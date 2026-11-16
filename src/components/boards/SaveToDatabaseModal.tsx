@@ -1,18 +1,37 @@
-import { Alert, Button, Group, Loader, Select, Stack } from "@mantine/core";
+import { Alert, Button, Group, Loader, Select, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useState } from "react";
+import { useAtomValue } from "jotai";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { StoreApi } from "zustand";
 import AppModal from "@/components/common/AppModal";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { listingFailure } from "@/components/files/listingFailure";
+import { listingFailure, rootFailureMessage } from "@/components/files/listingFailure";
 import { databaseLoadFailureMessage } from "@/components/databases/databaseLoadFailure";
+import type { FileMetadata } from "@/components/files/file";
+import { joinLibraryCollections } from "@/components/library/libraryData";
+import { LibraryTypeBadge } from "@/components/library/presentation";
+import { useWorkspaceListing } from "@/components/library/useWorkspaceListing";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
+import { fileWorkspaceAtom } from "@/state/atoms";
 import type { TreeStoreState } from "@/state/store/tree";
-import { databaseHandleKey } from "@/utils/db";
-import { saveToDatabase, useTabActions, type Tab } from "@/utils/tabs";
+import { databaseHandleKey, type SuccessDatabaseInfo } from "@/utils/db";
+import { capitalize } from "@/utils/format";
+import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import { saveToDatabase, saveToLibraryFile, useTabActions, type Tab } from "@/utils/tabs";
+
+const FILE_PREFIX = "file:";
+const DATABASE_PREFIX = "database:";
+
+function fileValue(file: FileMetadata) {
+  return `${FILE_PREFIX}${fileWorkspaceKey(file.handle)}`;
+}
+
+function databaseValue(database: SuccessDatabaseInfo) {
+  return `${DATABASE_PREFIX}${databaseHandleKey(database.file)}`;
+}
 
 export default function SaveToDatabaseModal({
   opened,
@@ -26,64 +45,156 @@ export default function SaveToDatabaseModal({
   store: StoreApi<TreeStoreState>;
 }) {
   const { t } = useTranslation();
-  const { data, error, isLoading, mutate } = useDatabaseList(opened);
-  const failure = listingFailure(error);
+  const workspace = useAtomValue(fileWorkspaceAtom);
+  const filesListing = useWorkspaceListing(opened ? workspace : null);
+  const databasesListing = useDatabaseList(opened);
+  const filesFailure = listingFailure(filesListing.error);
+  const databasesFailure = listingFailure(databasesListing.error);
   const { getTab, updateTab } = useTabActions();
   const [selected, setSelected] = useState<string | null>(null);
   const { pending, run, isMounted } = useSingleFlight();
-  const targets = (data?.databases ?? []).filter(
-    (item) => item.type === "success" && (!item.collection || item.collection.status === "ready"),
+  const fileTargets = useMemo(() => {
+    if (!workspace || filesFailure !== "silent") return [];
+    const { files } = joinLibraryCollections(
+      filesListing.data ?? [],
+      databasesListing.data?.collections ?? [],
+    );
+    return files.filter((file) => !file.readError);
+  }, [workspace, filesFailure, filesListing.data, databasesListing.data?.collections]);
+  const fileKeys = useMemo(
+    () => new Set(fileTargets.map((file) => fileWorkspaceKey(file.handle))),
+    [fileTargets],
   );
-  const target = targets.find((item) => databaseHandleKey(item.file) === selected);
+  const databaseTargets = useMemo(() => {
+    if (databasesFailure !== "silent") return [];
+    return (databasesListing.data?.databases ?? []).filter(
+      (item): item is SuccessDatabaseInfo =>
+        item.type === "success" &&
+        (!item.collection || item.collection.status === "ready") &&
+        !(item.collection && fileKeys.has(fileWorkspaceKey(item.collection.file))),
+    );
+  }, [databasesFailure, databasesListing.data?.databases, fileKeys]);
+  const filesByValue = useMemo(
+    () => new Map(fileTargets.map((file) => [fileValue(file), file])),
+    [fileTargets],
+  );
+  const databasesByValue = useMemo(
+    () => new Map(databaseTargets.map((item) => [databaseValue(item), item])),
+    [databaseTargets],
+  );
+  const selectedFile = selected ? (filesByValue.get(selected) ?? null) : null;
+  const selectedDatabase = selected ? (databasesByValue.get(selected) ?? null) : null;
+  const filesListingFailed = !!workspace && filesFailure !== "silent";
+  const databasesListingFailed = databasesFailure !== "silent";
+  const filesReady = !!workspace && filesFailure === "silent" && !filesListing.isLoading;
+  const databasesReady = databasesFailure === "silent" && !databasesListing.isLoading;
+  const noTargets =
+    filesReady && databasesReady && fileTargets.length === 0 && databaseTargets.length === 0;
+  const selectDisabled = pending || ((!workspace || filesListingFailed) && databasesListingFailed);
+  const saveDisabled =
+    pending ||
+    (selectedFile ? filesListingFailed : selectedDatabase ? databasesListingFailed : true);
+  const selectData = [
+    ...(fileTargets.length > 0
+      ? [
+          {
+            group: t("Files.Title", { defaultValue: "Files" }),
+            items: fileTargets.map((file) => ({
+              value: fileValue(file),
+              label: file.name,
+            })),
+          },
+        ]
+      : []),
+    ...(databaseTargets.length > 0
+      ? [
+          {
+            group: t("Board.Database.Databases", { defaultValue: "Databases" }),
+            items: databaseTargets.map((item) => ({
+              value: databaseValue(item),
+              label: item.title,
+            })),
+          },
+        ]
+      : []),
+  ];
   async function submit() {
-    if (!target || target.type !== "success") return;
+    const file = selectedFile;
+    const database = selectedDatabase;
+    if (file ? filesListingFailed : database ? databasesListingFailed : true) return;
     await run(async () => {
-      const result = await saveToDatabase({ tab, store, database: target.file, getTab, updateTab });
-      if (!isMounted()) return;
-      if (typeof result === "object") notifyUnlessCancelled(t("Common.Error"), result.error);
-      else if (result === "saved") {
-        notifications.show({ message: t("Board.Database.Saved", { database: target.title }) });
-        onClose();
-        void mutate().catch((error) => {
-          if (isMounted()) notifyUnlessCancelled(t("Common.Error"), error);
-        });
-      } else if (result === "superseded")
-        notifyUnlessCancelled(t("Common.Error"), {
-          category: "validation",
-          message: t("Tab.SaveSuperseded"),
-        });
+      try {
+        const result = file
+          ? await saveToLibraryFile({ tab, store, file, getTab, updateTab })
+          : await saveToDatabase({ tab, store, database: database!.file, getTab, updateTab });
+        if (typeof result === "object") {
+          if (isMounted()) notifyUnlessCancelled(t("Common.Error"), result.error);
+        } else if (result === "saved") {
+          notifications.show({
+            message: t("Board.Database.Saved", { database: file ? file.name : database!.title }),
+          });
+          if (!isMounted()) return;
+          onClose();
+          const refresh = file ? filesListing.mutate : databasesListing.mutate;
+          void refresh().catch((error) => {
+            if (isMounted()) notifyUnlessCancelled(t("Common.Error"), error);
+          });
+        } else if (result === "superseded" && isMounted())
+          notifyUnlessCancelled(t("Common.Error"), {
+            category: "validation",
+            message: t("Tab.SaveSuperseded"),
+          });
+      } catch (error) {
+        if (isMounted()) notifyUnlessCancelled(t("Common.Error"), error);
+      }
     });
   }
   return (
     <AppModal opened={opened} onClose={onClose} pending={pending} title={t("Board.Database.Save")}>
       <Stack>
-        {isLoading && <Loader size="sm" />}
-        {failure !== "silent" && (
-          <Alert color="danger">{databaseLoadFailureMessage(error, t)}</Alert>
+        {(filesListing.isLoading || databasesListing.isLoading) && <Loader size="sm" />}
+        {filesListingFailed && (
+          <Alert color="danger">
+            {rootFailureMessage("files", filesListing.error, t) ??
+              t("Files.LoadFailed", {
+                defaultValue: "Files could not be loaded. Please try again.",
+              })}
+          </Alert>
+        )}
+        {databasesListingFailed && (
+          <Alert color="danger">{databaseLoadFailureMessage(databasesListing.error, t)}</Alert>
         )}
         <Select
           label={t("Board.Database.Target")}
-          value={target ? selected : null}
+          value={selectedFile || selectedDatabase ? selected : null}
           onChange={setSelected}
-          disabled={pending || !!error}
-          data={targets.flatMap((item) =>
-            item.type === "success"
-              ? [{ value: databaseHandleKey(item.file), label: item.title }]
-              : [],
-          )}
+          disabled={selectDisabled}
+          data={selectData}
           nothingFoundMessage={t("Board.Database.NoTargets")}
           searchable
+          renderOption={({ option }) => {
+            const file = filesByValue.get(option.value);
+            if (!file) return option.label;
+            return (
+              <Group gap="xs" wrap="nowrap" justify="space-between" maw="100%" miw={0}>
+                <Text size="sm" truncate="end" miw={0}>
+                  {option.label}
+                </Text>
+                <LibraryTypeBadge>
+                  {t(`Files.FileType.${capitalize(file.metadata.type)}`)}
+                </LibraryTypeBadge>
+              </Group>
+            );
+          }}
         />
-        {!isLoading && !error && targets.length === 0 && (
-          <Alert>{t("Board.Database.NoTargets")}</Alert>
-        )}
+        {noTargets && <Alert>{t("Board.Database.NoTargets")}</Alert>}
         <Group justify="end">
           <Button styles={wrappingButton} variant="default" disabled={pending} onClick={onClose}>
             {t("Common.Cancel")}
           </Button>
           <Button
             styles={wrappingButton}
-            disabled={!target || !!error}
+            disabled={saveDisabled}
             loading={pending}
             onClick={() => void submit()}
           >

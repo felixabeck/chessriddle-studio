@@ -1,21 +1,29 @@
 import { MantineProvider } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { StoreApi } from "zustand";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { FileMetadata } from "@/components/files/file";
+import { useWorkspaceListing } from "@/components/library/useWorkspaceListing";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
+import { fileWorkspaceAtom } from "@/state/atoms";
 import type { TreeStoreState } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import type { SuccessDatabaseInfo } from "@/utils/db";
-import { saveToDatabase } from "@/utils/tabs";
+import { saveToDatabase, saveToLibraryFile } from "@/utils/tabs";
 import SaveToDatabaseModal from "./SaveToDatabaseModal";
 
 vi.mock("@/hooks/useDatabaseList", () => ({ useDatabaseList: vi.fn() }));
+vi.mock("@/components/library/useWorkspaceListing", () => ({
+  useWorkspaceListing: vi.fn(),
+}));
 vi.mock("@/utils/tabs", () => ({
   useTabActions: () => ({ getTab: vi.fn(), updateTab: vi.fn() }),
   saveToDatabase: vi.fn(),
+  saveToLibraryFile: vi.fn(),
 }));
 vi.mock("@/components/common/AppModal", async () => ({
   default: (await import("@/tests/appModal")).PendingAppModal,
@@ -32,8 +40,20 @@ installMatchMediaStub();
 installResizeObserverStub();
 let host: HTMLDivElement;
 let root: Root;
+function emptyListing() {
+  return {
+    data: undefined,
+    error: undefined,
+    isLoading: false,
+    mutate: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(useWorkspaceListing).mockReturnValue(
+    emptyListing() as unknown as ReturnType<typeof useWorkspaceListing>,
+  );
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -43,17 +63,44 @@ afterEach(async () => {
   host?.remove();
 });
 
-async function renderModal(onClose: () => void = vi.fn()) {
+const workspace = { id: { id: "library" }, kind: "fileWorkspace" as const };
+
+const repertoireFile: FileMetadata = {
+  type: "file",
+  handle: { id: { id: "collection-file" }, kind: "fileWorkspace" },
+  name: "Caro Kann",
+  numGames: 3,
+  metadata: { type: "repertoire", tags: [] },
+  lastModified: 1,
+};
+
+const otherFile: FileMetadata = {
+  type: "file",
+  handle: { id: { id: "other-file" }, kind: "fileWorkspace" },
+  name: "Games",
+  numGames: 1,
+  metadata: { type: "game", tags: [] },
+  lastModified: 2,
+};
+
+async function renderModal(
+  onClose: () => void = vi.fn(),
+  libraryWorkspace: typeof workspace | null = null,
+) {
+  const jotai = createStore();
+  jotai.set(fileWorkspaceAtom, libraryWorkspace);
   await act(async () =>
     root.render(
-      <MantineProvider env="test">
-        <SaveToDatabaseModal
-          opened
-          onClose={onClose}
-          tab={undefined}
-          store={{} as StoreApi<TreeStoreState>}
-        />
-      </MantineProvider>,
+      <Provider store={jotai}>
+        <MantineProvider env="test">
+          <SaveToDatabaseModal
+            opened
+            onClose={onClose}
+            tab={undefined}
+            store={{} as StoreApi<TreeStoreState>}
+          />
+        </MantineProvider>
+      </Provider>,
     ),
   );
 }
@@ -160,7 +207,7 @@ test("pending save prevents dismissal and repeated saves, then completes once an
   expect(button.disabled).toBe(false);
 });
 
-test("unmount during a pending save prevents late close and notifications", async () => {
+test("unmount during a pending save still announces success and skips late close", async () => {
   const save = deferredSave();
   const onClose = vi.fn();
   const mutate = await selectReadyTarget(onClose);
@@ -172,7 +219,7 @@ test("unmount during a pending save prevents late close and notifications", asyn
   await act(async () => save.resolve("saved"));
 
   expect(onClose).not.toHaveBeenCalled();
-  expect(notifications.show).not.toHaveBeenCalled();
+  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.Database.Saved" });
   expect(mutate).not.toHaveBeenCalled();
 });
 
@@ -196,3 +243,183 @@ test.each([
     expect(saveButton().disabled).toBe(true);
   },
 );
+
+const standaloneDatabase: SuccessDatabaseInfo = {
+  ...readyTarget,
+  file: { id: { id: "standalone" }, kind: "database" },
+  title: "Standalone",
+  collection: undefined,
+};
+
+function mockDatabases(
+  databases: SuccessDatabaseInfo[],
+  collections: NonNullable<SuccessDatabaseInfo["collection"]>[] = [],
+  error?: unknown,
+) {
+  vi.mocked(useDatabaseList).mockReturnValue({
+    data: error
+      ? undefined
+      : {
+          databases,
+          unread: [],
+          root: { id: { id: "root" }, kind: "databaseRoot" },
+          collections,
+        },
+    error,
+    isLoading: false,
+    mutate: vi.fn().mockResolvedValue(undefined),
+  } as unknown as ReturnType<typeof useDatabaseList>);
+}
+
+function mockFiles(files: FileMetadata[], error?: unknown) {
+  vi.mocked(useWorkspaceListing).mockReturnValue({
+    data: error ? undefined : files,
+    error,
+    isLoading: false,
+    mutate: vi.fn().mockResolvedValue(undefined),
+  } as unknown as ReturnType<typeof useWorkspaceListing>);
+}
+
+function optionValues() {
+  return [...document.querySelectorAll<HTMLElement>('[role="option"]')].map(
+    (option) => option.getAttribute("value") ?? option.getAttribute("data-value"),
+  );
+}
+
+async function chooseOption(label: string) {
+  await act(async () => host.querySelector("input")!.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+    item.textContent?.includes(label),
+  )!;
+  await act(async () => option.click());
+}
+
+test("lists files and databases in two groups with namespaced values and omits a collection-backed database", async () => {
+  mockFiles([repertoireFile, { ...otherFile, readError: "permission" }]);
+  mockDatabases([readyTarget, standaloneDatabase], [readyTarget.collection!]);
+  await renderModal(vi.fn(), workspace);
+  await act(async () => host.querySelector("input")!.click());
+  expect(host.textContent).toContain("Files");
+  expect(host.textContent).toContain("Databases");
+  expect(optionValues()).toEqual(["file:collection-file", "database:standalone"]);
+  expect(host.textContent).toContain("Caro Kann");
+  expect(host.textContent).toContain("Repertoire");
+  expect(host.textContent).toContain("Standalone");
+  expect(host.textContent).not.toContain(readyTarget.title);
+  expect(host.textContent).not.toContain("Games");
+});
+
+test("saving a collection-backed file uses its real metadata", async () => {
+  mockFiles([repertoireFile]);
+  mockDatabases([readyTarget], [readyTarget.collection!]);
+  vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
+  const onClose = vi.fn();
+  await renderModal(onClose, workspace);
+  await chooseOption("Caro Kann");
+  await act(async () => saveButton().click());
+  expect(saveToLibraryFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ file: repertoireFile }),
+  );
+  expect(saveToDatabase).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.Database.Saved" });
+});
+
+test("a files-only library can save to a file", async () => {
+  mockFiles([otherFile]);
+  mockDatabases([]);
+  vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
+  await renderModal(vi.fn(), workspace);
+  await chooseOption("Games");
+  expect(saveButton().disabled).toBe(false);
+  await act(async () => saveButton().click());
+  expect(saveToLibraryFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ file: otherFile }),
+  );
+  expect(saveToDatabase).not.toHaveBeenCalled();
+});
+
+test("a databases-only library keeps saving to a database", async () => {
+  mockDatabases([standaloneDatabase]);
+  vi.mocked(saveToDatabase).mockResolvedValue("saved");
+  await renderModal();
+  await chooseOption("Standalone");
+  await act(async () => saveButton().click());
+  expect(saveToDatabase).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ database: standaloneDatabase.file }),
+  );
+  expect(saveToLibraryFile).not.toHaveBeenCalled();
+});
+
+test("a files listing failure uses files-domain copy and still saves a selected database", async () => {
+  mockFiles([], {
+    tag: "backend-error",
+    category: "io",
+    message: "private diagnostic",
+    rootFailure: "missing",
+  });
+  mockDatabases([standaloneDatabase]);
+  vi.mocked(saveToDatabase).mockResolvedValue("saved");
+  await renderModal(vi.fn(), workspace);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+    "This collection is no longer available. Choose another.",
+  );
+  expect(host.textContent).not.toContain("private diagnostic");
+  expect(host.querySelector("input")?.disabled).toBe(false);
+  await chooseOption("Standalone");
+  expect(saveButton().disabled).toBe(false);
+  await act(async () => saveButton().click());
+  expect(saveToDatabase).toHaveBeenCalledOnce();
+  expect(saveToLibraryFile).not.toHaveBeenCalled();
+});
+
+test("a database listing failure still saves a selected file", async () => {
+  mockFiles([repertoireFile]);
+  mockDatabases([], [], {
+    tag: "backend-error",
+    category: "io",
+    message: "private diagnostic",
+    rootFailure: "missing",
+  });
+  vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
+  await renderModal(vi.fn(), workspace);
+  expect(host.textContent).toContain(
+    "This database folder is no longer available. Choose another.",
+  );
+  await chooseOption("Caro Kann");
+  expect(saveButton().disabled).toBe(false);
+  await act(async () => saveButton().click());
+  expect(saveToLibraryFile).toHaveBeenCalledOnce();
+  expect(saveToDatabase).not.toHaveBeenCalled();
+});
+
+test("a failed file save keeps the dialog open and notifies", async () => {
+  mockFiles([repertoireFile]);
+  mockDatabases([]);
+  vi.mocked(saveToLibraryFile).mockResolvedValue({
+    status: "failed",
+    error: { category: "unexpected", message: "disk full" },
+  });
+  const onClose = vi.fn();
+  await renderModal(onClose, workspace);
+  await chooseOption("Caro Kann");
+  await act(async () => saveButton().click());
+  expect(onClose).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(notifications.show).toHaveBeenCalledWith(
+    expect.objectContaining({ color: "danger", message: "disk full" }),
+  );
+});
+
+test("a thrown file save is caught, keeps the dialog open, and notifies", async () => {
+  mockFiles([repertoireFile]);
+  mockDatabases([]);
+  vi.mocked(saveToLibraryFile).mockRejectedValue(new Error("boom"));
+  const onClose = vi.fn();
+  await renderModal(onClose, workspace);
+  await chooseOption("Caro Kann");
+  await act(async () => saveButton().click());
+  expect(onClose).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "danger" }));
+});

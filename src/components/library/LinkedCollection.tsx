@@ -27,7 +27,7 @@ import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import AppModal from "@/components/common/AppModal";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import { libraryButtonProps } from "./presentation";
-import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
+import NewGameButton from "@/components/boards/NewGameButton";
 import ExplainedAction from "@/components/library/ExplainedAction";
 
 const playerFieldStyles = {
@@ -117,7 +117,11 @@ export function LinkedCollection({
         </Alert>
       )}
       <Group wrap="wrap">
-        <NewDatabaseGameButton database={current.database} disabled={!ready || pending} />
+        <NewGameButton
+          origin={current.database ? { kind: "databaseDraft", database: current.database } : null}
+          explanation={t("Databases.NewGame.Desc")}
+          disabled={!ready || pending}
+        />
         <Button
           {...libraryButtonProps}
           disabled={!ready || pending}

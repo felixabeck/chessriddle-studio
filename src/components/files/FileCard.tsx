@@ -14,6 +14,7 @@ import { StaleFileGameError } from "@/state/fileStructureChange";
 import { rootFontPx } from "@/state/paneLayout";
 import { IconAction } from "@/components/common/IconAction";
 import { OpenGameButton, useGameOpen } from "@/components/common/gameOpen";
+import NewGameButton from "@/components/boards/NewGameButton";
 import { openFile } from "@/utils/files";
 import { runTabCreation } from "@/utils/tabs";
 import { capitalize, formatNumber } from "@/utils/format";
@@ -32,9 +33,11 @@ const GAME_LIST_MIN_HEIGHT = "8rem";
 function FileCard({
   selected,
   onEditMetadata,
+  linkedCollection = false,
 }: {
   selected: FileMetadata;
   onEditMetadata: () => void;
+  linkedCollection?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -170,6 +173,14 @@ function FileCard({
             pending={gameOpen.pending}
             disabled={previewOmitted || selected.numGames <= 0 || page >= selected.numGames}
           />
+          {!linkedCollection && (
+            <NewGameButton
+              origin={{ kind: "fileDraft", file: selected }}
+              explanation={t("Files.NewGame.Desc", {
+                defaultValue: "Enter a new game move by move and save it to this file.",
+              })}
+            />
+          )}
           <IconAction label={t("Files.EditMetadata")} size="sm" onClick={onEditMetadata}>
             <Pencil size="1rem" />
           </IconAction>

@@ -3,32 +3,36 @@ import { Plus } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import type { DatabaseHandle } from "@/bindings";
 import { tabsAtom } from "@/state/atoms";
+import type { GameOrigin } from "@/state/workspaceTypes";
 import { createTab, runTabCreation } from "@/utils/tabs";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { libraryButtonProps } from "@/components/library/presentation";
 import ExplainedAction from "@/components/library/ExplainedAction";
 
-export default function NewDatabaseGameButton({
-  database,
+export type NewGameDraftOrigin = Extract<GameOrigin, { kind: "databaseDraft" | "fileDraft" }>;
+
+export default function NewGameButton({
+  origin,
+  explanation,
   disabled,
 }: {
-  database: DatabaseHandle | null;
+  origin: NewGameDraftOrigin | null;
+  explanation: string;
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const setTabs = useSetAtom(tabsAtom);
   const navigate = useNavigate();
-  const unavailable = disabled || !database;
+  const unavailable = disabled || !origin;
   return (
-    <ExplainedAction explanation={t("Databases.NewGame.Desc")} disabled={unavailable}>
+    <ExplainedAction explanation={explanation} disabled={unavailable}>
       <Button
         {...libraryButtonProps}
         disabled={unavailable}
         leftSection={<Plus size="1rem" />}
         onClick={() =>
-          database &&
+          origin &&
           void runTabCreation({
             create: () =>
               createTab({
@@ -36,7 +40,7 @@ export default function NewDatabaseGameButton({
                   name: t("Databases.NewGame", { defaultValue: "New game" }),
                   type: "analysis",
                 },
-                gameOrigin: { kind: "databaseDraft", database },
+                gameOrigin: origin,
                 setTabs,
               }),
             onSuccess: () => navigate({ to: "/" }),

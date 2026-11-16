@@ -92,6 +92,11 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
         {
+            name: "new-game-to-file",
+            testMatch: /new-game-to-file\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+        },
+        {
             name: "game-references",
             testMatch: /game-references\.spec\.ts/,
             use: { ...chromium, viewport: { width: 800, height: 720 }, colorScheme: "light" },

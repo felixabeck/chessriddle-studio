@@ -47,27 +47,6 @@ export default function LibraryPage() {
   const { data: linkSupported } = useSWR("linkedCollectionsSupported", () =>
     tauri.linkedCollectionsSupported(),
   );
-  const files = useFileWorkspace(
-    selection?.kind === "workspace" ? selection.entry : null,
-    (entry) => {
-      setSelection((current) =>
-        entry && files.workspace
-          ? { kind: "workspace", workspaceKey: fileWorkspaceKey(files.workspace), entry }
-          : current?.kind === "workspace"
-            ? null
-            : current,
-      );
-    },
-    selection?.kind === "workspace" ? selection.workspaceKey : undefined,
-  );
-  const workspaceKey = files.workspace ? fileWorkspaceKey(files.workspace) : null;
-  useEffect(() => {
-    if (linkSupported && files.data) void mutate("databases");
-  }, [linkSupported, files.data, mutate]);
-  const fileSelection =
-    selection?.kind === "workspace" && selection.workspaceKey === workspaceKey
-      ? files.selected
-      : null;
   const databases = useDatabaseLibrary(
     selection?.kind === "database" ? selection.key : null,
     (next) => {
@@ -80,6 +59,37 @@ export default function LibraryPage() {
       });
     },
   );
+  const selectedLibraryFile =
+    selection?.kind === "workspace" && selection.entry?.type === "file" ? selection.entry : null;
+  const linkedCollection =
+    !!selectedLibraryFile &&
+    databases.collections.some(
+      (collection) =>
+        collection.status !== "retired" &&
+        fileWorkspaceKey(collection.file) === fileWorkspaceKey(selectedLibraryFile.handle),
+    );
+  const files = useFileWorkspace(
+    selection?.kind === "workspace" ? selection.entry : null,
+    (entry) => {
+      setSelection((current) =>
+        entry && files.workspace
+          ? { kind: "workspace", workspaceKey: fileWorkspaceKey(files.workspace), entry }
+          : current?.kind === "workspace"
+            ? null
+            : current,
+      );
+    },
+    selection?.kind === "workspace" ? selection.workspaceKey : undefined,
+    linkedCollection,
+  );
+  const workspaceKey = files.workspace ? fileWorkspaceKey(files.workspace) : null;
+  useEffect(() => {
+    if (linkSupported && files.data) void mutate("databases");
+  }, [linkSupported, files.data, mutate]);
+  const fileSelection =
+    selection?.kind === "workspace" && selection.workspaceKey === workspaceKey
+      ? files.selected
+      : null;
   useEffect(() => {
     if (
       selection?.kind === "workspace" &&

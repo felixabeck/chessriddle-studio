@@ -3,7 +3,7 @@ import {
   libraryDangerButtonProps,
   libraryClasses,
 } from "@/components/library/presentation";
-import NewDatabaseGameButton from "@/components/boards/NewDatabaseGameButton";
+import NewGameButton from "@/components/boards/NewGameButton";
 import ExplainedAction from "@/components/library/ExplainedAction";
 import { tauri } from "@/platform/tauri";
 import { listingFailure } from "@/components/files/listingFailure";
@@ -525,7 +525,10 @@ export function useDatabaseLibrary(
             <Group justify="space-between">
               {selectedDatabase.type === "success" && (
                 <Group>
-                  <NewDatabaseGameButton database={selectedDatabase.file} />
+                  <NewGameButton
+                    origin={{ kind: "databaseDraft", database: selectedDatabase.file }}
+                    explanation={t("Databases.NewGame.Desc")}
+                  />
                   <ExplainedAction explanation={t("Databases.Settings.AddGames.Desc")}>
                     <Button
                       {...libraryButtonProps}

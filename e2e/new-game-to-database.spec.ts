@@ -147,9 +147,9 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     await expect
         .poll(async () => (await saves()).map((item) => item.command))
         .toEqual(["insert_db_game", "write_db_game"]);
-    await page.getByRole("button", { name: "Save to database…", exact: true }).click();
-    const modal = page.getByRole("dialog", { name: "Save to database…", exact: true });
-    await modal.getByRole("textbox", { name: "Database", exact: true }).click();
+    await page.getByRole("button", { name: "Save to file or database…", exact: true }).click();
+    const modal = page.getByRole("dialog", { name: "Save to file or database…", exact: true });
+    await modal.getByRole("textbox", { name: "File or database", exact: true }).click();
     await page.getByRole("option", { name: gameOpeningFixture.databaseTitle, exact: true }).click();
     await expect(modal.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await assertNothingClipped(modal);

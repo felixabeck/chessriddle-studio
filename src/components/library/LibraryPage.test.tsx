@@ -110,7 +110,11 @@ vi.mock("@/utils/files", async () => ({
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
 vi.mock("@/components/files/FileCard", () => ({
-  default: ({ selected }: { selected: Entry }) => <output data-file-detail>{selected.name}</output>,
+  default: ({ selected, linkedCollection }: { selected: Entry; linkedCollection?: boolean }) => (
+    <output data-file-detail data-linked-collection-file={linkedCollection ? "true" : "false"}>
+      {selected.name}
+    </output>
+  ),
 }));
 vi.mock("@/components/databases/PlayerSearchInput", () => ({ PlayerSearchInput: () => null }));
 vi.mock("@/components/databases/AddDatabase", () => ({
@@ -361,6 +365,9 @@ test("one tree distinguishes equal-name and equal-key file/database identities a
   expect(rows().map((row) => row.getAttribute("aria-label"))).toEqual(["Same name", "Same name"]);
   await click(rows()[0]);
   expect(host.querySelector("[data-file-detail]")).not.toBeNull();
+  expect(
+    host.querySelector("[data-file-detail]")?.getAttribute("data-linked-collection-file"),
+  ).toBe("false");
   expect(button("Trash")).toBeDefined();
   await click(rows()[1]);
   expect(host.querySelector("[data-file-detail]")).toBeNull();
@@ -582,6 +589,9 @@ test("a linked collection composes one Library row and opens the existing explor
   expect(rows()).toHaveLength(1);
   await click(rows()[0]);
   expect(host.querySelector("[data-file-detail]")).not.toBeNull();
+  expect(
+    host.querySelector("[data-file-detail]")?.getAttribute("data-linked-collection-file"),
+  ).toBe("true");
   expect(host.querySelector("[data-linked-collection]")).not.toBeNull();
   await vi.waitFor(() => expect(button("Explore").disabled).toBe(false));
   await click(button("Explore"));

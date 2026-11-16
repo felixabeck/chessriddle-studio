@@ -15,6 +15,7 @@ import i18n, { initializeI18n } from "@/i18n";
 const mocks = vi.hoisted(() => ({
   readGames: vi.fn(),
   readGame: vi.fn(),
+  writeGame: vi.fn(),
   navigate: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
   showNotification: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock("@/platform/tauri", async () => {
       ...actual.tauri,
       readGames: mocks.readGames,
       readGame: mocks.readGame,
+      writeGame: mocks.writeGame,
       moveGames: mocks.moveGames,
     },
   };
@@ -839,5 +841,49 @@ describe("FileCard", () => {
     seed.mockRestore();
     await act(async () => openButton().click());
     expect(mocks.navigate).toHaveBeenCalledOnce();
+  });
+
+  function newGameButton() {
+    return [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Databases.NewGame",
+    );
+  }
+
+  test("New game is enabled for an empty file, opens a fileDraft, and does not write", async () => {
+    mocks.readGames.mockResolvedValue([]);
+    const empty = { ...sampleFileA, numGames: 0 };
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={empty} />, root);
+    const button = newGameButton();
+    expect(button).toBeDefined();
+    expect(button!.disabled).toBe(false);
+    await act(async () => button!.click());
+    expect(getDefaultStore().get(tabsAtom)[0]?.gameOrigin).toEqual({
+      kind: "fileDraft",
+      file: empty,
+    });
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+    expect(mocks.writeGame).not.toHaveBeenCalled();
+  });
+
+  test("New game reports a creation failure without navigation or a write", async () => {
+    mocks.readGames.mockResolvedValue([stampedGame("Preview")]);
+    const tabs = await import("@/utils/tabs");
+    const createTab = vi.spyOn(tabs, "createTab").mockRejectedValueOnce(new Error("quota"));
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    await act(async () => newGameButton()!.click());
+    expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", expect.any(Error));
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.writeGame).not.toHaveBeenCalled();
+    expect(getDefaultStore().get(tabsAtom)).toEqual([]);
+    createTab.mockRestore();
+  });
+
+  test("omits New game when the file backs a linked collection", async () => {
+    mocks.readGames.mockResolvedValue([stampedGame("Preview")]);
+    await renderWithMantine(
+      <FileCard onEditMetadata={vi.fn()} selected={sampleFileA} linkedCollection />,
+      root,
+    );
+    expect(newGameButton()).toBeUndefined();
   });
 });
