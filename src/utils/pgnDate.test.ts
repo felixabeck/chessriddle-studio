@@ -47,19 +47,29 @@ describe("canonicalPgnDate", () => {
 
 describe("pgnDateTags", () => {
     afterEach(() => {
-        vi.unstubAllEnvs();
+        vi.restoreAllMocks();
     });
 
+    // A runtime TZ change is ignored in worker threads (Stryker's runner), so the local
+    // calendar fields are stubbed on the instant instead.
+    function instant(utc: string, local: [year: number, month: number, day: number]): Date {
+        const date = new Date(utc);
+        vi.spyOn(date, "getFullYear").mockReturnValue(local[0]);
+        vi.spyOn(date, "getMonth").mockReturnValue(local[1] - 1);
+        vi.spyOn(date, "getDate").mockReturnValue(local[2]);
+        return date;
+    }
+
     test.each([
-        // Berlin, 00:30 local on 15 November is still 14 November in UTC.
-        ["Europe/Berlin", "2026-11-14T23:30:00Z", "2026.11.15", "2026.11.14", "23:30:00"],
-        ["Europe/Berlin", "2026-07-14T23:30:00Z", "2026.07.15", "2026.07.14", "23:30:00"],
-        ["Asia/Tokyo", "2026-11-14T23:00:00Z", "2026.11.15", "2026.11.14", "23:00:00"],
-        // New York, 20:30 local on 14 November is already 15 November in UTC.
-        ["America/New_York", "2026-11-15T01:30:00Z", "2026.11.14", "2026.11.15", "01:30:00"],
-        ["UTC", "2026-01-02T03:04:05Z", "2026.01.02", "2026.01.02", "03:04:05"],
-    ])("in %s at %s dates the game by the local day", (tz, instant, date, utcDate, utcTime) => {
-        vi.stubEnv("TZ", tz);
-        expect(pgnDateTags(new Date(instant))).toEqual({ date, utcDate, utcTime });
-    });
+        // East of UTC after local midnight (Tokyo 08:00 on 15 November).
+        ["2026-11-14T23:00:00Z", [2026, 11, 15], "2026.11.15", "2026.11.14", "23:00:00"],
+        // West of UTC in the evening (New York 20:30 on 14 November).
+        ["2026-11-15T01:30:00Z", [2026, 11, 14], "2026.11.14", "2026.11.15", "01:30:00"],
+        ["2026-01-02T03:04:05Z", [2026, 1, 2], "2026.01.02", "2026.01.02", "03:04:05"],
+    ] as const)(
+        "at %s with local day %j dates the game by the local day",
+        (utc, local, date, utcDate, utcTime) => {
+            expect(pgnDateTags(instant(utc, [...local]))).toEqual({ date, utcDate, utcTime });
+        },
+    );
 });

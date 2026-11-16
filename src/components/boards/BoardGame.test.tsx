@@ -796,10 +796,15 @@ test("starting a human game sends numeric configuration and records ChessRiddle 
 });
 
 test("starting a game dates it by the local day and keeps the UTC moment in UTCDate and the time header", async () => {
-  vi.stubEnv("TZ", "Asia/Tokyo");
   vi.useFakeTimers({ toFake: ["Date"] });
-  // 08:00 on 15 November in Tokyo is 23:00 on 14 November in UTC.
+  // 08:00 on 15 November in Tokyo is 23:00 on 14 November in UTC. The local calendar fields
+  // are stubbed because a runtime TZ change is ignored in worker threads.
   vi.setSystemTime(new Date("2026-11-14T23:00:00Z"));
+  const localFields = [
+    vi.spyOn(Date.prototype, "getFullYear").mockReturnValue(2026),
+    vi.spyOn(Date.prototype, "getMonth").mockReturnValue(10),
+    vi.spyOn(Date.prototype, "getDate").mockReturnValue(15),
+  ];
   try {
     await render();
     await start();
@@ -811,8 +816,8 @@ test("starting a game dates it by the local day and keeps the UTC moment in UTCD
       }),
     );
   } finally {
+    for (const spy of localFields) spy.mockRestore();
     vi.useRealTimers();
-    vi.unstubAllEnvs();
   }
 });
 
