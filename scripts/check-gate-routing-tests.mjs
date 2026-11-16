@@ -1376,13 +1376,17 @@ function ciWorkflowContracts(texts) {
   );
   pinDepsStep("deps library writes the file-check helper", "resolve", (step) =>
     assert.ok(
-      step.text.includes("declare -f desktop_deps_label_stall desktop_deps_apt desktop_deps_check_file;"),
+      step.text.includes(
+        "declare -f desktop_deps_label_stall desktop_deps_apt desktop_deps_check_file;",
+      ),
       "deps library writes the file-check helper",
     ),
   );
   pinDepsStep("deps verify uses the file-check helper", "verify", (step) =>
     assert.ok(
-      step.text.includes('desktop_deps_check_file "$file" "$size" "$checksum" && status=0 || status=$?'),
+      step.text.includes(
+        'desktop_deps_check_file "$file" "$size" "$checksum" && status=0 || status=$?',
+      ),
       "deps verify uses the file-check helper",
     ),
   );
@@ -2745,8 +2749,7 @@ esac`,
       join(runnerTemp, "linux-desktop-deps-set.txt"),
       fixture.currentSet?.length ? `${fixture.currentSet.join("\n")}\n` : "",
     );
-    if (fixture.manifest)
-      writeFileSync(manifestPath, `${fixture.manifest.join("\n")}\n`);
+    if (fixture.manifest) writeFileSync(manifestPath, `${fixture.manifest.join("\n")}\n`);
     if (fixture.dpkgFail) writeFileSync(join(dir, "dpkg-fail"), "");
     writeFileSync(
       join(runnerTemp, "linux-desktop-deps-lib.sh"),
@@ -2797,10 +2800,7 @@ esac`,
 function assertNoUsableSet(install, reason) {
   assert.equal(install.status, 1, install.output);
   assert.deepEqual(install.calls, []);
-  assert.ok(
-    install.output.includes(`${noUsableSetError} (${reason})`),
-    install.output,
-  );
+  assert.ok(install.output.includes(`${noUsableSetError} (${reason})`), install.output);
 }
 
 const pipelineCases = [
@@ -3018,7 +3018,11 @@ const replacePipeline = (field, before, after) => (parts) => {
 const pipelineMutations = [
   [
     "success branch never matches",
-    replacePipeline("install", '"${DOWNLOAD_OUTCOME:-}" = "success"', '"${DOWNLOAD_OUTCOME:-}" = "never"'),
+    replacePipeline(
+      "install",
+      '"${DOWNLOAD_OUTCOME:-}" = "success"',
+      '"${DOWNLOAD_OUTCOME:-}" = "never"',
+    ),
     "success outcome: one apt call without pins",
   ],
   [
@@ -3037,11 +3041,7 @@ const pipelineMutations = [
   ],
   [
     "fallback warning names every pinned package",
-    replacePipeline(
-      "install",
-      'if [ "${cached[$pkg]}" != "$candidate" ]; then',
-      "if true; then",
-    ),
+    replacePipeline("install", 'if [ "${cached[$pkg]}" != "$candidate" ]; then', "if true; then"),
     "failed download pins a current-set file and a newer sibling to the manifest versions",
   ],
   [
@@ -3056,11 +3056,7 @@ const pipelineMutations = [
   ],
   [
     "missing cached file is skipped",
-    replacePipeline(
-      "install",
-      'reason="cached file $name is missing"\n      return 1',
-      "continue",
-    ),
+    replacePipeline("install", 'reason="cached file $name is missing"\n      return 1', "continue"),
     "missing manifest file prints the no-usable-set error and never calls apt",
   ],
   [
@@ -3074,20 +3070,12 @@ const pipelineMutations = [
   ],
   [
     "malformed manifest line is skipped",
-    replacePipeline(
-      "install",
-      'reason="malformed manifest line"\n      return 1',
-      "continue",
-    ),
+    replacePipeline("install", 'reason="malformed manifest line"\n      return 1', "continue"),
     "malformed manifest line prints the no-usable-set error and never calls apt",
   ],
   [
     "current name without a cached version is skipped",
-    replacePipeline(
-      "install",
-      'if [ -z "${cached[$pkg]:-}" ]; then',
-      "if false; then",
-    ),
+    replacePipeline("install", 'if [ -z "${cached[$pkg]:-}" ]; then', "if false; then"),
     "current name without a manifest entry prints the no-usable-set error and never calls apt",
   ],
   [
