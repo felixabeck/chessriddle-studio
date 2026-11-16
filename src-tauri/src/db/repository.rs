@@ -11715,6 +11715,14 @@ mod bound_sqlite_witnesses {
                 }
                 assert!(matches!(pool, Err(ref error) if error.category() == crate::error::ErrorCategory::Database && error.diagnostic().contains("unable to open database file")), "pool retains concrete bounded acquisition error");
                 assert_eq!(bound.refusal_count(), 0, "FIFO sidecar failure is not Conflict");
+                // The failed pool's r2d2 retry would otherwise open the database during the
+                // read-only -shm window and park a connection on SQLite's read-only shared-memory node.
+                let (key, entry, _) = repository.entry(&target, None).unwrap();
+                repository.retire_replaced(&key, &entry, None).unwrap();
+                assert!(
+                    !repository.state.lock().unwrap().entries.contains_key(&key),
+                    "retired failed FIFO pool is gone before -shm replacement"
+                );
                 fs::remove_file(&shm).unwrap();
                 fs::copy(&good_shm, &shm).unwrap();
                 fs::set_permissions(&shm, fs::Permissions::from_mode(0o400)).unwrap();
