@@ -344,7 +344,7 @@ test.each([
   {
     input: "score",
     write: (tree: TreeStore) =>
-      tree.getState().setScore({ value: { type: "cp", value: 42 }, wdl: null }),
+      tree.getState().setEngineScore({ value: { type: "cp", value: 42 }, wdl: null }),
   },
 ])("writing a $input keeps the list and cursor in place", ({ write }) => {
   store = middleGameStore();

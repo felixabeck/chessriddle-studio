@@ -13,7 +13,12 @@ import { positionFromFen } from "@/utils/chessops";
 import { skipWhile, takeWhile } from "@/utils/misc";
 import { getGamePhases } from "@/utils/phase";
 import { formatScore } from "@/utils/score";
-import { type ListNode, type TreeNode, treeIteratorMainLine } from "@/utils/treeReducer";
+import {
+  displayedScore,
+  type ListNode,
+  type TreeNode,
+  treeIteratorMainLine,
+} from "@/utils/treeReducer";
 import classes from "./EvalChart.module.css";
 import { TreeStateContext } from "./TreeStateContext";
 
@@ -38,13 +43,11 @@ type DataPoint = {
 const annotationAreaProps = { isAnimationActive: false, dot: <CustomDot /> };
 
 function getYValue(node: TreeNode): number | undefined {
-  if (node.score) {
-    let cp: number = node.score.value.value;
-    if (
-      node.score.value.type === "mate" ||
-      (node.score.value.type === "dtz" && node.score.value.value !== 0)
-    ) {
-      cp = node.score.value.value > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+  const score = displayedScore(node);
+  if (score) {
+    let cp: number = score.value.value;
+    if (score.value.type === "mate" || (score.value.type === "dtz" && score.value.value !== 0)) {
+      cp = score.value.value > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
     }
     return 2 / (1 + Math.exp(-0.004 * cp)) - 1;
   }
@@ -92,7 +95,8 @@ function EvalChart(props: EvalChartProps) {
         const node = currentNode.node;
         const annotations = nagGlyphs(node.nags);
         const [pos] = positionFromFen(node.fen);
-        const wdl = node.score?.wdl;
+        const score = displayedScore(node);
+        const wdl = score?.wdl;
         const terminalText = () => {
           if (node.children.length === 0 && pos) {
             if (pos.isCheckmate()) return t("Common.Checkmate");
@@ -102,11 +106,11 @@ function EvalChart(props: EvalChartProps) {
         };
         return {
           name: `${Math.ceil(node.halfMoves / 2)}.${pos?.turn === "black" ? "" : ".."} ${node.san}${formatNagGlyphs(annotations)}`,
-          cpText: node.score
-            ? `${t("Board.Analysis.Advantage")}: ${formatScore(node.score.value)}`
+          cpText: score
+            ? `${t("Board.Analysis.Advantage")}: ${formatScore(score.value)}`
             : terminalText(),
-          wdlText: node.score?.wdl
-            ? `\n         White: ${node.score.wdl[0] / 10}%\n         Draw: ${node.score.wdl[1] / 10}%\n         Black: ${node.score.wdl[2] / 10}%`
+          wdlText: wdl
+            ? `\n         White: ${wdl[0] / 10}%\n         Draw: ${wdl[1] / 10}%\n         Black: ${wdl[2] / 10}%`
             : terminalText(),
           yValue: getYValue(node) ?? "none",
           movePath: currentNode.position,

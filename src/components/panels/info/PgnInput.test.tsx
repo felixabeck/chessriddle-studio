@@ -323,7 +323,7 @@ test("an engine score keeps an unsaved PGN draft when the serialization does not
   await draft(draftText);
   const rootBefore = store.getState().root;
   await act(async () => {
-    store.getState().setScore({ value: { type: "cp", value: 30 }, wdl: null });
+    store.getState().setEngineScore({ value: { type: "cp", value: 30 }, wdl: null });
   });
   expect(store.getState().root).not.toBe(rootBefore);
   expect(editor().querySelector("textarea")!.value).toBe(draftText);

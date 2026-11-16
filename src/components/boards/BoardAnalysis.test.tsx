@@ -1225,6 +1225,43 @@ describe("BoardAnalysis", () => {
     expect(mocks.writeGame).not.toHaveBeenCalled();
   });
 
+  test.each(["file", "database"] as const)(
+    "a live engine score leaves a clean %s-backed tab unsaved-free and unwritten under autosave",
+    async (origin) => {
+      const database = { id: { id: "engine-score-db" }, kind: "database" } as const;
+      mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
+      mocks.writeDbGame.mockReset();
+      await act(async () => {
+        treeStore.getState().setState({ ...defaultTree(), sourceStamp: "a".repeat(64) });
+        if (origin === "database")
+          updateTabById(
+            (...args) => jotaiStore.set(tabsAtom, ...args),
+            tabId,
+            (previous) => ({
+              ...previous,
+              gameOrigin: { kind: "database", database, gameId: 813 },
+            }),
+          );
+        jotaiStore.set(autoSaveAtom, true);
+      });
+      const before = serializeStoreTree(treeStore);
+      await act(async () => {
+        treeStore.getState().setEngineScore({ value: { type: "cp", value: 31 }, wdl: null });
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(treeStore.getState().root.engineScore).toEqual({
+        value: { type: "cp", value: 31 },
+        wdl: null,
+      });
+      expect(treeStore.getState().dirty).toBe(false);
+      expect(serializeStoreTree(treeStore)).toBe(before);
+      expect(mocks.writeGame).not.toHaveBeenCalled();
+      expect(mocks.writeDbGame).not.toHaveBeenCalled();
+    },
+  );
+
   async function startAutosave() {
     const tree = defaultTree();
     tree.headers.event = "Captured autosave header";

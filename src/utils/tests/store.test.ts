@@ -6,6 +6,7 @@ import { getPGN } from "../chess";
 import { positionFromFen } from "../chessops";
 import {
     defaultTree,
+    displayedScore,
     getMemoizedBoardStateMap,
     TreeNode,
     type TreeState,
@@ -418,9 +419,9 @@ test("should handle setFen", () => {
     });
 });
 
-test("should handle setScore", () => {
+test("setEngineScore records a view-only score without marking the tab unsaved", () => {
     store.getState().setState({ ...treeE4D5(), position: [0] });
-    store.getState().setScore({
+    store.getState().setEngineScore({
         value: { type: "mate" as const, value: 1 },
         wdl: null,
     });
@@ -430,7 +431,7 @@ test("should handle setScore", () => {
         children: [
             {
                 ...treeE4D5().root.children[0],
-                score: {
+                engineScore: {
                     value: { type: "mate" as const, value: 1 },
                     wdl: null,
                 },
@@ -440,7 +441,7 @@ test("should handle setScore", () => {
 
     expect(getNewState()).toStrictEqual({
         ...treeE4D5(),
-        dirty: true,
+        dirty: false,
         position: [0],
         root: mutatedRoot,
         boardStateMap: expectedMap(mutatedRoot),
@@ -519,21 +520,58 @@ test("counts a custom root for threefold even when its FEN has doubled spaces", 
     expect(store.getState().headers.result).toBe(singleResult);
 });
 
-test("setScore clears a depth that described the replaced score", () => {
+test("setEngineScore leaves the source evaluation and the serialized PGN unchanged", () => {
     const tree = treeE4D5();
+    tree.root.children[0].score = { value: { type: "cp" as const, value: 30 }, wdl: null };
     tree.root.children[0].depth = 61;
     store.getState().setState({ ...tree, position: [0] });
-    store.getState().setScore({ value: { type: "cp" as const, value: 5 }, wdl: null });
+    const serialize = () =>
+        getPGN(getNewState().root, {
+            headers: null,
+            glyphs: true,
+            comments: true,
+            variations: true,
+            extraMarkups: true,
+        });
+    const before = serialize();
+    store.getState().setEngineScore({ value: { type: "cp" as const, value: 5 }, wdl: null });
 
-    expect(getNewState().root.children[0].depth).toBeNull();
-    const pgn = getPGN(getNewState().root, {
-        headers: null,
-        glyphs: true,
-        comments: true,
-        variations: true,
-        extraMarkups: true,
-    });
-    expect(pgn).toContain("[%eval +0.05]");
+    const node = getNewState().root.children[0];
+    expect(node.score).toEqual({ value: { type: "cp", value: 30 }, wdl: null });
+    expect(node.depth).toBe(61);
+    expect(displayedScore(node)).toEqual({ value: { type: "cp", value: 5 }, wdl: null });
+    expect(getNewState().dirty).toBe(false);
+    expect(serialize()).toBe(before);
+    expect(before).toContain("[%eval +0.30,61]");
+    expect(before).not.toContain("+0.05");
+});
+
+test("addAnalysis replaces the shown live score with the report's evaluation", () => {
+    store.getState().setState({ ...treeE4D5(), position: [0] });
+    store.getState().setEngineScore({ value: { type: "cp" as const, value: 5 }, wdl: null });
+    store.getState().addAnalysis([
+        { best: [], novelty: false, is_sacrifice: false },
+        {
+            best: [
+                {
+                    depth: 20,
+                    multipv: 1,
+                    nodes: 1n,
+                    score: { value: { type: "cp", value: 40 }, wdl: null },
+                    nps: 1000n,
+                    sanMoves: ["d5"],
+                    uciMoves: ["d7d5"],
+                },
+            ],
+            novelty: false,
+            is_sacrifice: false,
+        },
+    ]);
+
+    const node = getNewState().root.children[0];
+    expect(node.engineScore).toBeUndefined();
+    expect(displayedScore(node)).toEqual({ value: { type: "cp", value: 40 }, wdl: null });
+    expect(getNewState().dirty).toBe(true);
 });
 
 test("should handle addAnalysis", () => {

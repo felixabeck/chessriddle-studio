@@ -17,6 +17,7 @@ import {
     createNode,
     applyGameEndLoadDefault,
     defaultTree,
+    displayedScore,
     GAME_END_COMMAND,
     GAME_END_PROSE,
     getEffectiveGameEnd,
@@ -791,7 +792,8 @@ export function getGameStats(root: TreeNode) {
         };
     }
 
-    let parentScore: Score | null = root.score ?? (root.fen === INITIAL_FEN ? INITIAL_SCORE : null);
+    let parentScore: Score | null =
+        displayedScore(root) ?? (root.fen === INITIAL_FEN ? INITIAL_SCORE : null);
     const cplosses: ColorMap<number[]> = {
         white: [],
         black: [],
@@ -814,11 +816,12 @@ export function getGameStats(root: TreeNode) {
             }
         }
         const color = node.halfMoves % 2 === 1 ? "white" : "black";
-        if (parentScore && node.score) {
-            cplosses[color].push(getCPLoss(parentScore.value, node.score.value, color));
-            accuracies[color].push(getAccuracy(parentScore.value, node.score.value, color));
+        const score = displayedScore(node);
+        if (parentScore && score) {
+            cplosses[color].push(getCPLoss(parentScore.value, score.value, color));
+            accuracies[color].push(getAccuracy(parentScore.value, score.value, color));
         }
-        parentScore = node.score ?? null;
+        parentScore = score;
     }
     const whiteCPL = mean(cplosses.white);
     const blackCPL = mean(cplosses.black);

@@ -135,7 +135,8 @@ export interface TreeStoreState extends TreeState {
     clearGameEnd: () => void;
     setTermination: (text: string) => void;
     setShapes: (shapes: DrawShape[]) => void;
-    setScore: (score: Score) => void;
+    /** Records the live engine's evaluation of the current node; view-only, leaves `dirty` alone. */
+    setEngineScore: (score: Score) => void;
 
     clearShapes: () => void;
 
@@ -863,16 +864,11 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                     setShapes(state, shapes);
                 }),
             ),
-        setScore: (score) =>
+        setEngineScore: (score) =>
             set(
                 produce((state) => {
-                    state.dirty = true;
                     const node = getNodeAtPath(state.root, state.position);
-                    if (node) {
-                        node.score = score;
-                        // A depth read from the PGN described the score this one replaces.
-                        node.depth = null;
-                    }
+                    if (node) node.engineScore = score;
                 }),
             ),
         addAnalysis: (analysis, options) =>
@@ -1218,6 +1214,8 @@ function addAnalysis(
         if (pos && !pos.isEnd() && analysis[i].best.length > 0) {
             cur.score = analysis[i].best[0].score;
             cur.depth = analysis[i].best[0].depth;
+            // The report's evaluation is the one to show; an earlier live reading may be shallower.
+            delete cur.engineScore;
             let prevScore = null;
             let prevprevScore = null;
             let prevMoves: BestMoves[] = [];

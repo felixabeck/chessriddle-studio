@@ -48,6 +48,7 @@ import { keyMapAtom } from "@/state/keybinds";
 import classes from "@/styles/Chessboard.module.css";
 import { ANNOTATION_INFO, isBasicAnnotation, nagGlyphs } from "@/utils/annotation";
 import { getVariationLine } from "@/utils/chess";
+import { displayedScore } from "@/utils/treeReducer";
 import { normalizeEditedFen, positionFromFen, translateChessopsError } from "@/utils/chessops";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import ShowMaterial from "../common/ShowMaterial";
@@ -586,7 +587,9 @@ function Board({
                   </IconAction>
                 </Center>
               )}
-              {evalOpen && <EvalBar score={currentNode.score || null} orientation={orientation} />}
+              {evalOpen && (
+                <EvalBar score={displayedScore(currentNode)} orientation={orientation} />
+              )}
             </Box>
             <BoardFrame>
               <Box

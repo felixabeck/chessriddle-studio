@@ -33,6 +33,7 @@ import { keyMapAtom } from "@/state/keybinds";
 import { nagGlyphs } from "@/utils/annotation";
 import { formatScore } from "@/utils/score";
 import {
+  displayedScore,
   getEffectiveGameEnd,
   getEffectiveTermination,
   getNodeAtPath,
@@ -486,6 +487,11 @@ function GameEndRow({
   );
 }
 
+function notationScoreText(node: TreeNode): string | undefined {
+  const score = displayedScore(node);
+  return score ? formatScore(score.value, 1) : undefined;
+}
+
 function moveProps(
   move: NotationMove,
   index: NotationNodeIndex,
@@ -638,9 +644,7 @@ function TableRow({
                   startNode,
                   showComments,
                   true,
-                  showComments && row.white.node.score
-                    ? formatScore(row.white.node.score.value, 1)
-                    : undefined,
+                  showComments ? notationScoreText(row.white.node) : undefined,
                 )}
               />
             ) : (
@@ -660,9 +664,7 @@ function TableRow({
                   startNode,
                   showComments,
                   true,
-                  showComments && row.black.node.score
-                    ? formatScore(row.black.node.score.value, 1)
-                    : undefined,
+                  showComments ? notationScoreText(row.black.node) : undefined,
                 )}
               />
             ) : row.splitRow ? (

@@ -43,7 +43,7 @@ test.each([
     {
         input: "score",
         change: (tree: ReturnType<typeof createTreeStore>) =>
-            tree.getState().setScore({ value: { type: "cp", value: 42 }, wdl: null }),
+            tree.getState().setEngineScore({ value: { type: "cp", value: 42 }, wdl: null }),
     },
     {
         input: "comment",
@@ -92,7 +92,7 @@ test("keeps the choice when a score write copies a transposed ancestor's continu
     const choice = chooser.getState().choice;
     const previous = tree.getState();
 
-    tree.getState().setScore({ value: { type: "cp", value: 15 }, wdl: null });
+    tree.getState().setEngineScore({ value: { type: "cp", value: 15 }, wdl: null });
 
     expect(tree.getState().root).not.toBe(previous.root);
     for (const field of ["position", "headers", "practicePath"] as const) {

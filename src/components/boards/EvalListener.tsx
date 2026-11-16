@@ -154,7 +154,7 @@ function EngineListener({
 }) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
-  const setScore = useStore(store, (s) => s.setScore);
+  const setEngineScore = useStore(store, (s) => s.setEngineScore);
   const ownerTabId = useOwnerTabId();
 
   const [, setProgress] = useAtom(engineProgressFamily({ engine: engine.id, tab: ownerTabId }));
@@ -283,7 +283,7 @@ function EngineListener({
             const replaced = newMap.remember(searchedKey, ev, attempt);
             const shouldSetScore =
               firstEngineWithLines === engine.id || firstEngineWithLines === null;
-            if (replaced && !threat && shouldSetScore) setScore(ev[0].score);
+            if (replaced && !threat && shouldSetScore) setEngineScore(ev[0].score);
             return newMap;
           });
           setProgress(payload.progress);
@@ -292,7 +292,7 @@ function EngineListener({
     },
     [
       ownerTabId,
-      setScore,
+      setEngineScore,
       searchingFen,
       searchingMoves,
       engine.id,

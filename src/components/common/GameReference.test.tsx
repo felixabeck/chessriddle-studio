@@ -527,7 +527,7 @@ test("real notation score updates preserve a pending citation search and its cor
   const { source, sourceStore, settle, signal } = await pendingNotation();
   const previousRoot = sourceStore.getState().root;
   await act(async () =>
-    sourceStore.getState().setScore({ value: { type: "cp", value: 45 }, wdl: null }),
+    sourceStore.getState().setEngineScore({ value: { type: "cp", value: 45 }, wdl: null }),
   );
   expect(sourceStore.getState().root).not.toBe(previousRoot);
   expect(getCachedTreeStore(source.value)).toBe(sourceStore);

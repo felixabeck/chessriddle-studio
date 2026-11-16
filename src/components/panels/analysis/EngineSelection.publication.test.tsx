@@ -63,7 +63,7 @@ vi.mock("@/utils/chess", async (importOriginal) => ({
 }));
 vi.mock("zustand", () => ({
   useStore: (_store: unknown, selector: (state: unknown) => unknown) =>
-    selector({ root: { fen: INITIAL_FEN }, position: [], setScore: () => undefined }),
+    selector({ root: { fen: INITIAL_FEN }, position: [], setEngineScore: () => undefined }),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

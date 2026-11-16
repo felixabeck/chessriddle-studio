@@ -31,8 +31,14 @@ export interface TreeNode {
     move: Move | null;
     san: string | null;
     children: TreeNode[];
+    /** The game's own evaluation: read from the source PGN or written by a game report. Saved. */
     score: Score | null;
     depth: number | null;
+    /**
+     * The live engine's latest evaluation of this node. View-only: it never marks the tab unsaved
+     * and is never serialized into the PGN (f-20261115-24).
+     */
+    engineScore?: Score;
     halfMoves: number;
     shapes: DrawShape[];
     nags: number[];
@@ -189,6 +195,11 @@ export function normalizeTreeHalfMoves(root: TreeNode): void {
     for (const { node, position } of treeIterator(root)) {
         node.halfMoves = initial + position.length;
     }
+}
+
+/** The evaluation to show for a node: the live engine's when present, otherwise the game's. */
+export function displayedScore(node: TreeNode): Score | null {
+    return node.engineScore ?? node.score;
 }
 
 export function createNode({

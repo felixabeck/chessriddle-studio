@@ -3219,7 +3219,7 @@ describe("native game delivery reconciliation", () => {
     // 1... e7e5 (mainline)
     realStore.getState().makeMove({ payload: parseUci("e7e5")!, mainline: true });
     realStore.getState().setComment("mainline reply");
-    realStore.getState().setScore({ value: { type: "cp", value: 24 }, wdl: null });
+    realStore.getState().setEngineScore({ value: { type: "cp", value: 24 }, wdl: null });
 
     // 1... c7c5 (variation on e4)
     realStore.getState().goToMove([0]);
@@ -3291,7 +3291,7 @@ describe("native game delivery reconciliation", () => {
     expect(e4AfterTakeback.children.length).toBe(2);
     expect(e4AfterTakeback.children[0].san).toBe("e5");
     expect(e4AfterTakeback.children[0].comment).toBe("mainline reply");
-    expect(e4AfterTakeback.children[0].score).toEqual({
+    expect(e4AfterTakeback.children[0].engineScore).toEqual({
       value: { type: "cp", value: 24 },
       wdl: null,
     });
@@ -3334,7 +3334,7 @@ describe("native game delivery reconciliation", () => {
     expect(e4AfterRewrite.children.length).toBe(2);
     expect(e4AfterRewrite.children[0].san).toBe("e5");
     expect(e4AfterRewrite.children[0].comment).toBe("mainline reply");
-    expect(e4AfterRewrite.children[0].score).toEqual({
+    expect(e4AfterRewrite.children[0].engineScore).toEqual({
       value: { type: "cp", value: 24 },
       wdl: null,
     });

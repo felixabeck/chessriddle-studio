@@ -31,7 +31,7 @@ const fixtures = vi.hoisted(() => ({
   prepareEngineSearch: vi.fn(),
   listeners: [] as Array<(event: any) => void>,
   notifyUnlessCancelled: vi.fn(),
-  setScore: vi.fn(),
+  setEngineScore: vi.fn(),
   stopEngine: vi.fn(),
   releaseEngineSearch: vi.fn(),
   scoreOwner: null as string | null,
@@ -117,7 +117,11 @@ vi.mock("@/state/atoms", async () => {
 });
 vi.mock("zustand", () => ({
   useStore: (_store: unknown, selector: (state: any) => unknown) =>
-    selector({ root: { fen: fixtures.fen }, position: [], setScore: fixtures.setScore }),
+    selector({
+      root: { fen: fixtures.fen },
+      position: [],
+      setEngineScore: fixtures.setEngineScore,
+    }),
 }));
 vi.mock("zustand/react/shallow", () => ({ useShallow: (selector: unknown) => selector }));
 vi.mock("@/components/common/TreeStateContext", async () => {
@@ -1246,7 +1250,7 @@ test("remembered lines survive A to B to A and restarted shallow output cannot d
   const deep = payload("a1");
   deep.bestLines[0].depth = 20;
   await broadcast(deep);
-  expect(fixtures.setScore).toHaveBeenCalledExactlyOnceWith(deep.bestLines[0].score);
+  expect(fixtures.setEngineScore).toHaveBeenCalledExactlyOnceWith(deep.bestLines[0].score);
   fixtures.fen = positionB;
   await rerender();
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toEqual(deep.bestLines);
@@ -1258,19 +1262,19 @@ test("remembered lines survive A to B to A and restarted shallow output cannot d
   shallow.bestLines[0].score.value.value = 2;
   await broadcast(shallow);
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toEqual(deep.bestLines);
-  expect(fixtures.setScore).toHaveBeenCalledTimes(1);
+  expect(fixtures.setEngineScore).toHaveBeenCalledTimes(1);
   const equalDepth = payload("a2");
   equalDepth.bestLines[0].depth = 20;
   equalDepth.bestLines[0].score.value.value = 33;
   await broadcast(equalDepth);
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toEqual(equalDepth.bestLines);
-  expect(fixtures.setScore).toHaveBeenLastCalledWith(equalDepth.bestLines[0].score);
-  expect(fixtures.setScore).toHaveBeenCalledTimes(2);
+  expect(fixtures.setEngineScore).toHaveBeenLastCalledWith(equalDepth.bestLines[0].score);
+  expect(fixtures.setEngineScore).toHaveBeenCalledTimes(2);
   // Once this search has written the entry, its own revisions may be shallower.
   await broadcast(shallow);
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toEqual(shallow.bestLines);
-  expect(fixtures.setScore).toHaveBeenCalledTimes(3);
-  expect(fixtures.setScore).toHaveBeenLastCalledWith(shallow.bestLines[0].score);
+  expect(fixtures.setEngineScore).toHaveBeenCalledTimes(3);
+  expect(fixtures.setEngineScore).toHaveBeenLastCalledWith(shallow.bestLines[0].score);
 });
 
 test("normal and threat entries coexist and threat toggles restore lines without writing the node score", async () => {
@@ -1294,13 +1298,13 @@ test("normal and threat entries coexist and threat toggles restore lines without
   await broadcast(threat);
   expect(store.get(movesAtom()).size).toBe(2);
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toEqual(normal.bestLines);
-  expect(fixtures.setScore).toHaveBeenCalledExactlyOnceWith(normal.bestLines[0].score);
+  expect(fixtures.setEngineScore).toHaveBeenCalledExactlyOnceWith(normal.bestLines[0].score);
   await act(async () => {
     store.set(threatFamily("tab-1"), false);
     await flush();
   });
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toEqual(normal.bestLines);
-  expect(fixtures.setScore).toHaveBeenCalledTimes(1);
+  expect(fixtures.setEngineScore).toHaveBeenCalledTimes(1);
   await act(async () => {
     store.set(threatFamily("tab-1"), true);
     await flush();
@@ -1308,7 +1312,7 @@ test("normal and threat entries coexist and threat toggles restore lines without
   expect(
     store.get(movesAtom()).get("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1:"),
   ).toEqual(threat.bestLines);
-  expect(fixtures.setScore).toHaveBeenCalledTimes(1);
+  expect(fixtures.setEngineScore).toHaveBeenCalledTimes(1);
 });
 
 test("only the first engine with lines writes the node score", async () => {
@@ -1316,7 +1320,7 @@ test("only the first engine with lines writes the node score", async () => {
   await rerender();
   await broadcast(payload("generation-1"));
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toBeDefined();
-  expect(fixtures.setScore).not.toHaveBeenCalled();
+  expect(fixtures.setEngineScore).not.toHaveBeenCalled();
 });
 
 test("the current first engine with lines can update its score", async () => {
@@ -1324,7 +1328,7 @@ test("the current first engine with lines can update its score", async () => {
   await rerender();
   const result = payload("generation-1");
   await broadcast(result);
-  expect(fixtures.setScore).toHaveBeenCalledExactlyOnceWith(result.bestLines[0].score);
+  expect(fixtures.setEngineScore).toHaveBeenCalledExactlyOnceWith(result.bestLines[0].score);
 });
 
 test("a synchronous launch failure marks its key, notifies once and retires the transition slot", async () => {
@@ -1716,7 +1720,7 @@ test.each(["resolve", "empty", "reject"])(
     expect(store.get(movesAtom())).toEqual(remembered);
     expect(store.get(noLinesAtom())).toBeNull();
     expect(store.get(progressAtom())).toBe(0);
-    expect(fixtures.setScore).not.toHaveBeenCalled();
+    expect(fixtures.setEngineScore).not.toHaveBeenCalled();
     expect(fixtures.notifyUnlessCancelled).not.toHaveBeenCalled();
     expect(store.get(settingsAtom()).enabled).toBe(true);
     expect(store.get(threatFamily("tab-1"))).toBe(true);
@@ -1749,7 +1753,7 @@ test.each(["local", "chessdb", "lichess"] as const)(
     expect(fixtures.getBestMoves).not.toHaveBeenCalled();
     expect(fixtures.chessdbGetBestMoves).not.toHaveBeenCalled();
     expect(fixtures.lichessGetBestMoves).not.toHaveBeenCalled();
-    expect(fixtures.setScore).not.toHaveBeenCalled();
+    expect(fixtures.setEngineScore).not.toHaveBeenCalled();
   },
 );
 
@@ -1818,7 +1822,7 @@ test.each(["chessdb", "lichess"] as const)(
     expect(store.get(movesAtom("tab-1", remote.id)).size).toBe(0);
     expect(store.get(progressAtom("tab-1", remote.id))).toBe(0);
     expect(store.get(noLinesAtom("tab-1", remote.id))).toBeNull();
-    expect(fixtures.setScore).not.toHaveBeenCalled();
+    expect(fixtures.setEngineScore).not.toHaveBeenCalled();
     expect(fixtures.notifyUnlessCancelled).not.toHaveBeenCalled();
     fixtures.moves = [];
     await rerender();

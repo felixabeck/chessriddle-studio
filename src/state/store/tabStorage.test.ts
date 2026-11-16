@@ -730,6 +730,21 @@ test("comment commands and a starting comment survive hydration", () => {
     });
 });
 
+test("a live engine score survives hydration beside the game's own score", () => {
+    const tree = treeWith((state) => {
+        state.root.score = { value: { type: "cp", value: 30 }, wdl: null };
+        state.root.engineScore = { value: { type: "mate", value: -2 }, wdl: [0, 10, 990] };
+    });
+
+    storage.seed("engine-score", tree);
+    expect(storage.read("engine-score")?.state).toMatchObject({
+        root: {
+            score: { value: { type: "cp", value: 30 }, wdl: null },
+            engineScore: { value: { type: "mate", value: -2 }, wdl: [0, 10, 990] },
+        },
+    });
+});
+
 test("hydrates legacy child comments by separating unmodeled PGN commands", () => {
     const tree = structuredClone(defaultTree());
     const child = { ...tree.root, children: [], comment: "[%evp 0,34] prose" };
@@ -980,6 +995,15 @@ test("rejects every persisted tree type, scalar, and structural boundary", () =>
         treeWith(
             (tree) =>
                 (tree.root.score = { value: { type: "mate", value: 0.5 }, wdl: null } as never),
+        ),
+    );
+    expectSeedRejected(
+        treeWith(
+            (tree) =>
+                (tree.root.engineScore = {
+                    value: { type: "cp", value: Infinity },
+                    wdl: null,
+                } as never),
         ),
     );
     expectSeedRejected(

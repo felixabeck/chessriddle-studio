@@ -115,7 +115,7 @@ async function publish(payload: BestMoves[]) {
       engineMovesFamily({ tab, engine: engine.id }),
       new AnalysisLineMemory(new Map([[analysisSearch(INITIAL_FEN, [], false).key!, payload]])),
     );
-    tree.getState().setScore({ ...payload[0].score, value: { ...payload[0].score.value } });
+    tree.getState().setEngineScore({ ...payload[0].score, value: { ...payload[0].score.value } });
   });
 }
 
@@ -159,8 +159,8 @@ test("a deeper identical engine payload and fresh equal score skip config and PV
   await publish(lines("e2e4", 25));
   const after = tree.getState().currentNode();
   expect(after).not.toBe(before);
-  expect(after.score).not.toBe(before.score);
-  expect(after.score).toEqual(before.score);
+  expect(after.engineScore).not.toBe(before.engineScore);
+  expect(after.engineScore).toEqual(before.engineScore);
   expect(after.children).toBe(before.children);
   expect(nativeBoard.set).not.toHaveBeenCalled();
   expect(parseUci).not.toHaveBeenCalled();
@@ -179,7 +179,7 @@ test("a changed engine PV sets its new arrow once and a later equal score skips 
   expect(vi.mocked(parseUci).mock.calls.map(([uci]) => uci)).toEqual(["d2d4", "e7e5"]);
   vi.mocked(parseUci).mockClear();
   await act(async () => {
-    tree.getState().setScore({ value: { type: "cp", value: 10 }, wdl: null });
+    tree.getState().setEngineScore({ value: { type: "cp", value: 10 }, wdl: null });
   });
   expect(nativeBoard.set).toHaveBeenCalledOnce();
   expect(parseUci).not.toHaveBeenCalled();

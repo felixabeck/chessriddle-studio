@@ -185,6 +185,7 @@ function createPersistedTreeSchema() {
         children: z.array(z.unknown()).max(MAX_TREE_NODES),
         score: scoreSchema.nullable(),
         depth: z.number().int().nonnegative().nullable(),
+        engineScore: scoreSchema.optional(),
         halfMoves: z.number().int().nonnegative(),
         shapes: z.array(shapeSchema).max(MAX_NODE_SHAPES),
         nags: z.array(z.number().int().min(0).max(MAX_NAG)).max(MAX_NODE_NAGS),
