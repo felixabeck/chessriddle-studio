@@ -740,7 +740,7 @@ export function useFileWorkspace(
             {/* The card fills the column down to the window's bottom edge and splits that height
                     between its game list and preview. A fixed height left a wide, short window's list
                     two rows high; the floor keeps a 200% font scale usable, where the page scrolls. */}
-            <Box flex={1} mih={FILE_CARD_MIN_HEIGHT}>
+            <Box flex={1} mih={FILE_CARD_MIN_HEIGHT} miw={0} maw="100%">
               <FileCard
                 key={`file:${fileWorkspaceKey(selected.handle)}`}
                 selected={selected}

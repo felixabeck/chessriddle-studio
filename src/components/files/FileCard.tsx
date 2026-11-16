@@ -23,6 +23,7 @@ import GamePreview from "../databases/GamePreview";
 import GameSelector, { type GameSelectorRow } from "../panels/info/GameSelector";
 import type { FileMetadata } from "./file";
 import { reorderFileLines, type MoveLines } from "./reorderLines";
+import classes from "./FileCard.module.css";
 
 // Below this card width the preview's move list has no room beside the board. In rem, because the
 // list's needs grow with the font scale while a window width in px does not.
@@ -155,9 +156,38 @@ function FileCard({
     return gameOpen.activate({ file: selected, index, expected: games.get(index)?.identity });
   };
 
+  const openGame = (
+    <OpenGameButton
+      onOpen={() => activateGame(page)}
+      pending={gameOpen.pending}
+      disabled={previewOmitted || selected.numGames <= 0 || page >= selected.numGames}
+    />
+  );
+  const newGame = !omitNewGame && (
+    <NewGameButton
+      origin={{ kind: "fileDraft", file: selected }}
+      explanation={t("Files.NewGame.Desc", {
+        defaultValue: "Enter a new game move by move and save it to this file.",
+      })}
+    />
+  );
+  const edit = (
+    <IconAction label={t("Files.EditMetadata")} size="sm" onClick={onEditMetadata}>
+      <Pencil size="1rem" />
+    </IconAction>
+  );
+  const gameCount = (
+    <Text ta="center" c="dimmed" miw={0}>
+      {t("Files.GameCountSuffix", {
+        count: selected.numGames,
+        number: formatNumber(selected.numGames),
+      })}
+    </Text>
+  );
+
   return (
-    <Stack h="100%" ref={cardRef}>
-      <Stack align="center">
+    <Stack h="100%" miw={0} w="100%" ref={cardRef}>
+      <Stack align="center" className={classes.header}>
         <Text ta="center" fz="xl" fw="bold" miw={0} style={{ overflowWrap: "anywhere" }}>
           {selected?.name}
         </Text>
@@ -167,32 +197,31 @@ function FileCard({
       </Stack>
       <Divider />
 
-      <Group align="center" justify="space-between" wrap="wrap" px={{ base: 0, lg: "xs" }} miw={0}>
-        <Group gap="xs" miw={0}>
-          <OpenGameButton
-            onOpen={() => activateGame(page)}
-            pending={gameOpen.pending}
-            disabled={previewOmitted || selected.numGames <= 0 || page >= selected.numGames}
-          />
-          {!omitNewGame && (
-            <NewGameButton
-              origin={{ kind: "fileDraft", file: selected }}
-              explanation={t("Files.NewGame.Desc", {
-                defaultValue: "Enter a new game move by move and save it to this file.",
-              })}
-            />
-          )}
-          <IconAction label={t("Files.EditMetadata")} size="sm" onClick={onEditMetadata}>
-            <Pencil size="1rem" />
-          </IconAction>
+      {narrow ? (
+        <Stack gap="xs" px={{ base: 0, lg: "xs" }} className={classes.stacked}>
+          <div className={classes.actionSlot}>{openGame}</div>
+          {newGame ? <div className={classes.actionSlot}>{newGame}</div> : null}
+          <Group gap="xs" wrap="wrap">
+            {edit}
+            {gameCount}
+          </Group>
+        </Stack>
+      ) : (
+        <Group
+          align="center"
+          justify="space-between"
+          wrap="wrap"
+          px={{ base: 0, lg: "xs" }}
+          miw={0}
+        >
+          <Group gap="xs" wrap="wrap" miw={0}>
+            {openGame}
+            {newGame}
+            {edit}
+          </Group>
+          {gameCount}
         </Group>
-        <Text ta="center" c="dimmed" miw={0}>
-          {t("Files.GameCountSuffix", {
-            count: selected.numGames,
-            number: formatNumber(selected.numGames),
-          })}
-        </Text>
-      </Group>
+      )}
 
       {/* When both parts render, they share what the header leaves, by ratio, from a zero basis:
           a fixed preview share once left the list two rows in a short window. The floor keeps ~4 rows. */}
