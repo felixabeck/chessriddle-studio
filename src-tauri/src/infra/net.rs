@@ -40,8 +40,13 @@ fn validate_resolved_addresses(
     Ok(addresses)
 }
 
+/// Chess.com refuses requests without a User-Agent; every native provider request identifies the app.
+/// User-Agent product tokens cannot contain spaces (RFC 9110), hence "ChessRiddleStudio" rather than the display name "ChessRiddle Studio" used in feedback.rs.
+const STUDIO_USER_AGENT: &str = concat!("ChessRiddleStudio/", env!("CARGO_PKG_VERSION"));
+
 /// Shared provider client policy. Every native request, including credential-bearing OAuth and
-/// account traffic, resolves only globally routable addresses and never follows redirects.
+/// account traffic, resolves only globally routable addresses, never follows redirects, and
+/// identifies the app with [`STUDIO_USER_AGENT`].
 pub fn safe_http_client(
     builder: reqwest::ClientBuilder,
     connect_timeout: Duration,
@@ -51,6 +56,7 @@ pub fn safe_http_client(
     builder
         .dns_resolver(Arc::new(SafeResolver))
         .redirect(reqwest::redirect::Policy::none())
+        .user_agent(STUDIO_USER_AGENT)
         .connect_timeout(connect_timeout)
         .read_timeout(read_timeout)
         .timeout(request_timeout)
@@ -308,5 +314,53 @@ mod tests {
                 "Localhost should be blocked by SafeResolver"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn safe_http_client_sends_the_studio_user_agent() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = async {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buf = [0; 512];
+                let n = stream.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await;
+            String::from_utf8(request).unwrap()
+        };
+        let client = safe_http_client(
+            reqwest::Client::builder().no_proxy(),
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let url = format!("http://127.0.0.1:{}/", addr.port());
+        let (captured, response) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(server, client.get(url).send())
+        })
+        .await
+        .expect("loopback request must finish");
+        assert_eq!(response.unwrap().status().as_u16(), 200);
+        let expected = format!("user-agent: {}", STUDIO_USER_AGENT.to_ascii_lowercase());
+        assert!(
+            captured
+                .to_ascii_lowercase()
+                .lines()
+                .any(|line| line == expected),
+            "{captured}"
+        );
     }
 }

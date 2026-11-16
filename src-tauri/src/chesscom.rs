@@ -101,15 +101,18 @@ fn valid_player(player: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn archive_index_url(player: &str) -> Result<reqwest::Url, Error> {
+/// Chess.com 301-redirects mixed-case paths; the transport never follows redirects.
+fn player_url(player: &str, tail: &[&str]) -> Result<reqwest::Url, Error> {
     if !valid_player(player) {
         return Err(Error::InvalidInput("invalid Chess.com player name".into()));
     }
+    let player = player.to_ascii_lowercase();
     let mut url = reqwest::Url::parse(API_ORIGIN)
         .map_err(|_| Error::InvalidInput("invalid Chess.com endpoint".into()))?;
     url.path_segments_mut()
         .map_err(|_| Error::InvalidInput("invalid Chess.com endpoint".into()))?
-        .extend(["pub", "player", player, "games", "archives"]);
+        .extend(["pub", "player", &player])
+        .extend(tail.iter().copied());
     Ok(url)
 }
 
@@ -220,17 +223,7 @@ pub async fn get_public_chess_com_json(
     state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
     let url = match request {
-        PublicChessComRequest::Account { player } => {
-            if !valid_player(&player) {
-                return Err(Error::InvalidInput("invalid Chess.com player name".into()));
-            }
-            let mut url = reqwest::Url::parse(API_ORIGIN)
-                .map_err(|_| Error::InvalidInput("invalid Chess.com endpoint".into()))?;
-            url.path_segments_mut()
-                .map_err(|_| Error::InvalidInput("invalid Chess.com endpoint".into()))?
-                .extend(["pub", "player", &player, "stats"]);
-            url
-        }
+        PublicChessComRequest::Account { player } => player_url(&player, &["stats"])?,
         PublicChessComRequest::Game { game_type, game_id } => {
             if !matches!(game_type.as_str(), "live" | "daily")
                 || game_id.is_empty()
@@ -388,7 +381,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
         let archives = tokio::time::timeout_at(deadline, async {
             let index_bytes = fetch_bounded(
                 &state,
-                archive_index_url(&lower_player)?,
+                player_url(&lower_player, &["games", "archives"])?,
                 MAX_INDEX_BYTES,
                 &cancellation,
             )
@@ -1386,6 +1379,36 @@ mod tests {
     }
 
     #[test]
+    fn player_urls_use_the_lowercase_chess_com_segment() {
+        assert_eq!(
+            player_url("GGalile0", &["games", "archives"])
+                .unwrap()
+                .as_str(),
+            "https://api.chess.com/pub/player/ggalile0/games/archives"
+        );
+        assert_eq!(
+            player_url("GGalile0", &["stats"]).unwrap().as_str(),
+            "https://api.chess.com/pub/player/ggalile0/stats"
+        );
+    }
+
+    #[test]
+    fn player_url_refuses_invalid_names() {
+        assert!(matches!(
+            player_url("", &["stats"]),
+            Err(Error::InvalidInput(_))
+        ));
+        assert!(matches!(
+            player_url(&"a".repeat(51), &["stats"]),
+            Err(Error::InvalidInput(_))
+        ));
+        assert!(matches!(
+            player_url("a/b", &["stats"]),
+            Err(Error::InvalidInput(_))
+        ));
+    }
+
+    #[test]
     fn archive_urls_are_exactly_constrained_to_the_requested_player_and_month() {
         let (url, year, month) = validate_archive_url(
             "https://api.chess.com/pub/player/Felix_Chess/games/2025/09",
@@ -1443,7 +1466,7 @@ mod tests {
                 http_transport: transport,
                 ..Default::default()
             };
-            let url = archive_index_url("private_player").unwrap();
+            let url = player_url("private_player", &["games", "archives"]).unwrap();
             let error = fetch_bounded(&state, url, MAX_INDEX_BYTES, &CancellationToken::new())
                 .await
                 .unwrap_err();
@@ -1474,7 +1497,7 @@ mod tests {
             ..Default::default()
         };
         let cancellation = CancellationToken::new();
-        let url = archive_index_url("felix_chess").unwrap();
+        let url = player_url("felix_chess", &["games", "archives"]).unwrap();
         let body = fetch_bounded(&state, url, MAX_INDEX_BYTES, &cancellation)
             .await
             .unwrap();
