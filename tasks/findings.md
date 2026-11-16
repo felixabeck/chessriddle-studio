@@ -26697,7 +26697,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Engine analysis alone marks file and database tabs unsaved, and autosave rewrites the PGN or row with [%eval] comments
 
-* **ID:** f-20261115-24 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** felix-decision
+* **ID:** f-20261115-24 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (engine-analysis / autosave sweeps, origin `7beaf8a56`)
 * **Where:**
@@ -26715,6 +26715,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Recommend:** (A). Viewing should not modify the user's files. Source evals and explicit reports still round-trip, and it also removes the main write-amplification risk from the f-20261115-15 fix. (B) only if keeping engine evals in the PGN is a feature you want to offer.
 * **Product impact:** with (A) or (B, off), opening and analysing a game no longer changes the file or database row, marks the tab unsaved, triggers sync uploads or conflicts, or shows a conflict panel in another tab. Under (C) every analysed position keeps rewriting the user's PGN with `[%eval]` comments.
 * **Session:** Grok Bot executor, ChessFable review session 2026-11-15 (batches 48-52; filed on Felix's request t61u)
+* **Decision made:** (A) engine scores are view-only state: they do not mark the tab unsaved and are never written by autosave or save; source-file [%eval] comments and explicit game reports still round-trip — Felix: chosen after the recommendation: viewing a game must not modify the user's PGN file or database row.
 
 ---
 
