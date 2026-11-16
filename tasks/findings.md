@@ -26913,3 +26913,18 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Fix:** make both arms print the actual `result` on mismatch (`assert!(matches!(..), "{result:?}")`), then trace which path returns a different error while the thread-local injection is set — candidates: the injection being consumed by a concurrent spawn on the same worker thread, or a deadline/timeout path (`EngineTimeout`) under the instrumented, loaded runner before the stdout check.
 * **Proof:** the test passes repeatedly under `pnpm gate:ensure backend-coverage` with a CPU-stress background load, and a deliberately mismatched injection fails it with the printed outcome.
 * **Related:** f-20261008-09, f-20261011-06.
+
+---
+
+## 2026-11-16 — filed through the inbox spool
+
+### `$push`'s post-push `bash scripts/install-local.sh` is OOM-killed inside a drain session's 8 GiB scope
+
+* **ID:** f-20261116-03 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 90e15052-ece7-4bce-9a2d-7565b31795a5
+* **Impact class:** tooling
+* **Where:** `.claude/skills/push/SKILL.md` §4, the installer step (`bash scripts/install-local.sh`), and `scripts/install-local.sh`.
+* **Defect:** The push skill runs the installer directly in the calling session's cgroup. Agent session scopes are capped at 8 GiB (`tuxedo-config/agent-slice/agent-run`, which says a legitimate heavy build is exempted through `agent-gate`, never by raising the session scope). The release `rustc` for `chessriddle_studio` alone reached 4.3 GB anon RSS, and the memcg OOM killer killed it, so the install failed.
+* **Failure scenario:** 2026-11-16, drain session for f-20261112-96, after the verified push of d8db999cd: `bash scripts/install-local.sh` failed with `rustc ... (signal: 9, SIGKILL: kill)`; kernel log `Memory cgroup out of memory: Killed process 659710 (rustc) total-vm:6467336kB, anon-rss:4338340kB`, `oom_memcg=.../agents.slice/run-rfac169f409e54f95a0700b6c37542bc7.scope` (memory.max 8589934592). Rerunning as `agent-gate bash scripts/install-local.sh` from the same checkout built and installed d8db999cd in 1 m 22 s. Every agent-run install hits the same cap when the session already holds a few GB, so the menu entry Felix uses silently stays on an older commit.
+* **Fix:** Route the installer's Tauri release build through `agent-gate` (either in the push skill's command or inside `scripts/install-local.sh` for its build step), matching how `pnpm gates:push` and `pnpm checks:pre-review` already run, and update `.claude/rules/desktop-installation.md` if it names the command.
+* **Proof:** Run the installer from a drain session after a push and confirm `~/.local/opt/chessriddle-studio/current/VERSION` names the pushed commit with no OOM entry in `journalctl -k`.
