@@ -11,7 +11,7 @@ permissions:
 jobs:
   # One draft per tag; every matrix leg uploads into it so latest.json covers all platforms.
   create-release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -38,11 +38,12 @@ jobs:
 
   # macOS legs build `app` beside `dmg`: the updater's darwin entry is the signed .app.tar.gz,
   # which only the app bundle produces (run 42296138869 lacked darwin in latest.json).
-  # A manual dispatch has no tag and no draft: every leg builds, signs and notarizes, and
-  # uploads nothing. That is the rehearsal for a signing change.
+  # A manual dispatch never gets a draft, whatever ref it runs on: every leg builds, signs and
+  # notarizes, and uploads nothing. That is the rehearsal for a signing change.
+  # (`${{ }}` is required here: a bare leading `!` is a YAML tag.)
   release:
     needs: create-release
-    if: ${{ !cancelled() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.create-release.result == 'skipped')) }}
     permissions:
       contents: write
     strategy:
@@ -106,16 +107,26 @@ jobs:
       - name: Install app dependencies
         run: pnpm install --frozen-lockfile
 
-      # Notarization reads the App Store Connect key from a file. A missing secret fails the leg:
-      # without it the bundler would fall back to the ad-hoc identity in tauri.conf.json and ship
-      # an app Gatekeeper blocks.
-      - name: Write the notarization key (macOS only)
+      # With any of these empty the bundler falls back to the ad-hoc identity in tauri.conf.json
+      # or skips notarization, and the leg would only fail in the verification step after a full
+      # build and upload. Notarization reads the App Store Connect key from a file.
+      - name: Require the Apple signing secrets (macOS only)
         if: runner.os == 'macOS'
         shell: bash
         env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
-          [ -n "$APPLE_API_KEY_P8" ] || { echo "::error::secret APPLE_API_KEY_P8 is empty"; exit 1; }
+          missing=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+            APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8; do
+            [ -n "${!name}" ] || { echo "::error::secret $name is empty"; missing=1; }
+          done
+          [ "$missing" -eq 0 ] || exit 1
           key_path="$RUNNER_TEMP/AuthKey.p8"
           printf '%s\n' "$APPLE_API_KEY_P8" > "$key_path"
           echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
@@ -140,13 +151,19 @@ jobs:
           args: ${{ matrix.args }}
 
       # The publish job needs every leg green, so a bundle that is not signed with the Developer ID
-      # and notarized never leaves the draft.
+      # and notarized never leaves the draft. The disk image only carries the signature: its app
+      # holds the stapled ticket, and Gatekeeper's verdict on the image is printed for the record.
       - name: Verify signature and notarization (macOS only)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          app=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos" -maxdepth 1 -name '*.app' | head -n 1)
-          [ -n "$app" ] || { echo "::error::no .app bundle for ${{ matrix.target }}"; exit 1; }
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          set -- "$bundle"/macos/*.app
+          app=$1
+          [ -d "$app" ] || { echo "::error::no .app bundle for ${{ matrix.target }}"; exit 1; }
+          set -- "$bundle"/dmg/*.dmg
+          dmg=$1
+          [ -f "$dmg" ] || { echo "::error::no .dmg for ${{ matrix.target }}"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$app"
           xcrun stapler validate "$app"
           assessment=$(spctl --assess --type execute --verbose=4 "$app" 2>&1) || { echo "$assessment"; exit 1; }
@@ -155,11 +172,13 @@ jobs:
             *"source=Notarized Developer ID"*) ;;
             *) echo "::error::Gatekeeper accepted the app, but not as a notarized Developer ID build"; exit 1 ;;
           esac
+          codesign --verify --strict --verbose=2 "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" || true
 
   # Undrafts only after every leg succeeded and latest.json names all four platforms.
   publish:
     needs: [create-release, release]
-    if: success() && startsWith(github.ref, 'refs/tags/v')
+    if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     runs-on: ubuntu-24.04
