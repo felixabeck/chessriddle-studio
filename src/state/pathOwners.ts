@@ -150,7 +150,11 @@ function collectOriginalSnapshots(local?: Storage, session?: Storage): OriginalO
     const tabsSchema = z.array(tabSchema);
     const consumeTabs = (tabs: z.output<typeof tabsSchema>) => {
         for (const tab of tabs) {
-            if (tab.gameOrigin.kind === "file" || tab.gameOrigin.kind === "temp_file") {
+            if (
+                tab.gameOrigin.kind === "file" ||
+                tab.gameOrigin.kind === "temp_file" ||
+                tab.gameOrigin.kind === "fileDraft"
+            ) {
                 ids.add(pathRefKey(tab.gameOrigin.file.handle.id));
             } else if (
                 tab.gameOrigin.kind === "database" ||

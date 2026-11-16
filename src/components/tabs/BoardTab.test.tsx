@@ -96,3 +96,33 @@ test.each([
     );
   },
 );
+
+test("a fileDraft analysis tab uses the file icon", async () => {
+  const tab: Tab = {
+    value: "tab",
+    name: "Caro",
+    type: "analysis",
+    gameOrigin: { kind: "fileDraft", file },
+  };
+  await act(async () =>
+    root.render(
+      <MantineProvider>
+        <Tabs value="tab">
+          <Tabs.List>
+            <BoardTab
+              tab={tab}
+              tabType="analysis"
+              selected
+              setActiveTab={() => {}}
+              dragHandleProps={null}
+              onContextMenu={() => {}}
+            />
+          </Tabs.List>
+        </Tabs>
+      </MantineProvider>,
+    ),
+  );
+  expect(container.querySelector(".lucide-book-open")).not.toBeNull();
+  expect(container.querySelector(".lucide-database")).toBeNull();
+  expect(container.querySelector(".lucide-scan-search")).toBeNull();
+});

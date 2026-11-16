@@ -84,7 +84,11 @@ function TabIcon({ tab, tabType }: { tab: Tab; tabType: string }) {
   if (tab.gameOrigin.kind === "database" || tab.gameOrigin.kind === "databaseDraft") {
     return <Database size="0.875rem" />;
   }
-  if (tab.gameOrigin.kind === "file" || tab.gameOrigin.kind === "temp_file") {
+  if (
+    tab.gameOrigin.kind === "file" ||
+    tab.gameOrigin.kind === "temp_file" ||
+    tab.gameOrigin.kind === "fileDraft"
+  ) {
     return <FileIcon type={tab.gameOrigin.file.metadata.type} size="0.875rem" />;
   }
   if (tabType === "analysis") {

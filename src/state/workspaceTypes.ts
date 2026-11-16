@@ -5,6 +5,7 @@ import { databaseHandleSchema, linkedGameLocatorSchema } from "@/utils/pathCapab
 const gameOriginSchema = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("none") }),
     z.object({ kind: z.literal("databaseDraft"), database: databaseHandleSchema }),
+    z.object({ kind: z.literal("fileDraft"), file: fileMetadataSchema }),
     z.object({ kind: z.literal("file"), file: fileMetadataSchema, gameNumber: z.number() }),
     z.object({ kind: z.literal("temp_file"), file: fileMetadataSchema, gameNumber: z.number() }),
     // Existing database origins remain readable. Native resolution runs before tab admission/save.

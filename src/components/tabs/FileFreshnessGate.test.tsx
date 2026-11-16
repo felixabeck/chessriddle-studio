@@ -356,6 +356,18 @@ const databaseRow: NormalizedGame = {
   moves: "1... c5 *",
 };
 
+test("a fileDraft tab renders without polling or recovering a stored game", async () => {
+  await setup({
+    tab: {
+      ...fileTab,
+      gameOrigin: { kind: "fileDraft", file },
+    },
+  });
+  expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
+  expect(mocks.readFileGame).not.toHaveBeenCalled();
+  expect(mocks.getDbGame).not.toHaveBeenCalled();
+});
+
 test("an unverified database tab shows the board until a conflict unmounts it", async () => {
   await setup({ tab: databaseTab });
   expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();

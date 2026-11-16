@@ -10,11 +10,14 @@ import { tabStorage, TREE_STORAGE_VERSION } from "@/state/store/tabStorage";
 import { serializeStorageValue } from "@/state/store/debouncedStorage";
 import { getFileFreshness, removeFileFreshness } from "@/state/fileFreshness";
 import { defaultTree } from "./treeReducer";
+import type { FileMetadata } from "@/components/files/file";
 import {
     createTab,
     commitNewTab,
     saveToDatabase,
     saveToFile,
+    saveToLibraryFile,
+    sameOrigin,
     serializeStoreTree,
     type GameOrigin,
     type Tab,
@@ -31,13 +34,48 @@ const native = vi.hoisted(() => ({
     resolveLinkedGame: vi.fn(),
     getDbGame: vi.fn(),
 }));
+const files = vi.hoisted(() => ({ pickPgnFile: vi.fn() }));
 vi.mock("@/platform/tauri", () => ({ tauri: native }));
+vi.mock("@/utils/files", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/utils/files")>()),
+    pickPgnFile: files.pickPgnFile,
+}));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("@/state/persistError", () => ({ reportPersistError: vi.fn() }));
 
 const database = { id: { id: "draft-database" }, kind: "database" } as const;
 const otherDatabase = { id: { id: "other-database" }, kind: "database" } as const;
 const file = { id: { id: "linked-file" }, kind: "fileWorkspace" } as const;
+const repertoireFile: FileMetadata = {
+    type: "file",
+    handle: { id: { id: "repertoire-file" }, kind: "fileWorkspace" },
+    name: "Weiß_Caro Kann.pgn",
+    numGames: 2,
+    metadata: { type: "repertoire", tags: [] },
+    lastModified: 1,
+};
+const linkedCollectionFile: FileMetadata = {
+    type: "file",
+    handle: file,
+    name: "Linked.pgn",
+    numGames: 3,
+    metadata: { type: "repertoire", tags: [] },
+    lastModified: 1,
+};
+function readyCollection(name = "Linked"): CollectionDescriptor {
+    return {
+        id: "collection",
+        name,
+        file,
+        database: null,
+        account: null,
+        status: "ready",
+        generation: "",
+        omitted: 0,
+        retiredDatabase: null,
+        fetchSinceMs: null,
+    };
+}
 const ids: string[] = [];
 const stampA = "a".repeat(64);
 const stampB = "b".repeat(64);
@@ -83,6 +121,7 @@ beforeEach(async () => {
     native.countPgnGames.mockReset().mockResolvedValue(3);
     native.getDbGame.mockReset();
     native.resolveLinkedGame.mockReset().mockResolvedValue(null);
+    files.pickPgnFile.mockReset().mockResolvedValue(null);
 });
 afterEach(() => {
     ids.splice(0).forEach((id) => {
@@ -719,4 +758,276 @@ test("a missing database game makes the tab unavailable and preserves dirty edit
     expect(f.store.getState()).toMatchObject({ dirty: true, sourceStamp: stampA });
     expect(f.store.getState().root).toBe(root);
     expect(serializeStoreTree(f.store)).toBe(pgn);
+});
+
+test("fileDraft workspace round-trips, retains its handle and scrubs only a corrupt neighbour", () => {
+    const f = fixture({ kind: "fileDraft", file: repertoireFile });
+    const valid = f.getTab(f.id)!;
+    saveWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY, {
+        version: 1,
+        tabs: [valid],
+        activeTab: f.id,
+    });
+    expect(loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY).tabs).toEqual([valid]);
+    const owners = collectOriginalPathOwners(localStorage, sessionStorage);
+    expect(owners.retainedIds).toContainEqual(repertoireFile.handle.id);
+    expect(owners.trustedFamilies).toContain("sessionWorkspace");
+    sessionStorage.setItem(
+        WORKSPACE_STORAGE_KEY,
+        serializeStorageValue({
+            version: 1,
+            tabs: [
+                valid,
+                {
+                    ...valid,
+                    value: crypto.randomUUID(),
+                    gameOrigin: { kind: "fileDraft", file: { type: "file" } },
+                },
+            ],
+            activeTab: f.id,
+        }),
+    );
+    expect(loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY).tabs).toEqual([valid]);
+});
+
+test("sameOrigin matches fileDrafts of one file and distinguishes different files", () => {
+    const left: GameOrigin = { kind: "fileDraft", file: repertoireFile };
+    const sameFile: GameOrigin = {
+        kind: "fileDraft",
+        file: { ...repertoireFile, numGames: 9, name: "other-name.pgn" },
+    };
+    const other: GameOrigin = { kind: "fileDraft", file: linkedCollectionFile };
+    expect(sameOrigin(left, left)).toBe(true);
+    expect(sameOrigin(left, sameFile)).toBe(true);
+    expect(sameOrigin(left, other)).toBe(false);
+    expect(sameOrigin(left, { kind: "databaseDraft", database })).toBe(false);
+});
+
+test("fileDraft user save appends at the re-counted index and rebinds with real metadata", async () => {
+    const f = fixture({ kind: "fileDraft", file: repertoireFile });
+    native.countPgnGames.mockResolvedValue(5);
+    expect(await saveToFile(f.args())).toBe("saved");
+    expect(native.writeGame).toHaveBeenCalledExactlyOnceWith(
+        repertoireFile.handle,
+        5,
+        expect.stringContaining("e4"),
+        { kind: "append" },
+    );
+    expect(files.pickPgnFile).not.toHaveBeenCalled();
+    expect(f.getTab(f.id)?.gameOrigin).toEqual({
+        kind: "file",
+        gameNumber: 5,
+        file: { ...repertoireFile, numGames: 6 },
+    });
+    expect(f.store.getState().storeAttempts).toEqual([]);
+});
+
+test("a non-user save of a fileDraft never writes", async () => {
+    const f = fixture({ kind: "fileDraft", file: repertoireFile });
+    expect(await saveToFile({ ...f.args(), isUserSave: false })).toBe("cancelled");
+    expect(native.writeGame).not.toHaveBeenCalled();
+    expect(native.countPgnGames).not.toHaveBeenCalled();
+    expect(files.pickPgnFile).not.toHaveBeenCalled();
+    expect(f.getTab(f.id)?.gameOrigin).toEqual({ kind: "fileDraft", file: repertoireFile });
+});
+
+test("a non-flight draft save writes nothing", async () => {
+    const f = fixture({ kind: "fileDraft", file: repertoireFile });
+    const write = deferred<{ stamp: string; revision: string }>();
+    native.writeGame.mockReturnValueOnce(write.promise);
+    const storing = saveToFile(f.args());
+    await vi.waitFor(() => expect(native.writeGame).toHaveBeenCalledOnce());
+    const autoSave = saveToFile({ ...f.args(), isUserSave: false });
+    write.reject(new Error("IPC disconnected"));
+    expect(await storing).toMatchObject({ status: "failed" });
+    expect(await autoSave).toBe("cancelled");
+    expect(native.writeGame).toHaveBeenCalledOnce();
+    expect(files.pickPgnFile).not.toHaveBeenCalled();
+    expect(f.getTab(f.id)?.gameOrigin).toEqual({ kind: "fileDraft", file: repertoireFile });
+});
+
+test("a rejecting store to file A does not fail a later store to file B", async () => {
+    const f = fixture({ kind: "none" });
+    const otherFile: FileMetadata = {
+        ...repertoireFile,
+        handle: { id: { id: "other-repertoire" }, kind: "fileWorkspace" },
+        name: "other.pgn",
+    };
+    let flushes = 0;
+    vi.spyOn(tabStorage, "flush").mockImplementation(() => {
+        flushes += 1;
+        if (flushes === 2) throw new Error("first store exploded");
+        return [];
+    });
+    const countA = deferred<number>();
+    native.countPgnGames.mockReturnValueOnce(countA.promise).mockResolvedValue(4);
+    const first = saveToLibraryFile({ ...f.args(), file: repertoireFile });
+    await vi.waitFor(() => expect(native.countPgnGames).toHaveBeenCalledOnce());
+    const second = saveToLibraryFile({ ...f.args(), file: otherFile });
+    expect(native.writeGame).not.toHaveBeenCalled();
+    countA.reject(new Error("count A failed"));
+    await expect(first).rejects.toThrow("first store exploded");
+    expect(await second).toBe("saved");
+    expect(native.writeGame).toHaveBeenCalledExactlyOnceWith(
+        otherFile.handle,
+        4,
+        expect.stringContaining("e4"),
+        { kind: "append" },
+    );
+});
+
+test("saveToLibraryFile appends, rebinds as Save-As, and keeps the file's real type", async () => {
+    const f = fixture({ kind: "none" });
+    native.countPgnGames.mockResolvedValue(4);
+    expect(await saveToLibraryFile({ ...f.args(), file: repertoireFile })).toBe("saved");
+    expect(native.writeGame).toHaveBeenCalledExactlyOnceWith(
+        repertoireFile.handle,
+        4,
+        expect.stringContaining("e4"),
+        { kind: "append" },
+    );
+    expect(f.getTab(f.id)?.gameOrigin).toMatchObject({
+        kind: "file",
+        gameNumber: 4,
+        file: { handle: repertoireFile.handle, metadata: { type: "repertoire" }, numGames: 5 },
+    });
+});
+
+test("a repeat submission to the same Library file joins one write", async () => {
+    const f = fixture({ kind: "none" });
+    const pending = deferred<{ stamp: string; revision: string }>();
+    native.writeGame.mockReturnValueOnce(pending.promise);
+    const first = saveToLibraryFile({ ...f.args(), file: repertoireFile });
+    const second = saveToLibraryFile({ ...f.args(), file: repertoireFile });
+    expect(second).toBe(first);
+    await vi.waitFor(() => expect(native.writeGame).toHaveBeenCalledOnce());
+    pending.resolve({ stamp: stampB, revision: "saved" });
+    expect(await first).toBe("saved");
+    expect(await second).toBe("saved");
+    expect(native.writeGame).toHaveBeenCalledOnce();
+});
+
+test("collection draft Ctrl+S, collection database store and Library file store join one write", async () => {
+    const f = fixture();
+    native.collectionForDatabase.mockResolvedValue(readyCollection());
+    const pending = deferred<{ stamp: string; revision: string }>();
+    native.writeGame.mockReturnValueOnce(pending.promise);
+    const ctrlS = saveToFile(f.args());
+    const saveDb = saveToDatabase({ ...f.args(), database });
+    const saveFile = saveToLibraryFile({ ...f.args(), file: linkedCollectionFile });
+    expect(saveDb).toBe(ctrlS);
+    await vi.waitFor(() => expect(native.writeGame).toHaveBeenCalledOnce());
+    pending.resolve({ stamp: stampB, revision: "saved" });
+    expect(await ctrlS).toBe("saved");
+    expect(await saveDb).toBe("saved");
+    expect(await saveFile).toBe("saved");
+    expect(native.writeGame).toHaveBeenCalledExactlyOnceWith(
+        file,
+        3,
+        expect.stringContaining("e4"),
+        {
+            kind: "append",
+        },
+    );
+    expect(native.insertDbGame).not.toHaveBeenCalled();
+});
+
+test("the same three stores join one write while collection lookup is still pending", async () => {
+    const f = fixture();
+    const lookup = deferred<CollectionDescriptor>();
+    native.collectionForDatabase.mockReturnValue(lookup.promise);
+    const ctrlS = saveToFile(f.args());
+    const saveDb = saveToDatabase({ ...f.args(), database });
+    const saveFile = saveToLibraryFile({ ...f.args(), file: linkedCollectionFile });
+    expect(saveDb).toBe(ctrlS);
+    expect(native.writeGame).not.toHaveBeenCalled();
+    expect(native.countPgnGames).not.toHaveBeenCalled();
+    lookup.resolve(readyCollection());
+    await vi.waitFor(() => expect(native.writeGame).toHaveBeenCalledOnce());
+    expect(await ctrlS).toBe("saved");
+    expect(await saveDb).toBe("saved");
+    expect(await saveFile).toBe("saved");
+    expect(native.writeGame).toHaveBeenCalledOnce();
+    expect(native.insertDbGame).not.toHaveBeenCalled();
+});
+
+test("a rejected collection lookup is a typed failure with no write and no marker", async () => {
+    const f = fixture();
+    native.collectionForDatabase.mockRejectedValueOnce(new Error("lookup failed"));
+    expect(await saveToFile(f.args())).toMatchObject({
+        status: "failed",
+        error: { message: expect.stringContaining("lookup failed") },
+    });
+    expect(native.insertDbGame).not.toHaveBeenCalled();
+    expect(native.writeGame).not.toHaveBeenCalled();
+    expect(native.countPgnGames).not.toHaveBeenCalled();
+    expect(f.store.getState().storeAttempts ?? []).toEqual([]);
+    expect(f.getTab(f.id)?.gameOrigin).toEqual({ kind: "databaseDraft", database });
+});
+
+test.each([
+    {
+        name: "file draft",
+        run: (f: ReturnType<typeof fixture>) => saveToFile(f.args()),
+        origin: { kind: "fileDraft" as const, file: repertoireFile },
+    },
+    {
+        name: "file target",
+        run: (f: ReturnType<typeof fixture>) =>
+            saveToLibraryFile({ ...f.args(), file: repertoireFile }),
+        origin: { kind: "none" as const },
+    },
+    {
+        name: "database",
+        run: (f: ReturnType<typeof fixture>) => saveToDatabase({ ...f.args(), database }),
+        origin: { kind: "databaseDraft" as const, database },
+    },
+])("empty tree is refused with no write and no marker for $name", async ({ run, origin }) => {
+    const f = fixture(origin, false);
+    const result = await run(f);
+    expect(result).toMatchObject({
+        status: "failed",
+        error: { category: "validation", message: "Add at least one move before saving." },
+    });
+    expect(native.writeGame).not.toHaveBeenCalled();
+    expect(native.insertDbGame).not.toHaveBeenCalled();
+    expect(native.countPgnGames).not.toHaveBeenCalled();
+    expect(f.store.getState().storeAttempts ?? []).toEqual([]);
+});
+
+test("a countPgnGames rejection is a no-write and clears the marker", async () => {
+    const f = fixture({ kind: "fileDraft", file: repertoireFile });
+    native.countPgnGames.mockRejectedValueOnce({
+        tag: "backend-error",
+        category: "io",
+        message: "count failed",
+    });
+    const result = await saveToFile(f.args());
+    expect(result).toMatchObject({
+        status: "failed",
+        error: { message: "count failed" },
+    });
+    expect(native.writeGame).not.toHaveBeenCalled();
+    expect(f.store.getState().storeAttempts ?? []).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain("may already have been added");
+});
+
+test("fileDraft stale-game and uncertain append keep their messages", async () => {
+    const f = fixture({ kind: "fileDraft", file: repertoireFile });
+    native.writeGame.mockRejectedValueOnce({
+        tag: "backend-error",
+        category: "stale-game",
+        message: "stale game",
+    });
+    expect(await saveToFile(f.args())).toMatchObject({
+        status: "failed",
+        error: { message: "stale game" },
+    });
+    expect(f.store.getState().storeAttempts ?? []).toEqual([]);
+    native.writeGame.mockResolvedValueOnce({ stamp: null, revision: null });
+    expect(await saveToFile(f.args())).toMatchObject({
+        status: "failed",
+        error: { category: "applied-despite-error" },
+    });
+    expect(f.store.getState().storeAttempts).toEqual(["file:repertoire-file"]);
 });

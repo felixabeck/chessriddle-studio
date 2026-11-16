@@ -31,6 +31,26 @@ test("retries a UUID collision against known tabs and stored tree keys", () => {
     randomUUID.mockRestore();
 });
 
+test("fileDraft origins round-trip through the tab schema", () => {
+    const tab = {
+        name: "Caro",
+        value: "tab",
+        type: "analysis" as const,
+        gameOrigin: {
+            kind: "fileDraft" as const,
+            file: {
+                type: "file" as const,
+                handle: { kind: "fileWorkspace" as const, id: { id: "repertoire" } },
+                name: "Weiß_Caro Kann.pgn",
+                numGames: 0,
+                metadata: { type: "repertoire" as const, tags: [] },
+                lastModified: 1,
+            },
+        },
+    };
+    expect(tabSchema.parse(tab)).toEqual(tab);
+});
+
 test("file tabs require an opaque capability instead of a renderer path", () => {
     expect(
         tabSchema.safeParse({

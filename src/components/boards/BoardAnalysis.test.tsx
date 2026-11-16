@@ -1190,6 +1190,36 @@ describe("BoardAnalysis", () => {
     return () => binding[1](new KeyboardEvent("keydown"));
   }
 
+  test("a fileDraft tab does not auto-save", async () => {
+    await act(async () => {
+      updateTabById(
+        (...args) => jotaiStore.set(tabsAtom, ...args),
+        tabId,
+        (previous) => ({
+          ...previous,
+          gameOrigin: {
+            kind: "fileDraft",
+            file: {
+              type: "file",
+              handle: fileHandle,
+              name: "Weiß_Caro Kann.pgn",
+              numGames: 0,
+              metadata: { type: "repertoire", tags: [] },
+              lastModified: 1,
+            },
+          },
+        }),
+      );
+      jotaiStore.set(autoSaveAtom, true);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(mocks.writeGame).not.toHaveBeenCalled();
+    expect(mocks.countPgnGames).not.toHaveBeenCalled();
+    expect(mocks.writeDbGame).not.toHaveBeenCalled();
+  });
+
   test("a database orientation flip autosaves its PGN tag and advances the row stamp", async () => {
     const database = { id: { id: "orientation-db" }, kind: "database" } as const;
     mocks.collectionForDatabase.mockReset().mockResolvedValue(null);

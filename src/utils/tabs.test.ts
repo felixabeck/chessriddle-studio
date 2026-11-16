@@ -81,6 +81,7 @@ import {
     getTabFile,
     getTabGameNumber,
     isPersistentGameOrigin,
+    isDraftGameOrigin,
     asksBeforeDiscardingChanges,
     commitNewTab,
     createTab,
@@ -316,6 +317,13 @@ test("getTabGameNumber and persistence follow the game origin kind", () => {
     expect(isPersistentGameOrigin(undefined)).toBe(false);
     expect(isPersistentGameOrigin(fileTab)).toBe(true);
     expect(isPersistentGameOrigin({ ...fileTab, gameOrigin: { kind: "none" } } as Tab)).toBe(false);
+    const fileDraft = {
+        kind: "fileDraft" as const,
+        file: (fileTab.gameOrigin as Extract<Tab["gameOrigin"], { kind: "file" }>).file,
+    };
+    expect(isPersistentGameOrigin({ ...fileTab, gameOrigin: fileDraft } as Tab)).toBe(true);
+    expect(isDraftGameOrigin(fileDraft)).toBe(true);
+    expect(isDraftGameOrigin(fileTab.gameOrigin)).toBe(false);
 });
 
 test("unsaved-changes coverage is persistent origin or analysis, and ignores dirty", () => {
@@ -329,6 +337,10 @@ test("unsaved-changes coverage is persistent origin or analysis, and ignores dir
         kind: "databaseDraft" as const,
         database: { id: { id: "db" }, kind: "database" as const },
     };
+    const fileDraft = {
+        kind: "fileDraft" as const,
+        file: (fileTab.gameOrigin as Extract<Tab["gameOrigin"], { kind: "file" }>).file,
+    };
     expect(asksBeforeDiscardingChanges(undefined)).toBe(false);
     expect(asksBeforeDiscardingChanges(fileTab)).toBe(true);
     expect(
@@ -336,6 +348,9 @@ test("unsaved-changes coverage is persistent origin or analysis, and ignores dir
     ).toBe(true);
     expect(
         asksBeforeDiscardingChanges({ ...fileTab, type: "play", gameOrigin: draft } as Tab),
+    ).toBe(true);
+    expect(
+        asksBeforeDiscardingChanges({ ...fileTab, type: "play", gameOrigin: fileDraft } as Tab),
     ).toBe(true);
     expect(
         asksBeforeDiscardingChanges({ ...fileTab, type: "analysis", gameOrigin: none } as Tab),

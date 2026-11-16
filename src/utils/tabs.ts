@@ -33,7 +33,12 @@ import { defaultPGN, getPGN, parsePGN, parsePGNWithLossReport } from "./chess";
 import { getFileGameName, pickPgnFile, readFileGame, writeFileGame } from "./files";
 import type { GameHeaders, TreeState } from "./treeReducer";
 import { fileWorkspaceKey } from "./pathCapabilities";
-import type { DatabaseHandle, FileWorkspaceHandle, NormalizedGame } from "@/bindings";
+import type {
+    CollectionDescriptor,
+    DatabaseHandle,
+    FileWorkspaceHandle,
+    NormalizedGame,
+} from "@/bindings";
 import { databaseGameToTree, seedDatabaseOrientation } from "./databaseGameTree";
 import { databaseHandleKey } from "./db";
 import { getFileFreshness, setFileFreshness } from "@/state/fileFreshness";
@@ -67,6 +72,13 @@ export function getTabGameNumber(tab?: Tab | null): number {
 export function isPersistentGameOrigin(tab?: Tab | null): boolean {
     if (!tab) return false;
     return tab.gameOrigin.kind !== "none";
+}
+
+/** A tab that names a store destination but has no stored game yet. */
+export function isDraftGameOrigin(
+    origin: GameOrigin,
+): origin is Extract<GameOrigin, { kind: "databaseDraft" | "fileDraft" }> {
+    return origin.kind === "databaseDraft" || origin.kind === "fileDraft";
 }
 
 /** A tab's display name, prefixed by its file so same-named games stay distinguishable. */
@@ -795,10 +807,16 @@ export function isTabOfFileGame(
     return isFileBackedTab(tab) && isSameFileGame(tab.gameOrigin, handle, gameNumber);
 }
 
-function sameOrigin(left: GameOrigin, right: GameOrigin): boolean {
+export function sameOrigin(left: GameOrigin, right: GameOrigin): boolean {
     if (left.kind !== right.kind) return false;
     if (left.kind === "file" || left.kind === "temp_file") {
         return sameFileGameOrigin(left, right);
+    }
+    if (left.kind === "fileDraft") {
+        return (
+            right.kind === "fileDraft" &&
+            fileWorkspaceKey(left.file.handle) === fileWorkspaceKey(right.file.handle)
+        );
     }
     if (left.kind === "database") {
         return (
@@ -825,10 +843,27 @@ function failed(error: unknown): Extract<SaveResult, { status: "failed" }> {
     return { status: "failed", error: normalizeError(error) };
 }
 
+type StoreKeyRequest =
+    | { kind: "file"; file: FileMetadata }
+    | { kind: "database"; database: DatabaseHandle };
+
+type ResolvedStoreTarget =
+    | { kind: "file"; key: string; file: FileMetadata }
+    | { kind: "database"; key: string; database: DatabaseHandle };
+
+type StoreKeyResolution =
+    | { status: "resolved"; target: ResolvedStoreTarget }
+    | { status: "failed"; error: Extract<SaveResult, { status: "failed" }> };
+
+type StoreReservation = {
+    request: StoreKeyRequest;
+    key: Promise<StoreKeyResolution>;
+    result: Promise<SaveResult>;
+};
+
 type SaveFlight = {
     saves: Set<Promise<SaveResult>>;
-    storing?: Promise<SaveResult>;
-    storeTarget?: string;
+    storing?: StoreReservation;
 };
 // A live tab has one cached tree. Weak ownership lets a retired generation settle independently.
 const saveFlights = new WeakMap<StoreApi<TreeStoreState>, SaveFlight>();
@@ -844,34 +879,120 @@ function settleSave(store: StoreApi<TreeStoreState>, flight: SaveFlight) {
     if (!flight.saves.size && !flight.storing) saveFlights.delete(store);
 }
 
+function fileStoreKey(handle: FileWorkspaceHandle): string {
+    return `file:${fileWorkspaceKey(handle)}`;
+}
+
+function collectionFileMetadata(collection: CollectionDescriptor): FileMetadata {
+    return {
+        type: "file",
+        handle: collection.file,
+        name: collection.name,
+        numGames: 0,
+        metadata: { type: "game", tags: [] },
+        lastModified: Date.now(),
+    };
+}
+
+function sameStoreRequest(left: StoreKeyRequest, right: StoreKeyRequest): boolean {
+    if (left.kind === "file" && right.kind === "file") {
+        return fileWorkspaceKey(left.file.handle) === fileWorkspaceKey(right.file.handle);
+    }
+    if (left.kind === "database" && right.kind === "database") {
+        return databaseHandleKey(left.database) === databaseHandleKey(right.database);
+    }
+    return false;
+}
+
+function resolveStoreKey(request: StoreKeyRequest): Promise<StoreKeyResolution> {
+    if (request.kind === "file") {
+        return Promise.resolve({
+            status: "resolved",
+            target: {
+                kind: "file",
+                key: fileStoreKey(request.file.handle),
+                file: request.file,
+            },
+        });
+    }
+    return tauri.collectionForDatabase(request.database).then(
+        (collection) => {
+            if (collection && collection.status !== "ready") {
+                return {
+                    status: "failed" as const,
+                    error: failed({
+                        category: "validation",
+                        message: i18n.t("Collections.Unavailable"),
+                    }),
+                };
+            }
+            if (collection) {
+                return {
+                    status: "resolved" as const,
+                    target: {
+                        kind: "file",
+                        key: fileStoreKey(collection.file),
+                        file: collectionFileMetadata(collection),
+                    },
+                };
+            }
+            return {
+                status: "resolved" as const,
+                target: {
+                    kind: "database",
+                    key: `database:${databaseHandleKey(request.database)}`,
+                    database: request.database,
+                },
+            };
+        },
+        (error) => ({ status: "failed" as const, error: failed(error) }),
+    );
+}
+
 function withStoreFlight(
-    args: SaveArguments & { database: DatabaseHandle },
-    action: (tab: Tab) => Promise<SaveResult>,
+    args: SaveArguments,
+    request: StoreKeyRequest,
+    action: (tab: Tab, target: ResolvedStoreTarget) => Promise<SaveResult>,
 ): Promise<SaveResult> {
     const owner = args.tab;
     if (!owner) return Promise.resolve(failed(new Error("There is no active tab to save.")));
     const flight = saveFlight(args.store);
-    // A repeated submission belongs to the same pending attempt, never another native store.
-    const target = databaseHandleKey(args.database);
-    if (flight.storing && flight.storeTarget === target) return flight.storing;
-    const pending = [...flight.saves, ...(flight.storing ? [flight.storing] : [])];
-    const start = () => {
+    // A repeated submission to the same request belongs to the pending attempt.
+    if (flight.storing && sameStoreRequest(flight.storing.request, request)) {
+        return flight.storing.result;
+    }
+    const previous = flight.storing;
+    const pendingSaves = [...flight.saves];
+    const key = resolveStoreKey(request);
+    const start = async (): Promise<SaveResult> => {
+        const [resolved, previousResolved] = previous
+            ? await Promise.all([key, previous.key])
+            : [await key, undefined];
+        if (resolved.status === "failed") return resolved.error;
+        if (previous) {
+            if (
+                previousResolved?.status === "resolved" &&
+                previousResolved.target.key === resolved.target.key
+            ) {
+                return previous.result;
+            }
+            await Promise.allSettled([previous.result]);
+        }
+        if (pendingSaves.length) await Promise.allSettled(pendingSaves);
         const current = args.getTab(owner.value);
         if (
             !sameTabOwner(current, owner) ||
-            (!pending.length && !sameOrigin(current.gameOrigin, owner.gameOrigin))
-        )
-            return Promise.resolve<SaveResult>("superseded");
-        return action(current);
-    };
-    const result = pending.length ? Promise.allSettled(pending).then(start) : start();
-    flight.storing = result;
-    flight.storeTarget = target;
-    const cleanup = () => {
-        if (flight.storing === result) {
-            flight.storing = undefined;
-            flight.storeTarget = undefined;
+            (!previous && !pendingSaves.length && !sameOrigin(current.gameOrigin, owner.gameOrigin))
+        ) {
+            return "superseded";
         }
+        return action(current, resolved.target);
+    };
+    const result = start();
+    const reservation: StoreReservation = { request, key, result };
+    flight.storing = reservation;
+    const cleanup = () => {
+        if (flight.storing === reservation) flight.storing = undefined;
         settleSave(args.store, flight);
     };
     void result.then(cleanup, cleanup);
@@ -896,56 +1017,85 @@ type SaveArguments = {
 export function saveToDatabase(
     args: SaveArguments & { database: DatabaseHandle },
 ): Promise<SaveResult> {
-    return withStoreFlight(args, (tab) => storeToDatabase({ ...args, tab }));
+    return withStoreFlight(args, { kind: "database", database: args.database }, (tab, target) =>
+        applyResolvedStore({ ...args, tab, target }),
+    );
 }
 
-async function storeToDatabase({
+/** Store the current game into a Library PGN file (append at the re-counted index). */
+export function saveToLibraryFile(
+    args: SaveArguments & { file: FileMetadata },
+): Promise<SaveResult> {
+    return withStoreFlight(args, { kind: "file", file: args.file }, (tab, target) =>
+        applyResolvedStore({ ...args, tab, target }),
+    );
+}
+
+function applyResolvedStore({
     tab,
     store,
-    database,
     getTab,
     updateTab,
-}: SaveArguments & {
+    target,
+}: SaveArguments & { tab: Tab; target: ResolvedStoreTarget }): Promise<SaveResult> {
+    if (target.kind === "file") {
+        return storeIntoPgnFile({ tab, store, getTab, updateTab, file: target.file });
+    }
+    return insertIntoDatabase({ tab, store, getTab, updateTab, database: target.database });
+}
+
+type StoreWriteContext = {
     tab: Tab;
-    database: DatabaseHandle;
-}): Promise<SaveResult> {
-    let completionOwner = tab;
+    store: StoreApi<TreeStoreState>;
+    getTab: (tabId: string) => Tab | undefined;
+    updateTab: UpdateTab;
+    destination: string;
+};
+
+async function runStoreAttempt(
+    ctx: StoreWriteContext,
+    write: (helpers: {
+        owns: () => boolean;
+        pgn: string;
+        clearAttempt: () => void;
+        setCompletionOwner: (successor: Tab) => void;
+        markAttempted: () => void;
+    }) => Promise<SaveResult>,
+    options?: { insertConflictIsNoWrite?: boolean },
+): Promise<SaveResult> {
+    let completionOwner = ctx.tab;
     const owns = () => {
-        const current = getTab(tab.value);
+        const current = ctx.getTab(ctx.tab.value);
         return (
             sameTabOwner(current, completionOwner) &&
             sameOrigin(current.gameOrigin, completionOwner.gameOrigin) &&
-            (!getCachedTreeStore(tab.value) || getCachedTreeStore(tab.value) === store)
+            (!getCachedTreeStore(ctx.tab.value) || getCachedTreeStore(ctx.tab.value) === ctx.store)
         );
     };
     let destination: string | undefined;
     let attempted = false;
     let inserting = false;
     const clearAttempt = () => {
-        store
+        ctx.store
             .getState()
             .setStoreAttempts(
-                (store.getState().storeAttempts ?? []).filter((key) => key !== destination),
+                (ctx.store.getState().storeAttempts ?? []).filter((key) => key !== destination),
             );
         tabStorage.flush();
     };
     try {
         if (!owns()) return "superseded";
-        const collection = await tauri.collectionForDatabase(database);
-        if (!owns()) return "superseded";
-        if (store.getState().root.children.length === 0)
-            return failed({ category: "validation", message: i18n.t("Board.Database.NoMoves") });
-        if (collection && collection.status !== "ready")
-            return failed({ category: "validation", message: i18n.t("Collections.Unavailable") });
-        destination = collection
-            ? `file:${fileWorkspaceKey(collection.file)}`
-            : `database:${databaseHandleKey(database)}`;
-        const attempts = store.getState().storeAttempts ?? [];
-        if (attempts.includes(destination) || attempts.length >= MAX_STORE_ATTEMPTS)
+        if (ctx.store.getState().root.children.length === 0) {
+            return failed({ category: "validation", message: i18n.t("Board.Save.NoMoves") });
+        }
+        destination = ctx.destination;
+        const attempts = ctx.store.getState().storeAttempts ?? [];
+        if (attempts.includes(destination) || attempts.length >= MAX_STORE_ATTEMPTS) {
             return uncertainStore();
-        const pgn = serializeStoreTree(store);
-        store.getState().setStoreAttempts([...attempts, destination]);
-        const key = getTabTreeKey(tab);
+        }
+        const pgn = serializeStoreTree(ctx.store);
+        ctx.store.getState().setStoreAttempts([...attempts, destination]);
+        const key = getTabTreeKey(ctx.tab);
         const failedTabs = tabStorage.flush();
         if (
             failedTabs.includes(key) ||
@@ -958,62 +1108,18 @@ async function storeToDatabase({
             });
         }
         if (!owns()) return "superseded";
-        if (collection) {
-            const numGames = await tauri.countPgnGames(collection.file);
-            if (!owns()) return "superseded";
-            attempted = true;
-            const result = await appendStoreGame({
-                tab,
-                store,
-                pgn,
-                getTab,
-                updateTab,
-                isCurrent: owns,
-                selected: {
-                    type: "file",
-                    handle: collection.file,
-                    name: collection.name,
-                    numGames,
-                    metadata: { type: "game", tags: [] },
-                    lastModified: Date.now(),
-                },
-                prepareMessage: i18n.t("FileFreshness.CouldNotPrepareAppend"),
-                storeAttempt: { clear: clearAttempt },
-                onAdmitted: (successor) => {
-                    completionOwner = successor;
-                },
-            });
-            if (result === "uncertain" || result === "refused") return uncertainStore();
-            return result === "edited" ? "superseded" : result;
-        }
-        attempted = true;
-        inserting = true;
-        const inserted = await tauri.insertDbGame(database, pgn);
-        if (!owns()) return "superseded";
-        const admitted = admitStoredGame({
-            tab,
-            getTab,
-            updateTab,
-            origin: { kind: "database", database, gameId: inserted.id },
-            onAdmitted: (successor) => {
+        return await write({
+            owns,
+            pgn,
+            clearAttempt,
+            setCompletionOwner: (successor) => {
                 completionOwner = successor;
             },
-            finish: (ownsSuccessor) => {
-                store.getState().setLinkedSource(null);
-                if (!ownsSuccessor()) return;
-                store.getState().setSourceStamp(inserted.stamp);
-                if (!ownsSuccessor()) return;
-                clearAttempt();
-                if (!ownsSuccessor()) return;
-                if (serializeStoreTree(store) === pgn) store.getState().save(inserted.stamp);
-                if (!ownsSuccessor()) return;
-                setFileFreshness(tab.value, "verified", { verifiedRevision: null });
+            markAttempted: () => {
+                attempted = true;
+                if (options?.insertConflictIsNoWrite) inserting = true;
             },
         });
-        if (admitted !== "admitted") return admitted === "refused" ? uncertainStore() : admitted;
-        return !store.getState().dirty && serializeStoreTree(store) === pgn
-            ? "saved"
-            : "superseded";
     } catch (error) {
         const failure = failed(error);
         // These typed rejections precede a write or roll the transaction back. A transport or
@@ -1025,10 +1131,89 @@ async function storeToDatabase({
             (inserting && failure.error.backendCategory === "conflict");
         if (destination && (!attempted || noWrite)) clearAttempt();
         if (!owns()) return "superseded";
-        if (destination && store.getState().storeAttempts?.includes(destination))
+        if (destination && ctx.store.getState().storeAttempts?.includes(destination)) {
             failure.error.message = `${i18n.t("Board.Database.MayHaveBeenAdded")} ${failure.error.message}`;
+        }
         return failure;
     }
+}
+
+async function storeIntoPgnFile({
+    tab,
+    store,
+    getTab,
+    updateTab,
+    file,
+}: SaveArguments & { tab: Tab; file: FileMetadata }): Promise<SaveResult> {
+    return runStoreAttempt(
+        { tab, store, getTab, updateTab, destination: fileStoreKey(file.handle) },
+        async ({ owns, pgn, clearAttempt, setCompletionOwner, markAttempted }) => {
+            const numGames = await tauri.countPgnGames(file.handle);
+            if (!owns()) return "superseded";
+            markAttempted();
+            const result = await appendStoreGame({
+                tab,
+                store,
+                pgn,
+                getTab,
+                updateTab,
+                isCurrent: owns,
+                selected: { ...file, numGames },
+                prepareMessage: i18n.t("FileFreshness.CouldNotPrepareAppend"),
+                storeAttempt: { clear: clearAttempt },
+                onAdmitted: setCompletionOwner,
+            });
+            if (result === "uncertain" || result === "refused") return uncertainStore();
+            return result === "edited" ? "superseded" : result;
+        },
+    );
+}
+
+async function insertIntoDatabase({
+    tab,
+    store,
+    getTab,
+    updateTab,
+    database,
+}: SaveArguments & { tab: Tab; database: DatabaseHandle }): Promise<SaveResult> {
+    return runStoreAttempt(
+        {
+            tab,
+            store,
+            getTab,
+            updateTab,
+            destination: `database:${databaseHandleKey(database)}`,
+        },
+        async ({ owns, pgn, clearAttempt, setCompletionOwner, markAttempted }) => {
+            markAttempted();
+            const inserted = await tauri.insertDbGame(database, pgn);
+            if (!owns()) return "superseded";
+            const admitted = admitStoredGame({
+                tab,
+                getTab,
+                updateTab,
+                origin: { kind: "database", database, gameId: inserted.id },
+                onAdmitted: setCompletionOwner,
+                finish: (ownsSuccessor) => {
+                    store.getState().setLinkedSource(null);
+                    if (!ownsSuccessor()) return;
+                    store.getState().setSourceStamp(inserted.stamp);
+                    if (!ownsSuccessor()) return;
+                    clearAttempt();
+                    if (!ownsSuccessor()) return;
+                    if (serializeStoreTree(store) === pgn) store.getState().save(inserted.stamp);
+                    if (!ownsSuccessor()) return;
+                    setFileFreshness(tab.value, "verified", { verifiedRevision: null });
+                },
+            });
+            if (admitted !== "admitted")
+                return admitted === "refused" ? uncertainStore() : admitted;
+            return !store.getState().dirty && serializeStoreTree(store) === pgn
+                ? "saved"
+                : "superseded";
+        },
+        { insertConflictIsNoWrite: true },
+    );
 }
 
 /** Only the canonical acknowledgement can finalize a write, even when observers throw. */
@@ -1164,11 +1349,16 @@ export async function appendStoreGame({
 export function saveToFile(args: SaveArguments): Promise<SaveResult> {
     const owner = args.tab;
     if (!owner) return Promise.resolve(failed(new Error("There is no active tab to save.")));
-    if (owner.gameOrigin.kind === "databaseDraft") {
+    if (isDraftGameOrigin(owner.gameOrigin)) {
         if (args.isUserSave) {
-            const database = owner.gameOrigin.database;
+            const request: StoreKeyRequest =
+                owner.gameOrigin.kind === "fileDraft"
+                    ? { kind: "file", file: owner.gameOrigin.file }
+                    : { kind: "database", database: owner.gameOrigin.database };
             // A queued draft save follows the current origin after an earlier store rebinds it.
-            return withStoreFlight({ ...args, database }, (tab) => saveToFileNow({ ...args, tab }));
+            return withStoreFlight(args, request, (tab, target) =>
+                saveToFileNow({ ...args, tab, resolvedStore: target }),
+            );
         }
         if (!saveFlights.get(args.store)?.storing) return Promise.resolve("cancelled");
     }
@@ -1184,7 +1374,7 @@ export function saveToFile(args: SaveArguments): Promise<SaveResult> {
         return saveToFileNow({ ...args, tab: pendingStore ? current : owner });
     };
     const earlierSaves = [...flight.saves];
-    if (pendingStore) earlierSaves.push(pendingStore);
+    if (pendingStore) earlierSaves.push(pendingStore.result);
     const result = earlierSaves.length ? Promise.allSettled(earlierSaves).then(start) : start();
     flight.saves.add(result);
     const cleanup = () => {
@@ -1201,12 +1391,14 @@ async function saveToFileNow({
     getTab,
     store,
     isUserSave,
+    resolvedStore,
 }: {
     tab: Tab | undefined;
     updateTab: UpdateTab;
     getTab: (tabId: string) => Tab | undefined;
     store: StoreApi<TreeStoreState>;
     isUserSave?: boolean;
+    resolvedStore?: ResolvedStoreTarget;
 }): Promise<SaveResult> {
     if (!tab) return failed(new Error("There is no active tab to save."));
     const tabId = tab.value;
@@ -1224,14 +1416,14 @@ async function saveToFileNow({
     let writingSaveAsDestination = false;
     try {
         if (!owns()) return "superseded";
-        if (currentOrigin.kind === "databaseDraft") {
-            if (!isUserSave) return "cancelled";
-            return storeToDatabase({
+        if (isDraftGameOrigin(currentOrigin)) {
+            if (!isUserSave || !resolvedStore) return "cancelled";
+            return applyResolvedStore({
                 tab,
                 store,
                 getTab,
                 updateTab,
-                database: currentOrigin.database,
+                target: resolvedStore,
             });
         }
         const fileOrigin = isFileBackedTab(tab) ? tab.gameOrigin : undefined;

@@ -66,7 +66,9 @@ function BoardAnalysis() {
   const [addGameConfirm, setAddGameConfirm] = useState(false);
   const tabFile = getTabFile(currentTab);
   const hasPersistentOrigin =
-    isPersistentGameOrigin(currentTab) && currentTab?.gameOrigin.kind !== "databaseDraft";
+    isPersistentGameOrigin(currentTab) &&
+    currentTab?.gameOrigin.kind !== "databaseDraft" &&
+    currentTab?.gameOrigin.kind !== "fileDraft";
   const [databaseModal, setDatabaseModal] = useState(false);
   const autoSave = useAtomValue(autoSaveAtom);
   const boardRef = useRef(null);
