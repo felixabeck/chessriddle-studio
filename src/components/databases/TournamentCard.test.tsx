@@ -260,6 +260,15 @@ test("a linked collection generation change refetches games and a pending lookup
   expect(container.textContent).not.toContain("Gen One");
 });
 
+test("an unavailable collection does not fetch tournament games", async () => {
+  mocks.unavailable = true;
+  mocks.generation = "g1";
+  mocks.getTournamentGames.mockResolvedValue({ data: games(1) });
+  await render(file("unavailable"));
+  expect(mocks.getTournamentGames).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Collections.Unavailable");
+});
+
 test("a write to the tournament database refetches games and a write to another database does not", async () => {
   mocks.getTournamentGames.mockResolvedValue({ data: games(3) });
   await render(file("tournament-write"));

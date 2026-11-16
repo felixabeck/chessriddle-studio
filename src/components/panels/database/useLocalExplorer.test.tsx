@@ -182,6 +182,7 @@ test("linked generation changes the key and disabled or unavailable searches do 
   mocks.pending = true;
   await render(true, false);
   expect(mocks.searchPosition).not.toHaveBeenCalled();
+  expect(JSON.parse(container.textContent!).loading).toBe(true);
   mocks.pending = false;
   await render(true, false, "start", false);
   expect(mocks.searchPosition).not.toHaveBeenCalled();

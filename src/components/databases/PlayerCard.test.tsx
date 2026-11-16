@@ -147,6 +147,15 @@ test("a linked collection generation change refetches game info and a pending lo
   );
 });
 
+test("an unavailable collection does not fetch player game info", async () => {
+  mocks.unavailable = true;
+  mocks.generation = "g1";
+  mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [] });
+  await renderPlayerCard();
+  expect(mocks.getPlayersGameInfo).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Collections.Unavailable");
+});
+
 test("a write to the player's database refetches game info and a write to another database does not", async () => {
   const cache = new Map();
   mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [] });

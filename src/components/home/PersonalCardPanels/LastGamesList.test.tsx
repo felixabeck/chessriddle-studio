@@ -163,6 +163,56 @@ test("queries the player's last 10 games with sides Any, newest first", async ()
   );
 });
 
+test("a linked collection generation change refetches last games and a pending lookup does not fetch", async () => {
+  const cache = new Map();
+  async function renderCached() {
+    await act(async () => {
+      root.render(
+        <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
+          <LastGamesList player={player} file={file} />
+        </SWRConfig>,
+      );
+    });
+  }
+  mocks.pending = true;
+  mocks.queryGames.mockResolvedValue({
+    data: [game({ id: 1, white: "Magnus", black: "Hikaru" })],
+    count: 1,
+  });
+  await renderCached();
+  expect(mocks.queryGames).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Common.Loading");
+
+  mocks.pending = false;
+  mocks.generation = "g1";
+  mocks.queryGames.mockResolvedValue({
+    data: [game({ id: 1, white: "Magnus", black: "Gen One" })],
+    count: 1,
+  });
+  await renderCached();
+  await vi.waitFor(() => expect(mocks.queryGames).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(container.textContent).toContain("Gen One"));
+
+  mocks.generation = "g2";
+  mocks.queryGames.mockResolvedValue({
+    data: [game({ id: 2, white: "Magnus", black: "Gen Two" })],
+    count: 1,
+  });
+  await renderCached();
+  await vi.waitFor(() => expect(mocks.queryGames).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(container.textContent).toContain("Gen Two"));
+  expect(container.textContent).not.toContain("Gen One");
+});
+
+test("an unavailable collection does not fetch last games", async () => {
+  mocks.unavailable = true;
+  mocks.generation = "g1";
+  mocks.queryGames.mockResolvedValue({ data: [], count: 0 });
+  await renderList();
+  expect(mocks.queryGames).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Collections.Unavailable");
+});
+
 test("a write to the player's database refetches last games and a write to another database does not", async () => {
   const cache = new Map();
   const first = game({ id: 1, white: "Magnus", black: "Hikaru" });

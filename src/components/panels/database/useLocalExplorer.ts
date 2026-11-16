@@ -53,7 +53,7 @@ export function useLocalExplorer(
     return {
         openings: data?.openings ?? [],
         games: data?.games ?? [],
-        loading: isLoading,
+        loading: isLoading || (enabled && !!options.path && !unavailable && revision === null),
         error: unavailable
             ? t("Collections.Unavailable", {
                   defaultValue:
