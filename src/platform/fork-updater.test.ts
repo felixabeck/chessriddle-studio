@@ -75,7 +75,9 @@ test("release.yml builds on tags into one draft and publishes only a complete ma
     expect(releaseWorkflow).not.toMatch(/^\s+branches:/m);
 
     const createRelease = jobBlock("create-release");
-    expect(createRelease).toContain("if: startsWith(github.ref, 'refs/tags/v')");
+    expect(createRelease).toContain(
+        "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+    );
     expect(createRelease).toMatch(/contents: write/);
     expect(createRelease).toMatch(/release_id:/);
     expect(createRelease).toContain("-F draft=true");
@@ -100,7 +102,9 @@ test("release.yml builds on tags into one draft and publishes only a complete ma
     expect(publish).toMatch(
         /needs: \[?create-release, release\]?|needs:\n\s+- create-release\n\s+- release/,
     );
-    expect(publish).toContain("if: success() && startsWith(github.ref, 'refs/tags/v')");
+    expect(publish).toContain(
+        "if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+    );
     expect(publish).toMatch(/contents: write/);
     expect(publish).toMatch(/gh release download/);
     expect(publish).toMatch(/latest\.json/);

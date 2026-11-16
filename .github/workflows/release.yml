@@ -110,7 +110,7 @@ jobs:
       # With any of these empty the bundler falls back to the ad-hoc identity in tauri.conf.json
       # or skips notarization, and the leg would only fail in the verification step after a full
       # build and upload. Notarization reads the App Store Connect key from a file.
-      - name: Require the Apple signing secrets (macOS only)
+      - name: Require the Apple secrets and write the notarization key (macOS only)
         if: runner.os == 'macOS'
         shell: bash
         env:
