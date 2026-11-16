@@ -26061,6 +26061,9 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Commit SHAs after rebase (Claude Code drain, 2026-11-15):** the drain rebased these commits onto `origin/master` before pushing (range-diff all `=`). The pushed SHAs are `6dca2e400` (was `12da78629`), `141a3ee7d` (was `762b01678`), `bf3e25554` (was `8ac006639`), `bea403641` (was `287ede877`) and `25113b105` (was `4fcf2bfe9`).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"dc98bf54aebe47f132b81c3a9ac3ebb9fa1f7515d61a1c732a5ed85143b1b349","input_sha256":"45952dd7505bbcc1a9eeec5f9e35f46a1ff77b34f20b1936070c7bafd0bbfa48","kind":"mutation-receipt","operation":"46713468a842a3d5f5f291a4140ff7b5c4470c56ecc08c61ccb742aa0bfaa3f3","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-15"],"target":"f-20261114-15","v":1} -->
 
+* **Landed SHAs (Claude Code drain, 2026-11-16):** a second rebase before the push replaced the SHAs in the annotation above. The commits on `master` are `284547224` (fix), `f441ba955`, `e6960d2b4`, `9fa509473` and `34b96c08d` (review-round tests and docs). The push landed at `49d14e2ba`. CI `Test` run 43776111151 passed, and the local install is at `49d14e2ba`.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"eb0ca0f93a7c73ca8f2120956c7d4d0d1277985f21958c2f1c019192aea0e15f","input_sha256":"44d53905c185c0baf149215badb73aa62454a3124d67d5fc7362240f7fc813f0","kind":"mutation-receipt","operation":"657486ceee07a94998ec474c8943bb778bcb650ef818e95cb2f7c9c4748eeeb6","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-15"],"target":"f-20261114-15","v":1} -->
+
 ---
 
 ## 2026-11-14 — filed through the inbox spool
