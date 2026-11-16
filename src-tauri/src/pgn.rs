@@ -1060,6 +1060,15 @@ fn scan_games<R: Read + Seek>(reader: R) -> io::Result<Vec<GameRange>> {
     scan_games_cancelled(reader, &CancellationToken::new())
 }
 
+/// Comment-, BOM- and CRLF-aware `[start, end)` game ranges, mapping I/O and cancellation onto `Error`.
+pub(crate) fn scan_game_ranges(
+    reader: impl Read + Seek,
+    cancellation: &CancellationToken,
+) -> Result<Vec<GameRange>, Error> {
+    scan_games_cancelled(reader, cancellation)
+        .map_err(|error| crate::cancellable_read::map_read_error(error, cancellation))
+}
+
 fn scan_games_cancelled<R: Read + Seek>(
     reader: R,
     cancellation: &CancellationToken,
@@ -1157,9 +1166,7 @@ fn scan_file(
     cancellation: &CancellationToken,
 ) -> Result<(CacheKey, Arc<[GameRange]>), Error> {
     let key = snapshot_key(snapshot);
-    let games = scan_games_cancelled(snapshot.file.try_clone()?, cancellation)
-        .map_err(|error| crate::cancellable_read::map_read_error(error, cancellation))?
-        .into();
+    let games = scan_game_ranges(snapshot.file.try_clone()?, cancellation)?.into();
     Ok((key, games))
 }
 

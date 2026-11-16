@@ -8,6 +8,7 @@ use crate::{credentials::LichessAccountHandle, error::Error, AppState};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashSet;
 use std::time::Duration;
 
 const ACCOUNT_URL: &str = "https://lichess.org/api/account";
@@ -105,6 +106,9 @@ struct CoverageGame {
     perf: String,
     status: String,
     created_at: i64,
+    /// Lichess last-move time when present. Fallback to createdAt lives in
+    /// `coverage_last_move_at_ms`.
+    last_move_at: Option<i64>,
 }
 
 fn invalid_coverage() -> Error {
@@ -119,17 +123,36 @@ fn coverage_game(line: &[u8]) -> Result<Option<CoverageGame>, Error> {
     if game.id.len() != 8
         || !game.id.bytes().all(|byte| byte.is_ascii_alphanumeric())
         || game.created_at <= 0
+        || game
+            .last_move_at
+            .is_some_and(|last_move_at| last_move_at <= 0)
     {
         return Err(invalid_coverage());
     }
     Ok(Some(game))
 }
 
-fn push_coverage_hold(game: CoverageGame, holds: &mut Vec<CoverageHold>) -> Result<(), Error> {
-    if game.rated
+/// Per-game last-move time for the export `until` window: lastMoveAt when present, otherwise
+/// createdAt. Clamped to createdAt so a lastMoveAt earlier than createdAt cannot shrink `until`
+/// below the game's createdAt.
+fn coverage_last_move_at_ms(game: &CoverageGame) -> i64 {
+    game.last_move_at
+        .unwrap_or(game.created_at)
+        .max(game.created_at)
+}
+
+fn coverage_export_eligible(game: &CoverageGame) -> bool {
+    game.rated
         && ACCOUNT_EXPORT_PERFS.contains(&game.perf.as_str())
         && !matches!(game.status.as_str(), "aborted" | "noStart")
-    {
+}
+
+fn coverage_ongoing(status: &str) -> bool {
+    matches!(status, "created" | "started")
+}
+
+fn push_coverage_hold(game: CoverageGame, holds: &mut Vec<CoverageHold>) -> Result<(), Error> {
+    if coverage_export_eligible(&game) {
         if holds.len() >= MAX_COVERAGE_HOLDS {
             return Err(Error::ResourceLimit(
                 "Lichess coverage has too many holds".into(),
@@ -138,7 +161,7 @@ fn push_coverage_hold(game: CoverageGame, holds: &mut Vec<CoverageHold>) -> Resu
         holds.push(CoverageHold {
             id: game.id,
             created_at_ms: game.created_at,
-            ongoing: matches!(game.status.as_str(), "created" | "started"),
+            ongoing: coverage_ongoing(&game.status),
         });
     }
     Ok(())
@@ -154,8 +177,30 @@ fn coverage_line(line: &[u8], holds: &mut Vec<CoverageHold>) -> Result<(), Error
 
 #[cfg(test)]
 pub(crate) fn coverage_object(id: &str, rated: bool, created_at: i64) -> String {
+    coverage_object_at(id, rated, created_at, created_at)
+}
+
+#[cfg(test)]
+pub(crate) fn coverage_object_at(
+    id: &str,
+    rated: bool,
+    created_at: i64,
+    last_move_at: i64,
+) -> String {
+    coverage_object_fields(id, rated, "blitz", "mate", created_at, last_move_at)
+}
+
+#[cfg(test)]
+fn coverage_object_fields(
+    id: &str,
+    rated: bool,
+    perf: &str,
+    status: &str,
+    created_at: i64,
+    last_move_at: i64,
+) -> String {
     format!(
-        r#"{{"id":"{id}","rated":{rated},"perf":"blitz","status":"mate","createdAt":{created_at}}}"#
+        r#"{{"id":"{id}","rated":{rated},"perf":"{perf}","status":"{status}","createdAt":{created_at},"lastMoveAt":{last_move_at}}}"#
     )
 }
 
@@ -180,16 +225,29 @@ pub(crate) fn coverage_objects(count: usize, last_rated: bool) -> (Vec<u8>, i64)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CoverageProbe {
     pub holds: Vec<CoverageHold>,
+    /// createdAt of the last listed coverage object (dateAsc). Exclusive `since` floor
+    /// for the next chunk; Lichess `since` filters on createdAt.
     pub last_created_at_ms: Option<i64>,
+    /// Maximum last-move time over listed games the rated export can contain that are
+    /// finished (hold-eligible and not created/started). Ongoing games are excluded so a
+    /// still-running correspondence game cannot open `until` to now and blow the 100 MiB
+    /// staged chunk bound; they stay covered by holds.
+    pub max_exportable_last_move_at_ms: Option<i64>,
     pub counted: usize,
+    /// IDs of every listed object when the probe is bounded (`max` set). Used to drop
+    /// games a last-move `until` would otherwise pull in from after the createdAt floor.
+    pub listed_ids: Option<HashSet<String>>,
 }
 
+/// Exclusive export `until`: one past the latest finished exportable last-move time, or one
+/// past the last listed createdAt when the probe listed no such game, else `since` (or 0).
 pub(crate) fn coverage_until_ms(
+    max_exportable_last_move_at_ms: Option<i64>,
     last_created_at_ms: Option<i64>,
     since_ms: Option<i64>,
 ) -> Result<i64, Error> {
-    match last_created_at_ms {
-        Some(created_at) => created_at.checked_add(1).ok_or_else(invalid_coverage),
+    match max_exportable_last_move_at_ms.or(last_created_at_ms) {
+        Some(bound) => bound.checked_add(1).ok_or_else(invalid_coverage),
         None => Ok(since_ms.unwrap_or(0)),
     }
 }
@@ -213,7 +271,9 @@ pub(crate) async fn read_coverage(
     let mut probe = CoverageProbe {
         holds: Vec::new(),
         last_created_at_ms: None,
+        max_exportable_last_move_at_ms: None,
         counted: 0,
+        listed_ids: max_games.map(|_| HashSet::new()),
     };
     let mut lines = NdjsonLines::new(
         MAX_COVERAGE_LINE_BYTES,
@@ -224,8 +284,19 @@ pub(crate) async fn read_coverage(
         let Some(game) = coverage_game(line)? else {
             return Ok(true);
         };
+        if coverage_export_eligible(&game) && !coverage_ongoing(&game.status) {
+            let last_move_at = coverage_last_move_at_ms(&game);
+            probe.max_exportable_last_move_at_ms =
+                Some(match probe.max_exportable_last_move_at_ms {
+                    Some(prior) => prior.max(last_move_at),
+                    None => last_move_at,
+                });
+        }
         probe.last_created_at_ms = Some(game.created_at);
         probe.counted = probe.counted.saturating_add(1);
+        if let Some(ids) = probe.listed_ids.as_mut() {
+            ids.insert(game.id.clone());
+        }
         push_coverage_hold(game, &mut probe.holds)?;
         Ok(max_games.is_none_or(|max| probe.counted < max))
     };
@@ -988,6 +1059,8 @@ mod tests {
         for (field, value) in [
             ("id", serde_json::json!("bad")),
             ("createdAt", serde_json::json!(-1)),
+            ("lastMoveAt", serde_json::json!(0)),
+            ("lastMoveAt", serde_json::json!(-1)),
         ] {
             let mut line = valid.clone();
             line[field] = value;
@@ -1064,10 +1137,19 @@ mod tests {
         let probe = probe_body(body, LICHESS_CHUNK_GAMES).await?;
         assert_eq!(probe.counted, LICHESS_CHUNK_GAMES);
         assert_eq!(probe.last_created_at_ms, Some(last));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(last - 1));
+        assert_eq!(
+            probe.listed_ids.as_ref().map(HashSet::len),
+            Some(LICHESS_CHUNK_GAMES)
+        );
         assert_eq!(probe.holds.len(), LICHESS_CHUNK_GAMES - 1);
         assert_eq!(
-            coverage_until_ms(probe.last_created_at_ms, Some(50))?,
-            last + 1
+            coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                Some(50)
+            )?,
+            last
         );
         Ok(())
     }
@@ -1081,6 +1163,7 @@ mod tests {
         let probe = probe_body(body, LICHESS_CHUNK_GAMES).await?;
         assert_eq!(probe.counted, LICHESS_CHUNK_GAMES);
         assert_eq!(probe.last_created_at_ms, Some(bound_last));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(bound_last - 1));
         assert_eq!(probe.holds.len(), LICHESS_CHUNK_GAMES - 1);
         Ok(())
     }
@@ -1092,16 +1175,30 @@ mod tests {
         let probe = probe_body(body, LICHESS_CHUNK_GAMES).await?;
         assert_eq!(probe.counted, 3);
         assert_eq!(probe.last_created_at_ms, Some(last));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(last));
         assert_eq!(probe.holds.len(), 3);
         assert_eq!(
-            coverage_until_ms(probe.last_created_at_ms, Some(50))?,
+            coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                Some(50)
+            )?,
             last + 1
         );
 
         let empty = probe_body(Vec::new(), LICHESS_CHUNK_GAMES).await?;
         assert_eq!(empty.counted, 0);
         assert_eq!(empty.last_created_at_ms, None);
-        assert_eq!(coverage_until_ms(empty.last_created_at_ms, Some(50))?, 50);
+        assert_eq!(empty.max_exportable_last_move_at_ms, None);
+        assert_eq!(empty.listed_ids.as_ref().map(HashSet::len), Some(0));
+        assert_eq!(
+            coverage_until_ms(
+                empty.max_exportable_last_move_at_ms,
+                empty.last_created_at_ms,
+                Some(50)
+            )?,
+            50
+        );
         Ok(())
     }
 
@@ -1164,12 +1261,151 @@ mod tests {
         .await?;
         assert_eq!(probe.counted, LICHESS_CHUNK_GAMES);
         assert_eq!(probe.last_created_at_ms, Some(last));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(last - 1));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_until_covers_a_last_game_that_ends_after_it_starts() -> Result<(), Error> {
+        let created_at = 1_792_296_915_875;
+        let last_move_at = 1_792_297_630_544;
+        let body = format!(
+            "{}\n",
+            coverage_object_at("OKdhe74m", true, created_at, last_move_at)
+        );
+        let probe = probe_body(body.into_bytes(), LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.last_created_at_ms, Some(created_at));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(last_move_at));
+        assert_eq!(
+            coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                Some(50)
+            )?,
+            last_move_at + 1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_until_uses_the_latest_last_move_not_the_last_listed_created_at(
+    ) -> Result<(), Error> {
+        let body = [
+            coverage_object_at("earlyend", true, 1_000, 9_000),
+            coverage_object_at("lastlist", true, 2_000, 2_500),
+        ]
+        .join("\n");
+        let probe = probe_body(format!("{body}\n").into_bytes(), LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.last_created_at_ms, Some(2_000));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(9_000));
+        assert_eq!(
+            coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                Some(50)
+            )?,
+            9_001
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_missing_last_move_falls_back_to_created_at() -> Result<(), Error> {
+        let line =
+            br#"{"id":"AbCd1234","rated":true,"perf":"blitz","status":"mate","createdAt":100}"#;
+        let probe = probe_body([line.as_slice(), b"\n"].concat(), LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.last_created_at_ms, Some(100));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(100));
+        assert_eq!(
+            coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                None
+            )?,
+            101
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_until_ignores_ongoing_correspondence_last_move() -> Result<(), Error> {
+        let body = [
+            coverage_object_fields(
+                "corres01",
+                true,
+                "correspondence",
+                "started",
+                1_000,
+                9_999_999_999,
+            ),
+            coverage_object_at("finish01", true, 2_000, 3_000),
+            coverage_object_at("finish02", true, 2_500, 4_000),
+        ]
+        .join("\n");
+        let probe = probe_body(format!("{body}\n").into_bytes(), LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.last_created_at_ms, Some(2_500));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(4_000));
+        assert_eq!(probe.listed_ids.as_ref().map(HashSet::len), Some(3));
+        assert_eq!(probe.holds.len(), 3);
+        assert!(probe.holds[0].ongoing);
+        assert_eq!(
+            coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                Some(50)
+            )?,
+            4_001
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_until_clamps_last_move_before_created_at() -> Result<(), Error> {
+        let body = format!("{}\n", coverage_object_at("clamp001", true, 5_000, 1_000));
+        let probe = probe_body(body.into_bytes(), LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.last_created_at_ms, Some(5_000));
+        assert_eq!(probe.max_exportable_last_move_at_ms, Some(5_000));
+        assert_eq!(
+            coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                Some(50)
+            )?,
+            5_001
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn probe_until_falls_back_to_last_created_at_when_only_ongoing() -> Result<(), Error> {
+        let body = format!(
+            "{}\n",
+            coverage_object_fields(
+                "ongoing1",
+                true,
+                "correspondence",
+                "started",
+                2_000,
+                9_999_999_999,
+            )
+        );
+        let probe = probe_body(body.into_bytes(), LICHESS_CHUNK_GAMES).await?;
+        assert_eq!(probe.last_created_at_ms, Some(2_000));
+        assert_eq!(probe.max_exportable_last_move_at_ms, None);
+        assert_eq!(
+            coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                Some(50)
+            )?,
+            2_001
+        );
         Ok(())
     }
 
     #[test]
-    fn coverage_until_rejects_created_at_at_i64_max() {
-        let error = coverage_until_ms(Some(i64::MAX), Some(1)).unwrap_err();
+    fn coverage_until_rejects_last_move_at_at_i64_max() {
+        let error = coverage_until_ms(Some(i64::MAX), None, Some(1)).unwrap_err();
         assert!(
             matches!(error, Error::InvalidInput(message) if message == "Lichess returned invalid coverage data")
         );

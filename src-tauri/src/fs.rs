@@ -1,6 +1,7 @@
 #[cfg(test)]
 use std::ffi::OsStr;
 use std::{
+    collections::HashSet,
     future::Future,
     io::{Read, Seek, Write},
     path::{Path, PathBuf},
@@ -682,6 +683,44 @@ fn accept_plain_download_payload(file: &mut std::fs::File) -> Result<(), Error> 
     Ok(())
 }
 
+/// Keeps games whose Lichess id is in the coverage probe's listed set, and games whose
+/// provider id cannot be read (logged once with the count). Drops games whose id is
+/// readable and outside the listed set, so a last-move `until` cannot import a
+/// later-created game that the next createdAt `since` chunk will export again.
+fn keep_listed_lichess_export_games(
+    mut file: std::fs::File,
+    listed_ids: &HashSet<String>,
+    cancellation: &CancellationToken,
+) -> Result<std::fs::File, Error> {
+    file.rewind()?;
+    let ranges = crate::pgn::scan_game_ranges(file.try_clone()?, cancellation)?;
+    let account = crate::db::linked_collections::AccountIdentity::for_lichess_provider_game_id();
+    let mut kept = tempfile::tempfile().map_err(|error| Error::Io(Box::new(error)))?;
+    let mut unreadables = 0usize;
+    for range in ranges {
+        if cancellation.is_cancelled() {
+            return Err(Error::Cancellation);
+        }
+        let bytes = crate::pgn::read_range_bytes(&mut file, range, cancellation)?;
+        match crate::db::linked_collections::readable_provider_game_id(&bytes, &account)? {
+            Some(id) if !listed_ids.contains(&id) => {}
+            Some(_) => kept.write_all(&bytes)?,
+            None => {
+                unreadables += 1;
+                kept.write_all(&bytes)?;
+            }
+        }
+    }
+    if unreadables > 0 {
+        log::warn!(
+            "{unreadables} Lichess export game(s) had no readable provider id and were kept"
+        );
+    }
+    kept.flush()?;
+    kept.rewind()?;
+    Ok(kept)
+}
+
 /// Installs only zip, tar or tar-in-gzip into process-owned `staging`, which must match `path`.
 /// Its existing parent is pinned once for every archive install; missing parents are refused.
 #[allow(clippy::too_many_arguments)]
@@ -952,6 +991,13 @@ type DownloadPublication = (
     Option<Vec<crate::lichess::CoverageHold>>,
 );
 
+/// Post-download Lichess coverage step: probe coverage after a Complete export, or keep only the
+/// games a Resumable chunk's bounded probe listed.
+pub(crate) enum LichessExportCheck {
+    ProbeAfterExport(reqwest::Url),
+    KeepListed(HashSet<String>),
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn download_to_destination<R: tauri::Runtime>(
     id: &str,
@@ -966,7 +1012,7 @@ pub(crate) async fn download_to_destination<R: tauri::Runtime>(
     lease: crate::infra::operations::OperationLease,
     register_pgn_artifact: bool,
     integrity: Option<&ArtifactIntegrity>,
-    lichess_coverage_url: Option<reqwest::Url>,
+    lichess_export: Option<LichessExportCheck>,
 ) -> Result<DownloadPublication, Error> {
     download_to_destination_with_failure(
         id,
@@ -982,7 +1028,7 @@ pub(crate) async fn download_to_destination<R: tauri::Runtime>(
         register_pgn_artifact,
         integrity,
         None,
-        lichess_coverage_url,
+        lichess_export,
     )
     .await
 }
@@ -1002,7 +1048,7 @@ async fn download_to_destination_with_failure<R: tauri::Runtime>(
     register_pgn_artifact: bool,
     integrity: Option<&ArtifactIntegrity>,
     file_generation: Option<std::sync::Arc<std::sync::OnceLock<ProgressGeneration>>>,
-    lichess_coverage_url: Option<reqwest::Url>,
+    lichess_export: Option<LichessExportCheck>,
 ) -> Result<DownloadPublication, Error> {
     let cancellation = lease.token();
     let commit_gate = lease.commit_gate();
@@ -1028,7 +1074,7 @@ async fn download_to_destination_with_failure<R: tauri::Runtime>(
             cancellation.clone(),
             commit_gate,
             file_generation.as_deref(),
-            lichess_coverage_url,
+            lichess_export,
             Box::new(|op, url, integrity| validate_artifact_integrity(op, url, Some(integrity))),
         )
         .await
@@ -1182,7 +1228,7 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
     cancellation: CancellationToken,
     commit_gate: crate::infra::operations::OperationCommitGate,
     file_generation: Option<&std::sync::OnceLock<ProgressGeneration>>,
-    lichess_coverage_url: Option<reqwest::Url>,
+    lichess_export: Option<LichessExportCheck>,
     validate_integrity: ArtifactIntegrityValidator,
 ) -> Result<DownloadPublication, Error> {
     // Validate and reserve all fallible producer prerequisites before starting
@@ -1260,7 +1306,12 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                 },
             )
             .await?;
-            let coverage_holds = if let Some(url) = lichess_coverage_url {
+            let (coverage_url, keep_listed_ids) = match lichess_export {
+                Some(LichessExportCheck::ProbeAfterExport(url)) => (Some(url), None),
+                Some(LichessExportCheck::KeepListed(ids)) => (None, Some(ids)),
+                None => (None, None),
+            };
+            let coverage_holds = if let Some(url) = coverage_url {
                 let token = bearer_token.ok_or_else(|| {
                     Error::OAuthFailure("authenticated Lichess account unavailable".into())
                 })?;
@@ -1284,6 +1335,13 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                         return Err(Error::Cancellation);
                     }
                     accept_plain_download_payload(&mut staged_file)?;
+                    if let Some(listed_ids) = keep_listed_ids.as_ref() {
+                        staged_file = keep_listed_lichess_export_games(
+                            staged_file,
+                            listed_ids,
+                            worker_cancellation,
+                        )?;
+                    }
                     Ok((staged_file, coverage_holds))
                 })
                 .await
@@ -1633,11 +1691,16 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         .await?
         .ok_or_else(|| Error::OAuthFailure("authenticated Lichess account unavailable".into()))?;
     let cancellation = lease.token();
-    let (url, coverage_url, probed_holds, coverage_floor_ms) = match scope {
+    let (url, lichess_export, probed_holds, coverage_floor_ms) = match scope {
         crate::chesscom::ExportScope::Complete => {
             let (url, _) = lichess_games_url(&player, since_ms, None)?;
             let coverage_url = lichess_coverage_url(&url, since_ms, None);
-            (url, Some(coverage_url), None, None)
+            (
+                url,
+                Some(LichessExportCheck::ProbeAfterExport(coverage_url)),
+                None,
+                None,
+            )
         }
         crate::chesscom::ExportScope::Resumable => {
             let (base, _) = lichess_games_url(&player, since_ms, None)?;
@@ -1651,12 +1714,29 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
                 Some(crate::lichess::LICHESS_CHUNK_GAMES),
             )
             .await?;
-            let until_ms = crate::lichess::coverage_until_ms(probe.last_created_at_ms, since_ms)?;
+            let until_ms = crate::lichess::coverage_until_ms(
+                probe.max_exportable_last_move_at_ms,
+                probe.last_created_at_ms,
+                since_ms,
+            )?;
             let (url, _) = lichess_games_url(&player, since_ms, Some(until_ms))?;
             let coverage_floor_ms = (probe.counted >= crate::lichess::LICHESS_CHUNK_GAMES)
                 .then_some(probe.last_created_at_ms)
                 .flatten();
-            (url, None, Some(probe.holds), coverage_floor_ms)
+            (
+                url,
+                // A bounded probe always records listed ids; an absent set must not become an
+                // empty allowlist that drops every exported game.
+                Some(LichessExportCheck::KeepListed(
+                    probe.listed_ids.ok_or_else(|| {
+                        Error::InvalidInput(
+                            "bounded Lichess coverage probe returned no listed-id set".into(),
+                        )
+                    })?,
+                )),
+                Some(probe.holds),
+                coverage_floor_ms,
+            )
         }
     };
     let (publication, coverage_holds) = download_to_destination(
@@ -1672,7 +1752,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         lease,
         true,
         None,
-        coverage_url,
+        lichess_export,
     )
     .await?;
     let publication = publication
@@ -5454,12 +5534,7 @@ mod tests {
 
         let fixture = Fixture::new();
         let player = "reload-receipt-failure";
-        let body = crate::db::linked_collections::tests::game(
-            None,
-            "e4 e5",
-            "published before receipt failure",
-        )
-        .replace("https://www.chess.com", "https://lichess.org/AbCd1234");
+        let body = lichess_export_game("AbCd1234", "e4 e5", "published before receipt failure");
         let length = body.len() as u64;
         let (state, app, account, _) = authenticated_lichess_runtime_setup(
             &fixture,
@@ -5521,15 +5596,18 @@ mod tests {
     #[tokio::test]
     async fn linked_collections_lichess_runtime_downloads_differing_sizes_and_appends_genuine_artifact(
     ) {
-        use crate::db::linked_collections::tests::{game, Fixture};
+        use crate::db::linked_collections::tests::Fixture;
         use crate::file_workspace::WorkspaceFileType;
         for has_length in [false, true] {
             let fixture = Fixture::new();
             fixture.create("history", "", WorkspaceFileType::Game);
             let collection = fixture.list().pop().unwrap();
             fixture.account(&collection.id, "lichess");
-            let body = game(None, "e4 e5", "a real export body, not a 900-byte estimate")
-                .replace("https://www.chess.com", "https://lichess.org/AbCd1234");
+            let body = lichess_export_game(
+                "AbCd1234",
+                "e4 e5",
+                "a real export body, not a 900-byte estimate",
+            );
             assert_ne!(body.len(), 900);
             let length = body.len() as u64;
             let (state, app, account, transport) = authenticated_lichess_runtime_setup(
@@ -5692,10 +5770,31 @@ mod tests {
 
     #[cfg(unix)]
     fn export_pgn_response() -> DownloadResponse {
+        coverage_response(&lichess_export_game("Blitz001", "e4 e5", "bounded export"))
+    }
+
+    #[cfg(unix)]
+    fn lichess_export_game(id: &str, moves: &str, note: &str) -> String {
         use crate::db::linked_collections::tests::game;
-        let body = game(None, "e4 e5", "bounded export")
-            .replace("https://www.chess.com", "https://lichess.org/Blitz001");
-        coverage_response(&body)
+        game(None, moves, note).replace(
+            "https://www.chess.com",
+            &format!("https://lichess.org/{id}"),
+        )
+    }
+
+    #[cfg(unix)]
+    fn published_lichess_pgn(
+        fixture: &crate::db::linked_collections::tests::Fixture,
+        filename: &str,
+    ) -> String {
+        std::fs::read_to_string(
+            fixture
+                .directory
+                .path()
+                .join("app/collections/batches")
+                .join(filename),
+        )
+        .unwrap()
     }
 
     #[cfg(unix)]
@@ -5726,7 +5825,9 @@ mod tests {
         );
         assert_lichess_probe_query(&requests[0].0, Some(since));
         let (_, export_query) = lichess_query(&requests[1].0);
-        let until = (last + 1).to_string();
+        // coverage_objects(.., false) makes the last object unrated, so the max
+        // finished exportable last move is last - 1 and the exclusive until is last.
+        let until = last.to_string();
         let since = since.to_string();
         assert_eq!(
             export_query.get("until").map(String::as_str),
@@ -5762,7 +5863,9 @@ mod tests {
         );
         assert_eq!(transport.requests_seen.lock().unwrap().len(), 2);
         let (_, export_query) = lichess_query(&transport.requests_seen.lock().unwrap()[1].0);
-        let until = (last + 1).to_string();
+        // coverage_objects(.., false) makes the last object unrated, so the max
+        // finished exportable last move is last - 1 and the exclusive until is last.
+        let until = last.to_string();
         assert_eq!(
             export_query.get("until").map(String::as_str),
             Some(until.as_str())
@@ -5798,7 +5901,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn lichess_runtime_resumable_empty_probe_exports_until_the_start() {
-        let (downloaded, _, transport) = download_resumable_lichess(
+        let (downloaded, fixture, transport) = download_resumable_lichess(
             coverage_response(""),
             export_pgn_response(),
             Some(50),
@@ -5809,6 +5912,118 @@ mod tests {
         assert_eq!(downloaded.coverage_floor_ms, None);
         let (_, export_query) = lichess_query(&transport.requests_seen.lock().unwrap()[1].0);
         assert_eq!(export_query.get("until").map(String::as_str), Some("50"));
+        assert!(published_lichess_pgn(&fixture, "empty.pgn").is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_until_covers_last_move_after_created_at() {
+        let created_at = 1_792_296_915_875i64;
+        let last_move_at = 1_792_297_630_544i64;
+        let coverage = format!(
+            "{}\n",
+            crate::lichess::coverage_object_at("OKdhe74m", true, created_at, last_move_at)
+        );
+        let export = coverage_response(&lichess_export_game(
+            "OKdhe74m",
+            "e4 e5",
+            "the missing newest",
+        ));
+        let (downloaded, fixture, transport) = download_resumable_lichess(
+            coverage_response(&coverage),
+            export,
+            Some(50),
+            "last-move.pgn",
+        )
+        .await;
+        let downloaded = downloaded.unwrap();
+        assert_eq!(downloaded.coverage_floor_ms, None);
+        let (_, export_query) = lichess_query(&transport.requests_seen.lock().unwrap()[1].0);
+        let until = (last_move_at + 1).to_string();
+        assert_eq!(
+            export_query.get("until").map(String::as_str),
+            Some(until.as_str())
+        );
+        let staged = published_lichess_pgn(&fixture, "last-move.pgn");
+        assert!(staged.contains("https://lichess.org/OKdhe74m"));
+        assert!(staged.contains("the missing newest"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_until_uses_max_finished_exportable_last_move() {
+        let coverage = format!(
+            "{}\n{}\n",
+            crate::lichess::coverage_object_at("earlyend", true, 1_000, 9_000),
+            crate::lichess::coverage_object_at("lastlist", true, 2_000, 2_500)
+        );
+        let (downloaded, _, transport) = download_resumable_lichess(
+            coverage_response(&coverage),
+            export_pgn_response(),
+            Some(50),
+            "max-last-move.pgn",
+        )
+        .await;
+        downloaded.unwrap();
+        let (_, export_query) = lichess_query(&transport.requests_seen.lock().unwrap()[1].0);
+        assert_eq!(export_query.get("until").map(String::as_str), Some("9001"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_drops_export_games_outside_the_probed_set() {
+        let (coverage, _) = crate::lichess::coverage_objects(3, true);
+        let coverage = String::from_utf8(coverage).unwrap();
+        let listed = lichess_export_game("00000000", "e4 e5", "listed first");
+        let extra = lichess_export_game("Outside1", "d4 d5", "outside the probe");
+        let later = lichess_export_game("00000001", "c4 c5", "listed second");
+        let export = coverage_response(&format!("{listed}{extra}{later}"));
+        let (downloaded, fixture, _) = download_resumable_lichess(
+            coverage_response(&coverage),
+            export,
+            Some(50),
+            "keep-listed.pgn",
+        )
+        .await;
+        downloaded.unwrap();
+        let staged = published_lichess_pgn(&fixture, "keep-listed.pgn");
+        let first = staged.find("https://lichess.org/00000000").unwrap();
+        let second = staged.find("https://lichess.org/00000001").unwrap();
+        assert!(first < second);
+        assert!(staged.contains("listed first"));
+        assert!(staged.contains("listed second"));
+        assert!(!staged.contains("Outside1"));
+        assert!(!staged.contains("outside the probe"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_keeps_export_games_without_a_lichess_id() {
+        use crate::db::linked_collections::tests::game;
+        let (coverage, _) = crate::lichess::coverage_objects(3, true);
+        let coverage = String::from_utf8(coverage).unwrap();
+        let listed = lichess_export_game("00000000", "e4 e5", "listed first");
+        let unreadable = game(None, "Nf3 Nf6", "no lichess id");
+        let extra = lichess_export_game("Outside1", "d4 d5", "outside the probe");
+        let later = lichess_export_game("00000001", "c4 c5", "listed second");
+        let export = coverage_response(&format!("{listed}{unreadable}{extra}{later}"));
+        let (downloaded, fixture, _) = download_resumable_lichess(
+            coverage_response(&coverage),
+            export,
+            Some(50),
+            "keep-unreadable.pgn",
+        )
+        .await;
+        downloaded.unwrap();
+        let staged = published_lichess_pgn(&fixture, "keep-unreadable.pgn");
+        let first = staged.find("https://lichess.org/00000000").unwrap();
+        let unread = staged.find("no lichess id").unwrap();
+        let second = staged.find("https://lichess.org/00000001").unwrap();
+        assert!(first < unread && unread < second);
+        assert!(staged.contains("listed first"));
+        assert!(staged.contains("listed second"));
+        assert!(!staged.contains("Outside1"));
+        assert!(!staged.contains("outside the probe"));
     }
 
     #[cfg(unix)]

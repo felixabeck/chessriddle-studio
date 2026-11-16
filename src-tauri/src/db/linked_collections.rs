@@ -100,6 +100,14 @@ pub(crate) struct AccountIdentity {
 }
 
 impl AccountIdentity {
+    /// `account` is unused by `provider_game_id` for Lichess (Site/Link only).
+    pub(crate) fn for_lichess_provider_game_id() -> Self {
+        Self {
+            provider: "lichess".into(),
+            account: "unused".into(),
+        }
+    }
+
     fn validate(mut self) -> Result<Self, Error> {
         if !matches!(self.provider.as_str(), "lichess" | "chesscom")
             || self.account.is_empty()
@@ -3444,7 +3452,7 @@ fn identity_range(
 }
 
 // A malformed header can make the in-memory header reader fail too. It supplies no ID.
-fn readable_provider_game_id(
+pub(crate) fn readable_provider_game_id(
     bytes: &[u8],
     account: &AccountIdentity,
 ) -> Result<Option<String>, Error> {
