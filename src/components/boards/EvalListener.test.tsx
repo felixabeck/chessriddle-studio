@@ -1277,7 +1277,7 @@ test("remembered lines survive A to B to A and restarted shallow output cannot d
   expect(fixtures.setEngineScore).toHaveBeenLastCalledWith(shallow.bestLines[0].score);
 });
 
-test("normal and threat entries coexist and threat toggles restore lines without writing the node score", async () => {
+test("normal and threat entries coexist and threat toggles restore lines without writing the engine score", async () => {
   fixtures.prepareEngineSearch
     .mockResolvedValueOnce("normal")
     .mockResolvedValueOnce("threat")
@@ -1315,7 +1315,7 @@ test("normal and threat entries coexist and threat toggles restore lines without
   expect(fixtures.setEngineScore).toHaveBeenCalledTimes(1);
 });
 
-test("only the first engine with lines writes the node score", async () => {
+test("only the first engine with lines writes the engine score", async () => {
   fixtures.scoreOwner = "another-engine";
   await rerender();
   await broadcast(payload("generation-1"));

@@ -1226,7 +1226,7 @@ describe("BoardAnalysis", () => {
   });
 
   test.each(["file", "database"] as const)(
-    "a live engine score leaves a clean %s-backed tab unsaved-free and unwritten under autosave",
+    "a live engine score neither marks a %s-backed tab dirty nor autosaves it",
     async (origin) => {
       const database = { id: { id: "engine-score-db" }, kind: "database" } as const;
       mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
