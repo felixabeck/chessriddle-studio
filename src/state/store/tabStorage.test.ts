@@ -1509,6 +1509,20 @@ test("clone reports validation and destination failures without replacing either
         kind: "copy-failed",
         error: { message: "Could not validate the source tree." },
     });
+    expect(invalidCopy.kind === "copy-failed" && invalidCopy.error).not.toBeInstanceOf(
+        TreeStorageLimitError,
+    );
+    let cloneThrown: unknown;
+    try {
+        storage.readForClone("invalid-clone-source");
+    } catch (error) {
+        cloneThrown = error;
+    }
+    expect(cloneThrown).toBeInstanceOf(Error);
+    expect(cloneThrown).not.toBeInstanceOf(TreeStorageLimitError);
+    expect((cloneThrown as Error).message).toBe(
+        "Could not validate the source tree for duplication.",
+    );
     expect(storage.pendingCount()).toBe(1);
     expect(sessionStorage.getItem("invalid-clone-target")).toBeNull();
 
@@ -1865,10 +1879,12 @@ test("accepts the maximum recursive depth and rejects its first overflow", () =>
     }
     expect(thrown).toBeInstanceOf(TreeStorageLimitError);
     expect(thrown).toMatchObject({
+        name: "TreeStorageLimitError",
         limit: "depth",
         message:
             "This game is too long to open in a tab: a tab holds at most 1,024 moves (2,048 half-moves).",
     });
+    expect((thrown as Error).name).toBe("TreeStorageLimitError");
 });
 
 const KNIGHT_CYCLE = [
@@ -2083,6 +2099,102 @@ test("clone of a pending over-depth tree surfaces a typed admission error", () =
         limit: "depth",
         message:
             "This game is too long to open in a tab: a tab holds at most 1,024 moves (2,048 half-moves).",
+    });
+});
+
+test("seed refuses a non-record state as invalid structure, not a storage limit", () => {
+    const expectInvalidStructure = (state: unknown) => {
+        let thrown: unknown;
+        try {
+            storage.seed("bad-state", state);
+        } catch (error) {
+            thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(Error);
+        expect(thrown).not.toBeInstanceOf(TreeStorageLimitError);
+        expect((thrown as Error).message).toBe("Cannot persist an invalid game tree.");
+        expect(sessionStorage.getItem("bad-state")).toBeNull();
+    };
+    expectInvalidStructure(null);
+    expectInvalidStructure({ ...defaultTree(), root: 5 as never });
+    expectInvalidStructure({
+        ...defaultTree(),
+        root: { ...defaultTree().root, children: [5 as never] },
+    });
+});
+
+test("migrateTreeForStorage leaves a non-array children field unchanged", () => {
+    const withString = {
+        ...defaultTree(),
+        root: { ...defaultTree().root, children: "x" as never },
+    };
+    expect(
+        (migrateTreeForStorage(withString) as { root: { children: unknown } }).root.children,
+    ).toBe("x");
+
+    const withoutChildren = structuredClone(defaultTree()) as unknown as {
+        root: Record<string, unknown>;
+    };
+    delete withoutChildren.root.children;
+    expect(
+        (migrateTreeForStorage(withoutChildren) as { root: Record<string, unknown> }).root,
+    ).not.toHaveProperty("children");
+});
+
+test("branching child order survives seed, read, and legacy migration", () => {
+    const fen = defaultTree().root.fen;
+    const move = parseUci("g1f3")!;
+    const node = (
+        san: string,
+        halfMoves: number,
+        children: ReturnType<typeof createNode>[] = [],
+    ) => {
+        const created = createNode({ fen, move, san, halfMoves });
+        created.children = children;
+        return created;
+    };
+    const tree = defaultTree();
+    tree.root.children = [
+        node("a", 1, [node("a1", 2), node("a2", 2)]),
+        node("b", 1, [node("b1", 2), node("b2", 2)]),
+        node("c", 1, [node("c1", 2), node("c2", 2)]),
+    ];
+    const sans = (root: { children: Array<{ san: string | null; children: unknown[] }> }) =>
+        root.children.map((child) => [
+            child.san,
+            (child.children as Array<{ san: string | null }>).map((grand) => grand.san),
+        ]);
+    const expected = [
+        ["a", ["a1", "a2"]],
+        ["b", ["b1", "b2"]],
+        ["c", ["c1", "c2"]],
+    ];
+    expect(sans((migrateTreeForStorage(tree) as typeof tree).root)).toEqual(expected);
+    storage.seed("branch-order", tree);
+    expect(sans(storage.read<ReturnType<typeof defaultTree>>("branch-order")!.state.root)).toEqual(
+        expected,
+    );
+});
+
+test("a non-limit flush failure does not suppress a later depth-limit report on the same tab", () => {
+    const tabId = "nonlimit-then-depth";
+    storage.seed(tabId, defaultTree());
+    storage.write(tabId, {
+        version: 0,
+        state: treeWith((tree) => (tree.root.comment = "x".repeat(PGN_TEXT_MAX + 1))),
+    });
+    expect(storage.flush({ notify: true })).toEqual([tabId]);
+    expect(persistError.reportPersistError).toHaveBeenCalledOnce();
+    expect(persistError.reportPersistError.mock.calls[0][0]).not.toBeInstanceOf(
+        TreeStorageLimitError,
+    );
+
+    storage.write(tabId, { version: 0, state: treeOfDepth(2049) });
+    expect(storage.flush({ notify: true })).toEqual([tabId]);
+    expect(persistError.reportPersistError).toHaveBeenCalledTimes(2);
+    expect(persistError.reportPersistError.mock.calls[1][0]).toMatchObject({
+        message:
+            "Could not save this game: it is longer than 1,024 moves (2,048 half-moves), the most a tab can hold.",
     });
 });
 

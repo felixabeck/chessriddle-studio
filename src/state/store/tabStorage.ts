@@ -330,7 +330,7 @@ function migrateLegacyNode(
             migrated: rootMigrated,
             depth: 0,
             childInputs: rootChildren,
-            childOutputs: rootChildren ? new Array<unknown>(rootChildren.length) : null,
+            childOutputs: rootChildren ? [] : null,
             nextChild: 0,
         },
     ];
@@ -340,21 +340,20 @@ function migrateLegacyNode(
         if (frame.childInputs && frame.nextChild < frame.childInputs.length) {
             const child = frame.childInputs[frame.nextChild];
             const childDepth = frame.depth + 1;
+            frame.nextChild += 1;
             if (!isRecord(child) || childDepth > MAX_TREE_DEPTH) {
-                frame.childOutputs![frame.nextChild] = child;
-                frame.nextChild += 1;
+                frame.childOutputs!.push(child);
                 continue;
             }
             const childMigrated = beginNode(child);
             const grandchildren = Array.isArray(child.children) ? child.children : null;
-            frame.childOutputs![frame.nextChild] = childMigrated;
-            frame.nextChild += 1;
+            frame.childOutputs!.push(childMigrated);
             stack.push({
                 node: child,
                 migrated: childMigrated,
                 depth: childDepth,
                 childInputs: grandchildren,
-                childOutputs: grandchildren ? new Array<unknown>(grandchildren.length) : null,
+                childOutputs: grandchildren ? [] : null,
                 nextChild: 0,
             });
             continue;
@@ -421,10 +420,7 @@ type PersistedTreeState = Omit<z.infer<PersistedTreeSchemas["stateSchema"]>, "ro
 };
 type ValidatedStoredTree = StorageValue<PersistedTreeState>;
 
-type ParseTreeResult =
-    | { kind: "ok"; value: ValidatedStoredTree }
-    | { kind: "limit"; limit: TreeStorageLimit }
-    | { kind: "invalid" };
+type ParseTreeResult = { value: ValidatedStoredTree } | { limit: TreeStorageLimit } | null;
 
 function validatePersistedTree(
     root: unknown,
@@ -433,22 +429,21 @@ function validatePersistedTree(
     type Frame = {
         input: unknown;
         parent: PersistedTreeNode | null;
-        index: number;
     };
     let validatedRoot: PersistedTreeNode | null = null;
-    const stack: Frame[] = [{ input: root, parent: null, index: 0 }];
+    const stack: Frame[] = [{ input: root, parent: null }];
     while (stack.length > 0) {
         const frame = stack.pop()!;
         const parsed = treeNodeObjectSchema.safeParse(frame.input);
         if (!parsed.success) return null;
         const node: PersistedTreeNode = {
             ...parsed.data,
-            children: new Array<PersistedTreeNode>(parsed.data.children.length),
+            children: [],
         };
-        if (frame.parent) frame.parent.children[frame.index] = node;
+        if (frame.parent) frame.parent.children.push(node);
         else validatedRoot = node;
         for (let index = parsed.data.children.length - 1; index >= 0; index--) {
-            stack.push({ input: parsed.data.children[index], parent: node, index });
+            stack.push({ input: parsed.data.children[index], parent: node });
         }
     }
     return validatedRoot;
@@ -477,13 +472,12 @@ const NOT_READ_STATUS: TabTreeStorageStatus = { kind: "not-read" };
 function parseTreeResult(value: unknown): ParseTreeResult {
     const candidate = migrateTreeForStorage(value);
     const bounds = inspectTreeBounds(candidate);
-    if (bounds === "depth" || bounds === "nodes") return { kind: "limit", limit: bounds };
-    if (bounds === "invalid") return { kind: "invalid" };
+    if (bounds !== "ok") return bounds === "invalid" ? null : { limit: bounds };
     const { stateSchema, treeNodeObjectSchema } = createPersistedTreeSchema();
     const parsed = stateSchema.safeParse(candidate);
-    if (!parsed.success) return { kind: "invalid" };
+    if (!parsed.success) return null;
     const root = validatePersistedTree(parsed.data.root, treeNodeObjectSchema);
-    if (!root) return { kind: "invalid" };
+    if (!root) return null;
 
     // A stored path is repaired against the tree it was stored with: the cursor and the drill path
     // clamp to their longest resolving prefix, and an unresolvable repertoire start is dropped.
@@ -498,24 +492,25 @@ function parseTreeResult(value: unknown): ParseTreeResult {
         state.practicePath = practicePath.slice(0, getResolvedPathLength(state.root, practicePath));
     }
 
-    return { kind: "ok", value: { version: TREE_STORAGE_VERSION, state } };
+    return { value: { version: TREE_STORAGE_VERSION, state } };
 }
 
 function parseTree(value: unknown): ValidatedStoredTree | null {
     const result = parseTreeResult(value);
-    return result.kind === "ok" ? result.value : null;
+    if (result === null || "limit" in result) return null;
+    return result.value;
 }
 
-function refuseAdmission(result: Exclude<ParseTreeResult, { kind: "ok" }>): never {
-    if (result.kind === "limit") {
-        throw new TreeStorageLimitError(result.limit, treeLimitAdmissionMessage(result.limit));
+function refuseAdmission(limit: TreeStorageLimit | null): never {
+    if (limit !== null) {
+        throw new TreeStorageLimitError(limit, treeLimitAdmissionMessage(limit));
     }
     throw new Error("Cannot persist an invalid game tree.");
 }
 
-function refuseFlush(result: Exclude<ParseTreeResult, { kind: "ok" }>): never {
-    if (result.kind === "limit") {
-        throw new TreeStorageLimitError(result.limit, treeLimitFlushMessage(result.limit));
+function refuseFlush(limit: TreeStorageLimit | null): never {
+    if (limit !== null) {
+        throw new TreeStorageLimitError(limit, treeLimitFlushMessage(limit));
     }
     throw new Error("Could not save this game: it no longer fits tab storage.");
 }
@@ -528,7 +523,8 @@ export function canRehydrate(state: unknown): boolean {
 /** Admission installs the same canonical paths and fields that a fresh reader will restore. */
 export function prepareTreeForStorage(state: unknown): TreeState {
     const result = parseTreeResult(state);
-    if (result.kind !== "ok") refuseAdmission(result);
+    if (result === null) refuseAdmission(null);
+    if ("limit" in result) refuseAdmission(result.limit);
     return result.value.state as TreeState;
 }
 
@@ -568,7 +564,8 @@ function decodeLegacyOrCompressedResult(value: string): ParseTreeResult {
 
 export function decodeLegacyOrCompressed(value: string): ValidatedStoredTree | null {
     const result = decodeLegacyOrCompressedResult(value);
-    return result.kind === "ok" ? result.value : null;
+    if (result === null || "limit" in result) return null;
+    return result.value;
 }
 
 /**
@@ -736,7 +733,8 @@ export class TabStorageRepository {
 
     seed(tabId: string, state: unknown) {
         const parsed = parseTreeResult(state);
-        if (parsed.kind !== "ok") refuseAdmission(parsed);
+        if (parsed === null) refuseAdmission(null);
+        if ("limit" in parsed) refuseAdmission(parsed.limit);
         const value = parsed.value;
         const blocker = this.writeBlocker(tabId);
         if (blocker) {
@@ -760,10 +758,10 @@ export class TabStorageRepository {
         const source = this.readTree(sourceTabId, requireExisting);
         if (source.kind !== "available") return source;
         const copy = this.validatedClone(source.value);
-        if (copy.kind === "limit") {
-            return { kind: "copy-failed", error: copy.error };
+        if (copy instanceof TreeStorageLimitError) {
+            return { kind: "copy-failed", error: copy };
         }
-        if (copy.kind !== "ok") {
+        if (copy === null) {
             return {
                 kind: "copy-failed",
                 error: new Error("Could not validate the source tree."),
@@ -779,7 +777,7 @@ export class TabStorageRepository {
                         : new Error("The destination tree key cannot be replaced."),
             };
         }
-        this.pending.set(targetTabId, copy.value);
+        this.pending.set(targetTabId, copy);
         this.setReadStatus(targetTabId, { kind: "available" });
         this.scheduleFlush();
         return { kind: "copied" };
@@ -838,10 +836,9 @@ export class TabStorageRepository {
             throw new Error("Cannot duplicate a tab whose saved tree is unreadable.");
         }
         const copy = this.validatedClone(source.value);
-        if (copy.kind === "limit") throw copy.error;
-        if (copy.kind !== "ok")
-            throw new Error("Could not validate the source tree for duplication.");
-        return copy.value.state as TreeState;
+        if (copy instanceof TreeStorageLimitError) throw copy;
+        if (copy === null) throw new Error("Could not validate the source tree for duplication.");
+        return copy.state as TreeState;
     }
 
     /** Creates an immediately durable clone without flushing any unrelated pending tree. */
@@ -1043,7 +1040,8 @@ export class TabStorageRepository {
                 // The read gate, applied before the write: a tree that would not rehydrate is
                 // never stored in place of the last one that does.
                 const parsed = parseTreeResult(value.state);
-                if (parsed.kind !== "ok") refuseFlush(parsed);
+                if (parsed === null) refuseFlush(null);
+                if ("limit" in parsed) refuseFlush(parsed.limit);
                 sessionStorage.setItem(tabId, serializeStorageValue(value));
                 this.pending.delete(tabId);
                 this.notifiedLimitTabs.delete(tabId);
@@ -1122,27 +1120,21 @@ export class TabStorageRepository {
 
     private validatedClone(
         source: StorageValue<unknown>,
-    ):
-        | { kind: "ok"; value: ValidatedStoredTree }
-        | { kind: "limit"; error: TreeStorageLimitError }
-        | { kind: "invalid" } {
+    ): ValidatedStoredTree | TreeStorageLimitError | null {
         // Round-trip through serialize/parse so a pending partialized store
         // (which still carries action functions) cannot reach structuredClone.
         const decoded = decodeLegacyOrCompressedResult(serializeStorageValue(source));
-        if (decoded.kind === "limit") {
-            return {
-                kind: "limit",
-                error: new TreeStorageLimitError(
-                    decoded.limit,
-                    treeLimitAdmissionMessage(decoded.limit),
-                ),
-            };
+        if (decoded === null) return null;
+        if ("limit" in decoded) {
+            return new TreeStorageLimitError(
+                decoded.limit,
+                treeLimitAdmissionMessage(decoded.limit),
+            );
         }
-        if (decoded.kind !== "ok") return { kind: "invalid" };
         const copy = decoded.value;
         // A duplicate tab must not share a live analysis lease.
         copy.state.report = { ...copy.state.report, inProgress: false, operationId: null };
-        return { kind: "ok", value: copy };
+        return copy;
     }
 
     private bindFlushHandlers() {
