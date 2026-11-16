@@ -113,3 +113,41 @@ test("release.yml builds on tags into one draft and publishes only a complete ma
     }
     expect(publish).toMatch(/--draft=false/);
 });
+
+test("release.yml never lets a macOS bundle out that is not a notarized Developer ID build", () => {
+    const build = jobBlock("release");
+    const appleSecrets = [
+        "APPLE_CERTIFICATE",
+        "APPLE_CERTIFICATE_PASSWORD",
+        "APPLE_SIGNING_IDENTITY",
+        "APPLE_API_KEY",
+        "APPLE_API_ISSUER",
+    ];
+    // Every secret is required before the build: an empty one means an ad-hoc signed bundle.
+    for (const secret of [...appleSecrets, "APPLE_API_KEY_P8"]) {
+        expect(build).toContain(`          ${secret}: \${{ secrets.${secret} }}\n`);
+    }
+    expect(build).toContain(
+        '[ -n "${!name}" ] || { echo "::error::secret $name is empty"; missing=1; }',
+    );
+    expect(build).toContain('echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"');
+    // The build receives them on the macOS legs only.
+    for (const secret of appleSecrets) {
+        expect(build).toContain(
+            `${secret}: \${{ runner.os == 'macOS' && secrets.${secret} || '' }}`,
+        );
+    }
+    // The leg fails, and with it the publish job, unless Gatekeeper names the notarized build.
+    expect(build).toContain('codesign --verify --deep --strict --verbose=2 "$app"');
+    expect(build).toContain('xcrun stapler validate "$app"');
+    expect(build).toContain('*"source=Notarized Developer ID"*) ;;');
+    expect(build).toContain('codesign --verify --strict --verbose=2 "$dmg"');
+});
+
+test("a manual dispatch of release.yml rehearses the build and can never publish", () => {
+    expect(releaseWorkflow).toMatch(/^ {2}workflow_dispatch:$/m);
+    // The legs run without a draft, so tauri-action has no release to upload into.
+    expect(jobBlock("release")).toContain(
+        "(github.event_name == 'workflow_dispatch' && needs.create-release.result == 'skipped')",
+    );
+});
