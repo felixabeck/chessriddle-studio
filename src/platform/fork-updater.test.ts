@@ -130,6 +130,14 @@ test("release.yml never lets a macOS bundle out that is not a notarized Develope
     expect(build).toContain(
         '[ -n "${!name}" ] || { echo "::error::secret $name is empty"; missing=1; }',
     );
+    expect(build).toContain(
+        "      - name: Require the Apple secrets and write the notarization key (macOS only)\n" +
+            "        if: runner.os == 'macOS'\n",
+    );
+    expect(build).toContain(
+        "for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \\\n" +
+            "            APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8; do\n",
+    );
     expect(build).toContain('[ "$missing" -eq 0 ] || exit 1\n');
     expect(build).toContain('echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"');
     // The build receives them on the macOS legs only.
