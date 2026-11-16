@@ -702,6 +702,14 @@ test.each([
     expect(store.getState().root.children[0].nags).toEqual([8, 8, 220, code, 146]);
 });
 
+test("analysis report never puts the novelty glyph on the root", () => {
+    store.getState().setState(treeE4D5());
+    store
+        .getState()
+        .addAnalysis([{ ...line(0, "e4", "e2e4"), novelty: true }, line(0, "d5", "d7d5")]);
+    expect(store.getState().root.nags).not.toContain(146);
+});
+
 test.each([
     { nags: [1], expected: [4] },
     { nags: [2], expected: [4] },

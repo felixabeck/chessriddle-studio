@@ -1321,7 +1321,8 @@ function addAnalysis(
                 }
             }
             const noveltyCode = ANNOTATION_INFO.N.nag;
-            if (analysis[i].novelty && !cur.nags.includes(noveltyCode)) {
+            // The root is the start position, not a move: it never carries N.
+            if (i > 0 && analysis[i].novelty && !cur.nags.includes(noveltyCode)) {
                 cur.nags.push(noveltyCode);
             }
         }

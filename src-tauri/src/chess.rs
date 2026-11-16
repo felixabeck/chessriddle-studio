@@ -1498,8 +1498,10 @@ async fn analyze_game_core<R: tauri::Runtime>(
         let Some(reference) = options.reference_db.clone() else {
             fail_analysis_progress!(None, Error::MissingReferenceDatabase);
         };
+        // The start position is not a move, so it is never the novelty.
         let queries: Vec<GameQuery> = fens
             .iter()
+            .skip(1)
             .map(|(fen, _, _)| {
                 GameQuery::new().position(PositionQueryJs {
                     fen: fen.to_string(),
@@ -1538,18 +1540,10 @@ async fn analyze_game_core<R: tauri::Runtime>(
     } else {
         Vec::new()
     };
-    let mut novelty_found = false;
     for (i, analysis) in analysis.iter_mut().enumerate() {
         analysis.is_sacrifice = fens[i].2;
-        if options.annotate_novelties && !novelty_found {
-            if let Some(&found) = present.get(i) {
-                analysis.novelty = !found;
-                if analysis.novelty {
-                    novelty_found = true;
-                }
-            }
-        }
     }
+    mark_first_novelty(&mut analysis, &present);
     if let Err(cancelled) = ensure_analysis_not_cancelled(&cancellation) {
         fail_analysis_progress!(None, cancelled);
     }
@@ -1561,6 +1555,18 @@ async fn analyze_game_core<R: tauri::Runtime>(
         ProgressState::Succeeded,
     )?;
     Ok(analysis)
+}
+
+/// Marks the move that first reaches a position absent from the reference
+/// database. `present` covers the positions after each move, so its index `k`
+/// is report index `k + 1`; report index 0 is the start position, which a game
+/// from a custom FEN may not share with any reference game.
+fn mark_first_novelty(analysis: &mut [MoveAnalysis], present: &[bool]) {
+    if let Some(first_absent) = present.iter().position(|found| !found) {
+        if let Some(entry) = analysis.get_mut(first_absent + 1) {
+            entry.novelty = true;
+        }
+    }
 }
 
 /// Returns a prefix of presence flags ending at the first absent position, or
@@ -5225,6 +5231,30 @@ done
                 "{line}"
             );
         }
+    }
+
+    fn novelty_flags(present: &[bool], len: usize) -> Vec<bool> {
+        let mut analysis: Vec<MoveAnalysis> = (0..len).map(|_| MoveAnalysis::default()).collect();
+        mark_first_novelty(&mut analysis, present);
+        analysis.iter().map(|entry| entry.novelty).collect()
+    }
+
+    #[test]
+    fn novelty_never_lands_on_the_start_position() {
+        // A custom start absent from the reference database: the lookup covers
+        // the positions after each move, so the first move is the novelty.
+        assert_eq!(
+            novelty_flags(&[false], 5),
+            [false, true, false, false, false]
+        );
+        // Standard start present, third move leaves the reference games.
+        assert_eq!(
+            novelty_flags(&[true, true, false], 5),
+            [false, false, false, true, false]
+        );
+        // Every position present, or novelties not requested.
+        assert_eq!(novelty_flags(&[true, true, true, true], 5), [false; 5]);
+        assert_eq!(novelty_flags(&[], 5), [false; 5]);
     }
 
     fn parsed_black_info(line: &str) -> BestMoves {
