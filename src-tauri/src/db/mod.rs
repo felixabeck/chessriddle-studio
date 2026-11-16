@@ -966,6 +966,11 @@ mod lexer {
                 "{pgn:?}"
             );
         }
+        // Without UTCDate an account game keeps its Date.
+        assert_eq!(
+            date_of("[Date \"2026.11.15\"]\n\n1. e4 *", Some(&account)).as_deref(),
+            Some("2026.11.15")
+        );
 
         // The tags of one game never leak into the next.
         let mut reader = BufferedReader::new(
