@@ -157,6 +157,16 @@ test("release.yml never lets a macOS bundle out that is not a notarized Develope
         /^ {12}\*\) echo "::error::Gatekeeper accepted the app, .*"; exit 1 ;;$/m,
     );
     expect(build).toContain('codesign --verify --strict --verbose=2 "$dmg"');
+    // Tauri only signs the disk image; the workflow notarizes it and Gatekeeper has to agree.
+    expect(build).toContain(
+        'xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait\n',
+    );
+    expect(build).toContain(
+        'dmg_assessment=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1) || { echo "$dmg_assessment"; exit 1; }',
+    );
+    expect(build).toMatch(
+        /case "\$dmg_assessment" in\n {12}\*"source=Notarized Developer ID"\*\) ;;\n {12}\*\) echo "::error::Gatekeeper accepted the disk image, .*"; exit 1 ;;$/m,
+    );
 });
 
 test("a manual dispatch of release.yml rehearses the build and can never publish", () => {

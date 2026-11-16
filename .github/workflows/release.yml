@@ -156,6 +156,9 @@ jobs:
       - name: Verify signature and notarization (macOS only)
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
           set -- "$bundle"/macos/*.app
@@ -173,7 +176,16 @@ jobs:
             *) echo "::error::Gatekeeper accepted the app, but not as a notarized Developer ID build"; exit 1 ;;
           esac
           codesign --verify --strict --verbose=2 "$dmg"
-          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" || true
+          # Tauri notarizes the app but only signs the disk image, which Gatekeeper then reports as
+          # "Unnotarized Developer ID". Notarizing registers the image's hash with Apple and leaves
+          # the file untouched, so the copy tauri-action already uploaded stays the notarized one.
+          xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+          dmg_assessment=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1) || { echo "$dmg_assessment"; exit 1; }
+          echo "$dmg_assessment"
+          case "$dmg_assessment" in
+            *"source=Notarized Developer ID"*) ;;
+            *) echo "::error::Gatekeeper accepted the disk image, but not as a notarized Developer ID build"; exit 1 ;;
+          esac
 
   # Undrafts only after every leg succeeded and latest.json names all four platforms.
   publish:
