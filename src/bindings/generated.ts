@@ -1865,11 +1865,7 @@ name: string;
  * The default value of this string option.
  */
 default: string | null } }
-export type UnsavedGameInventory = { records: UnsavedGameRecord[]; skipped: UnsavedGameSkip[]; 
-/**
- * Valid-named leaves beyond [`UNSAVED_GAME_LIST_MAX_ENTRIES`], neither read nor returned.
- */
-omitted: number }
+export type UnsavedGameInventory = { records: UnsavedGameRecord[]; skipped: UnsavedGameSkip[]; omitted: number }
 export type UnsavedGameRecord = { id: string; document: string }
 export type UnsavedGameSkip = { id: string; reason: string }
 export type WorkspaceEntry = { handle: FileWorkspaceHandle; kind: WorkspaceEntryKind; name: string; children: WorkspaceEntry[]; metadata: WorkspaceMetadata | null; readError: ErrorCategory | null; gameCount: number | null; lastModified: bigint }

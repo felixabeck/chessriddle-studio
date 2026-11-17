@@ -47,7 +47,8 @@ pub struct UnsavedGameSkip {
 pub struct UnsavedGameInventory {
     pub records: Vec<UnsavedGameRecord>,
     pub skipped: Vec<UnsavedGameSkip>,
-    /// Valid-named leaves beyond [`UNSAVED_GAME_LIST_MAX_ENTRIES`], neither read nor returned.
+    // Valid-named leaves beyond UNSAVED_GAME_LIST_MAX_ENTRIES, neither read nor returned. A
+    // plain comment: a doc comment is exported into the generated bindings with a trailing space.
     pub omitted: u32,
 }
 
