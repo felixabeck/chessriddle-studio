@@ -38,6 +38,7 @@ const productIdentitySources = new Set([
   "AccountCard.tsx",
   "Accounts.tsx",
   "LichessLogo.tsx",
+  "SiteLogo.tsx",
   "WebsiteAccountSelector.tsx",
 ]);
 
