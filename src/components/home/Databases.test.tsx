@@ -1224,12 +1224,39 @@ test("a database listing failure renders a diagnostic-free message and logs the 
   expect(mocks.personalCardInfo).not.toHaveBeenCalled();
 });
 
-test("a cancelled database listing logs nothing", async () => {
+test("a cancelled database listing is neither a failure nor logged", async () => {
   mocks.getDatabases.mockRejectedValue(new DOMException("Cancellation", "AbortError"));
 
   await renderDatabases();
-  await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Failed.Title"));
+  await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalled());
+  await act(async () => Promise.resolve());
 
+  expect(container.textContent).not.toContain("Home.Databases.Failed.Title");
+  expect(mocks.logError).not.toHaveBeenCalled();
+});
+
+test("a superseded listing refresh keeps the current summary", async () => {
+  const record = {
+    site: "Lichess",
+    player: "Magnus",
+    daily: [],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
+  mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [record] });
+  await renderDatabases();
+  await vi.waitFor(() => expect(container.textContent).toContain("player-card Magnus"));
+
+  mocks.getDatabases.mockRejectedValue(new DOMException("Cancellation", "AbortError"));
+  await act(async () => {
+    void swrMutate(DATABASE_LIST_KEY).catch(() => undefined);
+  });
+  await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalledTimes(2));
+  await act(async () => Promise.resolve());
+
+  expect(container.textContent).toContain("player-card Magnus");
+  expect(container.textContent).not.toContain("Home.Databases.Failed.Title");
   expect(mocks.logError).not.toHaveBeenCalled();
 });
 

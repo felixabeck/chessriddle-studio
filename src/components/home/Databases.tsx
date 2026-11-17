@@ -20,7 +20,8 @@ import type { PlayerGameInfo } from "@/bindings";
 import { notifyListenerError } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseWritesRevision } from "@/platform/databaseWrites";
-import { errorUnlessCancelled, logFailureSafely, safeFailureContext } from "@/platform/errors";
+import { logFailureSafely, safeFailureContext } from "@/platform/errors";
+import { listingFailure } from "@/components/files/listingFailure";
 import { sessionsAtom } from "@/state/atoms";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
 import { useTauriListener } from "@/platform/useTauriListener";
@@ -178,16 +179,19 @@ function Databases() {
   const player = players.find(({ key }) => key === selectedKey) ?? players[0];
   const playerKey = player?.key ?? "";
 
-  const { data: listing, error: databasesError } = useDatabaseList(sessions.length > 0);
+  const { data: listing, error: listingResultError } = useDatabaseList(sessions.length > 0);
+  // A superseded or cancelled read is replaced by a newer one and keeps the current rows.
+  const listingError =
+    listingFailure(listingResultError) === "silent" ? undefined : listingResultError;
   useEffect(() => {
-    if (!databasesError || !errorUnlessCancelled(databasesError)) return;
-    const failure = safeFailureContext(databasesError);
+    if (!listingError) return;
+    const failure = safeFailureContext(listingError);
     void logFailureSafely(
       `personal database listing failed: ${failure.message}`,
       { operation: "personal database listing", primaryFailure: failure },
       "Personal database listing logging failed",
     );
-  }, [databasesError]);
+  }, [listingError]);
   const unavailableLabel = t("Home.Accounts.HistoryUnavailable");
   const databases = useMemo(
     () => (listing ? personalDatabases(listing, sessions, unavailableLabel) : undefined),
@@ -290,7 +294,7 @@ function Databases() {
       }),
   );
 
-  const loadError = databasesError ?? error;
+  const loadError = listingError ?? error;
   const [progress, setProgress] = useState<{ owner: Map<string, number>; value: number } | null>(
     null,
   );
@@ -324,7 +328,8 @@ function Databases() {
 
   return (
     <>
-      {isLoading && databases && !databasesError && (
+      {/* A failed listing refresh keeps SWR's previous rows, so do not paint them as current. */}
+      {isLoading && databases && !listingError && (
         <Paper
           h="100%"
           shadow="sm"
@@ -355,8 +360,7 @@ function Databases() {
           {t("Home.Databases.Failed.Title")}
         </Text>
       )}
-      {/* A failed listing refresh keeps SWR's previous rows, so do not paint them as current. */}
-      {!databasesError &&
+      {!listingError &&
         personalInfo &&
         (personalInfo.entries.length === 0 ? (
           <Paper
