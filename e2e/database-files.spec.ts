@@ -633,10 +633,11 @@ test("database-files: the local explorer options keep their controls legible and
     const layout = await options.evaluate((panel) => {
         const box = (selector: string) =>
             [...panel.querySelectorAll(selector)].map((node) => node.getBoundingClientRect());
-        const marks = box(".mantine-Slider-markLabel");
+        const marks = box(".mantine-RangeSlider-markLabel");
         const viewport = panel.querySelector(".mantine-ScrollArea-viewport")!;
         const track = panel.querySelector<HTMLElement>(".mantine-Switch-track")!;
         return {
+            markCount: marks.length,
             marksBottom: Math.max(...marks.map((mark) => mark.bottom)),
             marksRight: Math.max(...marks.map((mark) => mark.right)),
             switchTop: box(".mantine-Switch-root")[0].top,
@@ -645,6 +646,8 @@ test("database-files: the local explorer options keep their controls legible and
             switchCursor: getComputedStyle(track).cursor,
         };
     });
+    // Without marks the comparisons below would pass vacuously.
+    expect(layout.markCount).toBe(3);
     expect(layout.marksBottom).toBeLessThan(layout.switchTop);
     expect(layout.marksRight).toBeLessThanOrEqual(layout.viewportRight);
     expect(layout.sidewaysOverflow).toBe(0);
