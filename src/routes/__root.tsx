@@ -40,6 +40,12 @@ import {
 import { openFile, pickPgnFile } from "@/utils/files";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { createQuitTabSaver } from "@/state/quitSave";
+import {
+  clearUnsavedGamesBeforeWipe,
+  getUnsavedGameMirror,
+  nativeUnsavedGames,
+  restoreUnsavedGames,
+} from "@/state/unsavedGames";
 import { createTab, type Tab } from "@/utils/tabs";
 import {
   assembleNativeMenuResources,
@@ -148,6 +154,22 @@ export function RootLayout() {
   const jotaiStore = useJotaiStore();
 
   const [, setTabs] = useAtom(tabsAtom);
+  const unsavedGames = getUnsavedGameMirror(() => ({
+    native: nativeUnsavedGames,
+    jotaiStore,
+    notify: (message) => notifications.show({ color: "red", message }),
+  }));
+
+  useEffect(() => {
+    unsavedGames.start();
+    void restoreUnsavedGames({
+      native: nativeUnsavedGames,
+      jotaiStore,
+      setTabs: (...args) => jotaiStore.set(tabsAtom, ...args),
+      notify: (message) => notifications.show({ message }),
+    });
+    return () => unsavedGames.stop();
+  }, [jotaiStore, unsavedGames]);
 
   const { t } = useTranslation();
   const windowPlatform = menuWindowPlatform(String(import.meta.env.VITE_PLATFORM));
@@ -229,6 +251,10 @@ export function RootLayout() {
     destroyWindow: () => getCurrentWebviewWindow().destroy(),
     exitProcess: (code) => exit(code),
     saveTab: createQuitTabSaver(jotaiStore, () => void navigate({ to: "/" })),
+    recovery: {
+      drain: () => unsavedGames.drain(),
+      isConfirmed: (tabId) => unsavedGames.isConfirmed(tabId),
+    },
     notify: notifyQuitError,
     log: (message) =>
       logFailureSafely(
@@ -280,17 +306,31 @@ export function RootLayout() {
                     decks: decks.join(", "),
                     practiceData: t("Board.Practice.Data"),
                   }),
-                clear: () => {
-                  localStorage.clear();
-                  sessionStorage.clear();
-                  location.reload();
-                },
+                clear: () =>
+                  clearUnsavedGamesBeforeWipe({
+                    mirror: unsavedGames,
+                    native: nativeUnsavedGames,
+                    wipe: () => {
+                      localStorage.clear();
+                      sessionStorage.clear();
+                      location.reload();
+                    },
+                  }),
               }),
           }),
         openLogs: () => tauri.openAppLog(),
         openLogsSuccessMessage: t("Menu.Help.OpenLogs"),
       }),
-    [createNewTab, openNewFile, openSettings, requestQuit, runMenu, t, toggleFullscreen],
+    [
+      createNewTab,
+      openNewFile,
+      openSettings,
+      requestQuit,
+      runMenu,
+      t,
+      toggleFullscreen,
+      unsavedGames,
+    ],
   );
 
   useHotkeys(

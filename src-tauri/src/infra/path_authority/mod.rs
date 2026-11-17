@@ -2947,6 +2947,7 @@ pub(crate) enum AppOwnedDefaultRoot {
     Puzzles,
     Credentials,
     Practice,
+    UnsavedGames,
     #[cfg(target_os = "macos")]
     EngineLaunch,
 }
@@ -2961,6 +2962,7 @@ impl AppOwnedDefaultRoot {
         Self::Puzzles,
         Self::Credentials,
         Self::Practice,
+        Self::UnsavedGames,
         #[cfg(target_os = "macos")]
         Self::EngineLaunch,
     ];
@@ -2974,6 +2976,7 @@ impl AppOwnedDefaultRoot {
             Self::Puzzles => "puzzles",
             Self::Credentials => "credentials",
             Self::Practice => "practice",
+            Self::UnsavedGames => "unsaved-games",
             #[cfg(target_os = "macos")]
             Self::EngineLaunch => "engine-launch",
         }
@@ -2984,6 +2987,7 @@ impl AppOwnedDefaultRoot {
         match self {
             Self::Collections => Some(0o700),
             Self::Credentials => Some(0o700),
+            Self::UnsavedGames => Some(0o700),
             #[cfg(target_os = "macos")]
             Self::EngineLaunch => Some(0o700),
             Self::Databases
@@ -10914,6 +10918,7 @@ const APP_OWNED_DEFAULT_ROOT_LEAVES: &[(AppOwnedDefaultRoot, &str)] = &[
     (AppOwnedDefaultRoot::Puzzles, "puzzles"),
     (AppOwnedDefaultRoot::Credentials, "credentials"),
     (AppOwnedDefaultRoot::Practice, "practice"),
+    (AppOwnedDefaultRoot::UnsavedGames, "unsaved-games"),
     #[cfg(target_os = "macos")]
     (AppOwnedDefaultRoot::EngineLaunch, "engine-launch"),
 ];
@@ -12306,9 +12311,10 @@ pub(crate) mod portable_tests {
             AppOwnedDefaultRoot::Collections
             | AppOwnedDefaultRoot::EngineImages
             | AppOwnedDefaultRoot::Credentials
-            | AppOwnedDefaultRoot::Practice => {
+            | AppOwnedDefaultRoot::Practice
+            | AppOwnedDefaultRoot::UnsavedGames => {
                 panic!(
-                    "engine images, credentials and practice do not have a persistent root entry"
+                    "engine images, credentials, practice and unsaved games do not have a persistent root entry"
                 )
             }
             #[cfg(target_os = "macos")]
@@ -12336,9 +12342,10 @@ pub(crate) mod portable_tests {
             AppOwnedDefaultRoot::Collections
             | AppOwnedDefaultRoot::EngineImages
             | AppOwnedDefaultRoot::Credentials
-            | AppOwnedDefaultRoot::Practice => {
+            | AppOwnedDefaultRoot::Practice
+            | AppOwnedDefaultRoot::UnsavedGames => {
                 panic!(
-                    "engine images, credentials and practice do not have a persistent root entry"
+                    "engine images, credentials, practice and unsaved games do not have a persistent root entry"
                 )
             }
             #[cfg(target_os = "macos")]
@@ -12365,9 +12372,10 @@ pub(crate) mod portable_tests {
             AppOwnedDefaultRoot::Collections
             | AppOwnedDefaultRoot::EngineImages
             | AppOwnedDefaultRoot::Credentials
-            | AppOwnedDefaultRoot::Practice => {
+            | AppOwnedDefaultRoot::Practice
+            | AppOwnedDefaultRoot::UnsavedGames => {
                 panic!(
-                    "engine images, credentials and practice do not have a persistent root entry"
+                    "engine images, credentials, practice and unsaved games do not have a persistent root entry"
                 )
             }
             #[cfg(target_os = "macos")]
@@ -22037,7 +22045,9 @@ mod tests {
                 ensure_app_owned_default_dir(&AppDataDir::for_test(dir.path()), root).unwrap();
             let mode = fs::metadata(directory.path()).unwrap().permissions().mode() & 0o7777;
             let expected_mode = match root {
-                AppOwnedDefaultRoot::Credentials | AppOwnedDefaultRoot::Collections => 0o700,
+                AppOwnedDefaultRoot::Credentials
+                | AppOwnedDefaultRoot::Collections
+                | AppOwnedDefaultRoot::UnsavedGames => 0o700,
                 #[cfg(target_os = "macos")]
                 AppOwnedDefaultRoot::EngineLaunch => 0o700,
                 _ => 0o755,

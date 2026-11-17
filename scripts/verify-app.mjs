@@ -1041,27 +1041,58 @@ async function dirtyActiveTreeEventHeader(
   );
 }
 
-async function verifyDirtyTabQuitAndRestart() {
-  const dirtyEvent = "verify:quit-gate-unsaved";
-  console.log("  .. opening dirty-quit WebDriver session");
+/** Every tab in the session workspace whose stored tree carries the given Event header. */
+async function tabsWithEvent(session, event) {
+  const raw = await session.execute(`return sessionStorage.getItem("workspace")`);
+  const workspace = raw && deserializeStorageValue(raw);
+  const found = [];
+  for (const tab of Array.isArray(workspace?.tabs) ? workspace.tabs : []) {
+    const treeKey = tab.treeKey ?? tab.value;
+    const rawTree = await session.execute("return sessionStorage.getItem(arguments[0])", [treeKey]);
+    const tree = rawTree && deserializeStorageValue(rawTree)?.state;
+    if (tree?.headers?.event === event)
+      found.push({ tab, tree, active: workspace.activeTab === tab.value });
+  }
+  return found;
+}
+
+async function openRecoverySession(label) {
   const session = await Session.open(APP_BINARY);
-  await waitFor("the dirty-quit renderer to expose Tauri", () =>
+  await waitFor(`the ${label} renderer to expose Tauri`, () =>
     session.execute("return typeof window.__TAURI_INTERNALS__ === 'object'").catch(() => false),
   );
-  await waitFor("the dirty-quit renderer to mount its window controls", () =>
+  await waitFor(`the ${label} renderer to mount its window controls`, () =>
     session.execute(closeControlProbe).catch(() => false),
   );
+  return session;
+}
+
+async function releaseSession(session, label) {
+  const released = await session.quit();
+  if (!released.released)
+    console.log(`  .. ${label} WebDriver session release returned: ${released.error}`);
+}
+
+/** A typed game survives a crash and a window close, and "Close without saving" really discards it. */
+async function verifyUnsavedGameRecovery(profileDirectory) {
+  const dirtyEvent = "verify:unsaved-game-recovery";
+  const store = join(profileDirectory, ".local/share/com.chessriddle.studio/unsaved-games");
+  const records = async () =>
+    (await readdir(store).catch(() => [])).filter((name) => name.endsWith(".json"));
+
+  console.log("  .. recovery: typing a game, then killing the process");
+  const first = await openRecoverySession("recovery-kill");
   const analysisOpen = await reachableStableCoordinates(
-    session,
+    first,
     "Analysis Board",
     `[...document.querySelectorAll('button')].find((node) =>
       node.textContent.trim() === 'Analysis Board')`,
   );
-  await clickAt(session, analysisOpen.x, analysisOpen.y);
+  await clickAt(first, analysisOpen.x, analysisOpen.y);
   await waitFor(
     "origin-none analysis board",
     async () => {
-      const snapshot = await readActiveTabTree(session);
+      const snapshot = await readActiveTabTree(first);
       return (
         snapshot.tab?.type === "analysis" &&
         snapshot.tab.gameOrigin?.kind === "none" &&
@@ -1070,105 +1101,125 @@ async function verifyDirtyTabQuitAndRestart() {
     },
     { timeoutMs: FILES_PROBE_TIMEOUT_MS },
   );
-  const dirtySnapshot = await dirtyActiveTreeEventHeader(session, dirtyEvent);
+  const dirtySnapshot = await dirtyActiveTreeEventHeader(first, dirtyEvent);
   check(
-    dirtySnapshot.tree?.dirty === true && dirtySnapshot.tab?.type === "analysis",
-    "dirty-quit tree.dirty is true immediately before the title-bar close",
-    `tab: ${JSON.stringify(dirtySnapshot.tab)}, dirty: ${dirtySnapshot.tree?.dirty}, event: ${
-      dirtySnapshot.tree?.headers?.event
-    }`,
+    dirtySnapshot.tree?.dirty === true,
+    "recovery: the typed game is dirty before the crash",
+    `dirty: ${dirtySnapshot.tree?.dirty}`,
   );
-  const requested = await requestCloseThroughTitlebar(session, "dirty-quit");
-  const dialog = await waitFor(
-    "the quit confirmation dialog while the process stays alive",
+  const written = await waitFor("the recovery copy on disk", async () =>
+    (await records()).length === 1 ? true : false,
+  ).catch(() => false);
+  check(!!written, "recovery: a recovery copy is written while typing, without quitting");
+  const running = appProcesses();
+  const application = running.find(({ cmd }) => cmd.includes(APP_BINARY));
+  if (!application) throw new Error("recovery-kill application process was not running");
+  const tracked = [
+    application.pid,
+    ...running
+      .filter(({ ppid, cmd }) => ppid === application.pid && /WebKit/.test(cmd))
+      .map(({ pid }) => pid),
+  ];
+  process.kill(application.pid, "SIGKILL");
+  await waitFor(
+    "the killed application and its WebKit processes to exit",
+    () => tracked.every((pid) => !processExists(pid)),
+    { timeoutMs: 30_000 },
+  ).catch(() => {
+    for (const pid of tracked.filter(processExists)) process.kill(pid, "SIGKILL");
+  });
+  await releaseSession(first, "recovery-kill");
+
+  console.log("  .. recovery: restarting after the crash");
+  const second = await openRecoverySession("recovery-after-kill");
+  const afterKill = await waitFor(
+    "the typed game restored after the crash",
     async () => {
-      if (!processExists(requested.application.pid))
-        throw new Error("dirty-quit process exited before the confirmation dialog appeared");
-      return session.execute(`return !!${quitConfirmDialogProbe}`).catch(() => false);
+      const found = await tabsWithEvent(second, dirtyEvent);
+      return found.length === 1 ? found[0] : false;
     },
     { timeoutMs: FILES_PROBE_TIMEOUT_MS },
-  );
+  ).catch(() => null);
   check(
-    !!dialog && processExists(requested.application.pid),
-    "title-bar close with a dirty covered tab keeps the process alive and shows the quit dialog",
+    !!afterKill && afterKill.tree.dirty === true && afterKill.tab.type === "analysis",
+    "recovery: after SIGKILL the restart restores the game, still unsaved",
+    afterKill
+      ? `tab: ${JSON.stringify(afterKill.tab)}, dirty: ${afterKill.tree.dirty}`
+      : "not restored",
   );
-  const quit = await reachableStableCoordinates(
-    session,
-    "Quit without saving",
-    `(() => {
-      const dialog = ${quitConfirmDialogProbe};
-      return dialog && [...dialog.querySelectorAll('button')].find(node => node.textContent.trim() === 'Quit without saving');
-    })()`,
-  );
-  await clickAt(session, quit.x, quit.y);
-  const gone = await waitFor(
-    `dirty-quit application pid ${requested.application.pid} and recorded WebKit service pids to exit`,
-    () => requested.trackedPids.every((pid) => !processExists(pid)),
+  if (!afterKill) throw new Error("recovery: the game was not restored after a crash");
+
+  console.log("  .. recovery: closing the window with the unsaved game");
+  const requested = await requestCloseThroughTitlebar(second, "recovery-close");
+  let dialogSeen = false;
+  const closed = await waitFor(
+    "the window to close without a quit dialog",
+    async () => {
+      if (await second.execute(`return !!${quitConfirmDialogProbe}`).catch(() => false))
+        dialogSeen = true;
+      return requested.trackedPids.every((pid) => !processExists(pid));
+    },
     { timeoutMs: 30_000 },
   ).catch(() => false);
-  const survivors = requested.trackedPids.filter(processExists);
   check(
-    gone && survivors.length === 0,
-    "Quit without saving exits the dirty-quit process with no child left",
-    survivors.length > 0 ? `surviving pids: ${survivors.join(", ")}` : undefined,
+    !!closed && !dialogSeen,
+    "recovery: closing the window with a kept unsaved game quits without the dialog",
+    dialogSeen ? "the quit dialog appeared" : undefined,
   );
-  const released = await session.quit();
-  if (!released.released)
-    console.log(`  .. dirty-quit WebDriver session release returned: ${released.error}`);
+  await releaseSession(second, "recovery-close");
 
-  console.log("  .. restarting under the same throwaway HOME for the dirty-tab probe");
-  const restart = await Session.open(APP_BINARY);
-  await waitFor("the restart renderer to expose Tauri", () =>
-    restart.execute("return typeof window.__TAURI_INTERNALS__ === 'object'").catch(() => false),
-  );
-  await waitFor("the restart renderer to mount its window controls", () =>
-    restart.execute(closeControlProbe).catch(() => false),
-  );
-  const restored = await restart.execute(
-    `return {
-      rawWorkspace: sessionStorage.getItem("workspace"),
-      body: document.body.innerText,
-      keys: Object.keys(sessionStorage),
-    }`,
-  );
-  const workspace = restored.rawWorkspace && deserializeStorageValue(restored.rawWorkspace);
-  let restoredDirty = false;
-  const restoredTabs = Array.isArray(workspace?.tabs) ? workspace.tabs : [];
-  for (const tab of restoredTabs) {
-    const treeKey = tab.treeKey ?? tab.value;
-    const rawTree =
-      typeof treeKey === "string"
-        ? await restart.execute("return sessionStorage.getItem(arguments[0])", [treeKey])
-        : null;
-    const tree = rawTree && deserializeStorageValue(rawTree)?.state;
-    if (
-      tab.type === "analysis" &&
-      (tree?.dirty === true || tree?.headers?.event === dirtyEvent || tab.name === "Analysis Board")
-    ) {
-      restoredDirty = true;
-    }
-  }
-  if (typeof restored.body === "string" && restored.body.includes(dirtyEvent)) restoredDirty = true;
+  console.log("  .. recovery: restart, then Close without saving");
+  const third = await openRecoverySession("recovery-discard");
+  const afterClose = await waitFor(
+    "the game restored after the window close",
+    async () => {
+      const found = await tabsWithEvent(third, dirtyEvent);
+      return found.length === 1 && found[0].active ? found[0] : false;
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+  ).catch(() => null);
   check(
-    !restoredDirty,
-    "restart under the same HOME does not restore the dirty tab",
-    `workspace: ${JSON.stringify(workspace)}, keys: ${JSON.stringify(restored.keys)}`,
+    !!afterClose && afterClose.tree.dirty === true,
+    "recovery: after closing the window the restart restores the game, still unsaved",
   );
-  if (restoredDirty) {
+  if (!afterClose) throw new Error("recovery: the game was not restored after a window close");
+  await clickButton(third, "Close tab", true);
+  const discard = await reachableStableCoordinates(
+    third,
+    "Close without saving",
+    `(() => {
+      const dialog = [...document.querySelectorAll('[role="dialog"]')].find(node => node.innerText.includes('Unsaved changes'));
+      return dialog && [...dialog.querySelectorAll('button')].find(node => node.textContent.trim() === 'Close without saving');
+    })()`,
+  );
+  await clickAt(third, discard.x, discard.y);
+  const removed = await waitFor(
+    "the recovery copy to be deleted",
+    async () => (await records()).length === 0,
+  ).catch(() => false);
+  check(!!removed, "recovery: Close without saving deletes the recovery copy");
+  const thirdClose = await closeApplicationThroughTitlebar(third, "recovery-discard");
+  if (!thirdClose.gone || thirdClose.survivors.length > 0)
     throw new Error(
-      "restart probe: a dirty tab's tree survived a restart; stop rather than shipping quit-dialog copy that says the work is lost",
+      `recovery-discard processes survived close: ${thirdClose.survivors.join(", ")}`,
     );
-  }
-  console.log("  .. restart probe: dirty tab was not restored");
-  const restartClose = await closeApplicationThroughTitlebar(restart, "dirty-quit-restart");
-  if (!restartClose.gone || restartClose.survivors.length > 0) {
-    throw new Error(
-      `dirty-quit-restart processes survived close: ${restartClose.survivors.join(", ")}`,
-    );
-  }
-  const restartQuit = await restart.quit();
-  if (!restartQuit.released)
-    console.log(`  .. dirty-quit-restart WebDriver session release returned: ${restartQuit.error}`);
+  await releaseSession(third, "recovery-discard");
+
+  console.log("  .. recovery: final restart restores nothing");
+  const fourth = await openRecoverySession("recovery-final");
+  await waitFor("the final renderer to settle", () =>
+    fourth.execute(`return document.readyState === "complete"`).catch(() => false),
+  );
+  const leftover = await tabsWithEvent(fourth, dirtyEvent);
+  check(
+    leftover.length === 0,
+    "recovery: a game closed without saving is not restored",
+    leftover.length ? JSON.stringify(leftover.map((entry) => entry.tab)) : undefined,
+  );
+  const fourthClose = await closeApplicationThroughTitlebar(fourth, "recovery-final");
+  if (!fourthClose.gone || fourthClose.survivors.length > 0)
+    throw new Error(`recovery-final processes survived close: ${fourthClose.survivors.join(", ")}`);
+  await releaseSession(fourth, "recovery-final");
 }
 
 async function showLibraryOverview(session) {
@@ -4789,7 +4840,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   }
   console.log("  .. seed app and WebKit processes are gone; reusing WebDriver after session quit");
 
-  await verifyDirtyTabQuitAndRestart();
+  await verifyUnsavedGameRecovery(profileDirectory);
 
   const fixtureDirectory = join(profileDirectory, "path-owner-fixture");
   const ownedRoot = join(fixtureDirectory, "owned-database-root");

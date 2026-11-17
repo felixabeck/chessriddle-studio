@@ -17,6 +17,7 @@ import {
     runQuitGate,
     saveAndQuit,
     scanBlockingTabs,
+    scanQuitBlockingTabs,
     type QuitGateHost,
     type TabInspection,
 } from "./quitGate";
@@ -851,4 +852,89 @@ test("listener registration failure notifies once with the specific message", as
 test("main capability grants window destroy", () => {
     const capability = JSON.parse(capabilityText) as { permissions: string[] };
     expect(capability.permissions).toContain("core:window:allow-destroy");
+});
+
+function recovery(confirmed: readonly string[], drain = vi.fn(async () => ({ finished: true }))) {
+    return { drain, isConfirmed: (tabId: string) => confirmed.includes(tabId) };
+}
+
+test("a dirty tab with a confirmed recovery copy quits without a dialog", async () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const tabs = [tab({ value: id, type: "analysis" })];
+    const copies = recovery([id]);
+    const gate = host({ getTabs: () => tabs, recovery: copies });
+    await runQuitGate(gate);
+    expect(copies.drain).toHaveBeenCalledOnce();
+    expect(gate.openDialog).not.toHaveBeenCalled();
+    expect(gate.destroyWindow).toHaveBeenCalledOnce();
+});
+
+test("an unconfirmed recovery copy still shows the dialog", async () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const gate = host({
+        getTabs: () => [tab({ value: id, type: "analysis" })],
+        recovery: recovery([]),
+    });
+    await runQuitGate(gate);
+    expect(gate.openDialog).toHaveBeenCalledWith({
+        failClosed: false,
+        tabs: [{ value: id, name: id, uninspectable: false }],
+    });
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+});
+
+test("a thrown recovery drain fails closed", async () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const gate = host({
+        getTabs: () => [tab({ value: id, type: "analysis" })],
+        recovery: recovery(
+            [id],
+            vi.fn(async () => Promise.reject(new Error("drain failed"))),
+        ),
+    });
+    await runQuitGate(gate);
+    expect(gate.openDialog).toHaveBeenCalledWith({ failClosed: true, tabs: [] });
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+});
+
+test("a confirmed dirty file tab in conflict still blocks the quit, and file guards still see it dirty", () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    setFileFreshness(id, "conflict");
+    const tabs = [tab({ value: id, type: "analysis", gameOrigin: fileOrigin() })];
+    expect(scanQuitBlockingTabs(tabs, recovery([id])).map((item) => item.value)).toEqual([id]);
+
+    const clean = uuid();
+    seedStoredTree(clean, true);
+    const plain = [tab({ value: clean, type: "analysis" })];
+    expect(scanQuitBlockingTabs(plain, recovery([clean]))).toEqual([]);
+    // Line-section edits, reorders and the updater depend on the unchanged meaning.
+    expect(scanBlockingTabs(plain).map((item) => item.value)).toEqual([clean]);
+});
+
+test("Save and quit drains the recovery copies after saving, before it quits", async () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const order: string[] = [];
+    const drain = vi.fn(async () => {
+        order.push("drain");
+        return { finished: true };
+    });
+    const gate = host({
+        getTabs: () => [tab({ value: id, type: "analysis" })],
+        recovery: recovery([], drain),
+        saveTab: vi.fn(async (saved: Tab) => {
+            order.push("save");
+            return markStoredTreeSaved(saved.value);
+        }),
+        destroyWindow: vi.fn(async () => {
+            order.push("destroy");
+        }),
+    });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toEqual({ kind: "quit" });
+    expect(order).toEqual(["drain", "save", "drain", "destroy"]);
 });

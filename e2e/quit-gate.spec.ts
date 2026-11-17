@@ -160,6 +160,14 @@ async function expectImmediateDestroy(page: Page) {
         .toEqual({ destroy: 1, dialogs: 0 });
 }
 
+/**
+ * Holds every recovery-copy write past the quit gate's drain, so a dirty game has no durable
+ * copy and the gate must still ask before quitting.
+ */
+const recoveryCopyPending = {
+    write_unsaved_game: { result: null, delay: 600_000 },
+};
+
 const gestures = [
     { name: "title-bar close", run: clickTitleBarClose, snapshot: "dirty-analysis-title-bar.png" },
     {
@@ -170,9 +178,11 @@ const gestures = [
 ] as const;
 
 for (const gesture of gestures) {
-    test(`quit-gate: dirty origin-none analysis ${gesture.name} shows the dialog, then Quit without saving destroys once`, async ({
+    test(`quit-gate: dirty origin-none analysis ${gesture.name} without a recovery copy shows the dialog, then Quit without saving destroys once`, async ({
         page,
+        mockScenario,
     }) => {
+        await mockScenario({ commands: recoveryCopyPending });
         await openOriginNoneAnalysis(page);
         await gesture.run(page);
         await expectQuitDialog(page, gesture.snapshot);
@@ -180,6 +190,15 @@ for (const gesture of gestures) {
             .getByRole("button", { name: "Quit without saving", exact: true })
             .click();
         await expect.poll(() => ipcCount(page, "plugin:window|destroy")).toBe(1);
+    });
+
+    test(`quit-gate: dirty origin-none analysis ${gesture.name} with a stored recovery copy destroys without a dialog`, async ({
+        page,
+    }) => {
+        await openOriginNoneAnalysis(page);
+        await expect.poll(() => ipcCount(page, "write_unsaved_game")).toBeGreaterThan(0);
+        await gesture.run(page);
+        await expectImmediateDestroy(page);
     });
 
     test(`quit-gate: no dirty tab ${gesture.name} destroys immediately`, async ({ page }) => {
@@ -244,6 +263,7 @@ test("quit-gate: Save and quit stores a new database game, then destroys once", 
     await mockScenario({
         commands: filesWorkspaceCommands([[]], {
             ...gameOpeningCommands,
+            ...recoveryCopyPending,
             insert_db_game: { result: { id: 501, stamp: "a".repeat(64) } },
         }),
     });
@@ -263,6 +283,7 @@ test("quit-gate: a failed Save and quit keeps the window, names the tab, and can
     await mockScenario({
         commands: filesWorkspaceCommands([[]], {
             ...gameOpeningCommands,
+            ...recoveryCopyPending,
             insert_db_game: { error: "The database is locked." },
         }),
     });

@@ -54,6 +54,16 @@ export type QuitGateHost = {
     notify: (error: unknown) => void;
     log: (message: string) => Promise<void>;
     warn: (message: string) => void;
+    /**
+     * Recovery copies of unsaved games. A dirty tab whose copy is durable for its current content
+     * does not block quitting; it comes back on the next start.
+     */
+    recovery?: QuitRecovery;
+};
+
+export type QuitRecovery = {
+    drain: () => Promise<{ finished: boolean }>;
+    isConfirmed: (tabId: string) => boolean;
 };
 
 const defaultInspection: TabInspection = {
@@ -100,6 +110,7 @@ type TabVerdict = { tab: Tab; uninspectable: boolean; dirty: boolean };
 function inspectBlockingTabs(
     tabs: readonly Tab[],
     inspection: TabInspection = defaultInspection,
+    isRecoverable: (tabId: string) => boolean = () => false,
 ): TabVerdict[] {
     const blocking: TabVerdict[] = [];
     for (const tab of tabs) {
@@ -138,7 +149,8 @@ function inspectBlockingTabs(
 
         if (!asksBeforeDiscardingChanges(tab)) continue;
 
-        if (dirty) {
+        // A recoverable dirty tab is not blocking for being dirty, but a file conflict still is.
+        if (dirty && !isRecoverable(tab.value)) {
             blocking.push({ tab, uninspectable: false, dirty: true });
             continue;
         }
@@ -157,11 +169,23 @@ function toBlockingTab({ tab, uninspectable }: TabVerdict): BlockingTab {
     return { value: tab.value, name: tab.name, uninspectable };
 }
 
+/** Dirty, conflicting or uninspectable tabs. File-write guards depend on this exact meaning. */
 export function scanBlockingTabs(
     tabs: readonly Tab[],
     inspection: TabInspection = defaultInspection,
 ): BlockingTab[] {
     return inspectBlockingTabs(tabs, inspection).map(toBlockingTab);
+}
+
+/** The quit decision: like `scanBlockingTabs`, minus dirty tabs with a durable recovery copy. */
+export function scanQuitBlockingTabs(
+    tabs: readonly Tab[],
+    recovery: QuitRecovery | undefined,
+    inspection: TabInspection = defaultInspection,
+): BlockingTab[] {
+    return inspectBlockingTabs(tabs, inspection, (tabId) =>
+        recovery ? recovery.isConfirmed(tabId) : false,
+    ).map(toBlockingTab);
 }
 
 function releaseLatch(): void {
@@ -216,8 +240,9 @@ export async function runQuitGate(host: QuitGateHost): Promise<void> {
     inProgress = true;
     activeHost = host;
     try {
+        await host.recovery?.drain();
         const tabs = host.getTabs();
-        const blocking = scanBlockingTabs(tabs);
+        const blocking = scanQuitBlockingTabs(tabs, host.recovery);
         if (blocking.length === 0) {
             await proceedQuit(host);
             return;
@@ -269,7 +294,21 @@ export async function saveAndQuit(): Promise<QuitSaveOutcome> {
             if (result === "superseded") return { kind: "blocked", tab, reason: "superseded" };
             return { kind: "blocked", tab, reason: "failed", message: result.error.message };
         }
-        const remaining = scanBlockingTabs(host.getTabs());
+        // Let the removes of the games just saved finish. An incomplete drain still quits: the
+        // user saved, and a leftover copy only reappears as an unsaved duplicate.
+        try {
+            const drained = await host.recovery?.drain();
+            if (drained && !drained.finished) {
+                host.warn("Save and quit: recovery copies were still being updated at quit.");
+            }
+        } catch (error) {
+            host.warn(
+                `Save and quit could not settle recovery copies: ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+            );
+        }
+        const remaining = scanQuitBlockingTabs(host.getTabs(), host.recovery);
         const first = remaining[0];
         if (!first) {
             saving = false;
@@ -287,7 +326,10 @@ export async function saveAndQuit(): Promise<QuitSaveOutcome> {
         if (inProgress && !proceeding && activeHost === host) {
             // Saved tabs no longer block; show what is still open.
             try {
-                host.openDialog({ failClosed: false, tabs: scanBlockingTabs(host.getTabs()) });
+                host.openDialog({
+                    failClosed: false,
+                    tabs: scanQuitBlockingTabs(host.getTabs(), host.recovery),
+                });
             } catch (error) {
                 // The existing dialog stays as it was.
                 host.warn(

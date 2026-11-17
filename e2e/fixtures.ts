@@ -1147,6 +1147,10 @@ const tauriBootstrap = () => {
         acknowledge_practice_orphans: { result: null },
         repair_practice_deck: { result: null },
         list_practice_decks: { result: { decks: [], anomalies: [] } },
+        write_unsaved_game: { result: null },
+        list_unsaved_games: { result: { records: [], skipped: [], omitted: 0 } },
+        remove_unsaved_game: { result: null },
+        clear_unsaved_games: { result: [] },
         get_database_workspace: {
             result: {
                 root: { id: { id: "database-root" }, kind: "databaseRoot" },

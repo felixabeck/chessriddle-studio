@@ -632,3 +632,16 @@ test.each([
         unsubscribe();
     }
 });
+
+test("the fresh-start flag is sampled before the default workspace is written", async () => {
+    const fresh = await importAtoms();
+    fresh.atoms.initializeWorkspace();
+    expect(sessionStorage.getItem("workspace")).not.toBeNull();
+    expect(fresh.atoms.workspaceStartedFresh()).toBe(true);
+
+    // A reload keeps sessionStorage: the stored workspace makes the next renderer not fresh.
+    vi.resetModules();
+    const reloaded = await importAtoms();
+    reloaded.atoms.initializeWorkspace();
+    expect(reloaded.atoms.workspaceStartedFresh()).toBe(false);
+});

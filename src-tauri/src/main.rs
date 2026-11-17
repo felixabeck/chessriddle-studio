@@ -30,6 +30,7 @@ mod progress;
 mod puzzle;
 mod sound;
 mod system_appearance;
+mod unsaved_games;
 
 #[cfg(any(test, debug_assertions))]
 use std::path::Path;
@@ -114,6 +115,9 @@ use crate::puzzle::{
     list_puzzle_databases,
 };
 use crate::sound::get_sound_server_port;
+use crate::unsaved_games::{
+    clear_unsaved_games, list_unsaved_games, remove_unsaved_game, write_unsaved_game,
+};
 use crate::{
     chess::get_best_moves,
     db::{
@@ -2246,6 +2250,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             acknowledge_practice_orphans,
             repair_practice_deck,
             list_practice_decks,
+            write_unsaved_game,
+            list_unsaved_games,
+            remove_unsaved_game,
+            clear_unsaved_games,
             search_opening_name,
             get_opening_from_fens,
             get_opening_from_name,

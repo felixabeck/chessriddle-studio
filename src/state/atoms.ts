@@ -142,12 +142,34 @@ export function initializeRendererState() {
 // Tabs
 
 let initialWorkspace: Workspace | undefined;
+let startedFresh = false;
+
+function storedWorkspaceAbsent(): boolean {
+    try {
+        return sessionStorage.getItem(WORKSPACE_STORAGE_KEY) === null;
+    } catch {
+        // An unreadable session store is not proof of a fresh start; restore stays off.
+        return false;
+    }
+}
 
 /** One successful document snapshot, shared by new stores without replacing their later edits. */
 export function initializeWorkspace(): Workspace {
     initializeRendererState();
-    initialWorkspace ??= loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY);
+    if (initialWorkspace === undefined) {
+        // Sampled before `loadWorkspace` writes the default workspace for an absent key.
+        startedFresh = storedWorkspaceAbsent();
+        initialWorkspace = loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY);
+    }
     return initialWorkspace;
+}
+
+/**
+ * Whether this renderer started without a stored workspace (process start, or after "Clear saved
+ * data"), as opposed to a reload that kept its tabs. Only then are unsaved games restored.
+ */
+export function workspaceStartedFresh(): boolean {
+    return startedFresh;
 }
 
 const committedWorkspaceAtom = atom<Workspace | null>(null);

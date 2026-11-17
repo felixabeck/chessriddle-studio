@@ -671,6 +671,38 @@ async listPracticeDecks() : Promise<Result<PracticeDeckInventory, ErrorPayload>>
     else return { status: "error", error: e  as any };
 }
 },
+async writeUnsavedGame(id: string, document: string) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("write_unsaved_game", { id, document }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listUnsavedGames() : Promise<Result<UnsavedGameInventory, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_unsaved_games") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async removeUnsavedGame(id: string) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_unsaved_game", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearUnsavedGames() : Promise<Result<string[], ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_unsaved_games") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async searchOpeningName(query: string) : Promise<Result<OutOpening[], ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("search_opening_name", { query }) };
@@ -1520,7 +1552,7 @@ export type DatabaseUpgradeFailureReason = "disk-full" | "other"
 export type DbGameLookup = { kind: "found"; game: NormalizedGame } | { kind: "missing" }
 export type DisconnectOutcome = { status: "notFound" } | { status: "removed"; revocation_pending: boolean; durability_uncertain: boolean }
 export type DrawReason = "stalemate" | "insufficientMaterial" | "threefoldRepetition" | "fiftyMoveRule" | "agreement"
-export type DurabilityStage = "ArchiveCommitMarker" | "ArchiveReservationJournal" | "DatabasePgnReplacement" | "DirectoryInstall" | "DownloadTargetReplacement" | "NativeExport" | "OldDirectoryCleanup" | "OldDirectoryCleanupSync" | "PgnEdit" | "PgnCacheInvalidation" | "CollectionIndexRefresh" | "PgnCapabilityRebind" | "RegistryReplacement" | "SearchIndexReplacement" | "WorkspaceDirectoryCreation" | "WorkspacePgnCreation" | "WorkspaceRemoval" | "WorkspaceRename" | "WorkspaceSidecarCreation" | "WorkspaceSidecarReplacement" | "PracticePositions" | "PracticeReviewShard" | "PracticeState"
+export type DurabilityStage = "ArchiveCommitMarker" | "ArchiveReservationJournal" | "DatabasePgnReplacement" | "DirectoryInstall" | "DownloadTargetReplacement" | "NativeExport" | "OldDirectoryCleanup" | "OldDirectoryCleanupSync" | "PgnEdit" | "PgnCacheInvalidation" | "CollectionIndexRefresh" | "PgnCapabilityRebind" | "RegistryReplacement" | "SearchIndexReplacement" | "WorkspaceDirectoryCreation" | "WorkspacePgnCreation" | "WorkspaceRemoval" | "WorkspaceRename" | "WorkspaceSidecarCreation" | "WorkspaceSidecarReplacement" | "PracticePositions" | "PracticeReviewShard" | "PracticeState" | "UnsavedGame"
 /**
  * Prepare marks the supplied current-session attachments as prepared without retiring omitted
  * IDs; an empty list is an explicit prepare with no retained attachments.
@@ -1833,6 +1865,13 @@ name: string;
  * The default value of this string option.
  */
 default: string | null } }
+export type UnsavedGameInventory = { records: UnsavedGameRecord[]; skipped: UnsavedGameSkip[]; 
+/**
+ * Valid-named leaves beyond [`UNSAVED_GAME_LIST_MAX_ENTRIES`], neither read nor returned.
+ */
+omitted: number }
+export type UnsavedGameRecord = { id: string; document: string }
+export type UnsavedGameSkip = { id: string; reason: string }
 export type WorkspaceEntry = { handle: FileWorkspaceHandle; kind: WorkspaceEntryKind; name: string; children: WorkspaceEntry[]; metadata: WorkspaceMetadata | null; readError: ErrorCategory | null; gameCount: number | null; lastModified: bigint }
 export type WorkspaceEntryKind = "file" | "directory"
 export type WorkspaceFileContent = { kind: "text"; pgn: string } | { kind: "copy"; source: FileWorkspaceHandle; revision: string }

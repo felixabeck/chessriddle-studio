@@ -387,14 +387,20 @@ function stageAndCommitTab({
     existingTabIds,
     commit,
     keepLogicalTab = false,
+    requestedId,
 }: {
     seed?: (id: string) => void;
     existingTabIds?: Iterable<string>;
     commit: (freshId: string) => boolean;
     keepLogicalTab?: boolean;
+    /** A known id (a restored unsaved game keeps its own); refused when already stored. */
+    requestedId?: string;
 }): StagedAdmissionResult {
     initializeWorkspace();
-    const id = genID(existingTabIds);
+    if (requestedId !== undefined && !isFreeTabId(requestedId)) {
+        return { kind: "refused", stage: "workspace" };
+    }
+    const id = requestedId ?? genID(existingTabIds);
     if (seed) {
         try {
             seed(id);
@@ -427,20 +433,31 @@ function stageAndCommitTab({
     return result;
 }
 
+function isFreeTabId(id: string): boolean {
+    try {
+        return sessionStorage.getItem(id) === null;
+    } catch {
+        return false;
+    }
+}
+
 export function commitNewTab({
     tab,
     setTabs,
     seed,
     existingTabIds,
+    id,
 }: {
     tab: Omit<Tab, "value">;
     setTabs: SetTabs;
     seed?: (id: string) => void;
     existingTabIds?: Iterable<string>;
+    id?: string;
 }): string | null {
     const result = stageAndCommitTab({
         seed,
         existingTabIds,
+        requestedId: id,
         commit: (id) =>
             setTabs((prev) => {
                 const nextTab = { ...tab, value: id, treeKey: undefined };
