@@ -436,11 +436,14 @@ function EngineSettings({
     value: string | number | boolean | null,
     def: string | number | boolean | null,
   ) {
-    submit({
-      kind: "option",
-      name,
-      value: value !== def || requiredEngineSettings.includes(name) ? String(value ?? "") : null,
-    });
+    // An emptied field (cleared text, deselected combo, non-number) carries no UCI value, and the
+    // native launch refuses an empty option value, so it means "the engine default".
+    const emptied =
+      value === null || value === "" || (typeof value === "number" && !Number.isFinite(value));
+    const next = emptied ? def : value;
+    const stored =
+      next !== def || requiredEngineSettings.includes(name) ? String(next ?? "") : null;
+    submit({ kind: "option", name, value: stored === "" ? null : stored });
   }
 
   function setResourceSetting(
@@ -518,8 +521,12 @@ function EngineSettings({
             inputWrapperOrder={["label", "input", "description", "error"]}
             min={Number(v.min)}
             max={Number(v.max)}
+            allowDecimal={false}
             value={Number(v.value)}
-            onChange={(e) => setSetting(v.name, e, Number(v.default))}
+            // A cleared field reports "" mid-edit; keep the last valid value until it holds a number.
+            onChange={(e) => {
+              if (typeof e === "number") setSetting(v.name, e, Number(v.default));
+            }}
           />
         );
       })
@@ -532,6 +539,7 @@ function EngineSettings({
             inputWrapperOrder={["label", "input", "description", "error"]}
             data={v.var}
             value={v.value}
+            allowDeselect={false}
             onChange={(e) => setSetting(v.name, e, v.default)}
           />
         );

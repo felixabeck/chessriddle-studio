@@ -127,7 +127,7 @@ vi.mock("@mantine/core", () => ({
     label: string;
     description?: React.ReactNode;
     value: number;
-    onChange: (value: number) => void;
+    onChange: (value: number | string) => void;
     min?: number;
     max?: number;
   }) => (
@@ -139,17 +139,44 @@ vi.mock("@mantine/core", () => ({
         value={value}
         min={min}
         max={max}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        // Mantine reports a cleared field as "", not as a number.
+        onChange={(event) =>
+          onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
+        }
       />
       {description}
     </label>
   ),
   Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Select: ({ label, description }: { label: string; description?: React.ReactNode }) => (
+  Select: ({
+    label,
+    description,
+    data = [],
+    value,
+    onChange,
+  }: {
+    label: string;
+    description?: React.ReactNode;
+    data?: string[];
+    value?: string | null;
+    onChange?: (value: string | null) => void;
+  }) => (
     <label>
       <span>{label}</span>
-      <select aria-label={label} />
+      <select
+        aria-label={label}
+        value={value ?? ""}
+        // The empty entry stands for Mantine's deselect, which reports null.
+        onChange={(event) => onChange?.(event.currentTarget.value || null)}
+      >
+        <option value="" />
+        {data.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
       {description}
     </label>
   ),
@@ -413,6 +440,59 @@ test("combo settings render their catalogue label, description and raw UCI name"
     "How threads are spread across processors on machines with several CPUs. Keep “auto”.",
   );
   expect(field!.parentElement?.textContent).toContain("NumaPolicy");
+});
+
+function changeField(field: HTMLInputElement | HTMLSelectElement, value: string) {
+  const prototype =
+    field instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(field, value);
+  field.dispatchEvent(
+    new Event(field instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }),
+  );
+}
+
+test("clearing a spin field or deselecting a combo never saves an empty option value", async () => {
+  const engine = makeEngine("engine-cleared-options");
+  engine.settings = [
+    { type: "string", name: "MultiPV", value: "1" },
+    { type: "string", name: "Threads", value: "1" },
+    { type: "string", name: "Hash", value: "64" },
+    { type: "string", name: "Unknown Option", value: "5" },
+    { type: "string", name: "NumaPolicy", value: "none" },
+  ];
+  atomEngines = [engine];
+  mocks.getEngineConfig.mockResolvedValue({
+    name: "Stockfish",
+    options: [
+      { type: "spin", value: { name: "Threads", default: 1, min: 1, max: 32 } },
+      { type: "spin", value: { name: "Hash", default: 16, min: 1, max: 1024 } },
+      { type: "spin", value: { name: "MultiPV", default: 1, min: 1, max: 256 } },
+      { type: "spin", value: { name: "Unknown Option", default: 7, min: 0, max: 10 } },
+      { type: "combo", value: { name: "NumaPolicy", default: "auto", var: ["auto", "none"] } },
+    ],
+  });
+  await renderSettings();
+  await expandExpert();
+
+  await act(async () => changeField(optionInput("Memory (MB)")!, ""));
+  await act(async () => changeField(optionInput("Unknown Option")!, ""));
+  await act(async () => {
+    changeField(
+      host.querySelector<HTMLSelectElement>('select[aria-label="Processor memory policy"]')!,
+      "",
+    );
+  });
+
+  await vi.waitFor(() =>
+    expect(atomEngines[0].settings?.some((option) => option.name === "NumaPolicy")).toBe(false),
+  );
+  // Cleared spins keep their last valid value; the deselected combo returns to its default.
+  expect(atomEngines[0].settings).toEqual([
+    { type: "string", name: "MultiPV", value: "1" },
+    { type: "string", name: "Threads", value: "1" },
+    { type: "string", name: "Hash", value: "64" },
+    { type: "string", name: "Unknown Option", value: "5" },
+  ]);
 });
 
 test.each([false, true])(
