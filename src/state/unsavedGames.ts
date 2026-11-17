@@ -16,7 +16,7 @@
 import i18n from "i18next";
 import type { getDefaultStore } from "jotai";
 import { z } from "zod";
-import type { UnsavedGameInventory } from "@/bindings/generated";
+import type { UnsavedGameInventory } from "@/bindings";
 import { normalizeError, warnSafely } from "@/platform/errors";
 import { tauri } from "@/platform/tauri";
 import { tabsAtom, workspaceStartedFresh } from "@/state/atoms";

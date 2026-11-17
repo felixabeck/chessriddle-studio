@@ -3,7 +3,7 @@ import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import i18n from "@/i18n";
 import enUSCatalogue from "@/translation/en-US.json";
 import { createStore } from "zustand/vanilla";
-import type { UnsavedGameInventory } from "@/bindings/generated";
+import type { UnsavedGameInventory } from "@/bindings";
 import { tabsAtom } from "@/state/atoms";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import type { Tab } from "@/state/workspaceTypes";
