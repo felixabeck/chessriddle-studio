@@ -408,6 +408,38 @@ test("notation-hierarchy: overflow-only in both views", async ({ page, mockScena
     await assertNotationNoOverflow(notation, "table");
 });
 
+async function waitForBoardResized(page: Page) {
+    await expect
+        .poll(() =>
+            page.evaluate(() => {
+                const wraps = [...document.querySelectorAll("#left .cg-wrap")].filter((wrap) => {
+                    const rect = wrap.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                });
+                if (wraps.length === 0) return "no laid-out #left .cg-wrap";
+                const dpr = window.devicePixelRatio;
+                const reports: string[] = [];
+                for (const wrap of wraps) {
+                    const wrapRect = wrap.getBoundingClientRect();
+                    const container = wrap.querySelector("cg-container");
+                    if (!(container instanceof HTMLElement)) {
+                        return `wrap ${wrapRect.width}px missing cg-container`;
+                    }
+                    const expected = (Math.floor((wrapRect.width * dpr) / 8) * 8) / dpr;
+                    const actual = parseFloat(container.style.width);
+                    // Negated so an unset inline width (NaN) counts as not settled.
+                    if (!(Math.abs(actual - expected) < 1 / dpr)) {
+                        reports.push(
+                            `wrap ${wrapRect.width}px container ${actual}px expected ${expected}px`,
+                        );
+                    }
+                }
+                return reports.length === 0 ? "settled" : reports.join("; ");
+            }),
+        )
+        .toBe("settled");
+}
+
 async function assertStackedBoardGeometry(page: Page, label: string) {
     await expect(page.locator('[data-board-layout="stacked"]')).toHaveCount(1);
     await waitForFontsSettled(page);
@@ -538,6 +570,9 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
     await page.locator("#left").getByRole("grid").first().focus();
     await page.keyboard.press("z");
     const showEvaluation = page.getByRole("button", { name: "Show evaluation", exact: true });
+    await expect(showEvaluation).toBeVisible();
+    // Chessground resizes cg-container only from its wrap ResizeObserver.
+    await waitForBoardResized(page);
     await assertNothingClipped(showEvaluation, { mode: "reachable" });
     await expectHintOverA3("eval collapsed");
 });
