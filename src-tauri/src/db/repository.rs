@@ -82,7 +82,7 @@ const POOL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 const METADATA_READ_BUSY_TIMEOUT_MS: u64 = 1000;
 #[cfg(test)]
 const SHORT_POOL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
-// Must exceed `PRAGMA busy_timeout = 30000` in `db/mod.rs` so an ordinary
+// Must exceed `CONNECTION_BUSY_TIMEOUT_MS` in `db/mod.rs` so an ordinary
 // contended write completes rather than tripping retirement.
 const RETIRE_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const RETIRE_CANCELLATION_POLL: Duration = Duration::from_millis(25);

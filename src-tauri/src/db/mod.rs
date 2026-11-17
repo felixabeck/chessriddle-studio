@@ -196,15 +196,35 @@ impl diesel::r2d2::CustomizeConnection<SqliteConnection, diesel::r2d2::Error>
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
         (|| {
             name_identity::register(conn)?;
-            conn.batch_execute(
-                "PRAGMA busy_timeout = 30000;\
-                 PRAGMA foreign_keys = ON;\
-                 PRAGMA journal_mode = WAL;\
-                 PRAGMA synchronous = FULL;",
-            )?;
-            Ok(())
+            conn.batch_execute(&format!(
+                "PRAGMA busy_timeout = {CONNECTION_BUSY_TIMEOUT_MS};\
+                 PRAGMA foreign_keys = ON;"
+            ))?;
+            enable_wal(conn)?;
+            conn.batch_execute("PRAGMA synchronous = FULL;")
         })()
         .map_err(diesel::r2d2::Error::QueryError)
+    }
+}
+
+const CONNECTION_BUSY_TIMEOUT_MS: u64 = 30_000;
+const WAL_SWITCH_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Switching a rollback-journal file to WAL upgrades the statement's own read lock to a write
+/// lock. When two connections switch at once, SQLite returns SQLITE_BUSY to the loser without
+/// calling its busy handler, because waiting while holding the read lock could deadlock. The
+/// failed statement releases that lock, so retry it within the busy-timeout budget.
+fn enable_wal(conn: &mut SqliteConnection) -> diesel::QueryResult<()> {
+    let deadline = Instant::now() + std::time::Duration::from_millis(CONNECTION_BUSY_TIMEOUT_MS);
+    loop {
+        match conn.batch_execute("PRAGMA journal_mode = WAL;") {
+            Err(diesel::result::Error::DatabaseError(_, information))
+                if information.message() == "database is locked" && Instant::now() < deadline =>
+            {
+                std::thread::sleep(WAL_SWITCH_RETRY_INTERVAL);
+            }
+            result => return result,
+        }
     }
 }
 
@@ -15962,6 +15982,47 @@ mod setup_policy_tests {
             "wal"
         );
         eprintln!("contended on_acquire completed in {:?}", origin.elapsed());
+    }
+
+    #[test]
+    fn concurrent_connections_enabling_wal_on_a_rollback_journal_file_all_succeed() {
+        use diesel::r2d2::CustomizeConnection;
+
+        // One round lost the WAL switch about a quarter of the time before the retry.
+        const ROUNDS: usize = 50;
+        const CONNECTIONS: usize = 4;
+        for round in 0..ROUNDS {
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("rollback.db3");
+            SqliteConnection::establish(path.to_str().unwrap())
+                .unwrap()
+                .batch_execute("CREATE TABLE T (v INTEGER); INSERT INTO T VALUES (1);")
+                .unwrap();
+            let start = std::sync::Barrier::new(CONNECTIONS);
+            let results: Vec<_> = std::thread::scope(|scope| {
+                let workers: Vec<_> = (0..CONNECTIONS)
+                    .map(|_| {
+                        scope.spawn(|| {
+                            let mut connection =
+                                SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+                            start.wait();
+                            ConnectionOptions
+                                .on_acquire(&mut connection)
+                                .map_err(|error| error.to_string())
+                        })
+                    })
+                    .collect();
+                workers
+                    .into_iter()
+                    .map(|worker| worker.join().unwrap())
+                    .collect()
+            });
+            for result in results {
+                if let Err(error) = result {
+                    panic!("round {round}: concurrent on_acquire failed: {error}");
+                }
+            }
+        }
     }
 
     const IMPORTER_STANDARD_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
