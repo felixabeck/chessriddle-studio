@@ -454,3 +454,92 @@ test("a write queued behind an in-flight write is dropped when the tab is closed
     expect(fake.calls).toEqual([`write:${tab.value}`, `remove:${tab.value}`]);
     expect(fake.records.has(tab.value)).toBe(false);
 });
+
+test("a save whose delete failed never deletes the copy of later edits", async () => {
+    const fake = fakeNative();
+    const mirror = mirrorWith(fake.native);
+    const tab = analysisTab();
+    const store = treeStore();
+    openTab(tab, store);
+    mirror.start();
+    edit(store, "before save");
+    await vi.advanceTimersByTimeAsync(0);
+
+    fake.native.failRemove = 1;
+    store.setState({ dirty: false } as never);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.records.has(tab.value)).toBe(true);
+
+    edit(store, "after save");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mirror.isConfirmed(tab.value)).toBe(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await mirror.drain();
+    expect(decodeUnsavedGame(fake.records.get(tab.value)!).tree.root.comment).toBe("after save");
+    expect(mirror.isConfirmed(tab.value)).toBe(true);
+});
+
+test("a failed delete notifies with the error category", async () => {
+    const fake = fakeNative();
+    fake.native.remove = () =>
+        Promise.reject({ tag: "backend-error", category: "permission", message: "denied" });
+    const mirror = mirrorWith(fake.native);
+    const tab = analysisTab();
+    const store = treeStore();
+    openTab(tab, store);
+    mirror.start();
+    edit(store, "x");
+    await vi.advanceTimersByTimeAsync(0);
+    closeTab(tab.value);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(notify).toHaveBeenCalledOnce();
+    expect(String(notify.mock.calls[0][0])).toContain("permission");
+});
+
+test("a record refused as too large is not retried until the game changes", async () => {
+    const fake = fakeNative();
+    fake.native.failWrite = { tag: "backend-error", category: "resource-limit", message: "big" };
+    const mirror = mirrorWith(fake.native);
+    const tab = analysisTab();
+    const store = treeStore();
+    openTab(tab, store);
+    mirror.start();
+    edit(store, "huge");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.calls).toEqual([`write:${tab.value}`]);
+
+    await mirror.drain();
+    tabRename(tab.value, tab.name);
+    await vi.advanceTimersByTimeAsync(UNSAVED_GAME_WRITE_DELAY_MS);
+    expect(fake.calls).toEqual([`write:${tab.value}`]);
+
+    fake.native.failWrite = undefined;
+    edit(store, "smaller");
+    await vi.advanceTimersByTimeAsync(UNSAVED_GAME_WRITE_DELAY_MS);
+    expect(fake.calls).toEqual([`write:${tab.value}`, `write:${tab.value}`]);
+    expect(mirror.isConfirmed(tab.value)).toBe(true);
+});
+
+function tabRename(id: string, name: string) {
+    jotai.set(tabsAtom, (tabs) => tabs.map((tab) => (tab.value === id ? { ...tab, name } : tab)));
+}
+
+test("long tab names are cut on write so the record still restores", () => {
+    const long = "x".repeat(5000);
+    const decoded = decodeUnsavedGame(
+        encodeUnsavedGame({ name: long, type: "analysis" }, defaultTree()),
+    );
+    expect(decoded.name).toHaveLength(1024);
+});
+
+test("restore clears the stale source stamp and linked source", async () => {
+    const { native, records } = fakeNative();
+    const id = crypto.randomUUID();
+    const tree: TreeState = { ...defaultTree(), dirty: true, sourceStamp: "a".repeat(64) };
+    records.set(id, encodeUnsavedGame({ name: "file game", type: "analysis" }, tree));
+    await restoreUnsavedGames(restoreDeps(native));
+    const { tabStorage } = await import("@/state/store/tabStorage");
+    const stored = tabStorage.readTree(id) as { value: { state: TreeState } };
+    expect(stored.value.state.sourceStamp).toBeNull();
+    expect((stored.value.state as { linkedSource?: unknown }).linkedSource ?? null).toBeNull();
+});

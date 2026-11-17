@@ -31,6 +31,9 @@ export const UNSAVED_GAME_VERSION = 1;
 export const UNSAVED_GAME_WRITE_DELAY_MS = 1000;
 /** Upper bound a quit or "Clear saved data" waits for outstanding native operations. */
 export const UNSAVED_GAME_DRAIN_TIMEOUT_MS = 2000;
+/** Longest tab name and type a record keeps; longer names are cut on write, never refused. */
+export const UNSAVED_GAME_NAME_MAX = 1024;
+const UNSAVED_GAME_TYPE_MAX = 64;
 const REMOVE_RETRY_BASE_MS = 1000;
 const REMOVE_RETRY_MAX_MS = 30_000;
 
@@ -55,7 +58,11 @@ export const nativeUnsavedGames: UnsavedGameNative = {
 
 const recordSchema = z.object({
     version: z.literal(UNSAVED_GAME_VERSION),
-    tab: z.object({ name: z.string().max(1024), type: z.string().max(64) }),
+    // The stored type is diagnostic only: restore always opens an analysis tab.
+    tab: z.object({
+        name: z.string().max(UNSAVED_GAME_NAME_MAX),
+        type: z.string().max(UNSAVED_GAME_TYPE_MAX),
+    }),
     tree: z.object({
         version: z.number().int().min(0).max(TREE_STORAGE_VERSION),
         state: z.unknown(),
@@ -68,7 +75,7 @@ export type DecodedUnsavedGame = { name: string; tree: TreeState };
 export function encodeUnsavedGame(tab: Pick<Tab, "name" | "type">, state: unknown): string {
     return JSON.stringify({
         version: UNSAVED_GAME_VERSION,
-        tab: { name: tab.name, type: tab.type },
+        tab: { name: tab.name.slice(0, UNSAVED_GAME_NAME_MAX), type: tab.type },
         tree: { version: TREE_STORAGE_VERSION, state: prepareTreeForStorage(state) },
     });
 }
@@ -211,8 +218,9 @@ export class UnsavedGameMirror {
     }
 
     /**
-     * Starts pending writes now, retries failed removes without their backoff, and waits for every
-     * outstanding operation, bounded by `timeoutMs`.
+     * Retries failed removes without their backoff and waits for every outstanding operation,
+     * bounded by `timeoutMs`. Unless paused (Clear saved data), it also starts pending writes now
+     * (quit).
      */
     async drain(timeoutMs = UNSAVED_GAME_DRAIN_TIMEOUT_MS): Promise<DrainResult> {
         if (!this.paused) {
@@ -392,6 +400,9 @@ export class UnsavedGameMirror {
             if (this.paused) return;
             if (this.lane(entry.id).generation !== generation) return;
             if (this.entries.get(entry.id) !== entry) return;
+            // An earlier generation's remove that failed and waits for its retry must not run
+            // after this write: the write replaces the record it was meant to delete.
+            this.cancelRemoval(entry.id);
             const state = entry.store.getState();
             if (!state.dirty) return;
             const snapshot = this.snapshot(entry);
@@ -450,6 +461,14 @@ export class UnsavedGameMirror {
         this.enqueueRemove(removal);
     }
 
+    private cancelRemoval(id: string): void {
+        const removal = this.removals.get(id);
+        if (!removal) return;
+        if (removal.timer) clearTimeout(removal.timer);
+        removal.timer = null;
+        this.removals.delete(id);
+    }
+
     private enqueueRemove(removal: PendingRemoval): void {
         this.enqueue(removal.id, async () => {
             if (this.removals.get(removal.id) !== removal) return;
@@ -457,10 +476,11 @@ export class UnsavedGameMirror {
                 await this.deps.native.remove(removal.id);
             } catch (error) {
                 removal.attempts += 1;
-                this.warn(
-                    `Recovery copy ${removal.id} could not be deleted: ${normalizeError(error).message}`,
-                );
                 if (!removal.notified) {
+                    // Retries stay silent; the native side logs every failed attempt.
+                    this.warn(
+                        `Recovery copy ${removal.id} could not be deleted: ${normalizeError(error).message}`,
+                    );
                     removal.notified = true;
                     this.deps.notify(
                         i18n.t("UnsavedGames.RemoveFailed", {
@@ -593,8 +613,6 @@ function admitRecord(id: string, document: string, deps: RestoreDeps): string | 
 // ---------------------------------------------------------------------------------------------
 // Clear saved data
 
-export class ClearUnsavedGamesError extends Error {}
-
 /**
  * Deletes every recovery copy before the caller wipes web storage. Throws (and resumes the mirror)
  * on every path that keeps the session; on success the mirror stays paused for the reload.
@@ -610,26 +628,26 @@ export async function clearUnsavedGamesBeforeWipe(deps: {
         drained = await deps.mirror.drain();
     } catch (error) {
         deps.mirror.resume();
-        throw new ClearUnsavedGamesError(
+        throw new Error(
             i18n.t("Menu.Help.ClearSavedData.UnsavedFailed", { category: categoryOf(error) }),
         );
     }
     if (!drained.finished) {
         deps.mirror.resume();
-        throw new ClearUnsavedGamesError(i18n.t("Menu.Help.ClearSavedData.UnsavedPending"));
+        throw new Error(i18n.t("Menu.Help.ClearSavedData.UnsavedPending"));
     }
     let leftover: string[];
     try {
         leftover = await deps.native.clear();
     } catch (error) {
         deps.mirror.resume();
-        throw new ClearUnsavedGamesError(
+        throw new Error(
             i18n.t("Menu.Help.ClearSavedData.UnsavedFailed", { category: categoryOf(error) }),
         );
     }
     if (leftover.length > 0) {
         deps.mirror.resume();
-        throw new ClearUnsavedGamesError(
+        throw new Error(
             i18n.t("Menu.Help.ClearSavedData.UnsavedLeftover", { count: leftover.length }),
         );
     }

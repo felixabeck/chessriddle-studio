@@ -110,7 +110,7 @@ type TabVerdict = { tab: Tab; uninspectable: boolean; dirty: boolean };
 function inspectBlockingTabs(
     tabs: readonly Tab[],
     inspection: TabInspection = defaultInspection,
-    isRecoverable: (tabId: string) => boolean = () => false,
+    hasConfirmedCopy: (tabId: string) => boolean = () => false,
 ): TabVerdict[] {
     const blocking: TabVerdict[] = [];
     for (const tab of tabs) {
@@ -149,8 +149,8 @@ function inspectBlockingTabs(
 
         if (!asksBeforeDiscardingChanges(tab)) continue;
 
-        // A recoverable dirty tab is not blocking for being dirty, but a file conflict still is.
-        if (dirty && !isRecoverable(tab.value)) {
+        // A dirty tab with a durable copy is not blocking for being dirty; a conflict still is.
+        if (dirty && !hasConfirmedCopy(tab.value)) {
             blocking.push({ tab, uninspectable: false, dirty: true });
             continue;
         }
@@ -240,7 +240,10 @@ export async function runQuitGate(host: QuitGateHost): Promise<void> {
     inProgress = true;
     activeHost = host;
     try {
-        await host.recovery?.drain();
+        const drained = await host.recovery?.drain();
+        if (drained && !drained.finished) {
+            host.warn("Quit gate: recovery copies were still being updated when it scanned.");
+        }
         const tabs = host.getTabs();
         const blocking = scanQuitBlockingTabs(tabs, host.recovery);
         if (blocking.length === 0) {

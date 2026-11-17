@@ -5,7 +5,7 @@ import { Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
 import { Database, Info, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
 import { parseUci, type Piece } from "chessops";
-import { useAtom, useAtomValue, useSetAtom, useStore as useAtomStore } from "jotai";
+import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -37,7 +37,7 @@ import {
   saveToFile,
   useTabActions,
 } from "@/utils/tabs";
-import { boardCommandAtom } from "./boardCommands";
+import { useBoardCommands } from "./boardCommands";
 import SaveToTargetModal from "./SaveToTargetModal";
 import DetachedEval from "../common/DetachedEval";
 import GameNotation from "../common/GameNotation";
@@ -131,14 +131,9 @@ function BoardAnalysis() {
   const userSaveFile = useCallback(() => saveFile(true), [saveFile]);
 
   // File menu → Save / Save to…: handled here with the same handlers as the board controls.
-  const boardCommand = useAtomValue(boardCommandAtom);
-  const setBoardCommand = useSetAtom(boardCommandAtom);
-  useEffect(() => {
-    if (!boardCommand || !currentTab || boardCommand.tabId !== currentTab.value) return;
-    setBoardCommand(null);
-    if (boardCommand.kind === "save") void userSaveFile();
-    else setSaveToModal(true);
-  }, [boardCommand, currentTab, setBoardCommand, userSaveFile]);
+  const openSaveTo = useCallback(() => setSaveToModal(true), []);
+  const saveFromMenu = useCallback(() => void userSaveFile(), [userSaveFile]);
+  useBoardCommands(currentTab?.value, { save: saveFromMenu, saveTo: openSaveTo });
   useAutoSave(store, hasPersistentOrigin && autoSave, saveFile);
 
   const addGameAction = useContext(AddGameContext);

@@ -938,3 +938,29 @@ test("Save and quit drains the recovery copies after saving, before it quits", a
     await expect(saveAndQuit()).resolves.toEqual({ kind: "quit" });
     expect(order).toEqual(["drain", "save", "drain", "destroy"]);
 });
+
+test.each([
+    ["an incomplete", async () => ({ finished: false })],
+    [
+        "a thrown",
+        async (): Promise<{ finished: boolean }> => {
+            throw new Error("drain failed");
+        },
+    ],
+])("Save and quit still quits after %s post-save drain", async (_, secondDrain) => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const drain = vi
+        .fn<() => Promise<{ finished: boolean }>>()
+        .mockResolvedValueOnce({ finished: true })
+        .mockImplementationOnce(secondDrain);
+    const gate = host({
+        getTabs: () => [tab({ value: id, type: "analysis" })],
+        recovery: recovery([], drain),
+        saveTab: vi.fn(async (saved: Tab) => markStoredTreeSaved(saved.value)),
+    });
+    await runQuitGate(gate);
+    await expect(saveAndQuit()).resolves.toEqual({ kind: "quit" });
+    expect(gate.destroyWindow).toHaveBeenCalledOnce();
+    expect(gate.warn).toHaveBeenCalled();
+});
