@@ -133,7 +133,10 @@ vi.mock("@/utils/tabs", () => ({
   getTabFile: () => ({ handle: { id: { id: "file-a" } }, name: "opening.pgn" }),
   getTabGameNumber: () => 0,
 }));
-vi.mock("@/utils/pathCapabilities", () => ({ fileWorkspaceKey: () => "file-a" }));
+vi.mock("@/utils/pathCapabilities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/pathCapabilities")>()),
+  fileWorkspaceKey: () => "file-a",
+}));
 vi.mock("@/utils/treeReducer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/utils/treeReducer")>();
   return {
