@@ -210,9 +210,11 @@ vi.mock("lucide-react", () => {
 });
 vi.mock("@mantine/core", () => {
   const element = ({ children, ...props }: any) => <div {...props}>{children}</div>;
-  const button = ({ children, ...props }: any) => (
+  const button = ({ children, leftSection, rightSection, ...props }: any) => (
     <button type="button" {...props}>
+      {leftSection}
       {children}
+      {rightSection}
     </button>
   );
   const Tabs = ({ children, ...props }: any) => <div {...props}>{children}</div>;
@@ -346,6 +348,18 @@ afterEach(async () => {
   container?.remove();
   root = undefined;
   container = undefined;
+});
+
+test("the full-repertoire badge shows the in-scope total from getStats", async () => {
+  fixtures.deck = deck({
+    positions: [position("a"), position("b"), position("c")],
+  });
+  fixtures.stats = { due: 0, nextDue: null, learned: 0, total: 7, unseen: 0 };
+  await rerenderPracticePanel();
+  const button = [...(container?.querySelectorAll("button") ?? [])].find((element) =>
+    element.textContent?.includes("Board.Practice.PracticeFullRepertoire"),
+  );
+  expect(button?.textContent).toContain("7");
 });
 
 test("the next due date follows the German interface language", async () => {

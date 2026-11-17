@@ -76,6 +76,17 @@ export function buildFromTree(tree: TreeNode, color: "white" | "black", start: n
     return cards;
 }
 
+/** Empty Start covers every non-root position; the root is never a card. Union of both orientations is every board state the tree can still practise under any scope. */
+export function practiceBoardStates(tree: TreeNode): Set<string> {
+    const boardStates = new Set<string>();
+    for (const color of ["white", "black"] as const) {
+        for (const pos of buildFromTree(tree, color, [])) {
+            boardStates.add(getBoardState(pos.fen));
+        }
+    }
+    return boardStates;
+}
+
 type Stats = {
     unseen: number;
     due: number;
@@ -168,14 +179,7 @@ export function syncDeck(
     retained?: () => ReadonlySet<string>,
 ): { positions: Position[]; added: number; removed: number; updated: number; reordered: boolean } {
     const freshPositions = buildFromTree(tree, color, start);
-    // Empty Start covers every non-root position; the root is never a card. Union of both
-    // orientations is every board state the tree can still practise under any scope.
-    const anyScopeBoardStates = new Set<string>();
-    for (const scopeColor of ["white", "black"] as const) {
-        for (const pos of buildFromTree(tree, scopeColor, [])) {
-            anyScopeBoardStates.add(getBoardState(pos.fen));
-        }
-    }
+    const anyScopeBoardStates = practiceBoardStates(tree);
 
     const existingByFen = new Map<string, Position>();
     for (const pos of existing) {

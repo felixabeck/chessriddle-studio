@@ -1,4 +1,4 @@
-import type { Position } from "@/components/files/opening";
+import { inScopeCards, type Position } from "@/components/files/opening";
 import type { PracticePhase, PracticeSessionStats, PracticeState } from "@/state/atoms";
 import { getBoardState } from "@/utils/treeReducer";
 
@@ -21,9 +21,8 @@ export function buildPracticeQueue(
     now: Date,
 ): PracticeQueue {
     let newCount = 0;
-    const remainingPositionKeys = positions
-        .filter(({ card, outOfScope }) => {
-            if (outOfScope) return false;
+    const remainingPositionKeys = inScopeCards(positions)
+        .filter(({ card }) => {
             if (mode === "full") return true;
             if (card.reps > 0) return new Date(card.due) <= now;
             if (newCount >= newPerSession) return false;

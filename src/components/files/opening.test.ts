@@ -11,6 +11,7 @@ import {
     getStats,
     inScopeCards,
     isInPracticeScope,
+    positionSchema,
     resolvePracticeCard,
     syncDeck,
     updateCardPerformance,
@@ -511,17 +512,17 @@ test("narrowing Start flags earlier cards and widening restores their schedule",
 
     const narrowed = syncDeck(all, root, "white", [0, 0, 0, 0]);
     expect(narrowed).toMatchObject({ removed: 0 });
-    const e4Card = narrowed.positions.find((position) => position.answer === "Nf3");
-    expect(e4Card?.outOfScope).toBe(true);
-    expect(e4Card?.card.reps).toBe(5);
-    expect(e4Card?.card.due).toEqual(dueInTwentyDays);
+    const nf3Card = narrowed.positions.find((position) => position.answer === "Nf3");
+    expect(nf3Card?.outOfScope).toBe(true);
+    expect(nf3Card?.card.reps).toBe(5);
+    expect(nf3Card?.card.due).toEqual(dueInTwentyDays);
 
     const widened = syncDeck(narrowed.positions, root, "white", []);
-    const restored = widened.positions.find((position) => position.answer === "Nf3");
+    const restoredNf3Card = widened.positions.find((position) => position.answer === "Nf3");
     expect(widened).toMatchObject({ added: 0, removed: 0 });
-    expect(restored).not.toHaveProperty("outOfScope");
-    expect(restored?.card.reps).toBe(5);
-    expect(restored?.card.due).toEqual(dueInTwentyDays);
+    expect(restoredNf3Card).not.toHaveProperty("outOfScope");
+    expect(restoredNf3Card?.card.reps).toBe(5);
+    expect(restoredNf3Card?.card.due).toEqual(dueInTwentyDays);
 });
 
 test("removing a line from the tree still drops its card", () => {
@@ -536,6 +537,25 @@ test("removing a line from the tree still drops its card", () => {
         buildFromTree(shorter, "white", []).map(({ answer }) => answer),
     );
     expect(result.positions.some((position) => position.answer === "Ba4")).toBe(false);
+});
+
+test("positionSchema keeps the outOfScope flag", () => {
+    const card = createEmptyCard();
+    expect(
+        positionSchema.parse({
+            fen: "8/8/8/8/8/8/8/8 w - - 0 1",
+            answer: "e4",
+            card,
+            outOfScope: true,
+        }).outOfScope,
+    ).toBe(true);
+    expect(
+        positionSchema.parse({
+            fen: "8/8/8/8/8/8/8/8 w - - 0 1",
+            answer: "e4",
+            card,
+        }),
+    ).not.toHaveProperty("outOfScope");
 });
 
 test("getStats ignores out-of-scope cards", () => {

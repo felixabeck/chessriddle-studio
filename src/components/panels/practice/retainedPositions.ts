@@ -1,4 +1,4 @@
-import { buildFromTree, type Position } from "@/components/files/opening";
+import { practiceBoardStates, type Position } from "@/components/files/opening";
 import type { PracticeDeckKey } from "@/state/practiceStorage";
 import { tabStorage } from "@/state/store/tabStorage";
 import { getCachedTreeStore } from "@/state/store/tree";
@@ -41,11 +41,8 @@ export function collectRetainedPracticePositions({
                 ? cached.getState().root
                 : tabStorage.readForClone(getTabTreeKey(tab), tab.treeKey !== undefined)?.root;
             if (!root) continue;
-            for (const position of [
-                ...buildFromTree(root, "white", []),
-                ...buildFromTree(root, "black", []),
-            ]) {
-                retained.add(getBoardState(position.fen));
+            for (const boardState of practiceBoardStates(root)) {
+                retained.add(boardState);
             }
         } catch {
             return new Set(existing.map((position) => getBoardState(position.fen)));

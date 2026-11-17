@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
+import { createEmptyCard } from "ts-fsrs";
 import { buildFromTree, updateCardPerformance } from "@/components/files/opening";
 import {
   activeTabAtom,
@@ -27,6 +28,7 @@ import { defaultTree, getBoardState, getNodeAtPath } from "@/utils/treeReducer";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { getTabFile } from "@/utils/tabs";
 import PracticePanel from "./PracticePanel";
+import { PositionsModal } from "./PracticeModals";
 import { PRACTICE_REPLAY_STEP_MS } from "./session";
 
 const mocks = vi.hoisted(() => ({
@@ -946,6 +948,39 @@ async function mountScopedTransposition(startPractice: boolean) {
     },
   );
 }
+
+test("PositionsModal shows empty when every stored card is out of scope", async () => {
+  tree = createTreeStore(undefined, defaultTree(standard));
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <TreeStateContext.Provider value={tree}>
+          <PositionsModal
+            open
+            setOpen={() => {}}
+            deck={{
+              status: "ready",
+              positions: [
+                {
+                  fen: standard,
+                  answer: "e4",
+                  card: createEmptyCard(),
+                  outOfScope: true,
+                },
+              ],
+              revision: 1,
+              generation: 0,
+              unappliedReviews: 0,
+              orphansAcknowledged: true,
+            }}
+          />
+        </TreeStateContext.Provider>
+      </MantineProvider>,
+    ),
+  );
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Board.Practice.NoPositionsYet");
+});
 
 test("scoped transpositions use the in-scope occurrence for PositionsModal, replay and answers", async () => {
   await mountScopedTransposition(false);
