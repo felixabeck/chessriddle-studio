@@ -403,11 +403,15 @@ test("a mouse press on the result opens the list once instead of toggling it shu
   });
   expect(resultListOpen()).toBe(true);
 
-  await act(async () => resultField().click());
+  // A press on the already focused field fires no focus event, so it leaves the pointer flag set.
+  await act(async () => {
+    resultField().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    resultField().click();
+  });
   expect(resultListOpen()).toBe(false);
   expect(document.activeElement).toBe(resultField());
 
-  // The press set the pointer flag on a focused field; leaving must clear it so the next Tab opens.
+  // Leaving must clear that flag so the next Tab opens.
   await act(async () => resultField().blur());
   await act(async () => resultField().focus());
   expect(resultListOpen()).toBe(true);

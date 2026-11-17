@@ -187,9 +187,13 @@ test("Tab from White Elo opens the result list with a visible focus outline", as
     const result = page.getByLabel("Result", { exact: true });
     await expect(result).toBeFocused();
     await expect(result).toHaveAttribute("aria-expanded", "true");
-    expect(await result.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe(
-        "solid",
-    );
+    // Same ring as the neighbouring fields (`GameInfo.module.css` focus-visible rule).
+    expect(
+        await result.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return [style.outlineStyle, style.outlineWidth, style.outlineOffset];
+        }),
+    ).toEqual(["solid", "3px", "2px"]);
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("Enter");
     await expect(result).toHaveValue("1/2-1/2");

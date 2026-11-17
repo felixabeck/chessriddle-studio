@@ -309,7 +309,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             </label>
             <ResultField
               value={headers.result}
-              readOnly={disabled}
+              locked={disabled}
               onChange={(result) =>
                 setHeaders({
                   ...headers,
@@ -358,14 +358,16 @@ const RESULT_OPTIONS = (["1-0", "0-1", "1/2-1/2", "*"] satisfies Outcome[]).map(
  */
 function ResultField({
   value,
-  readOnly,
+  locked,
   onChange,
 }: {
   value: Outcome;
-  readOnly: boolean;
+  /** Read-only game info: the result shows but never opens. */
+  locked: boolean;
   onChange: (result: Outcome) => void;
 }) {
-  const pointerFocus = useRef(false);
+  /** Set by pointerdown, read and cleared by the focus that pointerdown causes. */
+  const focusFromPointer = useRef(false);
   const combobox = useCombobox({
     onDropdownOpen: () => combobox.updateSelectedOptionIndex("active"),
     onDropdownClose: () => combobox.resetSelectedOption(),
@@ -374,41 +376,46 @@ function ResultField({
   return (
     <Combobox
       store={combobox}
-      readOnly={readOnly}
+      readOnly={locked}
       onOptionSubmit={(next) => {
         onChange(next as Outcome);
         combobox.closeDropdown();
       }}
     >
+      {/* Button semantics, as in Mantine's Select: Enter and Space open the list even after
+          Escape closed it. The input itself is never typed into. */}
       <Combobox.Target targetType="button" withExpandedAttribute>
         <InputBase
           id="game-result"
           role="combobox"
           readOnly
-          pointer={!readOnly}
+          pointer={!locked}
           variant="unstyled"
           classNames={{ input: classes.resultInput }}
           value={value}
           onPointerDown={() => {
-            pointerFocus.current = true;
+            focusFromPointer.current = true;
           }}
           onFocus={() => {
-            if (!pointerFocus.current && !readOnly) combobox.openDropdown("keyboard");
-            pointerFocus.current = false;
+            if (!focusFromPointer.current && !locked) combobox.openDropdown("keyboard");
+            focusFromPointer.current = false;
           }}
           onClick={() => {
-            if (!readOnly) combobox.toggleDropdown();
+            if (!locked) combobox.toggleDropdown();
           }}
           onBlur={() => {
             // A press on the already focused field fires no focus event, so clear it here.
-            pointerFocus.current = false;
+            focusFromPointer.current = false;
             combobox.closeDropdown();
           }}
         />
       </Combobox.Target>
+      {/* Mantine's own Select list, so it looks exactly like before. The props set to undefined
+          are typed `T | undefined` but required; aria-label stays unset because a listbox named
+          "Result" would collide with the field's label. */}
       <OptionsDropdown
         data={RESULT_OPTIONS}
-        hidden={readOnly}
+        hidden={locked}
         value={value}
         withCheckIcon
         checkIconPosition="left"
