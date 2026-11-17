@@ -370,6 +370,29 @@ describe("account authentication", () => {
     ]);
   });
 
+  test("adding Lichess and Chess.com accounts under one typed player name makes one player", async () => {
+    const { sessionsAtom } = await import("@/state/atoms");
+    const { getDefaultStore } = await import("jotai");
+    const { playerGroups } = await import("@/utils/session");
+    const store = getDefaultStore();
+    mocks.getLichessAccount.mockResolvedValue({ id: "casual", username: "casual" });
+
+    openModal();
+    fillPlayerName("Felix");
+    fillUsername("casual");
+    await submit();
+
+    openModal();
+    fillPlayerName("Felix");
+    fillUsername("serious");
+    chooseChessCom();
+    await submit();
+
+    expect(playerGroups(store.get(sessionsAtom)).map(({ key, sites }) => [key, sites])).toEqual([
+      ["alias:Felix", ["lichess", "chesscom"]],
+    ]);
+  });
+
   test("deduplicates Chess.com accounts case-insensitively when adding Felix then felix", async () => {
     const { sessionsAtom } = await import("@/state/atoms");
     const { getDefaultStore } = await import("jotai");

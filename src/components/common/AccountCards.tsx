@@ -152,8 +152,8 @@ function PlayerSession({
                 setSessions((prev) =>
                   prev.map((s) => {
                     if (sessions.includes(s)) {
-                      const { alias: _previous, ...account } = s;
-                      return alias ? { ...account, alias } : account;
+                      const { alias: _previous, ...unnamed } = s;
+                      return alias ? { ...unnamed, alias } : unnamed;
                     }
                     return s;
                   }),

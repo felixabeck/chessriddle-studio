@@ -48,6 +48,16 @@ describe("authenticateLichess", () => {
         });
     });
 
+    test("an empty player name stores the account without an alias", async () => {
+        mocks.getAuthenticationStatus.mockResolvedValue({
+            state: "succeeded",
+            account: { handle: "native-handle", username: "Player" },
+            durability_uncertain: false,
+        });
+        await authenticateLichess("", "Player");
+        expect(getDefaultStore().get(sessionsAtom)[0]).not.toHaveProperty("alias");
+    });
+
     test("preserves the durability warning on successful authentication", async () => {
         mocks.getAuthenticationStatus.mockResolvedValue({
             state: "succeeded",

@@ -1486,7 +1486,7 @@ test("accounts-puzzles-engines: home summary keeps one username on Lichess and C
     await options.nth(1).click();
     await expect(player).toHaveValue("alex");
     await expect(selectedSites).toHaveAttribute("data-site-logos", "chesscom");
-    // Switching to the Chess.com player reads only the Chess.com account's database.
+    // Switching to the Chess.com player adds a read of only the Chess.com account's database.
     await expect
         .poll(statisticsFiles)
         .toEqual([summaryLichessDatabase.handle, summaryChessComDatabase.handle]);

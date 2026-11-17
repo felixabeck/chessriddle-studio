@@ -107,10 +107,11 @@ const collidingSessions = [
   },
 ];
 
-function playerGroup(name: string) {
-  const heading = Array.from(container.querySelectorAll("span")).find(
+/** The player group under the heading `name`; names can repeat, so `index` picks among them. */
+function playerGroup(name: string, index = 0) {
+  const heading = Array.from(container.querySelectorAll("span")).filter(
     (element) => element.textContent === name,
-  );
+  )[index];
   const group = heading?.parentElement?.parentElement;
   if (!group) throw new Error(`Player group ${name} not found`);
   return group;
@@ -272,7 +273,8 @@ describe("Players without an alias", () => {
       });
     }
 
-    await rename(playerGroup("Twin"), "Twin");
+    // The first Twin group is the Lichess account.
+    await rename(playerGroup("Twin", 0), "Twin");
     expect(getDefaultStore().get(sessionsAtom)).toEqual(twins);
 
     await rename(playerGroup("Twin"), "Casual");
@@ -283,6 +285,16 @@ describe("Players without an alias", () => {
 
     await rename(playerGroup("Casual"), "  ");
     expect(getDefaultStore().get(sessionsAtom)).toEqual(twins);
+
+    // Giving both twins one name merges them into one player card.
+    await rename(playerGroup("Twin", 0), "Felix");
+    await rename(playerGroup("Twin", 0), "Felix");
+    expect(
+      Array.from(container.querySelectorAll("span"), (element) => element.textContent).filter(
+        (text) => text === "Felix" || text === "Twin",
+      ),
+    ).toEqual(["Felix"]);
+    expect(playerGroup("Felix").querySelectorAll('button[aria-label^="Log out "]')).toHaveLength(2);
   });
 });
 
