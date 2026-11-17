@@ -26387,7 +26387,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Clicking the selected colour again in the Lichess explorer options stores `color: null`, which breaks the player query and wipes all Lichess explorer options at the next start
 
-* **ID:** f-20261115-08 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-08 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (cross-cutting Mantine-inputs sweep, origin `179c9f23c`)
 * **Where:** `src/components/panels/database/options/LichessOptionsPanel.tsx` ~142-151, the colour `<Select … value={options.color} onChange={(v) => setOptions({ ...options, color: v as "white" | "black" })} clearable={false} />` without `allowDeselect={false}`. It persists through `lichessOptionsAtom` (`src/state/atoms.ts` ~1089-1097, `createZodStorage(lichessGamesOptionsSchema, localStorage)`), whose schema requires `color: z.enum(["white","black"])` (`src/utils/lichess/explorer.ts` ~53). `createZodStorage.getItem` (`src/state/utils.ts` ~104-115) replaces an invalid stored object with the initial value and rewrites storage. `getLichessGames` (`src/utils/lichess/api.tsx` ~375) picks the `player` endpoint from `options.player` alone, but `getLichessGamesQueryParams` (`explorer.ts` ~83-86) only sends `player`/`color` when both are set.
@@ -26397,6 +26397,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** add `allowDeselect={false}` to the colour Select (as the other required Selects do, e.g. `GameInfo`, `TimeInput`, `LogsPanel`), and ignore a `null` in `onChange`. Optionally make the schema repair field-wise (fall back to `"white"` for a bad colour instead of discarding the whole object). Add a panel regression that re-selecting the current colour keeps `"white"`.
 * **Related:** f-20261115-06 (same Mantine deselect → empty value in engine combo options); f-20261112-25 (player endpoint response parsing, handled); f-20261112-01 (explorer date filters, handled).
 * **Found by:** Grok Bot, cross-cutting Mantine-inputs sweep
+* **Closed (drain, 2026-11-17):** fixed in `3ffadc176`. The Lichess colour Select now sets `allowDeselect={false}` and ignores any value other than `"white"`/`"black"`. The same deselect-to-null shape in the local explorer Result Select (`LocalOptionsPanel.tsx`, same file set) got the same fix. `lichessGamesOptionsSchema.color` now uses `.catch("white")`, so a `color: null` already written by this bug is repaired field-wise instead of resetting every stored Lichess option. Regressions: `LichessOptionsPanel.test.tsx` (re-clicking White keeps `color: "white"` and the player), `LocalOptionsPanel.test.tsx` (re-clicking Any keeps `result: "any"`), `explorer.test.ts` (schema repairs a null colour and keeps the other fields). All three go red with the source changes reverted.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"c38a1c2a20ab2f3b245ff86502854eb805ea46dad49b0abe5615b94eaa9d879a","header_sha256":"bd04f3f2c0898cac1af519867534bc3c6c7d9038fb9193ee85dd8ac1608acea2","header_status":"handled","input_sha256":"cfdfbc40a6bfe6f44b8dc66b987cef585b485eedd729899929c5e37ad3a917d3","kind":"mutation-receipt","operation":"162dc6f4de5b470578211a5ee602f74576965a242b8f3d0abfe19a165babd2c4","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-08"],"target":"f-20261115-08","v":1} -->
 
 ---
 
