@@ -4136,9 +4136,16 @@ fn get_players_game_info_blocking<R: tauri::Runtime>(
                 PLAYER_STATISTICS_BATCH_ROW_LIMIT,
                 cancellation,
                 |batch| {
+                    // Per-job child tokens: the shared token's mutex would serialise the
+                    // per-move checks of every worker (see `search_position_blocking`).
                     let evaluated = batch
                         .par_iter()
-                        .map(|row| evaluate_player_statistics_row(row, id, cancellation))
+                        .map_init(
+                            || cancellation.child_token(),
+                            |row_cancellation, row| {
+                                evaluate_player_statistics_row(row, id, row_cancellation)
+                            },
+                        )
                         .collect::<Result<Vec<_>, Error>>()?;
 
                     for row in evaluated.into_iter().flatten() {
