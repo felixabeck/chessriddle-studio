@@ -2,6 +2,12 @@ import { Group } from "@mantine/core";
 import type { AccountSite } from "@/utils/session";
 import LichessLogo from "./LichessLogo";
 
+/** Size and spacing of the small logos inside a dropdown; `siteLogosWidth` derives from them. */
+const SMALL_LOGO_SIZE = 18;
+const SMALL_LOGO_GAP = 4;
+/** Mantine's horizontal padding around an input section. */
+const SECTION_PADDING = 16;
+
 /** The logo of the site an account lives on. */
 export function SiteLogo({ site, size = 30 }: { site: AccountSite; size?: number }) {
   return site === "lichess" ? (
@@ -12,34 +18,32 @@ export function SiteLogo({ site, size = 30 }: { site: AccountSite; size?: number
 }
 
 /**
- * Small side-by-side site logos, for a player whose accounts live on several sites.
+ * Small side-by-side logos of one or more sites, as shown inside a dropdown.
  * `decorative` hides them from assistive technology where adjacent text already names the site.
  */
 export function SiteLogos({
   sites,
-  size = 18,
   decorative = false,
 }: {
   sites: AccountSite[];
-  size?: number;
   decorative?: boolean;
 }) {
   if (sites.length === 0) return null;
   return (
     <Group
-      gap={4}
+      gap={SMALL_LOGO_GAP}
       wrap="nowrap"
       data-site-logos={sites.join(" ")}
       aria-hidden={decorative || undefined}
     >
       {sites.map((site) => (
-        <SiteLogo key={site} site={site} size={size} />
+        <SiteLogo key={site} site={site} size={SMALL_LOGO_SIZE} />
       ))}
     </Group>
   );
 }
 
-/** Mantine `leftSectionWidth` that fits `count` small logos plus the input's inner padding. */
-export function siteLogosWidth(count: number, size = 18): number {
-  return count === 0 ? 0 : count * size + (count - 1) * 4 + 16;
+/** Mantine `leftSectionWidth` that fits `count` small logos plus the section's padding. */
+export function siteLogosWidth(count: number): number {
+  return count === 0 ? 0 : count * SMALL_LOGO_SIZE + (count - 1) * SMALL_LOGO_GAP + SECTION_PADDING;
 }

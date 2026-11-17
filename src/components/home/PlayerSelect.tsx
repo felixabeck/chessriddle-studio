@@ -4,14 +4,17 @@ import { sessionsAtom } from "@/state/atoms";
 import { playerSites, sessionPlayerName } from "@/utils/session";
 import { SiteLogos, siteLogosWidth } from "./SiteLogo";
 
+/** Width of Mantine's chevron section, the right padding when no logos are wider. */
+const CHEVRON_SECTION_WIDTH = 36;
+
 /** The player dropdown of the statistics card; every player shows the sites its accounts live on. */
 export function PlayerSelect({
-  label,
+  ariaLabel,
   value,
   onChange,
   mt,
 }: {
-  label: string;
+  ariaLabel: string;
   value: string;
   onChange: (name: string) => void;
   mt?: MantineSpacing;
@@ -23,7 +26,7 @@ export function PlayerSelect({
 
   return (
     <Select
-      aria-label={label}
+      aria-label={ariaLabel}
       value={value}
       data={players}
       onChange={(name) => onChange(name || "")}
@@ -34,7 +37,7 @@ export function PlayerSelect({
       leftSection={<SiteLogos sites={selectedSites} />}
       leftSectionWidth={sectionWidth || undefined}
       // Pad the right as far as the logos pad the left, so the centred name stays centred.
-      rightSectionWidth={Math.max(sectionWidth, 36)}
+      rightSectionWidth={Math.max(sectionWidth, CHEVRON_SECTION_WIDTH)}
       renderOption={({ option }) => (
         <Group gap="xs" wrap="nowrap">
           <SiteLogos sites={playerSites(sessions, option.value)} />

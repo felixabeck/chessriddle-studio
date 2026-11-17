@@ -42,8 +42,8 @@ const WebsiteAccountSelector = ({
     }
     return availableWebsites;
   }, [allowAll, sites, t]);
-  // "All websites" shows every site the player has an account on.
-  const websiteSites = (value: string | null): AccountSite[] =>
+  // The logos a Website filter value stands for; "All websites" shows every site the player has.
+  const filterLogoSites = (value: string | null): AccountSite[] =>
     value === ALL_WEBSITES ? sites : value && WEBSITE_SITE[value] ? [WEBSITE_SITE[value]] : [];
 
   const [website, setWebsite] = useState<string | null>(websites[0]?.value);
@@ -56,6 +56,15 @@ const WebsiteAccountSelector = ({
   useEffect(() => {
     onAccountChange(account);
   }, [account, onAccountChange]);
+
+  // The card keeps this selector mounted when another player is chosen; a website that player
+  // has no account on would otherwise stay selected and filter every game away.
+  useEffect(() => {
+    if (!websites.some((option) => option.value === website)) {
+      setWebsite(websites[0]?.value ?? null);
+      setAccount(ALL_ACCOUNTS);
+    }
+  }, [website, websites]);
 
   const accounts = useMemo(
     () =>
@@ -73,6 +82,10 @@ const WebsiteAccountSelector = ({
     [playerName, sessions, website],
   );
 
+  useEffect(() => {
+    if (account !== null && !accounts.includes(account)) setAccount(ALL_ACCOUNTS);
+  }, [account, accounts]);
+
   return (
     <>
       <Select
@@ -86,11 +99,11 @@ const WebsiteAccountSelector = ({
         }}
         data={websites}
         allowDeselect={false}
-        leftSection={<SiteLogos sites={websiteSites(website)} decorative />}
-        leftSectionWidth={siteLogosWidth(websiteSites(website).length) || undefined}
+        leftSection={<SiteLogos sites={filterLogoSites(website)} decorative />}
+        leftSectionWidth={siteLogosWidth(filterLogoSites(website).length) || undefined}
         renderOption={({ option }) => (
           <Group gap="xs" wrap="nowrap">
-            <SiteLogos sites={websiteSites(option.value)} decorative />
+            <SiteLogos sites={filterLogoSites(option.value)} decorative />
             {option.label}
           </Group>
         )}

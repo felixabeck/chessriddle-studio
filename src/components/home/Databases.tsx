@@ -395,7 +395,7 @@ function Databases() {
                 )}
 
                 <PlayerSelect
-                  label={t("Home.Accounts.SelectPlayer")}
+                  ariaLabel={t("Home.Accounts.SelectPlayer")}
                   value={name}
                   onChange={setSelectedName}
                   mt="md"

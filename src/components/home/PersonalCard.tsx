@@ -59,7 +59,11 @@ function PersonalPlayerCard({
         )}
         {setName ? (
           <Flex justify="center">
-            <PlayerSelect label={t("Home.Accounts.PlayerName")} value={name} onChange={setName} />
+            <PlayerSelect
+              ariaLabel={t("Home.Accounts.PlayerName")}
+              value={name}
+              onChange={setName}
+            />
           </Flex>
         ) : (
           <Text fz="lg" fw={500} ta="center" className="wrap-anywhere">
