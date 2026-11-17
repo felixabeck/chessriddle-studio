@@ -1191,6 +1191,20 @@ test("a database created after the first listing reaches the selected player on 
   expect(container.textContent).not.toContain("player-card");
 });
 
+test("a failed listing refresh replaces an in-flight summary with the failure message", async () => {
+  await renderDatabases();
+  await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalled());
+  expect(container.textContent).toContain("Home.Databases.ProcessingGames");
+
+  mocks.getDatabases.mockRejectedValue(new Error("database workspace unavailable"));
+  await act(async () => {
+    void swrMutate(DATABASE_LIST_KEY).catch(() => undefined);
+  });
+
+  await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Failed.Title"));
+  expect(container.textContent).not.toContain("Home.Databases.ProcessingGames");
+});
+
 test("a database listing failure renders a diagnostic-free message and logs the failure", async () => {
   mocks.getDatabases.mockRejectedValue(new Error("database workspace unavailable"));
 

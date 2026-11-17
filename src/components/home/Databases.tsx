@@ -68,7 +68,7 @@ function sessionAccountDatabase(
 
 /** Each account's database from the shared listing, owned by every player key that reads it. */
 function personalDatabases(
-  dbs: DatabaseList,
+  listing: DatabaseList,
   sessions: Session[],
   unavailableLabel: string,
 ): PersonalDatabase[] {
@@ -79,9 +79,9 @@ function personalDatabases(
   });
   const associations = accounts.map((account) => ({
     ...account,
-    association: findAccountDatabase(dbs, account.provider, account.username),
+    association: findAccountDatabase(listing, account.provider, account.username),
   }));
-  const readable: PersonalDatabase[] = dbs.databases.flatMap((db) => {
+  const readable: PersonalDatabase[] = listing.databases.flatMap((db) => {
     const owners = associations.filter((account) => account.association === db);
     const account = owners[0];
     return account
@@ -97,7 +97,7 @@ function personalDatabases(
               type: "unread" as const,
               filename: issue.filenames.join(", ") || account.username,
               error: [unavailableLabel, issue.error].filter(Boolean).join(" "),
-              key: `${capabilityKey(dbs.root)}:account:${index}`,
+              key: `${capabilityKey(listing.root)}:account:${index}`,
             },
             username: account.username,
             playerKeys: [account.playerKey],
@@ -324,7 +324,7 @@ function Databases() {
 
   return (
     <>
-      {isLoading && databases && (
+      {isLoading && databases && !databasesError && (
         <Paper
           h="100%"
           shadow="sm"
