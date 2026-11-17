@@ -493,7 +493,8 @@ export default function GameSelectorAccordion({
 
         markFileTabsFreshness(jotaiStore.get(tabsAtom), fileKey, "unverified");
         // A tab that had the deleted game open keeps its number, which now names the next game
-        // (or no game). Withhold it rather than let its reconcile adopt that game.
+        // (or no game). Withhold it rather than let its reconcile adopt that game. The captured
+        // number tells it apart from the next game's tab, which the rebind just moved to `index`.
         const replacing = index < predictedCount;
         for (const tab of jotaiStore.get(tabsAtom)) {
           if (

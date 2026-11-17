@@ -385,10 +385,8 @@ function FileBackedGate({
         if (!isFileBackedTab(current) || !matchesFileGameTab(current, origin)) return current;
         const file = current.gameOrigin.file;
         const name = getFileGameName(next, file);
-        if (current.name === name || current.name !== getFileGameName(previous, file)) {
-          return current;
-        }
-        return { ...current, name };
+        const followsOutgoing = current.name === getFileGameName(previous, file);
+        return followsOutgoing && current.name !== name ? { ...current, name } : current;
       });
     },
     [updateTab, tabId, origin],

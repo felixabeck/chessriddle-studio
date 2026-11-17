@@ -66,8 +66,34 @@ import {
     loadFileGame,
     openFile,
     pickPgnFile,
+    sameGameIdentity,
     writeFileGame,
 } from "./files";
+
+const otherStart = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+
+test.each([
+    { field: "white", a: "", b: "?" },
+    { field: "white", a: "Unknown", b: "" },
+    { field: "date", a: "", b: "????.??.??" },
+    { field: "round", a: "?", b: "" },
+    { field: "event", a: "", b: "fertig" },
+    { field: "site", a: "Berlin", b: "Moscow" },
+] as const)("sameGameIdentity keeps a game whose $field reads $a then $b", ({ field, a, b }) => {
+    const headers = defaultTree().headers;
+    expect(sameGameIdentity({ ...headers, [field]: a }, { ...headers, [field]: b })).toBe(true);
+});
+
+test.each([
+    { field: "white", a: "Kasparov", b: "Carlsen" },
+    { field: "black", a: "Topalov", b: "" },
+    { field: "date", a: "1999.01.20", b: "????.??.??" },
+    { field: "round", a: "4", b: "5" },
+    { field: "fen", a: defaultTree().headers.fen, b: otherStart },
+] as const)("sameGameIdentity tells games apart by $field", ({ field, a, b }) => {
+    const headers = defaultTree().headers;
+    expect(sameGameIdentity({ ...headers, [field]: a }, { ...headers, [field]: b })).toBe(false);
+});
 
 test.each([
     { white: "Dragon", black: "plan", event: "fertig", expected: "Dragon" },

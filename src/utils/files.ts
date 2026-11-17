@@ -25,6 +25,7 @@ import {
     tabFamily,
 } from "@/state/atoms";
 import { beginFileWrite, setFileFreshness } from "@/state/fileFreshness";
+import { isAbsentHeader } from "@/state/gameSignature";
 import { beginFileOpen, StaleFileGameError } from "@/state/fileStructureChange";
 import { parsePGN } from "./chess";
 import { fileWorkspaceKey } from "./pathCapabilities";
@@ -45,24 +46,23 @@ export function getFileGameName(
     return name === "Unknown" || name === "?" ? file.name.replace(/\.pgn$/i, "") : name;
 }
 
-function identityTag(value: string | null | undefined): string {
-    const trimmed = (value ?? "").trim();
-    return trimmed === "?" ? "" : trimmed;
+function sameHeaderValue(
+    a: string | null | undefined,
+    b: string | null | undefined,
+    kind: "name" | "date" | "round",
+): boolean {
+    const absentA = isAbsentHeader(a, kind);
+    const absentB = isAbsentHeader(b, kind);
+    return absentA || absentB ? absentA === absentB : a === b;
 }
 
-/**
- * Whether two header sets name the same game: players, date, round and start position. A clean tab
- * reloads silently only when this holds; otherwise its game number now points at another game (a
- * delete above it or an outside insert, removal or re-sort). Event is left out because repertoire
- * files use it as an editable ChessBase status (d-20261110-12).
- */
 export function sameGameIdentity(a: GameHeaders, b: GameHeaders): boolean {
     return (
-        identityTag(a.date) === identityTag(b.date) &&
-        identityTag(a.round) === identityTag(b.round) &&
-        identityTag(a.white) === identityTag(b.white) &&
-        identityTag(a.black) === identityTag(b.black) &&
-        identityTag(a.fen) === identityTag(b.fen)
+        sameHeaderValue(a.white, b.white, "name") &&
+        sameHeaderValue(a.black, b.black, "name") &&
+        sameHeaderValue(a.date, b.date, "date") &&
+        sameHeaderValue(a.round, b.round, "round") &&
+        a.fen === b.fen
     );
 }
 

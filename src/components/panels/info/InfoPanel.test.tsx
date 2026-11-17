@@ -2125,7 +2125,7 @@ describe("InfoPanel game loading and cancellation", () => {
       { kind: "file", gameNumber: 0, file: { numGames: 5 } },
     ]);
     // The tab on the deleted game keeps number 1, which now names the next game: it is withheld
-    // instead of reconciling onto that game. Every other same-file tab re-verifies.
+    // instead of reconciling onto that game. Every other same-file tab goes back to unverified.
     expect(getFileFreshness(siblingAtRemovedIndex.value)).toMatchObject({
       state: "unavailable",
       gameReplaced: true,
