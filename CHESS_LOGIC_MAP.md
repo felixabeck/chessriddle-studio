@@ -59,7 +59,7 @@ Where the bindings are consumed:
 | --- | --- | --- |
 | Active game | `src/components/boards/BoardGame.tsx` | `startGame`, `makeGameMove`, `takeBackGameMove`, `abortGame`, `resignGame`, `getGameState`, `getGameEngineLogs`; `gameMoveEvent`, `clockUpdateEvent`, `gameOverEvent` |
 | Databases / PGN | `src/components/databases/{DatabasesPage,AddDatabase}.tsx` | `clearGames`, `convertPgn`, `exportToPgn`, `deleteDatabase`, `mergePlayers`, `createIndexes`, `deleteIndexes` |
-| Analysis | `src/components/boards/EvalListener.tsx`, `src/components/panels/analysis/ReportPanel.tsx`, `src/components/engines/EnginesPage.tsx` | `getEngineConfig`, `cancelAnalysis`; `bestMovesPayload` |
+| Analysis | `src/components/boards/EvalListener.tsx`, `src/components/panels/analysis/ReportPanel.tsx`, `src/components/engines/EngineSettings.tsx` | `getEngineConfig`, `cancelAnalysis`; `bestMovesPayload` |
 | Progress | `src/hooks/useProgress.ts`, `src/components/home/AccountCard.tsx` | `progressEvent` |
 
 ## 3. Engine connection and the UCI protocol
