@@ -1828,11 +1828,21 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     );
     await session.execute(`document.querySelector('a[href="/"]')?.click(); return true;`);
     await click("Puzzles");
+    const puzzleGuidance = await visible(
+      "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings.",
+    );
     check(
-      await visible(
-        "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings.",
-      ),
+      puzzleGuidance,
       "RF5 puzzle permission guidance is visible through the actual renderer",
+      puzzleGuidance
+        ? undefined
+        : JSON.stringify(
+            await session
+              .execute(
+                `return { path: location.pathname, notifications: [...document.querySelectorAll('.mantine-Notification-root')].map(node => node.innerText) };`,
+              )
+              .catch((error) => String(error)),
+          ),
     );
     chmodSync(puzzleRoot, 0o700);
 
