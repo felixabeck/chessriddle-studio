@@ -1320,15 +1320,62 @@ describe("BoardAnalysis", () => {
     });
   }
 
+  test.each(["file", "database"] as const)(
+    "an edit made during a successful %s autosave is written by a follow-up autosave",
+    async (origin) => {
+      const database = { id: { id: "follow-up-db" }, kind: "database" } as const;
+      let resolveWrite!: (written: unknown) => void;
+      const firstWrite = new Promise((resolve) => {
+        resolveWrite = resolve;
+      });
+      mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
+      if (origin === "database") {
+        mocks.writeDbGame
+          .mockReset()
+          .mockReturnValueOnce(firstWrite)
+          .mockResolvedValue("c".repeat(64));
+        jotaiStore.set(
+          tabsAtom,
+          [{ ...tab, gameOrigin: { kind: "database", database, gameId: 812 } }],
+          tabId,
+        );
+      } else mocks.writeGame.mockReturnValueOnce(firstWrite);
+      const write = origin === "database" ? mocks.writeDbGame : mocks.writeGame;
+      await startAutosave();
+      expect(write).toHaveBeenCalledOnce();
+      await act(async () => {
+        treeStore.getState().setComment("Edit during write");
+        resolveWrite(
+          origin === "database" ? "b".repeat(64) : { stamp: "b".repeat(64), revision: "r1" },
+        );
+      });
+      await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+      expect(write.mock.calls[1]?.[2]).toContain("Edit during write");
+      await vi.waitFor(() => expect(treeStore.getState().dirty).toBe(false));
+      await act(async () => {
+        treeStore.getState().setComment("Second edit");
+      });
+      await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(3));
+      expect(write.mock.calls[2]?.[2]).toContain("Second edit");
+    },
+  );
+
   test.each(["io", "resource-limit", "cancellation"] as const)(
     "production autosave presents current-owner %s failures and preserves newer dirty edits",
     async (category) => {
       let rejectWrite!: (reason: unknown) => void;
-      mocks.writeGame.mockReturnValueOnce(
-        new Promise((_resolve, reject) => {
-          rejectWrite = reject;
-        }),
-      );
+      const failure = {
+        tag: "backend-error",
+        category,
+        message: category === "cancellation" ? "Cancellation" : "Autosave failed",
+      };
+      mocks.writeGame
+        .mockReturnValueOnce(
+          new Promise((_resolve, reject) => {
+            rejectWrite = reject;
+          }),
+        )
+        .mockRejectedValue(failure);
       await startAutosave();
       const captured = serializeStoreTree(treeStore);
       expect(mocks.writeGame).toHaveBeenCalledOnce();
@@ -1343,11 +1390,13 @@ describe("BoardAnalysis", () => {
         treeStore
           .getState()
           .setHeaders({ ...treeStore.getState().headers, event: "Newer autosave header" });
-        rejectWrite({
-          tag: "backend-error",
-          category,
-          message: category === "cancellation" ? "Cancellation" : "Autosave failed",
-        });
+        rejectWrite(failure);
+      });
+      // The edits made during the failed write get one retry, which fails again silently.
+      await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(2));
+      expect(mocks.writeGame.mock.calls[1]?.[2]).toContain("Newer autosave comment");
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
       expect(treeStore.getState().dirty).toBe(true);
       expect(serializeStoreTree(treeStore)).toContain("Newer autosave comment");
@@ -1366,7 +1415,17 @@ describe("BoardAnalysis", () => {
               ],
             ],
       );
-      expect(mocks.writeGame).toHaveBeenCalledOnce();
+      expect(mocks.writeGame).toHaveBeenCalledTimes(2);
+      // A later edit retries once more, still without a second notification.
+      await act(async () => {
+        treeStore.getState().setComment("Later autosave comment");
+      });
+      await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(3));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(mocks.writeGame).toHaveBeenCalledTimes(3);
+      expect(mocks.showNotification).toHaveBeenCalledTimes(category === "cancellation" ? 0 : 1);
     },
   );
 

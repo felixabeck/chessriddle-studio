@@ -1,5 +1,6 @@
 import { useTabAtom, useOwnerTab, useOwnerTabId } from "@/state/tabScope";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { errorUnlessCancelled } from "@/platform/errors";
 import { Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
 import { Database, Info, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
@@ -51,6 +52,7 @@ import Board from "./Board";
 import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
 import EvalListener from "./EvalListener";
+import { useAutoSave } from "./useAutoSave";
 import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
@@ -84,6 +86,10 @@ function BoardAnalysis() {
     [t],
   );
 
+  const autoSaveFailureShown = useRef(false);
+  useEffect(() => {
+    if (!dirty) autoSaveFailureShown.current = false;
+  }, [dirty]);
   const saveFile = useCallback(
     async (isUserSave = false) => {
       const result = await saveToFile({
@@ -94,7 +100,10 @@ function BoardAnalysis() {
         isUserSave,
       });
       if (typeof result === "object" && result.status === "failed") {
-        notifyError(result.error);
+        // Autosave retries once per later edit; a failure streak is reported once, until the
+        // tree is clean again.
+        if (isUserSave || !autoSaveFailureShown.current) notifyError(result.error);
+        if (!isUserSave && errorUnlessCancelled(result.error)) autoSaveFailureShown.current = true;
       } else if (isUserSave && result === "superseded") {
         notifyError({
           category: "validation",
@@ -118,11 +127,8 @@ function BoardAnalysis() {
     [updateTab, getTab, currentTab, store, t, notifyError],
   );
   const userSaveFile = useCallback(() => saveFile(true), [saveFile]);
-  useEffect(() => {
-    if (hasPersistentOrigin && autoSave && dirty) {
-      saveFile();
-    }
-  }, [hasPersistentOrigin, saveFile, autoSave, dirty]);
+  const autoSaveFile = useCallback(() => saveFile(), [saveFile]);
+  useAutoSave(store, hasPersistentOrigin && autoSave, autoSaveFile);
 
   const addGameAction = useContext(AddGameContext);
   const appendGame = useCallback(async () => {
