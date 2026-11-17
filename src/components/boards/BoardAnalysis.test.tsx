@@ -1457,6 +1457,18 @@ describe("BoardAnalysis", () => {
     expect(mocks.writeGame).toHaveBeenCalledTimes(2);
   });
 
+  test("a manual save still reports its failure during an autosave failure streak", async () => {
+    const failure = { tag: "backend-error", category: "io", message: "Autosave failed" };
+    mocks.writeGame.mockRejectedValue(failure);
+    await startAutosave();
+    await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledOnce());
+    await act(async () => {
+      latestSaveHotkey()();
+    });
+    await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledTimes(2));
+  });
+
   test("a clean autosave ends a failure streak, so the next failure is reported again", async () => {
     const failure = { tag: "backend-error", category: "io", message: "Autosave failed" };
     mocks.writeGame
