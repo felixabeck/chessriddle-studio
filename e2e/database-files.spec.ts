@@ -579,6 +579,85 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
 
+test("database-files: the local explorer options keep their controls legible and apart", async ({
+    page,
+    mockScenario,
+}) => {
+    const reference = { id: { id: gameOpeningFixture.databaseId }, kind: "database" };
+    await page.addInitScript((saved) => {
+        localStorage.setItem("reference-database", JSON.stringify(saved));
+        localStorage.setItem("font-size", "100");
+    }, reference);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await mockScenario({
+        commands: filesWorkspaceCommands([[]], {
+            ...gameOpeningCommands,
+            get_progress: { result: null },
+            linked_collections_supported: { result: true },
+            list_linked_collections: { result: [] },
+            search_position: { result: [[], []] },
+        }),
+    });
+    await page.goto("/library");
+    // Choosing the workspace loads its files and admits the shared database list.
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Open database", exact: true })).toBeVisible();
+    await page
+        .locator("nav.mantine-AppShell-navbar")
+        .getByRole("link", { name: "Board", exact: true })
+        .click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
+    await page.getByRole("tab", { name: "Database", exact: true }).click();
+    await expect(
+        page
+            .getByRole("tabpanel", { name: "Stats", exact: true })
+            .getByPlaceholder("add a database", { exact: true }),
+    ).toHaveValue(gameOpeningFixture.databaseTitle);
+    await page.getByRole("tab", { name: "Options", exact: true }).click();
+    const options = page.getByRole("tabpanel", { name: "Options", exact: true });
+
+    // The colour only says which side the selected player has.
+    await expect(options.getByText("Plays as", { exact: true })).toBeVisible();
+    const colour = options.getByRole("radio", { name: "White", exact: true });
+    await expect(colour).toBeDisabled();
+    await expect(
+        options.locator(".mantine-SegmentedControl-label[data-disabled]").first(),
+    ).toHaveCSS("cursor", "not-allowed");
+    await expect(options.getByText("Games that reached exactly this position.")).toBeVisible();
+
+    const toggle = options.getByRole("switch", {
+        name: "Exclude blitz, bullet, and armageddon events",
+        exact: true,
+    });
+    await toggle.scrollIntoViewIfNeeded();
+    const layout = await options.evaluate((panel) => {
+        const box = (selector: string) =>
+            [...panel.querySelectorAll(selector)].map((node) => node.getBoundingClientRect());
+        const marks = box(".mantine-Slider-markLabel");
+        const viewport = panel.querySelector(".mantine-ScrollArea-viewport")!;
+        const track = panel.querySelector<HTMLElement>(".mantine-Switch-track")!;
+        return {
+            marksBottom: Math.max(...marks.map((mark) => mark.bottom)),
+            marksRight: Math.max(...marks.map((mark) => mark.right)),
+            switchTop: box(".mantine-Switch-root")[0].top,
+            viewportRight: viewport.getBoundingClientRect().right,
+            sidewaysOverflow: viewport.scrollWidth - viewport.clientWidth,
+            switchCursor: getComputedStyle(track).cursor,
+        };
+    });
+    expect(layout.marksBottom).toBeLessThan(layout.switchTop);
+    expect(layout.marksRight).toBeLessThanOrEqual(layout.viewportRight);
+    expect(layout.sidewaysOverflow).toBe(0);
+    expect(layout.switchCursor).toBe("pointer");
+
+    // Both palette colours must stand out from the tile, whatever the card colour is.
+    const blackPawn = options.locator(".black.pawn").last();
+    await blackPawn.scrollIntoViewIfNeeded();
+    await expect(blackPawn).toHaveCSS("background-color", "rgb(170, 160, 147)");
+    await expect(options).toHaveScreenshot("local-explorer-options-palette.png");
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
+
 function linkedLibraryFixture() {
     const file = { ...gameOpeningFixture.file, metadata: { type: "game", tags: [] } };
     const database = { id: { id: gameOpeningFixture.databaseId }, kind: "database" };

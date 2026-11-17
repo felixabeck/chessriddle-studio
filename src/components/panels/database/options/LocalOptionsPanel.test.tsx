@@ -213,6 +213,12 @@ describe("LocalOptionsPanel explorer filters", () => {
       })),
     );
     expect(colourInputs().every((input) => !input.disabled)).toBe(true);
+    await act(async () =>
+      colourInputs()
+        .find((input) => input.value === "black")!
+        .click(),
+    );
+    expect(store.get(localOptionsFamily(tabId)).color).toBe("black");
     // A player stored for another database does not count as selected here.
     await renderPanel(databaseB);
     expect(colourInputs().every((input) => input.disabled)).toBe(true);

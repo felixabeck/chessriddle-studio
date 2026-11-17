@@ -110,6 +110,6 @@ export default function PieceComponent({
  * A board-functional mid-tone, the same in both colour schemes: black pieces vanish on the dark
  * card and white ones on the light card, so neither card colour can carry the palette.
  */
-export const PALETTE_TILE_COLOR = "hsl(35 12% 62%)";
+export const PALETTE_TILE_COLOR = "#aaa093";
 
 const getPieceName = (piece: Piece) => `${piece.color} ${piece.role}`;

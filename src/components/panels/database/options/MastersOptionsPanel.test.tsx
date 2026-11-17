@@ -52,6 +52,17 @@ describe("MasterOptionsPanel filters", () => {
     expect(text).not.toContain("Common.Since");
   });
 
+  test("clearing To removes the stored end instead of keeping the stale date", async () => {
+    const clear = container.querySelector<HTMLButtonElement>(
+      "button.mantine-InputClearButton-root",
+    )!;
+    expect(clear).not.toBeNull();
+    await act(async () => clear.click());
+    const options = store.get(masterOptionsAtom);
+    expect("until" in options).toBe(true);
+    expect(options.until).toBeUndefined();
+  });
+
   test("a year shortcut sets the start as a UTC day and keeps the stored end", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {

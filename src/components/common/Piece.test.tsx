@@ -1,7 +1,7 @@
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import PieceComponent, { PALETTE_TILE_COLOR } from "./Piece";
+import PieceComponent from "./Piece";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -31,8 +31,6 @@ test("a draggable palette piece sits on the scheme-independent palette tile", as
     );
   });
   const piece = host.querySelector<HTMLElement>(".black.pawn")!;
-  const probe = document.createElement("div");
-  probe.style.backgroundColor = PALETTE_TILE_COLOR;
-  expect(piece.style.backgroundColor).not.toBe("");
-  expect(piece.style.backgroundColor).toBe(probe.style.backgroundColor);
+  // The literal, not the exported constant: a darker or lighter tile must turn this red.
+  expect(piece.style.backgroundColor).toBe("rgb(170, 160, 147)");
 });
