@@ -26548,7 +26548,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### An edit made while an autosave is writing stops autosave for that tab until a manual save
 
-* **ID:** f-20261115-15 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-15 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (autosave during multi-step tree changes sweep, origin `fb8bca5f4`)
 * **Where:** `src/components/boards/BoardAnalysis.tsx` ~120-124: `useEffect(() => { if (hasPersistentOrigin && autoSave && dirty) saveFile(); }, [hasPersistentOrigin, saveFile, autoSave, dirty])`. `src/utils/tabs.ts` `saveToFileNow` `finish` (~1137-1148, and the database branch ~1000-1010) clears `dirty` (`store.getState().save(stamp)`) only when the tree still serializes to the written PGN. Otherwise it keeps `dirty` true and only advances `sourceStamp`.
@@ -26566,6 +26566,14 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 * **Addendum (Grok Bot, 2026-11-15, fix caveat):** engine analysis dirties the tree on every best-line update: `EvalListener.tsx` (~284-286) calls `setScore` per new line, and `setScore` and `addAnalysis` (`state/store/tree.ts` ~843-860) set `dirty = true`. `serializeStoreTree` always writes extra markups, so each update changes the saved PGN (`[%eval]`). A fix that re-arms autosave on every tree change would rewrite the whole file (an atomic replace with fsync) per depth update while an engine runs. The fix must exclude score-only changes from the autosave trigger, or debounce them.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"1615e54aa2067de1780a7bf8133c422ab7f0526f1c3678a2505cc22a57043af5","input_sha256":"90023803b95830e4e7d7680c869c3f7b8e34108d78ffd4f78c82b06728ccbe69","kind":"mutation-receipt","operation":"47d3ba49c4743780a7b45add2b31ad23b655dcae0b46eeff488beaa509c82c22","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-15"],"target":"f-20261115-15","v":1} -->
+
+* **Handled 2026-11-17 (drain, Claude Code orchestrator, Grok lenses):** commits `076067687`, `6cf0a73b2`, `f3e65d362`, `66a354dfd`.
+  * Autosave no longer keys on the `dirty` edge. The new `src/components/boards/useAutoSave.ts` subscribes to the tree store and runs one write at a time. When a write settles, it writes again only while the tree is still dirty and its PGN differs from the last attempt. So an edit made during a write (file or database origin) gets a follow-up write, a failed autosave is retried only after a later edit changes the PGN (including a header-only edit), never in a loop, and a view-only change that leaves the PGN unchanged never writes. The engine-score caveat no longer applies: `setEngineScore` has left `dirty` alone since `a559e1c93`, and the PGN comparison skips it anyway.
+  * Autosave failure notices are coalesced to one per failure streak. A clean tree ends the streak. A manual Save always reports its own failure.
+  * `saveToFile` takes `skipIfClean`. An autosave queued behind a manual Save that already cleaned the tree returns `cancelled` instead of rewriting the same PGN (found by the review in round 2).
+  * Tests in `BoardAnalysis.test.tsx`: a follow-up write after an edit during a successful file or database autosave; a retry once per later edit with one notification; the streak reset; the manual-save notice; and no rewrite behind a manual save. Each test was seen to fail against the old trigger or with its guard removed.
+  * Rejected: depending on `root`/`headers` in React effect deps. That re-renders BoardAnalysis on every live engine score. A fixed debounce timer was also rejected: it adds latency and still needs the no-repeat rule.
+<!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"eaa17a6c1393fd41a23deb860c3cf051ca598195f7ee7cdf38aa31f40cd66799","header_sha256":"b91fe725c3a9960eeae27c8ecad59e0ed79382fa58d777633318afc35dd91812","header_status":"handled","input_sha256":"b411e875bf48088d6892a18856bf66158139d50b1cadba1920f3e217cf351d75","kind":"mutation-receipt","operation":"9348b999d1f768d175bf699755cae0dac7adc9aad07a13ac8e430cc6ae708eb5","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-15"],"target":"f-20261115-15","v":1} -->
 
 ---
 
