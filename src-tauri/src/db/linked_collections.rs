@@ -208,6 +208,25 @@ impl Record {
     }
 }
 
+/// Readable candidates after which an account file falls back to its collection id.
+const ACCOUNT_FILE_NAME_CANDIDATES: u32 = 99;
+
+/// The workspace name of a new account collection file: `GGalile0 (Chess.com)`, then
+/// `GGalile0 (Chess.com) 2` … on collisions, and the collection id once every readable
+/// candidate is taken.
+fn account_file_name(display: &str, provider: &str, attempt: u32, id: Uuid) -> String {
+    let label = match provider {
+        "chesscom" => "Chess.com",
+        "lichess" => "Lichess",
+        other => other,
+    };
+    match attempt {
+        0 | 1 => format!("{display} ({label})"),
+        2..=ACCOUNT_FILE_NAME_CANDIDATES => format!("{display} ({label}) {attempt}"),
+        _ => format!("{display} ({label}) {id}"),
+    }
+}
+
 fn visit_file_entries(entries: &[WorkspaceEntry], visit: &mut impl FnMut(&WorkspaceEntry)) {
     for entry in entries {
         match entry.kind {
@@ -2652,6 +2671,9 @@ pub(crate) async fn prepare_account_collection(
                     let Some(service) = authority.collections()? else {
                         return Ok(None);
                     };
+                    // The renderer sends the username as the provider spells it; identity
+                    // matching uses the lowercased form, the file name keeps this spelling.
+                    let display_account = account.account.clone();
                     let account = account.validate()?;
                     let batches = service.root.ensure_child(OsStr::new("batches"))?;
                     let destination = authority
@@ -2712,7 +2734,7 @@ pub(crate) async fn prepare_account_collection(
                             CreationIntent {
                                 id,
                                 workspace: workspace.clone(),
-                                name: format!("{}-{}-{}", account.provider, account.account, id),
+                                name: account_file_name(&display_account, &account.provider, 1, id),
                                 account: account.clone(),
                                 identity: None,
                             }
@@ -2736,38 +2758,76 @@ pub(crate) async fn prepare_account_collection(
                     let file = if let Some(file) = recovered {
                         file
                     } else {
-                        let workspace = creation.workspace.clone();
-                        let name = creation.name.clone();
-                        let mut owner = |identity| {
-                            creation.identity = Some(identity);
-                            let mut guard = service.lock(token)?;
-                            let mut registry = CollectionService::state(&mut guard)?.clone();
-                            let prior = registry
-                                .creations
-                                .iter_mut()
-                                .find(|prior| prior.id == creation.id)
-                                .ok_or(Error::StaleGame)?;
-                            *prior = creation.clone();
-                            service.save(&mut guard, registry)
-                        };
-                        crate::file_workspace::create_owned_workspace_file_blocking(
-                            workspace.clone(),
-                            workspace,
-                            name,
-                            crate::file_workspace::WorkspaceMetadata {
-                                file_type: WorkspaceFileType::Game,
-                                tags: vec![],
-                            },
-                            crate::file_workspace::WorkspaceFileContent::Text {
-                                pgn: String::new(),
-                            },
-                            &authority,
-                            &mutation,
-                            &service.pgn_repository,
-                            token,
-                            Some(&mut owner),
-                        )?
-                        .handle
+                        let mut attempt = 1;
+                        loop {
+                            let workspace = creation.workspace.clone();
+                            let name = creation.name.clone();
+                            let mut owner = |identity| {
+                                creation.identity = Some(identity);
+                                let mut guard = service.lock(token)?;
+                                let mut registry = CollectionService::state(&mut guard)?.clone();
+                                let prior = registry
+                                    .creations
+                                    .iter_mut()
+                                    .find(|prior| prior.id == creation.id)
+                                    .ok_or(Error::StaleGame)?;
+                                *prior = creation.clone();
+                                service.save(&mut guard, registry)
+                            };
+                            match crate::file_workspace::create_owned_workspace_file_blocking(
+                                workspace.clone(),
+                                workspace,
+                                name,
+                                crate::file_workspace::WorkspaceMetadata {
+                                    file_type: WorkspaceFileType::Game,
+                                    tags: vec![],
+                                },
+                                crate::file_workspace::WorkspaceFileContent::Text {
+                                    pgn: String::new(),
+                                },
+                                &authority,
+                                &mutation,
+                                &service.pgn_repository,
+                                token,
+                                Some(&mut owner),
+                            ) {
+                                Ok(entry) => break entry.handle,
+                                Err(Error::Conflict(message))
+                                    if message == crate::error::WORKSPACE_FILE_NAME_TAKEN =>
+                                {
+                                    // Another file holds this name. Persist the next candidate
+                                    // before creating it, so a crash after publication leaves the
+                                    // intent naming the leaf on disk for recovery.
+                                    let next = loop {
+                                        attempt += 1;
+                                        if attempt > ACCOUNT_FILE_NAME_CANDIDATES + 1 {
+                                            return Err(Error::Conflict(message));
+                                        }
+                                        let candidate = account_file_name(
+                                            &display_account,
+                                            &account.provider,
+                                            attempt,
+                                            creation.id,
+                                        );
+                                        if candidate != creation.name {
+                                            break candidate;
+                                        }
+                                    };
+                                    creation.name = next;
+                                    let mut guard = service.lock(token)?;
+                                    let mut registry =
+                                        CollectionService::state(&mut guard)?.clone();
+                                    registry
+                                        .creations
+                                        .iter_mut()
+                                        .find(|prior| prior.id == creation.id)
+                                        .ok_or(Error::StaleGame)?
+                                        .name = creation.name.clone();
+                                    service.save(&mut guard, registry)?;
+                                }
+                                Err(error) => return Err(error),
+                            }
+                        }
                     };
                     let collection = service
                         .reconcile(&authority, &creation.workspace, token)?

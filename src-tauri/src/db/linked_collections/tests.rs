@@ -4999,6 +4999,145 @@ mod native_tests {
         );
     }
 
+    #[test]
+    fn account_file_names_are_readable_with_numbered_and_id_fallbacks() {
+        let id = Uuid::nil();
+        assert_eq!(
+            account_file_name("GGalile0", "chesscom", 1, id),
+            "GGalile0 (Chess.com)"
+        );
+        assert_eq!(
+            account_file_name("ggalileo", "lichess", 1, id),
+            "ggalileo (Lichess)"
+        );
+        assert_eq!(
+            account_file_name("GGalile0", "chesscom", 2, id),
+            "GGalile0 (Chess.com) 2"
+        );
+        assert_eq!(
+            account_file_name("GGalile0", "lichess", ACCOUNT_FILE_NAME_CANDIDATES, id),
+            format!("GGalile0 (Lichess) {ACCOUNT_FILE_NAME_CANDIDATES}")
+        );
+        assert_eq!(
+            account_file_name("GGalile0", "lichess", ACCOUNT_FILE_NAME_CANDIDATES + 1, id),
+            format!("GGalile0 (Lichess) {id}")
+        );
+    }
+
+    #[tokio::test]
+    async fn account_preparation_numbers_a_taken_name_and_persists_it() {
+        use tauri::Manager;
+        let fixture = Fixture::new();
+        let library = fixture.directory.path().join("library");
+        std::fs::write(library.join("GGalile0 (Chess.com).pgn"), b"foreign").unwrap();
+        std::fs::write(library.join("GGalile0 (Chess.com) 2.pgn"), b"foreign").unwrap();
+        let app = fixture.app();
+        let prepared = prepare_account_collection(
+            fixture.workspace.clone(),
+            AccountIdentity {
+                provider: "chesscom".into(),
+                account: "GGalile0".into(),
+            },
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let collection = prepared.collection.unwrap();
+        let record = fixture
+            .service
+            .record(
+                Uuid::parse_str(&collection.id).unwrap(),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            record.locator,
+            vec![OsString::from("GGalile0 (Chess.com) 3.pgn")]
+        );
+        assert_eq!(
+            std::fs::read(library.join("GGalile0 (Chess.com).pgn")).unwrap(),
+            b"foreign"
+        );
+        assert_eq!(
+            std::fs::read(library.join("GGalile0 (Chess.com) 2.pgn")).unwrap(),
+            b"foreign"
+        );
+        assert_eq!(
+            std::fs::read(library.join("GGalile0 (Chess.com) 3.pgn")).unwrap(),
+            b""
+        );
+        let registry =
+            CollectionService::state(&mut fixture.service.lock(&CancellationToken::new()).unwrap())
+                .unwrap()
+                .clone();
+        assert!(registry
+            .creations
+            .iter()
+            .all(|creation| creation.name == "GGalile0 (Chess.com) 3"));
+
+        let repeated = prepare_account_collection(
+            fixture.workspace.clone(),
+            AccountIdentity {
+                provider: "chesscom".into(),
+                account: "ggalile0".into(),
+            },
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(repeated.collection.unwrap().id, collection.id);
+    }
+
+    #[tokio::test]
+    async fn account_preparation_recovers_an_in_flight_intent_under_its_legacy_name() {
+        use tauri::Manager;
+        let fixture = Fixture::new();
+        let account = AccountIdentity {
+            provider: "chesscom".into(),
+            account: "player".into(),
+        };
+        let mut creation = interrupt_account_before_sidecar(&fixture, &account).await;
+        // An intent persisted by a build that named account files `<provider>-<account>-<id>`.
+        let legacy = format!("chesscom-player-{}", creation.id);
+        std::fs::rename(fixture.path(&creation.name), fixture.path(&legacy)).unwrap();
+        creation.name = legacy.clone();
+        {
+            let mut guard = fixture.service.lock(&CancellationToken::new()).unwrap();
+            let mut registry = CollectionService::state(&mut guard).unwrap().clone();
+            registry.creations = vec![creation.clone()];
+            fixture.service.save(&mut guard, registry).unwrap();
+        }
+        let app = fixture.app();
+        let prepared = prepare_account_collection(
+            fixture.workspace.clone(),
+            AccountIdentity {
+                account: "Player".into(),
+                ..account.clone()
+            },
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let collection = prepared.collection.unwrap();
+        assert_eq!(collection.id, creation.id.to_string());
+        let record = fixture
+            .service
+            .record(creation.id, &CancellationToken::new())
+            .unwrap();
+        assert_eq!(
+            record.locator,
+            vec![OsString::from(format!("{legacy}.pgn"))]
+        );
+        assert!(!fixture.path("Player (Chess.com)").exists());
+        assert_eq!(fixture.list().len(), 1);
+    }
+
     #[tokio::test]
     async fn account_preparation_creates_and_reuses_one_source_with_pending_recovery() {
         use tauri::Manager;
@@ -5038,6 +5177,11 @@ mod native_tests {
             .join("library")
             .join(&record.locator[0]);
         assert_eq!(std::fs::read(&source_path).unwrap(), b"");
+        assert_eq!(
+            record.locator,
+            vec![OsString::from("Player (Chess.com).pgn")],
+            "the account file keeps the username as sent and names the provider"
+        );
         let (listing, _) = crate::file_workspace::collect_tree_entries(
             &fixture.state.pgn_path_authority,
             &fixture.workspace,
