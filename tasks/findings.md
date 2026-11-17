@@ -27089,7 +27089,7 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 
 ### `slow_schema_probes_do_not_hold_the_upgrade_admission_lock` fails intermittently on Windows CI with "database is locked"
 
-* **ID:** f-20261117-08 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261117-08 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Filed from:** d0521669-19b9-4e44-b6b9-f268d10d6149
 * **Spotted outside diff:** yes (red `rust-windows-test` after the frontend-only push of f-20261115-18, `47cb6b471`)
@@ -27101,3 +27101,5 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Open question:** is the Windows "database is locked" a fixture race (two first opens of a freshly created test database) or a production first-open path that needs its busy timeout applied before any locking statement?
 * **Related:** f-20261108-04 (handled; "database is locked" during a schema upgrade race), f-20261109-07 (handled; pooled reader blocking on macOS CI).
 * **Found by:** Claude Code drain d0521669, CI wait after push
+* **Entry revalidation (2026-11-17, drain e7a02d36):** build → inline. The open question is answered by measurement, not design: a disposable probe running the production `ConnectionOptions::on_acquire` on two connections that start together against a fresh rollback-journal (DELETE-mode) file failed 167 of 600 times with `database is locked`, on Linux, despite `PRAGMA busy_timeout = 30000`. `PRAGMA journal_mode = WAL` upgrades the statement's own read lock to a write lock, and SQLite returns SQLITE_BUSY to the loser without calling the busy handler (deadlock avoidance). The test fixture `schema_database_case` creates a DELETE-mode file and the pool's first connections switch it, so this is the production first-open path for any database not yet in WAL, not a fixture race. The fix is a decided one-function change in `db/mod.rs` with a red/green regression test.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"c51d050916c6ce13f55cc170b0f70765d8075e6e3cb84dac8ce2adc789fed97a","header_sha256":"c8d8c1ef677a647b4378cb378b737622d498680704669d99cffacce0122a16d4","header_status":"open","input_sha256":"2834ab91448e4cd47b9e420057fd95b2ac49e3300b74959a55fe9bc871b343ef","kind":"mutation-receipt","operation":"f2d466ffe6689c968a24ef9532c57c42a9f4510b6b3a122db54474437f60aa27","options":{"headers":{"Entry":"inline"},"section":null},"request_id_sha256":null,"results":["f-20261117-08"],"target":"f-20261117-08","v":1} -->
