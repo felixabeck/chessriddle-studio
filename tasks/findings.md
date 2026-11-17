@@ -26979,3 +26979,19 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Failure scenario:** every later push stops at `pnpm ci:remote:check` (exit 1) until this job succeeds on a rerun. Any cold macOS build (download abort or eviction) needs about 42 min to compile, so the remaining 18 min do not cover the test run.
 * **Fix shape:** `gh run rerun 43994514248 --failed -R felixabeck/chessriddle-studio` and confirm `rust-macos-test` succeeds; close with the new job id. Only if a cold build recurs, raise the job's budget for the cold-cache case.
 * **Found by:** Claude (drain orchestrator), drain 32517be2
+
+---
+
+## 2026-11-17 — filed through the inbox spool
+
+### The analysis board's frame is cut at its right edge in the stacked layout
+
+* **ID:** f-20261117-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 3fe53cbf-45f9-4f1a-9427-75ce692eb6a3
+* **Impact class:** ux
+* **Spotted outside diff:** yes (eval-chevron clipping fix, branch fix/icon-clipping)
+* **Where:** `src/components/boards/Board.tsx` board row inside the `overflow: hidden` wrapper (around line 511), stacked layout from `src/components/tabs/BoardsPage.module.css` `.boardStack` (`--board-max-width: 100%`, `--board-eval-width: 8px`).
+* **Defect:** in the stacked layout the chessboard grid's right edge lands exactly on the clipping wrapper's right content edge, so the board's gold frame and part of the h-file are cut off on the right. Measured in the e2e container (board-keyboard project, Analysis Board), identical on master `7c07e63aa` with the eval bar open and collapsed: 320x720 at 100% grid R305.0 = clip R305.0; 500x800 grid R485.0 = clip R485.0. At 800x720 (mosaic) the grid also ends at the clip edge (R419.0).
+* **Failure scenario:** open an Analysis Board in a window under about 646px wide (or under about 1286px at 200% font scale); the board's right frame and the h-file squares' outer edge are not visible.
+* **Fix shape:** size the board so its frame fits inside the wrapper (subtract the frame from `--board-max-width` / the board's width calculation), then add an `assertNothingClipped(board, { mode: "reachable" })` check at 320px and 500px to the board-keyboard project.
+* **Found by:** Claude (interactive session, icon clipping fix)
