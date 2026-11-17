@@ -27067,3 +27067,18 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Spotted outside diff:** yes — seen by the unsaved-games build's pre-push remote CI check.
 * **Open question:** which handle still holds the SQLite file when the probe's connection opens on Windows (a WAL/journal handle released late, or a connection from the slow probe not yet dropped), and whether the test should wait for that release or the code should retry `SQLITE_BUSY` on that path.
 * **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17.
+
+---
+
+## 2026-11-17 — filed through the inbox spool
+
+### `account_preparation_refuses_invalid_identity_without_touching_owned_history` fails under the parallel Rust suite with an ownership Conflict
+
+* **ID:** f-20261117-07 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `src-tauri/src/db/linked_collections/tests.rs:7135` (`db::linked_collections::tests::native_tests::account_preparation_refuses_invalid_identity_without_touching_owned_history`).
+* **Failure scenario:** the `rust-test` lane of `pnpm gates:push` on 2026-11-17 (tree `fece68d28` on the unsaved-games build branch, rebased on `47cb6b471`) panicked with ``called `Result::unwrap()` on an `Err` value: Conflict("account creation source ownership cannot be confirmed")``; 3455 passed, 1 failed. The previous gate run on a tree differing only in a Rust comment passed it, and the test run alone five times in a row passed every time (0.8 s each). The unsaved-games diff does not touch `db/linked_collections`.
+* **Why it matters:** a timing-dependent test turns the release `rust-test` gate red at random.
+* **Spotted outside diff:** yes — unsaved-games build final gates.
+* **Open question:** which shared state the ownership confirmation reads that a concurrently running test can change (a process-wide registry, a shared temp root, or the instance lock), and whether the test or the confirmation needs isolation.
+* **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17.
