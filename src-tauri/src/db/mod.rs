@@ -5181,20 +5181,25 @@ fn delete_duplicated_games_blocking(
 }
 
 fn delete_duplicated_games_transaction(db: &mut SqliteConnection) -> Result<(), Error> {
-    db.batch_execute(
+    // f-20261115-07: one game can be stored with NULL, PGN-placeholder or empty Date/Round and
+    // with NULL or `*` Result (import, export → re-import, save from a tab). Compare those
+    // columns with absence folded, through the signature's own marker set (d-20261102-06).
+    let date = SignatureField::Date.normalized_sql();
+    let round = SignatureField::Round.normalized_sql();
+    db.batch_execute(&format!(
         "
         DELETE FROM Games
         WHERE ID IN (
             SELECT ID
             FROM (
-                SELECT ID,
-                    ROW_NUMBER() OVER (PARTITION BY EventID, SiteID, Round, WhiteID, BlackID, Moves, Date, UTCTime, FEN, Result, WhiteElo, BlackElo, TimeControl ORDER BY ID) AS RowNum
-                FROM Games
+                SELECT g.ID,
+                    ROW_NUMBER() OVER (PARTITION BY g.EventID, g.SiteID, {round}, g.WhiteID, g.BlackID, g.Moves, {date}, NULLIF(g.UTCTime, ''), g.FEN, COALESCE(g.Result, '*'), g.WhiteElo, g.BlackElo, g.TimeControl ORDER BY g.ID) AS RowNum
+                FROM Games g
             ) AS Subquery
             WHERE RowNum > 1
         );
         ",
-    )?;
+    ))?;
 
     remove_orphans_and_refresh_derived_data(db)?;
 
@@ -5293,13 +5298,19 @@ impl PgnGame {
             self.event.as_deref().unwrap_or("?")
         )?;
         writeln!(writer, "[Site \"{}\"]", self.site.as_deref().unwrap_or("?"))?;
-        writeln!(writer, "[Date \"{}\"]", self.date.as_deref().unwrap_or(""))?;
+        // f-20261115-07: absent Date and Round use the PGN-standard unknown markers, which the
+        // duplicate cleanup and signature comparison read as absent.
+        writeln!(
+            writer,
+            "[Date \"{}\"]",
+            self.date.as_deref().unwrap_or(GameSignature::ABSENT_DATE)
+        )?;
         if let Some(time) = self.time.as_deref() {
             if !time.is_empty() {
                 writeln!(writer, "[UTCTime \"{}\"]", time)?;
             }
         }
-        write_decoded_pgn_tag(writer, "Round", self.round.as_deref().unwrap_or(""))?;
+        write_decoded_pgn_tag(writer, "Round", self.round.as_deref().unwrap_or("?"))?;
         write_decoded_pgn_tag(writer, "White", self.white.as_deref().unwrap_or("?"))?;
         write_decoded_pgn_tag(writer, "Black", self.black.as_deref().unwrap_or("?"))?;
         writeln!(
@@ -7731,6 +7742,78 @@ mod tests {
         db.transaction(delete_duplicated_games_transaction).unwrap();
 
         assert_eq!(games::table.count().get_result::<i64>(db).unwrap(), 1);
+        assert_info_counts_match_tables(db);
+    }
+
+    #[test]
+    fn deleting_duplicate_games_folds_absent_date_round_and_result_across_export_round_trip() {
+        fn import_pgn(db: &mut SqliteConnection, pgn: &[u8]) {
+            let mut importer = Importer::new(None);
+            for game in BufferedReader::new(pgn).into_iter(&mut importer) {
+                game.expect("PGN parses")
+                    .expect("game retained")
+                    .insert_to_db(db)
+                    .unwrap();
+            }
+        }
+        fn export(db: &mut SqliteConnection) -> Vec<u8> {
+            let (white_players, black_players) = diesel::alias!(players as white, players as black);
+            let rows = games::table
+                .inner_join(white_players.on(games::white_id.eq(white_players.field(players::id))))
+                .inner_join(black_players.on(games::black_id.eq(black_players.field(players::id))))
+                .inner_join(events::table.on(games::event_id.eq(events::id)))
+                .inner_join(sites::table.on(games::site_id.eq(sites::id)))
+                .load::<(Game, Player, Player, Event, Site)>(db)
+                .unwrap();
+            let mut exported = Vec::new();
+            write_pgn_rows(
+                &mut exported,
+                rows.into_iter().map(Ok),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+            exported
+        }
+
+        let db = &mut setup_test_db();
+        // Bare movetext: Date, Round and Result are stored as NULL.
+        import_pgn(db, b"1. e4 e5 2. Nf3 Nc6 *\n\n");
+        let exported = export(db);
+        let exported_text = String::from_utf8(exported.clone()).unwrap();
+        assert!(exported_text.contains("[Date \"????.??.??\"]"));
+        assert!(exported_text.contains("[Round \"?\"]"));
+        assert!(exported_text.contains("[Result \"*\"]"));
+        // Re-import of the export, a copy written by an older export (empty Date/Round) and a
+        // copy saved from a tab through `headersToPGN`.
+        import_pgn(db, &exported);
+        import_pgn(
+            db,
+            b"[Date \"\"]\n[Round \"\"]\n[Result \"*\"]\n\n1. e4 e5 2. Nf3 Nc6 *\n\n",
+        );
+        import_pgn(
+            db,
+            b"[Date \"????.??.??\"]\n[Round \"?\"]\n\n1. e4 e5 2. Nf3 Nc6 *\n\n",
+        );
+        // A real game with a known date stays apart.
+        import_pgn(
+            db,
+            b"[Date \"2024.01.01\"]\n[Round \"1\"]\n\n1. e4 e5 2. Nf3 Nc6 *\n\n",
+        );
+        assert_eq!(games::table.count().get_result::<i64>(db).unwrap(), 5);
+
+        db.transaction(delete_duplicated_games_transaction).unwrap();
+
+        let mut remaining = games::table
+            .select((games::date, games::round, games::result))
+            .order(games::id)
+            .load::<(Option<String>, Option<String>, Option<String>)>(db)
+            .unwrap();
+        assert_eq!(remaining.len(), 2);
+        assert_eq!(remaining.remove(0), (None, None, None));
+        assert_eq!(
+            remaining.remove(0),
+            (Some("2024.01.01".into()), Some("1".into()), None)
+        );
         assert_info_counts_match_tables(db);
     }
 
@@ -10219,8 +10302,8 @@ mod tests {
         for tag in ["White", "Black", "Event", "Site"] {
             assert!(exported.contains(&format!("[{tag} \"?\"]")));
         }
-        assert!(exported.contains("[Date \"\"]"));
-        assert!(exported.contains("[Round \"\"]"));
+        assert!(exported.contains("[Date \"????.??.??\"]"));
+        assert!(exported.contains("[Round \"?\"]"));
 
         for (id, name) in std::iter::once((0, "Sentinel")).chain(
             SignatureNormalization::Name
