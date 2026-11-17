@@ -396,11 +396,12 @@ test("leaving the result field closes the list without changing the result", asy
 
 test("a mouse press on the result opens the list once instead of toggling it shut", async () => {
   await act(async () => root.render(<Editor />));
+  // Separate steps, as in a browser: the click must see the state the focus left behind.
   await act(async () => {
     resultField().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    resultField().focus();
-    resultField().click();
   });
+  await act(async () => resultField().focus());
+  await act(async () => resultField().click());
   expect(resultListOpen()).toBe(true);
 
   // A press on the already focused field fires no focus event, so it leaves the pointer flag set.
