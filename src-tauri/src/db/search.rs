@@ -1618,7 +1618,7 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                             entry.moves,
                             &entry.fen,
                             position_query,
-                            cancellation,
+                            entry_cancellation,
                         )? {
                             let elo_key = entry.white_elo.max(entry.black_elo);
                             let key = if date_order {
@@ -1657,7 +1657,9 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                 Ok(())
             };
 
-            // Per-job child tokens avoid sharing a mutex on every metadata check.
+            // Per-job child tokens avoid sharing a mutex on every metadata check and on
+            // every replayed move: the replay must receive the child, never the shared token
+            // (measured on 11.4M games: 45-60 s per position with the shared token, 1-2 s without).
             // Progress lease revocation still cancels the original operation token.
             mmap_index
                 .par_iter()
@@ -1797,11 +1799,13 @@ pub(crate) fn is_position_in_db_cancellable(
     // Presence therefore uses its own occurrence scan.
 
     let exists = AtomicBool::new(false);
-    let check_entry = |entry: SearchGameEntryRef<'_>| -> Result<(), Error> {
-        if cancellation.is_cancelled() {
+    let check_entry = |entry: SearchGameEntryRef<'_>,
+                       entry_cancellation: &CancellationToken|
+     -> Result<(), Error> {
+        if entry_cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        try_iter_mainline_move_bytes_cancellable(entry.moves, cancellation)
+        try_iter_mainline_move_bytes_cancellable(entry.moves, entry_cancellation)
             .map_err(|error| invalid_move_stream(entry.id, error))?;
         if let Some(position_query) = &parsed_position_query {
             if position_query.can_reach(entry.pawn_home)
@@ -1810,7 +1814,7 @@ pub(crate) fn is_position_in_db_cancellable(
                     entry.moves,
                     &entry.fen,
                     position_query,
-                    cancellation,
+                    entry_cancellation,
                 )?
                 .is_some()
             {
@@ -1820,7 +1824,14 @@ pub(crate) fn is_position_in_db_cancellable(
         Ok(())
     };
 
-    mmap_index.par_iter().try_for_each(check_entry)?;
+    // Per-job child tokens: the shared token's mutex would serialise every move check.
+    mmap_index
+        .par_iter()
+        .map_init(
+            || cancellation.child_token(),
+            |entry_cancellation, entry| check_entry(entry, entry_cancellation),
+        )
+        .try_for_each(|result| result)?;
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
