@@ -27037,3 +27037,18 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Spotted outside diff:** yes — found while verifying the unsaved-games build; RF5's code and the puzzle notice are untouched by it.
 * **Open question:** whether the `Puzzles` action no longer exists or changed on the seeded workspace's active tab (verifier selector drift), or the puzzle page now opens without raising the permission notice (product regression). The ledger shows RF5 green at `2512acd1c` (f-20261004 proof), so bisecting between that commit and `cfb5c6eb8` with `pnpm verify:app` decides it.
 * **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17, real-app verification of the unsaved-games build.
+
+---
+
+## 2026-11-17 — filed through the inbox spool
+
+### e2e `notation-hierarchy-scaled` overflow-only stacked annotation clips by 21px under the full parallel suite only
+
+* **ID:** f-20261117-05 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `e2e/notation-hierarchy.spec.ts:481` ("notation-hierarchy: overflow-only stacked annotation stays over its square", assertion at `:541` via `assertNothingClipped` in `e2e/fixtures.ts:679`), project `notation-hierarchy-scaled` (320px, 200% font scale).
+* **Failure scenario:** the full `pnpm gates:push` e2e lane on 2026-11-17 (466 passed, 1 failed) reported `content clipped: div.: x 195px > 174px`. The same spec run alone in the container immediately afterwards on the same tree passed 7/7. The diff under test (unsaved-games build) does not touch notation rendering, so the failure depends on load or timing, not on the change.
+* **Why it matters:** a timing-dependent clip check turns the release e2e gate red at random and costs a full gate rerun.
+* **Spotted outside diff:** yes — unsaved-games build final gates.
+* **Open question:** whether the measurement runs before the stacked annotation's layout settles under CPU contention (verifier wait), or the annotation really overflows for a frame (product layout). Evidence log kept at the session scratchpad `e2e-flake-evidence.log`; re-run the scaled project under `pnpm test:e2e:container` with the full suite to reproduce.
+* **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17.
