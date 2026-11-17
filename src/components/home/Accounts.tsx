@@ -191,10 +191,13 @@ function AccountModal({
     submitLock.current = true;
     setIsPending(true);
     try {
-      const success =
+      // An explicit selection instead of awaits inside a conditional expression: V8's coverage
+      // converter otherwise reports a negative branch count here (d-20261023-13).
+      const add =
         website === "lichess"
-          ? await addLichess(alias, username, withLogin)
-          : await addChessCom(alias, username);
+          ? () => addLichess(alias, username, withLogin)
+          : () => addChessCom(alias, username);
+      const success = await add();
       if (success) closeAndClear();
     } catch {
       // Account providers own their lookup failure notifications.

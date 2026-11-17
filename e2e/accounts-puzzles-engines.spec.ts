@@ -2073,7 +2073,7 @@ test("accounts-puzzles-engines: retains unsaved public cards and retries only th
     const saved = deserializeStorageValue(encoded!);
     expect(saved).toMatchObject([
         {
-            player: "Latest alias",
+            alias: "Latest alias",
             lichess: { username: "retained-player", handle: "current-handle" },
         },
     ]);
