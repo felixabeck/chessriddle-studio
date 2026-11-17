@@ -26995,3 +26995,18 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Failure scenario:** open an Analysis Board in a window under about 646px wide (or under about 1286px at 200% font scale); the board's right frame and the h-file squares' outer edge are not visible.
 * **Fix shape:** size the board so its frame fits inside the wrapper (subtract the frame from `--board-max-width` / the board's width calculation), then add an `assertNothingClipped(board, { mode: "reachable" })` check at 320px and 500px to the board-keyboard project.
 * **Found by:** Claude (interactive session, icon clipping fix)
+
+---
+
+### The `account-download-durability-uncertain` full-page screenshot differs by 562 pixels on one CI run and passes on rerun
+
+* **ID:** f-20261117-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** e7f0a3b6-0b7b-40fe-95a5-4f116a445357
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (CI wait for the f-20261115-15 push, commit `7c07e63aa`)
+* **Where:** `e2e/accounts-puzzles-engines.spec.ts:1721` (`await expect(page).toHaveScreenshot("account-download-durability-uncertain.png", { fullPage: true })` in "accounts-puzzles-engines: warns when a downloaded game file's save is not confirmed"), snapshot under `e2e/accounts-puzzles-engines.spec.ts-snapshots/`.
+* **Defect:** on the `e2e` job 133988773201 of Test run 44068624944 (commit `7c07e63aa`, a BoardAnalysis autosave change that this accounts-page test never mounts) the full-page screenshot differed in 562 pixels (ratio 0.01) after Playwright had "captured a stable screenshot". The rerun of the same job on the same commit (job 134001838055) passed, and the previous master commit `8a907d42e` (which added the accounts changes) passed CI. A snapshot assertion that fails on unchanged inputs measures rendering nondeterminism, not the change, and a red e2e job blocks every later push through `ci:remote:check`.
+* **Failure scenario:** any push whose CI e2e job renders this accounts-page screenshot in the unsettled state fails the job, although the pushed diff never reaches the page. The next push is then refused by `ci:remote:check` until someone reruns the job.
+* **Evidence:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/133988773201/logs` (the `1) [accounts-puzzles-engines]` block: 562 pixels, ratio 0.01). The test waits for one `.mantine-Notification-root` through `expectNotificationSettled` before the capture. The diff image is in that job's artifacts.
+* **Proof required:** name the differing region from the diff artifact and the state that is not settled at capture time; wait for that state (or mask only that element), re-record in the pinned container if needed, and pass a repeated run (`--repeat-each`).
+* **Related:** f-20261011-07 (handled, same spec, an unsettled modal scroll position before a dialog screenshot).
