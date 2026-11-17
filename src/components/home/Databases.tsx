@@ -43,7 +43,7 @@ type PersonalUnread = { type: "unread"; filename: string; error: string; key: st
 type PersonalDatabase = {
   db: ManagedDatabaseInfo | PersonalUnread;
   username: string;
-  players: string[];
+  playerKeys: string[];
 };
 
 function databaseLabel(db: PersonalDatabase["db"]): string {
@@ -163,7 +163,7 @@ function Databases() {
         const keys = playerKeys(sessions);
         const accounts = sessions.flatMap((session, index) => {
           const account = sessionAccountDatabase(session);
-          return account ? [{ ...account, player: keys[index] }] : [];
+          return account ? [{ ...account, playerKey: keys[index] }] : [];
         });
         const associations = accounts.map((account) => ({
           ...account,
@@ -173,7 +173,13 @@ function Databases() {
           const owners = associations.filter((account) => account.association === db);
           const account = owners[0];
           return account
-            ? [{ db, username: account.username, players: owners.map((owner) => owner.player) }]
+            ? [
+                {
+                  db,
+                  username: account.username,
+                  playerKeys: owners.map((owner) => owner.playerKey),
+                },
+              ]
             : [];
         });
         const unread: PersonalDatabase[] = associations.flatMap((account, index) => {
@@ -190,7 +196,7 @@ function Databases() {
                     key: `${capabilityKey(dbs.root)}:account:${index}`,
                   },
                   username: account.username,
-                  players: [account.player],
+                  playerKeys: [account.playerKey],
                 },
               ]
             : [];
@@ -204,7 +210,7 @@ function Databases() {
       db.type !== "unread" && db.collection ? [db.collection] : [],
     ) ?? [],
   );
-  const playerDatabases = databases?.filter(({ players }) => players.includes(playerKey));
+  const playerDatabases = databases?.filter(({ playerKeys }) => playerKeys.includes(playerKey));
   const personalRevision = useDatabaseWritesRevision(
     playerDatabases?.map((item) => (item.db.type === "success" ? item.db.file : undefined)) ?? [],
   );

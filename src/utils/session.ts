@@ -80,11 +80,6 @@ export function playerGroups(sessions: Session[]): PlayerGroup[] {
     });
 }
 
-/** The sites a player's accounts live on, Lichess first, each listed once. */
-export function playerSites(sessions: Session[], playerKey: string): AccountSite[] {
-    return playerGroups(sessions).find((group) => group.key === playerKey)?.sites ?? [];
-}
-
 function recordUsername(record: Record<string, unknown>): string {
     for (const site of [record.lichess, record.chessCom]) {
         if (site !== null && typeof site === "object" && "username" in site) {
@@ -395,6 +390,15 @@ export async function initializePersistedSessions(): Promise<SessionPersistenceS
     return savePublicSessions(dedupeChessComSessions(reconciled));
 }
 
+/**
+ * The alias an added account is stored with: the name typed into the add form, trimmed, or else
+ * the alias its earlier record had, so re-adding an account without a name keeps its player.
+ */
+function upsertedAlias(typed: string, previous: Session[]): { alias?: string } {
+    const alias = typed.trim() || previous.find((session) => session.alias)?.alias;
+    return alias ? { alias } : {};
+}
+
 export function upsertLichessSession(
     sessions: Session[],
     alias: string,
@@ -414,7 +418,12 @@ export function upsertLichessSession(
                 lichess.handle === undefined && existingHandle !== undefined
                     ? { ...lichess, handle: existingHandle }
                     : lichess,
-            ...(alias ? { alias } : {}),
+            ...upsertedAlias(
+                alias,
+                sessions.filter((session) =>
+                    sameAccountUsername(session.lichess?.username, lichess.username),
+                ),
+            ),
             updatedAt: Date.now(),
         },
     ];
@@ -452,7 +461,12 @@ export function upsertChessComSession(
         ),
         {
             chessCom,
-            ...(alias ? { alias } : {}),
+            ...upsertedAlias(
+                alias,
+                sessions.filter((session) =>
+                    sameAccountUsername(session.chessCom?.username, chessCom.username),
+                ),
+            ),
             updatedAt: Date.now(),
         },
     ];

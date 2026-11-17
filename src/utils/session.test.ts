@@ -27,7 +27,6 @@ import {
     getSessionPersistenceSnapshot,
     migrateLegacyPlayerNames,
     playerGroups,
-    playerSites,
     savePublicSessions,
     retrySessionPersistence,
     sameAccountUsername,
@@ -139,9 +138,10 @@ test("player sites list each site a player's accounts live on once, Lichess firs
         chessComSession("Solo"),
     ];
 
-    expect(playerSites(sessions, "alias:GGalileo")).toEqual(["lichess", "chesscom"]);
-    expect(playerSites(sessions, "chesscom:solo")).toEqual(["chesscom"]);
-    expect(playerSites(sessions, "alias:Nobody")).toEqual([]);
+    expect(playerGroups(sessions).map(({ key, sites }) => [key, sites])).toEqual([
+        ["alias:GGalileo", ["lichess", "chesscom"]],
+        ["chesscom:solo", ["chesscom"]],
+    ]);
 });
 
 describe("migrateLegacyPlayerNames", () => {
@@ -258,6 +258,15 @@ describe("upsertLichessSession", () => {
         ]);
         expect(sessions[0].lichess?.handle).toBeUndefined();
     });
+
+    test("re-adding without a name keeps the stored alias, and a typed name is trimmed", () => {
+        expect(
+            upsertLichessSession([authenticated], "", { username: "Alice", account })[0],
+        ).toMatchObject({ alias: "Original alias" });
+        expect(
+            upsertLichessSession([authenticated], "  Coach ", { username: "alice", account })[0],
+        ).toMatchObject({ alias: "Coach" });
+    });
 });
 
 describe("sameAccountUsername", () => {
@@ -310,6 +319,12 @@ describe("upsertChessComSession", () => {
                 .filter((session) => session.chessCom !== undefined)
                 .map((s) => s.chessCom?.username),
         ).toEqual(["bob", "felix"]);
+    });
+
+    test("re-adding without a name keeps the stored alias", () => {
+        expect(
+            upsertChessComSession([existing, otherAccount], " ", { username: "FELIX", stats }),
+        ).toEqual([otherAccount, expect.objectContaining({ alias: "Original alias" })]);
     });
 
     test("an empty alias stores no alias, so the account is its own player", () => {

@@ -3,7 +3,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { sessionsAtom } from "@/state/atoms";
-import { playerKeys, playerSites, type AccountSite } from "@/utils/session";
+import { playerGroups, type AccountSite } from "@/utils/session";
 import { SiteLogos, siteLogosWidth } from "../SiteLogo";
 import filterClasses from "./StatisticsFilters.module.css";
 
@@ -28,7 +28,11 @@ const WebsiteAccountSelector = ({
   const { t } = useTranslation();
   const sessions = useAtomValue(sessionsAtom);
 
-  const sites = useMemo(() => playerSites(sessions, playerKey), [playerKey, sessions]);
+  const player = useMemo(
+    () => playerGroups(sessions).find(({ key }) => key === playerKey),
+    [playerKey, sessions],
+  );
+  const sites = useMemo(() => player?.sites ?? [], [player]);
   const websites = useMemo(() => {
     const availableWebsites = [];
     if (sites.includes("chesscom")) {
@@ -66,20 +70,20 @@ const WebsiteAccountSelector = ({
     }
   }, [website, websites]);
 
-  const accounts = useMemo(() => {
-    const keys = playerKeys(sessions);
-    return [ALL_ACCOUNTS].concat(
-      sessions
-        .filter(
-          (s, index) =>
-            keys[index] === playerKey &&
-            ((website === "Chess.com" && s.chessCom?.username) ||
-              (website === "Lichess" && s.lichess?.username)),
-        )
-        .map((s) => s.chessCom?.username || s.lichess?.username)
-        .filter((username): username is string => username !== undefined && username !== null),
-    );
-  }, [playerKey, sessions, website]);
+  const accounts = useMemo(
+    () =>
+      [ALL_ACCOUNTS].concat(
+        (player?.sessions ?? [])
+          .filter(
+            (s) =>
+              (website === "Chess.com" && s.chessCom?.username) ||
+              (website === "Lichess" && s.lichess?.username),
+          )
+          .map((s) => s.chessCom?.username || s.lichess?.username)
+          .filter((username): username is string => username !== undefined && username !== null),
+      ),
+    [player, website],
+  );
 
   useEffect(() => {
     if (account !== null && !accounts.includes(account)) setAccount(ALL_ACCOUNTS);

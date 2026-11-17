@@ -72,11 +72,11 @@ function Accounts() {
   }, [t]);
 
   const addChessCom = useCallback(
-    async (player: string, username: string): Promise<boolean> => {
+    async (alias: string, username: string): Promise<boolean> => {
       try {
         const stats = await getChessComAccount(username);
         if (!stats) return false;
-        addChessComSession(player, { username, stats });
+        addChessComSession(alias, { username, stats });
         return true;
       } catch (cause) {
         notifyUnlessCancelled(t("Common.Error"), cause);
@@ -87,11 +87,11 @@ function Accounts() {
   );
 
   const addLichessNoLogin = useCallback(
-    async (player: string, username: string): Promise<boolean> => {
+    async (alias: string, username: string): Promise<boolean> => {
       try {
         const account = await getLichessAccount({ username });
         if (!account) return false;
-        addLichessSession(player, { username, account });
+        addLichessSession(alias, { username, account });
         return true;
       } catch (cause) {
         notifyUnlessCancelled(t("Common.Error"), cause);
@@ -102,10 +102,10 @@ function Accounts() {
   );
 
   const addLichess = useCallback(
-    async (player: string, username: string, withLogin: boolean): Promise<boolean> => {
+    async (alias: string, username: string, withLogin: boolean): Promise<boolean> => {
       if (withLogin) {
         try {
-          const result = await authenticateLichess(player, username);
+          const result = await authenticateLichess(alias, username);
           if (!result.ok) {
             showAuthenticationFailed();
             return false;
@@ -118,7 +118,7 @@ function Accounts() {
         showAuthenticationFailed();
         return false;
       }
-      return addLichessNoLogin(player, username);
+      return addLichessNoLogin(alias, username);
     },
     [addLichessNoLogin, showAuthenticationFailed, showLinkDurabilityUncertain],
   );
@@ -164,13 +164,13 @@ function AccountModal({
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
-  addLichess: (player: string, username: string, withLogin: boolean) => Promise<boolean>;
-  addChessCom: (player: string, username: string) => Promise<boolean>;
+  addLichess: (alias: string, username: string, withLogin: boolean) => Promise<boolean>;
+  addChessCom: (alias: string, username: string) => Promise<boolean>;
 }) {
   const { t } = useTranslation();
   const sessions = useAtomValue(sessionsAtom);
   const [username, setUsername] = useState("");
-  const [player, setPlayer] = useState<string>("");
+  const [alias, setAlias] = useState<string>("");
   const [website, setWebsite] = useState<"lichess" | "chesscom">("lichess");
   const [withLogin, setWithLogin] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -181,7 +181,7 @@ function AccountModal({
   function closeAndClear() {
     setOpen(false);
     setUsername("");
-    setPlayer("");
+    setAlias("");
     setWebsite("lichess");
     setWithLogin(false);
   }
@@ -193,8 +193,8 @@ function AccountModal({
     try {
       const success =
         website === "lichess"
-          ? await addLichess(player, username, withLogin)
-          : await addChessCom(player, username);
+          ? await addLichess(alias, username, withLogin)
+          : await addChessCom(alias, username);
       if (success) closeAndClear();
     } catch {
       // Account providers own their lookup failure notifications.
@@ -221,8 +221,8 @@ function AccountModal({
             label={t("Home.Accounts.PlayerName")}
             description={t("Home.Accounts.PlayerName.Desc")}
             data={Array.from(players)}
-            value={player}
-            onChange={(value) => setPlayer(value)}
+            value={alias}
+            onChange={(value) => setAlias(value)}
             placeholder={t("Home.Accounts.SelectPlayer")}
           />
           <InputWrapper label={t("Home.Accounts.Website")} required>

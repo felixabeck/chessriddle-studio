@@ -344,6 +344,30 @@ describe("account authentication", () => {
     await act(async () => root.unmount());
   });
 
+  test("adding one username on Lichess and Chess.com without a player name keeps two players", async () => {
+    const { sessionsAtom } = await import("@/state/atoms");
+    const { getDefaultStore } = await import("jotai");
+    const { playerGroups } = await import("@/utils/session");
+    const store = getDefaultStore();
+    mocks.getLichessAccount.mockResolvedValue({ id: "alex", username: "alex" });
+
+    openModal();
+    fillUsername("alex");
+    await submit();
+
+    openModal();
+    fillUsername("alex");
+    chooseChessCom();
+    await submit();
+
+    const sessions = store.get(sessionsAtom);
+    expect(sessions.map((session) => session.alias)).toEqual([undefined, undefined]);
+    expect(playerGroups(sessions).map(({ key, sites }) => [key, sites])).toEqual([
+      ["lichess:alex", ["lichess"]],
+      ["chesscom:alex", ["chesscom"]],
+    ]);
+  });
+
   test("deduplicates Chess.com accounts case-insensitively when adding Felix then felix", async () => {
     const { sessionsAtom } = await import("@/state/atoms");
     const { getDefaultStore } = await import("jotai");
