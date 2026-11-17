@@ -1,6 +1,4 @@
 .logo {
-  width: 30px;
-  height: 30px;
   border-radius: var(--mantine-radius-sm);
   overflow: hidden;
 }

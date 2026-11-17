@@ -1,8 +1,13 @@
 import classes from "./LichessLogo.module.css";
 
-function LichessLogo() {
+function LichessLogo({ size = 30 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg" className={classes.logo}>
+    <svg
+      viewBox="0 0 50 50"
+      xmlns="http://www.w3.org/2000/svg"
+      className={classes.logo}
+      style={{ width: size, height: size, flexShrink: 0 }}
+    >
       <title>Lichess</title>
       <path
         strokeLinejoin="round"

@@ -52,7 +52,7 @@ import { accountDatabaseFilename, type AccountDatabaseIssue } from "./accountDat
 import { capitalize } from "@/utils/format";
 import { useTauriListener } from "@/platform/useTauriListener";
 import { logFailureSafely, runWithAppliedRecovery, safeFailureContext } from "@/platform/errors";
-import LichessLogo from "./LichessLogo";
+import { SiteLogo } from "./SiteLogo";
 
 interface AccountCardProps {
   type: "lichess" | "chesscom";
@@ -271,11 +271,7 @@ export function AccountCard({
       <Card.Section withBorder inheritPadding py="xs">
         <Group justify="space-between">
           <Group wrap="wrap" miw={0}>
-            {type === "lichess" ? (
-              <LichessLogo />
-            ) : (
-              <img width={30} height={30} src="/chesscom.png" alt="chess.com" />
-            )}
+            <SiteLogo site={type} />
             <Text fw={600} size="sm" miw={0} className="wrap-anywhere">
               {title}
             </Text>

@@ -5,7 +5,6 @@ import {
   Loader,
   Paper,
   Progress,
-  Select,
   Stack,
   Text,
   ThemeIcon,
@@ -38,6 +37,7 @@ import { collectSequential } from "@/utils/collectSequential";
 import { sessionPlayerName, type Session } from "@/utils/session";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import PersonalPlayerCard from "./PersonalCard";
+import { PlayerSelect } from "./PlayerSelect";
 
 type PersonalUnread = { type: "unread"; filename: string; error: string; key: string };
 type PersonalDatabase = {
@@ -394,20 +394,10 @@ function Databases() {
                   </Text>
                 )}
 
-                <Select
-                  aria-label={t("Home.Accounts.SelectPlayer")}
+                <PlayerSelect
+                  label={t("Home.Accounts.SelectPlayer")}
                   value={name}
-                  data={players}
-                  onChange={(e) => setSelectedName(e || "")}
-                  clearable={false}
-                  allowDeselect={false}
-                  fw="bold"
-                  styles={{
-                    input: {
-                      textAlign: "center",
-                      fontSize: "1.25rem",
-                    },
-                  }}
+                  onChange={setSelectedName}
                   mt="md"
                 />
               </Stack>

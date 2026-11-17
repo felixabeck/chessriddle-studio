@@ -1,19 +1,17 @@
-import { Box, Flex, Paper, Select, Tabs, Text } from "@mantine/core";
+import { Box, Flex, Paper, Tabs, Text } from "@mantine/core";
 import { Info } from "lucide-react";
-import { useAtomValue } from "jotai";
 import { useContext, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import type { PlayerGameInfo } from "@/bindings";
-import { sessionsAtom } from "@/state/atoms";
 import { IconAction } from "@/components/common/IconAction";
 import type { DatabaseViewStore } from "@/state/store/database";
-import { sessionPlayerName } from "@/utils/session";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import FideInfo from "../databases/FideInfo";
 import OpeningsPanel from "./PersonalCardPanels/OpeningsPanel";
 import OverviewPanel from "./PersonalCardPanels/OverviewPanel";
 import RatingsPanel from "./PersonalCardPanels/RatingsPanel";
+import { PlayerSelect } from "./PlayerSelect";
 import PlayerOpeningTree from "../databases/PlayerOpeningTree";
 import type { DatabaseHandle, Player } from "@/bindings";
 
@@ -38,8 +36,6 @@ function PersonalPlayerCard({
   const setActiveTab = useStore(store, (s) => s.setPlayersActiveTab);
 
   const [opened, setOpened] = useState(false);
-  const sessions = useAtomValue(sessionsAtom);
-  const players = Array.from(new Set(sessions.map(sessionPlayerName)));
 
   return (
     <Paper
@@ -63,21 +59,7 @@ function PersonalPlayerCard({
         )}
         {setName ? (
           <Flex justify="center">
-            <Select
-              aria-label={t("Home.Accounts.PlayerName")}
-              value={name}
-              data={players}
-              onChange={(e) => setName(e || "")}
-              clearable={false}
-              allowDeselect={false}
-              fw="bold"
-              styles={{
-                input: {
-                  textAlign: "center",
-                  fontSize: "1.25rem",
-                },
-              }}
-            />
+            <PlayerSelect label={t("Home.Accounts.PlayerName")} value={name} onChange={setName} />
           </Flex>
         ) : (
           <Text fz="lg" fw={500} ta="center" className="wrap-anywhere">

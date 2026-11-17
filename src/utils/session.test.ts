@@ -25,6 +25,7 @@ import {
     dedupeChessComSessions,
     initializePersistedSessions,
     getSessionPersistenceSnapshot,
+    playerSites,
     savePublicSessions,
     retrySessionPersistence,
     sameAccountUsername,
@@ -57,6 +58,32 @@ test("session player names prefer the alias, then Lichess, then Chess.com, then 
         "chesscom",
     );
     expect(sessionPlayerName({ updatedAt: 1 })).toBe("");
+});
+
+test("player sites list each site a player's accounts live on once, Lichess first", () => {
+    const lichess = (username: string, player?: string) => ({
+        player,
+        updatedAt: 1,
+        lichess: { username, account: { id: username, username } },
+    });
+    const chessCom = (username: string, player?: string) => ({
+        player,
+        updatedAt: 1,
+        chessCom: { username, stats: {} },
+    });
+    const sessions = [
+        chessCom("GGalile0", "GGalileo"),
+        lichess("GGalileo", "GGalileo"),
+        lichess("Second", "GGalileo"),
+        chessCom("Solo"),
+        lichess("Other", "Other"),
+    ] as Parameters<typeof playerSites>[0];
+
+    expect(playerSites(sessions, "GGalileo")).toEqual(["lichess", "chesscom"]);
+    // A session without a player alias is grouped under its username.
+    expect(playerSites(sessions, "Solo")).toEqual(["chesscom"]);
+    expect(playerSites(sessions, "Other")).toEqual(["lichess"]);
+    expect(playerSites(sessions, "Nobody")).toEqual([]);
 });
 
 describe("upsertLichessSession", () => {

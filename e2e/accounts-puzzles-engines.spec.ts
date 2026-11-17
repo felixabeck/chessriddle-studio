@@ -1394,6 +1394,19 @@ for (const state of ["partial", "failed"] as const) {
         await expect(page).toHaveScreenshot(`home-summary-${state}-statistics.png`, {
             fullPage: true,
         });
+        if (state === "partial") {
+            // A player merged from a Lichess and a Chess.com account shows both site logos,
+            // in the closed player dropdown and in its options.
+            const player = page.locator('input[aria-label="Player Name"]');
+            await expect(
+                player.locator("xpath=..").locator('[data-site-logos="lichess chesscom"]'),
+            ).toBeVisible();
+            await player.click();
+            const option = page.getByRole("option", { name: "Alex" });
+            await expect(option.locator('[data-site-logos="lichess chesscom"]')).toBeVisible();
+            await capture("home-summary-player-sites");
+            await expect(page).toHaveScreenshot("home-summary-player-sites.png");
+        }
     });
 }
 

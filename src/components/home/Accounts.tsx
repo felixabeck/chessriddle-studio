@@ -30,7 +30,7 @@ import {
 import AccountCards from "../common/AccountCards";
 import GenericCard from "../common/GenericCard";
 import AppModal from "../common/AppModal";
-import LichessLogo from "./LichessLogo";
+import { SiteLogo } from "./SiteLogo";
 
 function Accounts() {
   const { t } = useTranslation();
@@ -235,7 +235,7 @@ function AccountModal({
                 setSelected={() => setWebsite("lichess")}
                 Header={
                   <Group>
-                    <LichessLogo />
+                    <SiteLogo site="lichess" />
                     Lichess
                   </Group>
                 }
@@ -246,7 +246,7 @@ function AccountModal({
                 setSelected={() => setWebsite("chesscom")}
                 Header={
                   <Group>
-                    <img width={30} height={30} src="/chesscom.png" alt="chess.com" />
+                    <SiteLogo site="chesscom" />
                     Chess.com
                   </Group>
                 }

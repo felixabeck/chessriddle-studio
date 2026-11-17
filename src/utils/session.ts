@@ -33,6 +33,17 @@ export function sessionPlayerName(session: Session): string {
     return session.player || session.lichess?.username || session.chessCom?.username || "";
 }
 
+export type AccountSite = "lichess" | "chesscom";
+
+/** The sites a player's accounts live on, Lichess first, each listed once. */
+export function playerSites(sessions: Session[], player: string): AccountSite[] {
+    const own = sessions.filter((session) => sessionPlayerName(session) === player);
+    const sites: AccountSite[] = [];
+    if (own.some((session) => session.lichess?.username)) sites.push("lichess");
+    if (own.some((session) => session.chessCom?.username)) sites.push("chesscom");
+    return sites;
+}
+
 /** Storage boundary: the Lichess object is deliberately `strip`ped so an old `accessToken`
  * field can never be hydrated into Jotai state, even when Account screens never mount. */
 export const sessionSchema = z
