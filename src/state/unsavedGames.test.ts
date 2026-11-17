@@ -16,6 +16,7 @@ import {
     resetUnsavedGamesForTests,
     restoreUnsavedGames,
     UnsavedGameMirror,
+    UNSAVED_GAME_NAME_MAX,
     UNSAVED_GAME_WRITE_DELAY_MS,
     type UnsavedGameNative,
 } from "./unsavedGames";
@@ -509,8 +510,7 @@ test("a record refused as too large is not retried until the game changes", asyn
     expect(fake.calls).toEqual([`write:${tab.value}`]);
 
     await mirror.drain();
-    tabRename(tab.value, tab.name);
-    await vi.advanceTimersByTimeAsync(UNSAVED_GAME_WRITE_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(fake.calls).toEqual([`write:${tab.value}`]);
 
     fake.native.failWrite = undefined;
@@ -520,26 +520,28 @@ test("a record refused as too large is not retried until the game changes", asyn
     expect(mirror.isConfirmed(tab.value)).toBe(true);
 });
 
-function tabRename(id: string, name: string) {
-    jotai.set(tabsAtom, (tabs) => tabs.map((tab) => (tab.value === id ? { ...tab, name } : tab)));
-}
-
 test("long tab names are cut on write so the record still restores", () => {
     const long = "x".repeat(5000);
     const decoded = decodeUnsavedGame(
         encodeUnsavedGame({ name: long, type: "analysis" }, defaultTree()),
     );
-    expect(decoded.name).toHaveLength(1024);
+    expect(decoded.name).toHaveLength(UNSAVED_GAME_NAME_MAX);
 });
 
 test("restore clears the stale source stamp and linked source", async () => {
     const { native, records } = fakeNative();
     const id = crypto.randomUUID();
-    const tree: TreeState = { ...defaultTree(), dirty: true, sourceStamp: "a".repeat(64) };
+    const tree: TreeState = {
+        ...defaultTree(),
+        dirty: true,
+        sourceStamp: "a".repeat(64),
+        appendAttempted: true,
+    };
     records.set(id, encodeUnsavedGame({ name: "file game", type: "analysis" }, tree));
     await restoreUnsavedGames(restoreDeps(native));
     const { tabStorage } = await import("@/state/store/tabStorage");
     const stored = tabStorage.readTree(id) as { value: { state: TreeState } };
     expect(stored.value.state.sourceStamp).toBeNull();
+    expect(stored.value.state.appendAttempted).toBe(false);
     expect((stored.value.state as { linkedSource?: unknown }).linkedSource ?? null).toBeNull();
 });

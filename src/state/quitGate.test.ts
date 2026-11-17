@@ -964,3 +964,24 @@ test.each([
     expect(gate.destroyWindow).toHaveBeenCalledOnce();
     expect(gate.warn).toHaveBeenCalled();
 });
+
+test("an unfinished drain before the scan is logged and the unconfirmed tab still asks", async () => {
+    const id = uuid();
+    seedStoredTree(id, true);
+    const gate = host({
+        getTabs: () => [tab({ value: id, type: "analysis" })],
+        recovery: recovery(
+            [],
+            vi.fn(async () => ({ finished: false })),
+        ),
+    });
+    await runQuitGate(gate);
+    expect(gate.warn).toHaveBeenCalledWith(
+        "Quit gate: recovery copies were still being updated when it scanned.",
+    );
+    expect(gate.openDialog).toHaveBeenCalledWith({
+        failClosed: false,
+        tabs: [{ value: id, name: id, uninspectable: false }],
+    });
+    expect(gate.destroyWindow).not.toHaveBeenCalled();
+});

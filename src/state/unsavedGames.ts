@@ -31,7 +31,7 @@ export const UNSAVED_GAME_VERSION = 1;
 export const UNSAVED_GAME_WRITE_DELAY_MS = 1000;
 /** Upper bound a quit or "Clear saved data" waits for outstanding native operations. */
 export const UNSAVED_GAME_DRAIN_TIMEOUT_MS = 2000;
-/** Longest tab name and type a record keeps; longer names are cut on write, never refused. */
+/** Longest tab name a record keeps; a longer name is cut on write so the record still decodes. */
 export const UNSAVED_GAME_NAME_MAX = 1024;
 const UNSAVED_GAME_TYPE_MAX = 64;
 const REMOVE_RETRY_BASE_MS = 1000;
@@ -102,7 +102,6 @@ type Entry = {
     writeQueued: number | null;
     confirmed: Snapshot | null;
     status: WriteStatus;
-    limitRefused: Snapshot | null;
     notifiedWriteFailure: boolean;
     mayHaveRecord: boolean;
 };
@@ -212,7 +211,6 @@ export class UnsavedGameMirror {
             if (!entry.store.getState().dirty) continue;
             entry.status = "pending";
             entry.confirmed = null;
-            entry.limitRefused = null;
             this.scheduleWrite(entry, true);
         }
     }
@@ -296,7 +294,6 @@ export class UnsavedGameMirror {
             writeQueued: null,
             confirmed: null,
             status: "pending",
-            limitRefused: null,
             notifiedWriteFailure: false,
             mayHaveRecord: false,
         };
@@ -329,7 +326,6 @@ export class UnsavedGameMirror {
         this.clearTimer(entry);
         entry.status = "pending";
         entry.confirmed = null;
-        entry.limitRefused = null;
         if (entry.mayHaveRecord) {
             entry.mayHaveRecord = false;
             this.startRemoval(entry.id, entry.tab.name);
@@ -406,12 +402,11 @@ export class UnsavedGameMirror {
             const state = entry.store.getState();
             if (!state.dirty) return;
             const snapshot = this.snapshot(entry);
-            if (sameSnapshot(entry.limitRefused, snapshot)) return;
             let document: string;
             try {
                 document = encodeUnsavedGame(entry.tab, state);
             } catch (error) {
-                this.writeFailed(entry, snapshot, error);
+                this.writeFailed(entry, error);
                 return;
             }
             entry.mayHaveRecord = true;
@@ -419,7 +414,7 @@ export class UnsavedGameMirror {
                 await this.deps.native.write(entry.id, document);
             } catch (error) {
                 if (this.lane(entry.id).generation === generation) {
-                    this.writeFailed(entry, snapshot, error);
+                    this.writeFailed(entry, error);
                 }
                 return;
             }
@@ -435,10 +430,11 @@ export class UnsavedGameMirror {
         });
     }
 
-    private writeFailed(entry: Entry, snapshot: Snapshot, error: unknown): void {
+    private writeFailed(entry: Entry, error: unknown): void {
         entry.status = "failed";
+        // Writes start only on a content change, so a refused (too large) record is not retried
+        // until the game changes.
         const category = categoryOf(error);
-        if (category === "resource-limit") entry.limitRefused = snapshot;
         this.warn(`Unsaved game ${entry.id} could not be stored: ${normalizeError(error).message}`);
         if (entry.notifiedWriteFailure) return;
         entry.notifiedWriteFailure = true;
@@ -594,8 +590,10 @@ function admitRecord(id: string, document: string, deps: RestoreDeps): string | 
     const tree = {
         ...decoded.tree,
         dirty: true,
+        // The restored tab has no origin, so no earlier save can be pending or uncertain.
         sourceStamp: null,
         linkedSource: null,
+        appendAttempted: false,
     } as TreeState;
     try {
         const admitted = commitNewTab({
