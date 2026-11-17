@@ -1,14 +1,31 @@
-use shakmaty::{fen::Fen, uci::UciMove, CastlingMode, Chess, EnPassantMode, Position};
+use shakmaty::{fen::Fen, uci::UciMove, CastlingMode, Chess, EnPassantMode, Position, Setup};
 
 use crate::error::Error;
 
+/// Human-only positions (Play without an engine) follow the database policy.
 pub fn parse_fen_to_position(fen: &str) -> Result<Chess, Error> {
     let fen: Fen = fen.parse()?;
-    let setup = fen.as_setup().clone();
+    crate::db::database_setup_to_chess(fen.into_setup())
+}
+
+/// The engine and game-report policy for a start setup. Castling rights without a matching king
+/// and rook (stale `KQkq` from older tools, which chessops and the database already ignore) are
+/// dropped; the wire FEN is re-serialised from the position, so the engine never sees them.
+/// Excess material stays refused for engines
+/// (`engine_games_refuse_excess_material_at_creation_but_human_games_keep_it`).
+/// The returned mode is detected from the surviving rights, so a stale right cannot select
+/// Chess960 (and with it `UCI_Chess960`) for a standard position.
+pub(crate) fn engine_setup_to_chess(setup: Setup) -> Result<(Chess, CastlingMode), Error> {
     let castling_mode = CastlingMode::detect(&setup);
     match setup.position(castling_mode) {
-        Ok(p) => Ok(p),
-        Err(e) => Ok(e.ignore_too_much_material()?),
+        Ok(position) => Ok((position, castling_mode)),
+        Err(error) => {
+            let setup = error
+                .ignore_invalid_castling_rights()?
+                .into_setup(EnPassantMode::Legal);
+            let castling_mode = CastlingMode::detect(&setup);
+            Ok((setup.position(castling_mode)?, castling_mode))
+        }
     }
 }
 
@@ -80,9 +97,7 @@ fn canonicalize_engine_position_inner(
         }
     }
     let fen: Fen = fields.join(" ").parse()?;
-    let setup = fen.into_setup();
-    let castling_mode = CastlingMode::detect(&setup);
-    let mut pos: Chess = setup.position(castling_mode)?;
+    let (mut pos, castling_mode) = engine_setup_to_chess(fen.into_setup())?;
     // Clamp only the wire setup. In particular, game state retains positive
     // request clocks rather than adopting the engine's bounded counters.
     let mut wire_setup = pos.clone().into_setup(EnPassantMode::Legal);
@@ -206,7 +221,19 @@ mod tests {
                 "castling without rooks",
                 format!("{BOARD} w KQkq - 0 1"),
                 &[],
-                None,
+                Some("4k3/8/8/8/8/8/8/4K3 w - - 0 1"),
+            ),
+            fixture(
+                "stale castling beside a valid right",
+                "4k3/8/8/8/8/8/8/4K2R w Kk - 0 1".into(),
+                &["e1d2"],
+                Some("4k3/8/8/8/8/8/8/4K2R w K - 0 1"),
+            ),
+            fixture(
+                "stale Shredder right beside a standard right",
+                "4k3/8/8/8/8/8/8/4K2R w HB - 0 1".into(),
+                &["e1g1"],
+                Some("4k3/8/8/8/8/8/8/4K2R w K - 0 1"),
             ),
             fixture(
                 "Crazyhouse bracket pockets",
@@ -343,6 +370,24 @@ mod tests {
             Some(expected) => assert_eq!(result.unwrap().fen, expected),
             None => assert!(matches!(result, Err(Error::EnginePositionRejected(_)))),
         }
+    }
+
+    #[test]
+    fn drops_stale_castling_rights_and_redetects_the_mode() {
+        assert_fixture("castling without rooks");
+        assert_fixture("stale castling beside a valid right");
+        let canonical =
+            canonicalize_engine_position("4k3/8/8/8/8/8/8/4K2R w HB - 0 1", &["e1g1".into()])
+                .unwrap();
+        assert_eq!(canonical.castling_mode, CastlingMode::Standard);
+        assert_eq!(canonical.moves, ["e1g1"]);
+        // Excess material stays refused for engines; only castling is tolerated.
+        assert!(matches!(
+            canonicalize_engine_position("4k3/8/8/8/8/8/PPPPPPPP/QQQ1K3 w KQ - 0 1", &[]),
+            Err(Error::EnginePositionRejected(_))
+        ));
+        // Play without an engine follows the database policy for both classes.
+        assert!(parse_fen_to_position("4k3/8/8/8/8/8/PPPPPPPP/QQQ1K3 w KQ - 0 1").is_ok());
     }
 
     #[test]

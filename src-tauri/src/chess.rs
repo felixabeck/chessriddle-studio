@@ -13,8 +13,7 @@ use log::{info, warn};
 use nonzero_ext::*;
 use serde::{Deserialize, Serialize};
 use shakmaty::{
-    fen::Fen, san::SanPlus, uci::UciMove, ByColor, CastlingMode, Chess, Color, EnPassantMode,
-    Position, Role,
+    fen::Fen, san::SanPlus, uci::UciMove, ByColor, Chess, Color, EnPassantMode, Position, Role,
 };
 use specta::Type;
 use tauri_specta::Event;
@@ -1210,9 +1209,7 @@ fn collect_report_positions(
     cancellation: &CancellationToken,
 ) -> Result<Vec<(Fen, Vec<String>, bool)>, Error> {
     ensure_analysis_not_cancelled(cancellation)?;
-    let setup = fen.as_setup().clone();
-    let castling_mode = CastlingMode::detect(&setup);
-    let mut chess: Chess = setup.position(castling_mode)?;
+    let (mut chess, _) = crate::engine::engine_setup_to_chess(fen.as_setup().clone())?;
     let mut fens: Vec<(Fen, Vec<String>, bool)> = vec![(fen, vec![], false)];
 
     for (i, m) in moves.iter().enumerate() {
@@ -5111,7 +5108,7 @@ done
 
     fn pos(fen: &str) -> Chess {
         let fen: Fen = fen.parse().unwrap();
-        Chess::from_setup(fen.into_setup(), CastlingMode::Chess960).unwrap()
+        Chess::from_setup(fen.into_setup(), shakmaty::CastlingMode::Chess960).unwrap()
     }
 
     fn start_fen() -> Fen {
@@ -5236,6 +5233,18 @@ done
                 "{line}"
             );
         }
+    }
+
+    #[test]
+    fn report_positions_tolerate_stale_castling_rights_in_the_root() {
+        let stale: Fen = "4k3/8/8/8/8/8/4P3/4K3 w KQkq - 0 1".parse().unwrap();
+        let moves = ["e2e4".to_string()];
+        let fens =
+            collect_report_positions(stale.clone(), &moves, false, &CancellationToken::new())
+                .unwrap();
+        assert_eq!(fens.len(), 2);
+        assert_eq!(fens[0].0, stale);
+        assert_eq!(fens[1].0.to_string(), "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1");
     }
 
     #[test]

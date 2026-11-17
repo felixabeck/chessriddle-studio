@@ -27,12 +27,15 @@ pub(crate) use search::is_position_in_db_cancellable;
 mod search_index;
 pub(crate) mod sqlite_cancellation;
 
+/// Shared with Play without an engine (`engine::parse_fen_to_position`).
+pub(crate) use encoding::database_setup_to_chess;
+
 use crate::{
     cancellable_read::{map_read_error, CancellableRead, SourceRead, SourceReadState},
     db::{
         encoding::{
-            database_setup_to_chess, decode_game_to_movetext, decode_game_to_movetext_cancellable,
-            decode_move, iter_mainline_move_bytes, try_iter_mainline_move_bytes_cancellable,
+            decode_game_to_movetext, decode_game_to_movetext_cancellable, decode_move,
+            iter_mainline_move_bytes, try_iter_mainline_move_bytes_cancellable,
         },
         models::*,
         ops::*,
