@@ -901,6 +901,48 @@ test.each(["count", "open"])(
   },
 );
 
+const replaced = {
+  tag: "backend-error",
+  category: "conflict",
+  message: "path authority is unavailable because its object changed",
+};
+
+test("a recent replaced at its path is pruned on mount while a busy or deleted sibling follows its own rule", async () => {
+  store.set(recentFilesAtom, [
+    { name: "Replaced", handle: handle("replaced"), type: "game", lastOpened: 3 },
+    { name: "Busy", handle: handle("busy"), type: "game", lastOpened: 2 },
+    { name: "Gone", handle: handle("gone"), type: "game", lastOpened: 1 },
+  ]);
+  mocks.count.mockImplementation(async (file: { id: { id: string } }) => {
+    if (file.id.id === "replaced") throw replaced;
+    if (file.id.id === "gone")
+      throw { tag: "backend-error", category: "missing-resource", message: "File moved" };
+    throw { tag: "backend-error", category: "io", message: "busy" };
+  });
+  await render();
+  expect(store.get(recentFilesAtom).map((recent) => recent.name)).toEqual(["Busy"]);
+  expect(rows()).toHaveLength(1);
+});
+
+test("clicking a recent whose count reports it replaced prunes the row; an open conflict keeps it", async () => {
+  const recent = {
+    name: "Replaced",
+    handle: handle("replaced"),
+    type: "game" as const,
+    lastOpened: 1,
+  };
+  store.set(recentFilesAtom, [recent]);
+  await render();
+  mocks.openFile.mockRejectedValueOnce(replaced);
+  await open("Replaced");
+  expect(store.get(recentFilesAtom)).toEqual([recent]);
+  mocks.count.mockRejectedValueOnce(replaced);
+  await open("Replaced");
+  expect(store.get(recentFilesAtom)).toEqual([]);
+  expect(mocks.navigate).not.toHaveBeenCalled();
+  expect(mocks.notify).toHaveBeenCalledTimes(2);
+});
+
 test("transient validation failures retain recents and refused opening does not navigate", async () => {
   store.set(recentFilesAtom, [
     { name: "Keep", handle: handle("keep"), type: "game", lastOpened: 1 },

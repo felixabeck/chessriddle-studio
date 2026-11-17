@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { FileWorkspaceHandle } from "@/bindings";
-import { normalizeError } from "@/platform/errors";
+import { isUnavailableFileHandle, normalizeError } from "@/platform/errors";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import type { Tab } from "@/utils/tabs";
 import type { CollectionDescriptor } from "@/bindings";
@@ -491,13 +491,10 @@ export function startFileRevisionPoll(dependencies: FileRevisionPollDependencies
             })
             .catch((error: unknown) => {
                 if (flight.timedOut || !running) return;
-                const normalized = normalizeError(error);
                 applyIfCurrent({
                     kind: "rejected",
-                    unavailable:
-                        normalized.backendCategory === "missing-resource" ||
-                        normalized.backendCategory === "conflict",
-                    message: normalized.message,
+                    unavailable: isUnavailableFileHandle(error),
+                    message: normalizeError(error).message,
                 });
             })
             .finally(() => {

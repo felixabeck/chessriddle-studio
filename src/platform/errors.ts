@@ -380,6 +380,16 @@ export async function runDestructiveWithRefresh<T>(
     }
 }
 
+/**
+ * A file capability whose file was deleted, or replaced at its path by another program, can never
+ * resolve again: the native side answers `missing-resource` or `conflict` (identity changed,
+ * d-20261113-02). Only a fresh capability from a listing or picker reaches the file again.
+ */
+export function isUnavailableFileHandle(error: unknown): boolean {
+    const { backendCategory } = normalizeError(error);
+    return backendCategory === "missing-resource" || backendCategory === "conflict";
+}
+
 export function isOperationAndCleanup(error: unknown): boolean {
     return normalizeError(error).backendCategory === "operation-and-cleanup";
 }
