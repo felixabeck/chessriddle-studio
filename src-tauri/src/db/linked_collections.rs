@@ -208,7 +208,7 @@ impl Record {
     }
 }
 
-/// The highest number an account file name carries before it falls back to the collection id.
+/// The highest number an account file name carries before it takes the collection id suffix.
 const ACCOUNT_FILE_NAME_NUMBERED_MAX: u32 = 99;
 /// Every candidate `account_file_name` produces: the plain name, `2..=99`, then the id suffix.
 const ACCOUNT_FILE_NAME_ATTEMPTS: u32 = ACCOUNT_FILE_NAME_NUMBERED_MAX + 1;
@@ -2775,8 +2775,9 @@ pub(crate) async fn prepare_account_collection(
                     let file = if let Some(file) = recovered {
                         file
                     } else {
-                        // Candidates restart from the plain name, so an intent stored under an
-                        // older name still prefers the readable one.
+                        // The first attempt uses the stored name. After a collision, candidates
+                        // restart from the plain name, so an intent stored under an older name
+                        // still prefers the readable one.
                         let mut attempt = 0;
                         loop {
                             let workspace = creation.workspace.clone();
