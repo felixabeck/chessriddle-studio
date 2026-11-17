@@ -27059,7 +27059,7 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 
 ### Windows CI: `slow_schema_probes_do_not_hold_the_upgrade_admission_lock` fails once with "database is locked"
 
-* **ID:** f-20261117-06 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261117-06 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** tooling
 * **Where:** `src-tauri/src/db/repository.rs:3738` (`db::repository::upgrade_tests::slow_schema_probes_do_not_hold_the_upgrade_admission_lock`), CI job `rust-windows-test`.
 * **Failure scenario:** Test run 44132907360 on `47cb6b471` (job 134214547495, 2026-11-17 17:11 UTC) panicked with ``called `Result::unwrap()` on an `Err` value: Diesel(DatabaseError(Unknown, "database is locked"))``; 2174 passed, 1 failed. The previous run on `0dd08d652` was green and `git diff 0dd08d652..47cb6b471 -- src-tauri` is empty, so the failure is non-deterministic on Windows, not introduced by those commits.
@@ -27067,6 +27067,8 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Spotted outside diff:** yes — seen by the unsaved-games build's pre-push remote CI check.
 * **Open question:** which handle still holds the SQLite file when the probe's connection opens on Windows (a WAL/journal handle released late, or a connection from the slow probe not yet dropped), and whether the test should wait for that release or the code should retry `SQLITE_BUSY` on that path.
 * **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17.
+* **Handled (2026-11-17, drain e7a02d36):** duplicate of f-20261117-08 (filed independently by the drain for the same CI run 44132907360) and fixed by commit `bf724e8b0`. The open question is answered: no handle is held late. Two pooled connections enable WAL on the rollback-journal fixture at the same time. SQLite returns SQLITE_BUSY to the loser of the read-to-write lock upgrade without calling its busy handler, so `busy_timeout = 30000` never helped. A disposable probe failed 167 of 600 concurrent `on_acquire` calls on Linux. `on_acquire` now retries `PRAGMA journal_mode = WAL` on "database is locked" within the same 30 s budget, and the regression test `setup_policy_tests::concurrent_connections_enabling_wal_on_a_rollback_journal_file_all_succeed` fails without the retry. Full account: f-20261117-08.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"75505492deaec5fb5751c702ebf1e5fc6bdafd43a05e6b189891be52418d31a3","header_sha256":"d57254c33607aa13d58f5de0a89a390dec9e618d5fbc32aa8040bc479b6a9efd","header_status":"handled","input_sha256":"469f8f59cc5022ef4300ec6e82f1d00906099ae8e433eab2887d186a32f0e285","kind":"mutation-receipt","operation":"a5973485aaac90dfbdde192b3395dacbbab61eb064c576d753dc0f3fc121430e","options":{"section":null},"request_id_sha256":null,"results":["f-20261117-06"],"target":"f-20261117-06","v":1} -->
 
 ---
 
