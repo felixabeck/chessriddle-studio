@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import type { Token } from "../src/bindings/generated";
 import {
+    assertNothingClipped,
     contrastRatio,
     expect,
     filesWorkspaceCommands,
@@ -508,27 +509,37 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
     // A visible hint also proves that this tab has comments enabled.
     await expect(hint).toBeVisible();
     await waitForFontsSettled(page);
-    const geometry = await hint.evaluate((element) => {
-        const hint = element.getBoundingClientRect();
-        const board = document.querySelector("#left cg-board")!.getBoundingClientRect();
-        // White orientation, a3 is file 0 and row 5 from the top of the painted board.
-        const square = {
-            left: board.left,
-            right: board.left + board.width / 8,
-            top: board.top + (5 * board.height) / 8,
-            bottom: board.top + (6 * board.height) / 8,
-        };
-        return {
-            hint: { x: hint.x, y: hint.y, width: hint.width, height: hint.height },
-            center: { x: hint.x + hint.width / 2, y: hint.y + hint.height / 2 },
-            square,
-        };
-    });
-    console.log(`320x720/200% a3! annotation ${JSON.stringify(geometry)}`);
-    expect(geometry.center.x).toBeGreaterThanOrEqual(geometry.square.left);
-    expect(geometry.center.x).toBeLessThanOrEqual(geometry.square.right);
-    expect(geometry.center.y).toBeGreaterThanOrEqual(geometry.square.top);
-    expect(geometry.center.y).toBeLessThanOrEqual(geometry.square.bottom);
+    const expectHintOverA3 = async (state: string) => {
+        const geometry = await hint.evaluate((element) => {
+            const hint = element.getBoundingClientRect();
+            const board = document.querySelector("#left cg-board")!.getBoundingClientRect();
+            // White orientation, a3 is file 0 and row 5 from the top of the painted board.
+            const square = {
+                left: board.left,
+                right: board.left + board.width / 8,
+                top: board.top + (5 * board.height) / 8,
+                bottom: board.top + (6 * board.height) / 8,
+            };
+            return {
+                hint: { x: hint.x, y: hint.y, width: hint.width, height: hint.height },
+                center: { x: hint.x + hint.width / 2, y: hint.y + hint.height / 2 },
+                square,
+            };
+        });
+        console.log(`320x720/200% a3! annotation ${state} ${JSON.stringify(geometry)}`);
+        expect(geometry.center.x).toBeGreaterThanOrEqual(geometry.square.left);
+        expect(geometry.center.x).toBeLessThanOrEqual(geometry.square.right);
+        expect(geometry.center.y).toBeGreaterThanOrEqual(geometry.square.top);
+        expect(geometry.center.y).toBeLessThanOrEqual(geometry.square.bottom);
+    };
+    await expectHintOverA3("eval open");
+    // Collapsed, the 8px stacked eval column widens to the 1rem (32px here) reopen button, which
+    // the board would otherwise clip; the hint's offset follows the wider column.
+    await page.locator("#left").getByRole("grid").first().focus();
+    await page.keyboard.press("z");
+    const showEvaluation = page.getByRole("button", { name: "Show evaluation", exact: true });
+    await assertNothingClipped(showEvaluation, { mode: "reachable" });
+    await expectHintOverA3("eval collapsed");
 });
 
 test("notation-hierarchy: overflow-only stacked geometry and wheel reachability", async ({
