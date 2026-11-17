@@ -67,7 +67,10 @@ function sessionAccountDatabase(
   return undefined;
 }
 
-/** Each account's database from the shared listing, owned by every player key that reads it. */
+/**
+ * Each account's database from the shared listing, or an unread row when its association is
+ * unavailable, owned by every player key that reads it.
+ */
 function personalDatabases(
   listing: DatabaseList,
   sessions: Session[],
