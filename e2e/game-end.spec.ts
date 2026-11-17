@@ -126,18 +126,19 @@ for (const colorScheme of ["light", "dark"] as const) {
         await waitForFontsSettled(page);
         // The list is portaled, so the snapshot spans the field and the list together.
         const fieldBox = (await field.boundingBox())!;
-        const listBox = (await listbox.boundingBox())!;
-        const x = Math.min(fieldBox.x, listBox.x) - 8;
+        const listboxBox = (await listbox.boundingBox())!;
+        const x = Math.min(fieldBox.x, listboxBox.x) - 8;
         const y = fieldBox.y - 8;
         await expect(page).toHaveScreenshot(`termination-suggestions-${colorScheme}.png`, {
             clip: {
                 x,
                 y,
-                width: Math.max(fieldBox.x + fieldBox.width, listBox.x + listBox.width) - x + 8,
-                height: listBox.y + listBox.height - y + 8,
+                width:
+                    Math.max(fieldBox.x + fieldBox.width, listboxBox.x + listboxBox.width) - x + 8,
+                height: listboxBox.y + listboxBox.height - y + 8,
             },
         });
-        await options.nth(1).click();
+        await listbox.getByRole("option", { name: /^Time forfeit/ }).click();
         await expect(field).toHaveValue("Time forfeit");
         await expect(page.getByText("Unexpected Tauri IPC command", { exact: false })).toHaveCount(
             0,

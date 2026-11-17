@@ -250,7 +250,7 @@ const TERMINATION_SUGGESTIONS = [
   ["Unterminated", "GameInfo.TerminationHint.Unterminated"],
 ] as const;
 
-async function renderTermination(termination?: string) {
+async function renderAndFocusTermination(termination?: string) {
   const state = defaultTree();
   state.root.children = [
     { ...fixtureNode("e4"), gameEnd: termination === undefined ? {} : { termination } },
@@ -278,13 +278,13 @@ function terminationOptions() {
 }
 
 test("focusing an empty Termination lists every PGN-standard suggestion with its hint", async () => {
-  await renderTermination();
+  await renderAndFocusTermination();
   expect(terminationOptions()).toEqual(TERMINATION_SUGGESTIONS.map((entry) => [...entry]));
 });
 
 test("picking a suggestion stores its exact English value", async () => {
   const setTermination = vi.spyOn(store.getState(), "setTermination");
-  const field = await renderTermination();
+  const field = await renderAndFocusTermination();
   const option = terminationOptionElements().find(
     (candidate) => candidate.getAttribute("value") === "Time forfeit",
   )!;
@@ -295,7 +295,7 @@ test("picking a suggestion stores its exact English value", async () => {
 });
 
 test("free text outside the suggestions is accepted and stored", async () => {
-  const field = await renderTermination();
+  const field = await renderAndFocusTermination();
   await act(async () => setNativeInputValue(field, "Black won by resignation"));
   expect(getEffectiveTermination(store.getState())).toBe("Black won by resignation");
   expect(field.value).toBe("Black won by resignation");
@@ -307,7 +307,7 @@ test.each([
   ["a partial value, case-insensitively", "time", ["Time forfeit"]],
   ["unrelated free text", "White won on time", []],
 ])("Termination suggestions for %s", async (_case, termination, expected) => {
-  await renderTermination(termination);
+  await renderAndFocusTermination(termination);
   expect(terminationOptions().map(([value]) => value)).toEqual(expected);
 });
 
