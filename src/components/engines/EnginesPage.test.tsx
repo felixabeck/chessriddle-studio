@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Engine, LocalEngine } from "@/utils/engines";
 
 const mocks = vi.hoisted(() => ({
+  widgetProps: new Map<string, Record<string, unknown>>(),
   fileExists: vi.fn(),
   navigate: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
@@ -123,6 +124,7 @@ vi.mock("@mantine/core", () => ({
     onChange,
     min,
     max,
+    allowDecimal,
   }: {
     label: string;
     description?: React.ReactNode;
@@ -130,23 +132,27 @@ vi.mock("@mantine/core", () => ({
     onChange: (value: number | string) => void;
     min?: number;
     max?: number;
-  }) => (
-    <label>
-      <span>{label}</span>
-      <input
-        type="number"
-        aria-label={label}
-        value={value}
-        min={min}
-        max={max}
-        // Mantine reports a cleared field as "", not as a number.
-        onChange={(event) =>
-          onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
-        }
-      />
-      {description}
-    </label>
-  ),
+    allowDecimal?: boolean;
+  }) => {
+    mocks.widgetProps.set(label, { allowDecimal });
+    return (
+      <label>
+        <span>{label}</span>
+        <input
+          type="number"
+          aria-label={label}
+          value={value}
+          min={min}
+          max={max}
+          // Mantine reports a cleared field as "", not as a number.
+          onChange={(event) =>
+            onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
+          }
+        />
+        {description}
+      </label>
+    );
+  },
   Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Select: ({
@@ -155,31 +161,36 @@ vi.mock("@mantine/core", () => ({
     data = [],
     value,
     onChange,
+    allowDeselect,
   }: {
     label: string;
     description?: React.ReactNode;
     data?: string[];
     value?: string | null;
     onChange?: (value: string | null) => void;
-  }) => (
-    <label>
-      <span>{label}</span>
-      <select
-        aria-label={label}
-        value={value ?? ""}
-        // The empty entry stands for Mantine's deselect, which reports null.
-        onChange={(event) => onChange?.(event.currentTarget.value || null)}
-      >
-        <option value="" />
-        {data.map((item) => (
-          <option key={item} value={item}>
-            {item}
-          </option>
-        ))}
-      </select>
-      {description}
-    </label>
-  ),
+    allowDeselect?: boolean;
+  }) => {
+    mocks.widgetProps.set(label, { allowDeselect });
+    return (
+      <label>
+        <span>{label}</span>
+        <select
+          aria-label={label}
+          value={value ?? ""}
+          // The empty entry stands for Mantine's deselect, which reports null.
+          onChange={(event) => onChange?.(event.currentTarget.value || null)}
+        >
+          <option value="" />
+          {data.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        {description}
+      </label>
+    );
+  },
   SimpleGrid: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Space: () => null,
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -473,6 +484,9 @@ test("clearing a spin field or deselecting a combo never saves an empty option v
   });
   await renderSettings();
   await expandExpert();
+  // UCI spin values are integers, and Mantine's deselect would report null for a combo.
+  expect(mocks.widgetProps.get("Memory (MB)")).toEqual({ allowDecimal: false });
+  expect(mocks.widgetProps.get("Processor memory policy")).toEqual({ allowDeselect: false });
 
   await act(async () => changeField(optionInput("Memory (MB)")!, ""));
   await act(async () => changeField(optionInput("Unknown Option")!, ""));

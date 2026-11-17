@@ -2,7 +2,8 @@ use shakmaty::{fen::Fen, uci::UciMove, CastlingMode, Chess, EnPassantMode, Posit
 
 use crate::error::Error;
 
-/// Human-only positions (Play without an engine) follow the database policy.
+/// Non-engine positions (Play without an engine, opening-book EPD lines and PGN `FEN` headers)
+/// follow the database policy.
 pub fn parse_fen_to_position(fen: &str) -> Result<Chess, Error> {
     let fen: Fen = fen.parse()?;
     crate::db::database_setup_to_chess(fen.into_setup())
@@ -10,7 +11,8 @@ pub fn parse_fen_to_position(fen: &str) -> Result<Chess, Error> {
 
 /// The engine and game-report policy for a start setup. Castling rights without a matching king
 /// and rook (stale `KQkq` from older tools, which chessops and the database already ignore) are
-/// dropped; the wire FEN is re-serialised from the position, so the engine never sees them.
+/// dropped. Every engine `position` line is serialised from the returned position by
+/// `canonicalize_engine_position`, so the engine never receives them.
 /// Excess material stays refused for engines
 /// (`engine_games_refuse_excess_material_at_creation_but_human_games_keep_it`).
 /// The returned mode is detected from the surviving rights, so a stale right cannot select

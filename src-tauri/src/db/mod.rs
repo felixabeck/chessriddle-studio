@@ -27,7 +27,7 @@ pub(crate) use search::is_position_in_db_cancellable;
 mod search_index;
 pub(crate) mod sqlite_cancellation;
 
-/// Shared with Play without an engine (`engine::parse_fen_to_position`).
+/// Shared with the non-engine start positions of `engine::parse_fen_to_position`.
 pub(crate) use encoding::database_setup_to_chess;
 
 use crate::{
