@@ -5298,19 +5298,29 @@ impl PgnGame {
             self.event.as_deref().unwrap_or("?")
         )?;
         writeln!(writer, "[Site \"{}\"]", self.site.as_deref().unwrap_or("?"))?;
-        // f-20261115-07: absent Date and Round use the PGN-standard unknown markers, which the
-        // duplicate cleanup and signature comparison read as absent.
+        // f-20261115-07: an absent Date or Round (NULL or any d-20261102-06 marker) is written
+        // as the PGN-standard unknown marker, which duplicate cleanup reads as absent.
         writeln!(
             writer,
             "[Date \"{}\"]",
-            self.date.as_deref().unwrap_or(GameSignature::ABSENT_DATE)
+            SignatureField::Date
+                .normalize(&self.date)
+                .as_deref()
+                .unwrap_or(GameSignature::ABSENT_DATE)
         )?;
         if let Some(time) = self.time.as_deref() {
             if !time.is_empty() {
                 writeln!(writer, "[UTCTime \"{}\"]", time)?;
             }
         }
-        write_decoded_pgn_tag(writer, "Round", self.round.as_deref().unwrap_or("?"))?;
+        write_decoded_pgn_tag(
+            writer,
+            "Round",
+            SignatureField::Round
+                .normalize(&self.round)
+                .as_deref()
+                .unwrap_or("?"),
+        )?;
         write_decoded_pgn_tag(writer, "White", self.white.as_deref().unwrap_or("?"))?;
         write_decoded_pgn_tag(writer, "Black", self.black.as_deref().unwrap_or("?"))?;
         writeln!(
@@ -7788,7 +7798,7 @@ mod tests {
         import_pgn(db, &exported);
         import_pgn(
             db,
-            b"[Date \"\"]\n[Round \"\"]\n[Result \"*\"]\n\n1. e4 e5 2. Nf3 Nc6 *\n\n",
+            b"[Date \"\"]\n[Round \"\"]\n[UTCTime \"\"]\n[Result \"*\"]\n\n1. e4 e5 2. Nf3 Nc6 *\n\n",
         );
         import_pgn(
             db,
@@ -7800,6 +7810,12 @@ mod tests {
             b"[Date \"2024.01.01\"]\n[Round \"1\"]\n\n1. e4 e5 2. Nf3 Nc6 *\n\n",
         );
         assert_eq!(games::table.count().get_result::<i64>(db).unwrap(), 5);
+        // Every stored placeholder spelling exports as the standard markers.
+        let reexported = String::from_utf8(export(db)).unwrap();
+        assert_eq!(reexported.matches("[Date \"????.??.??\"]").count(), 4);
+        assert_eq!(reexported.matches("[Round \"?\"]").count(), 4);
+        assert!(!reexported.contains("[Date \"\"]"));
+        assert!(!reexported.contains("[Round \"\"]"));
 
         db.transaction(delete_duplicated_games_transaction).unwrap();
 
