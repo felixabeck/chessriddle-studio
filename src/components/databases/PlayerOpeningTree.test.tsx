@@ -30,7 +30,7 @@ import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { getNodeAtPath } from "@/utils/treeReducer";
 import { databaseHandleKey } from "@/utils/db";
-import PlayerOpeningTree from "./PlayerOpeningTree";
+import PlayerOpeningTree, { AccountOpeningTree, type OpeningTreeSource } from "./PlayerOpeningTree";
 
 const mocks = vi.hoisted(() => ({
   searchPosition: vi.fn(),
@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   createTab: vi.fn(),
   openGame: vi.fn(),
   getPlayer: vi.fn(),
+  unavailable: new Set<string>(),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate, Link: () => null }));
 vi.mock("@/components/files/notifyError", async (original) => ({
@@ -66,7 +67,10 @@ vi.mock("@/state/linkedCollections", async (importOriginal) => {
     useCollectionCurrency: () => ({ collection: null, pending: false }),
     useDatabaseContentRevision: (file: DatabaseHandle | null | undefined) => {
       const writes = useDatabaseWriteRevision(file);
-      return { revision: [null, writes] as const, unavailable: false };
+      return {
+        revision: [null, writes] as const,
+        unavailable: !!file && mocks.unavailable.has(file.id.id),
+      };
     },
   };
 });
@@ -155,6 +159,7 @@ beforeEach(async () => {
   mocks.createTab.mockImplementation(actual.createTab);
   mocks.openGame.mockResolvedValue("opened-game");
   mocks.getPlayer.mockReset().mockResolvedValue(player);
+  mocks.unavailable.clear();
   const i18n = await catalogueI18n("en-US");
   translate = (key, options) => i18n.t(key, options);
   localStorage.clear();
@@ -596,6 +601,222 @@ test("loading, empty, failure and truncated samples retain in-card feedback", as
   ]);
   await render({ ...player, id: 45 });
   expect(container.textContent).toContain("Showing the most recent 500 of 501");
+});
+
+const lichess: OpeningTreeSource = { key: "A:42", label: "Lichess games", file, player: 42 };
+const chessCom: OpeningTreeSource = {
+  key: "B:7",
+  label: "Chess.com games",
+  file: reference,
+  player: 7,
+};
+const otherGame: NormalizedGame = {
+  ...first,
+  black: "Other opponent",
+  date: "2026.11.03",
+  moves: "1. d4 d5 *",
+};
+const lichessRows: PositionStats[] = [
+  {
+    move: "e4",
+    white: 2,
+    draw: 0,
+    black: 1,
+    unknown: 0,
+    last_played: "2026.11.01",
+    year_counts: [],
+  },
+];
+const chessComRows: PositionStats[] = [
+  {
+    move: "e4",
+    white: 1,
+    draw: 1,
+    black: 0,
+    unknown: 0,
+    last_played: "2026.11.03",
+    year_counts: [],
+  },
+  {
+    move: "d4",
+    white: 0,
+    draw: 0,
+    black: 1,
+    unknown: 0,
+    last_played: "2026.11.03",
+    year_counts: [],
+  },
+];
+function answerPerDatabase() {
+  mocks.searchPosition.mockImplementation(async (path: DatabaseHandle) =>
+    path.id.id === file.id.id ? [lichessRows, [first]] : [chessComRows, [otherGame]],
+  );
+}
+async function renderAccount(sources: OpeningTreeSource[]) {
+  await act(async () =>
+    root.render(
+      <MantineProvider>
+        <Provider store={store}>
+          <SWRConfig
+            value={{ provider: () => cache, dedupingInterval: 0, shouldRetryOnError: false }}
+          >
+            <AccountOpeningTree name="GGalileo" sources={sources} />
+          </SWRConfig>
+        </Provider>
+      </MantineProvider>,
+    ),
+  );
+}
+function gameRows() {
+  return [...container.querySelectorAll<HTMLTableRowElement>("[data-opening-games] tbody tr")];
+}
+
+test("an account tree merges its sources, speaks neutrally and opens a game from its own database", async () => {
+  answerPerDatabase();
+  await renderAccount([lichess, chessCom]);
+  expect(container.textContent).toContain("Showing games where GGalileo has White.");
+  expect(container.textContent).not.toContain("You prepare");
+  expect(button("Prepare on board")).toBeUndefined();
+  expect(button("Analyze on board")).toBeTruthy();
+  // One native search per source, each for its own database and player id.
+  const searched = mocks.searchPosition.mock.calls.map((call) => [call[0], call[1].player1]);
+  expect(searched).toHaveLength(2);
+  expect(searched).toEqual(
+    expect.arrayContaining([
+      [file, 42],
+      [reference, 7],
+    ]),
+  );
+  expect(container.textContent).toContain("6 games in this position");
+  expect(row("e4").cells[1].lastChild?.textContent).toBe("5");
+  expect(row("d4").cells[1].lastChild?.textContent).toBe("1");
+  expect(container.querySelector("[data-opening-partial]")).toBeNull();
+
+  // Newest first across both databases; both games carry the same database-local id.
+  expect(gameRows().map((item) => item.cells[1].firstChild?.textContent)).toEqual([
+    "Other opponent",
+    "First opponent",
+  ]);
+  await click(gameRows()[0]);
+  expect(container.querySelectorAll('[aria-selected="true"]')).toHaveLength(1);
+  expect(gameRows()[0].getAttribute("aria-selected")).toBe("true");
+  expect(container.querySelector("[data-game-preview]")?.textContent).toBe(otherGame.moves);
+  await click(button("Open on board"));
+  expect(mocks.openGame).toHaveBeenLastCalledWith(
+    expect.objectContaining({ game: otherGame, database: reference }),
+  );
+  await act(async () => gameRows()[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  expect(mocks.openGame).toHaveBeenLastCalledWith(
+    expect.objectContaining({ game: first, database: file }),
+  );
+});
+
+test("an account tree keeps loading until every source has answered", async () => {
+  let complete!: (value: [PositionStats[], NormalizedGame[]]) => void;
+  mocks.searchPosition.mockImplementation((path: DatabaseHandle) =>
+    path.id.id === file.id.id
+      ? Promise.resolve([lichessRows, [first]])
+      : new Promise((resolve) => {
+          complete = resolve;
+        }),
+  );
+  await renderAccount([lichess, chessCom]);
+  expect(container.querySelector("[data-opening-skeleton]")).not.toBeNull();
+  expect(container.querySelector("[data-opening-moves]")).toBeNull();
+  await act(async () => complete([chessComRows, [otherGame]]));
+  expect(container.querySelector("[data-opening-skeleton]")).toBeNull();
+  expect(row("e4").cells[1].lastChild?.textContent).toBe("5");
+});
+
+test("a source that fails is named once while the others stay usable", async () => {
+  mocks.searchPosition.mockImplementation(async (path: DatabaseHandle) => {
+    if (path.id.id === file.id.id) return [lichessRows, [first]];
+    throw new Error("native detail");
+  });
+  // Two player ids of the same database fail alike and are named once.
+  await renderAccount([lichess, chessCom, { ...chessCom, key: "B:8", player: 8 }]);
+  const warning = container.querySelector("[data-opening-partial]")!;
+  expect(warning.textContent).toContain("Some games are missing");
+  expect(warning.textContent).toContain(
+    `Chess.com games: ${translate("Databases.LoadError.Title")}`,
+  );
+  expect(warning.textContent?.split("Chess.com games").length).toBe(2);
+  expect(container.textContent).not.toContain("native detail");
+  expect(row("e4").cells[1].lastChild?.textContent).toBe("3");
+  expect(gameRows()).toHaveLength(1);
+});
+
+test("a source whose search index is unavailable is named while the others stay usable", async () => {
+  answerPerDatabase();
+  mocks.unavailable.add(file.id.id);
+  await renderAccount([lichess, chessCom]);
+  expect(mocks.searchPosition).toHaveBeenCalledTimes(1);
+  expect(container.querySelector("[data-opening-partial]")?.textContent).toContain(
+    "Lichess games: The search index is unavailable.",
+  );
+  expect(row("d4").cells[1].lastChild?.textContent).toBe("1");
+  expect(row("e4").cells[1].lastChild?.textContent).toBe("2");
+});
+
+test("when no source can be searched the named errors replace the tree", async () => {
+  mocks.searchPosition.mockRejectedValue(new Error("native detail"));
+  await renderAccount([lichess, chessCom]);
+  expect(container.querySelector("[data-opening-partial]")).toBeNull();
+  const alert = container.querySelector('[role="alert"]')!;
+  expect(alert.textContent).toContain(`Lichess games: ${translate("Databases.LoadError.Title")}`);
+  expect(alert.textContent).toContain(`Chess.com games: ${translate("Databases.LoadError.Title")}`);
+  expect(container.querySelector("[data-opening-moves]")).toBeNull();
+  expect(container.querySelector("[data-opening-games]")).toBeNull();
+  expect(container.textContent).not.toContain("No games in this position");
+});
+
+test("an account tree without sources is empty, not failed", async () => {
+  await renderAccount([]);
+  expect(mocks.searchPosition).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).toContain("No games in this position");
+});
+
+test("a time-control filter reaches the search, stays off the board and clears the selection", async () => {
+  answerPerDatabase();
+  await renderAccount([{ ...lichess, timeControls: ["300+0"] }]);
+  expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({ timeControls: ["300+0"] });
+  await click(gameRows()[0]);
+  expect(container.querySelector("[data-opening-preview]")).not.toBeNull();
+
+  // The same source under another filter: the previewed game may no longer match.
+  await renderAccount([{ ...lichess, timeControls: ["600+5"] }]);
+  expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({ timeControls: ["600+5"] });
+  expect(container.querySelector("[data-opening-preview]")).toBeNull();
+  expect(container.querySelector('[aria-selected="true"]')).toBeNull();
+
+  await click(button("Analyze on board"));
+  const id = store.get(tabsAtom).at(-1)!.value;
+  expect(store.get(pinnedExplorerDatabaseFamily(id))).toEqual(file);
+  expect(store.get(localOptionsFamily(id))).toEqual({
+    path: file,
+    player: 42,
+    player_database: databaseHandleKey(file),
+    color: "white",
+    fen: INITIAL_FEN,
+    type: "exact",
+    result: "any",
+  });
+  expect(store.get(tabFamily(id))).toBe("database");
+  expect(store.get(tabsAtom).at(-1)!.name).toBe("GGalileo");
+});
+
+test("several merged sources open the line on the board without pinning a database", async () => {
+  answerPerDatabase();
+  await renderAccount([lichess, chessCom]);
+  await click(row("e4"));
+  await click(button("Analyze on board"));
+  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/" });
+  const tab = store.get(tabsAtom).at(-1)!;
+  expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toBeNull();
+  expect(store.get(tabFamily(tab.value))).not.toBe("database");
+  treeStore = createTreeStore(tab.value);
+  expect(treeStore.getState().root.children[0].san).toBe("e4");
 });
 
 test.each(shippedCatalogues())(

@@ -2,11 +2,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig, type Cache } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { PositionStats } from "@/bindings";
+import type { NormalizedGame, PositionStats } from "@/bindings";
 import { normalizeError } from "@/platform/errors";
 import { recordDatabaseWrite } from "@/platform/databaseWrites";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
-import { useLocalExplorer } from "./useLocalExplorer";
+import { MAX_SAMPLE_GAMES, mergeLocalOpenings, useLocalExplorer } from "./useLocalExplorer";
 
 const mocks = vi.hoisted(() => ({
   searchPosition: vi.fn(),
@@ -269,4 +269,137 @@ test("remounting a plain database without a write keeps the cached explorer resu
   await render(true, false);
   expect(JSON.parse(container.textContent!).openings[0].white).toBe(1);
   expect(mocks.searchPosition).toHaveBeenCalledOnce();
+});
+
+const stats = (move: string, overrides: Partial<PositionStats> = {}): PositionStats => ({
+  move,
+  white: 0,
+  draw: 0,
+  black: 0,
+  unknown: 0,
+  last_played: null,
+  year_counts: [],
+  ...overrides,
+});
+const sample = (id: number, date: string | null) => ({ id, date }) as unknown as NormalizedGame;
+
+test("merging sums moves across sources and orders them by total games", () => {
+  const merged = mergeLocalOpenings([
+    {
+      source: "a",
+      openings: [
+        stats("e4", {
+          white: 3,
+          draw: 1,
+          last_played: "2025.03.01",
+          year_counts: [
+            { year: 2024, count: 1 },
+            { year: 2025, count: 3 },
+          ],
+        }),
+        stats("d4", {
+          black: 1,
+          last_played: "2026.01.01",
+          year_counts: [{ year: 2026, count: 1 }],
+        }),
+      ],
+      games: [],
+    },
+    {
+      source: "b",
+      openings: [
+        stats("d4", {
+          white: 4,
+          unknown: 2,
+          last_played: null,
+          year_counts: [{ year: 2023, count: 6 }],
+        }),
+        stats("e4", {
+          black: 2,
+          last_played: "2026.02.02",
+          year_counts: [{ year: 2025, count: 2 }],
+        }),
+      ],
+      games: [],
+    },
+  ]);
+  expect(merged.openings).toEqual([
+    stats("d4", {
+      white: 4,
+      black: 1,
+      unknown: 2,
+      last_played: "2026.01.01",
+      year_counts: [
+        { year: 2023, count: 6 },
+        { year: 2026, count: 1 },
+      ],
+    }),
+    stats("e4", {
+      white: 3,
+      draw: 1,
+      black: 2,
+      last_played: "2026.02.02",
+      year_counts: [
+        { year: 2024, count: 1 },
+        { year: 2025, count: 5 },
+      ],
+    }),
+  ]);
+});
+
+test("merging never mutates the rows of its sources", () => {
+  const row = stats("e4", { white: 1, year_counts: [{ year: 2025, count: 1 }] });
+  mergeLocalOpenings([
+    { source: "a", openings: [row], games: [] },
+    {
+      source: "b",
+      openings: [stats("e4", { white: 2, year_counts: [{ year: 2025, count: 2 }] })],
+      games: [],
+    },
+  ]);
+  expect(row).toEqual(stats("e4", { white: 1, year_counts: [{ year: 2025, count: 1 }] }));
+});
+
+test("merged samples are newest first with unknown dates last and keep their source", () => {
+  const merged = mergeLocalOpenings([
+    {
+      source: "a",
+      openings: [],
+      games: [sample(1, "2025.05.01"), sample(2, "????.??.??"), sample(3, null)],
+    },
+    {
+      source: "b",
+      openings: [],
+      games: [sample(1, "2026.01.01"), sample(4, "2025.??.??"), sample(5, "2025.05.02")],
+    },
+  ]);
+  expect(merged.games.map(({ source, game }) => `${source}:${game.id}`)).toEqual([
+    "b:1",
+    "b:5",
+    "a:1",
+    "b:4",
+    "a:2",
+    "a:3",
+  ]);
+});
+
+test("merged samples keep the native cap and one source keeps its native order", () => {
+  const many = (source: string, year: number) => ({
+    source,
+    openings: [],
+    games: Array.from({ length: MAX_SAMPLE_GAMES }, (_, id) => sample(id, `${year}.01.01`)),
+  });
+  const merged = mergeLocalOpenings([many("old", 2020), many("new", 2026)]);
+  expect(merged.games).toHaveLength(MAX_SAMPLE_GAMES);
+  expect(new Set(merged.games.map(({ source }) => source))).toEqual(new Set(["new"]));
+
+  const single = {
+    source: "only",
+    openings: [stats("e4", { white: 1 })],
+    games: [sample(2, null), sample(1, "2026.01.01")],
+  };
+  const alone = mergeLocalOpenings([single]);
+  expect(alone.openings).toBe(single.openings);
+  expect(alone.games.map(({ game }) => game.id)).toEqual([2, 1]);
+  expect(mergeLocalOpenings([])).toEqual({ openings: [], games: [] });
 });

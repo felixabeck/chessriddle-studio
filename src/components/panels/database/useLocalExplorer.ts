@@ -23,6 +23,62 @@ export async function fetchLocalOpening(
     };
 }
 
+/** The native sample cap of one position search (`MAX_SAMPLES`), kept for a merged result. */
+export const MAX_SAMPLE_GAMES = 500;
+
+export type SourcedGame<S> = { source: S; game: NormalizedGame };
+
+/** Newest first; an unknown date last, an unknown component below every known one. */
+function sampleDateKey(date: string | null | undefined): string {
+    return !date || date.startsWith("?") ? "" : date.replaceAll("?", " ");
+}
+
+/**
+ * Unites the position results of several databases into one: moves are summed by SAN, sample
+ * games stay tied to the source they came from. One part is returned in its native order.
+ */
+export function mergeLocalOpenings<S>(
+    parts: readonly { source: S; openings: PositionStats[]; games: NormalizedGame[] }[],
+): { openings: PositionStats[]; games: SourcedGame<S>[] } {
+    const games = parts.flatMap(({ source, games }) => games.map((game) => ({ source, game })));
+    if (parts.length <= 1) return { openings: parts[0]?.openings ?? [], games };
+    const moves = new Map<string, PositionStats>();
+    for (const { openings } of parts) {
+        for (const row of openings) {
+            const merged = moves.get(row.move);
+            if (!merged) {
+                moves.set(row.move, {
+                    ...row,
+                    year_counts: row.year_counts.map((y) => ({ ...y })),
+                });
+                continue;
+            }
+            merged.white += row.white;
+            merged.draw += row.draw;
+            merged.black += row.black;
+            merged.unknown += row.unknown;
+            if (row.last_played && (!merged.last_played || row.last_played > merged.last_played)) {
+                merged.last_played = row.last_played;
+            }
+            for (const { year, count } of row.year_counts) {
+                const existing = merged.year_counts.find((entry) => entry.year === year);
+                if (existing) existing.count += count;
+                else merged.year_counts.push({ year, count });
+            }
+            merged.year_counts.sort((a, b) => a.year - b.year);
+        }
+    }
+    const total = (row: PositionStats) => row.white + row.draw + row.black + row.unknown;
+    return {
+        openings: [...moves.values()].sort((a, b) => total(b) - total(a)),
+        games: games
+            .map((entry) => ({ entry, key: sampleDateKey(entry.game.date) }))
+            .sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0))
+            .slice(0, MAX_SAMPLE_GAMES)
+            .map(({ entry }) => entry),
+    };
+}
+
 export type LocalExplorerResult = {
     openings: PositionStats[];
     games: NormalizedGame[];
