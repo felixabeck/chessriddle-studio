@@ -27082,3 +27082,22 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Spotted outside diff:** yes — unsaved-games build final gates.
 * **Open question:** which shared state the ownership confirmation reads that a concurrently running test can change (a process-wide registry, a shared temp root, or the instance lock), and whether the test or the confirmation needs isolation.
 * **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17.
+
+---
+
+## 2026-11-17 — filed through the inbox spool
+
+### `slow_schema_probes_do_not_hold_the_upgrade_admission_lock` fails intermittently on Windows CI with "database is locked"
+
+* **ID:** f-20261117-08 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Filed from:** d0521669-19b9-4e44-b6b9-f268d10d6149
+* **Spotted outside diff:** yes (red `rust-windows-test` after the frontend-only push of f-20261115-18, `47cb6b471`)
+* **Where:** `src-tauri/src/db/repository.rs` `upgrade_tests::slow_schema_probes_do_not_hold_the_upgrade_admission_lock` (~3703-3745). Two scoped threads call `repository.connection(&test_target(&path), None)` on the same fresh database while the schema-probe hook parks each one until both have entered. The panic is at `:3738` (`reader.join().unwrap().unwrap()`), so one of the two `connection` calls itself returned the error.
+* **Defect:** on Windows one of the two concurrent `connection` opens fails with `Diesel(DatabaseError(Unknown, "database is locked"))`. The test proves that the admission lock does not serialise schema probes, and it does let both probes run at once. But whatever SQLite work runs around the probe (connection setup, pragma, WAL or schema read on a just-created file) then collides on Windows without a busy timeout or retry covering it. Unknown so far whether this is a test-only race (the fresh `Case` file still being initialised) or a production path where two first opens of the same database can fail with "database is locked" on Windows.
+* **Failure scenario:** CI `Test` run 44132907360, job `rust-windows-test` (job id 134214547495), on `47cb6b471` (that push changed only `src/**` frontend files and the ledger): `test result: FAILED. 2174 passed; 1 failed`, the panic above. The same job passed on the previous 11 master runs with identical Rust sources (44046775242 … 44119117241), so this is intermittent.
+* **Proof:** job log via `gh api repos/felixabeck/chessriddle-studio/actions/jobs/134214547495/logs`, lines with `panicked at src\db\repository.rs:3738:40` and `database is locked`. `git log -- src-tauri/src/db/repository.rs` shows no change in the pushed range `0dd08d652..47cb6b471`. Not reproduced locally (Windows tests are CI-only).
+* **Fix:** find which statement in `connection` returns SQLITE_BUSY for the second opener on Windows (busy timeout applied only after a statement that can already lock, or a first-open initialisation step not covered by the busy handler). If production first opens can hit it, apply the busy timeout before any locking statement and add a Windows-relevant test. If only the fixture is racy, make the test create and initialise the database before the two readers start. Do not paper over it with a test retry.
+* **Open question:** is the Windows "database is locked" a fixture race (two first opens of a freshly created test database) or a production first-open path that needs its busy timeout applied before any locking statement?
+* **Related:** f-20261108-04 (handled; "database is locked" during a schema upgrade race), f-20261109-07 (handled; pooled reader blocking on macOS CI).
+* **Found by:** Claude Code drain d0521669, CI wait after push
