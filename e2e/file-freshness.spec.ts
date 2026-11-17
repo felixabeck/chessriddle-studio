@@ -212,3 +212,64 @@ test("file-freshness: shows the unavailable panel when the source file disappear
     await assertAccessible();
     await capture("file-freshness-unavailable-dark");
 });
+
+test("file-freshness: a clean tab whose game number now holds another game is withheld", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+    assertAccessible,
+    capture,
+}) => {
+    await openFileTab(page, mockScenario);
+    const workspaceTabs = page.getByRole("tablist").first().getByRole("tab");
+    await expect(workspaceTabs.filter({ hasText: "Weiss - Schwarz" })).toHaveCount(1);
+
+    // A delete above or an outside re-sort moved another game onto this tab's game number.
+    const nextGame = {
+        ...openedGame,
+        pgn: '[Event "E2E"]\n[White "Carlsen"]\n[Black "Anand"]\n[Result "*"]\n\n1. d4 d5 *',
+        stamp: "f".repeat(64),
+        revision: "e2e-pgn-revision-replaced",
+    };
+    const nextGameTokens = [
+        { type: "Header", value: { tag: "Event", value: "E2E" } },
+        { type: "Header", value: { tag: "White", value: "Carlsen" } },
+        { type: "Header", value: { tag: "Black", value: "Anand" } },
+        { type: "Header", value: { tag: "Result", value: "*" } },
+        { type: "San", value: "d4" },
+        { type: "San", value: "d5" },
+        { type: "Outcome", value: "*" },
+    ];
+    await page.evaluate(
+        ({ readGame, tokens }) => {
+            window.__E2E_TAURI__.configure({
+                commands: {
+                    read_game: { result: readGame },
+                    file_revision: { result: readGame.revision },
+                    lex_pgn: { result: tokens },
+                },
+            });
+        },
+        { readGame: nextGame, tokens: nextGameTokens },
+    );
+
+    const gate = page.locator("[data-file-freshness]");
+    await expect(gate).toHaveAttribute("data-file-freshness", /^unavailable:/, {
+        timeout: 8_000,
+    });
+    await expect(gate).toContainText("The file now has a different game at this position.");
+    await expect(
+        gate.getByRole("button", { name: "Open the game now at this position" }),
+    ).toBeVisible();
+    await expect(gate.getByRole("button", { name: "Close tab" })).toBeVisible();
+    await expect(page.getByRole("grid")).toHaveCount(0);
+    await assertNoHorizontalOverflow();
+    await assertAccessible();
+    await capture("file-freshness-replaced");
+    await expect(page).toHaveScreenshot("file-freshness-replaced.png", { fullPage: true });
+
+    await gate.getByRole("button", { name: "Open the game now at this position" }).click();
+    await expect(gate).toHaveAttribute("data-file-freshness", /^verified:/);
+    await expect(workspaceTabs.filter({ hasText: "Carlsen - Anand" })).toHaveCount(1);
+    await expect(workspaceTabs.filter({ hasText: "Weiss - Schwarz" })).toHaveCount(0);
+});
