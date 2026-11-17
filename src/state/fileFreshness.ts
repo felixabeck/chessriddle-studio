@@ -162,6 +162,8 @@ export type FileFreshnessEntry = {
     state: FileFreshnessState;
     verifiedRevision: string | null;
     conflictReason: FileConflictReason | null;
+    /** Unavailable because another game now holds this tab's game number. */
+    gameReplaced: boolean;
     errorMessage: string | null;
     epoch: number;
 };
@@ -169,6 +171,7 @@ export type FileFreshnessEntry = {
 type FreshnessUpdate = {
     verifiedRevision?: string | null;
     conflictReason?: FileConflictReason | null;
+    gameReplaced?: boolean;
     errorMessage?: string | null;
 };
 
@@ -176,6 +179,7 @@ const initialEntry: FileFreshnessEntry = Object.freeze({
     state: "unverified",
     verifiedRevision: null,
     conflictReason: null,
+    gameReplaced: false,
     errorMessage: null,
     epoch: 0,
 });
@@ -294,6 +298,7 @@ export function setFileFreshness(
                   ? previous.verifiedRevision
                   : null,
         conflictReason: state === "conflict" ? (update.conflictReason ?? "changed") : null,
+        gameReplaced: state === "unavailable" && update.gameReplaced === true,
         errorMessage: update.errorMessage ?? null,
         epoch: previous.epoch + 1,
     };

@@ -45,6 +45,27 @@ export function getFileGameName(
     return name === "Unknown" || name === "?" ? file.name.replace(/\.pgn$/i, "") : name;
 }
 
+function identityTag(value: string | null | undefined): string {
+    const trimmed = (value ?? "").trim();
+    return trimmed === "?" ? "" : trimmed;
+}
+
+/**
+ * Whether two header sets name the same game: players, date, round and start position. A clean tab
+ * reloads silently only when this holds; otherwise its game number now points at another game (a
+ * delete above it or an outside insert, removal or re-sort). Event is left out because repertoire
+ * files use it as an editable ChessBase status (d-20261110-12).
+ */
+export function sameGameIdentity(a: GameHeaders, b: GameHeaders): boolean {
+    return (
+        identityTag(a.date) === identityTag(b.date) &&
+        identityTag(a.round) === identityTag(b.round) &&
+        identityTag(a.white) === identityTag(b.white) &&
+        identityTag(a.black) === identityTag(b.black) &&
+        identityTag(a.fen) === identityTag(b.fen)
+    );
+}
+
 export function usePlatform() {
     const r = useSWR("os", async () => {
         return platform();

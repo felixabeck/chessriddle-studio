@@ -492,6 +492,21 @@ export default function GameSelectorAccordion({
         }
 
         markFileTabsFreshness(jotaiStore.get(tabsAtom), fileKey, "unverified");
+        // A tab that had the deleted game open keeps its number, which now names the next game
+        // (or no game). Withhold it rather than let its reconcile adopt that game.
+        const replacing = index < predictedCount;
+        for (const tab of jotaiStore.get(tabsAtom)) {
+          if (
+            belongsToFile(tab, fileKey) &&
+            tab.gameOrigin.gameNumber === index &&
+            initialTabMetadata.get(tab.value)?.gameNumber === index
+          ) {
+            setFileFreshness(tab.value, "unavailable", {
+              gameReplaced: replacing,
+              errorMessage: t("FileFreshness.GameNoLongerInFile"),
+            });
+          }
+        }
         if (isCurrentOwner(ownerId, fileKey, ownerStore)) setGames(new Map());
       } catch (error) {
         const errorDetails = normalizeError(error);

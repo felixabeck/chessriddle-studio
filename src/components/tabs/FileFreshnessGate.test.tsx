@@ -328,6 +328,10 @@ beforeEach(() => {
     const tree = defaultTree();
     const event = pgn.match(/\[Event "([^"]+)"\]/)?.[1];
     if (event) tree.headers.event = event;
+    const white = pgn.match(/\[White "([^"]+)"\]/)?.[1];
+    if (white) tree.headers.white = white;
+    const black = pgn.match(/\[Black "([^"]+)"\]/)?.[1];
+    if (black) tree.headers.black = black;
     return tree;
   });
   removeFileFreshness(tabId);
@@ -608,6 +612,61 @@ test("clean stamped files reload from disk before rendering", async () => {
   expect(treeStore.getState().sourceStamp).toBe(changedStamp);
   expect(treeStore.getState().headers.event).toBe("Fresh");
   expect(host.querySelector('[data-file-freshness="verified:1"]')).not.toBeNull();
+});
+
+test("a clean tab whose game number now holds a different game is withheld, not replaced", async () => {
+  mocks.readFileGame.mockResolvedValueOnce(
+    stampedGame(changedStamp, '[White "Carlsen"]\n[Black "Anand"]\n\n1. d4 d5 *'),
+  );
+  await setup();
+
+  await vi.waitFor(() => expect(getFileFreshness(tabId).state).toBe("unavailable"));
+  expect(getFileFreshness(tabId).gameReplaced).toBe(true);
+  expect(host.textContent).toContain("FileFreshness.GameReplaced");
+  expect(host.querySelector('[data-testid="board-and-panels"]')).toBeNull();
+  expect(treeStore.getState()).toMatchObject({ sourceStamp: originalStamp, dirty: false });
+  expect(treeStore.getState().headers.white).toBe("");
+  expect(button("Tab.Close")).toBeDefined();
+});
+
+test("opening the replacing game installs it and renames a derived tab title", async () => {
+  mocks.readFileGame.mockResolvedValueOnce(
+    stampedGame(changedStamp, '[White "Carlsen"]\n[Black "Anand"]\n\n1. d4 d5 *'),
+  );
+  // "games" is the title derived from the empty headers of the outgoing tree.
+  await setup({ tab: { ...fileTab, name: "games" } });
+  await vi.waitFor(() => expect(getFileFreshness(tabId).state).toBe("unavailable"));
+  const replacing = defaultTree();
+  replacing.headers.white = "Carlsen";
+  replacing.headers.black = "Anand";
+  mocks.loadFileGame.mockResolvedValueOnce({
+    ...stampedGame(changedStamp),
+    tree: { ...replacing, sourceStamp: changedStamp },
+  });
+
+  await act(async () => button("FileFreshness.OpenReplacingGame").click());
+
+  expect(getFileFreshness(tabId).state).toBe("verified");
+  expect(treeStore.getState().sourceStamp).toBe(changedStamp);
+  expect(jotaiStore.get(tabsAtom)[0].name).toBe("Carlsen - Anand");
+  expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
+});
+
+test("installing a disk game keeps a manual tab name", async () => {
+  mocks.readFileGame.mockResolvedValueOnce(stampedGame(changedStamp));
+  await setup({ dirty: true, tab: { ...fileTab, name: "My study" } });
+  await vi.waitFor(() => expect(getFileFreshness(tabId).state).toBe("conflict"));
+  const replacing = defaultTree();
+  replacing.headers.white = "Carlsen";
+  mocks.loadFileGame.mockResolvedValueOnce({
+    ...stampedGame(changedStamp),
+    tree: { ...replacing, sourceStamp: changedStamp },
+  });
+
+  await act(async () => button("FileFreshness.ReloadFromDisk").click());
+
+  expect(getFileFreshness(tabId).state).toBe("verified");
+  expect(jotaiStore.get(tabsAtom)[0].name).toBe("My study");
 });
 
 test("a stampless tree matching the present disk text adopts its stamp without clearing dirty", async () => {

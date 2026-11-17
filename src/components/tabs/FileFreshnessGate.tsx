@@ -8,8 +8,15 @@ import { normalizeError } from "@/platform/errors";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import type { TreeStore } from "@/state/store/tree";
-import { loadFileGame, pickPgnFile, readFileGame } from "@/utils/files";
+import {
+  getFileGameName,
+  loadFileGame,
+  pickPgnFile,
+  readFileGame,
+  sameGameIdentity,
+} from "@/utils/files";
 import { parsePGN } from "@/utils/chess";
+import type { GameHeaders } from "@/utils/treeReducer";
 import { tauri } from "@/platform/tauri";
 import { databaseGameToTree } from "@/utils/databaseGameTree";
 import { databaseHandleKey } from "@/utils/db";
@@ -49,7 +56,12 @@ function useAddGameLease(store: TreeStore) {
   );
 }
 
-function useInstallTree(store: TreeStore, tabId: string, onReload: () => void) {
+function useInstallTree(
+  store: TreeStore,
+  tabId: string,
+  onReload: () => void,
+  onInstalled?: (previous: GameHeaders, next: GameHeaders) => void,
+) {
   return useCallback(
     (
       tree: Parameters<ReturnType<typeof store.getState>["setState"]>[0],
@@ -57,7 +69,9 @@ function useInstallTree(store: TreeStore, tabId: string, onReload: () => void) {
     ) => {
       deferTreeView(store);
       try {
+        const previousHeaders = store.getState().headers;
         store.getState().setState(tree);
+        onInstalled?.(previousHeaders, store.getState().headers);
         const hooks = globalThis as {
           __verifyAppRecordTreeApplied?: () => void;
           __verifyAppStallFreshnessApply?: () => void;
@@ -75,7 +89,7 @@ function useInstallTree(store: TreeStore, tabId: string, onReload: () => void) {
         releaseTreeView(store);
       }
     },
-    [store, tabId, onReload],
+    [store, tabId, onReload, onInstalled],
   );
 }
 
@@ -363,7 +377,23 @@ function FileBackedGate({
   actionIdentityRef.current = actionIdentity;
 
   const onReload = useCallback(() => setReloadCount((count) => count + 1), []);
-  const installDiskTree = useInstallTree(store, tabId, onReload);
+  // A derived title follows the installed game, as a page switch renames the tab; a manual
+  // name (one that differs from the outgoing game's derived title) is kept.
+  const followTitle = useCallback(
+    (previous: GameHeaders, next: GameHeaders) => {
+      updateTab(tabId, (current) => {
+        if (!isFileBackedTab(current) || !matchesFileGameTab(current, origin)) return current;
+        const file = current.gameOrigin.file;
+        const name = getFileGameName(next, file);
+        if (current.name === name || current.name !== getFileGameName(previous, file)) {
+          return current;
+        }
+        return { ...current, name };
+      });
+    },
+    [updateTab, tabId, origin],
+  );
+  const installDiskTree = useInstallTree(store, tabId, onReload, followTitle);
 
   const actionIsCurrent = useCallback(
     (signal: AbortSignal) => {
@@ -444,6 +474,12 @@ function FileBackedGate({
         const beforeReplace = store.getState();
         if (beforeReplace.dirty || beforeReplace.root !== capturedRoot) {
           setFileFreshness(tabId, "conflict", { conflictReason: "changed" });
+          return;
+        }
+        if (!sameGameIdentity(beforeReplace.headers, tree.headers)) {
+          const message = t("FileFreshness.GameReplaced");
+          setFileFreshness(tabId, "unavailable", { gameReplaced: true, errorMessage: message });
+          setPanelError(message);
           return;
         }
         tree.sourceStamp = current.stamp;
@@ -674,6 +710,11 @@ function FileBackedGate({
         {(conflict || appendAttempted) && (
           <Button color="gold" onClick={() => void reloadFromDisk()} disabled={disabled}>
             {t("FileFreshness.ReloadFromDisk")}
+          </Button>
+        )}
+        {!conflict && !appendAttempted && freshness.gameReplaced && (
+          <Button color="gold" onClick={() => void reloadFromDisk()} disabled={disabled}>
+            {t("FileFreshness.OpenReplacingGame")}
           </Button>
         )}
         <Button

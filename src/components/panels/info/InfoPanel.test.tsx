@@ -2124,6 +2124,48 @@ describe("InfoPanel game loading and cancellation", () => {
       { kind: "file", gameNumber: 0, file: { numGames: 4 } },
       { kind: "file", gameNumber: 0, file: { numGames: 5 } },
     ]);
+    // The tab on the deleted game keeps number 1, which now names the next game: it is withheld
+    // instead of reconciling onto that game. Every other same-file tab re-verifies.
+    expect(getFileFreshness(siblingAtRemovedIndex.value)).toMatchObject({
+      state: "unavailable",
+      gameReplaced: true,
+      errorMessage: "FileFreshness.GameNoLongerInFile",
+    });
+    for (const tab of [owner, siblingAfter, siblingBefore]) {
+      expect(getFileFreshness(tab.value)).toMatchObject({
+        state: "unverified",
+        gameReplaced: false,
+      });
+    }
+    for (const tab of [siblingAfter, siblingAtRemovedIndex, siblingBefore]) {
+      removeFileFreshness(tab.value);
+    }
+  });
+
+  test("deleting the last game marks its open tab unavailable without a replacing game", async () => {
+    const ownerOrigin = tabA.gameOrigin;
+    if (ownerOrigin.kind !== "file") throw new Error("Test tab must be file-backed");
+    const twoGames = { ...ownerOrigin.file, numGames: 2 };
+    const owner = { ...tabA, gameOrigin: { ...ownerOrigin, file: twoGames, gameNumber: 0 } } as Tab;
+    const siblingOnLast: Tab = {
+      ...owner,
+      value: "44444444-4444-4444-8444-444444444444",
+      gameOrigin: { ...ownerOrigin, file: twoGames, gameNumber: 1 },
+    };
+    mocks.deleteGame.mockResolvedValueOnce(undefined);
+    jotaiStore.set(tabsAtom, [owner, siblingOnLast]);
+    jotaiStore.set(activeTabAtom, tabAId);
+    await act(async () => root.render(renderPanel()));
+
+    await primeAndDelete();
+
+    expect(mocks.deleteGame).toHaveBeenCalledOnce();
+    expect(getFileFreshness(siblingOnLast.value)).toMatchObject({
+      state: "unavailable",
+      gameReplaced: false,
+    });
+    expect(getFileFreshness(tabAId).state).toBe("unverified");
+    removeFileFreshness(siblingOnLast.value);
   });
 
   test("successful delete leaves a same-file tab opened during the native call at its current index", async () => {
