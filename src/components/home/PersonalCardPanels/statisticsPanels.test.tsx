@@ -129,9 +129,14 @@ vi.mock("./LastGamesList", () => ({
 }));
 vi.mock("./TimeControlSelector", () => ({
   default: ({ onTimeControlChange }: { onTimeControlChange: (value: string) => void }) => (
-    <button data-testid="select-rapid" onClick={() => onTimeControlChange("rapid")}>
-      Rapid
-    </button>
+    <>
+      <button data-testid="select-rapid" onClick={() => onTimeControlChange("rapid")}>
+        Rapid
+      </button>
+      <button data-testid="select-any" onClick={() => onTimeControlChange("any")}>
+        Any
+      </button>
+    </>
   ),
 }));
 vi.mock("./WebsiteAccountSelector", () => ({
@@ -1258,4 +1263,14 @@ test("the board's sources follow the website, account and time-control filters",
   await press("[data-testid='select-second-account']");
   // The second account has no rapid game.
   expect(lastTreeSources()).toEqual([]);
+
+  // "Any" is the absence of a filter, not a list of every known value.
+  await press("[data-testid='select-any']");
+  expect(lastTreeSources()).toEqual([
+    { key: "b:2", label: "Second on Lichess", file: handle("b"), player: 2 },
+  ]);
+  await press("[data-testid='select-all-websites']");
+  expect(lastTreeSources()).toEqual([
+    { key: "b:2", label: "Second on Lichess", file: handle("b"), player: 2 },
+  ]);
 });

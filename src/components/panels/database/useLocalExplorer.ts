@@ -6,6 +6,7 @@ import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseContentRevision } from "@/state/linkedCollections";
 import { type LocalOptions, searchPosition } from "@/utils/db";
+import { canonicalPgnDate } from "@/utils/pgnDate";
 
 export async function fetchLocalOpening(
     options: LocalOptions,
@@ -28,9 +29,12 @@ export const MAX_SAMPLE_GAMES = 500;
 
 export type SourcedGame<S> = { source: S; game: NormalizedGame };
 
-/** Newest first; an unknown date last, an unknown component below every known one. */
-function sampleDateKey(date: string | null | undefined): string {
-    return !date || date.startsWith("?") ? "" : date.replaceAll("?", " ");
+/**
+ * Orders PGN dates like the native sample order: stored dates are verbatim, so they are padded
+ * first; an unknown component sorts below every known one and an unknown date below all.
+ */
+function dateOrderKey(date: string | null | undefined): string {
+    return !date || date.startsWith("?") ? "" : canonicalPgnDate(date).replaceAll("?", "0");
 }
 
 /**
@@ -57,7 +61,7 @@ export function mergeLocalOpenings<S>(
             merged.draw += row.draw;
             merged.black += row.black;
             merged.unknown += row.unknown;
-            if (row.last_played && (!merged.last_played || row.last_played > merged.last_played)) {
+            if (dateOrderKey(row.last_played) > dateOrderKey(merged.last_played)) {
                 merged.last_played = row.last_played;
             }
             for (const { year, count } of row.year_counts) {
@@ -72,7 +76,7 @@ export function mergeLocalOpenings<S>(
     return {
         openings: [...moves.values()].sort((a, b) => total(b) - total(a)),
         games: games
-            .map((entry) => ({ entry, key: sampleDateKey(entry.game.date) }))
+            .map((entry) => ({ entry, key: dateOrderKey(entry.game.date) }))
             .sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0))
             .slice(0, MAX_SAMPLE_GAMES)
             .map(({ entry }) => entry),

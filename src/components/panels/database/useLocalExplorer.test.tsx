@@ -383,6 +383,23 @@ test("merged samples are newest first with unknown dates last and keep their sou
   ]);
 });
 
+test("merged dates are padded before they are compared and a partial date never beats a full one", () => {
+  const merged = mergeLocalOpenings([
+    {
+      source: "a",
+      openings: [stats("e4", { white: 1, last_played: "2025.05.01" })],
+      games: [sample(1, "2026.9.30"), sample(2, "2026.10.01")],
+    },
+    {
+      source: "b",
+      openings: [stats("e4", { white: 1, last_played: "2025.??.??" })],
+      games: [sample(3, "2026.12.1")],
+    },
+  ]);
+  expect(merged.openings[0].last_played).toBe("2025.05.01");
+  expect(merged.games.map(({ game }) => game.id)).toEqual([3, 2, 1]);
+});
+
 test("merged samples keep the native cap and one source keeps its native order", () => {
   const many = (source: string, year: number) => ({
     source,

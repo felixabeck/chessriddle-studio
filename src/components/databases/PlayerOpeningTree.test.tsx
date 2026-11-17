@@ -789,6 +789,10 @@ test("a time-control filter reaches the search, stays off the board and clears t
   expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({ timeControls: ["600+5"] });
   expect(container.querySelector("[data-opening-preview]")).toBeNull();
   expect(container.querySelector('[aria-selected="true"]')).toBeNull();
+  // Returning to the first filter does not bring the old selection back.
+  await renderAccount([{ ...lichess, timeControls: ["300+0"] }]);
+  expect(container.querySelector("[data-opening-preview]")).toBeNull();
+  await renderAccount([{ ...lichess, timeControls: ["600+5"] }]);
 
   await click(button("Analyze on board"));
   const id = store.get(tabsAtom).at(-1)!.value;
@@ -804,6 +808,20 @@ test("a time-control filter reaches the search, stays off the board and clears t
   });
   expect(store.get(tabFamily(id))).toBe("database");
   expect(store.get(tabsAtom).at(-1)!.name).toBe("GGalileo");
+});
+
+test("an account tree stays neutral with Black and drops its selection when a source leaves", async () => {
+  answerPerDatabase();
+  await renderAccount([lichess, chessCom]);
+  await click(gameRows()[0]);
+  expect(container.querySelector("[data-opening-preview]")).not.toBeNull();
+  await renderAccount([lichess]);
+  expect(container.querySelector("[data-opening-preview]")).toBeNull();
+
+  await black();
+  expect(container.textContent).toContain("Showing games where GGalileo has Black.");
+  expect(container.textContent).not.toContain("You prepare");
+  expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({ player2: 42 });
 });
 
 test("several merged sources open the line on the board without pinning a database", async () => {

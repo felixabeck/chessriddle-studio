@@ -1428,8 +1428,13 @@ for (const corner of [
         // The Italian Game scores 90% over ten games; the four-game gambit stays below.
         await expect(figures.first()).toContainText(`10 ${copy["Common.Games"]}`);
         await expect(figures.first()).toContainText("90%");
+        // Ten of the thirty-four games with White.
+        await expect(figures.first()).toContainText("29.4%");
         await assertNoHorizontalOverflow();
         await capture(`openings-${corner.width}-${corner.scale}-best-score`);
+        await expect(panel).toHaveScreenshot(
+            `openings-${corner.width}-${corner.scale}-best-score.png`,
+        );
 
         await panel.getByText(copy["Home.Personal.Openings.Board"], { exact: true }).click();
         const tree = panel.locator("[data-player-opening-tree]");
@@ -1450,6 +1455,7 @@ for (const corner of [
         expect(searched.sort()).toEqual(["summary-lichess", "summary-other"]);
         await assertNoHorizontalOverflow();
         await capture(`openings-${corner.width}-${corner.scale}-board`);
+        await expect(panel).toHaveScreenshot(`openings-${corner.width}-${corner.scale}-board.png`);
 
         // Back in the list, the rows return under the sort chosen before.
         await panel.getByText(copy["Home.Personal.Openings.List"], { exact: true }).click();

@@ -205,14 +205,15 @@ function OpeningTree({
   }));
   // A selection belongs to the sources and filters it was made under.
   const scope = JSON.stringify(sources.map(({ key, timeControls }) => [key, timeControls]));
-  const [selection, setSelection] = useState<{
-    scope: string;
+  const [selected, setSelected] = useState<{
     source: OpeningTreeSource;
     game: NormalizedGame;
   } | null>(null);
-  const selected = selection?.scope === scope ? selection : null;
-  const setSelected = (next: { source: OpeningTreeSource; game: NormalizedGame } | null) =>
-    setSelection(next && { ...next, scope });
+  const [selectionScope, setSelectionScope] = useState(scope);
+  if (selectionScope !== scope) {
+    setSelectionScope(scope);
+    setSelected(null);
+  }
   const [preparing, setPreparing] = useState(false);
   const setTabs = useSetAtom(tabsAtom);
   const addRecentFile = useSetAtom(addRecentFileAtom);
