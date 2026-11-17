@@ -27052,3 +27052,18 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Spotted outside diff:** yes — unsaved-games build final gates.
 * **Open question:** whether the measurement runs before the stacked annotation's layout settles under CPU contention (verifier wait), or the annotation really overflows for a frame (product layout). Evidence log kept at the session scratchpad `e2e-flake-evidence.log`; re-run the scaled project under `pnpm test:e2e:container` with the full suite to reproduce.
 * **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17.
+
+---
+
+## 2026-11-17 — filed through the inbox spool
+
+### Windows CI: `slow_schema_probes_do_not_hold_the_upgrade_admission_lock` fails once with "database is locked"
+
+* **ID:** f-20261117-06 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `src-tauri/src/db/repository.rs:3738` (`db::repository::upgrade_tests::slow_schema_probes_do_not_hold_the_upgrade_admission_lock`), CI job `rust-windows-test`.
+* **Failure scenario:** Test run 44132907360 on `47cb6b471` (job 134214547495, 2026-11-17 17:11 UTC) panicked with ``called `Result::unwrap()` on an `Err` value: Diesel(DatabaseError(Unknown, "database is locked"))``; 2174 passed, 1 failed. The previous run on `0dd08d652` was green and `git diff 0dd08d652..47cb6b471 -- src-tauri` is empty, so the failure is non-deterministic on Windows, not introduced by those commits.
+* **Why it matters:** `pnpm ci:remote:check` refuses every push while `master`'s latest `Test` run is red, so a timing-dependent Windows test blocks all releases until it is rerun or fixed.
+* **Spotted outside diff:** yes — seen by the unsaved-games build's pre-push remote CI check.
+* **Open question:** which handle still holds the SQLite file when the probe's connection opens on Windows (a WAL/journal handle released late, or a connection from the slow probe not yet dropped), and whether the test should wait for that release or the code should retry `SQLITE_BUSY` on that path.
+* **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17.
