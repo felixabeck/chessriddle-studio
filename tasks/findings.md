@@ -22930,7 +22930,7 @@ Review repair 75c9a98ac (push round 1, review-correctness REVISE): JS `trim()` k
 
 ### `EngineSettings` is a 560-line component still colocated in `EnginesPage.tsx` after `CloudSettings` was extracted
 
-* **ID:** f-20261111-54 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-54 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** general quality review (Felix t26u) at HEAD `16156bc18`
 * **Where:** `src/components/engines/EnginesPage.tsx` (1014 lines). The page component is `:81-255`. `CloudSettings` was already extracted as a sibling (`:257-322`). `EngineSettings` remains in the same file at `:324-883` (560 lines) and is the only caller of `JSONModal` (`:884-966`). The parent already narrows on `selectedEngine.type === "local"` (`:155-163`) before rendering `EngineSettings`, which then recasts `engines![selected] as LocalEngine` (`:340`). `EngineName` (`:967`) stays exported from this file for the list header (`:181`). No decision pins `EngineSettings` to this module.
@@ -22939,6 +22939,8 @@ Review repair 75c9a98ac (push round 1, review-correctness REVISE): JS `trim()` k
 * **Fix:** Move `EngineSettings` and `JSONModal` (its only client) to `src/components/engines/EngineSettings.tsx`. Have the parent pass the already-narrowed `LocalEngine` instead of recasting `engines![selected]`. Keep `EnginesPage`, `CloudSettings` and `EngineName` in `EnginesPage.tsx`. Existing `EnginesPage.test.tsx` / `EnginesPage.publication.test.tsx` remain the behaviour contract.
 * **Proof:** Function starts at depth 0: `EnginesPage` `:81`, `CloudSettings` `:257`, `EngineSettings` `:324-883`, `JSONModal` `:884-966`. `rg JSONModal src` only hits this file. `tasks/decisions.md` has no entry requiring these components to share a file.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `16156bc18`.
+* **Handled (2026-11-17, drain 32517be2, co-located with f-20261115-06):** `EngineSettings` and its only client `JSONModal` moved unchanged to `src/components/engines/EngineSettings.tsx`. The page passes the already-narrowed `LocalEngine` as `engine` instead of the form recasting `engines![selected]`; `selected` stays a prop for the per-index action-owner reset. `EnginesPage.tsx` keeps the directory, `CloudSettings` and `EngineName` (335 lines). `CHESS_LOGIC_MAP.md` points `getEngineConfig` at the new file. Existing engine tests (185) pass unchanged. Commit 91b286da2.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"4b8a10d5a7c374df2d58712a95be3cf74db01d5def140e38998d2963d12743d6","header_sha256":"d1fc39f671acb0bf29b25c5211d85fb125b858452ab5e0367243b64a130024e9","header_status":"handled","input_sha256":"84e9741fd8a0b42cc615d38b947e0787d789583dc167e1311b67b89f5d80f1bf","kind":"mutation-receipt","operation":"484862d7da21d2404ea13dec9ce884ede1a6b1a8cf63700d71fe9051173680b4","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-54"],"target":"f-20261111-54","v":1} -->
 
 ---
 
