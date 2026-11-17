@@ -10,13 +10,9 @@ export function isCollectionConsumer(key: unknown) {
     return (
         key === "databases" ||
         (Array.isArray(key) &&
-            [
-                "file-workspace",
-                "games",
-                "players",
-                "tournaments",
-                "personalInfo",
-            ].includes(String(key[0])))
+            ["file-workspace", "games", "players", "tournaments", "personalInfo"].includes(
+                String(key[0]),
+            ))
     );
 }
 
