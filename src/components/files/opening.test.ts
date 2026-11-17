@@ -167,6 +167,12 @@ test("setting Start flags a sibling-branch card during deck synchronization", ()
     expect(result.positions[0].card).toBe(existing[0].card);
     expect(result.positions[1]).toEqual({ ...existing[1], outOfScope: true });
     expect(result).toMatchObject({ added: 0, removed: 0, updated: 1 });
+
+    const widened = syncDeck(result.positions, root, "white", []);
+    expect(widened).toMatchObject({ added: 0, removed: 0, updated: 1, reordered: false });
+    expect(widened.positions[1]).toEqual(existing[1]);
+    expect(widened.positions[1].card).toBe(existing[1].card);
+    expect(widened.positions[1]).not.toHaveProperty("outOfScope");
 });
 
 test("deck synchronization retains another tab's rated Bb5 card lazily", () => {
@@ -512,6 +518,9 @@ test("narrowing Start flags earlier cards and widening restores their schedule",
 
     const narrowed = syncDeck(all, root, "white", [0, 0, 0, 0]);
     expect(narrowed).toMatchObject({ removed: 0 });
+    expect(inScopeCards(narrowed.positions).map(({ answer }) => answer)).toEqual(
+        buildFromTree(root, "white", [0, 0, 0, 0]).map(({ answer }) => answer),
+    );
     const nf3Card = narrowed.positions.find((position) => position.answer === "Nf3");
     expect(nf3Card?.outOfScope).toBe(true);
     expect(nf3Card?.card.reps).toBe(5);
@@ -519,7 +528,7 @@ test("narrowing Start flags earlier cards and widening restores their schedule",
 
     const widened = syncDeck(narrowed.positions, root, "white", []);
     const restoredNf3Card = widened.positions.find((position) => position.answer === "Nf3");
-    expect(widened).toMatchObject({ added: 0, removed: 0 });
+    expect(widened).toMatchObject({ added: 0, removed: 0, updated: 1 });
     expect(restoredNf3Card).not.toHaveProperty("outOfScope");
     expect(restoredNf3Card?.card.reps).toBe(5);
     expect(restoredNf3Card?.card.due).toEqual(dueInTwentyDays);

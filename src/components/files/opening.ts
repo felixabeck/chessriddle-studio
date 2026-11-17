@@ -76,8 +76,9 @@ export function buildFromTree(tree: TreeNode, color: "white" | "black", start: n
     return cards;
 }
 
-/** Empty Start covers every non-root position; the root is never a card. Union of both orientations is every board state the tree can still practise under any scope. */
-export function practiceBoardStates(tree: TreeNode): Set<string> {
+/** Empty Start covers every non-root position; the root is never a card. Union of both
+ * orientations is every board state the tree can still practise under any scope. */
+export function anyScopeBoardStates(tree: TreeNode): Set<string> {
     const boardStates = new Set<string>();
     for (const color of ["white", "black"] as const) {
         for (const pos of buildFromTree(tree, color, [])) {
@@ -179,7 +180,7 @@ export function syncDeck(
     retained?: () => ReadonlySet<string>,
 ): { positions: Position[]; added: number; removed: number; updated: number; reordered: boolean } {
     const freshPositions = buildFromTree(tree, color, start);
-    const anyScopeBoardStates = practiceBoardStates(tree);
+    const inTree = anyScopeBoardStates(tree);
 
     const existingByFen = new Map<string, Position>();
     for (const pos of existing) {
@@ -213,7 +214,7 @@ export function syncDeck(
     // their schedule. Deduplicate by board state (first remaining card wins).
     for (const pos of existing) {
         const boardState = getBoardState(pos.fen);
-        if (mergedBoardStates.has(boardState) || !anyScopeBoardStates.has(boardState)) continue;
+        if (mergedBoardStates.has(boardState) || !inTree.has(boardState)) continue;
         merged.push({ ...pos, outOfScope: true });
         mergedBoardStates.add(boardState);
         if (!pos.outOfScope) updated++;

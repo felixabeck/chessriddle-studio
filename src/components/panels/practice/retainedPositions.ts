@@ -1,4 +1,4 @@
-import { practiceBoardStates, type Position } from "@/components/files/opening";
+import { anyScopeBoardStates, type Position } from "@/components/files/opening";
 import type { PracticeDeckKey } from "@/state/practiceStorage";
 import { tabStorage } from "@/state/store/tabStorage";
 import { getCachedTreeStore } from "@/state/store/tree";
@@ -41,7 +41,7 @@ export function collectRetainedPracticePositions({
                 ? cached.getState().root
                 : tabStorage.readForClone(getTabTreeKey(tab), tab.treeKey !== undefined)?.root;
             if (!root) continue;
-            for (const boardState of practiceBoardStates(root)) {
+            for (const boardState of anyScopeBoardStates(root)) {
                 retained.add(boardState);
             }
         } catch {
