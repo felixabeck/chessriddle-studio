@@ -127,8 +127,7 @@ function BoardAnalysis() {
     [updateTab, getTab, currentTab, store, t, notifyError],
   );
   const userSaveFile = useCallback(() => saveFile(true), [saveFile]);
-  const autoSaveFile = useCallback(() => saveFile(), [saveFile]);
-  useAutoSave(store, hasPersistentOrigin && autoSave, autoSaveFile);
+  useAutoSave(store, hasPersistentOrigin && autoSave, saveFile);
 
   const addGameAction = useContext(AddGameContext);
   const appendGame = useCallback(async () => {

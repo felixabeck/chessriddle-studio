@@ -8,11 +8,12 @@ import { serializeStoreTree } from "@/utils/tabs";
  * of its `dirty` flag. An edit that lands while a write is in flight, or after a write failed,
  * leaves `dirty` true, so a trigger keyed on `dirty` would never fire again for that tab.
  *
- * One write runs at a time per subscription. When a write settles, the tree is written again only
- * while it is still dirty and its PGN differs from the last attempt. Edits made during a write
- * therefore get one follow-up write, a failed write is retried at most once per later edit (never
- * in a loop), and a view-only change that leaves the PGN unchanged (a live engine score) never
- * writes. `saveToFile` orders writes that overlap across subscriptions for the same store.
+ * One write runs at a time per subscription. When a write settles, the loop writes again only
+ * while the tree is still dirty and its PGN differs from the last attempt; the same serialized
+ * tree is never written twice. Edits made during a write therefore get one follow-up write, a
+ * failed write is retried only after a later edit changes the PGN, and a view-only change that
+ * leaves the PGN unchanged (a live engine score) never writes. `saveToFile` orders writes that
+ * overlap across subscriptions for the same store.
  */
 export function useAutoSave(
     store: StoreApi<TreeStoreState>,
@@ -44,13 +45,15 @@ export function useAutoSave(
         };
         void run();
         const unsubscribe = store.subscribe((state, previous) => {
-            if (!state.dirty) lastAttempt = null;
-            else if (
+            if (!state.dirty) {
+                lastAttempt = null;
+            } else if (
                 !previous.dirty ||
                 state.root !== previous.root ||
                 state.headers !== previous.headers
-            )
+            ) {
                 void run();
+            }
         });
         return () => {
             disposed = true;

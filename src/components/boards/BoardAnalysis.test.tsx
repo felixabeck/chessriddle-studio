@@ -1416,11 +1416,14 @@ describe("BoardAnalysis", () => {
             ],
       );
       expect(mocks.writeGame).toHaveBeenCalledTimes(2);
-      // A later edit retries once more, still without a second notification.
+      // A later header-only edit retries once more, still without a second notification.
       await act(async () => {
-        treeStore.getState().setComment("Later autosave comment");
+        treeStore
+          .getState()
+          .setHeaders({ ...treeStore.getState().headers, event: "Later autosave header" });
       });
       await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(3));
+      expect(mocks.writeGame.mock.calls[2]?.[2]).toContain("Later autosave header");
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
       });
@@ -1428,6 +1431,25 @@ describe("BoardAnalysis", () => {
       expect(mocks.showNotification).toHaveBeenCalledTimes(category === "cancellation" ? 0 : 1);
     },
   );
+
+  test("a clean autosave ends a failure streak, so the next failure is reported again", async () => {
+    const failure = { tag: "backend-error", category: "io", message: "Autosave failed" };
+    mocks.writeGame
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce({ stamp: "b".repeat(64), revision: "r1" })
+      .mockRejectedValueOnce(failure);
+    await startAutosave();
+    await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledOnce());
+    await act(async () => {
+      treeStore.getState().setComment("Saved after the failure");
+    });
+    await vi.waitFor(() => expect(treeStore.getState().dirty).toBe(false));
+    await act(async () => {
+      treeStore.getState().setComment("Fails again");
+    });
+    await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledTimes(2));
+  });
 
   test.each(["failure", "success"] as const)(
     "production autosave remains silent after its physical owner is superseded before %s",
