@@ -25,6 +25,10 @@ export function EloRangeSlider({
 
   return (
     <RangeSlider
+      // Mark labels hang below the track and the outer ones are centred on its ends:
+      // reserve that room so they neither overlap the next control nor overflow sideways.
+      mb="xl"
+      px="lg"
       thumbFromLabel={thumbFromLabel}
       thumbToLabel={thumbToLabel}
       step={10}

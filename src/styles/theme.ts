@@ -264,6 +264,8 @@ export function createAppTheme({
     const inputClassNames = { input: inputClasses.input };
     return createTheme({
         primaryColor: "gold",
+        // Switches, checkboxes and radios are clickable including their labels.
+        cursorType: "pointer",
         primaryShade: { light: 8, dark: 4 },
         variantColorResolver: (input) => {
             const resolved = defaultVariantColorsResolver(input);

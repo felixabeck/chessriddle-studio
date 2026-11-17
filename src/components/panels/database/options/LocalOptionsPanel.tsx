@@ -24,8 +24,7 @@ import { PlayerSearchInput } from "@/components/databases/PlayerSearchInput";
 import { localOptionsFamily } from "@/state/atoms";
 import type { DatabaseHandle } from "@/bindings";
 import { databaseHandleKey, getEffectiveLocalPlayer } from "@/utils/db";
-
-const YEAR_PRESETS = [1, 3, 5, 10];
+import { YearPresetButtons } from "./filterControls";
 
 function LocalOptionsPanel({
   boardFen,
@@ -38,6 +37,7 @@ function LocalOptionsPanel({
   const boardRef = useRef(null);
   const [options, setOptions] = useAtom(useTabAtom(localOptionsFamily));
   const databaseKey = database ? databaseHandleKey(database) : undefined;
+  const effectivePlayer = getEffectiveLocalPlayer(options, database);
 
   const setSimilarStructure = async (fen: string) => {
     const setup = parseFen(fen).unwrap();
@@ -62,7 +62,7 @@ function LocalOptionsPanel({
             <PlayerSearchInput
               key={databaseKey}
               label={t("Common.Search")}
-              value={getEffectiveLocalPlayer(options, database) ?? undefined}
+              value={effectivePlayer ?? undefined}
               file={database}
               setValue={(v) =>
                 setOptions((q) => ({
@@ -76,9 +76,11 @@ function LocalOptionsPanel({
         </Stack>
         <Stack gap={4}>
           <Text fw="bold" fz="sm">
-            {t("Board.Database.Local.Color")}
+            {t("Board.Database.Local.PlaysAs")}
           </Text>
           <SegmentedControl
+            // The colour only says which side the selected player has.
+            disabled={effectivePlayer === null}
             data={[
               { value: "white", label: t("Fen.White") },
               { value: "black", label: t("Fen.Black") },
@@ -104,24 +106,11 @@ function LocalOptionsPanel({
               })
             }
           />
-          <Group gap={4}>
-            {YEAR_PRESETS.map((years) => (
-              <Button
-                key={years}
-                size="compact-xs"
-                variant="default"
-                onClick={() =>
-                  // Rolling window from today; the To date is left as is.
-                  setOptions((q) => ({
-                    ...q,
-                    start_date: dayjs().subtract(years, "year").format("YYYY.MM.DD"),
-                  }))
-                }
-              >
-                {t("Board.Database.Local.LastYears", { count: years })}
-              </Button>
-            ))}
-          </Group>
+          <YearPresetButtons
+            onPick={(start) =>
+              setOptions((q) => ({ ...q, start_date: start.format("YYYY.MM.DD") }))
+            }
+          />
         </Stack>
         <Stack gap={4}>
           <Text fw="bold" fz="sm">
@@ -213,6 +202,11 @@ function LocalOptionsPanel({
           value={options.type}
           onChange={(v) => setOptions({ ...options, type: v as "exact" | "partial" })}
         />
+        <Text c="dimmed" fz="xs">
+          {options.type === "partial"
+            ? t("Board.Database.Local.Partial.Hint")
+            : t("Board.Database.Local.Exact.Hint")}
+        </Text>
       </Stack>
 
       <Group>

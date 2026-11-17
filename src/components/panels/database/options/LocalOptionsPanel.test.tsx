@@ -197,6 +197,27 @@ describe("LocalOptionsPanel explorer filters", () => {
     expect(input.value).toBe("");
   });
 
+  test("the colour control is disabled until a player of this database is selected", async () => {
+    const colourInputs = () =>
+      Array.from(
+        container.querySelectorAll<HTMLInputElement>(".mantine-SegmentedControl-input"),
+      ).filter((input) => input.value === "white" || input.value === "black");
+    expect(container.textContent).toContain("Board.Database.Local.PlaysAs");
+    expect(colourInputs()).toHaveLength(2);
+    expect(colourInputs().every((input) => input.disabled)).toBe(true);
+    await act(async () =>
+      store.set(localOptionsFamily(tabId), (options) => ({
+        ...options,
+        player: 42,
+        player_database: databaseHandleKey(databaseA),
+      })),
+    );
+    expect(colourInputs().every((input) => !input.disabled)).toBe(true);
+    // A player stored for another database does not count as selected here.
+    await renderPanel(databaseB);
+    expect(colourInputs().every((input) => input.disabled)).toBe(true);
+  });
+
   test("editing player 42 to a non-matching name clears the committed player filter", async () => {
     await act(async () =>
       store.set(localOptionsFamily(tabId), (options) => ({

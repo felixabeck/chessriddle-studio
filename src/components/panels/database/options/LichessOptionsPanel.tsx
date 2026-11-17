@@ -1,4 +1,4 @@
-import { Group, Select, Stack, TextInput } from "@mantine/core";
+import { InputWrapper, SegmentedControl, SimpleGrid, Stack, TextInput } from "@mantine/core";
 import { MonthPickerInput } from "@mantine/dates";
 import { ChevronRight, ChevronsRight, Clock4, Flame, Hourglass, Send } from "lucide-react";
 import { useAtom } from "jotai";
@@ -15,6 +15,7 @@ import {
   type LichessGameSpeed,
   type LichessRating,
 } from "@/utils/lichess/explorer";
+import { FILTER_LABEL_PROPS, YearPresetButtons } from "./filterControls";
 
 const LichessOptionsPanel = () => {
   const { t } = useTranslation();
@@ -87,39 +88,55 @@ const LichessOptionsPanel = () => {
     setOptions({ ...options, ratings: newSelected });
   }
 
+  const hasPlayer = (options.player ?? "").trim() !== "";
+
   return (
     <Stack justify="flex-start">
-      <ToggleButtonGroup
-        label={t("Board.Database.TimeControl")}
-        options={timeControls.map(mapTimeControl)}
-        toggleOption={toggleTimeControl}
-        minButtonWidth="9ch"
-        includeTooltips
-      />
-      <ToggleButtonGroup
-        label={t("Board.Database.AverageRating")}
-        options={ratings.map(mapRatingOption)}
-        toggleOption={toggleRating}
-        minButtonWidth="9ch"
-      />
-      <Group grow>
-        <MonthPickerInput
-          label={t("Common.Since")}
-          placeholder={t("Common.PickDate")}
-          value={options.since ? formatExplorerDate(options.since) : null}
-          minDate={MIN_DATE}
-          maxDate={new Date()}
-          onChange={(value) =>
-            setOptions({
-              ...options,
-              since: value ? new Date(value) : undefined,
-            })
-          }
-          clearable
+      <SimpleGrid cols={2}>
+        <TextInput
+          label={t("Board.Database.Local.Player")}
+          labelProps={FILTER_LABEL_PROPS}
+          placeholder={t("Home.Accounts.Username")}
+          value={options.player ?? ""}
+          onChange={(e) => setOptions({ ...options, player: e.currentTarget.value })}
         />
+        <InputWrapper label={t("Board.Database.Local.PlaysAs")} labelProps={FILTER_LABEL_PROPS}>
+          <SegmentedControl
+            fullWidth
+            // The colour only says which side the named player has.
+            disabled={!hasPlayer}
+            data={[
+              { value: "white", label: t("Fen.White") },
+              { value: "black", label: t("Fen.Black") },
+            ]}
+            value={options.color}
+            onChange={(v) => setOptions({ ...options, color: v as "white" | "black" })}
+          />
+        </InputWrapper>
+        <Stack gap={4}>
+          <MonthPickerInput
+            label={t("Common.From")}
+            labelProps={FILTER_LABEL_PROPS}
+            placeholder={t("Common.StartDate")}
+            value={options.since ? formatExplorerDate(options.since) : null}
+            minDate={MIN_DATE}
+            maxDate={new Date()}
+            onChange={(value) =>
+              setOptions({
+                ...options,
+                since: value ? new Date(value) : undefined,
+              })
+            }
+            clearable
+          />
+          <YearPresetButtons
+            onPick={(start) => setOptions({ ...options, since: start.toDate() })}
+          />
+        </Stack>
         <MonthPickerInput
-          label={t("Common.Until")}
-          placeholder={t("Common.PickDate")}
+          label={t("Common.To")}
+          labelProps={FILTER_LABEL_PROPS}
+          placeholder={t("Common.EndDate")}
           value={options.until ? formatExplorerDate(options.until) : null}
           minDate={MIN_DATE}
           maxDate={new Date()}
@@ -131,28 +148,22 @@ const LichessOptionsPanel = () => {
           }
           clearable
         />
-      </Group>
-      <Group grow>
-        <TextInput
-          label={t("Board.Database.Local.Player")}
-          placeholder={t("Home.Accounts.Username")}
-          value={options.player ?? ""}
-          onChange={(e) => setOptions({ ...options, player: e.currentTarget.value })}
-        />
-        <Select
-          label={t("Board.Database.Local.Color")}
-          placeholder={t("Common.PickValue")}
-          data={[
-            { label: t("Fen.White"), value: "white" },
-            { label: t("Fen.Black"), value: "black" },
-          ]}
-          value={options.color}
-          onChange={(v) => {
-            if (v === "white" || v === "black") setOptions({ ...options, color: v });
-          }}
-          allowDeselect={false}
-        />
-      </Group>
+      </SimpleGrid>
+      <ToggleButtonGroup
+        label={t("Board.Database.AverageRating")}
+        labelProps={FILTER_LABEL_PROPS}
+        options={ratings.map(mapRatingOption)}
+        toggleOption={toggleRating}
+        minButtonWidth="9ch"
+      />
+      <ToggleButtonGroup
+        label={t("Board.Database.TimeControl")}
+        labelProps={FILTER_LABEL_PROPS}
+        options={timeControls.map(mapTimeControl)}
+        toggleOption={toggleTimeControl}
+        minButtonWidth="9ch"
+        includeTooltips
+      />
     </Stack>
   );
 };

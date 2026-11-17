@@ -1,8 +1,9 @@
-import { Button, Group, InputWrapper, Tooltip } from "@mantine/core";
+import { Button, Group, InputWrapper, Tooltip, type InputLabelProps } from "@mantine/core";
 import { useId, type ReactNode } from "react";
 
 interface ToggleButtonGroupProps<T> {
   label: string;
+  labelProps?: InputLabelProps;
   options: ToggleButtonGroupOption<T>[];
   includeTooltips?: boolean;
   minButtonWidth?: string;
@@ -34,7 +35,11 @@ function ToggleButtonGroup<T>(props: ToggleButtonGroupProps<T>) {
   );
 
   return (
-    <InputWrapper label={props.label} required={false} labelProps={{ id: labelId }}>
+    <InputWrapper
+      label={props.label}
+      required={false}
+      labelProps={{ ...props.labelProps, id: labelId }}
+    >
       <Group gap={0} role="group" aria-labelledby={labelId}>
         {props.options.map((option) => {
           if (props.includeTooltips) {

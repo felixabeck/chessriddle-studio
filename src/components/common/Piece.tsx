@@ -95,6 +95,8 @@ export default function PieceComponent({
           backgroundSize: "contain",
           backgroundRepeat: "no-repeat",
           backgroundPosition: "center",
+          // A mid-tone tile: black pieces vanish on the dark card, white ones on the light card.
+          backgroundColor: "color-mix(in srgb, var(--cf-foreground) 40%, var(--cf-card))",
           zIndex: 100,
           cursor: onClick ? "pointer" : "default",
           border: selected ? "2px solid var(--cf-primary)" : "2px solid transparent",

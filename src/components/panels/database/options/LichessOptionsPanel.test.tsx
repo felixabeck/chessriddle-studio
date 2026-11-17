@@ -58,21 +58,40 @@ describe("LichessOptionsPanel colour", () => {
     else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   });
 
-  test("re-selecting the current colour keeps it instead of storing null", async () => {
-    const input = container.querySelector<HTMLInputElement>(
-      '.mantine-Select-input[placeholder="Common.PickValue"]',
-    )!;
-    expect(input.value).toBe("Fen.White");
-    await act(async () => input.click());
-    const white = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
-      (option) => option.textContent === "Fen.White",
-    );
-    expect(white).toBeDefined();
-    await act(async () => white!.click());
+  const colourInputs = () =>
+    Array.from(
+      container.querySelectorAll<HTMLInputElement>(".mantine-SegmentedControl-input"),
+    ).filter((input) => input.value === "white" || input.value === "black");
+
+  test("choosing the other colour stores it and re-selecting keeps it", async () => {
+    const black = colourInputs().find((input) => input.value === "black")!;
+    await act(async () => black.click());
     expect(store.get(lichessOptionsAtom)).toMatchObject({
       player: "DrNykterstein",
-      color: "white",
+      color: "black",
     });
-    expect(input.value).toBe("Fen.White");
+    await act(async () => black.click());
+    expect(store.get(lichessOptionsAtom).color).toBe("black");
+  });
+
+  test("the colour control is disabled while no player is named", async () => {
+    expect(colourInputs()).toHaveLength(2);
+    expect(colourInputs().every((input) => !input.disabled)).toBe(true);
+    await act(async () =>
+      store.set(lichessOptionsAtom, (options) => ({ ...options, player: " " })),
+    );
+    expect(colourInputs().every((input) => input.disabled)).toBe(true);
+  });
+
+  test("uses the same date wording as the local panel and a year shortcut sets only the start", async () => {
+    expect(container.textContent).toContain("Common.From");
+    expect(container.textContent).toContain("Common.To");
+    const preset = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Board.Database.Local.LastYears",
+    )!;
+    await act(async () => preset.click());
+    const { since, until } = store.get(lichessOptionsAtom);
+    expect(since?.getFullYear()).toBe(new Date().getFullYear() - 1);
+    expect(until).toBeUndefined();
   });
 });
