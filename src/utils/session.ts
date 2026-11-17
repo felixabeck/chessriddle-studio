@@ -36,17 +36,17 @@ function sessionUsername(session: Session): string {
 }
 
 /**
- * The player of each session, in session order. A chosen alias groups every account given it,
+ * The player key of each session, in session order; accounts of one player repeat its key. A chosen alias groups every account given it,
  * and an account without one joins the alias equal to its exact username, so naming a player
  * after an account merges them. Any other account is its own player per site: the same username
  * on Lichess and Chess.com stays two players until the user gives them one name.
  */
-export function playerKeys(sessions: Session[]): string[] {
+export function sessionPlayerKeys(sessions: Session[]): string[] {
     const aliases = new Set(sessions.flatMap((session) => (session.alias ? [session.alias] : [])));
     return sessions.map((session) => {
         const username = sessionUsername(session);
-        const alias = session.alias || (aliases.has(username) ? username : "");
-        if (alias) return `alias:${alias}`;
+        const groupAlias = session.alias || (aliases.has(username) ? username : "");
+        if (groupAlias) return `alias:${groupAlias}`;
         const site: AccountSite = session.lichess ? "lichess" : "chesscom";
         return `${site}:${username.toLocaleLowerCase()}`;
     });
@@ -68,7 +68,7 @@ export type PlayerGroup = {
 /** Every player in order of first appearance. Names can repeat; keys cannot. */
 export function playerGroups(sessions: Session[]): PlayerGroup[] {
     const groups = new Map<string, Session[]>();
-    const keys = playerKeys(sessions);
+    const keys = sessionPlayerKeys(sessions);
     sessions.forEach((session, index) => {
         groups.set(keys[index], [...(groups.get(keys[index]) ?? []), session]);
     });

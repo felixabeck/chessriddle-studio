@@ -270,6 +270,8 @@ describe("account authentication", () => {
     chooseBrowserLogin();
     await submit();
 
+    // An empty Player Name reaches the login as no alias, not as the username.
+    expect(mocks.authenticateLichess.mock.calls[0]?.[0]).toBe("");
     expect(document.querySelector("[role='dialog']")).toBeNull();
     expect(mocks.notificationsShow).toHaveBeenCalledWith({
       message: "Home.Accounts.LinkDurabilityUncertain",

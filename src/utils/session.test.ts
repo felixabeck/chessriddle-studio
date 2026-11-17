@@ -30,7 +30,7 @@ import {
     savePublicSessions,
     retrySessionPersistence,
     sameAccountUsername,
-    playerKeys,
+    sessionPlayerKeys,
     sessionPlayerName,
     type LichessSession,
     type Session,
@@ -83,7 +83,7 @@ test("accounts sharing a username on Lichess and Chess.com stay two players unle
         chessComSession("Serious", "Felix"),
     ];
 
-    expect(playerKeys(sessions)).toEqual([
+    expect(sessionPlayerKeys(sessions)).toEqual([
         "lichess:ggalileo",
         "chesscom:ggalileo",
         "alias:Felix",
@@ -115,7 +115,7 @@ test("an account without an alias joins the player named exactly after its usern
         chessComSession("ggalileo"),
     ];
 
-    expect(playerKeys(sessions)).toEqual([
+    expect(sessionPlayerKeys(sessions)).toEqual([
         "alias:GGalileo",
         "alias:GGalileo",
         "lichess:twin",
@@ -130,7 +130,7 @@ test("an account without an alias joins the player named exactly after its usern
     });
 });
 
-test("player sites list each site a player's accounts live on once, Lichess first", () => {
+test("player groups list each site a player's accounts live on once, Lichess first", () => {
     const sessions = [
         chessComSession("GGalile0", "GGalileo"),
         lichessSession("GGalileo", "GGalileo"),

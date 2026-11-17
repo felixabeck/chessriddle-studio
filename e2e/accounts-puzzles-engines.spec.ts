@@ -1457,6 +1457,15 @@ test("accounts-puzzles-engines: home summary keeps one username on Lichess and C
     await expect(player).toHaveValue("alex");
     const selectedSites = player.locator("xpath=..").locator("[data-site-logos]");
     await expect(selectedSites).toHaveAttribute("data-site-logos", "lichess");
+    const statisticsFiles = () =>
+        page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter(({ command }) => command === "get_players_game_info")
+                .map(({ args }) => (args as { file: unknown }).file),
+        );
+    // The Lichess player's statistics read only the Lichess account's database.
+    await expect.poll(statisticsFiles).toEqual([summaryLichessDatabase.handle]);
 
     await player.click();
     const options = page.getByRole("option");
@@ -1477,6 +1486,10 @@ test("accounts-puzzles-engines: home summary keeps one username on Lichess and C
     await options.nth(1).click();
     await expect(player).toHaveValue("alex");
     await expect(selectedSites).toHaveAttribute("data-site-logos", "chesscom");
+    // Switching to the Chess.com player reads only the Chess.com account's database.
+    await expect
+        .poll(statisticsFiles)
+        .toEqual([summaryLichessDatabase.handle, summaryChessComDatabase.handle]);
 });
 
 function seedDownloadPlayerSession(page: Page) {
