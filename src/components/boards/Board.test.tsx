@@ -6,7 +6,12 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TreeStateContext, VariationChooserContext } from "../common/TreeStateContext";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
-import { moveHighlightAtom, moveInputAtom, showVariationArrowsAtom } from "@/state/atoms";
+import {
+  enableBoardScrollAtom,
+  moveHighlightAtom,
+  moveInputAtom,
+  showVariationArrowsAtom,
+} from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { focusedDialogButton, press as pressKey } from "@/tests/keyboard";
 import Board from "./Board";
@@ -14,6 +19,7 @@ import type { Chessground } from "@/chessground/Chessground";
 import type { Config } from "@lichess-org/chessground/config";
 import type { BoardBar } from "./BoardBar";
 import type FideInfo from "../databases/FideInfo";
+import type PromotionModal from "./PromotionModal";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -78,7 +84,10 @@ const boardBar = vi.hoisted(() =>
 vi.mock("./BoardBar", () => ({ BoardBar: boardBar }));
 vi.mock("./Clock", () => ({ default: () => null }));
 vi.mock("./EvalBar", () => ({ default: () => null }));
-vi.mock("./PromotionModal", () => ({ default: () => null }));
+const promotionModal = vi.hoisted(() =>
+  vi.fn((_props: ComponentProps<typeof PromotionModal>) => null),
+);
+vi.mock("./PromotionModal", () => ({ default: promotionModal }));
 vi.mock("./AnnotationHint", () => ({ default: () => null }));
 vi.mock("../common/ShowMaterial", () => ({ default: () => null }));
 vi.mock("../common/IconAction", () => ({ default: () => null }));
@@ -108,9 +117,14 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function render(props: Partial<ComponentProps<typeof Board>> = {}, moveInput = false) {
+async function render(
+  props: Partial<ComponentProps<typeof Board>> = {},
+  moveInput = false,
+  boardScroll = false,
+) {
   const atoms = createJotaiStore();
   atoms.set(moveInputAtom, moveInput);
+  atoms.set(enableBoardScrollAtom, boardScroll);
   atoms.set(moveHighlightAtom, true);
   atoms.set(showVariationArrowsAtom, true);
   const onMove = vi.fn(async () => true);
@@ -358,6 +372,50 @@ test("keyboard source stays aria-selected after the focus square moves", async (
   expect(grid.getAttribute("aria-activedescendant")).toBe("board-square-e4");
   expect(host.querySelector("#board-square-e2")?.getAttribute("aria-selected")).toBe("true");
   expect(host.querySelector("#board-square-e4")?.getAttribute("aria-selected")).toBe("false");
+});
+
+async function wheel(grid: HTMLDivElement, deltaY: number) {
+  await act(async () => {
+    grid.dispatchEvent(new WheelEvent("wheel", { deltaY, bubbles: true }));
+  });
+}
+
+function promotionProps() {
+  return promotionModal.mock.calls.at(-1)![0];
+}
+
+test("wheel navigation closes the promotion picker and a later choice plays nothing", async () => {
+  tree.getState().setFen("k7/4P3/8/8/8/8/8/4K3 w - - 0 1");
+  tree.getState().makeMoves({ payload: ["Kd1", "Kb8"] });
+  const { grid, onMove, storeMove } = await render({}, false, true);
+  await act(async () => boardConfig.current.movable.events.after("e7", "e8", {}));
+  expect(promotionProps().pendingMove).toEqual({ from: 52, to: 60 });
+
+  await wheel(grid, -100);
+  expect(tree.getState().position).toEqual([0]);
+  expect(promotionProps().pendingMove).toBeNull();
+
+  // Returning to the original position does not resurrect the abandoned choice.
+  await wheel(grid, 100);
+  expect(tree.getState().position).toEqual([0, 0]);
+  expect(promotionProps().pendingMove).toBeNull();
+  await act(async () => promotionProps().confirmMove("queen"));
+  expect(onMove).not.toHaveBeenCalled();
+  expect(storeMove).not.toHaveBeenCalled();
+});
+
+test("navigation drops a selected keyboard source", async () => {
+  tree.getState().makeMoves({ payload: ["e4", "e5"] });
+  const { grid, onMove } = await render({}, false, true);
+  await press(grid, "Enter");
+  expect(host.querySelector("#board-square-e2")?.getAttribute("aria-selected")).toBe("true");
+  await wheel(grid, -100);
+  expect(tree.getState().position).toEqual([0]);
+  expect(host.querySelector('[aria-selected="true"]')).toBeNull();
+  // The next Enter starts a fresh selection instead of completing the abandoned one.
+  await press(grid, "ArrowUp", "ArrowUp", "Enter");
+  expect(onMove).not.toHaveBeenCalled();
+  expect(host.querySelector("#board-square-e4")?.getAttribute("aria-selected")).toBe("true");
 });
 
 async function typeMove(move: string) {

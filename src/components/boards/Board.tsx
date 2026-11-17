@@ -136,6 +136,7 @@ function Board({
   );
   const headers = useStore(store, (s) => s.headers);
   const currentNode = useStore(store, (s) => s.currentNode());
+  const positionPath = useStore(store, (s) => s.position.join(","));
 
   const tabId = useOwnerTabId();
   const arrows = useAtomValue(
@@ -200,6 +201,16 @@ function Board({
   const [keyboardSquare, setKeyboardSquare] = useState<SquareName>("e2");
   const [keyboardSource, setKeyboardSource] = useState<SquareName | null>(null);
   const keyboardFocus = useRef(false);
+  // A pending promotion and a keyboard move source belong to the position they were started in.
+  // Navigating away (wheel, notation, engine line) drops both, so a later choice can never play
+  // the move in a position the user did not make it in.
+  const moveOrigin = `${positionPath}|${currentNode.fen}`;
+  const [pendingMoveOrigin, setPendingMoveOrigin] = useState(moveOrigin);
+  if (pendingMoveOrigin !== moveOrigin) {
+    setPendingMoveOrigin(moveOrigin);
+    setPendingMove(null);
+    setKeyboardSource(null);
+  }
   const [keyboardAnnouncement, setKeyboardAnnouncement] = useState("");
 
   const turn = pos?.turn || "white";
