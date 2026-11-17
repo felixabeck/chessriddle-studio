@@ -26529,7 +26529,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### The board's promotion picker stays open across wheel navigation and promotes in whatever position is shown when a piece is chosen
 
-* **ID:** f-20261115-14 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-14 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (mouse-wheel navigation with pending move sweep, origin `fb8bca5f4`)
 * **Where:** `src/components/boards/Board.tsx`: `pendingMove` state (~197) is set on a pawn drop to the last rank (~700-706, and the keyboard path ~480-482) and only cleared in `makeMove` or by `cancelMove`. Nothing clears it when `currentNode` changes. The board container's `onWheel` (~620-628) calls `goToNext`/`goToPrevious` when `enableBoardScrollAtom` is on, and `PromotionModal` is rendered inside that container (~631-645), so wheel events over the picker reach it. `confirmMove` builds `{from, to, promotion}` from the stale `pendingMove` and passes it to `makeMove`, which uses the *current* `pos` (`makeSan(pos, move)`, then `storeMakeMove`). `PromotionModal` gets `turn` from the current position.
@@ -26539,6 +26539,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** store the FEN with the pending move (as `PuzzleBoardSurface` does) and clear it, or not render the picker, when `currentNode.fen` differs. Optionally stop wheel propagation inside the picker. The same check should drop a selected keyboard source when the position changes.
 * **Related:** f-20261115-13 (arrow keys on the grid navigate the game during keyboard move entry, a different trigger for a move made in a changed position). The picker's `aria-modal` already blocks arrow hotkeys, but not the wheel.
 * **Found by:** Grok Bot, mouse-wheel navigation with pending move sweep
+* **Closed (drain, 2026-11-17):** `Board.tsx` now keys the pending promotion and the keyboard move source to the position they were started in (`position` path plus `currentNode.fen`, the same idea as `PuzzleBoardSurface`'s stored FEN). A render-time state adjustment clears both when that key changes. Wheel, notation or any other navigation therefore closes the picker, and a later choice can play nothing. Commit 955952c54. Regression tests in `Board.test.tsx`: "wheel navigation closes the promotion picker and a later choice plays nothing" (a real wheel event with board scroll on, back and forward, then confirm plays no move) and "navigation drops a selected keyboard source". Both fail with the `Board.tsx` change reverted. Rejected: only stopping wheel propagation inside the picker, which leaves notation clicks and engine-line navigation open. Rejected: the FEN alone, which cannot tell transposed nodes with identical FENs apart.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"488247174c604db2538dd14f85f4fc5d452ef32a7b5d7f48855607ae1cf2920d","header_sha256":"ac2f7a5aba9ad6267ca0fbfbd2cfcd1e9aee1d19a585a0fa91ff2270786c8eab","header_status":"handled","input_sha256":"c8fb5143336d7156f71606db50fc94cc35a3ade7de00a21ebab3e3a8da221a2f","kind":"mutation-receipt","operation":"6c2e64681011318772ec19b4267b8ba58fadf302d7f85a6a3ffd92ec206b5a40","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-14"],"target":"f-20261115-14","v":1} -->
 
 ---
 
