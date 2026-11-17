@@ -968,6 +968,9 @@ test("board-keyboard: opens analysis and exposes a keyboard-operable board", asy
     await page.keyboard.press("z");
     const showEvaluation = page.getByRole("button", { name: "Show evaluation", exact: true });
     await assertNothingClipped(showEvaluation, { mode: "reachable" });
+    // The stacked layout's open bar is 8px wide; the collapsed column widens to hold the button.
+    await page.setViewportSize({ width: 500, height: 720 });
+    await assertNothingClipped(showEvaluation, { mode: "reachable" });
     await showEvaluation.click();
     await expect(showEvaluation).toHaveCount(0);
 });

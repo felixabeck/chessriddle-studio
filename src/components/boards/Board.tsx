@@ -75,6 +75,10 @@ const LARGE_BRUSH = 11;
 const MEDIUM_BRUSH = 7.5;
 const SMALL_BRUSH = 4;
 const BAR_HEIGHT = "1.9rem";
+const EVAL_WIDTH = "var(--board-eval-width, 25px)";
+// The collapsed bar's reopen button. Its column is never narrower, since the board clips what
+// passes the column's edge: an 8px stacked column cut the chevron's left side.
+const SHOW_EVAL_BUTTON_SIZE = "1rem";
 const VISUALLY_HIDDEN_STYLE = {
   position: "absolute",
   width: 1,
@@ -225,6 +229,7 @@ function Board({
   const keyMap = useAtomValue(keyMapAtom);
   useHotkeys(keyMap.SWAP_ORIENTATION.keys, () => toggleOrientation(), backgroundHotkeyOptions);
   const [evalOpen, setEvalOpen] = useAtom(useTabAtom(evalOpenFamily));
+  const evalColumnWidth = evalOpen ? EVAL_WIDTH : `max(${EVAL_WIDTH}, ${SHOW_EVAL_BUTTON_SIZE})`;
 
   async function makeMove(move: NormalMove) {
     if (!pos) return;
@@ -563,7 +568,10 @@ function Board({
           >
             {showComments && annotations.length > 0 && currentNode.move && square !== undefined && (
               <Box
-                style={{ paddingLeft: "var(--board-annotation-offset, 2.5rem)" }}
+                style={{
+                  // The offset counts the open bar's width; a collapsed column can be wider.
+                  paddingLeft: `calc(var(--board-annotation-offset, 2.5rem) + ${evalColumnWidth} - ${EVAL_WIDTH})`,
+                }}
                 w="100%"
                 h="100%"
                 pos="absolute"
@@ -580,14 +588,14 @@ function Board({
             <Box
               h="100%"
               style={{
-                width: "var(--board-eval-width, 25px)",
+                width: evalColumnWidth,
               }}
             >
               {!evalOpen && (
                 <Center h="100%" w="100%">
                   <IconAction
                     label={t("Board.Action.ShowEvaluation", { defaultValue: "Show evaluation" })}
-                    size="1rem"
+                    size={SHOW_EVAL_BUTTON_SIZE}
                     onClick={() => setEvalOpen(true)}
                     onContextMenu={(e: MouseEvent<HTMLButtonElement>) => {
                       setEvalOpen(true);
