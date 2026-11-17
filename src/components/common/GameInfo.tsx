@@ -1,8 +1,18 @@
-import { Box, Group, Select, SimpleGrid, Text } from "@mantine/core";
+import {
+  Box,
+  Combobox,
+  Group,
+  InputBase,
+  OptionsDropdown,
+  Select,
+  SimpleGrid,
+  Text,
+  useCombobox,
+} from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import cx from "clsx";
 import dayjs from "dayjs";
-import { memo, useContext, useState } from "react";
+import { memo, useContext, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
@@ -297,22 +307,13 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             <label className={classes.visuallyHidden} htmlFor="game-result">
               {t("GameInfo.Result")}
             </label>
-            <Select
-              id="game-result"
-              readOnly={disabled}
-              allowDeselect={false}
-              data={["1-0", "0-1", "1/2-1/2", "*"]}
+            <ResultField
               value={headers.result}
-              variant="unstyled"
-              rightSection={null}
-              rightSectionWidth={0}
-              styles={{
-                input: { textAlign: "center" },
-              }}
+              readOnly={disabled}
               onChange={(result) =>
                 setHeaders({
                   ...headers,
-                  result: result as Outcome,
+                  result,
                 })
               }
             />
@@ -342,6 +343,86 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
         </SimpleGrid>
       )}
     </Box>
+  );
+}
+
+const RESULT_OPTIONS = (["1-0", "0-1", "1/2-1/2", "*"] satisfies Outcome[]).map((result) => ({
+  value: result,
+  label: result,
+}));
+
+/**
+ * The result picker. Keyboard focus (Tab) opens the list with the current result active, so
+ * Enter or the arrow keys pick it; leaving the field closes the list unchanged. Pointer focus
+ * keeps the plain click toggle, otherwise a click would open the list on focus and shut it again.
+ */
+function ResultField({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: Outcome;
+  readOnly: boolean;
+  onChange: (result: Outcome) => void;
+}) {
+  const pointerFocus = useRef(false);
+  const combobox = useCombobox({
+    onDropdownOpen: () => combobox.updateSelectedOptionIndex("active"),
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
+
+  return (
+    <Combobox
+      store={combobox}
+      readOnly={readOnly}
+      onOptionSubmit={(next) => {
+        onChange(next as Outcome);
+        combobox.closeDropdown();
+      }}
+    >
+      <Combobox.Target targetType="button" withExpandedAttribute>
+        <InputBase
+          id="game-result"
+          role="combobox"
+          readOnly
+          pointer={!readOnly}
+          variant="unstyled"
+          classNames={{ input: classes.resultInput }}
+          value={value}
+          onPointerDown={() => {
+            pointerFocus.current = true;
+          }}
+          onFocus={() => {
+            if (!pointerFocus.current && !readOnly) combobox.openDropdown("keyboard");
+            pointerFocus.current = false;
+          }}
+          onClick={() => {
+            if (!readOnly) combobox.toggleDropdown();
+          }}
+          onBlur={() => {
+            // A press on the already focused field fires no focus event, so clear it here.
+            pointerFocus.current = false;
+            combobox.closeDropdown();
+          }}
+        />
+      </Combobox.Target>
+      <OptionsDropdown
+        data={RESULT_OPTIONS}
+        hidden={readOnly}
+        value={value}
+        withCheckIcon
+        checkIconPosition="left"
+        withScrollArea={false}
+        filter={undefined}
+        search={undefined}
+        limit={undefined}
+        maxDropdownHeight={undefined}
+        unstyled={undefined}
+        labelId={undefined}
+        aria-label={undefined}
+        scrollAreaProps={undefined}
+      />
+    </Combobox>
   );
 }
 

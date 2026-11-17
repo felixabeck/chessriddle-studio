@@ -45,11 +45,16 @@
 
 .input:focus-visible,
 .textInput:focus-visible,
+.resultInput:focus-visible,
 .eloInput:focus-visible,
 .roundInput:focus-visible,
 .colorHover:focus-visible {
   outline: 3px solid var(--mantine-primary-color-filled);
   outline-offset: 2px;
+}
+
+.resultInput {
+  text-align: center;
 }
 
 .textInput:disabled {

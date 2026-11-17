@@ -326,3 +326,117 @@ test("full layout names every header field", async () => {
     expect(host.querySelector(`input[aria-label="${label}"]`)).not.toBeNull();
   }
 });
+
+function resultField() {
+  return host.querySelector<HTMLInputElement>("#game-result")!;
+}
+
+function resultListOpen() {
+  return resultField().getAttribute("aria-expanded") === "true";
+}
+
+function checkedResultOption() {
+  return document.body.querySelector('[role="option"][data-checked]')?.textContent;
+}
+
+function selectedResultOption() {
+  return document.body.querySelector('[role="option"][data-combobox-selected]')?.textContent;
+}
+
+// jsdom has no scrollIntoView; Mantine calls it while moving the active option.
+function stubScrollIntoView() {
+  const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  Element.prototype.scrollIntoView = () => {};
+  return () => {
+    if (original) Object.defineProperty(Element.prototype, "scrollIntoView", original);
+    else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  };
+}
+
+async function pressResultKey(code: string) {
+  const restore = stubScrollIntoView();
+  try {
+    await act(async () => {
+      resultField().dispatchEvent(new KeyboardEvent("keydown", { code, key: code, bubbles: true }));
+    });
+  } finally {
+    restore();
+  }
+}
+
+test("Tab focus on the result opens the list with the current result active", async () => {
+  store.getState().setHeaders({ ...defaultTree().headers, result: "0-1" });
+  await act(async () => root.render(<Editor />));
+  expect(resultListOpen()).toBe(false);
+
+  await act(async () => resultField().focus());
+  expect(resultListOpen()).toBe(true);
+  expect(checkedResultOption()).toBe("0-1");
+  // Mantine anchors the keyboard cursor on the checked option one tick after opening.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  await pressResultKey("ArrowDown");
+  expect(selectedResultOption()).toBe("1/2-1/2");
+  await pressResultKey("Enter");
+  expect(store.getState().headers.result).toBe("1/2-1/2");
+  expect(resultListOpen()).toBe(false);
+});
+
+test("leaving the result field closes the list without changing the result", async () => {
+  store.getState().setHeaders({ ...defaultTree().headers, result: "1-0" });
+  await act(async () => root.render(<Editor />));
+  await act(async () => resultField().focus());
+  expect(resultListOpen()).toBe(true);
+
+  await pressResultKey("ArrowDown");
+  await act(async () => resultField().blur());
+  expect(resultListOpen()).toBe(false);
+  expect(store.getState().headers.result).toBe("1-0");
+});
+
+test("a mouse press on the result opens the list once instead of toggling it shut", async () => {
+  await act(async () => root.render(<Editor />));
+  await act(async () => {
+    resultField().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    resultField().focus();
+    resultField().click();
+  });
+  expect(resultListOpen()).toBe(true);
+
+  await act(async () => resultField().click());
+  expect(resultListOpen()).toBe(false);
+  expect(document.activeElement).toBe(resultField());
+
+  // The press set the pointer flag on a focused field; leaving must clear it so the next Tab opens.
+  await act(async () => resultField().blur());
+  await act(async () => resultField().focus());
+  expect(resultListOpen()).toBe(true);
+});
+
+test("a read-only result never opens the list", async () => {
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={defaultTree().headers} />
+      </MantineProvider>,
+    ),
+  );
+  await act(async () => resultField().focus());
+  await act(async () => resultField().click());
+  await pressResultKey("ArrowDown");
+  expect(resultListOpen()).toBe(false);
+  expect(resultField().value).toBe("*");
+});
+
+test("Enter and Space reopen the result list after Escape closed it", async () => {
+  await act(async () => root.render(<Editor />));
+  await act(async () => resultField().focus());
+  expect(resultListOpen()).toBe(true);
+  await pressResultKey("Escape");
+  expect(resultListOpen()).toBe(false);
+  await pressResultKey("Enter");
+  expect(resultListOpen()).toBe(true);
+  await pressResultKey("Escape");
+  await pressResultKey("Space");
+  expect(resultListOpen()).toBe(true);
+});

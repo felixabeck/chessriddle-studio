@@ -171,6 +171,35 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     await expect(page).toHaveScreenshot("saved-to-database.png");
 });
 
+test("Tab from White Elo opens the result list with a visible focus outline", async ({
+    page,
+    mockScenario,
+}) => {
+    await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
+    await mockScenario({ commands: filesWorkspaceCommands([[]], gameOpeningCommands) });
+    await page.goto("/library");
+    await selectFilesTreeRow(page, gameOpeningFixture.databaseTitle);
+    await page.getByRole("button", { name: "New game", exact: true }).click();
+    await page.getByRole("tab", { name: "Info", exact: true }).click();
+    const whiteElo = page.getByLabel("White Elo", { exact: true });
+    await whiteElo.fill("2077");
+    await page.keyboard.press("Tab");
+    const result = page.getByLabel("Result", { exact: true });
+    await expect(result).toBeFocused();
+    await expect(result).toHaveAttribute("aria-expanded", "true");
+    expect(await result.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe(
+        "solid",
+    );
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter");
+    await expect(result).toHaveValue("1/2-1/2");
+    await expect(result).toHaveAttribute("aria-expanded", "false");
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Black Elo", { exact: true })).toBeFocused();
+    await expect(result).toHaveValue("1/2-1/2");
+    await expect(result).toHaveAttribute("aria-expanded", "false");
+});
+
 test("linked collection New game appends to its PGN without inserting into the index", async ({
     page,
     mockScenario,
