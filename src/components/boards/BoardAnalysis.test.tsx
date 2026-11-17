@@ -1432,6 +1432,31 @@ describe("BoardAnalysis", () => {
     },
   );
 
+  test("a follow-up autosave queued behind a manual save that cleaned the tree does not rewrite it", async () => {
+    let resolveWrite!: (written: unknown) => void;
+    mocks.writeGame.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveWrite = resolve;
+      }),
+    );
+    await startAutosave();
+    expect(mocks.writeGame).toHaveBeenCalledOnce();
+    await act(async () => {
+      treeStore.getState().setComment("Edit before the manual save");
+      latestSaveHotkey()();
+    });
+    await act(async () => {
+      resolveWrite({ stamp: "b".repeat(64), revision: "r1" });
+    });
+    await vi.waitFor(() => expect(treeStore.getState().dirty).toBe(false));
+    expect(mocks.writeGame).toHaveBeenCalledTimes(2);
+    expect(mocks.writeGame.mock.calls[1]?.[2]).toContain("Edit before the manual save");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(mocks.writeGame).toHaveBeenCalledTimes(2);
+  });
+
   test("a clean autosave ends a failure streak, so the next failure is reported again", async () => {
     const failure = { tag: "backend-error", category: "io", message: "Autosave failed" };
     mocks.writeGame

@@ -1012,6 +1012,8 @@ type SaveArguments = {
     getTab: (tabId: string) => Tab | undefined;
     store: StoreApi<TreeStoreState>;
     isUserSave?: boolean;
+    /** An autosave queued behind another save skips when that save already left the tree clean. */
+    skipIfClean?: boolean;
 };
 
 export function saveToDatabase(
@@ -1371,6 +1373,8 @@ export function saveToFile(args: SaveArguments): Promise<SaveResult> {
             (!pendingStore && !sameOrigin(current.gameOrigin, owner.gameOrigin))
         )
             return Promise.resolve<SaveResult>("superseded");
+        if (args.skipIfClean && !args.store.getState().dirty)
+            return Promise.resolve<SaveResult>("cancelled");
         return saveToFileNow({ ...args, tab: pendingStore ? current : owner });
     };
     const earlierSaves = [...flight.saves];

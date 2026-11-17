@@ -86,6 +86,8 @@ function BoardAnalysis() {
     [t],
   );
 
+  // Autosave reports a failure streak once; a clean tree ends the streak. This effect only
+  // resets that notice, `useAutoSave` below decides when to write.
   const autoSaveFailureShown = useRef(false);
   useEffect(() => {
     if (!dirty) autoSaveFailureShown.current = false;
@@ -98,10 +100,9 @@ function BoardAnalysis() {
         tab: currentTab,
         store,
         isUserSave,
+        skipIfClean: !isUserSave,
       });
       if (typeof result === "object" && result.status === "failed") {
-        // Autosave retries once per later edit; a failure streak is reported once, until the
-        // tree is clean again.
         if (isUserSave || !autoSaveFailureShown.current) notifyError(result.error);
         if (!isUserSave && errorUnlessCancelled(result.error)) autoSaveFailureShown.current = true;
       } else if (isUserSave && result === "superseded") {
