@@ -30,6 +30,7 @@ import {
   buildFromTree,
   classifyPracticeAnswer,
   getStats,
+  inScopeCards,
   resolvePracticeCard,
   syncDeck,
   updateCardPerformance,
@@ -922,7 +923,7 @@ function PracticePanel() {
                             justify="space-between"
                             rightSection={
                               <Badge size="sm" color="gray">
-                                {deck.positions.length}
+                                {inScopeCards(deck.positions).length}
                               </Badge>
                             }
                           >

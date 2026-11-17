@@ -9,6 +9,7 @@ import {
     classifyPracticeAnswer,
     getCardStatus,
     getStats,
+    inScopeCards,
     isInPracticeScope,
     resolvePracticeCard,
     syncDeck,
@@ -153,7 +154,7 @@ test("non-empty Start excludes sibling branches from practice", () => {
     expect(buildFromTree(root, "white", [0, 0]).map(({ answer }) => answer)).toEqual(["Nf3"]);
 });
 
-test("setting Start removes a sibling-branch card during deck synchronization", () => {
+test("setting Start flags a sibling-branch card during deck synchronization", () => {
     const root = openingLine(["e4", "e5", "Nf3"]);
     root.children.push(...openingLine(["d4", "d5", "c4"]).children);
     const existing = buildFromTree(root, "white", []);
@@ -161,9 +162,10 @@ test("setting Start removes a sibling-branch card during deck synchronization", 
 
     const result = syncDeck(existing, root, "white", [0, 0]);
 
-    expect(result.positions.map(({ answer }) => answer)).toEqual(["Nf3"]);
+    expect(result.positions.map(({ answer }) => answer)).toEqual(["Nf3", "c4"]);
     expect(result.positions[0].card).toBe(existing[0].card);
-    expect(result).toMatchObject({ added: 0, removed: 1, updated: 0 });
+    expect(result.positions[1]).toEqual({ ...existing[1], outOfScope: true });
+    expect(result).toMatchObject({ added: 0, removed: 0, updated: 1 });
 });
 
 test("deck synchronization retains another tab's rated Bb5 card lazily", () => {
@@ -458,6 +460,106 @@ test.each(identityRefreshes)(
         });
     },
 );
+
+const ruyLopez = ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4"] as const;
+const dueInTwentyDays = new Date(statusNow.getTime() + 20 * 24 * 60 * 60 * 1000);
+
+function scheduleWhiteCards(root: TreeNode) {
+    const white = buildFromTree(root, "white", []);
+    for (const position of white) {
+        position.card = { ...position.card, reps: 5, stability: 30, due: dueInTwentyDays };
+    }
+    return white;
+}
+
+test("flipping orientation keeps the other side's cards out of scope with their schedule", () => {
+    const root = openingLine([...ruyLopez]);
+    const white = scheduleWhiteCards(root);
+    const blackAnswers = buildFromTree(root, "black", []).map(({ answer }) => answer);
+
+    const flipped = syncDeck(white, root, "black", []);
+
+    expect(flipped).toMatchObject({ added: 3, removed: 0 });
+    const flagged = flipped.positions.filter((position) => position.outOfScope);
+    expect(flagged.map(({ answer }) => answer)).toEqual(white.map(({ answer }) => answer));
+    for (const position of flagged) {
+        expect(position.card.reps).toBe(5);
+        expect(position.card.stability).toBe(30);
+        expect(position.card.due).toEqual(dueInTwentyDays);
+    }
+    expect(inScopeCards(flipped.positions).map(({ answer }) => answer)).toEqual(blackAnswers);
+
+    const restored = syncDeck(flipped.positions, root, "white", []);
+    expect(restored).toMatchObject({ added: 0, removed: 0 });
+    const inScope = inScopeCards(restored.positions);
+    expect(inScope.map(({ answer, card, outOfScope }) => ({ answer, card, outOfScope }))).toEqual(
+        white.map(({ answer, card }) => ({ answer, card, outOfScope: undefined })),
+    );
+    for (const position of inScope) {
+        expect(position).not.toHaveProperty("outOfScope");
+        expect(position.card.reps).toBe(5);
+        expect(position.card.due).toEqual(dueInTwentyDays);
+    }
+    expect(
+        restored.positions.filter((position) => position.outOfScope).map(({ answer }) => answer),
+    ).toEqual(blackAnswers);
+});
+
+test("narrowing Start flags earlier cards and widening restores their schedule", () => {
+    const root = openingLine([...ruyLopez]);
+    const all = scheduleWhiteCards(root);
+
+    const narrowed = syncDeck(all, root, "white", [0, 0, 0, 0]);
+    expect(narrowed).toMatchObject({ removed: 0 });
+    const e4Card = narrowed.positions.find((position) => position.answer === "Nf3");
+    expect(e4Card?.outOfScope).toBe(true);
+    expect(e4Card?.card.reps).toBe(5);
+    expect(e4Card?.card.due).toEqual(dueInTwentyDays);
+
+    const widened = syncDeck(narrowed.positions, root, "white", []);
+    const restored = widened.positions.find((position) => position.answer === "Nf3");
+    expect(widened).toMatchObject({ added: 0, removed: 0 });
+    expect(restored).not.toHaveProperty("outOfScope");
+    expect(restored?.card.reps).toBe(5);
+    expect(restored?.card.due).toEqual(dueInTwentyDays);
+});
+
+test("removing a line from the tree still drops its card", () => {
+    const root = openingLine([...ruyLopez]);
+    const existing = scheduleWhiteCards(root);
+    const shorter = openingLine(["e4", "e5", "Nf3", "Nc6", "Bb5"]);
+
+    const result = syncDeck(existing, shorter, "white", []);
+
+    expect(result.removed).toBeGreaterThan(0);
+    expect(result.positions.map(({ answer }) => answer)).toEqual(
+        buildFromTree(shorter, "white", []).map(({ answer }) => answer),
+    );
+    expect(result.positions.some((position) => position.answer === "Ba4")).toBe(false);
+});
+
+test("getStats ignores out-of-scope cards", () => {
+    const positions = buildFromTree(openingLine([...ruyLopez]), "white", []);
+    positions[0].card = { ...positions[0].card, reps: 2, due: statusNow };
+    positions[1].card = {
+        ...positions[1].card,
+        reps: 3,
+        due: new Date(statusNow.getTime() + 60_000),
+    };
+    positions[1].outOfScope = true;
+    positions[2].outOfScope = true;
+    const before = structuredClone(positions);
+
+    expect(getStats(positions, statusNow)).toEqual({
+        unseen: 0,
+        due: 1,
+        learned: 1,
+        total: 1,
+        nextDue: null,
+    });
+    expect(inScopeCards(positions)).toEqual([positions[0]]);
+    expect(positions).toEqual(before);
+});
 
 test("learned statistics include due reviews and keep the existing status counts", () => {
     const positions = buildFromTree(

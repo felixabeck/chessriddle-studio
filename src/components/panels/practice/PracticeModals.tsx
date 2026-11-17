@@ -9,7 +9,7 @@ import { formatMoveNumber } from "@/utils/format";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { IconAction } from "@/components/common/IconAction";
-import { getCardStatus, resolvePracticeCard } from "@/components/files/opening";
+import { getCardStatus, inScopeCards, resolvePracticeCard } from "@/components/files/opening";
 import {
   loadPracticeReviews,
   PRACTICE_LOG_PAGE_SIZE,
@@ -69,6 +69,7 @@ export function PositionsModal({
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
   const headers = useStore(store, (s) => s.headers);
+  const positions = inScopeCards(deck.positions);
   return (
     <AppModal
       opened={open}
@@ -76,9 +77,9 @@ export function PositionsModal({
       size="xl"
       title={<b>{t("Board.Practice.Positions")}</b>}
     >
-      {deck.positions.length === 0 && <Text>{t("Board.Practice.NoPositionsYet")}</Text>}
+      {positions.length === 0 && <Text>{t("Board.Practice.NoPositionsYet")}</Text>}
       <SimpleGrid cols={2}>
-        {deck.positions.map((c) => {
+        {positions.map((c) => {
           const resolved = resolveCardInTree(root, headers, c.fen);
           if (!resolved) return null;
           const node = resolved.frame.node;

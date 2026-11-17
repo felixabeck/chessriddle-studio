@@ -415,6 +415,23 @@ describe("practice queue", () => {
         });
         expect(buildPracticeQueue(positions, "anki", 1, now).reappendedPositionKeys).toEqual([]);
     });
+
+    it("ignores out-of-scope cards and does not let them consume the new-card limit", () => {
+        const withFlag: Position[] = [
+            { ...positions[0], outOfScope: true },
+            positions[1],
+            { ...positions[3], outOfScope: true },
+            positions[4],
+        ];
+        expect(buildPracticeQueue(withFlag, "anki", 1, now)).toEqual({
+            remainingPositionKeys: [keys[1], keys[4]],
+            reappendedPositionKeys: [],
+        });
+        expect(buildPracticeQueue(withFlag, "full", 0, now).remainingPositionKeys).toEqual([
+            keys[1],
+            keys[4],
+        ]);
+    });
 });
 
 describe("practice replay", () => {

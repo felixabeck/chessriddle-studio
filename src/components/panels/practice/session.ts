@@ -22,7 +22,8 @@ export function buildPracticeQueue(
 ): PracticeQueue {
     let newCount = 0;
     const remainingPositionKeys = positions
-        .filter(({ card }) => {
+        .filter(({ card, outOfScope }) => {
+            if (outOfScope) return false;
             if (mode === "full") return true;
             if (card.reps > 0) return new Date(card.due) <= now;
             if (newCount >= newPerSession) return false;

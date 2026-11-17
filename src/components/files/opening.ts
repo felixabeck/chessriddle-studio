@@ -18,13 +18,20 @@ export const positionSchema = z.object({
     fen: z.string(),
     answer: z.string(),
     card: z.object({}).passthrough(),
+    outOfScope: z.literal(true).optional(),
 });
 
 export type Position = {
     fen: string;
     answer: string;
     card: Card;
+    /** A card whose position is still in the tree but outside the current (orientation, Start) practice scope; it keeps its schedule and is excluded from practice and stats until the scope includes it again (f-20261115-21). */
+    outOfScope?: true;
 };
+
+export function inScopeCards(positions: readonly Position[]): Position[] {
+    return positions.filter((position) => !position.outOfScope);
+}
 
 /** Empty Start excludes the root. Otherwise, practice includes Start and its descendants. */
 export function isInPracticeScope(position: number[], start: number[]): boolean {
@@ -85,14 +92,15 @@ export function getCardStatus(card: Card, now: Date = new Date()): CardStatus {
 }
 
 export function getStats(positions: Position[], now: Date = new Date()) {
+    const scoped = inScopeCards(positions);
     const stats: Stats = {
         unseen: 0,
         due: 0,
         learned: 0,
         nextDue: null,
-        total: positions.length,
+        total: scoped.length,
     };
-    for (const card of positions) {
+    for (const card of scoped) {
         const status = getCardStatus(card.card, now);
         if (status === "unseen" || status === "due") stats[status]++;
         if (card.card.reps > 0) stats.learned++;
@@ -160,6 +168,14 @@ export function syncDeck(
     retained?: () => ReadonlySet<string>,
 ): { positions: Position[]; added: number; removed: number; updated: number; reordered: boolean } {
     const freshPositions = buildFromTree(tree, color, start);
+    // Empty Start covers every non-root position; the root is never a card. Union of both
+    // orientations is every board state the tree can still practise under any scope.
+    const anyScopeBoardStates = new Set<string>();
+    for (const scopeColor of ["white", "black"] as const) {
+        for (const pos of buildFromTree(tree, scopeColor, [])) {
+            anyScopeBoardStates.add(getBoardState(pos.fen));
+        }
+    }
 
     const existingByFen = new Map<string, Position>();
     for (const pos of existing) {
@@ -170,25 +186,40 @@ export function syncDeck(
     // A retained card whose answer moved (a promoted variation) or whose full FEN changed (the same
     // board state reached at another move number) is a change to persist even though no position
     // was added or removed. The rebuilt FEN is carried forward so the persisted card stays equal
-    // to the tree's current FEN; lookups go through `getBoardState` (f-20260922-02).
+    // to the tree's current FEN; lookups go through `getBoardState` (f-20260922-02). Restoring a
+    // card into the current (orientation, Start) scope drops `outOfScope` the same way (f-20261115-21).
     let updated = 0;
     const merged: Position[] = [];
+    const mergedBoardStates = new Set<string>();
     for (const pos of freshPositions) {
-        const prev = existingByFen.get(getBoardState(pos.fen));
+        const boardState = getBoardState(pos.fen);
+        const prev = existingByFen.get(boardState);
         if (prev) {
-            if (prev.answer !== pos.answer || prev.fen !== pos.fen) updated++;
-            merged.push({ ...prev, fen: pos.fen, answer: pos.answer });
+            const { outOfScope, ...rest } = prev;
+            if (outOfScope || prev.answer !== pos.answer || prev.fen !== pos.fen) updated++;
+            merged.push({ ...rest, fen: pos.fen, answer: pos.answer });
         } else {
             merged.push(pos);
             added++;
         }
+        mergedBoardStates.add(boardState);
     }
 
-    // Each retained fresh position keeps one existing card, discarding equivalent duplicates.
-    let removed = existing.length - (freshPositions.length - added);
+    // Cards still in the tree for another orientation or Start stay in the deck, flagged, with
+    // their schedule. Deduplicate by board state (first remaining card wins).
+    for (const pos of existing) {
+        const boardState = getBoardState(pos.fen);
+        if (mergedBoardStates.has(boardState) || !anyScopeBoardStates.has(boardState)) continue;
+        merged.push({ ...pos, outOfScope: true });
+        mergedBoardStates.add(boardState);
+        if (!pos.outOfScope) updated++;
+    }
+
+    // Each merged board state keeps one existing card, discarding equivalent duplicates.
+    // `removed` counts only cards absent from the tree for every scope (and not retained).
+    let removed = existing.length - (merged.length - added);
     if (removed > 0 && retained) {
         const retainedBoardStates = retained();
-        const mergedBoardStates = new Set(merged.map((pos) => getBoardState(pos.fen)));
         for (const pos of existing) {
             const boardState = getBoardState(pos.fen);
             if (!mergedBoardStates.has(boardState) && retainedBoardStates.has(boardState)) {
@@ -199,7 +230,7 @@ export function syncDeck(
         }
     }
 
-    // Retained cards absent from this tree follow the tree-ordered cards in their existing order.
+    // Out-of-scope and retained cards follow the tree-ordered in-scope cards in existing order.
     // Reordering the same cards is also a change to persist (full-repertoire order, due-date ties).
     const reordered =
         added === 0 &&
