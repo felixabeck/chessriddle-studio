@@ -3,7 +3,29 @@
 import { beforeAll, describe, expect, test } from "vitest";
 import { getExplorerQueriesInTimezone } from "../tests/explorerQueries.mjs";
 import { INITIAL_FEN } from "chessops/fen";
-import { getLichessGamesQueryParams, getMasterGamesQueryParams } from "./explorer";
+import {
+    getLichessGamesQueryParams,
+    getMasterGamesQueryParams,
+    lichessGamesOptionsSchema,
+} from "./explorer";
+
+describe("lichessGamesOptionsSchema", () => {
+    test("repairs a stored null colour to White and keeps the other options", () => {
+        expect(
+            lichessGamesOptionsSchema.parse({
+                ratings: [2200, 2500],
+                speeds: ["blitz"],
+                player: "DrNykterstein",
+                color: null,
+            }),
+        ).toEqual({
+            ratings: [2200, 2500],
+            speeds: ["blitz"],
+            player: "DrNykterstein",
+            color: "white",
+        });
+    });
+});
 
 describe("getLichessGamesQueryParams", () => {
     test.each(["white", "black"] as const)(

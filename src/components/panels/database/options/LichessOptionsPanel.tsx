@@ -147,8 +147,10 @@ const LichessOptionsPanel = () => {
             { label: t("Fen.Black"), value: "black" },
           ]}
           value={options.color}
-          onChange={(v) => setOptions({ ...options, color: v as "white" | "black" })}
-          clearable={false}
+          onChange={(v) => {
+            if (v === "white" || v === "black") setOptions({ ...options, color: v });
+          }}
+          allowDeselect={false}
         />
       </Group>
     </Stack>

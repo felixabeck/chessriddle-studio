@@ -50,7 +50,9 @@ export const lichessGamesOptionsSchema = z.object({
     topGames: z.number().min(0).optional(),
     recentGames: z.number().min(0).optional(),
     player: z.string().optional(),
-    color: z.enum(["white", "black"]),
+    // A colour stored as null by an earlier deselect bug falls back to White instead of
+    // discarding every other stored option.
+    color: z.enum(["white", "black"]).catch("white"),
 });
 
 export type LichessGamesOptions = z.infer<typeof lichessGamesOptionsSchema>;

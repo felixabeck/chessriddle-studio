@@ -165,12 +165,11 @@ function LocalOptionsPanel({
               },
             ]}
             value={options.result}
-            onChange={(v) =>
-              setOptions({
-                ...options,
-                result: v as "any" | "whitewon" | "draw" | "blackwon",
-              })
-            }
+            onChange={(v) => {
+              if (v === "any" || v === "whitewon" || v === "draw" || v === "blackwon")
+                setOptions({ ...options, result: v });
+            }}
+            allowDeselect={false}
           />
         </Stack>
       </SimpleGrid>

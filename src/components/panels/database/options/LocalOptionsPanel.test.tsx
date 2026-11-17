@@ -162,6 +162,19 @@ describe("LocalOptionsPanel explorer filters", () => {
     expect(container.querySelector('[role="slider"][aria-label="Maximum Elo"]')).not.toBeNull();
   });
 
+  test("re-selecting the current Result keeps it instead of storing null", async () => {
+    const result = container.querySelector<HTMLInputElement>(
+      '[role="combobox"][aria-label="Result"]',
+    )!;
+    await act(async () => result.click());
+    const any = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (option) => option.textContent === "Board.Database.Local.Result.Any",
+    );
+    expect(any).toBeDefined();
+    await act(async () => any!.click());
+    expect(store.get(localOptionsFamily(tabId)).result).toBe("any");
+  });
+
   test("clearing a typed From date empties the input and removes the filter", async () => {
     const input = container.querySelector<HTMLInputElement>('[placeholder="Common.StartDate"]')!;
     await act(async () => {
