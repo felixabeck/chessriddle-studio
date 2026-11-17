@@ -537,6 +537,14 @@ test("restore clears the stale source stamp and linked source", async () => {
         sourceStamp: "a".repeat(64),
         appendAttempted: true,
     };
+    Object.assign(tree, {
+        linkedSource: {
+            collection: crypto.randomUUID(),
+            generation: "1",
+            ordinal: 0,
+            stamp: "b".repeat(64),
+        },
+    });
     records.set(id, encodeUnsavedGame({ name: "file game", type: "analysis" }, tree));
     await restoreUnsavedGames(restoreDeps(native));
     const { tabStorage } = await import("@/state/store/tabStorage");
