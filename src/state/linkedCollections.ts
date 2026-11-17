@@ -15,7 +15,6 @@ export function isCollectionConsumer(key: unknown) {
                 "games",
                 "players",
                 "tournaments",
-                "personalDatabases",
                 "personalInfo",
             ].includes(String(key[0])))
     );

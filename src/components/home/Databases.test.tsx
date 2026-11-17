@@ -1,8 +1,9 @@
 import { getDefaultStore } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { SWRConfig } from "swr";
+import { SWRConfig, useSWRConfig, type ScopedMutator } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
 import { recordDatabaseWrite } from "@/platform/databaseWrites";
 import { sessionsAtom } from "@/state/atoms";
 import type { ProgressEvent } from "@/bindings";
@@ -150,10 +151,18 @@ let container: HTMLDivElement;
 let root: Root;
 let progressListener: (event: { payload: ProgressEvent }) => void;
 
+let swrMutate: ScopedMutator;
+
+function CacheHandle() {
+  swrMutate = useSWRConfig().mutate;
+  return null;
+}
+
 async function renderDatabases() {
   await act(async () => {
     root.render(
       <SWRConfig value={{ provider: () => new Map() }}>
+        <CacheHandle />
         <Databases />
       </SWRConfig>,
     );
@@ -1105,12 +1114,13 @@ test("changing session membership refetches the selected player's summary with u
   await act(async () => {
     getDefaultStore().set(sessionsAtom, [bobSession, { ...aliceSession, alias: "Bob" }]);
   });
-  await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalledTimes(2));
   await vi.waitFor(() =>
     expect(mocks.personalCardInfo).toHaveBeenLastCalledWith({
       site_stats_data: [bobRecord, aliceRecord],
     }),
   );
+  // Membership is derived from the shared listing, which an account change does not re-read.
+  expect(mocks.getDatabases).toHaveBeenCalledOnce();
   expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(3);
   expect(mocks.getPlayersGameInfo).toHaveBeenCalledWith(
     expect.any(String),
@@ -1119,6 +1129,49 @@ test("changing session membership refetches the selected player's summary with u
     expect.anything(),
   );
   expect(mocks.personalCardNotice).toHaveBeenLastCalledWith(undefined);
+});
+
+test("a database created after the first listing reaches the selected player on the shared refresh", async () => {
+  const { aliceSession, aliceDb } = setupBobAndAlice();
+  getDefaultStore().set(sessionsAtom, [aliceSession]);
+  mocks.getDatabases.mockResolvedValue({
+    databases: [],
+    unread: [],
+    root: { id: { id: "selection-root" }, kind: "databaseRoot" as const },
+  });
+  const record = {
+    site: "Chess.com",
+    player: "alice",
+    daily: [],
+    colors: [],
+    latest: [],
+    openings: [],
+  };
+  mocks.getPlayersGameInfo.mockResolvedValue({ site_stats_data: [record] });
+
+  await renderDatabases();
+  await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Empty.Title"));
+  expect(mocks.getPlayersGameInfo).not.toHaveBeenCalled();
+
+  // An account download refreshes the shared listing once its database exists.
+  mocks.getDatabases.mockResolvedValue({
+    databases: [aliceDb],
+    unread: [],
+    root: { id: { id: "selection-root" }, kind: "databaseRoot" as const },
+  });
+  await act(async () => {
+    void swrMutate(DATABASE_LIST_KEY);
+  });
+
+  await vi.waitFor(() =>
+    expect(mocks.personalCardInfo).toHaveBeenLastCalledWith({ site_stats_data: [record] }),
+  );
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledWith(
+    expect.any(String),
+    aliceDb.file,
+    7,
+    expect.anything(),
+  );
 });
 
 test("a database listing failure renders a diagnostic-free message and logs the failure", async () => {
@@ -1616,7 +1669,7 @@ test("switching between two players or returning after an aborted fetch does not
 });
 
 test("an in-flight same-handle refetch with a changed game_count shows 0% immediately", async () => {
-  const { bobSession, bobDb } = setupBobAndAlice({ bobGames: 2, includeAlice: false });
+  const { bobDb } = setupBobAndAlice({ bobGames: 2, includeAlice: false });
   mocks.query_players.mockResolvedValue({
     data: [{ id: 7, name: "bob", elo: null }],
     count: 1,
@@ -1647,8 +1700,9 @@ test("an in-flight same-handle refetch with a changed game_count shows 0% immedi
   });
 
   await act(async () => {
-    getDefaultStore().set(sessionsAtom, [{ ...bobSession, updatedAt: 2 }]);
+    void swrMutate(DATABASE_LIST_KEY);
   });
+  await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalledTimes(2));
 
   expect(container.textContent).toContain("Home.Databases.ProcessingGames");
   expect(displayedProgress()).toContain("0%");

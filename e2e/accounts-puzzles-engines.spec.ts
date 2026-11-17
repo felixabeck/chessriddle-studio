@@ -1161,10 +1161,9 @@ for (const corner of [
                     result: { entries: [summaryLichessDatabase, otherDatabase], unread: [] },
                 },
                 get_db_info: {
+                    // One shared listing reads each database once, in listing order.
                     results: [
                         summaryLichessInfo,
-                        summaryLichessInfo,
-                        { ...summaryLichessInfo, filename: otherDatabase.filename },
                         { ...summaryLichessInfo, filename: otherDatabase.filename },
                     ],
                     result: { ...summaryLichessInfo, filename: otherDatabase.filename },
@@ -1339,15 +1338,10 @@ for (const state of ["partial", "failed"] as const) {
                     },
                 },
                 get_db_info: {
-                    // Accounts and the summary read metadata concurrently, each in database order.
-                    // A different interleaving fails the failed-state test loudly because the notice
-                    // would name the same database twice.
-                    results: [
-                        summaryLichessInfo,
-                        summaryLichessInfo,
-                        summaryChessComInfo,
-                        summaryChessComInfo,
-                    ],
+                    // One shared listing reads each database once, in listing order. A different
+                    // order fails the failed-state test loudly because the notice would name the
+                    // same database twice.
+                    results: [summaryLichessInfo, summaryChessComInfo],
                     result: summaryChessComInfo,
                 },
                 get_players: { result: { data: [{ id: 7, name: "alex", elo: 1500 }], count: 1 } },
@@ -1439,12 +1433,8 @@ test("accounts-puzzles-engines: home summary keeps one username on Lichess and C
                 result: { entries: [summaryLichessDatabase, summaryChessComDatabase], unread: [] },
             },
             get_db_info: {
-                results: [
-                    summaryLichessInfo,
-                    summaryLichessInfo,
-                    summaryChessComInfo,
-                    summaryChessComInfo,
-                ],
+                // One shared listing reads each database once, in listing order.
+                results: [summaryLichessInfo, summaryChessComInfo],
                 result: summaryChessComInfo,
             },
             get_players: { result: { data: [{ id: 7, name: "alex", elo: 1500 }], count: 1 } },
@@ -1514,6 +1504,113 @@ function seedDownloadPlayerSession(page: Page) {
         );
     });
 }
+
+test("accounts-puzzles-engines: home summary reads an account's first downloaded database without a restart", async ({
+    page,
+    mockScenario,
+}) => {
+    const file = { id: { id: "first-account-source" }, kind: "fileWorkspace" };
+    const database = { id: { id: "first-account-index" }, kind: "database" };
+    const collection = {
+        id: "33333333-3333-4333-8333-333333333333",
+        name: "First history",
+        file,
+        database,
+        status: "ready",
+        generation: "first",
+        omitted: 0,
+        account: { provider: "chesscom", account: "download-player" },
+        retiredDatabase: null,
+        fetchSinceMs: null,
+    };
+    await page.addInitScript(() => {
+        localStorage.setItem(
+            "file-workspace",
+            JSON.stringify({ id: { id: "account-library" }, kind: "fileWorkspace" }),
+        );
+    });
+    await seedDownloadPlayerSession(page);
+    const scenario = {
+        commands: {
+            linked_collections_supported: { result: true },
+            list_linked_collections: { result: [] },
+            list_workspace_databases: { result: { entries: [], unread: [] } },
+            prepare_account_collection: {
+                result: {
+                    collection,
+                    migrationRequired: false,
+                    destination: { id: "private-account-staging" },
+                    pendingBatch: null,
+                },
+            },
+            import_account_games: {
+                result: {
+                    id: "first-account-import",
+                    request: {
+                        provider: "chesscom",
+                        account: "download-player",
+                        accountHandle: null,
+                        destination: { id: "private-account-staging" },
+                        pendingBatch: null,
+                        sinceMs: null,
+                        target: { kind: "linked", collection: collection.id },
+                    },
+                    progressId: "first-account-download",
+                    attempt: 1,
+                    importing: false,
+                    outcome: { state: "succeeded", result: { collectionNotice: false } },
+                    publication: { handle: file, durability: "Durable" },
+                    committedDatabase: null,
+                    deletionPending: false,
+                },
+            },
+        },
+    } satisfies MockScenario;
+    await mockScenario(scenario);
+    await page.goto("/accounts");
+    // Before the first download the account has no database, so the summary is empty.
+    await expect(page.getByText("No games found", { exact: true })).toBeVisible();
+    await page.evaluate(
+        ({ commands, created }) => {
+            const invoke = window.__TAURI_INTERNALS__.invoke;
+            window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+                const result = await invoke(command, args);
+                if (command === "import_account_games") {
+                    // The import creates the account's first database before the refresh reads.
+                    window.__E2E_TAURI__.configure({ commands: { ...commands, ...created } });
+                    window.__TAURI_INTERNALS__.invoke = invoke;
+                }
+                return result;
+            };
+        },
+        {
+            commands: scenario.commands,
+            created: {
+                list_linked_collections: { result: [collection] },
+                collection_for_database: { result: collection },
+                get_db_info: { result: { ...summaryDatabaseInfo, file: database, game_count: 8 } },
+                get_players: {
+                    result: { data: [{ id: 7, name: "download-player", elo: 1500 }], count: 1 },
+                },
+                get_players_game_info: { result: summaryStatistics },
+            },
+        },
+    );
+    await page.getByRole("button", { name: "Download games", exact: true }).click();
+    await expect(page.getByText("8 / 8", { exact: true })).toBeVisible();
+    // The summary follows the refreshed shared listing and reads the new database at once.
+    await expect
+        .poll(() =>
+            page.evaluate(() =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .filter(({ command }) => command === "get_players_game_info")
+                    .map(({ args }) => (args as { file: unknown }).file),
+            ),
+        )
+        .toEqual([database]);
+    await expect(page.getByText("No games found", { exact: true })).toBeHidden();
+});
 
 test("accounts-puzzles-engines: a linked account downloads privately and appends once with refreshed accumulated counts", async ({
     page,

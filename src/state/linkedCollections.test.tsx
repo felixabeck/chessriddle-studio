@@ -53,7 +53,6 @@ const dataKeys = [
   ["games", handle, {}],
   ["players", handle, {}],
   ["tournaments", handle, {}],
-  ["personalDatabases", []],
   ["personalInfo", "Player", []],
 ] as const;
 
@@ -190,7 +189,6 @@ test("list summaries and individual references share currency checks and all com
     ["games"],
     ["players"],
     ["tournaments"],
-    ["personalDatabases"],
     ["personalInfo"],
   ])
     expect(isCollectionConsumer(key)).toBe(true);

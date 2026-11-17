@@ -12,7 +12,7 @@ import {
 } from "@mantine/core";
 import { DatabaseX } from "lucide-react";
 import { useAtomValue } from "jotai";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { unstable_serialize } from "swr";
 import useSWRImmutable from "swr/immutable";
@@ -25,12 +25,8 @@ import { sessionsAtom } from "@/state/atoms";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
 import { useTauriListener } from "@/platform/useTauriListener";
 import { activeDatabaseViewStore } from "@/state/store/database";
-import {
-  getDatabases,
-  query_players,
-  type ManagedDatabaseInfo,
-  type DatabaseList,
-} from "@/utils/db";
+import { useDatabaseList } from "@/hooks/useDatabaseList";
+import { query_players, type ManagedDatabaseInfo, type DatabaseList } from "@/utils/db";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { findAccountDatabase } from "./accountDatabase";
 import { collectSequential } from "@/utils/collectSequential";
@@ -68,6 +64,48 @@ function sessionAccountDatabase(
     };
   }
   return undefined;
+}
+
+/** Each account's database from the shared listing, owned by every player key that reads it. */
+function personalDatabases(
+  dbs: DatabaseList,
+  sessions: Session[],
+  unavailableLabel: string,
+): PersonalDatabase[] {
+  const keys = sessionPlayerKeys(sessions);
+  const accounts = sessions.flatMap((session, index) => {
+    const account = sessionAccountDatabase(session);
+    return account ? [{ ...account, playerKey: keys[index] }] : [];
+  });
+  const associations = accounts.map((account) => ({
+    ...account,
+    association: findAccountDatabase(dbs, account.provider, account.username),
+  }));
+  const readable: PersonalDatabase[] = dbs.databases.flatMap((db) => {
+    const owners = associations.filter((account) => account.association === db);
+    const account = owners[0];
+    return account
+      ? [{ db, username: account.username, playerKeys: owners.map((owner) => owner.playerKey) }]
+      : [];
+  });
+  const unread: PersonalDatabase[] = associations.flatMap((account, index) => {
+    const issue = account.association;
+    return issue?.type === "unavailable"
+      ? [
+          {
+            db: {
+              type: "unread" as const,
+              filename: issue.filenames.join(", ") || account.username,
+              error: [unavailableLabel, issue.error].filter(Boolean).join(" "),
+              key: `${capabilityKey(dbs.root)}:account:${index}`,
+            },
+            username: account.username,
+            playerKeys: [account.playerKey],
+          },
+        ]
+      : [];
+  });
+  return [...readable, ...unread];
 }
 
 interface PersonalInfo {
@@ -140,69 +178,20 @@ function Databases() {
   const player = players.find(({ key }) => key === selectedKey) ?? players[0];
   const playerKey = player?.key ?? "";
 
-  const databasesKey = sessions.length === 0 ? null : ["personalDatabases", sessions];
-  const databasesOwner = useNativeRequestOwner(databasesKey);
-  const { data: databases, error: databasesError } = useSWRImmutable<PersonalDatabase[]>(
-    databasesKey,
-    () =>
-      databasesOwner!.run(async (signal) => {
-        let dbs: DatabaseList;
-        try {
-          dbs = await getDatabases({ signal });
-        } catch (cause) {
-          if (!signal.aborted && errorUnlessCancelled(cause)) {
-            const failure = safeFailureContext(cause);
-            await logFailureSafely(
-              `personal database listing failed: ${failure.message}`,
-              { operation: "personal database listing", primaryFailure: failure },
-              "Personal database listing logging failed",
-            );
-          }
-          throw cause;
-        }
-        const keys = sessionPlayerKeys(sessions);
-        const accounts = sessions.flatMap((session, index) => {
-          const account = sessionAccountDatabase(session);
-          return account ? [{ ...account, playerKey: keys[index] }] : [];
-        });
-        const associations = accounts.map((account) => ({
-          ...account,
-          association: findAccountDatabase(dbs, account.provider, account.username),
-        }));
-        const readable: PersonalDatabase[] = dbs.databases.flatMap((db) => {
-          const owners = associations.filter((account) => account.association === db);
-          const account = owners[0];
-          return account
-            ? [
-                {
-                  db,
-                  username: account.username,
-                  playerKeys: owners.map((owner) => owner.playerKey),
-                },
-              ]
-            : [];
-        });
-        const unread: PersonalDatabase[] = associations.flatMap((account, index) => {
-          const issue = account.association;
-          return issue?.type === "unavailable"
-            ? [
-                {
-                  db: {
-                    type: "unread" as const,
-                    filename: issue.filenames.join(", ") || account.username,
-                    error: [t("Home.Accounts.HistoryUnavailable"), issue.error]
-                      .filter(Boolean)
-                      .join(" "),
-                    key: `${capabilityKey(dbs.root)}:account:${index}`,
-                  },
-                  username: account.username,
-                  playerKeys: [account.playerKey],
-                },
-              ]
-            : [];
-        });
-        return [...readable, ...unread];
-      }),
+  const { data: listing, error: databasesError } = useDatabaseList(sessions.length > 0);
+  useEffect(() => {
+    if (!databasesError || !errorUnlessCancelled(databasesError)) return;
+    const failure = safeFailureContext(databasesError);
+    void logFailureSafely(
+      `personal database listing failed: ${failure.message}`,
+      { operation: "personal database listing", primaryFailure: failure },
+      "Personal database listing logging failed",
+    );
+  }, [databasesError]);
+  const unavailableLabel = t("Home.Accounts.HistoryUnavailable");
+  const databases = useMemo(
+    () => (listing ? personalDatabases(listing, sessions, unavailableLabel) : undefined),
+    [listing, sessions, unavailableLabel],
   );
 
   useCollectionCurrencies(
