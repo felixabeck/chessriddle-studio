@@ -1,9 +1,12 @@
 import {
+  Autocomplete,
   Box,
   Combobox,
+  type ComboboxItem,
   Group,
   InputBase,
   OptionsDropdown,
+  type OptionsFilter,
   Select,
   SimpleGrid,
   Text,
@@ -449,17 +452,64 @@ function TerminationField({
   );
   const setTermination = useStore(store, (state) => state.setTermination);
   if (!hasGameEnd) return null;
+  // Literal keys, one per suggestion, so i18n extraction keeps every hint.
+  const hints: Record<TerminationSuggestion, string> = {
+    Normal: t("GameInfo.TerminationHint.Normal"),
+    "Time forfeit": t("GameInfo.TerminationHint.TimeForfeit"),
+    Abandoned: t("GameInfo.TerminationHint.Abandoned"),
+    Adjudication: t("GameInfo.TerminationHint.Adjudication"),
+    "Rules infraction": t("GameInfo.TerminationHint.RulesInfraction"),
+    Unterminated: t("GameInfo.TerminationHint.Unterminated"),
+  };
   return (
-    <InlineInput
-      className={classes.input}
-      style={{ width: "100%" }}
+    <Autocomplete
+      variant="unstyled"
+      w="100%"
+      classNames={{ input: classes.input }}
       aria-label={t("GameInfo.Termination")}
       placeholder={t("GameInfo.Termination")}
-      disabled={disabled}
+      readOnly={disabled}
       value={termination ?? ""}
-      onChange={(event) => setTermination(event.currentTarget.value)}
+      onChange={setTermination}
+      data={TERMINATION_SUGGESTIONS}
+      filter={filterTerminationSuggestions}
+      // As wide as the hints need and tall enough for all six, so none wraps or scrolls away.
+      comboboxProps={{ width: "max-content" }}
+      maxDropdownHeight={TERMINATION_DROPDOWN_MAX_HEIGHT}
+      renderOption={({ option }) => (
+        <div>
+          <Text size="sm">{option.value}</Text>
+          <Text size="xs" c="dimmed">
+            {hints[option.value as TerminationSuggestion]}
+          </Text>
+        </div>
+      )}
     />
   );
 }
+
+/** PGN-standard Termination values, offered as suggestions and stored exactly as written. */
+const TERMINATION_SUGGESTIONS = [
+  "Normal",
+  "Time forfeit",
+  "Abandoned",
+  "Adjudication",
+  "Rules infraction",
+  "Unterminated",
+] as const;
+type TerminationSuggestion = (typeof TERMINATION_SUGGESTIONS)[number];
+/** Six two-line options fit; a shorter window still scrolls the list instead of clipping it. */
+const TERMINATION_DROPDOWN_MAX_HEIGHT = 400;
+
+/**
+ * Lists every suggestion while the field is empty or holds one of them, so switching from one
+ * value to another needs no clearing; otherwise only those containing the typed text.
+ */
+const filterTerminationSuggestions: OptionsFilter = ({ options, search }) => {
+  const query = search.trim().toLowerCase();
+  const items = options as ComboboxItem[];
+  if (query === "" || items.some((item) => item.value.toLowerCase() === query)) return options;
+  return items.filter((item) => item.value.toLowerCase().includes(query));
+};
 
 export default memo(GameInfo);

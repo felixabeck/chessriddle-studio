@@ -5,7 +5,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useStore } from "zustand";
+import { supportedLocales } from "@/i18n";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
+import { catalogueI18n } from "@/tests/catalogues";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { fixtureNode } from "@/tests/treeFixtures";
@@ -209,7 +211,10 @@ test("the Termination field reads the effective value and edits and clears it th
   expect(field).not.toBeNull();
   expect(field.value).toBe("Abandoned");
   expect(field.placeholder).toBe("GameInfo.Termination");
-  expect(field.parentElement?.querySelector("#game-result")).not.toBeNull();
+  // The field sits in the result cell, under the result picker.
+  const resultCell = host.querySelector('label[for="game-result"]')!.parentElement!;
+  expect(resultCell.querySelector("#game-result")).not.toBeNull();
+  expect(resultCell.contains(field)).toBe(true);
   for (const value of ["Time forfeit", ""]) {
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
@@ -235,6 +240,87 @@ test("the Termination field is hidden without an effective end", async () => {
   await act(async () => root.render(<Editor />));
   expect(host.querySelector('[aria-label="GameInfo.Termination"]')).toBeNull();
 });
+
+const TERMINATION_SUGGESTIONS = [
+  ["Normal", "GameInfo.TerminationHint.Normal"],
+  ["Time forfeit", "GameInfo.TerminationHint.TimeForfeit"],
+  ["Abandoned", "GameInfo.TerminationHint.Abandoned"],
+  ["Adjudication", "GameInfo.TerminationHint.Adjudication"],
+  ["Rules infraction", "GameInfo.TerminationHint.RulesInfraction"],
+  ["Unterminated", "GameInfo.TerminationHint.Unterminated"],
+] as const;
+
+async function renderTermination(termination?: string) {
+  const state = defaultTree();
+  state.root.children = [
+    { ...fixtureNode("e4"), gameEnd: termination === undefined ? {} : { termination } },
+  ];
+  store.getState().setState(state);
+  await act(async () => root.render(<Editor />));
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Termination"]')!;
+  await act(async () => field.focus());
+  return field;
+}
+
+/** The Termination field's own listed options; the result picker keeps its own list mounted. */
+function terminationOptionElements() {
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="GameInfo.Termination"]')!;
+  const listbox = document.getElementById(field.getAttribute("aria-controls") ?? "");
+  return [...(listbox?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
+}
+
+/** Each listed suggestion as [value, hint], read from the open dropdown. */
+function terminationOptions() {
+  return terminationOptionElements().map((option) => {
+    const [value, hint] = [...option.querySelectorAll("p")].map((line) => line.textContent);
+    return [value, hint];
+  });
+}
+
+test("focusing an empty Termination lists every PGN-standard suggestion with its hint", async () => {
+  await renderTermination();
+  expect(terminationOptions()).toEqual(TERMINATION_SUGGESTIONS.map((entry) => [...entry]));
+});
+
+test("picking a suggestion stores its exact English value", async () => {
+  const setTermination = vi.spyOn(store.getState(), "setTermination");
+  const field = await renderTermination();
+  const option = terminationOptionElements().find(
+    (candidate) => candidate.getAttribute("value") === "Time forfeit",
+  )!;
+  await act(async () => option.click());
+  expect(setTermination).toHaveBeenLastCalledWith("Time forfeit");
+  expect(getEffectiveTermination(store.getState())).toBe("Time forfeit");
+  expect(field.value).toBe("Time forfeit");
+});
+
+test("free text outside the suggestions is accepted and stored", async () => {
+  const field = await renderTermination();
+  await act(async () => setNativeInputValue(field, "Black won by resignation"));
+  expect(getEffectiveTermination(store.getState())).toBe("Black won by resignation");
+  expect(field.value).toBe("Black won by resignation");
+  expect(terminationOptions()).toEqual([]);
+});
+
+test.each([
+  ["a stored suggestion", "Normal", TERMINATION_SUGGESTIONS.map(([value]) => value)],
+  ["a partial value, case-insensitively", "time", ["Time forfeit"]],
+  ["unrelated free text", "White won on time", []],
+])("Termination suggestions for %s", async (_case, termination, expected) => {
+  await renderTermination(termination);
+  expect(terminationOptions().map(([value]) => value)).toEqual(expected);
+});
+
+test.each(supportedLocales)(
+  "ships every Termination hint in %s with fallback disabled",
+  async (locale) => {
+    const i18n = await catalogueI18n(locale);
+    for (const [, key] of TERMINATION_SUGGESTIONS) {
+      expect(i18n.t(key).trim()).toBeTruthy();
+      expect(i18n.t(key)).not.toBe(key);
+    }
+  },
+);
 
 test("clearing the round keeps the field mounted so it can be retyped", async () => {
   store.getState().setHeaders({ ...defaultTree().headers, round: "3" });

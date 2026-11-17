@@ -82,3 +82,65 @@ for (const colorScheme of ["light", "dark"] as const) {
         });
     }
 }
+
+const TERMINATION_SUGGESTIONS = [
+    ["Normal", "Checkmate, resignation or agreed draw"],
+    ["Time forfeit", "A player ran out of time"],
+    ["Abandoned", "The game was broken off"],
+    ["Adjudication", "Decided by an arbiter"],
+    ["Rules infraction", "Lost for breaking a rule"],
+    ["Unterminated", "The game is not finished"],
+];
+
+for (const colorScheme of ["light", "dark"] as const) {
+    test(`game-end: the Termination field suggests the PGN-standard values with hints, ${colorScheme}`, async ({
+        page,
+        mockScenario,
+    }) => {
+        await mockScenario({
+            commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+                ...pgnFileCommands,
+                lex_pgn: { pgnTokens: { [filesWorkspaceFixture.pgnGame]: tokens } },
+            }),
+        });
+        await page.emulateMedia({ colorScheme });
+        await page.addInitScript((colorScheme) => {
+            localStorage.setItem("mantine-color-scheme", colorScheme);
+        }, colorScheme);
+        await page.goto("/library");
+        await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+        await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
+        await page.getByRole("button", { name: "Open game", exact: true }).click();
+        await expect(page).toHaveURL("/");
+        await page.getByRole("tab", { name: "Info", exact: true }).click();
+        const field = page.getByRole("textbox", { name: "Termination", exact: true });
+        await expect(field).toHaveValue("Abandoned");
+        await field.focus();
+        const listbox = page.locator(`#${await field.getAttribute("aria-controls")}`);
+        const options = listbox.getByRole("option");
+        await expect(options).toHaveCount(TERMINATION_SUGGESTIONS.length);
+        for (const [index, [value, hint]] of TERMINATION_SUGGESTIONS.entries()) {
+            await expect(options.nth(index)).toHaveText(`${value}${hint}`);
+        }
+        await page.mouse.move(0, 0);
+        await waitForFontsSettled(page);
+        // The list is portaled, so the snapshot spans the field and the list together.
+        const fieldBox = (await field.boundingBox())!;
+        const listBox = (await listbox.boundingBox())!;
+        const x = Math.min(fieldBox.x, listBox.x) - 8;
+        const y = fieldBox.y - 8;
+        await expect(page).toHaveScreenshot(`termination-suggestions-${colorScheme}.png`, {
+            clip: {
+                x,
+                y,
+                width: Math.max(fieldBox.x + fieldBox.width, listBox.x + listBox.width) - x + 8,
+                height: listBox.y + listBox.height - y + 8,
+            },
+        });
+        await options.nth(1).click();
+        await expect(field).toHaveValue("Time forfeit");
+        await expect(page.getByText("Unexpected Tauri IPC command", { exact: false })).toHaveCount(
+            0,
+        );
+    });
+}
