@@ -157,6 +157,11 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
         },
         {
+            name: "file-menu-save",
+            testMatch: /file-menu-save\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
+        },
+        {
             name: "security-consent",
             testMatch: /security-consent\.spec\.ts/,
             use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "dark" },

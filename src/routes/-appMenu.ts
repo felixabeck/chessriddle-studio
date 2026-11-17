@@ -26,6 +26,8 @@ export type AppMenuCallbacks = {
     sendFeedback: () => void;
     createNewTab: () => void | Promise<void>;
     openNewFile: () => void | Promise<void>;
+    saveGame: () => void | Promise<void>;
+    saveGameTo: () => void | Promise<void>;
     openSettings: () => void | Promise<void>;
     exit: () => void | Promise<void>;
     reload: () => void;
@@ -66,9 +68,10 @@ export function buildAppMenuTree(args: {
     isMacOS: boolean;
     newTabShortcut: string;
     openFileShortcut: string;
+    saveShortcut: string;
     callbacks: AppMenuCallbacks;
 }): MenuGroup[] {
-    const { t, isMacOS, newTabShortcut, openFileShortcut, callbacks } = args;
+    const { t, isMacOS, newTabShortcut, openFileShortcut, saveShortcut, callbacks } = args;
 
     const aboutOption: MenuItemAction = {
         label: t("Menu.Help.About"),
@@ -140,8 +143,21 @@ export function buildAppMenuTree(args: {
                     shortcut: openFileShortcut,
                     action: callbacks.openNewFile,
                 },
+                { kind: "separator" },
+                {
+                    label: t("Common.Save"),
+                    id: "save",
+                    shortcut: saveShortcut,
+                    action: callbacks.saveGame,
+                },
+                {
+                    label: t("Board.Database.Save"),
+                    id: "save_to",
+                    action: callbacks.saveGameTo,
+                },
                 ...(!isMacOS
                     ? [
+                          { kind: "separator" as const },
                           {
                               label: t("Menu.File.Exit"),
                               id: "exit",
@@ -257,6 +273,8 @@ export type AppMenuCommandBindings = {
     sendFeedback: () => void;
     createNewTab: () => Promise<unknown>;
     openNewFile: () => Promise<unknown>;
+    saveGame: () => Promise<unknown>;
+    saveGameTo: () => Promise<unknown>;
     openSettings: () => Promise<unknown>;
     exit: () => Promise<unknown>;
     reload: () => void;
@@ -272,6 +290,8 @@ export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuC
         sendFeedback: bindings.sendFeedback,
         createNewTab: () => bindings.runMenu(bindings.createNewTab),
         openNewFile: () => bindings.runMenu(bindings.openNewFile),
+        saveGame: () => bindings.runMenu(bindings.saveGame),
+        saveGameTo: () => bindings.runMenu(bindings.saveGameTo),
         openSettings: () => bindings.runMenu(bindings.openSettings),
         exit: () => bindings.runMenu(bindings.exit),
         reload: bindings.reload,

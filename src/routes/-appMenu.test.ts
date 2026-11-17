@@ -57,6 +57,8 @@ function callbacks(overrides: Partial<AppMenuCallbacks> = {}): AppMenuCallbacks 
         sendFeedback: () => undefined,
         createNewTab: () => undefined,
         openNewFile: () => undefined,
+        saveGame: () => undefined,
+        saveGameTo: () => undefined,
         openSettings: () => undefined,
         exit: () => undefined,
         reload: () => undefined,
@@ -76,10 +78,25 @@ test("non-macOS tree has File/View/Help with Exit and About", () => {
         isMacOS: false,
         newTabShortcut: "Ctrl+T",
         openFileShortcut: "Ctrl+O",
+        saveShortcut: "ctrl+s",
         callbacks: actions,
     });
     expect(groups.map((group) => group.label)).toEqual(["Menu.File", "Menu.View", "Menu.Help"]);
-    expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file", "exit"]);
+    expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file", "save", "save_to", "exit"]);
+    expect(option(groups, "Menu.File", "save").label).toBe("Common.Save");
+    expect(option(groups, "Menu.File", "save").shortcut).toBe("ctrl+s");
+    expect(option(groups, "Menu.File", "save").action).toBe(actions.saveGame);
+    expect(option(groups, "Menu.File", "save_to").label).toBe("Board.Database.Save");
+    expect(option(groups, "Menu.File", "save_to").action).toBe(actions.saveGameTo);
+    expect(groups[0].options.map((item) => ("kind" in item ? "|" : item.id))).toEqual([
+        "new_tab",
+        "open_file",
+        "|",
+        "save",
+        "save_to",
+        "|",
+        "exit",
+    ]);
     expect(idsOf(groups, "Menu.View")).toEqual(["reload", "toggle_fullscreen"]);
     expect(idsOf(groups, "Menu.Help")).toEqual([
         "send_feedback",
@@ -111,6 +128,7 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
         isMacOS: true,
         newTabShortcut: "Cmd+T",
         openFileShortcut: "Cmd+O",
+        saveShortcut: "meta+s",
         callbacks: actions,
     });
     expect(groups.map((group) => group.label)).toEqual([
@@ -120,7 +138,8 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
         "Menu.View",
         "Menu.Help",
     ]);
-    expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file"]);
+    expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file", "save", "save_to"]);
+    expect(option(groups, "Menu.File", "save").shortcut).toBe("meta+s");
     expect(idsOf(groups, "Menu.Help")).toEqual(["send_feedback", "clear_saved_data", "logs"]);
     expect(option(groups, "Menu.Application.Menu", "about").action).toBe(actions.about);
     expect(option(groups, "Menu.Application.Menu", "settings").action).toBe(actions.openSettings);
@@ -150,6 +169,7 @@ test("changing t changes labels", () => {
         isMacOS: false,
         newTabShortcut: "Ctrl+T",
         openFileShortcut: "Ctrl+O",
+        saveShortcut: "ctrl+s",
         callbacks: callbacks(),
     });
     expect(groups[0].label).toBe("Menu.File.fr");
@@ -330,6 +350,12 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
         createNewTab: () => opened.promise,
         openNewFile: async () => {
             throw new Error("open failed");
+        },
+        saveGame: async () => {
+            seen.push("save");
+        },
+        saveGameTo: async () => {
+            seen.push("save-to");
         },
         openSettings: async () => undefined,
         exit: async () => undefined,

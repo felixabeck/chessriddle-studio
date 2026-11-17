@@ -18,7 +18,8 @@ import TopBar from "@/components/TopBar";
 import { WindowResizeHandles } from "@/components/WindowResizeHandles";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import i18n from "@/i18n";
-import { nativeBarAtom, tabsAtom } from "@/state/atoms";
+import { requestBoardCommand } from "@/components/boards/boardCommands";
+import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
 import {
   cancelQuitGate,
   quitWithoutSaving,
@@ -162,12 +163,16 @@ export function RootLayout() {
 
   useEffect(() => {
     unsavedGames.start();
-    void restoreUnsavedGames({
+    restoreUnsavedGames({
       native: nativeUnsavedGames,
       jotaiStore,
       setTabs: (...args) => jotaiStore.set(tabsAtom, ...args),
       notify: (message) => notifications.show({ message }),
-    });
+    }).catch((error: unknown) =>
+      warnSafely(
+        `Unsaved game restore stopped: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
     return () => unsavedGames.stop();
   }, [jotaiStore, unsavedGames]);
 
@@ -216,6 +221,18 @@ export function RootLayout() {
   );
 
   const openSettings = useCallback(() => openSettingsFromMenu({ navigate }), [navigate]);
+
+  // The board consumes the request once it is mounted, so show the workspace first. No root
+  // hotkey: Ctrl+S stays bound in the board alone, so one key press never starts two saves.
+  const requestSave = useCallback(
+    async (kind: "save" | "saveTo") => {
+      const tab = jotaiStore.get(currentTabAtom);
+      if (!tab || tab.type !== "analysis") return;
+      await navigate({ to: "/" });
+      requestBoardCommand(jotaiStore, kind);
+    },
+    [jotaiStore, navigate],
+  );
 
   const toggleFullscreen = useCallback(async () => {
     const currentWindow = getCurrentWindow();
@@ -290,6 +307,8 @@ export function RootLayout() {
         sendFeedback: () => setFeedbackOpened(true),
         createNewTab,
         openNewFile,
+        saveGame: () => requestSave("save"),
+        saveGameTo: () => requestSave("saveTo"),
         openSettings,
         exit: () => requestQuit(),
         reload: () => location.reload(),
@@ -326,6 +345,7 @@ export function RootLayout() {
       openNewFile,
       openSettings,
       requestQuit,
+      requestSave,
       runMenu,
       t,
       toggleFullscreen,
@@ -355,9 +375,10 @@ export function RootLayout() {
         isMacOS,
         newTabShortcut: keyMap.NEW_TAB.keys,
         openFileShortcut: keyMap.OPEN_FILE.keys,
+        saveShortcut: keyMap.SAVE_FILE.keys,
         callbacks: menuCallbacks,
       }),
-    [isMacOS, keyMap.NEW_TAB.keys, keyMap.OPEN_FILE.keys, menuCallbacks, t],
+    [isMacOS, keyMap.NEW_TAB.keys, keyMap.OPEN_FILE.keys, keyMap.SAVE_FILE.keys, menuCallbacks, t],
   );
 
   const showTopBar = renderTopBar(isNative, windowPlatform);

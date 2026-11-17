@@ -15,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   lastCallbacks: null as AppMenuCallbacks | null,
   createTab: vi.fn(),
   pickPgnFile: vi.fn(),
+  requestBoardCommand: vi.fn(),
+}));
+vi.mock("@/components/boards/boardCommands", () => ({
+  requestBoardCommand: mocks.requestBoardCommand,
 }));
 
 vi.mock("@/state/pathOwners", () => ({
@@ -28,7 +32,18 @@ vi.mock("@/state/practiceStorage", () => ({
 }));
 vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
-  return { nativeBarAtom: atom(false), tabsAtom: atom([]) };
+  const analysis = {
+    value: "analysis-tab",
+    name: "Game",
+    type: "analysis",
+    gameOrigin: { kind: "none" },
+  };
+  return {
+    nativeBarAtom: atom(false),
+    tabsAtom: atom([analysis]),
+    currentTabAtom: atom(analysis),
+    workspaceStartedFresh: () => false,
+  };
 });
 vi.mock("@/state/keybinds", async () => {
   const { atom } = await import("jotai");
@@ -36,6 +51,7 @@ vi.mock("@/state/keybinds", async () => {
     keyMapAtom: atom({
       NEW_TAB: { keys: "Ctrl+T" },
       OPEN_FILE: { keys: "Ctrl+O" },
+      SAVE_FILE: { keys: "Ctrl+S" },
     }),
   };
 });
@@ -459,3 +475,27 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
+test("the root binds no Save hotkey; Ctrl+S belongs to the board alone", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => root.render(<RootLayout />));
+  try {
+    mocks.requestBoardCommand.mockClear();
+    await act(async () => {
+      press("s", { ctrlKey: true });
+    });
+    expect(mocks.requestBoardCommand).not.toHaveBeenCalled();
+
+    // The File menu entry does request the save of the active analysis tab.
+    await act(async () => {
+      await mocks.lastCallbacks?.saveGame();
+    });
+    expect(mocks.requestBoardCommand).toHaveBeenCalledWith(expect.anything(), "save");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
