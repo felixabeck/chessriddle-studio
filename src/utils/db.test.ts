@@ -1077,6 +1077,18 @@ describe("searchPosition query mapping", () => {
             await sentQuery(localOptions({ include_unknown_results: false, sample_order: "elo" })),
         ).toMatchObject({ includeUnknownResults: false, sampleOrder: "elo" });
     });
+    it("sends the time-control allow-list only when one is set", async () => {
+        expect(await sentQuery(localOptions())).not.toHaveProperty("timeControls");
+        mocks.searchPosition.mockClear();
+        expect(await sentQuery(localOptions({ time_controls: ["300+0", ""] }))).toMatchObject({
+            timeControls: ["300+0", ""],
+        });
+        mocks.searchPosition.mockClear();
+        // An empty list is a filter that matches no game, not the absence of one.
+        expect(await sentQuery(localOptions({ time_controls: [] }))).toMatchObject({
+            timeControls: [],
+        });
+    });
     const localOptions = (overrides: Partial<LocalOptions> = {}): LocalOptions => ({
         path: handle("local"),
         fen: "8/8/8/8/8/8/8/8 w - - 0 1",

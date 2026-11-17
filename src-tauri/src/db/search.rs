@@ -83,6 +83,9 @@ pub struct PositionSearchQuery {
     pub include_unknown_results: Option<bool>,
     #[specta(optional)]
     pub sample_order: Option<SampleOrder>,
+    /// Allow-list of verbatim `TimeControl` values; see `GameQuery::time_controls`.
+    #[specta(optional)]
+    pub time_controls: Option<Vec<String>>,
 }
 
 impl From<PositionSearchQuery> for GameQuery {
@@ -99,6 +102,7 @@ impl From<PositionSearchQuery> for GameQuery {
             exclude_fast_events: query.exclude_fast_events,
             include_unknown_results: query.include_unknown_results,
             sample_order: query.sample_order,
+            time_controls: query.time_controls,
             ..Self::default()
         }
     }
@@ -650,13 +654,13 @@ static MAINLINE_REPLAYS: std::sync::LazyLock<Mutex<HashMap<i32, usize>>> =
 static EXCLUDE_FAST_SQL_COMPLETED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(test)]
-type ExcludeFastLoadHook = Box<dyn FnOnce() -> Option<Result<HashSet<i32>, Error>>>;
+type GameIdLoadHook = Box<dyn FnOnce() -> Option<Result<HashSet<i32>, Error>>>;
 
 #[cfg(test)]
 thread_local! {
-    // Runs at the start of load_excluded_fast_game_ids, inside the SQLite
-    // cancellation scope. Some(result) replaces the whole load.
-    static EXCLUDE_FAST_LOAD_HOOK: std::cell::RefCell<Option<ExcludeFastLoadHook>> =
+    // Runs at the start of load_excluded_fast_game_ids and load_time_control_game_ids,
+    // inside the SQLite cancellation scope. Some(result) replaces the whole load.
+    static GAME_ID_LOAD_HOOK: std::cell::RefCell<Option<GameIdLoadHook>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -664,10 +668,7 @@ thread_local! {
 /// entire body of one `with_sqlite_cancellation` scope.
 fn load_excluded_fast_game_ids(db: &mut SqliteConnection) -> Result<HashSet<i32>, Error> {
     #[cfg(test)]
-    if let Some(result) = EXCLUDE_FAST_LOAD_HOOK
-        .with(|hook| hook.borrow_mut().take())
-        .and_then(|hook| hook())
-    {
+    if let Some(result) = take_game_id_load_hook() {
         return result;
     }
     let mut fast_events = events::table.select(events::id).into_boxed();
@@ -678,6 +679,63 @@ fn load_excluded_fast_game_ids(db: &mut SqliteConnection) -> Result<HashSet<i32>
         .filter(games::event_id.eq_any(fast_events))
         .select(games::id)
         .load(db)?;
+    Ok(ids.into_iter().collect())
+}
+
+#[cfg(test)]
+fn take_game_id_load_hook() -> Option<Result<HashSet<i32>, Error>> {
+    GAME_ID_LOAD_HOOK
+        .with(|hook| hook.borrow_mut().take())
+        .and_then(|hook| hook())
+}
+
+/// Bounds of the renderer-supplied time-control allow-list.
+const MAX_TIME_CONTROLS: usize = 1024;
+const MAX_TIME_CONTROL_BYTES: usize = 64;
+
+/// Refuses an oversized allow-list, then sorts and de-duplicates it so
+/// equivalent lists share one collision lock and one cache entry.
+fn normalize_time_controls(time_controls: &mut Option<Vec<String>>) -> Result<(), Error> {
+    let Some(values) = time_controls else {
+        return Ok(());
+    };
+    if values.len() > MAX_TIME_CONTROLS {
+        return Err(Error::InvalidInput(format!(
+            "time control filter exceeds {MAX_TIME_CONTROLS} entries"
+        )));
+    }
+    if values
+        .iter()
+        .any(|value| value.len() > MAX_TIME_CONTROL_BYTES)
+    {
+        return Err(Error::InvalidInput(format!(
+            "time control filter entry exceeds {MAX_TIME_CONTROL_BYTES} bytes"
+        )));
+    }
+    values.sort_unstable();
+    values.dedup();
+    Ok(())
+}
+
+/// Ids of games whose `TimeControl` is one of `allowed`. The empty string
+/// also matches NULL, as the player statistics report a missing value as "".
+/// Runs as the entire body of one `with_sqlite_cancellation` scope.
+fn load_time_control_game_ids(
+    db: &mut SqliteConnection,
+    allowed: &[String],
+) -> Result<HashSet<i32>, Error> {
+    #[cfg(test)]
+    if let Some(result) = take_game_id_load_hook() {
+        return result;
+    }
+    let mut matching = games::table
+        .select(games::id)
+        .filter(games::time_control.eq_any(allowed))
+        .into_boxed();
+    if allowed.iter().any(String::is_empty) {
+        matching = matching.or_filter(games::time_control.is_null());
+    }
+    let ids: Vec<i32> = matching.load(db)?;
     Ok(ids.into_iter().collect())
 }
 
@@ -701,6 +759,7 @@ fn matches_search_metadata(
     query: &GameQuery,
     wanted_result: Option<GameResult>,
     excluded_fast_game_ids: Option<&HashSet<i32>>,
+    time_control_game_ids: Option<&HashSet<i32>>,
 ) -> bool {
     query.player1.is_none_or(|id| id == entry.white_id)
         && query.player2.is_none_or(|id| id == entry.black_id)
@@ -719,6 +778,7 @@ fn matches_search_metadata(
         && elo_in_range(entry.white_elo, query.range1)
         && elo_in_range(entry.black_elo, query.range2)
         && !excluded_fast_game_ids.is_some_and(|ids| ids.contains(&entry.id))
+        && time_control_game_ids.is_none_or(|ids| ids.contains(&entry.id))
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Type)]
@@ -1180,7 +1240,7 @@ fn search_positions_stats_blocking<R: tauri::Runtime>(
                                 #[cfg(test)]
                                 None,
                             )?;
-                            if !matches_search_metadata(entry, &coverage_query, None, None) {
+                            if !matches_search_metadata(entry, &coverage_query, None, None, None) {
                                 return Ok(());
                             }
                             let candidates = queries
@@ -1435,6 +1495,8 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
     if query.sample_order == Some(super::SampleOrder::Elo) {
         query.sample_order = None;
     }
+    // Refused before the collision lock, the index or a connection is touched.
+    normalize_time_controls(&mut query.time_controls)?;
     let database_handle = file;
     let target = resolve_search_target(authority, &database_handle)?;
     let collision_lease = search_cache.collision_lock(query.clone(), &target);
@@ -1499,6 +1561,14 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                     None
                 };
 
+            let time_control_game_ids: Option<HashSet<i32>> = match &query.time_controls {
+                Some(allowed) => Some(super::sqlite_cancellation::with_sqlite_cancellation(
+                    cancellation,
+                    || load_time_control_game_ids(db, allowed),
+                )?),
+                None => None,
+            };
+
             info!("start search on {}", lease.id);
 
             let process_entry = |entry: SearchGameEntryRef<'_>,
@@ -1534,6 +1604,7 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
                     &query,
                     wanted_result,
                     excluded_fast_game_ids.as_ref(),
+                    time_control_game_ids.as_ref(),
                 ) {
                     return Ok(());
                 }
@@ -3544,7 +3615,8 @@ mod tests {
             "range1": [1000, 2000], "range2": [1500, 2500],
             "position": { "fen": "startpos", "type_": "exact" },
             "wantedResult": "draw", "excludeFastEvents": true,
-            "includeUnknownResults": false, "sampleOrder": "date"
+            "includeUnknownResults": false, "sampleOrder": "date",
+            "timeControls": ["600+5", ""]
         }))
         .unwrap();
         let expected = GameQuery {
@@ -3562,6 +3634,7 @@ mod tests {
             exclude_fast_events: Some(true),
             include_unknown_results: Some(false),
             sample_order: Some(SampleOrder::Date),
+            time_controls: Some(vec!["600+5".into(), String::new()]),
             ..GameQuery::default()
         };
         assert_eq!(GameQuery::from(query), expected);
@@ -5628,7 +5701,7 @@ mod tests {
         assert_eq!(counted_games(&built), 2);
 
         let instrument = SearchInstrument::start();
-        EXCLUDE_FAST_LOAD_HOOK.with(|hook| {
+        GAME_ID_LOAD_HOOK.with(|hook| {
             *hook.borrow_mut() = Some(Box::new(|| {
                 Some(Err(Error::InvalidInput(
                     "injected exclude-fast SQL failure".into(),
@@ -5678,7 +5751,7 @@ mod tests {
         let instrument = SearchInstrument::start();
         let cancellation = CancellationToken::new();
         let hook_token = cancellation.clone();
-        EXCLUDE_FAST_LOAD_HOOK.with(|hook| {
+        GAME_ID_LOAD_HOOK.with(|hook| {
             *hook.borrow_mut() = Some(Box::new(move || {
                 hook_token.cancel();
                 None
@@ -5735,6 +5808,207 @@ mod tests {
         explicit_false.exclude_fast_events = Some(false);
         let cached = run_position_search(&app, &handle, explicit_false, "explicit-false").unwrap();
         assert_eq!(counted_games(&cached), 1);
+        assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
+        drop(instrument);
+    }
+
+    /// Four games after 1. e4 e5: "Candidates" without a time control, and one
+    /// event each for "300+0", "600+5" and the empty string.
+    fn time_control_search_database() -> (
+        TempDir,
+        tauri::AppHandle<tauri::test::MockRuntime>,
+        DatabaseHandle,
+        PathBuf,
+    ) {
+        let fixture = filter_search_database(&[
+            (("Firouzja", Some(2750)), ("So", Some(2750)), "Blitz Game"),
+            (("Caruana", Some(2780)), ("Ding", Some(2760)), "Rapid Game"),
+            (("Nakamura", Some(2740)), ("Giri", Some(2730)), "Empty Game"),
+        ]);
+        let mut db = SqliteConnection::establish(fixture.3.to_str().unwrap()).unwrap();
+        for (event, time_control) in [
+            ("Blitz Game", "300+0"),
+            ("Rapid Game", "600+5"),
+            ("Empty Game", ""),
+        ] {
+            let event_ids = events::table
+                .filter(events::name.eq(event))
+                .select(events::id);
+            diesel::update(games::table.filter(games::event_id.eq_any(event_ids)))
+                .set(games::time_control.eq(time_control))
+                .execute(&mut db)
+                .unwrap();
+        }
+        fixture
+    }
+
+    fn time_control_query(values: &[&str]) -> GameQuery {
+        let mut query = exact_position_query(STARTING_FEN);
+        query.time_controls = Some(values.iter().map(|value| (*value).to_string()).collect());
+        query
+    }
+
+    #[test]
+    fn position_search_time_controls_allow_list_matches_verbatim_values() {
+        let (_dir, app, handle, _database) = time_control_search_database();
+
+        let blitz =
+            run_position_search(&app, &handle, time_control_query(&["300+0"]), "tc-blitz").unwrap();
+        assert_eq!(sample_events(&blitz), vec!["Blitz Game"]);
+        assert_eq!(counted_games(&blitz), 1);
+
+        let both = run_position_search(
+            &app,
+            &handle,
+            time_control_query(&["300+0", "600+5"]),
+            "tc-both",
+        )
+        .unwrap();
+        assert_eq!(sample_events(&both), vec!["Blitz Game", "Rapid Game"]);
+
+        // The empty string stands for a missing value as well as an empty one.
+        let missing =
+            run_position_search(&app, &handle, time_control_query(&[""]), "tc-missing").unwrap();
+        assert_eq!(sample_events(&missing), vec!["Candidates", "Empty Game"]);
+
+        let none = run_position_search(&app, &handle, time_control_query(&[]), "tc-none").unwrap();
+        assert_eq!(counted_games(&none), 0);
+        assert!(none.1.is_empty());
+
+        let unfiltered = run_position_search(
+            &app,
+            &handle,
+            exact_position_query(STARTING_FEN),
+            "tc-unfiltered",
+        )
+        .unwrap();
+        assert_eq!(counted_games(&unfiltered), 4);
+    }
+
+    #[test]
+    fn position_search_time_controls_permuted_duplicates_share_cache_key() {
+        let (_dir, app, handle, _database) = time_control_search_database();
+        let instrument = SearchInstrument::start();
+
+        let first = run_position_search(
+            &app,
+            &handle,
+            time_control_query(&["600+5", "300+0", "300+0"]),
+            "tc-first",
+        )
+        .unwrap();
+        assert_eq!(counted_games(&first), 2);
+        assert!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst) > 0);
+        PROCESS_ENTRY_CALLS.store(0, Ordering::SeqCst);
+
+        let cached = run_position_search(
+            &app,
+            &handle,
+            time_control_query(&["300+0", "600+5"]),
+            "tc-cached",
+        )
+        .unwrap();
+        assert_eq!(counted_games(&cached), 2);
+        assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
+        drop(instrument);
+    }
+
+    #[test]
+    fn position_search_time_controls_bounds_refuse_before_the_database_is_resolved() {
+        let (_dir, app, handle, database) = time_control_search_database();
+        // With the file gone, any query that reaches the database fails there.
+        std::fs::remove_file(&database).unwrap();
+        let reached =
+            run_position_search(&app, &handle, time_control_query(&["300+0"]), "tc-reached");
+        assert!(
+            matches!(&reached, Err(error) if !matches!(error, Error::InvalidInput(_))),
+            "{:?}",
+            reached.as_ref().err()
+        );
+
+        let mut too_many = exact_position_query(STARTING_FEN);
+        too_many.time_controls = Some(
+            (0..=MAX_TIME_CONTROLS)
+                .map(|index| index.to_string())
+                .collect(),
+        );
+        let result = run_position_search(&app, &handle, too_many, "tc-too-many");
+        assert!(
+            matches!(
+                &result,
+                Err(Error::InvalidInput(message))
+                    if message == "time control filter exceeds 1024 entries"
+            ),
+            "{:?}",
+            result.as_ref().err()
+        );
+
+        let too_long = "9".repeat(MAX_TIME_CONTROL_BYTES + 1);
+        let result = run_position_search(
+            &app,
+            &handle,
+            time_control_query(&[&too_long]),
+            "tc-too-long",
+        );
+        assert!(
+            matches!(
+                &result,
+                Err(Error::InvalidInput(message))
+                    if message == "time control filter entry exceeds 64 bytes"
+            ),
+            "{:?}",
+            result.as_ref().err()
+        );
+    }
+
+    #[test]
+    fn position_search_time_controls_cancels_during_sql_without_cache_publication() {
+        let (_dir, app, handle, _database) = time_control_search_database();
+        let state = app.state::<AppState>();
+        load_search_index(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            &handle,
+        )
+        .unwrap();
+
+        let instrument = SearchInstrument::start();
+        let cancellation = CancellationToken::new();
+        let hook_token = cancellation.clone();
+        GAME_ID_LOAD_HOOK.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                hook_token.cancel();
+                None
+            }));
+        });
+        let progress = JobProgress::new(app.clone(), "tc-cancel".into()).unwrap();
+        let permit = state.new_request.clone().try_acquire_owned().unwrap();
+        let result = search_position_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            permit,
+            progress.lease(),
+            app.clone(),
+            handle.clone(),
+            time_control_query(&["300+0"]),
+            &cancellation,
+            None,
+        );
+        assert!(
+            matches!(result, Err(Error::Cancellation)),
+            "{:?}",
+            result.as_ref().err()
+        );
+        assert!(state
+            .search_cache
+            .results
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
         assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
         drop(instrument);
     }

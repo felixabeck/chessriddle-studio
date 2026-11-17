@@ -1661,7 +1661,11 @@ export type PositionQueryJs = { fen: string; type_: string }
  * Only these filters are accepted by position search, which has no pagination
  * and returns at most 500 sample games (`MAX_SAMPLES`).
  */
-export type PositionSearchQuery = { player1?: number | null; player2?: number | null; startDate?: string | null; endDate?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; position?: PositionQueryJs | null; wantedResult?: string | null; excludeFastEvents?: boolean | null; includeUnknownResults?: boolean | null; sampleOrder?: SampleOrder | null }
+export type PositionSearchQuery = { player1?: number | null; player2?: number | null; startDate?: string | null; endDate?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; position?: PositionQueryJs | null; wantedResult?: string | null; excludeFastEvents?: boolean | null; includeUnknownResults?: boolean | null; sampleOrder?: SampleOrder | null; 
+/**
+ * Allow-list of verbatim `TimeControl` values; see `GameQuery::time_controls`.
+ */
+timeControls?: string[] | null }
 export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[] }
 export type PositionStatsForFen = { fen: string; openings: PositionStats[] }
 export type PracticeDeckIdentity = { fileId: string; game: number }

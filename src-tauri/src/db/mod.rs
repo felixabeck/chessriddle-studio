@@ -2729,6 +2729,10 @@ pub struct GameQuery {
     pub include_unknown_results: Option<bool>,
     #[specta(optional)]
     pub sample_order: Option<SampleOrder>,
+    /// Position search only: allow-list of verbatim `TimeControl` values, where
+    /// "" also matches a missing value. `None` applies no filter.
+    #[specta(optional)]
+    pub time_controls: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash, Type)]
@@ -6082,6 +6086,32 @@ mod tests {
             ..GameQuery::default()
         };
         assert_eq!(GameQuery::from(query), expected);
+    }
+
+    #[test]
+    fn query_dtos_accept_time_controls_on_position_search_only() {
+        use serde_json::json;
+
+        let query: search::PositionSearchQuery =
+            serde_json::from_value(json!({ "timeControls": ["300+0", ""] })).unwrap();
+        assert_eq!(
+            GameQuery::from(query).time_controls,
+            Some(vec!["300+0".to_string(), String::new()])
+        );
+        let omitted: search::PositionSearchQuery = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(GameQuery::from(omitted).time_controls, None);
+        for invalid in [
+            json!({ "time_controls": ["300+0"] }),
+            json!({ "timeControls": "300+0" }),
+        ] {
+            assert!(serde_json::from_value::<search::PositionSearchQuery>(invalid).is_err());
+        }
+        assert!(
+            serde_json::from_value::<GameListQuery>(json!({ "timeControls": ["300+0"] }))
+                .unwrap_err()
+                .to_string()
+                .contains("unknown field")
+        );
     }
 
     #[test]

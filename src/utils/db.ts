@@ -440,6 +440,8 @@ export type LocalOptions = {
     exclude_fast_events?: boolean;
     include_unknown_results?: boolean;
     sample_order?: NonNullable<PositionSearchQuery["sampleOrder"]>;
+    /** Verbatim TimeControl values a game must carry; "" also matches a missing value. */
+    time_controls?: string[];
 };
 
 export function getEffectiveLocalPlayer(
@@ -488,6 +490,7 @@ export async function searchPosition(options: LocalOptions, tab: string, signal?
                 ? { includeUnknownResults: options.include_unknown_results }
                 : {}),
             ...(options.sample_order !== undefined ? { sampleOrder: options.sample_order } : {}),
+            ...(options.time_controls !== undefined ? { timeControls: options.time_controls } : {}),
         } satisfies PositionSearchQuery,
         tab,
         { signal },
