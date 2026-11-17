@@ -381,11 +381,13 @@ export async function runDestructiveWithRefresh<T>(
 }
 
 /**
- * A file capability whose file was deleted, or replaced at its path by another program, can never
- * resolve again: the native side answers `missing-resource` or `conflict` (identity changed,
- * d-20261113-02). Only a fresh capability from a listing or picker reaches the file again.
+ * The native answer for a file capability whose file was deleted (`missing-resource`) or replaced
+ * at its path by another program (`conflict`: the stored identity no longer matches,
+ * d-20261113-02). Either way the handle can never resolve again; only a fresh capability from a
+ * listing or picker reaches the file. Apply it only where resolving the handle is the call's sole
+ * conflict source: a later step of a longer operation can raise `conflict` on a live file.
  */
-export function isUnavailableFileHandle(error: unknown): boolean {
+export function isMissingOrReplacedFile(error: unknown): boolean {
     const { backendCategory } = normalizeError(error);
     return backendCategory === "missing-resource" || backendCategory === "conflict";
 }

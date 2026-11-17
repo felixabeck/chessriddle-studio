@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { FileWorkspaceHandle } from "@/bindings";
-import { isUnavailableFileHandle, normalizeError } from "@/platform/errors";
+import { isMissingOrReplacedFile, normalizeError } from "@/platform/errors";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import type { Tab } from "@/utils/tabs";
 import type { CollectionDescriptor } from "@/bindings";
@@ -493,7 +493,7 @@ export function startFileRevisionPoll(dependencies: FileRevisionPollDependencies
                 if (flight.timedOut || !running) return;
                 applyIfCurrent({
                     kind: "rejected",
-                    unavailable: isUnavailableFileHandle(error),
+                    unavailable: isMissingOrReplacedFile(error),
                     message: normalizeError(error).message,
                 });
             })

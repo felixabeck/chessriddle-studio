@@ -924,7 +924,7 @@ test("a recent replaced at its path is pruned on mount while a busy or deleted s
   expect(rows()).toHaveLength(1);
 });
 
-test("clicking a recent whose count reports it replaced prunes the row; an open conflict keeps it", async () => {
+test("clicking a recent whose count reports it replaced prunes the row; an open conflict or count I/O failure keeps it", async () => {
   const recent = {
     name: "Replaced",
     handle: handle("replaced"),
@@ -936,11 +936,14 @@ test("clicking a recent whose count reports it replaced prunes the row; an open 
   mocks.openFile.mockRejectedValueOnce(replaced);
   await open("Replaced");
   expect(store.get(recentFilesAtom)).toEqual([recent]);
+  mocks.count.mockRejectedValueOnce({ tag: "backend-error", category: "io", message: "busy" });
+  await open("Replaced");
+  expect(store.get(recentFilesAtom)).toEqual([recent]);
   mocks.count.mockRejectedValueOnce(replaced);
   await open("Replaced");
   expect(store.get(recentFilesAtom)).toEqual([]);
   expect(mocks.navigate).not.toHaveBeenCalled();
-  expect(mocks.notify).toHaveBeenCalledTimes(2);
+  expect(mocks.notify).toHaveBeenCalledTimes(3);
 });
 
 test("transient validation failures retain recents and refused opening does not navigate", async () => {

@@ -1,6 +1,6 @@
 import { tauri } from "@/platform/tauri";
 import { useDebouncedValue } from "@mantine/hooks";
-import { isUnavailableFileHandle, normalizeError } from "@/platform/errors";
+import { isMissingOrReplacedFile, normalizeError } from "@/platform/errors";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import {
   Badge,
@@ -244,14 +244,14 @@ export default function NewTabHome({ id }: { id: string }) {
     cause: unknown,
     file: FileMetadata,
     request: FileRequest,
-    prune: "missing" | "unavailable" | "never" = "missing",
+    prune: "not-found" | "not-found-or-replaced" | "never",
   ) => {
     if (fileRequest.current !== request || request.controller.signal.aborted) return;
     // Counting resolves only the stored handle, so its conflict means the file was replaced and
     // the row can never open again. An open's conflict may come from later work on a live file.
     if (
       (prune !== "never" && normalizeError(cause).category === "not-found") ||
-      (prune === "unavailable" && isUnavailableFileHandle(cause))
+      (prune === "not-found-or-replaced" && isMissingOrReplacedFile(cause))
     ) {
       setRecentFiles((current) =>
         current.filter(
@@ -303,7 +303,7 @@ export default function NewTabHome({ id }: { id: string }) {
           }),
         onSuccess: () => navigate({ to: "/" }),
         onError: (cause) =>
-          reportFileError(cause, file, request, index === undefined ? "missing" : "never"),
+          reportFileError(cause, file, request, index === undefined ? "not-found" : "never"),
       }),
     (cause) => notifyUnlessCancelled(t("Common.Error"), cause),
   );
@@ -335,7 +335,7 @@ export default function NewTabHome({ id }: { id: string }) {
             return file;
           } catch (cause) {
             // Deleted or replaced at its path: the stored handle can never resolve again.
-            return !isDatabaseRecent(file) && isUnavailableFileHandle(cause) ? null : file;
+            return !isDatabaseRecent(file) && isMissingOrReplacedFile(cause) ? null : file;
           }
         }),
       );
@@ -432,7 +432,7 @@ export default function NewTabHome({ id }: { id: string }) {
         }
       } catch (cause) {
         if (fileRequest.current !== request || request.controller.signal.aborted) return;
-        reportFileError(cause, file, request, "unavailable");
+        reportFileError(cause, file, request, "not-found-or-replaced");
         retireRowOpens();
       } finally {
         if (fileRequest.current === request) setCountingFile(null);
