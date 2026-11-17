@@ -6,6 +6,7 @@ import {
     preserveStorageForReload,
     expect,
     expectNotificationSettled,
+    gameOpeningFixture,
     test,
     type MockScenario,
 } from "./fixtures";
@@ -1296,6 +1297,164 @@ for (const corner of [
             }
             await assertNoHorizontalOverflow();
         }
+    });
+}
+
+const openingStatisticsFixture = (player: string) => ({
+    site_stats_data: [
+        {
+            ...summaryStatistics.site_stats_data[0],
+            player,
+            openings: [
+                ["Sicilian Defense: Najdorf Variation", true, 6, 1, 3],
+                ["Italian Game", true, 4, 1, 0],
+                ["King's Gambit Accepted: Fischer Defense", true, 2, 0, 0],
+                ["Caro-Kann Defense: Classical Variation", false, 1, 1, 4],
+                ["Dutch Defense: Leningrad Variation, Warsaw Variation", false, 5, 0, 1],
+            ].map(([opening, is_player_white, won, drawn, lost]) => ({
+                time_control: "600+0",
+                opening,
+                is_player_white,
+                won,
+                drawn,
+                lost,
+            })),
+        },
+    ],
+});
+
+for (const corner of [
+    { width: 1440, scale: 100, locale: "en-US", copy: english.translation },
+    { width: 320, scale: 200, locale: "de-DE", copy: german.translation },
+]) {
+    test(`accounts-puzzles-engines: openings score order and merged board ${corner.width} ${corner.scale}% ${corner.locale}`, async ({
+        page,
+        mockScenario,
+        capture,
+        assertNoHorizontalOverflow,
+    }) => {
+        // The tree's recency strip counts back from the current year.
+        await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+        await page.setViewportSize({ width: corner.width, height: 900 });
+        await page.addInitScript(
+            ({ scale, locale }) => {
+                localStorage.setItem("font-size", String(scale));
+                localStorage.setItem("i18nextLng", locale);
+                localStorage.setItem(
+                    "sessions",
+                    JSON.stringify(
+                        ["alex", "other"].map((username) => ({
+                            player: "Alex",
+                            updatedAt: Date.UTC(2026, 9, 4),
+                            lichess: { username, account: { id: username, username, perfs: {} } },
+                        })),
+                    ),
+                );
+            },
+            { scale: corner.scale, locale: corner.locale },
+        );
+        const otherDatabase = {
+            ...summaryLichessDatabase,
+            handle: { id: { id: "summary-other" }, kind: "database" },
+            filename: "other_lichess.db3",
+        };
+        await mockScenario({
+            commands: {
+                list_workspace_databases: {
+                    result: { entries: [summaryLichessDatabase, otherDatabase], unread: [] },
+                },
+                get_db_info: {
+                    results: [
+                        summaryLichessInfo,
+                        { ...summaryLichessInfo, filename: otherDatabase.filename },
+                    ],
+                    result: { ...summaryLichessInfo, filename: otherDatabase.filename },
+                },
+                get_players: { result: { data: [{ id: 7, name: "alex", elo: 1500 }], count: 1 } },
+                get_players_game_info: {
+                    outcomes: [
+                        { result: openingStatisticsFixture("alex") },
+                        { result: openingStatisticsFixture("other") },
+                    ],
+                    error: "Unexpected extra statistics read",
+                },
+                get_progress: { result: null },
+                search_position: {
+                    result: [
+                        [
+                            {
+                                move: "e4",
+                                white: 5,
+                                draw: 2,
+                                black: 1,
+                                unknown: 1,
+                                last_played: "2026.11.01",
+                                year_counts: [
+                                    { year: 2023, count: 2 },
+                                    { year: 2026, count: 7 },
+                                ],
+                            },
+                            {
+                                move: "d4",
+                                white: 1,
+                                draw: 0,
+                                black: 2,
+                                unknown: 0,
+                                last_played: "2025.03.02",
+                                year_counts: [{ year: 2025, count: 3 }],
+                            },
+                        ],
+                        [gameOpeningFixture.games[0]],
+                    ],
+                },
+            },
+        });
+        await page.goto("/accounts");
+        const copy = corner.copy;
+        const tabName = copy["Home.Personal.Openings"];
+        await page.getByRole("tab", { name: tabName, exact: true }).click();
+        const panel = page.getByRole("tabpanel", { name: tabName, exact: true });
+        const figures = panel.locator("[data-opening-figures]");
+        // Both accounts add up: twenty Najdorf games lead the list by games played.
+        await expect(figures.first()).toContainText(`20 ${copy["Common.Games"]}`);
+
+        await panel
+            .getByRole("textbox", { name: copy["Home.Personal.Openings.Sort"], exact: true })
+            .click();
+        await expectHomeSummaryDropdown(page, assertNoHorizontalOverflow);
+        await page
+            .getByRole("option", { name: copy["Home.Personal.Openings.SortBest"], exact: true })
+            .click();
+        // The Italian Game scores 90% over ten games; the four-game gambit stays below.
+        await expect(figures.first()).toContainText(`10 ${copy["Common.Games"]}`);
+        await expect(figures.first()).toContainText("90%");
+        await assertNoHorizontalOverflow();
+        await capture(`openings-${corner.width}-${corner.scale}-best-score`);
+
+        await panel.getByText(copy["Home.Personal.Openings.Board"], { exact: true }).click();
+        const tree = panel.locator("[data-player-opening-tree]");
+        const firstMove = tree.locator("[data-opening-moves] tbody tr").first();
+        await expect(firstMove).toContainText("e4");
+        // One search per account database, merged into one row.
+        await expect(firstMove).toContainText("18");
+        await expect(panel.locator("[data-opening-figures]")).toHaveCount(0);
+        await expect(
+            tree.getByRole("button", { name: copy["Databases.OpeningTree.Analyse"], exact: true }),
+        ).toBeVisible();
+        const searched = await page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter(({ command }) => command === "search_position")
+                .map(({ args }) => (args as { file: { id: { id: string } } }).file.id.id),
+        );
+        expect(searched.sort()).toEqual(["summary-lichess", "summary-other"]);
+        await assertNoHorizontalOverflow();
+        await capture(`openings-${corner.width}-${corner.scale}-board`);
+
+        // Back in the list, the rows return under the sort chosen before.
+        await panel.getByText(copy["Home.Personal.Openings.List"], { exact: true }).click();
+        await expect(figures.first()).toContainText("90%");
+        await expect(tree).toHaveCount(0);
     });
 }
 

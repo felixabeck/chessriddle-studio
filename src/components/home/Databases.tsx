@@ -27,19 +27,26 @@ import { useCollectionCurrencies } from "@/state/linkedCollections";
 import { useTauriListener } from "@/platform/useTauriListener";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
-import { query_players, type ManagedDatabaseInfo, type DatabaseList } from "@/utils/db";
+import {
+  databaseHandleKey,
+  query_players,
+  type ManagedDatabaseInfo,
+  type DatabaseList,
+} from "@/utils/db";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { findAccountDatabase } from "./accountDatabase";
 import { collectSequential } from "@/utils/collectSequential";
-import { playerGroups, sessionPlayerKeys, type Session } from "@/utils/session";
+import { playerGroups, sessionPlayerKeys, type AccountSite, type Session } from "@/utils/session";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import PersonalPlayerCard from "./PersonalCard";
+import type { AccountOpeningSource } from "./PersonalCardPanels/OpeningsPanel";
 import { PlayerSelect } from "./PlayerSelect";
 
 type PersonalUnread = { type: "unread"; filename: string; error: string; key: string };
 type PersonalDatabase = {
   db: ManagedDatabaseInfo | PersonalUnread;
   username: string;
+  provider: AccountSite;
   playerKeys: string[];
 };
 
@@ -49,7 +56,7 @@ function databaseLabel(db: PersonalDatabase["db"]): string {
 
 function sessionAccountDatabase(
   session: Session,
-): { username: string; provider: "lichess" | "chesscom" } | undefined {
+): { username: string; provider: AccountSite } | undefined {
   const lichessUsername = session.lichess?.username;
   if (typeof lichessUsername === "string" && lichessUsername.length > 0) {
     return {
@@ -89,7 +96,14 @@ function personalDatabases(
     const owners = associations.filter((account) => account.association === db);
     const account = owners[0];
     return account
-      ? [{ db, username: account.username, playerKeys: owners.map((owner) => owner.playerKey) }]
+      ? [
+          {
+            db,
+            username: account.username,
+            provider: account.provider,
+            playerKeys: owners.map((owner) => owner.playerKey),
+          },
+        ]
       : [];
   });
   const unread: PersonalDatabase[] = associations.flatMap((account, index) => {
@@ -104,6 +118,7 @@ function personalDatabases(
               key: `${capabilityKey(listing.root)}:account:${index}`,
             },
             username: account.username,
+            provider: account.provider,
             playerKeys: [account.playerKey],
           },
         ]
@@ -115,6 +130,25 @@ function personalDatabases(
 interface PersonalInfo {
   db: Extract<ManagedDatabaseInfo, { type: "success" }>;
   info: PlayerGameInfo;
+  username: string;
+  provider: AccountSite;
+  /** The database-local ids the username resolved to, one per name variant. */
+  players: number[];
+}
+
+/** One opening-tree source per database and resolved player id. */
+function openingSources(entries: PersonalInfo[]): AccountOpeningSource[] {
+  return entries.flatMap(({ db, info, username, provider, players }) =>
+    players.map((player) => ({
+      key: `${databaseHandleKey(db.file)}:${player}`,
+      label: databaseLabel(db),
+      file: db.file,
+      player,
+      provider,
+      username,
+      info,
+    })),
+  );
 }
 
 interface PersonalSummary {
@@ -237,7 +271,7 @@ function Databases() {
                 db: Extract<ManagedDatabaseInfo, { type: "success" }>;
               } => item.db.type === "success",
             ),
-            async ({ db, username }) => {
+            async ({ db, username, provider }) => {
               const players = await query_players(
                 db.file,
                 {
@@ -267,7 +301,7 @@ function Databases() {
                   info.site_stats_data.push({ ...site, player: username });
                 }
               }
-              return { db, info };
+              return { db, info, username, provider, players: players.data.map(({ id }) => id) };
             },
             {
               signal,
@@ -415,6 +449,7 @@ function Databases() {
               info={{
                 site_stats_data: personalInfo.entries.flatMap((i) => i.info.site_stats_data),
               }}
+              openingSources={openingSources(personalInfo.entries)}
               notice={
                 personalInfo.failed.length > 0 ? (
                   <StatisticsNotice failed={personalInfo.failed} incomplete />

@@ -8,7 +8,7 @@ import { IconAction } from "@/components/common/IconAction";
 import type { DatabaseViewStore } from "@/state/store/database";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import FideInfo from "../databases/FideInfo";
-import OpeningsPanel from "./PersonalCardPanels/OpeningsPanel";
+import OpeningsPanel, { type AccountOpeningSource } from "./PersonalCardPanels/OpeningsPanel";
 import OverviewPanel from "./PersonalCardPanels/OverviewPanel";
 import RatingsPanel from "./PersonalCardPanels/RatingsPanel";
 import { PlayerSelect } from "./PlayerSelect";
@@ -23,6 +23,7 @@ function PersonalPlayerCard({
   isDatabase,
   notice,
   databasePlayer,
+  openingSources,
 }: {
   name: string;
   /** The selected account player's key; absent for a database player, whose panels show no website filter. */
@@ -32,6 +33,8 @@ function PersonalPlayerCard({
   isDatabase?: boolean;
   notice?: ReactNode;
   databasePlayer?: { player: Player; file: DatabaseHandle };
+  /** The account player's databases for the opening tree; absent leaves the Openings tab a list. */
+  openingSources?: AccountOpeningSource[];
 }) {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
@@ -118,7 +121,13 @@ function PersonalPlayerCard({
           {isDatabase && databasePlayer ? (
             <PlayerOpeningTree {...databasePlayer} />
           ) : (
-            <OpeningsPanel playerKey={playerKey ?? ""} info={info} isDatabase={isDatabase} />
+            <OpeningsPanel
+              playerKey={playerKey ?? ""}
+              name={name}
+              info={info}
+              isDatabase={isDatabase}
+              sources={openingSources}
+            />
           )}
         </Tabs.Panel>
         <Tabs.Panel value="ratings">

@@ -10,6 +10,13 @@ dayjs.extend(customParseFormat);
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 const mocks = vi.hoisted(() => ({
   getOpeningFromName: vi.fn(),
+  treeProps: [] as { name: string; sources: unknown[] }[],
+}));
+vi.mock("@/components/databases/PlayerOpeningTree", () => ({
+  AccountOpeningTree: (props: { name: string; sources: unknown[] }) => {
+    mocks.treeProps.push(props);
+    return <div data-testid="account-opening-tree">{props.name}</div>;
+  },
 }));
 vi.mock("@mantine/core", () => {
   const Container = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
@@ -18,6 +25,47 @@ vi.mock("@mantine/core", () => {
     Divider: () => <hr />,
     Group: Container,
     ScrollArea: Container,
+    // Both choice controls render one button per option, named after its value.
+    SegmentedControl: ({
+      data,
+      onChange,
+      "aria-label": label,
+    }: {
+      data: { value: string; label: string }[];
+      onChange: (value: string) => void;
+      "aria-label": string;
+    }) => (
+      <div role="radiogroup" aria-label={label}>
+        {data.map((option) => (
+          <button
+            key={option.value}
+            data-view={option.value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    ),
+    Select: ({
+      data,
+      onChange,
+    }: {
+      data: { value: string; label: string }[];
+      onChange: (value: string) => void;
+    }) => (
+      <>
+        {data.map((option) => (
+          <button
+            key={option.value}
+            data-sort={option.value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </>
+    ),
     Stack: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
       <div {...props}>{children}</div>
     ),
@@ -87,10 +135,24 @@ vi.mock("./TimeControlSelector", () => ({
   ),
 }));
 vi.mock("./WebsiteAccountSelector", () => ({
-  default: ({ onWebsiteChange }: { onWebsiteChange: (value: string) => void }) => (
-    <button data-testid="select-all-websites" onClick={() => onWebsiteChange("All websites")}>
-      All websites
-    </button>
+  default: ({
+    onWebsiteChange,
+    onAccountChange,
+  }: {
+    onWebsiteChange: (value: string) => void;
+    onAccountChange: (value: string) => void;
+  }) => (
+    <>
+      <button data-testid="select-all-websites" onClick={() => onWebsiteChange("All websites")}>
+        All websites
+      </button>
+      <button data-testid="select-lichess" onClick={() => onWebsiteChange("Lichess")}>
+        Lichess
+      </button>
+      <button data-testid="select-second-account" onClick={() => onAccountChange("Second")}>
+        Second
+      </button>
+    </>
   ),
 }));
 vi.mock("./DateRangeTabs", () => ({
@@ -887,11 +949,16 @@ test("Openings sums duplicate opening keys and retains each colour's results", a
   await render(<OpeningsPanel playerKey="Magnus" info={duplicatedOpeningStatistics} isDatabase />);
 
   expect(container.textContent).toContain("Sicilian Defense");
-  expect(container.textContent).toContain("83.33%");
   expect(container.textContent).toContain("French Defense");
-  expect(container.textContent).toContain("16.67%");
   expect(container.textContent).toContain("Caro-Kann Defense");
-  expect(container.textContent).toContain("100.00%");
+  // Each row names its absolute count, its score and its labelled share of that colour's games.
+  expect(
+    Array.from(container.querySelectorAll("[data-opening-figures]"), (node) => node.textContent),
+  ).toEqual([
+    "5 Common.Games · Databases.OpeningTree.Score 70%Home.Personal.Openings.Share",
+    "4 Common.Games · Databases.OpeningTree.Score 37.5%Home.Personal.Openings.Share",
+    "1 Common.Games · Databases.OpeningTree.Score 50%Home.Personal.Openings.Share",
+  ]);
   expect(
     Array.from(
       container.querySelectorAll("[data-testid='result-counts']"),
@@ -1014,4 +1081,181 @@ test("Overview last games appear only when a database player is passed", async (
     />,
   );
   expect(container.querySelector("[data-testid='last-games']")?.textContent).toBe("last-games");
+});
+
+const openingRow = (opening: string, white: boolean, won: number, drawn: number, lost: number) => ({
+  time_control: "600+0",
+  is_player_white: white,
+  opening,
+  won,
+  drawn,
+  lost,
+});
+const sortableOpenings: PlayerGameInfo = {
+  site_stats_data: [
+    {
+      site: "Lichess",
+      player: "Magnus",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: [
+        openingRow("W ten at 20%", true, 2, 0, 8),
+        openingRow("W six at 50%", true, 3, 0, 3),
+        openingRow("W five at 100%", true, 5, 0, 0),
+        openingRow("W four at 0%", true, 0, 0, 4),
+        openingRow("W two at 100%", true, 2, 0, 0),
+        openingRow("B seven at 100%", false, 7, 0, 0),
+        openingRow("B five at 0%", false, 0, 0, 5),
+      ],
+    },
+  ],
+};
+function openingNames(prefix: string) {
+  return Array.from(container.querySelectorAll("button"), (button) => button.textContent ?? "")
+    .filter((name) => name.startsWith(`${prefix} `))
+    .map((name) => name.slice(2));
+}
+async function press(selector: string) {
+  await act(async () => container.querySelector<HTMLButtonElement>(selector)!.click());
+}
+
+test("Openings orders each colour by score with rarely played openings last", async () => {
+  await render(<OpeningsPanel playerKey="Magnus" info={sortableOpenings} isDatabase />);
+  expect(openingNames("W")).toEqual([
+    "ten at 20%",
+    "six at 50%",
+    "five at 100%",
+    "four at 0%",
+    "two at 100%",
+  ]);
+  expect(openingNames("B")).toEqual(["seven at 100%", "five at 0%"]);
+
+  await press("[data-sort='best']");
+  expect(openingNames("W")).toEqual([
+    "five at 100%",
+    "six at 50%",
+    "ten at 20%",
+    "four at 0%",
+    "two at 100%",
+  ]);
+  expect(openingNames("B")).toEqual(["seven at 100%", "five at 0%"]);
+
+  await press("[data-sort='worst']");
+  expect(openingNames("W")).toEqual([
+    "ten at 20%",
+    "six at 50%",
+    "five at 100%",
+    "four at 0%",
+    "two at 100%",
+  ]);
+  expect(openingNames("B")).toEqual(["five at 0%", "seven at 100%"]);
+});
+
+const sourceInfo = (site: string, timeControls: string[]): PlayerGameInfo => ({
+  site_stats_data: [
+    {
+      site,
+      player: "ignored",
+      daily: [],
+      colors: [],
+      latest: [],
+      openings: timeControls.map((time_control) => ({
+        ...openingRow("Any", true, 1, 0, 0),
+        time_control,
+      })),
+    },
+  ],
+});
+const handle = (id: string) => ({ kind: "database" as const, id: { id } });
+const accountSources = [
+  {
+    key: "a:1",
+    label: "Magnus on Lichess",
+    file: handle("a"),
+    player: 1,
+    provider: "lichess" as const,
+    username: "Magnus",
+    // 600+0 and 900+10 are rapid on Lichess, 300+0 is blitz.
+    info: sourceInfo("Lichess", ["600+0", "300+0", "900+10"]),
+  },
+  {
+    key: "b:2",
+    label: "Second on Lichess",
+    file: handle("b"),
+    player: 2,
+    provider: "lichess" as const,
+    username: "Second",
+    info: sourceInfo("Lichess", ["60+0"]),
+  },
+  {
+    key: "c:3",
+    label: "Magnus on Chess.com",
+    file: handle("c"),
+    player: 3,
+    provider: "chesscom" as const,
+    username: "Magnus",
+    // 600+0 is rapid on Chess.com, where 300+0 is blitz.
+    info: sourceInfo("Chess.com", ["600+0", "300+0"]),
+  },
+];
+const lastTreeSources = () => mocks.treeProps.at(-1)!.sources;
+
+test("Openings offers the board only for account sources and replaces the list with it", async () => {
+  await render(<OpeningsPanel playerKey="Magnus" info={sortableOpenings} isDatabase />);
+  expect(container.querySelector("[data-view]")).toBeNull();
+
+  mocks.treeProps.length = 0;
+  await render(
+    <OpeningsPanel
+      playerKey="Magnus"
+      name="GGalileo"
+      info={sortableOpenings}
+      sources={accountSources}
+    />,
+  );
+  expect(container.querySelector("[data-testid='account-opening-tree']")).toBeNull();
+  expect(openingNames("W")).toHaveLength(5);
+
+  await press("[data-view='board']");
+  expect(container.querySelector("[data-testid='account-opening-tree']")?.textContent).toBe(
+    "GGalileo",
+  );
+  expect(openingNames("W")).toEqual([]);
+  expect(container.querySelector("[data-sort]")).toBeNull();
+  // Every account of the player is merged by default, without a time-control list.
+  expect(lastTreeSources()).toEqual(
+    accountSources.map(({ key, label, file, player }) => ({ key, label, file, player })),
+  );
+
+  await press("[data-view='list']");
+  expect(container.querySelector("[data-testid='account-opening-tree']")).toBeNull();
+  expect(openingNames("W")).toHaveLength(5);
+});
+
+test("the board's sources follow the website, account and time-control filters", async () => {
+  mocks.treeProps.length = 0;
+  await render(
+    <OpeningsPanel
+      playerKey="Magnus"
+      name="GGalileo"
+      info={sortableOpenings}
+      sources={accountSources}
+    />,
+  );
+  await press("[data-view='board']");
+
+  await press("[data-testid='select-rapid']");
+  // Each source gets its own matching raw values; one without any is left out.
+  expect(lastTreeSources()).toEqual([
+    expect.objectContaining({ key: "a:1", timeControls: ["600+0", "900+10"] }),
+    expect.objectContaining({ key: "c:3", timeControls: ["600+0"] }),
+  ]);
+
+  await press("[data-testid='select-lichess']");
+  expect(lastTreeSources()).toEqual([expect.objectContaining({ key: "a:1" })]);
+
+  await press("[data-testid='select-second-account']");
+  // The second account has no rapid game.
+  expect(lastTreeSources()).toEqual([]);
 });

@@ -16,7 +16,11 @@ import {
     filterPlayerStats,
     formatResultCounts,
     formatScorePercent,
+    matchingTimeControls,
+    MIN_SCORED_GAMES,
+    type OpeningStats,
     scoreHundredths,
+    sortOpenings,
     scoreFraction,
 } from "./overviewStatistics";
 
@@ -482,4 +486,91 @@ test("extractMonthlyResults sums wins, draws and losses separately per month", (
         { name: "2026-01", count: 12, won: 3, drawn: 5, lost: 4 },
         { name: "2026-02", count: 8, won: 5, drawn: 2, lost: 1 },
     ]);
+});
+
+describe("sortOpenings", () => {
+    const opening = (name: string, won: number, draw: number, lost: number): OpeningStats => ({
+        name,
+        games: won + draw + lost,
+        won,
+        draw,
+        lost,
+    });
+    // Already in games order, as aggregateOpenings returns them.
+    const byGames = [
+        opening("Ten at 50%", 5, 0, 5),
+        opening("Six at 50%", 2, 2, 2),
+        opening("Five at 50% b", 2, 1, 2),
+        opening("Five at 50% a", 2, 1, 2),
+        opening("Five at 100%", 5, 0, 0),
+        opening("Four at 100%", 4, 0, 0),
+        opening("One at 0%", 0, 0, 1),
+    ];
+    const names = (openings: OpeningStats[]) => openings.map(({ name }) => name);
+
+    test("games mode keeps the given order", () => {
+        expect(sortOpenings(byGames, "games")).toBe(byGames);
+    });
+
+    test("the threshold is five games", () => {
+        expect(MIN_SCORED_GAMES).toBe(5);
+    });
+
+    test("best score ranks openings from five games, ties by games then name, and keeps the rest in games order", () => {
+        expect(names(sortOpenings(byGames, "best"))).toEqual([
+            "Five at 100%",
+            "Ten at 50%",
+            "Six at 50%",
+            "Five at 50% a",
+            "Five at 50% b",
+            "Four at 100%",
+            "One at 0%",
+        ]);
+    });
+
+    test("worst score reverses only the ranked group and counts a draw as half a point", () => {
+        expect(names(sortOpenings(byGames, "worst"))).toEqual([
+            "Ten at 50%",
+            "Six at 50%",
+            "Five at 50% a",
+            "Five at 50% b",
+            "Five at 100%",
+            "Four at 100%",
+            "One at 0%",
+        ]);
+        expect(
+            names(sortOpenings([opening("Draws", 0, 6, 0), opening("Mixed", 2, 0, 3)], "worst")),
+        ).toEqual(["Mixed", "Draws"]);
+    });
+
+    test("sorting leaves its input untouched", () => {
+        const before = names(byGames);
+        sortOpenings(byGames, "best");
+        expect(names(byGames)).toEqual(before);
+    });
+});
+
+describe("matchingTimeControls", () => {
+    test("collects the raw values of a category from every statistics row, classified per site", () => {
+        const row = (time_control: string) => ({ time_control }) as OpeningStatsData;
+        const site = (name: string, openings: string[], daily: string[]): SiteStatsData =>
+            ({
+                site: name,
+                player: "Magnus",
+                openings: openings.map(row),
+                daily: daily.map(row),
+                colors: [],
+                latest: [],
+            }) as unknown as SiteStatsData;
+        const info = {
+            site_stats_data: [
+                // 480+0 is rapid on Lichess and blitz on Chess.com.
+                site("Lichess", ["480+0", "300+0", "480+0"], ["900+10"]),
+                site("Chess.com", ["480+0", "600+0"], []),
+            ],
+        };
+        expect(matchingTimeControls(info, "rapid")).toEqual(["480+0", "600+0", "900+10"]);
+        expect(matchingTimeControls(info, "blitz")).toEqual(["300+0", "480+0"]);
+        expect(matchingTimeControls(info, "classical")).toEqual([]);
+    });
 });

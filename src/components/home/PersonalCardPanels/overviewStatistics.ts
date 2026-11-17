@@ -7,6 +7,7 @@ import type {
     SiteStatsData,
 } from "@/bindings";
 import type { Color } from "chessops";
+import type { AccountSite } from "@/utils/session";
 import { getTimeControl } from "@/utils/timeControl";
 
 export type OpeningStats = {
@@ -46,6 +47,16 @@ export type OverviewStatistics = {
     blackOpenings: OpeningStats[];
 };
 
+/** The Website and Account filter values that select everything. */
+export const ALL_WEBSITES = "All websites";
+export const ALL_ACCOUNTS = "All accounts";
+
+/** The account provider behind each single-website filter value. */
+export const WEBSITE_SITE: Record<string, AccountSite> = {
+    Lichess: "lichess",
+    "Chess.com": "chesscom",
+};
+
 export type OverviewFilters = {
     website: string | null;
     account: string | null;
@@ -77,6 +88,45 @@ export function aggregateOpenings(data: OpeningStatsData[], color: Color): Openi
         openings.set(row.opening, previous);
     }
     return Array.from(openings.values()).sort((a, b) => b.games - a.games);
+}
+
+export type OpeningSort = "games" | "best" | "worst";
+
+/** Below this many games an opening's score is not ranked: one game would decide it. */
+export const MIN_SCORED_GAMES = 5;
+
+/**
+ * Orders openings already sorted by games. In a score mode the openings with enough games come
+ * first by score, ties by games and then name; the rest follow in their games order.
+ */
+export function sortOpenings(openings: OpeningStats[], sort: OpeningSort): OpeningStats[] {
+    if (sort === "games") return openings;
+    const direction = sort === "best" ? -1 : 1;
+    const score = (opening: OpeningStats) => scoreFraction(opening.won, opening.draw, opening.lost);
+    const scored = openings
+        .filter((opening) => opening.games >= MIN_SCORED_GAMES)
+        .sort(
+            (a, b) =>
+                direction * (score(a) - score(b)) ||
+                b.games - a.games ||
+                (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+        );
+    return [...scored, ...openings.filter((opening) => opening.games < MIN_SCORED_GAMES)];
+}
+
+/** The verbatim time-control values of these statistics that fall into the selected category. */
+export function matchingTimeControls(info: PlayerGameInfo, selected: string): string[] {
+    const values = new Set<string>();
+    for (const site of info.site_stats_data ?? []) {
+        for (const rows of [site.daily, site.openings, site.colors, site.latest]) {
+            for (const row of rows) {
+                if (matchesTimeControl(site.site, selected, row.time_control)) {
+                    values.add(row.time_control);
+                }
+            }
+        }
+    }
+    return [...values].sort();
 }
 
 export function scoreFraction(won: number, drawn: number, lost: number): number {
@@ -137,8 +187,8 @@ export function matchesTimeControl(
 
 export function filterPlayerStats(info: PlayerGameInfo, filters: OverviewFilters): SiteStatsData[] {
     return (info.site_stats_data ?? [])
-        .filter((site) => filters.website === "All websites" || site.site === filters.website)
-        .filter((site) => filters.account === "All accounts" || site.player === filters.account)
+        .filter((site) => filters.website === ALL_WEBSITES || site.site === filters.website)
+        .filter((site) => filters.account === ALL_ACCOUNTS || site.player === filters.account)
         .map((site) => ({
             ...site,
             daily: site.daily.filter((row) =>

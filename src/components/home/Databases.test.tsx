@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   logError: vi.fn(),
   personalCardInfo: vi.fn(),
   personalCardNotice: vi.fn(),
+  personalCardSources: vi.fn(),
   setPlayerKey: undefined as ((playerKey: string) => void) | undefined,
   select: undefined as
     | {
@@ -62,12 +63,15 @@ vi.mock("./PersonalCard", () => ({
     setPlayerKey,
     info,
     notice,
+    openingSources,
   }: {
     name: string;
     setPlayerKey?: (playerKey: string) => void;
     info: unknown;
     notice?: React.ReactNode;
+    openingSources?: unknown;
   }) => {
+    mocks.personalCardSources(openingSources);
     mocks.personalCardInfo(info);
     mocks.personalCardNotice(notice);
     mocks.setPlayerKey = setPlayerKey;
@@ -264,6 +268,53 @@ test("exact account lookup combines every casing variant under session spelling 
   expect(container.textContent).toContain('"won":9');
   expect(container.textContent).not.toContain("MagnusOpponent");
   expect(container.textContent).not.toContain('"player":"MAGNUS"');
+});
+
+test("the card receives one opening source per account database and resolved player id", async () => {
+  exactOwnerScenario();
+  mocks.getDatabases.mockResolvedValue({
+    databases: [database("db-1"), database("db-2")],
+    unread: [],
+    root: { id: { id: "listing-test-root" }, kind: "databaseRoot" as const },
+  });
+  await renderDatabases();
+  await vi.waitFor(() => expect(mocks.personalCardInfo).toHaveBeenCalled());
+  const sources = mocks.personalCardSources.mock.lastCall![0] as {
+    key: string;
+    label: string;
+    file: unknown;
+    player: number;
+    provider: string;
+    username: string;
+    info: { site_stats_data: { daily: { won: number }[] }[] };
+  }[];
+  expect(
+    sources.map(({ label, file, player, provider, username }) => ({
+      label,
+      file,
+      player,
+      provider,
+      username,
+    })),
+  ).toEqual(
+    [
+      { id: "db-1", label: "Magnus Lichess", provider: "lichess" },
+      { id: "db-2", label: "Magnus Chess.com", provider: "chesscom" },
+    ].flatMap(({ id, label, provider }) =>
+      [7, 8, 9].map((player) => ({
+        label,
+        file: database(id).file,
+        player,
+        provider,
+        username: "Magnus",
+      })),
+    ),
+  );
+  expect(new Set(sources.map(({ key }) => key)).size).toBe(6);
+  // Each source carries the statistics of its own database, for its own filter values.
+  expect(sources[0].info).toBe(sources[2].info);
+  expect(sources[0].info).not.toBe(sources[3].info);
+  expect(sources[3].info.site_stats_data.map((site) => site.daily[0].won)).toEqual([7, 8, 9]);
 });
 
 test("a write to a personal database refetches stats and a write to another database does not", async () => {

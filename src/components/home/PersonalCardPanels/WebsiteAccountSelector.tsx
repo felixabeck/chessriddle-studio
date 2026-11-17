@@ -5,12 +5,8 @@ import { useTranslation } from "react-i18next";
 import { sessionsAtom } from "@/state/atoms";
 import { playerGroups, type AccountSite } from "@/utils/session";
 import { SiteLogos, siteLogosWidth } from "../SiteLogo";
+import { ALL_ACCOUNTS, ALL_WEBSITES, WEBSITE_SITE } from "./overviewStatistics";
 import filterClasses from "./StatisticsFilters.module.css";
-
-const ALL_ACCOUNTS = "All accounts";
-const ALL_WEBSITES = "All websites";
-
-const WEBSITE_SITE: Record<string, AccountSite> = { Lichess: "lichess", "Chess.com": "chesscom" };
 
 interface WebsiteAccountSelectorProps {
   playerKey: string;

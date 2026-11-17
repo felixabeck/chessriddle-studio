@@ -7,3 +7,19 @@
 .link:hover {
   text-decoration: underline;
 }
+
+/* When the card is too short for the filters and the content, the whole panel scrolls. */
+.panel {
+  overflow-y: auto;
+}
+
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--mantine-spacing-sm);
+}
+
+.board {
+  flex-shrink: 0;
+  padding-right: var(--mantine-spacing-xs);
+}
