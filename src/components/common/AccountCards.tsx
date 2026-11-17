@@ -160,7 +160,7 @@ function PlayerSession({
                 );
               }}
             >
-              <Check />
+              <Check size="1rem" />
             </IconAction>
           ) : (
             <IconAction
@@ -172,7 +172,7 @@ function PlayerSession({
                 setEdit(true);
               }}
             >
-              <Pencil />
+              <Pencil size="1rem" />
             </IconAction>
           )}
           <IconAction
@@ -209,7 +209,7 @@ function PlayerSession({
               }
             }}
           >
-            <Trash2 />
+            <Trash2 size="1rem" />
           </IconAction>
         </Group>
       </Group>

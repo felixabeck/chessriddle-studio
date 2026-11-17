@@ -1,6 +1,7 @@
 import {
     activeWorkspaceTab,
     assertChooserInsideBoard,
+    assertNothingClipped,
     dragBoard,
     dragMosaicDivider,
     drawMark,
@@ -963,6 +964,12 @@ test("board-keyboard: opens analysis and exposes a keyboard-operable board", asy
     ).toHaveAttribute("aria-selected", "true");
     await page.keyboard.press("f");
     await expect(whiteBoard).toBeVisible();
+    // Collapsing the evaluation bar leaves a 16px button that clips an icon larger than itself.
+    await page.keyboard.press("z");
+    const showEvaluation = page.getByRole("button", { name: "Show evaluation", exact: true });
+    await assertNothingClipped(showEvaluation, { mode: "reachable" });
+    await showEvaluation.click();
+    await expect(showEvaluation).toHaveCount(0);
 });
 
 test.describe("board-keyboard: German game command errors", () => {

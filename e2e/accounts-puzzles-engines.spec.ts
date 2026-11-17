@@ -1177,6 +1177,23 @@ for (const corner of [
         });
         await page.goto("/accounts");
         const copy = corner.copy;
+        const editName = page
+            .getByRole("button", { name: copy["Accounts.EditName"], exact: true })
+            .first();
+        // The player header's 22px buttons clip an icon larger than themselves: unsized 24px icons
+        // lost the pencil's tip and the trash can's sides. Chromium shrinks such an icon's width, so
+        // only the reachable rule's y check sees it.
+        await assertNothingClipped(editName, { mode: "reachable" });
+        await assertNothingClipped(
+            page.getByRole("button", { name: copy["Accounts.Remove"], exact: true }).first(),
+            { mode: "reachable" },
+        );
+        await editName.click();
+        const saveName = page.getByRole("button", { name: copy["Accounts.SaveName"], exact: true });
+        await assertNothingClipped(saveName, { mode: "reachable" });
+        // Saving the shown name unchanged leaves the player as it was.
+        await saveName.click();
+        await expect(editName).toBeVisible();
         for (const tab of ["Overview", "Ratings", "Openings"] as const) {
             const tabName = copy[`Home.Personal.${tab}`];
             await page.getByRole("tab", { name: tabName, exact: true }).click();

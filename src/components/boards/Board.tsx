@@ -594,7 +594,7 @@ function Board({
                       e.preventDefault();
                     }}
                   >
-                    <ChevronRight />
+                    <ChevronRight size="0.875rem" />
                   </IconAction>
                 </Center>
               )}
