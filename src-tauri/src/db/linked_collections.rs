@@ -208,12 +208,14 @@ impl Record {
     }
 }
 
-/// Readable candidates after which an account file falls back to its collection id.
-const ACCOUNT_FILE_NAME_CANDIDATES: u32 = 99;
+/// The highest number an account file name carries before it falls back to the collection id.
+const ACCOUNT_FILE_NAME_NUMBERED_MAX: u32 = 99;
+/// Every candidate `account_file_name` produces: the plain name, `2..=99`, then the id suffix.
+const ACCOUNT_FILE_NAME_ATTEMPTS: u32 = ACCOUNT_FILE_NAME_NUMBERED_MAX + 1;
 
-/// The workspace name of a new account collection file: `GGalile0 (Chess.com)`, then
-/// `GGalile0 (Chess.com) 2` … on collisions, and the collection id once every readable
-/// candidate is taken.
+/// The workspace name of a new account collection file for candidate `attempt` (1-based):
+/// `GGalile0 (Chess.com)`, then `GGalile0 (Chess.com) 2` … `99` on collisions, and finally
+/// the name suffixed with the collection id, e.g. `GGalile0 (Chess.com) <uuid>`.
 fn account_file_name(display: &str, provider: &str, attempt: u32, id: Uuid) -> String {
     let label = match provider {
         "chesscom" => "Chess.com",
@@ -221,8 +223,8 @@ fn account_file_name(display: &str, provider: &str, attempt: u32, id: Uuid) -> S
         other => other,
     };
     match attempt {
-        0 | 1 => format!("{display} ({label})"),
-        2..=ACCOUNT_FILE_NAME_CANDIDATES => format!("{display} ({label}) {attempt}"),
+        ..=1 => format!("{display} ({label})"),
+        2..=ACCOUNT_FILE_NAME_NUMBERED_MAX => format!("{display} ({label}) {attempt}"),
         _ => format!("{display} ({label}) {id}"),
     }
 }
@@ -1111,6 +1113,21 @@ impl CollectionService {
         Ok(Some(file))
     }
 
+    /// Replaces the persisted creation intent with the same id.
+    fn update_creation(
+        &self,
+        creation: &CreationIntent,
+        token: &CancellationToken,
+    ) -> Result<(), Error> {
+        let mut guard = self.lock(token)?;
+        let mut registry = Self::state(&mut guard)?.clone();
+        *registry
+            .creations
+            .iter_mut()
+            .find(|prior| prior.id == creation.id)
+            .ok_or(Error::StaleGame)? = creation.clone();
+        self.save(&mut guard, registry)
+    }
     fn recover_created_source(
         &self,
         authority: &SharedPathAuthority,
@@ -2758,21 +2775,15 @@ pub(crate) async fn prepare_account_collection(
                     let file = if let Some(file) = recovered {
                         file
                     } else {
-                        let mut attempt = 1;
+                        // Candidates restart from the plain name, so an intent stored under an
+                        // older name still prefers the readable one.
+                        let mut attempt = 0;
                         loop {
                             let workspace = creation.workspace.clone();
                             let name = creation.name.clone();
                             let mut owner = |identity| {
                                 creation.identity = Some(identity);
-                                let mut guard = service.lock(token)?;
-                                let mut registry = CollectionService::state(&mut guard)?.clone();
-                                let prior = registry
-                                    .creations
-                                    .iter_mut()
-                                    .find(|prior| prior.id == creation.id)
-                                    .ok_or(Error::StaleGame)?;
-                                *prior = creation.clone();
-                                service.save(&mut guard, registry)
+                                service.update_creation(&creation, token)
                             };
                             match crate::file_workspace::create_owned_workspace_file_blocking(
                                 workspace.clone(),
@@ -2795,12 +2806,13 @@ pub(crate) async fn prepare_account_collection(
                                 Err(Error::Conflict(message))
                                     if message == crate::error::WORKSPACE_FILE_NAME_TAKEN =>
                                 {
-                                    // Another file holds this name. Persist the next candidate
-                                    // before creating it, so a crash after publication leaves the
-                                    // intent naming the leaf on disk for recovery.
+                                    // Another file holds this name, possibly after the owner
+                                    // recorded our unpublished temp file's identity. Persist the
+                                    // next candidate without that identity before creating it, so
+                                    // recovery never binds the intent to a foreign file.
                                     let next = loop {
                                         attempt += 1;
-                                        if attempt > ACCOUNT_FILE_NAME_CANDIDATES + 1 {
+                                        if attempt > ACCOUNT_FILE_NAME_ATTEMPTS {
                                             return Err(Error::Conflict(message));
                                         }
                                         let candidate = account_file_name(
@@ -2814,16 +2826,8 @@ pub(crate) async fn prepare_account_collection(
                                         }
                                     };
                                     creation.name = next;
-                                    let mut guard = service.lock(token)?;
-                                    let mut registry =
-                                        CollectionService::state(&mut guard)?.clone();
-                                    registry
-                                        .creations
-                                        .iter_mut()
-                                        .find(|prior| prior.id == creation.id)
-                                        .ok_or(Error::StaleGame)?
-                                        .name = creation.name.clone();
-                                    service.save(&mut guard, registry)?;
+                                    creation.identity = None;
+                                    service.update_creation(&creation, token)?;
                                 }
                                 Err(error) => return Err(error),
                             }

@@ -5015,11 +5015,16 @@ mod native_tests {
             "GGalile0 (Chess.com) 2"
         );
         assert_eq!(
-            account_file_name("GGalile0", "lichess", ACCOUNT_FILE_NAME_CANDIDATES, id),
-            format!("GGalile0 (Lichess) {ACCOUNT_FILE_NAME_CANDIDATES}")
+            account_file_name("GGalile0", "lichess", ACCOUNT_FILE_NAME_NUMBERED_MAX, id),
+            format!("GGalile0 (Lichess) {ACCOUNT_FILE_NAME_NUMBERED_MAX}")
         );
         assert_eq!(
-            account_file_name("GGalile0", "lichess", ACCOUNT_FILE_NAME_CANDIDATES + 1, id),
+            account_file_name(
+                "GGalile0",
+                "lichess",
+                ACCOUNT_FILE_NAME_NUMBERED_MAX + 1,
+                id
+            ),
             format!("GGalile0 (Lichess) {id}")
         );
     }
@@ -5068,14 +5073,6 @@ mod native_tests {
             std::fs::read(library.join("GGalile0 (Chess.com) 3.pgn")).unwrap(),
             b""
         );
-        let registry =
-            CollectionService::state(&mut fixture.service.lock(&CancellationToken::new()).unwrap())
-                .unwrap()
-                .clone();
-        assert!(registry
-            .creations
-            .iter()
-            .all(|creation| creation.name == "GGalile0 (Chess.com) 3"));
 
         let repeated = prepare_account_collection(
             fixture.workspace.clone(),
@@ -5090,6 +5087,209 @@ mod native_tests {
         .unwrap()
         .unwrap();
         assert_eq!(repeated.collection.unwrap().id, collection.id);
+    }
+
+    #[tokio::test]
+    async fn account_preparation_falls_back_to_the_id_after_every_numbered_name() {
+        use tauri::Manager;
+        let fixture = Fixture::new();
+        let library = fixture.directory.path().join("library");
+        std::fs::write(library.join("Player (Lichess).pgn"), b"foreign").unwrap();
+        for n in 2..=ACCOUNT_FILE_NAME_NUMBERED_MAX {
+            std::fs::write(
+                library.join(format!("Player (Lichess) {n}.pgn")),
+                b"foreign",
+            )
+            .unwrap();
+        }
+        let app = fixture.app();
+        let collection = prepare_account_collection(
+            fixture.workspace.clone(),
+            AccountIdentity {
+                provider: "lichess".into(),
+                account: "Player".into(),
+            },
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .collection
+        .unwrap();
+        let record = fixture
+            .service
+            .record(
+                Uuid::parse_str(&collection.id).unwrap(),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            record.locator,
+            vec![OsString::from(format!(
+                "Player (Lichess) {}.pgn",
+                collection.id
+            ))]
+        );
+    }
+
+    #[tokio::test]
+    async fn account_preparation_prefers_the_readable_name_over_a_taken_legacy_name() {
+        use tauri::Manager;
+        let fixture = Fixture::new();
+        let account = AccountIdentity {
+            provider: "chesscom".into(),
+            account: "player".into(),
+        };
+        let id = Uuid::new_v4();
+        let legacy = format!("chesscom-player-{id}");
+        std::fs::write(fixture.path(&legacy), b"foreign").unwrap();
+        {
+            let mut guard = fixture.service.lock(&CancellationToken::new()).unwrap();
+            let mut registry = CollectionService::state(&mut guard).unwrap().clone();
+            registry.creations.push(CreationIntent {
+                id,
+                workspace: fixture.workspace.clone(),
+                name: legacy.clone(),
+                account: account.clone(),
+                identity: None,
+            });
+            fixture.service.save(&mut guard, registry).unwrap();
+        }
+        let app = fixture.app();
+        let collection = prepare_account_collection(
+            fixture.workspace.clone(),
+            AccountIdentity {
+                account: "Player".into(),
+                ..account
+            },
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .collection
+        .unwrap();
+        assert_eq!(collection.id, id.to_string());
+        let record = fixture
+            .service
+            .record(id, &CancellationToken::new())
+            .unwrap();
+        assert_eq!(
+            record.locator,
+            vec![OsString::from("Player (Chess.com).pgn")]
+        );
+        assert_eq!(std::fs::read(fixture.path(&legacy)).unwrap(), b"foreign");
+    }
+
+    #[tokio::test]
+    async fn account_preparation_persists_the_next_name_without_a_stale_identity() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Mutex,
+        };
+        use tauri::Manager;
+        // Loses the publication race for the plain name after the owner recorded the temp
+        // file's identity, then stops before the numbered candidate's temp file exists.
+        struct RaceThenStop {
+            registry: PathBuf,
+            library: PathBuf,
+            raced: AtomicBool,
+            stopped: Mutex<Option<Option<(u64, u64)>>>,
+        }
+        impl fs::AtomicWriterInjector for RaceThenStop {
+            fn inject(&self, point: fs::AtomicFileFaultPoint) -> std::io::Result<()> {
+                if !self.registry.exists() {
+                    return Ok(());
+                }
+                let registry: Registry = serde_json::from_slice(&std::fs::read(&self.registry)?)
+                    .map_err(std::io::Error::other)?;
+                let Some(creation) = registry.creations.first() else {
+                    return Ok(());
+                };
+                if point == fs::AtomicFileFaultPoint::Rename
+                    && creation.name == "Player (Chess.com)"
+                    && creation.identity.is_some()
+                    && !self.raced.swap(true, Ordering::SeqCst)
+                {
+                    std::fs::write(self.library.join("Player (Chess.com).pgn"), b"foreign")?;
+                }
+                if point == fs::AtomicFileFaultPoint::TempfileCreate
+                    && creation.name == "Player (Chess.com) 2"
+                {
+                    *self.stopped.lock().unwrap() = Some(creation.identity);
+                    return Err(std::io::Error::other(
+                        "induced stop before the next candidate",
+                    ));
+                }
+                Ok(())
+            }
+        }
+        let fixture = Fixture::new();
+        let library = fixture.directory.path().join("library");
+        let injector = Arc::new(RaceThenStop {
+            registry: fixture.service.root.path().join(REGISTRY),
+            library: library.clone(),
+            raced: AtomicBool::new(false),
+            stopped: Mutex::new(None),
+        });
+        let fault = fs::install_test_atomic_file_injector(injector.clone());
+        let account = AccountIdentity {
+            provider: "chesscom".into(),
+            account: "Player".into(),
+        };
+        let app = fixture.app();
+        assert!(prepare_account_collection(
+            fixture.workspace.clone(),
+            account.clone(),
+            None,
+            app.state::<AppState>()
+        )
+        .await
+        .is_err());
+        drop(fault);
+        assert!(
+            injector.raced.load(Ordering::SeqCst),
+            "publication race did not fire"
+        );
+        assert_eq!(
+            *injector.stopped.lock().unwrap(),
+            Some(None),
+            "the next candidate was not persisted, or kept the lost attempt's identity"
+        );
+        assert_eq!(
+            std::fs::read(library.join("Player (Chess.com).pgn")).unwrap(),
+            b"foreign"
+        );
+        assert!(!library.join("Player (Chess.com) 2.pgn").exists());
+
+        let collection = prepare_account_collection(
+            fixture.workspace.clone(),
+            account,
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .collection
+        .unwrap();
+        let record = fixture
+            .service
+            .record(
+                Uuid::parse_str(&collection.id).unwrap(),
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            record.locator,
+            vec![OsString::from("Player (Chess.com) 2.pgn")]
+        );
+        assert_eq!(
+            std::fs::read(library.join("Player (Chess.com).pgn")).unwrap(),
+            b"foreign"
+        );
     }
 
     #[tokio::test]
