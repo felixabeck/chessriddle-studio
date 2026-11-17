@@ -27093,6 +27093,8 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Spotted outside diff:** yes — unsaved-games build final gates.
 * **Open question:** which shared state the ownership confirmation reads that a concurrently running test can change (a process-wide registry, a shared temp root, or the instance lock), and whether the test or the confirmation needs isolation.
 * **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17.
+* **Recurrence (2026-11-18, drain e7a02d36):** the same panic occurred on hosted CI: `Test` run 44196238731, job `rust` (134438320094, step "Run Rust tests with coverage"), on `a74c06472`, `3455 passed; 1 failed`, ``called `Result::unwrap()` on an `Err` value: Conflict("account creation source ownership cannot be confirmed")`` at `src/db/linked_collections/tests.rs:7135:10`. `git diff f5b2258e8..a74c06472 -- src-tauri` is empty (that push changed one e2e spec and ledger records) and the previous master run was green, so the failure is intermittent on Linux CI too, not only under the local gate. While this stays open, `pnpm ci:remote:check` refuses later pushes until master's `Test` run is green again.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"caa5947bcdf3d9f55b95f8c738c8b3bb028c6f1d32b03b64bef025ed9c029559","input_sha256":"5006b1a74dcc33252841cc4430f87e62a5d8d877153e8172b1529c06f1c3a317","kind":"mutation-receipt","operation":"95ae2eff9a3e76e2065d13ed0b1a091abbb4db320a0137c8f95f64b7d0d91223","options":{"section":null},"request_id_sha256":null,"results":["f-20261117-07"],"target":"f-20261117-07","v":1} -->
 
 ---
 
