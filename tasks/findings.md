@@ -26941,3 +26941,19 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Failure scenario:** 2026-11-16, drain session for f-20261112-96, after the verified push of d8db999cd: `bash scripts/install-local.sh` failed with `rustc ... (signal: 9, SIGKILL: kill)`; kernel log `Memory cgroup out of memory: Killed process 659710 (rustc) total-vm:6467336kB, anon-rss:4338340kB`, `oom_memcg=.../agents.slice/run-rfac169f409e54f95a0700b6c37542bc7.scope` (memory.max 8589934592). Rerunning as `agent-gate bash scripts/install-local.sh` from the same checkout built and installed d8db999cd in 1 m 22 s. Every agent-run install hits the same cap when the session already holds a few GB, so the menu entry Felix uses silently stays on an older commit.
 * **Fix:** Route the installer's Tauri release build through `agent-gate` (either in the push skill's command or inside `scripts/install-local.sh` for its build step), matching how `pnpm gates:push` and `pnpm checks:pre-review` already run, and update `.claude/rules/desktop-installation.md` if it names the command.
 * **Proof:** Run the installer from a drain session after a push and confirm `~/.local/opt/chessriddle-studio/current/VERSION` names the pushed commit with no OOM entry in `journalctl -k`.
+
+---
+
+## 2026-11-17 — filed through the inbox spool
+
+### `rust-macos-test` on master `09d65e4e7` timed out after its Rust cache download aborted mid-transfer
+
+* **ID:** f-20261117-01 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 32517be2-a170-4058-9a56-2f017130bfe5
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (post-push CI wait for f-20261115-06, drain 32517be2)
+* **Where:** `.github/workflows/test.yml` job `rust-macos-test` (`timeout-minutes: 60`), run 43994514248 on `09d65e4e7`.
+* **Defect:** the Swatinem rust-cache restore found the full-match key `v0-rust-rust-macos-test-Darwin-x64-db29baad-3bc3fadf` (687 MB), stalled at 432 MB (62.9%) and ended with `Failed to restore: The operation was aborted.` / `No cache found.` at 01:18:56Z. The job then compiled cold (`Finished test profile … in 41m 44s`, against 23m 03s with the same cache restored on the parent run 43984431727) and was cancelled at 02:18:07Z, still running the `infra::path_authority` tests, with no test failure. The cache entry is still present in the repository's cache list, so the miss was a transfer failure, not an eviction.
+* **Failure scenario:** every later push stops at `pnpm ci:remote:check` (exit 1) until this job succeeds on a rerun. Any cold macOS build (download abort or eviction) needs about 42 min to compile, so the remaining 18 min do not cover the test run.
+* **Fix shape:** `gh run rerun 43994514248 --failed -R felixabeck/chessriddle-studio` and confirm `rust-macos-test` succeeds; close with the new job id. Only if a cold build recurs, raise the job's budget for the cold-cache case.
+* **Found by:** Claude (drain orchestrator), drain 32517be2
