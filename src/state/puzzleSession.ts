@@ -9,6 +9,7 @@ import {
     type TreeState,
 } from "@/utils/treeReducer";
 import { positionFromFen } from "@/utils/chessops";
+import { pathRefSchema } from "@/utils/pathCapabilities";
 import { decodeCompressedOrJson, serializeStorageValue } from "./store/debouncedStorage";
 import { persistStorageWriteError } from "./store/tabStorage";
 import { reportPersistError } from "./persistError";
@@ -51,6 +52,12 @@ const attemptIdSchema = z.string().min(1).max(MAX_PUZZLE_ATTEMPT_ID_LENGTH);
 export const puzzleAttemptSchema = z.object({
     attemptId: attemptIdSchema,
     puzzle: puzzleSchema,
+    /**
+     * The database the row was drawn from. Row ids repeat across puzzle databases, so a later
+     * lookup by `puzzle.id` is only valid against this database. Absent on attempts migrated
+     * from legacy storage or persisted before it was recorded: their source is unknown.
+     */
+    database: pathRefSchema.optional(),
 });
 export type PuzzleAttempt = z.infer<typeof puzzleAttemptSchema>;
 

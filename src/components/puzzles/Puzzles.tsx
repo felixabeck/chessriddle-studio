@@ -383,8 +383,11 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
     existingAttemptId: string | null,
     {
       isCurrent = () => true,
+      database,
     }: {
       isCurrent?: () => boolean;
+      /** Source database of an appended row; an existing attempt keeps its recorded one. */
+      database?: PathRef;
     } = {},
   ) {
     try {
@@ -423,7 +426,12 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
             if (prior?.puzzle.completion === "incomplete")
               prior.puzzle.timeSpent = timerElapsed(previousTimer);
           }
-          if (append) history.attempts.push({ attemptId: selected, puzzle });
+          if (append)
+            history.attempts.push(
+              database
+                ? { attemptId: selected, puzzle, database }
+                : { attemptId: selected, puzzle },
+            );
           history.selectedAttemptId = selected;
           Object.assign(draft, opening, { puzzleSession: history });
         });
@@ -525,7 +533,11 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
       moves: puzzle.moves.split(" "),
       completion: "incomplete",
     };
-    if (admitPuzzle(newPuzzle, null, { isCurrent }) && progressive && range !== ratingRange)
+    if (
+      admitPuzzle(newPuzzle, null, { isCurrent, database: db }) &&
+      progressive &&
+      range !== ratingRange
+    )
       setRatingRange(range);
   }
 
@@ -535,9 +547,10 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
     refreshOwner: () => void = () => {},
   ) {
     if (!isCurrent()) return false;
-    const puzzle = store
+    const attempt = store
       .getState()
-      .puzzleSession?.attempts.find((attempt) => attempt.attemptId === attemptId)?.puzzle;
+      .puzzleSession?.attempts.find((candidate) => candidate.attemptId === attemptId);
+    const puzzle = attempt?.puzzle;
     if (!puzzle) return false;
     if (puzzle.completion !== "incomplete") return true;
     if (firstResult.current?.attemptId !== attemptId)
@@ -599,7 +612,14 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
     refreshOwner();
     clearTimer(timer);
 
-    if (effectiveSelectedDb && puzzle?.id && !themesTableMissing) {
+    // Row ids repeat across databases: look up themes only in the attempt's own database.
+    if (
+      effectiveSelectedDb &&
+      attempt?.database &&
+      capabilityKey(attempt.database) === capabilityKey(effectiveSelectedDb) &&
+      puzzle?.id &&
+      !themesTableMissing
+    ) {
       const database = effectiveSelectedDb;
       const generation = requestGeneration.current;
       completedThemeController.current?.abort();

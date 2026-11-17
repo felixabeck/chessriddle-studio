@@ -773,12 +773,12 @@ function puzzleRow(overrides: Partial<Puzzle> = {}): Puzzle {
   };
 }
 
-function testSession(rows: Puzzle[], index = 0): PuzzleSession {
+function testSession(rows: Puzzle[], index = 0, database = selectedDb): PuzzleSession {
   return {
     version: 1,
     attempts: rows
       .filter((row) => puzzleSchema.safeParse(row).success)
-      .map((puzzle, i) => ({ attemptId: `test-${i}`, puzzle })),
+      .map((puzzle, i) => ({ attemptId: `test-${i}`, puzzle, database })),
     selectedAttemptId:
       rows[index] && puzzleSchema.safeParse(rows[index]).success ? `test-${index}` : null,
   };
@@ -4099,6 +4099,46 @@ test("puzzle or database replacement cancels completed-theme ownership and refus
   );
   expect(mocks.notificationShow).not.toHaveBeenCalled();
 });
+
+test.each([
+  ["drawn from the previously selected database", selectedDb, false],
+  ["of unknown source", undefined, false],
+  ["drawn from the newly selected database", otherDb, true],
+] as const)(
+  "completing an attempt %s after a database switch looks up themes only in its own database",
+  async (_name, source, looksUp) => {
+    mocks.listPuzzleDatabases.mockResolvedValue([selectedDatabase, otherDatabase]);
+    mocks.getThemesForPuzzle.mockResolvedValue(["themeFromOtherDb"]);
+    const initial = defaultTree();
+    initial.puzzleSession = testSession([puzzleRow()], 0, source);
+    if (!source) delete initial.puzzleSession.attempts[0].database;
+    const atoms = await renderPuzzles({ initial });
+    await act(async () => {
+      treeStore.getState().transitionPuzzleSession((draft) => {
+        draft.puzzleSession!.selectedAttemptId = draft.puzzleSession!.attempts[0].attemptId;
+      });
+      treeStore.getState().makeMoves({ payload: ["e4"] });
+      treeStore.getState().goToMove([0]);
+      treeStore.getState().setStart([0]);
+      treeStore.getState().setPracticePath([0]);
+      atoms.set(jumpToNextPuzzleAtom, false);
+    });
+    await act(async () => atoms.set(selectedPuzzleDbAtom, otherDb));
+    expect(storedPuzzles().map((row) => [row.id, row.completion])).toEqual([[10, "incomplete"]]);
+
+    await humanMove("e7", "e5");
+    await act(async () => Promise.resolve());
+
+    expect(storedPuzzles()[0].completion).toBe("correct");
+    expect(mocks.getThemesForPuzzle.mock.calls.map((call) => [call[0], call[1]])).toEqual(
+      looksUp ? [[otherDb, 10]] : [],
+    );
+    expect(storedPuzzles()[0].themes).toEqual(looksUp ? ["themeFromOtherDb"] : undefined);
+    expect(
+      document.querySelector('[data-testid="puzzle-state"]')?.getAttribute("data-themes"),
+    ).toBe(looksUp ? "themeFromOtherDb" : "");
+  },
+);
 
 test("retains a stored database across workspace switches and restores it on return", async () => {
   const store = await renderPuzzles();
