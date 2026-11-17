@@ -3,7 +3,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { sessionsAtom } from "@/state/atoms";
-import { playerSites, sessionPlayerName, type AccountSite } from "@/utils/session";
+import { playerSites, sessionPlayerKey, type AccountSite } from "@/utils/session";
 import { SiteLogos, siteLogosWidth } from "../SiteLogo";
 import filterClasses from "./StatisticsFilters.module.css";
 
@@ -13,14 +13,14 @@ const ALL_WEBSITES = "All websites";
 const WEBSITE_SITE: Record<string, AccountSite> = { Lichess: "lichess", "Chess.com": "chesscom" };
 
 interface WebsiteAccountSelectorProps {
-  playerName: string;
+  playerKey: string;
   onWebsiteChange: (website: string | null) => void;
   onAccountChange: (account: string | null) => void;
   allowAll: boolean;
 }
 
 const WebsiteAccountSelector = ({
-  playerName,
+  playerKey,
   onWebsiteChange,
   onAccountChange,
   allowAll,
@@ -28,7 +28,7 @@ const WebsiteAccountSelector = ({
   const { t } = useTranslation();
   const sessions = useAtomValue(sessionsAtom);
 
-  const sites = useMemo(() => playerSites(sessions, playerName), [playerName, sessions]);
+  const sites = useMemo(() => playerSites(sessions, playerKey), [playerKey, sessions]);
   const websites = useMemo(() => {
     const availableWebsites = [];
     if (sites.includes("chesscom")) {
@@ -72,14 +72,14 @@ const WebsiteAccountSelector = ({
         sessions
           .filter(
             (s) =>
-              sessionPlayerName(s) === playerName &&
+              sessionPlayerKey(s) === playerKey &&
               ((website === "Chess.com" && s.chessCom?.username) ||
                 (website === "Lichess" && s.lichess?.username)),
           )
           .map((s) => s.chessCom?.username || s.lichess?.username)
           .filter((username): username is string => username !== undefined && username !== null),
       ),
-    [playerName, sessions, website],
+    [playerKey, sessions, website],
   );
 
   useEffect(() => {

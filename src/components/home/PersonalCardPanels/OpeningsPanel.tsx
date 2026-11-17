@@ -21,11 +21,11 @@ import TimeControlSelector from "./TimeControlSelector";
 import WebsiteAccountSelector from "./WebsiteAccountSelector";
 
 function OpeningsPanel({
-  playerName,
+  playerKey,
   info,
   isDatabase,
 }: {
-  playerName: string;
+  playerKey: string;
   info: PlayerGameInfo;
   isDatabase?: boolean;
 }) {
@@ -81,7 +81,7 @@ function OpeningsPanel({
       <div className={filterClasses.filters}>
         {!isDatabase && (
           <WebsiteAccountSelector
-            playerName={playerName}
+            playerKey={playerKey}
             onWebsiteChange={(website) => {
               setWebsite(website);
             }}

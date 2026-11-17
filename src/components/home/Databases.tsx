@@ -34,7 +34,7 @@ import {
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { findAccountDatabase } from "./accountDatabase";
 import { collectSequential } from "@/utils/collectSequential";
-import { sessionPlayerName, type Session } from "@/utils/session";
+import { playerGroups, sessionPlayerKey, type Session } from "@/utils/session";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import PersonalPlayerCard from "./PersonalCard";
 import { PlayerSelect } from "./PlayerSelect";
@@ -114,13 +114,13 @@ function StatisticsNotice({
   );
 }
 
-/** Exact SWR key identity (`unstable_serialize`) for `["personalInfo", name, databases, revision]`. */
+/** Exact SWR key identity (`unstable_serialize`) for `["personalInfo", playerKey, databases, revision]`. */
 function personalInfoProgressKey(
-  name: string,
+  playerKey: string,
   databases: PersonalDatabase[],
   revision: number,
 ): string {
-  return unstable_serialize(["personalInfo", name, databases, revision]);
+  return unstable_serialize(["personalInfo", playerKey, databases, revision]);
 }
 
 /**
@@ -134,15 +134,11 @@ function Databases() {
   const { t } = useTranslation();
   const sessions = useAtomValue(sessionsAtom);
 
-  const players = Array.from(new Set(sessions.map(sessionPlayerName)));
+  const players = playerGroups(sessions);
 
-  const [selectedName, setSelectedName] = useState("");
-  const name =
-    selectedName && players.includes(selectedName)
-      ? selectedName
-      : sessions.length > 0
-        ? sessionPlayerName(sessions[0])
-        : "";
+  const [selectedKey, setSelectedKey] = useState("");
+  const player = players.find(({ key }) => key === selectedKey) ?? players[0];
+  const playerKey = player?.key ?? "";
 
   const databasesKey = sessions.length === 0 ? null : ["personalDatabases", sessions];
   const databasesOwner = useNativeRequestOwner(databasesKey);
@@ -166,7 +162,7 @@ function Databases() {
         }
         const accounts = sessions.flatMap((session) => {
           const account = sessionAccountDatabase(session);
-          return account ? [{ ...account, player: sessionPlayerName(session) }] : [];
+          return account ? [{ ...account, player: sessionPlayerKey(session) }] : [];
         });
         const associations = accounts.map((account) => ({
           ...account,
@@ -207,12 +203,14 @@ function Databases() {
       db.type !== "unread" && db.collection ? [db.collection] : [],
     ) ?? [],
   );
-  const playerDatabases = databases?.filter(({ players }) => players.includes(name));
+  const playerDatabases = databases?.filter(({ players }) => players.includes(playerKey));
   const personalRevision = useDatabaseWritesRevision(
     playerDatabases?.map((item) => (item.db.type === "success" ? item.db.file : undefined)) ?? [],
   );
   const personalKey =
-    playerDatabases && name ? ["personalInfo", name, playerDatabases, personalRevision] : null;
+    playerDatabases && playerKey
+      ? ["personalInfo", playerKey, playerDatabases, personalRevision]
+      : null;
   const personalOwner = useNativeRequestOwner(personalKey);
   const {
     data: personalInfo,
@@ -220,9 +218,9 @@ function Databases() {
     error,
   } = useSWRImmutable<PersonalSummary>(
     personalKey,
-    ([, playerName, playerDatabases, revision]: [string, string, PersonalDatabase[], number]) =>
+    ([, requestedKey, playerDatabases, revision]: [string, string, PersonalDatabase[], number]) =>
       personalOwner!.run(async (signal) => {
-        const progressKey = personalInfoProgressKey(playerName, playerDatabases, revision);
+        const progressKey = personalInfoProgressKey(requestedKey, playerDatabases, revision);
         const map = new Map<string, number>();
         ownedProgressByKey.clear();
         ownedProgressByKey.set(progressKey, map);
@@ -301,8 +299,8 @@ function Databases() {
     null,
   );
   const currentProgressKey =
-    playerDatabases && name
-      ? personalInfoProgressKey(name, playerDatabases, personalRevision)
+    playerDatabases && playerKey
+      ? personalInfoProgressKey(playerKey, playerDatabases, personalRevision)
       : null;
   const currentProgress =
     currentProgressKey && progress && progress.owner === ownedProgressByKey.get(currentProgressKey)
@@ -396,8 +394,8 @@ function Databases() {
 
                 <PlayerSelect
                   ariaLabel={t("Home.Accounts.SelectPlayer")}
-                  value={name}
-                  onChange={setSelectedName}
+                  value={playerKey}
+                  onChange={setSelectedKey}
                   mt="md"
                 />
               </Stack>
@@ -406,8 +404,9 @@ function Databases() {
         ) : (
           <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
             <PersonalPlayerCard
-              name={name}
-              setName={setSelectedName}
+              name={player?.name ?? ""}
+              playerKey={playerKey}
+              setPlayerKey={setSelectedKey}
               info={{
                 site_stats_data: personalInfo.entries.flatMap((i) => i.info.site_stats_data),
               }}

@@ -44,11 +44,11 @@ function calculateEarliestDate(dateRange: DateRange, ratingDates: number[]): num
 }
 
 function RatingsPanel({
-  playerName,
+  playerKey,
   info,
   isDatabase,
 }: {
-  playerName: string;
+  playerKey: string;
   info: PlayerGameInfo;
   isDatabase?: boolean;
 }) {
@@ -140,7 +140,7 @@ function RatingsPanel({
       {!isDatabase && (
         <div className={filterClasses.filters}>
           <WebsiteAccountSelector
-            playerName={playerName}
+            playerKey={playerKey}
             onWebsiteChange={setWebsite}
             onAccountChange={setAccount}
             allowAll={false}

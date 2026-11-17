@@ -1410,6 +1410,75 @@ for (const state of ["partial", "failed"] as const) {
     });
 }
 
+test("accounts-puzzles-engines: home summary keeps one username on Lichess and Chess.com as two players", async ({
+    page,
+    mockScenario,
+    capture,
+}) => {
+    await page.addInitScript(() => {
+        localStorage.setItem(
+            "sessions",
+            JSON.stringify([
+                {
+                    updatedAt: Date.UTC(2026, 9, 4),
+                    lichess: {
+                        username: "alex",
+                        account: { id: "alex", username: "alex", perfs: {} },
+                    },
+                },
+                {
+                    updatedAt: Date.UTC(2026, 9, 4),
+                    chessCom: { username: "alex", stats: {} },
+                },
+            ]),
+        );
+    });
+    await mockScenario({
+        commands: {
+            list_workspace_databases: {
+                result: { entries: [summaryLichessDatabase, summaryChessComDatabase], unread: [] },
+            },
+            get_db_info: {
+                results: [
+                    summaryLichessInfo,
+                    summaryLichessInfo,
+                    summaryChessComInfo,
+                    summaryChessComInfo,
+                ],
+                result: summaryChessComInfo,
+            },
+            get_players: { result: { data: [{ id: 7, name: "alex", elo: 1500 }], count: 1 } },
+            get_players_game_info: { result: summaryStatistics },
+        },
+    });
+    await page.goto("/accounts");
+
+    const player = page.locator('input[aria-label="Player Name"]');
+    await expect(player).toHaveValue("alex");
+    const selectedSites = player.locator("xpath=..").locator("[data-site-logos]");
+    await expect(selectedSites).toHaveAttribute("data-site-logos", "lichess");
+
+    await player.click();
+    const options = page.getByRole("option");
+    await expect(options).toHaveCount(2);
+    await expect(options.nth(0)).toContainText("alex");
+    await expect(options.nth(0).locator("[data-site-logos]")).toHaveAttribute(
+        "data-site-logos",
+        "lichess",
+    );
+    await expect(options.nth(1)).toContainText("alex");
+    await expect(options.nth(1).locator("[data-site-logos]")).toHaveAttribute(
+        "data-site-logos",
+        "chesscom",
+    );
+    await capture("home-summary-separate-sites");
+    await expect(page).toHaveScreenshot("home-summary-separate-sites.png");
+
+    await options.nth(1).click();
+    await expect(player).toHaveValue("alex");
+    await expect(selectedSites).toHaveAttribute("data-site-logos", "chesscom");
+});
+
 function seedDownloadPlayerSession(page: Page) {
     return page.addInitScript(() => {
         localStorage.setItem(

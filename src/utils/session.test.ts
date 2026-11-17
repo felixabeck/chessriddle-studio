@@ -25,11 +25,16 @@ import {
     dedupeChessComSessions,
     initializePersistedSessions,
     getSessionPersistenceSnapshot,
+    migrateLegacyPlayerNames,
+    playerGroups,
     playerSites,
     savePublicSessions,
     retrySessionPersistence,
     sameAccountUsername,
+    sessionPlayerKey,
     sessionPlayerName,
+    type LichessSession,
+    type Session,
     SessionSanitizationError,
     upsertChessComSession,
     upsertLichessSession,
@@ -46,50 +51,138 @@ beforeEach(() => {
 
 test("session player names prefer the alias, then Lichess, then Chess.com, then empty", () => {
     const session = {
-        player: "Alias",
+        alias: "Alias",
         updatedAt: 1,
         lichess: { username: "lichess", account: { id: "account", username: "Account" } },
         chessCom: { username: "chesscom", stats: {} },
     };
     expect(sessionPlayerName(session)).toBe("Alias");
-    expect(sessionPlayerName({ ...session, player: undefined })).toBe("lichess");
-    expect(sessionPlayerName({ ...session, player: "" })).toBe("lichess");
-    expect(sessionPlayerName({ ...session, player: undefined, lichess: undefined })).toBe(
+    expect(sessionPlayerName({ ...session, alias: undefined })).toBe("lichess");
+    expect(sessionPlayerName({ ...session, alias: "" })).toBe("lichess");
+    expect(sessionPlayerName({ ...session, alias: undefined, lichess: undefined })).toBe(
         "chesscom",
     );
     expect(sessionPlayerName({ updatedAt: 1 })).toBe("");
 });
 
+const lichessSession = (username: string, alias?: string): Session => ({
+    ...(alias === undefined ? {} : { alias }),
+    updatedAt: 1,
+    lichess: { username, account: { id: username, username } as LichessSession["account"] },
+});
+const chessComSession = (username: string, alias?: string): Session => ({
+    ...(alias === undefined ? {} : { alias }),
+    updatedAt: 1,
+    chessCom: { username, stats: {} },
+});
+
+test("accounts sharing a username on Lichess and Chess.com stay two players unless given one alias", () => {
+    const sessions = [
+        lichessSession("GGalileo"),
+        chessComSession("ggalileo"),
+        lichessSession("Casual", "Felix"),
+        chessComSession("Serious", "Felix"),
+    ];
+
+    expect(sessions.map(sessionPlayerKey)).toEqual([
+        "lichess:ggalileo",
+        "chesscom:ggalileo",
+        "alias:Felix",
+        "alias:Felix",
+    ]);
+    expect(playerGroups(sessions)).toEqual([
+        { key: "lichess:ggalileo", name: "GGalileo", sites: ["lichess"], sessions: [sessions[0]] },
+        {
+            key: "chesscom:ggalileo",
+            name: "ggalileo",
+            sites: ["chesscom"],
+            sessions: [sessions[1]],
+        },
+        {
+            key: "alias:Felix",
+            name: "Felix",
+            sites: ["lichess", "chesscom"],
+            sessions: [sessions[2], sessions[3]],
+        },
+    ]);
+});
+
 test("player sites list each site a player's accounts live on once, Lichess first", () => {
-    const lichess = (username: string, player?: string) => ({
+    const sessions = [
+        chessComSession("GGalile0", "GGalileo"),
+        lichessSession("GGalileo", "GGalileo"),
+        lichessSession("Second", "GGalileo"),
+        chessComSession("Solo"),
+    ];
+
+    expect(playerSites(sessions, "alias:GGalileo")).toEqual(["lichess", "chesscom"]);
+    expect(playerSites(sessions, "chesscom:solo")).toEqual(["chesscom"]);
+    expect(playerSites(sessions, "alias:Nobody")).toEqual([]);
+});
+
+describe("migrateLegacyPlayerNames", () => {
+    const legacyLichess = (username: string, player?: string) => ({
         player,
         updatedAt: 1,
-        lichess: { username, account: { id: username, username } },
+        lichess: { username, account: { id: username } },
     });
-    const chessCom = (username: string, player?: string) => ({
+    const legacyChessCom = (username: string, player?: string) => ({
         player,
         updatedAt: 1,
         chessCom: { username, stats: {} },
     });
-    const sessions = [
-        chessCom("GGalile0", "GGalileo"),
-        lichess("GGalileo", "GGalileo"),
-        lichess("Second", "GGalileo"),
-        chessCom("Solo"),
-        lichess("Other", "Other"),
-    ] as Parameters<typeof playerSites>[0];
 
-    expect(playerSites(sessions, "GGalileo")).toEqual(["lichess", "chesscom"]);
-    // A session without a player alias is grouped under its username.
-    expect(playerSites(sessions, "Solo")).toEqual(["chesscom"]);
-    expect(playerSites(sessions, "Other")).toEqual(["lichess"]);
-    expect(playerSites(sessions, "Nobody")).toEqual([]);
+    test("a name that is only each account's own username becomes no alias, splitting the sites", () => {
+        const migrated = migrateLegacyPlayerNames([
+            legacyLichess("GGalileo", "GGalileo"),
+            legacyChessCom("GGalileo", "GGalileo"),
+        ]);
+
+        expect(migrated).toEqual([
+            { updatedAt: 1, lichess: { username: "GGalileo", account: { id: "GGalileo" } } },
+            { updatedAt: 1, chessCom: { username: "GGalileo", stats: {} } },
+        ]);
+    });
+
+    test("a name differing from the username only by case was chosen and stays an alias", () => {
+        const migrated = migrateLegacyPlayerNames([
+            legacyLichess("alex", "Alex"),
+            legacyChessCom("alex", "Alex"),
+        ]);
+
+        expect(migrated.map((record) => record.alias)).toEqual(["Alex", "Alex"]);
+    });
+
+    test("a name chosen for any account stays the alias of every account carrying it", () => {
+        const migrated = migrateLegacyPlayerNames([
+            legacyLichess("GGalileo", "GGalileo"),
+            legacyChessCom("GGalile0", "GGalileo"),
+            legacyLichess("Other", "Other"),
+            legacyChessCom("Empty", ""),
+        ]);
+
+        expect(migrated.map((record) => record.alias)).toEqual([
+            "GGalileo",
+            "GGalileo",
+            undefined,
+            undefined,
+        ]);
+        expect(migrated.every((record) => !("player" in record))).toBe(true);
+    });
+
+    test("a record already carrying an alias keeps it and drops a stray legacy name", () => {
+        expect(
+            migrateLegacyPlayerNames([{ ...legacyLichess("Solo", "Old"), alias: "Solo" }]),
+        ).toEqual([
+            { alias: "Solo", updatedAt: 1, lichess: { username: "Solo", account: { id: "Solo" } } },
+        ]);
+    });
 });
 
 describe("upsertLichessSession", () => {
     const account = { id: "alice", username: "alice" };
     const authenticated = {
-        player: "Original alias",
+        alias: "Original alias",
         updatedAt: 1,
         lichess: { username: "alice", account, handle: "existing-handle" },
     };
@@ -105,7 +198,7 @@ describe("upsertLichessSession", () => {
 
             expect(sessions).toEqual([
                 {
-                    player: "New alias",
+                    alias: "New alias",
                     updatedAt: 123,
                     lichess: { username, account, handle: "existing-handle" },
                 },
@@ -135,7 +228,6 @@ describe("upsertLichessSession", () => {
 
         expect(sessions).toEqual([
             {
-                player: "alice",
                 updatedAt: 123,
                 lichess: { username: "alice", account },
             },
@@ -158,17 +250,17 @@ describe("sameAccountUsername", () => {
 describe("upsertChessComSession", () => {
     const stats = {};
     const existing = {
-        player: "Original alias",
+        alias: "Original alias",
         updatedAt: 1,
         chessCom: { username: "Felix", stats },
     };
     const otherAccount = {
-        player: "Bob",
+        alias: "Bob",
         updatedAt: 2,
         chessCom: { username: "bob", stats },
     };
     const lichessOnly = {
-        player: "Lichess",
+        alias: "Lichess",
         updatedAt: 3,
         lichess: { username: "alice", account: { id: "alice", username: "alice" } },
     };
@@ -184,7 +276,7 @@ describe("upsertChessComSession", () => {
             otherAccount,
             lichessOnly,
             {
-                player: "New alias",
+                alias: "New alias",
                 updatedAt: 123,
                 chessCom: { username: "felix", stats },
             },
@@ -196,13 +288,12 @@ describe("upsertChessComSession", () => {
         ).toEqual(["bob", "felix"]);
     });
 
-    test("empty alias falls back to the Chess.com username", () => {
+    test("an empty alias stores no alias, so the account is its own player", () => {
         vi.spyOn(Date, "now").mockReturnValue(123);
         const sessions = upsertChessComSession([], "", { username: "felix", stats });
 
         expect(sessions).toEqual([
             {
-                player: "felix",
                 updatedAt: 123,
                 chessCom: { username: "felix", stats },
             },
@@ -213,17 +304,17 @@ describe("upsertChessComSession", () => {
 describe("dedupeChessComSessions", () => {
     const stats = {};
     const lichessFirst = {
-        player: "Alice",
+        alias: "Alice",
         updatedAt: 5,
         lichess: { username: "alice", account: { id: "alice", username: "alice" } },
     };
     const otherChessCom = {
-        player: "Bob",
+        alias: "Bob",
         updatedAt: 3,
         chessCom: { username: "bob", stats },
     };
     const combinedSession = {
-        player: "Combined",
+        alias: "Combined",
         updatedAt: 99,
         lichess: { username: "felix", account: { id: "felix", username: "felix" } },
         chessCom: { username: "FELIX", stats },
@@ -231,12 +322,12 @@ describe("dedupeChessComSessions", () => {
 
     test("keeps the highest updatedAt regardless of order and preserves relative order of survivors and others", () => {
         const olderUpper = {
-            player: "Felix",
+            alias: "Felix",
             updatedAt: 1,
             chessCom: { username: "Felix", stats },
         };
         const newerLower = {
-            player: "felix",
+            alias: "felix",
             updatedAt: 10,
             chessCom: { username: "felix", stats },
         };
@@ -263,8 +354,8 @@ describe("dedupeChessComSessions", () => {
     });
 
     test("breaks updatedAt ties in favour of the later session", () => {
-        const first = { player: "First", updatedAt: 4, chessCom: { username: "Felix", stats } };
-        const second = { player: "Second", updatedAt: 4, chessCom: { username: "felix", stats } };
+        const first = { alias: "First", updatedAt: 4, chessCom: { username: "Felix", stats } };
+        const second = { alias: "Second", updatedAt: 4, chessCom: { username: "felix", stats } };
 
         expect(dedupeChessComSessions([first, lichessFirst, second])).toEqual([
             lichessFirst,
@@ -287,10 +378,25 @@ describe("initializePersistedSessions", () => {
 
         expect(snapshot).toEqual({
             status: "saved",
-            sessions: [
-                { player: "felix", updatedAt: 2, chessCom: { username: "felix", stats: {} } },
-            ],
+            sessions: [{ updatedAt: 2, chessCom: { username: "felix", stats: {} } }],
         });
+        expect(decodeCompressedOrJson(localStorage.getItem("sessions"))).toEqual(snapshot.sessions);
+    });
+    test("startup stores legacy player names as aliases only where one was chosen", async () => {
+        localStorage.setItem(
+            "sessions",
+            serializeStorageValue([
+                { player: "GGalileo", updatedAt: 1, chessCom: { username: "GGalileo", stats: {} } },
+                { player: "Casual", updatedAt: 1, chessCom: { username: "Blitzer", stats: {} } },
+            ]),
+        );
+
+        const snapshot = await initializePersistedSessions();
+
+        expect(snapshot.sessions).toEqual([
+            { updatedAt: 1, chessCom: { username: "GGalileo", stats: {} } },
+            { alias: "Casual", updatedAt: 1, chessCom: { username: "Blitzer", stats: {} } },
+        ]);
         expect(decodeCompressedOrJson(localStorage.getItem("sessions"))).toEqual(snapshot.sessions);
     });
     test("persists one card for a listed native account after a successful profile read", async () => {
@@ -305,7 +411,6 @@ describe("initializePersistedSessions", () => {
 
         expect(decodeCompressedOrJson(localStorage.getItem("sessions"))).toEqual([
             {
-                player: "Player",
                 updatedAt: expect.any(Number),
                 lichess: { username: "Player", handle: "native-handle", account: profile },
             },
@@ -580,7 +685,7 @@ describe("initializePersistedSessions", () => {
         "confirmed absence clears a $source handle and cannot restore it on reload (populated: $populated)",
         async ({ source, populated }) => {
             const publicSession = {
-                player: "Player alias",
+                alias: "Player alias",
                 updatedAt: 123,
                 lichess: {
                     username: "Player",
@@ -668,7 +773,7 @@ describe("initializePersistedSessions", () => {
 
     test("a failed listing preserves the offline public session and opaque handle across reload", async () => {
         const session = {
-            player: "Alias",
+            alias: "Alias",
             updatedAt: 123,
             lichess: {
                 username: "Player",
@@ -734,7 +839,7 @@ describe("initializePersistedSessions", () => {
         expect(JSON.stringify(outcome)).not.toMatch(/private-write-token|accessToken/);
         expect(retrySessionPersistence()).toEqual(outcome);
         refusal.mockRestore();
-        const saved = savePublicSessions([{ ...outcome.sessions[0], player: "Latest alias" }]);
+        const saved = savePublicSessions([{ ...outcome.sessions[0], alias: "Latest alias" }]);
         expect(saved.status).toBe("saved");
         expect(deserializeStorageValue(localStorage.getItem("sessions")!)).toEqual(saved.sessions);
     });

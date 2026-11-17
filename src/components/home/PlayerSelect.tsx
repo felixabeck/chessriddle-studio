@@ -1,13 +1,16 @@
 import { Group, Select, Text, type MantineSpacing } from "@mantine/core";
 import { useAtomValue } from "jotai";
 import { sessionsAtom } from "@/state/atoms";
-import { playerSites, sessionPlayerName } from "@/utils/session";
+import { playerGroups } from "@/utils/session";
 import { SiteLogos, siteLogosWidth } from "./SiteLogo";
 
 /** Width of Mantine's chevron section, the right padding when no logos are wider. */
 const CHEVRON_SECTION_WIDTH = 36;
 
-/** The player dropdown of the statistics card; every player shows the sites its accounts live on. */
+/**
+ * The player dropdown of the statistics card. Its value is a player key; every player shows the
+ * sites its accounts live on, which tells apart players sharing a name.
+ */
 export function PlayerSelect({
   ariaLabel,
   value,
@@ -16,20 +19,21 @@ export function PlayerSelect({
 }: {
   ariaLabel: string;
   value: string;
-  onChange: (name: string) => void;
+  onChange: (playerKey: string) => void;
   mt?: MantineSpacing;
 }) {
   const sessions = useAtomValue(sessionsAtom);
-  const players = Array.from(new Set(sessions.map(sessionPlayerName)));
-  const selectedSites = playerSites(sessions, value);
+  const players = playerGroups(sessions);
+  const sitesOf = (key: string) => players.find((player) => player.key === key)?.sites ?? [];
+  const selectedSites = sitesOf(value);
   const sectionWidth = siteLogosWidth(selectedSites.length);
 
   return (
     <Select
       aria-label={ariaLabel}
       value={value}
-      data={players}
-      onChange={(name) => onChange(name || "")}
+      data={players.map(({ key, name }) => ({ value: key, label: name }))}
+      onChange={(key) => onChange(key || "")}
       clearable={false}
       allowDeselect={false}
       fw="bold"
@@ -40,7 +44,7 @@ export function PlayerSelect({
       rightSectionWidth={Math.max(sectionWidth, CHEVRON_SECTION_WIDTH)}
       renderOption={({ option }) => (
         <Group gap="xs" wrap="nowrap">
-          <SiteLogos sites={playerSites(sessions, option.value)} />
+          <SiteLogos sites={sitesOf(option.value)} />
           <Text fw="bold" inherit>
             {option.label}
           </Text>

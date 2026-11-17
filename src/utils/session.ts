@@ -24,24 +24,99 @@ export type ChessComSession = {
 export type Session = {
     lichess?: LichessSession;
     chessCom?: ChessComSession;
-    player?: string;
+    /** A player name the user chose. Accounts given the same alias form one player. */
+    alias?: string;
     updatedAt: number;
 };
 
-/** The name a session is grouped under: its player alias, else its Lichess username, else its Chess.com username. */
-export function sessionPlayerName(session: Session): string {
-    return session.player || session.lichess?.username || session.chessCom?.username || "";
-}
-
 export type AccountSite = "lichess" | "chesscom";
 
+function sessionUsername(session: Session): string {
+    return session.lichess?.username || session.chessCom?.username || "";
+}
+
+/**
+ * The player a session belongs to. A chosen alias groups every account given it; an account
+ * without one is its own player per site, so the same username on Lichess and Chess.com stays
+ * two players.
+ */
+export function sessionPlayerKey(session: Session): string {
+    if (session.alias) return `alias:${session.alias}`;
+    const site: AccountSite = session.lichess ? "lichess" : "chesscom";
+    return `${site}:${sessionUsername(session).toLocaleLowerCase()}`;
+}
+
+/** The name a player is shown under: its alias, else its account's username. */
+export function sessionPlayerName(session: Session): string {
+    return session.alias || sessionUsername(session);
+}
+
+export type PlayerGroup = {
+    key: string;
+    name: string;
+    /** The sites the player's accounts live on, Lichess first, each listed once. */
+    sites: AccountSite[];
+    sessions: Session[];
+};
+
+/** Every player in order of first appearance. Names can repeat; keys cannot. */
+export function playerGroups(sessions: Session[]): PlayerGroup[] {
+    const groups = new Map<string, Session[]>();
+    for (const session of sessions) {
+        const key = sessionPlayerKey(session);
+        groups.set(key, [...(groups.get(key) ?? []), session]);
+    }
+    return Array.from(groups, ([key, own]) => {
+        const sites: AccountSite[] = [];
+        if (own.some((session) => session.lichess?.username)) sites.push("lichess");
+        if (own.some((session) => session.chessCom?.username)) sites.push("chesscom");
+        return { key, name: sessionPlayerName(own[0]), sites, sessions: own };
+    });
+}
+
 /** The sites a player's accounts live on, Lichess first, each listed once. */
-export function playerSites(sessions: Session[], player: string): AccountSite[] {
-    const own = sessions.filter((session) => sessionPlayerName(session) === player);
-    const sites: AccountSite[] = [];
-    if (own.some((session) => session.lichess?.username)) sites.push("lichess");
-    if (own.some((session) => session.chessCom?.username)) sites.push("chesscom");
-    return sites;
+export function playerSites(sessions: Session[], playerKey: string): AccountSite[] {
+    return playerGroups(sessions).find((group) => group.key === playerKey)?.sites ?? [];
+}
+
+function recordUsername(record: Record<string, unknown>): string {
+    for (const site of [record.lichess, record.chessCom]) {
+        if (site !== null && typeof site === "object" && "username" in site) {
+            const username = (site as { username: unknown }).username;
+            if (typeof username === "string" && username !== "") return username;
+        }
+    }
+    return "";
+}
+
+/**
+ * Stored sessions written before player aliases always carried a `player` name, defaulting to
+ * the account's exact stored username, so accounts sharing a username were merged without being
+ * asked. A legacy name becomes an alias only when at least one of its accounts carries a name
+ * other than its own username, even by case, which can only have been a choice. Records already
+ * carrying `alias` keep it.
+ */
+export function migrateLegacyPlayerNames(
+    records: Record<string, unknown>[],
+): Record<string, unknown>[] {
+    const chosen = new Set<string>();
+    for (const record of records) {
+        const player = record.player;
+        if (
+            "alias" in record ||
+            typeof player !== "string" ||
+            player === "" ||
+            player === recordUsername(record)
+        ) {
+            continue;
+        }
+        chosen.add(player);
+    }
+    return records.map(({ player, ...record }) =>
+        "alias" in record || typeof player !== "string" || !chosen.has(player)
+            ? record
+            : { ...record, alias: player },
+    );
 }
 
 /** Storage boundary: the Lichess object is deliberately `strip`ped so an old `accessToken`
@@ -67,7 +142,7 @@ export const sessionSchema = z
             })
             .strip()
             .optional(),
-        player: z.string().optional(),
+        alias: z.string().optional(),
         updatedAt: z.number(),
     })
     .strip();
@@ -181,15 +256,12 @@ function sanitizeLegacySessions(): {
     const migrations: { username: string; token: string }[] = [];
     const legacyTokens: string[] = [];
     const sessions: Session[] = [];
-    for (const storedSession of parsePersistedSessions()) {
-        if (
-            storedSession === null ||
-            typeof storedSession !== "object" ||
-            Array.isArray(storedSession)
-        ) {
-            continue;
-        }
-        const session = { ...storedSession } as Record<string, unknown>;
+    const records = parsePersistedSessions().filter(
+        (stored): stored is Record<string, unknown> =>
+            stored !== null && typeof stored === "object" && !Array.isArray(stored),
+    );
+    for (const storedSession of migrateLegacyPlayerNames(records)) {
+        const session = { ...storedSession };
         const storedLichess = session.lichess;
         if (
             storedLichess !== null &&
@@ -304,7 +376,6 @@ export async function initializePersistedSessions(): Promise<SessionPersistenceS
             const profile = await getLichessAccount({ handle: account.handle });
             if (!profile) continue;
             reconciled.push({
-                player: account.username,
                 updatedAt: Date.now(),
                 lichess: { username: account.username, handle: account.handle, account: profile },
             });
@@ -320,7 +391,7 @@ export async function initializePersistedSessions(): Promise<SessionPersistenceS
 
 export function upsertLichessSession(
     sessions: Session[],
-    player: string,
+    alias: string,
     lichess: LichessSession,
 ): Session[] {
     const existingHandle = sessions.find(
@@ -337,7 +408,7 @@ export function upsertLichessSession(
                 lichess.handle === undefined && existingHandle !== undefined
                     ? { ...lichess, handle: existingHandle }
                     : lichess,
-            player: player || lichess.username,
+            ...(alias ? { alias } : {}),
             updatedAt: Date.now(),
         },
     ];
@@ -366,7 +437,7 @@ export function dedupeChessComSessions(sessions: Session[]): Session[] {
 
 export function upsertChessComSession(
     sessions: Session[],
-    player: string,
+    alias: string,
     chessCom: ChessComSession,
 ): Session[] {
     return [
@@ -375,7 +446,7 @@ export function upsertChessComSession(
         ),
         {
             chessCom,
-            player: player || chessCom.username,
+            ...(alias ? { alias } : {}),
             updatedAt: Date.now(),
         },
     ];

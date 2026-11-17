@@ -75,12 +75,12 @@ function mergeYears(data: MonthResults[]): MonthResults[] {
 }
 
 function OverviewPanel({
-  playerName,
+  playerKey,
   info,
   isDatabase,
   databasePlayer,
 }: {
-  playerName: string;
+  playerKey: string;
   info: PlayerGameInfo;
   isDatabase?: boolean;
   databasePlayer?: { player: Player; file: DatabaseHandle };
@@ -99,7 +99,7 @@ function OverviewPanel({
       <div className={filterClasses.filters}>
         {!isDatabase && (
           <WebsiteAccountSelector
-            playerName={playerName}
+            playerKey={playerKey}
             onWebsiteChange={(website) => setWebsite(website)}
             onAccountChange={setAccount}
             allowAll={true}

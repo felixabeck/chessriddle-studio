@@ -7,11 +7,12 @@ import { installResizeObserverStub } from "@/tests/resizeObserver";
 
 const lichess = (username: string) => ({ username, account: { id: username, username } });
 const sessions = [
-  { player: "GGalileo", updatedAt: 1, lichess: lichess("GGalileo") },
-  { player: "GGalileo", updatedAt: 1, lichess: lichess("GGalileo2") },
-  { player: "GGalileo", updatedAt: 1, chessCom: { username: "GGalile0", stats: {} } },
-  { player: "Lena", updatedAt: 1, chessCom: { username: "Lena", stats: {} } },
-  // No player alias: grouped under its Lichess username, as the statistics card groups it.
+  { alias: "GGalileo", updatedAt: 1, lichess: lichess("GGalileo") },
+  { alias: "GGalileo", updatedAt: 1, lichess: lichess("GGalileo2") },
+  { alias: "GGalileo", updatedAt: 1, chessCom: { username: "GGalile0", stats: {} } },
+  // No alias: each account is its own player, so the same name on both sites stays two players.
+  { updatedAt: 1, chessCom: { username: "Twin", stats: {} } },
+  { updatedAt: 1, lichess: lichess("Twin") },
   { updatedAt: 1, lichess: lichess("Solo") },
 ];
 
@@ -61,23 +62,25 @@ function logosNear(input: HTMLInputElement): string | null {
   return wrapper.querySelector("[data-site-logos]")?.getAttribute("data-site-logos") ?? null;
 }
 
-async function openOptions(input: HTMLInputElement): Promise<Map<string, string | null>> {
+/** Each option's label and the sites its logos show, in order; labels can repeat. */
+async function openOptions(input: HTMLInputElement): Promise<[string, string | null][]> {
   await act(async () => {
     input.click();
   });
   const options = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
-  return new Map(
-    options.map((option) => [
-      option.textContent ?? "",
-      option.querySelector("[data-site-logos]")?.getAttribute("data-site-logos") ?? null,
-    ]),
-  );
+  return options.map((option) => [
+    option.textContent ?? "",
+    option.querySelector("[data-site-logos]")?.getAttribute("data-site-logos") ?? null,
+  ]);
 }
 
-async function choose(input: HTMLInputElement, label: string) {
+async function choose(input: HTMLInputElement, label: string, sites?: string) {
   await openOptions(input);
   const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
-    (candidate) => candidate.textContent === label,
+    (candidate) =>
+      candidate.textContent === label &&
+      (sites === undefined ||
+        candidate.querySelector("[data-site-logos]")?.getAttribute("data-site-logos") === sites),
   )!;
   await act(async () => {
     option.click();
@@ -92,31 +95,38 @@ function inputWithValue(value: string): HTMLInputElement {
 
 test("the player dropdown shows the sites of the selected player and of every option", async () => {
   const onChange = vi.fn();
-  await render(<PlayerSelect ariaLabel="Player" value="GGalileo" onChange={onChange} />);
+  await render(<PlayerSelect ariaLabel="Player" value="alias:GGalileo" onChange={onChange} />);
   const input = container.querySelector<HTMLInputElement>('input[aria-label="Player"]')!;
   expect(input.value).toBe("GGalileo");
   expect(logosNear(input)).toBe("lichess chesscom");
 
-  expect(await openOptions(input)).toEqual(
-    new Map([
-      ["GGalileo", "lichess chesscom"],
-      ["Lena", "chesscom"],
-      ["Solo", "lichess"],
-    ]),
-  );
+  expect(await openOptions(input)).toEqual([
+    ["GGalileo", "lichess chesscom"],
+    ["Twin", "chesscom"],
+    ["Twin", "lichess"],
+    ["Solo", "lichess"],
+  ]);
+});
 
-  await choose(input, "Lena");
-  expect(onChange).toHaveBeenLastCalledWith("Lena");
-
-  await render(<PlayerSelect ariaLabel="Player" value="Lena" onChange={onChange} />);
-  expect(input.value).toBe("Lena");
+test("the same name on Lichess and Chess.com is two players told apart by their logos", async () => {
+  const onChange = vi.fn();
+  await render(<PlayerSelect ariaLabel="Player" value="chesscom:twin" onChange={onChange} />);
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Player"]')!;
+  expect(input.value).toBe("Twin");
   expect(logosNear(input)).toBe("chesscom");
+
+  await choose(input, "Twin", "lichess");
+  expect(onChange).toHaveBeenLastCalledWith("lichess:twin");
+
+  await render(<PlayerSelect ariaLabel="Player" value="lichess:twin" onChange={onChange} />);
+  expect(input.value).toBe("Twin");
+  expect(logosNear(input)).toBe("lichess");
 });
 
 test("the website filter shows the selected site, and All websites shows every site of the player", async () => {
   await render(
     <WebsiteAccountSelector
-      playerName="GGalileo"
+      playerKey="alias:GGalileo"
       allowAll
       onWebsiteChange={vi.fn()}
       onAccountChange={vi.fn()}
@@ -125,56 +135,54 @@ test("the website filter shows the selected site, and All websites shows every s
   const input = inputWithValue("Home.Accounts.AllWebsites");
   expect(logosNear(input)).toBe("lichess chesscom");
 
-  expect(await openOptions(input)).toEqual(
-    new Map([
-      ["Home.Accounts.AllWebsites", "lichess chesscom"],
-      ["Chess.com", "chesscom"],
-      ["Lichess", "lichess"],
-    ]),
-  );
+  expect(await openOptions(input)).toEqual([
+    ["Home.Accounts.AllWebsites", "lichess chesscom"],
+    ["Chess.com", "chesscom"],
+    ["Lichess", "lichess"],
+  ]);
 
   await choose(input, "Lichess");
   expect(input.value).toBe("Lichess");
   expect(logosNear(input)).toBe("lichess");
 });
 
-test("the website filter lists the sites of a player grouped under its username", async () => {
+test("the website filter of an account without an alias lists only that account's site", async () => {
   await render(
     <WebsiteAccountSelector
-      playerName="Solo"
+      playerKey="lichess:twin"
       allowAll={false}
       onWebsiteChange={vi.fn()}
       onAccountChange={vi.fn()}
     />,
   );
   const input = inputWithValue("Lichess");
-  expect(await openOptions(input)).toEqual(new Map([["Lichess", "lichess"]]));
+  expect(await openOptions(input)).toEqual([["Lichess", "lichess"]]);
 });
 
 test("switching to a player without the selected website or account resets the filter", async () => {
   const onWebsiteChange = vi.fn();
   const onAccountChange = vi.fn();
-  const selector = (playerName: string) => (
+  const selector = (playerKey: string) => (
     <WebsiteAccountSelector
-      playerName={playerName}
+      playerKey={playerKey}
       allowAll={false}
       onWebsiteChange={onWebsiteChange}
       onAccountChange={onAccountChange}
     />
   );
-  await render(selector("GGalileo"));
+  await render(selector("alias:GGalileo"));
   await choose(inputWithValue("Chess.com"), "Lichess");
   await choose(inputWithValue("Home.Accounts.AllAccounts"), "GGalileo2");
   expect(onWebsiteChange).toHaveBeenLastCalledWith("Lichess");
   expect(onAccountChange).toHaveBeenLastCalledWith("GGalileo2");
 
   // Solo has Lichess but not the account GGalileo2.
-  await render(selector("Solo"));
+  await render(selector("lichess:solo"));
   expect(onWebsiteChange).toHaveBeenLastCalledWith("Lichess");
   expect(onAccountChange).toHaveBeenLastCalledWith("All accounts");
 
-  // Lena has no Lichess account at all.
-  await render(selector("Lena"));
+  // The Chess.com Twin has no Lichess account at all.
+  await render(selector("chesscom:twin"));
   const website = inputWithValue("Chess.com");
   expect(logosNear(website)).toBe("chesscom");
   expect(onWebsiteChange).toHaveBeenLastCalledWith("Chess.com");

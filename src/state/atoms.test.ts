@@ -457,7 +457,7 @@ test("real bootstrap retains the latest safe sessions through atom mount, remoun
     const token = "private-bootstrap-token-sentinel";
     const publicSessions = [
         {
-            player: "Lichess alias",
+            alias: "Lichess alias",
             updatedAt: 123,
             lichess: {
                 username: "Player",
@@ -469,7 +469,7 @@ test("real bootstrap retains the latest safe sessions through atom mount, remoun
                 },
             },
         },
-        { player: "Chess.com alias", updatedAt: 456, chessCom: { username: "Other", stats: {} } },
+        { alias: "Chess.com alias", updatedAt: 456, chessCom: { username: "Other", stats: {} } },
     ] as const;
     localStorage.setItem(
         "sessions",
@@ -517,19 +517,19 @@ test("real bootstrap retains the latest safe sessions through atom mount, remoun
     unmount = store.sub(atoms.sessionsAtom, listener);
     expect(store.get(atoms.sessionsAtom)).toEqual(expected);
     store.set(atoms.sessionsAtom, (sessions) =>
-        sessions.map((s, index) => (index === 0 ? { ...s, player: "New alias" } : s)),
+        sessions.map((s, index) => (index === 0 ? { ...s, alias: "New alias" } : s)),
     );
     store.set(atoms.sessionsAtom, (sessions) => sessions.filter((s) => !s.chessCom));
-    const latest = [{ ...expected[0], player: "New alias" }];
+    const latest = [{ ...expected[0], alias: "New alias" }];
     expect(session.retrySessionPersistence()).toEqual({ status: "unsaved", sessions: latest });
     expect(store.get(atoms.sessionsAtom)).toEqual(latest);
     const nativeCalls = sessionNative.listLichessAccounts.mock.calls.length;
     unmount();
     secondStore.set(atoms.sessionsAtom, (sessions) =>
-        sessions.map((s) => ({ ...s, player: "Edited while unmounted" })),
+        sessions.map((s) => ({ ...s, alias: "Edited while unmounted" })),
     );
     unmount = store.sub(atoms.sessionsAtom, listener);
-    expect(store.get(atoms.sessionsAtom)[0]?.player).toBe("Edited while unmounted");
+    expect(store.get(atoms.sessionsAtom)[0]?.alias).toBe("Edited while unmounted");
     expect(store.get(atoms.sessionsAtom)).toHaveLength(1);
     refusal.mockRestore();
     const recovered = session.retrySessionPersistence();

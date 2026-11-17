@@ -12,7 +12,7 @@ import { getChessComAccount, getStats } from "@/utils/chess.com/api";
 import { findAccountDatabase, type AccountDatabaseListing } from "../home/accountDatabase";
 import { getLichessAccount } from "@/utils/lichess/api";
 import { revocationReason, revocationReasonText } from "@/utils/lichess/revocation";
-import { sameAccountUsername, type Session, sessionPlayerName } from "@/utils/session";
+import { playerGroups, sameAccountUsername, type Session } from "@/utils/session";
 import { notifyUnlessCancelled } from "../files/notifyError";
 import { AccountCard } from "../home/AccountCard";
 import { EmptyAccounts } from "../home/EmptyAccounts";
@@ -69,13 +69,6 @@ function AccountCards({
       database.collection ? [database.collection] : [],
     ),
   );
-  const playerNames = Array.from(new Set(sessions.map(sessionPlayerName)));
-
-  const playerSessions = playerNames.map((name) => ({
-    name,
-    sessions: sessions.filter((s) => sessionPlayerName(s) === name),
-  }));
-
   if (sessions.length === 0) {
     return <EmptyAccounts onAddAccount={onAddAccount} />;
   }
@@ -83,9 +76,9 @@ function AccountCards({
   return (
     <ScrollArea offsetScrollbars>
       <Stack>
-        {playerSessions.map(({ name, sessions }) => (
+        {playerGroups(sessions).map(({ key, name, sessions }) => (
           <PlayerSession
-            key={name}
+            key={key}
             name={name}
             sessions={sessions}
             listing={listing}
@@ -155,10 +148,9 @@ function PlayerSession({
                 setSessions((prev) =>
                   prev.map((s) => {
                     if (sessions.includes(s)) {
-                      return {
-                        ...s,
-                        player: text,
-                      };
+                      const { alias: _previous, ...account } = s;
+                      const alias = text.trim();
+                      return alias ? { ...account, alias } : account;
                     }
                     return s;
                   }),

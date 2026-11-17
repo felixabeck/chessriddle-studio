@@ -69,7 +69,7 @@ test("Overview headline real ResultsChart hover labels are Wins and Losses in en
     root!.render(
       <I18nextProvider i18n={i18n}>
         <MantineProvider>
-          <OverviewPanel playerName="Magnus" info={info} isDatabase />
+          <OverviewPanel playerKey="Magnus" info={info} isDatabase />
         </MantineProvider>
       </I18nextProvider>,
     ),

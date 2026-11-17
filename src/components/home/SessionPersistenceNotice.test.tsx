@@ -61,14 +61,14 @@ test("stays visible after failed retry and later edits, then saves the latest li
   expect(host.querySelector('[role="alert"]')).toBeNull();
   const refusal = refuseWrites();
   await act(async () => {
-    savePublicSessions([{ player: "Original alias", updatedAt: 1 }]);
+    savePublicSessions([{ alias: "Original alias", updatedAt: 1 }]);
   });
   expect(host.textContent).toContain(enUS.translation["Accounts.Persistence.Unsaved"]);
   await act(async () => host.querySelector("button")?.click());
   expect(host.querySelector('[role="alert"]')).not.toBeNull();
   await renderNotice(i18n);
   await act(async () => {
-    savePublicSessions([{ player: "Latest alias", updatedAt: 2 }]);
+    savePublicSessions([{ alias: "Latest alias", updatedAt: 2 }]);
   });
   expect(host.textContent).not.toContain("private-notice-token");
   expect(host.querySelectorAll("button")).toHaveLength(1);
@@ -77,7 +77,7 @@ test("stays visible after failed retry and later edits, then saves the latest li
   await act(async () => host.querySelector("button")?.click());
   expect(getSessionPersistenceSnapshot().status).toBe("saved");
   expect(deserializeStorageValue(localStorage.getItem("sessions")!)).toEqual([
-    { player: "Latest alias", updatedAt: 2 },
+    { alias: "Latest alias", updatedAt: 2 },
   ]);
   expect(host.querySelector('[role="alert"]')).toBeNull();
 });

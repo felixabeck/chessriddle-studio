@@ -17,14 +17,17 @@ import type { DatabaseHandle, Player } from "@/bindings";
 
 function PersonalPlayerCard({
   name,
-  setName,
+  playerKey,
+  setPlayerKey,
   info,
   isDatabase,
   notice,
   databasePlayer,
 }: {
   name: string;
-  setName?: (name: string) => void;
+  /** The selected account player's key; absent for a database player, whose panels show no website filter. */
+  playerKey?: string;
+  setPlayerKey?: (playerKey: string) => void;
   info: PlayerGameInfo;
   isDatabase?: boolean;
   notice?: ReactNode;
@@ -57,12 +60,12 @@ function PersonalPlayerCard({
             <Info />
           </IconAction>
         )}
-        {setName ? (
+        {playerKey !== undefined && setPlayerKey ? (
           <Flex justify="center">
             <PlayerSelect
               ariaLabel={t("Home.Accounts.PlayerName")}
-              value={name}
-              onChange={setName}
+              value={playerKey}
+              onChange={setPlayerKey}
             />
           </Flex>
         ) : (
@@ -92,7 +95,7 @@ function PersonalPlayerCard({
         </Tabs.List>
         <Tabs.Panel value="overview" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           <OverviewPanel
-            playerName={name}
+            playerKey={playerKey ?? ""}
             info={info}
             isDatabase={isDatabase}
             databasePlayer={databasePlayer}
@@ -115,11 +118,11 @@ function PersonalPlayerCard({
           {isDatabase && databasePlayer ? (
             <PlayerOpeningTree {...databasePlayer} />
           ) : (
-            <OpeningsPanel playerName={name} info={info} isDatabase={isDatabase} />
+            <OpeningsPanel playerKey={playerKey ?? ""} info={info} isDatabase={isDatabase} />
           )}
         </Tabs.Panel>
         <Tabs.Panel value="ratings">
-          <RatingsPanel playerName={name} info={info} isDatabase={isDatabase} />
+          <RatingsPanel playerKey={playerKey ?? ""} info={info} isDatabase={isDatabase} />
         </Tabs.Panel>
       </Tabs>
     </Paper>

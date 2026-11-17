@@ -105,14 +105,14 @@ test("slider label uses the interface language", async () => {
 
 test("rating ticks and tooltip labels use the interface language", async () => {
   await act(async () => {
-    root.render(<RatingsPanel playerName="Ada" info={info} isDatabase />);
+    root.render(<RatingsPanel playerKey="Ada" info={info} isDatabase />);
   });
   expectLocalizedDate("rating-tick", "de-DE", "en-US");
   expectLocalizedDate("rating-tooltip", "de-DE", "en-US");
 
   locale.language = "en-US";
   await act(async () => {
-    root.render(<RatingsPanel playerName="Ada" info={info} isDatabase />);
+    root.render(<RatingsPanel playerKey="Ada" info={info} isDatabase />);
   });
   expectLocalizedDate("rating-tick", "en-US", "de-DE");
   expectLocalizedDate("rating-tooltip", "en-US", "de-DE");

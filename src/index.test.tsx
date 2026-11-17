@@ -444,7 +444,7 @@ test("mounts App after a recoverable public save outcome", async () => {
   const sessions = await import("./utils/session");
   vi.mocked(sessions.initializePersistedSessions).mockResolvedValueOnce({
     status: "unsaved",
-    sessions: [{ player: "Public alias", updatedAt: 1 }],
+    sessions: [{ alias: "Public alias", updatedAt: 1 }],
   });
   const { startApplication } = await import("./bootstrap");
   const applicationStartup = startApplication();

@@ -79,7 +79,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 const session = {
-  player: "Player",
+  alias: "Player",
   updatedAt: 1,
   lichess: {
     handle: "native-handle",
@@ -90,7 +90,7 @@ const session = {
 
 const collidingSessions = [
   {
-    player: "bob",
+    alias: "bob",
     updatedAt: 1,
     lichess: {
       username: "carol",
@@ -98,7 +98,7 @@ const collidingSessions = [
     },
   },
   {
-    player: "Alice",
+    alias: "Alice",
     updatedAt: 1,
     lichess: {
       username: "bob",
@@ -215,9 +215,71 @@ describe("Player session grouping", () => {
     });
 
     expect(getDefaultStore().get(sessionsAtom)).toEqual([
-      { ...collidingSessions[0], player: "Robert" },
+      { ...collidingSessions[0], alias: "Robert" },
       collidingSessions[1],
     ]);
+  });
+});
+
+describe("Players without an alias", () => {
+  const twins = [
+    {
+      updatedAt: 1,
+      lichess: { username: "Twin", account: { id: "twin", username: "Twin" } },
+    },
+    { updatedAt: 1, chessCom: { username: "Twin", stats: {} } },
+  ];
+
+  test("the same username on Lichess and Chess.com shows two players", async () => {
+    getDefaultStore().set(sessionsAtom, twins);
+    await renderCards();
+
+    const headings = Array.from(container.querySelectorAll("span")).filter(
+      (element) => element.textContent === "Twin",
+    );
+    expect(headings).toHaveLength(2);
+    expect(
+      headings.map(
+        (heading) =>
+          heading.parentElement?.parentElement?.querySelectorAll('button[aria-label^="Log out "]')
+            .length,
+      ),
+    ).toEqual([1, 1]);
+  });
+
+  test("naming one twin gives it an alias, and an emptied name removes the alias", async () => {
+    getDefaultStore().set(sessionsAtom, twins);
+    await renderCards();
+
+    async function rename(group: Element, value: string) {
+      await act(async () => {
+        group
+          .querySelector('button[aria-label="Accounts.EditName"]')
+          ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      const input = group.querySelector("input")!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => {
+        group
+          .querySelector('button[aria-label="Accounts.SaveName"]')
+          ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    }
+
+    await rename(playerGroup("Twin"), "Casual");
+    expect(getDefaultStore().get(sessionsAtom)).toEqual([
+      { ...twins[0], alias: "Casual" },
+      twins[1],
+    ]);
+
+    await rename(playerGroup("Casual"), "  ");
+    expect(getDefaultStore().get(sessionsAtom)).toEqual(twins);
   });
 });
 
@@ -292,7 +354,7 @@ describe("Player group account removal", () => {
   test("keeps a failed member, reports once, and continues through Chess.com and Lichess siblings", async () => {
     const failure = new Error("native unavailable");
     const chessCom = {
-      player: "Player",
+      alias: "Player",
       updatedAt: 1,
       chessCom: { username: "chess-sibling", stats: {} },
     };
@@ -419,7 +481,7 @@ describe("Player group account removal", () => {
     await removeGroup("Player");
     await act(async () => {
       getDefaultStore().set(sessionsAtom, (current) =>
-        current.map((member) => ({ ...member, player: "Renamed" })),
+        current.map((member) => ({ ...member, alias: "Renamed" })),
       );
     });
     expect(playerGroup("Renamed")).toBeDefined();
@@ -434,7 +496,7 @@ describe("Player group account removal", () => {
     "drops a renamed handle-less %s sibling but preserves one authenticated during the await",
     async (provider) => {
       const sibling: Session = {
-        player: "Player",
+        alias: "Player",
         updatedAt: 1,
         ...(provider === "lichess"
           ? {
@@ -460,7 +522,7 @@ describe("Player group account removal", () => {
       await removeGroup("Player");
       const replacement: Session = {
         ...newlyAuthenticated,
-        player: "Renamed",
+        alias: "Renamed",
         lichess: {
           ...session.lichess,
           username: "new-login",
@@ -470,7 +532,7 @@ describe("Player group account removal", () => {
       await act(async () => {
         getDefaultStore().set(sessionsAtom, [
           session,
-          { ...sibling, player: "Renamed" },
+          { ...sibling, alias: "Renamed" },
           replacement,
         ]);
         removal.resolve({ state: "not_found" });
@@ -657,7 +719,7 @@ test.each(["lichess", "chesscom"] as const)(
   async (type) => {
     if (type === "chesscom")
       getDefaultStore().set(sessionsAtom, [
-        { player: "Player", updatedAt: 1, chessCom: { username: "Player", stats: {} } },
+        { alias: "Player", updatedAt: 1, chessCom: { username: "Player", stats: {} } },
       ]);
     const broken: ManagedDatabaseInfo = {
       type: "error",
@@ -699,18 +761,18 @@ test.each(["lichess", "chesscom"] as const)(
 
 describe("Chess.com case-insensitive removal", () => {
   const unrelatedChessCom: Session = {
-    player: "Other",
+    alias: "Other",
     updatedAt: 3,
     chessCom: { username: "other", stats: {} },
   };
   const unrelatedLichess: Session = {
-    player: "Carol",
+    alias: "Carol",
     updatedAt: 4,
     lichess: { username: "carol", account: { id: "carol", username: "carol" } },
   };
   const legacyDuplicates: Session[] = [
-    { player: "Felix", updatedAt: 1, chessCom: { username: "Felix", stats: {} } },
-    { player: "felix", updatedAt: 2, chessCom: { username: "felix", stats: {} } },
+    { alias: "Felix", updatedAt: 1, chessCom: { username: "Felix", stats: {} } },
+    { alias: "felix", updatedAt: 2, chessCom: { username: "felix", stats: {} } },
     unrelatedChessCom,
     unrelatedLichess,
   ];
@@ -744,17 +806,17 @@ describe("Account card reload and Lichess case-insensitive removal", () => {
 
   test("Chess.com reload updates a re-added case-variant session without reverting its spelling", async () => {
     const unrelatedChessCom: Session = {
-      player: "Other",
+      alias: "Other",
       updatedAt: 2,
       chessCom: { username: "other", stats: statsA },
     };
     const unrelatedLichess: Session = {
-      player: "Carol",
+      alias: "Carol",
       updatedAt: 3,
       lichess: { username: "carol", account: { id: "carol", username: "carol" } },
     };
     getDefaultStore().set(sessionsAtom, [
-      { player: "Felix", updatedAt: 1, chessCom: { username: "Felix", stats: statsA } },
+      { alias: "Felix", updatedAt: 1, chessCom: { username: "Felix", stats: statsA } },
       unrelatedChessCom,
       unrelatedLichess,
     ]);
@@ -776,7 +838,7 @@ describe("Account card reload and Lichess case-insensitive removal", () => {
       getDefaultStore().set(sessionsAtom, [
         unrelatedChessCom,
         unrelatedLichess,
-        { player: "felix", updatedAt: 10, chessCom: { username: "felix", stats: statsA } },
+        { alias: "felix", updatedAt: 10, chessCom: { username: "felix", stats: statsA } },
       ]);
     });
 
@@ -789,7 +851,7 @@ describe("Account card reload and Lichess case-insensitive removal", () => {
     expect(getDefaultStore().get(sessionsAtom)).toEqual([
       unrelatedChessCom,
       unrelatedLichess,
-      { player: "felix", updatedAt: 99, chessCom: { username: "felix", stats: statsB } },
+      { alias: "felix", updatedAt: 99, chessCom: { username: "felix", stats: statsB } },
     ]);
   });
 
@@ -802,7 +864,7 @@ describe("Account card reload and Lichess case-insensitive removal", () => {
     };
     getDefaultStore().set(sessionsAtom, [
       {
-        player: "alice",
+        alias: "alice",
         updatedAt: 1,
         lichess: { username: "alice", account: initialAccount },
       },
@@ -824,7 +886,7 @@ describe("Account card reload and Lichess case-insensitive removal", () => {
     act(() => {
       getDefaultStore().set(sessionsAtom, [
         {
-          player: "alice",
+          alias: "alice",
           updatedAt: 2,
           lichess: { username: "Alice", handle: "native-handle", account: initialAccount },
         },
@@ -839,7 +901,7 @@ describe("Account card reload and Lichess case-insensitive removal", () => {
 
     expect(getDefaultStore().get(sessionsAtom)).toEqual([
       {
-        player: "alice",
+        alias: "alice",
         updatedAt: 88,
         lichess: { username: "Alice", handle: "native-handle", account: refreshedAccount },
       },
@@ -848,18 +910,18 @@ describe("Account card reload and Lichess case-insensitive removal", () => {
 
   test("Lichess handle-less logout removes case-variant Alice/alice duplicates", async () => {
     const unrelatedLichess: Session = {
-      player: "Carol",
+      alias: "Carol",
       updatedAt: 3,
       lichess: { username: "carol", account: { id: "carol", username: "carol" } },
     };
     getDefaultStore().set(sessionsAtom, [
       {
-        player: "Alice",
+        alias: "Alice",
         updatedAt: 1,
         lichess: { username: "Alice", account: { id: "alice", username: "Alice" } },
       },
       {
-        player: "alice",
+        alias: "alice",
         updatedAt: 2,
         lichess: { username: "alice", account: { id: "alice", username: "alice" } },
       },
@@ -874,18 +936,18 @@ describe("Account card reload and Lichess case-insensitive removal", () => {
 
   test("removing a player group removes case-variant handle-less Lichess duplicates", async () => {
     const unrelatedLichess: Session = {
-      player: "Carol",
+      alias: "Carol",
       updatedAt: 3,
       lichess: { username: "carol", account: { id: "carol", username: "carol" } },
     };
     getDefaultStore().set(sessionsAtom, [
       {
-        player: "Alice",
+        alias: "Alice",
         updatedAt: 1,
         lichess: { username: "Alice", account: { id: "alice", username: "Alice" } },
       },
       {
-        player: "alice",
+        alias: "alice",
         updatedAt: 2,
         lichess: { username: "alice", account: { id: "alice", username: "alice" } },
       },

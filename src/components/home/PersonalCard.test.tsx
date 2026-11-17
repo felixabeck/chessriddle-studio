@@ -35,7 +35,8 @@ test("Accounts retains OpeningsPanel while only the database caller renders the 
             <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
               <PersonalPlayerCard
                 name="Player"
-                setName={vi.fn()}
+                playerKey="lichess:player"
+                setPlayerKey={vi.fn()}
                 info={{ site_stats_data: [] }}
                 isDatabase={database}
                 databasePlayer={

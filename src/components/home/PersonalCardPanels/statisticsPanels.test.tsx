@@ -442,7 +442,7 @@ describe.runIf(canStubTimezone).each(["America/New_York", "Europe/Berlin"])(
 );
 
 test("Overview sums duplicate daily keys into result totals and month buckets", async () => {
-  await render(<OverviewPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);
+  await render(<OverviewPanel playerKey="Magnus" info={duplicatedDailyStatistics} isDatabase />);
 
   expect(container.textContent).toContain("6 Common.Games");
   expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("3:1:2");
@@ -496,7 +496,7 @@ test("Overview year aggregation beyond 36 months preserves each result sum", asy
       },
     ],
   };
-  await render(<OverviewPanel playerName="Magnus" info={info} isDatabase />);
+  await render(<OverviewPanel playerKey="Magnus" info={info} isDatabase />);
   expect(JSON.parse(container.querySelector("[data-testid='month-data']")!.textContent!)).toEqual([
     { name: "2022", count: 12, won: 3, drawn: 5, lost: 4 },
     { name: "2023", count: 0, won: 0, drawn: 0, lost: 0 },
@@ -547,7 +547,7 @@ async function renderAllWebsitesRapid(Panel: typeof RatingsPanel | typeof Openin
       ],
     })),
   };
-  await render(<Panel playerName="Magnus" info={info} />);
+  await render(<Panel playerKey="Magnus" info={info} />);
   await act(async () => {
     container.querySelector<HTMLButtonElement>("[data-testid='select-all-websites']")!.click();
     container.querySelector<HTMLButtonElement>("[data-testid='select-rapid']")!.click();
@@ -578,7 +578,7 @@ test("OpeningsPanel filters All websites rapid by each row's site", async () => 
 });
 
 test("Ratings sums duplicate daily keys and takes the highest rating for each date", async () => {
-  await render(<RatingsPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);
+  await render(<RatingsPanel playerKey="Magnus" info={duplicatedDailyStatistics} isDatabase />);
 
   expect(container.textContent).toContain("6 Common.Games");
   expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("3:1:2");
@@ -619,7 +619,7 @@ describe.runIf(canStubTimezone).each(["Europe/Berlin", "America/New_York"])(
         expect(today.getTimezoneOffset()).not.toBe(0);
 
         await render(
-          <RatingsPanel playerName="Magnus" info={ratingStatisticsForDates(dates)} isDatabase />,
+          <RatingsPanel playerKey="Magnus" info={ratingStatisticsForDates(dates)} isDatabase />,
         );
 
         const stops = container
@@ -669,7 +669,7 @@ test.runIf(canStubTimezone).each([
 
       await render(
         <RatingsPanel
-          playerName="Magnus"
+          playerKey="Magnus"
           info={ratingStatisticsForDates([boundaryDate, earlierDay])}
           isDatabase
         />,
@@ -687,7 +687,7 @@ test.runIf(canStubTimezone).each([
 );
 
 test("Ratings excludes out-of-range days from the summary and rating series", async () => {
-  await render(<RatingsPanel playerName="Magnus" info={duplicatedDailyStatistics} isDatabase />);
+  await render(<RatingsPanel playerKey="Magnus" info={duplicatedDailyStatistics} isDatabase />);
 
   await act(async () => {
     container.querySelector<HTMLButtonElement>("[data-testid='select-seven-days']")?.click();
@@ -741,10 +741,10 @@ test("Overview and Ratings All-time both count games on incomplete daily dates",
     ],
   };
 
-  await render(<OverviewPanel playerName="Magnus" info={partialDateStatistics} isDatabase />);
+  await render(<OverviewPanel playerKey="Magnus" info={partialDateStatistics} isDatabase />);
   expect(container.textContent).toContain("3 Common.Games");
 
-  await render(<RatingsPanel playerName="Magnus" info={partialDateStatistics} isDatabase />);
+  await render(<RatingsPanel playerKey="Magnus" info={partialDateStatistics} isDatabase />);
   expect(container.textContent).toContain("3 Common.Games");
   const dates = container.querySelector("[data-testid='rating-dates']")?.textContent ?? "";
   expect(dates.split("|").some((value) => value === "NaN" || Number.isNaN(Number(value)))).toBe(
@@ -801,7 +801,7 @@ test("Ratings Seven Days excludes incomplete dates that All time includes", asyn
     ],
   };
 
-  await render(<RatingsPanel playerName="Magnus" info={mixedDateStatistics} isDatabase />);
+  await render(<RatingsPanel playerKey="Magnus" info={mixedDateStatistics} isDatabase />);
   expect(container.textContent).toContain("3 Common.Games");
 
   await act(async () => {
@@ -849,7 +849,7 @@ test("Ratings manual slider counts incomplete dates only on the full timeline", 
     ],
   };
 
-  await render(<RatingsPanel playerName="Magnus" info={mixedDateStatistics} isDatabase />);
+  await render(<RatingsPanel playerKey="Magnus" info={mixedDateStatistics} isDatabase />);
   expect(container.textContent).toContain("3 Common.Games");
 
   await act(async () => {
@@ -867,7 +867,7 @@ test("Ratings manual slider counts incomplete dates only on the full timeline", 
 
 test("opening names are single-flight buttons", async () => {
   mocks.getOpeningFromName.mockReturnValueOnce(new Promise(() => {}));
-  await render(<OpeningsPanel playerName="Magnus" info={duplicatedOpeningStatistics} isDatabase />);
+  await render(<OpeningsPanel playerKey="Magnus" info={duplicatedOpeningStatistics} isDatabase />);
   const sicilian = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Sicilian Defense"),
   )!;
@@ -884,7 +884,7 @@ test("opening names are single-flight buttons", async () => {
 });
 
 test("Openings sums duplicate opening keys and retains each colour's results", async () => {
-  await render(<OpeningsPanel playerName="Magnus" info={duplicatedOpeningStatistics} isDatabase />);
+  await render(<OpeningsPanel playerKey="Magnus" info={duplicatedOpeningStatistics} isDatabase />);
 
   expect(container.textContent).toContain("Sicilian Defense");
   expect(container.textContent).toContain("83.33%");
@@ -971,7 +971,7 @@ const mixedResultOverview: PlayerGameInfo = {
 };
 
 test("Overview mixed results keep per-colour games, score and W/D/L distinct", async () => {
-  await render(<OverviewPanel playerName="Magnus" info={mixedResultOverview} isDatabase />);
+  await render(<OverviewPanel playerKey="Magnus" info={mixedResultOverview} isDatabase />);
 
   const headline = container.querySelector("[data-testid='overview-headline']")?.textContent ?? "";
   expect(headline).toContain("6 Common.Games");
@@ -999,12 +999,12 @@ test("Overview mixed results keep per-colour games, score and W/D/L distinct", a
 });
 
 test("Overview last games appear only when a database player is passed", async () => {
-  await render(<OverviewPanel playerName="Magnus" info={mixedResultOverview} isDatabase />);
+  await render(<OverviewPanel playerKey="Magnus" info={mixedResultOverview} isDatabase />);
   expect(container.querySelector("[data-testid='last-games']")).toBeNull();
 
   await render(
     <OverviewPanel
-      playerName="Magnus"
+      playerKey="Magnus"
       info={mixedResultOverview}
       isDatabase
       databasePlayer={{

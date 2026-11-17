@@ -362,7 +362,7 @@ describe("account authentication", () => {
 
     expect(store.get(sessionsAtom)).toEqual([
       expect.objectContaining({
-        player: "Updated Alias",
+        alias: "Updated Alias",
         chessCom: { username: "felix", stats: {} },
       }),
     ]);

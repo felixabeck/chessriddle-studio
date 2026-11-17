@@ -173,7 +173,7 @@ beforeEach(() => {
   store.set(accountDownloadsInFlightAtom, new Map());
   store.set(sessionsAtom, [
     {
-      player: "Felix",
+      alias: "Felix",
       updatedAt: 0,
       chessCom: { username: "Felix", stats: {} },
     },
@@ -219,7 +219,7 @@ test.each([{}, { username: "Felix" }, { username: "Foreign" }])(
       sessionsAtom,
       sessionsSchema.parse([
         {
-          player: "Coach",
+          alias: "Coach",
           updatedAt: 0,
           lichess: { username: "felix", handle: "owned-handle", account: profile },
         },
@@ -334,12 +334,12 @@ test.each(["conflict-readable", "conflict-unread", "unread-only", "loading", "fa
 test("unavailable history still refreshes and removes the owned partial profile while preserving its peer", async () => {
   const accepted = sessionsSchema.parse([
     {
-      player: "Coach",
+      alias: "Coach",
       updatedAt: 0,
       lichess: { username: "e2e-player", handle: "owned-handle", account: {} },
     },
     {
-      player: "Coach",
+      alias: "Coach",
       updatedAt: 0,
       lichess: { username: "peer", handle: "peer-handle", account: {} },
     },
@@ -411,7 +411,7 @@ test.each([{}, { perfs: { blitz: { games: 2, rating: 1400 } } }])(
   async (profile) => {
     const accepted = sessionsSchema.parse([
       {
-        player: "E2E Spieler",
+        alias: "E2E Spieler",
         updatedAt: 0,
         lichess: { username: "e2e-player", account: profile },
       },
@@ -443,7 +443,7 @@ test.each([{}, { perfs: { blitz: { games: 2, rating: 1400 } } }])(
       username: "e2e-player",
     });
     expect(store.get(sessionsAtom)[0]).toMatchObject({
-      player: "E2E Spieler",
+      alias: "E2E Spieler",
       lichess: {
         username: "e2e-player",
         account: { id: "e2e-player", username: "E2E-Player" },
@@ -461,7 +461,7 @@ test.each([{}, { username: "DisplaySpelling" }, { username: 17 }])(
       sessionsAtom,
       sessionsSchema.parse([
         {
-          player: "Coach",
+          alias: "Coach",
           updatedAt: 0,
           lichess: { username: "e2e-player", handle: "owned-handle", account: profile },
         },
@@ -534,12 +534,12 @@ test.each([{}, { username: "DisplaySpelling" }, { username: 17 }])(
 test("removing one partial Lichess profile retains the other canonical account and its handle", async () => {
   const accepted = sessionsSchema.parse([
     {
-      player: "Coach",
+      alias: "Coach",
       updatedAt: 0,
       lichess: { username: "e2e-player", handle: "owned-handle", account: {} },
     },
     {
-      player: "Coach",
+      alias: "Coach",
       updatedAt: 0,
       lichess: { username: "other-player", handle: "other-handle", account: {} },
     },
@@ -568,7 +568,7 @@ test.each([false, true])(
   "real Accounts preserve a linked account error instead of zero or legacy counts (legacy present: %s)",
   async (legacyPresent) => {
     store.set(sessionsAtom, [
-      { player: "Coach", updatedAt: 0, chessCom: { username: "Felix", stats: {} } },
+      { alias: "Coach", updatedAt: 0, chessCom: { username: "Felix", stats: {} } },
     ]);
     const linked: import("@/bindings").CollectionDescriptor = {
       id: "33333333-3333-4333-8333-333333333333",
@@ -676,7 +676,7 @@ test("linked account append survives an unsaved public list, consumer remount an
     });
     expect(host.textContent).toContain("8 / 8");
     const latest = [
-      { player: "Latest alias", updatedAt: 2, chessCom: { username: "Felix", stats: {} } },
+      { alias: "Latest alias", updatedAt: 2, chessCom: { username: "Felix", stats: {} } },
     ];
     await act(async () => store.set(sessionsAtom, latest));
     expect(getSessionPersistenceSnapshot().status).toBe("unsaved");

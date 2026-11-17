@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const sessions = [
   {
-    player: "Ada",
+    alias: "Ada",
     chessCom: { username: "ada-chess" },
     lichess: { username: "ada-lichess" },
   },
@@ -191,7 +191,7 @@ describe("personal card selectors", () => {
     await act(async () => {
       root.render(
         <WebsiteAccountSelector
-          playerName="Ada"
+          playerKey="alias:Ada"
           allowAll={false}
           onWebsiteChange={firstWebsiteCallback}
           onAccountChange={firstAccountCallback}
@@ -201,7 +201,7 @@ describe("personal card selectors", () => {
     await act(async () => {
       root.render(
         <WebsiteAccountSelector
-          playerName="Ada"
+          playerKey="alias:Ada"
           allowAll={false}
           onWebsiteChange={replacementWebsiteCallback}
           onAccountChange={replacementAccountCallback}

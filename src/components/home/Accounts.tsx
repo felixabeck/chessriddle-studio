@@ -73,11 +73,10 @@ function Accounts() {
 
   const addChessCom = useCallback(
     async (player: string, username: string): Promise<boolean> => {
-      const p = player !== "" ? player : username;
       try {
         const stats = await getChessComAccount(username);
         if (!stats) return false;
-        addChessComSession(p, { username, stats });
+        addChessComSession(player, { username, stats });
         return true;
       } catch (cause) {
         notifyUnlessCancelled(t("Common.Error"), cause);
@@ -89,11 +88,10 @@ function Accounts() {
 
   const addLichessNoLogin = useCallback(
     async (player: string, username: string): Promise<boolean> => {
-      const p = player !== "" ? player : username;
       try {
         const account = await getLichessAccount({ username });
         if (!account) return false;
-        addLichessSession(p, { username, account });
+        addLichessSession(player, { username, account });
         return true;
       } catch (cause) {
         notifyUnlessCancelled(t("Common.Error"), cause);

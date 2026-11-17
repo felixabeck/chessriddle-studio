@@ -17,11 +17,11 @@ const mocks = vi.hoisted(() => ({
   logError: vi.fn(),
   personalCardInfo: vi.fn(),
   personalCardNotice: vi.fn(),
-  setName: undefined as ((name: string) => void) | undefined,
+  setPlayerKey: undefined as ((playerKey: string) => void) | undefined,
   select: undefined as
     | {
         value?: string | null;
-        data?: string[];
+        data?: { value: string; label: string }[];
         onChange?: (value: string | null) => void;
       }
     | undefined,
@@ -58,18 +58,18 @@ vi.mock("@/components/files/notifyError", () => ({
 vi.mock("./PersonalCard", () => ({
   default: ({
     name,
-    setName,
+    setPlayerKey,
     info,
     notice,
   }: {
     name: string;
-    setName?: (name: string) => void;
+    setPlayerKey?: (playerKey: string) => void;
     info: unknown;
     notice?: React.ReactNode;
   }) => {
     mocks.personalCardInfo(info);
     mocks.personalCardNotice(notice);
-    mocks.setName = setName;
+    mocks.setPlayerKey = setPlayerKey;
     return (
       <div>
         player-card {name}
@@ -93,7 +93,7 @@ vi.mock("@mantine/core", () => ({
   Progress: ({ value }: { value: number }) => <div data-testid="progress">{value}</div>,
   Select: (props: {
     value?: string | null;
-    data?: string[];
+    data?: { value: string; label: string }[];
     onChange?: (value: string | null) => void;
   }) => {
     mocks.select = props;
@@ -110,7 +110,7 @@ import Databases from "./Databases";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const session = {
-  player: "Magnus",
+  alias: "Magnus",
   updatedAt: 1,
   lichess: {
     username: "Magnus",
@@ -202,12 +202,12 @@ function exactOwnerScenario(ownerPresent = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.setName = undefined;
+  mocks.setPlayerKey = undefined;
   mocks.select = undefined;
   localStorage.clear();
   getDefaultStore().set(sessionsAtom, [
     session,
-    { player: "Magnus", updatedAt: 1, chessCom: { username: "Magnus", stats: {} } },
+    { alias: "Magnus", updatedAt: 1, chessCom: { username: "Magnus", stats: {} } },
   ]);
   mocks.getDatabases.mockResolvedValue({
     databases: [database("db-1")],
@@ -430,12 +430,12 @@ test("an adapter decoding error notifies only while mounted and leaves progress 
 test("an owned ProgressEvent moves the bar when another player's database is present", async () => {
   getDefaultStore().set(sessionsAtom, [
     {
-      player: "Bob",
+      alias: "Bob",
       updatedAt: 1,
       lichess: { username: "bob", account: { id: "bob", username: "bob" } },
     },
     {
-      player: "Alice",
+      alias: "Alice",
       updatedAt: 1,
       chessCom: { username: "alice", stats: {} },
     },
@@ -908,7 +908,7 @@ test("an imported database with an account title or username substring is exclud
 
 test("a renamed account database remains included by filename with the owning username", async () => {
   getDefaultStore().set(sessionsAtom, [
-    { ...session, player: "Player alias", lichess: { ...session.lichess, username: "magnus" } },
+    { ...session, alias: "Player alias", lichess: { ...session.lichess, username: "magnus" } },
   ]);
   mocks.getDatabases.mockResolvedValue({
     databases: [
@@ -981,12 +981,12 @@ test.each([false, true])(
   async (statisticsFail) => {
     getDefaultStore().set(sessionsAtom, [
       {
-        player: "bob",
+        alias: "bob",
         updatedAt: 1,
         lichess: { username: "carol", account: { id: "carol", username: "carol" } },
       },
       {
-        player: "Alice",
+        alias: "Alice",
         updatedAt: 1,
         lichess: { username: "bob", account: { id: "bob", username: "bob" } },
       },
@@ -1054,12 +1054,12 @@ test.each([false, true])(
 
 test("changing session membership refetches the selected player's summary with unchanged databases", async () => {
   const bobSession = {
-    player: "Bob",
+    alias: "Bob",
     updatedAt: 1,
     lichess: { username: "bob", account: { id: "bob", username: "bob" } },
   };
   const aliceSession = {
-    player: "Alice",
+    alias: "Alice",
     updatedAt: 1,
     chessCom: { username: "alice", stats: {} },
   };
@@ -1103,7 +1103,7 @@ test("changing session membership refetches the selected player's summary with u
   );
 
   await act(async () => {
-    getDefaultStore().set(sessionsAtom, [bobSession, { ...aliceSession, player: "Bob" }]);
+    getDefaultStore().set(sessionsAtom, [bobSession, { ...aliceSession, alias: "Bob" }]);
   });
   await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalledTimes(2));
   await vi.waitFor(() =>
@@ -1172,7 +1172,7 @@ test("an aborted database listing logs no late failure", async () => {
 });
 
 test("a username-less session does not prevent a healthy account summary from loading", async () => {
-  getDefaultStore().set(sessionsAtom, [{ player: "Magnus", updatedAt: 1 }, session]);
+  getDefaultStore().set(sessionsAtom, [{ alias: "Magnus", updatedAt: 1 }, session]);
   const record = {
     site: "Lichess",
     player: "Magnus",
@@ -1201,12 +1201,12 @@ test.each([false, true])(
   async (failedSibling) => {
     getDefaultStore().set(sessionsAtom, [
       {
-        player: "Coach",
+        alias: "Coach",
         updatedAt: 1,
         lichess: { username: "felix", account: { id: "felix", username: "Felix" } },
       },
-      { player: "Coach", updatedAt: 1, chessCom: { username: "FELIX", stats: {} } },
-      { player: "Other", updatedAt: 1, chessCom: { username: "Coach", stats: {} } },
+      { alias: "Coach", updatedAt: 1, chessCom: { username: "FELIX", stats: {} } },
+      { alias: "Other", updatedAt: 1, chessCom: { username: "Coach", stats: {} } },
     ]);
     const linked = (id: string, provider: "lichess" | "chesscom", account: string) => ({
       ...database(id),
@@ -1298,9 +1298,9 @@ test.each(
     getDefaultStore().set(
       sessionsAtom,
       sessionsSchema.parse([
-        { player: "Coach", updatedAt: 1, lichess: { username: "e2e-player", account: profile } },
-        { player: "Coach", updatedAt: 1, chessCom: { username: "e2e-player", stats: {} } },
-        { player: "Other", updatedAt: 1, lichess: { username: "other-player", account: {} } },
+        { alias: "Coach", updatedAt: 1, lichess: { username: "e2e-player", account: profile } },
+        { alias: "Coach", updatedAt: 1, chessCom: { username: "e2e-player", stats: {} } },
+        { alias: "Other", updatedAt: 1, lichess: { username: "other-player", account: {} } },
       ]),
     );
     const canonical = {
@@ -1414,7 +1414,7 @@ test.each(["readable", "unread"])(
     getDefaultStore().set(
       sessionsAtom,
       sessionsSchema.parse([
-        { player: "Coach", updatedAt: 1, lichess: { username: "magnus", account: {} } },
+        { alias: "Coach", updatedAt: 1, lichess: { username: "magnus", account: {} } },
       ]),
     );
     mocks.getDatabases.mockResolvedValue({
@@ -1441,7 +1441,7 @@ test.each([{}, { perfs: { blitz: { games: 2 } } }, { username: "foreign" }])(
     getDefaultStore().set(
       sessionsAtom,
       sessionsSchema.parse([
-        { player: "Coach", updatedAt: 1, lichess: { username: "magnus", account: profile } },
+        { alias: "Coach", updatedAt: 1, lichess: { username: "magnus", account: profile } },
       ]),
     );
     const legacy = { ...database("db-1"), filename: "Magnus_lichess.db3" };
@@ -1481,12 +1481,12 @@ test.each([{}, { perfs: { blitz: { games: 2 } } }, { username: "foreign" }])(
 
 function setupBobAndAlice({ bobGames = 2, includeAlice = true } = {}) {
   const bobSession = {
-    player: "Bob",
+    alias: "Bob",
     updatedAt: 1,
     lichess: { username: "bob", account: { id: "bob", username: "bob" } },
   };
   const aliceSession = {
-    player: "Alice",
+    alias: "Alice",
     updatedAt: 1,
     chessCom: { username: "alice", stats: {} },
   };
@@ -1516,10 +1516,16 @@ test("choosing a player via the empty-summary Select or PersonalCard survives se
 
   await renderDatabases();
   await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Empty.Title"));
-  expect(mocks.select).toMatchObject({ value: "Bob", data: ["Bob", "Alice"] });
+  expect(mocks.select).toMatchObject({
+    value: "alias:Bob",
+    data: [
+      { value: "alias:Bob", label: "Bob" },
+      { value: "alias:Alice", label: "Alice" },
+    ],
+  });
 
   await act(async () => {
-    mocks.select?.onChange?.("Alice");
+    mocks.select?.onChange?.("alias:Alice");
   });
   await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
 
@@ -1530,12 +1536,12 @@ test("choosing a player via the empty-summary Select or PersonalCard survives se
   expect(container.textContent).not.toContain("Home.Databases.Empty.Title");
 
   await act(async () => {
-    mocks.setName?.("Bob");
+    mocks.setPlayerKey?.("alias:Bob");
   });
   await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Empty.Title"));
 
   await act(async () => {
-    mocks.select?.onChange?.("Alice");
+    mocks.select?.onChange?.("alias:Alice");
   });
   await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
 
@@ -1543,7 +1549,7 @@ test("choosing a player via the empty-summary Select or PersonalCard survives se
     getDefaultStore().set(sessionsAtom, [{ ...bobSession, updatedAt: 3 }]);
   });
   await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Empty.Title"));
-  expect(mocks.select?.value).toBe("Bob");
+  expect(mocks.select?.value).toBe("alias:Bob");
 });
 
 test("switching between two players or returning after an aborted fetch does not carry over stale progress", async () => {
@@ -1601,7 +1607,7 @@ test("switching between two players or returning after an aborted fetch does not
   await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
 
   await act(async () => {
-    mocks.setName?.("Bob");
+    mocks.setPlayerKey?.("alias:Bob");
   });
   await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(3));
   expect(displayedProgress()).toContain("0%");
@@ -1725,7 +1731,7 @@ test("aborting Bob at 80% by switching to a cached player clears Bob's progress 
   await vi.waitFor(() => expect(container.textContent).toContain("player-card Alice"));
 
   await act(async () => {
-    mocks.setName?.("Bob");
+    mocks.setPlayerKey?.("alias:Bob");
   });
   await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
   const bobProgressId = mocks.getPlayersGameInfo.mock.calls[1][0] as string;

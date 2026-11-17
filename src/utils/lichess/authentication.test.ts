@@ -43,7 +43,7 @@ describe("authenticateLichess", () => {
             durabilityUncertain: false,
         });
         expect(getDefaultStore().get(sessionsAtom)[0]).toMatchObject({
-            player: "alias",
+            alias: "alias",
             lichess: { handle: "native-handle", username: "Player" },
         });
     });
@@ -95,7 +95,7 @@ describe("authenticateLichess", () => {
         });
         expect(getDefaultStore().get(sessionsAtom)).toEqual([
             {
-                player: "alias",
+                alias: "alias",
                 updatedAt: expect.any(Number),
                 lichess: {
                     handle: "native-handle",
