@@ -2004,8 +2004,9 @@ describe("BoardAnalysis", () => {
           verifiedRevision: "reconciled",
         });
         expect(tabStorage.flush()).toEqual([]);
+        // The reconciled install carries the derived title over to the admitted game's headers.
         expect(coldPair()).toMatchObject({
-          owner: cold.owner,
+          owner: { ...cold.owner, name: "Admitted page" },
           tree: {
             headers: { event: "Admitted page" },
             root: { comment: "", children: [] },
