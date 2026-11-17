@@ -1338,9 +1338,7 @@ for (const state of ["partial", "failed"] as const) {
                     },
                 },
                 get_db_info: {
-                    // One shared listing reads each database once, in listing order. A different
-                    // order fails the failed-state test loudly because the notice would name the
-                    // same database twice.
+                    // One shared listing reads each database once, in listing order.
                     results: [summaryLichessInfo, summaryChessComInfo],
                     result: summaryChessComInfo,
                 },

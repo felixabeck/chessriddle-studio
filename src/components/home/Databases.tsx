@@ -355,7 +355,9 @@ function Databases() {
           {t("Home.Databases.Failed.Title")}
         </Text>
       )}
-      {personalInfo &&
+      {/* A failed listing refresh keeps SWR's previous rows, so do not paint them as current. */}
+      {!databasesError &&
+        personalInfo &&
         (personalInfo.entries.length === 0 ? (
           <Paper
             h="100%"

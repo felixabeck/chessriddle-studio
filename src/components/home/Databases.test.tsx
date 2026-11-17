@@ -153,7 +153,7 @@ let progressListener: (event: { payload: ProgressEvent }) => void;
 
 let swrMutate: ScopedMutator;
 
-function CacheHandle() {
+function MutateCapture() {
   swrMutate = useSWRConfig().mutate;
   return null;
 }
@@ -162,7 +162,7 @@ async function renderDatabases() {
   await act(async () => {
     root.render(
       <SWRConfig value={{ provider: () => new Map() }}>
-        <CacheHandle />
+        <MutateCapture />
         <Databases />
       </SWRConfig>,
     );
@@ -1172,6 +1172,23 @@ test("a database created after the first listing reaches the selected player on 
     7,
     expect.anything(),
   );
+
+  // A refresh that returns identical rows keeps the summary without another statistics read.
+  await act(async () => {
+    void swrMutate(DATABASE_LIST_KEY);
+  });
+  await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalledTimes(3));
+  await act(async () => Promise.resolve());
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain("player-card Alice");
+
+  // A failed refresh keeps SWR's previous rows, which must not be shown as current statistics.
+  mocks.getDatabases.mockRejectedValue(new Error("database workspace unavailable"));
+  await act(async () => {
+    void swrMutate(DATABASE_LIST_KEY).catch(() => undefined);
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Failed.Title"));
+  expect(container.textContent).not.toContain("player-card");
 });
 
 test("a database listing failure renders a diagnostic-free message and logs the failure", async () => {
