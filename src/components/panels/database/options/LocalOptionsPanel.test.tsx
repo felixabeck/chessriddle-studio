@@ -218,6 +218,16 @@ describe("LocalOptionsPanel explorer filters", () => {
     expect(colourInputs().every((input) => input.disabled)).toBe(true);
   });
 
+  test("the position hint follows the selected match mode", async () => {
+    expect(container.textContent).toContain("Board.Database.Local.Exact.Hint");
+    expect(container.textContent).not.toContain("Board.Database.Local.Partial.Hint");
+    await act(async () =>
+      store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
+    );
+    expect(container.textContent).toContain("Board.Database.Local.Partial.Hint");
+    expect(container.textContent).not.toContain("Board.Database.Local.Exact.Hint");
+  });
+
   test("editing player 42 to a non-matching name clears the committed player filter", async () => {
     await act(async () =>
       store.set(localOptionsFamily(tabId), (options) => ({

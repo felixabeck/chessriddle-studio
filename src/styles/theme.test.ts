@@ -42,6 +42,8 @@ describe("ChessRiddle foundation", () => {
     );
     test("fixes gold at the exact scheme-specific primary while retaining board palettes", () => {
         expect(theme.primaryColor).toBe("gold");
+        // Switches, checkboxes and radios show the pointer on track and label.
+        expect(theme.cursorType).toBe("pointer");
         expect(theme.primaryShade).toEqual({ light: 8, dark: 4 });
         expect(theme.colors.gold[8]).toBe("hsl(45 76% 24%)");
         expect(theme.colors.gold[4]).toBe("hsl(42 53.2% 54.7%)");

@@ -79,3 +79,10 @@ test("defaults thumbs to [0, ELO_FILTER_MAX] when value is null", async () => {
   expect(minThumb.getAttribute("aria-valuenow")).toBe("0");
   expect(maxThumb.getAttribute("aria-valuenow")).toBe(String(ELO_FILTER_MAX));
 });
+
+test("reserves room below and beside the track for the mark labels", async () => {
+  await renderSlider([0, ELO_FILTER_MAX], vi.fn());
+  const slider = host.querySelector<HTMLElement>(".mantine-RangeSlider-root")!;
+  expect(slider.style.marginBottom).toBe("var(--mantine-spacing-xl)");
+  expect(slider.style.paddingInline).toBe("var(--mantine-spacing-lg)");
+});

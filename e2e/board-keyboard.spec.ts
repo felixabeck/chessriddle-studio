@@ -197,8 +197,11 @@ for (const timezoneId of ["America/Los_Angeles", "Europe/Berlin"]) {
             await page.getByRole("tab", { name: "Options", exact: true }).click();
             const options = page.getByRole("tabpanel", { name: "Options", exact: true });
             await options.getByText("Lichess All", { exact: true }).click();
-            const since = options.getByLabel("Since", { exact: true });
-            const until = options.getByLabel("Until", { exact: true });
+            const since = options.getByLabel("From", { exact: true });
+            const until = options.getByLabel("To", { exact: true });
+            // One time zone pins the pixels; the picker behaviour below runs in both.
+            const pinsLayout = timezoneId === "Europe/Berlin";
+            if (pinsLayout) await expect(options).toHaveScreenshot("explorer-lichess-options.png");
             async function pickDate(input: Locator, name: string) {
                 await input.click();
                 const dropdown = page.locator("[data-dates-dropdown]");
@@ -215,6 +218,7 @@ for (const timezoneId of ["America/Los_Angeles", "Europe/Berlin"]) {
             await expect(since).toHaveText("January 2024");
 
             await options.getByText("Lichess Masters", { exact: true }).click();
+            if (pinsLayout) await expect(options).toHaveScreenshot("explorer-masters-options.png");
             await pickDate(since, "2024");
             await pickDate(until, "2024");
             await expect(since).toHaveText("2024");

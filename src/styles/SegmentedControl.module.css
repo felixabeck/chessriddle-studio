@@ -42,3 +42,13 @@
     color: var(--cf-foreground);
   }
 }
+
+/* The label colours above outrank Mantine's own disabled colour, so dim the whole control. */
+/* Mantine writes `data-disabled="false"` on an enabled root, so match the value. */
+.root[data-disabled="true"] {
+  opacity: 0.45;
+}
+
+.label[data-disabled] {
+  cursor: not-allowed;
+}

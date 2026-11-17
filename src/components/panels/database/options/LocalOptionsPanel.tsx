@@ -24,7 +24,7 @@ import { PlayerSearchInput } from "@/components/databases/PlayerSearchInput";
 import { localOptionsFamily } from "@/state/atoms";
 import type { DatabaseHandle } from "@/bindings";
 import { databaseHandleKey, getEffectiveLocalPlayer } from "@/utils/db";
-import { YearPresetButtons } from "./filterControls";
+import { FilterField, PlaysAsControl, YearPresetButtons } from "./filterControls";
 
 function LocalOptionsPanel({
   boardFen,
@@ -54,10 +54,7 @@ function LocalOptionsPanel({
   return (
     <Stack>
       <SimpleGrid cols={2}>
-        <Stack gap={4}>
-          <Text fw="bold" fz="sm">
-            {t("Board.Database.Local.Player")}
-          </Text>
+        <FilterField label={t("Board.Database.Local.Player")}>
           {database && (
             <PlayerSearchInput
               key={databaseKey}
@@ -73,27 +70,14 @@ function LocalOptionsPanel({
               }
             />
           )}
-        </Stack>
-        <Stack gap={4}>
-          <Text fw="bold" fz="sm">
-            {t("Board.Database.Local.PlaysAs")}
-          </Text>
-          <SegmentedControl
-            // The colour only says which side the selected player has.
-            disabled={effectivePlayer === null}
-            data={[
-              { value: "white", label: t("Fen.White") },
-              { value: "black", label: t("Fen.Black") },
-            ]}
-            value={options.color}
-            onChange={(v) => setOptions({ ...options, color: v as "white" | "black" })}
-          />
-        </Stack>
+        </FilterField>
+        <PlaysAsControl
+          value={options.color}
+          onChange={(color) => setOptions({ ...options, color })}
+          hasPlayer={effectivePlayer !== null}
+        />
 
-        <Stack gap={4}>
-          <Text fw="bold" fz="sm">
-            {t("Common.From")}
-          </Text>
+        <FilterField label={t("Common.From")}>
           <DateInput
             placeholder={t("Common.StartDate")}
             valueFormat="YYYY-MM-DD"
@@ -107,15 +91,10 @@ function LocalOptionsPanel({
             }
           />
           <YearPresetButtons
-            onPick={(start) =>
-              setOptions((q) => ({ ...q, start_date: start.format("YYYY.MM.DD") }))
-            }
+            onPick={(day) => setOptions((q) => ({ ...q, start_date: day.replaceAll("-", ".") }))}
           />
-        </Stack>
-        <Stack gap={4}>
-          <Text fw="bold" fz="sm">
-            {t("Common.To")}
-          </Text>
+        </FilterField>
+        <FilterField label={t("Common.To")}>
           <DateInput
             placeholder={t("Common.EndDate")}
             valueFormat="YYYY-MM-DD"
@@ -128,12 +107,9 @@ function LocalOptionsPanel({
               })
             }
           />
-        </Stack>
+        </FilterField>
 
-        <Stack gap={4}>
-          <Text fw="bold" fz="sm">
-            {t("Board.Database.Local.Result")}
-          </Text>
+        <FilterField label={t("Board.Database.Local.Result")}>
           <Select
             // Mantine's non-searchable Select does not assign the combobox role or expanded state.
             role="combobox"
@@ -160,13 +136,10 @@ function LocalOptionsPanel({
             }}
             allowDeselect={false}
           />
-        </Stack>
+        </FilterField>
       </SimpleGrid>
 
-      <Stack gap={4}>
-        <Text fw="bold" fz="sm">
-          {t("Board.Database.Local.Elo")}
-        </Text>
+      <FilterField label={t("Board.Database.Local.Elo")}>
         <Text c="dimmed" fz="xs">
           {t("Board.Database.Local.Elo.BothPlayers")}
         </Text>
@@ -176,7 +149,7 @@ function LocalOptionsPanel({
           value={options.elo}
           onCommit={(value) => setOptions((q) => ({ ...q, elo: value }))}
         />
-      </Stack>
+      </FilterField>
 
       <Switch
         // Mantine's label element also wraps the description; keep the accessible name to the label.
@@ -190,10 +163,7 @@ function LocalOptionsPanel({
         }}
       />
 
-      <Stack gap={4}>
-        <Text fw="bold" fz="sm">
-          {t("Board.Database.Local.Position")}
-        </Text>
+      <FilterField label={t("Board.Database.Local.Position")}>
         <SegmentedControl
           data={[
             { value: "exact", label: t("Board.Database.Local.Exact") },
@@ -207,7 +177,7 @@ function LocalOptionsPanel({
             ? t("Board.Database.Local.Partial.Hint")
             : t("Board.Database.Local.Exact.Hint")}
         </Text>
-      </Stack>
+      </FilterField>
 
       <Group>
         <Stack>

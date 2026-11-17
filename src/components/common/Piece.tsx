@@ -95,8 +95,7 @@ export default function PieceComponent({
           backgroundSize: "contain",
           backgroundRepeat: "no-repeat",
           backgroundPosition: "center",
-          // A mid-tone tile: black pieces vanish on the dark card, white ones on the light card.
-          backgroundColor: "color-mix(in srgb, var(--cf-foreground) 40%, var(--cf-card))",
+          backgroundColor: PALETTE_TILE_COLOR,
           zIndex: 100,
           cursor: onClick ? "pointer" : "default",
           border: selected ? "2px solid var(--cf-primary)" : "2px solid transparent",
@@ -106,5 +105,11 @@ export default function PieceComponent({
     </Draggable>
   );
 }
+
+/**
+ * A board-functional mid-tone, the same in both colour schemes: black pieces vanish on the dark
+ * card and white ones on the light card, so neither card colour can carry the palette.
+ */
+export const PALETTE_TILE_COLOR = "hsl(35 12% 62%)";
 
 const getPieceName = (piece: Piece) => `${piece.color} ${piece.role}`;
