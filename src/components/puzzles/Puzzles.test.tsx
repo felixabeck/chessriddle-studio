@@ -10,6 +10,7 @@ import type {
   ErrorCategory,
   TrainingPuzzle,
   TrainingVerdict,
+  PathRef,
   Puzzle as NativePuzzle,
   PuzzleDatabaseInfo,
   PuzzleRootDescriptor,
@@ -773,12 +774,21 @@ function puzzleRow(overrides: Partial<Puzzle> = {}): Puzzle {
   };
 }
 
-function testSession(rows: Puzzle[], index = 0, database = selectedDb): PuzzleSession {
+/** `database: null` seeds attempts of unknown source, as legacy migration produces. */
+function testSession(
+  rows: Puzzle[],
+  index = 0,
+  database: PathRef | null = selectedDb,
+): PuzzleSession {
   return {
     version: 1,
     attempts: rows
       .filter((row) => puzzleSchema.safeParse(row).success)
-      .map((puzzle, i) => ({ attemptId: `test-${i}`, puzzle, database })),
+      .map((puzzle, i) => ({
+        attemptId: `test-${i}`,
+        puzzle,
+        ...(database ? { database } : {}),
+      })),
     selectedAttemptId:
       rows[index] && puzzleSchema.safeParse(rows[index]).success ? `test-${index}` : null,
   };
@@ -2355,9 +2365,14 @@ const rejectedCandidates = [
   ],
 ] as const;
 
-async function renderPriorPuzzle(rows: Puzzle[], index = 0, line = ["e4", "e5", "Nf3"]) {
+async function renderPriorPuzzle(
+  rows: Puzzle[],
+  index = 0,
+  line = ["e4", "e5", "Nf3"],
+  database: PathRef | null = selectedDb,
+) {
   const initial = defaultTree();
-  initial.puzzleSession = testSession(rows, index);
+  initial.puzzleSession = testSession(rows, index, database);
   const atoms = await renderPuzzles({ initial });
   await act(async () => {
     treeStore.getState().transitionPuzzleSession((draft) => {
@@ -4102,27 +4117,15 @@ test("puzzle or database replacement cancels completed-theme ownership and refus
 
 test.each([
   ["drawn from the previously selected database", selectedDb, false],
-  ["of unknown source", undefined, false],
+  ["of unknown source", null, false],
   ["drawn from the newly selected database", otherDb, true],
 ] as const)(
-  "completing an attempt %s after a database switch looks up themes only in its own database",
+  "completing an attempt %s after a database switch requests themes only when its recorded database is selected",
   async (_name, source, looksUp) => {
     mocks.listPuzzleDatabases.mockResolvedValue([selectedDatabase, otherDatabase]);
     mocks.getThemesForPuzzle.mockResolvedValue(["themeFromOtherDb"]);
-    const initial = defaultTree();
-    initial.puzzleSession = testSession([puzzleRow()], 0, source);
-    if (!source) delete initial.puzzleSession.attempts[0].database;
-    const atoms = await renderPuzzles({ initial });
-    await act(async () => {
-      treeStore.getState().transitionPuzzleSession((draft) => {
-        draft.puzzleSession!.selectedAttemptId = draft.puzzleSession!.attempts[0].attemptId;
-      });
-      treeStore.getState().makeMoves({ payload: ["e4"] });
-      treeStore.getState().goToMove([0]);
-      treeStore.getState().setStart([0]);
-      treeStore.getState().setPracticePath([0]);
-      atoms.set(jumpToNextPuzzleAtom, false);
-    });
+    const atoms = await renderPriorPuzzle([puzzleRow()], 0, ["e4"], source);
+    await act(async () => atoms.set(jumpToNextPuzzleAtom, false));
     await act(async () => atoms.set(selectedPuzzleDbAtom, otherDb));
     expect(storedPuzzles().map((row) => [row.id, row.completion])).toEqual([[10, "incomplete"]]);
 
