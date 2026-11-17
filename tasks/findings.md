@@ -27022,3 +27022,18 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 * **Related:** f-20261011-07 (handled, same spec, an unsettled modal scroll position before a dialog screenshot).
 * **Id corrected (2026-11-17, drain rebase):** this entry was merged by drain commit `ed1ebad04` as `f-20261117-02` while `origin/master` (`8d52c1e88`) had already filed a different finding (analysis-board frame clipping) under the same id. Resolving the rebase conflict kept both entries and renumbered this one to `f-20261117-03`. No other record referenced the old id for this entry.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"db77118e2a6ec04e68b8381c2f0ab9bf6f5bee2f35ea7d5aa9c431b814ad3458","input_sha256":"61c1ef90471a98739bf25093a25fae369f7df7ccbe9aa67091de4b593216f0ba","kind":"mutation-receipt","operation":"332bf0f668bea6d6dd11dec232fb2cf1b3e958405043f3ae1ca3f625183e4f7c","options":{"section":null},"request_id_sha256":null,"results":["f-20261117-03"],"target":"f-20261117-03","v":1} -->
+
+---
+
+## 2026-11-17 — filed through the inbox spool
+
+### Real-app verifier RF5 never sees the puzzle permission guidance — the Puzzles click leaves the route at `/`
+
+* **ID:** f-20261117-04 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Why it matters:** `pnpm verify:app` exits 1 on an unchanged upstream tree, so no change can show a fully green real-app run until this is understood.
+* **Where:** `scripts/verify-app.mjs` `verifySelectedRootPermissions` (RF5: navigate to `/`, click `Puzzles`, wait for the notification "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings."); the Puzzles entry on the new-tab page and the puzzle-root permission notice in the renderer.
+* **Failure scenario:** `FAIL  RF5 puzzle permission guidance is visible through the actual renderer`, deterministic in four runs on 2026-11-17: three on build branch `build/unsaved-games-20261117` and one on unchanged upstream `cfb5c6eb8` (fresh release build, throwaway worktree). RF0–RF4, RF6–RF8 pass in the same runs, so the puzzle root is denied (RF1 sees `Permission`) but the renderer shows nothing. A diagnostic added to RF5 on the build branch recorded `{"path":"/","notifications":[]}` at the failure: the `Puzzles` click did not open the puzzle page and no notification of any kind was on screen.
+* **Spotted outside diff:** yes — found while verifying the unsaved-games build; RF5's code and the puzzle notice are untouched by it.
+* **Open question:** whether the `Puzzles` action no longer exists or changed on the seeded workspace's active tab (verifier selector drift), or the puzzle page now opens without raising the permission notice (product regression). The ledger shows RF5 green at `2512acd1c` (f-20261004 proof), so bisecting between that commit and `cfb5c6eb8` with `pnpm verify:app` decides it.
+* **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17, real-app verification of the unsaved-games build.
