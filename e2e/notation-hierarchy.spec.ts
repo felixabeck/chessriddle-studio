@@ -408,7 +408,7 @@ test("notation-hierarchy: overflow-only in both views", async ({ page, mockScena
     await assertNotationNoOverflow(notation, "table");
 });
 
-async function waitForBoardResized(page: Page) {
+async function waitForBoardSizeSettled(page: Page) {
     await expect
         .poll(() =>
             page.evaluate(() => {
@@ -425,6 +425,8 @@ async function waitForBoardResized(page: Page) {
                     if (!(container instanceof HTMLElement)) {
                         return `wrap ${wrapRect.width}px missing cg-container`;
                     }
+                    // Chessground's updateBounds rounds the wrap width down to a multiple of
+                    // eight device pixels.
                     const expected = (Math.floor((wrapRect.width * dpr) / 8) * 8) / dpr;
                     const actual = parseFloat(container.style.width);
                     // Negated so an unset inline width (NaN) counts as not settled.
@@ -572,7 +574,7 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
     const showEvaluation = page.getByRole("button", { name: "Show evaluation", exact: true });
     await expect(showEvaluation).toBeVisible();
     // Chessground resizes cg-container only from its wrap ResizeObserver.
-    await waitForBoardResized(page);
+    await waitForBoardSizeSettled(page);
     await assertNothingClipped(showEvaluation, { mode: "reachable" });
     await expectHintOverA3("eval collapsed");
 });
