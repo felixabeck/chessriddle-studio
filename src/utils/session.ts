@@ -36,14 +36,20 @@ function sessionUsername(session: Session): string {
 }
 
 /**
- * The player a session belongs to. A chosen alias groups every account given it; an account
- * without one is its own player per site, so the same username on Lichess and Chess.com stays
- * two players.
+ * The player of each session, in session order. A chosen alias groups every account given it,
+ * and an account without one joins the alias equal to its exact username, so naming a player
+ * after an account merges them. Any other account is its own player per site: the same username
+ * on Lichess and Chess.com stays two players until the user gives them one name.
  */
-export function sessionPlayerKey(session: Session): string {
-    if (session.alias) return `alias:${session.alias}`;
-    const site: AccountSite = session.lichess ? "lichess" : "chesscom";
-    return `${site}:${sessionUsername(session).toLocaleLowerCase()}`;
+export function playerKeys(sessions: Session[]): string[] {
+    const aliases = new Set(sessions.flatMap((session) => (session.alias ? [session.alias] : [])));
+    return sessions.map((session) => {
+        const username = sessionUsername(session);
+        const alias = session.alias || (aliases.has(username) ? username : "");
+        if (alias) return `alias:${alias}`;
+        const site: AccountSite = session.lichess ? "lichess" : "chesscom";
+        return `${site}:${username.toLocaleLowerCase()}`;
+    });
 }
 
 /** The name a player is shown under: its alias, else its account's username. */
@@ -62,10 +68,10 @@ export type PlayerGroup = {
 /** Every player in order of first appearance. Names can repeat; keys cannot. */
 export function playerGroups(sessions: Session[]): PlayerGroup[] {
     const groups = new Map<string, Session[]>();
-    for (const session of sessions) {
-        const key = sessionPlayerKey(session);
-        groups.set(key, [...(groups.get(key) ?? []), session]);
-    }
+    const keys = playerKeys(sessions);
+    sessions.forEach((session, index) => {
+        groups.set(keys[index], [...(groups.get(keys[index]) ?? []), session]);
+    });
     return Array.from(groups, ([key, own]) => {
         const sites: AccountSite[] = [];
         if (own.some((session) => session.lichess?.username)) sites.push("lichess");

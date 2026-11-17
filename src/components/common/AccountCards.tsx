@@ -145,11 +145,14 @@ function PlayerSession({
               color="success"
               onClick={() => {
                 setEdit(false);
+                const alias = text.trim();
+                // Saving the shown name unchanged must not turn a username into a chosen alias,
+                // which would pull in the same username's account from the other site.
+                if (alias === name) return;
                 setSessions((prev) =>
                   prev.map((s) => {
                     if (sessions.includes(s)) {
                       const { alias: _previous, ...account } = s;
-                      const alias = text.trim();
                       return alias ? { ...account, alias } : account;
                     }
                     return s;

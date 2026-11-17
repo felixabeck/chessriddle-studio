@@ -34,7 +34,7 @@ import {
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { findAccountDatabase } from "./accountDatabase";
 import { collectSequential } from "@/utils/collectSequential";
-import { playerGroups, sessionPlayerKey, type Session } from "@/utils/session";
+import { playerGroups, playerKeys, type Session } from "@/utils/session";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import PersonalPlayerCard from "./PersonalCard";
 import { PlayerSelect } from "./PlayerSelect";
@@ -160,9 +160,10 @@ function Databases() {
           }
           throw cause;
         }
-        const accounts = sessions.flatMap((session) => {
+        const keys = playerKeys(sessions);
+        const accounts = sessions.flatMap((session, index) => {
           const account = sessionAccountDatabase(session);
-          return account ? [{ ...account, player: sessionPlayerKey(session) }] : [];
+          return account ? [{ ...account, player: keys[index] }] : [];
         });
         const associations = accounts.map((account) => ({
           ...account,

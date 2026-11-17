@@ -272,6 +272,9 @@ describe("Players without an alias", () => {
       });
     }
 
+    await rename(playerGroup("Twin"), "Twin");
+    expect(getDefaultStore().get(sessionsAtom)).toEqual(twins);
+
     await rename(playerGroup("Twin"), "Casual");
     expect(getDefaultStore().get(sessionsAtom)).toEqual([
       { ...twins[0], alias: "Casual" },

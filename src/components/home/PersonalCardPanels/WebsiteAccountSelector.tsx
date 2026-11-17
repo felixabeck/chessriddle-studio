@@ -3,7 +3,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { sessionsAtom } from "@/state/atoms";
-import { playerSites, sessionPlayerKey, type AccountSite } from "@/utils/session";
+import { playerKeys, playerSites, type AccountSite } from "@/utils/session";
 import { SiteLogos, siteLogosWidth } from "../SiteLogo";
 import filterClasses from "./StatisticsFilters.module.css";
 
@@ -66,21 +66,20 @@ const WebsiteAccountSelector = ({
     }
   }, [website, websites]);
 
-  const accounts = useMemo(
-    () =>
-      [ALL_ACCOUNTS].concat(
-        sessions
-          .filter(
-            (s) =>
-              sessionPlayerKey(s) === playerKey &&
-              ((website === "Chess.com" && s.chessCom?.username) ||
-                (website === "Lichess" && s.lichess?.username)),
-          )
-          .map((s) => s.chessCom?.username || s.lichess?.username)
-          .filter((username): username is string => username !== undefined && username !== null),
-      ),
-    [playerKey, sessions, website],
-  );
+  const accounts = useMemo(() => {
+    const keys = playerKeys(sessions);
+    return [ALL_ACCOUNTS].concat(
+      sessions
+        .filter(
+          (s, index) =>
+            keys[index] === playerKey &&
+            ((website === "Chess.com" && s.chessCom?.username) ||
+              (website === "Lichess" && s.lichess?.username)),
+        )
+        .map((s) => s.chessCom?.username || s.lichess?.username)
+        .filter((username): username is string => username !== undefined && username !== null),
+    );
+  }, [playerKey, sessions, website]);
 
   useEffect(() => {
     if (account !== null && !accounts.includes(account)) setAccount(ALL_ACCOUNTS);
