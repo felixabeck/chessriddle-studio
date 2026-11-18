@@ -1800,8 +1800,7 @@ describe("DatabasePanel", () => {
     mocks.getDatabases.mockRejectedValue(new DOMException("Cancellation", "AbortError"));
     await revalidate();
 
-    const selector =
-      selectedPanel("stats").querySelector<HTMLInputElement>(".mantine-Select-input")!;
+    const selector = container.querySelector<HTMLInputElement>(".mantine-Select-input")!;
     expect(selector.value).toBe("Saved reference");
     expect(container.textContent).not.toContain("Board.Database.NoReference1");
     await act(async () => selector.click());

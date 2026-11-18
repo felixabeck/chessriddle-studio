@@ -177,7 +177,8 @@ function DatabasePanel() {
 
   const { data: databases, error: databasesError } = useDatabaseList(db === "local");
 
-  const readableDatabases = failureUnlessCancelled(databasesError)
+  const databasesFailure = failureUnlessCancelled(databasesError);
+  const readableDatabases = databasesFailure
     ? []
     : (databases?.databases ?? []).filter((d) => d.type === "success");
   const effectiveReferenceDatabase = databaseHandleFromKey(
@@ -215,7 +216,7 @@ function DatabasePanel() {
     pinned,
     primary: effectiveReferenceDatabase,
     stored: storedComparison,
-    databases: databasesError ? undefined : databases?.databases,
+    databases: databasesFailure ? undefined : databases?.databases,
   });
   const comparisonDatabase = comparison.kind === "source" ? comparison.database : null;
   // The stored choice is followed, not the shown one: a database its collection already replaced
