@@ -26047,7 +26047,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Game info header shows a year-only or year-month PGN date as fully unknown (????.??.??)
 
-* **ID:** f-20261114-12 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-12 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (general review of pre-fork code, origin/master 69856f2ea; the date conversion is upstream code)
 * **Where:** `src/components/common/GameInfo.tsx:47-51` (`const date = headers.date ? dayjs(headers.date, "YYYY.MM.DD").isValid() ? dayjs(headers.date, "YYYY.MM.DD").toDate() : null : null;`) feeding the header's `DateInput` at `:228-243` (`value={date}`, `placeholder="????.??.??"`). `customParseFormat` is the only dayjs parse plugin (`src/bootstrap.tsx:64`).
@@ -26057,6 +26057,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** when `headers.date` does not parse as a full date, show the raw PGN date text (or render the known parts) instead of the empty placeholder, and keep the picker for full dates. Add a test rendering `GameInfo` with `date: "1972.??.??"` that expects `1972` to be visible.
 * **Related:** f-20261101-10 (partial dates in database date filters, a different code path); d-20261107-03 (partial dates on the Ratings time axis).
 * **Found by:** Grok Bot general review
+* **Handled — no longer holds (Claude Code drain, 2026-11-18):** pickup re-check found the defect already fixed by `e87f3ff33` ("fix(game-info): keep Round editable, show partial dates, name every field", for f-20261112-50, on `origin/master`), which landed after this finding's review base `69856f2ea`. `src/components/common/GameInfo.tsx` now derives `partialDate` (the raw `headers.date` whenever it does not parse as a full date) and passes it as the header `DateInput`'s placeholder, so `[Date "1972.??.??"]` renders `1972.??.??` instead of the blank `????.??.??` mask, while the stored header stays unchanged and full dates keep the picker. The existing regression `GameInfo.test.tsx` "a partial PGN date is shown as the date placeholder" (placeholder `1972.??.??`, header unchanged; a full date still shows `????.??.??` when cleared) passed on this branch (`vitest run src/components/common/GameInfo.test.tsx -t "partial PGN date"`, 1 passed). No code change.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"6c993e24698a0871a54d25fd030f30e0fc77dc9876bad9dc2e42a6a2ed1d254d","header_sha256":"50e191ebbd96040e8ab60ecb7e9e09327e153e6005ef2b251c50f2c23de90885","header_status":"handled","input_sha256":"fd10ce992b73cbe121370b85ce5fa4f24ddc7fe2ff848b8a5322e32465c8c270","kind":"mutation-receipt","operation":"01b3f3e7018c638ce48fbb36f27f1cf778c4c8ba51e6764e864a4b783341b40a","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-12"],"target":"f-20261114-12","v":1} -->
 
 ---
 
