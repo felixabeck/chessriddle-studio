@@ -557,11 +557,13 @@ describe("DatabasePanel", () => {
   });
 
   test.each([
-    { label: "opening totals", moves: mockExplorerData.moves, count: 100 },
-    { label: "no moves", moves: [], count: 2 },
+    // The position total is the response's own white + draws + black, not the move-row sum.
+    { label: "opening totals", moves: mockExplorerData.moves },
+    // A mate position: every game ended there, so no move row, yet the total still shows.
+    { label: "no moves", moves: [] },
   ])(
-    "mounted partial failure: $label retains the survivor and counts returned games",
-    async ({ moves, count }) => {
+    "mounted partial failure: $label retains the survivor and totals the whole position",
+    async ({ moves }) => {
       const diagnostic = "partial-fetch-private-diagnostic";
       const store = await mountExplorer({ ...mockExplorerData, moves }, ["g0"], diagnostic);
       const panel = selectedPanel("games");
@@ -581,7 +583,7 @@ describe("DatabasePanel", () => {
       expect(panel.querySelector(".mantine-datatable-empty-state[data-active]")).toBeNull();
       expect(panel.textContent).not.toContain("Board.Database.GamesFailed");
       expect(panel.textContent).not.toContain(diagnostic);
-      expectTotal(moves.length > 0 ? count : null);
+      expectTotal(200);
 
       await act(async () => {
         store.set(dbTabFamily(tabId), "stats");
@@ -602,7 +604,7 @@ describe("DatabasePanel", () => {
     expect(panel.textContent).not.toContain("Databases.Game.NoGamesFound");
     expect(panel.querySelector("table")).toBeNull();
     expect(panel.textContent).not.toContain(diagnostic);
-    expectTotal(100);
+    expectTotal(200);
   });
 
   test("mounted empty explorer list: keeps the genuine empty state and the Total row count", async () => {
@@ -612,7 +614,7 @@ describe("DatabasePanel", () => {
     expect(panel.querySelector(".mantine-datatable-empty-state[data-active]")).not.toBeNull();
     expect(panel.textContent).not.toContain("Board.Database.GamesIncomplete");
     expect(panel.textContent).not.toContain("Board.Database.GamesFailed");
-    expectTotal(100);
+    expectTotal(200);
   });
 
   test.each([

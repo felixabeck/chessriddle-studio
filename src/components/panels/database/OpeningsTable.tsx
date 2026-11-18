@@ -34,12 +34,15 @@ const TOTAL_ACCESSOR = { primary: "primaryTotal", comparison: "comparisonTotal" 
  */
 function OpeningsTable({
   openings,
+  total,
   loading,
   comparison,
   sort = DEFAULT_SORT,
   onSortChange,
 }: {
   openings: Opening[];
+  /** The primary source's position total when its move rows do not add up to it. */
+  total?: Opening;
   loading: boolean;
   comparison?: { openings: Opening[]; loading: boolean };
   sort?: OpeningsSort;
@@ -56,14 +59,15 @@ function OpeningsTable({
     comparison,
   };
   const totals: Record<Role, Opening> = {
-    primary: openingTotals(openings),
+    primary: total ?? openingTotals(openings),
     comparison: openingTotals(comparison?.openings ?? []),
   };
   const moves: OpeningRow[] = comparison
     ? combineOpenings(openings, comparison.openings, sort)
     : openings.map((opening) => ({ move: opening.move, primary: opening }));
+  // A position whose games all ended there has no move row but still has games to total.
   const rows: StatsRow[] =
-    moves.length > 0
+    moves.length > 0 || openingGames(totals.primary) > 0
       ? [
           ...moves,
           {

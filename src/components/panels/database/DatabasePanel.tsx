@@ -79,6 +79,12 @@ export type DBType =
 
 type OpeningData = {
   openings: Opening[];
+  /**
+   * Every game that reached the position, when the source reports it apart from its move rows.
+   * The online explorers list only their most common continuations and no row for games that
+   * ended in the position, so their move rows undercount it.
+   */
+  total?: Opening;
   games: NormalizedGame[];
   gameFailures?: Awaited<ReturnType<typeof convertToNormalized>>["failures"];
 };
@@ -108,6 +114,7 @@ export async function fetchOnlineOpening<T>(
       black: move.black,
       draw: move.draws,
     })),
+    total: { move: "", white: data.white, black: data.black, draw: data.draws },
     games: normalized.games,
     gameFailures: normalized.failures,
   };
@@ -522,7 +529,11 @@ function DatabasePanel() {
           </>
         ) : (
           (unavailable ?? (
-            <OpeningsTable openings={openingData?.openings || []} loading={isLoading} />
+            <OpeningsTable
+              openings={openingData?.openings || []}
+              total={openingData?.total}
+              loading={isLoading}
+            />
           ))
         )}
       </ViewPanel>

@@ -48,14 +48,14 @@ afterEach(async () => {
   treeStore.dispose();
 });
 
-async function renderTable(rows: Opening[] = openings) {
+async function renderTable(rows: Opening[] = openings, total?: Opening) {
   await act(async () =>
     root.render(
       <MantineProvider env="test">
         <I18nextProvider i18n={locale}>
           <Provider store={jotai}>
             <TreeStateContext.Provider value={treeStore}>
-              <OpeningsTable openings={rows} loading={false} />
+              <OpeningsTable openings={rows} total={total} loading={false} />
             </TreeStateContext.Provider>
           </Provider>
         </I18nextProvider>
@@ -131,6 +131,30 @@ test("total row omits percentage while move rows show percentage and count", asy
   const sumCell = rows[3].querySelectorAll("td")[1].textContent;
   expect(sumCell).not.toContain("%");
   expect(sumCell).toBe("38");
+});
+
+test("a source's position total is the Total row and every percentage's denominator", async () => {
+  // The online explorers list only the common moves: 36 listed games of a 72-game position.
+  await renderTable(openings.slice(0, 2), { move: "", white: 30, draw: 20, black: 22 });
+  const rows = bodyRows();
+  expect(rows).toHaveLength(3);
+  const e4TotalCell = rows[0].querySelectorAll("td")[1].textContent;
+  expect(e4TotalCell).toContain("28%");
+  expect(e4TotalCell).toContain("20");
+  expect(rows[2].querySelectorAll("td")[1].textContent).toBe("72");
+});
+
+test("a position with a total but no move row shows the Total row alone", async () => {
+  await renderTable([], { move: "", white: 0, draw: 0, black: 4210 });
+  const rows = bodyRows();
+  expect(rows).toHaveLength(1);
+  expect(rows[0].querySelector("td")?.textContent).toBe("Total");
+  expect(rows[0].querySelectorAll("td")[1].textContent).toBe("4,210");
+});
+
+test("no move row and no game in the total keeps the empty state", async () => {
+  await renderTable([], { move: "", white: 0, draw: 0, black: 0 });
+  expect(bodyRows().some((row) => row.querySelector("td")?.textContent === "Total")).toBe(false);
 });
 
 const comparisonOpenings: Opening[] = [
