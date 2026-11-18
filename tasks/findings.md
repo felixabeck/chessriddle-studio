@@ -25776,7 +25776,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Switching back to a player whose personal-summary fetch was aborted shows "Failed" next to the processing view
 
-* **ID:** f-20261114-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-01 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** e5f1087c-0110-4c22-a7c9-dab757ea1c9f
 * **Impact class:** ux
 * **Spotted outside diff:** yes (observed by the f-20261112-21 repair leaf, 2026-11-14)
@@ -25786,6 +25786,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Fix:** do not surface a cancellation as a load failure: ignore `AbortError`/cancellation errors in `loadError` (the codebase already has `errorUnlessCancelled`), or keep SWR from storing a superseded run's rejection. Check the other `useNativeRequestOwner` + SWR callers for the same display, and add a Databases test asserting no "Failed" text after an aborted fetch is resumed.
 * **Proof:** observed in the Vitest test `aborting Bob at 80% by switching to a cached player clears Bob's progress so switching back shows 0%` (`src/components/home/Databases.test.tsx`, commit d0613174b): the rendered text was `Home.Databases.ProcessingGames…0%Home.Databases.Failed.Title`. Not yet reproduced in the real app.
 * **Found by:** next-finding drain session e5f1087c (f-20261112-21 repair round 3). Related: f-20261112-21 (progress identity in the same view, handled; different cause).
+* **Handled 2026-11-18 (drain ec30318c):** commit a2993980d. `Databases.tsx` now filters out the summary SWR error through `errorUnlessCancelled` before it reaches `loadError`, so a superseded run's `AbortError` no longer renders "Failed" next to the processing view. Real failures still render (existing tests at lines 824–1592 cover this). The test `aborting Bob at 80% …` now asserts there is no `Home.Databases.Failed.Title`. With the fix reverted it fails, with the fix it passes (58/58). Sibling `useNativeRequestOwner` + SWR callers (`PlayerTable` via `inlineFailureMessage`, `useFileWorkspace`/`SaveToTargetModal` via `listingFailure`) already filter cancellation. Rejected: stopping SWR from storing the superseded rejection inside `useNativeRequestOwner`. Its documented contract already accepts that SWR records the retired generation's silent cancellation, and every display site filters it.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"619393217c792aa23c7da92aa2214a48e26bebd77bf932ea04a556fae958897f","header_sha256":"36132787171d4b4be256bdc89ef51384deab520f49808f95a4bbb7c621e13708","header_status":"handled","input_sha256":"4bf58fa1d1718f6b51263b234b8c726476ef446e0a4f04124ef533f42121c887","kind":"mutation-receipt","operation":"5ab5c9d90fd4124c0c6b5e0668e9187445669671215f45b0a5adbcff84c5a465","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-01"],"target":"f-20261114-01","v":1} -->
 
 ---
 
