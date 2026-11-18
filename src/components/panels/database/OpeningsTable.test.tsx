@@ -273,6 +273,23 @@ test("two-source result bars label only their wider sections, in whole percent",
   expect(labels(bodyRows()[0].querySelectorAll("td")[2])).toEqual(["50.0%", "25.0%", "25.0%"]);
 });
 
+test("a source without a single counted game shows a zero total and no bar or NaN", async () => {
+  await renderCompared({}, { openings: [], loading: false });
+  const total = bodyRows().at(-1)!;
+  expect(cells(total)[1]).toBe("38");
+  expect(cells(total)[3]).toBe("0");
+  expect(total.querySelectorAll("td")[4].querySelector(".mantine-Progress-root")).toBeNull();
+  expect(host.textContent).not.toContain("NaN");
+
+  // Only games with an unknown result: the move exists, but no side has a counted game.
+  const unknownOnly: Opening[] = [{ move: "a3", white: 0, draw: 0, black: 0, unknown: 4 }];
+  await renderTable(unknownOnly);
+  const [a3] = bodyRows();
+  expect(cells(a3).slice(0, 2)).toEqual(["a3", "0%0"]);
+  expect(a3.querySelector(".mantine-Progress-root")).toBeNull();
+  expect(host.textContent).not.toContain("NaN");
+});
+
 test("a move row of the two-source table plays its move", async () => {
   await renderCompared();
   const h4 = bodyRows().find((row) => row.querySelector("td")?.textContent === "h4")!;

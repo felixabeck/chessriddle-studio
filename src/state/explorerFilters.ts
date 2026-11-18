@@ -12,6 +12,9 @@ export type ExplorerFilterEntry = { database: string; filters: ExplorerFilters }
 /** Saved filter sets are bounded; the least recently changed database goes first. */
 export const MAX_EXPLORER_FILTER_DATABASES = 64;
 
+/** An opaque database capability id; far longer than any id the native side issues. */
+const MAX_DATABASE_KEY_LENGTH = 512;
+
 const PGN_DATE = /^\d{4}\.\d{2}\.\d{2}$/;
 
 const filtersSchema = z
@@ -27,7 +30,7 @@ const filtersSchema = z
     .strict();
 
 const entrySchema = z
-    .object({ database: z.string().min(1).max(512), filters: filtersSchema })
+    .object({ database: z.string().min(1).max(MAX_DATABASE_KEY_LENGTH), filters: filtersSchema })
     .strict();
 
 /**

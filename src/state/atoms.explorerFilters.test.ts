@@ -86,22 +86,36 @@ test("a corrupt stored element is dropped on hydration and the others survive", 
     ]);
 });
 
-test("the stored list is read at document initialization, before any consumer mounts", async () => {
+test("every stored explorer choice is read at document initialization, before any consumer mounts", async () => {
     localStorage.setItem(
         "explorer-database-filters",
         JSON.stringify([
             { database: "old", filters: { ...defaultExplorerFilters(), result: "draw" } },
         ]),
     );
+    localStorage.setItem("reference-database", JSON.stringify(handle("old")));
+    localStorage.setItem("comparison-database", JSON.stringify(handle("old")));
     vi.resetModules();
     const atoms = await import("./atoms");
     const { createStore: createReloadedStore } = await import("jotai");
     const store = createReloadedStore();
-    // Nothing subscribed: a migration on the Library page replaces the database.
+    // Nothing subscribed: a migration on the Accounts page replaces the database.
     store.set(atoms.replaceExplorerDatabaseAtom, { from: handle("old"), to: handle("new") });
     expect(stored()).toEqual([
         { database: "new", filters: { ...defaultExplorerFilters(), result: "draw" } },
     ]);
+    expect(JSON.parse(localStorage.getItem("reference-database")!)).toEqual(handle("new"));
+    expect(JSON.parse(localStorage.getItem("comparison-database")!)).toEqual(handle("new"));
+});
+
+test("an unmounted deletion forgets the stored comparison database", async () => {
+    localStorage.setItem("comparison-database", JSON.stringify(handle("gone")));
+    vi.resetModules();
+    const atoms = await import("./atoms");
+    const { createStore: createReloadedStore } = await import("jotai");
+    const store = createReloadedStore();
+    store.set(atoms.forgetExplorerDatabaseAtom, handle("gone"));
+    expect(localStorage.getItem("comparison-database")).toBe("null");
 });
 
 test("a replaced database takes its filters and the reference with it", () => {

@@ -13,7 +13,7 @@ import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { type DatabaseHandle, type NormalizedGame } from "@/bindings";
-import IconAction from "@/components/common/IconAction";
+import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import {
@@ -217,7 +217,9 @@ function DatabasePanel() {
     databases: databasesError ? undefined : databases?.databases,
   });
   const comparisonDatabase = comparison.kind === "source" ? comparison.database : null;
-  useCollectionDatabase(comparisonDatabase, replaceStored);
+  // The stored choice is followed, not the shown one: a database its collection already replaced
+  // is no longer in the list, and only its collection still knows the successor.
+  useCollectionDatabase(db === "local" && !pinned ? storedComparison : null, replaceStored);
   const comparisonFilters = useExplorerFilters(comparisonDatabase);
   const dbType: DBType = match(db)
     .with("local", (v) => ({
@@ -291,15 +293,12 @@ function DatabasePanel() {
 
   // Clearing the native search cache only frees memory; a choice never depends on it.
   const clearSearchCache = () => void Promise.resolve(tauri.clearGames()).catch(() => undefined);
-  const chooseDatabase = (value: string | null) => {
+  const choose = (store: (database: DatabaseHandle | null) => void) => (value: string | null) => {
     clearSearchCache();
-    const nextDatabase = databaseHandleFromKey(readableDatabases, value);
-    (pinnedDatabase ? setPinnedDatabase : setReferenceDatabase)(nextDatabase);
+    store(databaseHandleFromKey(readableDatabases, value));
   };
-  const chooseComparison = (value: string | null) => {
-    clearSearchCache();
-    setStoredComparison(databaseHandleFromKey(readableDatabases, value));
-  };
+  const chooseDatabase = choose(pinnedDatabase ? setPinnedDatabase : setReferenceDatabase);
+  const chooseComparison = choose(setStoredComparison);
   const comparisonChoices = dbSelectData.filter(
     (choice) => choice.value !== selectedReferenceDatabase,
   );
@@ -312,46 +311,65 @@ function DatabasePanel() {
     comparison.kind === "none" &&
     comparisonChoices.length > 0;
 
-  const loader = (
-    <DatabaseLoader
-      isLoading={isLoading}
-      tab={db === "local" ? localExplorer.progressId : (tab?.value ?? null)}
+  /** A local source's cell: the two differ only in their database, filters and progress. */
+  const localSourceHeader = (source: {
+    key: string;
+    choices: typeof dbSelectData;
+    database: DatabaseHandle | null;
+    choose: (value: string | null) => void;
+    name?: string;
+    binding: Pick<ReturnType<typeof useExplorerFilters>, "filters" | "setFilters">;
+    explorer: Pick<ReturnType<typeof useLocalExplorer>, "loading" | "progressId">;
+    action?: ReactNode;
+  }) => (
+    <ExplorerSourceHeader
+      key={source.key}
+      select={
+        <Select
+          data={source.choices}
+          value={source.database ? databaseHandleKey(source.database) : null}
+          onChange={source.choose}
+          placeholder={source.name ? undefined : t("Board.Database.SelectReference")}
+          aria-label={source.name}
+          size="sm"
+          flex={1}
+          miw={0}
+          allowDeselect={false}
+        />
+      }
+      filterLabel={localFilterSummary(source.binding.filters, t)}
+      filterDisabled={!source.database}
+      filters={
+        <LocalFiltersForm
+          database={source.database}
+          filters={source.binding.filters}
+          setFilters={source.binding.setFilters}
+        />
+      }
+      action={source.action}
+      loader={
+        <DatabaseLoader isLoading={source.explorer.loading} tab={source.explorer.progressId} />
+      }
     />
   );
+  const onlineLoader = <DatabaseLoader isLoading={isLoading} tab={tab?.value ?? null} />;
   const sourceHeader = match(db)
-    .with("local", () => (
-      <ExplorerSourceHeader
-        key={db}
-        select={
-          <Select
-            data={dbSelectData}
-            value={selectedReferenceDatabase}
-            onChange={chooseDatabase}
-            placeholder={t("Board.Database.SelectReference")}
-            size="sm"
-            flex={1}
-            miw={0}
-            allowDeselect={false}
-          />
-        }
-        filterLabel={localFilterSummary(localFilters, t)}
-        filterDisabled={!effectiveReferenceDatabase}
-        filters={
-          <LocalFiltersForm
-            database={effectiveReferenceDatabase}
-            filters={localFilters}
-            setFilters={setLocalFilters}
-          />
-        }
-        loader={loader}
-      />
-    ))
+    .with("local", () =>
+      localSourceHeader({
+        key: db,
+        choices: dbSelectData,
+        database: effectiveReferenceDatabase,
+        choose: chooseDatabase,
+        binding: { filters: localFilters, setFilters: setLocalFilters },
+        explorer: localExplorer,
+      }),
+    )
     .with("lch_all", () => (
       <ExplorerSourceHeader
         key={db}
         filterLabel={t("Board.Database.Filters")}
         filters={<LichessOptionsPanel />}
-        loader={loader}
+        loader={onlineLoader}
       />
     ))
     .with("lch_master", () => (
@@ -359,34 +377,21 @@ function DatabasePanel() {
         key={db}
         filterLabel={t("Board.Database.Filters")}
         filters={<MasterOptionsPanel />}
-        loader={loader}
+        loader={onlineLoader}
       />
     ))
     .exhaustive();
-  const comparisonHeader = comparison.kind === "source" && (
-    <ExplorerSourceHeader
-      key="comparison"
-      select={
-        <Select
-          data={comparisonChoices}
-          value={databaseHandleKey(comparison.database)}
-          onChange={chooseComparison}
-          aria-label={t("Board.Database.CompareWith")}
-          size="sm"
-          flex={1}
-          miw={0}
-          allowDeselect={false}
-        />
-      }
-      filterLabel={localFilterSummary(comparisonFilters.filters, t)}
-      filters={
-        <LocalFiltersForm
-          database={comparison.database}
-          filters={comparisonFilters.filters}
-          setFilters={comparisonFilters.setFilters}
-        />
-      }
-      action={
+  const comparisonHeader =
+    comparison.kind === "source" &&
+    localSourceHeader({
+      key: "comparison",
+      choices: comparisonChoices,
+      database: comparison.database,
+      choose: chooseComparison,
+      name: t("Board.Database.CompareWith"),
+      binding: comparisonFilters,
+      explorer: comparisonExplorer,
+      action: (
         <IconAction
           label={t("Board.Database.RemoveComparison")}
           variant="subtle"
@@ -395,15 +400,8 @@ function DatabasePanel() {
         >
           <X size="0.875rem" />
         </IconAction>
-      }
-      loader={
-        <DatabaseLoader
-          isLoading={comparisonExplorer.loading}
-          tab={comparisonExplorer.progressId}
-        />
-      }
-    />
-  );
+      ),
+    });
 
   // With two sources a failure belongs to its source: it is named, and the other one stays.
   const twoSources =

@@ -4,6 +4,11 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import classes from "./ExplorerSourceHeader.module.css";
 
+/** The database select never grows beyond this, so a wide cell keeps room for the filter label. */
+const SELECT_MAX_WIDTH = 200;
+/** Room for the icon action beside the select and the gap between them. */
+const ACTION_ALLOWANCE = 30;
+
 /**
  * One explorer source in the sources bar: its database select, the button that names its active
  * filters and opens them, and its own progress bar.
@@ -29,7 +34,13 @@ function ExplorerSourceHeader({
       {/* In a narrow cell the filter button moves below the select instead of squeezing its name. */}
       <Group gap="xs" wrap="wrap">
         {(select || action) && (
-          <Group gap={4} wrap="nowrap" flex="1 1 9rem" miw={0} maw={action ? 230 : 200}>
+          <Group
+            gap={4}
+            wrap="nowrap"
+            flex="1 1 9rem"
+            miw={0}
+            maw={action ? SELECT_MAX_WIDTH + ACTION_ALLOWANCE : SELECT_MAX_WIDTH}
+          >
             {select}
             {action}
           </Group>

@@ -763,13 +763,12 @@ export const addRecentFileAtom = atom(null, (get, set, file: RecentEntryInput) =
 
 // Database
 
-const storedReferenceDbAtom = initializeBeforeUse(
-    atomWithStorage<DatabaseHandle | null>(
-        "reference-database",
-        null,
-        createZodStorage(databaseHandleSchema.nullable(), localStorage),
-    ),
-    initializeRendererState,
+// Read at document initialization like the explorer's other database choices, so a write that
+// follows a replaced database sees the stored reference although no consumer has mounted it.
+const storedReferenceDbAtom = documentPreferences.atomWithStorage<DatabaseHandle | null>(
+    "reference-database",
+    null,
+    createZodStorage(databaseHandleSchema.nullable(), localStorage),
 );
 
 const referenceCollectionOwnerAtom = documentPreferences.atomWithStorage(

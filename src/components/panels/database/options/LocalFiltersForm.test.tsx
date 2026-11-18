@@ -440,6 +440,34 @@ describe("local explorer filters and position", () => {
     });
   });
 
+  test("the form's own dropdowns render inside it, so using one is no click outside a popover", async () => {
+    // Player suggestions.
+    await enterPlayer("B");
+    const suggestion = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (item) => item.textContent === "B player",
+    )!;
+    expect(container.contains(suggestion)).toBe(true);
+    // Result options.
+    const result = container.querySelector<HTMLInputElement>(
+      '[role="combobox"][aria-label="Result"]',
+    )!;
+    await act(async () => result.click());
+    const draw = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (option) => option.textContent === "Board.Analysis.Tablebase.Draw",
+    )!;
+    expect(container.contains(draw)).toBe(true);
+    // Date calendar.
+    const from = container.querySelector<HTMLInputElement>('[placeholder="Common.StartDate"]')!;
+    await act(async () => {
+      from.focus();
+      from.click();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    const calendar = document.querySelector("[data-dates-dropdown]");
+    expect(calendar).not.toBeNull();
+    expect(container.contains(calendar)).toBe(true);
+  });
+
   test("dragging the Elo slider keeps store elo unchanged until release", async () => {
     const slider = container.querySelector<HTMLElement>(".mantine-RangeSlider-root")!;
     await dragRangeSlider(

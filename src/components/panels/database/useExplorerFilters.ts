@@ -27,7 +27,7 @@ function tabFilters(options: LocalOptions, database: DatabaseHandle | null): Exp
  * The options one local source is searched with. A pinned tab searches with its own options; any
  * other tab combines the database's saved filters with the tab's position and match mode.
  */
-export function localSourceOptions(
+function localSourceOptions(
     tabOptions: LocalOptions,
     database: DatabaseHandle | null,
     saved: ExplorerFilters | null,

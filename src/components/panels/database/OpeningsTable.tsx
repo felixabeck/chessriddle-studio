@@ -103,7 +103,9 @@ function OpeningsTable({
         );
       }
       const total = openingGames(opening);
-      const percentage = (total / openingGames(totals[role])) * 100;
+      const sourceTotal = openingGames(totals[role]);
+      // Games with an unknown result count for neither side: a source can total none.
+      const percentage = sourceTotal > 0 ? (total / sourceTotal) * 100 : 0;
       return (
         <Group wrap="nowrap">
           {!row.isTotal && <Text fz="sm">{percentage.toFixed(0)}%</Text>}
@@ -121,6 +123,7 @@ function OpeningsTable({
       const opening = row[role];
       if (!opening || pending(role)) return null;
       const total = openingGames(opening);
+      if (total === 0) return null;
       const whitePercent = (opening.white / total) * 100;
       const drawPercent = (opening.draw / total) * 100;
       const blackPercent = (opening.black / total) * 100;

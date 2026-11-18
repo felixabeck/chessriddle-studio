@@ -1504,6 +1504,103 @@ describe("DatabasePanel", () => {
       expect(compareButton()).toBeUndefined();
     });
 
+    test("the comparison select changes the comparison alone and never offers the primary", async () => {
+      const { store } = await mountCompared();
+      const select = sources()[1].querySelector<HTMLInputElement>(".mantine-Select-input")!;
+      expect(select.getAttribute("aria-label")).toBe("Board.Database.CompareWith");
+      await act(async () => select.click());
+      const options = Array.from(
+        sources()[1].ownerDocument.querySelectorAll<HTMLElement>('[role="option"]'),
+      ).filter(
+        (option) => option.closest('[role="listbox"]')?.id === select.getAttribute("aria-controls"),
+      );
+      expect(options.map((option) => option.textContent)).toEqual([
+        "Correspondence",
+        "Third database",
+      ]);
+      await act(async () => options[1].click());
+      expect(store.get(comparisonDbAtom)).toEqual(third.file);
+      expect(JSON.parse(localStorage.getItem("comparison-database")!)).toEqual(third.file);
+      expect(store.get(referenceDbAtom)).toEqual(reference);
+      expect(mocks.clearGames).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(searchesOf(third.file)).not.toHaveLength(0));
+      expect(searchesOf(third.file).at(-1)?.[2]).toBe(`${tabId}:comparison`);
+    });
+
+    test.each([
+      ["a pinned tab", { pin: reference }],
+      ["no primary database", {}],
+    ] as const)("an unreadable stored comparison stays silent in %s", async (_name, options) => {
+      const pinned = "pin" in options;
+      await mountCompared({
+        ...options,
+        list: pinned ? [readable, { ...unreadable, file: corr }] : [{ ...unreadable, file: corr }],
+      });
+      expect(container.textContent).not.toContain("Board.Database.ComparisonUnreadable");
+      expect(sources()).toHaveLength(1);
+      expect(searchesOf(corr)).toHaveLength(0);
+      expect({
+        noReference: container.textContent?.includes("Board.Database.NoReference1"),
+      }).toEqual({ noReference: !pinned });
+    });
+
+    test("without a tab id each source falls back to its own progress id", async () => {
+      mocks.getDatabases.mockResolvedValue(databaseList([readable, corrInfo]));
+      mocks.searchPosition.mockResolvedValue([[], []]);
+      localStorage.setItem("reference-database", JSON.stringify(reference));
+      localStorage.setItem("comparison-database", JSON.stringify(corr));
+      const store = createJotaiStore();
+      // The scope names a tab the workspace does not list, so the panel has no tab id.
+      store.set(tabsAtom, []);
+      store.set(dbTypeFamily(tabId), "local");
+      await renderPanel(store, {
+        provider: () => new Map(),
+        dedupingInterval: 0,
+        shouldRetryOnError: false,
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+      });
+      await vi.waitFor(() => {
+        expect(searchesOf(reference)).not.toHaveLength(0);
+        expect(searchesOf(corr)).not.toHaveLength(0);
+      });
+      const primaryId = searchesOf(reference).at(-1)![2] as string;
+      const comparisonId = searchesOf(corr).at(-1)![2] as string;
+      expect(primaryId).toMatch(/^local-explorer:/);
+      expect(comparisonId).toMatch(/^local-explorer:/);
+      expect(comparisonId).not.toBe(primaryId);
+    });
+
+    test("a comparison its collection replaced while the panel was closed is followed on mount", async () => {
+      const current: DatabaseHandle = { id: { id: "regenerated-corr" }, kind: "database" };
+      mocks.collectionForDatabase.mockImplementation(async (file: DatabaseHandle) =>
+        databaseHandleKey(file) === databaseHandleKey(corr)
+          ? {
+              id: "66666666-6666-4666-8666-666666666666",
+              name: "Correspondence",
+              file: { id: { id: "library" }, kind: "fileWorkspace" },
+              database: current,
+              account: null,
+              status: "ready",
+              generation: "g2",
+              omitted: 0,
+              retiredDatabase: corr,
+              fetchSinceMs: null,
+            }
+          : null,
+      );
+      // The retired database is no longer listed; only its collection knows the successor.
+      const { store } = await mountCompared({
+        list: [readable, { ...corrInfo, file: current, title: "Regenerated" }],
+      });
+      await vi.waitFor(() => expect(store.get(comparisonDbAtom)).toEqual(current));
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      expect(sources()[1].querySelector<HTMLInputElement>(".mantine-Select-input")?.value).toBe(
+        "Regenerated",
+      );
+      expect(store.get(referenceDbAtom)).toEqual(reference);
+    });
+
     test("the position dialog's match mode reaches both sources", async () => {
       const { store } = await mountCompared();
       mocks.searchPosition.mockClear();
