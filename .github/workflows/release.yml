@@ -218,7 +218,9 @@ jobs:
 
       # Like the macOS check: an installer or app binary that is not signed by the Certum
       # certificate with a timestamp fails the leg, so it never leaves the draft. The timestamp
-      # keeps the signature valid after the one-year certificate expires.
+      # keeps the signature valid after the one-year certificate expires. The app binary is
+      # checked inside the installer: the bundler signs it, packs it and then restores the
+      # unsigned build in target/release (tauri-bundler bundle.rs, run 44302689681).
       - name: Verify the Authenticode signatures (Windows only)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -226,9 +228,13 @@ jobs:
           THUMBPRINT: ${{ steps.certum.outputs.cert-thumbprint }}
         run: |
           $installers = @(Get-ChildItem -ErrorAction SilentlyContinue src-tauri/target/release/bundle/nsis/*.exe)
-          $app = Get-Item -ErrorAction SilentlyContinue src-tauri/target/release/chessriddle-studio.exe
           if ($installers.Count -ne 1) { Write-Error "expected one NSIS installer, found $($installers.Count)"; exit 1 }
-          if (-not $app) { Write-Error "missing app binary chessriddle-studio.exe"; exit 1 }
+          $unpacked = Join-Path $env:RUNNER_TEMP 'nsis-unpacked'
+          7z x -y "-o$unpacked" $installers[0].FullName | Out-Null
+          if ($LASTEXITCODE -ne 0) { Write-Error "7z could not unpack the installer (exit $LASTEXITCODE)"; exit 1 }
+          $apps = @(Get-ChildItem -Recurse -File -Filter chessriddle-studio.exe $unpacked)
+          if ($apps.Count -ne 1) { Write-Error "expected one chessriddle-studio.exe in the installer, found $($apps.Count)"; exit 1 }
+          $app = $apps[0]
           $failed = $false
           foreach ($f in @($installers[0], $app)) {
             $sig = Get-AuthenticodeSignature $f.FullName
