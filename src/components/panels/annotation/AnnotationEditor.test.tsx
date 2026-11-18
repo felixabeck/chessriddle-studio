@@ -866,6 +866,80 @@ test("B: typed entity text survives saving and reloading beside a hard break", a
 });
 
 test.each([
+  {
+    name: "list marker after a break",
+    parts: ["Main idea", "\n", "1. e4 e5 2. Nf3"],
+    saved: "Main idea  \n1\\. e4 e5 2. Nf3",
+  },
+  { name: "bullet after a break", parts: ["Main idea", "\n", "- a"], saved: "Main idea  \n\\- a" },
+  {
+    name: "heading marker after a break",
+    parts: ["Main idea", "\n", "# h"],
+    saved: "Main idea  \n\\# h",
+  },
+  {
+    name: "thematic break after a break",
+    parts: ["Main idea", "\n", "---"],
+    saved: "Main idea  \n\\---",
+  },
+  { name: "e-mail address", parts: ["Write to foo@bar.com"], saved: "Write to foo\\@bar.com" },
+  {
+    name: "space before a break",
+    parts: ["Main idea ", "\n", "1.e4 e5 is best"],
+    saved: "Main idea \\\n1\\.e4 e5 is best",
+  },
+  {
+    name: "blank line",
+    parts: ["Main idea", "\n", "\n", "Second thought"],
+    saved: "Main idea  \n\\\nSecond thought",
+  },
+  { name: "trailing break", parts: ["Line", "\n"], saved: "Line" },
+])("C: typing a $name saves every keystroke and reloads it", async ({ parts, saved }) => {
+  await mount("");
+  for (const part of parts) {
+    for (const character of part === "\n" ? [part] : Array.from(part)) {
+      await act(async () => {
+        if (character === "\n") editor().commands.keyboardShortcut("Shift-Enter");
+        else editor().commands.insertContent(character);
+      });
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+    }
+  }
+  const typed = commentDomText(editorElement());
+  expect(await reloadSavedComment()).toBe(saved);
+  expect(commentDomText(editorElement())).toBe(typed.replace(/\n+$/u, ""));
+  expect(editorElement().querySelector("a")).toBeNull();
+});
+
+test("C: a break typed before an existing comment saves later edits", async () => {
+  await mount("Old text");
+  await act(async () => {
+    editor().commands.setTextSelection(1);
+    editor().commands.keyboardShortcut("Shift-Enter");
+  });
+  await act(async () =>
+    editor().commands.insertContentAt(editor().state.doc.content.size - 1, " more"),
+  );
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(await reloadSavedComment()).toBe("\\\nOld text more");
+  expect(commentDomText(editorElement())).toBe("\nOld text more");
+});
+
+test("C: bolding a word with the break after it keeps the bold and the break", async () => {
+  await mount("ab");
+  await act(async () => {
+    editor().commands.setTextSelection(3);
+    editor().commands.keyboardShortcut("Shift-Enter");
+    editor().commands.insertContent("cd");
+    editor().commands.setTextSelection({ from: 1, to: 4 });
+    editor().commands.toggleBold();
+  });
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(await reloadSavedComment()).toBe("**ab**  \ncd");
+  expect(commentMarkedText(editorElement(), "strong")).toBe("ab");
+});
+
+test.each([
   { mark: "underline", selector: "u", delimiter: "++" },
   { mark: "bold", selector: "strong", delimiter: "**" },
   { mark: "italic", selector: "em", delimiter: "*" },

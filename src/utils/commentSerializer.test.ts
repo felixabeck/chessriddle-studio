@@ -834,11 +834,116 @@ test("does not replace the character after a www prefix unless it is a dot", () 
     roundTrip([{ text: "WWW.a.test" }], undefined, "WWW\\.a.test");
 });
 
-test("normalization never drops emphasis or link coverage on a break", () => {
-    for (const hardBreak of [false, true]) {
-        const marks = ["bold", "italic", "strike", url];
-        const oracle = expected([{ text: "\n", marks }]);
-        const input = document([{ text: "\n", hardBreak, marks: [...marks, "underline"] }]);
-        expect(flattenCommentDocument(normalizeCommentDocument(input))).toEqual(oracle);
-    }
+test("normalization never drops emphasis or link coverage on a covered break", () => {
+    const marks = ["bold", "italic", "strike", url];
+    const soft = document([{ text: "\n", marks: [...marks, "underline"] }]);
+    expect(flattenCommentDocument(normalizeCommentDocument(soft))).toEqual(
+        expected([{ text: "\n", marks }]),
+    );
+    const hard = document([
+        { text: "a", marks },
+        { text: "\n", hardBreak: true, marks: [...marks, "underline"] },
+        { text: "b", marks },
+    ]);
+    expect(flattenCommentDocument(normalizeCommentDocument(hard))).toEqual(
+        expected([
+            { text: "a", marks },
+            { text: "\n", marks },
+            { text: "b", marks },
+        ]),
+    );
+});
+
+const BR: Span = { text: "\n", hardBreak: true };
+
+test.each([
+    { line: "1. e4 e5 2. Nf3", source: "Main idea  \n1\\. e4 e5 2. Nf3" },
+    { line: "1) e4", source: "Main idea  \n1\\) e4" },
+    { line: "12. Nf3", source: "Main idea  \n12\\. Nf3" },
+    { line: "- a", source: "Main idea  \n\\- a" },
+    { line: "+ a", source: "Main idea  \n\\+ a" },
+    { line: "# h", source: "Main idea  \n\\# h" },
+    { line: "---", source: "Main idea  \n\\---" },
+    { line: "- - -", source: "Main idea  \n\\- - -" },
+    { line: "   - a", source: "Main idea  \n   \\- a" },
+])("escapes a paragraph-interrupting marker after a hard break: $line", ({ line, source }) => {
+    expect.hasAssertions();
+    roundTrip([{ text: "Main idea" }, BR, { text: line }], undefined, source);
+});
+
+test("leaves markers that do not start a line unescaped", () => {
+    expect.hasAssertions();
+    roundTrip([{ text: "1. e4 e5 is best - # 2." }], undefined, "1. e4 e5 is best - # 2.");
+    roundTrip([{ text: "a" }, BR, { text: "b 1. - #" }], undefined, "a  \nb 1. - #");
+    roundTrip(
+        [{ text: "a" }, BR, { text: "-", marks: ["bold"] }, { text: " b" }],
+        undefined,
+        "a  \n**-** b",
+    );
+});
+
+test("escapes every at sign so an address stays plain text", () => {
+    expect.hasAssertions();
+    roundTrip([{ text: "Write to foo@bar.com" }], undefined, "Write to foo\\@bar.com");
+    roundTrip([{ text: "mail foo@bar.com then Nf3" }], undefined, "mail foo\\@bar.com then Nf3");
+    roundTrip([{ text: "mailto:x@y.z" }], undefined, "mailto\\:x\\@y.z");
+    const mailto = link("mailto:foo@bar.com");
+    roundTrip(
+        [{ text: "foo@bar.com", marks: [mailto] }],
+        undefined,
+        "[foo\\@bar.com](mailto:foo@bar.com)",
+    );
+});
+
+test("spells a hard break with a backslash where the two-space break is lost", () => {
+    expect.hasAssertions();
+    roundTrip([{ text: "Idea " }, BR, { text: "next" }], undefined, "Idea \\\nnext");
+    roundTrip([{ text: "a" }, BR, BR, { text: "b" }], undefined, "a  \n\\\nb");
+    roundTrip([{ text: "a" }, BR, { text: " " }, BR, { text: "b" }], undefined, "a  \n \\\nb");
+    roundTrip([BR, { text: "b" }], undefined, "\\\nb");
+    roundTrip([{ text: "Idea" }, BR, { text: " next" }], undefined, "Idea  \n next");
+});
+
+test("drops a hard break that only whitespace follows to the paragraph end", () => {
+    expect.hasAssertions();
+    roundTrip([{ text: "Line" }, BR], [{ text: "Line" }], "Line");
+    roundTrip([{ text: "Line" }, BR, { text: " " }, BR], [{ text: "Line " }], "Line ");
+    roundTrip([BR], [], "");
+});
+
+test.each(["bold", "italic", "strike"])(
+    "keeps %s off a hard break at either edge of its run",
+    (type) => {
+        expect.hasAssertions();
+        const delimiter = { bold: "**", italic: "*", strike: "~~" }[type];
+        roundTrip(
+            [{ text: "ab", marks: [type] }, { ...BR, marks: [type] }, { text: "cd" }],
+            [{ text: "ab", marks: [type] }, BR, { text: "cd" }],
+            `${delimiter}ab${delimiter}  \ncd`,
+        );
+        roundTrip(
+            [{ text: "ab" }, { ...BR, marks: [type] }, { text: "cd", marks: [type] }],
+            [{ text: "ab" }, BR, { text: "cd", marks: [type] }],
+            `ab  \n${delimiter}cd${delimiter}`,
+        );
+    },
+);
+
+test("keeps a link off a hard break that ends its text and on one that starts it", () => {
+    expect.hasAssertions();
+    roundTrip(
+        [
+            { text: "ab", marks: [url] },
+            { ...BR, marks: [url] },
+            { text: " ", marks: [url] },
+            { text: "cd" },
+        ],
+        [{ text: "ab", marks: [url] }, BR, { text: " cd" }],
+        "[ab](https://x.y)  \n cd",
+    );
+    roundTrip(
+        [{ text: "ab" }, { ...BR, marks: [url] }, { text: "cd", marks: [url] }],
+        undefined,
+        "ab[  \ncd](https://x.y)",
+    );
 });

@@ -13,6 +13,8 @@ type Character = {
     text: string;
     marks: string[];
     hardBreak: boolean;
+    /** Set by `serializeComment`, which sees the whole paragraph. */
+    backslashBreak?: boolean;
 };
 
 const DELIMITERS = { bold: "**", italic: "*", strike: "~~", underline: "++" };
@@ -69,6 +71,20 @@ function normalize(paragraph: Character[]): Character[] {
     const remove = (index: number, mark: string) => {
         characters[index].marks = characters[index].marks.filter((candidate) => candidate !== mark);
     };
+    const links = [...new Set(characters.flatMap((character) => character.marks))].filter((mark) =>
+        mark.startsWith('["link",'),
+    );
+    for (const mark of links) {
+        for (const [start, end] of runs(characters, mark)) {
+            // Link text cannot end in a hard break: the reparse reads the break
+            // as literal text. A break there and the whitespace after it leave the link.
+            let edge = end;
+            while (edge > start && /\s/u.test(characters[edge - 1].text)) edge--;
+            if (characters.slice(edge, end).some((character) => character.hardBreak)) {
+                for (let index = edge; index < end; index++) remove(index, mark);
+            }
+        }
+    }
     for (const mark of ["bold", "italic", "strike", "underline"]) {
         if (mark === "underline") {
             characters.forEach((character, index) => {
@@ -89,12 +105,13 @@ function normalize(paragraph: Character[]): Character[] {
                         .slice(first, last)
                         .some((character) => character.text === "\n");
                 });
-            const flanking = characters
-                .slice(start, end)
-                .map(
-                    (character, offset) =>
-                        /[^\S\n]/u.test(character.text) && !canKeepSpace(start + offset),
-                );
+            const flanking = characters.slice(start, end).map(
+                (character, offset) =>
+                    // A hard break at a run edge leaves its delimiter beside
+                    // whitespace, so it flanks like a space.
+                    (character.hardBreak || /[^\S\n]/u.test(character.text)) &&
+                    !canKeepSpace(start + offset),
+            );
             const first = flanking.indexOf(false);
             const last = flanking.lastIndexOf(false);
             flanking.forEach((_, offset) => {
@@ -102,7 +119,11 @@ function normalize(paragraph: Character[]): Character[] {
             });
         }
     }
-    return characters;
+    // A hard break followed only by whitespace has no Markdown spelling:
+    // the reparse drops it at the end of the paragraph.
+    let content = characters.length;
+    while (content > 0 && /\s/u.test(characters[content - 1].text)) content--;
+    return characters.filter((character, index) => index < content || !character.hardBreak);
 }
 
 function formatting(paragraphs: Character[][]): CommentFormatting {
@@ -139,10 +160,31 @@ export function normalizeCommentDocument(document: JSONContent): JSONContent {
     };
 }
 
+// True when only spaces separate `index` from the previous line break.
+// The slice start is a delimiter or the paragraph start, never a line start.
+function startsLine(index: number, characters: Character[]): boolean {
+    for (let previous = index - 1; previous >= 0; previous--) {
+        if (characters[previous].text === "\n") return true;
+        if (!/[^\S\n]/u.test(characters[previous].text)) return false;
+    }
+    return false;
+}
+
+// The `.` of a line-start digit run would start an ordered list.
+function endsLineStartDigits(index: number, characters: Character[]): boolean {
+    let first = index;
+    while (first > 0 && /\d/u.test(characters[first - 1].text)) first--;
+    return first < index && startsLine(first, characters);
+}
+
 function literal(character: Character, index: number, characters: Character[]): string {
-    if (character.hardBreak) return "  \n";
+    if (character.hardBreak) return character.backslashBreak ? "\\\n" : "  \n";
     if (
-        /[\\*_[\]~<>:()]/u.test(character.text) ||
+        // `@` would otherwise form a GFM e-mail autolink.
+        /[\\*_[\]~<>:()@]/u.test(character.text) ||
+        // A list or heading marker after a line break would end the paragraph.
+        (/[-+#]/u.test(character.text) && startsLine(index, characters)) ||
+        (character.text === "." && endsLineStartDigits(index, characters)) ||
         (character.text === "+" &&
             [characters[index - 1], characters[index + 1]].some(
                 (neighbor) => neighbor?.text === "+",
@@ -253,7 +295,21 @@ function render(characters: Character[]): string {
 }
 
 export function serializeComment(document: JSONContent): string {
-    return paragraphs(normalizeCommentDocument(document)).map(render).join("\n\n");
+    return paragraphs(normalizeCommentDocument(document))
+        .map((paragraph) =>
+            render(
+                paragraph.map((character, index) => ({
+                    ...character,
+                    // A two-space break is dropped at the paragraph start and loses
+                    // the whitespace before it, and a line of only spaces ends the
+                    // paragraph. The backslash break keeps all three.
+                    backslashBreak:
+                        character.hardBreak &&
+                        (index === 0 || /\s/u.test(paragraph[index - 1].text)),
+                })),
+            ),
+        )
+        .join("\n\n");
 }
 
 export function compareCommentDocument(
