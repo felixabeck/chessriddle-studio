@@ -123,10 +123,10 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
           onFocus={() => combobox.openDropdown()}
           onBlur={() => {
             combobox.closeDropdown();
-            const reverted = value || "";
+            const committed = value || "";
             // Keep the error only while its rejected text is still the one shown.
-            if (reverted !== search) setError(undefined);
-            setSearch(reverted);
+            if (committed !== search) setError(undefined);
+            setSearch(committed);
             setHasTyped(false);
           }}
           onKeyDown={(event) => {
