@@ -185,6 +185,22 @@ test("a changed engine PV sets its new arrow once and a later equal score skips 
   expect(parseUci).not.toHaveBeenCalled();
 });
 
+test("the eval bar keeps the last score while the engine computes the next move", async () => {
+  await mountBoard();
+  expect(host.textContent).toContain("0.1");
+  await act(async () => {
+    tree.getState().makeMove({ payload: parseUci("e2e4")! });
+  });
+  expect(tree.getState().currentNode().engineScore).toBeUndefined();
+  // Without the hold the bar renders no score section here until the engine answers.
+  expect(host.textContent).toContain("0.1");
+  await act(async () => {
+    tree.getState().setEngineScore({ value: { type: "cp", value: -40 }, wdl: null });
+  });
+  expect(host.textContent).toContain("0.4");
+  expect(host.textContent).not.toContain("0.1");
+});
+
 test("the eval bar shows the live engine score ahead of the node's saved score", async () => {
   await mountBoard();
   await act(async () => {

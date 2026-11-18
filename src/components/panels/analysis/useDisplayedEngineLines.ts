@@ -1,10 +1,17 @@
 import { useTabAtom, useOwnerTabId } from "@/state/tabScope";
-import { useAtomValue, useStore, type Getter } from "jotai";
+import { atom, useAtomValue, useStore, type Getter } from "jotai";
 import { useEffect, useState } from "react";
-import type { BestMoves, EngineLog, EngineTerminalEntry, EngineTerminalSnapshot } from "@/bindings";
+import type {
+    BestMoves,
+    EngineLog,
+    EngineTerminalEntry,
+    EngineTerminalSnapshot,
+    Score,
+} from "@/bindings";
 import type { TFunction } from "i18next";
 import { normalizeError } from "@/platform/errors";
 import {
+    enginesAtom,
     threatFamily,
     engineMovesFamily,
     engineTerminalFamily,
@@ -138,6 +145,51 @@ export function readEngineLines(
     };
 }
 
+/** A search for this position is due but has produced neither lines nor a terminal yet. */
+export function engineLinesWaiting({
+    eligible,
+    current,
+    currentTerminal,
+}: Pick<ReturnType<typeof readEngineLines>, "eligible" | "current" | "currentTerminal">): boolean {
+    return eligible && current === undefined && !currentTerminal;
+}
+
+/**
+ * Whether `request` has been waiting for `ENGINE_LINES_LOADING_DELAY_MS`. A new request restarts
+ * the delay, and the timer is cleared when the request changes, stops waiting or unmounts.
+ */
+export function useEngineWaitExpired(request: string, waiting: boolean): boolean {
+    const [expired, setExpired] = useState<string | null>(null);
+    useEffect(() => {
+        setExpired(null);
+        if (!waiting) return;
+        const timer = window.setTimeout(() => setExpired(request), ENGINE_LINES_LOADING_DELAY_MS);
+        return () => window.clearTimeout(timer);
+    }, [request, waiting]);
+    return waiting && expired === request;
+}
+
+/**
+ * What the engines know about this position's live score, mirroring who writes it: only local
+ * engines call `setEngineScore`, and never for a threat search. `cached` is the first such
+ * engine's remembered score for this exact position (the node may lack it after a reload, or
+ * while a fresh search is still shallower than the remembered one); `pending` says a local
+ * engine is still computing the position's first lines.
+ */
+export const createLiveEngineScoreAtom = (tab: string, fen: string, moves: string[]) =>
+    atom((get): { cached: Score | null; pending: boolean } => {
+        if (get(threatFamily(tab))) return { cached: null, pending: false };
+        let pending = false;
+        for (const engine of get(enginesAtom) ?? []) {
+            if (!engine.loaded || engine.type !== "local") continue;
+            const read = readEngineLines(get, tab, engine, fen, moves, false);
+            const cached = read.eligible ? read.current?.[0]?.score : undefined;
+            if (cached) return { cached, pending: false };
+            pending ||= engineLinesWaiting(read);
+        }
+        return { cached: null, pending };
+    });
+
 /** Retains one committed display per mode and reader, scoped to its owner and settings. */
 export function useDisplayedEngineLines(
     engine: Engine,
@@ -191,16 +243,11 @@ export function useDisplayedEngineLines(
             });
     }, [current, scope, search.searchedBoardFen, halfMoves, error, isGameOver, threat]);
 
-    const waiting = eligible && current === undefined && !currentTerminal;
-    const request = JSON.stringify([scope, search.key, threat, retry]);
-    const [expired, setExpired] = useState<string | null>(null);
-    useEffect(() => {
-        setExpired(null);
-        if (!waiting) return;
-        const timer = window.setTimeout(() => setExpired(request), ENGINE_LINES_LOADING_DELAY_MS);
-        return () => window.clearTimeout(timer);
-    }, [request, waiting]);
-    const loading = waiting && expired === request;
+    const waiting = engineLinesWaiting({ eligible, current, currentTerminal });
+    const loading = useEngineWaitExpired(
+        JSON.stringify([scope, search.key, threat, retry]),
+        waiting,
+    );
     const fallback =
         ((waiting && !loading) || failure) && current === undefined
             ? previous?.displays.get(threat)

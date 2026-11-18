@@ -68,6 +68,7 @@ import { accessibleBoardGrid, accessibleSquareLabel, boardColorLabel } from "./b
 import { BoardBar } from "./BoardBar";
 import Clock from "./Clock";
 import EvalBar from "./EvalBar";
+import { useEvalBarScore } from "./useEvalBarScore";
 import MoveInput from "./MoveInput";
 import PromotionModal from "./PromotionModal";
 
@@ -141,8 +142,16 @@ function Board({
   const headers = useStore(store, (s) => s.headers);
   const currentNode = useStore(store, (s) => s.currentNode());
   const positionPath = useStore(store, (s) => s.position.join(","));
+  const documentId = useStore(store, (s) => s.documentId);
 
   const tabId = useOwnerTabId();
+  const evalBarScore = useEvalBarScore({
+    score: displayedScore(currentNode),
+    tab: tabId,
+    documentId,
+    rootFen,
+    moves,
+  });
   const arrows = useAtomValue(
     useMemo(() => createBestMovesAtom(tabId, rootFen, moves), [tabId, rootFen, moves]),
   );
@@ -606,9 +615,7 @@ function Board({
                   </IconAction>
                 </Center>
               )}
-              {evalOpen && (
-                <EvalBar score={displayedScore(currentNode)} orientation={orientation} />
-              )}
+              {evalOpen && <EvalBar score={evalBarScore} orientation={orientation} />}
             </Box>
             <BoardFrame>
               <Box

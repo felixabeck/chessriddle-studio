@@ -84,6 +84,9 @@ const boardBar = vi.hoisted(() =>
 vi.mock("./BoardBar", () => ({ BoardBar: boardBar }));
 vi.mock("./Clock", () => ({ default: () => null }));
 vi.mock("./EvalBar", () => ({ default: () => null }));
+vi.mock("./useEvalBarScore", () => ({
+  useEvalBarScore: ({ score }: { score: unknown }) => score,
+}));
 const promotionModal = vi.hoisted(() =>
   vi.fn((_props: ComponentProps<typeof PromotionModal>) => null),
 );
