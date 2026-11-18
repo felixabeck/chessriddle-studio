@@ -106,15 +106,15 @@ function OpeningsTable({
           </Text>
         );
       }
-      const total = openingGames(opening);
+      const games = openingGames(opening);
       const sourceTotal = openingGames(totals[role]);
       // Games with an unknown result count for neither side: a source can total none.
-      const percentage = sourceTotal > 0 ? (total / sourceTotal) * 100 : 0;
+      const percentage = sourceTotal > 0 ? (games / sourceTotal) * 100 : 0;
       return (
         <Group wrap="nowrap">
           {!row.isTotal && <Text fz="sm">{percentage.toFixed(0)}%</Text>}
           <Text fz="sm" flex={1} ta="right">
-            {formatNumber(total)}
+            {formatNumber(games)}
           </Text>
         </Group>
       );
@@ -126,11 +126,11 @@ function OpeningsTable({
     render: (row) => {
       const opening = row[role];
       if (!opening || pending(role)) return null;
-      const total = openingGames(opening);
-      if (total === 0) return null;
-      const whitePercent = (opening.white / total) * 100;
-      const drawPercent = (opening.draw / total) * 100;
-      const blackPercent = (opening.black / total) * 100;
+      const games = openingGames(opening);
+      if (games === 0) return null;
+      const whitePercent = (opening.white / games) * 100;
+      const drawPercent = (opening.draw / games) * 100;
+      const blackPercent = (opening.black / games) * 100;
       // Two sources halve the bar: label only the wider sections, in whole percent.
       const label = (percent: number) =>
         comparison

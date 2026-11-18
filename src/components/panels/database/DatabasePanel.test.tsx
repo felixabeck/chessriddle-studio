@@ -397,6 +397,8 @@ describe("DatabasePanel", () => {
       );
 
       expect(result.openings).toEqual([{ move: "e4", white: 50, black: 40, draw: 10 }]);
+      // The position total is the response's top-level counts, not the move-row sum.
+      expect(result.total).toEqual({ move: "", white: 100, black: 80, draw: 20 });
       expect(result.games).toHaveLength(1);
       expect(result.games[0].id).toBe(1);
       expect(result.gameFailures).toHaveLength(1);
@@ -528,8 +530,8 @@ describe("DatabasePanel", () => {
     return store;
   }
 
-  /** The match count lives only in the Stats table's Total row; `null` means no such row. */
-  function expectTotal(count: number | null) {
+  /** The match count lives only in the Stats table's Total row. */
+  function expectTotal(count: number) {
     expect(container.textContent).not.toContain("Board.Database.Matches");
     const tab = Array.from(container.querySelectorAll('[role="tab"]')).find(
       (element) => element.textContent === "Board.Database.Stats",
@@ -540,9 +542,7 @@ describe("DatabasePanel", () => {
     const total = Array.from(rows).find((row) =>
       row.querySelector("td")?.textContent?.startsWith("Board.Database.StatsTable.Total"),
     );
-    expect(total?.querySelectorAll("td")[1]?.textContent ?? null).toBe(
-      count === null ? null : formatNumber(count),
-    );
+    expect(total?.querySelectorAll("td")[1]?.textContent).toBe(formatNumber(count));
   }
 
   test("the rail is gone: Stats and Games are the only views and both sit in the header", async () => {
