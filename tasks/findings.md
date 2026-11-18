@@ -25907,7 +25907,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Repertoire minimum-games "Custom" field collapses to a preset while typing, so values like 500 or 2000 cannot be typed
 
-* **ID:** f-20261114-07 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-07 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (general review, origin/master f3b063a85)
 * **Where:** `src/components/settings/RepertoireMinGamesSetting.tsx:25-27` (the effect re-derives `preset` from `minGames` on every change) together with `:65-74` (the Custom `NumberInput` is mounted only while `preset === "custom"`, and its `onChange` writes every keystroke straight into `coverageMinGamesAtom`, with `Number(val) || 50` for an empty field).
@@ -25917,6 +25917,15 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** Vitest probe in a `/tmp` `git archive` copy of origin/master (f3b063a85), same mocks as `RepertoireMinGamesSetting.test.tsx` but with `useAtom` backed by a real `useState(7)`: typing `5` → preset `custom`, input shown; `50` → preset `standard`, input gone; `500` → no input to type into, preset stays `standard`. Probe removed afterwards.
 * **Related:** -
 * **Found by:** Grok Bot general review
+* **Closed:** 2026-11-18, drain session dff05860-0ecd-4f85-b955-d33fb387e7b7 (lens tier, Claude Code orchestrator writes, agy lenses).
+  * `1b5f1cc3b` — the preset effect keeps `custom` while it is selected (`setPreset((current) => current === "custom" ? current : presetFor(minGames))`), so typing 5 → 50 → 500 stays in Custom and stores 500; an empty draft no longer writes 50.
+  * `6b859cf8e` — review round 1 (correctness, root-cause, tests, code-quality): the field holds its text as a local draft (`value={draft ?? minGames}`, cleared on blur and on a preset change), so an emptied field shows the stored minimum again instead of staying blank; only Mantine's numeric `onChange` value >= 1 is stored.
+  * `a4463dd92` — review round 2: the test renders Mantine's real `NumberInput`, which showed that its blur normalisation (clamp to `min={1}`, trim leading zeros) stores 0 → 1 and 05 → 5. That is kept as the intended meaning of `min={1}`; comments corrected; the unreachable `Number.isSafeInteger` check removed (Mantine keeps values beyond the safe range as strings, also on blur).
+  * Proof: `RepertoireMinGamesSetting.test.tsx` 14 tests on the real `NumberInput`. Against the original component 5 fail; each repair reverted on its own (no draft, coerced strings, no `>= 1`, no draft reset on preset change, no preset effect) turns exactly its test red.
+  * Rejected: committing on blur/Enter only — the stored minimum would lag the visible field while typing, and the sticky-Custom effect already removes the collapse. Clamp-free blur (`clampBehavior="none"`) — it would revert a typed 05 to the old value instead of storing 5.
+  * Filed: the same controlled-`NumberInput`-without-draft mechanism in `SettingsPage.tsx` (new per session) and `EngineSettings.tsx` (spin options), through the inbox (Related: f-20261114-07).
+  * Review: round 1 correctness, root-cause, tests, code-quality, minimalism APPROVED with should-fix points (all fixed); round 2 REVISE on Mantine's blur normalisation (fixed); round 3 correctness, root-cause, tests, code-quality APPROVED, all adopted findings CLOSED. agy lenses (google.low), orchestrator Claude: family-separated.
+<!-- ledger-meta {"command":"close","effect_lines":8,"effect_sha256":"16ecbd2c8fea9be3437f9cfd6b86f89a9b9363ce00e8186b713de972ce86221a","header_sha256":"5b8f892c4febe8de800f87a6c9f03e8641e0fb8395822c5a8e5228e593543be3","header_status":"handled","input_sha256":"37bbb49ba2e7e6c2991541cb7b298d4b5c8029adb89004715bde29f384b7aa05","kind":"mutation-receipt","operation":"9906cafe9bb8f0c369b54d98f2c9df3b97e386b29cc31571ec6c404a026ef2dd","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-07"],"target":"f-20261114-07","v":1} -->
 
 ---
 
