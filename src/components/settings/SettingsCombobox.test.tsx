@@ -65,10 +65,20 @@ async function renderHarness() {
   );
 }
 
+const trigger = () => host!.querySelector<HTMLElement>('button[aria-haspopup="listbox"]')!;
+
+// jsdom computes no accessible names, so resolve aria-labelledby the way accname does.
+const labelledName = (element: Element) =>
+  element
+    .getAttribute("aria-labelledby")!
+    .split(" ")
+    .map((id) => document.getElementById(id)!.textContent)
+    .join(" ");
+
 const currentValue = () => host!.querySelector("[data-testid=value]")!.textContent;
 
 async function open() {
-  await act(async () => host!.querySelector<HTMLElement>('button[aria-label="Pieces"]')!.click());
+  await act(async () => trigger().click());
 }
 
 function option(label: string) {
@@ -88,11 +98,9 @@ async function hover(label: string) {
 
 async function pressEscape() {
   await act(async () => {
-    host!
-      .querySelector('button[aria-label="Pieces"]')!
-      .dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }),
-      );
+    trigger().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }),
+    );
   });
 }
 
@@ -160,4 +168,16 @@ test("restores a value changed from outside while the dropdown was closed", asyn
 
   await pressEscape();
   expect(currentValue()).toBe("alpha");
+});
+
+test("names the trigger by its field and the committed value", async () => {
+  await renderHarness();
+  expect(trigger().hasAttribute("aria-label")).toBe(false);
+  expect(labelledName(trigger())).toBe("Pieces Staunty");
+
+  await open();
+  expect(labelledName(host!.querySelector('[role="listbox"]')!)).toBe("Pieces");
+  await act(async () => option("Merida").click());
+
+  expect(labelledName(trigger())).toBe("Pieces Merida");
 });
