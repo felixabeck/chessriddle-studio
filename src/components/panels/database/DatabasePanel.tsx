@@ -1,22 +1,27 @@
 import { useTabAtom, useOwnerTab } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
-import { Alert, Group, SegmentedControl, Select, Tabs } from "@mantine/core";
+import { Alert, Button, Group, Menu, SegmentedControl, Select, Stack, Tabs } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { memo, type ReactNode, useContext, useEffect } from "react";
+import { Plus, X } from "lucide-react";
+import { memo, type ReactNode, useCallback, useContext, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr/immutable";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
-import { type NormalizedGame } from "@/bindings";
+import { type DatabaseHandle, type NormalizedGame } from "@/bindings";
+import IconAction from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import {
+  comparisonDbAtom,
   dbTabFamily,
   dbTypeFamily,
+  explorerGamesSourceFamily,
+  explorerSortFamily,
   localOptionsFamily,
   pinnedExplorerDatabaseFamily,
   lichessOptionsAtom,
@@ -38,7 +43,9 @@ import {
   type PositionData,
 } from "@/utils/lichess/api";
 import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/explorer";
+import classes from "./DatabasePanel.module.css";
 import DatabaseLoader from "./DatabaseLoader";
+import { comparisonState } from "./explorerComparison";
 import ExplorerSourceHeader from "./ExplorerSourceHeader";
 import { localFilterSummary } from "./filterSummary";
 import GamesTable from "./GamesTable";
@@ -121,6 +128,21 @@ export async function fetchOpening(
     .exhaustive();
 }
 
+/** Follows a linked collection that publishes a new database in place of `selected`. */
+function useCollectionDatabase(
+  selected: DatabaseHandle | null,
+  replaced: (from: DatabaseHandle, to: DatabaseHandle) => void,
+) {
+  const currency = useCollectionCurrency(selected);
+  const current = currency.collection?.database;
+  useEffect(() => {
+    if (current && selected && databaseHandleKey(current) !== databaseHandleKey(selected)) {
+      replaced(selected, current);
+    }
+  }, [current, selected, replaced]);
+  return currency;
+}
+
 function DatabasePanel() {
   const { t } = useTranslation();
 
@@ -129,25 +151,20 @@ function DatabasePanel() {
   const [referenceDatabase, setReferenceDatabase] = useAtom(referenceDbAtom);
   const [pinnedDatabase, setPinnedDatabase] = useAtom(useTabAtom(pinnedExplorerDatabaseFamily));
   const selectedDatabase = pinnedDatabase ?? referenceDatabase;
-  const currency = useCollectionCurrency(selectedDatabase);
   const replaceExplorerDatabase = useSetAtom(replaceExplorerDatabaseAtom);
-  useEffect(() => {
-    const current = currency.collection?.database;
-    if (
-      current &&
-      selectedDatabase &&
-      databaseHandleKey(current) !== databaseHandleKey(selectedDatabase)
-    ) {
-      if (pinnedDatabase) setPinnedDatabase(current);
-      else replaceExplorerDatabase({ from: selectedDatabase, to: current });
-    }
-  }, [
-    currency.collection?.database,
-    selectedDatabase,
-    pinnedDatabase,
-    setPinnedDatabase,
-    replaceExplorerDatabase,
-  ]);
+  const pinned = pinnedDatabase !== null;
+  const replaceStored = useCallback(
+    (from: DatabaseHandle, to: DatabaseHandle) => replaceExplorerDatabase({ from, to }),
+    [replaceExplorerDatabase],
+  );
+  // A pin is the tab's own choice; every other choice is stored and follows the replacement.
+  const replacePrimary = useCallback(
+    (from: DatabaseHandle, to: DatabaseHandle) =>
+      pinned ? setPinnedDatabase(to) : replaceExplorerDatabase({ from, to }),
+    [pinned, setPinnedDatabase, replaceExplorerDatabase],
+  );
+  const currency = useCollectionDatabase(selectedDatabase, replacePrimary);
+  const [storedComparison, setStoredComparison] = useAtom(comparisonDbAtom);
   const sessions = useAtomValue(sessionsAtom);
   const [debouncedFen] = useDebouncedValue(fen, 50);
   const lichessOptions = useAtomValue(lichessOptionsAtom);
@@ -191,6 +208,17 @@ function DatabasePanel() {
     setFilters: setLocalFilters,
     options: effectiveLocalOptions,
   } = useExplorerFilters(effectiveReferenceDatabase);
+
+  const comparison = comparisonState({
+    local: db === "local",
+    pinned,
+    primary: effectiveReferenceDatabase,
+    stored: storedComparison,
+    databases: databasesError ? undefined : databases?.databases,
+  });
+  const comparisonDatabase = comparison.kind === "source" ? comparison.database : null;
+  useCollectionDatabase(comparisonDatabase, replaceStored);
+  const comparisonFilters = useExplorerFilters(comparisonDatabase);
   const dbType: DBType = match(db)
     .with("local", (v) => ({
       type: v,
@@ -221,6 +249,16 @@ function DatabasePanel() {
     db === "local",
     tab?.value || undefined,
   );
+  // Its own progress id: a job on the primary's id would supersede the primary's progress.
+  const comparisonExplorer = useLocalExplorer(
+    comparisonFilters.options,
+    db === "local" && comparisonDatabase !== null,
+    tab?.value ? `${tab.value}:comparison` : undefined,
+  );
+  const [storedGamesSource, setGamesSource] = useAtom(useTabAtom(explorerGamesSourceFamily));
+  const gamesSource =
+    comparisonDatabase && storedGamesSource === "comparison" ? "comparison" : "primary";
+  const [sort, setSort] = useAtom(useTabAtom(explorerSortFamily));
   const openingKey =
     !missingExplorerAuthentication && db !== "local"
       ? currency.collection
@@ -251,12 +289,28 @@ function DatabasePanel() {
     .join(", ");
   const hasGameFailures = (openingData?.gameFailures?.length ?? 0) > 0;
 
+  // Clearing the native search cache only frees memory; a choice never depends on it.
+  const clearSearchCache = () => void Promise.resolve(tauri.clearGames()).catch(() => undefined);
   const chooseDatabase = (value: string | null) => {
-    // Clearing the native search cache only frees memory; the choice never depends on it.
-    void Promise.resolve(tauri.clearGames()).catch(() => undefined);
+    clearSearchCache();
     const nextDatabase = databaseHandleFromKey(readableDatabases, value);
     (pinnedDatabase ? setPinnedDatabase : setReferenceDatabase)(nextDatabase);
   };
+  const chooseComparison = (value: string | null) => {
+    clearSearchCache();
+    setStoredComparison(databaseHandleFromKey(readableDatabases, value));
+  };
+  const comparisonChoices = dbSelectData.filter(
+    (choice) => choice.value !== selectedReferenceDatabase,
+  );
+  const primaryTitle =
+    dbSelectData.find((choice) => choice.value === selectedReferenceDatabase)?.label ?? "";
+  const canCompare =
+    db === "local" &&
+    !pinned &&
+    !!effectiveReferenceDatabase &&
+    comparison.kind === "none" &&
+    comparisonChoices.length > 0;
 
   const loader = (
     <DatabaseLoader
@@ -277,7 +331,6 @@ function DatabasePanel() {
             size="sm"
             flex={1}
             miw={0}
-            maw={200}
             allowDeselect={false}
           />
         }
@@ -310,6 +363,63 @@ function DatabasePanel() {
       />
     ))
     .exhaustive();
+  const comparisonHeader = comparison.kind === "source" && (
+    <ExplorerSourceHeader
+      key="comparison"
+      select={
+        <Select
+          data={comparisonChoices}
+          value={databaseHandleKey(comparison.database)}
+          onChange={chooseComparison}
+          aria-label={t("Board.Database.CompareWith")}
+          size="sm"
+          flex={1}
+          miw={0}
+          allowDeselect={false}
+        />
+      }
+      filterLabel={localFilterSummary(comparisonFilters.filters, t)}
+      filters={
+        <LocalFiltersForm
+          database={comparison.database}
+          filters={comparisonFilters.filters}
+          setFilters={comparisonFilters.setFilters}
+        />
+      }
+      action={
+        <IconAction
+          label={t("Board.Database.RemoveComparison")}
+          variant="subtle"
+          size="sm"
+          onClick={() => setStoredComparison(null)}
+        >
+          <X size="0.875rem" />
+        </IconAction>
+      }
+      loader={
+        <DatabaseLoader
+          isLoading={comparisonExplorer.loading}
+          tab={comparisonExplorer.progressId}
+        />
+      }
+    />
+  );
+
+  // With two sources a failure belongs to its source: it is named, and the other one stays.
+  const twoSources =
+    comparison.kind === "source"
+      ? ([
+          { role: "primary", name: primaryTitle, explorer: localExplorer },
+          { role: "comparison", name: comparison.title, explorer: comparisonExplorer },
+        ] as const)
+      : null;
+  const sourceAlert = (source: NonNullable<typeof twoSources>[number]) => (
+    <Alert key={source.role} color="danger" style={{ flexShrink: 0 }}>
+      {`${source.name}: ${source.explorer.error}`}
+    </Alert>
+  );
+  const failedSources = twoSources?.filter((source) => source.explorer.error !== undefined) ?? [];
+  const gamesFrom = twoSources?.find((source) => source.role === gamesSource);
 
   /** What a view shows instead of its table while the source cannot answer. */
   const unavailable: ReactNode | null =
@@ -347,6 +457,27 @@ function DatabasePanel() {
             onChange={(value) => setDb(value as "local" | "lch_all" | "lch_master")}
           />
           {db === "local" && <PositionSearchControl boardFen={debouncedFen} />}
+          {canCompare && (
+            <Menu position="bottom-start" withinPortal>
+              <Menu.Target>
+                <Button
+                  variant="subtle"
+                  size="compact-sm"
+                  leftSection={<Plus size="0.875rem" />}
+                  aria-label={t("Board.Database.CompareWith")}
+                >
+                  {t("Board.Database.Compare")}
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                {comparisonChoices.map((choice) => (
+                  <Menu.Item key={choice.value} onClick={() => chooseComparison(choice.value)}>
+                    {choice.label}
+                  </Menu.Item>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+          )}
         </Group>
         <Tabs.List style={{ flexWrap: "nowrap" }}>
           <Tabs.Tab value="stats" disabled={statsUnavailable}>
@@ -355,39 +486,94 @@ function DatabasePanel() {
           <Tabs.Tab value="games">{t("Board.Database.Games")}</Tabs.Tab>
         </Tabs.List>
       </Group>
-      <Group wrap="nowrap" align="flex-start" gap="sm" mt="xs">
+      <div className={classes.sources} data-two-sources={twoSources ? true : undefined}>
         {sourceHeader}
-      </Group>
+        {comparisonHeader}
+      </div>
+      {comparison.kind === "unreadable" && (
+        <Alert
+          color="warning"
+          mt="xs"
+          style={{ flexShrink: 0 }}
+          withCloseButton
+          closeButtonLabel={t("Board.Database.RemoveComparison")}
+          onClose={() => setStoredComparison(null)}
+        >
+          {t("Board.Database.ComparisonUnreadable", { database: comparison.name })}
+        </Alert>
+      )}
 
       <ViewPanel value="stats">
-        {unavailable ?? (
-          <OpeningsTable openings={openingData?.openings || []} loading={isLoading} />
-        )}
-      </ViewPanel>
-      <ViewPanel value="games">
-        {unavailable ?? (
+        {twoSources ? (
           <>
-            {hasGameFailures && (
-              <Alert color="warning" style={{ flexShrink: 0 }}>
-                {openingData?.games.length
-                  ? t("Board.Database.GamesIncomplete", {
-                      defaultValue: "Could not load these games: {{games}}",
-                      games: failedGames,
-                    })
-                  : t("Board.Database.GamesFailed", {
-                      defaultValue: "Could not load games: {{games}}",
-                      games: failedGames,
-                    })}
-              </Alert>
-            )}
-            {(!hasGameFailures || !!openingData?.games.length) && (
-              <GamesTable
-                games={openingData?.games || []}
-                loading={isLoading}
-                databasePath={dbType.type === "local" ? dbType.options.path : null}
+            {failedSources.map(sourceAlert)}
+            {failedSources.length < twoSources.length && (
+              <OpeningsTable
+                openings={localExplorer.openings}
+                loading={localExplorer.loading}
+                comparison={{
+                  openings: comparisonExplorer.openings,
+                  loading: comparisonExplorer.loading,
+                }}
+                sort={sort}
+                onSortChange={setSort}
               />
             )}
           </>
+        ) : (
+          (unavailable ?? (
+            <OpeningsTable openings={openingData?.openings || []} loading={isLoading} />
+          ))
+        )}
+      </ViewPanel>
+      <ViewPanel value="games">
+        {twoSources && gamesFrom ? (
+          <Stack gap="xs" flex={1} style={{ overflow: "hidden" }}>
+            <SegmentedControl
+              aria-label={t("Board.Database.GamesSource")}
+              style={{ flexShrink: 0, alignSelf: "flex-start" }}
+              size="xs"
+              data={twoSources.map((source) => ({ value: source.role, label: source.name }))}
+              value={gamesSource}
+              onChange={(value) => setGamesSource(value as typeof gamesSource)}
+            />
+            {gamesFrom.explorer.error !== undefined ? (
+              sourceAlert(gamesFrom)
+            ) : (
+              <GamesTable
+                games={gamesFrom.explorer.games}
+                loading={gamesFrom.explorer.loading}
+                databasePath={
+                  gamesFrom.role === "comparison" ? comparisonDatabase : effectiveReferenceDatabase
+                }
+              />
+            )}
+          </Stack>
+        ) : (
+          (unavailable ?? (
+            <>
+              {hasGameFailures && (
+                <Alert color="warning" style={{ flexShrink: 0 }}>
+                  {openingData?.games.length
+                    ? t("Board.Database.GamesIncomplete", {
+                        defaultValue: "Could not load these games: {{games}}",
+                        games: failedGames,
+                      })
+                    : t("Board.Database.GamesFailed", {
+                        defaultValue: "Could not load games: {{games}}",
+                        games: failedGames,
+                      })}
+                </Alert>
+              )}
+              {(!hasGameFailures || !!openingData?.games.length) && (
+                <GamesTable
+                  games={openingData?.games || []}
+                  loading={isLoading}
+                  databasePath={dbType.type === "local" ? dbType.options.path : null}
+                />
+              )}
+            </>
+          ))
         )}
       </ViewPanel>
     </Tabs>

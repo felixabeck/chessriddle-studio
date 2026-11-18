@@ -3323,3 +3323,200 @@ for (const scheme of ["dark", "light"] as const) {
         );
     });
 }
+
+test("database-files: the board explorer compares two databases side by side", async ({
+    page,
+    mockScenario,
+}) => {
+    const mega = { id: { id: gameOpeningFixture.databaseId }, kind: "database" };
+    const corr = { id: { id: "correspondence-db" }, kind: "database" };
+    await page.addInitScript(
+        ({ mega, corr }) => {
+            localStorage.setItem("reference-database", JSON.stringify(mega));
+            localStorage.setItem("comparison-database", JSON.stringify(corr));
+            localStorage.setItem(
+                "explorer-database-filters",
+                JSON.stringify([
+                    {
+                        database: mega.id.id,
+                        filters: { player: null, color: "white", result: "any", elo: [1900, 2500] },
+                    },
+                ]),
+            );
+            localStorage.setItem("font-size", "100");
+        },
+        { mega, corr },
+    );
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await mockScenario({
+        commands: filesWorkspaceCommands([[]], {
+            ...gameOpeningCommands,
+            list_workspace_databases: {
+                result: {
+                    entries: [
+                        { handle: mega, filename: "mega.db3", availability: "available" },
+                        { handle: corr, filename: "corr.db3", availability: "available" },
+                    ],
+                    unread: [],
+                },
+            },
+            get_progress: { result: null },
+            linked_collections_supported: { result: true },
+            list_linked_collections: { result: [] },
+            search_position: { result: [[], []] },
+        }),
+    });
+    // The shared mock answers by command alone; these two commands differ by database here.
+    await page.addInitScript((megaId) => {
+        type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+        const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
+            .__TAURI_INTERNALS__;
+        const invoke = internals.invoke;
+        const row = (move: string, white: number, draw: number, black: number) => ({
+            move,
+            white,
+            draw,
+            black,
+            unknown: 0,
+            last_played: null,
+            year_counts: [],
+        });
+        internals.invoke = async (command, args = {}) => {
+            const reply = await invoke(command, args);
+            const file = (args.file as { id?: { id?: string } } | undefined)?.id?.id;
+            if (!file) return reply;
+            const isMega = file === megaId;
+            if (command === "get_db_info") {
+                return {
+                    ...(reply as object),
+                    title: isMega ? "Mega Database" : "Correspondence",
+                };
+            }
+            if (command === "search_position") {
+                return isMega
+                    ? [
+                          [
+                              row("e4", 500, 300, 400),
+                              row("d4", 300, 200, 150),
+                              row("c4", 40, 30, 20),
+                          ],
+                          [],
+                      ]
+                    : [[row("d4", 20, 90, 10), row("h4", 10, 60, 5), row("e4", 5, 25, 5)], []];
+            }
+            return reply;
+        };
+    }, mega.id.id);
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await expect(
+        page.getByRole("button", { name: "Open database", exact: true }).first(),
+    ).toBeVisible();
+    await page
+        .locator("nav.mantine-AppShell-navbar")
+        .getByRole("link", { name: "Board", exact: true })
+        .click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
+    await page.getByRole("tab", { name: "Database", exact: true }).click();
+
+    // Each database has its own cell in the sources bar, with its own saved filters.
+    const sources = page.locator("[data-explorer-source]");
+    await expect(sources).toHaveCount(2);
+    await expect(sources.nth(0).getByRole("textbox")).toHaveValue("Mega Database");
+    await expect(sources.nth(1).getByRole("textbox")).toHaveValue("Correspondence");
+    await expect(
+        sources.nth(0).getByRole("button", { name: "Filters: Elo 1900–2500", exact: true }),
+    ).toBeVisible();
+    const corrFilters = sources.nth(1).getByRole("button", { name: /^Filters: / });
+    await expect(corrFilters).toHaveAccessibleName("Filters: No filter");
+    await expect(page.getByRole("tab", { name: "Options", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Compare with a database" })).toHaveCount(0);
+
+    // One table: the union of both databases' moves, ordered by the first one.
+    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
+    const rows = stats.locator("tbody tr");
+    const moves = () => rows.locator("td:first-child").allTextContents();
+    await expect(rows).toHaveCount(5);
+    expect(await moves()).toEqual(["e4", "d4", "c4", "h4", "Total"]);
+    expect(await rows.nth(0).locator("td").allTextContents()).toEqual([
+        "e4",
+        "62%1,200",
+        expect.any(String),
+        "15%35",
+        expect.any(String),
+    ]);
+    // A move one database never saw shows a dash on that side.
+    expect(await rows.nth(2).locator("td").nth(3).textContent()).toBe("–");
+    expect(await rows.nth(3).locator("td").nth(1).textContent()).toBe("–");
+    await expect(stats.locator("[data-no-games]")).toHaveCount(2);
+    expect(await rows.nth(4).locator("td").allTextContents()).toEqual([
+        "Total",
+        "1,940",
+        expect.any(String),
+        "230",
+        expect.any(String),
+    ]);
+
+    // The cells of the sources bar stand above their column groups.
+    const edges = await page.evaluate(() => {
+        const left = (element: Element) => Math.round(element.getBoundingClientRect().left);
+        const cells = [...document.querySelectorAll("[data-explorer-source]")].map(left);
+        const headers = [
+            ...document.querySelectorAll('[role="tabpanel"][data-active] thead th, thead th'),
+        ]
+            .filter((th) => (th as HTMLElement).offsetParent !== null)
+            .map(left);
+        return { cells, headers };
+    });
+    expect(Math.abs(edges.cells[0] - edges.headers[1])).toBeLessThanOrEqual(2);
+    expect(Math.abs(edges.cells[1] - edges.headers[3])).toBeLessThanOrEqual(2);
+    await expect(page.getByRole("tabpanel", { name: "Database", exact: true })).toHaveScreenshot(
+        "explorer-two-databases.png",
+    );
+
+    // Sorting by the second database's Total reorders the same rows.
+    await stats.locator("thead th").nth(3).click();
+    await expect.poll(moves).toEqual(["d4", "h4", "e4", "c4", "Total"]);
+
+    // A date picked in the comparison's filters keeps them open and is saved for it alone.
+    await corrFilters.click();
+    const filters = page.locator("[data-explorer-filters]");
+    await filters.getByPlaceholder("Start date", { exact: true }).click();
+    await page
+        .locator("[data-dates-dropdown]")
+        .getByRole("button", { name: /^15 / })
+        .first()
+        .click();
+    await expect(filters).toBeVisible();
+    await expect(corrFilters).toHaveAccessibleName(/^Filters: since /);
+    const saved = await page.evaluate(
+        () =>
+            JSON.parse(localStorage.getItem("explorer-database-filters")!) as {
+                database: string;
+                filters: Record<string, unknown>;
+            }[],
+    );
+    expect(saved.map((entry) => entry.database)).toEqual([mega.id.id, corr.id.id]);
+    expect(saved[0].filters).toEqual({
+        player: null,
+        color: "white",
+        result: "any",
+        elo: [1900, 2500],
+    });
+    expect(saved[1].filters).toHaveProperty("start_date");
+    await corrFilters.click();
+    await expect(filters).toBeHidden();
+
+    // The Games view lists one database's sample games at a time.
+    await page.getByRole("tab", { name: "Games", exact: true }).click();
+    const games = page.getByRole("tabpanel", { name: "Games", exact: true });
+    await expect(games.getByRole("radio", { name: "Mega Database", exact: true })).toBeChecked();
+    await games.getByText("Correspondence", { exact: true }).click();
+    await expect(games.getByRole("radio", { name: "Correspondence", exact: true })).toBeChecked();
+
+    // Removing the comparison returns to the single-source table and offers to compare again.
+    await page.getByRole("button", { name: "Remove comparison database", exact: true }).click();
+    await expect(sources).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Compare with a database" })).toBeVisible();
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});

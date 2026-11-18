@@ -26,8 +26,14 @@ function ExplorerSourceHeader({
   const { t } = useTranslation();
   return (
     <Stack gap={0} miw={0} flex={1} data-explorer-source>
-      <Group gap="xs" wrap="nowrap">
-        {select}
+      {/* In a narrow cell the filter button moves below the select instead of squeezing its name. */}
+      <Group gap="xs" wrap="wrap">
+        {(select || action) && (
+          <Group gap={4} wrap="nowrap" flex="1 1 9rem" miw={0} maw={action ? 230 : 200}>
+            {select}
+            {action}
+          </Group>
+        )}
         <Popover position="bottom-start" shadow="md" width="30rem" trapFocus withinPortal>
           <Popover.Target>
             <Button
@@ -46,7 +52,6 @@ function ExplorerSourceHeader({
             {filters}
           </Popover.Dropdown>
         </Popover>
-        {action}
       </Group>
       {loader}
     </Stack>

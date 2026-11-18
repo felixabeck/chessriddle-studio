@@ -60,11 +60,19 @@ describe("explorer header catalogues", () => {
         "Board.Database.FilterSummary.Since": ["since {{date}}", "date"],
         "Board.Database.FilterSummary.Until": ["until {{date}}", "date"],
         "Board.Database.PositionMode": ["Position: {{mode}}", "mode"],
+        "Board.Database.ComparisonUnreadable": [
+            "The comparison database “{{database}}” cannot be read.",
+            "database",
+        ],
     } as const;
     const plain = {
         "Board.Database.Filters": "Filters",
         "Board.Database.NoFilter": "No filter",
         "Board.Database.FilterSummary.NoFastEvents": "no blitz",
+        "Board.Database.Compare": "Compare",
+        "Board.Database.CompareWith": "Compare with a database",
+        "Board.Database.RemoveComparison": "Remove comparison database",
+        "Board.Database.GamesSource": "Games from",
     } as const;
 
     test.each(shippedCatalogues())(

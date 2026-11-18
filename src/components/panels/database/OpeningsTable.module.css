@@ -5,3 +5,8 @@
 [data-mantine-color-scheme] .whiteResultsSection {
   background-color: var(--cf-eval-bar-light);
 }
+
+/* The second source's columns start at a rule, so the two groups read apart. */
+[data-mantine-color-scheme] .sourceStart {
+  border-inline-start: 1px solid var(--cf-border-strong);
+}

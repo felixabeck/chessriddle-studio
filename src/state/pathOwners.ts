@@ -118,8 +118,9 @@ function collectOriginalSnapshots(local?: Storage, session?: Storage): OriginalO
             ),
         ),
     );
-    // The explorer's saved filters own database ids like the reference does. They share its
-    // family, so an unreadable value of either key withholds the purge of database capabilities.
+    // The explorer's comparison database and saved filters own database ids like the reference
+    // does. They share its family, so an unreadable value of any of the three keys withholds the
+    // purge of database capabilities.
     const referenceReadable = collectOne(
         readJson(local, "reference-database"),
         databaseHandleSchema.nullable(),
@@ -130,7 +131,12 @@ function collectOriginalSnapshots(local?: Storage, session?: Storage): OriginalO
         explorerFilterOwnersSchema,
         (entries) => entries.forEach((entry) => ids.add(entry.database)),
     );
-    trust("referenceDatabase", referenceReadable && explorerFiltersReadable);
+    const comparisonReadable = collectOne(
+        readJson(local, "comparison-database"),
+        databaseHandleSchema.nullable(),
+        (value) => value && ids.add(pathRefKey(value.id)),
+    );
+    trust("referenceDatabase", referenceReadable && comparisonReadable && explorerFiltersReadable);
     trust(
         "puzzleDatabase",
         collectOne(

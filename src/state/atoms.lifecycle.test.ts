@@ -9,6 +9,8 @@ import {
     closeWorkspaceTabAtom,
     closingTabsAtom,
     disposeTabAtoms,
+    explorerGamesSourceFamily,
+    explorerSortFamily,
     engineMovesFamily,
     engineProgressFamily,
     gameIdFamily,
@@ -1210,6 +1212,8 @@ test("closing a tab removes all cached tab and per-engine atom-family entries", 
     const store = getDefaultStore();
     store.set(tabFamily(tabId), "practice");
     store.set(pinnedExplorerDatabaseFamily(tabId), { id: { id: "pinned" }, kind: "database" });
+    store.set(explorerGamesSourceFamily(tabId), "comparison");
+    store.set(explorerSortFamily(tabId), { source: "comparison", direction: "asc" });
     store.set(gameIdFamily(tabId), "native-game");
     store.set(pendingGameStartFamily(tabId), Promise.resolve());
     store.set(engineMovesFamily({ tab: tabId, engine: "engine" }), new Map());
@@ -1230,6 +1234,8 @@ test("closing a tab removes all cached tab and per-engine atom-family entries", 
     expect([...pinnedExplorerDatabaseFamily.getParams()]).not.toContain(tabId);
     expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toBeNull();
     pinnedExplorerDatabaseFamily.remove(tabId);
+    expect([...explorerGamesSourceFamily.getParams()]).not.toContain(tabId);
+    expect([...explorerSortFamily.getParams()]).not.toContain(tabId);
     expect([...gameIdFamily.getParams()]).not.toContain(tabId);
     expect([...pendingGameStartFamily.getParams()]).not.toContain(tabId);
     expect([...engineMovesFamily.getParams()]).not.toContainEqual({ tab: tabId, engine: "engine" });

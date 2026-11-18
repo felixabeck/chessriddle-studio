@@ -132,3 +132,150 @@ test("total row omits percentage while move rows show percentage and count", asy
   expect(sumCell).not.toContain("%");
   expect(sumCell).toBe("38");
 });
+
+const comparisonOpenings: Opening[] = [
+  { move: "d4", white: 2, draw: 9, black: 1 },
+  { move: "h4", white: 1, draw: 6, black: 1 },
+];
+
+async function renderCompared(
+  props: Partial<React.ComponentProps<typeof OpeningsTable>> = {},
+  comparison = { openings: comparisonOpenings, loading: false },
+) {
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <I18nextProvider i18n={locale}>
+          <Provider store={jotai}>
+            <TreeStateContext.Provider value={treeStore}>
+              <OpeningsTable
+                openings={openings}
+                loading={false}
+                comparison={comparison}
+                {...props}
+              />
+            </TreeStateContext.Provider>
+          </Provider>
+        </I18nextProvider>
+      </MantineProvider>,
+    ),
+  );
+}
+
+const cells = (row: HTMLTableRowElement) =>
+  [...row.querySelectorAll("td")].map((cell) => cell.textContent);
+
+test("two sources render a Total and a Results column each, and one source keeps three", async () => {
+  await renderCompared();
+  expect([...host.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
+    "Move",
+    "Total",
+    "Results",
+    "Total",
+    "Results",
+  ]);
+  await renderTable();
+  expect([...host.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
+    "Move",
+    "Total",
+    "Results",
+  ]);
+  expect(host.querySelector("thead button, thead [role='button']")).toBeNull();
+});
+
+test("rows are the union of both sources, with a dash and no bar where a source has no game", async () => {
+  await renderCompared();
+  const rows = bodyRows();
+  expect(rows.map((row) => row.querySelector("td")?.textContent)).toEqual([
+    "e4",
+    "d4",
+    "Game is over",
+    "h4",
+    "Total",
+  ]);
+  const [e4, d4, , h4, total] = rows;
+  // e4: 20 of the primary's 38 games, none in the comparison.
+  expect(cells(e4).slice(1, 2)).toEqual(["53%20"]);
+  expect(cells(e4)[3]).toBe("–");
+  expect(e4.querySelectorAll("td")[4].querySelector(".mantine-Progress-root")).toBeNull();
+  expect(e4.querySelectorAll("td")[2].querySelector(".mantine-Progress-root")).not.toBeNull();
+  // d4 is in both; each share is of its own source's total.
+  expect(cells(d4)[1]).toBe("42%16");
+  expect(cells(d4)[3]).toBe("60%12");
+  // h4 only in the comparison.
+  expect(cells(h4)[1]).toBe("–");
+  expect(cells(h4)[3]).toBe("40%8");
+  expect(h4.querySelectorAll("td")[2].querySelector(".mantine-Progress-root")).toBeNull();
+  // Each source's total, without a share.
+  expect(cells(total)[1]).toBe("38");
+  expect(cells(total)[3]).toBe("20");
+  expect(host.querySelectorAll("[data-no-games]")).toHaveLength(3);
+});
+
+test("the sort follows the chosen source and a header click reports the next sort", async () => {
+  const changes: unknown[] = [];
+  await renderCompared({
+    sort: { source: "comparison", direction: "desc" },
+    onSortChange: (sort) => changes.push(sort),
+  });
+  expect(bodyRows().map((row) => row.querySelector("td")?.textContent)).toEqual([
+    "d4",
+    "h4",
+    "e4",
+    "Game is over",
+    "Total",
+  ]);
+  const headers = [...host.querySelectorAll<HTMLElement>("thead th")];
+  // Only the two Total columns sort, and the comparison's carries the active indicator.
+  const indicator = (th: HTMLElement) =>
+    th.querySelector(".mantine-datatable-header-cell-sortable-icon")
+      ? "sorted"
+      : th.querySelector(".mantine-datatable-header-cell-sortable-unsorted-icon")
+        ? "unsorted"
+        : null;
+  expect(headers.map(indicator)).toEqual([null, "unsorted", null, "sorted", null]);
+  await act(async () => headers[3].click());
+  await act(async () => headers[1].click());
+  expect(changes).toEqual([
+    // The sorted column flips; another column takes over with the direction in use.
+    { source: "comparison", direction: "asc" },
+    { source: "primary", direction: "desc" },
+  ]);
+});
+
+test("a source still searching marks its own cells while the other one is shown", async () => {
+  await renderCompared({}, { openings: [], loading: true });
+  const [e4, , , total] = bodyRows();
+  expect(cells(e4)[1]).toBe("53%20");
+  expect(cells(e4)[3]).toBe("…");
+  expect(cells(total)[3]).toBe("…");
+  expect(host.querySelectorAll("[data-no-games]")).toHaveLength(0);
+  expect(host.querySelector(".mantine-datatable-loader-fetching")).toBeNull();
+});
+
+test("the table-wide overlay shows only while every source is searching", async () => {
+  await renderCompared({ loading: true }, { openings: [], loading: true });
+  expect(host.querySelector(".mantine-datatable-loader-fetching")).not.toBeNull();
+  await renderCompared({ loading: true });
+  expect(host.querySelector(".mantine-datatable-loader-fetching")).toBeNull();
+});
+
+test("two-source result bars label only their wider sections, in whole percent", async () => {
+  await renderCompared();
+  const [e4, d4] = bodyRows();
+  const labels = (cell: Element) =>
+    [...cell.querySelectorAll(".mantine-Progress-label")].map((label) => label.textContent);
+  // e4 primary: 10 / 5 / 5 of 20.
+  expect(labels(e4.querySelectorAll("td")[2])).toEqual(["50%", "", ""]);
+  // d4 comparison: 2 / 9 / 1 of 12; the narrow sections stay unlabelled.
+  expect(labels(d4.querySelectorAll("td")[4])).toEqual(["", "75%", ""]);
+  await renderTable();
+  expect(labels(bodyRows()[0].querySelectorAll("td")[2])).toEqual(["50.0%", "25.0%", "25.0%"]);
+});
+
+test("a move row of the two-source table plays its move", async () => {
+  await renderCompared();
+  const h4 = bodyRows().find((row) => row.querySelector("td")?.textContent === "h4")!;
+  await act(async () => h4.click());
+  expect(treeStore.getState().currentNode().san).toBe("h4");
+});

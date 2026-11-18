@@ -477,6 +477,34 @@ describe("collectOriginalPathOwners", () => {
         expect(owners.retainedIds).toContainEqual(path("reference"));
     });
 
+    test("retains the explorer's comparison database under the reference family", () => {
+        setJson(localStorage, "reference-database", databaseHandle("reference"));
+        setJson(localStorage, "comparison-database", databaseHandle("comparison"));
+        const owners = collectOriginalPathOwners(localStorage, sessionStorage);
+        expect(owners.trustedFamilies).toContain("referenceDatabase");
+        expect(owners.retainedIds).toEqual(
+            expect.arrayContaining([path("reference"), path("comparison")]),
+        );
+    });
+
+    test.each([
+        ["malformed JSON", "{malformed"],
+        ["no database handle", JSON.stringify({ id: "comparison" })],
+    ])("a comparison database stored as %s withholds reference-database trust", (_name, raw) => {
+        setJson(localStorage, "reference-database", databaseHandle("reference"));
+        localStorage.setItem("comparison-database", raw);
+        const owners = collectOriginalPathOwners(localStorage, sessionStorage);
+        expect(owners.trustedFamilies).not.toContain("referenceDatabase");
+        expect(owners.retainedIds).toContainEqual(path("reference"));
+    });
+
+    test("no stored comparison database keeps the reference family trusted", () => {
+        setJson(localStorage, "reference-database", databaseHandle("reference"));
+        setJson(localStorage, "comparison-database", null);
+        const owners = collectOriginalPathOwners(localStorage, sessionStorage);
+        expect(owners.trustedFamilies).toContain("referenceDatabase");
+    });
+
     test("a malformed reference withholds trust although the explorer filters are readable", () => {
         localStorage.setItem("reference-database", "{malformed");
         setJson(localStorage, "explorer-database-filters", []);

@@ -1,6 +1,7 @@
 import { MantineProvider } from "@mantine/core";
 import { Provider, createStore } from "jotai";
 import {
+  comparisonDbAtom,
   explorerDatabaseFiltersAtom,
   referenceDbAtom,
   setExplorerFiltersAtom,
@@ -304,6 +305,7 @@ test("migration exports an entire database without a PGN, retains its request on
   };
   mocks.migrateLinkedCollection.mockRejectedValueOnce(new Error("archive unavailable"));
   jotai.set(referenceDbAtom, database.file);
+  jotai.set(comparisonDbAtom, database.file);
   jotai.set(setExplorerFiltersAtom, {
     database: database.file,
     update: { player: 3, color: "black", result: "draw" },
@@ -333,6 +335,7 @@ test("migration exports an entire database without a PGN, retains its request on
   ]);
   expect(complete).toHaveBeenCalledWith(collection);
   expect(jotai.get(referenceDbAtom)).toEqual(collection.database);
+  expect(jotai.get(comparisonDbAtom)).toEqual(collection.database);
   // The explorer's saved filters follow the database the migration replaced.
   expect(jotai.get(explorerDatabaseFiltersAtom)).toEqual([
     {

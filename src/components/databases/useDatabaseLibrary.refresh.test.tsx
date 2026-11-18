@@ -6,6 +6,7 @@ import { SWRConfig, useSWRConfig, type Cache, type ScopedMutator } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
 import {
+  comparisonDbAtom,
   databaseConversionStateAtom,
   explorerDatabaseFiltersAtom,
   referenceDbAtom,
@@ -260,6 +261,7 @@ test("delete retires a pending pre-write listing before refreshing the list", as
 test("a failed post-delete list read preserves the committed deletion without notifying", async () => {
   await render();
   await act(async () => store.set(referenceDbAtom, database.file));
+  await act(async () => store.set(comparisonDbAtom, database.file));
   const other = { id: { id: "kept-database" }, kind: "database" as const };
   await act(async () => {
     for (const file of [database.file, other]) {
@@ -277,6 +279,7 @@ test("a failed post-delete list read preserves the committed deletion without no
   expect(host.querySelector('[role="dialog"]')).toBeNull();
   expect(host.querySelector("[data-selected]")?.textContent).toBe("none");
   expect(store.get(referenceDbAtom)).toBeNull();
+  expect(store.get(comparisonDbAtom)).toBeNull();
   // The deleted database keeps no saved explorer filters; another database keeps its own.
   expect(store.get(explorerDatabaseFiltersAtom).map((entry) => entry.database)).toEqual([
     "kept-database",

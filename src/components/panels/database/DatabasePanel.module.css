@@ -1,0 +1,20 @@
+.sources {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  margin-top: var(--mantine-spacing-xs);
+}
+
+/* Two sources sit above the move table's two column groups: its Move column is 100px wide and
+   the groups share the rest equally. */
+.sources[data-two-sources] {
+  grid-template-columns: 100px repeat(2, minmax(0, 1fr));
+}
+
+.sources[data-two-sources] > [data-explorer-source] {
+  padding-inline-end: var(--mantine-spacing-xs);
+}
+
+.sources[data-two-sources] > [data-explorer-source]:first-of-type {
+  grid-column-start: 2;
+}

@@ -1,7 +1,18 @@
 import { createStore } from "jotai";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle } from "@/bindings";
+
+const native = vi.hoisted(() => ({ warn: vi.fn() }));
+// An invalid stored value is reported through the native log, which has no transport here.
+vi.mock("@/platform/native", () => ({
+    error: vi.fn(),
+    warn: native.warn,
+    info: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+}));
 import {
+    comparisonDbAtom,
     explorerDatabaseFiltersAtom,
     forgetExplorerDatabaseAtom,
     referenceDbAtom,
@@ -15,6 +26,7 @@ const stored = () => JSON.parse(localStorage.getItem("explorer-database-filters"
 
 beforeEach(() => {
     localStorage.clear();
+    native.warn.mockClear();
 });
 
 test("saved filters persist per database and hydrate in a fresh store", () => {
@@ -142,4 +154,47 @@ test("a deleted database loses its saved filters and no other", () => {
     expect(stored().map((entry: { database: string }) => entry.database)).toEqual(["corr"]);
     store.set(forgetExplorerDatabaseAtom, handle("unknown"));
     expect(stored().map((entry: { database: string }) => entry.database)).toEqual(["corr"]);
+});
+
+test("the comparison database persists and follows its replacement", () => {
+    const store = createStore();
+    store.set(referenceDbAtom, handle("mega"));
+    store.set(comparisonDbAtom, handle("old"));
+    expect(JSON.parse(localStorage.getItem("comparison-database")!)).toEqual(handle("old"));
+    store.set(replaceExplorerDatabaseAtom, { from: handle("old"), to: handle("new") });
+    expect(store.get(comparisonDbAtom)).toEqual(handle("new"));
+    expect(store.get(referenceDbAtom)).toEqual(handle("mega"));
+    expect(JSON.parse(localStorage.getItem("comparison-database")!)).toEqual(handle("new"));
+
+    const reloaded = createStore();
+    reloaded.sub(comparisonDbAtom, () => {});
+    expect(reloaded.get(comparisonDbAtom)).toEqual(handle("new"));
+});
+
+test("replacing the reference leaves another comparison database alone", () => {
+    const store = createStore();
+    store.set(referenceDbAtom, handle("old"));
+    store.set(comparisonDbAtom, handle("corr"));
+    store.set(replaceExplorerDatabaseAtom, { from: handle("old"), to: handle("new") });
+    expect(store.get(referenceDbAtom)).toEqual(handle("new"));
+    expect(store.get(comparisonDbAtom)).toEqual(handle("corr"));
+});
+
+test("a deleted comparison database is forgotten, another one is kept", () => {
+    const store = createStore();
+    store.set(comparisonDbAtom, handle("corr"));
+    store.set(forgetExplorerDatabaseAtom, handle("mega"));
+    expect(store.get(comparisonDbAtom)).toEqual(handle("corr"));
+    store.set(forgetExplorerDatabaseAtom, handle("corr"));
+    expect(store.get(comparisonDbAtom)).toBeNull();
+    expect(localStorage.getItem("comparison-database")).toBe("null");
+});
+
+test("a corrupt stored comparison database reads as none", () => {
+    localStorage.setItem("comparison-database", JSON.stringify({ id: "not-a-handle" }));
+    const store = createStore();
+    store.sub(comparisonDbAtom, () => {});
+    expect(store.get(comparisonDbAtom)).toBeNull();
+    expect(native.warn).toHaveBeenCalledWith("Invalid persisted value for comparison-database");
+    expect(localStorage.getItem("comparison-database")).toBe("null");
 });

@@ -9,8 +9,11 @@ import { SWRConfig, useSWRConfig, type ScopedMutator, type SWRConfiguration } fr
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import {
+  comparisonDbAtom,
   dbTypeFamily,
   dbTabFamily,
+  explorerGamesSourceFamily,
+  explorerSortFamily,
   sessionsAtom,
   tabsAtom,
   activeTabAtom,
@@ -40,6 +43,7 @@ const mocks = vi.hoisted(() => ({
   collectionForDatabase: vi.fn(),
   clearGames: vi.fn(),
   getPlayer: vi.fn(),
+  openDatabaseGame: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -100,6 +104,7 @@ vi.mock("@/platform/tauri", async () => {
   };
 });
 
+vi.mock("@/utils/databaseGame", () => ({ openDatabaseGame: mocks.openDatabaseGame }));
 vi.mock("@/chessground/Chessground", () => ({ Chessground: () => null }));
 vi.mock("@/components/boards/PiecesGrid", () => ({ default: () => null }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
@@ -183,6 +188,7 @@ describe("DatabasePanel", () => {
     mocks.searchPosition.mockReset().mockResolvedValue([[], []]);
     mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
     mocks.clearGames.mockReset().mockResolvedValue(undefined);
+    mocks.openDatabaseGame.mockReset().mockResolvedValue("opened-tab");
     mocks.getPlayer.mockReset().mockImplementation(async (file: DatabaseHandle, id: number) => ({
       id,
       name: `${file.id.id} player`,
@@ -1156,6 +1162,418 @@ describe("DatabasePanel", () => {
     expect(mocks.clearGames).toHaveBeenCalledOnce();
     expect(store.get(referenceDbAtom)).toEqual(stalePath);
     await vi.waitFor(() => expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(stalePath));
+  });
+
+  describe("with a comparison database", () => {
+    const corr: DatabaseHandle = { id: { id: "correspondence" }, kind: "database" };
+    const corrInfo: ManagedDatabaseInfo = { ...readable, file: corr, title: "Correspondence" };
+    const third: ManagedDatabaseInfo = {
+      ...readable,
+      file: { id: { id: "third" }, kind: "database" },
+      title: "Third database",
+    };
+    const stats = (move: string, white: number, draw: number, black: number) => ({
+      move,
+      white,
+      draw,
+      black,
+      unknown: 0,
+      last_played: null,
+      year_counts: [],
+    });
+    const game = (id: number, white: string) => ({
+      id,
+      white,
+      black: "Opponent",
+      white_elo: 2400,
+      black_elo: 2400,
+      date: "2024.01.01",
+      result: "1/2-1/2",
+      ply_count: 40,
+    });
+    const answers = {
+      [databaseHandleKey(reference)]: [
+        [stats("e4", 50, 10, 40), stats("d4", 30, 5, 5)],
+        [game(1, "Mega player")],
+      ],
+      [databaseHandleKey(corr)]: [
+        [stats("d4", 2, 9, 1), stats("h4", 1, 6, 1)],
+        [game(7, "Corr player")],
+      ],
+    };
+
+    async function mountCompared({
+      pin,
+      list = [readable, corrInfo, third],
+      failing,
+    }: { pin?: DatabaseHandle; list?: ManagedDatabaseInfo[]; failing?: DatabaseHandle } = {}) {
+      mocks.getDatabases.mockResolvedValue(databaseList(list));
+      mocks.searchPosition.mockImplementation(async (file: DatabaseHandle) => {
+        if (failing && databaseHandleKey(file) === databaseHandleKey(failing)) {
+          throw new Error("search failed");
+        }
+        return answers[databaseHandleKey(file)] ?? [[], []];
+      });
+      localStorage.setItem("comparison-database", JSON.stringify(corr));
+      const mounted = await mountLocal(pin);
+      await act(async () => {});
+      return mounted;
+    }
+
+    const sources = () =>
+      Array.from(container.querySelectorAll<HTMLElement>("[data-explorer-source]"));
+    const searchesOf = (database: DatabaseHandle) =>
+      mocks.searchPosition.mock.calls.filter(
+        ([file]) => databaseHandleKey(file) === databaseHandleKey(database),
+      );
+    const moveRows = () =>
+      Array.from(selectedPanel("stats").querySelectorAll("tbody tr"), (row) =>
+        Array.from(row.querySelectorAll("td"), (cell) => cell.textContent),
+      );
+    const compareButton = () =>
+      Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Board.Database.Compare",
+      );
+
+    test("both databases are searched with their own filters and progress ids, side by side", async () => {
+      await mountCompared();
+      await vi.waitFor(() => expect(searchesOf(corr)).not.toHaveLength(0));
+      for (const [file, query, progress] of searchesOf(reference)) {
+        expect(file).toEqual(reference);
+        expect(query).toMatchObject({ wantedResult: "draw", range1: [1800, 2400] });
+        expect(progress).toBe(tabId);
+      }
+      for (const [, query, progress] of searchesOf(corr)) {
+        expect(query).not.toHaveProperty("wantedResult");
+        expect(query).not.toHaveProperty("range1");
+        expect(query).not.toHaveProperty("excludeFastEvents");
+        expect(query.position).toEqual(searchesOf(reference)[0][1].position);
+        expect(progress).toBe(`${tabId}:comparison`);
+      }
+      expect(sources()).toHaveLength(2);
+      expect(
+        sources().map(
+          (source) => source.querySelector<HTMLInputElement>(".mantine-Select-input")?.value,
+        ),
+      ).toEqual(["Saved reference", "Correspondence"]);
+      expect(
+        sources().map(
+          (source) => source.querySelector("button[aria-haspopup='dialog']")?.textContent,
+        ),
+      ).toEqual([
+        [
+          "Board.Database.Local.Elo 1800–2400",
+          "Board.Analysis.Tablebase.Draw",
+          "Board.Database.FilterSummary.NoFastEvents",
+        ].join(" · "),
+        "Board.Database.NoFilter",
+      ]);
+      await vi.waitFor(() =>
+        expect(
+          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+        ).toEqual([
+          ["e4", "71%100", "–"],
+          ["d4", "29%40", "60%12"],
+          ["h4", "–", "40%8"],
+          ["Board.Database.StatsTable.Total", "140", "20"],
+        ]),
+      );
+      expect(compareButton()).toBeUndefined();
+    });
+
+    test("a filter set on the comparison source is saved for that database only", async () => {
+      const { store } = await mountCompared();
+      const button = sources()[1].querySelector<HTMLButtonElement>(
+        "button[aria-haspopup='dialog']",
+      )!;
+      await act(async () => button.click());
+      const toggle = await vi.waitFor(() => {
+        const found = document.querySelector<HTMLInputElement>(
+          '[data-explorer-filters] input[type="checkbox"]',
+        );
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      mocks.searchPosition.mockClear();
+      await act(async () => toggle.click());
+      expect(savedFilters(store, corr)).toMatchObject({ exclude_fast_events: true, result: "any" });
+      expect(savedFilters(store, reference)).toMatchObject({ result: "draw", elo: [1800, 2400] });
+      await vi.waitFor(() =>
+        expect(searchesOf(corr).at(-1)?.[1]).toMatchObject({ excludeFastEvents: true }),
+      );
+      expect(searchesOf(reference)).toHaveLength(0);
+    });
+
+    test("the sort choice is the tab's and orders the rows by the comparison source", async () => {
+      const { store } = await mountCompared();
+      await vi.waitFor(() => expect(moveRows()).toHaveLength(4));
+      const totals = Array.from(
+        selectedPanel("stats").querySelectorAll<HTMLElement>("thead th"),
+      ).filter((th) => th.textContent === "Board.Database.StatsTable.Total");
+      expect(totals).toHaveLength(2);
+      await act(async () => totals[1].click());
+      expect(store.get(explorerSortFamily(tabId))).toEqual({
+        source: "comparison",
+        direction: "desc",
+      });
+      expect(moveRows().map(([move]) => move)).toEqual([
+        "d4",
+        "h4",
+        "e4",
+        "Board.Database.StatsTable.Total",
+      ]);
+    });
+
+    test("the Games switch lists the chosen source's games and opens them from its database", async () => {
+      const { store } = await mountCompared();
+      await act(async () => store.set(dbTabFamily(tabId), "games"));
+      const panel = selectedPanel("games");
+      await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
+      expect(panel.textContent).not.toContain("Corr player");
+      const choices = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+      expect(choices.map((choice) => choice.value)).toEqual(["primary", "comparison"]);
+      expect(
+        Array.from(
+          panel.querySelectorAll(".mantine-SegmentedControl-label"),
+          (label) => label.textContent,
+        ),
+      ).toEqual(["Saved reference", "Correspondence"]);
+      await act(async () => choices[1].click());
+      expect(store.get(explorerGamesSourceFamily(tabId))).toBe("comparison");
+      await vi.waitFor(() => expect(panel.textContent).toContain("Corr player"));
+      expect(panel.textContent).not.toContain("Mega player");
+      const row = Array.from(panel.querySelectorAll<HTMLElement>("tbody tr")).find((item) =>
+        item.textContent?.includes("Corr player"),
+      )!;
+      await act(async () => row.click());
+      await vi.waitFor(() => expect(mocks.openDatabaseGame).toHaveBeenCalledOnce());
+      expect(mocks.openDatabaseGame.mock.calls[0][0]).toMatchObject({
+        database: corr,
+        game: { id: 7 },
+      });
+    });
+
+    test("removing the comparison returns to one source and falls back to the primary's games", async () => {
+      const { store } = await mountCompared();
+      await act(async () => store.set(explorerGamesSourceFamily(tabId), "comparison"));
+      const remove = sources()[1].querySelector<HTMLButtonElement>(
+        'button[aria-label="Board.Database.RemoveComparison"]',
+      )!;
+      await act(async () => remove.click());
+      expect(store.get(comparisonDbAtom)).toBeNull();
+      expect(localStorage.getItem("comparison-database")).toBe("null");
+      expect(sources()).toHaveLength(1);
+      expect(compareButton()).toBeDefined();
+      await act(async () => store.set(dbTabFamily(tabId), "games"));
+      const panel = selectedPanel("games");
+      expect(panel.querySelector('input[type="radio"]')).toBeNull();
+      await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
+      // The stored games choice stays the tab's; only the shown source is derived.
+      expect(store.get(explorerGamesSourceFamily(tabId))).toBe("comparison");
+    });
+
+    test.each([
+      ["the primary", reference, "Saved reference", "Correspondence"],
+      ["the comparison", corr, "Correspondence", "Saved reference"],
+    ] as const)(
+      "a failed search of %s is named and leaves the other source and every control",
+      async (_name, failing, failedName, _otherName) => {
+        const { store } = await mountCompared({ failing });
+        const panel = selectedPanel("stats");
+        await vi.waitFor(() => expect(panel.querySelector('[role="alert"]')).not.toBeNull());
+        const alerts = Array.from(
+          panel.querySelectorAll('[role="alert"]'),
+          (alert) => alert.textContent,
+        );
+        expect(alerts).toHaveLength(1);
+        expect(alerts[0]).toMatch(new RegExp(`^${failedName}: `));
+        expect(panel.querySelector("table")).not.toBeNull();
+        const failedIsPrimary = failing === reference;
+        await vi.waitFor(() =>
+          expect(
+            moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+          ).toEqual(
+            failedIsPrimary
+              ? [
+                  ["d4", "–", "60%12"],
+                  ["h4", "–", "40%8"],
+                  ["Board.Database.StatsTable.Total", "0", "20"],
+                ]
+              : [
+                  ["e4", "71%100", "–"],
+                  ["d4", "29%40", "–"],
+                  ["Board.Database.StatsTable.Total", "140", "0"],
+                ],
+          ),
+        );
+        expect(sources()).toHaveLength(2);
+
+        await act(async () => store.set(dbTabFamily(tabId), "games"));
+        const games = selectedPanel("games");
+        const choices = Array.from(games.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+        expect(choices).toHaveLength(2);
+        // The primary is listed first: its failure replaces only its own games.
+        expect(!!games.querySelector('[role="alert"]')).toBe(failedIsPrimary);
+        expect(!!games.querySelector("table")).toBe(!failedIsPrimary);
+        await act(async () => choices[1].click());
+        expect(!!games.querySelector('[role="alert"]')).toBe(!failedIsPrimary);
+        expect(!!games.querySelector("table")).toBe(failedIsPrimary);
+        expect(games.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+      },
+    );
+
+    test("when both searches fail, each source is named and no table is shown", async () => {
+      mocks.getDatabases.mockResolvedValue(databaseList([readable, corrInfo]));
+      mocks.searchPosition.mockRejectedValue(new Error("search failed"));
+      localStorage.setItem("comparison-database", JSON.stringify(corr));
+      await mountLocal();
+      const panel = selectedPanel("stats");
+      await vi.waitFor(() => expect(panel.querySelectorAll('[role="alert"]')).toHaveLength(2));
+      expect(
+        Array.from(
+          panel.querySelectorAll('[role="alert"]'),
+          (alert) => alert.textContent?.split(":")[0],
+        ),
+      ).toEqual(["Saved reference", "Correspondence"]);
+      expect(panel.querySelector("table")).toBeNull();
+      expect(sources()).toHaveLength(2);
+    });
+
+    test("a pinned tab shows one source and searches no comparison although one is stored", async () => {
+      const { store } = await mountCompared({ pin: reference });
+      expect(sources()).toHaveLength(1);
+      expect(searchesOf(corr)).toHaveLength(0);
+      expect(compareButton()).toBeUndefined();
+      expect(container.textContent).not.toContain("Board.Database.ComparisonUnreadable");
+      expect(store.get(comparisonDbAtom)).toEqual(corr);
+    });
+
+    test("without a primary database no comparison is searched or shown", async () => {
+      await mountCompared({ list: [corrInfo] });
+      expectNoReference();
+      expect(sources()).toHaveLength(1);
+      expect(searchesOf(corr)).toHaveLength(0);
+      expect(compareButton()).toBeUndefined();
+    });
+
+    test.each([
+      ["the primary database itself", reference, [readable, corrInfo]],
+      ["missing from the list", corr, [readable, third]],
+    ] as const)(
+      "a stored comparison that is %s is not shown, and the compare control replaces it",
+      async (_name, stored, list) => {
+        mocks.getDatabases.mockResolvedValue(databaseList([...list]));
+        localStorage.setItem("comparison-database", JSON.stringify(stored));
+        const { store } = await mountLocal();
+        await act(async () => {});
+        expect(sources()).toHaveLength(1);
+        expect(store.get(comparisonDbAtom)).toEqual(stored);
+        const compare = compareButton()!;
+        expect(compare.getAttribute("aria-label")).toBe("Board.Database.CompareWith");
+        await act(async () => compare.click());
+        const items = await vi.waitFor(() => {
+          const found = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+          expect(found).not.toHaveLength(0);
+          return found;
+        });
+        // Every other readable database is offered, never the primary one.
+        expect(items.map((item) => item.textContent)).toEqual([list[1].title]);
+        mocks.clearGames.mockRejectedValue(new Error("cache unavailable"));
+        await act(async () => items[0].click());
+        expect(store.get(comparisonDbAtom)).toEqual(list[1].file);
+        expect(sources()).toHaveLength(2);
+      },
+    );
+
+    test("an unreadable comparison database is named with its remove control and keeps one source", async () => {
+      const { store } = await mountCompared({ list: [readable, { ...unreadable, file: corr }] });
+      const alert = Array.from(container.querySelectorAll<HTMLElement>('[role="alert"]')).find(
+        (item) => item.textContent?.startsWith("Board.Database.ComparisonUnreadable"),
+      )!;
+      expect(alert.textContent).toBe("Board.Database.ComparisonUnreadable reference.db3");
+      expect(sources()).toHaveLength(1);
+      expect(searchesOf(corr)).toHaveLength(0);
+      expect(compareButton()).toBeUndefined();
+      await vi.waitFor(() => expect(searchesOf(reference)).not.toHaveLength(0));
+      const remove = alert.querySelector<HTMLButtonElement>(
+        'button[aria-label="Board.Database.RemoveComparison"]',
+      )!;
+      await act(async () => remove.click());
+      expect(store.get(comparisonDbAtom)).toBeNull();
+      expect(container.textContent).not.toContain("Board.Database.ComparisonUnreadable");
+      expect(compareButton()).toBeUndefined();
+    });
+
+    test("the position dialog's match mode reaches both sources", async () => {
+      const { store } = await mountCompared();
+      mocks.searchPosition.mockClear();
+      await act(async () =>
+        store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
+      );
+      await vi.waitFor(() => {
+        expect(searchesOf(reference).at(-1)?.[1].position.type_).toBe("partial");
+        expect(searchesOf(corr).at(-1)?.[1].position.type_).toBe("partial");
+      });
+      selectedPanel("games");
+    });
+
+    test("a collection that publishes a new comparison database moves the choice and its filters", async () => {
+      const current: DatabaseHandle = { id: { id: "regenerated-corr" }, kind: "database" };
+      mocks.collectionForDatabase.mockImplementation(async (file: DatabaseHandle) =>
+        databaseHandleKey(file) === databaseHandleKey(corr)
+          ? {
+              id: "66666666-6666-4666-8666-666666666666",
+              name: "Correspondence",
+              file: { id: { id: "library" }, kind: "fileWorkspace" },
+              database: current,
+              account: null,
+              status: "ready",
+              generation: "g2",
+              omitted: 0,
+              retiredDatabase: corr,
+              fetchSinceMs: null,
+            }
+          : null,
+      );
+      localStorage.setItem(
+        "explorer-database-filters",
+        JSON.stringify([
+          {
+            database: databaseHandleKey(corr),
+            filters: { player: 4, color: "black", result: "whitewon" },
+          },
+        ]),
+      );
+      mocks.getDatabases.mockResolvedValue(
+        databaseList([readable, corrInfo, { ...corrInfo, file: current, title: "Regenerated" }]),
+      );
+      mocks.searchPosition.mockResolvedValue([[], []]);
+      localStorage.setItem("comparison-database", JSON.stringify(corr));
+      // The reference keeps no saved filters here, so the comparison's entry is the only one.
+      const store = createJotaiStore();
+      store.set(tabsAtom, [validTab]);
+      store.set(activeTabAtom, tabId);
+      store.set(dbTypeFamily(tabId), "local");
+      localStorage.setItem("reference-database", JSON.stringify(reference));
+      await renderPanel(store, {
+        provider: () => new Map(),
+        dedupingInterval: 0,
+        shouldRetryOnError: false,
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+      });
+      await vi.waitFor(() => expect(store.get(comparisonDbAtom)).toEqual(current));
+      expect(store.get(referenceDbAtom)).toEqual(reference);
+      expect(store.get(explorerDatabaseFiltersAtom)).toEqual([
+        {
+          database: databaseHandleKey(current),
+          filters: { player: null, color: "white", result: "whitewon" },
+        },
+      ]);
+      await vi.waitFor(() =>
+        expect(searchesOf(current).at(-1)?.[1]).toMatchObject({ wantedResult: "whitewon" }),
+      );
+    });
   });
 
   test("local: a pinned player remains scoped to its database when the global reference changes", async () => {

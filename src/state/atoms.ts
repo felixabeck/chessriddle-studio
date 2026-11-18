@@ -866,6 +866,16 @@ export const explorerDatabaseFiltersAtom = documentPreferences.atomWithStorage<
     createZodStorage(explorerFilterEntriesSchema, localStorage),
 );
 
+/**
+ * The app-wide second database of the board explorer, shown beside the reference. What a panel
+ * shows is derived from it on read; the stored choice is never reset by that derivation.
+ */
+export const comparisonDbAtom = documentPreferences.atomWithStorage<DatabaseHandle | null>(
+    "comparison-database",
+    null,
+    createZodStorage(databaseHandleSchema.nullable(), localStorage),
+);
+
 export const setExplorerFiltersAtom = atom(
     null,
     (get, set, change: { database: DatabaseHandle; update: SetStateAction<ExplorerFilters> }) => {
@@ -892,6 +902,8 @@ export const replaceExplorerDatabaseAtom = atom(
         }
         const reference = get(referenceDbAtom);
         if (reference && capabilityKey(reference) === from) set(referenceDbAtom, change.to);
+        const comparison = get(comparisonDbAtom);
+        if (comparison && capabilityKey(comparison) === from) set(comparisonDbAtom, change.to);
     },
 );
 
@@ -902,6 +914,8 @@ export const forgetExplorerDatabaseAtom = atom(null, (get, set, database: Databa
     if (entries.some((entry) => entry.database === key)) {
         set(explorerDatabaseFiltersAtom, withoutExplorerFilters(entries, key));
     }
+    const comparison = get(comparisonDbAtom);
+    if (comparison && capabilityKey(comparison) === key) set(comparisonDbAtom, null);
 });
 
 export const selectedPuzzleDbAtom = initializeBeforeUse(
@@ -1167,6 +1181,21 @@ export const localOptionsFamily = atomFamily((_tab: string) =>
 
 export const pinnedExplorerDatabaseFamily = atomFamily((_tab: string) =>
     atom<DatabaseHandle | null>(null),
+);
+
+export type ExplorerSourceRole = "primary" | "comparison";
+
+/** Whose sample games the Games view lists while two local sources are shown. */
+export const explorerGamesSourceFamily = atomFamily((_tab: string) =>
+    atom<ExplorerSourceRole>("primary"),
+);
+
+/** The two-source move table's sort: which source's game count, in which direction. */
+export const explorerSortFamily = atomFamily((_tab: string) =>
+    atom<{ source: ExplorerSourceRole; direction: "asc" | "desc" }>({
+        source: "primary",
+        direction: "desc",
+    }),
 );
 
 export const lichessOptionsAtom = documentPreferences.atomWithStorage<LichessGamesOptions>(
@@ -1575,6 +1604,8 @@ export function disposeTabAtoms(tabId: string) {
         reportModalOpenFamily,
         localOptionsFamily,
         pinnedExplorerDatabaseFamily,
+        explorerGamesSourceFamily,
+        explorerSortFamily,
         dbTypeFamily,
         dbTabFamily,
         analysisTabFamily,
