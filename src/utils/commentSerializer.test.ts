@@ -963,6 +963,11 @@ test.each(["bold", "italic", "strike"])(
 test("keeps a link off a hard break that ends its text and on one that starts it", () => {
     expect.hasAssertions();
     roundTrip(
+        [{ text: "a ", marks: ["underline", url] }, { ...BR, marks: ["underline"] }, { text: "b" }],
+        [{ text: "a ", marks: ["underline", url] }, BR, { text: "b" }],
+        "++[a ](https://x.y)++\\\nb",
+    );
+    roundTrip(
         [
             { text: "ab", marks: [url] },
             { ...BR, marks: [url] },
