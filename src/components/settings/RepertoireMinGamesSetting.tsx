@@ -22,8 +22,10 @@ export default function RepertoireMinGamesSetting() {
   const [minGames, setMinGames] = useAtom(coverageMinGamesAtom);
   const [preset, setPreset] = useState<Preset>(() => presetFor(minGames));
 
-  // While the free-entry field is being typed into, the field text.
-  // `null` shows the stored minimum; blur drops a draft the atom did not take.
+  // The free-entry field's text while it is being edited; `null` shows the
+  // stored minimum. Blur drops a draft that was never stored (an emptied
+  // field); a value Mantine normalises on blur (0 → min, 05 → 5) arrives
+  // through onChange first and is stored.
   const [draft, setDraft] = useState<number | string | null>(null);
 
   // Custom stays selected while the user is in it: each whole number typed in
@@ -80,10 +82,10 @@ export default function RepertoireMinGamesSetting() {
           onBlur={() => setDraft(null)}
           onChange={(val) => {
             setDraft(val);
-            // Mantine passes a number only for a complete numeric entry; an
-            // empty, leading-zero or over-long draft arrives as a string and
-            // leaves the stored minimum alone.
-            if (typeof val === "number" && Number.isSafeInteger(val) && val >= 1) setMinGames(val);
+            // Mantine passes a string for an empty, leading-zero or over-long
+            // (beyond the safe integer range) draft and a whole number
+            // otherwise (allowDecimal is off); a number >= 1 is stored.
+            if (typeof val === "number" && val >= 1) setMinGames(val);
           }}
           min={1}
           allowNegative={false}
