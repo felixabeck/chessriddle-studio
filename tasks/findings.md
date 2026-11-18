@@ -25173,7 +25173,7 @@ Handled in a2d06726a. `EvalChart` now builds the WDL tooltip as three lines (`wd
 
 ### Settings comboboxes (board image, piece set, sound collection) announce only their field name, never the selected value
 
-* **ID:** f-20261112-69 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-69 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/settings/SettingsCombobox.tsx:74-86`: the target is `InputBase component="button"` with `aria-label={ariaLabel}`, and the current choice is rendered only as its child content (`selected?.preview ?? selected?.label`). Callers: `BoardSelect.tsx:51-52` ("Settings.Appearance.BoardImage"), `PiecesSelect.tsx:29-30` ("Settings.Appearance.PieceSet"), `SoundSelect.tsx:39-40` ("Settings.Sound.Collection").
@@ -25182,6 +25182,9 @@ Handled in a2d06726a. `EvalChart` now builds the WDL tooltip as three lines (`wd
 - **Fix:** keep the field name as the label but include the value, e.g. `aria-label={`${ariaLabel}: ${selectedText}`}` (give items a plain-text `name` for this), or label via `aria-labelledby` pointing at a visible label plus the button's own text node. Add a SettingsCombobox test that the accessible name contains the selected item's text.
 - **Proof:** code trace on origin/master d30eb171f: `aria-label` is set unconditionally (`:75`), and the only value-bearing output is the child node (`:83-85`). Mantine `InputBase` forwards `aria-label` to the rendered `<button>`, which then takes precedence over its content per accname. No probe needed; tree unchanged.
 - **Found by:** Grok Bot general review (chunk 27)
+
+**Handled 2026-11-18 (060d1a60d):** `SettingsCombobox` no longer sets `aria-label` on its trigger. The button is `aria-labelledby` a `VisuallyHidden` node carrying the field name (rendered outside the button, so the button's text stays the value) plus the value container. It is announced as "Piece Set Merida", and the same holds for Board Image and Sound Collection. The `Combobox.Options` listbox, which was unnamed, is now labelled by the field name. Tests: `SettingsCombobox.test.tsx` asserts the trigger name before and after a commit and the listbox name. It fails with the source change reverted. `e2e/piece-size.spec.ts` asserts `toHaveAccessibleName("Piece Set Merida")` in a real browser. The container run of piece-size, settings-responsive, board-wood-texture and font-scaled-breakpoints passed 73/73, including snapshots and the axe checks. Rejected alternatives: a concatenated `aria-label` (`${label}: ${value}`), as in f-20261112-67, because it builds the string outside i18n and needs plain-text item names. A hidden name inside the button, because it leaked into the button's text content ("Piece SetMerida"), which the first e2e run caught.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"743023371f0dfb1b5adaa25d40b14c5416ac40fded1f15dd6f61f437fdab5efc","header_sha256":"27934bd8e2e7bf23af2cc3f7e5390aaf041def02baa9a5ee6f1063863f8f69ac","header_status":"handled","input_sha256":"ca2d871dfab9dc3456c6dfb44e664f8d11d0182982cf0a40cfd8d9780b8ce67d","kind":"mutation-receipt","operation":"74839d487d3012d0b47da49a466489d49dc4c2f7bee75c1abec6848e2fd5d8ab","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-69"],"target":"f-20261112-69","v":1} -->
 
 ---
 
