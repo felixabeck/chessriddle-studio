@@ -8,7 +8,6 @@ import { useTranslation } from "react-i18next";
 import { Chessground } from "@/chessground/Chessground";
 import PiecesGrid from "@/components/boards/PiecesGrid";
 import { localOptionsFamily } from "@/state/atoms";
-import { FilterField } from "./filterControls";
 
 /** The tab's searched position and its exact or partial match mode, for every local source. */
 function PositionSearchEditor({ boardFen }: { boardFen: string }) {
@@ -28,9 +27,10 @@ function PositionSearchEditor({ boardFen }: { boardFen: string }) {
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
 
   return (
-    <Stack>
-      <FilterField label={t("Board.Database.Local.Position")}>
+    <Stack pt="sm">
+      <Stack gap={4}>
         <SegmentedControl
+          aria-label={t("Board.Database.Local.Position")}
           data={[
             { value: "exact", label: t("Board.Database.Local.Exact") },
             { value: "partial", label: t("Board.Database.Local.Partial") },
@@ -43,7 +43,7 @@ function PositionSearchEditor({ boardFen }: { boardFen: string }) {
             ? t("Board.Database.Local.Partial.Hint")
             : t("Board.Database.Local.Exact.Hint")}
         </Text>
-      </FilterField>
+      </Stack>
 
       <Group>
         <Stack>

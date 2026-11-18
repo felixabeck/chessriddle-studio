@@ -194,9 +194,10 @@ for (const timezoneId of ["America/Los_Angeles", "Europe/Berlin"]) {
                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
             );
             await page.getByRole("tab", { name: "Database", exact: true }).click();
-            await page.getByRole("tab", { name: "Options", exact: true }).click();
-            const options = page.getByRole("tabpanel", { name: "Options", exact: true });
-            await options.getByText("Lichess All", { exact: true }).click();
+            await page.getByText("Lichess All", { exact: true }).click();
+            const filterButton = page.getByRole("button", { name: /^Filters: / });
+            await filterButton.click();
+            const options = page.locator("[data-explorer-filters]");
             const since = options.getByLabel("From", { exact: true });
             const until = options.getByLabel("To", { exact: true });
             // One time zone pins the pixels; the picker behaviour below runs in both.
@@ -217,7 +218,9 @@ for (const timezoneId of ["America/Los_Angeles", "Europe/Berlin"]) {
             await pickDate(since, "Jan");
             await expect(since).toHaveText("January 2024");
 
-            await options.getByText("Lichess Masters", { exact: true }).click();
+            await page.getByText("Lichess Masters", { exact: true }).click();
+            await expect(options).toBeHidden();
+            await filterButton.click();
             if (pinsLayout) await expect(options).toHaveScreenshot("explorer-masters-options.png");
             await pickDate(since, "2024");
             await pickDate(until, "2024");

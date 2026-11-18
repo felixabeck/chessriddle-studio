@@ -14,12 +14,15 @@ export function PlayerSearchInput({
   file,
   rightSection,
   setValue,
+  withinPortal,
 }: {
   label: string;
   value?: number;
   file: DatabaseHandle;
   rightSection?: ReactNode;
   setValue: (val: number | undefined) => void;
+  /** `false` keeps the suggestions inside an enclosing popover, so a pick does not close it. */
+  withinPortal?: boolean;
 }) {
   const { t } = useTranslation();
   const [tempValue, setTempValue] = useState("");
@@ -135,6 +138,7 @@ export function PlayerSearchInput({
       classNames={rightSection ? { root: classes.field, wrapper: classes.inputWrapper } : undefined}
       leftSection={<Search size="1rem" />}
       placeholder={label}
+      comboboxProps={withinPortal === undefined ? undefined : { withinPortal }}
     />
   );
 }

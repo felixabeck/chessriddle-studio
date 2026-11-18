@@ -515,9 +515,17 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
   );
   expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("includeUnknownResults");
   expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("sampleOrder");
-  await act(async () => store.set(dbTabFamily(tab.value), "options"));
-  expect(container.querySelector<HTMLInputElement>(".mantine-Autocomplete-input")?.value).toBe(
-    player.name,
+  // The pinned source's filters open from its filter button and show the seeded player.
+  const filters = container.querySelector<HTMLButtonElement>(
+    '[data-explorer-source] button[aria-haspopup="dialog"]',
+  )!;
+  await act(async () => filters.click());
+  await vi.waitFor(() =>
+    expect(
+      document.querySelector<HTMLInputElement>(
+        "[data-explorer-filters] .mantine-Autocomplete-input",
+      )?.value,
+    ).toBe(player.name),
   );
   expect(mocks.getPlayer).toHaveBeenCalledWith(file, 42);
   for (const [database, id] of mocks.getPlayer.mock.calls) {

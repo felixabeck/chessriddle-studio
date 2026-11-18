@@ -52,7 +52,26 @@ vi.mock("@/platform/tauri", async () => {
 });
 
 import { databaseHandleKey, NAME_SEARCH_DEBOUNCE_MS, searchPosition } from "@/utils/db";
-import LocalOptionsPanel from "./LocalOptionsPanel";
+import { useExplorerFilters } from "../useExplorerFilters";
+import LocalFiltersForm from "./LocalFiltersForm";
+import PositionSearchEditor from "./PositionSearchEditor";
+
+/** The form and the position editor bound the way the board panel binds them. */
+function LocalOptionsPanel({
+  boardFen,
+  database,
+}: {
+  boardFen: string;
+  database: DatabaseHandle | null;
+}) {
+  const { filters, setFilters } = useExplorerFilters(database);
+  return (
+    <>
+      <LocalFiltersForm database={database} filters={filters} setFilters={setFilters} />
+      <PositionSearchEditor boardFen={boardFen} />
+    </>
+  );
+}
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 class MockResizeObserver {
@@ -76,7 +95,7 @@ const databaseB: DatabaseHandle = { id: { id: "other-database" }, kind: "databas
 const playerA: Player = { id: 42, name: "A player", elo: 2000, game_count: 3 };
 const playerB: Player = { ...playerA, name: "B player" };
 
-describe("LocalOptionsPanel explorer filters", () => {
+describe("local explorer filters and position", () => {
   let container: HTMLDivElement;
   let root: Root;
   let store: ReturnType<typeof createJotaiStore>;

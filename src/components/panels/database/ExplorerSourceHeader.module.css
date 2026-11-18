@@ -1,0 +1,13 @@
+.filterButton {
+  flex: 0 1 auto;
+}
+
+.filterLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filters {
+  max-width: calc(100vw - 2rem);
+}

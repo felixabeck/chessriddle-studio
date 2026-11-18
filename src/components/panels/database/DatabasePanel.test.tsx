@@ -479,8 +479,8 @@ describe("DatabasePanel", () => {
     });
   }
 
-  function selectedPanel(value: "games" | "stats" | "options") {
-    const labels = { stats: "Stats", games: "Games", options: "Options" };
+  function selectedPanel(value: "games" | "stats") {
+    const labels = { stats: "Stats", games: "Games" };
     const tab = Array.from(container.querySelectorAll('[role="tab"]')).find(
       (element) => element.textContent === `Board.Database.${labels[value]}`,
     );
@@ -522,13 +522,33 @@ describe("DatabasePanel", () => {
     return store;
   }
 
-  function expectMatches(panel: HTMLElement, count: number) {
-    const nodes = Array.from(panel.querySelectorAll("p")).filter((node) =>
-      node.textContent?.startsWith("Board.Database.Matches"),
+  /** The match count lives only in the Stats table's Total row; `null` means no such row. */
+  function expectTotal(count: number | null) {
+    expect(container.textContent).not.toContain("Board.Database.Matches");
+    const tab = Array.from(container.querySelectorAll('[role="tab"]')).find(
+      (element) => element.textContent === "Board.Database.Stats",
+    )!;
+    const rows = document
+      .getElementById(tab.getAttribute("aria-controls")!)!
+      .querySelectorAll("tbody tr");
+    const total = Array.from(rows).find((row) =>
+      row.querySelector("td")?.textContent?.startsWith("Board.Database.StatsTable.Total"),
     );
-    expect(nodes).toHaveLength(1);
-    expect(nodes[0].textContent).toBe(`Board.Database.Matches ${formatNumber(count)}`);
+    expect(total?.querySelectorAll("td")[1]?.textContent ?? null).toBe(
+      count === null ? null : formatNumber(count),
+    );
   }
+
+  test("the rail is gone: Stats and Games are the only views and both sit in the header", async () => {
+    await mountExplorer();
+    const tabs = Array.from(container.querySelectorAll('[role="tab"]'), (tab) => tab.textContent);
+    expect(tabs).toEqual(["Board.Database.Stats", "Board.Database.Games"]);
+    expect(container.querySelector('[role="tablist"]')?.getAttribute("aria-orientation")).toBe(
+      "horizontal",
+    );
+    expect(container.textContent).not.toContain("Board.Database.Options");
+    expect(container.querySelectorAll("[data-explorer-source]")).toHaveLength(1);
+  });
 
   test.each([
     { label: "opening totals", moves: mockExplorerData.moves, count: 100 },
@@ -555,7 +575,7 @@ describe("DatabasePanel", () => {
       expect(panel.querySelector(".mantine-datatable-empty-state[data-active]")).toBeNull();
       expect(panel.textContent).not.toContain("Board.Database.GamesFailed");
       expect(panel.textContent).not.toContain(diagnostic);
-      expectMatches(panel, count);
+      expectTotal(moves.length > 0 ? count : null);
 
       await act(async () => {
         store.set(dbTabFamily(tabId), "stats");
@@ -576,17 +596,17 @@ describe("DatabasePanel", () => {
     expect(panel.textContent).not.toContain("Databases.Game.NoGamesFound");
     expect(panel.querySelector("table")).toBeNull();
     expect(panel.textContent).not.toContain(diagnostic);
-    expectMatches(panel, 100);
+    expectTotal(100);
   });
 
-  test("mounted empty explorer list: keeps the genuine empty state and opening Matches total", async () => {
+  test("mounted empty explorer list: keeps the genuine empty state and the Total row count", async () => {
     await mountExplorer({ ...mockExplorerData, topGames: [] }, []);
     const panel = selectedPanel("games");
     expect(panel.textContent).toContain("Databases.Game.NoGamesFound");
     expect(panel.querySelector(".mantine-datatable-empty-state[data-active]")).not.toBeNull();
     expect(panel.textContent).not.toContain("Board.Database.GamesIncomplete");
     expect(panel.textContent).not.toContain("Board.Database.GamesFailed");
-    expectMatches(panel, 100);
+    expectTotal(100);
   });
 
   test.each([
@@ -710,21 +730,44 @@ describe("DatabasePanel", () => {
     },
   );
 
-  function expectNoReference(value: "stats" | "games" | "options" = "stats") {
+  function expectNoReference(value: "stats" | "games" = "stats") {
     const panel = selectedPanel(value);
     const tab = container.querySelector(`[role="tab"][aria-controls="${panel.id}"]`);
     expect(panel.getAttribute("aria-labelledby")).toBe(tab?.id);
     expect({ [value]: panel.textContent }).toEqual({
       [value]: expect.stringContaining("Board.Database.NoReference1"),
     });
+    // The database select stays available in the sources bar, outside the replaced view.
+    expect(panel.querySelector(".mantine-Select-input")).toBeNull();
     expect({
-      [value]: panel.querySelector<HTMLInputElement>(".mantine-Select-input")?.value,
+      [value]: container.querySelector<HTMLInputElement>(".mantine-Select-input")?.value,
     }).toEqual({ [value]: "" });
+    expect(filterButton().disabled).toBe(true);
   }
 
-  async function showPlayerOptions(store: ReturnType<typeof createJotaiStore>, owner = tabId) {
-    await act(async () => store.set(dbTabFamily(owner), "options"));
-    return selectedPanel("options").querySelector<HTMLInputElement>(".mantine-Autocomplete-input");
+  function filterButton() {
+    return container.querySelector<HTMLButtonElement>(
+      '[data-explorer-source] button[aria-label^="Board.Database.FilterButton"]',
+    )!;
+  }
+
+  /** Opens the source's filter popover, unless it is open or the source has no database. */
+  async function openFilters() {
+    const button = filterButton();
+    if (button.disabled) return null;
+    if (button.getAttribute("aria-expanded") !== "true") await act(async () => button.click());
+    // The dropdown mounts on the transition's first frame.
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-explorer-filters]")).not.toBeNull(),
+    );
+    await act(async () => {});
+    return document.querySelector<HTMLElement>("[data-explorer-filters]");
+  }
+
+  async function showPlayerOptions() {
+    return (
+      (await openFilters())?.querySelector<HTMLInputElement>(".mantine-Autocomplete-input") ?? null
+    );
   }
 
   test("local: readable persisted handle searches with preserved filters and overrides stale tab path", async () => {
@@ -791,12 +834,11 @@ describe("DatabasePanel", () => {
       const nextDatabase = pinned ? reference : stalePath;
       expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(initialDatabase);
       expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
-      expect((await showPlayerOptions(store))?.value).toBe(`${initialDatabase.id.id} player`);
+      expect((await showPlayerOptions())?.value).toBe(`${initialDatabase.id.id} player`);
       await act(async () => store.set(dbTabFamily(tabId), "stats"));
       mocks.searchPosition.mockClear();
 
-      const selector =
-        selectedPanel("stats").querySelector<HTMLInputElement>(".mantine-Select-input")!;
+      const selector = container.querySelector<HTMLInputElement>(".mantine-Select-input")!;
       await act(async () => selector.click());
       const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
         (item) => item.textContent === (pinned ? "Saved reference" : "Other database"),
@@ -824,7 +866,7 @@ describe("DatabasePanel", () => {
         expect(query.player1 ?? null).toBeNull();
         expect(query.player2 ?? null).toBeNull();
       }
-      expect((await showPlayerOptions(store))?.value).toBe("");
+      expect((await showPlayerOptions())?.value).toBe("");
       for (const [database, id] of mocks.getPlayer.mock.calls) {
         expect(database).toEqual(initialDatabase);
         expect(id).toBe(42);
@@ -837,7 +879,7 @@ describe("DatabasePanel", () => {
       await act(async () =>
         store.set(pinned ? pinnedExplorerDatabaseFamily(tabId) : referenceDbAtom, initialDatabase),
       );
-      expect((await showPlayerOptions(store))?.value).toBe(`${initialDatabase.id.id} player`);
+      expect((await showPlayerOptions())?.value).toBe(`${initialDatabase.id.id} player`);
       await act(async () => store.set(dbTabFamily(tabId), "stats"));
       for (const [database, query] of mocks.searchPosition.mock.calls) {
         const expectedPlayer =
@@ -855,7 +897,7 @@ describe("DatabasePanel", () => {
     const { store, swrConfig } = await mountLocal(undefined, 42);
     expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(reference);
     expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
-    expect((await showPlayerOptions(store))?.value).toBe(`${reference.id.id} player`);
+    expect((await showPlayerOptions())?.value).toBe(`${reference.id.id} player`);
     await act(async () => root.render(null));
 
     const secondTabId = "22222222-2222-4222-8222-222222222222";
@@ -866,8 +908,7 @@ describe("DatabasePanel", () => {
       store.set(activeTabAtom, secondTabId);
     });
     await renderPanel(store, swrConfig, undefined, secondTabId);
-    const selector =
-      selectedPanel("stats").querySelector<HTMLInputElement>(".mantine-Select-input")!;
+    const selector = container.querySelector<HTMLInputElement>(".mantine-Select-input")!;
     await act(async () => selector.click());
     const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
       (item) => item.textContent === "Other database",
@@ -891,7 +932,7 @@ describe("DatabasePanel", () => {
       expect(query.player1 ?? null).toBeNull();
       expect(query.player2 ?? null).toBeNull();
     }
-    expect((await showPlayerOptions(store))?.value).toBe("");
+    expect((await showPlayerOptions())?.value).toBe("");
     for (const [database, id] of mocks.getPlayer.mock.calls) {
       expect(database).toEqual(reference);
       expect(id).toBe(42);
@@ -906,9 +947,9 @@ describe("DatabasePanel", () => {
     const first = await mountLocal();
     localStorage.removeItem("explorer-database-filters");
     await act(async () => first.store.set(explorerDatabaseFiltersAtom, []));
-    await act(async () => first.store.set(dbTabFamily(tabId), "options"));
-    const toggle =
-      selectedPanel("options").querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const toggle = (await openFilters())!.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    )!;
     expect(toggle.checked).toBe(false);
     await act(async () => toggle.click());
     expect(savedFilters(first.store, reference).exclude_fast_events).toBe(true);
@@ -954,9 +995,9 @@ describe("DatabasePanel", () => {
       wantedResult: "draw",
       range1: [1800, 2400],
     });
-    await act(async () => store.set(dbTabFamily(tabId), "options"));
-    const toggle =
-      selectedPanel("options").querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const toggle = (await openFilters())!.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    )!;
     expect(toggle.checked).toBe(true);
     await act(async () => toggle.click());
     expect(store.get(localOptionsFamily(tabId)).exclude_fast_events).toBe(false);
@@ -1036,6 +1077,87 @@ describe("DatabasePanel", () => {
     expect(store.get(referenceDbAtom)).toEqual(reference);
   });
 
+  test("local: the filter button names the database's active filters", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    await mountLocal();
+    expect(filterButton().textContent).toBe(
+      [
+        "Board.Database.Local.Elo 1800–2400",
+        "Board.Analysis.Tablebase.Draw",
+        "Board.Database.FilterSummary.NoFastEvents",
+      ].join(" · "),
+    );
+    expect(filterButton().getAttribute("aria-label")).toBe(
+      `Board.Database.FilterButton ${filterButton().textContent}`,
+    );
+  });
+
+  test("local: a partial position shows Games with Stats disabled and keeps the stored view", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    const { store } = await mountLocal();
+    selectedPanel("stats");
+    await act(async () =>
+      store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
+    );
+    selectedPanel("games");
+    const stats = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+      (tab) => tab.textContent === "Board.Database.Stats",
+    )!;
+    expect(stats.disabled).toBe(true);
+    expect(store.get(dbTabFamily(tabId))).toBe("stats");
+    await vi.waitFor(() =>
+      expect(mocks.searchPosition.mock.lastCall?.[1].position.type_).toBe("partial"),
+    );
+    // The stored choice returns with the exact position.
+    await act(async () =>
+      store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "exact" })),
+    );
+    selectedPanel("stats");
+    expect(stats.disabled).toBe(false);
+  });
+
+  test("local: the position dialog switches the tab's match mode for the search", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    const { store } = await mountLocal();
+    const control = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.startsWith("Board.Database.PositionMode"),
+    )!;
+    expect(control.textContent).toBe("Board.Database.PositionMode Board.Database.Local.Exact");
+    await act(async () => control.click());
+    const dialog = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[role="dialog"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(dialog.textContent).toContain("Board.Database.Local.Exact.Hint");
+    const partial = dialog.querySelector<HTMLInputElement>('input[value="partial"]')!;
+    await act(async () => partial.click());
+    expect(store.get(localOptionsFamily(tabId)).type).toBe("partial");
+    expect(control.textContent).toBe("Board.Database.PositionMode Board.Database.Local.Partial");
+    await vi.waitFor(() =>
+      expect(mocks.searchPosition.mock.lastCall?.[1].position.type_).toBe("partial"),
+    );
+    // The saved filters still apply: the mode is the tab's, the filters are the database's.
+    expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({ wantedResult: "draw" });
+  });
+
+  test("local: a database choice is stored although clearing the search cache fails", async () => {
+    mocks.getDatabases.mockResolvedValue(
+      databaseList([readable, { ...readable, file: stalePath, title: "Other database" }]),
+    );
+    mocks.clearGames.mockRejectedValue(new Error("cache unavailable"));
+    const { store } = await mountLocal();
+    const selector = container.querySelector<HTMLInputElement>(".mantine-Select-input")!;
+    await act(async () => selector.click());
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (item) => item.textContent === "Other database",
+    )!;
+    await act(async () => option.click());
+    expect(mocks.clearGames).toHaveBeenCalledOnce();
+    expect(store.get(referenceDbAtom)).toEqual(stalePath);
+    await vi.waitFor(() => expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(stalePath));
+  });
+
   test("local: a pinned player remains scoped to its database when the global reference changes", async () => {
     mocks.getDatabases.mockResolvedValue(
       databaseList([readable, { ...readable, file: stalePath }]),
@@ -1059,7 +1181,7 @@ describe("DatabasePanel", () => {
     expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(reference);
     expect(mocks.searchPosition.mock.lastCall?.[1].player1 ?? null).toBeNull();
     mocks.getPlayer.mockClear();
-    expect((await showPlayerOptions(store))?.value).toBe("");
+    expect((await showPlayerOptions())?.value).toBe("");
     expect(mocks.getPlayer).not.toHaveBeenCalled();
   });
 
@@ -1070,22 +1192,24 @@ describe("DatabasePanel", () => {
     mocks.getPlayer.mockReturnValueOnce(lookup.promise);
     const { store, revalidate } = await mountLocal(undefined, 42);
     expect(mocks.searchPosition).not.toHaveBeenCalled();
-    expect(await showPlayerOptions(store)).toBeNull();
+    expect(await showPlayerOptions()).toBeNull();
     expect(mocks.getPlayer).not.toHaveBeenCalled();
     await act(async () => listing.resolve(databaseList([readable])));
+    // The saved player is looked up once the database's filters are opened.
+    expect(await showPlayerOptions()).not.toBeNull();
     expect(mocks.getPlayer).toHaveBeenCalledWith(reference, 42);
 
     mocks.getDatabases.mockResolvedValue(databaseList([unreadable]));
     await revalidate();
-    expect(await showPlayerOptions(store)).toBeNull();
+    expect(await showPlayerOptions()).toBeNull();
     await act(async () =>
       lookup.resolve({ id: 42, name: "Late A player", elo: 2000, game_count: 3 }),
     );
-    expect(container.textContent).not.toContain("Late A player");
+    expect(document.body.textContent).not.toContain("Late A player");
     expect(savedFilters(store, reference).player).toBe(42);
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     await revalidate();
-    expect((await showPlayerOptions(store))?.value).toBe(`${reference.id.id} player`);
+    expect((await showPlayerOptions())?.value).toBe(`${reference.id.id} player`);
     await act(async () => store.set(dbTabFamily(tabId), "stats"));
     expect(mocks.searchPosition).toHaveBeenCalled();
     for (const [database, query] of mocks.searchPosition.mock.calls) {
@@ -1118,7 +1242,7 @@ describe("DatabasePanel", () => {
       expect(mocks.searchPosition).not.toHaveBeenCalled();
       expect(store.get(localOptionsFamily(tabId)).path).toBeNull();
       expectSavedChoice(store);
-      for (const value of ["stats", "games", "options"] as const) {
+      for (const value of ["stats", "games"] as const) {
         await act(async () => {
           store.set(dbTabFamily(tabId), value);
         });

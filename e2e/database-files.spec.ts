@@ -537,8 +537,10 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
     const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
-    const picker = stats.getByPlaceholder("add a database", { exact: true });
+    // The database select sits in the sources bar, above the view it would otherwise vanish with.
+    const picker = page.getByPlaceholder("add a database", { exact: true });
     await expect(picker).toHaveValue("");
+    await expect(page.getByRole("button", { name: /^Filters: / })).toBeDisabled();
     await expect(stats.getByText("No reference database selected.", { exact: true })).toBeVisible();
     const searches = () =>
         page.evaluate(() =>
@@ -608,13 +610,13 @@ test("database-files: the local explorer options keep their controls legible and
         .click();
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
-    await expect(
-        page
-            .getByRole("tabpanel", { name: "Stats", exact: true })
-            .getByPlaceholder("add a database", { exact: true }),
-    ).toHaveValue(gameOpeningFixture.databaseTitle);
-    await page.getByRole("tab", { name: "Options", exact: true }).click();
-    const options = page.getByRole("tabpanel", { name: "Options", exact: true });
+    await expect(page.getByPlaceholder("add a database", { exact: true })).toHaveValue(
+        gameOpeningFixture.databaseTitle,
+    );
+    await expect(page.getByRole("tab", { name: "Options", exact: true })).toHaveCount(0);
+    const filterButton = page.getByRole("button", { name: "Filters: No filter", exact: true });
+    await filterButton.click();
+    const options = page.locator("[data-explorer-filters]");
 
     // The colour only says which side the selected player has.
     await expect(options.getByText("Plays as", { exact: true })).toBeVisible();
@@ -623,7 +625,6 @@ test("database-files: the local explorer options keep their controls legible and
     await expect(
         options.locator(".mantine-SegmentedControl-label[data-disabled]").first(),
     ).toHaveCSS("cursor", "not-allowed");
-    await expect(options.getByText("Games that reached exactly this position.")).toBeVisible();
 
     const toggle = options.getByRole("switch", {
         name: "Exclude blitz, bullet, and armageddon events",
@@ -634,15 +635,14 @@ test("database-files: the local explorer options keep their controls legible and
         const box = (selector: string) =>
             [...panel.querySelectorAll(selector)].map((node) => node.getBoundingClientRect());
         const marks = box(".mantine-RangeSlider-markLabel");
-        const viewport = panel.querySelector(".mantine-ScrollArea-viewport")!;
         const track = panel.querySelector<HTMLElement>(".mantine-Switch-track")!;
         return {
             markCount: marks.length,
             marksBottom: Math.max(...marks.map((mark) => mark.bottom)),
             marksRight: Math.max(...marks.map((mark) => mark.right)),
             switchTop: box(".mantine-Switch-root")[0].top,
-            viewportRight: viewport.getBoundingClientRect().right,
-            sidewaysOverflow: viewport.scrollWidth - viewport.clientWidth,
+            viewportRight: panel.getBoundingClientRect().right,
+            sidewaysOverflow: panel.scrollWidth - panel.clientWidth,
             switchCursor: getComputedStyle(track).cursor,
         };
     });
@@ -653,11 +653,26 @@ test("database-files: the local explorer options keep their controls legible and
     expect(layout.sidewaysOverflow).toBe(0);
     expect(layout.switchCursor).toBe("pointer");
 
+    // A date picked in the popover's own calendar leaves the filters open.
+    await options.getByPlaceholder("Start date", { exact: true }).click();
+    const calendar = page.locator("[data-dates-dropdown]");
+    await calendar.getByRole("button", { name: /^15 / }).first().click();
+    await expect(options).toBeVisible();
+    await expect(options.getByPlaceholder("Start date", { exact: true })).not.toHaveValue("");
+    const activeFilter = page.getByRole("button", { name: /^Filters: since / });
+    await expect(activeFilter).toBeVisible();
+    await activeFilter.click();
+    await expect(options).toBeHidden();
+
+    // The position search is one setting for every local source and opens from the header.
+    await page.getByRole("button", { name: "Position: Exact", exact: true }).click();
+    const position = page.getByRole("dialog", { name: "Position", exact: true });
+    await expect(position.getByText("Games that reached exactly this position.")).toBeVisible();
     // Both palette colours must stand out from the tile, whatever the card colour is.
-    const blackPawn = options.locator(".black.pawn").last();
+    const blackPawn = position.locator(".black.pawn").last();
     await blackPawn.scrollIntoViewIfNeeded();
     await expect(blackPawn).toHaveCSS("background-color", "rgb(170, 160, 147)");
-    await expect(options).toHaveScreenshot("local-explorer-options-palette.png");
+    await expect(position).toHaveScreenshot("local-explorer-options-palette.png");
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
 

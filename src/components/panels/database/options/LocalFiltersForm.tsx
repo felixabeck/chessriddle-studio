@@ -10,6 +10,10 @@ import type { ExplorerFilters } from "@/state/explorerFilters";
 import { databaseHandleKey } from "@/utils/db";
 import { FilterField, PlaysAsControl, YearPresetButtons } from "./filterControls";
 
+// The form lives in a popover: its own dropdowns stay inside it, so using one is not a click
+// outside that would close the filters.
+const NESTED = { withinPortal: false } as const;
+
 /** The filters of one local explorer source. Where they are kept is the caller's binding. */
 function LocalFiltersForm({
   database,
@@ -35,6 +39,7 @@ function LocalFiltersForm({
               value={filters.player ?? undefined}
               file={database}
               setValue={(v) => setFilters((q) => ({ ...q, player: v ?? null }))}
+              withinPortal={false}
             />
           )}
         </FilterField>
@@ -48,6 +53,7 @@ function LocalFiltersForm({
           <DateInput
             placeholder={t("Common.StartDate")}
             valueFormat="YYYY-MM-DD"
+            popoverProps={NESTED}
             clearable
             value={filters.start_date ? dayjs(filters.start_date, "YYYY.MM.DD").toDate() : null}
             onChange={(value) =>
@@ -65,6 +71,7 @@ function LocalFiltersForm({
           <DateInput
             placeholder={t("Common.EndDate")}
             valueFormat="YYYY-MM-DD"
+            popoverProps={NESTED}
             clearable
             value={filters.end_date ? dayjs(filters.end_date, "YYYY.MM.DD").toDate() : null}
             onChange={(value) =>
@@ -102,6 +109,7 @@ function LocalFiltersForm({
                 setFilters((q) => ({ ...q, result: v }));
             }}
             allowDeselect={false}
+            comboboxProps={NESTED}
           />
         </FilterField>
       </SimpleGrid>

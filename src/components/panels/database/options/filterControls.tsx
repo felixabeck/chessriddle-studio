@@ -100,6 +100,8 @@ export function ExplorerDateRange({
     minDate: MIN_DATE,
     maxDate: new Date(),
     clearable: true,
+    // These pickers live in the source's filter popover and must not count as a click outside it.
+    popoverProps: { withinPortal: false },
   };
   return (
     <>
