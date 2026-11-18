@@ -1919,4 +1919,6 @@ test("aborting Bob at 80% by switching to a cached player clears Bob's progress 
   expect(displayedProgress()).toContain("0%");
   expect(displayedProgress()).not.toContain("80%");
   expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("0");
+  // Bob's superseded run left a cancellation in SWR; it is not a load failure.
+  expect(container.textContent).not.toContain("Home.Databases.Failed.Title");
 });
