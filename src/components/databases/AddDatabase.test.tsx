@@ -245,7 +245,7 @@ afterEach(async () => {
 });
 
 async function renderAddDatabase(
-  databases: Array<{ type: "success"; title: string }> = [],
+  databases: Array<{ type: "success"; title: string; filename: string }> = [],
   {
     setOpened = vi.fn(),
     reloadDatabases = vi.fn().mockResolvedValue(undefined),
@@ -320,7 +320,8 @@ test.each([
 
 test("wires installed state and progress id from the download URL", async () => {
   mocks.defaultDatabases = [manifestDb];
-  await renderAddDatabase([{ type: "success", title: "Lichess" }]);
+  // The file's own Info.Title differs from the catalog title, as Lumbra's Gigabase ships.
+  await renderAddDatabase([{ type: "success", title: "LichessDB", filename: "Lichess.db3" }]);
   expect(mocks.progressButtonProps?.id).toBe(defaultDatabaseProgressId(manifestDb.downloadLink));
   expect(mocks.progressButtonProps?.id).not.toBe("db_0");
   expect(mocks.progressButtonProps?.initInstalled).toBe(true);

@@ -50,6 +50,7 @@ import {
     getDefaultDatabases,
     getDefaultPuzzleDatabases,
     getDatabases,
+    catalogDatabaseFilename,
     manifestDatabaseInstallCard,
     manifestPuzzleDatabaseInstallCard,
     sameDatabaseHandle,
@@ -930,7 +931,7 @@ describe("manifest install-card identity", () => {
     const otherLink = "https://db.encroissant.org/other.db3";
 
     it("keys game-database progress by download URL, not array index or title", () => {
-        const installed = [{ type: "success", title: "Lichess" }];
+        const installed = [{ filename: "Lichess.db3" }];
         const card = manifestDatabaseInstallCard(installed, {
             downloadLink: link,
             title: "Lichess",
@@ -944,6 +945,29 @@ describe("manifest install-card identity", () => {
         expect(
             manifestDatabaseInstallCard(installed, { downloadLink: otherLink, title: "Other" })
                 .initInstalled,
+        ).toBe(false);
+    });
+
+    it("treats a catalog database as installed by its download leaf, not its Info.Title", () => {
+        const lumbra = { downloadLink: link, title: "Lumbra's Gigabase" };
+        expect(catalogDatabaseFilename(lumbra.title)).toBe("Lumbra's Gigabase.db3");
+        // The signed file ships Info.Title "LumbrasGigaBase", which never equals the catalog title.
+        const installed = [
+            { type: "success", title: "LumbrasGigaBase", filename: "Lumbra's Gigabase.db3" },
+        ];
+        expect(manifestDatabaseInstallCard(installed, lumbra).initInstalled).toBe(true);
+        // An unreadable or upgrading row still occupies the leaf the download refuses.
+        const unreadable = [{ type: "error", filename: "Lumbra's Gigabase.db3" }];
+        expect(manifestDatabaseInstallCard(unreadable, lumbra).initInstalled).toBe(true);
+        // A title match alone is not installed: the leaf is free and the download can succeed.
+        const renamed = [{ type: "success", title: "Lumbra's Gigabase", filename: "renamed.db3" }];
+        expect(manifestDatabaseInstallCard(renamed, lumbra).initInstalled).toBe(false);
+        // A linked collection lives outside the workspace root and never blocks the leaf.
+        expect(
+            manifestDatabaseInstallCard(
+                [{ filename: "Lumbra's Gigabase.db3", collection: { id: "c" } }],
+                lumbra,
+            ).initInstalled,
         ).toBe(false);
     });
 

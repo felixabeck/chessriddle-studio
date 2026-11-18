@@ -31,6 +31,7 @@ import {
   type DatabaseConversionOperation,
 } from "@/state/atoms";
 import {
+  catalogDatabaseFilename,
   manifestDatabaseInstallCard,
   type DownloadableDatabaseInfo,
   useDefaultDatabases,
@@ -327,7 +328,7 @@ function DatabaseCard({
               progressId,
               database.downloadLink,
               destination,
-              `${database.title}.db3`,
+              catalogDatabaseFilename(database.title),
               null,
               ticket,
               { sha256: database.sha256, signature: database.signature },

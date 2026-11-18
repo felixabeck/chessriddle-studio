@@ -154,14 +154,26 @@ export function defaultPuzzleDatabaseProgressId(downloadLink: string): string {
 
 export const puzzleDatabaseExtension = ".db3";
 
+/** Workspace leaf a catalog game database downloads to; the native download refuses an existing one. */
+export function catalogDatabaseFilename(title: string): string {
+    return `${title}.db3`;
+}
+
+/**
+ * A catalog card is installed when its download leaf already exists in the
+ * workspace. The file's own `Info.Title` is editable and need not equal the
+ * catalog title (Lumbra's Gigabase ships "LumbrasGigaBase"), so the title is
+ * not an install identity. Linked collections live outside the workspace root.
+ */
 export function manifestDatabaseInstallCard(
-    installed: readonly { type: string; title?: string }[],
+    installed: readonly { filename: string; collection?: unknown }[],
     manifest: { downloadLink: string; title: string },
 ): { progressId: string; initInstalled: boolean } {
+    const filename = catalogDatabaseFilename(manifest.title);
     return {
         progressId: defaultDatabaseProgressId(manifest.downloadLink),
         initInstalled: installed.some(
-            (database) => database.type === "success" && database.title === manifest.title,
+            (database) => database.collection === undefined && database.filename === filename,
         ),
     };
 }
