@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import {
+    assertButtonGlyphsUnclipped,
     assertNothingClipped,
     assertPageNotClipped,
     databaseCommands,
@@ -356,6 +357,7 @@ test("font-scaled-breakpoints: visible library open controls wrap at 320px and 2
     await waitForFontsSettled(page);
     await databaseOpen.scrollIntoViewIfNeeded();
     await assertNothingClipped(databaseOpen);
+    await assertButtonGlyphsUnclipped(databaseOpen);
     await capture("database-open-320-200");
     await expect(page).toHaveScreenshot("database-open-320-200.png", { fullPage: true });
     await databaseOpen.click();
@@ -429,10 +431,12 @@ test("font-scaled-breakpoints: visible library open controls wrap at 320px and 2
     await expect(gameOpen).toBeEnabled();
     await gameOpen.scrollIntoViewIfNeeded();
     await assertNothingClipped(gameOpen);
+    await assertButtonGlyphsUnclipped(gameOpen);
     const newGame = page.getByRole("button", { name: "New game", exact: true });
     await expect(newGame).toBeVisible();
     await newGame.scrollIntoViewIfNeeded();
     await assertNothingClipped(newGame);
+    await assertButtonGlyphsUnclipped(newGame);
     await newGame.hover();
     const explanation = page.getByRole("tooltip");
     await expect(explanation).toBeVisible();

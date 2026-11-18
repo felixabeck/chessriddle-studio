@@ -336,7 +336,7 @@ export function createAppTheme({
         },
         components: {
             Button: {
-                classNames: { root: buttonClasses.root },
+                classNames: { root: buttonClasses.root, label: buttonClasses.label },
                 styles: (_theme, props) => {
                     const color = props.color?.split(".")[0] ?? "gold";
                     const accent = color === "gold" || color === "gray";

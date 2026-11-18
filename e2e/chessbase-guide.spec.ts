@@ -1,4 +1,4 @@
-import { test, expect, filesWorkspaceCommands } from "./fixtures";
+import { assertButtonGlyphsUnclipped, test, expect, filesWorkspaceCommands } from "./fixtures";
 
 test.beforeEach(async ({ mockScenario }) => {
     await mockScenario({
@@ -24,6 +24,7 @@ test("empty Library opens the migration guide with reachable content", async ({
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.getByText("Your library is empty.", { exact: false })).toBeVisible();
     const link = page.getByRole("button", { name: "Coming from ChessBase?", exact: true });
+    await assertButtonGlyphsUnclipped(link);
     await expect(link).toHaveScreenshot("guide-entry.png");
     await link.click();
     const modal = page.getByRole("dialog", { name: "Coming from ChessBase?" });

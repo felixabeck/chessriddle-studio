@@ -7,6 +7,26 @@
     box-shadow 150ms;
 }
 
+/* Mantine's label clips (overflow: hidden) at line-height 1 with height: 100%, which leaves it one
+   line box tall whenever the root's height comes from its content, so Inter's ascenders and
+   descenders (about 0.065em per side) are cut. An auto-height label sits where the full-height one
+   did, because the inner centres it. Its padding widens its clip box for the ink and the equal
+   negative margin keeps its layout box; the root's padding keeps the ink inside the root's own
+   clip once the content sets its height, and only narrows a fixed-height root's inner box. The room
+   is 2px at the default size and scales with larger buttons and font scales; the custom property
+   substitutes unresolved, so the em is the using element's font size. :where() keeps these rules
+   below any class or style prop that sets its own block padding or label height. */
+:where(.root) {
+  --cf-label-ink-room: max(2px, 0.125em);
+  padding-block: var(--cf-label-ink-room);
+}
+
+:where(.label) {
+  height: auto;
+  padding-block: var(--cf-label-ink-room);
+  margin-block: calc(-1 * var(--cf-label-ink-room));
+}
+
 .root[data-size="xs"],
 .root[data-size="sm"],
 .root[data-size="compact-lg"],

@@ -545,8 +545,9 @@ export async function assertNothingClipped(
         // margin), so a reported overflow only counts when visible text or a leaf box (an icon, the
         // switch thumb) really passes the edge. An input's value is not in the DOM, so its scroll size is all there is.
         // A text range's rect is the font's content area, which can overhang a tight line box by a
-        // pixel or two (a Mantine Button label at 200%) without cutting a glyph; on y the extent is
-        // the line boxes, so that half-leading overhang is taken off both ends.
+        // pixel or two; on y the extent is the line boxes, so that half-leading overhang is taken
+        // off both ends. Whether a Button label's clip cuts that overhang is
+        // assertButtonGlyphsUnclipped's question.
         const textExtent = (text: Text, axis: Axis) => {
             const range = document.createRange();
             range.selectNode(text);
@@ -679,10 +680,61 @@ export async function assertNothingClipped(
     expect(offenders, `content clipped: ${offenders.join("; ")}`).toEqual([]);
 }
 
-// The whole rendered page under the reachable rule — the 320px / 200% layout contract
-// (d-20260831-16), beside the document-width check that it does not replace.
+// Every button label's glyphs inside its clip boxes on the block axis. Mantine's label clips
+// (overflow: hidden) at line-height 1, so Inter's ascenders and descenders can be cut while every
+// layout box still fits, which assertNothingClipped cannot see. A text range's client rect is the
+// font's ascent-to-descent box for each line, a bound on the ink.
+export async function assertButtonGlyphsUnclipped(
+    target: Locator,
+    { allowNone = false }: { allowNone?: boolean } = {},
+) {
+    const offenders = await target.evaluate((element, allowNone) => {
+        const found: string[] = [];
+        // A loading Button slides its label out of the root's clip on purpose, and a label that is
+        // not rendered has no glyphs to cut.
+        const labels = (
+            element.matches(".mantine-Button-label")
+                ? [element]
+                : [...element.querySelectorAll(".mantine-Button-label")]
+        ).filter(
+            (label) =>
+                label.getClientRects().length > 0 &&
+                !label.closest(".mantine-Button-root[data-loading]"),
+        );
+        if (labels.length === 0 && !allowNone) found.push("no rendered Button label to check");
+        for (const label of labels) {
+            const range = document.createRange();
+            range.selectNodeContents(label);
+            const lines = [...range.getClientRects()].filter((line) => line.height > 0);
+            const root = label.closest(".mantine-Button-root");
+            for (let node: Element | null = label; node; node = node.parentElement) {
+                const style = getComputedStyle(node);
+                if (style.overflowY !== "visible") {
+                    const box = node.getBoundingClientRect();
+                    const top = box.top + parseFloat(style.borderTopWidth);
+                    const bottom = box.bottom - parseFloat(style.borderBottomWidth);
+                    for (const line of lines) {
+                        if (line.top < top - 0.01 || line.bottom > bottom + 0.01) {
+                            found.push(
+                                `"${label.textContent}": glyphs ${line.top}-${line.bottom}, ` +
+                                    `${node === label ? "label" : "button"} clips at ${top}-${bottom}`,
+                            );
+                        }
+                    }
+                }
+                if (node === root) break;
+            }
+        }
+        return found;
+    }, allowNone);
+    expect(offenders, `button glyphs clipped: ${offenders.join("; ")}`).toEqual([]);
+}
+
+// The whole rendered page under the reachable rule, and every Button label's glyphs — the 320px /
+// 200% layout contract (d-20260831-16), beside the document-width check that it does not replace.
 export async function assertPageNotClipped(page: Page) {
     await assertNothingClipped(page.locator("body"), { mode: "reachable" });
+    await assertButtonGlyphsUnclipped(page.locator("body"), { allowNone: true });
 }
 
 // Both Files columns with everything in them: the controls and tree, the action row and the card.

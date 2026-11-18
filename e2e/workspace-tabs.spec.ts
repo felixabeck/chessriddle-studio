@@ -13,6 +13,7 @@ import {
     playBoardMove,
     drawMark,
     assertNothingClipped,
+    assertButtonGlyphsUnclipped,
 } from "./fixtures";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import { createEmptyCard } from "ts-fsrs";
@@ -147,6 +148,8 @@ test("workspace-tabs: home has compact actions and one reachable Library list", 
         );
         await assertNothingClipped(label);
     }
+    await assertButtonGlyphsUnclipped(page.locator("[data-home-action]").first());
+    await assertButtonGlyphsUnclipped(libraryLinkLabel);
     const card = (await library.boundingBox())!;
     const list = (await viewport.boundingBox())!;
     expect(list.height).toBeGreaterThan(300);
@@ -204,6 +207,7 @@ test("workspace-tabs: home has compact actions and one reachable Library list", 
         await assertWordsUnbroken(control);
         await assertNothingClipped(control);
     }
+    await assertButtonGlyphsUnclipped(libraryLinkLabel);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
     );
@@ -235,6 +239,7 @@ test("workspace-tabs: home actions wrap without horizontal scrolling at 200% fon
             expect(box.x + box.width).toBeLessThanOrEqual(width);
             await assertWordsUnbroken(action.locator(".mantine-Button-label"));
             await assertNothingClipped(action);
+            await assertButtonGlyphsUnclipped(action);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
             true,
@@ -755,6 +760,7 @@ for (const surface of [
         await expect(prepared).toContainText("100");
         await expect(prepared.getByRole("progressbar")).toHaveCount(3);
         await assertNothingClipped(error, { mode: "reachable" });
+        await assertButtonGlyphsUnclipped(error);
         await assertNoHorizontalOverflow();
         expect(await queries()).toHaveLength(2);
         const failedAt = await page.evaluate(() => Date.now());

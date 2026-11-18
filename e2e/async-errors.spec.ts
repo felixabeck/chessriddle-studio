@@ -11,6 +11,7 @@ import {
     filesWorkspaceFixture,
     pgnFileCommands,
     assertFilesColumnsNotClipped,
+    assertButtonGlyphsUnclipped,
     assertNothingClipped,
     assertPageNotClipped,
     selectFilesTreeRow,
@@ -581,6 +582,7 @@ test("engine editor: refused cloud draft settles at 320px and 200% German", asyn
         const remove = page.getByRole("button", { name: "Entfernen", exact: true });
         await remove.scrollIntoViewIfNeeded();
         await assertNothingClipped(remove, { mode: "reachable" });
+        await assertButtonGlyphsUnclipped(remove);
         await assertNoHorizontalOverflow();
         await remove.click();
         await expect(page.getByText("Committed cloud", { exact: true })).toBeVisible();

@@ -5,6 +5,7 @@ import {
     filesWorkspaceCommands,
     filesWorkspaceFixture,
     pgnFileCommands,
+    assertButtonGlyphsUnclipped,
     assertFilesColumnsNotClipped,
     assertNothingClipped,
     selectFilesTreeRow,
@@ -385,7 +386,9 @@ for (const width of [1920, 320]) {
         await tree.locator("[data-opening-moves] tbody tr").filter({ hasText: "e5" }).click();
         await expect(tree.locator("[data-opening-sequence]")).toHaveText("1. e4 e5");
         await expect(tree.locator("[data-opening-moves]")).toContainText("Game ended here");
-        await tree.getByRole("button", { name: "Prepare on board", exact: true }).click();
+        const prepare = tree.getByRole("button", { name: "Prepare on board", exact: true });
+        await assertButtonGlyphsUnclipped(prepare);
+        await prepare.click();
         await expect(page).toHaveURL("/");
         const database = page.getByRole("tab", { name: "Database", exact: true });
         await expect(database).toHaveAttribute("aria-selected", "true");
@@ -1759,12 +1762,15 @@ for (const surface of [
         await expect(detail).toHaveAttribute("data-linked-collection", collection.id);
         for (const name of ["Explore", "Rebuild search index", "Add Games", "Export to PGN"]) {
             const action = detail.getByRole("button", { name, exact: true });
-            await action.scrollIntoViewIfNeeded();
+            // Playwright's scrollIntoViewIfNeeded (Chromium's DOM.scrollIntoViewIfNeeded) can stop a
+            // pixel or two short of a padded scroller's edge, so ratio 1 would measure the harness.
+            await action.evaluate((element) => element.scrollIntoView({ block: "nearest" }));
             await expect(action).toBeInViewport({ ratio: 1 });
             await assertNothingClipped(action, { mode: "reachable" });
         }
         await assertLinkedPlayerFields(detail);
         await assertNothingClipped(detail, { mode: "reachable" });
+        await assertButtonGlyphsUnclipped(detail);
         await assertNoHorizontalOverflow();
         await assertAccessible();
         await detail.scrollIntoViewIfNeeded();

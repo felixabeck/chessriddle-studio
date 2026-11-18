@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import catalog from "../src/catalogs/engines.json" with { type: "json" };
 import { serializeStorageValue } from "../src/state/store/debouncedStorage";
 import {
+    assertButtonGlyphsUnclipped,
     assertNothingClipped,
     assertPageNotClipped,
     expect,
@@ -131,6 +132,7 @@ test("automatic install stays visible across routes, cancels, and never starts a
     await assertNothingClipped(
         button.locator("xpath=ancestor::*[contains(@class,'mantine-Stack-root')][1]"),
     );
+    await assertButtonGlyphsUnclipped(button);
     await expect(button).toHaveScreenshot("engines-install-stockfish.png");
     const marker = await page.evaluate(() => localStorage.getItem("first-launch-stockfish"));
     expect(marker).not.toBeNull();

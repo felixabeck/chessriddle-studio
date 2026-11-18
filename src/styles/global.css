@@ -89,9 +89,6 @@ cg-board square.oc.move-dest:hover {
 
 .wrap-button .mantine-Button-label {
   height: auto;
-  /* A wrapped label's last line can overhang its line box by a pixel or two; the root still clips
-     for Mantine's loader. */
-  padding-block: 2px;
   white-space: normal;
   overflow-wrap: anywhere;
   text-align: center;
