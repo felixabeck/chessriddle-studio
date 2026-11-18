@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { ChevronDown } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import AppModal from "@/components/common/AppModal";
 import { trainingSettings as settings } from "@/state/chessRiddleTrainingSettings";
@@ -145,6 +145,8 @@ function MotifPicker({
 }) {
   const { t } = useTranslation();
   const [opened, setOpened] = useState(false);
+  const labelId = useId();
+  const valueId = useId();
   const [category, setCategory] = useState("all");
   const labels = motifCategoryLabels(t);
   const available = CATEGORY_ORDER.filter((item) =>
@@ -181,7 +183,7 @@ function MotifPicker({
     );
   };
   return (
-    <Input.Wrapper label={t("Training.Settings.Motif")}>
+    <Input.Wrapper label={t("Training.Settings.Motif")} labelProps={{ id: labelId }}>
       <Popover
         opened={opened && !disabled}
         onChange={setOpened}
@@ -195,7 +197,7 @@ function MotifPicker({
             fullWidth
             variant="default"
             disabled={disabled}
-            aria-label={t("Training.Settings.Motif")}
+            aria-labelledby={`${labelId} ${valueId}`}
             aria-haspopup="dialog"
             aria-expanded={opened && !disabled}
             onClick={() => setOpened((current) => !current)}
@@ -205,10 +207,10 @@ function MotifPicker({
               label: { flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis" },
             }}
           >
-            {value ? motifLabel(value, t) : allLabel}
+            <span id={valueId}>{value ? motifLabel(value, t) : allLabel}</span>
           </Button>
         </Popover.Target>
-        <Popover.Dropdown role="dialog" aria-label={t("Training.Settings.Motif")}>
+        <Popover.Dropdown role="dialog" aria-labelledby={labelId}>
           <Stack gap="sm">
             <Radio.Group
               value={activeCategory}

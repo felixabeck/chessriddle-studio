@@ -163,7 +163,10 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     dialog.getByLabel(text["Training.Settings.Difficulty"], { exact: true }),
                 ).toHaveValue(text["Training.Difficulty.Harder"]);
                 await dialog
-                    .getByRole("button", { name: text["Training.Settings.Motif"], exact: true })
+                    .getByRole("button", {
+                        name: `${text["Training.Settings.Motif"]} ${text["Training.Settings.AllMotifs"]}`,
+                        exact: true,
+                    })
                     .click();
                 const motifs = page.getByRole("dialog", {
                     name: text["Training.Settings.Motif"],
@@ -227,10 +230,10 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     .click();
                 await expect(
                     dialog.getByRole("button", {
-                        name: text["Training.Settings.Motif"],
+                        name: `${text["Training.Settings.Motif"]} ${text["Training.Motif.fork"]}`,
                         exact: true,
                     }),
-                ).toContainText(text["Training.Motif.fork"]);
+                ).toBeVisible();
                 await dialog
                     .getByRole("switch", {
                         name: text["Training.Settings.ShowSolutionLength"],
@@ -342,7 +345,8 @@ test("unknown motifs appear under Other and All motifs resets the saved selectio
     await page.getByRole("button", { name: "Puzzles", exact: true }).click();
     await page.getByRole("button", { name: "Training settings", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Training settings", exact: true });
-    const trigger = dialog.getByRole("button", { name: "Motif", exact: true });
+    const trigger = dialog.getByRole("button", { name: /^Motif / });
+    await expect(trigger).toHaveAccessibleName("Motif All motifs");
     await trigger.click();
     const picker = page.getByRole("dialog", { name: "Motif", exact: true });
     await expect(picker.getByRole("radio")).toHaveCount(7);
@@ -355,7 +359,7 @@ test("unknown motifs appear under Other and All motifs resets the saved selectio
     await assertNoHorizontalOverflow();
     await unknown.click();
     await expect(trigger).toContainText("•");
-    await expect(trigger).toContainText("Future Motif 42");
+    await expect(trigger).toHaveAccessibleName("Motif Future Motif 42");
     const saves = () =>
         page.evaluate(() =>
             window.__E2E_TAURI__
@@ -369,7 +373,7 @@ test("unknown motifs appear under Other and All motifs resets the saved selectio
     await expect(picker.getByRole("radio", { name: "All", exact: true })).toBeChecked();
     await expect(picker.getByRole("button", { name: "Pin", exact: true })).toHaveCount(0);
     await picker.getByRole("button", { name: "All motifs", exact: true }).click();
-    await expect(trigger).toContainText("All motifs");
+    await expect(trigger).toHaveAccessibleName("Motif All motifs");
     await expect
         .poll(saves)
         .toEqual([{ settings: { ...settings, motif: "futureMotif42" } }, { settings }]);
@@ -624,7 +628,10 @@ test("keyboard submit, navigation, ignored keys, next and Analyse", async ({
     await captureTraining(page, page.getByRole("dialog"), "en-US-desktop-shortcuts.png", false);
     await page.keyboard.press("Escape");
     await panel.getByRole("button", { name: "Training settings", exact: true }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Motif", exact: true }).click();
+    await page
+        .getByRole("dialog")
+        .getByRole("button", { name: "Motif All motifs", exact: true })
+        .click();
     await page.keyboard.press("Enter");
     expect(
         await page.evaluate(
