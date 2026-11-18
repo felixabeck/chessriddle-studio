@@ -25036,7 +25036,7 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 
 ### FenSearch keeps an invalid-FEN error under the field after it reverts to, or moves on to, a valid position
 
-* **ID:** f-20261112-62 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-62 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/info/FenSearch.tsx:22,30-45,52-56,121-124`: `error` is set by `addFen` on a parse failure and cleared only by a later successful `addFen`. The `currentFen` effect (`:52-56`) resets value, search and hasTyped but not `error`. `onBlur` (`:121-124`) reverts the text to `value` and leaves `error` alone. Rendered by `InfoPanel.tsx:120` and `FenInput.tsx:104`.
@@ -25045,6 +25045,9 @@ Correction to the Failure scenario example: the `!?` button's accessible name is
 - **Fix:** call `setError(undefined)` in the `currentFen` effect and in `onBlur` when reverting (or on the next `onChange`), so an error lives only while its rejected text is shown. Add a FenSearch test for blur-revert and external-position-change clearing.
 - **Proof:** ephemeral Vitest using FenSearch.test.tsx's own `setup`/`type`/`enter` harness: after Enter on `not a fen`, error `Errors.InvalidTurn` with `aria-invalid="true"`. After blur, value `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`, still with that error and `aria-invalid="true"`. After `makeMove("e4")`, value `…/4P3/… b KQkq - 0 1`, still with the error and `aria-invalid="true"`. Probe removed, tree clean.
 - **Found by:** Grok Bot general review (chunk 27)
+
+Handled 2026-11-18 (drain, lens tier). `FenSearch.tsx` now clears `error` in the `currentFen` effect (board position changed), in `onChange` (user edited the rejected text) and in `onBlur` when the field reverts to a different, committed text. When the `$create` option has made the rejected text the committed value, blur keeps that text and its error. Four FenSearch tests cover blur-revert, board move, edit and the create-option keep path. With the source fix reverted, 3 failed and the keep-path test passed, as intended. Commits 1c4695e41 (fix and tests) and 70b53f8c3 (helper renames from the push code-quality lens). Rejected alternative: clearing on every blur, which would drop the error while the create option still shows the rejected text.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"59c3b858d62282c5ea94623a33eef48dc793ac0af6d58c2eaaff407ec54381c7","header_sha256":"877fc738c276b8b50e1b5ff68380ff46c23e4bb0139d6f90f870f33fc7f7d41a","header_status":"handled","input_sha256":"2f15ec5f9126960ad145fab33f5662c67de13fb6a9164fbc500d2abcd2a8f8d2","kind":"mutation-receipt","operation":"4dad4c2c61a50f2406d1d8ef7cf3da8400d2185721981883743190d27f0a11db","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-62"],"target":"f-20261112-62","v":1} -->
 
 ---
 
