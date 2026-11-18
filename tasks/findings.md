@@ -25798,7 +25798,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Library Players and Tournaments tables cannot select a first row from the keyboard
 
-* **ID:** f-20261114-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-03 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** dfffe27f-6598-4673-8fb7-83898f979f3b
 - **Impact class:** ux
 - **Spotted outside diff:** yes
@@ -25808,6 +25808,10 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 - **Fix:** make rows focusable with an Enter (and focus) selection via `customRowAttributes`, reusing `gameRowActivation` as the siblings do, and let ArrowDown/ArrowUp with no selection pick the first/last loaded row; add keyboard tests to `PlayerTournamentTable.test.tsx`.
 - **Proof:** code trace on 988a311ca: no `customRowAttributes` in either file (`git grep customRowAttributes src/components/databases` lists only GameTable), and `getAdjacentRecordId` returns `undefined` for `currentIndex === -1`. Reported by the root-cause lens on the f-20261112-38/-59 push.
 - **Found by:** review-root-cause lens (agy), drain dfffe27f
+* **Handled 2026-11-18 (drain 28a6dd1a, commit 6c6d921cf):** Players and Tournaments rows now spread the shared `gameRowActivation(record.id, select)` contract through `customRowAttributes` (tabIndex 0, Enter selects, double-click selects) plus `aria-selected`, matching the Library Games table. The ArrowDown-with-no-selection fallback that only `GameTable` had moved into the shared `getAdjacentRecordId` (`src/components/databases/pageSelection.ts`): with no selection on the loaded page ArrowDown enters at the first row, ArrowUp stays put, edges keep the selection. All three Library tables now share one contract and `GameTable`'s inline `else` branch is gone.
+  * **Rejected:** ArrowUp with no selection picking the last row (the finding's suggestion) — `GameTable.test.tsx` already pins ArrowUp-with-no-selection as a no-op for the Games table, and diverging the three tables would split the shared contract; ArrowDown alone gives the keyboard a first selection.
+  * **Proof:** `PlayerTournamentTable.test.tsx` adds per-table tests (ArrowDown from absent/off-page selection selects the first row, ArrowUp keeps it; a focused row with tabIndex 0 selects on Enter and reflects `aria-selected`); they and the two `GameTable` ArrowDown fallback cases go red with the helper/PlayerTable reverted. Lenses correctness, root-cause, tests, code-quality, minimalism (agy, google.low) approved with no findings.
+<!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"368d6d676c5daa3231518b8245d9e1ae0a128eb550ee80e1e49df3bfd3cc5a62","header_sha256":"aef2a11bf9a452afbcb381c2df946509682d1a1db9413ac5e4ef90703f1a2283","header_status":"handled","input_sha256":"80acebc2a6839b6d1fcdf7e14060aee14bc459afcd38bb891069f56a5f70e5f9","kind":"mutation-receipt","operation":"7555c5b73014b00dceb20adf6a02be570f169dd11d4030657a03fbb8442fe108","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-03"],"target":"f-20261114-03","v":1} -->
 
 ### Windows CI: production_workspace_file_tail_finishes_after_command_caller_drop times out on its 1 s "entered" wait
 
