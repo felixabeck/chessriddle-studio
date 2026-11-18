@@ -5,7 +5,12 @@ import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
 import { SettingRow } from "./SettingsLayout";
 
 const language = vi.hoisted(() => ({ current: "en-US" }));
-const minGames = vi.hoisted(() => ({ current: 50, set: vi.fn() }));
+const minGames = vi.hoisted(() => ({
+  current: 50,
+  set: vi.fn(),
+  // Writes the atom from outside the component, as another settings surface would.
+  external: null as ((next: number) => void) | null,
+}));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -20,6 +25,7 @@ vi.mock("jotai", async () => {
   return {
     useAtom: () => {
       const [value, setValue] = useState(minGames.current);
+      minGames.external = setValue;
       return [
         value,
         (next: number) => {
@@ -48,12 +54,18 @@ vi.mock("@mantine/core", () => ({
       ))}
     </select>
   ),
-  NumberInput: ({ value, onChange, "aria-label": ariaLabel }: any) => (
+  // Mantine 8 passes a number for a complete numeric entry and the raw string
+  // for an empty, leading-zero or over-long (14+ digit) draft.
+  NumberInput: ({ value, onChange, onBlur, "aria-label": ariaLabel }: any) => (
     <input
       data-testid="custom"
       aria-label={ariaLabel}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => {
+        const text = event.target.value;
+        onChange(/^(0|[1-9]\d{0,12})$/.test(text) ? Number(text) : text);
+      }}
+      onBlur={onBlur}
     />
   ),
 }));
@@ -67,6 +79,7 @@ beforeEach(() => {
   language.current = "en-US";
   minGames.current = 50;
   minGames.set = vi.fn();
+  minGames.external = null;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -194,4 +207,41 @@ test("leaves the stored minimum alone while the custom field is empty", async ()
   expect(minGames.set).not.toHaveBeenCalled();
   expect(host.querySelector<HTMLSelectElement>("[data-testid=preset]")?.value).toBe("custom");
   expect(host.querySelector("[data-testid=custom]")).not.toBeNull();
+});
+
+test("does not store zero, a leading-zero draft or an unsafe integer", async () => {
+  minGames.current = 7;
+  await act(async () => root.render(<RepertoireMinGamesSetting />));
+
+  for (const draft of ["0", "05", "90071992547409920"]) await typeCustom(draft);
+
+  expect(minGames.set).not.toHaveBeenCalled();
+});
+
+test("shows the stored minimum again when a rejected draft loses focus", async () => {
+  minGames.current = 7;
+  await act(async () => root.render(<RepertoireMinGamesSetting />));
+
+  await typeCustom("");
+  expect(host.querySelector<HTMLInputElement>("[data-testid=custom]")?.value).toBe("");
+
+  const input = host.querySelector<HTMLInputElement>("[data-testid=custom]")!;
+  await act(async () => {
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
+
+  expect(host.querySelector<HTMLInputElement>("[data-testid=custom]")?.value).toBe("7");
+});
+
+test("follows an outside change of the minimum while a preset is selected", async () => {
+  await act(async () => root.render(<RepertoireMinGamesSetting />));
+  const select = () => host.querySelector<HTMLSelectElement>("[data-testid=preset]")?.value;
+  expect(select()).toBe("standard");
+
+  await act(async () => minGames.external!(20));
+  expect(select()).toBe("deep");
+
+  await act(async () => minGames.external!(137));
+  expect(select()).toBe("custom");
+  expect(host.querySelector<HTMLInputElement>("[data-testid=custom]")?.value).toBe("137");
 });

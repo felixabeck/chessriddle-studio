@@ -22,11 +22,15 @@ export default function RepertoireMinGamesSetting() {
   const [minGames, setMinGames] = useAtom(coverageMinGamesAtom);
   const [preset, setPreset] = useState<Preset>(() => presetFor(minGames));
 
-  // Custom stays selected while the user is in it: every keystroke in the
-  // free-entry field is written to the atom, and re-deriving the preset from an
-  // intermediate value (the "50" on the way to "500") would switch to that
-  // preset and unmount the field mid-typing. Only a change made while a preset
-  // is selected re-derives it.
+  // While the free-entry field is being typed into, the field text.
+  // `null` shows the stored minimum; blur drops a draft the atom did not take.
+  const [draft, setDraft] = useState<number | string | null>(null);
+
+  // Custom stays selected while the user is in it: each whole number typed in
+  // the free-entry field is written to the atom, and re-deriving the preset
+  // from an intermediate value (the "50" on the way to "500") would switch to
+  // that preset and unmount the field mid-typing. Only a change made while a
+  // preset is selected re-derives it.
   useEffect(() => {
     setPreset((current) => (current === "custom" ? current : presetFor(minGames)));
   }, [minGames]);
@@ -64,6 +68,7 @@ export default function RepertoireMinGamesSetting() {
         onChange={(val) => {
           const next = (val ?? "custom") as Preset;
           if (next !== "custom") setMinGames(PRESET_MIN_GAMES[next]);
+          setDraft(null);
           setPreset(next);
         }}
       />
@@ -71,13 +76,14 @@ export default function RepertoireMinGamesSetting() {
         <NumberInput
           w={100}
           aria-label={inheritedLabel}
-          value={minGames}
+          value={draft ?? minGames}
+          onBlur={() => setDraft(null)}
           onChange={(val) => {
-            // An empty or partial field is a draft, not a value: leave the
-            // stored minimum alone until the field holds a whole number >= 1.
-            const next = typeof val === "number" ? val : Number(val);
-            if (val === "" || !Number.isInteger(next) || next < 1) return;
-            setMinGames(next);
+            setDraft(val);
+            // Mantine passes a number only for a complete numeric entry; an
+            // empty, leading-zero or over-long draft arrives as a string and
+            // leaves the stored minimum alone.
+            if (typeof val === "number" && Number.isSafeInteger(val) && val >= 1) setMinGames(val);
           }}
           min={1}
           allowNegative={false}
