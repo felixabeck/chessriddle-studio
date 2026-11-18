@@ -974,7 +974,11 @@ async fn download_file_runtime<R: tauri::Runtime>(
 
 fn sanitize_download_error(error: Error) -> Error {
     match error {
-        Error::Io(source) => sanitized_download_io_error(&source),
+        Error::Io(source) => {
+            // The payload loses the native text, so log it first or the cause is lost entirely.
+            log::warn!("download I/O failure ({:?}): {source}", source.kind());
+            sanitized_download_io_error(&source)
+        }
         error => error,
     }
 }
@@ -5065,11 +5069,20 @@ mod tests {
         assert!(matches!(&result, Err(Error::Io(_))));
         let error = result.unwrap_err();
         let diagnostic = std::error::Error::source(&error).unwrap().to_string();
+        let capture = crate::error::LogCaptureScope::start();
         let sanitized = sanitize_download_error(error);
         let serialized = serde_json::to_string(&sanitized).unwrap();
         let payload: serde_json::Value = serde_json::from_str(&serialized).unwrap();
         assert_eq!(payload["message"], "I/O failure");
         assert!(!serialized.contains(&diagnostic));
+        // The renderer payload is redacted, but the native log keeps the cause.
+        assert!(
+            capture
+                .records()
+                .iter()
+                .any(|record| record.level == log::Level::Warn
+                    && record.message.contains(&diagnostic))
+        );
         assert!(leaves(parent.path()).is_empty());
     }
 
@@ -12444,6 +12457,13 @@ mod tests {
         for boundary in ["publication", "application", "acknowledgement"] {
             // The retained failure payload is redacted; the native diagnostic is only logged.
             let capture = crate::error::LogCaptureScope::start();
+            let logged = || -> Vec<String> {
+                capture
+                    .records()
+                    .into_iter()
+                    .map(|record| format!("{}: {}", record.level, record.message))
+                    .collect()
+            };
             let dir = tempdir().unwrap();
             let authority =
                 crate::infra::path_authority::PathAuthority::open_for_engine_test(dir.path())
@@ -12530,7 +12550,11 @@ mod tests {
                 app.unlisten(listener);
                 assert!(acknowledged.load(Ordering::SeqCst));
                 assert!(state.operations.engine_completion(&id, "main").is_err());
-                assert!(matches!(terminal.outcome, CompletionOutcome::Succeeded(_)));
+                assert!(
+                    matches!(terminal.outcome, CompletionOutcome::Succeeded(_)),
+                    "native engine workflow did not succeed at {boundary}: {terminal:?}\nlogged: {:#?}",
+                    logged()
+                );
                 state.engine_supervisor.terminate_all().await.unwrap();
                 continue;
             }
@@ -12583,13 +12607,9 @@ mod tests {
             .unwrap());
             let snapshot = state.operations.engine_completion(&id, "main").unwrap();
             let CompletionOutcome::Succeeded(installed) = snapshot.outcome else {
-                let logged: Vec<String> = capture
-                    .records()
-                    .into_iter()
-                    .map(|record| format!("{}: {}", record.level, record.message))
-                    .collect();
                 panic!(
-                    "native engine workflow did not retain success at {boundary}: {snapshot:?}\nlogged: {logged:#?}"
+                    "native engine workflow did not retain success at {boundary}: {snapshot:?}\nlogged: {:#?}",
+                    logged()
                 )
             };
             assert_eq!(installed.config.name, "Reload Engine");
