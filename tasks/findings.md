@@ -25136,7 +25136,7 @@ Handled in a2d06726a. `EvalChart` now builds the WDL tooltip as three lines (`wd
 
 ### Training settings: the motif picker button's aria-label hides the selected motif from assistive technology
 
-* **ID:** f-20261112-67 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-67 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/chessriddle/TrainingSettings.tsx:194-209`: the `Popover.Target` button sets `aria-label={t("Training.Settings.Motif")}` and renders the current choice (`motifLabel(value, t)` or `t("Training.Settings.AllMotifs")`) only as its visible text child (`:208`). The motif icon is `aria-hidden` (`:202`).
@@ -25145,6 +25145,9 @@ Handled in a2d06726a. `EvalChart` now builds the WDL tooltip as three lines (`wd
 - **Fix:** drop the `aria-label` and let the visible text be the name, with the `Input.Wrapper` label linked via `aria-labelledby` (wrapper label id plus the button's own text id). Or set `aria-label={`${t("Training.Settings.Motif")}: ${currentLabel}`}`. Add a TrainingSettings test asserting the button's accessible name contains the selected motif label.
 - **Proof:** code trace on origin/master d30eb171f. The button carries an explicit `aria-label` (`:198`), which per accname overrides the subtree text (`:208`), and the only other ARIA on it is `aria-haspopup`/`aria-expanded` (`:199-200`). The `Input.Wrapper` label (`:184`) is not associated with the button: no `id`/`aria-labelledby` pairing, and Mantine's wrapper label targets `inputProps.id`, which is not passed. No probe needed; tree unchanged.
 - **Found by:** Grok Bot general review (chunk 27)
+
+**Handled 2026-11-18 (07a248aff):** the motif picker's `Popover.Target` button no longer carries `aria-label`. It is now `aria-labelledby` the `Input.Wrapper` label (`labelProps.id`) plus a span holding its own value text, so it is announced as "Motif Fork" / "Motif All motifs". The `Popover.Dropdown` dialog now uses `aria-labelledby={labelId}`. Mantine labels the dropdown with the target id by default, and once the target lost its `aria-label` the dialog was named after the value ("All motifs"), which the first e2e run caught. Test: `e2e/chessriddle-training.spec.ts` asserts the trigger's accessible name (`toHaveAccessibleName` / exact role name) before and after a selection, in both locales and across the three layouts. Fix-revert proof: with the source change reverted, 8 of 38 specs fail; with it, 38/38 pass (container run). Rejected alternative: a concatenated `aria-label` such as `${Motif}: ${value}`, because it builds a sentence by string concatenation outside i18n, and the visible label already exists to reference. Sibling f-20261112-69 (same pattern on `SettingsCombobox`) stays open at `lens`.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"cbd6e6c1cb1e9e740bc7ad88dab1167aa15e988a60066592e7466a337dce7b7b","header_sha256":"c627662a6a87041d38ad48b3fcbf5c9c3b1600e27199d5bddc9c9ec5d6951ef8","header_status":"handled","input_sha256":"ca22bd03acb5018e04ffeb477a0359de3a18a5db41cd59f7a215c50a30916ffe","kind":"mutation-receipt","operation":"ea03a37aea3da7c110351ad7fa63af453bd906f24475890127c582e0faed2117","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-67"],"target":"f-20261112-67","v":1} -->
 
 ---
 
