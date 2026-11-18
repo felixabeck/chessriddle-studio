@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Remis",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*på grunn av 50-trekksregelen",
     "Board.Analysis.Tablebase.WhiteWins": "Hvit vinner",
+    "Board.Analysis.ThreatMode": "Trussel",
+    "Board.Analysis.ThreatModeHint": "Motoren lar siden i trekket stå over og viser hva motstanderen ville spilt. Disse vurderingene er ikke vurderingen av stillingen.",
     "Board.Analysis.Unpin": "Løsne motor",
     "Board.Analysis.WDL.Black": "Svart: {{percent}}",
     "Board.Analysis.WDL.Draw": "Remis: {{percent}}",

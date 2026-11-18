@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Nulle",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*en raison de la règle des 50 coups",
     "Board.Analysis.Tablebase.WhiteWins": "Victoire des blancs",
+    "Board.Analysis.ThreatMode": "Menace",
+    "Board.Analysis.ThreatModeHint": "Le moteur fait passer le camp au trait et montre ce que l'adversaire jouerait ensuite. Ces évaluations ne sont pas l'évaluation de la position.",
     "Board.Analysis.Unpin": "Désépingler le moteur",
     "Board.Analysis.WDL.Black": "Noirs : {{percent}}",
     "Board.Analysis.WDL.Draw": "Nulle : {{percent}}",

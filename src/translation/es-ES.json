@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Tablas",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*por la regla de las 50 jugadas",
     "Board.Analysis.Tablebase.WhiteWins": "Ganan las blancas",
+    "Board.Analysis.ThreatMode": "Amenaza",
+    "Board.Analysis.ThreatModeHint": "El motor hace pasar al bando que mueve y muestra lo que el rival jugaría a continuación. Estas evaluaciones no son la evaluación de la posición.",
     "Board.Analysis.Unpin": "Desfijar motor",
     "Board.Analysis.WDL.Black": "Negras: {{percent}}",
     "Board.Analysis.WDL.Draw": "Tablas: {{percent}}",

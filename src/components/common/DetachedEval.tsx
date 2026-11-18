@@ -21,6 +21,7 @@ import LinesSlider, { LINE_COUNT_OPTIONS } from "../panels/analysis/LinesSlider"
 import { useDisplayedEngineLines } from "../panels/analysis/useDisplayedEngineLines";
 import { useTabEngineSettings } from "../panels/analysis/useTabEngineSettings";
 import { EngineScoreBubble } from "../panels/analysis/ScoreBubble";
+import { ThreatBadge } from "../panels/analysis/ThreatBadge";
 import classes from "./DetachedEval.module.css";
 import IconAction from "./IconAction";
 import { TreeStateContext } from "./TreeStateContext";
@@ -117,6 +118,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
           <Text fw={700} fz="sm" style={{ whiteSpace: "nowrap" }}>
             {engine.name}
           </Text>
+          {threat && <ThreatBadge />}
           {failure && (
             <Text fz="xs" c="danger" role="status">
               {t("Board.Analysis.EngineFailed")}

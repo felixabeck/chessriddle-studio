@@ -45,6 +45,7 @@ import AnalysisRow from "./AnalysisRow";
 import AssessmentSymbol from "./AssessmentSymbol";
 import classes from "./BestMoves.module.css";
 import EngineSettingsForm from "./EngineSettingsForm";
+import { ThreatBadge } from "./ThreatBadge";
 import { engineFailureMessage, useDisplayedEngineLines } from "./useDisplayedEngineLines";
 import { useTabEngineSettings } from "./useTabEngineSettings";
 
@@ -107,7 +108,9 @@ function BestMovesComponent({
       style={{
         "--cf-engine-status":
           settings.enabled && !isGameOver && !failure
-            ? `var(--mantine-color-${id < 4 ? arrowColors[id].strong : theme.primaryColor}-6)`
+            ? threat
+              ? "var(--cf-destructive)"
+              : `var(--mantine-color-${id < 4 ? arrowColors[id].strong : theme.primaryColor}-6)`
             : "var(--cf-border-strong)",
       }}
     >
@@ -143,6 +146,7 @@ function BestMovesComponent({
             loading={loading}
             dimmed={dimmed}
             failed={failure !== null}
+            threat={threat}
           />
         </Accordion.Control>
         <Group gap={0}>
@@ -332,6 +336,7 @@ function EngineTop({
   loading,
   dimmed,
   failed,
+  threat,
 }: {
   name: string;
   showNodes: boolean;
@@ -343,6 +348,7 @@ function EngineTop({
   loading: boolean;
   dimmed: boolean;
   failed: boolean;
+  threat: boolean;
 }) {
   const { t } = useTranslation();
   const isComputed = engineVariations && engineVariations.length > 0;
@@ -356,6 +362,7 @@ function EngineTop({
         <Text fw={600} fz="sm" lineClamp={1}>
           {name}
         </Text>
+        {threat && <ThreatBadge />}
         {loading && enabled && !isGameOver && !error && <Code fz="xs">{t("Common.Loading")}</Code>}
         {showNodes &&
           progress < 100 &&

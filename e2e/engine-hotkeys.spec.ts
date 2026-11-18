@@ -131,10 +131,14 @@ test("X toggles the Crosshair state and Shift+C navigates to the previous branch
 }) => {
     const { panel, current } = await setup(page);
     const threat = panel.getByRole("button", { name: "Check the opponent's threat", exact: true });
+    const badge = panel.getByTestId("threat-badge");
+    await expect(badge).toHaveCount(0);
     await page.keyboard.press("x");
     await expect(threat).toHaveAttribute("aria-pressed", "true");
+    await expect(badge).toHaveText("Threat");
     await page.keyboard.press("x");
     await expect(threat).toHaveAttribute("aria-pressed", "false");
+    await expect(badge).toHaveCount(0);
     await playBoardMove(page, page.locator("cg-board"), "d2", "d4");
     await expect(current).toHaveText("d4");
     await page.getByRole("button", { name: "Go to start", exact: true }).click();

@@ -2,7 +2,7 @@ import { Tooltip } from "@mantine/core";
 import type { ReactElement } from "react";
 
 /**
- * A text button with a hover explanation of what it does. A disabled button
+ * A text button or label with a hover explanation of what it does or means. A disabled button
  * swallows pointer events, so it is wrapped in a span to keep the explanation
  * reachable, the same way `@/components/common/IconAction` does.
  */

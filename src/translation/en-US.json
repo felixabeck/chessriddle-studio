@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Draw",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*due to the 50-move rule",
     "Board.Analysis.Tablebase.WhiteWins": "White wins",
+    "Board.Analysis.ThreatMode": "Threat",
+    "Board.Analysis.ThreatModeHint": "The engine lets the side to move pass and shows what the opponent would play next. These evaluations are not the evaluation of the position.",
     "Board.Analysis.Unpin": "Unpin engine",
     "Board.Analysis.WDL.Black": "Black: {{percent}}",
     "Board.Analysis.WDL.Draw": "Draw: {{percent}}",

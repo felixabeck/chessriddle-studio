@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Ничья",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*из-за правила 50 ходов",
     "Board.Analysis.Tablebase.WhiteWins": "Выигрыш белых",
+    "Board.Analysis.ThreatMode": "Угроза",
+    "Board.Analysis.ThreatModeHint": "Движок пропускает ход стороны, которая ходит, и показывает, что сыграл бы соперник. Эти оценки не являются оценкой позиции.",
     "Board.Analysis.Unpin": "Открепить движок",
     "Board.Analysis.WDL.Black": "Чёрные: {{percent}}",
     "Board.Analysis.WDL.Draw": "Ничья: {{percent}}",

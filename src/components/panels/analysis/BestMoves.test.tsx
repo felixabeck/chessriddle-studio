@@ -483,6 +483,23 @@ test("unavailable threat uses the shipped empty state and idles every loading af
   expect(h.host.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("65");
 });
 
+test("threat mode labels the card and switches its accent to the threat colour", async () => {
+  await h.remember();
+  await h.render(panel());
+  const card = () => h.host.querySelector<HTMLElement>("[style*='--cf-engine-status']")!;
+  expect(h.host.querySelector('[data-testid="threat-badge"]')).toBeNull();
+  expect(card().style.getPropertyValue("--cf-engine-status")).toBe("var(--mantine-color-blue-6)");
+  await act(async () => h.store.set(threatFamily("display-tab"), true));
+  expect(h.host.querySelector('[data-testid="threat-badge"]')?.textContent).toBe(
+    "Board.Analysis.ThreatMode",
+  );
+  expect(card().style.getPropertyValue("--cf-engine-status")).toBe("var(--cf-destructive)");
+  await act(async () => h.store.set(h.settingsAtom, (s: Settings) => ({ ...s, enabled: false })));
+  expect(card().style.getPropertyValue("--cf-engine-status")).toBe("var(--cf-border-strong)");
+  await act(async () => h.store.set(threatFamily("display-tab"), false));
+  expect(h.host.querySelector('[data-testid="threat-badge"]')).toBeNull();
+});
+
 test("threat rows use the shared searched board once and keep its numbering anchor during fallback", async () => {
   const fen = "4k3/3p4/8/4P3/8/8/8/4K3 b - - 0 7";
   const source = analysisSearch(fen, ["d7d5"], true);

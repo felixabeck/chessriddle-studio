@@ -41,6 +41,7 @@ import EngineSelection from "./EngineSelection";
 import LogsPanel from "./LogsPanel";
 import ReportPanel from "./ReportPanel";
 import { EngineScoreBubble } from "./ScoreBubble";
+import { ThreatBadge } from "./ThreatBadge";
 import TablebaseInfo from "./TablebaseInfo";
 import { useDisplayedEngineLines } from "./useDisplayedEngineLines";
 import classes from "./AnalysisPanel.module.css";
@@ -322,7 +323,7 @@ export function EngineSummary({
   i: number;
 }) {
   const { t } = useTranslation();
-  const { lines: curEval, dimmed, failure } = useDisplayedEngineLines(engine, fen, moves);
+  const { lines: curEval, dimmed, failure, threat } = useDisplayedEngineLines(engine, fen, moves);
   const score = curEval && curEval.length > 0 ? curEval[0].score : null;
 
   return (
@@ -351,6 +352,7 @@ export function EngineSummary({
             {t("Board.Analysis.EngineFailed")}
           </Text>
         )}
+        {threat && <ThreatBadge compact />}
         {score ? (
           <Group opacity={dimmed ? 0.5 : 1} inert={dimmed}>
             <EngineScoreBubble engineId={engine.id} size="sm" score={score} inert={dimmed} />

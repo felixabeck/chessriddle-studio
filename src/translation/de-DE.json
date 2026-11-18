@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Remis",
     "Board.Analysis.Tablebase.FiftyMoveRule": "50-Züge-Regel",
     "Board.Analysis.Tablebase.WhiteWins": "Weiß gewinnt",
+    "Board.Analysis.ThreatMode": "Drohung",
+    "Board.Analysis.ThreatModeHint": "Die Engine lässt die Seite am Zug aussetzen und zeigt, was der Gegner als Nächstes spielen würde. Diese Bewertungen sind nicht die Bewertung der Stellung.",
     "Board.Analysis.Unpin": "Engine lösen",
     "Board.Analysis.WDL.Black": "Schwarz: {{percent}}",
     "Board.Analysis.WDL.Draw": "Remis: {{percent}}",

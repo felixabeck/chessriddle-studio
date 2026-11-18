@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Empate",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*devido à regra dos 50 lances",
     "Board.Analysis.Tablebase.WhiteWins": "As brancas vencem",
+    "Board.Analysis.ThreatMode": "Ameaça",
+    "Board.Analysis.ThreatModeHint": "O motor faz passar o lado que joga e mostra o que o adversário jogaria a seguir. Estas avaliações não são a avaliação da posição.",
     "Board.Analysis.Unpin": "Desafixar motor",
     "Board.Analysis.WDL.Black": "Pretas: {{percent}}",
     "Board.Analysis.WDL.Draw": "Empate: {{percent}}",

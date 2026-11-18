@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Нічыя",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*праз правіла 50 хадоў",
     "Board.Analysis.Tablebase.WhiteWins": "Белыя перамагаюць",
+    "Board.Analysis.ThreatMode": "Пагроза",
+    "Board.Analysis.ThreatModeHint": "Рухавік прапускае ход боку, які ходзіць, і паказвае, што згуляў бы сапернік. Гэтыя адзнакі не з'яўляюцца адзнакай пазіцыі.",
     "Board.Analysis.Unpin": "Адмацаваць рухавік",
     "Board.Analysis.WDL.Black": "Чорныя: {{percent}}",
     "Board.Analysis.WDL.Draw": "Нічыя: {{percent}}",

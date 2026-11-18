@@ -187,13 +187,18 @@ test("EngineSummary clears historical threat evaluation while unavailable and re
   );
   await h.render(summary([]));
   expect(h.host.textContent).toContain("0.34");
+  const badge = () => h.host.querySelector('[role="img"][aria-label="Board.Analysis.ThreatMode"]');
+  expect(badge()).not.toBeNull();
   await h.render(summary(["e2e4", "d7d5", "f1b5"]));
+  expect(badge()).not.toBeNull();
   expect(h.host.textContent).toContain("???");
   expect(h.host.textContent).not.toContain("0.34");
   expect(h.host.textContent).not.toContain("Board.Analysis.EngineFailed");
   expect(h.host.querySelector("[inert]")).toBeNull();
   await h.render(summary([]));
   expect(h.host.textContent).toContain("0.34");
+  await act(async () => h.store.set(threatFamily("display-tab"), false));
+  expect(badge()).toBeNull();
 });
 
 test.each([false, true])(

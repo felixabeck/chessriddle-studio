@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Remis",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*z powodu reguły 50 posunięć",
     "Board.Analysis.Tablebase.WhiteWins": "Białe wygrywają",
+    "Board.Analysis.ThreatMode": "Groźba",
+    "Board.Analysis.ThreatModeHint": "Silnik pomija ruch strony na posunięciu i pokazuje, co zagrałby przeciwnik. Te oceny nie są oceną pozycji.",
     "Board.Analysis.Unpin": "Odepnij silnik",
     "Board.Analysis.WDL.Black": "Czarne: {{percent}}",
     "Board.Analysis.WDL.Draw": "Remis: {{percent}}",

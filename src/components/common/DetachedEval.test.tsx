@@ -63,8 +63,11 @@ test("DetachedEval drops historical threat PV and score in check and restores le
     </TreeStateContext.Provider>,
   );
   expect(h.host.textContent).toContain(THREAT_LINE);
+  expect(h.host.querySelector('[data-testid="threat-badge"]')).not.toBeNull();
   await act(async () => tree.getState().makeMoves({ payload: ["e4", "d5", "Bb5+"] }));
   expect(h.host.textContent).toContain("—");
+  // The mode stays on while its lines are unavailable in check, so the label stays too.
+  expect(h.host.querySelector('[data-testid="threat-badge"]')).not.toBeNull();
   expect(h.host.textContent).not.toContain(THREAT_LINE);
   expect(h.host.textContent).not.toContain("0.34");
   expect(h.host.textContent).not.toContain("Board.Analysis.EngineFailed");
@@ -72,6 +75,8 @@ test("DetachedEval drops historical threat PV and score in check and restores le
   await act(async () => tree.getState().goToStart());
   expect(h.host.textContent).toContain(THREAT_LINE);
   expect(h.store.get(threatFamily("display-tab"))).toBe(true);
+  await act(async () => h.store.set(threatFamily("display-tab"), false));
+  expect(h.host.querySelector('[data-testid="threat-badge"]')).toBeNull();
   tree.dispose();
 });
 test("DetachedEval uses the shared dimmed fallback and replaces it with current lines", async () => {

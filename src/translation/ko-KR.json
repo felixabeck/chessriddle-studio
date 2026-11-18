@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "무승부",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*50수 규칙 때문에",
     "Board.Analysis.Tablebase.WhiteWins": "백 승",
+    "Board.Analysis.ThreatMode": "위협",
+    "Board.Analysis.ThreatModeHint": "엔진이 둘 차례인 쪽의 수를 건너뛰고 상대가 다음에 둘 수를 보여 줍니다. 이 평가는 현재 국면의 평가가 아닙니다.",
     "Board.Analysis.Unpin": "엔진 고정 해제",
     "Board.Analysis.WDL.Black": "흑: {{percent}}",
     "Board.Analysis.WDL.Draw": "무승부: {{percent}}",

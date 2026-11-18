@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Patta",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*regola delle 50 mosse",
     "Board.Analysis.Tablebase.WhiteWins": "Bianco vince",
+    "Board.Analysis.ThreatMode": "Minaccia",
+    "Board.Analysis.ThreatModeHint": "Il motore fa passare il lato al tratto e mostra cosa giocherebbe l'avversario. Queste valutazioni non sono la valutazione della posizione.",
     "Board.Analysis.Unpin": "Sgancia motore",
     "Board.Analysis.WDL.Black": "Nero: {{percent}}",
     "Board.Analysis.WDL.Draw": "Patta: {{percent}}",

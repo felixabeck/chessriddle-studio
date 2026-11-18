@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Berabere",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*50 hamle kuralı nedeniyle",
     "Board.Analysis.Tablebase.WhiteWins": "Beyaz kazanır",
+    "Board.Analysis.ThreatMode": "Tehdit",
+    "Board.Analysis.ThreatModeHint": "Motor, hamle sırası olan tarafa pas geçtirir ve rakibin sıradaki hamlesini gösterir. Bu değerlendirmeler konumun değerlendirmesi değildir.",
     "Board.Analysis.Unpin": "Motor sabitlemesini kaldır",
     "Board.Analysis.WDL.Black": "Siyah: {{percent}}",
     "Board.Analysis.WDL.Draw": "Berabere: {{percent}}",

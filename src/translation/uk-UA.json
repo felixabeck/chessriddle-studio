@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "Нічия",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*через правило 50 ходів",
     "Board.Analysis.Tablebase.WhiteWins": "Виграють білі",
+    "Board.Analysis.ThreatMode": "Загроза",
+    "Board.Analysis.ThreatModeHint": "Рушій пропускає хід сторони, яка ходить, і показує, що зіграв би суперник. Ці оцінки не є оцінкою позиції.",
     "Board.Analysis.Unpin": "Відкріпити рушій",
     "Board.Analysis.WDL.Black": "Чорні: {{percent}}",
     "Board.Analysis.WDL.Draw": "Нічия: {{percent}}",

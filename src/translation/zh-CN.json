@@ -106,6 +106,8 @@
     "Board.Analysis.Tablebase.Draw": "和棋",
     "Board.Analysis.Tablebase.FiftyMoveRule": "*因五十步规则",
     "Board.Analysis.Tablebase.WhiteWins": "白胜",
+    "Board.Analysis.ThreatMode": "威胁",
+    "Board.Analysis.ThreatModeHint": "引擎让走棋方停一步，显示对手接下来会走的着法。这些评估不是当前局面的评估。",
     "Board.Analysis.Unpin": "取消固定引擎",
     "Board.Analysis.WDL.Black": "黑方：{{percent}}",
     "Board.Analysis.WDL.Draw": "和棋：{{percent}}",
