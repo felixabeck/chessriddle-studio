@@ -190,18 +190,21 @@ impl DatabaseSchemaIdentity {
     }
 }
 
+/// Shared SQLite busy timeout (ms) for pooled connections and waiting schema probes.
+pub(crate) const CONNECTION_BUSY_TIMEOUT_MS: u64 = 30_000;
+
 impl diesel::r2d2::CustomizeConnection<SqliteConnection, diesel::r2d2::Error>
     for ConnectionOptions
 {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
         (|| {
             name_identity::register(conn)?;
-            conn.batch_execute(
-                "PRAGMA busy_timeout = 30000;\
+            conn.batch_execute(&format!(
+                "PRAGMA busy_timeout = {CONNECTION_BUSY_TIMEOUT_MS};\
                  PRAGMA foreign_keys = ON;\
                  PRAGMA journal_mode = WAL;\
                  PRAGMA synchronous = FULL;",
-            )?;
+            ))?;
             Ok(())
         })()
         .map_err(diesel::r2d2::Error::QueryError)

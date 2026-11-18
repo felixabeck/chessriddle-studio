@@ -48,6 +48,7 @@ use crate::error::{
 use super::{
     bound_sqlite::{BoundDatabase, SqliteMode, VanishedWal},
     migrations, ConnectionOptions, DatabaseSchemaIdentity, RegularFileMetadata,
+    CONNECTION_BUSY_TIMEOUT_MS,
 };
 
 const MAX_OPEN_DATABASES: usize = 16;
@@ -82,7 +83,7 @@ const POOL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 const METADATA_READ_BUSY_TIMEOUT_MS: u64 = 1000;
 #[cfg(test)]
 const SHORT_POOL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
-// Must exceed `PRAGMA busy_timeout = 30000` in `db/mod.rs` so an ordinary
+// Must exceed `CONNECTION_BUSY_TIMEOUT_MS` in `db/mod.rs` so an ordinary
 // contended write completes rather than tripping retirement.
 const RETIRE_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const RETIRE_CANCELLATION_POLL: Duration = Duration::from_millis(25);
@@ -1047,9 +1048,12 @@ impl DatabaseRepository {
                             )
                         })?;
                 let mut connection = lifetime.wrap(connection);
-                connection.batch_execute(&format!(
-                    "PRAGMA busy_timeout = {METADATA_READ_BUSY_TIMEOUT_MS};"
-                ))?;
+                let busy_timeout_ms = if report_busy {
+                    METADATA_READ_BUSY_TIMEOUT_MS
+                } else {
+                    CONNECTION_BUSY_TIMEOUT_MS
+                };
+                connection.batch_execute(&format!("PRAGMA busy_timeout = {busy_timeout_ms};"))?;
                 drop(admission);
                 let needs_upgrade = match migrations::needs_upgrade(&mut connection) {
                     Ok(needs_upgrade) => needs_upgrade,
@@ -4124,6 +4128,48 @@ mod upgrade_tests {
         assert!(started.elapsed() < Duration::from_secs(10));
         raw.execute_batch("ROLLBACK").unwrap();
         assert!(matches!(case.info(), DatabaseInfoResult::Ready(_)));
+    }
+
+    #[test]
+    fn waiting_connection_outlasts_a_foreign_exclusive_lock_longer_than_the_metadata_budget() {
+        let case = Case::new(false);
+        {
+            let raw = rusqlite::Connection::open(&case.path).unwrap();
+            let journal_mode: String = raw
+                .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(
+                journal_mode.to_ascii_lowercase(),
+                "delete",
+                "EXCLUSIVE locks only block readers outside WAL mode"
+            );
+        }
+
+        let repository = case.repository();
+        let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let holder = Arc::new(ParkingMutex::new(None));
+        let hook_fired = Arc::clone(&fired);
+        let hook_holder = Arc::clone(&holder);
+        let hook_path = case.path.clone();
+        *repository.schema_probe_test_hook.lock() = Some(Arc::new(move || {
+            if hook_fired.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let raw = rusqlite::Connection::open(&hook_path).unwrap();
+            raw.execute_batch("BEGIN EXCLUSIVE").unwrap();
+            let join = std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(3));
+                let _ = raw.execute_batch("ROLLBACK");
+            });
+            *hook_holder.lock() = Some(join);
+        }));
+
+        let result = repository.connection(&test_target(&case.path), None);
+        if let Some(join) = holder.lock().take() {
+            join.join().unwrap();
+        }
+        assert!(fired.load(Ordering::SeqCst));
+        result.unwrap();
     }
 
     #[test]
