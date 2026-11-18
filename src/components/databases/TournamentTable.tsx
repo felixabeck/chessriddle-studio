@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
 import { type Event, type TournamentSort } from "@/bindings";
+import { gameRowActivation } from "@/components/common/gameOpen";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { NAME_SEARCH_DEBOUNCE_MS } from "@/utils/db";
@@ -82,6 +83,10 @@ function TournamentTable() {
           highlightOnHover
           records={tournaments}
           fetching={isLoading}
+          customRowAttributes={(record) => ({
+            ...gameRowActivation(record.id, (id) => void setSelected(id)),
+            "aria-selected": record.id === selected,
+          })}
           columns={[
             { accessor: "name", title: t("Common.Name"), sortable: true },
             {

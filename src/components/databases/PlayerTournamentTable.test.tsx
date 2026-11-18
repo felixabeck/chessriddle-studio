@@ -45,11 +45,13 @@ vi.mock("mantine-datatable", () => ({
   DataTable: ({
     records,
     onRowClick,
+    customRowAttributes,
     sortStatus,
     onSortStatusChange,
   }: {
     records: Array<{ id: number }>;
     onRowClick: (row: { index: number }) => void;
+    customRowAttributes?: (record: { id: number }) => Record<string, unknown>;
     sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
     onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
   }) => {
@@ -57,9 +59,14 @@ vi.mock("mantine-datatable", () => ({
     return (
       <div>
         {records.map((record, index) => (
-          <button key={record.id} onClick={() => onRowClick({ index })}>
+          <div
+            key={record.id}
+            data-row
+            {...customRowAttributes?.(record)}
+            onClick={() => onRowClick({ index })}
+          >
             {record.id}
-          </button>
+          </div>
         ))}
       </div>
     );
@@ -157,6 +164,10 @@ describe.each([
     );
   }
 
+  function rows() {
+    return host.querySelectorAll<HTMLElement>("[data-row]");
+  }
+
   async function press(key: "ArrowUp" | "ArrowDown") {
     await act(async () => {
       expect(() => mocks.hotkeys.get(key)!()).not.toThrow();
@@ -203,21 +214,43 @@ describe.each([
   test("navigation follows selection changes from row clicks", async () => {
     select(page[12].id);
     await render();
-    await act(async () => host.querySelectorAll("button")[3].click());
+    await act(async () => rows()[3].click());
     expect(selected()).toBe(page[3].id);
     await press("ArrowDown");
     expect(selected()).toBe(page[4].id);
-    await act(async () => host.querySelectorAll("button")[8].click());
+    await act(async () => rows()[8].click());
     await press("ArrowUp");
     expect(selected()).toBe(page[7].id);
   });
 
-  test.each([undefined, 9999])("arrows preserve absent selection %s", async (id) => {
-    select(id);
+  test.each([undefined, 9999])(
+    "ArrowUp keeps absent selection %s and ArrowDown selects the first row",
+    async (id) => {
+      select(id);
+      await render();
+      await press("ArrowUp");
+      expect(selected()).toBe(id);
+      await press("ArrowDown");
+      expect(selected()).toBe(page[0].id);
+      expect(host.querySelector("output")?.textContent).toBe(String(page[0].id));
+      expect(rows()[0].getAttribute("aria-selected")).toBe("true");
+    },
+  );
+
+  test("rows are focusable and Enter on a focused row selects it", async () => {
+    select(undefined);
     await render();
-    await press("ArrowDown");
-    await press("ArrowUp");
-    expect(selected()).toBe(id);
+    const row = rows()[5];
+    expect(row.tabIndex).toBe(0);
+    row.focus();
+    expect(document.activeElement).toBe(row);
+    await act(async () => {
+      row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(selected()).toBe(page[5].id);
+    expect(host.querySelector("output")?.textContent).toBe(String(page[5].id));
+    expect(row.getAttribute("aria-selected")).toBe("true");
+    expect(rows()[4].getAttribute("aria-selected")).toBe("false");
   });
 
   test("arrows preserve selection when the loaded page is empty", async () => {

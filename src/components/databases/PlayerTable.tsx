@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
 import type { Player, PlayerSort } from "@/bindings";
+import { gameRowActivation } from "@/components/common/gameOpen";
 import { IconAction } from "@/components/common/IconAction";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
@@ -125,6 +126,10 @@ function PlayerTable() {
           highlightOnHover
           records={players}
           fetching={isLoading}
+          customRowAttributes={(record) => ({
+            ...gameRowActivation(record.id, (id) => void setSelectedPlayer(id)),
+            "aria-selected": record.id === selectedPlayer,
+          })}
           columns={[
             { accessor: "name", title: t("Common.Name"), sortable: true },
             {

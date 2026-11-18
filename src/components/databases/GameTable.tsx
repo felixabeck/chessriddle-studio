@@ -110,7 +110,6 @@ function GameTable() {
       () => {
         const id = getAdjacentRecordId(games, selectedGameId, 1);
         if (id != null) setSelectedGameId(id);
-        else if (!game && games[0]) setSelectedGameId(games[0].id);
       },
     ],
   ]);
