@@ -15,6 +15,7 @@ import { getMainLine } from "@/utils/chess";
 import ReportPanel from "./ReportPanel";
 
 const mocks = vi.hoisted(() => ({
+  t: vi.fn((key: string, _options?: Record<string, unknown>) => key),
   activeTabAtom: Symbol("activeTabAtom"),
   enginesAtom: Symbol("enginesAtom"),
   referenceDbAtom: Symbol("referenceDbAtom"),
@@ -66,7 +67,7 @@ const mocks = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: mocks.t }) }));
 vi.mock("@/hooks/useProgress", () => ({
   useProgress: (id: string) => {
     mocks.progressId = id;
@@ -390,10 +391,27 @@ test("annotation counts are labelled buttons that jump to the move; zero counts 
   );
   expect(white?.textContent).toBe("2");
   expect(black?.textContent).toBe("1");
-  // Every other count is zero and offers no control.
-  expect(host.querySelectorAll("button[aria-label^='Board.Analysis.NextAnnotation']")).toHaveLength(
-    2,
-  );
+  expect(mocks.t).toHaveBeenCalledWith("Board.Analysis.NextAnnotationByWhite", {
+    annotation: "Annotate.Blunder",
+    total: 2,
+  });
+  expect(mocks.t).toHaveBeenCalledWith("Board.Analysis.NextAnnotationByBlack", {
+    annotation: "Annotate.Blunder",
+    total: 1,
+  });
+  // The ten zero counts (five other annotations, both sides) are text, never controls.
+  const buttons = [...host.querySelectorAll("button")];
+  expect(buttons.filter((button) => button.textContent === "0")).toEqual([]);
+  expect(
+    buttons.filter((button) =>
+      button.getAttribute("aria-label")?.startsWith("Board.Analysis.NextAnnotation"),
+    ),
+  ).toHaveLength(2);
+  expect(
+    [...host.querySelectorAll("div")].filter(
+      (cell) => cell.childElementCount === 0 && cell.textContent === "0",
+    ),
+  ).toHaveLength(10);
 
   await act(async () => white!.click());
   expect(store.getState().position).toEqual([0, 0, 0]);
@@ -401,6 +419,25 @@ test("annotation counts are labelled buttons that jump to the move; zero counts 
   expect(store.getState().position).toEqual([0, 0, 0, 0, 0]);
   await act(async () => black!.click());
   expect(store.getState().position).toEqual([0, 0]);
+});
+
+test("the shipped en-US catalogue names the count buttons in full", async () => {
+  const { createInstance } = await import("i18next");
+  const { default: enUS } = await import("@/translation/en-US.json");
+  const i18n = createInstance();
+  await i18n.init({
+    lng: "en-US",
+    fallbackLng: false,
+    keySeparator: false,
+    nsSeparator: false,
+    resources: { "en-US": enUS },
+  });
+  expect(i18n.t("Board.Analysis.NextAnnotationByWhite", { annotation: "Blunder", total: 2 })).toBe(
+    "Go to White's next Blunder (2 total)",
+  );
+  expect(i18n.t("Board.Analysis.NextAnnotationByBlack", { annotation: "Blunder", total: 1 })).toBe(
+    "Go to Black's next Blunder (1 total)",
+  );
 });
 
 test("ProgressButton subscribes to the registered operation id without treating success as complete", async () => {

@@ -188,14 +188,14 @@ const GameStats = memo(
               const { name, color, translationKey } = ANNOTATION_INFO[s];
               const w = whiteAnnotations[s];
               const b = blackAnnotations[s];
-              const label = translationKey ? t(`Annotate.${translationKey}`) : name;
+              const annotationName = translationKey ? t(`Annotate.${translationKey}`) : name;
               return (
                 <React.Fragment key={annotation}>
                   <AnnotationCount
                     annotation={s}
                     side="white"
                     total={w}
-                    label={label}
+                    annotationName={annotationName}
                     goToAnnotation={goToAnnotation}
                   />
                   <Grid.Col
@@ -206,13 +206,13 @@ const GameStats = memo(
                     {annotation}
                   </Grid.Col>
                   <Grid.Col span={4} c={w + b > 0 ? color : undefined}>
-                    {label}
+                    {annotationName}
                   </Grid.Col>
                   <AnnotationCount
                     annotation={s}
                     side="black"
                     total={b}
-                    label={label}
+                    annotationName={annotationName}
                     goToAnnotation={goToAnnotation}
                   />
                 </React.Fragment>
@@ -236,13 +236,13 @@ function AnnotationCount({
   annotation,
   side,
   total,
-  label,
+  annotationName,
   goToAnnotation,
 }: {
   annotation: BasicAnnotation;
   side: "white" | "black";
   total: number;
-  label: string;
+  annotationName: string;
   goToAnnotation: (annotation: BasicAnnotation, color: "white" | "black") => void;
 }) {
   const { t } = useTranslation();
@@ -263,8 +263,8 @@ function AnnotationCount({
         c={color}
         aria-label={
           side === "white"
-            ? t("Board.Analysis.NextAnnotationByWhite", { annotation: label, total })
-            : t("Board.Analysis.NextAnnotationByBlack", { annotation: label, total })
+            ? t("Board.Analysis.NextAnnotationByWhite", { annotation: annotationName, total })
+            : t("Board.Analysis.NextAnnotationByBlack", { annotation: annotationName, total })
         }
         onClick={() => goToAnnotation(annotation, side)}
       >
