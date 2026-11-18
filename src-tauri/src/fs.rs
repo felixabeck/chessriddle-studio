@@ -12442,6 +12442,8 @@ mod tests {
             CompletionOutcome, EngineInstallIntent, EngineInstallRequest,
         };
         for boundary in ["publication", "application", "acknowledgement"] {
+            // The retained failure payload is redacted; the native diagnostic is only logged.
+            let capture = crate::error::LogCaptureScope::start();
             let dir = tempdir().unwrap();
             let authority =
                 crate::infra::path_authority::PathAuthority::open_for_engine_test(dir.path())
@@ -12581,7 +12583,14 @@ mod tests {
             .unwrap());
             let snapshot = state.operations.engine_completion(&id, "main").unwrap();
             let CompletionOutcome::Succeeded(installed) = snapshot.outcome else {
-                panic!("native engine workflow did not retain success: {snapshot:?}")
+                let logged: Vec<String> = capture
+                    .records()
+                    .into_iter()
+                    .map(|record| format!("{}: {}", record.level, record.message))
+                    .collect();
+                panic!(
+                    "native engine workflow did not retain success at {boundary}: {snapshot:?}\nlogged: {logged:#?}"
+                )
             };
             assert_eq!(installed.config.name, "Reload Engine");
             assert_eq!(installed.filename, "engine");
