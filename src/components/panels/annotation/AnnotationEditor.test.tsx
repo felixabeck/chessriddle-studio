@@ -897,7 +897,7 @@ test.each([
 ])("C: typing a $name saves every keystroke and reloads it", async ({ parts, saved }) => {
   await mount("");
   for (const part of parts) {
-    for (const character of part === "\n" ? [part] : Array.from(part)) {
+    for (const character of Array.from(part)) {
       await act(async () => {
         if (character === "\n") editor().commands.keyboardShortcut("Shift-Enter");
         else editor().commands.insertContent(character);
@@ -925,18 +925,63 @@ test("C: a break typed before an existing comment saves later edits", async () =
   expect(commentDomText(editorElement())).toBe("\nOld text more");
 });
 
-test("C: bolding a word with the break after it keeps the bold and the break", async () => {
-  await mount("ab");
-  await act(async () => {
-    editor().commands.setTextSelection(3);
-    editor().commands.keyboardShortcut("Shift-Enter");
-    editor().commands.insertContent("cd");
-    editor().commands.setTextSelection({ from: 1, to: 4 });
-    editor().commands.toggleBold();
-  });
+test.each([
+  { mark: "bold", selector: "strong", delimiter: "**" },
+  { mark: "italic", selector: "em", delimiter: "*" },
+  { mark: "strike", selector: "s", delimiter: "~~" },
+])(
+  "C: $mark over a word and the break after or before it keeps the mark and the break",
+  async ({ mark, selector, delimiter }) => {
+    for (const { from, to, saved } of [
+      { from: 1, to: 4, saved: `${delimiter}ab${delimiter}  \ncd` },
+      { from: 3, to: 6, saved: `ab  \n${delimiter}cd${delimiter}` },
+    ]) {
+      await mount("ab");
+      await act(async () => {
+        editor().commands.setTextSelection(3);
+        editor().commands.keyboardShortcut("Shift-Enter");
+        editor().commands.insertContent("cd");
+        editor().commands.setTextSelection({ from, to });
+        editor().commands.setMark(mark);
+      });
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+      expect(await reloadSavedComment()).toBe(saved);
+      expect(commentMarkedText(editorElement(), selector)).toBe(from === 1 ? "ab" : "cd");
+    }
+  },
+);
+
+test.each([
+  { from: 1, to: 4, saved: "[ab](https://x.y)  \ncd", linked: "ab" },
+  { from: 3, to: 6, saved: "ab[  \ncd](https://x.y)", linked: "cd" },
+])(
+  "C: a link over a word and the break around it saves $saved",
+  async ({ from, to, saved, linked }) => {
+    await mount("ab");
+    await act(async () => {
+      editor().commands.setTextSelection(3);
+      editor().commands.keyboardShortcut("Shift-Enter");
+      editor().commands.insertContent("cd");
+      editor().commands.setTextSelection({ from, to });
+      editor().commands.setLink({ href: "https://x.y" });
+    });
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(await reloadSavedComment()).toBe(saved);
+    expect(commentMarkedText(editorElement(), "a")).toBe(linked);
+  },
+);
+
+test("C: inserting an address in one chunk saves it as plain text", async () => {
+  await mount("Main idea.");
+  await act(async () =>
+    editor().commands.insertContentAt(
+      editor().state.doc.content.size - 1,
+      " mail foo@bar.com then Nf3",
+    ),
+  );
   expect(host.querySelector('[role="alert"]')).toBeNull();
-  expect(await reloadSavedComment()).toBe("**ab**  \ncd");
-  expect(commentMarkedText(editorElement(), "strong")).toBe("ab");
+  expect(await reloadSavedComment()).toBe("Main idea. mail foo\\@bar.com then Nf3");
+  expect(editorElement().querySelector("a")).toBeNull();
 });
 
 test.each([

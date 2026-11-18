@@ -121,9 +121,9 @@ function normalize(paragraph: Character[]): Character[] {
     }
     // A hard break followed only by whitespace has no Markdown spelling:
     // the reparse drops it at the end of the paragraph.
-    let content = characters.length;
-    while (content > 0 && /\s/u.test(characters[content - 1].text)) content--;
-    return characters.filter((character, index) => index < content || !character.hardBreak);
+    let contentEnd = characters.length;
+    while (contentEnd > 0 && /\s/u.test(characters[contentEnd - 1].text)) contentEnd--;
+    return characters.filter((character, index) => index < contentEnd || !character.hardBreak);
 }
 
 function formatting(paragraphs: Character[][]): CommentFormatting {
@@ -160,9 +160,10 @@ export function normalizeCommentDocument(document: JSONContent): JSONContent {
     };
 }
 
-// True when only spaces separate `index` from the previous line break.
-// The slice start is a delimiter or the paragraph start, never a line start.
-function startsLine(index: number, characters: Character[]): boolean {
+// True when only spaces separate `index` from a preceding line break. A paragraph's
+// first line never interrupts the paragraph, and the slice start is a delimiter or
+// the paragraph start, so neither counts.
+function followsLineBreak(index: number, characters: Character[]): boolean {
     for (let previous = index - 1; previous >= 0; previous--) {
         if (characters[previous].text === "\n") return true;
         if (!/[^\S\n]/u.test(characters[previous].text)) return false;
@@ -170,11 +171,11 @@ function startsLine(index: number, characters: Character[]): boolean {
     return false;
 }
 
-// The `.` of a line-start digit run would start an ordered list.
-function endsLineStartDigits(index: number, characters: Character[]): boolean {
+// The `.` after a digit run that follows a line break would start an ordered list.
+function endsDigitsAfterLineBreak(index: number, characters: Character[]): boolean {
     let first = index;
     while (first > 0 && /\d/u.test(characters[first - 1].text)) first--;
-    return first < index && startsLine(first, characters);
+    return first < index && followsLineBreak(first, characters);
 }
 
 function literal(character: Character, index: number, characters: Character[]): string {
@@ -182,9 +183,11 @@ function literal(character: Character, index: number, characters: Character[]): 
     if (
         // `@` would otherwise form a GFM e-mail autolink.
         /[\\*_[\]~<>:()@]/u.test(character.text) ||
-        // A list or heading marker after a line break would end the paragraph.
-        (/[-+#]/u.test(character.text) && startsLine(index, characters)) ||
-        (character.text === "." && endsLineStartDigits(index, characters)) ||
+        // After a line break, a list, heading or thematic-break marker, a backtick
+        // fence or a table delimiter row would end the paragraph. `*`, `_`, `~`,
+        // `:`, `<`, `>` and `)` are escaped everywhere above.
+        (/[-+#`|]/u.test(character.text) && followsLineBreak(index, characters)) ||
+        (character.text === "." && endsDigitsAfterLineBreak(index, characters)) ||
         (character.text === "+" &&
             [characters[index - 1], characters[index + 1]].some(
                 (neighbor) => neighbor?.text === "+",

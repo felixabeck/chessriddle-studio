@@ -19,9 +19,13 @@ const cases: CaseInput[] = [
     { name: "rule", input: "---" },
     { name: "setext heading", input: "a\n---", text: "a\n\n---", edited: "a\n\n---!" },
     { name: "indented code", input: "    indented" },
-    { name: "fenced code", input: "```\nfenced text\n```" },
+    { name: "fenced code", input: "```\nfenced text\n```", edited: "```\nfenced text\n\\```!" },
     { name: "inline code", input: "`x`" },
-    { name: "table", input: "| a | b |\n| --- | --- |\n| c | d |" },
+    {
+        name: "table",
+        input: "| a | b |\n| --- | --- |\n| c | d |",
+        edited: "| a | b |\n\\| --- | --- |\n\\| c | d |!",
+    },
     { name: "footnote", input: "call[^1]\n\n[^1]: x", edited: "call\\[^1\\]\n\n\\[^1\\]\\: x!" },
     {
         name: "reference definition",
@@ -303,6 +307,7 @@ const cases: CaseInput[] = [
     {
         name: "formatting inside table-looking prose",
         input: "| **a** | b |\n| --- | --- |\n| c | d |",
+        edited: "| **a** | b |\n\\| --- | --- |\n\\| c | d |!",
         text: "| a | b |\n| --- | --- |\n| c | d |",
         formatting: [{ selector: "strong", text: "a" }],
     },

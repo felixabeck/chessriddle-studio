@@ -13,6 +13,7 @@ type Span = { text: string; marks?: string[]; hardBreak?: boolean };
 
 const link = (href: string, title: string | null = null) => JSON.stringify(["link", href, title]);
 const url = link("https://x.y");
+const BR: Span = { text: "\n", hardBreak: true };
 
 function mark(key: string) {
     if (!key.startsWith("[")) return { type: key };
@@ -854,8 +855,6 @@ test("normalization never drops emphasis or link coverage on a covered break", (
     );
 });
 
-const BR: Span = { text: "\n", hardBreak: true };
-
 test.each([
     { line: "1. e4 e5 2. Nf3", source: "Main idea  \n1\\. e4 e5 2. Nf3" },
     { line: "1) e4", source: "Main idea  \n1\\) e4" },
@@ -866,12 +865,14 @@ test.each([
     { line: "---", source: "Main idea  \n\\---" },
     { line: "- - -", source: "Main idea  \n\\- - -" },
     { line: "   - a", source: "Main idea  \n   \\- a" },
+    { line: "```", source: "Main idea  \n\\```" },
+    { line: "| a | b |", source: "Main idea  \n\\| a | b |" },
 ])("escapes a paragraph-interrupting marker after a hard break: $line", ({ line, source }) => {
     expect.hasAssertions();
     roundTrip([{ text: "Main idea" }, BR, { text: line }], undefined, source);
 });
 
-test("leaves markers that do not start a line unescaped", () => {
+test("leaves markers that do not follow a line break unescaped", () => {
     expect.hasAssertions();
     roundTrip([{ text: "1. e4 e5 is best - # 2." }], undefined, "1. e4 e5 is best - # 2.");
     roundTrip([{ text: "a" }, BR, { text: "b 1. - #" }], undefined, "a  \nb 1. - #");
@@ -879,6 +880,30 @@ test("leaves markers that do not start a line unescaped", () => {
         [{ text: "a" }, BR, { text: "-", marks: ["bold"] }, { text: " b" }],
         undefined,
         "a  \n**-** b",
+    );
+});
+
+test("escapes a fence or table delimiter row that a later line completes", () => {
+    expect.hasAssertions();
+    roundTrip(
+        [{ text: "Main idea" }, BR, { text: "``` " }, BR, { text: "code" }],
+        undefined,
+        "Main idea  \n\\``` \\\ncode",
+    );
+    roundTrip(
+        [{ text: "Main idea" }, BR, { text: "   ```js" }, BR, { text: "code" }],
+        undefined,
+        "Main idea  \n   \\```js  \ncode",
+    );
+    roundTrip(
+        [{ text: "Main idea" }, BR, { text: "| a | b |" }, BR, { text: "| --- | --- |" }],
+        undefined,
+        "Main idea  \n\\| a | b |  \n\\| --- | --- |",
+    );
+    roundTrip(
+        [{ text: "Main idea" }, BR, { text: "a | b" }, BR, { text: "| --- | --- |" }],
+        undefined,
+        "Main idea  \na | b  \n\\| --- | --- |",
     );
 });
 
