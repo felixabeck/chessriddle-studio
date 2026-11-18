@@ -1235,6 +1235,20 @@ describe("DatabasePanel", () => {
         (button) => button.textContent === "Board.Database.Compare",
       );
 
+    test("a cancellation on the database list keeps the comparison database", async () => {
+      const { revalidate } = await mountCompared();
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+
+      mocks.getDatabases.mockRejectedValue(new DOMException("Cancellation", "AbortError"));
+      await revalidate();
+
+      expect(
+        sources().map(
+          (source) => source.querySelector<HTMLInputElement>(".mantine-Select-input")?.value,
+        ),
+      ).toEqual(["Saved reference", "Correspondence"]);
+    });
+
     test("both databases are searched with their own filters and progress ids, side by side", async () => {
       await mountCompared();
       await vi.waitFor(() => expect(searchesOf(corr)).not.toHaveLength(0));
