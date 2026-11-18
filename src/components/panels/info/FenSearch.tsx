@@ -53,6 +53,8 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
     setValue(currentFen);
     setSearch(currentFen);
     setHasTyped(false);
+    // An error describes the rejected text; a new position replaces that text.
+    setError(undefined);
   }, [currentFen]);
 
   const { data, isLoading } = useSWRImmutable(
@@ -115,12 +117,16 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
             combobox.updateSelectedOptionIndex();
             setHasTyped(true);
             setSearch(event.currentTarget.value);
+            setError(undefined);
           }}
           onClick={() => combobox.openDropdown()}
           onFocus={() => combobox.openDropdown()}
           onBlur={() => {
             combobox.closeDropdown();
-            setSearch(value || "");
+            const reverted = value || "";
+            // Keep the error only while its rejected text is still the one shown.
+            if (reverted !== search) setError(undefined);
+            setSearch(reverted);
             setHasTyped(false);
           }}
           onKeyDown={(event) => {

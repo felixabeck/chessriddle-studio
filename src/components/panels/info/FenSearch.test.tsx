@@ -299,3 +299,49 @@ test("typed Enter requires exclusively FRC matches and unmatched created FENs cl
   await select(sicilian.fen);
   expectPosition(sicilian.fen);
 });
+
+function fieldError() {
+  return {
+    invalid: input().getAttribute("aria-invalid"),
+    message: host.textContent?.includes("Errors.InvalidTurn") ?? false,
+  };
+}
+
+async function rejectInvalidFen() {
+  await setup([]);
+  await act(async () => input().focus());
+  await type("not a fen");
+  await enter();
+  expect(fieldError()).toEqual({ invalid: "true", message: true });
+  expect(input().value).toBe("not a fen");
+}
+
+test("blur reverting a rejected FEN clears its error", async () => {
+  await rejectInvalidFen();
+  await act(async () => input().blur());
+  expect(input().value).toBe(standardFen);
+  expect(fieldError()).toEqual({ invalid: "false", message: false });
+});
+
+test("a board move after a rejected FEN clears its error", async () => {
+  await rejectInvalidFen();
+  await act(async () => tree.getState().makeMove({ payload: "e4" }));
+  expect(input().value).toBe(tree.getState().currentNode().fen);
+  expect(fieldError()).toEqual({ invalid: "false", message: false });
+});
+
+test("editing a rejected FEN clears its error", async () => {
+  await rejectInvalidFen();
+  await typeWithoutWaiting("not a fen!");
+  expect(fieldError()).toEqual({ invalid: "false", message: false });
+});
+
+test("a rejected FEN kept in the field by its create option keeps its error on blur", async () => {
+  await setup([]);
+  await type("not a fen");
+  await select("not a fen");
+  expect(fieldError()).toEqual({ invalid: "true", message: true });
+  await act(async () => input().blur());
+  expect(input().value).toBe("not a fen");
+  expect(fieldError()).toEqual({ invalid: "true", message: true });
+});
