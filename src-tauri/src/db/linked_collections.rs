@@ -2038,6 +2038,15 @@ impl CollectionService {
         visit_file_entries(&listing.entries, &mut |entry| entries.push(entry.clone()));
         let mut guard = self.lock(cancellation)?;
         let mut registry = Self::state(&mut guard)?.clone();
+        // Sources replaced atomically by appends or edits keep a stale persisted identity, and a
+        // reused inode number of the freed old file would falsely match creation_for_source's
+        // registry-wide `record.identity == identity` arm.
+        for record in &mut registry.records {
+            cancellation_check(cancellation)?;
+            if let Ok(snapshot) = Self::snapshot(record, authority) {
+                record.identity = snapshot.identity.pair();
+            }
+        }
         for record in registry
             .records
             .iter_mut()

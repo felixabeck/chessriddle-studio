@@ -7144,6 +7144,192 @@ mod native_tests {
         assert_eq!(std::fs::read(&pending_path).unwrap(), pending_bytes);
     }
 
+    fn overwrite_record_identity_from_next_created_source(fixture: &Fixture, stale_id: Uuid) {
+        let service = Arc::clone(&fixture.service);
+        fixture
+            .state
+            .pgn_repository
+            .set_create_post_register_hook(Some(Box::new(move || {
+                let mut guard = service.lock(&CancellationToken::new()).unwrap();
+                let mut registry = CollectionService::state(&mut guard).unwrap().clone();
+                let identity = registry
+                    .creations
+                    .iter()
+                    .find_map(|creation| creation.identity)
+                    .expect("registered account file records its live identity");
+                registry
+                    .records
+                    .iter_mut()
+                    .find(|record| record.id == stale_id)
+                    .expect("stale collection remains registered")
+                    .identity = identity;
+                service.save(&mut guard, registry).unwrap();
+            })))
+            .unwrap();
+    }
+
+    fn grant_and_promote_library(
+        fixture: &Fixture,
+        directory_name: &str,
+        display: &str,
+    ) -> FileWorkspaceHandle {
+        let workspace_path = fixture.directory.path().join(directory_name);
+        std::fs::create_dir(&workspace_path).unwrap();
+        fixture
+            .state
+            .pgn_path_authority
+            .with_mut(|authority| {
+                let grant = authority.grant_dialog_operations(
+                    &workspace_path,
+                    display,
+                    PathClass::BoundedDialogGrant,
+                    vec![PathOperation::ReadPgn, PathOperation::WritePgn],
+                    Duration::from_secs(60),
+                    4,
+                )?;
+                Ok::<_, Error>(FileWorkspaceHandle::new(
+                    authority
+                        .promote_dialog(
+                            &grant,
+                            PathClass::PersistentCustomRoot,
+                            display,
+                            vec![PathOperation::ReadPgn, PathOperation::WritePgn],
+                        )?
+                        .id,
+                ))
+            })
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn account_preparation_confirms_ownership_when_new_source_reuses_stale_same_workspace_identity(
+    ) {
+        use tauri::Manager;
+        let fixture = Fixture::new();
+        let account = AccountIdentity {
+            provider: "chesscom".into(),
+            account: "player".into(),
+        };
+        let app = fixture.app();
+        let prepared = prepare_account_collection(
+            fixture.workspace.clone(),
+            account.clone(),
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .collection
+        .unwrap();
+        let id = Uuid::parse_str(&prepared.id).unwrap();
+        let history = fixture.create(
+            "history",
+            &game(Some("123"), "e4 e5", "owned history"),
+            WorkspaceFileType::Other,
+        );
+        Arc::clone(&fixture.service)
+            .append_batch(
+                fixture.state.pgn_path_authority.clone(),
+                id,
+                history,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        overwrite_record_identity_from_next_created_source(&fixture, id);
+        let other = AccountIdentity {
+            provider: "lichess".into(),
+            account: "Other-Player_2".into(),
+        };
+        let other = prepare_account_collection(
+            fixture.workspace.clone(),
+            other,
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .collection
+        .unwrap();
+        assert_eq!(other.account.unwrap().account, "other-player_2");
+        assert_ne!(other.id, prepared.id);
+        assert_ne!(other.file, prepared.file);
+    }
+
+    #[tokio::test]
+    async fn account_preparation_confirms_ownership_when_new_source_reuses_stale_cross_workspace_identity(
+    ) {
+        use tauri::Manager;
+        let fixture = Fixture::new();
+        let second_workspace = grant_and_promote_library(&fixture, "library-two", "Library Two");
+        let account = AccountIdentity {
+            provider: "chesscom".into(),
+            account: "player".into(),
+        };
+        let app = fixture.app();
+        let prepared = prepare_account_collection(
+            second_workspace.clone(),
+            account.clone(),
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .collection
+        .unwrap();
+        let id = Uuid::parse_str(&prepared.id).unwrap();
+        let history = crate::file_workspace::create_workspace_file_blocking(
+            second_workspace.clone(),
+            second_workspace.clone(),
+            "history".into(),
+            WorkspaceMetadata {
+                file_type: WorkspaceFileType::Other,
+                tags: vec!["preserved".into()],
+            },
+            WorkspaceFileContent::Text {
+                pgn: game(Some("123"), "e4 e5", "owned history"),
+            },
+            &fixture.state.pgn_path_authority,
+            &fixture.state.workspace_mutation,
+            &fixture.state.pgn_repository,
+            &CancellationToken::new(),
+        )
+        .unwrap()
+        .handle;
+        Arc::clone(&fixture.service)
+            .append_batch(
+                fixture.state.pgn_path_authority.clone(),
+                id,
+                history,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        overwrite_record_identity_from_next_created_source(&fixture, id);
+        let other = AccountIdentity {
+            provider: "lichess".into(),
+            account: "Other-Player_2".into(),
+        };
+        let other = prepare_account_collection(
+            fixture.workspace.clone(),
+            other,
+            None,
+            app.state::<AppState>(),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .collection
+        .unwrap();
+        assert_eq!(other.account.unwrap().account, "other-player_2");
+        assert_ne!(other.id, prepared.id);
+        assert_ne!(other.file, prepared.file);
+    }
+
     #[tokio::test]
     async fn durable_registry_rejects_corrupted_produced_ownership_without_overwrite() {
         use tauri::Manager;
