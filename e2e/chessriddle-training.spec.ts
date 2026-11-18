@@ -916,11 +916,18 @@ for (const layout of ["desktop", "scaled"] as const) {
                 },
             },
         });
+        // The timer measures from the fake performance.now() it read at mount, so pause before the
+        // Puzzles tab mounts it and advance an exact second: the shown value cannot depend on how
+        // long a runner stalls. The pause target lies far enough ahead that startup never passes it.
+        const clockStart = new Date("2026-11-10T12:00:00Z").getTime();
+        await page.clock.install({ time: clockStart });
         await page.goto("/");
-        await page.getByRole("button", { name: "Puzzles", exact: true }).click();
+        const puzzles = page.getByRole("button", { name: "Puzzles", exact: true });
+        await expect(puzzles).toBeVisible();
+        await page.clock.pauseAt(clockStart + 10 * 60_000);
+        await puzzles.click();
         await expect(page.getByRole("timer")).toBeVisible();
-        await page.clock.install({ time: new Date("2026-11-10T12:00:00Z") });
-        await page.clock.pauseAt(new Date("2026-11-10T12:00:01Z"));
+        await page.clock.runFor(1000);
         await page.getByRole("timer").scrollIntoViewIfNeeded();
         await assertNoHorizontalOverflow();
         await captureTraining(page, page, `en-US-${layout}-timer.png`);
