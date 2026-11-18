@@ -9,7 +9,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
@@ -18,7 +18,7 @@ import type { AccountIdentity, CollectionDescriptor, FileWorkspaceHandle } from 
 import type { FileMetadata } from "@/components/files/file";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { tauri } from "@/platform/tauri";
-import { referenceDbAtom } from "@/state/atoms";
+import { referenceDbAtom, replaceExplorerDatabaseAtom } from "@/state/atoms";
 import { isCollectionConsumer, useCollectionCurrency } from "@/state/linkedCollections";
 export { isCollectionConsumer } from "@/state/linkedCollections";
 import { databaseHandleKey, type SuccessDatabaseInfo } from "@/utils/db";
@@ -319,7 +319,7 @@ function CollectionMigrationForm({
   onComplete,
 }: CollectionMigrationProps) {
   const { t } = useTranslation();
-  const [, setReference] = useAtom(referenceDbAtom);
+  const replaceExplorerDatabase = useSetAtom(replaceExplorerDatabaseAtom);
   const [source, setSource] = useState<string | null>(null);
   const [choice, setChoice] = useState<"pgn" | "database">("database");
   const [name, setName] = useState(`${database.title}-linked`);
@@ -353,12 +353,7 @@ function CollectionMigrationForm({
       );
       if (collection) {
         if (collection.database) {
-          const current = collection.database;
-          setReference((previous) =>
-            previous && databaseHandleKey(previous) === databaseHandleKey(database.file)
-              ? current
-              : previous,
-          );
+          replaceExplorerDatabase({ from: database.file, to: collection.database });
         }
         await onComplete(collection);
       }

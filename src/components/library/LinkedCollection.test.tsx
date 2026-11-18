@@ -1,6 +1,11 @@
 import { MantineProvider } from "@mantine/core";
 import { Provider, createStore } from "jotai";
-import { referenceDbAtom, tabsAtom } from "@/state/atoms";
+import {
+  explorerDatabaseFiltersAtom,
+  referenceDbAtom,
+  setExplorerFiltersAtom,
+  tabsAtom,
+} from "@/state/atoms";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { SWRConfig } from "swr";
@@ -299,6 +304,10 @@ test("migration exports an entire database without a PGN, retains its request on
   };
   mocks.migrateLinkedCollection.mockRejectedValueOnce(new Error("archive unavailable"));
   jotai.set(referenceDbAtom, database.file);
+  jotai.set(setExplorerFiltersAtom, {
+    database: database.file,
+    update: { player: 3, color: "black", result: "draw" },
+  });
   await render(
     <CollectionMigration
       database={database}
@@ -324,6 +333,13 @@ test("migration exports an entire database without a PGN, retains its request on
   ]);
   expect(complete).toHaveBeenCalledWith(collection);
   expect(jotai.get(referenceDbAtom)).toEqual(collection.database);
+  // The explorer's saved filters follow the database the migration replaced.
+  expect(jotai.get(explorerDatabaseFiltersAtom)).toEqual([
+    {
+      database: collection.database!.id.id,
+      filters: { player: null, color: "white", result: "draw" },
+    },
+  ]);
   mocks.migrateLinkedCollection.mockResolvedValueOnce(null);
   await act(async () => button("Collections.Decline").click());
   expect(mocks.migrateLinkedCollection.mock.calls.at(-1)![4]).toBe("decline");

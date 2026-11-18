@@ -24,6 +24,15 @@ import type {
 } from "@/bindings";
 import type { OpponentSettings } from "@/state/opponentSettings";
 import type { LocalOptions } from "@/utils/db";
+import {
+    type ExplorerFilterEntry,
+    type ExplorerFilters,
+    explorerFilterEntriesSchema,
+    explorerFiltersFor,
+    replaceExplorerFilterDatabase,
+    withExplorerFilters,
+    withoutExplorerFilters,
+} from "./explorerFilters";
 import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
 import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
 import type { SuccessDatabaseInfo } from "@/utils/db";
@@ -842,6 +851,58 @@ export const reconcileReferenceCollectionAtom = atom(
             set(referenceDbAtom, null);
     },
 );
+
+/**
+ * The board explorer's saved filters per local database, keyed by the opaque database id. The
+ * Databases page and the player opening tree do not read them.
+ */
+export const explorerDatabaseFiltersAtom = documentPreferences.atomWithStorage<
+    ExplorerFilterEntry[]
+>(
+    // Read once at document initialization, so a write from a page that never mounted the
+    // explorer still starts from the stored list.
+    "explorer-database-filters",
+    [],
+    createZodStorage(explorerFilterEntriesSchema, localStorage),
+);
+
+export const setExplorerFiltersAtom = atom(
+    null,
+    (get, set, change: { database: DatabaseHandle; update: SetStateAction<ExplorerFilters> }) => {
+        const entries = get(explorerDatabaseFiltersAtom);
+        const key = capabilityKey(change.database);
+        const next =
+            typeof change.update === "function"
+                ? change.update(explorerFiltersFor(entries, key))
+                : change.update;
+        set(explorerDatabaseFiltersAtom, withExplorerFilters(entries, key, next));
+    },
+);
+
+/** Database `from` was replaced by `to`: every stored explorer choice keyed on it follows. */
+export const replaceExplorerDatabaseAtom = atom(
+    null,
+    (get, set, change: { from: DatabaseHandle; to: DatabaseHandle }) => {
+        const from = capabilityKey(change.from);
+        const to = capabilityKey(change.to);
+        if (from === to) return;
+        const entries = get(explorerDatabaseFiltersAtom);
+        if (entries.some((entry) => entry.database === from)) {
+            set(explorerDatabaseFiltersAtom, replaceExplorerFilterDatabase(entries, from, to));
+        }
+        const reference = get(referenceDbAtom);
+        if (reference && capabilityKey(reference) === from) set(referenceDbAtom, change.to);
+    },
+);
+
+/** A deleted database keeps no stored explorer choice. */
+export const forgetExplorerDatabaseAtom = atom(null, (get, set, database: DatabaseHandle) => {
+    const key = capabilityKey(database);
+    const entries = get(explorerDatabaseFiltersAtom);
+    if (entries.some((entry) => entry.database === key)) {
+        set(explorerDatabaseFiltersAtom, withoutExplorerFilters(entries, key));
+    }
+});
 
 export const selectedPuzzleDbAtom = initializeBeforeUse(
     atomWithStorage<PathRef | null>(

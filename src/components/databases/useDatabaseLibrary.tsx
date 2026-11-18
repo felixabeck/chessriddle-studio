@@ -25,7 +25,7 @@ import {
 import { useDebouncedValue, useToggle } from "@mantine/hooks";
 import { ArrowRight, Database, Plus } from "lucide-react";
 import { Link, useNavigate, type RegisteredRouter } from "@tanstack/react-router";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import {
   Fragment,
   useCallback,
@@ -47,6 +47,7 @@ import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/no
 import {
   databaseConversionStateAtom,
   databaseConversionRefreshFailedAtom,
+  forgetExplorerDatabaseAtom,
   referenceDbAtom,
   runDatabaseConversion,
 } from "@/state/atoms";
@@ -115,6 +116,7 @@ export function useDatabaseLibrary(
 
   const [open, setOpen] = useState(false);
   const [referenceDatabase, setReferenceDatabase] = useAtom(referenceDbAtom);
+  const forgetExplorerDatabase = useSetAtom(forgetExplorerDatabaseAtom);
   const [conversionState, setConversionState] = useAtom(databaseConversionStateAtom);
   const [importRefreshFailed, setImportRefreshFailed] = useAtom(
     databaseConversionRefreshFailedAtom,
@@ -161,6 +163,7 @@ export function useDatabaseLibrary(
       setReferenceDatabase(null);
       void tauri.clearGames();
     }
+    forgetExplorerDatabase(deleted);
     if (sameDatabaseHandle(activeDatabaseViewStore.getState().database?.file, deleted)) {
       activeDatabaseViewStore.getState().clearDatabase();
     }

@@ -12,7 +12,7 @@ import {
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { memo, useContext, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr/immutable";
@@ -31,12 +31,12 @@ import {
   lichessOptionsAtom,
   masterOptionsAtom,
   referenceDbAtom,
+  replaceExplorerDatabaseAtom,
   sessionsAtom,
 } from "@/state/atoms";
 import {
   databaseHandleFromKey,
   databaseHandleKey,
-  getEffectiveLocalPlayer,
   type Opening,
   type LocalOptions,
 } from "@/utils/db";
@@ -56,6 +56,7 @@ import LichessOptionsPanel from "./options/LichessOptionsPanel";
 import LocalOptionsPanel from "./options/LocalOptionsPanel";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import MasterOptionsPanel from "./options/MastersOptionsPanel";
+import { useExplorerFilters } from "./useExplorerFilters";
 import { fetchLocalOpening, useLocalExplorer } from "./useLocalExplorer";
 
 export type { LocalOptions } from "@/utils/db";
@@ -136,26 +137,29 @@ function DatabasePanel() {
   const [pinnedDatabase, setPinnedDatabase] = useAtom(useTabAtom(pinnedExplorerDatabaseFamily));
   const selectedDatabase = pinnedDatabase ?? referenceDatabase;
   const currency = useCollectionCurrency(selectedDatabase);
+  const replaceExplorerDatabase = useSetAtom(replaceExplorerDatabaseAtom);
   useEffect(() => {
     const current = currency.collection?.database;
     if (
       current &&
       selectedDatabase &&
       databaseHandleKey(current) !== databaseHandleKey(selectedDatabase)
-    )
-      (pinnedDatabase ? setPinnedDatabase : setReferenceDatabase)(current);
+    ) {
+      if (pinnedDatabase) setPinnedDatabase(current);
+      else replaceExplorerDatabase({ from: selectedDatabase, to: current });
+    }
   }, [
     currency.collection?.database,
     selectedDatabase,
     pinnedDatabase,
     setPinnedDatabase,
-    setReferenceDatabase,
+    replaceExplorerDatabase,
   ]);
   const sessions = useAtomValue(sessionsAtom);
   const [debouncedFen] = useDebouncedValue(fen, 50);
   const [lichessOptions, setLichessOptions] = useAtom(lichessOptionsAtom);
   const [masterOptions, setMasterOptions] = useAtom(masterOptionsAtom);
-  const [localOptions, setLocalOptions] = useAtom(useTabAtom(localOptionsFamily));
+  const setLocalOptions = useSetAtom(useTabAtom(localOptionsFamily));
   const [db, setDb] = useAtom(useTabAtom(dbTypeFamily));
   const explorerHandle = sessions.find((session) => session.lichess?.handle)?.lichess?.handle;
   const missingExplorerAuthentication = db !== "local" && !explorerHandle;
@@ -189,11 +193,7 @@ function DatabasePanel() {
     }
   }, [effectiveReferenceDatabase, setLocalOptions, db]);
 
-  const effectiveLocalOptions: LocalOptions = {
-    ...localOptions,
-    path: effectiveReferenceDatabase,
-    player: getEffectiveLocalPlayer(localOptions, effectiveReferenceDatabase),
-  };
+  const { options: effectiveLocalOptions } = useExplorerFilters(effectiveReferenceDatabase);
   const dbType: DBType = match(db)
     .with("local", (v) => ({
       type: v,

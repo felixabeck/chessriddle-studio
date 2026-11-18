@@ -208,7 +208,8 @@ export type Speed =
 
 export const ELO_FILTER_MAX = 3000;
 
-function normalizeRange(range?: [number, number] | null): [number, number] | undefined {
+/** A full `[0, ELO_FILTER_MAX]` band means no Elo filter. */
+export function normalizeRange(range?: [number, number] | null): [number, number] | undefined {
     if (!range || (range[0] === 0 && range[1] === ELO_FILTER_MAX)) {
         return undefined;
     }

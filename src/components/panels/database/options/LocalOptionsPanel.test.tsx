@@ -5,7 +5,14 @@ import { Provider as JotaiProvider, createStore as createJotaiStore } from "jota
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { activeTabAtom, localOptionsFamily, tabsAtom } from "@/state/atoms";
+import {
+  activeTabAtom,
+  explorerDatabaseFiltersAtom,
+  localOptionsFamily,
+  pinnedExplorerDatabaseFamily,
+  tabsAtom,
+} from "@/state/atoms";
+import { explorerFiltersFor } from "@/state/explorerFilters";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { dragRangeSlider, rangeSliderThumbs } from "@/tests/rangeSliderDrag";
 import type { DatabaseHandle, Player } from "@/bindings";
@@ -108,6 +115,8 @@ describe("LocalOptionsPanel explorer filters", () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     sessionStorage.clear();
+    // Saved filters hydrate from localStorage when the store first reads them.
+    localStorage.clear();
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
       value: vi.fn(),
@@ -122,6 +131,8 @@ describe("LocalOptionsPanel explorer filters", () => {
     store = createJotaiStore();
     store.set(tabsAtom, [tab]);
     store.set(activeTabAtom, tabId);
+    // These cases cover a pinned tab, whose filters are the tab's own options.
+    store.set(pinnedExplorerDatabaseFamily(tabId), databaseA);
     store.set(localOptionsFamily(tabId), (q) => ({
       ...q,
       path: databaseA,
@@ -347,6 +358,67 @@ describe("LocalOptionsPanel explorer filters", () => {
     const options = store.get(localOptionsFamily(tabId));
     expect(options.start_date).toBe(dayjs().subtract(3, "year").format("YYYY.MM.DD"));
     expect(options.end_date).toBeUndefined();
+  });
+
+  describe("in a tab without a pin", () => {
+    const saved = (database: DatabaseHandle) =>
+      explorerFiltersFor(store.get(explorerDatabaseFiltersAtom), databaseHandleKey(database));
+
+    beforeEach(async () => {
+      await act(async () => store.set(pinnedExplorerDatabaseFamily(tabId), null));
+    });
+
+    test("an edit is saved for the database and leaves the tab's options alone", async () => {
+      const tabOptions = store.get(localOptionsFamily(tabId));
+      const input = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      await act(async () => input.click());
+      expect(saved(databaseA).exclude_fast_events).toBe(true);
+      expect(saved(databaseB).exclude_fast_events).toBeUndefined();
+      expect(store.get(localOptionsFamily(tabId))).toBe(tabOptions);
+      expect(JSON.parse(localStorage.getItem("explorer-database-filters")!)).toEqual([
+        {
+          database: databaseHandleKey(databaseA),
+          filters: { player: null, color: "white", result: "any", exclude_fast_events: true },
+        },
+      ]);
+    });
+
+    test("each database shows its own saved filters", async () => {
+      const input = () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      await act(async () => input().click());
+      expect(input().checked).toBe(true);
+      await renderPanel(databaseB);
+      expect(input().checked).toBe(false);
+      await renderPanel(databaseA);
+      expect(input().checked).toBe(true);
+    });
+
+    test("a selected player is saved for its database and reaches the search", async () => {
+      await enterPlayer("B");
+      const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+        (item) => item.textContent === "B player",
+      );
+      await act(async () => option!.click());
+      expect(saved(databaseA).player).toBe(42);
+      expect(store.get(localOptionsFamily(tabId)).player).toBeNull();
+      await renderPanel(databaseB);
+      expect(playerInput().value).toBe("");
+    });
+
+    test("clearing the last filter removes the database's saved entry", async () => {
+      const input = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      await act(async () => input.click());
+      await act(async () => input.click());
+      expect(store.get(explorerDatabaseFiltersAtom)).toEqual([]);
+      expect(localStorage.getItem("explorer-database-filters")).toBe("[]");
+    });
+
+    test("without a database nothing is saved", async () => {
+      await renderPanel(null);
+      const input = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      await act(async () => input.click());
+      expect(store.get(explorerDatabaseFiltersAtom)).toEqual([]);
+    });
   });
 
   test("dragging the Elo slider keeps store elo unchanged until release", async () => {

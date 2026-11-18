@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { PathOwnerFamily, PathRef, StartupPathOwners } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { isDatabaseRecent, recentFileSchema } from "./recentFiles";
+import { explorerFilterOwnersSchema } from "./explorerFilters";
 import { decodeCompressedOrJson } from "./store/debouncedStorage";
 import {
     EXPANDED_DIRECTORIES_STORAGE_KEY,
@@ -117,14 +118,19 @@ function collectOriginalSnapshots(local?: Storage, session?: Storage): OriginalO
             ),
         ),
     );
-    trust(
-        "referenceDatabase",
-        collectOne(
-            readJson(local, "reference-database"),
-            databaseHandleSchema.nullable(),
-            (value) => value && ids.add(pathRefKey(value.id)),
-        ),
+    // The explorer's saved filters own database ids like the reference does. They share its
+    // family, so an unreadable value of either key withholds the purge of database capabilities.
+    const referenceReadable = collectOne(
+        readJson(local, "reference-database"),
+        databaseHandleSchema.nullable(),
+        (value) => value && ids.add(pathRefKey(value.id)),
     );
+    const explorerFiltersReadable = collectOne(
+        readJson(local, "explorer-database-filters"),
+        explorerFilterOwnersSchema,
+        (entries) => entries.forEach((entry) => ids.add(entry.database)),
+    );
+    trust("referenceDatabase", referenceReadable && explorerFiltersReadable);
     trust(
         "puzzleDatabase",
         collectOne(

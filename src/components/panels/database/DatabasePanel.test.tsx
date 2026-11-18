@@ -14,10 +14,12 @@ import {
   sessionsAtom,
   tabsAtom,
   activeTabAtom,
+  explorerDatabaseFiltersAtom,
   localOptionsFamily,
   pinnedExplorerDatabaseFamily,
   referenceDbAtom,
 } from "@/state/atoms";
+import { explorerFiltersFor } from "@/state/explorerFilters";
 import type { DatabaseHandle } from "@/bindings";
 import { databaseHandleKey, type DatabaseList, type ManagedDatabaseInfo } from "@/utils/db";
 import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
@@ -626,17 +628,29 @@ describe("DatabasePanel", () => {
     if (pin) store.set(pinnedExplorerDatabaseFamily(tabId), pin);
     store.set(dbTypeFamily(tabId), "local");
     store.set(dbTabFamily(tabId), "stats");
-    // Hydrate the real persisted atom and seed an unrelated old per-tab search path.
+    // Hydrate the real persisted atoms and seed an unrelated old per-tab search path.
     localStorage.setItem("reference-database", JSON.stringify(reference));
+    const filters = {
+      player,
+      color: "white" as const,
+      result: "draw" as const,
+      elo: [1800, 2400] as [number, number],
+      exclude_fast_events: true,
+    };
+    // A pinned tab owns its filters; every other tab reads the database's saved ones.
+    if (!pin) {
+      localStorage.setItem(
+        "explorer-database-filters",
+        JSON.stringify([{ database: databaseHandleKey(reference), filters }]),
+      );
+    }
     store.set(localOptionsFamily(tabId), {
       ...store.get(localOptionsFamily(tabId)),
       path: stalePath,
-      player,
-      player_database: player !== null ? databaseHandleKey(pin ?? reference) : undefined,
       fen: treeStore.getState().currentNode().fen,
-      result: "draw",
-      elo: [1800, 2400],
-      exclude_fast_events: true,
+      ...(pin
+        ? { ...filters, player_database: player !== null ? databaseHandleKey(pin) : undefined }
+        : {}),
     });
     let mutate!: ScopedMutator;
     function CacheControl() {
@@ -660,6 +674,10 @@ describe("DatabasePanel", () => {
         });
       },
     };
+  }
+
+  function savedFilters(store: ReturnType<typeof createJotaiStore>, database: DatabaseHandle) {
+    return explorerFiltersFor(store.get(explorerDatabaseFiltersAtom), databaseHandleKey(database));
   }
 
   function expectSavedChoice(store: ReturnType<typeof createJotaiStore>) {
@@ -787,10 +805,19 @@ describe("DatabasePanel", () => {
       await act(async () => option!.click());
 
       expect(mocks.clearGames).toHaveBeenCalledOnce();
-      expect(store.get(localOptionsFamily(tabId)).player).toBe(42);
-      expect(store.get(localOptionsFamily(tabId)).player_database).toBe(
-        databaseHandleKey(initialDatabase),
-      );
+      // The player stays with the database that owns it: in the pinned tab's own options, or
+      // in that database's saved filters.
+      const owned = pinned
+        ? store.get(localOptionsFamily(tabId))
+        : {
+            player: savedFilters(store, initialDatabase).player,
+            player_database: databaseHandleKey(initialDatabase),
+          };
+      expect(owned).toMatchObject({
+        player: 42,
+        player_database: databaseHandleKey(initialDatabase),
+      });
+      expect(savedFilters(store, nextDatabase).player).toBeNull();
       expect(mocks.searchPosition).toHaveBeenCalled();
       for (const [database, query] of mocks.searchPosition.mock.calls) {
         expect(database).toEqual(nextDatabase);
@@ -848,7 +875,7 @@ describe("DatabasePanel", () => {
     expect(option).toBeDefined();
     await act(async () => option!.click());
     expect(store.get(referenceDbAtom)).toEqual(stalePath);
-    expect(store.get(localOptionsFamily(tabId)).player).toBe(42);
+    expect(savedFilters(store, reference).player).toBe(42);
     mocks.searchPosition.mockClear();
     await act(async () => root.render(null));
 
@@ -869,7 +896,144 @@ describe("DatabasePanel", () => {
       expect(database).toEqual(reference);
       expect(id).toBe(42);
     }
-    expect(store.get(localOptionsFamily(tabId)).player_database).toBe(databaseHandleKey(reference));
+    expect(savedFilters(store, reference).player).toBe(42);
+    expect(savedFilters(store, stalePath).player).toBeNull();
+  });
+
+  test("local: a filter edit follows the database into another tab and a fresh store", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    localStorage.removeItem("explorer-database-filters");
+    const first = await mountLocal();
+    localStorage.removeItem("explorer-database-filters");
+    await act(async () => first.store.set(explorerDatabaseFiltersAtom, []));
+    await act(async () => first.store.set(dbTabFamily(tabId), "options"));
+    const toggle =
+      selectedPanel("options").querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(toggle.checked).toBe(false);
+    await act(async () => toggle.click());
+    expect(savedFilters(first.store, reference).exclude_fast_events).toBe(true);
+    // The tab's own options carry no filter: they are the database's, not the tab's.
+    expect(first.store.get(localOptionsFamily(tabId)).exclude_fast_events).toBeUndefined();
+    await act(async () => root.render(null));
+
+    // Nothing but localStorage connects the two mounts.
+    mocks.searchPosition.mockClear();
+    const store = createJotaiStore();
+    const secondTabId = "22222222-2222-4222-8222-222222222222";
+    store.set(tabsAtom, [{ ...validTab, value: secondTabId, name: "Tab 2" }]);
+    store.set(activeTabAtom, secondTabId);
+    store.set(dbTypeFamily(secondTabId), "local");
+    store.set(dbTabFamily(secondTabId), "stats");
+    store.set(localOptionsFamily(secondTabId), (options) => ({
+      ...options,
+      fen: treeStore.getState().currentNode().fen,
+    }));
+    await renderPanel(store, first.swrConfig, undefined, secondTabId);
+    await vi.waitFor(() =>
+      expect(mocks.searchPosition).toHaveBeenLastCalledWith(
+        reference,
+        expect.objectContaining({ excludeFastEvents: true }),
+        secondTabId,
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    expect(mocks.searchPosition.mock.lastCall?.[1]).not.toHaveProperty("wantedResult");
+  });
+
+  test("local: a pinned tab neither reads nor writes the database's saved filters", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    const saved = [
+      {
+        database: databaseHandleKey(reference),
+        filters: { player: null, color: "white", result: "whitewon", elo: [2600, 3000] },
+      },
+    ];
+    localStorage.setItem("explorer-database-filters", JSON.stringify(saved));
+    const { store } = await mountLocal(reference);
+    expect(mocks.searchPosition.mock.lastCall?.[1]).toMatchObject({
+      wantedResult: "draw",
+      range1: [1800, 2400],
+    });
+    await act(async () => store.set(dbTabFamily(tabId), "options"));
+    const toggle =
+      selectedPanel("options").querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(toggle.checked).toBe(true);
+    await act(async () => toggle.click());
+    expect(store.get(localOptionsFamily(tabId)).exclude_fast_events).toBe(false);
+    expect(store.get(explorerDatabaseFiltersAtom)).toEqual(saved);
+    expect(JSON.parse(localStorage.getItem("explorer-database-filters")!)).toEqual(saved);
+  });
+
+  test("local: a collection that publishes a new database moves the reference and its filters", async () => {
+    const current: DatabaseHandle = { id: { id: "regenerated-reference" }, kind: "database" };
+    mocks.getDatabases.mockResolvedValue(
+      databaseList([readable, { ...readable, file: current, title: "Regenerated" }]),
+    );
+    mocks.collectionForDatabase.mockImplementation(async (file: DatabaseHandle) =>
+      databaseHandleKey(file) === databaseHandleKey(reference)
+        ? {
+            id: "55555555-5555-4555-8555-555555555555",
+            name: "Games",
+            file: { id: { id: "library" }, kind: "fileWorkspace" },
+            database: current,
+            account: null,
+            status: "ready",
+            generation: "g2",
+            omitted: 0,
+            retiredDatabase: reference,
+            fetchSinceMs: null,
+          }
+        : null,
+    );
+    const { store } = await mountLocal(undefined, 42);
+    await vi.waitFor(() => expect(store.get(referenceDbAtom)).toEqual(current));
+    expect(store.get(explorerDatabaseFiltersAtom)).toEqual([
+      {
+        database: databaseHandleKey(current),
+        filters: {
+          player: null,
+          color: "white",
+          result: "draw",
+          elo: [1800, 2400],
+          exclude_fast_events: true,
+        },
+      },
+    ]);
+    await vi.waitFor(() =>
+      expect(mocks.searchPosition).toHaveBeenLastCalledWith(
+        current,
+        expect.objectContaining({ wantedResult: "draw", range1: [1800, 2400] }),
+        tabId,
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    expect(mocks.searchPosition.mock.lastCall?.[1].player1 ?? null).toBeNull();
+  });
+
+  test("local: a pinned collection that publishes a new database moves only the pin", async () => {
+    const current: DatabaseHandle = { id: { id: "regenerated-pin" }, kind: "database" };
+    mocks.getDatabases.mockResolvedValue(
+      databaseList([readable, { ...readable, file: stalePath }, { ...readable, file: current }]),
+    );
+    mocks.collectionForDatabase.mockImplementation(async (file: DatabaseHandle) =>
+      databaseHandleKey(file) === databaseHandleKey(stalePath)
+        ? {
+            id: "55555555-5555-4555-8555-555555555555",
+            name: "Games",
+            file: { id: { id: "library" }, kind: "fileWorkspace" },
+            database: current,
+            account: null,
+            status: "ready",
+            generation: "g2",
+            omitted: 0,
+            retiredDatabase: stalePath,
+            fetchSinceMs: null,
+          }
+        : null,
+    );
+    const { store } = await mountLocal(stalePath);
+    await vi.waitFor(() => expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toEqual(current));
+    expect(store.get(referenceDbAtom)).toEqual(reference);
   });
 
   test("local: a pinned player remains scoped to its database when the global reference changes", async () => {
@@ -883,9 +1047,9 @@ describe("DatabasePanel", () => {
     expect(store.get(localOptionsFamily(tabId)).player_database).toBe(databaseHandleKey(reference));
   });
 
-  test("local: ownerless player selections are neither searched nor displayed", async () => {
+  test("local: ownerless player selections of a pinned tab are neither searched nor displayed", async () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
-    const { store } = await mountLocal(undefined, 42);
+    const { store } = await mountLocal(reference, 42);
     await act(async () =>
       store.set(localOptionsFamily(tabId), (options) => ({
         ...options,
@@ -918,10 +1082,7 @@ describe("DatabasePanel", () => {
       lookup.resolve({ id: 42, name: "Late A player", elo: 2000, game_count: 3 }),
     );
     expect(container.textContent).not.toContain("Late A player");
-    expect(store.get(localOptionsFamily(tabId))).toMatchObject({
-      player: 42,
-      player_database: databaseHandleKey(reference),
-    });
+    expect(savedFilters(store, reference).player).toBe(42);
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     await revalidate();
     expect((await showPlayerOptions(store))?.value).toBe(`${reference.id.id} player`);

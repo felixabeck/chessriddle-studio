@@ -452,6 +452,38 @@ describe("collectOriginalPathOwners", () => {
         expect(owners.retainedIds).toContainEqual(path("player-executable"));
     });
 
+    test("retains the databases of the explorer's saved filters under the reference family", () => {
+        setJson(localStorage, "reference-database", databaseHandle("reference"));
+        setJson(localStorage, "explorer-database-filters", [
+            { database: "filtered-a", filters: { player: null, color: "white", result: "draw" } },
+            { database: "filtered-b", filters: { result: "no longer valid" } },
+        ]);
+        const owners = collectOriginalPathOwners(localStorage, sessionStorage);
+        expect(owners.trustedFamilies).toContain("referenceDatabase");
+        expect(owners.retainedIds).toEqual(
+            expect.arrayContaining([path("reference"), path("filtered-a"), path("filtered-b")]),
+        );
+    });
+
+    test.each([
+        ["malformed JSON", "{malformed"],
+        ["no list", JSON.stringify({ database: "filtered" })],
+        ["an element without a database id", JSON.stringify([{ filters: {} }])],
+    ])("explorer filters stored as %s withhold reference-database trust", (_name, raw) => {
+        setJson(localStorage, "reference-database", databaseHandle("reference"));
+        localStorage.setItem("explorer-database-filters", raw);
+        const owners = collectOriginalPathOwners(localStorage, sessionStorage);
+        expect(owners.trustedFamilies).not.toContain("referenceDatabase");
+        expect(owners.retainedIds).toContainEqual(path("reference"));
+    });
+
+    test("a malformed reference withholds trust although the explorer filters are readable", () => {
+        localStorage.setItem("reference-database", "{malformed");
+        setJson(localStorage, "explorer-database-filters", []);
+        const owners = collectOriginalPathOwners(localStorage, sessionStorage);
+        expect(owners.trustedFamilies).not.toContain("referenceDatabase");
+    });
+
     test("unions current and legacy workspace evidence but distrusts either failed source", () => {
         const tempFile = {
             type: "file" as const,
