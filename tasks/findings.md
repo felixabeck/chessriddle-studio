@@ -25117,7 +25117,7 @@ Handled in 1ab8c70cc. Each `IconAction` in `ChallengeHistory` carries `aria-curr
 
 ### The report's WDL chart tooltip hard-codes "White / Draw / Black" in English
 
-* **ID:** f-20261112-66 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-66 · **Status:** handled · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/common/EvalChart.tsx:103-105` builds `wdlText` as a template literal ``\n         White: ${w/10}%\n         Draw: ${d/10}%\n         Black: ${l/10}%``. `CustomTooltip` renders it as the body of the WDL chart's tooltip (`type === "cp" ? cpText : wdlText`, `:296`). The sibling `cpText` on `:100-102` goes through `t("Board.Analysis.Advantage")`, and catalogue keys for the same words already exist (`Board.Analysis.Tablebase.WhiteWins` / `Draw` / `BlackWins`, `Fen.White` / `Fen.Black`).
@@ -25126,6 +25126,9 @@ Handled in 1ab8c70cc. Each `IconAction` in `ChallengeHistory` carries `aria-curr
 - **Fix:** build the text from `t()` with the existing outcome keys (or a new interpolated `Board.Analysis.WdlTooltip` key), and render three lines as separate `Text`s/a small list rather than embedded `\n`. Add a de-DE tooltip assertion to the EvalChart test.
 - **Proof:** code trace on origin/master d30eb171f: `wdlText` (`:103-105`) is the only user-facing label text in `data` not built through `t` (`name` is move notation). `CustomTooltip` passes it straight into `<Text>`. `EvalChart.module.css` gives `.tooltipTitle` only `font-weight: bold`, and `.tooltip` (`white-space: nowrap`) is not applied to this Paper. No probe needed; tree unchanged.
 - **Found by:** Grok Bot general review (chunk 27)
+
+Handled in a2d06726a. `EvalChart` now builds the WDL tooltip as three lines (`wdlLines`) from new `Board.Analysis.Wdl.White/Draw/Black` keys interpolating `{{percent}}`, formatted by `Intl.NumberFormat(i18n.language, { style: "percent", maximumFractionDigits: 1 })` over the per-mille WDL values, and `CustomTooltip` renders each line as its own `Text`. All 16 catalogues carry the keys (`pnpm i18n:check` green). `EvalChart.test.tsx` renders the tooltip through the AreaChart mock and pins the de-DE lines against the shipped catalogue. Rejected: reusing `Fen.White` / `Board.Analysis.Tablebase.Draw` / `Fen.Black` with a hard-coded `": "` separator, because the separator is locale-specific (fr-FR " : ", zh "："). Rejected: putting the percent sign in the catalogue, because percent shaping is locale-specific, matching the `VolumeSlider` precedent.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"48b1aa5c3ea0f4e3bb9fe3ce87794cee458e6d4799e96c59714a230ac47c5a4a","header_sha256":"5718e2b7b3d14955b1538d65a66d9fd58c8ed44c72f3c8f2280a81b8efbc7f4a","header_status":"handled","input_sha256":"8dcdcc9258e7167ddd79df387cb33b893a69560416dce1a193dc697938ab4ace","kind":"mutation-receipt","operation":"fe07590ecc7604b66941bc4c7a7fa59f226955282b1cc04b915b28ca9077ca35","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-66"],"target":"f-20261112-66","v":1} -->
 
 ---
 
