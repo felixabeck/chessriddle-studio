@@ -388,6 +388,18 @@ test("a resumed fetch after a cancellation renders the header and loading state"
     resolvePending({ data: [game({ id: 1, white: "Magnus", black: "Hikaru" })], count: 1 });
   });
   await vi.waitFor(() => expect(container.textContent).toContain("Hikaru"));
+
+  // A cancelled revalidation over cached games keeps showing them.
+  mocks.queryGames.mockRejectedValueOnce(new DOMException("Cancellation", "AbortError"));
+  await act(async () => {
+    void mutate(() => true);
+    await Promise.resolve();
+  });
+  await vi.waitFor(() => expect(mocks.queryGames).toHaveBeenCalledTimes(3));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(container.textContent).toContain("Hikaru");
 });
 
 test("production SWR configuration does not retry get_games after an error", async () => {

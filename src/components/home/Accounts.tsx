@@ -1,4 +1,3 @@
-import { failureUnlessCancelled } from "@/platform/errors";
 import {
   Autocomplete,
   Button,
@@ -21,6 +20,7 @@ import { sessionsAtom } from "@/state/atoms";
 import { getChessComAccount } from "@/utils/chess.com/api";
 import { getLichessAccount } from "@/utils/lichess/api";
 import { authenticateLichess } from "@/utils/lichess/authentication";
+import { failureUnlessCancelled } from "@/platform/errors";
 import {
   type ChessComSession,
   type LichessSession,

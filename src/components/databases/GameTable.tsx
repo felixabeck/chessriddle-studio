@@ -1,4 +1,3 @@
-import { failureUnlessCancelled } from "@/platform/errors";
 import { Box, Collapse, Flex, Group, InputWrapper, Select, Stack } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { useHotkeys } from "@mantine/hooks";
@@ -21,6 +20,7 @@ import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { query_games, sameDatabaseHandle } from "@/utils/db";
 import { runTabCreation } from "@/utils/tabs";
 import { openDatabaseGame } from "@/utils/databaseGame";
+import { failureUnlessCancelled } from "@/platform/errors";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { dateColumn, numericColumn, truncatedTextColumn } from "./databaseColumns";
 import GameCard from "./GameCard";

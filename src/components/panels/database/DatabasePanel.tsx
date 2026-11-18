@@ -1,4 +1,3 @@
-import { failureUnlessCancelled } from "@/platform/errors";
 import { useTabAtom, useOwnerTab } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
 import { Alert, Button, Group, Menu, SegmentedControl, Select, Stack, Tabs } from "@mantine/core";
@@ -55,6 +54,7 @@ import OpeningsTable from "./OpeningsTable";
 import LichessOptionsPanel from "./options/LichessOptionsPanel";
 import LocalFiltersForm from "./options/LocalFiltersForm";
 import { useCollectionCurrency } from "@/state/linkedCollections";
+import { failureUnlessCancelled } from "@/platform/errors";
 import MasterOptionsPanel from "./options/MastersOptionsPanel";
 import PositionSearchControl from "./PositionSearchControl";
 import { useExplorerFilters } from "./useExplorerFilters";
