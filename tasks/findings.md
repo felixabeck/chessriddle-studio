@@ -25272,7 +25272,7 @@ Handled in a2d06726a. `EvalChart` now builds the WDL tooltip as three lines (`wd
 
 ### The database view's Back control is a button nested inside a link (two tab stops, invalid nesting)
 
-* **ID:** f-20261112-74 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-74 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (general review, origin/master d30eb171f)
 * **Where:** `src/components/databases/DatabaseView.tsx:206-210`: `<Link to="/library"><IconAction label={t("Common.Back")} variant="default">…</IconAction></Link>`. `IconAction` (`src/components/common/IconAction.tsx:11,32-47`) renders a Mantine `ActionIcon` `<button>` with its own aria-label. TanStack `Link` renders an `<a href>`. This is the only `<Link>` that wraps a button in `src` (`git grep -A1 '<Link to='`).
@@ -25281,6 +25281,9 @@ Handled in a2d06726a. `EvalChart` now builds the WDL tooltip as three lines (`wd
 * **Fix:** render one control. Either `IconAction component={Link} to="/library"` (Mantine polymorphic) or an `onClick={() => navigate({ to: "/library" })}` on the `IconAction` alone.
 * **Proof:** trace above (the `<a>` from `Link`, the `<button>` from `IconAction`/`ActionIcon`, and one nested inside the other with no `tabIndex` change).
 * **Found by:** Grok Bot general review (chunk 31)
+
+Handled (drain 6fef38d2, 2026-11-18). The database view's Back control is now one `IconAction` that calls `navigate({ to: "/library" })`, with no wrapping `Link` (b22388602). Review found the same button-in-anchor nesting in `FideInfo.tsx` (a raw `<a target="_blank">` around the open-profile `IconAction`), fixed in the same run: `IconAction` takes an optional external `href` and renders its `ActionIcon` as that one anchor (`component="a"`, `target="_blank"`, `rel="noreferrer"`), keeping the plain-anchor route the app uses to open external URLs. A disabled or pending link renders as the disabled button, because an anchor cannot be disabled (a73e18bdf, the test-mock typing fix after it, and the follow-up repair). Tests: DatabaseView Back is not inside an `<a>` and navigates to /library; IconAction href renders one named link, and a disabled href renders the disabled button; FideInfo (real Mantine) open-profile is a single `<a>` with no nested control. Each fails with its source fix reverted. Review: correctness/root-cause, tests, code-quality, all APPROVED after the FideInfo and disabled-link repairs. Rejected: `IconAction component={Link}`, because `IconAction` is button-typed and the Back action needs no anchor semantics in the desktop app. Also rejected: an onClick opener for FideInfo, because the renderer has no opener facade and `_blank` anchors are the established route.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"67e64cc0f3d3eab882f52261746a363480c1b67e750f5b8fc2405b911373b6d2","header_sha256":"1ef77086ae46db7e1f64a0b0159f3f60fa548cc5a6ed478902496999c03562d3","header_status":"handled","input_sha256":"9a60cc4ccd5b53a2008d6fa06be9b73fdf65156e5bc48a5d9ef40f2ad7e63eda","kind":"mutation-receipt","operation":"4f64cd64eafa56f03299035c39f8ae8f99542c014e5fd1635090aa4a359a59ea","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-74"],"target":"f-20261112-74","v":1} -->
 
 ---
 
