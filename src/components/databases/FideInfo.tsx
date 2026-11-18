@@ -46,15 +46,12 @@ function FideInfo({
         <Group>
           <b>{t("Databases.FIDE.Title")}</b>
           {player && (
-            <a
+            <IconAction
+              label={t("Databases.FIDE.OpenProfile")}
               href={`https://ratings.fide.com/profile/${player.id}`}
-              target="_blank"
-              rel="noreferrer"
             >
-              <IconAction label={t("Databases.FIDE.OpenProfile")}>
-                <ExternalLink />
-              </IconAction>
-            </a>
+              <ExternalLink />
+            </IconAction>
           )}
         </Group>
       }

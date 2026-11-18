@@ -188,6 +188,28 @@ test("an open modal renders the real federation flag", async () => {
   expect(modalText()).toContain("Magnus");
 });
 
+test("the open-profile action is one link, not a button nested in a link", async () => {
+  const { FideInfo, SWRConfig } = await importFideInfo();
+  mocks.getFidePlayer.mockResolvedValue(player("Magnus"));
+
+  await renderFideInfo(FideInfo, SWRConfig, {
+    opened: true,
+    setOpened: vi.fn(),
+    name: "Magnus",
+  });
+
+  const dialog = container.querySelector('[role="dialog"]')!;
+  await vi.waitFor(() =>
+    expect(dialog.querySelector('[aria-label="Databases.FIDE.OpenProfile"]')).not.toBeNull(),
+  );
+  const action = dialog.querySelector('[aria-label="Databases.FIDE.OpenProfile"]')!;
+  expect(action.tagName).toBe("A");
+  expect(action.getAttribute("href")).toBe("https://ratings.fide.com/profile/1");
+  expect(action.getAttribute("target")).toBe("_blank");
+  expect(action.querySelector("button, a")).toBeNull();
+  expect(action.parentElement?.closest("a")).toBeNull();
+});
+
 test("a pending player response renders the loader and loading text", async () => {
   const { FideInfo, SWRConfig } = await importFideInfo();
   let resolvePlayer!: (value: ReturnType<typeof player>) => void;

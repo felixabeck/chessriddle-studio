@@ -17,6 +17,12 @@ type IconActionProps = Omit<
   children: ReactElement;
   pending?: boolean;
   pressed?: boolean;
+  /**
+   * An external URL. The action renders as one link that opens it in a new window,
+   * instead of a button wrapped in an anchor (two tab stops, invalid nesting).
+   * A link action does not receive the forwarded ref.
+   */
+  href?: string;
 };
 
 /**
@@ -24,21 +30,30 @@ type IconActionProps = Omit<
  * behaviour, pressed state, pending state, and visible tooltip in sync.
  */
 export const IconAction = forwardRef<HTMLButtonElement, IconActionProps>(function IconAction(
-  { label, children, pending = false, pressed, disabled, ...props },
+  { label, children, pending = false, pressed, disabled, href, ...props },
   ref,
 ) {
   const unavailable = disabled || pending;
-  const action = (
+  const state = {
+    "aria-label": label,
+    "aria-busy": pending || undefined,
+    "aria-pressed": pressed,
+    disabled: unavailable,
+    children: pending ? <Loader size="1em" aria-hidden /> : children,
+  };
+  // The rest props are declared for the button form; their DOM handlers apply to the
+  // anchor unchanged. The forwarded ref is button-typed, so a link action takes none.
+  const action = href ? (
     <ActionIcon
-      {...props}
-      ref={ref}
-      aria-label={label}
-      aria-busy={pending || undefined}
-      aria-pressed={pressed}
-      disabled={unavailable}
-    >
-      {pending ? <Loader size="1em" aria-hidden /> : children}
-    </ActionIcon>
+      {...(props as ActionIconProps & ElementProps<"a", keyof ActionIconProps>)}
+      {...state}
+      component="a"
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+    />
+  ) : (
+    <ActionIcon {...props} {...state} ref={ref} />
   );
 
   return (
