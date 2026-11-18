@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   clearGames: vi.fn(),
   editDbInfo: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
+  addDatabaseProps: vi.fn(),
 }));
 
 vi.mock("@/utils/db", async () => ({
@@ -51,7 +52,12 @@ vi.mock("@/components/common/AppModal", () => ({
     opened ? <div role="dialog">{children}</div> : null,
 }));
 vi.mock("./PlayerSearchInput", () => ({ PlayerSearchInput: () => null }));
-vi.mock("./AddDatabase", () => ({ default: () => null }));
+vi.mock("./AddDatabase", () => ({
+  default: (props: { workspaceFilenames: readonly string[] }) => {
+    mocks.addDatabaseProps(props);
+    return null;
+  },
+}));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
@@ -188,6 +194,21 @@ async function startOldListing() {
   expect(mocks.getDatabases).toHaveBeenCalledTimes(2);
   return { old, pending };
 }
+
+test("passes every workspace leaf, not only readable rows, to the catalog install cards", async () => {
+  mocks.getDatabases.mockResolvedValue({
+    ...list([database]),
+    workspaceFilenames: ["games.db3", "retired.db3", "unread.db3"],
+  });
+  await render();
+  await vi.waitFor(() =>
+    expect(mocks.addDatabaseProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        workspaceFilenames: ["games.db3", "retired.db3", "unread.db3"],
+      }),
+    ),
+  );
+});
 
 test("add games keeps the fresh list after a pre-write listing settles", async () => {
   await render();

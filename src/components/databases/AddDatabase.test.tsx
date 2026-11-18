@@ -326,6 +326,12 @@ test("wires installed state and progress id from the download URL", async () => 
   expect(mocks.progressButtonProps?.initInstalled).toBe(true);
 });
 
+test("offers install while the catalog download leaf is absent from the workspace", async () => {
+  mocks.defaultDatabases = [manifestDb];
+  await renderAddDatabase(["Other.db3", "Lichess"]);
+  expect(mocks.progressButtonProps?.initInstalled).toBe(false);
+});
+
 test("installs a downloaded database with the URL-keyed progress id", async () => {
   mocks.defaultDatabases = [manifestDb];
   const workspaceRoot = { id: { id: "database-root" }, kind: "databaseRoot" };
