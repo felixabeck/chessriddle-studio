@@ -71,13 +71,11 @@ function normalize(paragraph: Character[]): Character[] {
     const remove = (index: number, mark: string) => {
         characters[index].marks = characters[index].marks.filter((candidate) => candidate !== mark);
     };
-    const links = [...new Set(characters.flatMap((character) => character.marks))].filter((mark) =>
-        mark.startsWith('["link",'),
-    );
-    for (const mark of links) {
+    for (const mark of new Set(characters.flatMap((character) => character.marks))) {
         for (const [start, end] of runs(characters, mark)) {
-            // Link text cannot end in a hard break: the reparse reads the break
-            // as literal text. A break there and the whitespace after it leave the link.
+            // No mark can end in a hard break: link text reads the break back as
+            // literal text, and an emphasis delimiter beside it is not flanking.
+            // A break there and the whitespace after it leave the mark.
             let edge = end;
             while (edge > start && /\s/u.test(characters[edge - 1].text)) edge--;
             if (characters.slice(edge, end).some((character) => character.hardBreak)) {

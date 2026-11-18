@@ -883,6 +883,12 @@ test("leaves markers that do not follow a line break unescaped", () => {
     );
 });
 
+test("escapes a marker after a break that starts the paragraph, but not a lone dot", () => {
+    expect.hasAssertions();
+    roundTrip([BR, { text: "- a" }], undefined, "\\\n\\- a");
+    roundTrip([{ text: "a" }, BR, { text: ". b" }], undefined, "a  \n. b");
+});
+
 test("escapes a fence or table delimiter row that a later line completes", () => {
     expect.hasAssertions();
     roundTrip(
@@ -956,6 +962,19 @@ test.each(["bold", "italic", "strike"])(
 
 test("keeps a link off a hard break that ends its text and on one that starts it", () => {
     expect.hasAssertions();
+    roundTrip(
+        [
+            { text: "ab", marks: [url] },
+            { ...BR, marks: [url] },
+        ],
+        [{ text: "ab", marks: [url] }],
+        "[ab](https://x.y)",
+    );
+    roundTrip(
+        [{ text: "ab ", marks: [url] }, { text: "cd" }, BR, { text: "ef" }],
+        undefined,
+        "[ab ](https://x.y)cd  \nef",
+    );
     roundTrip(
         [
             { text: "ab", marks: [url] },
