@@ -972,7 +972,7 @@ async fn download_file_runtime<R: tauri::Runtime>(
     })
 }
 
-fn sanitize_download_error(error: Error) -> Error {
+fn log_and_sanitize_download_error(error: Error) -> Error {
     match error {
         Error::Io(source) => {
             // The payload loses the native text, so log it first or the cause is lost entirely.
@@ -1082,7 +1082,7 @@ async fn download_to_destination_with_failure<R: tauri::Runtime>(
             Box::new(|op, url, integrity| validate_artifact_integrity(op, url, Some(integrity))),
         )
         .await
-        .map_err(sanitize_download_error)
+        .map_err(log_and_sanitize_download_error)
     })
     .await
 }
@@ -1643,7 +1643,7 @@ pub async fn download_lichess_games(
         )
         .await,
     )
-    .map_err(sanitize_download_error)
+    .map_err(log_and_sanitize_download_error)
 }
 
 pub(crate) fn download_publication_result(
@@ -1991,7 +1991,7 @@ async fn download_engine_archive_core<R: tauri::Runtime>(
         Ok(())
     }
     .await;
-    result.map_err(sanitize_download_error)
+    result.map_err(log_and_sanitize_download_error)
 }
 
 #[tauri::command]
@@ -4643,7 +4643,7 @@ mod tests {
                 "missing-resource",
             ),
         ] {
-            let error = sanitize_download_error(Error::Io(Box::new(source)));
+            let error = log_and_sanitize_download_error(Error::Io(Box::new(source)));
             let Error::Io(source) = &error else {
                 panic!("sanitization must preserve the I/O error");
             };
@@ -5070,7 +5070,7 @@ mod tests {
         let error = result.unwrap_err();
         let diagnostic = std::error::Error::source(&error).unwrap().to_string();
         let capture = crate::error::LogCaptureScope::start();
-        let sanitized = sanitize_download_error(error);
+        let sanitized = log_and_sanitize_download_error(error);
         let serialized = serde_json::to_string(&sanitized).unwrap();
         let payload: serde_json::Value = serde_json::from_str(&serialized).unwrap();
         assert_eq!(payload["message"], "I/O failure");
@@ -10975,7 +10975,7 @@ mod tests {
         assert_eq!(item.state, ProgressState::Failed);
         assert!(item.failure.is_none());
         let command_error = download_publication_result(result)
-            .map_err(sanitize_download_error)
+            .map_err(log_and_sanitize_download_error)
             .unwrap_err();
         assert!(serde_json::to_value(command_error)
             .unwrap()
@@ -11068,6 +11068,7 @@ mod tests {
                 MAX_ACTIVE_DOWNLOADS,
             )
             .unwrap();
+        let capture = crate::error::LogCaptureScope::start();
         let terminal = run_engine_install_completion(
             snapshot,
             lease.unwrap(),
@@ -11081,6 +11082,12 @@ mod tests {
         let CompletionOutcome::Failed(payload) = terminal.outcome else {
             panic!("engine completion must retain its failure")
         };
+        // The redacted payload's native cause reaches the log the completion task writes.
+        assert!(capture
+            .records()
+            .iter()
+            .any(|record| record.level == log::Level::Warn
+                && record.message.contains("completion transport failed")));
         assert!(serde_json::to_value(payload)
             .unwrap()
             .get("progressGeneration")
@@ -12559,10 +12566,16 @@ mod tests {
                 continue;
             }
             if boundary == "publication" {
-                tokio::time::timeout(Duration::from_secs(5), at_commit_rx)
-                    .await
-                    .unwrap()
-                    .unwrap();
+                if !matches!(
+                    tokio::time::timeout(Duration::from_secs(5), at_commit_rx).await,
+                    Ok(Ok(()))
+                ) {
+                    panic!(
+                        "native engine workflow never reached publication: {:?}\nlogged: {:#?}",
+                        state.operations.engine_completion(&id, "main"),
+                        logged()
+                    );
+                }
                 assert!(matches!(
                     state
                         .operations
