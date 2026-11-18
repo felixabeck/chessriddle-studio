@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -7,9 +7,9 @@ vi.mock("@mantine/core", () => ({
     children,
     component: Element = "button",
     ...props
-  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { component?: "a" | "button" }) => (
-    <Element {...props}>{children}</Element>
-  ),
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { component?: "a" | "button" }) =>
+    // createElement: the mock's props are button-typed, which JSX would not accept on an anchor.
+    createElement(Element, props, children),
   Loader: () => <span>Loading</span>,
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
