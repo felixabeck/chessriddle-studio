@@ -14,7 +14,9 @@ import GameNotation from "./GameNotation";
 import { TreeStateContext, VariationChooserContext } from "./TreeStateContext";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en-US" } }),
+}));
 vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("@/chessground/Chessground", () => ({ Chessground: () => <div data-chessground /> }));

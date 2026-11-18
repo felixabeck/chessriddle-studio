@@ -34,7 +34,9 @@ const mocks = vi.hoisted(() => ({
   translate: (key: string) => key,
 }));
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: mocks.translate }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: mocks.translate, i18n: { language: "en-US" } }),
+}));
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("@/platform/native", async () => ({
