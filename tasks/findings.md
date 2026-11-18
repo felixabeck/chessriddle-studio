@@ -26817,7 +26817,7 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 ## 2026-11-15 — filed through the inbox spool
 
 ### The "solving with timer" e2e test fails in CI when the runner stalls between clock install and pause
-* **ID:** f-20261115-29 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261115-29 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 
 **CI run:** 43770143503 (job `e2e`, pushed SHA `9ba40fad8`, 2026-11-15). `e2e/chessriddle-training.spec.ts:923` threw `clock.pauseAt: Error: Cannot fast-forward to the past` in `desktop: solving with timer`; the other 453 tests passed, and the same tree passed the local e2e gate.
 
@@ -26826,6 +26826,11 @@ Push review follow-up: the review-tests lens (REVISE) found that nothing committ
 **What does not work (measured 2026-11-15 in the Playwright container):** installing the clock a minute earlier (`11:59:01Z`) removes the throw but makes the screenshot unstable. The displayed timer then depends on the real time elapsed before the pause: 5 repeats per layout all differed from a freshly recorded snapshot by 25 pixels in the timer digits. The change was reverted.
 
 **Direction:** make the timer's start deterministic instead of widening the window, for example by installing the clock before the Puzzles tab mounts the timer, or by pausing first and advancing with `runFor`, then re-record `en-US-desktop-timer` and `en-US-scaled-timer` if the shown value changes. Related: f-20261111-01 (handled, another CI-only difference in this spec, different cause).
+
+Handled in b689bfeb7. The timer stored `elapsedStart` from the real `performance.now()` before the test installed the clock, so the shown value never depended on the fake clock, and the 1 s window between `install` and `pauseAt` was the only thing under test. The test now installs the clock before `goto`, pauses at `clockStart + 10 min` once the Puzzles button is visible (before the tab mounts the timer), and advances exactly 1000 ms with `runFor`. The timer shows 9:59 instead of 10:00; `en-US-desktop-timer` and `en-US-scaled-timer` were re-recorded (the diff covered only the timer digits).
+
+Proof in the pinned Playwright container: `--repeat-each=3` gave byte-identical actuals per layout; with a temporary 3 s real wait inserted before `pauseAt` and before `runFor`, 4/4 passed against the committed snapshots; the same 3 s wait between `install` and `pauseAt` in the old test reproduced `clock.pauseAt: Error: Cannot fast-forward to the past`. Rejected: installing earlier (measured in the filing, leaves the value dependent on real elapsed time).
+<!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"92a2157fe55589b1aad21b0a479b0e050c60de56ded30cf1bf97b58832c28936","header_sha256":"09e607722b588cd69ae21cb04f90c0e5bc9b11659d45b61de74fece5fa6fba91","header_status":"handled","input_sha256":"9ed125f4509d9b7c3a9d366c7e77bd649a24ee6ea92e83da01196ae270fafa2e","kind":"mutation-receipt","operation":"ac33485dab284ee887431e7969a55a5a08767b0ae82af111c7b2cca03c7bba1f","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-29"],"target":"f-20261115-29","v":1} -->
 
 ---
 
