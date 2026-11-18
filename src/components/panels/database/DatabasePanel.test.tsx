@@ -1790,6 +1790,31 @@ describe("DatabasePanel", () => {
     expectSavedChoice(store);
   });
 
+  test("local: a cancellation on the database list preserves cached readable options", async () => {
+    mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    const { revalidate } = await mountLocal();
+    expect(container.querySelector<HTMLInputElement>(".mantine-Select-input")?.value).toBe(
+      "Saved reference",
+    );
+
+    mocks.getDatabases.mockRejectedValue(new DOMException("Cancellation", "AbortError"));
+    await revalidate();
+
+    const selector =
+      selectedPanel("stats").querySelector<HTMLInputElement>(".mantine-Select-input")!;
+    expect(selector.value).toBe("Saved reference");
+    expect(container.textContent).not.toContain("Board.Database.NoReference1");
+    await act(async () => selector.click());
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (item) => item.textContent === "Saved reference",
+    );
+    expect(option).toBeDefined();
+
+    mocks.getDatabases.mockRejectedValue(new Error("Temporary list failure"));
+    await revalidate();
+    expectNoReference();
+  });
+
   test.each(["absent", "unreadable", "list failure"] as const)(
     "local: becoming %s cancels the pending owner and hides a late result",
     async (unavailable) => {

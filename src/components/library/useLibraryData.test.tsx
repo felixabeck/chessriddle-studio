@@ -12,7 +12,11 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const mocks = vi.hoisted(() => ({
   listing: { data: undefined as Entry[] | undefined, error: undefined as unknown, isLoading: true },
-  databases: { data: undefined as DatabaseList | undefined, isLoading: true },
+  databases: {
+    data: undefined as DatabaseList | undefined,
+    error: undefined as unknown,
+    isLoading: true,
+  },
   mutate: vi.fn(),
   clear: vi.fn(),
 }));
@@ -56,7 +60,7 @@ beforeEach(() => {
   root = createRoot(host);
   store = createStore();
   mocks.listing = { data: undefined, error: undefined, isLoading: true };
-  mocks.databases = { data: undefined, isLoading: true };
+  mocks.databases = { data: undefined, error: undefined, isLoading: true };
   mocks.mutate.mockClear();
   mocks.clear.mockClear();
 });
@@ -73,6 +77,7 @@ test.each([true, false])(
         root: { kind: "databaseRoot", id: { id: "root" } },
         collections: supported ? [] : undefined,
       },
+      error: undefined,
       isLoading: false,
     };
     const render = () =>
@@ -141,4 +146,28 @@ test("renders recents while listing is pending, then adds rows, retaining failur
   expect(latest.rows).toHaveLength(2);
   expect(latest.listingError).toBe(mocks.listing.error);
   expect(mocks.clear).not.toHaveBeenCalled();
+});
+
+test("ignores cancellation errors for listing and databases while returning real errors", async () => {
+  const render = () =>
+    act(async () =>
+      root.render(
+        <Provider store={store}>
+          <Consumer />
+        </Provider>,
+      ),
+    );
+  mocks.listing.error = new DOMException("Cancellation", "AbortError");
+  mocks.databases.error = new DOMException("Cancellation", "AbortError");
+  await render();
+  expect(latest.listingError).toBeUndefined();
+  expect(latest.databaseError).toBeUndefined();
+
+  const listingFailure = new Error("listing failed");
+  const databaseFailure = new Error("database failed");
+  mocks.listing.error = listingFailure;
+  mocks.databases.error = databaseFailure;
+  await render();
+  expect(latest.listingError).toBe(listingFailure);
+  expect(latest.databaseError).toBe(databaseFailure);
 });

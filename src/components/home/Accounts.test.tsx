@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import "./Accounts";
 
 const mocks = vi.hoisted(() => ({
+  accountCards: vi.fn(),
   authenticate: vi.fn(),
   authenticateLichess: vi.fn(),
   getAuthenticationStatus: vi.fn(),
@@ -33,11 +34,18 @@ vi.mock("@mantine/notifications", () => ({
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("lucide-react", () => ({ Plus: () => null }));
 vi.mock("../common/AccountCards", () => ({
-  default: ({ onAddAccount }: { onAddAccount: () => void }) => (
-    <button type="button" onClick={onAddAccount}>
-      Add account
-    </button>
-  ),
+  default: (props: {
+    listingAvailable: boolean;
+    listingPending: boolean;
+    onAddAccount: () => void;
+  }) => {
+    mocks.accountCards(props);
+    return (
+      <button type="button" onClick={props.onAddAccount}>
+        Add account
+      </button>
+    );
+  },
 }));
 vi.mock("../common/GenericCard", () => ({
   default: ({ Header, setSelected }: { Header: React.ReactNode; setSelected: () => void }) => (
@@ -416,4 +424,58 @@ describe("account authentication", () => {
       }),
     ]);
   });
+});
+
+test("treats database listing cancellation as available and real failures as unavailable", async () => {
+  const { SWRConfig } = await import("swr");
+  mocks.accountCards.mockClear();
+  mocks.getDatabases.mockClear();
+  mocks.getDatabases.mockRejectedValue(new DOMException("Cancellation", "AbortError"));
+  await act(async () => {
+    root.render(
+      <SWRConfig
+        key="cancelled"
+        value={{
+          provider: () => new Map(),
+          dedupingInterval: 0,
+          shouldRetryOnError: false,
+          errorRetryInterval: 60_000,
+        }}
+      >
+        <Accounts />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() =>
+    expect(mocks.accountCards.mock.calls.at(-1)?.[0]).toMatchObject({
+      listingPending: false,
+      listingAvailable: true,
+    }),
+  );
+
+  mocks.accountCards.mockClear();
+  mocks.getDatabases.mockRejectedValue(new Error("disk failed"));
+  await act(async () => {
+    root.render(
+      <SWRConfig
+        key="failure"
+        value={{
+          provider: () => new Map(),
+          dedupingInterval: 0,
+          shouldRetryOnError: false,
+          errorRetryInterval: 60_000,
+        }}
+      >
+        <Accounts />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() =>
+    expect(mocks.accountCards.mock.calls.at(-1)?.[0]).toMatchObject({
+      listingPending: false,
+      listingAvailable: false,
+    }),
+  );
 });

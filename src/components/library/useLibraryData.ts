@@ -1,3 +1,4 @@
+import { failureUnlessCancelled } from "@/platform/errors";
 import { useAtomValue } from "jotai";
 import { useEffect } from "react";
 import { useSWRConfig } from "swr";
@@ -32,8 +33,8 @@ export function useLibraryData() {
             conversions,
             recents,
             lastOpened,
-            listingError: listing.error,
-            databaseError: databases.error,
+            listingError: failureUnlessCancelled(listing.error),
+            databaseError: failureUnlessCancelled(databases.error),
         }),
         collections: databases.data?.collections,
         unreadDatabases: databases.data?.unread ?? [],

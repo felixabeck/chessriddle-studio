@@ -359,6 +359,15 @@ export function errorUnlessCancelled(error: unknown): AppError | null {
     return normalized.message === "Cancellation" ? null : normalized;
 }
 
+/**
+ * The failure itself, or undefined when it is absent or a cancellation. SWR keeps a superseded or
+ * abandoned run's cancellation as the key's error until the next fetch settles; a display must not
+ * treat it as a failure (f-20261114-01).
+ */
+export function failureUnlessCancelled<E>(error: E | null | undefined): E | undefined {
+    return error != null && errorUnlessCancelled(error) !== null ? error : undefined;
+}
+
 export async function runDestructiveWithRefresh<T>(
     run: () => Promise<T>,
     refresh: () => void | Promise<void>,

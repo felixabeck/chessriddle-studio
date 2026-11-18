@@ -1,3 +1,4 @@
+import { failureUnlessCancelled } from "@/platform/errors";
 import { Box, Collapse, Flex, Group, InputWrapper, Select, Stack } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { useHotkeys } from "@mantine/hooks";
@@ -74,9 +75,10 @@ function GameTable() {
     requestOwner!.run((signal) => query_games(file, query, { signal })),
   );
 
-  const games = error ? [] : (data?.data ?? []);
+  const failure = failureUnlessCancelled(error);
+  const games = failure ? [] : (data?.data ?? []);
   const game = games.find((game) => game.id === selectedGameId);
-  const count = error ? undefined : data?.count;
+  const count = failure ? undefined : data?.count;
   const reportOpenError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
   const gameOpen = useGameOpen(
     (record: NormalizedGame) =>

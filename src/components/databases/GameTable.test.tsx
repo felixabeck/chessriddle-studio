@@ -24,8 +24,12 @@ const mocks = vi.hoisted(() => ({
   deleteDbGame: vi.fn(),
   deletedGameId: undefined as number | undefined,
   queryError: undefined as Error | AppError | undefined,
+  queryData: true,
+  queryLoading: false,
   table: undefined as
     | {
+        records: NormalizedGame[];
+        totalRecords?: number;
         sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
         onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
       }
@@ -64,11 +68,14 @@ vi.mock("@/utils/chess", async (original) => ({
 vi.mock("swr", async (original) => ({
   ...(await original<typeof import("swr")>()),
   default: () => ({
-    data: {
-      data: games.filter((game) => game.id !== mocks.deletedGameId),
-      count: games.length - (mocks.deletedGameId === undefined ? 0 : 1),
-    },
+    data: mocks.queryData
+      ? {
+          data: games.filter((game) => game.id !== mocks.deletedGameId),
+          count: games.length - (mocks.deletedGameId === undefined ? 0 : 1),
+        }
+      : undefined,
     error: mocks.queryError,
+    isLoading: mocks.queryLoading,
     mutate: vi.fn(),
   }),
 }));
@@ -156,6 +163,8 @@ let jotai: ReturnType<typeof createStore>;
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.queryError = undefined;
+  mocks.queryData = true;
+  mocks.queryLoading = false;
   mocks.deletedGameId = undefined;
   mocks.deleteDbGame.mockReset().mockImplementation(async (_file, id: number) => {
     mocks.deletedGameId = id;
@@ -236,6 +245,7 @@ test.each([
 ])(
   "query failure %s renders safe empty-state copy",
   async (message, expected, rootFailure = undefined) => {
+    if (message === "Cancellation") mocks.queryData = false;
     mocks.queryError = rootFailure
       ? normalizeError({ tag: "backend-error", category: "io", message, rootFailure })
       : new Error(message);
@@ -244,6 +254,24 @@ test.each([
     expect(host.textContent).not.toContain(message);
   },
 );
+
+test("cancellation with cached rows keeps rendering the rows and count while real errors clear them", async () => {
+  mocks.queryError = new DOMException("Cancellation", "AbortError");
+  mocks.queryLoading = true;
+  await render();
+  expect(host.querySelectorAll("tbody tr input")).toHaveLength(games.length);
+  expect(row(0).textContent).toContain(games[0].white);
+  expect(row(1).textContent).toContain(games[1].white);
+  expect(host.textContent).not.toContain("Databases.Game.NoGamesFound");
+  expect(mocks.table?.totalRecords).toBe(games.length);
+
+  mocks.queryError = new Error("disk failed");
+  mocks.queryLoading = false;
+  await render();
+  expect(host.querySelectorAll("tbody tr input")).toHaveLength(0);
+  expect(host.querySelector("tbody")?.textContent).toBe("Databases.LoadError.Title");
+  expect(mocks.table?.totalRecords).toBeUndefined();
+});
 
 test("plies sorting maps the native tag to the row accessor in both directions", async () => {
   await render();

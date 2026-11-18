@@ -1,3 +1,4 @@
+import { failureUnlessCancelled } from "@/platform/errors";
 import {
   Autocomplete,
   Button,
@@ -127,7 +128,7 @@ function Accounts() {
     <>
       <AccountCards
         listing={data}
-        listingAvailable={!error}
+        listingAvailable={!failureUnlessCancelled(error)}
         listingPending={isValidating}
         onAddAccount={() => setOpen(true)}
       />

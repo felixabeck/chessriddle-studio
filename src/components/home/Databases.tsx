@@ -20,7 +20,7 @@ import type { PlayerGameInfo } from "@/bindings";
 import { notifyListenerError } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseWritesRevision } from "@/platform/databaseWrites";
-import { errorUnlessCancelled, logFailureSafely, safeFailureContext } from "@/platform/errors";
+import { failureUnlessCancelled, logFailureSafely, safeFailureContext } from "@/platform/errors";
 import { listingFailure } from "@/components/files/listingFailure";
 import { sessionsAtom } from "@/state/atoms";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
@@ -331,10 +331,7 @@ function Databases() {
       }),
   );
 
-  // SWR keeps a superseded run's cancellation as the key's error until a new fetch settles;
-  // a cancellation is not a load failure (f-20261114-01).
-  const summaryError = error != null && errorUnlessCancelled(error) ? error : undefined;
-  const loadError = listingError ?? summaryError;
+  const loadError = listingError ?? failureUnlessCancelled(error);
   const [progress, setProgress] = useState<{ owner: Map<string, number>; value: number } | null>(
     null,
   );

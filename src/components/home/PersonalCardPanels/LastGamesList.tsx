@@ -62,7 +62,8 @@ function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle 
   );
 
   const visibleError = error ? errorUnlessCancelled(error) : null;
-  if (error && visibleError === null) return null;
+  // A resumed fetch after a cancelled one shows its loading state, not nothing.
+  if (error && visibleError === null && !isLoading) return null;
   const loading = isLoading || revision === null;
 
   return (

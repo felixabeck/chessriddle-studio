@@ -3,6 +3,7 @@ import { TauriCommandError } from "./tauri";
 import type { ErrorPayload } from "@/bindings";
 import {
     errorUnlessCancelled,
+    failureUnlessCancelled,
     isErrorReported,
     markErrorReported,
     normalizeError,
@@ -139,6 +140,24 @@ describe("explicit error reporting ownership", () => {
             expect(isErrorReported(error)).toBe(false);
         },
     );
+});
+
+describe("failureUnlessCancelled", () => {
+    test.each([undefined, null])("treats %j as no failure", (error) => {
+        expect(failureUnlessCancelled(error)).toBeUndefined();
+    });
+
+    test.each([new DOMException("Cancellation", "AbortError"), new Error("Cancellation")])(
+        "hides the pinned cancellation %s",
+        (error) => {
+            expect(failureUnlessCancelled(error)).toBeUndefined();
+        },
+    );
+
+    test("returns a real failure unchanged, including a cancel-classified message", () => {
+        const failure = new Error("Analysis cancelled");
+        expect(failureUnlessCancelled(failure)).toBe(failure);
+    });
 });
 
 describe("warnSafely", () => {

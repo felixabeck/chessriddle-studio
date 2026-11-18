@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { SWRConfig } from "swr";
+import { SWRConfig, useSWRConfig, type ScopedMutator } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
 import { recordDatabaseWrite } from "@/platform/databaseWrites";
@@ -345,6 +345,49 @@ test("a cancellation renders nothing", async () => {
   });
   expect(container.textContent).toBe("");
   expect(mocks.notify).not.toHaveBeenCalled();
+});
+
+test("a resumed fetch after a cancellation renders the header and loading state", async () => {
+  const cache = new Map();
+  let mutate!: ScopedMutator;
+  function CacheControl() {
+    mutate = useSWRConfig().mutate;
+    return null;
+  }
+  mocks.queryGames.mockRejectedValueOnce(new DOMException("Cancellation", "AbortError"));
+  await act(async () => {
+    root.render(
+      <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false, dedupingInterval: 0 }}>
+        <CacheControl />
+        <LastGamesList player={player} file={file} />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(mocks.queryGames).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(container.textContent).toBe("");
+
+  let resolvePending!: (value: { data: NormalizedGame[]; count: number }) => void;
+  mocks.queryGames.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolvePending = resolve;
+      }),
+  );
+  await act(async () => {
+    void mutate(() => true);
+    await Promise.resolve();
+  });
+  await vi.waitFor(() => expect(mocks.queryGames).toHaveBeenCalledTimes(2));
+  expect(container.textContent).toContain("Home.Personal.Overview.LastGames");
+  expect(container.textContent).toContain("Common.Loading");
+
+  await act(async () => {
+    resolvePending({ data: [game({ id: 1, white: "Magnus", black: "Hikaru" })], count: 1 });
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("Hikaru"));
 });
 
 test("production SWR configuration does not retry get_games after an error", async () => {

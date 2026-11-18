@@ -1,3 +1,4 @@
+import { failureUnlessCancelled } from "@/platform/errors";
 import { useTabAtom, useOwnerTab } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
 import { Alert, Button, Group, Menu, SegmentedControl, Select, Stack, Tabs } from "@mantine/core";
@@ -176,7 +177,7 @@ function DatabasePanel() {
 
   const { data: databases, error: databasesError } = useDatabaseList(db === "local");
 
-  const readableDatabases = databasesError
+  const readableDatabases = failureUnlessCancelled(databasesError)
     ? []
     : (databases?.databases ?? []).filter((d) => d.type === "success");
   const effectiveReferenceDatabase = databaseHandleFromKey(

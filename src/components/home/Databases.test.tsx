@@ -809,6 +809,15 @@ test("ordinary failed personal item retains successful sibling and reports a dia
   expect(mocks.logError).toHaveBeenCalledWith(expect.stringContaining("(Magnus Lichess)"));
 });
 
+test("a summary failure that escapes per-database collection renders the failed title", async () => {
+  // "Analysis cancelled" classifies as cancelled, so collectSequential rethrows it, but it is not
+  // the pinned Cancellation and must stay a visible failure.
+  mocks.getPlayersGameInfo.mockRejectedValue(new Error("Analysis cancelled"));
+  await renderDatabases();
+  await vi.waitFor(() => expect(container.textContent).toContain("Home.Databases.Failed.Title"));
+  expect(container.textContent).not.toContain("Home.Databases.ProcessingGames");
+});
+
 test.each([1, 2])(
   "unread account candidates remain visibly unavailable (%i rows)",
   async (count) => {
