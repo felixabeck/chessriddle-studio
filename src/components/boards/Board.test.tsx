@@ -187,7 +187,7 @@ test("changing only whiteTime does not set native Chessground config", async () 
 });
 
 test.each(["white", "black"] as const)(
-  "repertoire titles are non-clickable and independent of %s orientation",
+  "the repertoire title sits above the board, non-clickable, in %s orientation",
   async (orientation) => {
     tree.getState().setHeaders({
       ...tree.getState().headers,
@@ -199,7 +199,8 @@ test.each(["white", "black"] as const)(
     });
     await render({ repertoire: true });
     const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
-    expect(bars.map((props) => props.name)).toEqual(["Quiet plan", "Italian Game"]);
+    expect(bars.map((props) => props.name)).toEqual(["Italian Game", ""]);
+    expect(bars.map((props) => props.detail)).toEqual(["Quiet plan", undefined]);
     for (const props of bars) {
       expect(props.onNameClick).toBeUndefined();
       expect(props.rating).toBeUndefined();
@@ -217,8 +218,22 @@ test("repertoire bars use trimmed line titles with the event fallback for an unk
   });
   await render({ repertoire: true });
   const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
-  expect(bars.map((props) => props.name)).toEqual(["English attack", "Najdorf main line"]);
+  expect(bars.map((props) => props.name)).toEqual(["Najdorf main line", ""]);
+  expect(bars[0].detail).toBe("English attack");
   for (const props of bars) expect(props.onNameClick).toBeUndefined();
+});
+
+test("an idea-only repertoire line shows its idea as the title", async () => {
+  tree.getState().setHeaders({
+    ...tree.getState().headers,
+    white: "?",
+    event: "?",
+    black: "6...Dc7",
+  });
+  await render({ repertoire: true });
+  const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
+  expect(bars.map((props) => props.name)).toEqual(["6...Dc7", ""]);
+  expect(bars[0].detail).toBeUndefined();
 });
 
 test("player bars remain clickable and open FideInfo for that player", async () => {

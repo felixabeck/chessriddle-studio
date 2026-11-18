@@ -3,13 +3,15 @@ import type { ReactNode } from "react";
 
 interface BoardBarProps {
   name: string;
+  /** Muted secondary text after the name, such as a repertoire line's idea. */
+  detail?: string;
   rating?: string | number | null;
   onNameClick?: () => void;
   height: string;
   children?: ReactNode;
 }
 
-export function BoardBar({ name, rating, onNameClick, height, children }: BoardBarProps) {
+export function BoardBar({ name, detail, rating, onNameClick, height, children }: BoardBarProps) {
   const hasPlayerName = name.trim().length > 0 && name !== "?";
 
   return (
@@ -35,6 +37,11 @@ export function BoardBar({ name, rating, onNameClick, height, children }: BoardB
               {name}
             </Text>
           ))}
+        {hasPlayerName && detail && (
+          <Text size="sm" c="dimmed">
+            {detail}
+          </Text>
+        )}
         {rating && (
           <Text size="xs" c="dimmed">
             ({rating})

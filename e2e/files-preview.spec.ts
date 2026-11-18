@@ -102,6 +102,7 @@ async function startLineDrag(page: Page, row: Locator) {
 test("files-preview: repertoire clicks below the threshold select and double clicks open", async ({
     page,
     mockScenario,
+    capture,
 }) => {
     await page.setViewportSize({ width: 1920, height: 1100 });
     const list = await openDragFile(page, mockScenario);
@@ -117,6 +118,12 @@ test("files-preview: repertoire clicks below the threshold select and double cli
     await second.dblclick();
     await expect(page).toHaveURL(/\/$/);
     expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 1 });
+    // The line's name and idea form one title above the board, never two player labels.
+    const bars = page.locator("[data-board-bar]");
+    await expect(bars).toHaveCount(2);
+    await expect(bars.first()).toHaveText("White 2Black 2");
+    await expect(bars.last()).toHaveText("");
+    await capture("repertoire-board-title");
 });
 
 for (const belowHeading of [false, true]) {

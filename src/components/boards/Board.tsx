@@ -435,6 +435,10 @@ function Board({
   const topPlayer = orientation === "white" ? headers.black : headers.white;
   const bottomPlayer = orientation === "white" ? headers.white : headers.black;
   const lineTitle = repertoire ? lineTitleOf(headers) : undefined;
+  // A repertoire line's name and idea form one title above the board; an idea-only line shows
+  // its idea as the title. The bottom bar carries no name, so nothing reads as a player label.
+  const repertoireTitle = lineTitle?.name ?? lineTitle?.idea ?? "";
+  const repertoireDetail = lineTitle?.name ? lineTitle.idea : undefined;
   const accessibleGrid = accessibleBoardGrid(orientation);
 
   function keyboardMove(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -529,7 +533,8 @@ function Board({
           }}
         >
           <BoardBar
-            name={repertoire ? (lineTitle?.idea ?? "") : topPlayer}
+            name={repertoire ? repertoireTitle : topPlayer}
+            detail={repertoire ? repertoireDetail : undefined}
             rating={
               repertoire
                 ? undefined
@@ -783,7 +788,7 @@ function Board({
           </Group>
           <Box h="0.5rem" />
           <BoardBar
-            name={repertoire ? (lineTitle?.name ?? "") : bottomPlayer}
+            name={repertoire ? "" : bottomPlayer}
             rating={
               repertoire
                 ? undefined
