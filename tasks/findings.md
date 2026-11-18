@@ -25846,7 +25846,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### Annotate refuses to save a comment while an e-mail address is its last word, or when text containing one is pasted
 
-* **ID:** f-20261114-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261114-05 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (general review, origin/master f3b063a85)
 * **Where:** `src/utils/commentSerializer.ts:142-164` (`literal` escapes `\ * _ [ ] ~ < > : ( )`, `++`, `![` and the `.` after `www` so that GFM URL and `www.` autolink literals stay plain text, but never `@`); the shared lexer `src/utils/commentMarkdown.ts:16-62` (`gfm: true`, autolink literals on per d-20261013-09) and `parseNotationComment` (`src/utils/commentNotation.ts:58-78`); the refusal is `compareCommentDocument` (`src/utils/commentSerializer.ts:259-281`) as used by `src/components/panels/annotation/AnnotationEditor.tsx:140-146`. Tiptap's Link autolink (`@tiptap/extension-link` 3.20.0) marks an address only after a following space is typed.
@@ -25856,6 +25856,9 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Proof:** (1) `/tmp` serializer probe on origin/master copies of `commentSerializer.ts`, `commentNotation.ts`, `commentMarkdown.ts`: `compareCommentDocument` for a single text node `foo@bar.com` → `saved: false`, reparsed as `[{"text":"foo@bar.com","marks":[link mailto:foo@bar.com]}]`; 27 other literal inputs (`1. e4`, `# h`, `a_b_c`, `http://x.com/a_b`, `www.example.com`, `<b>x</b>`, …) save. (2) Real-editor Vitest probe in a `/tmp` `git archive` copy of origin/master using `AnnotationEditor.test.tsx`'s `mount`: typing `Write to foo@bar.com` character by character → doc unlinked, alert `Board.Annotate.SaveFailed`, stored comment `Write to foo@bar.`; then typing ` and more` → address autolinked, stored `Write to [foo@bar.com](mailto:foo@bar.com) and more`, no alert. Inserting ` Ask me at foo@bar.com` / ` mail foo@bar.com then Nf3` / ` foo@bar.com` after `Main idea.` → alert, stored comment stays `Main idea.`. Probes removed afterwards.
 * **Related:** f-20261112-71, f-20261013-02, d-20261013-09 (autolink literals in the dialect), d-20261018-08/-09.
 * **Found by:** Grok Bot general review
+
+**Handled, 2026-11-18 (Claude Code, drain session 4a636f55-145f-480a-a1eb-bdc3f2313b6f, joined to f-20261112-71):** commit 322682451. `literal` escapes every `@` (`\@`), including inside link text, where `[foo\@bar.com](mailto:foo@bar.com)` reparses to the same text and link; the href is written separately and stays unescaped. Escaping only outside links was rejected: `render` strips the link mark before it reaches `literal`, and the escape inside link text is harmless. Tests: `Write to foo@bar.com`, `mail foo@bar.com then Nf3`, `mailto:x@y.z` and a mailto link round-trip, plus a real-editor case typing an address character by character with no trailing space (no alert, no link, reloads `Write to foo\@bar.com`).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"b5c728921173d2005d0e4f95238b2d3458f1b3db41f9c02b8e4da31190b0dd5a","header_sha256":"6e48937e38121421616adc4ea4864fa3da1317ba2f49e3b8d3535b0b5ab508d7","header_status":"handled","input_sha256":"bdc37cd0272b5a665cda48c78f584f458547780c27fe9dcb91dd385d10159a93","kind":"mutation-receipt","operation":"b867783e186885b22ce3880f3c05cc6dce06f9f14a920b12d2e3e6f4abc188d1","options":{"section":null},"request_id_sha256":null,"results":["f-20261114-05"],"target":"f-20261114-05","v":1} -->
 
 ---
 
