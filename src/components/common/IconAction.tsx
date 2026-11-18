@@ -20,7 +20,8 @@ type IconActionProps = Omit<
   /**
    * An external URL. The action renders as one link that opens it in a new window,
    * instead of a button wrapped in an anchor (two tab stops, invalid nesting).
-   * A link action does not receive the forwarded ref.
+   * A link action does not receive the forwarded ref; while disabled or pending it
+   * renders as the disabled button, because an anchor cannot be disabled.
    */
   href?: string;
 };
@@ -34,7 +35,7 @@ export const IconAction = forwardRef<HTMLButtonElement, IconActionProps>(functio
   ref,
 ) {
   const unavailable = disabled || pending;
-  const state = {
+  const shared = {
     "aria-label": label,
     "aria-busy": pending || undefined,
     "aria-pressed": pressed,
@@ -43,18 +44,20 @@ export const IconAction = forwardRef<HTMLButtonElement, IconActionProps>(functio
   };
   // The rest props are declared for the button form; their DOM handlers apply to the
   // anchor unchanged. The forwarded ref is button-typed, so a link action takes none.
-  const action = href ? (
-    <ActionIcon
-      {...(props as ActionIconProps & ElementProps<"a", keyof ActionIconProps>)}
-      {...state}
-      component="a"
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-    />
-  ) : (
-    <ActionIcon {...props} {...state} ref={ref} />
-  );
+  // An anchor cannot be disabled, so an unavailable link renders as the disabled button.
+  const action =
+    href && !unavailable ? (
+      <ActionIcon
+        {...(props as ActionIconProps & ElementProps<"a", keyof ActionIconProps>)}
+        {...shared}
+        component="a"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+      />
+    ) : (
+      <ActionIcon {...props} {...shared} ref={ref} />
+    );
 
   return (
     <Tooltip label={label} withinPortal>

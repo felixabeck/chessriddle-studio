@@ -75,3 +75,16 @@ test("an href action is one named link that opens in a new window", async () => 
   expect(links[0].getAttribute("target")).toBe("_blank");
   expect(links[0].getAttribute("rel")).toBe("noreferrer");
 });
+
+test("a disabled href action renders as the disabled button, not a clickable link", async () => {
+  await act(async () => {
+    root.render(
+      <IconAction label="Open profile" href="https://example.com/profile/1" disabled>
+        <span aria-hidden>Icon</span>
+      </IconAction>,
+    );
+  });
+
+  expect(container.querySelector("a")).toBeNull();
+  expect(container.querySelector("button")!.disabled).toBe(true);
+});
