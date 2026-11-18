@@ -6,7 +6,10 @@ mod native_tests {
     use crate::file_workspace::{WorkspaceFileContent, WorkspaceMetadata};
     use crate::infra::fs;
     use crate::infra::path_authority::{PathAuthority, PathClass};
-    use std::{path::PathBuf, time::Duration};
+    use std::{
+        path::{Path, PathBuf},
+        time::Duration,
+    };
 
     #[test]
     fn account_cursor_covers_ongoing_and_unexported_finished_games() {
@@ -560,6 +563,34 @@ mod native_tests {
         game(id, "e4 e5", note).replacen("[Custom", "[FEN \"invalid\"]\n[Custom", 1)
     }
 
+    fn grant_and_promote_library(
+        authority: &mut PathAuthority,
+        path: &Path,
+        display: &str,
+    ) -> FileWorkspaceHandle {
+        let grant = authority
+            .grant_dialog_operations(
+                path,
+                display,
+                PathClass::BoundedDialogGrant,
+                vec![PathOperation::ReadPgn, PathOperation::WritePgn],
+                Duration::from_secs(60),
+                4,
+            )
+            .unwrap();
+        FileWorkspaceHandle::new(
+            authority
+                .promote_dialog(
+                    &grant,
+                    PathClass::PersistentCustomRoot,
+                    display,
+                    vec![PathOperation::ReadPgn, PathOperation::WritePgn],
+                )
+                .unwrap()
+                .id,
+        )
+    }
+
     #[test]
     fn linked_refresh_keeps_event_summaries_current() {
         let fixture = Fixture::new();
@@ -1101,27 +1132,7 @@ mod native_tests {
             std::fs::create_dir(&workspace_path).unwrap();
             let mut authority =
                 PathAuthority::open(directory.path().join("authority.json"), vec![]).unwrap();
-            let grant = authority
-                .grant_dialog_operations(
-                    &workspace_path,
-                    "Library",
-                    PathClass::BoundedDialogGrant,
-                    vec![PathOperation::ReadPgn, PathOperation::WritePgn],
-                    Duration::from_secs(60),
-                    4,
-                )
-                .unwrap();
-            let workspace = FileWorkspaceHandle::new(
-                authority
-                    .promote_dialog(
-                        &grant,
-                        PathClass::PersistentCustomRoot,
-                        "Library",
-                        vec![PathOperation::ReadPgn, PathOperation::WritePgn],
-                    )
-                    .unwrap()
-                    .id,
-            );
+            let workspace = grant_and_promote_library(&mut authority, &workspace_path, "Library");
             let state = AppState::default();
             state.pgn_path_authority.install(authority).unwrap();
             let root = authority::ensure_app_owned_default_dir(
@@ -7168,110 +7179,18 @@ mod native_tests {
             .unwrap();
     }
 
-    fn grant_and_promote_library(
+    async fn assert_account_preparation_confirms_ownership_when_new_source_reuses_stale_identity(
         fixture: &Fixture,
-        directory_name: &str,
-        display: &str,
-    ) -> FileWorkspaceHandle {
-        let workspace_path = fixture.directory.path().join(directory_name);
-        std::fs::create_dir(&workspace_path).unwrap();
-        fixture
-            .state
-            .pgn_path_authority
-            .with_mut(|authority| {
-                let grant = authority.grant_dialog_operations(
-                    &workspace_path,
-                    display,
-                    PathClass::BoundedDialogGrant,
-                    vec![PathOperation::ReadPgn, PathOperation::WritePgn],
-                    Duration::from_secs(60),
-                    4,
-                )?;
-                Ok::<_, Error>(FileWorkspaceHandle::new(
-                    authority
-                        .promote_dialog(
-                            &grant,
-                            PathClass::PersistentCustomRoot,
-                            display,
-                            vec![PathOperation::ReadPgn, PathOperation::WritePgn],
-                        )?
-                        .id,
-                ))
-            })
-            .unwrap()
-            .unwrap()
-    }
-
-    #[tokio::test]
-    async fn account_preparation_confirms_ownership_when_new_source_reuses_stale_same_workspace_identity(
+        stale_workspace: FileWorkspaceHandle,
     ) {
         use tauri::Manager;
-        let fixture = Fixture::new();
         let account = AccountIdentity {
             provider: "chesscom".into(),
             account: "player".into(),
         };
         let app = fixture.app();
         let prepared = prepare_account_collection(
-            fixture.workspace.clone(),
-            account.clone(),
-            None,
-            app.state::<AppState>(),
-        )
-        .await
-        .unwrap()
-        .unwrap()
-        .collection
-        .unwrap();
-        let id = Uuid::parse_str(&prepared.id).unwrap();
-        let history = fixture.create(
-            "history",
-            &game(Some("123"), "e4 e5", "owned history"),
-            WorkspaceFileType::Other,
-        );
-        Arc::clone(&fixture.service)
-            .append_batch(
-                fixture.state.pgn_path_authority.clone(),
-                id,
-                history,
-                CancellationToken::new(),
-            )
-            .await
-            .unwrap();
-        overwrite_record_identity_from_next_created_source(&fixture, id);
-        let other = AccountIdentity {
-            provider: "lichess".into(),
-            account: "Other-Player_2".into(),
-        };
-        let other = prepare_account_collection(
-            fixture.workspace.clone(),
-            other,
-            None,
-            app.state::<AppState>(),
-        )
-        .await
-        .unwrap()
-        .unwrap()
-        .collection
-        .unwrap();
-        assert_eq!(other.account.unwrap().account, "other-player_2");
-        assert_ne!(other.id, prepared.id);
-        assert_ne!(other.file, prepared.file);
-    }
-
-    #[tokio::test]
-    async fn account_preparation_confirms_ownership_when_new_source_reuses_stale_cross_workspace_identity(
-    ) {
-        use tauri::Manager;
-        let fixture = Fixture::new();
-        let second_workspace = grant_and_promote_library(&fixture, "library-two", "Library Two");
-        let account = AccountIdentity {
-            provider: "chesscom".into(),
-            account: "player".into(),
-        };
-        let app = fixture.app();
-        let prepared = prepare_account_collection(
-            second_workspace.clone(),
+            stale_workspace.clone(),
             account.clone(),
             None,
             app.state::<AppState>(),
@@ -7283,8 +7202,8 @@ mod native_tests {
         .unwrap();
         let id = Uuid::parse_str(&prepared.id).unwrap();
         let history = crate::file_workspace::create_workspace_file_blocking(
-            second_workspace.clone(),
-            second_workspace.clone(),
+            stale_workspace.clone(),
+            stale_workspace,
             "history".into(),
             WorkspaceMetadata {
                 file_type: WorkspaceFileType::Other,
@@ -7309,7 +7228,7 @@ mod native_tests {
             )
             .await
             .unwrap();
-        overwrite_record_identity_from_next_created_source(&fixture, id);
+        overwrite_record_identity_from_next_created_source(fixture, id);
         let other = AccountIdentity {
             provider: "lichess".into(),
             account: "Other-Player_2".into(),
@@ -7328,6 +7247,37 @@ mod native_tests {
         assert_eq!(other.account.unwrap().account, "other-player_2");
         assert_ne!(other.id, prepared.id);
         assert_ne!(other.file, prepared.file);
+    }
+
+    #[tokio::test]
+    async fn account_preparation_confirms_ownership_when_new_source_reuses_stale_same_workspace_identity(
+    ) {
+        let fixture = Fixture::new();
+        assert_account_preparation_confirms_ownership_when_new_source_reuses_stale_identity(
+            &fixture,
+            fixture.workspace.clone(),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn account_preparation_confirms_ownership_when_new_source_reuses_stale_cross_workspace_identity(
+    ) {
+        let fixture = Fixture::new();
+        let workspace_path = fixture.directory.path().join("library-two");
+        std::fs::create_dir(&workspace_path).unwrap();
+        let second_workspace = fixture
+            .state
+            .pgn_path_authority
+            .with_mut(|authority| {
+                grant_and_promote_library(authority, &workspace_path, "Library Two")
+            })
+            .unwrap();
+        assert_account_preparation_confirms_ownership_when_new_source_reuses_stale_identity(
+            &fixture,
+            second_workspace,
+        )
+        .await;
     }
 
     #[tokio::test]
