@@ -15816,15 +15816,18 @@ mod tests {
     ) -> u32 {
         match pid_rx.try_recv() {
             Ok(Some(pid)) => pid,
-            published => {
-                let outcome = match spawn_result {
-                    Ok(_) => "Ok(runtime)".to_string(),
-                    Err(error) => format!("Err({error:?})"),
-                };
-                panic!(
-                    "spawn observer must have published a child pid by the time spawn completed; channel={published:?}; spawn={outcome}"
-                );
-            }
+            published => panic!(
+                "spawn observer must have published a child pid by the time spawn completed; channel={published:?}; spawn={}",
+                spawn_outcome(spawn_result)
+            ),
+        }
+    }
+
+    #[cfg(unix)]
+    fn spawn_outcome(spawn_result: &Result<EngineRuntime, Error>) -> String {
+        match spawn_result {
+            Ok(_) => "Ok(runtime)".to_string(),
+            Err(error) => format!("Err({error:?})"),
         }
     }
 
@@ -15843,21 +15846,22 @@ mod tests {
                 }),
             );
             set_spawn_io_failure(Some(failure));
-            let result = EngineRuntime::spawn(
-                executable,
-                EngineDeadlines {
-                    kill_reap: Duration::from_millis(200),
-                    ..EngineDeadlines::default()
-                },
-            )
-            .await;
+            // The default reap budget, not a shortened one: a SIGKILLed child that is not
+            // reaped in time turns the injected I/O error into `OperationAndCleanup`, which a
+            // loaded coverage runner can hit at 200 ms (f-20261116-02).
+            let result = EngineRuntime::spawn(executable, EngineDeadlines::default()).await;
             set_spawn_io_failure(None);
 
             let pid = child_pid_published_when_spawn_completed(&pid_rx, &result);
-            match failure {
-                SpawnIoFailure::NoStdin => assert!(matches!(result, Err(Error::NoStdin))),
-                SpawnIoFailure::NoStdout => assert!(matches!(result, Err(Error::NoStdout))),
-            }
+            let expected = match failure {
+                SpawnIoFailure::NoStdin => matches!(result, Err(Error::NoStdin)),
+                SpawnIoFailure::NoStdout => matches!(result, Err(Error::NoStdout)),
+            };
+            assert!(
+                expected,
+                "{failure:?} injection must fail spawn with exactly that error; spawn={}",
+                spawn_outcome(&result)
+            );
             assert_child_is_reaped(pid);
         }
 
@@ -15873,19 +15877,24 @@ mod tests {
         );
         set_spawn_io_failure(Some(SpawnIoFailure::NoStdin));
         set_terminate_failure(Some(TerminateFailure::ReapError));
-        let result = EngineRuntime::spawn(
-            executable,
-            EngineDeadlines {
-                kill_reap: Duration::from_millis(200),
-                ..EngineDeadlines::default()
-            },
-        )
-        .await;
+        // The injected reap error waits for the real child first; the default budget keeps
+        // `assert_child_is_reaped` independent of runner load.
+        let result = EngineRuntime::spawn(executable, EngineDeadlines::default()).await;
         set_spawn_io_failure(None);
         set_terminate_failure(None);
 
         let pid = child_pid_published_when_spawn_completed(&pid_rx, &result);
-        assert!(matches!(result, Err(Error::OperationAndCleanup { .. })));
+        // Match the injected cause, so a reap timeout (also `OperationAndCleanup`) cannot pass.
+        assert!(
+            matches!(
+                &result,
+                Err(Error::OperationAndCleanup { primary, cleanup })
+                    if *primary == Error::NoStdin.diagnostic()
+                        && cleanup.contains("injected engine reap failure")
+            ),
+            "an injected reap error must surface as OperationAndCleanup; spawn={}",
+            spawn_outcome(&result)
+        );
         assert_child_is_reaped(pid);
     }
 
