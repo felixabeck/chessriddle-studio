@@ -9,6 +9,9 @@ export const WRITE_JOB_ALLOWED_ACTIONS = new Set([
   "actions/checkout",
   "actions/setup-node",
   "dtolnay/rust-toolchain",
+  // Windows signing login and logout, read in full at the pinned commit (d-20261118-02).
+  "jay0lee/certum-cloud-code-sign",
+  "jay0lee/certum-cloud-code-sign/teardown",
   "pnpm/action-setup",
   "swatinem/rust-cache",
   "tauri-apps/tauri-action",

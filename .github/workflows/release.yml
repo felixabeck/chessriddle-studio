@@ -131,6 +131,35 @@ jobs:
           printf '%s\n' "$APPLE_API_KEY_P8" > "$key_path"
           echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
 
+      # Windows signing uses the Certum "Open Source Code Signing in the Cloud" certificate. Its key
+      # never leaves Certum: SimplySign Desktop, logged in with the account's TOTP, exposes it as a
+      # certificate in CurrentUser\My for signtool. The action is pinned to the commit that was read
+      # in full before its first use (installs Certum's MSI from files.certum.eu, types the login
+      # into the desktop dialog, masks the code). The TOTP seed reaches only that step.
+      - name: Log in to Certum SimplySign (Windows only)
+        id: certum
+        if: runner.os == 'Windows'
+        uses: jay0lee/certum-cloud-code-sign@a3324503499c49090869856eeeecfe95fb613d87 # v1
+        with:
+          username: ${{ secrets.CERTUM_USERNAME }}
+          totp_secret: ${{ secrets.CERTUM_TOTP_SECRET }}
+
+      # Tauri merges src-tauri/tauri.windows.conf.json on Windows. The thumbprint is read from the
+      # store instead of committed, so a renewed certificate needs no change here.
+      - name: Point the bundler at the Certum certificate (Windows only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          THUMBPRINT: ${{ steps.certum.outputs.cert-thumbprint }}
+        run: |
+          if (-not $env:THUMBPRINT) { Write-Error "no Certum certificate thumbprint"; exit 1 }
+          @{ bundle = @{ windows = @{
+            certificateThumbprint = $env:THUMBPRINT
+            digestAlgorithm = 'sha256'
+            timestampUrl = 'http://time.certum.pl'
+            tsp = $true
+          } } } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM src-tauri/tauri.windows.conf.json
+
       - name: Build the app
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
 
@@ -186,6 +215,34 @@ jobs:
             *"source=Notarized Developer ID"*) ;;
             *) echo "::error::Gatekeeper accepted the disk image, but not as a notarized Developer ID build"; exit 1 ;;
           esac
+
+      # Like the macOS check: an installer or app binary that is not signed by the Certum
+      # certificate with a timestamp fails the leg, so it never leaves the draft. The timestamp
+      # keeps the signature valid after the one-year certificate expires.
+      - name: Verify the Authenticode signatures (Windows only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          THUMBPRINT: ${{ steps.certum.outputs.cert-thumbprint }}
+        run: |
+          $installers = @(Get-ChildItem -ErrorAction SilentlyContinue src-tauri/target/release/bundle/nsis/*.exe)
+          $app = Get-Item -ErrorAction SilentlyContinue src-tauri/target/release/chessriddle-studio.exe
+          if ($installers.Count -ne 1) { Write-Error "expected one NSIS installer, found $($installers.Count)"; exit 1 }
+          if (-not $app) { Write-Error "missing app binary chessriddle-studio.exe"; exit 1 }
+          $failed = $false
+          foreach ($f in @($installers[0], $app)) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            Write-Host "$($f.Name): $($sig.Status) ($($sig.StatusMessage)) | $($sig.SignerCertificate.Subject) $($sig.SignerCertificate.Thumbprint) | timestamp: $($null -ne $sig.TimeStamperCertificate)"
+            if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Thumbprint -ne $env:THUMBPRINT -or -not $sig.TimeStamperCertificate) {
+              Write-Host "::error::$($f.Name) is not validly signed and timestamped with the Certum certificate"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Log out of Certum SimplySign (Windows only)
+        if: always() && steps.certum.outcome != 'skipped'
+        uses: jay0lee/certum-cloud-code-sign/teardown@a3324503499c49090869856eeeecfe95fb613d87 # v1
 
   # Undrafts only after every leg succeeded and latest.json names all four platforms.
   publish:
