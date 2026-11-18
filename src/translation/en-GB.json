@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Logs",
     "Board.Analysis.ManageEngines": "Manage Engines",
     "Board.Analysis.Middlegame": "Middlegame",
+    "Board.Analysis.NextAnnotationByBlack": "Go to Black's next {{annotation}} ({{total}} total)",
+    "Board.Analysis.NextAnnotationByWhite": "Go to White's next {{annotation}} ({{total}} total)",
     "Board.Analysis.NoAnalysisAvailable": "No analysis available",
     "Board.Analysis.NotAnalysed": "Not analysed",
     "Board.Analysis.NotInChessDB": "This position is not in ChessDB yet.",

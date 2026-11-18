@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Kayıtlar",
     "Board.Analysis.ManageEngines": "Motorları yönet",
     "Board.Analysis.Middlegame": "Oyunortası",
+    "Board.Analysis.NextAnnotationByBlack": "Siyahın sonraki “{{annotation}}” hamlesine git (toplam {{total}})",
+    "Board.Analysis.NextAnnotationByWhite": "Beyazın sonraki “{{annotation}}” hamlesine git (toplam {{total}})",
     "Board.Analysis.NoAnalysisAvailable": "Analiz yok",
     "Board.Analysis.NotAnalysed": "Analiz edilmedi",
     "Board.Analysis.NotInChessDB": "Bu konum henüz ChessDB'de yok.",

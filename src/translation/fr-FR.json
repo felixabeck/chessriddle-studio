@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Journaux",
     "Board.Analysis.ManageEngines": "Gérer les moteurs",
     "Board.Analysis.Middlegame": "Milieu de jeu",
+    "Board.Analysis.NextAnnotationByBlack": "Aller au prochain coup « {{annotation}} » des Noirs ({{total}} au total)",
+    "Board.Analysis.NextAnnotationByWhite": "Aller au prochain coup « {{annotation}} » des Blancs ({{total}} au total)",
     "Board.Analysis.NoAnalysisAvailable": "Aucune analyse disponible",
     "Board.Analysis.NotAnalysed": "Non analysé",
     "Board.Analysis.NotInChessDB": "Cette position n’est pas encore dans ChessDB.",

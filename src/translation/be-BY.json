@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Логі",
     "Board.Analysis.ManageEngines": "Кіраваць рухавікамі",
     "Board.Analysis.Middlegame": "Мітэльшпіль",
+    "Board.Analysis.NextAnnotationByBlack": "Перайсці да наступнага ходу чорных «{{annotation}}» (усяго {{total}})",
+    "Board.Analysis.NextAnnotationByWhite": "Перайсці да наступнага ходу белых «{{annotation}}» (усяго {{total}})",
     "Board.Analysis.NoAnalysisAvailable": "Аналіз недаступны",
     "Board.Analysis.NotAnalysed": "Не прааналізавана",
     "Board.Analysis.NotInChessDB": "Гэтай пазіцыі пакуль няма ў ChessDB.",

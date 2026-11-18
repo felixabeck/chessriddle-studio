@@ -1,8 +1,7 @@
 import { useTabAtom, useOwnerTabId } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
-import { Grid, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
+import { Grid, Group, Paper, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core";
 import { ScanSearch } from "lucide-react";
-import cx from "clsx";
 import equal from "fast-deep-equal";
 import { useAtom } from "jotai";
 import React, { memo, useCallback, useContext, useEffect, useMemo } from "react";
@@ -185,25 +184,20 @@ const GameStats = memo(
           {Object.keys(ANNOTATION_INFO)
             .filter((a) => isBasicAnnotation(a))
             .map((annotation) => {
-              const s = annotation as "??" | "?" | "?!" | "!!" | "!" | "!?";
+              const s = annotation as BasicAnnotation;
               const { name, color, translationKey } = ANNOTATION_INFO[s];
               const w = whiteAnnotations[s];
               const b = blackAnnotations[s];
+              const label = translationKey ? t(`Annotate.${translationKey}`) : name;
               return (
                 <React.Fragment key={annotation}>
-                  <Grid.Col
-                    className={cx(w > 0 && classes.label)}
-                    span={3}
-                    style={{ textAlign: "center" }}
-                    c={w > 0 ? color : undefined}
-                    onClick={() => {
-                      if (w > 0) {
-                        goToAnnotation(s, "white");
-                      }
-                    }}
-                  >
-                    {w}
-                  </Grid.Col>
+                  <AnnotationCount
+                    annotation={s}
+                    side="white"
+                    total={w}
+                    label={label}
+                    goToAnnotation={goToAnnotation}
+                  />
                   <Grid.Col
                     span={2}
                     style={{ textAlign: "center", fontWeight: "bold" }}
@@ -212,21 +206,15 @@ const GameStats = memo(
                     {annotation}
                   </Grid.Col>
                   <Grid.Col span={4} c={w + b > 0 ? color : undefined}>
-                    {translationKey ? t(`Annotate.${translationKey}`) : name}
+                    {label}
                   </Grid.Col>
-                  <Grid.Col
-                    className={cx(b > 0 && classes.label)}
-                    span={3}
-                    style={{ textAlign: "center" }}
-                    c={b > 0 ? color : undefined}
-                    onClick={() => {
-                      if (b > 0) {
-                        goToAnnotation(s, "black");
-                      }
-                    }}
-                  >
-                    {b}
-                  </Grid.Col>
+                  <AnnotationCount
+                    annotation={s}
+                    side="black"
+                    total={b}
+                    label={label}
+                    goToAnnotation={goToAnnotation}
+                  />
                 </React.Fragment>
               );
             })}
@@ -241,6 +229,50 @@ const GameStats = memo(
     );
   },
 );
+
+type BasicAnnotation = "??" | "?" | "?!" | "!!" | "!" | "!?";
+
+function AnnotationCount({
+  annotation,
+  side,
+  total,
+  label,
+  goToAnnotation,
+}: {
+  annotation: BasicAnnotation;
+  side: "white" | "black";
+  total: number;
+  label: string;
+  goToAnnotation: (annotation: BasicAnnotation, color: "white" | "black") => void;
+}) {
+  const { t } = useTranslation();
+  const { color } = ANNOTATION_INFO[annotation];
+
+  if (total === 0) {
+    return (
+      <Grid.Col span={3} style={{ textAlign: "center" }}>
+        {total}
+      </Grid.Col>
+    );
+  }
+
+  return (
+    <Grid.Col span={3} style={{ textAlign: "center" }}>
+      <UnstyledButton
+        className={classes.label}
+        c={color}
+        aria-label={
+          side === "white"
+            ? t("Board.Analysis.NextAnnotationByWhite", { annotation: label, total })
+            : t("Board.Analysis.NextAnnotationByBlack", { annotation: label, total })
+        }
+        onClick={() => goToAnnotation(annotation, side)}
+      >
+        {total}
+      </UnstyledButton>
+    </Grid.Col>
+  );
+}
 
 function AccuracyCard({ color, cpl, accuracy }: { color: string; cpl: number; accuracy: number }) {
   const { t } = useTranslation();

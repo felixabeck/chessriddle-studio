@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Logger",
     "Board.Analysis.ManageEngines": "Administrer motorer",
     "Board.Analysis.Middlegame": "Midtspill",
+    "Board.Analysis.NextAnnotationByBlack": "Gå til svarts neste «{{annotation}}» ({{total}} totalt)",
+    "Board.Analysis.NextAnnotationByWhite": "Gå til hvits neste «{{annotation}}» ({{total}} totalt)",
     "Board.Analysis.NoAnalysisAvailable": "Ingen analyse tilgjengelig",
     "Board.Analysis.NotAnalysed": "Ikke analysert",
     "Board.Analysis.NotInChessDB": "Denne stillingen finnes ikke i ChessDB ennå.",

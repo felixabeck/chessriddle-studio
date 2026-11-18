@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Логи",
     "Board.Analysis.ManageEngines": "Управление движками",
     "Board.Analysis.Middlegame": "Миттельшпиль",
+    "Board.Analysis.NextAnnotationByBlack": "Перейти к следующему ходу чёрных «{{annotation}}» (всего {{total}})",
+    "Board.Analysis.NextAnnotationByWhite": "Перейти к следующему ходу белых «{{annotation}}» (всего {{total}})",
     "Board.Analysis.NoAnalysisAvailable": "Анализ недоступен",
     "Board.Analysis.NotAnalysed": "Не проанализировано",
     "Board.Analysis.NotInChessDB": "Этой позиции пока нет в ChessDB.",

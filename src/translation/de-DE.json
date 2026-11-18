@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Protokolle",
     "Board.Analysis.ManageEngines": "Engines verwalten",
     "Board.Analysis.Middlegame": "Mittelspiel",
+    "Board.Analysis.NextAnnotationByBlack": "Zum nächsten Zug von Schwarz mit „{{annotation}}“ ({{total}} insgesamt)",
+    "Board.Analysis.NextAnnotationByWhite": "Zum nächsten Zug von Weiß mit „{{annotation}}“ ({{total}} insgesamt)",
     "Board.Analysis.NoAnalysisAvailable": "Keine Analyse verfügbar",
     "Board.Analysis.NotAnalysed": "Nicht analysiert",
     "Board.Analysis.NotInChessDB": "Diese Stellung ist noch nicht in ChessDB.",

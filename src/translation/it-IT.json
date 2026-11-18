@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Logs",
     "Board.Analysis.ManageEngines": "Gestisci motori",
     "Board.Analysis.Middlegame": "Mediogioco",
+    "Board.Analysis.NextAnnotationByBlack": "Vai alla prossima mossa «{{annotation}}» del Nero ({{total}} in totale)",
+    "Board.Analysis.NextAnnotationByWhite": "Vai alla prossima mossa «{{annotation}}» del Bianco ({{total}} in totale)",
     "Board.Analysis.NoAnalysisAvailable": "Nessuna analisi disponibile",
     "Board.Analysis.NotAnalysed": "Non analizzata",
     "Board.Analysis.NotInChessDB": "Questa posizione non è ancora in ChessDB.",

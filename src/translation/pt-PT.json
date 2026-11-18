@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Registos",
     "Board.Analysis.ManageEngines": "Gerir motores",
     "Board.Analysis.Middlegame": "Meio-jogo",
+    "Board.Analysis.NextAnnotationByBlack": "Ir para o próximo lance «{{annotation}}» das pretas ({{total}} no total)",
+    "Board.Analysis.NextAnnotationByWhite": "Ir para o próximo lance «{{annotation}}» das brancas ({{total}} no total)",
     "Board.Analysis.NoAnalysisAvailable": "Não há análise disponível",
     "Board.Analysis.NotAnalysed": "Não analisado",
     "Board.Analysis.NotInChessDB": "Esta posição ainda não está no ChessDB.",

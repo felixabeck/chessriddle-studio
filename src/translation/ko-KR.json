@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "로그",
     "Board.Analysis.ManageEngines": "엔진 관리",
     "Board.Analysis.Middlegame": "미들게임",
+    "Board.Analysis.NextAnnotationByBlack": "흑의 다음 '{{annotation}}' 수로 이동 (총 {{total}}개)",
+    "Board.Analysis.NextAnnotationByWhite": "백의 다음 '{{annotation}}' 수로 이동 (총 {{total}}개)",
     "Board.Analysis.NoAnalysisAvailable": "사용 가능한 분석 없음",
     "Board.Analysis.NotAnalysed": "분석되지 않음",
     "Board.Analysis.NotInChessDB": "이 포지션은 아직 ChessDB에 없습니다.",

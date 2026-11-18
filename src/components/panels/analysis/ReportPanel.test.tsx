@@ -166,8 +166,18 @@ vi.mock("@mantine/core", () => ({
   Select: () => <select />,
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  UnstyledButton: ({
+    children,
+    c: _c,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { c?: string }) => (
+    <button type="button" {...props}>
+      {children}
+    </button>
+  ),
 }));
 vi.mock("lucide-react", () => ({ ScanSearch: () => null }));
+vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -356,6 +366,41 @@ afterEach(async () => {
   tabStorage.flush();
   tabStorage.remove("tab-1");
   closeTreeStore("tab-1");
+});
+
+test("annotation counts are labelled buttons that jump to the move; zero counts are plain text", async () => {
+  // 1. e4 e5?? 2. Nf3?? Nc6 3. Bb5?? — two White blunders, one Black blunder.
+  store.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6", "Bb5"], mainline: true });
+  for (const path of [
+    [0, 0],
+    [0, 0, 0],
+    [0, 0, 0, 0, 0],
+  ]) {
+    store.getState().goToMove(path);
+    store.getState().setAnnotation("??");
+  }
+  store.getState().goToStart();
+  await renderPanel();
+
+  const white = host.querySelector<HTMLButtonElement>(
+    "button[aria-label='Board.Analysis.NextAnnotationByWhite']",
+  );
+  const black = host.querySelector<HTMLButtonElement>(
+    "button[aria-label='Board.Analysis.NextAnnotationByBlack']",
+  );
+  expect(white?.textContent).toBe("2");
+  expect(black?.textContent).toBe("1");
+  // Every other count is zero and offers no control.
+  expect(host.querySelectorAll("button[aria-label^='Board.Analysis.NextAnnotation']")).toHaveLength(
+    2,
+  );
+
+  await act(async () => white!.click());
+  expect(store.getState().position).toEqual([0, 0, 0]);
+  await act(async () => white!.click());
+  expect(store.getState().position).toEqual([0, 0, 0, 0, 0]);
+  await act(async () => black!.click());
+  expect(store.getState().position).toEqual([0, 0]);
 });
 
 test("ProgressButton subscribes to the registered operation id without treating success as complete", async () => {

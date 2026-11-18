@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "日誌",
     "Board.Analysis.ManageEngines": "管理引擎",
     "Board.Analysis.Middlegame": "中局",
+    "Board.Analysis.NextAnnotationByBlack": "跳到黑方下一步「{{annotation}}」（共 {{total}} 步）",
+    "Board.Analysis.NextAnnotationByWhite": "跳到白方下一步「{{annotation}}」（共 {{total}} 步）",
     "Board.Analysis.NoAnalysisAvailable": "沒有可用分析",
     "Board.Analysis.NotAnalysed": "未分析",
     "Board.Analysis.NotInChessDB": "此局面尚未收錄在 ChessDB 中。",

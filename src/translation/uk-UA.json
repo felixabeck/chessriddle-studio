@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Журнали",
     "Board.Analysis.ManageEngines": "Керувати рушіями",
     "Board.Analysis.Middlegame": "Мітельшпіль",
+    "Board.Analysis.NextAnnotationByBlack": "Перейти до наступного ходу чорних «{{annotation}}» (усього {{total}})",
+    "Board.Analysis.NextAnnotationByWhite": "Перейти до наступного ходу білих «{{annotation}}» (усього {{total}})",
     "Board.Analysis.NoAnalysisAvailable": "Аналіз недоступний",
     "Board.Analysis.NotAnalysed": "Не проаналізовано",
     "Board.Analysis.NotInChessDB": "Цієї позиції ще немає в ChessDB.",

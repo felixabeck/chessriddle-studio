@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Dzienniki",
     "Board.Analysis.ManageEngines": "Zarządzaj silnikami",
     "Board.Analysis.Middlegame": "Gra środkowa",
+    "Board.Analysis.NextAnnotationByBlack": "Przejdź do następnego ruchu „{{annotation}}” czarnych (łącznie {{total}})",
+    "Board.Analysis.NextAnnotationByWhite": "Przejdź do następnego ruchu „{{annotation}}” białych (łącznie {{total}})",
     "Board.Analysis.NoAnalysisAvailable": "Brak dostępnej analizy",
     "Board.Analysis.NotAnalysed": "Nie przeanalizowane",
     "Board.Analysis.NotInChessDB": "Tej pozycji nie ma jeszcze w ChessDB.",

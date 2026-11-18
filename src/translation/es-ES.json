@@ -83,6 +83,8 @@
     "Board.Analysis.Logs": "Logs",
     "Board.Analysis.ManageEngines": "Gestionar máquinas",
     "Board.Analysis.Middlegame": "Medio juego",
+    "Board.Analysis.NextAnnotationByBlack": "Ir a la siguiente jugada «{{annotation}}» de las negras ({{total}} en total)",
+    "Board.Analysis.NextAnnotationByWhite": "Ir a la siguiente jugada «{{annotation}}» de las blancas ({{total}} en total)",
     "Board.Analysis.NoAnalysisAvailable": "No hay análisis disponible",
     "Board.Analysis.NotAnalysed": "No analizado",
     "Board.Analysis.NotInChessDB": "Esta posición aún no está en ChessDB.",
