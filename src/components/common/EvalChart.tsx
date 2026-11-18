@@ -100,7 +100,7 @@ function EvalChart(props: EvalChartProps) {
       style: "percent",
       maximumFractionDigits: WDL_FRACTION_DIGITS,
     });
-    const share = (value: number) => percent.format(value / WDL_SCALE);
+    const formatPercent = (value: number) => percent.format(value / WDL_SCALE);
     return nodes.map((currentNode) => {
       const node = currentNode.node;
       const annotations = nagGlyphs(node.nags);
@@ -121,9 +121,9 @@ function EvalChart(props: EvalChartProps) {
           : terminalText(),
         wdlLines: wdl
           ? [
-              t("Board.Analysis.Wdl.White", { percent: share(wdl[0]) }),
-              t("Board.Analysis.Wdl.Draw", { percent: share(wdl[1]) }),
-              t("Board.Analysis.Wdl.Black", { percent: share(wdl[2]) }),
+              t("Board.Analysis.WDL.White", { percent: formatPercent(wdl[0]) }),
+              t("Board.Analysis.WDL.Draw", { percent: formatPercent(wdl[1]) }),
+              t("Board.Analysis.WDL.Black", { percent: formatPercent(wdl[2]) }),
             ]
           : [terminalText()],
         yValue: getYValue(node) ?? "none",
