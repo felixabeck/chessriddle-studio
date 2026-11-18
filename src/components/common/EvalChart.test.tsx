@@ -7,19 +7,30 @@ import type { Score } from "@/bindings";
 import { reportTypeAtom } from "@/state/atoms";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { catalogueI18n } from "@/tests/catalogues";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import EvalChart from "./EvalChart";
 import { TreeStateContext } from "./TreeStateContext";
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+const i18nMock = vi.hoisted(() => ({
+  language: "en-US",
+  t: (key: string, _options?: Record<string, unknown>) => key,
+}));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: i18nMock.t, i18n: { language: i18nMock.language } }),
+}));
 vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
 // Mantine AreaChart spreads resolved areaProps into both the filled Area and the dots Area
 // for each series. The dots layer is rendered because withDots defaults to true.
+// The tooltip is rendered as recharts would while the first point is hovered.
 vi.mock("@mantine/charts", () => ({
-  AreaChart: ({ data, series, referenceLines, areaProps, type }: any) => (
+  AreaChart: ({ data, series, referenceLines, areaProps, type, tooltipProps }: any) => (
     <div data-chart-type={type}>
+      <div data-tooltip>
+        {tooltipProps.content({ active: true, payload: [{ payload: data[0] }] })}
+      </div>
       {referenceLines.map((line: any, index: number) => (
         <div
           key={index}
@@ -104,6 +115,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  i18nMock.language = "en-US";
+  i18nMock.t = (key: string) => key;
   await act(async () => root.unmount());
   host.remove();
 });
@@ -230,4 +243,28 @@ test("WDL disables animation on every layer and renders annotation dots on White
   expect(
     host.querySelectorAll('[data-series="Draw"] circle, [data-series="Black"] circle'),
   ).toHaveLength(0);
+});
+
+function tooltipLines() {
+  return [...host.querySelectorAll("[data-tooltip] p")].map((line) => line.textContent);
+}
+
+test("the WDL tooltip shows one translated, locale-formatted line per outcome", async () => {
+  const translator = await catalogueI18n("de-DE");
+  i18nMock.language = "de-DE";
+  i18nMock.t = (key, options) => translator.t(key, options);
+  const score: Score = { value: { type: "cp", value: 30 }, wdl: [453, 300, 247] };
+  store.setState((state) => ({
+    root: { ...state.root, children: [{ ...state.root.children[0], score }] },
+  }));
+  await renderChart();
+  await act(async () => atoms.set(reportTypeAtom, "WDL"));
+  const percent = (value: number) =>
+    new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 1 }).format(value);
+  expect(tooltipLines()).toEqual([
+    "1. e4!",
+    `Weiß: ${percent(0.453)}`,
+    `Remis: ${percent(0.3)}`,
+    `Schwarz: ${percent(0.247)}`,
+  ]);
 });

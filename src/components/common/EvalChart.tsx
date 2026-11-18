@@ -30,7 +30,8 @@ interface EvalChartProps {
 type DataPoint = {
   name: string;
   cpText: string;
-  wdlText: string;
+  /** One tooltip line per outcome, or the single terminal/not-analysed line. */
+  wdlLines: string[];
   yValue: number | "none";
   movePath: number[];
   color: string;
@@ -39,6 +40,10 @@ type DataPoint = {
   Draw: number;
   Black: number;
 };
+
+/** Engine WDL values are per mille. */
+const WDL_SCALE = 1000;
+const WDL_FRACTION_DIGITS = 1;
 
 const annotationAreaProps = { isAnimationActive: false, dot: <CustomDot /> };
 
@@ -65,7 +70,7 @@ function getYValue(node: TreeNode): number | undefined {
 }
 
 function EvalChart(props: EvalChartProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const store = useContext(TreeStateContext)!;
   const { root } = useTreeView(store);
@@ -89,40 +94,48 @@ function EvalChart(props: EvalChartProps) {
     return [...takeWhile(withoutRoot, (node: ListNode) => node.node.move !== undefined)];
   }, [root, store]);
 
-  const data = useMemo<DataPoint[]>(
-    () =>
-      nodes.map((currentNode) => {
-        const node = currentNode.node;
-        const annotations = nagGlyphs(node.nags);
-        const [pos] = positionFromFen(node.fen);
-        const score = displayedScore(node);
-        const wdl = score?.wdl;
-        const terminalText = () => {
-          if (node.children.length === 0 && pos) {
-            if (pos.isCheckmate()) return t("Common.Checkmate");
-            if (pos.isStalemate()) return t("Common.Stalemate");
-          }
-          return t("Board.Analysis.NotAnalysed");
-        };
-        return {
-          name: `${Math.ceil(node.halfMoves / 2)}.${pos?.turn === "black" ? "" : ".."} ${node.san}${formatNagGlyphs(annotations)}`,
-          cpText: score
-            ? `${t("Board.Analysis.Advantage")}: ${formatScore(score.value)}`
-            : terminalText(),
-          wdlText: wdl
-            ? `\n         White: ${wdl[0] / 10}%\n         Draw: ${wdl[1] / 10}%\n         Black: ${wdl[2] / 10}%`
-            : terminalText(),
-          yValue: getYValue(node) ?? "none",
-          movePath: currentNode.position,
-          color: ANNOTATION_INFO[annotations[0]]?.color || "gray",
-          annotation: annotations[0],
-          White: wdl ? wdl[0] : 0,
-          Draw: wdl ? wdl[1] : 0,
-          Black: wdl ? wdl[2] : 0,
-        };
-      }),
-    [nodes, t],
-  );
+  const data = useMemo<DataPoint[]>(() => {
+    // Percent shaping is locale-dependent (fr-FR writes "45 %", de-DE "45,3 %").
+    const percent = new Intl.NumberFormat(i18n.language, {
+      style: "percent",
+      maximumFractionDigits: WDL_FRACTION_DIGITS,
+    });
+    const share = (value: number) => percent.format(value / WDL_SCALE);
+    return nodes.map((currentNode) => {
+      const node = currentNode.node;
+      const annotations = nagGlyphs(node.nags);
+      const [pos] = positionFromFen(node.fen);
+      const score = displayedScore(node);
+      const wdl = score?.wdl;
+      const terminalText = () => {
+        if (node.children.length === 0 && pos) {
+          if (pos.isCheckmate()) return t("Common.Checkmate");
+          if (pos.isStalemate()) return t("Common.Stalemate");
+        }
+        return t("Board.Analysis.NotAnalysed");
+      };
+      return {
+        name: `${Math.ceil(node.halfMoves / 2)}.${pos?.turn === "black" ? "" : ".."} ${node.san}${formatNagGlyphs(annotations)}`,
+        cpText: score
+          ? `${t("Board.Analysis.Advantage")}: ${formatScore(score.value)}`
+          : terminalText(),
+        wdlLines: wdl
+          ? [
+              t("Board.Analysis.Wdl.White", { percent: share(wdl[0]) }),
+              t("Board.Analysis.Wdl.Draw", { percent: share(wdl[1]) }),
+              t("Board.Analysis.Wdl.Black", { percent: share(wdl[2]) }),
+            ]
+          : [terminalText()],
+        yValue: getYValue(node) ?? "none",
+        movePath: currentNode.position,
+        color: ANNOTATION_INFO[annotations[0]]?.color || "gray",
+        annotation: annotations[0],
+        White: wdl ? wdl[0] : 0,
+        Draw: wdl ? wdl[1] : 0,
+        Black: wdl ? wdl[2] : 0,
+      };
+    });
+  }, [nodes, t, i18n.language]);
 
   const onChartClick = useCallback<CategoricalChartFunc>(
     (e) => {
@@ -287,7 +300,11 @@ function CustomTooltip({
         >
           {dataPoint.name}
         </Text>
-        <Text>{type === "cp" ? dataPoint.cpText : dataPoint.wdlText}</Text>
+        {type === "cp" ? (
+          <Text>{dataPoint.cpText}</Text>
+        ) : (
+          dataPoint.wdlLines.map((line) => <Text key={line}>{line}</Text>)
+        )}
       </Paper>
     );
   }
