@@ -1,5 +1,5 @@
 import { RichTextEditor } from "@mantine/tiptap";
-import { Text } from "@mantine/core";
+import { Box, Text } from "@mantine/core";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import { Markdown } from "@tiptap/markdown";
@@ -71,6 +71,10 @@ const CommentStarterKit = StarterKit.extend({
 });
 
 export { parseNotationComment } from "@/utils/commentNotation";
+
+// The editor root draws the frame but has no padding; lines placed below the content
+// take the content's inline inset so they never touch the border.
+const FRAME_INSET = { px: "md", pb: "xs" } as const;
 
 function AnnotationEditor() {
   "use no memo";
@@ -236,13 +240,17 @@ function AnnotationEditor() {
       >
         <RichTextEditor.Content />
       </div>
-      <Text id={hintId} c="dimmed" size="xs" hidden={!focused}>
+      <Text id={hintId} c="dimmed" size="xs" {...FRAME_INSET} hidden={!focused}>
         {t("Board.Annotate.NavigationHint", {
           next: formatKeymap(keyMap.ANNOTATION_NEXT_MOVE.keys),
           previous: formatKeymap(keyMap.ANNOTATION_PREVIOUS_MOVE.keys),
         })}
       </Text>
-      {saveFailed && <div role="alert">{t("Board.Annotate.SaveFailed")}</div>}
+      {saveFailed && (
+        <Box role="alert" {...FRAME_INSET}>
+          {t("Board.Annotate.SaveFailed")}
+        </Box>
+      )}
     </RichTextEditor>
   );
 }

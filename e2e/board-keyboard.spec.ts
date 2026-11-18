@@ -254,12 +254,20 @@ test("board-keyboard: annotation navigation keeps focus and comments on their mo
         .poll(() =>
             hint.evaluate((element) => {
                 const panel = element.closest<HTMLElement>(".mantine-ScrollArea-viewport")!;
+                const frame = element.closest<HTMLElement>(".mantine-RichTextEditor-root")!;
                 const hintBox = element.getBoundingClientRect();
                 const panelBox = panel.getBoundingClientRect();
+                const frameBox = frame.getBoundingClientRect();
+                const text = document.createRange();
+                text.selectNodeContents(element);
+                const textBox = text.getBoundingClientRect();
                 return {
                     insideRight: hintBox.right <= panelBox.right,
                     insideLeft: hintBox.left >= panelBox.left,
                     noHorizontalOverflow: element.scrollWidth <= element.clientWidth,
+                    // The hint text keeps clear of the editor frame's border.
+                    clearOfFrameLeft: textBox.left - frameBox.left >= 12,
+                    clearOfFrameBottom: frameBox.bottom - textBox.bottom >= 6,
                 };
             }),
         )
@@ -267,6 +275,8 @@ test("board-keyboard: annotation navigation keeps focus and comments on their mo
             insideRight: true,
             insideLeft: true,
             noHorizontalOverflow: true,
+            clearOfFrameLeft: true,
+            clearOfFrameBottom: true,
         });
     await page.keyboard.press("Tab");
     await expect(editor).toBeFocused();
