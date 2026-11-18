@@ -25055,7 +25055,7 @@ Handled 2026-11-18 (drain, lens tier). `FenSearch.tsx` now clears `error` in the
 
 ### Report tab annotation counts jump to the move only on mouse click; the count cells are not focusable controls
 
-* **ID:** f-20261112-63 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-63 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 - **Impact class:** ux
 - **Spotted outside diff:** no
 - **Where:** `src/components/panels/analysis/ReportPanel.tsx:194-206,217-229`: in `GameStats`, the White and Black count cells are Mantine `Grid.Col` (a plain `div`) carrying `onClick={() => goToAnnotation(s, color)}`. Their only affordance is the `.label` class (`AnalysisPanel.module.css:1-7`: `cursor: pointer` plus hover underline). There is no `role`, `tabIndex`, key handler or accessible name.
@@ -25067,6 +25067,9 @@ Handled 2026-11-18 (drain, lens tier). `FenSearch.tsx` now clears `error` in the
 
 Correction to the Failure scenario: what gets focus before or after the annotation grid (Generate report, the eval chart) was not checked. The claim rests only on the grid cells themselves having no tab stop (no `tabIndex`, `role` or key handler, per the Proof). Read it as "Tab never lands on any count cell".
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"12dd754a83cee03f105dc98695cf11f02c7b1508a0ff4cd1331984bdea40e3af","input_sha256":"f22d64c74d1cbff68648d90fb7a9110611471e8bf005314ae8e571684bf53e5e","kind":"mutation-receipt","operation":"485032ff345e74fb9aa5d235497bb33d49dc0acf116b2196dfe5d1dbb97e64fd","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-63"],"target":"f-20261112-63","v":1} -->
+
+Handled in abc59985e. `GameStats` now renders each count through `AnnotationCount`: a non-zero count is a Mantine `UnstyledButton` (a native `<button>`, so it takes a tab stop and Enter/Space activation) carrying a translated `aria-label` (`Board.Analysis.NextAnnotationByWhite` / `...ByBlack`, e.g. "Go to White's next Blunder (2 total)"), added to all 16 catalogues. A zero count stays plain text. The interpolation variable is `total`, not `count`, so i18next does not look for plural-suffixed keys. Proof: new `ReportPanel.test.tsx` case builds a game with two White and one Black `??`, asserts exactly two labelled buttons with the right counts, and that clicking steps through the blunders. It fails on the previous component and passes with the fix. Rejected: `role="button"` + `tabIndex` + `onKeyDown` on the `Grid.Col` div, which re-implements native button semantics by hand.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"630b1da363e46b84d61fa8ca55562e435b117df3ffd169048b135260a32bae41","header_sha256":"9fa8180db8b95b4afeadc7a4a9927c03d14d861d076e8048ada4db25e0728499","header_status":"handled","input_sha256":"c67fe1a568d55d109eda7a4265d73a62be4cea261d892720c28ff090a5e2f908","kind":"mutation-receipt","operation":"8b540e8f85e027a7af4953dd86d60c3443b86518cf85f4a910ec5d1fe1378e0c","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-63"],"target":"f-20261112-63","v":1} -->
 
 ---
 
