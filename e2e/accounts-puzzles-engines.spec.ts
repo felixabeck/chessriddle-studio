@@ -461,8 +461,10 @@ async function showPermissionNotifications(
     await expect(
         dialog.getByRole("button", { name: "Install", exact: true }).first(),
     ).toBeVisible();
-    // Let startup and the catalog finish before pausing notification expiry timers.
-    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 100);
+    // Let startup and the catalog finish before pausing notification expiry timers. The target is a
+    // fixed minute after install: a target read from the running clock can already have passed by
+    // the time pauseAt arrives on a stalled runner ("Cannot fast-forward to the past").
+    await page.clock.pauseAt(clockStart.getTime() + 60_000);
     for (let index = 0; index < count; index++) {
         await dialog.getByRole("button", { name: "Install", exact: true }).first().click();
         // Advance the paused application clock through transition timers, retaining production

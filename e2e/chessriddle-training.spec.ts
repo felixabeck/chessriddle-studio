@@ -926,8 +926,9 @@ for (const layout of ["desktop", "scaled"] as const) {
         await expect(puzzles).toBeVisible();
         await page.clock.pauseAt(clockStart + 10 * 60_000);
         await puzzles.click();
-        await expect(page.getByRole("timer")).toBeVisible();
+        await expect(page.getByRole("timer")).toHaveText("10:00");
         await page.clock.runFor(1000);
+        await expect(page.getByRole("timer")).toHaveText("9:59");
         await page.getByRole("timer").scrollIntoViewIfNeeded();
         await assertNoHorizontalOverflow();
         await captureTraining(page, page, `en-US-${layout}-timer.png`);
