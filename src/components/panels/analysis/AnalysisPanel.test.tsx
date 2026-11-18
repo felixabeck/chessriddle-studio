@@ -188,7 +188,7 @@ test("EngineSummary clears historical threat evaluation while unavailable and re
   await h.render(summary([]));
   expect(h.host.textContent).toContain("0.34");
   const badge = () => h.host.querySelector('[role="img"][aria-label="Board.Analysis.ThreatMode"]');
-  expect(badge()).not.toBeNull();
+  expect(badge()?.getAttribute("style")).toContain("var(--cf-destructive)");
   await h.render(summary(["e2e4", "d7d5", "f1b5"]));
   expect(badge()).not.toBeNull();
   expect(h.host.textContent).toContain("???");

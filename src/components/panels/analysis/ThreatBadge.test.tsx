@@ -7,10 +7,12 @@ import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { ThreatBadge } from "./ThreatBadge";
 
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
 let root: Root | undefined;
 let host: HTMLElement | undefined;
-afterEach(() => {
-  act(() => root?.unmount());
+afterEach(async () => {
+  await act(async () => root?.unmount());
   host?.remove();
   root = host = undefined;
 });
@@ -23,7 +25,7 @@ async function renderBadge(locale: "en-US" | "de-DE", compact: boolean) {
   root = createRoot(host);
   await act(async () =>
     root!.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <I18nextProvider i18n={i18n}>
           <ThreatBadge compact={compact} />
         </I18nextProvider>

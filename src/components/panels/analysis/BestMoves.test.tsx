@@ -473,6 +473,8 @@ test("unavailable threat uses the shipped empty state and idles every loading af
   expect(h.host.querySelector("[data-animated]")).toBeNull();
   expect(h.host.querySelector(".mantine-Skeleton-root")).toBeNull();
   expect(h.store.get(threatFamily("display-tab"))).toBe(true);
+  // The mode is still on while its lines are unavailable, so the card still says so.
+  expect(h.host.querySelector('[data-testid="threat-badge"]')).not.toBeNull();
   expect(h.store.get(h.settingsAtom).enabled).toBe(true);
   expect(h.store.get(engineProgressFamily({ tab: "display-tab", engine: displayEngine.id }))).toBe(
     65,
@@ -496,6 +498,7 @@ test("threat mode labels the card and switches its accent to the threat colour",
   expect(card().style.getPropertyValue("--cf-engine-status")).toBe("var(--cf-destructive)");
   await act(async () => h.store.set(h.settingsAtom, (s: Settings) => ({ ...s, enabled: false })));
   expect(card().style.getPropertyValue("--cf-engine-status")).toBe("var(--cf-border-strong)");
+  expect(h.host.querySelector('[data-testid="threat-badge"]')).not.toBeNull();
   await act(async () => h.store.set(threatFamily("display-tab"), false));
   expect(h.host.querySelector('[data-testid="threat-badge"]')).toBeNull();
 });

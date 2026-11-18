@@ -63,7 +63,10 @@ test("DetachedEval drops historical threat PV and score in check and restores le
     </TreeStateContext.Provider>,
   );
   expect(h.host.textContent).toContain(THREAT_LINE);
-  expect(h.host.querySelector('[data-testid="threat-badge"]')).not.toBeNull();
+  // The labelled badge, not the icon-only summary form.
+  expect(h.host.querySelector('[data-testid="threat-badge"]')?.textContent).toBe(
+    "Board.Analysis.ThreatMode",
+  );
   await act(async () => tree.getState().makeMoves({ payload: ["e4", "d5", "Bb5+"] }));
   expect(h.host.textContent).toContain("—");
   // The mode stays on while its lines are unavailable in check, so the label stays too.
