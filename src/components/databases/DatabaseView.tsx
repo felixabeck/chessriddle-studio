@@ -203,11 +203,13 @@ function DatabaseView() {
         <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
           <Stack ref={ref} className={classes.viewStack}>
             <Group align="center" style={{ flexShrink: 0 }}>
-              <Link to="/library">
-                <IconAction label={t("Common.Back")} variant="default">
-                  <ArrowLeft size="1rem" />
-                </IconAction>
-              </Link>
+              <IconAction
+                label={t("Common.Back")}
+                variant="default"
+                onClick={() => void navigate({ to: "/library" })}
+              >
+                <ArrowLeft size="1rem" />
+              </IconAction>
               <Title miw={0} className="wrap-anywhere">
                 {databaseForRoute.title}
               </Title>

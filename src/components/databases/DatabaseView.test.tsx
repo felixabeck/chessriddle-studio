@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   clearDatabase: vi.fn(),
   database: undefined as SuccessDatabaseInfo | undefined,
   realStore: false,
+  navigate: vi.fn(),
 }));
 
 vi.mock("@/utils/db", async () => {
@@ -26,7 +27,7 @@ vi.mock("@/utils/db", async () => {
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
   useParams: () => ({ databaseId: "db-1" }),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mocks.navigate,
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -73,7 +74,19 @@ vi.mock("@mantine/core", () => ({
   Title: ({ children }: { children: ReactNode }) => <h1>{children}</h1>,
 }));
 vi.mock("@/components/common/IconAction", () => ({
-  IconAction: ({ children }: { children: ReactNode }) => <button>{children}</button>,
+  IconAction: ({
+    children,
+    label,
+    onClick,
+  }: {
+    children: ReactNode;
+    label: string;
+    onClick?: () => void;
+  }) => (
+    <button aria-label={label} onClick={onClick}>
+      {children}
+    </button>
+  ),
 }));
 vi.mock("./GameTable", () => ({ default: () => <div>games table</div> }));
 vi.mock("./PlayerTable", () => ({ default: () => <div>players table</div> }));
@@ -150,6 +163,7 @@ beforeEach(() => {
   mocks.getDatabases.mockReset();
   mocks.setDatabase.mockReset();
   mocks.clearDatabase.mockReset();
+  mocks.navigate.mockReset();
   mocks.database = undefined;
   mocks.realStore = false;
   container = document.createElement("div");
@@ -203,6 +217,17 @@ test("a displayed database table records its opaque database key once per visit"
   await render(false, false);
   await render(true, false);
   expect(writes.mock.calls.filter(([key]) => key === "last-opened")).toHaveLength(2);
+});
+
+test("the Back action is one control, not a button nested in a link", async () => {
+  mocks.database = selectedDatabase;
+  mocks.getDatabases.mockResolvedValue({ databases: [selectedDatabase], unread: [] });
+  await render(true, false);
+  const back = container.querySelector<HTMLButtonElement>('button[aria-label="Common.Back"]');
+  expect(back).not.toBeNull();
+  expect(back!.closest("a")).toBeNull();
+  await act(async () => back!.click());
+  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/library" });
 });
 
 test.each(["synchronizing", "unavailable", "missing"] as const)(
