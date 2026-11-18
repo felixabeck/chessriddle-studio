@@ -210,6 +210,7 @@ async function useRealLookup(candidate: NormalizedGame) {
     getDatabases: async () => ({
       root: { id: { id: "root" }, kind: "databaseRoot" },
       unread: [],
+      workspaceFilenames: [],
       databases: [
         {
           type: "success",

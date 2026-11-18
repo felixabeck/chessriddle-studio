@@ -69,6 +69,7 @@ test.each([true, false])(
       data: {
         databases: [],
         unread: [],
+        workspaceFilenames: [],
         root: { kind: "databaseRoot", id: { id: "root" } },
         collections: supported ? [] : undefined,
       },

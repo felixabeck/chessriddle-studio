@@ -71,7 +71,12 @@ const database: SuccessDatabaseInfo = {
 };
 
 function list(databases: SuccessDatabaseInfo[]): DatabaseList {
-  return { databases, unread: [], root: { id: { id: "root" }, kind: "databaseRoot" } };
+  return {
+    databases,
+    unread: [],
+    workspaceFilenames: [],
+    root: { id: { id: "root" }, kind: "databaseRoot" },
+  };
 }
 
 function deferred<T>() {

@@ -79,6 +79,7 @@ function setup() {
     const library: DatabaseList = {
         root,
         unread: [],
+        workspaceFilenames: [],
         databases: [
             {
                 type: "success",

@@ -439,6 +439,7 @@ describe("DatabasePanel", () => {
   const databaseList = (databases: ManagedDatabaseInfo[]): DatabaseList => ({
     databases,
     unread: [],
+    workspaceFilenames: [],
     root: { id: { id: "database-root" }, kind: "databaseRoot" },
   });
 

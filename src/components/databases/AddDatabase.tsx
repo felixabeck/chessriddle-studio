@@ -23,7 +23,7 @@ import { AlertCircle } from "lucide-react";
 import { useSetAtom } from "jotai";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type DatabaseHandle, type DatabaseInfo, type FileWorkspaceHandle } from "@/bindings";
+import { type DatabaseHandle, type FileWorkspaceHandle } from "@/bindings";
 import {
   databaseConversionStateAtom,
   databaseConversionRefreshFailedAtom,
@@ -131,13 +131,13 @@ export async function convertLocalDatabase(
 }
 
 function AddDatabase({
-  databases,
+  workspaceFilenames,
   opened,
   setOpened,
   disableLocalConversion,
   reloadDatabases,
 }: {
-  databases: DatabaseInfo[];
+  workspaceFilenames: readonly string[];
   opened: boolean;
   setOpened: (opened: boolean) => void;
   disableLocalConversion: boolean;
@@ -220,7 +220,7 @@ function AddDatabase({
           <ScrollArea.Autosize h={500} offsetScrollbars>
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
               {defaultDatabases?.map((db) => {
-                const card = manifestDatabaseInstallCard(databases, db);
+                const card = manifestDatabaseInstallCard(workspaceFilenames, db);
                 return (
                   <DatabaseCard
                     database={db}

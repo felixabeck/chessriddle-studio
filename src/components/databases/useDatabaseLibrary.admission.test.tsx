@@ -171,6 +171,7 @@ beforeEach(() => {
   mocks.data = {
     databases: [database],
     unread: [],
+    workspaceFilenames: [],
     root: { id: { id: "root" }, kind: "databaseRoot" },
   };
   host = document.createElement("div");

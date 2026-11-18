@@ -464,6 +464,8 @@ describe("database capability UI mapping", () => {
             ]);
             expect(current.databases[1].collection).toEqual(collection);
             expect(mocks.getDbInfo).not.toHaveBeenCalledWith(handle("retired"), expect.anything());
+            // The retired copy is hidden from the rows but still occupies its workspace leaf.
+            expect(current.workspaceFilenames).toEqual(["old.db3", "reference.db3"]);
             vi.mocked(native.listLinkedCollections).mockResolvedValue([
                 { ...collection, status: "missing" },
             ]);
@@ -533,6 +535,7 @@ describe("production database metadata pipeline", () => {
             { filename: "�.db3", error: i18n.t("Databases.LoadError.Permission") },
         ]);
         expect(mocks.getDbInfo).toHaveBeenCalledExactlyOnceWith(handle("healthy"));
+        expect(result.workspaceFilenames).toEqual(["healthy.db3", "�.db3", "�.db3"]);
         expect(
             result.unread.every(
                 (item) => !("file" in item) && !("key" in item) && !("path" in item),
@@ -931,8 +934,7 @@ describe("manifest install-card identity", () => {
     const otherLink = "https://db.encroissant.org/other.db3";
 
     it("keys game-database progress by download URL, not array index or title", () => {
-        const installed = [{ filename: "Lichess.db3" }];
-        const card = manifestDatabaseInstallCard(installed, {
+        const card = manifestDatabaseInstallCard(["Lichess.db3"], {
             downloadLink: link,
             title: "Lichess",
         });
@@ -942,33 +944,31 @@ describe("manifest install-card identity", () => {
         });
         expect(card.progressId).not.toBe("db_0");
         expect(card.progressId).toBe(`db:${link}`);
-        expect(
-            manifestDatabaseInstallCard(installed, { downloadLink: otherLink, title: "Other" })
-                .initInstalled,
-        ).toBe(false);
     });
 
-    it("treats a catalog database as installed by its download leaf, not its Info.Title", () => {
+    it("treats a catalog database as installed by its workspace download leaf", () => {
         const lumbra = { downloadLink: link, title: "Lumbra's Gigabase" };
         expect(catalogDatabaseFilename(lumbra.title)).toBe("Lumbra's Gigabase.db3");
-        // The signed file ships Info.Title "LumbrasGigaBase", which never equals the catalog title.
-        const installed = [
-            { type: "success", title: "LumbrasGigaBase", filename: "Lumbra's Gigabase.db3" },
-        ];
-        expect(manifestDatabaseInstallCard(installed, lumbra).initInstalled).toBe(true);
-        // An unreadable or upgrading row still occupies the leaf the download refuses.
-        const unreadable = [{ type: "error", filename: "Lumbra's Gigabase.db3" }];
-        expect(manifestDatabaseInstallCard(unreadable, lumbra).initInstalled).toBe(true);
-        // A title match alone is not installed: the leaf is free and the download can succeed.
-        const renamed = [{ type: "success", title: "Lumbra's Gigabase", filename: "renamed.db3" }];
-        expect(manifestDatabaseInstallCard(renamed, lumbra).initInstalled).toBe(false);
-        // A linked collection lives outside the workspace root and never blocks the leaf.
+        // The leaf decides, whatever Info.Title the file reports ("LumbrasGigaBase" for Lumbra).
+        expect(manifestDatabaseInstallCard([], lumbra).initInstalled).toBe(false);
         expect(
-            manifestDatabaseInstallCard(
-                [{ filename: "Lumbra's Gigabase.db3", collection: { id: "c" } }],
-                lumbra,
-            ).initInstalled,
+            manifestDatabaseInstallCard(["other.db3", "Lumbra's Gigabase.db3"], lumbra)
+                .initInstalled,
+        ).toBe(true);
+        expect(
+            manifestDatabaseInstallCard(["Lumbra's Gigabase.db3", "other.db3"], lumbra)
+                .initInstalled,
+        ).toBe(true);
+        expect(
+            manifestDatabaseInstallCard(["other.db3", "Lumbra's Gigabase.db3"], {
+                downloadLink: otherLink,
+                title: "Caissabase 2024",
+            }).initInstalled,
         ).toBe(false);
+        // A renamed leaf frees the name, so the download can succeed again.
+        expect(manifestDatabaseInstallCard(["Lumbra's Gigabase"], lumbra).initInstalled).toBe(
+            false,
+        );
     });
 
     it("keys puzzle-database progress by download URL, not array index", () => {

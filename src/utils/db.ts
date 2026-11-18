@@ -38,6 +38,8 @@ export type ManagedDatabaseInfo = DatabaseInfo & {
 export type DatabaseList = {
     databases: ManagedDatabaseInfo[];
     unread: { filename: string; error: string }[];
+    /** Every `.db3` leaf in the workspace root, including unread and retired files hidden from `databases`. */
+    workspaceFilenames: string[];
     root: DatabaseRootHandle;
     /** Absent when linked collections are unsupported, rather than an empty authoritative listing. */
     collections?: import("@/bindings").CollectionDescriptor[];
@@ -161,20 +163,18 @@ export function catalogDatabaseFilename(title: string): string {
 
 /**
  * A catalog card is installed when its download leaf already exists in the
- * workspace. The file's own `Info.Title` is editable and need not equal the
- * catalog title (Lumbra's Gigabase ships "LumbrasGigaBase"), so the title is
- * not an install identity. Linked collections live outside the workspace root.
+ * workspace root, the same condition under which the native download refuses.
+ * The file's own `Info.Title` is editable and need not equal the catalog title
+ * (Lumbra's Gigabase ships "LumbrasGigaBase"), so the title is not an install
+ * identity. Unread and retired leaves count: they still occupy the name.
  */
 export function manifestDatabaseInstallCard(
-    installed: readonly { filename: string; collection?: unknown }[],
+    workspaceFilenames: readonly string[],
     manifest: { downloadLink: string; title: string },
 ): { progressId: string; initInstalled: boolean } {
-    const filename = catalogDatabaseFilename(manifest.title);
     return {
         progressId: defaultDatabaseProgressId(manifest.downloadLink),
-        initInstalled: installed.some(
-            (database) => database.collection === undefined && database.filename === filename,
-        ),
+        initInstalled: workspaceFilenames.includes(catalogDatabaseFilename(manifest.title)),
     };
 }
 
@@ -310,6 +310,10 @@ export async function getDatabases(options: { signal?: AbortSignal } = {}): Prom
         databases: values,
         collections: linkedSupported ? collections : undefined,
         root,
+        workspaceFilenames: [
+            ...databases.entries.map((database) => database.filename),
+            ...databases.unread.map((database) => database.filename),
+        ],
         unread: databases.unread.map(({ filename, category }) => ({
             filename,
             error: databaseReadErrorMessage(

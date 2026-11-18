@@ -389,6 +389,7 @@ test.each(["listing", "unreadable", "metadata", "database-listing", "unread-data
         failure === "unread-database"
           ? [{ filename: "Unreadable.db3", error: "Permission denied" }]
           : [],
+      workspaceFilenames: failure === "unread-database" ? ["Unreadable.db3"] : [],
       root: { kind: "databaseRoot", id: { id: "root" } },
     };
     await render();
@@ -507,6 +508,7 @@ test("choosing a collection retires an in-flight recent open", async () => {
     collections: [collection],
     databases: [],
     unread: [],
+    workspaceFilenames: [],
     root: { kind: "databaseRoot", id: { id: "root" } },
   };
   const collectionGame = { ...game, id: 8 };
@@ -537,6 +539,7 @@ test("changing the filter retires an in-flight collection open", async () => {
     collections: [collection],
     databases: [],
     unread: [],
+    workspaceFilenames: [],
     root: { kind: "databaseRoot", id: { id: "root" } },
   };
   let finish!: (metadata: { status: "ready"; game_count: number; title: string }) => void;
@@ -561,6 +564,7 @@ test.each(["collection", "own game", "recent game"])(
       collections: [collection],
       databases: [],
       unread: [],
+      workspaceFilenames: [],
       root: { kind: "databaseRoot", id: { id: "root" } },
     };
     mocks.feed.games = [{ collection, game }];
@@ -599,6 +603,7 @@ test("choosing a file retires an in-flight collection open", async () => {
     collections: [collection],
     databases: [],
     unread: [],
+    workspaceFilenames: [],
     root: { kind: "databaseRoot", id: { id: "root" } },
   };
   mocks.listing = {
@@ -627,6 +632,7 @@ test.each([1, 4])("a collection of %s games opens a game or its table", async (c
     collections: [collection],
     databases: [],
     unread: [],
+    workspaceFilenames: [],
     root: { kind: "databaseRoot", id: { id: "root" } },
   };
   mocks.info.mockResolvedValue({ status: "ready", game_count: count, title: "Own games" });
@@ -648,6 +654,7 @@ test.each(["Meine Partien.pgn", "Meine Partien.PGN", "Meine Partien"])(
       collections: [ownCollection],
       databases: [],
       unread: [],
+      workspaceFilenames: [],
       root: { kind: "databaseRoot", id: { id: "root" } },
     };
     mocks.feed.games = [{ collection: ownCollection, game }];
@@ -691,6 +698,7 @@ test("Games puts reference databases first, then own games, and opens each by ki
       },
     ],
     unread: [],
+    workspaceFilenames: [],
     root: { kind: "databaseRoot", id: { id: "root" } },
   };
   mocks.feed.games = [{ collection, game }];
@@ -722,6 +730,7 @@ test.each([
       { type: "error", file: database, filename: "Failed.db3", error: message, indexed: false },
     ],
     unread: [],
+    workspaceFilenames: [],
     root: { kind: "databaseRoot", id: { id: "root" } },
   };
   await render();
@@ -764,6 +773,7 @@ test.each<{ metadata: DatabaseInfoResult; message: string }>([
       collections: [collection],
       databases: [],
       unread: [],
+      workspaceFilenames: [],
       root: { kind: "databaseRoot", id: { id: "root" } },
     };
     mocks.info.mockResolvedValue(metadata);
@@ -855,6 +865,7 @@ test("All sorts recent games by their recorded opening and deduplicates appended
     collections: [collection],
     databases: [],
     unread: [],
+    workspaceFilenames: [],
     root: { kind: "databaseRoot", id: { id: "root" } },
   };
   mocks.feed.games = [{ collection, game }];
@@ -869,6 +880,7 @@ test("unusable collections explain their disabled state while failed decks stay 
     collections: [{ ...collection, status: "unavailable", database: null }],
     databases: [],
     unread: [],
+    workspaceFilenames: [],
     root: { kind: "databaseRoot", id: { id: "root" } },
   };
   await render();

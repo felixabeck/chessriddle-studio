@@ -149,6 +149,7 @@ test("a disabled subscription makes no request", async () => {
   vi.mocked(getDatabases).mockResolvedValue({
     databases: [],
     unread: [],
+    workspaceFilenames: [],
     root: { id: { id: "listing-test-root" }, kind: "databaseRoot" as const },
   });
   await render(<Consumer enabled={false} />);
@@ -175,6 +176,7 @@ test("a consumer reading only isLoading observes completion", async () => {
     resolve({
       databases: [],
       unread: [],
+      workspaceFilenames: [],
       root: { id: { id: "listing-test-root" }, kind: "databaseRoot" },
     }),
   );
@@ -211,6 +213,7 @@ function list(rootId: string): DatabaseList {
   return {
     databases: [],
     unread: [],
+    workspaceFilenames: [],
     root: { id: { id: rootId }, kind: "databaseRoot" },
   };
 }

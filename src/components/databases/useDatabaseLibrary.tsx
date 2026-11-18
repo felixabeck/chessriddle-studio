@@ -616,7 +616,7 @@ export function useDatabaseLibrary(
         />
 
         <AddDatabase
-          databases={databases ?? []}
+          workspaceFilenames={data?.workspaceFilenames ?? []}
           opened={open}
           setOpened={setOpen}
           disableLocalConversion={conversionInProgress}

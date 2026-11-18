@@ -245,7 +245,7 @@ afterEach(async () => {
 });
 
 async function renderAddDatabase(
-  databases: Array<{ type: "success"; title: string; filename: string }> = [],
+  workspaceFilenames: string[] = [],
   {
     setOpened = vi.fn(),
     reloadDatabases = vi.fn().mockResolvedValue(undefined),
@@ -257,7 +257,7 @@ async function renderAddDatabase(
   await act(async () => {
     root.render(
       <AddDatabase
-        databases={databases as never}
+        workspaceFilenames={workspaceFilenames}
         opened
         setOpened={setOpened}
         disableLocalConversion={false}
@@ -320,8 +320,7 @@ test.each([
 
 test("wires installed state and progress id from the download URL", async () => {
   mocks.defaultDatabases = [manifestDb];
-  // The file's own Info.Title differs from the catalog title, as Lumbra's Gigabase ships.
-  await renderAddDatabase([{ type: "success", title: "LichessDB", filename: "Lichess.db3" }]);
+  await renderAddDatabase(["Other.db3", "Lichess.db3"]);
   expect(mocks.progressButtonProps?.id).toBe(defaultDatabaseProgressId(manifestDb.downloadLink));
   expect(mocks.progressButtonProps?.id).not.toBe("db_0");
   expect(mocks.progressButtonProps?.initInstalled).toBe(true);
@@ -838,7 +837,7 @@ test("a committed import closes its mounted modal after reloadDatabases fails an
     const [opened, updateOpened] = useState(true);
     return (
       <AddDatabase
-        databases={[]}
+        workspaceFilenames={[]}
         opened={opened}
         setOpened={(value) => {
           setOpened(value);
