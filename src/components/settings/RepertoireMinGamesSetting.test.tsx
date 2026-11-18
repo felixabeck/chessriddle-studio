@@ -13,9 +13,23 @@ vi.mock("react-i18next", () => ({
     i18n: { language: language.current },
   }),
 }));
-vi.mock("jotai", () => ({
-  useAtom: () => [minGames.current, minGames.set],
-}));
+// Backed by real component state so a write re-renders with the new value,
+// the way the atom does; `minGames.set` records every write.
+vi.mock("jotai", async () => {
+  const { useState } = await import("react");
+  return {
+    useAtom: () => {
+      const [value, setValue] = useState(minGames.current);
+      return [
+        value,
+        (next: number) => {
+          minGames.set(next);
+          setValue(next);
+        },
+      ];
+    },
+  };
+});
 vi.mock("@/state/atoms", () => ({ coverageMinGamesAtom: {} }));
 vi.mock("@mantine/core", () => ({
   Group: ({ children }: any) => <div>{children}</div>,
@@ -147,5 +161,37 @@ test("keeps the stored value when switching to custom", async () => {
   });
 
   expect(minGames.set).not.toHaveBeenCalled();
+  expect(host.querySelector("[data-testid=custom]")).not.toBeNull();
+});
+
+async function typeCustom(value: string) {
+  const input = host.querySelector<HTMLInputElement>("[data-testid=custom]");
+  if (!input) throw new Error(`custom field is gone before typing ${JSON.stringify(value)}`);
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    setValue.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+test("stays on custom while typing through a preset's value", async () => {
+  minGames.current = 7;
+  await act(async () => root.render(<RepertoireMinGamesSetting />));
+
+  for (const keystrokes of ["5", "50", "500"]) await typeCustom(keystrokes);
+
+  expect(host.querySelector<HTMLSelectElement>("[data-testid=preset]")?.value).toBe("custom");
+  expect(host.querySelector<HTMLInputElement>("[data-testid=custom]")?.value).toBe("500");
+  expect(minGames.set).toHaveBeenLastCalledWith(500);
+});
+
+test("leaves the stored minimum alone while the custom field is empty", async () => {
+  minGames.current = 7;
+  await act(async () => root.render(<RepertoireMinGamesSetting />));
+
+  await typeCustom("");
+
+  expect(minGames.set).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLSelectElement>("[data-testid=preset]")?.value).toBe("custom");
   expect(host.querySelector("[data-testid=custom]")).not.toBeNull();
 });

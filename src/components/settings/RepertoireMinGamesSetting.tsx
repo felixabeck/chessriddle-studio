@@ -22,8 +22,13 @@ export default function RepertoireMinGamesSetting() {
   const [minGames, setMinGames] = useAtom(coverageMinGamesAtom);
   const [preset, setPreset] = useState<Preset>(() => presetFor(minGames));
 
+  // Custom stays selected while the user is in it: every keystroke in the
+  // free-entry field is written to the atom, and re-deriving the preset from an
+  // intermediate value (the "50" on the way to "500") would switch to that
+  // preset and unmount the field mid-typing. Only a change made while a preset
+  // is selected re-derives it.
   useEffect(() => {
-    setPreset(presetFor(minGames));
+    setPreset((current) => (current === "custom" ? current : presetFor(minGames)));
   }, [minGames]);
 
   // The count goes through Intl so the rendered number follows the active
@@ -67,7 +72,13 @@ export default function RepertoireMinGamesSetting() {
           w={100}
           aria-label={inheritedLabel}
           value={minGames}
-          onChange={(val) => setMinGames(Number(val) || 50)}
+          onChange={(val) => {
+            // An empty or partial field is a draft, not a value: leave the
+            // stored minimum alone until the field holds a whole number >= 1.
+            const next = typeof val === "number" ? val : Number(val);
+            if (val === "" || !Number.isInteger(next) || next < 1) return;
+            setMinGames(next);
+          }}
           min={1}
           allowNegative={false}
           allowDecimal={false}
