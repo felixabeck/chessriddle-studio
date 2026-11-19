@@ -27232,7 +27232,7 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 
 ### Cleared settings number fields stay blank after blur while the old value stays stored
 
-* **ID:** f-20261118-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261118-01 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** dff05860-0ecd-4f85-b955-d33fb387e7b7
 * **Impact class:** ux
 * **Spotted outside diff:** yes (push review of f-20261114-07, lenses correctness and root-cause)
@@ -27243,6 +27243,9 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 * **Proof:** agy correctness-lens probe during the f-20261114-07 review (Vitest/jsdom against real `@mantine/core` 8.3.14) showed the identical mechanism on `RepertoireMinGamesSetting` before its draft repair: clearing to `""` or typing `0` and blurring left the input text `""`/`0` with the atom unchanged. The two sites above use the same controlled-value-without-draft shape (read, not separately probed).
 * **Related:** f-20261114-07 (same mechanism, fixed there for the minimum-games field).
 * **Found by:** Claude Code drain session, push review of f-20261114-07
+
+Handled in 4b9be5cce. Extracted `src/components/common/DraftNumberInput.tsx` (`DraftNumberInput` component + `useNumberInputDraft` hook) holding the controlled NumberInput's draft and dropping it on blur; routed the practice new-per-session field (`SettingsPage.tsx`), engine spin options (`EngineSettings.tsx`), `RepertoireMinGamesSetting.tsx` and `TimeInput.tsx` (hook, for its unit-change reset) through it (rule 11). Because the draft is now the controlled value, Mantine's blur clamp applies to what was typed: an out-of-range draft is clamped and stored, a cleared draft shows the stored value again. Proof: `DraftNumberInput.test.tsx` (real Mantine: clear+blur, out-of-range clamp, valid draft) and a clear/over-limit blur extension of `SettingsPage.test.tsx`; both go red with `value={value}` in place of the draft. The engine spin site is covered by the shared component's test (EnginesPage.test mocks NumberInput, so a site test there could not observe the Mantine mechanism). Rejected: per-site local draft state (a fourth and fifth copy of the same pattern).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"b227b33c5567c44b0d5d92cea4e470d8139b98e6f0e1d8d51e5bb6e209a745d0","header_sha256":"0e619ae34bb6c6cbc074b7590c4a6575329f8b08f770aba7cf59a683f9c5556a","header_status":"handled","input_sha256":"19df4aa5d53b6f1adfc9d38505c8e72c00c07ad9089568e14ab72d231fcd1fef","kind":"mutation-receipt","operation":"1e32d4843862f2262333d07c6063366dff6b88bd27ddc6e9d0172031b9ee3223","options":{"section":null},"request_id_sha256":null,"results":["f-20261118-01"],"target":"f-20261118-01","v":1} -->
 
 ---
 
