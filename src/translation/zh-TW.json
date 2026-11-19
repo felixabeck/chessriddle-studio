@@ -191,7 +191,6 @@
     "Board.Database.PositionMode": "局面：{{mode}}",
     "Board.Database.RemoveComparison": "移除對比資料庫",
     "Board.Database.Resize": "調整資料庫高度",
-    "Board.Database.ResizeHint": "拖曳以變更高度。按兩下可還原。",
     "Board.Database.Save": "儲存至檔案或資料庫…",
     "Board.Database.SelectReference": "新增資料庫",
     "Board.Database.ShowSettings": "顯示資料庫設定",

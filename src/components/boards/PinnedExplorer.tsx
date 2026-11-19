@@ -17,6 +17,8 @@ import {
   type PinnedPlacement,
 } from "@/state/atoms";
 import DatabasePanel from "../panels/database/DatabasePanel";
+import "react-mosaic-component/react-mosaic-component.css";
+import "@/styles/react-mosaic.css";
 import classes from "./PinnedExplorer.module.css";
 
 /** The strip never gets shorter than its caption line, the table head and a couple of rows. */
@@ -194,11 +196,10 @@ function ExplorerStrip({ placement }: { placement: PinnedPlacement }) {
             ? Math.round((shownHeight / reference) * 100)
             : undefined
         }
-        title={t("Board.Database.ResizeHint")}
         tabIndex={0}
-        className={classes.handle}
+        // The pane divider's own classes: the same pointer, hit area and hover line.
+        className={`mosaic-split -column ${classes.handle}`}
         data-edge={edge}
-        data-dragging={dragHeight !== null || undefined}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
@@ -206,7 +207,9 @@ function ExplorerStrip({ placement }: { placement: PinnedPlacement }) {
         onLostPointerCapture={endDrag}
         onDoubleClick={reset}
         onKeyDown={onKeyDown}
-      />
+      >
+        <div className="mosaic-split-line" />
+      </div>
     </div>
   );
 }

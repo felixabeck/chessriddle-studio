@@ -194,7 +194,6 @@
     "Board.Database.PositionMode": "Позиция: {{mode}}",
     "Board.Database.RemoveComparison": "Убрать базу для сравнения",
     "Board.Database.Resize": "Изменить высоту базы данных",
-    "Board.Database.ResizeHint": "Перетащите, чтобы изменить высоту. Двойной щелчок сбрасывает её.",
     "Board.Database.Save": "Сохранить в файл или базу данных…",
     "Board.Database.SelectReference": "добавьте базу данных",
     "Board.Database.ShowSettings": "Показать настройки базы",

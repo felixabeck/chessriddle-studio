@@ -191,7 +191,6 @@
     "Board.Database.PositionMode": "局面：{{mode}}",
     "Board.Database.RemoveComparison": "移除对比数据库",
     "Board.Database.Resize": "调整数据库高度",
-    "Board.Database.ResizeHint": "拖动以更改高度。双击可恢复。",
     "Board.Database.Save": "保存到文件或数据库…",
     "Board.Database.SelectReference": "添加一个数据库",
     "Board.Database.ShowSettings": "显示数据库设置",

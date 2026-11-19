@@ -193,7 +193,6 @@
     "Board.Database.PositionMode": "Position : {{mode}}",
     "Board.Database.RemoveComparison": "Retirer la base de comparaison",
     "Board.Database.Resize": "Redimensionner la base",
-    "Board.Database.ResizeHint": "Faites glisser pour changer la hauteur. Un double-clic la réinitialise.",
     "Board.Database.Save": "Enregistrer dans un fichier ou une base de données…",
     "Board.Database.SelectReference": "ajouter une base de donnée",
     "Board.Database.ShowSettings": "Afficher les réglages de la base",

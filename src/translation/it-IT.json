@@ -193,7 +193,6 @@
     "Board.Database.PositionMode": "Posizione: {{mode}}",
     "Board.Database.RemoveComparison": "Rimuovi il database di confronto",
     "Board.Database.Resize": "Ridimensiona il database",
-    "Board.Database.ResizeHint": "Trascina per cambiare l'altezza. Il doppio clic la ripristina.",
     "Board.Database.Save": "Salva in un file o nel database…",
     "Board.Database.SelectReference": "Aggiungi un database",
     "Board.Database.ShowSettings": "Mostra le impostazioni del database",

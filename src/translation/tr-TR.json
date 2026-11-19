@@ -192,7 +192,6 @@
     "Board.Database.PositionMode": "Pozisyon: {{mode}}",
     "Board.Database.RemoveComparison": "Karşılaştırma veritabanını kaldır",
     "Board.Database.Resize": "Veritabanını yeniden boyutlandır",
-    "Board.Database.ResizeHint": "Yüksekliği değiştirmek için sürükleyin. Çift tıklama sıfırlar.",
     "Board.Database.Save": "Dosyaya veya veritabanına kaydet…",
     "Board.Database.SelectReference": "bir veritabanı ekleyin",
     "Board.Database.ShowSettings": "Veritabanı ayarlarını göster",

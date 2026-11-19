@@ -16,44 +16,22 @@
   overflow: hidden;
 }
 
-/* The divider fills the gap between the strip and the neighbour it shares the pane with. */
+/* The divider is the pane divider (react-mosaic's split classes); this only centres it in the
+   gap between the strip and the neighbour it shares the pane with, as Mosaic places its own. */
 .handle {
-  position: absolute;
   inset-inline: 0;
-  z-index: 1;
-  height: var(--mantine-spacing-xs);
-  cursor: row-resize;
-  touch-action: none;
-}
-
-.handle:focus-visible {
-  outline: 2px solid var(--mantine-primary-color-filled);
-  outline-offset: 1px;
 }
 
 .handle[data-edge="end"] {
-  top: 100%;
+  top: calc(100% + var(--mantine-spacing-xs) / 2);
 }
 
 .handle[data-edge="start"] {
-  bottom: 100%;
+  top: calc(var(--mantine-spacing-xs) / -2);
 }
 
-.handle::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 2.5rem;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--cf-border);
-  transform: translate(-50%, -50%);
-}
-
-.handle:hover::after,
-.handle:focus-visible::after,
-.handle[data-dragging]::after {
-  width: 100%;
-  background: var(--mantine-primary-color-filled);
+/* The pane divider takes no keyboard focus; this one does, so it shows a ring for it. */
+.handle:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 1px;
 }

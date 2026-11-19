@@ -20,6 +20,12 @@
   left: 0;
 }
 
+/* The library paints a hovered split black outside its themed root; dividers outside the mosaic
+   (the pinned explorer strip in the stacked layout) use the themed look too. */
+.mosaic-split:hover {
+  background: none;
+}
+
 .mosaic-split:hover .mosaic-split-line {
   box-shadow: 0 0 0 1px var(--mantine-primary-color-filled) !important;
 }

@@ -3515,6 +3515,32 @@ test("database-files: the board explorer compares two databases side by side", a
         await page.mouse.up();
         await page.mouse.move(0, 0);
     };
+    // The strip's divider is the pane divider: same pointer, hit area and hover line, and
+    // nothing to see at rest.
+    const paneDivider = page.locator(".mosaic-split.-column:not([role='separator'])").first();
+    const look = async (divider: Locator) => {
+        await divider.hover();
+        const hovered = await divider.evaluate((element) => {
+            const line = getComputedStyle(element.querySelector(".mosaic-split-line")!);
+            const own = getComputedStyle(element);
+            return {
+                cursor: own.cursor,
+                height: own.height,
+                background: own.backgroundColor,
+                line: line.boxShadow,
+            };
+        });
+        await page.mouse.move(0, 0);
+        const rest = await divider.evaluate(
+            (element) => getComputedStyle(element.querySelector(".mosaic-split-line")!).boxShadow,
+        );
+        return { ...hovered, rest };
+    };
+    const paneLook = await look(paneDivider);
+    expect(paneLook.rest).toBe("none");
+    expect(paneLook.line).not.toBe("none");
+    expect(await look(handle)).toEqual(paneLook);
+    await expect(handle).not.toHaveAttribute("title");
     await drag(-80);
     await expect.poll(async () => (await rect(strip)).height).toBeCloseTo(contentHeight - 80, -1);
     const stored = await page.evaluate(() => localStorage.getItem("detached-explorer-heights"));
