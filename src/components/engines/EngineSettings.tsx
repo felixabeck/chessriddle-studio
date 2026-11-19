@@ -259,7 +259,9 @@ export default function EngineSettings({
             min={min}
             max={max}
             allowDecimal={false}
-            value={Number(v.value)}
+            // An option with no default and no stored value shows an empty field, not 0, which
+            // the blur clamp would otherwise raise to `min` and save as an explicit override.
+            value={v.value == null || v.value === "" ? "" : Number(v.value)}
             // A cleared or out-of-range draft is not saved: blur clamps it into range (that value
             // arrives here and is saved) or shows the saved value again.
             onChange={(e) => {

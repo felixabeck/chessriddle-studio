@@ -547,6 +547,8 @@ test("a cleared or out-of-range spin draft is held until blur and never saved", 
   expect(atomEngines[0].settings).toEqual(engine.settings);
   // A spin that omits its bounds gets none, rather than a 0..0 range the blur clamp would write.
   expect(mocks.spinBounds.get("Unbounded")).toEqual({ min: undefined, max: undefined });
+  // With no default and nothing stored it shows an empty field, not a 0 the clamp could raise.
+  expect(optionInput("Unbounded")!.value).toBe("");
 });
 
 test.each([false, true])(

@@ -14,7 +14,7 @@ vi.mock("@mantine/core", () => ({
     onChange,
     "aria-label": ariaLabel,
   }: {
-    value: number;
+    value: number | string;
     rightSection?: React.ReactNode;
     onChange: (value: number | string) => void;
     "aria-label"?: string;

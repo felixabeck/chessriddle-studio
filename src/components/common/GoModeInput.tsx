@@ -51,6 +51,7 @@ function GoModeInput({
       {match(goMode || { t: "Infinite" })
         .with({ t: "Depth" }, (v) => (
           <DraftNumberInput
+            key="Depth"
             aria-label={t("GoMode.Depth")}
             min={1}
             max={MAX_GO_TIME_OR_DEPTH}
@@ -64,6 +65,7 @@ function GoModeInput({
         ))
         .with({ t: "Nodes" }, (v) => (
           <DraftNumberInput
+            key="Nodes"
             aria-label={t("GoMode.Nodes")}
             min={1}
             max={MAX_GO_NODES}

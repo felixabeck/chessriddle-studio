@@ -248,6 +248,28 @@ test("max Elo preserves numeric zero and an empty max restores the omitted full 
   );
 });
 
+test.each([1500.5, -50, 5000])(
+  "an Elo bound draft of %s is not sent to the query",
+  async (draft) => {
+    await act(async () =>
+      root.render(
+        <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+          <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+            <PlayerTable />
+          </DatabaseViewStateContext.Provider>
+        </SWRConfig>,
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    const before = vi.mocked(query_players).mock.calls.length;
+    await act(async () => mocks.inputs.get("Databases.Player.MinELO")!(draft));
+    await act(async () => mocks.inputs.get("Databases.Player.MaxELO")!(draft));
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+
+    expect(vi.mocked(query_players).mock.calls.length).toBe(before);
+  },
+);
+
 test("headers omit ID and sortable Games requests both directions with native player counts", async () => {
   mocks.getPlayers.mockResolvedValue({
     data: [{ id: 1, name: "Player", elo: 2200, game_count: 1234 }],

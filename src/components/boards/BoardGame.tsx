@@ -1439,10 +1439,12 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                                   label={t("Board.Opponent.OpeningBookMaxPlies")}
                                   description={t("Board.Opponent.OpeningBookMaxPlies.Desc")}
                                   min={1}
+                                  allowDecimal={false}
                                   value={openingBookMaxPly}
+                                  // Below 1 waits for the blur clamp rather than storing 1 mid-edit.
                                   onChange={(value) => {
-                                    if (typeof value === "number" && Number.isFinite(value)) {
-                                      setOpeningBookMaxPly(Math.max(1, Math.trunc(value)));
+                                    if (Number.isInteger(value) && (value as number) >= 1) {
+                                      setOpeningBookMaxPly(value as number);
                                     }
                                   }}
                                 />

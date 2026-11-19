@@ -21,6 +21,11 @@ import { getAdjacentRecordId } from "./pageSelection";
 import PlayerCard from "./PlayerCard";
 import classes from "./styles.module.css";
 
+// The native query takes whole-number bounds; a fraction or an out-of-range number is not stored.
+function isEloBound(value: number | string): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= ELO_FILTER_MAX;
+}
+
 function PlayerTable() {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
@@ -94,9 +99,9 @@ function PlayerTable() {
               <DraftNumberInput
                 label={t("Databases.Player.MinELO")}
                 value={query.range?.[0] ?? 0}
-                // An emptied field drops the bound; other non-number drafts are not stored.
+                // An emptied field drops the bound; an out-of-range draft waits for the blur clamp.
                 onChange={(v) => {
-                  if (typeof v === "number" || v === "")
+                  if (isEloBound(v) || v === "")
                     setQuery({
                       ...query,
                       range: [v === "" ? 0 : v, query.range?.[1] ?? ELO_FILTER_MAX],
@@ -104,6 +109,7 @@ function PlayerTable() {
                 }}
                 min={0}
                 max={ELO_FILTER_MAX}
+                allowDecimal={false}
                 step={100}
               />
               <DraftNumberInput
@@ -111,9 +117,10 @@ function PlayerTable() {
                 value={query.range?.[1] ?? ELO_FILTER_MAX}
                 min={0}
                 max={ELO_FILTER_MAX}
+                allowDecimal={false}
                 step={100}
                 onChange={(v) => {
-                  if (typeof v === "number" || v === "")
+                  if (isEloBound(v) || v === "")
                     setQuery({
                       ...query,
                       range: [query.range?.[0] ?? 0, v === "" ? ELO_FILTER_MAX : v],

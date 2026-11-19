@@ -12,7 +12,7 @@ import { type FocusEvent, useState } from "react";
  * `onChange` first), and blur then drops whatever was never stored so the
  * field shows the stored value again.
  */
-export function useNumberInputDraft(stored: number) {
+export function useNumberInputDraft(stored: number | "") {
   const [draft, setDraft] = useState<number | string | null>(null);
   return {
     value: draft ?? stored,
@@ -21,7 +21,8 @@ export function useNumberInputDraft(stored: number) {
   };
 }
 
-type DraftNumberInputProps = Omit<NumberInputProps, "value"> & { value: number };
+/** `""` is a stored value with no number (an empty field), never a draft. */
+type DraftNumberInputProps = Omit<NumberInputProps, "value"> & { value: number | "" };
 
 /** A `NumberInput` whose `value` is the stored number; see `useNumberInputDraft`. */
 export default function DraftNumberInput({
