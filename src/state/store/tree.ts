@@ -362,100 +362,89 @@ function stepIntoChild(
     return { position: [...path, index] };
 }
 
-export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeKey = id) => {
-    if (id) {
-        const existing = treeStores.get(id);
-        if (existing) return existing;
-    }
-    const initialTree = initTree ?? defaultTree();
-    let install!: StoreApi<TreeStoreState>["setState"];
-    let isCurrent = () => true;
-    let persistenceKey = () => treeKey;
-    const stateCreator: StateCreator<TreeStoreState> = (set, get) => ({
-        ...initialTree,
-        documentId: newDocumentId(),
+type TreeSet = Parameters<StateCreator<TreeStoreState>>[0];
+type TreeGet = Parameters<StateCreator<TreeStoreState>>[1];
 
-        capturePuzzleSessionOwner: () => {
-            const key = persistenceKey();
-            const session = get().puzzleSession;
-            return () => isCurrent() && persistenceKey() === key && get().puzzleSession === session;
-        },
+type TreeNavigationActions = Pick<
+    TreeStoreState,
+    | "currentNode"
+    | "getNode"
+    | "goToNext"
+    | "goToContinuation"
+    | "goToPrevious"
+    | "goToAnnotation"
+    | "goToEnd"
+    | "goToStart"
+    | "goToMove"
+    | "goToBranchStart"
+    | "goToBranchEnd"
+    | "goToBranchEndOrNextLine"
+    | "nextBranch"
+    | "previousBranch"
+    | "nextBranching"
+    | "previousBranching"
+>;
 
-        transitionPuzzleSession: (update) => {
-            let candidate: TreeStoreState;
-            try {
-                if (!isCurrent()) throw new Error("The puzzle tree owner has retired.");
-                candidate = produce(get(), (draft) => {
-                    update(draft);
-                    if (draft.puzzleSession)
-                        draft.puzzleSession = boundPuzzleSession(draft.puzzleSession);
-                });
-                candidate = freeze({ ...candidate, ...prepareTreeForStorage(candidate) }, true);
-                if (id) tabStorage.seed(persistenceKey()!, candidate);
-            } catch (cause) {
-                const error = persistStorageWriteError(cause);
-                reportPersistError(error);
-                return { success: false, error };
-            }
-            // Subscriber failures occur after installation. They must not be reported as a
-            // refused save or invite a retry of a transition that is already durable.
-            install(candidate);
-            return { success: true, persistence: id ? "saved" : "memory" };
-        },
+type TreeMutationActions = Pick<
+    TreeStoreState,
+    | "setFen"
+    | "makeMove"
+    | "appendMove"
+    | "makeMoves"
+    | "deleteMove"
+    | "promoteVariation"
+    | "promoteToMainline"
+>;
 
+type TreeMarkupActions = Pick<
+    TreeStoreState,
+    | "copyPgn"
+    | "copyVariationPgn"
+    | "setStart"
+    | "setAnnotation"
+    | "setComment"
+    | "setGameEnd"
+    | "clearGameEnd"
+    | "setTermination"
+    | "setHeaders"
+    | "setResult"
+    | "setShapes"
+    | "setEngineScore"
+    | "addAnalysis"
+    | "setReportInProgress"
+    | "setReportOperationId"
+    | "clearShapes"
+>;
+
+/** Moves to the next (`1`) or previous (`-1`) sibling of the current move, wrapping around the fork. */
+function stepSibling(step: 1 | -1) {
+    return produce((state: Draft<TreeStoreState>) => {
+        if (state.position.length === 0) return;
+
+        const target = [...state.position];
+        let parent = getNodeAtPath(state.root, target.slice(0, -1));
+        let branchIndex = target[target.length - 1];
+        const node = parent.children[branchIndex];
+
+        // Makes the navigation more fluid and compatible with next/previous branching
+        if (node.children.length >= 2 && parent.children.length <= 1) {
+            target.push(0);
+            parent = getNodeAtPath(state.root, target.slice(0, -1));
+            branchIndex = target[target.length - 1];
+        }
+
+        const count = parent.children.length;
+        target[target.length - 1] = (branchIndex + count + step) % count;
+        if (!drillAllows(state.practicePath, target)) return;
+        state.position = target;
+    });
+}
+
+/** Cursor movement. Never edits the tree, so none of these mark the document dirty. */
+function treeNavigationActions(set: TreeSet, get: TreeGet): TreeNavigationActions {
+    return {
         currentNode: () => getNodeAtPath(get().root, get().position),
         getNode: (path: number[]) => getNodeAtPath(get().root, path),
-
-        practicePath: null,
-        setPracticePath: (path) => set({ practicePath: path }),
-
-        setState: (state) => {
-            set(() => treeReplacementState(state));
-        },
-
-        reset: () =>
-            set(() => {
-                return {
-                    ...defaultTree(),
-                    documentId: newDocumentId(),
-                    linkedSource: null,
-                    puzzleSession: undefined,
-                    practicePath: null,
-                };
-            }),
-
-        save: (stamp, revision) => {
-            set((state) => ({
-                ...state,
-                dirty: false,
-                sourceStamp: stamp ?? state.sourceStamp,
-                linkedSource:
-                    state.linkedSource && stamp && revision
-                        ? { ...state.linkedSource, stamp, generation: revision }
-                        : state.linkedSource,
-                appendAttempted: false,
-            }));
-        },
-
-        setAppendAttempted: (value) => set({ appendAttempted: value }),
-        setStoreAttempts: (destinations) => set({ storeAttempts: destinations }),
-        setSourceStamp: (stamp, revision) =>
-            set((state) => ({
-                sourceStamp: stamp,
-                linkedSource:
-                    state.linkedSource && stamp && revision
-                        ? { ...state.linkedSource, stamp, generation: revision }
-                        : state.linkedSource,
-            })),
-        setLinkedSource: (linkedSource) => set({ linkedSource }),
-
-        setFen: (fen) =>
-            set(
-                produce((state) => {
-                    state.dirty = true;
-                    installRoot(state, defaultTree(fen).root);
-                }),
-            ),
 
         goToNext: () => {
             set((state) => {
@@ -517,60 +506,6 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                 }),
             ),
 
-        makeMove: ({ payload, changePosition, mainline, clock, changeHeaders = true }) => {
-            set(
-                produce((state) => {
-                    if (typeof payload === "string") {
-                        const node = getNodeAtPath(state.root, state.position);
-                        if (!node) return;
-                        const [pos] = positionFromFen(node.fen);
-                        if (!pos) return;
-                        const move = parseSan(pos, payload);
-                        if (!move) return;
-                        payload = move;
-                    }
-                    makeMove({
-                        state,
-                        move: payload,
-                        last: false,
-                        changePosition,
-                        changeHeaders,
-                        mainline,
-                        clock,
-                    });
-                }),
-            );
-        },
-
-        appendMove: ({ payload, clock }) =>
-            set(
-                produce((state) => {
-                    makeMove({ state, move: payload, last: true, clock });
-                }),
-            ),
-
-        makeMoves: ({ payload, mainline, changeHeaders = true }) => {
-            if (payload.length === 0) return { success: true, moves: [] };
-            const state = get();
-            const node = getNodeAtPath(state.root, state.position);
-            const result = validateMoveSequence(node.fen, payload);
-            if (!result.success) return result;
-            set(
-                produce((state) => {
-                    for (const [i, move] of result.moves.entries()) {
-                        makeMove({
-                            state,
-                            move,
-                            last: false,
-                            mainline,
-                            sound: i === payload.length - 1,
-                            changeHeaders,
-                        });
-                    }
-                }),
-            );
-            return result;
-        },
         goToEnd: () =>
             set(
                 produce((state) => {
@@ -641,51 +576,8 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
             if (next) set({ position: next });
         },
 
-        nextBranch: () =>
-            set(
-                produce((state) => {
-                    if (state.position.length === 0) return;
-
-                    const target = [...state.position];
-                    let parent = getNodeAtPath(state.root, target.slice(0, -1));
-                    let branchIndex = target[target.length - 1];
-                    const node = parent.children[branchIndex];
-
-                    // Makes the navigation more fluid and compatible with next/previous branching
-                    if (node.children.length >= 2 && parent.children.length <= 1) {
-                        target.push(0);
-                        parent = getNodeAtPath(state.root, target.slice(0, -1));
-                        branchIndex = target[target.length - 1];
-                    }
-
-                    target[target.length - 1] = (branchIndex + 1) % parent.children.length;
-                    if (!drillAllows(state.practicePath, target)) return;
-                    state.position = target;
-                }),
-            ),
-        previousBranch: () =>
-            set(
-                produce((state) => {
-                    if (state.position.length === 0) return;
-
-                    const target = [...state.position];
-                    let parent = getNodeAtPath(state.root, target.slice(0, -1));
-                    let branchIndex = target[target.length - 1];
-                    const node = parent.children[branchIndex];
-
-                    // Makes the navigation more fluid and compatible with next/previous branching
-                    if (node.children.length >= 2 && parent.children.length <= 1) {
-                        target.push(0);
-                        parent = getNodeAtPath(state.root, target.slice(0, -1));
-                        branchIndex = target[target.length - 1];
-                    }
-
-                    target[target.length - 1] =
-                        (branchIndex + parent.children.length - 1) % parent.children.length;
-                    if (!drillAllows(state.practicePath, target)) return;
-                    state.position = target;
-                }),
-            ),
+        nextBranch: () => set(stepSibling(1)),
+        previousBranch: () => set(stepSibling(-1)),
 
         nextBranching: () =>
             set(
@@ -721,6 +613,74 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                     } while (branchCount === 1 && state.position.length > 0);
                 }),
             ),
+    };
+}
+
+/** Tree edits; the node bookkeeping lives in the module-level helpers below the factory. */
+function treeMutationActions(set: TreeSet, get: TreeGet): TreeMutationActions {
+    return {
+        setFen: (fen) =>
+            set(
+                produce((state) => {
+                    state.dirty = true;
+                    installRoot(state, defaultTree(fen).root);
+                }),
+            ),
+
+        makeMove: ({ payload, changePosition, mainline, clock, changeHeaders = true }) => {
+            set(
+                produce((state) => {
+                    if (typeof payload === "string") {
+                        const node = getNodeAtPath(state.root, state.position);
+                        if (!node) return;
+                        const [pos] = positionFromFen(node.fen);
+                        if (!pos) return;
+                        const move = parseSan(pos, payload);
+                        if (!move) return;
+                        payload = move;
+                    }
+                    makeMove({
+                        state,
+                        move: payload,
+                        last: false,
+                        changePosition,
+                        changeHeaders,
+                        mainline,
+                        clock,
+                    });
+                }),
+            );
+        },
+
+        appendMove: ({ payload, clock }) =>
+            set(
+                produce((state) => {
+                    makeMove({ state, move: payload, last: true, clock });
+                }),
+            ),
+
+        makeMoves: ({ payload, mainline, changeHeaders = true }) => {
+            if (payload.length === 0) return { success: true, moves: [] };
+            const state = get();
+            const node = getNodeAtPath(state.root, state.position);
+            const result = validateMoveSequence(node.fen, payload);
+            if (!result.success) return result;
+            set(
+                produce((state) => {
+                    for (const [i, move] of result.moves.entries()) {
+                        makeMove({
+                            state,
+                            move,
+                            last: false,
+                            mainline,
+                            sound: i === payload.length - 1,
+                            changeHeaders,
+                        });
+                    }
+                }),
+            );
+            return result;
+        },
 
         deleteMove: (path) =>
             set(
@@ -746,6 +706,12 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                     }
                 }),
             ),
+    };
+}
+
+/** Clipboard export, annotations, comments, game end, headers, shapes, scores, analysis and report flags. */
+function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
+    return {
         copyVariationPgn: (path) => {
             const { root } = get();
             return copyPgnToClipboard(() =>
@@ -911,6 +877,96 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                     }
                 }),
             ),
+    };
+}
+
+export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeKey = id) => {
+    if (id) {
+        const existing = treeStores.get(id);
+        if (existing) return existing;
+    }
+    const initialTree = initTree ?? defaultTree();
+    let install!: StoreApi<TreeStoreState>["setState"];
+    let isCurrent = () => true;
+    let persistenceKey = () => treeKey;
+    const stateCreator: StateCreator<TreeStoreState> = (set, get) => ({
+        ...initialTree,
+        documentId: newDocumentId(),
+
+        capturePuzzleSessionOwner: () => {
+            const key = persistenceKey();
+            const session = get().puzzleSession;
+            return () => isCurrent() && persistenceKey() === key && get().puzzleSession === session;
+        },
+
+        transitionPuzzleSession: (update) => {
+            let candidate: TreeStoreState;
+            try {
+                if (!isCurrent()) throw new Error("The puzzle tree owner has retired.");
+                candidate = produce(get(), (draft) => {
+                    update(draft);
+                    if (draft.puzzleSession)
+                        draft.puzzleSession = boundPuzzleSession(draft.puzzleSession);
+                });
+                candidate = freeze({ ...candidate, ...prepareTreeForStorage(candidate) }, true);
+                if (id) tabStorage.seed(persistenceKey()!, candidate);
+            } catch (cause) {
+                const error = persistStorageWriteError(cause);
+                reportPersistError(error);
+                return { success: false, error };
+            }
+            // Subscriber failures occur after installation. They must not be reported as a
+            // refused save or invite a retry of a transition that is already durable.
+            install(candidate);
+            return { success: true, persistence: id ? "saved" : "memory" };
+        },
+
+        practicePath: null,
+        setPracticePath: (path) => set({ practicePath: path }),
+
+        setState: (state) => {
+            set(() => treeReplacementState(state));
+        },
+
+        reset: () =>
+            set(() => {
+                return {
+                    ...defaultTree(),
+                    documentId: newDocumentId(),
+                    linkedSource: null,
+                    puzzleSession: undefined,
+                    practicePath: null,
+                };
+            }),
+
+        save: (stamp, revision) => {
+            set((state) => ({
+                ...state,
+                dirty: false,
+                sourceStamp: stamp ?? state.sourceStamp,
+                linkedSource:
+                    state.linkedSource && stamp && revision
+                        ? { ...state.linkedSource, stamp, generation: revision }
+                        : state.linkedSource,
+                appendAttempted: false,
+            }));
+        },
+
+        setAppendAttempted: (value) => set({ appendAttempted: value }),
+        setStoreAttempts: (destinations) => set({ storeAttempts: destinations }),
+        setSourceStamp: (stamp, revision) =>
+            set((state) => ({
+                sourceStamp: stamp,
+                linkedSource:
+                    state.linkedSource && stamp && revision
+                        ? { ...state.linkedSource, stamp, generation: revision }
+                        : state.linkedSource,
+            })),
+        setLinkedSource: (linkedSource) => set({ linkedSource }),
+
+        ...treeNavigationActions(set, get),
+        ...treeMutationActions(set, get),
+        ...treeMarkupActions(set, get),
     });
 
     if (id) {
