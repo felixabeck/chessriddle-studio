@@ -27436,3 +27436,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** add one `useDatabaseListTable({ records, count, error, isLoading, query, setQuery, selectedId, setSelectedId, sortAccessors, emptyText, activate })` hook in `src/components/databases/` (next to `pageSelection.ts`). It returns the shared DataTable props and registers the arrow-key hotkeys. Each table keeps only its columns, sort-accessor map and preview. No behaviour change. The existing GameTable/PlayerTable/TournamentTable tests stay as the guard.
 * **Proof:** line references above at origin/master `7086448c7`. `rg -n "getAdjacentRecordId|onPageChange=|onRecordsPerPageChange=|recordsPerPageOptions" src/components/databases` shows the three parallel sets.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### The practice session-stats default is written out twice, in `practiceSessionStatsFamily` and `emptyPracticeStats`
+
+* **ID:** f-20261119-11 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review (Felix t67u) at origin/master `7086448c7`
+* **Where:** `src/state/atoms.ts:1388-1410` (`PracticeSessionStats` type, and `practiceSessionStatsFamily`, whose initial value is an inline object literal) and `src/components/panels/practice/session.ts:155-166` (`emptyPracticeStats()`, the same eight fields and values). `PracticePanel.tsx:247` and `:572` reset through `emptyPracticeStats()`; a fresh tab starts from the atom's own literal.
+* **Defect:** two hand-written copies of "empty practice stats" (`mode: "anki"`, three empty key arrays, `correct`/`incorrect`/`streak`/`bestStreak` 0). TypeScript forces both to gain a new required field, but not to agree on its starting value. Nothing checks that the first-mount state equals the reset state.
+* **Failure scenario:** a new stats field (for example a default mode other than `"anki"`, or a counter starting at a non-zero value) is set in one copy only. A first session in a new tab then starts from different stats than a session started after "New session" or a reset.
+* **Fix:** move `emptyPracticeStats()` next to `PracticeSessionStats` in `src/state/atoms.ts`, use it as the family's initial value (`atomFamily((_tab: string) => atom<PracticeSessionStats>(emptyPracticeStats()))`), and re-export or import it from `session.ts`. Keeping it in `atoms.ts` avoids adding another `state → components` import (cf. f-20261111-87). No behaviour change.
+* **Proof:** `sed -n 1399-1410p src/state/atoms.ts` and `sed -n 155-166p src/components/panels/practice/session.ts` at origin/master show the identical literals; a 7-line copy scan of `src/` flagged the pair.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
