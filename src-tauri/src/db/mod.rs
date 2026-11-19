@@ -27,16 +27,18 @@ pub(crate) use search::is_position_in_db_cancellable;
 mod search_index;
 pub(crate) mod sqlite_cancellation;
 
-/// Shared with the non-engine start positions of `engine::parse_fen_to_position`.
-pub(crate) use encoding::database_setup_to_chess;
+/// Shared with the non-engine start positions of `engine::parse_fen_to_position`, which keeps
+/// its FEN text through `database_fen_to_chess`.
+pub(crate) use encoding::database_fen_to_chess;
+#[cfg(test)]
+use encoding::database_setup_to_chess;
 
 use crate::{
     cancellable_read::{map_read_error, CancellableRead, SourceRead, SourceReadState},
     db::{
         encoding::{
             decode_game_to_movetext, decode_game_to_movetext_cancellable, decode_move,
-            fen_text_without_ep_square, iter_mainline_move_bytes,
-            try_iter_mainline_move_bytes_cancellable,
+            iter_mainline_move_bytes, try_iter_mainline_move_bytes_cancellable,
         },
         models::*,
         ops::*,
@@ -715,18 +717,8 @@ impl Visitor for Importer {
                 let fen = Fen::from_ascii(value.as_bytes());
                 if let Ok(fen) = fen {
                     let fen_text = decode_pgn_text(&value.decode()).into_owned();
-                    let had_ep_square = fen.as_setup().ep_square.is_some();
-                    if let Ok(position) = database_setup_to_chess(fen.into_setup()) {
-                        // A dropped en-passant square is dropped from the stored text too, so
-                        // `games.fen`, every replay from it and the renderer agree.
-                        self.game.fen = Some(
-                            if had_ep_square && position.ep_square(EnPassantMode::Always).is_none()
-                            {
-                                fen_text_without_ep_square(&fen_text)
-                            } else {
-                                fen_text
-                            },
-                        );
+                    if let Ok((position, fen_text)) = database_fen_to_chess(fen, fen_text) {
+                        self.game.fen = Some(fen_text);
                         self.game.position = position;
                     } else {
                         self.skip = true;
@@ -8132,6 +8124,12 @@ mod tests {
             decode_game_to_movetext(&parsed.moves, initial_fen).unwrap(),
             "2. exd6"
         );
+
+        // Structurally valid but with no capturing pawn: shakmaty and the renderer's
+        // `dropInvalidEpSquare` both keep it, so the stored text keeps it too.
+        let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+        let parsed = parsed_game(&format!("[SetUp \"1\"]\n[FEN \"{fen}\"]\n\n1... e5 *\n"));
+        assert_eq!(parsed.fen.as_deref(), Some(fen));
     }
 
     #[test]

@@ -3,10 +3,11 @@ use shakmaty::{fen::Fen, uci::UciMove, CastlingMode, Chess, EnPassantMode, Posit
 use crate::error::Error;
 
 /// Non-engine positions (Play without an engine, opening-book EPD lines and PGN `FEN` headers)
-/// follow the database policy.
-pub fn parse_fen_to_position(fen: &str) -> Result<Chess, Error> {
-    let fen: Fen = fen.parse()?;
-    crate::db::database_setup_to_chess(fen.into_setup())
+/// follow the database policy. The returned text is the one to keep with the position: an
+/// en-passant square the policy dropped is rewritten to `-` (`database_fen_to_chess`).
+pub fn parse_fen_to_position(fen_text: &str) -> Result<(Chess, String), Error> {
+    let fen: Fen = fen_text.parse()?;
+    crate::db::database_fen_to_chess(fen, fen_text.to_string())
 }
 
 /// The engine and game-report policy for a start setup. Castling rights without a matching king
@@ -390,6 +391,10 @@ mod tests {
         ));
         // Play without an engine follows the database policy for both classes.
         assert!(parse_fen_to_position("4k3/8/8/8/8/8/PPPPPPPP/QQQ1K3 w KQ - 0 1").is_ok());
+        // An impossible en-passant square is dropped from the position and the kept text.
+        let (position, text) = parse_fen_to_position("4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1").unwrap();
+        assert_eq!(position.ep_square(EnPassantMode::Always), None);
+        assert_eq!(text, "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1");
     }
 
     #[test]

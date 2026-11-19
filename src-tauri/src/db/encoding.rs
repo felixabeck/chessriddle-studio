@@ -1,6 +1,7 @@
 use crate::error::Error;
 use shakmaty::{
-    fen::Fen, san::SanPlus, CastlingMode, Chess, FromSetup, Move, Position, PositionError, Setup,
+    fen::Fen, san::SanPlus, CastlingMode, Chess, EnPassantMode, FromSetup, Move, Position,
+    PositionError, Setup,
 };
 use std::io::{self, ErrorKind};
 use tokio_util::sync::CancellationToken;
@@ -23,10 +24,24 @@ pub(crate) fn database_setup_to_chess(setup: Setup) -> Result<Chess, Error> {
         .map_err(Error::from)
 }
 
+/// `database_setup_to_chess` for a FEN whose text the caller keeps. The returned text is
+/// `fen_text` unchanged, or with its en-passant field rewritten to `-` when the policy dropped
+/// the square, so the kept text and the position agree.
+pub(crate) fn database_fen_to_chess(fen: Fen, fen_text: String) -> Result<(Chess, String), Error> {
+    let had_ep_square = fen.as_setup().ep_square.is_some();
+    let position = database_setup_to_chess(fen.into_setup())?;
+    let fen_text = if had_ep_square && position.ep_square(EnPassantMode::Always).is_none() {
+        fen_text_without_ep_square(&fen_text)
+    } else {
+        fen_text
+    };
+    Ok((position, fen_text))
+}
+
 /// Rewrites the en-passant field (the fourth field) of FEN text to `-`, keeping every other
 /// byte. Fields are delimited by the separators `Fen::from_ascii` accepts (space and `_`,
 /// runs collapsed). Text with fewer than four fields is returned unchanged.
-pub(crate) fn fen_text_without_ep_square(fen: &str) -> String {
+fn fen_text_without_ep_square(fen: &str) -> String {
     const EP_FIELD: usize = 3;
     let is_separator = |ch: char| ch == ' ' || ch == '_';
     let mut field = 0usize;
@@ -638,6 +653,23 @@ mod tests {
             fen_text_without_ep_square("4k3/8/8/8/8/8/8/4K3 w -"),
             "4k3/8/8/8/8/8/8/4K3 w -"
         );
+    }
+
+    #[test]
+    fn decode_replays_from_an_unrewritten_impossible_ep_square_fen() {
+        // Rows written before the importer rewrote the field, or by another writer.
+        let raw: Fen = "4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1".parse().unwrap();
+        let dropped: Fen = "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1".parse().unwrap();
+        let chess = database_setup_to_chess(dropped.into_setup()).unwrap();
+        let king_move = Move::Normal {
+            role: shakmaty::Role::King,
+            from: shakmaty::Square::E8,
+            to: shakmaty::Square::D7,
+            capture: None,
+            promotion: None,
+        };
+        let bytes = vec![encode_move(&king_move, &chess).unwrap()];
+        assert_eq!(decode_game_to_movetext(&bytes, raw).unwrap(), "1... Kd7");
     }
 
     #[test]

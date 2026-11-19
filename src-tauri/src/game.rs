@@ -343,10 +343,11 @@ impl GameController {
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string()
         });
 
-        let position = if matches!(config.white, PlayerConfig::Engine { .. })
+        let (position, initial_fen) = if matches!(config.white, PlayerConfig::Engine { .. })
             || matches!(config.black, PlayerConfig::Engine { .. })
         {
-            crate::engine::canonicalize_engine_position(&initial_fen, &[])?.position
+            let position = crate::engine::canonicalize_engine_position(&initial_fen, &[])?.position;
+            (position, initial_fen)
         } else {
             parse_fen_to_position(&initial_fen)?
         };
@@ -2370,7 +2371,7 @@ fn select_random_epd_entry_cancellable(
             "{} {} {} {} 0 1",
             fields[0], fields[1], fields[2], fields[3]
         );
-        parse_fen_to_position(&fen)?;
+        let (_, fen) = parse_fen_to_position(&fen)?;
         seen = seen
             .checked_add(1)
             .ok_or_else(|| Error::ResourceLimit("too many EPD entries".into()))?;
@@ -2554,7 +2555,7 @@ impl Visitor for OpeningBookPgnVisitor {
         if key == b"FEN" {
             let fen_text = value.decode_utf8_lossy().into_owned();
             match parse_fen_to_position(&fen_text) {
-                Ok(position) => {
+                Ok((position, fen_text)) => {
                     let parsed_fen: Fen = match fen_text.parse() {
                         Ok(fen) => fen,
                         Err(_) => {
@@ -4666,6 +4667,19 @@ mod tests {
     }
 
     #[test]
+    fn human_game_state_reports_the_start_fen_its_position_uses() {
+        // f-20261119-01: the database policy drops an impossible en-passant square, so the
+        // reported initial FEN drops it too instead of disagreeing with `current_fen`.
+        let mut config = human_config();
+        config.initial_fen = Some("4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1".into());
+        let state = GameController::new("human-ep".into(), 1, config)
+            .unwrap()
+            .get_state();
+        assert_eq!(state.initial_fen, "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1");
+        assert_eq!(state.current_fen, state.initial_fen);
+    }
+
+    #[test]
     fn engine_game_takeback_restores_root_with_normalized_negative_halfmove() {
         let mut config = human_config();
         config.black = fake_engine_player();
@@ -6536,6 +6550,29 @@ done
             select_random_epd_entry_cancellable(reader, &cancellation),
             Err(Error::Cancellation)
         ));
+    }
+
+    #[test]
+    fn opening_books_keep_an_impossible_ep_square_entry_with_the_square_dropped() {
+        // f-20261119-01: the database policy drops the square, so the selected text must
+        // drop it too or the engine start (`engine_setup_to_chess`) rejects the entry.
+        let dropped = "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1";
+        let epd = select_random_epd_entry(BufReader::new(Cursor::new(
+            "4k3/8/8/8/4P3/8/8/4K3 b - e6\n",
+        )))
+        .unwrap();
+        let pgn = select_random_pgn_entry(Cursor::new(
+            "[SetUp \"1\"]\n[FEN \"4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1\"]\n\n1... Kd7 *\n",
+        ))
+        .unwrap();
+        assert_eq!(epd.initial_fen, dropped);
+        assert_eq!(pgn.initial_fen, dropped);
+        assert_eq!(pgn.initial_moves, vec!["e8d7".to_string()]);
+        for selection in [&epd, &pgn] {
+            assert!(
+                crate::engine::canonicalize_engine_position(&selection.initial_fen, &[]).is_ok()
+            );
+        }
     }
 
     #[test]
