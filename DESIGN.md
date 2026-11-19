@@ -196,6 +196,8 @@ Existing `board-image` selections remain unchanged, all previous choices stay
 available, and the piece-set default remains `staunty`. ChessRiddle's wood grain
 (`wood4-square.png`, soft-light, one tile per square) is on by default and can be
 switched off under Appearance → Wood texture (`d-20261031-03`).
+Board corners scale with the board: 3% of its width, capped at the default lg
+radius, so a main board keeps 16px and small previews keep their corner squares.
 Light, Dark and Auto keep their existing behaviour.
 
 No hard-coded colours, no new icon library, no accent picker. Use the existing

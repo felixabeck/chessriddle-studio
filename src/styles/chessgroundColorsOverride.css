@@ -6,7 +6,9 @@ cg-board {
     12.5% 12.5%,
     cover;
   background-blend-mode: soft-light, normal;
-  border-radius: var(--mantine-radius-default);
+  /* Scales with the board (3% of its width, capped at the default radius from 533px up), so small
+     boards such as the engine-line preview keep their corner squares instead of clipping them. */
+  border-radius: min(var(--mantine-radius-default), 3%);
   overflow: hidden;
 }
 
