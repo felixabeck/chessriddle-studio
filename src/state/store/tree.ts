@@ -350,6 +350,11 @@ function drillAllows(practicePath: number[] | null, target: number[]): boolean {
     return practicePath === null || isPrefix(target, practicePath);
 }
 
+/** The one place a navigation action moves the cursor during a drill: lands on `target` only where {@link drillAllows} permits it. */
+function moveCursorWithinDrill(state: Draft<TreeStoreState>, target: number[]): void {
+    if (drillAllows(state.practicePath, target)) state.position = target;
+}
+
 function stepIntoChild(
     path: number[],
     children: TreeNode[],
@@ -439,8 +444,7 @@ function stepSibling(step: 1 | -1) {
 
         const count = parent.children.length;
         target[target.length - 1] = (branchIndex + count + step) % count;
-        if (!drillAllows(state.practicePath, target)) return;
-        state.position = target;
+        moveCursorWithinDrill(state, target);
     });
 }
 
@@ -502,9 +506,8 @@ function treeNavigationActions(set: TreeSet, get: TreeGet): TreeNavigationAction
                             node.nags.some((code) => nagGlyph(code) === annotation) &&
                             node.halfMoves % 2 === colorN
                         ) {
-                            if (!drillAllows(state.practicePath, p)) return;
-                            state.position = p;
-                            break;
+                            moveCursorWithinDrill(state, p);
+                            return;
                         }
                     }
                 }),
@@ -519,8 +522,7 @@ function treeNavigationActions(set: TreeSet, get: TreeGet): TreeNavigationAction
                         target.push(0);
                         currentNode = currentNode.children[0];
                     }
-                    if (!drillAllows(state.practicePath, target)) return;
-                    state.position = target;
+                    moveCursorWithinDrill(state, target);
                 }),
             ),
         goToStart: () =>
@@ -562,8 +564,7 @@ function treeNavigationActions(set: TreeSet, get: TreeGet): TreeNavigationAction
                         target.push(0);
                         currentNode = currentNode.children[0];
                     }
-                    if (!drillAllows(state.practicePath, target)) return;
-                    state.position = target;
+                    moveCursorWithinDrill(state, target);
                 }),
             );
         },
@@ -597,8 +598,7 @@ function treeNavigationActions(set: TreeSet, get: TreeGet): TreeNavigationAction
                         node = node.children[0];
                         branchCount = node.children.length;
                     } while (branchCount === 1);
-                    if (!drillAllows(state.practicePath, target)) return;
-                    state.position = target;
+                    moveCursorWithinDrill(state, target);
                 }),
             ),
 
