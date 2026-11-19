@@ -8,7 +8,7 @@ import { useStore } from "zustand";
 import { chooseVariationAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { nextContinuation } from "@/state/store/tree";
-import { isHotkeySuppressed } from "@/utils/keyboardOwnership";
+import { isEngineLinePreviewOpen, isHotkeySuppressed } from "@/utils/keyboardOwnership";
 import { TreeStateContext, useVariationChooser } from "@/components/common/TreeStateContext";
 import IconAction from "./IconAction";
 import { releaseFocusOnMoveKey } from "./MoveCell";
@@ -83,8 +83,14 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   };
 
   const keyMap = useAtomValue(keyMapAtom);
-  useHotkeys(keyMap.PREVIOUS_MOVE.keys, moveKey(previous), shortcutOptions());
-  useHotkeys(keyMap.NEXT_MOVE.keys, moveKey(next), shortcutOptions());
+  // An open engine-line preview board steps through its line with these keys instead.
+  const stepOptions = {
+    ...shortcutOptions(),
+    ignoreEventWhen: (event: KeyboardEvent) =>
+      isEngineLinePreviewOpen() || isHotkeySuppressed(event, groupRef.current),
+  };
+  useHotkeys(keyMap.PREVIOUS_MOVE.keys, moveKey(previous), stepOptions);
+  useHotkeys(keyMap.NEXT_MOVE.keys, moveKey(next), stepOptions);
   useHotkeys(keyMap.GO_TO_START.keys, moveKey(navigate(start)), shortcutOptions());
   useHotkeys(keyMap.GO_TO_END.keys, moveKey(navigate(end)), shortcutOptions());
   useHotkeys(

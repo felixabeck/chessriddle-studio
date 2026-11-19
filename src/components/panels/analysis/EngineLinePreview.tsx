@@ -1,20 +1,27 @@
 import type { Key } from "@lichess-org/chessground/types";
 import { Box, Portal } from "@mantine/core";
-import { useForceUpdate } from "@mantine/hooks";
+import type { Color } from "chessops";
 import { chessgroundMove } from "chessops/compat";
 import { makeFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { useAtomValue } from "jotai";
-import { type RefObject, useLayoutEffect, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { Chessground } from "@/chessground/Chessground";
 import { moveHighlightAtom, previewBoardOnHoverAtom } from "@/state/atoms";
+import { keyMapAtom } from "@/state/keybinds";
 import { positionFromFen } from "@/utils/chessops";
-import EngineLineMove, { engineLineMoveNumber } from "./EngineLineMove";
+import { backgroundHotkeyOptions, ENGINE_LINE_PREVIEW_ATTRIBUTE } from "@/utils/keyboardOwnership";
+import EngineLineMove from "./EngineLineMove";
 
 /** Edge length of the hover preview board, in pixels. */
 const PREVIEW_SIZE = 200;
 
-type PreviewMoveInfo = { san: string; fen: string; lastMove: Key[]; isCheck: boolean };
+/** The preview index of the line's start position, before its first move; only keys reach it. */
+const LINE_START = -1;
+
+type PreviewPosition = { fen: string; lastMove?: Key[]; isCheck: boolean; turn: Color };
+type PreviewMoveInfo = PreviewPosition & { san: string; lastMove: Key[] };
 
 /** Replays `sanMoves` from `fen`, stopping at the first move that is not legal there. */
 export function engineLinePositions(fen: string, sanMoves: string[]): PreviewMoveInfo[] {
@@ -30,9 +37,15 @@ export function engineLinePositions(fen: string, sanMoves: string[]): PreviewMov
       fen: makeFen(pos.toSetup()),
       lastMove: chessgroundMove(move),
       isCheck: pos.isCheck(),
+      turn: pos.turn,
     });
   }
   return positions;
+}
+
+function startPosition(fen: string): PreviewPosition | null {
+  const [pos] = positionFromFen(fen);
+  return pos && { fen, isCheck: pos.isCheck(), turn: pos.turn };
 }
 
 /**
@@ -46,94 +59,159 @@ export function previewTop(top: number, bottom: number, viewportHeight: number) 
   return Math.max(0, viewportHeight - PREVIEW_SIZE);
 }
 
-/** Read at render time, so the caller re-renders it when the anchor moves. */
-function previewPosition(anchor: HTMLElement | null) {
+function previewPlacement(anchor: HTMLElement | null) {
   const rect = anchor?.getBoundingClientRect();
   if (!rect) return { left: 0, top: 0 };
   return { left: rect.left, top: previewTop(rect.top, rect.bottom, window.innerHeight) };
 }
 
 /**
- * One engine-line move that shows the position after it on a small board while hovered,
- * placed against `anchor` (the line it belongs to).
+ * `index` is the previewed move (or LINE_START). `frozen` holds the line's moves from the first
+ * key step on, so an engine update cannot change the line being stepped through.
  */
-export function PreviewEngineLineMove({
-  move: { san, fen, lastMove, isCheck },
-  index,
+type PreviewState = { fen: string; index: number; frozen: string[] | null };
+
+/**
+ * The hover preview board of one engine line searched from `fen`. Hovering a move opens the
+ * board on the position after it; while it is open the next/previous move keys step through
+ * the line on the preview board only. The board stays where it opened while stepping.
+ */
+export function useEngineLinePreview({
+  fen,
   moves,
-  halfMoves,
-  threat,
+  visibleCount,
   orientation,
   anchor,
   inert,
 }: {
-  move: PreviewMoveInfo;
-  index: number;
+  fen: string;
+  /** The whole line, in SAN. */
   moves: string[];
-  halfMoves: number;
-  threat: boolean;
+  /** How many of its moves the line shows (Infinity for all); hover and key steps stay within them. */
+  visibleCount: number;
   orientation: "white" | "black";
+  /** The line the board is placed against. */
   anchor: RefObject<HTMLElement | null>;
   inert: boolean;
 }) {
-  const { isWhite } = engineLineMoveNumber(halfMoves, index, threat);
-  const preview = useAtomValue(previewBoardOnHoverAtom);
+  const enabled = useAtomValue(previewBoardOnHoverAtom);
   const moveHighlight = useAtomValue(moveHighlightAtom);
-  const [hovering, setHovering] = useState(false);
-  const shown = !inert && preview && hovering;
+  const keyMap = useAtomValue(keyMapAtom);
+  const [state, setState] = useState<PreviewState | null>(null);
 
-  const reposition = useForceUpdate();
+  // A new position or a dimmed line ends the preview and its frozen line.
+  useEffect(() => setState(null), [fen, inert]);
+
+  const current = state?.fen === fen && !inert && enabled ? state : null;
+  const lineMoves = current?.frozen ?? moves;
+  const positions = engineLinePositions(fen, lineMoves.slice(0, visibleCount));
+  const index =
+    current && positions.length > 0 ? Math.min(current.index, positions.length - 1) : null;
+  const shown =
+    index === null ? null : index === LINE_START ? startPosition(fen) : positions[index];
+  const open = shown != null;
+
+  const hover = (moveIndex: number) => {
+    if (inert) return;
+    setState((previous) =>
+      previous?.fen === fen && previous.frozen
+        ? { ...previous, index: moveIndex }
+        : { fen, index: moveIndex, frozen: null },
+    );
+  };
+  const close = () => setState(null);
+  const step = (direction: 1 | -1) =>
+    setState((previous) => {
+      if (previous?.fen !== fen) return previous;
+      // Step from the move shown, which a shorter live line may have clamped.
+      const last = positions.length - 1;
+      const from = Math.min(previous.index, last);
+      const next = Math.max(LINE_START, Math.min(last, from + direction));
+      return { ...previous, index: next, frozen: previous.frozen ?? moves };
+    });
+
+  const keyOptions = { ...backgroundHotkeyOptions, enabled: open, preventDefault: true };
+  useHotkeys(keyMap.NEXT_MOVE.keys, () => step(1), keyOptions);
+  useHotkeys(keyMap.PREVIOUS_MOVE.keys, () => step(-1), keyOptions);
+
+  // Placed once when it opens, so stepping never moves it; only a panel scroll does.
+  const [placement, setPlacement] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
-    if (!shown) return;
-    document.addEventListener("analysis-panel-scroll", reposition);
-    return () => document.removeEventListener("analysis-panel-scroll", reposition);
-  }, [shown, reposition]);
+    if (!open) {
+      setPlacement(null);
+      return;
+    }
+    const place = () => setPlacement(previewPlacement(anchor.current));
+    place();
+    document.addEventListener("analysis-panel-scroll", place);
+    return () => document.removeEventListener("analysis-panel-scroll", place);
+  }, [open, anchor]);
 
-  return (
-    <>
+  const board: ReactNode = shown && placement && (
+    <Portal>
       <Box
-        onMouseEnter={() => {
-          if (!inert) setHovering(true);
-        }}
-        onMouseLeave={() => setHovering(false)}
+        data-testid="engine-line-preview"
+        {...{ [ENGINE_LINE_PREVIEW_ATTRIBUTE]: true }}
+        w={PREVIEW_SIZE}
+        // The board may overlap the hovered move (a clamped placement); it must not take
+        // the pointer from it, or the line's mouse-leave would dismiss the board.
+        style={{ ...placement, pointerEvents: "none" }}
+        pos="fixed"
       >
-        <EngineLineMove
-          san={san}
-          index={index}
-          moves={moves}
-          halfMoves={halfMoves}
-          threat={threat}
-          inert={inert}
+        <Chessground
+          fen={shown.fen}
+          coordinates={false}
+          viewOnly
+          orientation={orientation}
+          lastMove={moveHighlight ? shown.lastMove : undefined}
+          turnColor={shown.turn}
+          check={moveHighlight && shown.isCheck}
+          drawable={{
+            enabled: true,
+            visible: true,
+            defaultSnapToValidMove: true,
+            eraseOnMovablePieceClick: true,
+          }}
         />
       </Box>
-      {shown && (
-        <Portal>
-          <Box
-            data-testid="engine-line-preview"
-            w={PREVIEW_SIZE}
-            // The board may overlap the hovered move (a clamped placement); it must not take
-            // the pointer from it, or the move's mouse-leave would dismiss the board.
-            style={{ ...previewPosition(anchor.current), pointerEvents: "none" }}
-            pos="fixed"
-          >
-            <Chessground
-              fen={fen}
-              coordinates={false}
-              viewOnly
-              orientation={orientation}
-              lastMove={moveHighlight ? lastMove : undefined}
-              turnColor={isWhite ? "black" : "white"}
-              check={moveHighlight && isCheck}
-              drawable={{
-                enabled: true,
-                visible: true,
-                defaultSnapToValidMove: true,
-                eraseOnMovablePieceClick: true,
-              }}
-            />
-          </Box>
-        </Portal>
-      )}
-    </>
+    </Portal>
   );
+
+  return {
+    /** The line's moves as shown: frozen while stepping, live otherwise. */
+    moves: lineMoves,
+    positions,
+    /** The move the board shows, highlighted in the line. */
+    previewedIndex: open ? index : null,
+    hover,
+    close,
+    board,
+  };
+}
+
+/** The moves of a line from `useEngineLinePreview`, each opening or moving its preview on hover. */
+export function EngineLinePreviewMoves({
+  preview,
+  halfMoves,
+  threat,
+  inert,
+}: {
+  preview: ReturnType<typeof useEngineLinePreview>;
+  halfMoves: number;
+  threat: boolean;
+  inert: boolean;
+}) {
+  return preview.positions.map(({ san }, index) => (
+    <EngineLineMove
+      key={index}
+      san={san}
+      index={index}
+      moves={preview.moves}
+      halfMoves={halfMoves}
+      threat={threat}
+      inert={inert}
+      previewed={preview.previewedIndex === index}
+      onHover={preview.hover}
+    />
+  ));
 }

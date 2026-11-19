@@ -148,3 +148,44 @@ test("X toggles the Crosshair state and Shift+C navigates to the previous branch
     await expect(current).toHaveText("d4");
     await expect(threat).toHaveAttribute("aria-pressed", "false");
 });
+
+test("move keys step an open engine-line preview board in place and leave the game alone", async ({
+    page,
+    emitTauriEvent,
+}) => {
+    const { panel, request, current } = await setup(page);
+    await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
+    await expect(current).toHaveText("e4");
+    await page.getByRole("button", { name: "Go to start", exact: true }).click();
+    await expect(current).toHaveCount(0);
+    await emitTauriEvent({
+        event: "best-moves-payload",
+        payload: bestMovesPayload(
+            await request([]),
+            ["d4", "d5", "c4", "e6"],
+            ["d2d4", "d7d5", "c2c4", "e7e6"],
+            20,
+        ),
+    });
+    const move = (san: string) => panel.getByRole("button", { name: san, exact: true });
+    await move("d4").hover();
+    const preview = page.getByTestId("engine-line-preview");
+    await expect(preview).toBeVisible();
+    const opened = await preview.boundingBox();
+
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(move("c4")).toHaveAttribute("aria-current", "true");
+    await expect(current).toHaveCount(0);
+    expect(await preview.boundingBox()).toEqual(opened);
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(move("d5")).toHaveAttribute("aria-current", "true");
+    await expect(current).toHaveCount(0);
+
+    // Once the pointer leaves the line the board closes, and the keys move the game again.
+    await page.mouse.move(5, 5);
+    await expect(preview).toHaveCount(0);
+    await page.keyboard.press("ArrowRight");
+    await expect(current).toHaveText("e4");
+});

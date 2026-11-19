@@ -1,5 +1,7 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { previewTop } from "./EngineLinePreview";
+
+vi.mock("@/state/keybinds", () => ({ keyMapAtom: null }));
 
 test("previewTop places the board below, then above, then inside the window", () => {
     // Room below the line.

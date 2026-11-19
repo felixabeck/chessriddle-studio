@@ -7,7 +7,7 @@ import { useClipboardCopy } from "@/hooks/useClipboardCopy";
 import type { Score } from "@/bindings";
 import type { ChessDBLine } from "@/utils/chessdb/api";
 import { formatScore } from "@/utils/score";
-import { engineLinePositions, PreviewEngineLineMove } from "./EngineLinePreview";
+import { EngineLinePreviewMoves, useEngineLinePreview } from "./EngineLinePreview";
 import { EngineScoreBubble } from "./ScoreBubble";
 import classes from "./BestMoves.module.css";
 
@@ -38,14 +38,19 @@ function AnalysisRow({
   const { t } = useTranslation();
   const { copied, copy } = useClipboardCopy(t("Board.Analysis.CopyLineFailed"));
 
-  const allMoves = moves;
-  const visibleMoves = open ? allMoves : allMoves.slice(0, 12);
+  const ref = useRef<HTMLTableRowElement>(null);
+  const preview = useEngineLinePreview({
+    fen,
+    moves,
+    visibleCount: open ? Infinity : 12,
+    orientation,
+    anchor: ref,
+    inert,
+  });
+  const allMoves = preview.moves;
   const engineOutput = [engineName, formatScore(score.value), allMoves.join(" ")]
     .filter(Boolean)
     .join(" ");
-
-  const moveInfo = engineLinePositions(fen, visibleMoves);
-  const ref = useRef<HTMLTableRowElement>(null);
 
   const mark = chessdb?.note.match(/^[^\p{L}\p{N}\s()]+/u)?.[0];
   const winrate = chessdb?.winrate?.trim() ? Number(chessdb.winrate) : Number.NaN;
@@ -83,21 +88,16 @@ function AnalysisRow({
             overflow: "hidden",
             alignItems: "center",
           }}
+          onMouseLeave={preview.close}
         >
-          {moveInfo.map((move, index) => (
-            <PreviewEngineLineMove
-              key={index}
-              move={move}
-              index={index}
-              moves={allMoves}
-              halfMoves={halfMoves}
-              threat={threat}
-              orientation={orientation}
-              anchor={ref}
-              inert={inert}
-            />
-          ))}
+          <EngineLinePreviewMoves
+            preview={preview}
+            halfMoves={halfMoves}
+            threat={threat}
+            inert={inert}
+          />
         </Flex>
+        {preview.board}
       </Table.Td>
       <Table.Th>
         <Flex direction="column" align="center" gap={4}>

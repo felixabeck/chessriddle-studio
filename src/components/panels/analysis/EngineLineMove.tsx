@@ -1,3 +1,4 @@
+import { Box } from "@mantine/core";
 import { useContext } from "react";
 import { useStore } from "zustand";
 import MoveCell from "@/components/common/MoveCell";
@@ -13,7 +14,10 @@ export function engineLineMoveNumber(halfMoves: number, index: number, threat: b
   return { isWhite: totalMoves % 2 === 1, moveNumber: Math.ceil(totalMoves / 2) };
 }
 
-/** One move of an engine line, with its move number, that plays the line up to it on click. */
+/**
+ * One move of an engine line, with its move number, that plays the line up to it on click.
+ * `moves` is the line it belongs to, so a frozen preview line plays what it shows.
+ */
 function EngineLineMove({
   san,
   index,
@@ -21,6 +25,8 @@ function EngineLineMove({
   halfMoves,
   threat,
   inert,
+  previewed = false,
+  onHover,
 }: {
   san: string;
   index: number;
@@ -28,19 +34,22 @@ function EngineLineMove({
   halfMoves: number;
   threat: boolean;
   inert: boolean;
+  /** The move a line preview board currently shows. */
+  previewed?: boolean;
+  onHover: (index: number) => void;
 }) {
   const { isWhite, moveNumber } = engineLineMoveNumber(halfMoves, index, threat);
   const store = useContext(TreeStateContext)!;
   const makeMoves = useStore(store, (s) => s.makeMoves);
 
   return (
-    <>
+    <Box onMouseEnter={() => onHover(index)}>
       {(index === 0 || isWhite) && (
         <span className={classes.moveNumber}>{`${moveNumber}${isWhite ? "." : "..."}`}</span>
       )}
       <MoveCell
         move={san}
-        isCurrentVariation={false}
+        isCurrentVariation={previewed}
         annotations={[]}
         onContextMenu={() => undefined}
         isStart={false}
@@ -50,7 +59,7 @@ function EngineLineMove({
           }
         }}
       />
-    </>
+    </Box>
   );
 }
 

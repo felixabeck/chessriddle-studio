@@ -2,12 +2,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { INITIAL_FEN } from "chessops/fen";
+import { press } from "@/tests/keyboard";
 
 const mocks = vi.hoisted(() => ({
   scoreTypeFamily: vi.fn((_engineId: string) => Symbol("scoreType")),
   setEvalDisplay: vi.fn(),
   makeMoves: vi.fn(),
   notify: vi.fn(),
+  keyMap: Symbol("keyMapAtom"),
 }));
 
 import AnalysisRow from "./AnalysisRow";
@@ -20,12 +22,15 @@ vi.mock("@/state/atoms", () => ({
   previewBoardOnHoverAtom: Symbol("previewBoardOnHoverAtom"),
   scoreTypeFamily: mocks.scoreTypeFamily,
 }));
+vi.mock("@/state/keybinds", () => ({ keyMapAtom: mocks.keyMap }));
 vi.mock("jotai", () => ({
   useAtom: () => ["cp", mocks.setEvalDisplay],
-  useAtomValue: () => true,
+  useAtomValue: (atom: unknown) =>
+    atom === mocks.keyMap
+      ? { NEXT_MOVE: { keys: "arrowright" }, PREVIOUS_MOVE: { keys: "arrowleft" } }
+      : true,
 }));
 vi.mock("zustand", () => ({ useStore: () => mocks.makeMoves }));
-vi.mock("@mantine/hooks", () => ({ useForceUpdate: () => vi.fn() }));
 vi.mock("@mantine/core", () => {
   const Container = ({ children, ...props }: any) => <div {...props}>{children}</div>;
   return {
@@ -51,8 +56,12 @@ vi.mock("@/components/common/IconAction", () => ({
   ),
 }));
 vi.mock("@/components/common/MoveCell", () => ({
-  default: ({ move, onClick, onContextMenu }: any) => (
-    <button onClick={onClick} onContextMenu={onContextMenu}>
+  default: ({ move, onClick, onContextMenu, isCurrentVariation }: any) => (
+    <button
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      aria-current={isCurrentVariation ? "true" : undefined}
+    >
       {move}
     </button>
   ),
@@ -238,4 +247,52 @@ test("inert previous rows ignore insertion, hover preview, context and expansion
   );
   expect(host.querySelector("[inert]")).not.toBeNull();
   expect(host.querySelector('[aria-label="Menu.Edit.Copy"]')).toBeNull();
+});
+
+test("move keys step a collapsed line's preview up to its twelfth shown move, an expanded one to its end", async () => {
+  const moves = [
+    "e4",
+    "e5",
+    "Nf3",
+    "Nc6",
+    "Bb5",
+    "a6",
+    "Ba4",
+    "Nf6",
+    "O-O",
+    "Be7",
+    "Re1",
+    "b5",
+    "Bb3",
+    "d6",
+  ];
+  await act(async () =>
+    root.render(
+      <AnalysisRow
+        engineId="engine"
+        engineName="Engine"
+        score={{ value: { type: "cp", value: 34 }, wdl: null }}
+        moves={moves}
+        halfMoves={0}
+        threat={false}
+        fen={INITIAL_FEN}
+        orientation="white"
+      />,
+    ),
+  );
+  const previewed = () => host.querySelector('[aria-current="true"]')?.textContent;
+  await act(async () => {
+    host
+      .querySelectorAll("button")[0]
+      .parentElement!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  });
+  for (let i = 0; i < 15; i++) press("ArrowRight");
+  expect(previewed()).toBe("b5");
+
+  await act(async () => {
+    (host.querySelector('[aria-label="Board.Analysis.Expand"]') as HTMLButtonElement).click();
+  });
+  for (let i = 0; i < 5; i++) press("ArrowRight");
+  expect(previewed()).toBe("d6");
+  expect(mocks.makeMoves).not.toHaveBeenCalled();
 });

@@ -14,6 +14,7 @@ import {
 import { INITIAL_FEN } from "chessops/fen";
 import { engineIdentity, engineLineContext } from "../panels/analysis/analysisLineContext";
 import { displayEngine, displayLines, engineDisplayHarness } from "@/tests/engineDisplay";
+import { press } from "@/tests/keyboard";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { TreeStateContext } from "./TreeStateContext";
 import DetachedEval from "./DetachedEval";
@@ -25,6 +26,8 @@ vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("@/platform/native", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/platform/native")>()),
   warn: vi.fn(),
+  // The move keys come from the keymap, whose defaults read the platform.
+  platform: () => "linux",
 }));
 vi.mock("@/chessground/Chessground", () => ({
   Chessground: ({ fen }: { fen: string }) => <div data-preview-fen={fen} />,
@@ -370,6 +373,105 @@ test("DetachedEval flips the preview above a line at the window bottom, without 
   expect(preview.style.top).toBe(`${window.innerHeight - 240}px`);
   expect(preview.style.left).toBe("40px");
   expect(preview.style.pointerEvents).toBe("none");
+  tree.dispose();
+});
+
+const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+const AFTER_E5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
+const AFTER_NF3 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
+const previewed = () => h.host.querySelector('[aria-current="true"]')?.textContent ?? null;
+
+test("DetachedEval move keys step the open preview through its line and leave the game alone", async () => {
+  const tree = await renderPinned("1");
+  await hover(moveButton("e4"));
+  expect(previewFen()).toBe(AFTER_E4);
+
+  press("ArrowRight");
+  expect(previewFen()).toBe(AFTER_E5);
+  expect(previewed()).toBe("e5");
+  press("ArrowRight");
+  expect(previewFen()).toBe(AFTER_NF3);
+  // The line's last move is the end.
+  press("ArrowRight");
+  expect(previewFen()).toBe(AFTER_NF3);
+  // Modified arrows keep their own bindings and do not step the preview.
+  press("ArrowLeft", { shiftKey: true });
+  expect(previewFen()).toBe(AFTER_NF3);
+  expect(tree.getState().position).toEqual([]);
+
+  press("ArrowLeft");
+  press("ArrowLeft");
+  expect(previewFen()).toBe(AFTER_E4);
+  // One more step back shows the position the line starts from, and no further.
+  press("ArrowLeft");
+  press("ArrowLeft");
+  expect(previewFen()).toBe(INITIAL_FEN);
+  expect(previewed()).toBeNull();
+  expect(tree.getState().position).toEqual([]);
+  tree.dispose();
+});
+
+test("DetachedEval keeps the stepped preview board where it opened", async () => {
+  const tree = await renderPinned("1");
+  const line = moveButton("e5").closest(".mantine-Group-root")!;
+  const rect = vi.spyOn(line, "getBoundingClientRect");
+  rect.mockReturnValue(DOMRect.fromRect({ x: 40, y: 100, width: 600, height: 40 }));
+  await hover(moveButton("e4"));
+  const preview = () => document.querySelector<HTMLElement>("[data-testid=engine-line-preview]")!;
+  expect(preview().style.top).toBe("140px");
+
+  rect.mockReturnValue(DOMRect.fromRect({ x: 90, y: 300, width: 600, height: 40 }));
+  press("ArrowRight");
+  press("ArrowRight");
+  expect(previewFen()).toBe(AFTER_NF3);
+  expect(preview().style.top).toBe("140px");
+  expect(preview().style.left).toBe("40px");
+  tree.dispose();
+});
+
+test("DetachedEval freezes a stepped line against engine updates until the pointer leaves", async () => {
+  const tree = await renderPinned("1");
+  await hover(moveButton("e4"));
+  press("ArrowRight");
+  await h.remember([{ ...displayLines[0], sanMoves: ["d4", "d5"], uciMoves: ["d2d4", "d7d5"] }]);
+  expect(h.host.textContent).toContain(LINE);
+  press("ArrowRight");
+  expect(previewFen()).toBe(AFTER_NF3);
+
+  // Hovering another move of the frozen line keeps it frozen.
+  await hover(moveButton("e5"));
+  expect(previewFen()).toBe(AFTER_E5);
+  expect(h.host.textContent).toContain(LINE);
+
+  await unhover(moveButton("e4"));
+  expect(previewFen()).toBeUndefined();
+  expect(h.host.textContent).toContain("1.d4d5");
+  tree.dispose();
+});
+
+test("DetachedEval plays the frozen line a stepped preview shows when one of its moves is clicked", async () => {
+  const tree = await renderPinned("1");
+  await hover(moveButton("e4"));
+  press("ArrowRight");
+  await h.remember([{ ...displayLines[0], sanMoves: ["d4", "d5"], uciMoves: ["d2d4", "d7d5"] }]);
+  await act(async () => moveButton("♘f3").click());
+  expect(tree.getState().currentNode().san).toBe("Nf3");
+  expect(tree.getState().currentNode().halfMoves).toBe(3);
+  tree.dispose();
+});
+
+test("DetachedEval closes the preview and its frozen line when the game moves", async () => {
+  const tree = await renderPinned("1");
+  await hover(moveButton("e4"));
+  press("ArrowRight");
+  await act(async () => tree.getState().makeMoves({ payload: ["e4"] }));
+  expect(previewFen()).toBeUndefined();
+  // Back on the position the line belongs to, nothing of the old preview comes back.
+  await act(async () => tree.getState().goToStart());
+  expect(previewFen()).toBeUndefined();
+  press("ArrowRight");
+  expect(previewFen()).toBeUndefined();
+  expect(previewed()).toBeNull();
   tree.dispose();
 });
 

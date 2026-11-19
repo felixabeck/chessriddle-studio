@@ -636,6 +636,39 @@ test.each([
   },
 );
 
+test.each(["ArrowLeft", "ArrowRight"])(
+  "%s steps an open engine-line preview board instead of the game, and the game again once it closes",
+  (key) => {
+    settings.chooseVariation = false;
+    store = middleGameStore();
+    render();
+    const preview = document.createElement("div");
+    preview.setAttribute("data-engine-line-preview", "");
+    document.body.append(preview);
+
+    press(key);
+    expect(store.getState().position).toEqual([0]);
+
+    preview.remove();
+    press(key);
+    expect(store.getState().position).toEqual(key === "ArrowLeft" ? [] : [0, 0]);
+  },
+);
+
+test("modified arrows keep their own bindings while an engine-line preview board is open", () => {
+  store = branchingStore();
+  render();
+  const preview = document.createElement("div");
+  preview.setAttribute("data-engine-line-preview", "");
+  document.body.append(preview);
+
+  press("ArrowRight", { shiftKey: true });
+  expect(store.getState().position).toEqual([0, 0]);
+  press("ArrowUp", { shiftKey: true });
+  expect(store.getState().position).toEqual([]);
+  preview.remove();
+});
+
 test("Delete dispatched on document with a modal open preserves the background game", () => {
   store = middleGameStore();
   render({ modal: true });

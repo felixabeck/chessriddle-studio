@@ -66,3 +66,11 @@ export function withKeyboardOwnership(hotkeys: HotkeyItem[]): HotkeyItem[] {
         ];
     });
 }
+
+/** Marks an open engine-line preview board, which owns the next/previous move keys. */
+export const ENGINE_LINE_PREVIEW_ATTRIBUTE = "data-engine-line-preview";
+
+/** True while an engine-line preview board is open: the move keys step it, not the game. */
+export function isEngineLinePreviewOpen(): boolean {
+    return document.querySelector(`[${ENGINE_LINE_PREVIEW_ATTRIBUTE}]`) !== null;
+}

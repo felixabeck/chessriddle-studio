@@ -17,7 +17,7 @@ import { getVariationLine } from "@/utils/chess";
 import type { BestMoves } from "@/bindings";
 import { engineMultiPv, setEngineMultiPv, type Engine } from "@/utils/engines";
 import AssessmentSymbol from "../panels/analysis/AssessmentSymbol";
-import { engineLinePositions, PreviewEngineLineMove } from "../panels/analysis/EngineLinePreview";
+import { EngineLinePreviewMoves, useEngineLinePreview } from "../panels/analysis/EngineLinePreview";
 import LinesSlider, { LINE_COUNT_OPTIONS } from "../panels/analysis/LinesSlider";
 import { useDisplayedEngineLines } from "../panels/analysis/useDisplayedEngineLines";
 import { useTabEngineSettings } from "../panels/analysis/useTabEngineSettings";
@@ -247,25 +247,26 @@ function DetachedLine({
   inert: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const positions = engineLinePositions(fen, line.sanMoves.slice(0, MOVES_PER_LINE));
+  const preview = useEngineLinePreview({
+    fen,
+    moves: line.sanMoves,
+    visibleCount: MOVES_PER_LINE,
+    orientation,
+    anchor: ref,
+    inert,
+  });
   return (
     <Group ref={ref} gap="xs" wrap="nowrap">
       <EngineScoreBubble engineId={engineId} size="sm" score={line.score} inert={inert} />
-      <Box className={classes.moves}>
-        {positions.map((move, index) => (
-          <PreviewEngineLineMove
-            key={index}
-            move={move}
-            index={index}
-            moves={line.sanMoves}
-            halfMoves={halfMoves}
-            threat={threat}
-            orientation={orientation}
-            anchor={ref}
-            inert={inert}
-          />
-        ))}
+      <Box className={classes.moves} onMouseLeave={preview.close}>
+        <EngineLinePreviewMoves
+          preview={preview}
+          halfMoves={halfMoves}
+          threat={threat}
+          inert={inert}
+        />
       </Box>
+      {preview.board}
     </Group>
   );
 }
