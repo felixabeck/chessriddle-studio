@@ -27526,3 +27526,26 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
 * **Correction (2026-11-19, same session):** there are 16 locale catalogues, not 17 (`src/translation/` holds 16 `*.json` plus `de-DE.test.ts`); all 16 carry both key triples (`rg -l` count 16 for each).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"b5aef9183d4207e341204ca61cb96212c0f62181966ffd78ab6ec865fc0d5cec","input_sha256":"0fe8082ebb77549afe169e3ca85af7a980b2a6a5a7e216f819916d4216ab02a3","kind":"mutation-receipt","operation":"23cdd67439f0d4883c76b101ad8040455369e098028a41be5f349ec2d1f482e8","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-14"],"target":"f-20261119-14","v":1} -->
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### During repertoire practice the blurred notation still accepts keyboard activation, so Tab + Enter on a hidden move shows the card's answer
+
+* **ID:** f-20261119-15 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** refactoring review follow-up (Felix t67u): the `goToMove` drill-guard question left open after f-20261119-13, at origin/master `d79fa979e`
+* **Where:**
+  * `src/components/common/GameNotation.tsx:282-284`: while `invisible` (set by `PracticePanel.tsx:367` and `:1024` when a drill starts), the notation gets only a visual Mantine `Overlay` (`blur={8}`). It has no `inert`, no `aria-hidden` and no `tabIndex={-1}` on the move buttons.
+  * Each move is a `<button>` (`src/components/common/MoveCell.tsx:95`) whose click calls `store.getState().goToMove(path)` (`src/components/common/CompleteMoveCell.tsx:145-147`).
+  * `goToMove` (`src/state/store/tree.ts:531`) sets `position` with no `drillAllows` check. This is deliberate, because Practice positions the board through it.
+* **Defect:** the drill rule (d-20260923-04/-05, d-20261021-05: navigation must not land past the card) is enforced in the store's navigation actions and, for the mouse, by the overlay covering the notation. The overlay does not stop keyboard focus or activation, and it does not hide the move names from assistive technology. So the notation is a path to the answer that the drill guard never sees.
+* **Failure scenario:** a White repertoire 1.e4 e5 2.Nf3 is being practised and the card waits at 1…e5 with the notation blurred. A keyboard user presses Tab until focus reaches the notation (the hidden move buttons are in the tab order) and presses Enter on the move after the cursor: the board jumps to 2.Nf3, showing the answer. The user steps back with Arrow Left (backward moves are allowed), plays Nf3, and the card is graded as a correct recall. A screen-reader user hears every hidden move name (for example "Nf3") just by tabbing. Mouse clicks are blocked by the overlay, so mouse users are not affected. This is the same answer-leak class that f-20261114-15 closed for Arrow Down, Shift+arrows and "Go to end".
+* **Proof:** ephemeral Vitest probe on atlas. A copy of `GameNotation.test.tsx`'s harness was placed in a `git archive` of origin/master under `/tmp`, run as one file, then deleted. Setup: tree e4 e5 Nf3, cursor `[0,0]`, `setPracticePath([0,0])`, `invisible` true, `<GameNotation topBar />`. The `Nf3` move rendered as a `BUTTON` with `tabIndex=0`, inside no `[inert]` or `[aria-hidden=true]` ancestor, with text "Nf3". `focus()` made it `document.activeElement`. Activating it moved `position` from `[0,0]` to `[0,0,0]` (FEN of Nf3) while `practicePath` stayed `[0,0]`. The real Mantine `Overlay` only paints a layer and sets no `inert`. The probe's Mantine mock rendered it as a plain element, so pointer blocking was not part of the probe.
+* **Fix:**
+  * While the notation is hidden, make its rows non-interactive: set `inert` on the rows container (or `aria-hidden` plus `tabIndex={-1}` on the move buttons) whenever `invisible` is true.
+  * Alternatively, give notation-originated navigation a guarded entry (for example a `goToMoveFromNotation` that applies `drillAllows` while `practicePath` is set), keeping the unguarded `goToMove` for Practice's own positioning.
+  * Add a GameNotation test asserting that with `invisible` the move buttons are not focusable and activation does not change `position`.
+  * Inert rows are the simpler fix and also stop the screen-reader leak.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
