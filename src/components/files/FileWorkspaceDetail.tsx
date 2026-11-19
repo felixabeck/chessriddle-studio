@@ -38,7 +38,7 @@ export function FileWorkspaceDetail({ files }: { files: FileWorkspace }) {
             <Button
               size="xs"
               {...libraryDangerButtonProps}
-              onClick={() => files.requestTrash(selected)}
+              onClick={() => files.setDeleteTarget(selected)}
             >
               {t("Files.Trash", { defaultValue: "Trash" })}
             </Button>

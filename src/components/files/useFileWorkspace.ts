@@ -271,9 +271,6 @@ export function useFileWorkspace(
         setSelectedEntry(entry);
         setMoveTarget(fileWorkspaceKey(workspace!));
     }
-    function requestTrash(entry: UsableEntry) {
-        setDeleteTarget(entry);
-    }
     function currentTarget(owner: Presentation, target: ActionTarget) {
         if (!owns(owner) || !data || failure !== "silent" || error) return null;
         if (target.kind === "root") return target.handle;
@@ -567,7 +564,6 @@ export function useFileWorkspace(
         data,
         selected,
         failure,
-        mutate,
         listProps: {
             files: failure === "silent" ? (data ?? []) : [],
             selectedFile: selected,
@@ -603,7 +599,6 @@ export function useFileWorkspace(
         rename,
         editMetadata,
         requestMove: openMove,
-        requestTrash,
         deleteTarget,
         setDeleteTarget,
         confirmTrash,

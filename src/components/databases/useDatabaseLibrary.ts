@@ -165,10 +165,6 @@ export function useDatabaseLibrary(
     }
     const navigate = useNavigate();
 
-    function openSuccessDatabase(database: SuccessDatabaseInfo) {
-        openDatabaseTable(database, navigate);
-    }
-
     function addGames(database: SuccessDatabaseInfo) {
         const dest = database.file;
         void runAddGamesToDatabase({
@@ -248,7 +244,7 @@ export function useDatabaseLibrary(
         revalidateDatabases,
         setActiveDatabase,
         openDatabase: (item: NonNullable<typeof databases>[number]) => {
-            if (item.type === "success") openSuccessDatabase(item);
+            if (item.type === "success") openDatabaseTable(item, navigate);
         },
         add: () => setOpen(true),
         addGames,
