@@ -3442,8 +3442,8 @@ test("database-files: the board explorer compares two databases side by side", a
     await expect(databasePanel.getByRole("textbox")).toHaveCount(0);
     await expect(databasePanel.getByRole("tab")).toHaveCount(0);
     await expect(databasePanel.locator("tbody tr")).toHaveCount(5);
-    const sourceEdges = () =>
-        page.evaluate(() => {
+    const expectSourcesAligned = async () => {
+        const edges = await page.evaluate(() => {
             const left = (element: Element) => Math.round(element.getBoundingClientRect().left);
             return {
                 cells: [...document.querySelectorAll("[data-explorer-source]")].map(left),
@@ -3452,9 +3452,10 @@ test("database-files: the board explorer compares two databases side by side", a
                     .map(left),
             };
         });
-    const captionEdges = await sourceEdges();
-    expect(Math.abs(captionEdges.cells[0] - captionEdges.headers[1])).toBeLessThanOrEqual(2);
-    expect(Math.abs(captionEdges.cells[1] - captionEdges.headers[3])).toBeLessThanOrEqual(2);
+        expect(Math.abs(edges.cells[0] - edges.headers[1])).toBeLessThanOrEqual(2);
+        expect(Math.abs(edges.cells[1] - edges.headers[3])).toBeLessThanOrEqual(2);
+    };
+    await expectSourcesAligned();
     await expect(databasePanel).toHaveScreenshot("explorer-two-databases-collapsed.png");
 
     // Pinned, the explorer is a strip above the panel tabs and Annotate is open below it.
@@ -3547,18 +3548,7 @@ test("database-files: the board explorer compares two databases side by side", a
     ]);
 
     // The cells of the sources bar stand above their column groups.
-    const edges = await page.evaluate(() => {
-        const left = (element: Element) => Math.round(element.getBoundingClientRect().left);
-        const cells = [...document.querySelectorAll("[data-explorer-source]")].map(left);
-        const headers = [
-            ...document.querySelectorAll('[role="tabpanel"][data-active] thead th, thead th'),
-        ]
-            .filter((th) => (th as HTMLElement).offsetParent !== null)
-            .map(left);
-        return { cells, headers };
-    });
-    expect(Math.abs(edges.cells[0] - edges.headers[1])).toBeLessThanOrEqual(2);
-    expect(Math.abs(edges.cells[1] - edges.headers[3])).toBeLessThanOrEqual(2);
+    await expectSourcesAligned();
     await expect(page.getByRole("tabpanel", { name: "Database", exact: true })).toHaveScreenshot(
         "explorer-two-databases.png",
     );

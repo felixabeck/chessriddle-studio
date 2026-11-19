@@ -17,7 +17,6 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Pin, PinOff, Plus, Settings, X } from "lucide-react";
 import { memo, type ReactNode, useCallback, useContext, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import equal from "fast-deep-equal";
 import useSWR from "swr/immutable";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
@@ -29,8 +28,6 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import {
   comparisonDbAtom,
-  DEFAULT_LICHESS_OPTIONS,
-  DEFAULT_MASTER_OPTIONS,
   dbTabFamily,
   dbTypeFamily,
   explorerGamesSourceFamily,
@@ -63,13 +60,13 @@ import classes from "./DatabasePanel.module.css";
 import DatabaseLoader from "./DatabaseLoader";
 import { comparisonState } from "./explorerComparison";
 import ExplorerSourceHeader, { ExplorerSourceCaption } from "./ExplorerSourceHeader";
-import { localFilterSummary } from "./filterSummary";
+import { lichessFiltersActive, localFilterSummary, masterFiltersActive } from "./filterSummary";
 import GamesTable from "./GamesTable";
 import NoDatabaseWarning from "./NoDatabaseWarning";
 import OpeningsTable from "./OpeningsTable";
 import LichessOptionsPanel from "./options/LichessOptionsPanel";
 import LocalFiltersForm from "./options/LocalFiltersForm";
-import { isDefaultExplorerFilters } from "@/state/explorerFilters";
+import { type ExplorerFilters, isDefaultExplorerFilters } from "@/state/explorerFilters";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { failureUnlessCancelled } from "@/platform/errors";
 import MasterOptionsPanel from "./options/MastersOptionsPanel";
@@ -445,16 +442,14 @@ function DatabasePanel() {
   const localCaption = (source: {
     key: string;
     name: string;
-    binding: Pick<ReturnType<typeof useExplorerFilters>, "filters">;
+    filters: ExplorerFilters;
     explorer: Pick<ReturnType<typeof useLocalExplorer>, "loading" | "progressId">;
   }) => (
     <ExplorerSourceCaption
       key={source.key}
       name={source.name}
       detail={[
-        isDefaultExplorerFilters(source.binding.filters)
-          ? null
-          : localFilterSummary(source.binding.filters, t),
+        isDefaultExplorerFilters(source.filters) ? null : localFilterSummary(source.filters, t),
         partialPosition,
       ]
         .filter((part) => part !== null)
@@ -477,28 +472,22 @@ function DatabasePanel() {
       localCaption({
         key: db,
         name: primaryTitle,
-        binding: { filters: localFilters },
+        filters: localFilters,
         explorer: localExplorer,
       }),
       comparison.kind === "source" &&
         localCaption({
           key: "comparison",
           name: comparison.title,
-          binding: comparisonFilters,
+          filters: comparisonFilters.filters,
           explorer: comparisonExplorer,
         }),
     ])
     .with("lch_all", () =>
-      onlineCaption(
-        t("Board.Database.LichessAll"),
-        !equal(lichessOptions, DEFAULT_LICHESS_OPTIONS),
-      ),
+      onlineCaption(t("Board.Database.LichessAll"), lichessFiltersActive(lichessOptions)),
     )
     .with("lch_master", () =>
-      onlineCaption(
-        t("Board.Database.LichessMaster"),
-        !equal(masterOptions, DEFAULT_MASTER_OPTIONS),
-      ),
+      onlineCaption(t("Board.Database.LichessMaster"), masterFiltersActive(masterOptions)),
     )
     .exhaustive();
   const [detached, setDetached] = useAtom(explorerDetachedAtom);
@@ -519,6 +508,7 @@ function DatabasePanel() {
         label={detached ? t("Board.Database.Unpin") : t("Board.Database.Pin")}
         variant="subtle"
         size="sm"
+        pressed={detached}
         onClick={() => {
           // Unpinned, the panel goes back to being a tab, and that tab is the one shown.
           if (detached) setBoardPanel("database");

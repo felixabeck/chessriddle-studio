@@ -660,7 +660,8 @@ test("engine-gap: pinned engine shows up to its own line count and swaps between
     await expect(scores).toHaveText(["+0.34", "+0.21", "0.00", "-0.10"]);
     await expect(detached).toContainText("1.c4e5");
 
-    // The bar starts above the panel tabs; its swap button moves it above the notation and back.
+    // The bar starts above the panel tabs; its swap button cycles it above the notation, below
+    // the board and back.
     const tabList = page.locator("#topRight").getByRole("tablist").first();
     const notation = page.locator("#bottomRight");
     const top = async (locator: typeof detached) => (await locator.boundingBox())!.y;

@@ -22,6 +22,7 @@ import {
   explorerDatabaseFiltersAtom,
   lichessOptionsAtom,
   localOptionsFamily,
+  masterOptionsAtom,
   pinnedExplorerDatabaseFamily,
   referenceDbAtom,
 } from "@/state/atoms";
@@ -1327,17 +1328,38 @@ describe("DatabasePanel", () => {
       expect(localStorage.getItem(HEADER_COLLAPSED_KEY)).toBe("true");
     });
 
-    test("a collapsed online source marks its filters only when they differ from the defaults", async () => {
+    test("a collapsed online source marks its filters only when they narrow the numbers, and still shows its games", async () => {
       localStorage.setItem(HEADER_COLLAPSED_KEY, "true");
+      mocks.getMasterGames.mockResolvedValue(mockExplorerData);
       const store = await mountExplorer();
       await vi.waitFor(() => expect(sources()).toHaveLength(1));
       expect(headerControls()).toHaveLength(0);
       expect(sources()[0].textContent).toBe("Board.Database.LichessAll");
+      // The stored Games view renders as a plain region below the caption.
+      expect(container.querySelector('[role="tabpanel"]')).toBeNull();
+      await vi.waitFor(() => expect(container.textContent).toContain("W1"));
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "Board.Database.GamesIncomplete",
+      );
 
       await act(async () => {
         await store.set(lichessOptionsAtom, { ...DEFAULT_LICHESS_OPTIONS, speeds: ["blitz"] });
       });
       expect(sources()[0].textContent).toBe("Board.Database.LichessAll · Board.Database.Filters");
+
+      await act(async () => store.set(dbTypeFamily(tabId), "lch_master"));
+      await vi.waitFor(() => expect(sources()[0].textContent).toBe("Board.Database.LichessMaster"));
+      await act(async () => {
+        await store.set(masterOptionsAtom, { since: new Date("2020-01-01T00:00:00Z") });
+      });
+      expect(sources()[0].textContent).toBe(
+        "Board.Database.LichessMaster · Board.Database.Filters",
+      );
+      // A cleared date leaves its key behind; that is no filter.
+      await act(async () => {
+        await store.set(masterOptionsAtom, { since: undefined });
+      });
+      expect(sources()[0].textContent).toBe("Board.Database.LichessMaster");
     });
 
     const PIN_KEY = "detached-explorer";
@@ -1370,6 +1392,7 @@ describe("DatabasePanel", () => {
         await act(async () => pinButton().click());
         expect(localStorage.getItem(PIN_KEY)).toBe("true");
         expect(pinButton().getAttribute("aria-label")).toBe("Board.Database.Unpin");
+        expect(pinButton().getAttribute("aria-pressed")).toBe("true");
         // Pinning leaves the board's panel choice alone.
         expect(store.get(tabFamily(tabId))).toBe("annotate");
 

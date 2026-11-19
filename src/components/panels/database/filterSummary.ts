@@ -1,6 +1,8 @@
 import type { TFunction } from "i18next";
 import type { ExplorerFilters } from "@/state/explorerFilters";
 import { normalizeExplorerFilters } from "@/state/explorerFilters";
+import { DEFAULT_LICHESS_OPTIONS } from "@/state/atoms";
+import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/explorer";
 
 const displayDate = (pgnDate: string) => pgnDate.replaceAll(".", "-");
 
@@ -26,4 +28,28 @@ export function localFilterSummary(filters: ExplorerFilters, t: TFunction): stri
     if (active.result === "blackwon") parts.push(t("Board.Database.Local.Result.BlackWon"));
     if (active.exclude_fast_events) parts.push(t("Board.Database.FilterSummary.NoFastEvents"));
     return parts.length > 0 ? parts.join(" · ") : t("Board.Database.NoFilter");
+}
+
+const sameMembers = (left: readonly unknown[] = [], right: readonly unknown[] = []) =>
+    left.length === right.length && left.every((member) => right.includes(member));
+
+/**
+ * Whether a Lichess source's stored options narrow its numbers compared with the defaults.
+ * Judged by what the query sends: a cleared date or player and a re-ordered default list are
+ * no filter, and a colour counts only with a player.
+ */
+export function lichessFiltersActive(options: LichessGamesOptions): boolean {
+    return (
+        !!options.player ||
+        !!options.since ||
+        !!options.until ||
+        options.variant !== DEFAULT_LICHESS_OPTIONS.variant ||
+        !sameMembers(options.speeds, DEFAULT_LICHESS_OPTIONS.speeds) ||
+        !sameMembers(options.ratings, DEFAULT_LICHESS_OPTIONS.ratings)
+    );
+}
+
+/** Whether a Masters source's stored options narrow its numbers: only its dates do. */
+export function masterFiltersActive(options: MasterGamesOptions): boolean {
+    return !!options.since || !!options.until;
 }

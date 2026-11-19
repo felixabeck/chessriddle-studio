@@ -3,7 +3,9 @@ import { describe, expect, test } from "vitest";
 import type { SupportedLocale } from "@/i18n";
 import { defaultExplorerFilters, type ExplorerFilters } from "@/state/explorerFilters";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
-import { localFilterSummary } from "./filterSummary";
+import { DEFAULT_LICHESS_OPTIONS } from "@/state/atoms";
+import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/explorer";
+import { lichessFiltersActive, localFilterSummary, masterFiltersActive } from "./filterSummary";
 
 const t = ((key: string, options?: Record<string, unknown>) =>
     [key, ...Object.values(options ?? {})].join(" ")) as unknown as TFunction;
@@ -112,4 +114,49 @@ describe("explorer header catalogues", () => {
             expect(text.split(" · ")).toHaveLength(5);
         },
     );
+});
+
+describe("online filter markers", () => {
+    const lichess = (change: Partial<LichessGamesOptions>): LichessGamesOptions => ({
+        ...DEFAULT_LICHESS_OPTIONS,
+        ...change,
+    });
+
+    test.each<[string, LichessGamesOptions]>([
+        ["the defaults", lichess({})],
+        ["a cleared player", lichess({ player: "" })],
+        ["a colour without a player", lichess({ color: "black" })],
+        ["cleared dates", lichess({ since: undefined, until: undefined })],
+        [
+            "the default speeds toggled off and on again",
+            lichess({ speeds: ["bullet", "rapid", "classical", "correspondence", "blitz"] }),
+        ],
+        [
+            "the default ratings toggled off and on again",
+            lichess({ ratings: [1200, 1400, 1600, 1800, 2000, 2200, 2500, 1000] }),
+        ],
+    ])("Lichess options with %s are no filter", (_name, options) => {
+        expect(lichessFiltersActive(options)).toBe(false);
+    });
+
+    test.each<[string, LichessGamesOptions]>([
+        ["a player", lichess({ player: "someone" })],
+        ["a start date", lichess({ since: new Date("2020-01-01T00:00:00Z") })],
+        ["an end date", lichess({ until: new Date("2024-01-01T00:00:00Z") })],
+        ["fewer speeds", lichess({ speeds: ["blitz"] })],
+        ["fewer ratings", lichess({ ratings: [2200, 2500] })],
+        ["no speeds", lichess({ speeds: [] })],
+    ])("Lichess options with %s are a filter", (_name, options) => {
+        expect(lichessFiltersActive(options)).toBe(true);
+    });
+
+    test.each<[string, MasterGamesOptions, boolean]>([
+        ["nothing set", {}, false],
+        ["cleared dates", { since: undefined, until: undefined }, false],
+        ["only display counts", { moves: 12, topGames: 4 }, false],
+        ["a start date", { since: new Date("2020-01-01T00:00:00Z") }, true],
+        ["an end date", { until: new Date("2024-01-01T00:00:00Z") }, true],
+    ])("Masters options with %s", (_name, options, active) => {
+        expect(masterFiltersActive(options)).toBe(active);
+    });
 });

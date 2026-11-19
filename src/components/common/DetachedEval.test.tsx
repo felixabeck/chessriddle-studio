@@ -385,7 +385,7 @@ test("DetachedEval renders a line only up to its first illegal move", async () =
 
 const PLACEMENT_KEY = "detached-engine-placement";
 
-async function renderBothSlots(stored: string | null) {
+async function renderEverySlot(stored: string | null) {
   if (stored === null) localStorage.removeItem(PLACEMENT_KEY);
   else localStorage.setItem(PLACEMENT_KEY, stored);
   installResizeObserverStub();
@@ -428,7 +428,7 @@ test.each([
   ["not json", "tabs"],
 ])("DetachedEval hydrates stored placement %s into the %s slot", async (stored, expected) => {
   try {
-    const tree = await renderBothSlots(stored);
+    const tree = await renderEverySlot(stored);
     expectOnlyIn(expected);
     tree.dispose();
   } finally {
@@ -438,7 +438,7 @@ test.each([
 
 test("DetachedEval renders in the stored slot only, and its swap button cycles it through the slots and persists", async () => {
   try {
-    const tree = await renderBothSlots(null);
+    const tree = await renderEverySlot(null);
     const swap = (label: string) => h.host.querySelector<HTMLElement>(`[aria-label="${label}"]`);
 
     expect(h.store.get(detachedEnginePlacementAtom)).toBe("tabs");

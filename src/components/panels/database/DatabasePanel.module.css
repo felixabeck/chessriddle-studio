@@ -25,11 +25,13 @@
   position: relative;
 }
 
+/* The line is at least as tall as the actions' small icon buttons. */
 .sources[data-collapsed] {
   margin-top: 0;
   min-height: 1.75rem;
 }
 
+/* The last caption ends before the two small icon buttons and the gap between them. */
 .sources[data-collapsed] > [data-explorer-source]:last-child {
   padding-inline-end: 3.5rem;
 }
