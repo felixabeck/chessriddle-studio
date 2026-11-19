@@ -27,7 +27,11 @@ const virtualizerMock = vi.hoisted(() => ({
   scrollCalls: [] as { index: number; options: unknown }[],
   measured: [] as Element[],
 }));
-const notationSettings = vi.hoisted(() => ({ showComments: false, tableView: false }));
+const notationSettings = vi.hoisted(() => ({
+  showComments: false,
+  tableView: false,
+  invisible: false,
+}));
 
 vi.mock("@/state/atoms", () => ({
   invisibleFamily: () => atoms.invisible,
@@ -39,6 +43,7 @@ vi.mock("@/state/keybinds", () => ({ keyMapAtom: atoms.keyMap }));
 vi.mock("jotai", () => ({
   useAtom: (atom: symbol) => {
     if (atom === atoms.table) return [notationSettings.tableView, vi.fn()];
+    if (atom === atoms.invisible) return [notationSettings.invisible, vi.fn()];
     return [false, vi.fn()];
   },
   useAtomValue: (atom: symbol) => {
@@ -173,6 +178,7 @@ beforeEach(() => {
   virtualizerMock.measured.length = 0;
   notationSettings.showComments = false;
   notationSettings.tableView = false;
+  notationSettings.invisible = false;
 });
 
 test.each([false, true])(
@@ -960,3 +966,29 @@ test("keeps a collapsed variation on its move sequence after promoting a sibling
   expect(host.querySelector('[data-node="c5"]')).toBeNull();
   expect(host.querySelectorAll('[aria-label="Notation.ToggleVariation"]')).toHaveLength(2);
 });
+
+test.each([false, true])(
+  "hidden notation takes its moves out of focus and the accessibility tree (invisible: %s)",
+  async (invisible) => {
+    notationSettings.invisible = invisible;
+    store.getState().makeMoves({ payload: ["e4", "e5", "Nf3"] });
+    store.getState().goToMove([0, 0]);
+    store.getState().setPracticePath([0, 0]);
+
+    await act(async () => {
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="notation-test">
+            <GameNotation topBar />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      );
+    });
+
+    // f-20261119-15: the blur overlay blocks only the pointer; Tab + Enter on a hidden move
+    // past the drill card showed the answer. `inert` is what removes that path in a browser.
+    const answer = host.querySelector('[data-node="Nf3"]');
+    expect(answer).not.toBeNull();
+    expect(answer!.closest("[inert]") !== null).toBe(invisible);
+  },
+);

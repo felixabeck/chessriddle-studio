@@ -282,7 +282,11 @@ function GameNotation({
                 {invisible && (
                   <Overlay backgroundOpacity={0.6} color="var(--cf-inset)" blur={8} zIndex={2} />
                 )}
+                {/* The overlay only blocks the pointer. `inert` also takes the hidden moves out of
+                    the tab order and the accessibility tree, so neither Tab + Enter nor a screen
+                    reader reaches the drill's answer (f-20261119-15). */}
                 <Box
+                  inert={invisible}
                   style={{
                     height: rowVirtualizer.getTotalSize(),
                     width: "100%",
