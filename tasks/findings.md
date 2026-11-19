@@ -27452,3 +27452,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** move `emptyPracticeStats()` next to `PracticeSessionStats` in `src/state/atoms.ts`, use it as the family's initial value (`atomFamily((_tab: string) => atom<PracticeSessionStats>(emptyPracticeStats()))`), and re-export or import it from `session.ts`. Keeping it in `atoms.ts` avoids adding another `state → components` import (cf. f-20261111-87). No behaviour change.
 * **Proof:** `sed -n 1399-1410p src/state/atoms.ts` and `sed -n 155-166p src/components/panels/practice/session.ts` at origin/master show the identical literals; a 7-line copy scan of `src/` flagged the pair.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### Two app-wide notices hand-place themselves in the same bottom-right slot that Mantine toasts use, with no shared stack
+
+* **ID:** f-20261119-12 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** refactoring review (Felix t67u) at origin/master `7086448c7`
+* **Where:** `src/components/home/SessionPersistenceNotice.tsx:25-50` and `src/components/home/AutomaticStockfishNotice.tsx:20-36`: each renders an `Alert` with `pos="fixed" bottom="var(--mantine-spacing-xs)" right="var(--mantine-spacing-xs)" w="36rem"`, `zIndex: getDefaultZIndex("modal") - 1`, and the same `maxWidth` / `maxHeight` literals. Both are mounted side by side in `src/App.tsx:299-300`, after `<Notifications>` (`:290-296`), which sets no `position` and so uses Mantine 8's default `bottom-right` at `getDefaultZIndex("overlay")` (`node_modules/@mantine/notifications/esm/Notifications.mjs`).
+* **Defect:** each notice was added as its own copy of the fixed-corner styling instead of through one notice slot. Neither knows about the other or about the toast stack, so all three occupy the same bottom-right rectangle.
+* **Failure scenario:** on first launch, while the automatic Stockfish download notice is showing, an account-session save fails and the persistence warning (`role="alert"`, with its Retry action) appears. It is drawn exactly on top of the download notice. Any error toast raised in that window (`notifyUnlessCancelled` is used throughout) is drawn above both, because `overlay` > `modal - 1`, and covers the warning's Retry button until it closes. This was traced from code, not rendered.
+* **Fix:** add one `FixedNoticeStack` (a fixed bottom-right `Stack` with the shared width, max sizes and z-index) in `App.tsx` and render both notices as children, so they stack instead of overlapping. Either move `<Notifications position="top-right">` or give the stack a bottom offset that clears the toast column. Keep the two `Alert` contents as they are. Add a component test that mounts both notices at once and asserts both are in one stack container.
+* **Proof:** the line references above at origin/master `7086448c7`; `rg -n 'pos="fixed"' src -g '!*test*'` lists only these two app-level notices, plus two local popovers (`PointerContextMenu`, `EngineLinePreview`).
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
