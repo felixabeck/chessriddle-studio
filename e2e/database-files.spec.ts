@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import {
     contrastRatio,
     databaseCommands,
@@ -3487,7 +3488,10 @@ test("database-files: the board explorer compares two databases side by side", a
         (await rect(panelTabs)).y,
     );
     await expect(note).toBeInViewport();
-    await expect(pane).toHaveScreenshot("explorer-pinned-strip.png");
+    // The strip's table scrolls, and whether its scrollbar thumb shows depends on timing.
+    await expect(pane).toHaveScreenshot("explorer-pinned-strip.png", {
+        stylePath: fileURLToPath(new URL("./scrollbar-free-screenshot.css", import.meta.url)),
+    });
     // With room for every row the strip is as tall as its content and nothing scrolls.
     const viewport = page.viewportSize()!;
     await page.setViewportSize({ width: viewport.width, height: 1600 });
