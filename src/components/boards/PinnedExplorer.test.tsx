@@ -39,18 +39,21 @@ let paneHeight = PANE_PX;
 /** Observers created by the strip; `resize()` reports a size change to all of them. */
 const observers = new Set<ResizeObserverCallback>();
 class ManualResizeObserver {
-  constructor(private callback: ResizeObserverCallback) {
-    observers.add(callback);
+  constructor(private callback: ResizeObserverCallback) {}
+  observe() {
+    observers.add(this.callback);
   }
-  observe() {}
   unobserve() {}
   disconnect() {
     observers.delete(this.callback);
   }
 }
-const resize = () =>
+/** Reports a size change to every observer; Mantine's element size reads `height` from it. */
+const resize = (height = stripRect) =>
   act(async () => {
-    for (const callback of [...observers]) callback([], {} as ResizeObserver);
+    const entry = { contentRect: { height, width: 300 } } as unknown as ResizeObserverEntry;
+    for (const callback of [...observers]) callback([entry], {} as ResizeObserver);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
   });
 
 beforeEach(() => {
@@ -87,6 +90,7 @@ async function renderPanes({
   stacked = false,
   engineIn,
 }: { stacked?: boolean; engineIn?: PinnedPlacement } = {}) {
+  // Below the board the strip and the engine bar share a slot inside the pane, as on the board.
   await act(async () =>
     root.render(
       <Provider store={store}>
@@ -99,11 +103,24 @@ async function renderPanes({
                 data-pinned-pane-grows={placement === "board" || undefined}
                 data-pane={placement}
                 ref={(node) => {
-                  if (node) Object.defineProperty(node, "clientHeight", { get: () => paneHeight });
+                  if (node)
+                    Object.defineProperty(node, "clientHeight", {
+                      configurable: true,
+                      get: () => paneHeight,
+                    });
                 }}
               >
-                {engineIn === placement && <div data-testid="pinned-engine" />}
-                <PinnedExplorer placement={placement} />
+                {placement === "board" ? (
+                  <div data-slot="below-board">
+                    <PinnedExplorer placement={placement} />
+                    {engineIn === placement && <div data-testid="pinned-engine" />}
+                  </div>
+                ) : (
+                  <>
+                    {engineIn === placement && <div data-testid="pinned-engine" />}
+                    <PinnedExplorer placement={placement} />
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -364,4 +381,24 @@ test("switching between the stacked and the pane layout measures below the board
   layout.setAttribute("data-board-layout", "mosaic");
   await act(async () => window.dispatchEvent(new Event("resize")));
   expect(strip().style.height).toBe(`${PANE_PX * 0.5}px`);
+});
+
+test.each(["tabs", "board"] as const)(
+  "an engine bar pinned into %s after the strip is counted as soon as it mounts",
+  async (placement) => {
+    await renderPanes();
+    await pin(placement, { [placement]: 1 });
+    expect(strip().style.height).toBe(`${MAX_PX}px`);
+    await renderPanes({ engineIn: placement });
+    expect(strip().style.height).toBe(`${PANE_PX - ENGINE_PX - NEIGHBOUR_MIN_PX}px`);
+    await renderPanes();
+    expect(strip().style.height).toBe(`${MAX_PX}px`);
+  },
+);
+
+test("with the content height the divider reports the strip's measured share", async () => {
+  await renderPanes();
+  await pin("tabs");
+  await resize(180);
+  expect(handle().getAttribute("aria-valuenow")).toBe(String(Math.round((180 / PANE_PX) * 100)));
 });

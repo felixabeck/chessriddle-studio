@@ -24,7 +24,7 @@ import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { type DatabaseHandle, type NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
-import { PinnedPlacementItems } from "@/components/common/PinnedPlacementItems";
+import { PinnedPlacementItems } from "@/components/boards/PinnedPlacementItems";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import {

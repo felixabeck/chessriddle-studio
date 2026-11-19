@@ -12,6 +12,7 @@ import {
   tabFamily,
   explorerDetachedAtom,
   explorerPlacementAtom,
+  type PinnedPlacement,
   analysisTabFamily,
   practiceTabFamily,
   reportModalOpenFamily,
@@ -518,8 +519,8 @@ describe("BoardAnalysis", () => {
     await act(async () => jotaiStore.set(explorerDetachedAtom, true));
     try {
       // Each place sits in a pane it measures against, beside its content; only one strip exists.
-      const expectIn = async (placement: string) => {
-        await act(async () => jotaiStore.set(explorerPlacementAtom, placement as never));
+      const expectIn = async (placement: PinnedPlacement) => {
+        await act(async () => jotaiStore.set(explorerPlacementAtom, placement));
         expect(strip().closest("[data-pinned-pane]")).not.toBeNull();
         expect(container.querySelectorAll('[data-testid="pinned-explorer-strip"]')).toHaveLength(1);
       };
@@ -540,6 +541,10 @@ describe("BoardAnalysis", () => {
       await expectIn("board");
       expect(strip().parentElement?.getAttribute("data-slot")).toBe("below-board");
       expect(strip().parentElement?.parentElement?.hasAttribute("data-pinned-pane")).toBe(true);
+      // That pane grows with its content in the stacked layout, so the window stands in there.
+      expect(strip().parentElement?.parentElement?.hasAttribute("data-pinned-pane-grows")).toBe(
+        true,
+      );
       expect(strip().nextElementSibling).toBe(engine("board"));
     } finally {
       await act(async () => {

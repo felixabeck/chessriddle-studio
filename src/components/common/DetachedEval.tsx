@@ -24,7 +24,7 @@ import { EngineScoreBubble } from "../panels/analysis/ScoreBubble";
 import { ThreatBadge } from "../panels/analysis/ThreatBadge";
 import classes from "./DetachedEval.module.css";
 import IconAction from "./IconAction";
-import { PinnedPlacementItems } from "./PinnedPlacementItems";
+import { PinnedPlacementItems } from "../boards/PinnedPlacementItems";
 import { TreeStateContext } from "./TreeStateContext";
 
 /** Moves rendered per line; the row clips whatever does not fit its width. */
