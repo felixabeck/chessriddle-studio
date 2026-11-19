@@ -27613,3 +27613,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * `git log --since=2026-10-19 --format=%h origin/master -- src/state/atoms.ts | wc -l` gives 47.
   * The line ranges above are at `d79fa979e`.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### `utils/tabs.ts` holds both tab identity/creation and the whole save pipeline in 1,657 lines
+
+* **ID:** f-20261119-18 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `d79fa979e`
+* **Where:** `src/utils/tabs.ts`, which 61 files import. The first ~780 lines are tab identity and creation: origin predicates `:49-95`, `rebindFileTabsAfterStructureChange` `:109`, `useTabActions` `:167`, add-game admission `:190-443`, `commitNewTab` / `replaceNewTab` / `replaceFileGame` `:444-634`, `runTabCreation` / `createTab` `:635-779`. The remaining ~880 lines (`:780-1657`) are the save and store pipeline: `SaveResult`, `serializeStoreTree`, origin equality, save flights, store-target resolution and caching, `withStoreFlight`, `runStoreAttempt`, `storeIntoPgnFile`, `insertIntoDatabase`, `admitStoredGame`, `appendStoreGame`, `saveToFile` / `saveToFileNow`. Outside the module, the save half has six production consumers (`useAutoSave`, `quitSave`, `SaveToTargetModal`, `ConfirmChangesModal`, `FileFreshnessGate`, `BoardAnalysis`).
+* **Defect:** the save pipeline is what imports `readFileGame` / `writeFileGame` / `pickPgnFile` from `./files`. Tab creation is what `files.ts` imports back (`createTab`). Keeping both in one module is the `tabs.ts ↔ files.ts` value cycle recorded in f-20261111-87, and it puts the concurrency-heavy save code (flights, CAS stamps, freshness conflicts: f-20261115-15 and f-20261115-16 live here) in the same review surface as tab-label and admission helpers.
+* **Failure scenario:** a save-path fix (the open f-20261115-15 retry, or the f-20261115-16 index-shift handling) has to be read and merged inside a file whose other half every tab-creating feature also edits. A test of tab creation has to load or mock the full save stack and its native imports.
+* **Fix:** move `:780-1657` (from `SaveResult` through `saveToFileNow`) into `src/utils/tabSave.ts`, together with `sameOrigin` / `sameFileGameOrigin` if only the save half and the predicates need them, and re-export from `tabs.ts` for the first step so importers do not change. That alone gives f-20261111-87 its natural cut: `files.ts` → `tabs.ts` (creation) stays, `tabSave.ts` → `files.ts` no longer closes a cycle. Mechanical move, no behaviour change. `tabs.test.ts` and the save tests are the guard.
+* **Proof:** `wc -l src/utils/tabs.ts` gives 1657. The export list (`rg -n "^export " src/utils/tabs.ts`) splits at `SaveResult` `:780`. `rg -l "(saveToFile|saveToDatabase|saveToLibraryFile|appendStoreGame|serializeStoreTree)\b" src -g '!*test*'` lists the six consumers above. The import of `./files` is at the module head.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
