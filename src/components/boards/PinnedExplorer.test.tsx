@@ -11,10 +11,13 @@ import {
   type PinnedPlacement,
 } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import { installResizeObserverStub } from "@/tests/resizeObserver";
 import PinnedExplorer, { AUTO_MAX_SHARE, NEIGHBOUR_MIN_PX, STRIP_MIN_PX } from "./PinnedExplorer";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("@/platform/native", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/platform/native")>()),
+  warn: vi.fn(),
+}));
 vi.mock("../panels/database/DatabasePanel", () => ({
   default: () => <span data-testid="database-panel" />,
 }));
@@ -28,16 +31,43 @@ let root: Root;
 let store: ReturnType<typeof createStore>;
 /** The strip's rendered height as the drag and keyboard handlers read it. */
 let stripRect = 200;
+/** A pinned engine bar's rendered height. */
+const ENGINE_PX = 100;
+/** Each pane's height; tests change it and then report a resize. */
+let paneHeight = PANE_PX;
+
+/** Observers created by the strip; `resize()` reports a size change to all of them. */
+const observers = new Set<ResizeObserverCallback>();
+class ManualResizeObserver {
+  constructor(private callback: ResizeObserverCallback) {
+    observers.add(callback);
+  }
+  observe() {}
+  unobserve() {}
+  disconnect() {
+    observers.delete(this.callback);
+  }
+}
+const resize = () =>
+  act(async () => {
+    for (const callback of [...observers]) callback([], {} as ResizeObserver);
+  });
 
 beforeEach(() => {
   localStorage.clear();
-  installResizeObserverStub();
+  observers.clear();
+  Object.defineProperty(window, "ResizeObserver", { writable: true, value: ManualResizeObserver });
   installMatchMediaStub();
   Element.prototype.setPointerCapture = vi.fn();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-    () => ({ height: stripRect }) as DOMRect,
+    function (this: HTMLElement) {
+      return {
+        height: this.getAttribute("data-testid") === "pinned-engine" ? ENGINE_PX : stripRect,
+      } as DOMRect;
+    },
   );
   stripRect = 200;
+  paneHeight = PANE_PX;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -51,13 +81,17 @@ afterEach(() => {
   localStorage.clear();
 });
 
-/** Every place inside its own pane of PANE_PX, as the analysis board mounts them. */
-async function renderPanes({ stacked = false } = {}) {
+/** Every place inside its own pane, as the analysis board mounts them; `engineIn` also holds a
+ * pinned engine bar. */
+async function renderPanes({
+  stacked = false,
+  engineIn,
+}: { stacked?: boolean; engineIn?: PinnedPlacement } = {}) {
   await act(async () =>
     root.render(
       <Provider store={store}>
         <MantineProvider env="test">
-          <div data-board-layout={stacked ? "stacked" : "mosaic"}>
+          <div data-board-layout={stacked ? "stacked" : "mosaic"} data-testid="layout">
             {PINNED_PLACEMENTS.map((placement) => (
               <div
                 key={placement}
@@ -65,9 +99,10 @@ async function renderPanes({ stacked = false } = {}) {
                 data-pinned-pane-grows={placement === "board" || undefined}
                 data-pane={placement}
                 ref={(node) => {
-                  if (node) Object.defineProperty(node, "clientHeight", { value: PANE_PX });
+                  if (node) Object.defineProperty(node, "clientHeight", { get: () => paneHeight });
                 }}
               >
+                {engineIn === placement && <div data-testid="pinned-engine" />}
                 <PinnedExplorer placement={placement} />
               </div>
             ))}
@@ -91,9 +126,11 @@ async function pin(
 
 const strip = () => host.querySelector<HTMLElement>('[data-testid="pinned-explorer-strip"]')!;
 const handle = () => host.querySelector<HTMLElement>('[role="separator"]')!;
-const pointer = (type: string, clientY: number) =>
+const pointer = (type: string, clientY: number, { button = 0, pointerId = 1 } = {}) =>
   act(async () => {
-    handle().dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientY }));
+    const event = new MouseEvent(type, { bubbles: true, button, clientY });
+    Object.defineProperty(event, "pointerId", { value: pointerId });
+    handle().dispatchEvent(event);
   });
 const key = (key: string) =>
   act(async () => {
@@ -228,11 +265,103 @@ test("below the board in the stacked layout the share is taken of the window", a
 test("stored heights hydrate per place, dropping only the unreadable ones", async () => {
   localStorage.setItem(
     HEIGHTS_KEY,
-    JSON.stringify({ tabs: 0.5, notation: "half", board: 7, belowNotation: 0.25, other: 1 }),
+    JSON.stringify({ tabs: 0.5, notation: "half", board: 7, belowNotation: 1, other: 1 }),
   );
   const fresh = createStore();
   // Stored values load when the atom is first used.
   const unsubscribe = fresh.sub(explorerStripHeightsAtom, () => {});
-  expect(fresh.get(explorerStripHeightsAtom)).toEqual({ tabs: 0.5, belowNotation: 0.25 });
+  expect(fresh.get(explorerStripHeightsAtom)).toEqual({ tabs: 0.5, belowNotation: 1 });
   unsubscribe();
+});
+
+test.each([0, -0.5])("a stored share of %s is dropped", async (share) => {
+  localStorage.setItem(HEIGHTS_KEY, JSON.stringify({ tabs: share, board: 0.4 }));
+  const fresh = createStore();
+  const unsubscribe = fresh.sub(explorerStripHeightsAtom, () => {});
+  expect(fresh.get(explorerStripHeightsAtom)).toEqual({ board: 0.4 });
+  unsubscribe();
+});
+
+test.each([
+  ['"belowNotation"', "belowNotation"],
+  ['"sideways"', "tabs"],
+  ["not json", "tabs"],
+])("the stored place %s hydrates as %s", async (stored, expected) => {
+  localStorage.setItem("detached-explorer-placement", stored);
+  const fresh = createStore();
+  const unsubscribe = fresh.sub(explorerPlacementAtom, () => {});
+  expect(fresh.get(explorerPlacementAtom)).toBe(expected);
+  unsubscribe();
+});
+
+test("above the notation the divider is the strip's lower edge too", async () => {
+  await renderPanes();
+  await pin("notation");
+  expect(handle().getAttribute("data-edge")).toBe("end");
+  await pointer("pointerdown", 100);
+  await pointer("pointerup", 140);
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ notation: 240 / PANE_PX });
+});
+
+test("a press without movement keeps the content height", async () => {
+  await renderPanes();
+  await pin("tabs");
+  await pointer("pointerdown", 100);
+  await pointer("pointerup", 100);
+  expect(store.get(explorerStripHeightsAtom)).toEqual({});
+  expect(strip().style.height).toBe("");
+});
+
+test("only a primary press starts a drag, and only that pointer moves and ends it", async () => {
+  await renderPanes();
+  await pin("tabs");
+  await pointer("pointerdown", 100, { button: 2 });
+  await pointer("pointerup", 160, { button: 2 });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({});
+
+  await pointer("pointerdown", 100, { pointerId: 1 });
+  await pointer("pointermove", 400, { pointerId: 2 });
+  expect(strip().style.height).toBe("200px");
+  await pointer("pointerup", 400, { pointerId: 2 });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({});
+  await pointer("pointerup", 130, { pointerId: 1 });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: 230 / PANE_PX });
+});
+
+test("a drag stops at the strip's minimum", async () => {
+  await renderPanes();
+  await pin("tabs");
+  await pointer("pointerdown", 300);
+  await pointer("pointermove", -300);
+  expect(strip().style.height).toBe(`${STRIP_MIN_PX}px`);
+  await pointer("pointerup", -300);
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: STRIP_MIN_PX / PANE_PX });
+});
+
+test("a resized pane resizes a dragged strip to the same share", async () => {
+  await renderPanes();
+  await pin("tabs", { tabs: 0.5 });
+  expect(strip().style.height).toBe("300px");
+  paneHeight = 800;
+  await resize();
+  expect(strip().style.height).toBe("400px");
+});
+
+test("a pinned engine bar in the same pane counts against the strip's largest height", async () => {
+  await renderPanes({ engineIn: "tabs" });
+  await pin("tabs", { tabs: 1 });
+  expect(strip().style.height).toBe(`${PANE_PX - ENGINE_PX - NEIGHBOUR_MIN_PX}px`);
+});
+
+test("switching between the stacked and the pane layout measures below the board against the right height", async () => {
+  await renderPanes();
+  await pin("board", { board: 0.5 });
+  expect(strip().style.height).toBe(`${PANE_PX * 0.5}px`);
+  const layout = host.querySelector('[data-testid="layout"]')!;
+  layout.setAttribute("data-board-layout", "stacked");
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(strip().style.height).toBe(`${window.innerHeight * 0.5}px`);
+  layout.setAttribute("data-board-layout", "mosaic");
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(strip().style.height).toBe(`${PANE_PX * 0.5}px`);
 });

@@ -57,10 +57,10 @@ import BoardAnalysis from "./BoardAnalysis";
 import type Board from "./Board";
 import { normalizeError, type AppError } from "@/platform/errors";
 import FileFreshnessGate from "@/components/tabs/FileFreshnessGate";
+import i18n, { initializeI18n } from "@/i18n";
 
 // The pinned explorer strip measures its pane.
 installResizeObserverStub();
-import i18n, { initializeI18n } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
   notifyUnlessCancelled: vi.fn(),
@@ -221,7 +221,7 @@ vi.mock("../panels/info/InfoPanel", () => ({
 vi.mock("../common/DetachedEval", () => ({
   default: ({ placement }: { placement: string }) => <span data-engine-slot={placement} />,
 }));
-vi.mock("../common/GameNotation", () => ({ default: () => null }));
+vi.mock("../common/GameNotation", () => ({ default: () => <span data-game-notation /> }));
 vi.mock("../common/MoveControls", () => ({ default: () => <span data-move-controls /> }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
 vi.mock("../panels/annotation/AnnotationPanel", () => ({ default: () => null }));
@@ -517,24 +517,30 @@ describe("BoardAnalysis", () => {
       document.querySelector(`[data-engine-slot="${placement}"]`);
     await act(async () => jotaiStore.set(explorerDetachedAtom, true));
     try {
-      await act(async () => jotaiStore.set(explorerPlacementAtom, "tabs"));
+      // Each place sits in a pane it measures against, beside its content; only one strip exists.
+      const expectIn = async (placement: string) => {
+        await act(async () => jotaiStore.set(explorerPlacementAtom, placement as never));
+        expect(strip().closest("[data-pinned-pane]")).not.toBeNull();
+        expect(container.querySelectorAll('[data-testid="pinned-explorer-strip"]')).toHaveLength(1);
+      };
+      await expectIn("tabs");
+      expect(strip().parentElement?.hasAttribute("data-pinned-pane")).toBe(true);
       expect(strip().previousElementSibling).toBe(engine("tabs"));
       expect(strip().nextElementSibling?.textContent).toContain("Board.Tabs.Info");
 
-      await act(async () => jotaiStore.set(explorerPlacementAtom, "notation"));
+      await expectIn("notation");
+      expect(strip().parentElement?.hasAttribute("data-pinned-pane")).toBe(true);
       expect(strip().previousElementSibling).toBe(engine("notation"));
+      expect(strip().nextElementSibling?.hasAttribute("data-game-notation")).toBe(true);
 
-      await act(async () => jotaiStore.set(explorerPlacementAtom, "belowNotation"));
+      await expectIn("belowNotation");
       expect(strip().previousElementSibling?.hasAttribute("data-move-controls")).toBe(true);
       expect(strip().nextElementSibling).toBe(engine("belowNotation"));
 
-      await act(async () => jotaiStore.set(explorerPlacementAtom, "board"));
+      await expectIn("board");
       expect(strip().parentElement?.getAttribute("data-slot")).toBe("below-board");
+      expect(strip().parentElement?.parentElement?.hasAttribute("data-pinned-pane")).toBe(true);
       expect(strip().nextElementSibling).toBe(engine("board"));
-
-      // Each place measures against a pane; only one strip exists at a time.
-      expect(strip().closest("[data-pinned-pane]")).not.toBeNull();
-      expect(container.querySelectorAll('[data-testid="pinned-explorer-strip"]')).toHaveLength(1);
     } finally {
       await act(async () => {
         jotaiStore.set(explorerPlacementAtom, "tabs");

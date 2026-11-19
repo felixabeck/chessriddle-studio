@@ -1253,15 +1253,8 @@ export const explorerPlacementAtom = atomWithStorage<PinnedPlacement>(
     createZodStorage(z.enum(PINNED_PLACEMENTS), localStorage),
 );
 
-/** The smallest and largest share of its pane a dragged explorer strip may be stored with. */
-export const EXPLORER_STRIP_FRACTION_RANGE = [0.05, 0.95] as const;
-
-const stripFraction = z
-    .number()
-    .min(EXPLORER_STRIP_FRACTION_RANGE[0])
-    .max(EXPLORER_STRIP_FRACTION_RANGE[1])
-    .optional()
-    .catch(undefined);
+/** A dragged explorer strip's height as a share of its pane; anything else is dropped. */
+const stripFraction = z.number().gt(0).max(1).optional().catch(undefined);
 
 /**
  * The pinned explorer strip's dragged height per place, as a share of the pane it sits in. A place

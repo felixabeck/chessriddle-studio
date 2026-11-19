@@ -77,7 +77,7 @@ function BoardAnalysis() {
   const [saveToModal, setSaveToModal] = useState(false);
   const autoSave = useAtomValue(autoSaveAtom);
   const boardRef = useRef(null);
-  // The engine bar below the board: the board gives up the bar's rendered height.
+  // The explorer strip and engine bar below the board: the board gives up their rendered height.
   const { ref: belowBoardRef, height: belowBoardHeight } = useElementSize<HTMLDivElement>();
 
   const store = useContext(TreeStateContext)!;

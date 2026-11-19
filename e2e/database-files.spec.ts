@@ -3540,9 +3540,27 @@ test("database-files: the board explorer compares two databases side by side", a
     expect(await bottom(strip)).toBeLessThanOrEqual((await rect(panelTabs)).y);
     await handle.dblclick();
     await page.mouse.move(0, 0);
+    // With room for every row the automatic height is the rows' height: nothing scrolls and the
+    // strip stays under half the pane.
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize({ width: viewport.width, height: 1600 });
+    await expect.poll(tableScrolls).toBe(false);
+    expect((await rect(strip)).height).toBeLessThan((await rect(pane)).height / 2 - 2);
+    await expect(strip.locator("tbody tr").last()).toBeInViewport({ ratio: 1 });
+    await page.setViewportSize(viewport);
+
+    // Above the notation the divider is the strip's lower edge, facing the notation.
+    const right = page.locator("#bottomRight");
+    await pinMenu("Database position", "Above the notation");
+    await expect(right.getByTestId("pinned-explorer")).toHaveCount(1);
+    expect((await rect(handle)).y).toBeGreaterThanOrEqual((await bottom(strip)) - 0.5);
+    const aboveNotation = (await rect(strip)).height;
+    await drag(-30);
+    await expect.poll(async () => (await rect(strip)).height).toBeCloseTo(aboveNotation - 30, 0);
+    await handle.dblclick();
+    await page.mouse.move(0, 0);
 
     // Below the notation the strip closes the right column, its divider on top.
-    const right = page.locator("#bottomRight");
     await pinMenu("Database position", "Below the notation");
     await expect(right.getByTestId("pinned-explorer")).toHaveCount(1);
     await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveCount(0);

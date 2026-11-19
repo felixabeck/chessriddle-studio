@@ -11,7 +11,6 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  EXPLORER_STRIP_FRACTION_RANGE,
   explorerDetachedAtom,
   explorerPlacementAtom,
   explorerStripHeightsAtom,
@@ -41,40 +40,74 @@ export default function PinnedExplorer({ placement }: { placement: PinnedPlaceme
 }
 
 /**
- * The height the strip's share is taken of: the pane it sits in, marked `data-pinned-pane`. Below
- * the board in the stacked layout that pane grows with its content, so the window stands in.
+ * The room the strip measures against. `reference` is the height its share is taken of: the pane
+ * it sits in, marked `data-pinned-pane`, or the window below the board in the stacked layout,
+ * where that pane grows with its content. `reserved` is what pinned engine bars in the same pane
+ * take, so the neighbour keeps its room beside both. Measured again whenever the pane, an engine
+ * bar or the window changes size (a layout switch moves the pane without remounting the strip),
+ * and whenever an engine bar mounts or unmounts beside the strip.
  */
-function useReferenceHeight(strip: RefObject<HTMLDivElement | null>) {
-  const [height, setHeight] = useState(0);
+function usePaneRoom(strip: RefObject<HTMLDivElement | null>) {
+  const [room, setRoom] = useState({ reference: 0, reserved: 0 });
   useEffect(() => {
     const element = strip.current;
     const pane = element?.closest<HTMLElement>("[data-pinned-pane]");
     if (!element || !pane) return;
-    if (
-      pane.hasAttribute("data-pinned-pane-grows") &&
-      element.closest("[data-board-layout='stacked']")
-    ) {
-      const measure = () => setHeight(window.innerHeight);
+    const resizes = new ResizeObserver(() => measure());
+    let engineBars: HTMLElement[] = [];
+    /** Pinned engine bar slots are children of the pane or of the strip's own slot. */
+    const findEngineBars = () => {
+      for (const bar of engineBars) resizes.unobserve(bar);
+      engineBars = [...pane.querySelectorAll<HTMLElement>('[data-testid="pinned-engine"]')];
+      for (const bar of engineBars) resizes.observe(bar);
+    };
+    const measure = () => {
+      const grows =
+        pane.hasAttribute("data-pinned-pane-grows") &&
+        element.closest("[data-board-layout='stacked']") !== null;
+      const gap = Number.parseFloat(getComputedStyle(pane).rowGap) || 0;
+      const next = {
+        reference: grows ? window.innerHeight : pane.clientHeight,
+        reserved: engineBars.reduce(
+          (sum, bar) => sum + bar.getBoundingClientRect().height + gap,
+          0,
+        ),
+      };
+      setRoom((previous) =>
+        previous.reference === next.reference && previous.reserved === next.reserved
+          ? previous
+          : next,
+      );
+    };
+    findEngineBars();
+    measure();
+    resizes.observe(pane);
+    const slots = new MutationObserver(() => {
+      findEngineBars();
       measure();
-      window.addEventListener("resize", measure);
-      return () => window.removeEventListener("resize", measure);
+    });
+    slots.observe(pane, { childList: true });
+    if (element.parentElement && element.parentElement !== pane) {
+      slots.observe(element.parentElement, { childList: true });
     }
-    const observer = new ResizeObserver(() => setHeight(pane.clientHeight));
-    observer.observe(pane);
-    setHeight(pane.clientHeight);
-    return () => observer.disconnect();
+    window.addEventListener("resize", measure);
+    return () => {
+      resizes.disconnect();
+      slots.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, [strip]);
-  return height;
+  return room;
 }
 
 function ExplorerStrip({ placement }: { placement: PinnedPlacement }) {
   const { t } = useTranslation();
   const [heights, setHeights] = useAtom(explorerStripHeightsAtom);
   const { ref: strip, height: measuredHeight } = useElementSize<HTMLDivElement>();
-  const reference = useReferenceHeight(strip);
+  const { reference, reserved } = usePaneRoom(strip);
   // Above its neighbour the strip's lower edge is the divider; below it, the upper edge.
   const edge = placement === "tabs" || placement === "notation" ? "end" : "start";
-  const max = Math.max(STRIP_MIN_PX, reference - NEIGHBOUR_MIN_PX);
+  const max = Math.max(STRIP_MIN_PX, reference - reserved - NEIGHBOUR_MIN_PX);
   const clamp = (px: number) => Math.min(max, Math.max(STRIP_MIN_PX, px));
   const share = heights[placement];
   /** The dragged height while a drag runs, so storage is written once at its end. */
@@ -86,8 +119,7 @@ function ExplorerStrip({ placement }: { placement: PinnedPlacement }) {
 
   const store = (px: number) => {
     if (reference <= 0) return;
-    const [low, high] = EXPLORER_STRIP_FRACTION_RANGE;
-    const next = Math.min(high, Math.max(low, clamp(px) / reference));
+    const next = Math.min(1, clamp(px) / reference);
     setHeights((previous) => ({ ...previous, [placement]: next }));
   };
   const reset = () => {
@@ -116,12 +148,14 @@ function ExplorerStrip({ placement }: { placement: PinnedPlacement }) {
     if (!current || current.pointer !== event.pointerId) return;
     setDragHeight(moved(current.startHeight, event.clientY - current.startY));
   };
-  // Every way a drag ends (release, cancel, lost capture) stores the height it reached.
+  // Every way a drag ends (release, cancel, lost capture) stores the height it reached; a press
+  // without movement (focusing the divider, a double-click's clicks) stores nothing.
   const endDrag = (event: PointerEvent<HTMLDivElement>) => {
     const current = drag.current;
     if (!current || current.pointer !== event.pointerId) return;
     drag.current = null;
-    store(moved(current.startHeight, event.clientY - current.startY));
+    const delta = event.clientY - current.startY;
+    if (delta !== 0) store(moved(current.startHeight, delta));
     setDragHeight(null);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -136,7 +170,6 @@ function ExplorerStrip({ placement }: { placement: PinnedPlacement }) {
     <div
       ref={strip}
       className={classes.strip}
-      data-edge={edge}
       data-testid="pinned-explorer-strip"
       style={{
         // The strip yields when its neighbour needs its minimum room (the notation column keeps
