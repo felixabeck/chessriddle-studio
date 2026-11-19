@@ -1,20 +1,12 @@
-/* The slot holds the pinned engine bar while it sits below the board. Empty, it takes no room
-   and no gap. */
+/* The slot holds the pinned explorer strip and engine bar while they sit below the board. Empty,
+   it takes no room and no gap. */
 .belowBoard {
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
+  gap: var(--mantine-spacing-xs);
 }
 
 .belowBoard:empty {
   display: none;
-}
-
-/* The pinned explorer: as tall as its content, at most half of the pane, its table scrolling
-   inside. */
-.detachedExplorer {
-  display: flex;
-  flex: 0 1 auto;
-  flex-direction: column;
-  min-height: 0;
-  max-height: 50%;
-  overflow: hidden;
 }

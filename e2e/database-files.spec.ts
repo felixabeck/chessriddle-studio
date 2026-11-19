@@ -3459,10 +3459,24 @@ test("database-files: the board explorer compares two databases side by side", a
     await expectSourcesAligned();
     await expect(databasePanel).toHaveScreenshot("explorer-two-databases-collapsed.png");
 
-    // Pinned, the explorer is a strip above the panel tabs and Annotate is open below it.
+    // The pin button offers every place; pinned above the tabs, Annotate is open below it.
+    const pinMenu = async (button: "Pin database" | "Database position", place: string) => {
+        await page.getByRole("button", { name: button, exact: true }).click();
+        await page.getByRole("menuitem", { name: place, exact: true }).click();
+        await expect(page.getByRole("menu")).toHaveCount(0);
+        await page.mouse.move(0, 0);
+    };
     await page.getByRole("button", { name: "Pin database", exact: true }).click();
-    await page.mouse.move(0, 0);
+    await expect(page.getByRole("menuitem")).toHaveText([
+        "Above the tabs",
+        "Above the notation",
+        "Below the notation",
+        "Below the board",
+    ]);
+    await page.keyboard.press("Escape");
+    await pinMenu("Pin database", "Above the tabs");
     const strip = page.getByTestId("pinned-explorer");
+    const handle = page.getByRole("separator", { name: "Resize the database", exact: true });
     const pane = page.locator("#topRight");
     const panelTabs = pane.getByRole("tablist").first();
     const note = pane.locator("[contenteditable='true']");
@@ -3474,35 +3488,89 @@ test("database-files: the board explorer compares two databases side by side", a
         "true",
     );
     const rect = async (locator: Locator) => (await locator.boundingBox())!;
+    const bottom = async (locator: Locator) => {
+        const { y, height } = await rect(locator);
+        return y + height;
+    };
     const tableScrolls = () =>
         strip
             .locator(".mantine-ScrollArea-viewport")
             .first()
             .evaluate((viewport) => viewport.scrollHeight > viewport.clientHeight + 1);
-    // The table is taller than half the pane here: the strip stops at half, its table scrolls,
-    // and the note stays in view below the tabs.
+    // Without a dragged height the strip is as tall as its rows, up to half the pane; here the
+    // rows need more, so its table scrolls.
     await expect.poll(tableScrolls).toBe(true);
     expect((await rect(strip)).height).toBeLessThanOrEqual((await rect(pane)).height / 2 + 1);
     expect((await rect(strip)).height).toBeGreaterThan((await rect(pane)).height / 2 - 2);
-    expect((await rect(strip)).y + (await rect(strip)).height).toBeLessThanOrEqual(
-        (await rect(panelTabs)).y,
-    );
+    expect(await bottom(strip)).toBeLessThanOrEqual((await rect(panelTabs)).y);
     await expect(note).toBeInViewport();
+    const contentHeight = (await rect(strip)).height;
+
+    // Dragging the divider below the strip up shrinks it, and the height is kept per place.
+    const drag = async (dy: number) => {
+        const box = await rect(handle);
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + dy, { steps: 4 });
+        await page.mouse.up();
+        await page.mouse.move(0, 0);
+    };
+    await drag(-80);
+    await expect.poll(async () => (await rect(strip)).height).toBeCloseTo(contentHeight - 80, -1);
+    const stored = await page.evaluate(() => localStorage.getItem("detached-explorer-heights"));
+    expect(Object.keys(JSON.parse(stored!))).toEqual(["tabs"]);
     // The strip's table scrolls, and whether its scrollbar thumb shows depends on timing.
     await expect(pane).toHaveScreenshot("explorer-pinned-strip.png", {
         stylePath: fileURLToPath(new URL("./scrollbar-free-screenshot.css", import.meta.url)),
     });
-    // With room for every row the strip is as tall as its content and nothing scrolls.
-    const viewport = page.viewportSize()!;
-    await page.setViewportSize({ width: viewport.width, height: 1600 });
-    await expect.poll(tableScrolls).toBe(false);
-    expect((await rect(strip)).height).toBeLessThan((await rect(pane)).height / 2 - 2);
-    await expect(strip.locator("tbody tr")).toHaveCount(5);
-    await expect(strip.locator("tbody tr").last()).toBeInViewport({ ratio: 1 });
-    await expect(note).toBeInViewport();
-    await page.setViewportSize(viewport);
-    // Unpinned from the strip, it is a tab again, and that tab is shown.
-    await strip.getByRole("button", { name: "Unpin database", exact: true }).click();
+    // The keyboard moves the same divider; a double-click returns to the content height.
+    await handle.focus();
+    const dragged = (await rect(strip)).height;
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(async () => (await rect(strip)).height).toBeCloseTo(dragged + 24, 0);
+    await handle.dblclick();
+    await page.mouse.move(0, 0);
+    await expect.poll(async () => (await rect(strip)).height).toBeCloseTo(contentHeight, 0);
+    // Dragged down, the strip may take more than half the pane, up to where the tabs keep
+    // 160px.
+    await drag(400);
+    await expect
+        .poll(async () => (await rect(strip)).height)
+        .toBeCloseTo((await rect(pane)).height - 160, 0);
+    expect(await bottom(strip)).toBeLessThanOrEqual((await rect(panelTabs)).y);
+    await handle.dblclick();
+    await page.mouse.move(0, 0);
+
+    // Below the notation the strip closes the right column, its divider on top.
+    const right = page.locator("#bottomRight");
+    await pinMenu("Database position", "Below the notation");
+    await expect(right.getByTestId("pinned-explorer")).toHaveCount(1);
+    await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveCount(0);
+    // Flush with the pane's bottom: the column does not scroll past it.
+    await expect
+        .poll(async () => Math.abs((await bottom(right)) - (await bottom(strip))))
+        .toBeLessThan(2);
+    expect(
+        await right
+            .locator("[data-pinned-pane]")
+            .evaluate((column) => column.scrollHeight <= column.clientHeight + 1),
+    ).toBe(true);
+    expect((await rect(handle)).y).toBeLessThan((await rect(strip)).y);
+    await expect(right).toHaveScreenshot("explorer-pinned-below-notation.png", {
+        stylePath: fileURLToPath(new URL("./scrollbar-free-screenshot.css", import.meta.url)),
+    });
+
+    // Below the board the board gives up the strip's room.
+    const board = page.locator("#left [data-board-surface]");
+    const boardBefore = (await rect(board)).height;
+    await pinMenu("Database position", "Below the board");
+    await expect(page.locator("#left").getByTestId("pinned-explorer")).toHaveCount(1);
+    await expect.poll(async () => (await rect(board)).height).toBeLessThan(boardBefore - 50);
+    expect((await rect(strip)).y).toBeGreaterThanOrEqual((await bottom(board)) - 0.5);
+    expect(await bottom(strip)).toBeLessThanOrEqual((await bottom(page.locator("#left"))) + 0.5);
+
+    // Unpinned from the strip's menu, it is a tab again, and that tab is shown.
+    await pinMenu("Database position", "Unpin database");
     await expect(strip).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveAttribute(
         "aria-selected",

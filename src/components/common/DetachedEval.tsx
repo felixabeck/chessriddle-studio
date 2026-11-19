@@ -1,5 +1,5 @@
 import { Box, Group, Menu, Paper, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core";
-import { Check, Move, PinOff, Pause, Play } from "lucide-react";
+import { Move, PinOff, Pause, Play } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
 import { memo, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,8 +7,7 @@ import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import {
   currentDetachedEngineAtom,
-  DETACHED_ENGINE_PLACEMENTS,
-  type DetachedEnginePlacement,
+  type PinnedPlacement,
   detachedEngineLinesAtom,
   detachedEnginePlacementAtom,
   enginesAtom,
@@ -25,6 +24,7 @@ import { EngineScoreBubble } from "../panels/analysis/ScoreBubble";
 import { ThreatBadge } from "../panels/analysis/ThreatBadge";
 import classes from "./DetachedEval.module.css";
 import IconAction from "./IconAction";
+import { PinnedPlacementItems } from "./PinnedPlacementItems";
 import { TreeStateContext } from "./TreeStateContext";
 
 /** Moves rendered per line; the row clips whatever does not fit its width. */
@@ -40,7 +40,7 @@ let focusPositionOnMount = false;
  * The pinned engine bar. The analysis board mounts it in every slot it can occupy; only the one
  * matching the stored placement renders, so the bar exists once.
  */
-function DetachedEval({ placement }: { placement: DetachedEnginePlacement }) {
+function DetachedEval({ placement }: { placement: PinnedPlacement }) {
   const [detachedEngineId, setDetachedEngineId] = useAtom(currentDetachedEngineAtom);
   const engines = useAtomValue(enginesAtom);
   const storedPlacement = useAtomValue(detachedEnginePlacementAtom);
@@ -80,14 +80,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
     positionRef.current?.focus();
   }, []);
   const theme = useMantineTheme();
-  const positionLabels: Record<DetachedEnginePlacement, string> = {
-    tabs: t("Engine.PositionAboveTabs"),
-    notation: t("Engine.PositionAboveNotation"),
-    belowNotation: t("Engine.PositionBelowNotation"),
-    board: t("Engine.PositionBelowBoard"),
-  };
-  const moveTo = (next: DetachedEnginePlacement) => {
-    if (next === placement) return;
+  const moveTo = (next: PinnedPlacement) => {
     focusPositionOnMount = true;
     setPlacement(next);
     // A click is a discrete update, so the new slot mounts and runs its effect before this task
@@ -186,22 +179,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
             </IconAction>
           </Menu.Target>
           <Menu.Dropdown>
-            {DETACHED_ENGINE_PLACEMENTS.map((option) => (
-              <Menu.Item
-                key={option}
-                aria-current={option === placement || undefined}
-                leftSection={
-                  option === placement ? (
-                    <Check size="0.875rem" />
-                  ) : (
-                    <Box w="0.875rem" aria-hidden />
-                  )
-                }
-                onClick={() => moveTo(option)}
-              >
-                {positionLabels[option]}
-              </Menu.Item>
-            ))}
+            <PinnedPlacementItems current={placement} onChoose={moveTo} />
           </Menu.Dropdown>
         </Menu>
         <IconAction label={t("Engine.Unpin")} size="sm" variant="subtle" onClick={onClose}>

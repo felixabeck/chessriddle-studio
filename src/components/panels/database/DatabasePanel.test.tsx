@@ -1363,14 +1363,37 @@ describe("DatabasePanel", () => {
     });
 
     const PIN_KEY = "detached-explorer";
+    const PLACEMENT_KEY = "detached-explorer-placement";
     const pinButton = () =>
       container.querySelector<HTMLButtonElement>(
-        '[aria-label="Board.Database.Pin"], [aria-label="Board.Database.Unpin"]',
+        '[aria-label="Board.Database.Pin"], [aria-label="Board.Database.Position"]',
       )!;
+    const menuItems = () => Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+    /** Opens the pin menu and returns its entries once they are shown. */
+    const openPinMenu = async () => {
+      await act(async () => pinButton().click());
+      return vi.waitFor(() => {
+        const items = menuItems();
+        expect(items).not.toHaveLength(0);
+        return items;
+      });
+    };
+    const choose = async (label: string) => {
+      const item = (await openPinMenu()).find((entry) => entry.textContent === label);
+      expect(item?.textContent).toBe(label);
+      await act(async () => item!.click());
+      await vi.waitFor(() => expect(menuItems()).toHaveLength(0));
+    };
+    const PLACES = [
+      "Pinned.AboveTabs",
+      "Pinned.AboveNotation",
+      "Pinned.BelowNotation",
+      "Pinned.BelowBoard",
+    ];
 
     test.each([
       [null, "Board.Database.Pin"],
-      ["true", "Board.Database.Unpin"],
+      ["true", "Board.Database.Position"],
       ["false", "Board.Database.Pin"],
       ["not json", "Board.Database.Pin"],
       ["1", "Board.Database.Pin"],
@@ -1382,23 +1405,48 @@ describe("DatabasePanel", () => {
     });
 
     test.each(["true", "false"])(
-      "pinning stores the preference and unpinning also selects the board's Database tab, header collapsed=%s",
+      "the pin menu pins to a chosen place, moves the strip, and unpinning selects the board's Database tab, header collapsed=%s",
       async (collapsed) => {
         localStorage.setItem(HEADER_COLLAPSED_KEY, collapsed);
         const { store } = await mountCompared();
         await vi.waitFor(() => expect(sources()).toHaveLength(2));
         await act(async () => store.set(tabFamily(tabId), "annotate"));
 
-        await act(async () => pinButton().click());
+        // Not pinned yet: every place is offered, none is marked, and there is nothing to unpin.
+        const offered = await openPinMenu();
+        expect(offered.map((item) => item.textContent)).toEqual(PLACES);
+        expect(offered.filter((item) => item.hasAttribute("aria-current"))).toEqual([]);
+        await act(async () =>
+          offered.find((item) => item.textContent === "Pinned.BelowNotation")!.click(),
+        );
+        await vi.waitFor(() => expect(menuItems()).toHaveLength(0));
         expect(localStorage.getItem(PIN_KEY)).toBe("true");
-        expect(pinButton().getAttribute("aria-label")).toBe("Board.Database.Unpin");
+        expect(localStorage.getItem(PLACEMENT_KEY)).toBe(JSON.stringify("belowNotation"));
+        expect(pinButton().getAttribute("aria-label")).toBe("Board.Database.Position");
         expect(pinButton().getAttribute("aria-pressed")).toBe("true");
         // Pinning leaves the board's panel choice alone.
         expect(store.get(tabFamily(tabId))).toBe("annotate");
 
-        await act(async () => pinButton().click());
+        // Pinned: the current place is marked, and the menu ends with Unpin.
+        const pinned = await openPinMenu();
+        expect(pinned.map((item) => item.textContent)).toEqual([...PLACES, "Board.Database.Unpin"]);
+        expect(
+          pinned
+            .filter((item) => item.getAttribute("aria-current") === "true")
+            .map((item) => item.textContent),
+        ).toEqual(["Pinned.BelowNotation"]);
+        await act(async () =>
+          pinned.find((item) => item.textContent === "Pinned.BelowBoard")!.click(),
+        );
+        await vi.waitFor(() => expect(menuItems()).toHaveLength(0));
+        expect(localStorage.getItem(PLACEMENT_KEY)).toBe(JSON.stringify("board"));
+        expect(localStorage.getItem(PIN_KEY)).toBe("true");
+
+        await choose("Board.Database.Unpin");
         expect(localStorage.getItem(PIN_KEY)).toBe("false");
         expect(store.get(tabFamily(tabId))).toBe("database");
+        // The place is kept for the next pin.
+        expect(localStorage.getItem(PLACEMENT_KEY)).toBe(JSON.stringify("board"));
       },
     );
 

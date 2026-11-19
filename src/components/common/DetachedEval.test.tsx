@@ -562,18 +562,18 @@ test("DetachedEval renders in the stored slot only, and its position menu lists 
     expectOnlyIn("tabs");
 
     for (const [label, next] of [
-      ["Engine.PositionBelowNotation", "belowNotation"],
-      ["Engine.PositionBelowBoard", "board"],
-      ["Engine.PositionAboveNotation", "notation"],
-      ["Engine.PositionAboveTabs", "tabs"],
+      ["Pinned.BelowNotation", "belowNotation"],
+      ["Pinned.BelowBoard", "board"],
+      ["Pinned.AboveNotation", "notation"],
+      ["Pinned.AboveTabs", "tabs"],
     ]) {
       await act(async () => positionButton()!.click());
       // Every slot is offered by name, in layout order, and only the current one is marked.
       expect(positionItems().map((item) => item.textContent)).toEqual([
-        "Engine.PositionAboveTabs",
-        "Engine.PositionAboveNotation",
-        "Engine.PositionBelowNotation",
-        "Engine.PositionBelowBoard",
+        "Pinned.AboveTabs",
+        "Pinned.AboveNotation",
+        "Pinned.BelowNotation",
+        "Pinned.BelowBoard",
       ]);
       const current = h.store.get(detachedEnginePlacementAtom);
       expect(
@@ -582,10 +582,10 @@ test("DetachedEval renders in the stored slot only, and its position menu lists 
           .map((item) => item.textContent),
       ).toEqual([
         {
-          tabs: "Engine.PositionAboveTabs",
-          notation: "Engine.PositionAboveNotation",
-          belowNotation: "Engine.PositionBelowNotation",
-          board: "Engine.PositionBelowBoard",
+          tabs: "Pinned.AboveTabs",
+          notation: "Pinned.AboveNotation",
+          belowNotation: "Pinned.BelowNotation",
+          board: "Pinned.BelowBoard",
         }[current],
       ]);
       await act(async () =>
@@ -610,7 +610,7 @@ test("DetachedEval keeps the bar in place when the current position is chosen ag
     const tree = await renderEverySlot('"notation"');
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     try {
-      await choosePosition("Engine.PositionAboveNotation");
+      await choosePosition("Pinned.AboveNotation");
       // Nothing is stored again.
       expect(setItem.mock.calls.filter(([key]) => key === PLACEMENT_KEY)).toEqual([]);
     } finally {
@@ -640,7 +640,7 @@ test("DetachedEval position focus does not leak into a later mount when the othe
         <DetachedEval placement="tabs" />
       </TreeStateContext.Provider>,
     );
-    await choosePosition("Engine.PositionAboveNotation");
+    await choosePosition("Pinned.AboveNotation");
     expect(h.host.textContent).not.toContain(LINE);
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     await act(async () => h.store.set(detachedEnginePlacementAtom, "tabs"));

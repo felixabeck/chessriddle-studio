@@ -1228,14 +1228,57 @@ export const explorerHeaderCollapsedAtom = atomWithStorage<boolean>(
 );
 
 /**
- * Whether the board explorer is pinned as a strip above the panel tabs instead of being one of
- * them. Called detached like the engine bar: `pinnedExplorerDatabaseFamily` is a tab's own
- * database, not this.
+ * Where a pinned panel (the engine bar, the explorer strip) sits on the analysis board: above the
+ * panel tabs, above or below the move notation, or below the board. "notation" is the stored name
+ * of the place above the notation.
+ */
+export const PINNED_PLACEMENTS = ["tabs", "notation", "belowNotation", "board"] as const;
+export type PinnedPlacement = (typeof PINNED_PLACEMENTS)[number];
+
+/**
+ * Whether the board explorer is pinned as a strip instead of being one of the panel tabs; where
+ * it sits is `explorerPlacementAtom`. Called detached like the engine bar:
+ * `pinnedExplorerDatabaseFamily` is a tab's own database, not this.
  */
 export const explorerDetachedAtom = atomWithStorage<boolean>(
     "detached-explorer",
     false,
     createZodStorage(z.boolean(), localStorage),
+);
+
+/** Where the pinned explorer strip sits. */
+export const explorerPlacementAtom = atomWithStorage<PinnedPlacement>(
+    "detached-explorer-placement",
+    "tabs",
+    createZodStorage(z.enum(PINNED_PLACEMENTS), localStorage),
+);
+
+/** The smallest and largest share of its pane a dragged explorer strip may be stored with. */
+export const EXPLORER_STRIP_FRACTION_RANGE = [0.05, 0.95] as const;
+
+const stripFraction = z
+    .number()
+    .min(EXPLORER_STRIP_FRACTION_RANGE[0])
+    .max(EXPLORER_STRIP_FRACTION_RANGE[1])
+    .optional()
+    .catch(undefined);
+
+/**
+ * The pinned explorer strip's dragged height per place, as a share of the pane it sits in. A place
+ * without a share sizes the strip to its content; an unreadable share is dropped on its own.
+ */
+export const explorerStripHeightsAtom = atomWithStorage<Partial<Record<PinnedPlacement, number>>>(
+    "detached-explorer-heights",
+    {},
+    createZodStorage(
+        z.object({
+            tabs: stripFraction,
+            notation: stripFraction,
+            belowNotation: stripFraction,
+            board: stripFraction,
+        }),
+        localStorage,
+    ),
 );
 
 export const dbTypeFamily = atomFamily((_tab: string) =>
@@ -1265,17 +1308,11 @@ export const detachedEngineLinesAtom = atomWithStorage<number | null>(
     createZodStorage(z.number().int().min(1).max(5).nullable(), localStorage),
 );
 
-/**
- * Where the pinned engine bar sits: above the panel tabs, above or below the move notation, or
- * below the board. "notation" is the stored name of the slot above the notation.
- */
-export const DETACHED_ENGINE_PLACEMENTS = ["tabs", "notation", "belowNotation", "board"] as const;
-export type DetachedEnginePlacement = (typeof DETACHED_ENGINE_PLACEMENTS)[number];
-
-export const detachedEnginePlacementAtom = atomWithStorage<DetachedEnginePlacement>(
+/** Where the pinned engine bar sits. */
+export const detachedEnginePlacementAtom = atomWithStorage<PinnedPlacement>(
     "detached-engine-placement",
     "tabs",
-    createZodStorage(z.enum(DETACHED_ENGINE_PLACEMENTS), localStorage),
+    createZodStorage(z.enum(PINNED_PLACEMENTS), localStorage),
 );
 
 export const pgnOptionsFamily = atomFamily((_tab: string) =>

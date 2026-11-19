@@ -24,6 +24,7 @@ import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { type DatabaseHandle, type NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
+import { PinnedPlacementItems } from "@/components/common/PinnedPlacementItems";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import {
@@ -32,6 +33,7 @@ import {
   dbTypeFamily,
   explorerGamesSourceFamily,
   explorerDetachedAtom,
+  explorerPlacementAtom,
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
   localOptionsFamily,
@@ -491,6 +493,7 @@ function DatabasePanel() {
     )
     .exhaustive();
   const [detached, setDetached] = useAtom(explorerDetachedAtom);
+  const [placement, setPlacement] = useAtom(explorerPlacementAtom);
   const setBoardPanel = useSetAtom(useTabAtom(tabFamily));
   const headerActions = (
     <>
@@ -504,19 +507,43 @@ function DatabasePanel() {
       >
         <Settings size="0.875rem" />
       </IconAction>
-      <IconAction
-        label={detached ? t("Board.Database.Unpin") : t("Board.Database.Pin")}
-        variant="subtle"
-        size="sm"
-        pressed={detached}
-        onClick={() => {
-          // Unpinned, the panel goes back to being a tab, and that tab is the one shown.
-          if (detached) setBoardPanel("database");
-          setDetached(!detached);
-        }}
-      >
-        {detached ? <PinOff size="0.875rem" /> : <Pin size="0.875rem" />}
-      </IconAction>
+      {/* One menu pins the panel to a place, moves it, or unpins it. */}
+      <Menu position="bottom-end" shadow="md" withinPortal>
+        <Menu.Target>
+          <IconAction
+            label={detached ? t("Board.Database.Position") : t("Board.Database.Pin")}
+            variant="subtle"
+            size="sm"
+            pressed={detached}
+          >
+            <Pin size="0.875rem" />
+          </IconAction>
+        </Menu.Target>
+        <Menu.Dropdown>
+          <PinnedPlacementItems
+            current={detached ? placement : null}
+            onChoose={(next) => {
+              setPlacement(next);
+              setDetached(true);
+            }}
+          />
+          {detached && (
+            <>
+              <Menu.Divider />
+              <Menu.Item
+                leftSection={<PinOff size="0.875rem" />}
+                onClick={() => {
+                  // Unpinned, the panel goes back to being a tab, and that tab is the one shown.
+                  setBoardPanel("database");
+                  setDetached(false);
+                }}
+              >
+                {t("Board.Database.Unpin")}
+              </Menu.Item>
+            </>
+          )}
+        </Menu.Dropdown>
+      </Menu>
     </>
   );
 

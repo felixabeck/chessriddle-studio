@@ -11,6 +11,7 @@ import {
   currentTabAtom,
   tabFamily,
   explorerDetachedAtom,
+  explorerPlacementAtom,
   analysisTabFamily,
   practiceTabFamily,
   reportModalOpenFamily,
@@ -26,6 +27,7 @@ import {
 } from "@/state/atoms";
 import { displayEngine, displayLines } from "@/tests/engineDisplay";
 import { focusedDialogButton, press } from "@/tests/keyboard";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { analysisSearch } from "../panels/analysis/analysisSearch";
 import { AnalysisLineMemory } from "../panels/analysis/analysisLineMemory";
 import { engineIdentity, engineLineContext } from "../panels/analysis/analysisLineContext";
@@ -55,6 +57,9 @@ import BoardAnalysis from "./BoardAnalysis";
 import type Board from "./Board";
 import { normalizeError, type AppError } from "@/platform/errors";
 import FileFreshnessGate from "@/components/tabs/FileFreshnessGate";
+
+// The pinned explorer strip measures its pane.
+installResizeObserverStub();
 import i18n, { initializeI18n } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -94,6 +99,14 @@ vi.mock("@mantine/hooks", () => ({
 vi.mock("@mantine/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mantine/core")>();
   const passthrough = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  // The Stack stand-in keeps data attributes: the pinned panes are found by them.
+  const stack = ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+    <div
+      {...Object.fromEntries(Object.entries(props).filter(([name]) => name.startsWith("data-")))}
+    >
+      {children}
+    </div>
+  );
   const Tabs = Object.assign(
     (props: React.ComponentProps<typeof actual.Tabs>) =>
       mocks.realTabs ? <actual.Tabs {...props} /> : passthrough(props),
@@ -110,7 +123,7 @@ vi.mock("@mantine/core", async (importOriginal) => {
     MantineProvider: actual.MantineProvider,
     Paper: passthrough,
     Portal: passthrough,
-    Stack: passthrough,
+    Stack: stack,
     Tabs,
     Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
       <button {...props}>{children}</button>
@@ -493,6 +506,41 @@ describe("BoardAnalysis", () => {
     expect(above.parentElement!.firstElementChild).toBe(above);
     expect(below.parentElement!.lastElementChild).toBe(below);
     expect(below.previousElementSibling?.hasAttribute("data-move-controls")).toBe(true);
+  });
+
+  test("pins the explorer strip in each place next to its content, with the engine bar outside it", async () => {
+    const strip = () =>
+      container
+        .querySelector('[data-testid="database-panel"]')!
+        .closest<HTMLElement>('[data-testid="pinned-explorer-strip"]')!;
+    const engine = (placement: string) =>
+      document.querySelector(`[data-engine-slot="${placement}"]`);
+    await act(async () => jotaiStore.set(explorerDetachedAtom, true));
+    try {
+      await act(async () => jotaiStore.set(explorerPlacementAtom, "tabs"));
+      expect(strip().previousElementSibling).toBe(engine("tabs"));
+      expect(strip().nextElementSibling?.textContent).toContain("Board.Tabs.Info");
+
+      await act(async () => jotaiStore.set(explorerPlacementAtom, "notation"));
+      expect(strip().previousElementSibling).toBe(engine("notation"));
+
+      await act(async () => jotaiStore.set(explorerPlacementAtom, "belowNotation"));
+      expect(strip().previousElementSibling?.hasAttribute("data-move-controls")).toBe(true);
+      expect(strip().nextElementSibling).toBe(engine("belowNotation"));
+
+      await act(async () => jotaiStore.set(explorerPlacementAtom, "board"));
+      expect(strip().parentElement?.getAttribute("data-slot")).toBe("below-board");
+      expect(strip().nextElementSibling).toBe(engine("board"));
+
+      // Each place measures against a pane; only one strip exists at a time.
+      expect(strip().closest("[data-pinned-pane]")).not.toBeNull();
+      expect(container.querySelectorAll('[data-testid="pinned-explorer-strip"]')).toHaveLength(1);
+    } finally {
+      await act(async () => {
+        jotaiStore.set(explorerPlacementAtom, "tabs");
+        jotaiStore.set(explorerDetachedAtom, false);
+      });
+    }
   });
 
   async function resetToFirstMove() {

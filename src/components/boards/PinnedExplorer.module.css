@@ -1,0 +1,55 @@
+/* The pinned explorer: as tall as its content or as its dragged height, its table scrolling
+   inside. The inline style caps or sets the height against the pane. */
+.strip {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The divider fills the gap between the strip and the neighbour it shares the pane with. */
+.handle {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 1;
+  height: var(--mantine-spacing-xs);
+  cursor: row-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.handle[data-edge="end"] {
+  top: 100%;
+}
+
+.handle[data-edge="start"] {
+  bottom: 100%;
+}
+
+.handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2.5rem;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--cf-border);
+  transform: translate(-50%, -50%);
+}
+
+.handle:hover::after,
+.handle:focus-visible::after,
+.handle[data-dragging]::after {
+  width: 100%;
+  background: var(--mantine-primary-color-filled);
+}

@@ -44,6 +44,7 @@ import DetachedEval from "../common/DetachedEval";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
 import NotationColumn from "../common/NotationColumn";
+import PinnedExplorer from "./PinnedExplorer";
 import { TreeStateContext } from "../common/TreeStateContext";
 import AnalysisPanel from "../panels/analysis/AnalysisPanel";
 import AnnotationPanel from "../panels/annotation/AnnotationPanel";
@@ -160,7 +161,7 @@ function BoardAnalysis() {
 
   const [, setAnalysisTab] = useAtom(useTabAtom(analysisTabFamily));
   const [currentTabSelected, setCurrentTabSelected] = useAtom(useTabAtom(tabFamily));
-  // Pinned, the explorer is a strip above the tabs and no longer one of them. A tab whose stored
+  // Pinned, the explorer is a strip in its chosen place and no longer one of the tabs. A tab whose stored
   // choice is the explorer shows Annotate meanwhile; the stored choice is left alone.
   const explorerDetached = useAtomValue(explorerDetachedAtom);
   const shownTab =
@@ -322,6 +323,8 @@ function BoardAnalysis() {
         <Stack
           h="100%"
           gap="xs"
+          data-pinned-pane
+          data-pinned-pane-grows
           style={{
             "--board-below-height":
               belowBoardHeight > 0
@@ -339,18 +342,15 @@ function BoardAnalysis() {
             />
           </Paper>
           <div ref={belowBoardRef} className={classes.belowBoard} data-slot="below-board">
+            <PinnedExplorer placement="board" />
             <DetachedEval placement="board" />
           </div>
         </Stack>
       </Portal>
       <Portal target="#topRight" className={paneClasses.root} style={{ height: "100%" }}>
-        <Stack h="100%" gap="xs" className={paneClasses.root}>
+        <Stack h="100%" gap="xs" className={paneClasses.root} data-pinned-pane>
           <DetachedEval placement="tabs" />
-          {explorerDetached && (
-            <Paper withBorder className={classes.detachedExplorer} data-testid="pinned-explorer">
-              <DatabasePanel />
-            </Paper>
-          )}
+          <PinnedExplorer placement="tabs" />
           <Paper
             withBorder
             className={paneClasses.root}
@@ -439,6 +439,7 @@ function BoardAnalysis() {
         ) : (
           <NotationColumn>
             <DetachedEval placement="notation" />
+            <PinnedExplorer placement="notation" />
             <GameNotation
               topBar
               controls={
@@ -453,6 +454,7 @@ function BoardAnalysis() {
               }
             />
             <MoveControls />
+            <PinnedExplorer placement="belowNotation" />
             <DetachedEval placement="belowNotation" />
           </NotationColumn>
         )}
