@@ -24,7 +24,11 @@
   height: var(--mantine-spacing-xs);
   cursor: row-resize;
   touch-action: none;
-  outline: none;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 1px;
 }
 
 .handle[data-edge="end"] {
