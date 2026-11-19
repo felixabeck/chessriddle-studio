@@ -23106,7 +23106,7 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 
 ### Two ChessRiddle training tests in `Puzzles.test.tsx` wait 250 ms on a real timer for a dialog
 
-* **ID:** f-20261111-63 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261111-63 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** general quality review (Felix t26u) at HEAD `bdea41f47`
 * **Where:** `src/components/puzzles/Puzzles.test.tsx:661-667` (`noMatch explains the filters and opens the settings dialog`) and `:731-737` (`training shortcuts respect bindings…`). After opening the settings or shortcuts dialog, both tests do `await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 250)); })` and then assert on `[role="dialog"]` text. The same file already uses `vi.waitFor` for later puzzle-database assertions (`:3640` onward) and uses `vi.useFakeTimers` in many other cases. These two tests do not.
@@ -23115,6 +23115,9 @@ Re-check: Felix runs `codex logout && codex login`. Then `echo 'Reply with OK on
 * **Fix:** Replace both sleeps with `await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')?.textContent).toContain(…))` (or `findByRole("dialog")`), matching the later waits in this file. Do not keep a real 250 ms timeout as the success path.
 * **Proof:** At HEAD `bdea41f47`, `rg 'setTimeout\(resolve, 250\)' src/components/puzzles/Puzzles.test.tsx` hits only `:661` and `:731`. Both are followed by a `role="dialog"` assertion. `rg 'vi.waitFor' src/components/puzzles/Puzzles.test.tsx` has many later hits, none of them in these two tests.
 * **Found by:** Grok Bot, quality review (t26u), HEAD `bdea41f47`.
+
+**Handled, 2026-11-20 (drain session f45e25ea-dbe9-473f-a401-c199e5b3579e, lens tier):** Both 250 ms real-timer sleeps in `Puzzles.test.tsx` (noMatch settings dialog, training shortcuts dialog) are replaced by `vi.waitFor(() => expect(document.querySelector('[role="dialog"]')?.textContent).toContain(...))`, so each test waits on the dialog condition and fails closed at the wait timeout. Under coverage the two tests fell from about 250+ ms to 55 ms and 109 ms. Commit 50a467fb5 (together with co-located f-20261115-27).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"fcee03d952b3c4a4ad5e68fe18bb991a9586d6a17098e2653853c05712a799b4","header_sha256":"51233451dd5c10a9ddfefbeea07871da150a436d17cc8f93bada701d8bc2870e","header_status":"handled","input_sha256":"c4ae4434ade7c08fffcbf7014ec86f015784cefee99d5d254a52e08c135a9f27","kind":"mutation-receipt","operation":"5e1c92134dedcc8831afcc1a9b583e58321ec2c43d033363d5fee35afdc9523d","options":{"section":null},"request_id_sha256":null,"results":["f-20261111-63"],"target":"f-20261111-63","v":1} -->
 
 ---
 
