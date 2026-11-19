@@ -3,7 +3,7 @@ import type { Move } from "chessops";
 import { INITIAL_FEN, makeCastlingFen, parseFen } from "chessops/fen";
 import type { Outcome, Score } from "@/bindings";
 import type { PuzzleSession } from "@/state/puzzleSession";
-import { positionFromFen } from "@/utils/chessops";
+import { dropInvalidEpSquare, positionFromFen } from "@/utils/chessops";
 
 export interface TreeState {
     root: TreeNode;
@@ -143,8 +143,13 @@ export function countMainPly(node: TreeNode): number {
     return count;
 }
 
+/**
+ * The one spelling a root FEN is installed with: trimmed, and without an en-passant square
+ * the engine, game report and database would reject (f-20261115-25).
+ */
 export function normalizeFen(fen?: string): string {
-    return fen?.trim() || INITIAL_FEN;
+    const trimmed = fen?.trim();
+    return trimmed ? dropInvalidEpSquare(trimmed) : INITIAL_FEN;
 }
 
 export function defaultTree(fen?: string): TreeState {

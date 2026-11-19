@@ -258,9 +258,7 @@ export default function ImportModal({
           return;
         }
         setFenError(null);
-        const parsedFen = makeFen(res.value);
-        const tree = defaultTree(parsedFen);
-        tree.headers.fen = parsedFen;
+        const tree = defaultTree(makeFen(res.value));
         replaceImportedTab(
           submittingOwnerId,
           {

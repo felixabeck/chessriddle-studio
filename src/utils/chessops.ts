@@ -52,6 +52,35 @@ export function swapMove(fen: string, color?: Color) {
 }
 
 /**
+ * Rewrites an en-passant field to "-" when the native side would reject it, keeping every
+ * other byte of the FEN. The test mirrors shakmaty's `EnPassant::from_setup`, which the
+ * engine, the game report and the database importer apply: the square is on the mover's
+ * sixth rank, an opposing pawn stands in front of it, and both the square and the pawn's
+ * origin are empty. chessops' own check omits the empty-square test, so it cannot be reused.
+ * A FEN that does not parse is returned unchanged for its caller's own validation.
+ */
+export function dropInvalidEpSquare(fen: string): string {
+    const parsed = parseFen(fen);
+    if (parsed.isErr) return fen;
+    const { board, turn, epSquare } = parsed.value;
+    if (epSquare === undefined) return fen;
+    const forward = turn === "white" ? 8 : -8;
+    const pushedTo = epSquare - forward;
+    const pushedFrom = epSquare + forward;
+    const valid =
+        squareRank(epSquare) === (turn === "white" ? 5 : 2) &&
+        board.pawn.has(pushedTo) &&
+        board[opposite(turn)].has(pushedTo) &&
+        !board.occupied.has(epSquare) &&
+        !board.occupied.has(pushedFrom);
+    if (valid) return fen;
+    // Same field separators parseFen accepts; the separators are kept at the odd indices.
+    const parts = fen.split(/([\s_]+)/);
+    parts[6] = "-";
+    return parts.join("");
+}
+
+/**
  * A piece editor must not carry transient game state into a different board.
  * Chessops filters existing castling rights against the edited kings and rooks,
  * preserving valid Chess960 rights without inventing any new ones.

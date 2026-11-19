@@ -53,6 +53,21 @@ test.each(["setFen", "setHeaders", "setState", "reset"] as const)(
     },
 );
 
+test("setHeaders with a tag that differs only by an impossible en-passant square keeps the moves", () => {
+    const tagged = "4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1";
+    const store = createTreeStore();
+    store.getState().setFen(tagged);
+    expect(store.getState().root.fen).toBe("4k3/8/8/8/4P3/8/8/4K3 b - - 0 1");
+    store.getState().makeMove({ payload: "Kd7" });
+    const id = store.getState().documentId;
+
+    store.getState().setHeaders({ ...store.getState().headers, fen: tagged, white: "A" });
+
+    expect(store.getState().root.children).toHaveLength(1);
+    expect(store.getState().documentId).toBe(id);
+    expect(store.getState().headers.white).toBe("A");
+});
+
 test("ordinary edits keep the document identity", () => {
     const store = createTreeStore();
     const id = store.getState().documentId;

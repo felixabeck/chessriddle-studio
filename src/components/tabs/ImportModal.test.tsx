@@ -754,6 +754,24 @@ test("FEN import submits a tree with the normalized FEN and owner fields", async
   expect(seed).not.toHaveBeenCalled();
 });
 
+test("FEN import drops an en-passant square the engine would reject (f-20261115-25)", async () => {
+  await renderModal("fen-ep-owner");
+  await chooseType("FEN");
+  await setInputValue(input("FEN"), "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e3 0 1");
+  await clickSubmit();
+  await vi.waitFor(() => expect(fixtures.replaceNewTab).toHaveBeenCalledOnce());
+
+  const installed = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  expect(fixtures.replaceNewTab).toHaveBeenCalledWith(
+    expect.objectContaining({
+      tree: expect.objectContaining({
+        root: expect.objectContaining({ fen: installed }),
+        headers: expect.objectContaining({ fen: installed }),
+      }),
+    }),
+  );
+});
+
 test("an invalid FEN shows its catalogue error and submits nothing", async () => {
   await renderModal("fen-invalid-owner");
   await chooseType("FEN");

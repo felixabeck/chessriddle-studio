@@ -39,6 +39,7 @@ import {
     treeIteratorMainLine,
     getBoardState,
     getMemoizedBoardStateMap,
+    normalizeFen,
     normalizeTreeHalfMoves,
     getEffectiveGameEnd,
     getEffectiveTermination,
@@ -845,7 +846,9 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                 produce((state) => {
                     state.dirty = true;
                     state.headers = headers;
-                    if (headers.fen && headers.fen !== state.root.fen) {
+                    // Compare the spelling a root is installed with, so a tag that only differs
+                    // by a dropped en-passant square does not replace the tree on every edit.
+                    if (headers.fen && normalizeFen(headers.fen) !== state.root.fen) {
                         installRoot(state, defaultTree(headers.fen).root);
                     }
                 }),

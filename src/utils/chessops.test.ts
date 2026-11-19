@@ -1,7 +1,7 @@
 import { Chess, parseSquare } from "chessops";
 import { INITIAL_FEN } from "chessops/fen";
 import { describe, expect, test } from "vitest";
-import { hasCaptures, isOp1, positionFromFen, swapMove } from "./chessops";
+import { dropInvalidEpSquare, hasCaptures, isOp1, positionFromFen, swapMove } from "./chessops";
 
 function position(fen: string) {
     const [pos, error] = positionFromFen(fen);
@@ -70,4 +70,36 @@ describe("isOp1", () => {
             expect(isOp1(position(fen))).toBe(false);
         },
     );
+});
+
+describe("dropInvalidEpSquare", () => {
+    test.each([
+        // Wrong side: the pawn on e4 was pushed by White, yet Black's ep square is on rank 6.
+        ["4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1", "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1"],
+        // No pawn was pushed in front of the square.
+        [
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e3 0 1",
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        ],
+        ["4k3/8/8/8/8/8/8/4K3 w - e6 0 1", "4k3/8/8/8/8/8/8/4K3 w - - 0 1"],
+        // The square itself is occupied, which chessops' own check accepts.
+        ["4k3/8/4n3/4p3/8/8/8/4K3 w - e6 0 1", "4k3/8/4n3/4p3/8/8/8/4K3 w - - 0 1"],
+        // The pawn's origin is occupied.
+        ["4k3/4n3/8/4p3/8/8/8/4K3 w - e6 0 1", "4k3/4n3/8/4p3/8/8/8/4K3 w - - 0 1"],
+        // Other separators and clock fields stay byte-identical.
+        ["4k3/8/8/8/8/8/8/4K3_w_-_e6_7_42", "4k3/8/8/8/8/8/8/4K3_w_-_-_7_42"],
+    ])("drops the impossible square in %s", (fen, expected) => {
+        expect(dropInvalidEpSquare(fen)).toBe(expected);
+    });
+
+    test.each([
+        // Structurally valid without a legal capture: shakmaty accepts it, so it is kept.
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        "rnbqkb1r/ppp1pppp/5n2/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3",
+        INITIAL_FEN,
+        "4k3/8/8/8/8/8/8/4K3 w - -",
+        "not a fen e6",
+    ])("keeps %s", (fen) => {
+        expect(dropInvalidEpSquare(fen)).toBe(fen);
+    });
 });
