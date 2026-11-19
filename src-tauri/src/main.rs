@@ -4470,6 +4470,22 @@ mod tests {
 mod blocking_offload_scans {
     use crate::infra::blocking::source_scan::body_at_indent;
 
+    /// The `db` command modules followed by the crate root, scanned as one source: the
+    /// command surface is split across these files, and each definition exists once.
+    const DB_SOURCES: &str = concat!(
+        include_str!("db/import.rs"),
+        "\n",
+        include_str!("db/queries.rs"),
+        "\n",
+        include_str!("db/player_statistics.rs"),
+        "\n",
+        include_str!("db/deletion.rs"),
+        "\n",
+        include_str!("db/export.rs"),
+        "\n",
+        include_str!("db/mod.rs"),
+    );
+
     /// Byte offset of the `)` matching the `(` at `open`. Shared so the gateway-closure scan
     /// and the engine-image lock-across-read scan cannot diverge.
     fn closing_paren(source: &str, open: usize) -> Option<usize> {
@@ -4784,8 +4800,8 @@ mod blocking_offload_scans {
     fn phase4_accepted_command_inventory_reaches_one_native_owner() {
         for (file, source, commands) in [
             (
-                "db/mod.rs",
-                include_str!("db/mod.rs"),
+                "db",
+                DB_SOURCES,
                 &[
                     "convert_pgn",
                     "create_indexes",
@@ -5491,7 +5507,7 @@ mod blocking_offload_scans {
 
     #[test]
     fn s4_database_commands_offload_through_named_blocking_functions() {
-        let db = include_str!("db/mod.rs");
+        let db = DB_SOURCES;
         let search = include_str!("db/search.rs");
         let chess = include_str!("chess.rs");
         for name in [
@@ -5810,7 +5826,7 @@ mod blocking_offload_scans {
             ("puzzle.rs", include_str!("puzzle.rs")),
             ("file_workspace.rs", include_str!("file_workspace.rs")),
             ("fs.rs", include_str!("fs.rs")),
-            ("db/mod.rs", include_str!("db/mod.rs")),
+            ("db", DB_SOURCES),
             ("db/search.rs", include_str!("db/search.rs")),
             ("chess.rs", include_str!("chess.rs")),
         ] {
@@ -5857,7 +5873,7 @@ mod blocking_offload_scans {
         // would take a second permit and stall. A glob cannot find them because they carry
         // no `_blocking` suffix — commit `a22bbdf4` made them synchronous for that reason.
         let file_workspace = include_str!("file_workspace.rs");
-        let db = include_str!("db/mod.rs");
+        let db = DB_SOURCES;
         let search = include_str!("db/search.rs");
         let pgn = include_str!("pgn.rs");
         // Limit hook lookup to free functions, before the same-named repository methods.

@@ -998,7 +998,7 @@ fn probe_error_caller_rows_keep_the_split_explicit() {
         "promotion must return probe errors"
     );
 
-    let deletion_source = source_for("db/mod.rs");
+    let deletion_source = source_for("db/deletion.rs");
     let deletion =
         compact(&deletion_source[braced_body(deletion_source, "fn remember_sidecar_error(")]);
     assert!(
@@ -2510,7 +2510,7 @@ fn phase_c_removed_rows_have_one_ungated_definition_without_refusals() {
     assert_removed_rows_are_ungated(
         "Phase C",
         &[
-            ("db/mod.rs", "fn unlink_database_files("),
+            ("db/deletion.rs", "fn unlink_database_files("),
             ("db/repository.rs", "pub(crate) fn identity_from_probe("),
         ],
     );
@@ -2664,6 +2664,9 @@ fn source_for(file: &str) -> &'static str {
         "db/search.rs" => include_str!("../../db/search.rs"),
         "db/search_index.rs" => include_str!("../../db/search_index.rs"),
         "db/mod.rs" => include_str!("../../db/mod.rs"),
+        "db/import.rs" => include_str!("../../db/import.rs"),
+        "db/deletion.rs" => include_str!("../../db/deletion.rs"),
+        "db/export.rs" => include_str!("../../db/export.rs"),
         "db/linked_collections.rs" => include_str!("../../db/linked_collections.rs"),
         "db/linked_collections/batch.rs" => include_str!("../../db/linked_collections/batch.rs"),
         "file_workspace.rs" => include_str!("../../file_workspace.rs"),
@@ -2704,6 +2707,9 @@ fn module_declarations(file: &str) -> &'static [(&'static str, &'static str)] {
         "db/mod.rs" => &[("main.rs", "mod db;")],
         "db/repository.rs" => &[("main.rs", "mod db;"), ("db/mod.rs", "mod repository;")],
         "db/search.rs" => &[("main.rs", "mod db;"), ("db/mod.rs", "mod search;")],
+        "db/import.rs" => &[("main.rs", "mod db;"), ("db/mod.rs", "mod import;")],
+        "db/deletion.rs" => &[("main.rs", "mod db;"), ("db/mod.rs", "mod deletion;")],
+        "db/export.rs" => &[("main.rs", "mod db;"), ("db/mod.rs", "mod export;")],
         "db/linked_collections.rs" => &[
             ("main.rs", "mod db;"),
             ("db/mod.rs", "pub(crate) mod linked_collections;"),
@@ -2998,7 +3004,7 @@ fn guard_rows() -> &'static [GuardRow] {
             effects: &["operations.accept("],
         },
         GuardRow {
-            file: "db/mod.rs",
+            file: "db/export.rs",
             signature: "pub async fn export_to_pgn(",
             operation: "PGN atomic replacement",
             effects: &["operations.accept("],
@@ -3142,7 +3148,7 @@ fn refusal_guards_are_first_statements_and_precede_their_effects() {
 fn production_replace_pgn_atomic_calls_are_only_edit_existing_and_export_to_pgn_blocking() {
     let expected = [
         ("pgn.rs", "edit_existing"),
-        ("db/mod.rs", "export_to_pgn_blocking"),
+        ("db/export.rs", "export_to_pgn_blocking"),
     ];
     let mut errors = Vec::new();
     for_each_production_region(|key, source, normalised| {
@@ -3858,7 +3864,7 @@ fn assert_no_retry_loop(body: &str) {
 /// It does not take `generation_lock`: the loader already holds it.
 #[test]
 fn search_index_generation_mutates_once_between_invalidations() {
-    let source = source_for("db/mod.rs");
+    let source = source_for("db/import.rs");
     let body = compact(&source[braced_body(source, "fn generate_search_index_locked(")]);
     assert_in_order(
         &body,
@@ -3882,7 +3888,7 @@ fn search_index_generation_mutates_once_between_invalidations() {
 /// and invalidates again before propagating any mutation error.
 #[test]
 fn search_index_deletion_unlinks_once_between_invalidations() {
-    let source = source_for("db/mod.rs");
+    let source = source_for("db/deletion.rs");
     let body = compact(&source[braced_body(source, "fn delete_database_blocking(")]);
     let before_exclusive = &body[..body.find("delete_exclusive_cancellable(").unwrap()];
     assert!(!before_exclusive.contains("invalidate_database"), "{body}");
@@ -3914,7 +3920,14 @@ fn search_index_deletion_unlinks_once_between_invalidations() {
 }
 
 fn assert_no_mapping_gate_symbols() {
-    for file in ["main.rs", "db/mod.rs", "db/search.rs", "db/search_index.rs"] {
+    for file in [
+        "main.rs",
+        "db/mod.rs",
+        "db/import.rs",
+        "db/deletion.rs",
+        "db/search.rs",
+        "db/search_index.rs",
+    ] {
         let source = normalise(source_for(file), Literals::Blank);
         for forbidden in [
             "MappingGate",

@@ -17726,6 +17726,17 @@ mod tests {
             assert!(!production.contains("DatabaseFileTarget {"));
             assert!(!production.contains("assemble("));
         }
+        // The command modules split out of `db/mod.rs` carry no test module.
+        for production in [
+            include_str!("../../db/import.rs"),
+            include_str!("../../db/queries.rs"),
+            include_str!("../../db/player_statistics.rs"),
+            include_str!("../../db/deletion.rs"),
+            include_str!("../../db/export.rs"),
+        ] {
+            assert!(!production.contains("DatabaseFileTarget {"));
+            assert!(!production.contains("assemble("));
+        }
     }
 
     #[cfg(unix)]
