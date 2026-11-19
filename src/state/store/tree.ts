@@ -845,10 +845,13 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
             set(
                 produce((state) => {
                     state.dirty = true;
-                    state.headers = headers;
-                    // Compare the spelling a root is installed with, so a tag that only differs
-                    // by a dropped en-passant square does not replace the tree on every edit.
-                    if (headers.fen && normalizeFen(headers.fen) !== state.root.fen) {
+                    // Store and compare the spelling a root is installed with, so a tag that only
+                    // differs by a dropped en-passant square neither replaces the tree on an edit
+                    // nor leaves headers.fen disagreeing with root.fen.
+                    state.headers = headers.fen
+                        ? { ...headers, fen: normalizeFen(headers.fen) }
+                        : headers;
+                    if (headers.fen && state.headers.fen !== normalizeFen(state.root.fen)) {
                         installRoot(state, defaultTree(headers.fen).root);
                     }
                 }),
@@ -924,6 +927,13 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                     state.report.inProgress = false;
                     state.report.operationId = null;
                     normalizeTreeHalfMoves(state.root);
+                    // A tab persisted before roots were normalized keeps its rejected en-passant
+                    // square otherwise, and the engine, report and database refuse it.
+                    const fen = normalizeFen(state.root.fen);
+                    if (fen !== state.root.fen) {
+                        if (state.headers.fen === state.root.fen) state.headers.fen = fen;
+                        state.root.fen = fen;
+                    }
                 }
             },
         });

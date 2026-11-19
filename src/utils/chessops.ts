@@ -74,9 +74,11 @@ export function dropInvalidEpSquare(fen: string): string {
         !board.occupied.has(epSquare) &&
         !board.occupied.has(pushedFrom);
     if (valid) return fen;
-    // Same field separators parseFen accepts; the separators are kept at the odd indices.
+    // Same field separators parseFen accepts; the split keeps them at the odd indices, so the
+    // fourth field (en passant) is at index 6.
+    const EP_FIELD_INDEX = 6;
     const parts = fen.split(/([\s_]+)/);
-    parts[6] = "-";
+    parts[EP_FIELD_INDEX] = "-";
     return parts.join("");
 }
 

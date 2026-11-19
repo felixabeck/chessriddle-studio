@@ -66,6 +66,32 @@ test("setHeaders with a tag that differs only by an impossible en-passant square
     expect(store.getState().root.children).toHaveLength(1);
     expect(store.getState().documentId).toBe(id);
     expect(store.getState().headers.white).toBe("A");
+    expect(store.getState().headers.fen).toBe(store.getState().root.fen);
+});
+
+test("a tab persisted with an impossible en-passant root is normalized on rehydrate and keeps its moves", async () => {
+    const tagged = "4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1";
+    const installed = "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1";
+    const source = createTreeStore();
+    source.getState().setFen(installed);
+    source.getState().makeMove({ payload: "Kd7" });
+    const tree = structuredClone({
+        ...defaultTree(),
+        root: { ...source.getState().root, fen: tagged },
+        headers: { ...source.getState().headers, fen: tagged },
+    });
+    const id = crypto.randomUUID();
+    persistedIds.push(id);
+    const store = createTreeStore(id);
+    sessionStorage.setItem(id, serializeStorageValue({ version: 1, state: tree }));
+    await retryTreeStoreStorage(id);
+
+    expect(store.getState().root.fen).toBe(installed);
+    expect(store.getState().headers.fen).toBe(installed);
+    expect(store.getState().root.children).toHaveLength(1);
+
+    store.getState().setHeaders({ ...store.getState().headers, fen: tagged, white: "A" });
+    expect(store.getState().root.children).toHaveLength(1);
 });
 
 test("ordinary edits keep the document identity", () => {
