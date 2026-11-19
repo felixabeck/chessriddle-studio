@@ -77,6 +77,8 @@ const MEDIUM_BRUSH = 7.5;
 const SMALL_BRUSH = 4;
 const BAR_HEIGHT = "1.9rem";
 const EVAL_WIDTH = "var(--board-eval-width, 25px)";
+// How far the global focus ring reaches beyond the grid (`src/styles/global.css`).
+const FOCUS_RING_EXTENT = "calc(var(--cf-focus-ring-width) + var(--cf-focus-ring-offset))";
 // The collapsed bar's reopen button. Its column is never narrower, since the board clips what
 // passes the column's edge: an 8px stacked column cut the chevron's left side.
 const SHOW_EVAL_BUTTON_SIZE = "1rem";
@@ -528,8 +530,8 @@ function Board({
             flexWrap: "nowrap",
             overflow: "hidden",
             maxWidth:
-              //            topbar   bottompadding                tabs                                  bottomb    topbar   evalbar                                gaps    ???
-              `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${BAR_HEIGHT} - ${BAR_HEIGHT} + 1.563rem + var(--mantine-spacing-md) - 1rem  - 0.2rem))`,
+              //            topbar   bottompadding                tabs                                  bottomb    topbar   evalbar                                gaps    ???     focus ring
+              `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${BAR_HEIGHT} - ${BAR_HEIGHT} + 1.563rem + var(--mantine-spacing-md) - 1rem  - 0.2rem + ${FOCUS_RING_EXTENT}))`,
           }}
         >
           <BoardBar
@@ -577,6 +579,9 @@ function Board({
               position: "relative",
               flexWrap: "nowrap",
               columnGap: "var(--board-gap, var(--mantine-spacing-sm))",
+              // The wrapper clips horizontally; the eval column leaves room for the grid's focus
+              // ring on the left, this padding leaves it on the right.
+              paddingInlineEnd: FOCUS_RING_EXTENT,
             }}
             gap="sm"
           >
@@ -585,6 +590,8 @@ function Board({
                 style={{
                   // The offset counts the open bar's width; a collapsed column can be wider.
                   paddingLeft: `calc(var(--board-annotation-offset, 2.5rem) + ${evalColumnWidth} - ${EVAL_WIDTH})`,
+                  // Spans the padded row, so it drops the ring reserve to stay as wide as the board.
+                  paddingRight: FOCUS_RING_EXTENT,
                 }}
                 w="100%"
                 h="100%"

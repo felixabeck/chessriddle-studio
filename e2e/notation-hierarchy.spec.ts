@@ -483,6 +483,10 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
             rootFont: parseFloat(getComputedStyle(document.documentElement).fontSize),
             squareWidth: square.width,
             squareHeight: square.height,
+            // The board row's right padding keeps the grid's focus ring inside the clip.
+            focusRingReserve: parseFloat(
+                getComputedStyle(target.querySelector("[data-board-surface]")!).paddingRight,
+            ),
             paintedSquareWidth: target.querySelector("cg-board")!.getBoundingClientRect().width,
             scrollWidth: document.documentElement.scrollWidth,
             viewport: innerWidth,
@@ -490,8 +494,13 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
     });
     console.log(`${label} geometry ${JSON.stringify(geometry)}`);
     expect(Math.abs(geometry.tileWidth - geometry.availableWidth)).toBeLessThanOrEqual(1);
-    expect(geometry.squareWidth).toBeGreaterThanOrEqual(geometry.tileWidth * 0.9);
-    expect(geometry.paintedSquareWidth).toBeGreaterThanOrEqual(geometry.tileInnerWidth * 0.9);
+    expect(geometry.focusRingReserve).toBeGreaterThan(0);
+    expect(geometry.squareWidth).toBeGreaterThanOrEqual(
+        geometry.tileWidth * 0.9 - geometry.focusRingReserve,
+    );
+    expect(geometry.paintedSquareWidth).toBeGreaterThanOrEqual(
+        geometry.tileInnerWidth * 0.9 - geometry.focusRingReserve,
+    );
     expect(Math.abs(geometry.squareWidth - geometry.squareHeight)).toBeLessThanOrEqual(1);
     expect(geometry.contentHeight).toBeLessThanOrEqual(geometry.tileInnerHeight + 1);
     expect(geometry.emptySpace).toBeLessThanOrEqual(geometry.rootFont);

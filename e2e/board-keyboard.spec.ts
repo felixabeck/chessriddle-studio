@@ -981,6 +981,58 @@ test("board-keyboard: opens analysis and exposes a keyboard-operable board", asy
     ).toHaveAttribute("aria-selected", "true");
     await page.keyboard.press("f");
     await expect(whiteBoard).toBeVisible();
+    // The focus ring paints outside the grid's box, where box-based clip checks cannot see it.
+    // Mosaic (800px) and both stacked widths put the grid's right edge on the wrapper's clip.
+    const ringClips = () =>
+        whiteBoard.evaluate((grid) => {
+            if (!grid.matches(":focus-visible")) return ["grid has no visible focus"];
+            const style = getComputedStyle(grid);
+            const extent = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+            const box = grid.getBoundingClientRect();
+            const ring = {
+                left: box.left - extent,
+                right: box.right + extent,
+                top: box.top - extent,
+                bottom: box.bottom + extent,
+            };
+            const cut: string[] = [];
+            for (
+                let node = grid.parentElement;
+                node && node !== document.body;
+                node = node.parentElement
+            ) {
+                const clip = getComputedStyle(node);
+                const own = node.getBoundingClientRect();
+                const inner = {
+                    left: own.left + node.clientLeft,
+                    right: own.left + node.clientLeft + node.clientWidth,
+                    top: own.top + node.clientTop,
+                    bottom: own.top + node.clientTop + node.clientHeight,
+                };
+                if (
+                    clip.overflowX !== "visible" &&
+                    (ring.left < inner.left - 0.5 || ring.right > inner.right + 0.5)
+                )
+                    cut.push(
+                        `x ${ring.left.toFixed(1)}..${ring.right.toFixed(1)} outside ${inner.left.toFixed(1)}..${inner.right.toFixed(1)}`,
+                    );
+                if (
+                    clip.overflowY !== "visible" &&
+                    (ring.top < inner.top - 0.5 || ring.bottom > inner.bottom + 0.5)
+                )
+                    cut.push(
+                        `y ${ring.top.toFixed(1)}..${ring.bottom.toFixed(1)} outside ${inner.top.toFixed(1)}..${inner.bottom.toFixed(1)}`,
+                    );
+            }
+            return cut;
+        });
+    for (const width of [800, 320, 500]) {
+        await page.setViewportSize({ width, height: 720 });
+        // Crossing into the stacked layout remounts the board; keyboard modality keeps the ring.
+        await whiteBoard.focus();
+        await expect.poll(ringClips, { message: `focus ring clipped at ${width}px` }).toEqual([]);
+    }
+    await page.setViewportSize({ width: 800, height: 720 });
     // Collapsing the evaluation bar leaves a 16px button that clips an icon larger than itself.
     await page.keyboard.press("z");
     const showEvaluation = page.getByRole("button", { name: "Show evaluation", exact: true });

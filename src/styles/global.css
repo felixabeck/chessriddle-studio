@@ -94,6 +94,12 @@ cg-board square.oc.move-dest:hover {
   text-align: center;
 }
 
+/* The ring reaches width + offset beyond its box; clipping containers reserve that extent. */
+:root {
+  --cf-focus-ring-width: 3px;
+  --cf-focus-ring-offset: 3px;
+}
+
 /* Mantine focus treatments beat this rule by specificity before @layer mantine.
    Those states stay excluded so layering does not restyle them. :where() keeps
    the original (0,1,0) specificity so component :focus-visible rules still win
@@ -108,8 +114,8 @@ cg-board square.oc.move-dest:hover {
     .ProseMirror
   )
 ) {
-  outline: 3px solid var(--cf-ring);
-  outline-offset: 3px;
+  outline: var(--cf-focus-ring-width) solid var(--cf-ring);
+  outline-offset: var(--cf-focus-ring-offset);
 }
 
 html,
