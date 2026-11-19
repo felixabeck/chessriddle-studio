@@ -79,7 +79,9 @@ vi.mock("@/chessground/useNodeDrawables", () => ({ useNodeDrawables: () => ({}) 
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("./BoardFrame", () => ({ default: ({ children }: { children: ReactNode }) => children }));
 const boardBar = vi.hoisted(() =>
-  vi.fn(({ children }: ComponentProps<typeof BoardBar>) => children),
+  vi.fn(({ children, placement }: ComponentProps<typeof BoardBar>) => (
+    <div data-bar={placement}>{children}</div>
+  )),
 );
 vi.mock("./BoardBar", () => ({ BoardBar: boardBar }));
 vi.mock("./Clock", () => ({ default: () => null }));
@@ -92,7 +94,9 @@ const promotionModal = vi.hoisted(() =>
 );
 vi.mock("./PromotionModal", () => ({ default: promotionModal }));
 vi.mock("./AnnotationHint", () => ({ default: () => null }));
-vi.mock("../common/ShowMaterial", () => ({ default: () => null }));
+vi.mock("../common/ShowMaterial", () => ({
+  default: ({ color }: { color?: string }) => <span data-show-material={color ?? "both"} />,
+}));
 vi.mock("../common/IconAction", () => ({ default: () => null }));
 const fideInfo = vi.hoisted(() => vi.fn((_props: ComponentProps<typeof FideInfo>) => null));
 vi.mock("../databases/FideInfo", () => ({ default: fideInfo }));
@@ -119,6 +123,14 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+/** An opening line renders only the bar above the board; returns its latest props. */
+function repertoireBar() {
+  const bars = boardBar.mock.calls.map(([props]) => props);
+  expect(bars.length).toBeGreaterThan(0);
+  expect(bars.every((props) => props.placement === "above")).toBe(true);
+  return bars.at(-1)!;
+}
 
 async function render(
   props: Partial<ComponentProps<typeof Board>> = {},
@@ -198,13 +210,11 @@ test.each(["white", "black"] as const)(
       orientation,
     });
     await render({ repertoire: true });
-    const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
-    expect(bars.map((props) => props.name)).toEqual(["Italian Game", ""]);
-    expect(bars.map((props) => props.detail)).toEqual(["Quiet plan", undefined]);
-    for (const props of bars) {
-      expect(props.onNameClick).toBeUndefined();
-      expect(props.rating).toBeUndefined();
-    }
+    const bar = repertoireBar();
+    expect(bar.name).toBe("Italian Game");
+    expect(bar.detail).toBe("Quiet plan");
+    expect(bar.onNameClick).toBeUndefined();
+    expect(bar.rating).toBeUndefined();
     expect(fideInfo).not.toHaveBeenCalled();
   },
 );
@@ -217,10 +227,10 @@ test("repertoire bars use trimmed line titles with the event fallback for an unk
     black: "  English attack  ",
   });
   await render({ repertoire: true });
-  const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
-  expect(bars.map((props) => props.name)).toEqual(["Najdorf main line", ""]);
-  expect(bars[0].detail).toBe("English attack");
-  for (const props of bars) expect(props.onNameClick).toBeUndefined();
+  const bar = repertoireBar();
+  expect(bar.name).toBe("Najdorf main line");
+  expect(bar.detail).toBe("English attack");
+  expect(bar.onNameClick).toBeUndefined();
 });
 
 test("an idea-only repertoire line shows its idea as the title", async () => {
@@ -231,9 +241,51 @@ test("an idea-only repertoire line shows its idea as the title", async () => {
     black: "6...Dc7",
   });
   await render({ repertoire: true });
-  const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
-  expect(bars.map((props) => props.name)).toEqual(["6...Dc7", ""]);
-  expect(bars[0].detail).toBeUndefined();
+  const bar = repertoireBar();
+  expect(bar.name).toBe("6...Dc7");
+  expect(bar.detail).toBeUndefined();
+});
+
+test("an opening line puts the move input, the position error and both sides' material in its one bar", async () => {
+  tree.getState().setFen("8/8/8/8/8/8/8/8 w - - 0 1");
+  await render({ repertoire: true }, true);
+  expect(host.querySelectorAll("[data-bar]")).toHaveLength(1);
+  const bar = host.querySelector('[data-bar="above"]')!;
+  expect(bar.querySelector('[aria-label="MoveInput.EnterMove"]')).not.toBeNull();
+  expect(bar.textContent).toContain("Errors.EmptyBoard");
+  expect(
+    Array.from(bar.querySelectorAll("[data-show-material]")).map((node) =>
+      node.getAttribute("data-show-material"),
+    ),
+  ).toEqual(["both"]);
+});
+
+test("a game keeps the move input, the position error and each side's material in its player bars", async () => {
+  tree.getState().setFen("8/8/8/8/8/8/8/8 w - - 0 1");
+  await render({}, true);
+  const above = host.querySelector('[data-bar="above"]')!;
+  const below = host.querySelector('[data-bar="below"]')!;
+  expect(above.querySelector("[data-show-material]")?.getAttribute("data-show-material")).toBe(
+    "black",
+  );
+  expect(below.querySelector("[data-show-material]")?.getAttribute("data-show-material")).toBe(
+    "white",
+  );
+  expect(below.querySelector('[aria-label="MoveInput.EnterMove"]')).not.toBeNull();
+  expect(above.querySelector('[aria-label="MoveInput.EnterMove"]')).toBeNull();
+  expect(below.textContent).toContain("Errors.EmptyBoard");
+  expect(above.textContent).not.toContain("Errors.EmptyBoard");
+});
+
+test("a flipped game shows Black's material below and White's above", async () => {
+  tree.getState().setHeaders({ ...tree.getState().headers, orientation: "black" });
+  await render();
+  const material = (placement: string) =>
+    host
+      .querySelector(`[data-bar="${placement}"] [data-show-material]`)
+      ?.getAttribute("data-show-material");
+  expect(material("above")).toBe("white");
+  expect(material("below")).toBe("black");
 });
 
 test("player bars remain clickable and open FideInfo for that player", async () => {

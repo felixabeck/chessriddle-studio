@@ -1,73 +1,75 @@
 import { Group, Text } from "@mantine/core";
-import { ChessBishop, ChessPawn, ChessKnight, ChessQueen, ChessRook } from "lucide-react";
-import type { Color } from "chessops";
-import { match } from "ts-pattern";
-import { getMaterialDiff } from "@/utils/chess";
+import { type Color, opposite } from "chessops";
+import PieceComponent from "@/components/common/Piece";
+import { getMaterialDiff, MATERIAL_ROLES } from "@/utils/chess";
+import classes from "@/components/common/ShowMaterial.module.css";
 
+const PIECE_SIZE = "1.5rem";
+/** Repeated pieces of one kind overlap, so a row of pawns stays compact. */
+const PIECE_OVERLAP = "-0.7rem";
+
+/**
+ * The material balance in the board's own piece set.
+ *
+ * `diff` shows the pieces a side has more of, in that side's colour. `all` shows every piece a
+ * side has captured, in the captured pieces' colour. The leading side gets the point lead.
+ * Without `color`, both sides render in one group, White first.
+ */
 export default function ShowMaterial({
   fen,
   color,
   mode = "diff",
 }: {
   fen: string;
-  color: Color;
+  color?: Color;
   mode?: "diff" | "all";
 }) {
   const materialDiff = getMaterialDiff(fen);
+  if (!materialDiff) return null;
 
-  if (!materialDiff) {
-    return null;
-  }
+  const sides: Color[] = color ? [color] : ["white", "black"];
+  const groups = sides.flatMap((side) => {
+    const sign = side === "white" ? 1 : -1;
+    const counts =
+      mode === "all"
+        ? materialDiff[side === "white" ? "whiteCaptured" : "blackCaptured"]
+        : materialDiff.pieces;
+    const pieceColor = mode === "all" ? opposite(side) : side;
+    const lead = sign * materialDiff.diff;
+    const kinds = MATERIAL_ROLES.map(({ key, role }) => ({
+      role,
+      count: mode === "all" ? counts[key] : Math.max(0, sign * counts[key]),
+    })).filter(({ count }) => count > 0);
+    if (kinds.length === 0 && lead <= 0) return [];
+    return [
+      <Group key={side} gap={6} wrap="nowrap" data-material-side={side}>
+        {kinds.map(({ role, count }) => (
+          <Group key={role} gap={0} wrap="nowrap">
+            {Array.from({ length: count }, (_, index) => (
+              <div
+                key={index}
+                className={classes.piece}
+                data-material-piece={`${pieceColor}-${role}`}
+                style={{ marginLeft: index === 0 ? 0 : PIECE_OVERLAP }}
+              >
+                <PieceComponent piece={{ color: pieceColor, role }} size={PIECE_SIZE} />
+              </div>
+            ))}
+          </Group>
+        ))}
+        {lead > 0 && (
+          <Text fz="sm" lh={1}>
+            +{lead}
+          </Text>
+        )}
+      </Group>,
+    ];
+  });
 
-  const pieces =
-    mode === "all"
-      ? materialDiff[color === "white" ? "whiteCaptured" : "blackCaptured"]
-      : materialDiff.pieces;
-  const { diff } = materialDiff;
-
-  const shouldShow =
-    mode === "all"
-      ? (v: number) => v > 0
-      : match(color)
-          .with("white", () => (v: number) => v > 0)
-          .with("black", () => (v: number) => v < 0)
-          .exhaustive();
-
-  const compare = match(color)
-    .with("white", () => (v: number) => v > 0)
-    .with("black", () => (v: number) => v < 0)
-    .exhaustive();
-
-  const pawns = [...Array(Math.abs(pieces.p)).keys()].map((i) => (
-    <ChessPawn size="1.1rem" key={i} style={{ marginRight: "-7px" }} />
-  ));
-  const knights = [...Array(Math.abs(pieces.n)).keys()].map((i) => (
-    <ChessKnight size="1.1rem" key={i} style={{ marginRight: "-7px" }} />
-  ));
-  const bishops = [...Array(Math.abs(pieces.b)).keys()].map((i) => (
-    <ChessBishop size="1.1rem" key={i} style={{ marginRight: "-7px" }} />
-  ));
-  const rooks = [...Array(Math.abs(pieces.r)).keys()].map((i) => (
-    <ChessRook size="1.1rem" key={i} style={{ marginRight: "-7px" }} />
-  ));
-  const queens = [...Array(Math.abs(pieces.q)).keys()].map((i) => (
-    <ChessQueen size="1.1rem" key={i} style={{ marginRight: "-7px" }} />
-  ));
-
+  if (groups.length === 0) return null;
   return (
-    <Group gap="xs">
-      <Group gap="xs">
-        {shouldShow(pieces.p) && <Group gap="0">{pawns}</Group>}
-        {shouldShow(pieces.n) && <Group gap="0">{knights}</Group>}
-        {shouldShow(pieces.b) && <Group gap="0">{bishops}</Group>}
-        {shouldShow(pieces.r) && <Group gap="0">{rooks}</Group>}
-        {shouldShow(pieces.q) && <Group gap="0">{queens}</Group>}
-      </Group>
-      {compare(diff) && (
-        <Text fz="sm" lh={1}>
-          +{Math.abs(diff)}
-        </Text>
-      )}
+    <Group gap="md" wrap="nowrap" data-material>
+      {groups}
     </Group>
   );
 }

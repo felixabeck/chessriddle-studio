@@ -8,21 +8,32 @@ interface BoardBarProps {
   rating?: string | number | null;
   onNameClick?: () => void;
   height: string;
+  /** Which side of the board the bar sits on; its content always hugs the board. */
+  placement: "above" | "below";
   children?: ReactNode;
 }
 
-export function BoardBar({ name, detail, rating, onNameClick, height, children }: BoardBarProps) {
+export function BoardBar({
+  name,
+  detail,
+  rating,
+  onNameClick,
+  height,
+  placement,
+  children,
+}: BoardBarProps) {
   const hasPlayerName = name.trim().length > 0 && name !== "?";
+  const towardBoard = placement === "above" ? "flex-end" : "flex-start";
 
   return (
     <Group
-      data-board-bar
+      data-board-bar={placement}
       ml="2.5rem"
       mr="xs"
       h={height}
       justify="space-between"
       wrap="nowrap"
-      align="flex-end"
+      align={towardBoard}
     >
       <Group gap={6} align="baseline">
         {hasPlayerName &&
@@ -49,7 +60,7 @@ export function BoardBar({ name, detail, rating, onNameClick, height, children }
         )}
       </Group>
 
-      <Group align="flex-end" wrap="nowrap">
+      <Group align={towardBoard} wrap="nowrap">
         {children}
       </Group>
     </Group>

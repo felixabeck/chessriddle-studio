@@ -8,6 +8,7 @@ import {
   makeSquare,
   makeUci,
   type NormalMove,
+  opposite,
   type Piece,
   parseSquare,
   parseUci,
@@ -76,6 +77,8 @@ const LARGE_BRUSH = 11;
 const MEDIUM_BRUSH = 7.5;
 const SMALL_BRUSH = 4;
 const BAR_HEIGHT = "1.9rem";
+// The space between a bar and the board.
+const BAR_GUTTER = "0.5rem";
 const EVAL_WIDTH = "var(--board-eval-width, 25px)";
 // How far the global focus ring reaches beyond the grid (`src/styles/global.css`).
 const FOCUS_RING_EXTENT = "calc(var(--cf-focus-ring-width) + var(--cf-focus-ring-offset))";
@@ -438,10 +441,29 @@ function Board({
   const bottomPlayer = orientation === "white" ? headers.white : headers.black;
   const lineTitle = repertoire ? lineTitleOf(headers) : undefined;
   // A repertoire line's name and idea form one title above the board; an idea-only line shows
-  // its idea as the title. The bottom bar carries no name, so nothing reads as a player label.
+  // its idea as the title.
   const repertoireTitle = lineTitle?.name ?? lineTitle?.idea ?? "";
   const repertoireDetail = lineTitle?.name ? lineTitle.idea : undefined;
   const accessibleGrid = accessibleBoardGrid(orientation);
+  // An opening line has no players, so it shows one bar above the board and none below.
+  const barsHeight = repertoire
+    ? `(${BAR_HEIGHT} + ${BAR_GUTTER})`
+    : `2 * (${BAR_HEIGHT} + ${BAR_GUTTER})`;
+  const errorText = error && (
+    <Text ta="center" c="danger">
+      {translateChessopsError(t, error)}
+    </Text>
+  );
+  const moveInputField = moveInput && (
+    <MoveInput
+      currentNode={currentNode}
+      onMove={(move) => {
+        if (!boardAllows(makeSquare(move.from), makeSquare(move.to))) return false;
+        void makeMove(move);
+        return true;
+      }}
+    />
+  );
 
   function keyboardMove(event: React.KeyboardEvent<HTMLDivElement>) {
     const [fileName, rankName] = keyboardSquare;
@@ -530,8 +552,8 @@ function Board({
             flexWrap: "nowrap",
             overflow: "hidden",
             maxWidth:
-              //            topbar   bottompadding                tabs                                  bottomb    topbar   evalbar                                gaps    ???     focus ring
-              `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${BAR_HEIGHT} - ${BAR_HEIGHT} + 1.563rem + var(--mantine-spacing-md) - 1rem  - 0.2rem + ${FOCUS_RING_EXTENT} - var(--board-below-height, 0px)))`,
+              //            topbar   bottompadding                tabs                                  bars and gutters   evalbar   ???                               ???     focus ring
+              `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${barsHeight} + 1.563rem + var(--mantine-spacing-md) - 0.2rem + ${FOCUS_RING_EXTENT} - var(--board-below-height, 0px)))`,
           }}
         >
           <BoardBar
@@ -556,10 +578,13 @@ function Board({
                   }
             }
             height={BAR_HEIGHT}
+            placement="above"
           >
+            {repertoire && errorText}
+            {repertoire && moveInputField}
             <ShowMaterial
               fen={currentNode.fen}
-              color={orientation === "white" ? "black" : "white"}
+              color={repertoire ? undefined : opposite(orientation)}
               mode={materialDisplay}
             />
             {hasClock && (
@@ -572,7 +597,7 @@ function Board({
             )}
           </BoardBar>
           {/* Gutters can shrink when the square board leaves less than the bars' minimum height. */}
-          <Box h="0.5rem" />
+          <Box h={BAR_GUTTER} />
           <Group
             data-board-surface
             style={{
@@ -799,51 +824,36 @@ function Board({
             </BoardFrame>
             <VisuallyHidden aria-live="polite">{keyboardAnnouncement}</VisuallyHidden>
           </Group>
-          <Box h="0.5rem" />
-          <BoardBar
-            name={repertoire ? "" : bottomPlayer}
-            rating={
-              repertoire
-                ? undefined
-                : orientation === "white"
-                  ? headers.white_elo
-                  : headers.black_elo
-            }
-            onNameClick={
-              repertoire
-                ? undefined
-                : () => {
-                    if (orientation === "white") {
-                      setWhiteFideOpen(true);
-                    } else {
-                      setBlackFideOpen(true);
-                    }
+          {!repertoire && (
+            <>
+              <Box h={BAR_GUTTER} />
+              <BoardBar
+                name={bottomPlayer}
+                rating={orientation === "white" ? headers.white_elo : headers.black_elo}
+                onNameClick={() => {
+                  if (orientation === "white") {
+                    setWhiteFideOpen(true);
+                  } else {
+                    setBlackFideOpen(true);
                   }
-            }
-            height={BAR_HEIGHT}
-          >
-            {error && (
-              <Text ta="center" c="danger">
-                {translateChessopsError(t, error)}
-              </Text>
-            )}
-
-            {moveInput && (
-              <MoveInput
-                currentNode={currentNode}
-                onMove={(move) => {
-                  if (!boardAllows(makeSquare(move.from), makeSquare(move.to))) return false;
-                  void makeMove(move);
-                  return true;
                 }}
-              />
-            )}
-
-            <ShowMaterial fen={currentNode.fen} color={orientation} mode={materialDisplay} />
-            {hasClock && (
-              <Clock color={orientation} turn={turn} whiteTime={whiteTime} blackTime={blackTime} />
-            )}
-          </BoardBar>
+                height={BAR_HEIGHT}
+                placement="below"
+              >
+                {errorText}
+                {moveInputField}
+                <ShowMaterial fen={currentNode.fen} color={orientation} mode={materialDisplay} />
+                {hasClock && (
+                  <Clock
+                    color={orientation}
+                    turn={turn}
+                    whiteTime={whiteTime}
+                    blackTime={blackTime}
+                  />
+                )}
+              </BoardBar>
+            </>
+          )}
         </Box>
       </Box>
       {!repertoire && (

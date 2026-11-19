@@ -13,6 +13,8 @@ import {
     activeWorkspaceTab,
     whitePawnSquares,
     type MockScenario,
+    waitForFontsSettled,
+    playBoardMove,
 } from "./fixtures";
 
 // A wide, short window at 100% font with a file of many games: the shape in which the card's old
@@ -105,6 +107,8 @@ test("files-preview: repertoire clicks below the threshold select and double cli
     capture,
 }) => {
     await page.setViewportSize({ width: 1920, height: 1100 });
+    // The line gains moves below; this layout check writes nothing back to the mock collection.
+    await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     const list = await openDragFile(page, mockScenario);
     const second = list.locator('[data-line-index="1"] [role="option"]');
     const box = (await second.boundingBox())!;
@@ -118,12 +122,57 @@ test("files-preview: repertoire clicks below the threshold select and double cli
     await second.dblclick();
     await expect(page).toHaveURL(/\/$/);
     expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 1 });
-    // The line's name and idea form one title above the board, never two player labels.
+    // The line's name and idea form one title above the board, with no player bar below it.
     const bars = page.locator("[data-board-bar]");
-    await expect(bars).toHaveCount(2);
-    await expect(bars.first()).toHaveText("White 2Black 2");
-    await expect(bars.last()).toHaveText("");
+    await expect(bars).toHaveCount(1);
+    await expect(bars).toHaveAttribute("data-board-bar", "above");
+    await expect(bars).toHaveText("White 2Black 2");
     await capture("repertoire-board-title");
+    // Height-bound, the board takes the room a bottom bar would have used.
+    await page.setViewportSize({ width: 2560, height: 900 });
+    await waitForFontsSettled(page);
+    const space = await page.locator("[data-board-surface]").evaluate((surface) => {
+        const card = surface.closest(".mantine-Paper-root")!.getBoundingClientRect();
+        const board = surface.querySelector("cg-board")!.getBoundingClientRect();
+        return card.bottom - board.bottom;
+    });
+    // Only the card's border and padding remain; a reserved bottom bar would leave about 38px.
+    expect(space).toBeGreaterThanOrEqual(0);
+    expect(space).toBeLessThan(8);
+    // Unequal material sits in the one bar, beside the title and inside the bar.
+    const board = page.locator("cg-board").first();
+    for (const [from, to] of [
+        ["e2", "e4"],
+        ["c7", "c5"],
+        ["d2", "d4"],
+        ["c5", "d4"],
+    ])
+        await playBoardMove(page, board, from, to);
+    const bar = page.locator('[data-board-bar="above"]');
+    await expect(bar.locator('[data-material-side="black"]')).toHaveText("+1");
+    await expect(bar.locator('[data-material-piece="black-pawn"]')).toHaveCount(1);
+    await expect(bar.locator('[data-material-side="white"]')).toHaveCount(0);
+    const layout = await bar.evaluate((element) => {
+        const box = (node: Element) => node.getBoundingClientRect();
+        // The name and idea group on the bar's left.
+        const title = box(element.firstElementChild!);
+        return {
+            bar: box(element).toJSON(),
+            title: title.toJSON(),
+            material: Array.from(
+                element.querySelectorAll("[data-material-piece], [data-material-side] p"),
+            ).map((node) => box(node).toJSON()),
+        };
+    });
+    for (const item of layout.material) {
+        expect(item.top).toBeGreaterThanOrEqual(layout.bar.top - 0.5);
+        expect(item.bottom).toBeLessThanOrEqual(layout.bar.bottom + 0.5);
+        expect(item.left).toBeGreaterThan(layout.title.right);
+        expect(item.right).toBeLessThanOrEqual(layout.bar.right + 0.5);
+        expect(item.width).toBeGreaterThan(0);
+        expect(item.height).toBeGreaterThan(0);
+    }
+    await capture("repertoire-material-bar");
 });
 
 for (const belowHeading of [false, true]) {

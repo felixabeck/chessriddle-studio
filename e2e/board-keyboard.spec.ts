@@ -91,12 +91,13 @@ for (const mode of ["diff", "all"] as const) {
                     clips,
                     board: rect(surface.querySelector("cg-board")!),
                     bars: [column.firstElementChild!, column.lastElementChild!].map((bar) => ({
+                        placement: bar.getAttribute("data-board-bar"),
                         bar: rect(bar),
                         name: rect(bar.querySelector("button")!),
                         indicators: Array.from(
-                            bar.lastElementChild!.querySelectorAll("svg, p"),
+                            bar.lastElementChild!.querySelectorAll("[data-material-piece], p"),
                         ).map((el) => ({
-                            tag: el.tagName,
+                            tag: el.hasAttribute("data-material-piece") ? "piece" : el.tagName,
                             text: el.textContent,
                             box: rect(el),
                         })),
@@ -113,10 +114,25 @@ for (const mode of ["diff", "all"] as const) {
             expect(geometry.board.width).toBe(720);
             expect(geometry.board.height).toBe(720);
             const indicators = geometry.bars.flatMap((bar) => bar.indicators);
-            expect(indicators.filter((indicator) => indicator.tag === "svg")).toHaveLength(
+            expect(geometry.bars.map((bar) => bar.placement)).toEqual(["above", "below"]);
+            expect(indicators.filter((indicator) => indicator.tag === "piece")).toHaveLength(
                 mode === "all" ? 3 : 1,
             );
             expect(indicators.filter((indicator) => indicator.text === "+1")).toHaveLength(1);
+            // Dark card: black pieces carry a light outline, white pieces need none.
+            const filters = await page
+                .locator("[data-material-piece]")
+                .evaluateAll((pieces) =>
+                    pieces.map((piece) => [
+                        piece.getAttribute("data-material-piece")!.split("-")[0],
+                        getComputedStyle(piece).filter,
+                    ]),
+                );
+            expect(filters.length).toBeGreaterThan(0);
+            for (const [color, filter] of filters) {
+                if (color === "black") expect(filter).toContain("drop-shadow");
+                else expect(filter).toBe("none");
+            }
             for (const bar of geometry.bars) {
                 for (const indicator of bar.indicators) {
                     for (const clip of geometry.clips) {
@@ -131,7 +147,15 @@ for (const mode of ["diff", "all"] as const) {
                         expect.soft(indicator.box.right).toBeLessThanOrEqual(clip.right);
                     }
                     expect.soft(indicator.box.bottom).toBeLessThanOrEqual(bar.bar.bottom);
-                    if (indicator.tag === "svg") expect(indicator.box.bottom).toBe(bar.name.bottom);
+                    // Bar content hugs the board: above it, pieces share the name's bottom edge;
+                    // below it, they share its top edge and never reach lower than the name.
+                    if (indicator.tag !== "piece") continue;
+                    if (bar.placement === "above") {
+                        expect(indicator.box.bottom).toBe(bar.name.bottom);
+                    } else {
+                        expect(indicator.box.top).toBe(bar.name.top);
+                        expect(indicator.box.bottom).toBeLessThanOrEqual(bar.name.bottom + 0.5);
+                    }
                 }
             }
         }

@@ -26,7 +26,7 @@ test("a title without onNameClick renders plain bold text without a button", asy
   await act(async () =>
     root.render(
       <MantineProvider>
-        <BoardBar name="Italian Game" height="1.9rem" />
+        <BoardBar name="Italian Game" height="1.9rem" placement="above" />
       </MantineProvider>,
     ),
   );
@@ -42,7 +42,7 @@ test("a player with onNameClick renders a button that invokes it", async () => {
   await act(async () =>
     root.render(
       <MantineProvider>
-        <BoardBar name="White Player" height="1.9rem" onNameClick={onNameClick} />
+        <BoardBar name="White Player" height="1.9rem" placement="above" onNameClick={onNameClick} />
       </MantineProvider>,
     ),
   );
@@ -56,7 +56,7 @@ test("a detail renders muted after the name and is hidden without a name", async
   await act(async () =>
     root.render(
       <MantineProvider>
-        <BoardBar name="Vorstoß" detail="4.h4" height="1.9rem" />
+        <BoardBar name="Vorstoß" detail="4.h4" height="1.9rem" placement="above" />
       </MantineProvider>,
     ),
   );
@@ -69,9 +69,26 @@ test("a detail renders muted after the name and is hidden without a name", async
   await act(async () =>
     root.render(
       <MantineProvider>
-        <BoardBar name="" detail="4.h4" height="1.9rem" />
+        <BoardBar name="" detail="4.h4" height="1.9rem" placement="above" />
       </MantineProvider>,
     ),
   );
   expect(host.querySelector("[data-board-bar]")?.textContent).toBe("");
+});
+
+test("each bar aligns its content toward the board", async () => {
+  await act(async () =>
+    root.render(
+      <MantineProvider>
+        <BoardBar name="Black Player" height="1.9rem" placement="above" />
+        <BoardBar name="White Player" height="1.9rem" placement="below" />
+      </MantineProvider>,
+    ),
+  );
+  const bars = Array.from(host.querySelectorAll<HTMLElement>("[data-board-bar]"));
+  expect(bars.map((bar) => bar.dataset.boardBar)).toEqual(["above", "below"]);
+  const align = (element: Element) =>
+    (element as HTMLElement).style.getPropertyValue("--group-align");
+  expect(bars.map(align)).toEqual(["flex-end", "flex-start"]);
+  expect(bars.map((bar) => align(bar.lastElementChild!))).toEqual(["flex-end", "flex-start"]);
 });

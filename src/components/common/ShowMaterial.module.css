@@ -1,0 +1,4 @@
+/* Black pieces would sink into the dark card, so they get a thin light outline there. */
+[data-mantine-color-scheme="dark"] .piece[data-material-piece^="black-"] {
+  filter: drop-shadow(0 0 0.5px rgb(255 255 255 / 0.9)) drop-shadow(0 0 1px rgb(255 255 255 / 0.6));
+}

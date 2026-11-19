@@ -846,6 +846,15 @@ export type PiecesCount = {
     q: number;
 };
 
+/** The capturable roles in ascending value, keyed as in `PiecesCount`. */
+export const MATERIAL_ROLES: readonly { key: keyof PiecesCount; role: Role }[] = [
+    { key: "p", role: "pawn" },
+    { key: "n", role: "knight" },
+    { key: "b", role: "bishop" },
+    { key: "r", role: "rook" },
+    { key: "q", role: "queen" },
+];
+
 export function getMaterialDiff(fen: string) {
     const res = parseFen(fen);
     if (res.isErr) {
@@ -855,13 +864,6 @@ export function getMaterialDiff(fen: string) {
     const { white, black } = board;
 
     const startingCounts = { p: 8, n: 2, b: 2, r: 2, q: 1 };
-    const roles: { key: keyof PiecesCount; role: Role }[] = [
-        { key: "p", role: "pawn" },
-        { key: "n", role: "knight" },
-        { key: "b", role: "bishop" },
-        { key: "r", role: "rook" },
-        { key: "q", role: "queen" },
-    ];
 
     const pieces: PiecesCount = { p: 0, n: 0, b: 0, r: 0, q: 0 };
     const whiteCaptured: PiecesCount = { p: 0, n: 0, b: 0, r: 0, q: 0 };
@@ -869,7 +871,7 @@ export function getMaterialDiff(fen: string) {
     let whitePromotions = 0;
     let blackPromotions = 0;
 
-    for (const { key, role } of roles) {
+    for (const { key, role } of MATERIAL_ROLES) {
         const whiteCount = white.intersect(board[role]).size();
         const blackCount = black.intersect(board[role]).size();
         pieces[key] = whiteCount - blackCount;
