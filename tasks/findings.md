@@ -27274,7 +27274,7 @@ Push review (rounds 1-5) extended the fix. 8466c52c9 maps `DraftNumberInput.tsx`
 
 ### Pinned Database strip screenshot flakes on the table's scrollbar thumb
 
-* **ID:** f-20261119-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261119-02 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (CI `Test` run 44498623129, job e2e, on 6d53b2c97; the image was added in 755a280d3)
 * **Where:** `e2e/database-files.spec.ts:3490` (`await expect(pane).toHaveScreenshot("explorer-pinned-strip.png")`).
@@ -27283,3 +27283,6 @@ Push review (rounds 1-5) extended the fix. 8466c52c9 maps `DraftNumberInput.tsx`
 * **Proof:** the CI diff image marks only the strip's right-edge scrollbar column; actual has no thumb, expected has one.
 * **Fix:** take the screenshot with `stylePath` `e2e/scrollbar-free-screenshot.css`, as the pinned-engine hover preview image already does, and re-record the image in the e2e container.
 * **Found by:** Claude Code, push of the engine position menu (d-20261119-05)
+
+Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css and the image is re-recorded without the thumb in the e2e container. Evidence: --repeat-each=5 of "database-files: the board explorer compares two databases side by side" in the container passed 5/5; the test's own scroll and half-pane height assertions are unchanged. Lenses correctness, root-cause and tests (agy) approved.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ec3821f1974b63632f8bf3cd6b06002fa73dee8c53fadbd561fb1104eff82779","header_sha256":"2fc334600436fe964cc5fe72b9f4ef822266201b818f8a2baa0ca92f68dab5f9","header_status":"handled","input_sha256":"280f2325d4cafcd41d4d200b2ae913e6d2ce0f77ef981ec8e55dcf02b151de8a","kind":"mutation-receipt","operation":"cf7054a5dd66e2631470b0c5645d1870a3e8c8ea9ebb81bb3f613f3f787d13cd","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-02"],"target":"f-20261119-02","v":1} -->
