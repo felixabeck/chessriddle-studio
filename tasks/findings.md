@@ -27541,7 +27541,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### During repertoire practice the blurred notation still accepts keyboard activation, so Tab + Enter on a hidden move shows the card's answer
 
-* **ID:** f-20261119-15 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-15 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** refactoring review follow-up (Felix t67u): the `goToMove` drill-guard question left open after f-20261119-13, at origin/master `d79fa979e`
 * **Where:**
@@ -27557,6 +27557,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * Add a GameNotation test asserting that with `invisible` the move buttons are not focusable and activation does not change `position`.
   * Inert rows are the simpler fix and also stop the screen-reader leak.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+* **Handled (2026-11-19, drain):** `9b377b7dc` sets `inert={invisible}` on the notation rows container in `GameNotation.tsx`, so while the notation is hidden its move buttons leave the tab order and the accessibility tree; the overlay still blocks the pointer. Chose the inert route over a guarded `goToMoveFromNotation`: it also closes the screen-reader leak and leaves Practice's own `goToMove` positioning untouched. New `GameNotation.test.tsx` case (invisible true/false) asserts the hidden `Nf3` sits under an `[inert]` ancestor only when hidden; verified red with the attribute removed. jsdom does not implement inert focus semantics, so the assertion is on the attribute, which browsers (WebKitGTK included) honour.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"54a9c3522a9f641baa0ebf92629ec0266fcce26523ce2f54a477e9ccb47973a0","header_sha256":"f48a6b533c422e963d933298aaff5acb5c96c41642e40c24529ad66f2ed27936","header_status":"handled","input_sha256":"f5477557297db34f330481aeb5f50027d84928b161534a4a253a9b1e9fa6e43c","kind":"mutation-receipt","operation":"740bca6062cb8494e836bd4bcb4459212cc5583c4a9dcd2e92f221b7bbba5b54","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-15"],"target":"f-20261119-15","v":1} -->
 
 ---
 
