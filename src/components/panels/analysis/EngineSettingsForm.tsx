@@ -131,8 +131,9 @@ function EngineSettingsForm({
       {!minimal && (
         <Group>
           <SyncSettings settings={settings} engineId={engine.id} setSettings={setSettings} />
-          <Group gap={0}>
-            {engine.type === "local" && (
+          {/* Cloud engines have nothing on the Engines page beyond this form. */}
+          {engine.type === "local" && (
+            <Group gap={0}>
               <IconAction
                 label={t("Board.Analysis.KillEngine")}
                 variant="default"
@@ -150,9 +151,9 @@ function EngineSettingsForm({
               >
                 <Square size="1rem" />
               </IconAction>
-            )}
-            <AdvancedSettings engineId={engine.id} />
-          </Group>
+              <OpenEngineSettings engineId={engine.id} />
+            </Group>
+          )}
         </Group>
       )}
     </Stack>
@@ -200,7 +201,7 @@ function SyncSettings({
   );
 }
 
-function AdvancedSettings({ engineId }: { engineId: string }) {
+function OpenEngineSettings({ engineId }: { engineId: string }) {
   const { t } = useTranslation();
 
   const navigate = useNavigate();
@@ -208,7 +209,7 @@ function AdvancedSettings({ engineId }: { engineId: string }) {
 
   return (
     <IconAction
-      label={t("Engines.Settings.AdvancedSettings")}
+      label={t("Engines.Settings.OpenEngineSettings")}
       variant="default"
       onClick={() => {
         const selected = (engines ?? []).findIndex((engine) => engine.id === engineId);

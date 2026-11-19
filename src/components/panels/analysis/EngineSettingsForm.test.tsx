@@ -128,15 +128,20 @@ afterEach(async () => {
   host.remove();
 });
 
-async function render(setSettings = vi.fn(), formSettings: Settings = settings) {
+async function render(
+  setSettings = vi.fn(),
+  formSettings: Settings = settings,
+  engine: Engine = engines[1],
+  remote = false,
+) {
   await act(async () => {
     root.render(
       <WorkspaceTabScope tabId="tab-A">
         <EngineSettingsForm
-          engine={engines[1]}
+          engine={engine}
           settings={formSettings}
           setSettings={setSettings}
-          remote={false}
+          remote={remote}
         />
       </WorkspaceTabScope>,
     );
@@ -144,7 +149,7 @@ async function render(setSettings = vi.fn(), formSettings: Settings = settings) 
   return setSettings;
 }
 
-test("uses last-wins settings and immutable ids for sync and advanced navigation", async () => {
+test("uses last-wins settings and immutable ids for sync and engine-page navigation", async () => {
   const setSettings = await render();
 
   expect(host.querySelector('[data-testid="multipv"]')?.textContent).toBe("4");
@@ -156,11 +161,34 @@ test("uses last-wins settings and immutable ids for sync and advanced navigation
 
   await act(async () => {
     (
-      host.querySelector('[aria-label="Engines.Settings.AdvancedSettings"]') as HTMLButtonElement
+      host.querySelector('[aria-label="Engines.Settings.OpenEngineSettings"]') as HTMLButtonElement
     ).click();
   });
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/engines", search: { selected: 1 } });
 });
+
+// The analysis panel passes remote={true}; the predicate is the engine type, not that flag.
+test.each([
+  { type: "chessdb", remote: true },
+  { type: "chessdb", remote: false },
+  { type: "lichess", remote: true },
+] as const)(
+  "a $type cloud engine (remote=$remote) keeps lines and sync but offers no engine page or kill action",
+  async ({ type, remote }) => {
+    await render(
+      vi.fn(),
+      settings,
+      { type, id: "cloud", name: type, url: "https://x.test", loaded: true },
+      remote,
+    );
+
+    expect(host.querySelector('[aria-label="Engines.Settings.NumOfLines"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Board.Analysis.SyncGlobally"]')).not.toBeNull();
+    // Its Engines page holds only the name, these lines and removal: nothing to open.
+    expect(host.querySelector('[aria-label="Engines.Settings.OpenEngineSettings"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Board.Analysis.KillEngine"]')).toBeNull();
+  },
+);
 
 test("selecting a line count updates MultiPV through the settings setter", async () => {
   const setSettings = await render();

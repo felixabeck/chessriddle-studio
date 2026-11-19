@@ -794,3 +794,28 @@ test("regression coverage: Lichess no-lines terminal keeps the generic empty-sta
   expect(h.host.querySelector("tbody")?.textContent).toBe("Board.Analysis.NoAnalysisAvailable");
   expect(h.host.querySelector(".mantine-Skeleton-root")).toBeNull();
 });
+
+test.each([
+  { type: "local", opensEnginePage: true },
+  { type: "chessdb", opensEnginePage: false },
+] as const)(
+  "the panel's Settings gear opens the inline form, which links the Engines page only for a $type engine with more there",
+  async ({ type, opensEnginePage }) => {
+    const engine: Engine =
+      type === "local"
+        ? displayEngine
+        : { type, id: displayEngine.id, name: "ChessDB", url: "", loaded: true };
+    publication.realForm = true;
+    await h.render(panel([], INITIAL_FEN, 0, engine));
+    const gear = h.host.querySelector<HTMLButtonElement>(
+      '[aria-label="Board.Analysis.EngineSettings"]',
+    )!;
+    expect(gear.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => gear.click());
+    expect(gear.getAttribute("aria-pressed")).toBe("true");
+    expect(h.host.querySelector('[aria-label="Engines.Settings.AdvancedSettings"]')).toBeNull();
+    expect(
+      h.host.querySelector('[aria-label="Engines.Settings.OpenEngineSettings"]') !== null,
+    ).toBe(opensEnginePage);
+  },
+);

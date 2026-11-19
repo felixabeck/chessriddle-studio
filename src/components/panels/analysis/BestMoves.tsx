@@ -176,7 +176,7 @@ function BestMovesComponent({
             {isDetached ? <PinOff size="1rem" /> : <Pin size="1rem" />}
           </IconAction>
           <IconAction
-            label={t("Engines.Settings.AdvancedSettings")}
+            label={t("Board.Analysis.EngineSettings")}
             pressed={settingsOn}
             size="lg"
             onClick={() => toggleSettingsOn()}
