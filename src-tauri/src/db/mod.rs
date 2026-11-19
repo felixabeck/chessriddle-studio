@@ -35,7 +35,8 @@ use crate::{
     db::{
         encoding::{
             decode_game_to_movetext, decode_game_to_movetext_cancellable, decode_move,
-            iter_mainline_move_bytes, try_iter_mainline_move_bytes_cancellable,
+            fen_text_without_ep_square, iter_mainline_move_bytes,
+            try_iter_mainline_move_bytes_cancellable,
         },
         models::*,
         ops::*,
@@ -713,9 +714,20 @@ impl Visitor for Importer {
             } else {
                 let fen = Fen::from_ascii(value.as_bytes());
                 if let Ok(fen) = fen {
-                    self.game.fen = Some(decode_pgn_text(&value.decode()).into_owned());
-                    if let Ok(setup) = database_setup_to_chess(fen.into_setup()) {
-                        self.game.position = setup;
+                    let fen_text = decode_pgn_text(&value.decode()).into_owned();
+                    let had_ep_square = fen.as_setup().ep_square.is_some();
+                    if let Ok(position) = database_setup_to_chess(fen.into_setup()) {
+                        // A dropped en-passant square is dropped from the stored text too, so
+                        // `games.fen`, every replay from it and the renderer agree.
+                        self.game.fen = Some(
+                            if had_ep_square && position.ep_square(EnPassantMode::Always).is_none()
+                            {
+                                fen_text_without_ep_square(&fen_text)
+                            } else {
+                                fen_text
+                            },
+                        );
+                        self.game.position = position;
                     } else {
                         self.skip = true;
                     }
@@ -8079,6 +8091,46 @@ mod tests {
         assert_eq!(
             decode_game_to_movetext(&stored.moves, stored_fen).unwrap(),
             "1. Ke2"
+        );
+    }
+
+    #[test]
+    fn import_keeps_a_game_whose_fen_has_an_impossible_ep_square_and_stores_it_dropped() {
+        // f-20261119-01: with Black to move an en-passant square must be on the third rank,
+        // so shakmaty rejects e6.
+        let pgn = "[Event \"Study\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"*\"]\n\
+             [SetUp \"1\"]\n[FEN \"4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1\"]\n\n1... Kd7 2. e5 *\n";
+        let parsed = parsed_game(pgn);
+        assert_eq!(
+            parsed.fen.as_deref(),
+            Some("4k3/8/8/8/4P3/8/8/4K3 b - - 0 1")
+        );
+
+        let db = &mut setup_test_db();
+        let id = parsed.insert_to_db(db).unwrap();
+        let stored: Game = games::table.find(id).first(db).unwrap();
+        let stored_fen: Fen = stored
+            .fen
+            .as_deref()
+            .expect("imported FEN")
+            .parse()
+            .unwrap();
+        assert_eq!(
+            decode_game_to_movetext(&stored.moves, stored_fen).unwrap(),
+            "1... Kd7 2. e5"
+        );
+    }
+
+    #[test]
+    fn import_keeps_a_legal_ep_square_in_the_stored_fen() {
+        let fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2";
+        let pgn = format!("[SetUp \"1\"]\n[FEN \"{fen}\"]\n\n2. exd6 *\n");
+        let parsed = parsed_game(&pgn);
+        assert_eq!(parsed.fen.as_deref(), Some(fen));
+        let initial_fen = Fen::from_ascii(fen.as_bytes()).unwrap();
+        assert_eq!(
+            decode_game_to_movetext(&parsed.moves, initial_fen).unwrap(),
+            "2. exd6"
         );
     }
 

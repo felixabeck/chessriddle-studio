@@ -12,12 +12,42 @@ pub const NAG_MARKER: u8 = 252;
 const ANNOTATION_CHECKPOINT_BYTES: usize = 4 * 1024;
 
 /// Reconstructs database setups with the same policy used when importing PGN headers.
+/// An en-passant square shakmaty's `EnPassant::from_setup` rejects is dropped, matching the
+/// renderer's `dropInvalidEpSquare` (`src/utils/chessops.ts`).
 pub(crate) fn database_setup_to_chess(setup: Setup) -> Result<Chess, Error> {
     let castling_mode = CastlingMode::detect(&setup);
     Chess::from_setup(setup, castling_mode)
         .or_else(PositionError::ignore_too_much_material)
         .or_else(PositionError::ignore_invalid_castling_rights)
+        .or_else(PositionError::ignore_invalid_ep_square)
         .map_err(Error::from)
+}
+
+/// Rewrites the en-passant field (the fourth field) of FEN text to `-`, keeping every other
+/// byte. Fields are delimited by the separators `Fen::from_ascii` accepts (space and `_`,
+/// runs collapsed). Text with fewer than four fields is returned unchanged.
+pub(crate) fn fen_text_without_ep_square(fen: &str) -> String {
+    const EP_FIELD: usize = 3;
+    let is_separator = |ch: char| ch == ' ' || ch == '_';
+    let mut field = 0usize;
+    let mut in_field = false;
+    for (index, ch) in fen.char_indices() {
+        if is_separator(ch) {
+            if in_field {
+                field += 1;
+                in_field = false;
+            }
+        } else if !in_field {
+            in_field = true;
+            if field == EP_FIELD {
+                let end = fen[index..]
+                    .find(is_separator)
+                    .map_or(fen.len(), |offset| index + offset);
+                return format!("{}-{}", &fen[..index], &fen[end..]);
+            }
+        }
+    }
+    fen.to_string()
 }
 
 #[cfg(test)]
@@ -589,6 +619,39 @@ fn decode_game_to_movetext_cancellable_with_checkpoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fen_text_without_ep_square_rewrites_only_the_fourth_field() {
+        assert_eq!(
+            fen_text_without_ep_square("4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1"),
+            "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1"
+        );
+        assert_eq!(
+            fen_text_without_ep_square("  4k3/8/8/8/4P3/8/8/4K3__b  - e6 0 1"),
+            "  4k3/8/8/8/4P3/8/8/4K3__b  - - 0 1"
+        );
+        assert_eq!(
+            fen_text_without_ep_square("4k3/8/8/8/4P3/8/8/4K3 b - e6"),
+            "4k3/8/8/8/4P3/8/8/4K3 b - -"
+        );
+        assert_eq!(
+            fen_text_without_ep_square("4k3/8/8/8/8/8/8/4K3 w -"),
+            "4k3/8/8/8/8/8/8/4K3 w -"
+        );
+    }
+
+    #[test]
+    fn database_setup_drops_an_impossible_ep_square_and_keeps_a_legal_one() {
+        let fen: Fen = "4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1".parse().unwrap();
+        let chess = database_setup_to_chess(fen.into_setup()).unwrap();
+        assert_eq!(chess.ep_square(shakmaty::EnPassantMode::Always), None);
+        let legal: Fen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2".parse().unwrap();
+        let chess = database_setup_to_chess(legal.into_setup()).unwrap();
+        assert_eq!(
+            chess.ep_square(shakmaty::EnPassantMode::Always),
+            Some(shakmaty::Square::D6)
+        );
+    }
 
     use shakmaty::{Role, Square};
 
