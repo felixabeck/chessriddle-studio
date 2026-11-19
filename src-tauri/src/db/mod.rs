@@ -3052,7 +3052,7 @@ mod tests {
             .load(std::sync::atomic::Ordering::SeqCst));
     }
 
-    /// Production source of the `db` crate root and its command modules, for the
+    /// Production source of `db/mod.rs` and its command modules, for the
     /// source-text anchors that span commands now split across those files.
     fn db_production_source() -> String {
         let root = include_str!("mod.rs")

@@ -4470,7 +4470,7 @@ mod tests {
 mod blocking_offload_scans {
     use crate::infra::blocking::source_scan::body_at_indent;
 
-    /// The `db` command modules followed by the crate root, scanned as one source: the
+    /// The `db` command modules followed by `db/mod.rs`, scanned as one source: the
     /// command surface is split across these files, and each definition exists once.
     const DB_SOURCES: &str = concat!(
         include_str!("db/import.rs"),
@@ -5842,7 +5842,8 @@ mod blocking_offload_scans {
                 let trimmed = line.trim_start();
                 let is_sync_fn = trimmed.starts_with("fn ")
                     || trimmed.starts_with("pub fn ")
-                    || trimmed.starts_with("pub(crate) fn ");
+                    || trimmed.starts_with("pub(crate) fn ")
+                    || trimmed.starts_with("pub(super) fn ");
                 if is_sync_fn {
                     let name_start = trimmed.find("fn ").expect("sync fn prefix") + 3;
                     let name = trimmed[name_start..]
@@ -5927,10 +5928,10 @@ mod blocking_offload_scans {
             ("pgn.rs", pgn, "observe_count_hook"),
             ("pgn.rs", pgn, "count_after_scan"),
             ("db/search.rs", search, "load_search_index"),
-            ("db/mod.rs", db, "generate_search_index"),
-            ("db/mod.rs", db, "generate_search_index_locked"),
+            ("db", db, "generate_search_index"),
+            ("db", db, "generate_search_index_locked"),
             ("db/search.rs", search, "is_position_in_db"),
-            ("db/mod.rs", db, "get_db_or_create"),
+            ("db", db, "get_db_or_create"),
         ] {
             let signature = fn_signature(source, name);
             if file == "pgn.rs" {
