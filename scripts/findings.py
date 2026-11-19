@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --script
-# agent-kit-sha256: 58b9584b8d517eb112c9ad097118cec6afe7d32d57d4745d7858428ab5ed820f
+# agent-kit-sha256: 211742aa023322fa3f726bf9b24ad3c28b2de00309ac21aa5a2ef214235c615f
 # /// script
 # requires-python = ">=3.14"
 # ///
@@ -13999,20 +13999,29 @@ def _renumber_repository_scope(root: Path) -> Iterator[None]:
         globals().update(saved)
 
 
-def _renumber_ledgers(root: Path, commit: str) -> dict[str, str]:
-    texts = {}
+def _renumber_ledger_blobs(root: Path, commit: str) -> dict[str, str | None]:
+    """Name each ledger's blob at ``commit`` without reading its content."""
+    blobs: dict[str, str | None] = {}
     for relative in MERGE_DRIVER_LEDGERS:
         entry = _head_file_blob_entry(root, commit, relative, strict=True)
-        if entry is None:
-            texts[relative] = ""
-            continue
-        if entry[0] not in {"100644", "100755"}:
+        if entry is not None and entry[0] not in {"100644", "100755"}:
             raise LedgerError(f"cannot rewrite non-regular ledger {commit}:{relative}")
-        blob = _git_for_ledger_bytes(root, "cat-file", "blob", entry[1])
-        if blob.returncode:
-            raise LedgerError(f"could not read {commit}:{relative}")
-        texts[relative] = blob.stdout.decode("utf-8")
-    return texts
+        blobs[relative] = None if entry is None else entry[1]
+    return blobs
+
+
+def _renumber_ledgers(root: Path, commit: str) -> dict[str, str]:
+    return {relative: _renumber_blob_text(root, blob)
+            for relative, blob in _renumber_ledger_blobs(root, commit).items()}
+
+
+def _renumber_blob_text(root: Path, blob: str | None) -> str:
+    if blob is None:
+        return ""
+    result = _git_for_ledger_bytes(root, "cat-file", "blob", blob)
+    if result.returncode:
+        raise LedgerError(f"could not read ledger blob {blob}")
+    return result.stdout.decode("utf-8")
 
 
 def _renumber_entries(text: str, kind: str) -> dict[str, str]:
@@ -14036,15 +14045,28 @@ def _renumber_entries(text: str, kind: str) -> dict[str, str]:
 
 
 def _renumber_introductions(
-    root: Path, commits: list[str], base_ids: set[str], snapshots: dict[str, dict[str, str]],
+    root: Path, commits: list[str], base_ids: set[str],
+    blobs: dict[str, dict[str, str | None]], texts: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """Record each id's first introduced form, parsing every distinct ledger blob once.
+
+    A full ledger is tens of MB as a Python string, and a range can hold hundreds
+    of commits that never touch a ledger, so texts are kept only when the caller
+    passes ``texts`` (the local range it will rewrite), keyed by blob id.
+    """
     introduced: dict[str, str] = {}
+    parsed: set[tuple[str, str]] = set()
     for commit in commits:
-        texts = snapshots.setdefault(commit, {})
-        if not texts:
-            texts.update(_renumber_ledgers(root, commit))
+        blobs[commit] = _renumber_ledger_blobs(root, commit)
         for relative, kind in MERGE_DRIVER_LEDGERS.items():
-            for identifier, form in _renumber_entries(texts[relative], kind).items():
+            blob = blobs[commit][relative]
+            if blob is None or (relative, blob) in parsed:
+                continue
+            parsed.add((relative, blob))
+            text = _renumber_blob_text(root, blob)
+            if texts is not None:
+                texts[blob] = text
+            for identifier, form in _renumber_entries(text, kind).items():
                 if identifier not in base_ids:
                     introduced.setdefault(identifier, form)
     return introduced
@@ -14101,6 +14123,12 @@ def _renumber_ledger_texts(texts: dict[str, str], mapping: Mapping[str, str]) ->
         for index, line in enumerate(lines[kind]):
             if index not in meta_lines and fence_states[index] is FenceState.OUTSIDE:
                 lines[kind][index] = _renumber_local_line(line, mapping, contexts=protected.get(index))
+    # Metadata lines are not citation occurrences, so one scan per source after
+    # the line rewrites above serves every context below.
+    rewritten_occurrences = {
+        kind: _citation_occurrences(Path(relative), kind, text="\n".join(lines[kind]), all_ids=True)[0]
+        for kind, relative in paths.items()
+    }
     for meta in metadata["decisions"]:
         if meta.data.get("kind") != CITATION_CONTEXT_KIND:
             continue
@@ -14117,30 +14145,41 @@ def _renumber_ledger_texts(texts: dict[str, str], mapping: Mapping[str, str]) ->
             data["corrections"] = [mapping.get(value, value) for value in cast(list[str], data["corrections"])]
         # The changed line can now equal a preceding line. Recompute its ordinal
         # with the same occurrence scanner used by check.
-        rewritten_occurrences, _issues = _citation_occurrences(
-            Path(paths[source]), source, text="\n".join(lines[source]), all_ids=True,
-        )
-        new_occurrence = next(occ for occ in rewritten_occurrences
+        new_occurrence = next(occ for occ in rewritten_occurrences[source]
                               if occ.line == matched.line and occ.cited_id == matched.cited_id
                               and occ.owner is None)
         data["occurrence"] = new_occurrence.occurrence
-        lines["decisions"][meta.line - 1] = _metadata_line(data)
+        # Leave an untouched declaration byte-identical: re-serialising it would
+        # rewrite published history (f-20261118-02).
+        if data != meta.data:
+            lines["decisions"][meta.line - 1] = _metadata_line(data)
     rewritten = {}
     for kind, relative in paths.items():
         original_lines = texts[relative].splitlines()
+        # Only real (unfenced, heading-consumed) headers: a fenced quotation of a
+        # header must not stand in for the entry's own header.
+        headers = {match.group("id"): original_lines[header]
+                   for _heading, header, match in _unfenced_header_matches(texts[relative])[1]}
         for meta in metadata[kind]:
             if meta.data.get("kind") != MUTATION_RECEIPT_KIND:
                 continue
             data = dict(meta.data)
             data["target"] = mapping.get(str(data["target"]), data["target"])
             data["results"] = [mapping.get(value, value) for value in cast(list[str], data["results"])]
-            data["operation"] = _mutation_operation(data)
+            header_changed = False
             if data["command"] in {"close", "set-header"}:
-                # Reuse the locked header writer's coupling refresh.
-                target = str(meta.data["target"])
-                original_header = next(line for line in original_lines
-                                       if (match := HEADER_RE.match(line)) and match.group("id") == target)
+                original_header = headers.get(str(meta.data["target"]))
+                if original_header is None:
+                    raise LedgerError(f"cannot refresh receipt for missing header {meta.data['target']}")
                 new_header = _renumber_local_line(original_header, mapping)
+                header_changed = new_header != original_header
+            if data == meta.data and not header_changed:
+                # Untouched receipt: keep its bytes. A covered effect line that
+                # changed is refreshed by _refresh_receipt_effects below.
+                continue
+            data["operation"] = _mutation_operation(data)
+            if header_changed:
+                # Reuse the locked header writer's coupling refresh.
                 data = _receipt_with_header(data, new_header)
             lines[kind][meta.line - 1] = _metadata_line(data)
         changed = {index for index, (old, new) in enumerate(zip(original_lines, lines[kind], strict=True)) if old != new}
@@ -14285,11 +14324,14 @@ def renumber_unpublished(
         if _allocation_git(root, "rev-list", "--merges", f"{base}..{old_tip}").stdout:
             raise LedgerError("unpublished range contains a merge commit")
         upstream = _allocation_git(root, "rev-list", "--reverse", "--topo-order", f"{base}..{onto_tip}").stdout.splitlines()
-        snapshots = {base: _renumber_ledgers(root, base)}
-        base_ids = set().union(*(_ledger_content(text, MERGE_DRIVER_LEDGERS[path], strict=False)[0]
-                                for path, text in snapshots[base].items()))
-        local_forms = _renumber_introductions(root, commits, base_ids, snapshots)
-        published_forms = _renumber_introductions(root, upstream, base_ids, snapshots)
+        blobs: dict[str, dict[str, str | None]] = {base: _renumber_ledger_blobs(root, base)}
+        base_ids = set().union(*(
+            _ledger_content(_renumber_blob_text(root, blob), MERGE_DRIVER_LEDGERS[path], strict=False)[0]
+            for path, blob in blobs[base].items()
+        ))
+        local_texts: dict[str, str] = {}
+        local_forms = _renumber_introductions(root, commits, base_ids, blobs, local_texts)
+        published_forms = _renumber_introductions(root, upstream, base_ids, blobs)
         colliding = sorted(identifier for identifier in local_forms.keys() & published_forms.keys()
                            if local_forms[identifier] != published_forms[identifier])
         if not colliding:
@@ -14313,10 +14355,20 @@ def renumber_unpublished(
             if cited_path is not None:
                 raise LedgerError(f"colliding id occurs in changed non-ledger path: {cited_path}")
         tip = base
+        # Commits that share both ledger blobs share one rewrite; only changed
+        # ledgers are written into the replayed tree.
+        rewrites: dict[tuple[str | None, ...], dict[str, str]] = {}
         for commit in commits:
-            rewritten = _renumber_ledger_texts(snapshots[commit], mapping)
-            _renumber_validate(rewritten, root)
-            tip = _renumber_commit(root, commit, tip, rewritten, mapping)
+            key = tuple(blobs[commit][relative] for relative in MERGE_DRIVER_LEDGERS)
+            if key not in rewrites:
+                texts = {relative: local_texts[blob] if blob is not None else ""
+                         for relative, blob in blobs[commit].items()}
+                rewritten = _renumber_ledger_texts(texts, mapping)
+                rewrites[key] = {relative: text for relative, text in rewritten.items()
+                                 if text != texts[relative]}
+                if rewrites[key]:
+                    _renumber_validate(rewritten, root)
+            tip = _renumber_commit(root, commit, tip, rewrites[key], mapping)
         _renumber_expect_head(root, branch_ref, old_tip)
         if reconcile_receipts:
             receipts.prepare(branch_ref, old_tip, tip, mapping)
