@@ -26839,7 +26839,7 @@ Proof: BoardAnalysis.test.tsx asserts for file- and database-backed tabs that a 
 
 ### Importing a FEN or opening a PGN whose start FEN carries an impossible en-passant square makes the engine, game report and database reject the whole tab
 
-* **ID:** f-20261115-25 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-25 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** dffa80ea-b9be-4de8-8939-c6bc1521ecf2
 * **Impact class:** ux
 * **Spotted outside diff:** yes (split from f-20261114-20's 2026-11-15 annotation; the editor entry point is fixed there, these entry points are not)
@@ -26850,6 +26850,9 @@ Proof: BoardAnalysis.test.tsx asserts for file- and database-backed tabs that a 
 * **Fix:** where these paths install the root, drop an illegal ep field (e.g. rewrite it to `-` when `makeFen(position.toSetup())` would drop it), keeping other fields byte-identical so `headers.fen`/root identity stays stable. Regressions for Import → FEN and a PGN `[FEN]` tag with an impossible ep square.
 * **Related:** f-20261114-20 (editor side-to-move entry point, handled in the same session), f-20261004-22.
 * **Found by:** Grok Bot deep scenario review (split by the f-20261114-11 drain session)
+
+Fixed in f8ab8f4b7. `normalizeFen` (`src/utils/treeReducer.ts`), the spelling every root is installed with (`defaultTree`, `parsePGN`'s header and root, `setFen`, `setHeaders`), now calls the new `dropInvalidEpSquare` (`src/utils/chessops.ts`), which rewrites the en-passant field to `-` and keeps every other byte when shakmaty's `EnPassant::from_setup` (shakmaty 0.27.1 `setup.rs`) would reject it: square not on the mover's sixth rank, no opposing pawn in front, or the square or the pawn's origin occupied. chessops' `validEpSquare` was not reused because it omits the occupied-square test; `makeFen(position.toSetup())` was rejected because it drops structurally valid squares without a legal capture, which shakmaty accepts, changing more tags than needed. `ImportModal` no longer overwrites `headers.fen` with the raw FEN, and `setHeaders` compares `normalizeFen(headers.fen)` so a raw tag cannot replace the tree on every header edit. Regressions: `dropInvalidEpSquare` table (the three filed FENs, occupied square, occupied origin, `_` separators; kept cases), parsePGN with an impossible `[FEN]`, Import → FEN, setHeaders keeping moves; the three integration tests fail with `normalizeFen` reverted. Tabs already persisted with such a root are not rewritten on hydration.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"7433e5cd618c95f88c38175fd54858aacee9fc8fcc1466e405509c4518335c3c","header_sha256":"5d89261249d5dcd41a28cb48c1e0d8e85b6a650bbf4c1fa922543cf692e6f303","header_status":"handled","input_sha256":"c8418141d1d0883b76426999eff24e5ad5646dcba2e36264d03d9410a6832303","kind":"mutation-receipt","operation":"6f21903f50b3156e91027cef4f77265d866cb86a853921227d45063b1453504a","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-25"],"target":"f-20261115-25","v":1} -->
 
 ---
 
