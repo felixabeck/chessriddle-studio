@@ -456,6 +456,7 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
         const cardBox = card.getBoundingClientRect();
         const style = getComputedStyle(card);
         const square = target.querySelector(".cg-wrap")!.getBoundingClientRect();
+        const rootStyle = getComputedStyle(document.documentElement);
         const content = [...target.querySelectorAll("[data-board-surface], [data-board-bar]")].map(
             (element) => element.getBoundingClientRect(),
         );
@@ -487,6 +488,9 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
             focusRingReserve: parseFloat(
                 getComputedStyle(target.querySelector("[data-board-surface]")!).paddingRight,
             ),
+            focusRingExtent:
+                parseFloat(rootStyle.getPropertyValue("--cf-focus-ring-width")) +
+                parseFloat(rootStyle.getPropertyValue("--cf-focus-ring-offset")),
             paintedSquareWidth: target.querySelector("cg-board")!.getBoundingClientRect().width,
             scrollWidth: document.documentElement.scrollWidth,
             viewport: innerWidth,
@@ -494,7 +498,9 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
     });
     console.log(`${label} geometry ${JSON.stringify(geometry)}`);
     expect(Math.abs(geometry.tileWidth - geometry.availableWidth)).toBeLessThanOrEqual(1);
-    expect(geometry.focusRingReserve).toBeGreaterThan(0);
+    // The fill floors give up exactly the ring's reach, never an arbitrary reserve.
+    expect(geometry.focusRingExtent).toBeGreaterThan(0);
+    expect(geometry.focusRingReserve).toBe(geometry.focusRingExtent);
     expect(geometry.squareWidth).toBeGreaterThanOrEqual(
         geometry.tileWidth * 0.9 - geometry.focusRingReserve,
     );
@@ -556,6 +562,10 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
         const geometry = await hint.evaluate((element) => {
             const hint = element.getBoundingClientRect();
             const board = document.querySelector("#left cg-board")!.getBoundingClientRect();
+            // The hint's square is a percentage of the overlay layer, which must match the board.
+            const layer =
+                element.parentElement!.parentElement!.parentElement!.getBoundingClientRect();
+            const wrap = document.querySelector("#left .cg-wrap")!.getBoundingClientRect();
             // White orientation, a3 is file 0 and row 5 from the top of the painted board.
             const square = {
                 left: board.left,
@@ -567,6 +577,8 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
                 hint: { x: hint.x, y: hint.y, width: hint.width, height: hint.height },
                 center: { x: hint.x + hint.width / 2, y: hint.y + hint.height / 2 },
                 square,
+                layer: { left: layer.left, width: layer.width },
+                wrap: { left: wrap.left, width: wrap.width },
             };
         });
         console.log(`320x720/200% a3! annotation ${state} ${JSON.stringify(geometry)}`);
@@ -574,6 +586,8 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
         expect(geometry.center.x).toBeLessThanOrEqual(geometry.square.right);
         expect(geometry.center.y).toBeGreaterThanOrEqual(geometry.square.top);
         expect(geometry.center.y).toBeLessThanOrEqual(geometry.square.bottom);
+        expect(Math.abs(geometry.layer.left - geometry.wrap.left)).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.layer.width - geometry.wrap.width)).toBeLessThanOrEqual(1);
     };
     await expectHintOverA3("eval open");
     // Collapsed, the 8px stacked eval column widens to the 1rem (32px here) reopen button, which

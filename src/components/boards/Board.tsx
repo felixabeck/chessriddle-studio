@@ -581,7 +581,7 @@ function Board({
               columnGap: "var(--board-gap, var(--mantine-spacing-sm))",
               // The wrapper clips horizontally; the eval column leaves room for the grid's focus
               // ring on the left, this padding leaves it on the right.
-              paddingInlineEnd: FOCUS_RING_EXTENT,
+              paddingRight: FOCUS_RING_EXTENT,
             }}
             gap="sm"
           >

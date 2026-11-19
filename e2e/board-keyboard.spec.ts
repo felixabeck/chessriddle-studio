@@ -987,6 +987,8 @@ test("board-keyboard: opens analysis and exposes a keyboard-operable board", asy
         whiteBoard.evaluate((grid) => {
             if (!grid.matches(":focus-visible")) return ["grid has no visible focus"];
             const style = getComputedStyle(grid);
+            if (style.outlineStyle === "none" || parseFloat(style.outlineWidth) <= 0)
+                return ["grid has no painted focus ring"];
             const extent = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
             const box = grid.getBoundingClientRect();
             const ring = {
@@ -1026,8 +1028,13 @@ test("board-keyboard: opens analysis and exposes a keyboard-operable board", asy
             }
             return cut;
         });
-    for (const width of [800, 320, 500]) {
+    for (const [width, layout] of [
+        [800, "mosaic"],
+        [320, "stacked"],
+        [500, "stacked"],
+    ] as const) {
         await page.setViewportSize({ width, height: 720 });
+        await expect(page.locator(`[data-board-layout="${layout}"]`)).toHaveCount(1);
         // Crossing into the stacked layout remounts the board; keyboard modality keeps the ring.
         await whiteBoard.focus();
         await expect.poll(ringClips, { message: `focus ring clipped at ${width}px` }).toEqual([]);
