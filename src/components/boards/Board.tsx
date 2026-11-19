@@ -597,7 +597,7 @@ function Board({
                 h="100%"
                 pos="absolute"
               >
-                <Box pos="relative" w="100%" h="100%">
+                <Box data-board-annotation-layer pos="relative" w="100%" h="100%">
                   <AnnotationHint
                     orientation={orientation}
                     square={square}

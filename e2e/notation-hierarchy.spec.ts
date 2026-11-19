@@ -563,8 +563,7 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
             const hint = element.getBoundingClientRect();
             const board = document.querySelector("#left cg-board")!.getBoundingClientRect();
             // The hint's square is a percentage of the overlay layer, which must match the board.
-            const layer =
-                element.parentElement!.parentElement!.parentElement!.getBoundingClientRect();
+            const layer = element.closest("[data-board-annotation-layer]")!.getBoundingClientRect();
             const wrap = document.querySelector("#left .cg-wrap")!.getBoundingClientRect();
             // White orientation, a3 is file 0 and row 5 from the top of the painted board.
             const square = {
