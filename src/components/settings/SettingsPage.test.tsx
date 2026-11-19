@@ -96,6 +96,27 @@ test("practice settings expose automatic/manual grading and the session new-move
     limit.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(atoms.get(practiceNewPerSessionAtom)).toBe(0);
+  const setText = async (text: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(limit, text);
+      limit.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  const blur = async () =>
+    act(async () => {
+      limit.focus();
+      limit.blur();
+    });
+  // A cleared field shows the stored limit again once it loses focus.
+  await setText("");
+  await blur();
+  expect(limit.value).toBe("0");
+  expect(atoms.get(practiceNewPerSessionAtom)).toBe(0);
+  // An over-limit draft is clamped on blur, and the clamped limit is stored.
+  await setText("150");
+  expect(atoms.get(practiceNewPerSessionAtom)).toBe(0);
+  await blur();
+  expect(limit.value).toBe("100");
+  expect(atoms.get(practiceNewPerSessionAtom)).toBe(100);
 });
 
 test.each(["{", '"invalid"', "null", "101", "-1", "1.5"])(

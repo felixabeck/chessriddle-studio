@@ -1,7 +1,8 @@
-import { Group, NumberInput } from "@mantine/core";
+import { Group } from "@mantine/core";
 import { useAtom } from "jotai";
 import { useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import DraftNumberInput from "@/components/common/DraftNumberInput";
 import { coverageMinGamesAtom } from "@/state/atoms";
 import { SettingLabelContext } from "./SettingsLayout";
 import SettingsSelect from "./SettingsSelect";
@@ -21,12 +22,6 @@ export default function RepertoireMinGamesSetting() {
   const inheritedLabel = useContext(SettingLabelContext);
   const [minGames, setMinGames] = useAtom(coverageMinGamesAtom);
   const [preset, setPreset] = useState<Preset>(() => presetFor(minGames));
-
-  // The free-entry field's text while it is being edited; `null` shows the
-  // stored minimum. Blur drops a draft that was never stored (an emptied
-  // field); a value Mantine normalises on blur (0 → min, 05 → 5) arrives
-  // through onChange first and is stored.
-  const [draft, setDraft] = useState<number | string | null>(null);
 
   // Custom stays selected while the user is in it: each whole number typed in
   // the free-entry field is written to the atom, and re-deriving the preset
@@ -70,18 +65,15 @@ export default function RepertoireMinGamesSetting() {
         onChange={(val) => {
           const next = (val ?? "custom") as Preset;
           if (next !== "custom") setMinGames(PRESET_MIN_GAMES[next]);
-          setDraft(null);
           setPreset(next);
         }}
       />
       {preset === "custom" && (
-        <NumberInput
+        <DraftNumberInput
           w={100}
           aria-label={inheritedLabel}
-          value={draft ?? minGames}
-          onBlur={() => setDraft(null)}
+          value={minGames}
           onChange={(val) => {
-            setDraft(val);
             // Mantine passes a string for an empty, leading-zero or over-long
             // (beyond the safe integer range) draft and a whole number
             // otherwise (allowDecimal is off); a number >= 1 is stored.

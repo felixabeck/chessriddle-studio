@@ -2,6 +2,7 @@ import { NumberInput, Select } from "@mantine/core";
 import { useState } from "react";
 import { match } from "ts-pattern";
 import type { GoMode } from "@/bindings";
+import { useNumberInputDraft } from "./DraftNumberInput";
 
 export type TimeType = "ms" | "s" | "m" | "h";
 // Native GoMode::validate rejects a zero time.
@@ -27,11 +28,9 @@ function TimeInput({
   ariaLabel?: string;
 }) {
   const [internalTimeType, setInternalTimeType] = useState<TimeType>(defaultType ?? "ms");
-  const [draft, setDraft] = useState<string | number | null>(null);
-
   const timeType = type ?? internalTimeType;
   const handleTypeChange = (newType: TimeType) => {
-    setDraft(null);
+    draft.reset();
     if (onTypeChange) {
       onTypeChange(newType);
     } else {
@@ -45,6 +44,7 @@ function TimeInput({
     .with("m", () => value / 1000 / 60)
     .with("h", () => value / 1000 / 60 / 60)
     .exhaustive();
+  const draft = useNumberInputDraft(displayedValue);
 
   const toMilliseconds = (amount: number) =>
     Math.round(
@@ -82,10 +82,10 @@ function TimeInput({
         />
       }
       rightSectionWidth={"30%"}
-      value={draft ?? displayedValue}
-      onBlur={() => setDraft(null)}
+      value={draft.value}
+      onBlur={draft.reset}
       onChange={(v) => {
-        setDraft(v);
+        draft.track(v);
         if (typeof v === "number") {
           setValue({ t: "Time", c: toMilliseconds(v) });
           return;

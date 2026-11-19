@@ -27,6 +27,7 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import { match, P } from "ts-pattern";
+import DraftNumberInput from "@/components/common/DraftNumberInput";
 import { IconAction } from "@/components/common/IconAction";
 import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
 import { enginesAtom } from "@/state/atoms";
@@ -245,7 +246,7 @@ export default function EngineSettings({
     return match(option)
       .with({ type: "spin", value: P.select() }, (v: any) => {
         return (
-          <NumberInput
+          <DraftNumberInput
             key={v.name}
             label={label}
             description={note}
@@ -254,7 +255,7 @@ export default function EngineSettings({
             max={Number(v.max)}
             allowDecimal={false}
             value={Number(v.value)}
-            // A cleared field reports "" mid-edit; keep the last valid value until it holds a number.
+            // A cleared field reports "" mid-edit; only a number is saved, and blur shows the saved value again.
             onChange={(e) => {
               if (typeof e === "number") setSetting(v.name, e, Number(v.default));
             }}

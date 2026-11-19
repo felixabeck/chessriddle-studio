@@ -1,16 +1,5 @@
 import { tauri } from "@/platform/tauri";
-import {
-  Card,
-  Group,
-  NumberInput,
-  ScrollArea,
-  Stack,
-  Table,
-  Tabs,
-  Text,
-  TextInput,
-  Title,
-} from "@mantine/core";
+import { Card, Group, ScrollArea, Stack, Table, Tabs, Text, TextInput, Title } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
 import {
   BookOpen,
@@ -67,6 +56,7 @@ import { keyMapAtom } from "@/state/keybinds";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
 import { PIECE_SCALE_MAX, PIECE_SCALE_MIN, PIECE_SCALE_STEP } from "@/state/pieceScale";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import DraftNumberInput from "../common/DraftNumberInput";
 import { IconAction } from "../common/IconAction";
 import BoardSelect from "./BoardSelect";
 import KeybindInput from "./KeybindInput";
@@ -519,7 +509,7 @@ export default function Page() {
         description: t("Settings.Repertoire.NewPerSession.Desc"),
         keywords: ["practice", "new", "limit", "session"],
         render: () => (
-          <NumberInput
+          <DraftNumberInput
             aria-label={t("Settings.Repertoire.NewPerSession")}
             min={PRACTICE_NEW_PER_SESSION.min}
             max={PRACTICE_NEW_PER_SESSION.max}
