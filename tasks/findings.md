@@ -27804,3 +27804,33 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** move the files with no code change. `common/AccountCards.tsx` (+ test) goes to `home/AccountCards.tsx`. `common/DetachedEval.tsx` (+ test) goes to `boards/DetachedEval.tsx`, or `panels/analysis/DetachedEval.tsx` beside its eight imports. `databases/FideInfo.tsx` (+ test) goes to `common/FideInfo.tsx`. Then update the five import sites. The other single-user `common/` files (`ChallengeHistory`, `EvalChart`, `ShowMaterial`, `ToggleButtonGroup`, `LocalImage`, `OpenFolderButton`, `InlineInput`, `CompleteMoveCell`) import no feature folder, so they can stay as generic pieces.
 * **Proof:** at `0b14f4525`, for each `src/components/common/*.tsx`, I counted production importers with `rg -l` and feature-folder imports with `rg -c 'from "(\.\./|@/components/)(home|boards|panels|databases|tabs|settings|puzzles|engines)/'`. Only `AccountCards` (1 importer, 3 feature imports), `DetachedEval` (1, 8) and `GameInfo` (3, 1 = `databases/FideInfo`) import feature folders. `rg -l 'databases/FideInfo|\./FideInfo"' src/components -g '!*.test.*'` lists only the three non-`databases` importers.
 * **Found by:** Grok Bot, refactoring review (t68u), origin/master `0b14f4525`.
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### FileFreshnessPublication's main-thread budget test asserts wall-clock time and fails under shared-machine load
+
+* **ID:** f-20261120-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** f45e25ea-dbe9-473f-a401-c199e5b3579e
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (split out of f-20261115-27's 2026-11-16 recurrence note while working that finding, 2026-11-20)
+* **Where:** `src/components/tabs/FileFreshnessPublication.test.tsx:468` (`real install exceeds the main-thread budget with the synchronous wedge and passes after removal`). The clean iteration measures `performance.now()` between read completion, tree apply and the observed DOM attribute and asserts `fileFreshnessMainThreadWithinBudget(...)` is true.
+* **Defect:** the clean (non-wedged) arm asserts a real wall-clock budget (`FILE_FRESHNESS_APPLY_BUDGET_MS`) inside the instrumented `frontend-coverage` lane, so CPU contention from other gates alone can push the clean install over budget. This is not the jsdom `getComputedStyle` cost that f-20261115-27 removed; the test measures time by design.
+* **Failure scenario:** `pnpm gates:push -- --frontend` on tree `f34c6f414` (diff only `src/state/store/tabStorage.ts`, 2026-11-16) failed frontend-coverage with `expected [ false, false ] to deeply equal [ false, true ]` from this test while e2e ran concurrently. Transcript `artifacts/gates/20261116T050309969Z-3872340/frontend-coverage.log`. It passes in isolation.
+* **Open question:** how should the budget proof stay meaningful without depending on machine load in the coverage lane (deterministic clock injected around the apply path, a ratio between the wedged and clean arms, or running the wall-clock proof only in `pnpm verify:app`), given d-20260901-36 rejects raising timeouts?
+* **Related:** f-20261115-27 (handled; same push-gate symptom family, different cause).
+* **Found by:** Claude Code drain session f45e25ea-dbe9-473f-a401-c199e5b3579e
+
+### check-rust-release-surface-config-c O3.7 test times out at 5 s in the loaded frontend-coverage lane
+
+* **ID:** f-20261120-02 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** f45e25ea-dbe9-473f-a401-c199e5b3579e
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (split out of f-20261115-27's 2026-11-18 recurrence note while working that finding, 2026-11-20)
+* **Where:** `scripts/check-rust-release-surface-config-c.test.mjs`, test `O3.7 rejects a nested repository in the ignored nested child`, collected by vitest's `scripts/**/*.test.mjs` include and run in the `frontend-coverage` lane.
+* **Defect:** the test took 5035 ms and hit vitest's 5000 ms default under load. It is a gate-script test, not a Mantine/jsdom render, so f-20261115-27's `getComputedStyle` stub does not apply; where its time goes (likely real git/process or filesystem work per case) is unmeasured.
+* **Failure scenario:** `pnpm gates:push -- --frontend` on tree `e5552c422` (2026-11-18, diff limited to board components and an e2e spec) failed frontend-coverage on this test among load-only timeouts. Transcript `artifacts/gates/20261118T161545610Z-3290055/receipt-frontend-coverage.log`. The file passes in isolation.
+* **Fix:** measure the test's cost (spawned processes, repository fixtures created per case) and remove it at its source, as in f-20261109-08; d-20260901-36 rejects raising the timeout. Lens: review-tests.
+* **Related:** f-20261115-27 (handled; same push-gate symptom, different cause).
+* **Found by:** Claude Code drain session f45e25ea-dbe9-473f-a401-c199e5b3579e
