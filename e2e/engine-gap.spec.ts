@@ -550,7 +550,7 @@ test("engine-gap: engines reorder from the keyboard on their grip", async ({ pag
     await expect(names).toHaveText(["E2E ChessDB", "E2E Stockfish"]);
 });
 
-test("engine-gap: pinned engine shows up to its own line count and swaps between the tabs and the notation", async ({
+test("engine-gap: pinned engine shows up to its own line count and moves between its four places", async ({
     page,
     emitTauriEvent,
     assertAccessible,

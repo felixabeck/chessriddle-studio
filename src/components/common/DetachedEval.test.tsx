@@ -506,11 +506,16 @@ test("DetachedEval renders in the stored slot only, and its position menu lists 
 test("DetachedEval keeps the bar in place when the current position is chosen again", async () => {
   try {
     const tree = await renderEverySlot('"notation"');
-    await choosePosition("Engine.PositionAboveNotation");
-    expect(localStorage.getItem(PLACEMENT_KEY)).toBe(JSON.stringify("notation"));
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    try {
+      await choosePosition("Engine.PositionAboveNotation");
+      // Nothing is stored again.
+      expect(setItem.mock.calls.filter(([key]) => key === PLACEMENT_KEY)).toEqual([]);
+    } finally {
+      setItem.mockRestore();
+    }
     expectOnlyIn("notation");
-    // No remount happened, so a later mount must not steal focus.
-    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    // No move was requested, so the next mount, before any timer runs, must not take focus.
     await act(async () => h.store.set(detachedEnginePlacementAtom, "board"));
     expect(document.activeElement).not.toBe(positionButton());
     tree.dispose();
@@ -527,7 +532,7 @@ test("DetachedEval position focus does not leak into a later mount when the othe
     expect((await h.store.set(enginesAtom, [displayEngine])).saved).toBe(true);
     h.store.set(currentDetachedEngineAtom, displayEngine.id);
     await h.remember();
-    // Board editing renders no notation slot, so a swap to it mounts nothing.
+    // Board editing renders no notation slots, so a move to one mounts nothing.
     await h.render(
       <TreeStateContext.Provider value={tree}>
         <DetachedEval placement="tabs" />

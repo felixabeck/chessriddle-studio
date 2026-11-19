@@ -209,7 +209,7 @@ vi.mock("../common/DetachedEval", () => ({
   default: ({ placement }: { placement: string }) => <span data-engine-slot={placement} />,
 }));
 vi.mock("../common/GameNotation", () => ({ default: () => null }));
-vi.mock("../common/MoveControls", () => ({ default: () => null }));
+vi.mock("../common/MoveControls", () => ({ default: () => <span data-move-controls /> }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
 vi.mock("../panels/annotation/AnnotationPanel", () => ({ default: () => null }));
 vi.mock("../panels/database/DatabasePanel", () => ({
@@ -485,12 +485,14 @@ describe("BoardAnalysis", () => {
     expect(
       document.querySelector('[data-slot="below-board"] [data-engine-slot="board"]'),
     ).not.toBeNull();
-    // The two notation slots open and close the same notation column.
+    // The two notation slots open and close the same notation column, the lower one after the
+    // move buttons.
     const above = document.querySelector('[data-engine-slot="notation"]')!;
     const below = document.querySelector('[data-engine-slot="belowNotation"]')!;
     expect(above.parentElement).toBe(below.parentElement);
     expect(above.parentElement!.firstElementChild).toBe(above);
     expect(below.parentElement!.lastElementChild).toBe(below);
+    expect(below.previousElementSibling?.hasAttribute("data-move-controls")).toBe(true);
   });
 
   async function resetToFirstMove() {
