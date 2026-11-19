@@ -160,10 +160,12 @@ vi.mock("@mantine/core", () => {
     Divider: () => null,
     Group: Box,
     // Controlled like Mantine's: the shown text is the `value` prop, a cleared field reports "".
-    NumberInput: ({ label, value, onChange, onBlur }: any) => (
+    NumberInput: ({ label, value, onChange, onBlur, min, allowDecimal }: any) => (
       <input
         aria-label={label}
         value={value}
+        data-min={min}
+        data-allow-decimal={String(allowDecimal)}
         onBlur={onBlur}
         onChange={(event) =>
           onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
@@ -3815,6 +3817,11 @@ test("the opening-book ply limit holds a cleared or below-1 draft until blur and
   });
   expect(field().value).toBe("20");
   expect(store.get(gameOpeningBookMaxPlyAtom)).toBe(20);
+  // A fraction is never stored; whole numbers below 1 are clamped by the input on blur.
+  await type("1.5");
+  expect(store.get(gameOpeningBookMaxPlyAtom)).toBe(20);
+  expect(field().dataset.min).toBe("1");
+  expect(field().dataset.allowDecimal).toBe("false");
   await type("12");
   expect(store.get(gameOpeningBookMaxPlyAtom)).toBe(12);
 });

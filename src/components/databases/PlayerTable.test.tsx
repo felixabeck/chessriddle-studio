@@ -46,17 +46,26 @@ vi.mock("@mantine/core", () => {
       value,
       onChange,
       onBlur,
+      min,
+      max,
+      allowDecimal,
     }: {
       label: string;
       value: number | string;
       onChange: (value: string | number) => void;
       onBlur?: () => void;
+      min?: number;
+      max?: number;
+      allowDecimal?: boolean;
     }) => {
       mocks.inputs.set(label, onChange);
       return (
         <input
           aria-label={label}
           value={value}
+          data-min={min}
+          data-max={max}
+          data-allow-decimal={String(allowDecimal)}
           onBlur={onBlur}
           onChange={(event) =>
             onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
@@ -355,6 +364,12 @@ test.each([
     });
   // No range stored yet: the field shows the omitted bound.
   expect(field().value).toBe(bound);
+  // The input clamps to the native query's whole-number range on blur.
+  expect(field().dataset).toMatchObject({
+    min: "0",
+    max: String(ELO_FILTER_MAX),
+    allowDecimal: "false",
+  });
   // An out-of-range draft stays on screen unstored (Mantine clamps it on blur; the mock does not).
   await type("5000");
   expect(field().value).toBe("5000");
