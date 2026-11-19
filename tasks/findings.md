@@ -27468,3 +27468,31 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** add one `FixedNoticeStack` (a fixed bottom-right `Stack` with the shared width, max sizes and z-index) in `App.tsx` and render both notices as children, so they stack instead of overlapping. Either move `<Notifications position="top-right">` or give the stack a bottom offset that clears the toast column. Keep the two `Alert` contents as they are. Add a component test that mounts both notices at once and asserts both are in one stack container.
 * **Proof:** the line references above at origin/master `7086448c7`; `rg -n 'pos="fixed"' src -g '!*test*'` lists only these two app-level notices, plus two local popovers (`PointerContextMenu`, `EngineLinePreview`).
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### `nextBranch` and `previousBranch` are one function written twice, and the drill guard is restated in each navigation action
+
+* **ID:** f-20261119-13 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
+* **Where:** `src/state/store/tree.ts` (`createTreeStore`):
+  * `nextBranch` `:644-665` and `previousBranch` `:666-688` are 22 identical lines, including the copied comment "Makes the navigation more fluid…". They differ only in the final index expression: `(branchIndex + 1) % n` vs `(branchIndex + n - 1) % n`.
+  * The pair was already mirrored upstream at merge-base `9654961d6` (`:294-333`).
+  * `if (!drillAllows(state.practicePath, target)) return; state.position = target;` is repeated in `goToAnnotation` `:512-513`, `goToEnd` `:583-584`, `goToBranchEnd` `:626-627`, both branch functions `:662-663` / `:685-686`, and `nextBranching` `:704-705`.
+  * `goToNext` `:460-474` and `goToBranchEndOrNextLine` `:630-641` carry their own inline `practicePath` checks.
+* **Defect:** branch cycling and the drill rule ("navigation may only land on the drill line up to the card", d-20260923-04/-05) have no single owner. Every navigation action computes its target and then repeats the guard by hand.
+* **Failure scenario:** both recorded fixes in this area had to be applied once per copy:
+  * f-20261011-11 fixed the descend-then-cycle bug separately in `nextBranch` and `previousBranch`.
+  * f-20261114-15 existed because upstream navigation actions added after the guard did not repeat it, and its fix pasted the same two lines into six actions.
+
+  A new navigation action, or a change to the drill rule (for example letting sideways moves stay inside the card's sibling set), has to be repeated in every copy. A forgotten one reveals the practice answer again.
+* **Fix:**
+  * Fold the pair into `cycleBranch(state, step: 1 | -1)` and have `nextBranch`/`previousBranch` call it.
+  * Add one `moveCursorWithinDrill(state, target)` that applies `drillAllows` and assigns `state.position`, and route `goToAnnotation`, `goToEnd`, `goToBranchEnd`, `nextBranching` and the branch pair through it.
+  * Leave `goToMove` unguarded. Practice itself positions the board through it (`PracticePanel.tsx:377`, `:499`, `:726`).
+  * No behaviour change. The `tree.test.ts` cases added by f-20261011-11 and f-20261114-15 are the guard.
+* **Proof:** `sed -n 644,688p src/state/store/tree.ts` at origin/master `7086448c7` (a 7-line copy scan of `src/` flagged the pair). `rg -n "drillAllows" src/state/store/tree.ts` lists the six call sites above. `git show 9654961d6:src/state/store/tree.ts` shows the pair at `:294-333`.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
