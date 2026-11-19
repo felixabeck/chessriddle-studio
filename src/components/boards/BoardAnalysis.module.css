@@ -7,3 +7,14 @@
 .belowBoard:empty {
   display: none;
 }
+
+/* The pinned explorer: as tall as its content, at most half of the pane, its table scrolling
+   inside. */
+.detachedExplorer {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 50%;
+  overflow: hidden;
+}

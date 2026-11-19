@@ -20,6 +20,7 @@ import {
   practiceMoveControllerFamily,
   practiceStateFamily,
   enginesAtom,
+  explorerDetachedAtom,
   threatFamily,
   tabEngineSettingsFamily,
 } from "@/state/atoms";
@@ -159,6 +160,11 @@ function BoardAnalysis() {
 
   const [, setAnalysisTab] = useAtom(useTabAtom(analysisTabFamily));
   const [currentTabSelected, setCurrentTabSelected] = useAtom(useTabAtom(tabFamily));
+  // Pinned, the explorer is a strip above the tabs and no longer one of them. A tab whose stored
+  // choice is the explorer shows Annotate meanwhile; the stored choice is left alone.
+  const explorerDetached = useAtomValue(explorerDetachedAtom);
+  const shownTab =
+    explorerDetached && currentTabSelected === "database" ? "annotate" : currentTabSelected;
   const [, setReportModalOpen] = useAtom(useTabAtom(reportModalOpenFamily));
   const practiceTabSelected = useAtomValue(useTabAtom(practiceTabFamily));
   const isRepertoire = tabFile?.metadata.type === "repertoire";
@@ -273,7 +279,13 @@ function BoardAnalysis() {
           [keyMap.ANNOTATE_TAB.keys, "annotate"],
           [keyMap.INFO_TAB.keys, "info"],
         ] as const
-      ).map<HotkeyItem>(([keys, panel]) => [keys, () => setCurrentTabSelected(panel)]),
+      ).map<HotkeyItem>(([keys, panel]) => [
+        keys,
+        () => {
+          if (panel === "database" && explorerDetached) return;
+          setCurrentTabSelected(panel);
+        },
+      ]),
       [
         keyMap.TOGGLE_ALL_ENGINES.keys,
         (e) => {
@@ -334,6 +346,11 @@ function BoardAnalysis() {
       <Portal target="#topRight" className={paneClasses.root} style={{ height: "100%" }}>
         <Stack h="100%" gap="xs" className={paneClasses.root}>
           <DetachedEval placement="tabs" />
+          {explorerDetached && (
+            <Paper withBorder className={classes.detachedExplorer} data-testid="pinned-explorer">
+              <DatabasePanel />
+            </Paper>
+          )}
           <Paper
             withBorder
             className={paneClasses.root}
@@ -346,7 +363,7 @@ function BoardAnalysis() {
             <Tabs
               w="100%"
               h="100%"
-              value={currentTabSelected}
+              value={shownTab}
               onChange={(v) => setCurrentTabSelected(v || "info")}
               keepMounted={false}
               activateTabWithKeyboard={false}
@@ -377,7 +394,9 @@ function BoardAnalysis() {
                     ? [{ value: "practice", title: t("Board.Tabs.Practice"), Icon: Crosshair }]
                     : []),
                   { value: "analysis", title: t("Board.Tabs.Analysis"), Icon: ScanSearch },
-                  { value: "database", title: t("Board.Tabs.Database"), Icon: Database },
+                  ...(explorerDetached
+                    ? []
+                    : [{ value: "database", title: t("Board.Tabs.Database"), Icon: Database }]),
                   { value: "annotate", title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
                   { value: "info", title: t("Board.Tabs.Info"), Icon: Info },
                 ].map(({ value, title, Icon }) => (
@@ -394,9 +413,11 @@ function BoardAnalysis() {
               <Tabs.Panel value="info">
                 <InfoPanel addGame={addGame} />
               </Tabs.Panel>
-              <Tabs.Panel value="database">
-                <DatabasePanel />
-              </Tabs.Panel>
+              {!explorerDetached && (
+                <Tabs.Panel value="database">
+                  <DatabasePanel />
+                </Tabs.Panel>
+              )}
               <Tabs.Panel value="annotate">
                 <AnnotationPanel />
               </Tabs.Panel>

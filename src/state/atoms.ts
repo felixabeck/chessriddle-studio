@@ -1227,6 +1227,17 @@ export const explorerHeaderCollapsedAtom = atomWithStorage<boolean>(
     createZodStorage(z.boolean(), localStorage),
 );
 
+/**
+ * Whether the board explorer is pinned as a strip above the panel tabs instead of being one of
+ * them. Called detached like the engine bar: `pinnedExplorerDatabaseFamily` is a tab's own
+ * database, not this.
+ */
+export const explorerDetachedAtom = atomWithStorage<boolean>(
+    "detached-explorer",
+    false,
+    createZodStorage(z.boolean(), localStorage),
+);
+
 export const dbTypeFamily = atomFamily((_tab: string) =>
     atom<"local" | "lch_all" | "lch_master">("local"),
 );

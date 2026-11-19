@@ -14,7 +14,7 @@ import {
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Plus, Settings, X } from "lucide-react";
+import { Pin, PinOff, Plus, Settings, X } from "lucide-react";
 import { memo, type ReactNode, useCallback, useContext, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import equal from "fast-deep-equal";
@@ -34,6 +34,7 @@ import {
   dbTabFamily,
   dbTypeFamily,
   explorerGamesSourceFamily,
+  explorerDetachedAtom,
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
   localOptionsFamily,
@@ -43,6 +44,7 @@ import {
   referenceDbAtom,
   replaceExplorerDatabaseAtom,
   sessionsAtom,
+  tabFamily,
 } from "@/state/atoms";
 import {
   databaseHandleFromKey,
@@ -499,17 +501,33 @@ function DatabasePanel() {
       ),
     )
     .exhaustive();
+  const [detached, setDetached] = useAtom(explorerDetachedAtom);
+  const setBoardPanel = useSetAtom(useTabAtom(tabFamily));
   const headerActions = (
-    <IconAction
-      label={collapsed ? t("Board.Database.ShowSettings") : t("Board.Database.HideSettings")}
-      variant="subtle"
-      size="sm"
-      pressed={!collapsed}
-      disabled={needsDatabase}
-      onClick={() => setStoredCollapsed(!storedCollapsed)}
-    >
-      <Settings size="0.875rem" />
-    </IconAction>
+    <>
+      <IconAction
+        label={collapsed ? t("Board.Database.ShowSettings") : t("Board.Database.HideSettings")}
+        variant="subtle"
+        size="sm"
+        pressed={!collapsed}
+        disabled={needsDatabase}
+        onClick={() => setStoredCollapsed(!storedCollapsed)}
+      >
+        <Settings size="0.875rem" />
+      </IconAction>
+      <IconAction
+        label={detached ? t("Board.Database.Unpin") : t("Board.Database.Pin")}
+        variant="subtle"
+        size="sm"
+        onClick={() => {
+          // Unpinned, the panel goes back to being a tab, and that tab is the one shown.
+          if (detached) setBoardPanel("database");
+          setDetached(!detached);
+        }}
+      >
+        {detached ? <PinOff size="0.875rem" /> : <Pin size="0.875rem" />}
+      </IconAction>
+    </>
   );
 
   // With two sources a failure belongs to its source: it is named, and the other one stays.
@@ -601,7 +619,7 @@ function DatabasePanel() {
                 </Menu>
               )}
             </Group>
-            <Group gap="xs" wrap="nowrap">
+            <Group gap={4} wrap="nowrap">
               <Tabs.List style={{ flexWrap: "nowrap" }}>
                 <Tabs.Tab value="stats" disabled={statsUnavailable}>
                   {t("Board.Database.Stats")}

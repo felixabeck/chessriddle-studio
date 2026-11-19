@@ -10,6 +10,7 @@ import {
   closeWorkspaceTabAtom,
   currentTabAtom,
   tabFamily,
+  explorerDetachedAtom,
   analysisTabFamily,
   practiceTabFamily,
   reportModalOpenFamily,
@@ -211,7 +212,9 @@ vi.mock("../common/GameNotation", () => ({ default: () => null }));
 vi.mock("../common/MoveControls", () => ({ default: () => null }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
 vi.mock("../panels/annotation/AnnotationPanel", () => ({ default: () => null }));
-vi.mock("../panels/database/DatabasePanel", () => ({ default: () => null }));
+vi.mock("../panels/database/DatabasePanel", () => ({
+  default: () => <span data-testid="database-panel" />,
+}));
 vi.mock("../panels/practice/PracticePanel", () => ({ default: () => null }));
 const board = vi.hoisted(() => vi.fn((_props: React.ComponentProps<typeof Board>) => null));
 vi.mock("./Board", () => ({ default: board }));
@@ -416,6 +419,63 @@ describe("BoardAnalysis", () => {
       expect(board.mock.lastCall?.[0].repertoire).toBe(type === "repertoire");
     },
   );
+
+  test("a pinned explorer renders once above the tabs, leaves the tab list, and a stored Database choice shows Annotate", async () => {
+    mocks.realTabs = true;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    await act(async () => {
+      jotaiStore.set(tabFamily(tabId), "database");
+      root.render(
+        <MantineProvider>
+          <JotaiProvider store={jotaiStore}>
+            <TreeStateContext.Provider value={treeStore}>
+              <RetainedBoardHarness />
+            </TreeStateContext.Provider>
+          </JotaiProvider>
+        </MantineProvider>,
+      );
+    });
+    const panels = () => [...container.querySelectorAll('[data-testid="database-panel"]')];
+    const headings = () =>
+      Array.from(container.querySelectorAll('[role="tab"]'), (heading) => heading.textContent);
+    const selected = () =>
+      container.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
+    const databaseKey = async () => {
+      const keys = jotaiStore.get(keyMapAtom).DATABASE_TAB.keys;
+      const binding = hotkeys.mock.calls
+        .flatMap(([bindings]) => bindings)
+        .findLast(([bound]) => bound === keys)!;
+      await act(async () => binding[1](new KeyboardEvent("keydown", { cancelable: true })));
+    };
+
+    // As a tab: one panel, inside the tab panel.
+    expect(panels()).toHaveLength(1);
+    expect(panels()[0].closest('[role="tabpanel"]')).not.toBeNull();
+    expect(selected()).toBe("Board.Tabs.Database");
+
+    await act(async () => jotaiStore.set(explorerDetachedAtom, true));
+    expect(panels()).toHaveLength(1);
+    expect(panels()[0].closest('[role="tabpanel"]')).toBeNull();
+    expect(headings()).toEqual(["Board.Tabs.Analysis", "Board.Tabs.Annotate", "Board.Tabs.Info"]);
+    expect(selected()).toBe("Board.Tabs.Annotate");
+    // The stored choice is derived around, not rewritten, and the shortcut has no tab to open.
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
+    await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
+    await databaseKey();
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
+    expect(panels()).toHaveLength(1);
+
+    await act(async () => jotaiStore.set(explorerDetachedAtom, false));
+    expect(headings()).toContain("Board.Tabs.Database");
+    expect(panels()).toHaveLength(0);
+    await databaseKey();
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
+    expect(panels()).toHaveLength(1);
+    expect(panels()[0].closest('[role="tabpanel"]')).not.toBeNull();
+  });
 
   test("mounts one pinned-engine slot per placement, the board's below the board", () => {
     const slots = [...document.querySelectorAll("[data-engine-slot]")].map((slot) =>

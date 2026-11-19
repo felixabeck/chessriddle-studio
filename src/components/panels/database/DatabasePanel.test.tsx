@@ -16,6 +16,7 @@ import {
   explorerGamesSourceFamily,
   explorerSortFamily,
   sessionsAtom,
+  tabFamily,
   tabsAtom,
   activeTabAtom,
   explorerDatabaseFiltersAtom,
@@ -1338,6 +1339,45 @@ describe("DatabasePanel", () => {
       });
       expect(sources()[0].textContent).toBe("Board.Database.LichessAll · Board.Database.Filters");
     });
+
+    const PIN_KEY = "detached-explorer";
+    const pinButton = () =>
+      container.querySelector<HTMLButtonElement>(
+        '[aria-label="Board.Database.Pin"], [aria-label="Board.Database.Unpin"]',
+      )!;
+
+    test.each([
+      [null, "Board.Database.Pin"],
+      ["true", "Board.Database.Unpin"],
+      ["false", "Board.Database.Pin"],
+      ["not json", "Board.Database.Pin"],
+      ["1", "Board.Database.Pin"],
+    ])("the pin preference %s hydrates as %s", async (stored, label) => {
+      if (stored !== null) localStorage.setItem(PIN_KEY, stored);
+      await mountCompared();
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      expect(pinButton().getAttribute("aria-label")).toBe(label);
+    });
+
+    test.each(["true", "false"])(
+      "pinning stores the preference and unpinning also selects the board's Database tab, header collapsed=%s",
+      async (collapsed) => {
+        localStorage.setItem(HEADER_COLLAPSED_KEY, collapsed);
+        const { store } = await mountCompared();
+        await vi.waitFor(() => expect(sources()).toHaveLength(2));
+        await act(async () => store.set(tabFamily(tabId), "annotate"));
+
+        await act(async () => pinButton().click());
+        expect(localStorage.getItem(PIN_KEY)).toBe("true");
+        expect(pinButton().getAttribute("aria-label")).toBe("Board.Database.Unpin");
+        // Pinning leaves the board's panel choice alone.
+        expect(store.get(tabFamily(tabId))).toBe("annotate");
+
+        await act(async () => pinButton().click());
+        expect(localStorage.getItem(PIN_KEY)).toBe("false");
+        expect(store.get(tabFamily(tabId))).toBe("database");
+      },
+    );
 
     test("a cancellation on the database list keeps the comparison database", async () => {
       const { revalidate } = await mountCompared();

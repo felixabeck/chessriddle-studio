@@ -3456,6 +3456,55 @@ test("database-files: the board explorer compares two databases side by side", a
     expect(Math.abs(captionEdges.cells[0] - captionEdges.headers[1])).toBeLessThanOrEqual(2);
     expect(Math.abs(captionEdges.cells[1] - captionEdges.headers[3])).toBeLessThanOrEqual(2);
     await expect(databasePanel).toHaveScreenshot("explorer-two-databases-collapsed.png");
+
+    // Pinned, the explorer is a strip above the panel tabs and Annotate is open below it.
+    await page.getByRole("button", { name: "Pin database", exact: true }).click();
+    await page.mouse.move(0, 0);
+    const strip = page.getByTestId("pinned-explorer");
+    const pane = page.locator("#topRight");
+    const panelTabs = pane.getByRole("tablist").first();
+    const note = pane.locator("[contenteditable='true']");
+    await expect(strip.locator("[data-explorer-source]")).toHaveCount(2);
+    await expect(sources).toHaveCount(2);
+    await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Annotate", exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    const rect = async (locator: Locator) => (await locator.boundingBox())!;
+    const tableScrolls = () =>
+        strip
+            .locator(".mantine-ScrollArea-viewport")
+            .first()
+            .evaluate((viewport) => viewport.scrollHeight > viewport.clientHeight + 1);
+    // The table is taller than half the pane here: the strip stops at half, its table scrolls,
+    // and the note stays in view below the tabs.
+    await expect.poll(tableScrolls).toBe(true);
+    expect((await rect(strip)).height).toBeLessThanOrEqual((await rect(pane)).height / 2 + 1);
+    expect((await rect(strip)).height).toBeGreaterThan((await rect(pane)).height / 2 - 2);
+    expect((await rect(strip)).y + (await rect(strip)).height).toBeLessThanOrEqual(
+        (await rect(panelTabs)).y,
+    );
+    await expect(note).toBeInViewport();
+    await expect(pane).toHaveScreenshot("explorer-pinned-strip.png");
+    // With room for every row the strip is as tall as its content and nothing scrolls.
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize({ width: viewport.width, height: 1600 });
+    await expect.poll(tableScrolls).toBe(false);
+    expect((await rect(strip)).height).toBeLessThan((await rect(pane)).height / 2 - 2);
+    await expect(strip.locator("tbody tr")).toHaveCount(5);
+    await expect(strip.locator("tbody tr").last()).toBeInViewport({ ratio: 1 });
+    await expect(note).toBeInViewport();
+    await page.setViewportSize(viewport);
+    // Unpinned from the strip, it is a tab again, and that tab is shown.
+    await strip.getByRole("button", { name: "Unpin database", exact: true }).click();
+    await expect(strip).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await expect(sources).toHaveCount(2);
+
     await page.getByRole("button", { name: "Show database settings", exact: true }).click();
     // Take the pointer off the button, so its tooltip is in no later image.
     await page.mouse.move(0, 0);
