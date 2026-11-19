@@ -605,7 +605,7 @@
     "Databases.Upgrading.Description": "Diese Datenbank wird auf das aktuelle Format aktualisiert. Bei großen Datenbanken kann dies mehrere Minuten dauern.",
     "Databases.Upgrading.Label": "Wird aktualisiert…",
     "Engine.PauseAnalysis": "Engine-Analyse pausieren",
-    "Engine.Position": "Position der Engine",
+    "Engine.Position": "Platz der Engine",
     "Engine.PositionAboveNotation": "Über der Notation",
     "Engine.PositionAboveTabs": "Über den Reitern",
     "Engine.PositionBelowBoard": "Unter dem Brett",
