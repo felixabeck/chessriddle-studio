@@ -146,6 +146,15 @@ describe("online filter markers", () => {
         ["fewer speeds", lichess({ speeds: ["blitz"] })],
         ["fewer ratings", lichess({ ratings: [2200, 2500] })],
         ["no speeds", lichess({ speeds: [] })],
+        [
+            "one speed swapped for another",
+            lichess({ speeds: ["ultraBullet", "blitz", "rapid", "classical", "correspondence"] }),
+        ],
+        [
+            "one rating swapped for another",
+            lichess({ ratings: [0, 1200, 1400, 1600, 1800, 2000, 2200, 2500] }),
+        ],
+        ["a variant", lichess({ variant: "chess960" })],
     ])("Lichess options with %s are a filter", (_name, options) => {
         expect(lichessFiltersActive(options)).toBe(true);
     });
