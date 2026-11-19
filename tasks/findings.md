@@ -27645,3 +27645,37 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** delete `getMainlineUcis` and use `getMainLine(root)` from `utils/chess.ts` (normalised, and also correct for custom start FENs) at both call sites. Add a BoardGame test that starts from a tree containing `O-O` and asserts that a polled `e1g1` state still counts as a prefix.
 * **Proof:** a node probe using the repo's `chessops` (`dist/esm`) gave `parseSan(pos, "O-O")` → `{"from":4,"to":7}`, with `makeUci` → `e1h1`. `rg -n "from_move\(&mv" src-tauri/src/game.rs` shows the native writer uses the game's castling mode, which is Standard unless a Chess960 FEN is detected. Line references are at origin/master `d79fa979e`. The poll-path consequence was traced from code, not reproduced end to end.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### `TreeStore.dispose()` is a no-op that six call sites still invoke, and `createTreeStore(id)` reads as "new store" where it returns the live cached one
+
+* **ID:** f-20261119-20 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `d79fa979e`
+* **Where:**
+  * `src/state/store/tree.ts:173` declares `TreeStore = StoreApi<TreeStoreState> & { dispose: () => void }`.
+  * Both construction branches of `createTreeStore` set `dispose: () => undefined` (`:1010`, with the comment "Provider unmount also calls dispose during ordinary tab switching", and `:1021`). The no-op has been that way since the 2026-08-13 audit (3afed0317).
+  * `createTreeStore(id)` returns the cached live store when one exists for `id` (`:888-891`).
+  * Six callers still call `dispose()`:
+    * `src/components/common/TreeStateContext.tsx:46`
+    * `src/components/tabs/BoardsPage.tsx:191`, `:514`, `:519`, `:525`
+    * `src/state/chessRiddleTraining.ts:133`
+  * Callers that look up a tab's live store through `createTreeStore(tab.value, undefined, treeKey)`:
+    * `src/components/tabs/BoardsPage.tsx:142` (`closeTab`)
+    * `src/state/quitSave.ts:24`
+    * `src/state/unsavedGames.ts:142`
+* **Defect:** the API advertises a cleanup step that does nothing. Code written against it looks like resource management. `BoardsPage.closeTab` "creates" a store to read `dirty`, parks it in `pendingClose`, and the three Confirm-modal callbacks each "dispose" it. In fact that store is the open tab's own live store, and disposing it would be wrong if `dispose` ever did anything.
+* **Failure scenario:** an AI fixing a store-lifetime issue (persist subscriptions, puzzle-session owners) implements `dispose` for real, trusting the call sites. The Confirm-changes Cancel button (`BoardsPage.tsx:513-515`) and every tab switch through `TreeStateContext` (per the comment at `:1009`) would then tear down the live store of a tab that stays open. Conversely, a reviewer reading `closeTab` assumes the early `return`s (`:143-151`, `:183-186`) leak a temporary store, and spends a fix on a non-problem.
+* **Fix:**
+  * Drop `dispose` from `TreeStore` and delete the six calls. `pendingClose` then only needs `{ tabId }` plus `getTreeStore(tabId)` at use time.
+  * Name the lookup for what it does: a `getOrCreateTreeStore(id, …)` alias used by `closeTab`, `quitSave` and `unsavedGames`, leaving `createTreeStore` for genuinely new stores (training sessions, `TreeStateContext` without an id).
+  * If a real disposal is needed later, give it a separate name tied to tab close (`closeTreeStore` already exists, `BoardsPage.tsx:184`).
+  * No behaviour change. `pnpm exec tsc --noEmit`, `BoardsPage.test.tsx` and `TreeStateContext` tests are the guard.
+* **Proof:** at origin/master `d79fa979e`:
+  * `rg -n "dispose" src/state/store/tree.ts` shows only the type and the two no-op bodies.
+  * `rg -n "\.dispose\(\)" src -g '!*test*'` lists the six tree-store calls above, plus the unrelated `feed.dispose()`.
+  * `git log -S"dispose: () => undefined" -- src/state/store/tree.ts` returns 3afed0317 only.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
