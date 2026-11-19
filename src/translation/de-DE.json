@@ -601,6 +601,7 @@
     "Databases.Upgrading.Label": "Wird aktualisiert…",
     "Engine.MoveAboveNotation": "Über die Notation verschieben",
     "Engine.MoveAboveTabs": "Über die Reiter verschieben",
+    "Engine.MoveBelowBoard": "Unter das Brett verschieben",
     "Engine.PauseAnalysis": "Engine-Analyse pausieren",
     "Engine.StartAnalysis": "Engine-Analyse starten",
     "Engine.Unpin": "Engine lösen",

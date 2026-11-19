@@ -617,6 +617,7 @@
     "Databases.Upgrading.Label": "Aktualizowanie…",
     "Engine.MoveAboveNotation": "Przenieś nad notację",
     "Engine.MoveAboveTabs": "Przenieś nad karty",
+    "Engine.MoveBelowBoard": "Przenieś pod szachownicę",
     "Engine.PauseAnalysis": "Wstrzymaj analizę silnika",
     "Engine.StartAnalysis": "Rozpocznij analizę silnika",
     "Engine.Unpin": "Odepnij silnik",

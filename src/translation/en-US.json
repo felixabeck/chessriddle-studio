@@ -601,6 +601,7 @@
     "Databases.Upgrading.Label": "Upgrading…",
     "Engine.MoveAboveNotation": "Move above the notation",
     "Engine.MoveAboveTabs": "Move above the tabs",
+    "Engine.MoveBelowBoard": "Move below the board",
     "Engine.PauseAnalysis": "Pause engine analysis",
     "Engine.StartAnalysis": "Start engine analysis",
     "Engine.Unpin": "Unpin engine",

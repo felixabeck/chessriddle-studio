@@ -617,6 +617,7 @@
     "Databases.Upgrading.Label": "Обновление…",
     "Engine.MoveAboveNotation": "Переместить над нотацией",
     "Engine.MoveAboveTabs": "Переместить над вкладками",
+    "Engine.MoveBelowBoard": "Переместить под доску",
     "Engine.PauseAnalysis": "Приостановить анализ движка",
     "Engine.StartAnalysis": "Запустить анализ движка",
     "Engine.Unpin": "Открепить движок",

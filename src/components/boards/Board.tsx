@@ -531,7 +531,7 @@ function Board({
             overflow: "hidden",
             maxWidth:
               //            topbar   bottompadding                tabs                                  bottomb    topbar   evalbar                                gaps    ???     focus ring
-              `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${BAR_HEIGHT} - ${BAR_HEIGHT} + 1.563rem + var(--mantine-spacing-md) - 1rem  - 0.2rem + ${FOCUS_RING_EXTENT}))`,
+              `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${BAR_HEIGHT} - ${BAR_HEIGHT} + 1.563rem + var(--mantine-spacing-md) - 1rem  - 0.2rem + ${FOCUS_RING_EXTENT} - var(--board-below-height, 0px)))`,
           }}
         >
           <BoardBar

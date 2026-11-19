@@ -609,6 +609,7 @@
     "Databases.Upgrading.Label": "Actualizando…",
     "Engine.MoveAboveNotation": "Mover sobre la notación",
     "Engine.MoveAboveTabs": "Mover sobre las pestañas",
+    "Engine.MoveBelowBoard": "Mover debajo del tablero",
     "Engine.PauseAnalysis": "Pausar análisis del motor",
     "Engine.StartAnalysis": "Iniciar análisis del motor",
     "Engine.Unpin": "Desfijar motor",

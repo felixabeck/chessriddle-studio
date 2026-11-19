@@ -593,6 +593,7 @@
     "Databases.Upgrading.Label": "업그레이드 중…",
     "Engine.MoveAboveNotation": "기보 위로 이동",
     "Engine.MoveAboveTabs": "탭 위로 이동",
+    "Engine.MoveBelowBoard": "보드 아래로 이동",
     "Engine.PauseAnalysis": "엔진 분석 일시 중지",
     "Engine.StartAnalysis": "엔진 분석 시작",
     "Engine.Unpin": "엔진 고정 해제",

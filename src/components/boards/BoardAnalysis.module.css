@@ -1,0 +1,9 @@
+/* The slot holds the pinned engine bar while it sits below the board. Empty, it takes no room
+   and no gap. */
+.belowBoard {
+  flex-shrink: 0;
+}
+
+.belowBoard:empty {
+  display: none;
+}

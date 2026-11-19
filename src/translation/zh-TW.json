@@ -593,6 +593,7 @@
     "Databases.Upgrading.Label": "正在升級…",
     "Engine.MoveAboveNotation": "移到棋譜上方",
     "Engine.MoveAboveTabs": "移到分頁上方",
+    "Engine.MoveBelowBoard": "移到棋盤下方",
     "Engine.PauseAnalysis": "暫停引擎分析",
     "Engine.StartAnalysis": "開始引擎分析",
     "Engine.Unpin": "取消釘選引擎",

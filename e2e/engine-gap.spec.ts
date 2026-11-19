@@ -13,7 +13,7 @@ import {
     type AnalysisRequest,
     type MockScenario,
 } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import type { EngineOptions, ErrorPayload } from "../src/bindings/generated";
 
 async function setupNotationMenu(
@@ -667,16 +667,143 @@ test("engine-gap: pinned engine shows up to its own line count and swaps between
     expect(await top(detached)).toBeLessThan(await top(tabList));
     await detached.getByRole("button", { name: "Move above the notation", exact: true }).click();
     await expect(
-        detached.getByRole("button", { name: "Move above the tabs", exact: true }),
+        detached.getByRole("button", { name: "Move below the board", exact: true }),
     ).toBeVisible();
     expect(await top(detached)).toBeGreaterThan(await top(tabList));
     expect(await top(detached)).toBeGreaterThanOrEqual(await top(notation));
+    await expect(detached).toHaveCount(1);
+    // The next step puts it below the board, the third returns it above the tabs.
+    await detached.getByRole("button", { name: "Move below the board", exact: true }).click();
+    await expect(
+        detached.getByRole("button", { name: "Move above the tabs", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator("#left").getByTestId("pinned-engine")).toHaveCount(1);
     await expect(detached).toHaveCount(1);
     await detached.getByRole("button", { name: "Move above the tabs", exact: true }).click();
     await expect(
         detached.getByRole("button", { name: "Move above the notation", exact: true }),
     ).toBeVisible();
     expect(await top(detached)).toBeLessThan(await top(tabList));
+});
+
+test("engine-gap: the pinned engine below the board stays inside the left pane and the board makes room", async ({
+    page,
+    emitTauriEvent,
+}) => {
+    const { searches, panel } = await setupAnalysisEngine(page, 2);
+    await panel.getByRole("button", { name: "Pin engine", exact: true }).click();
+    const detached = page.getByTestId("pinned-engine");
+    const lineCount = detached.getByRole("radiogroup", { name: "Number of lines", exact: true });
+    await lineCount.getByText("4", { exact: true }).click();
+    const raisedSearch = async () =>
+        (await searches()).findLast(({ args }) => {
+            const request = args as AnalysisRequest & { options: EngineOptions };
+            return (
+                request.id === "e2e-engine" &&
+                request.options.extraOptions.some(
+                    (option) =>
+                        option.name === "MultiPV" &&
+                        option.type === "string" &&
+                        option.value === "4",
+                )
+            );
+        })?.args as AnalysisRequest | undefined;
+    await expect.poll(raisedSearch).toBeDefined();
+    const payload = bestMovesPayload(
+        (await raisedSearch())!,
+        ["e4", "e5", "Nf3"],
+        ["e2e4", "e7e5", "g1f3"],
+        34,
+    );
+    payload.bestLines.push(
+        ...[2, 3, 4].map((multipv) => ({
+            ...payload.bestLines[0],
+            multipv,
+            score: { value: { type: "cp" as const, value: 40 - 10 * multipv }, wdl: null },
+        })),
+    );
+    await emitTauriEvent({ event: "best-moves-payload", payload });
+    const scores = detached.locator("[data-size='sm']:has(> p)");
+    await expect(scores).toHaveCount(4);
+
+    const left = page.locator("#left");
+    const card = left.locator(".mantine-Paper-root").first();
+    const surface = left.locator("[data-board-surface]");
+    const box = async (locator: Locator) => (await locator.boundingBox())!;
+    const bottom = async (locator: Locator) => {
+        const { y, height } = await box(locator);
+        return y + height;
+    };
+    const boardSize = async () => (await box(surface)).height;
+    const swapTo = async (name: string, next: string) => {
+        await detached.getByRole("button", { name, exact: true }).click();
+        await expect(detached.getByRole("button", { name: next, exact: true })).toBeVisible();
+    };
+    const belowBoard = async () => {
+        await swapTo("Move above the notation", "Move below the board");
+        await swapTo("Move below the board", "Move above the tabs");
+    };
+    /** Board, player bars and engine bar lie inside the left pane, and none is clipped or overlaps. */
+    const expectFits = async () => {
+        expect(await card.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+        for (const bar of await left.locator("[data-board-bar]").all()) {
+            expect(await bottom(bar)).toBeLessThanOrEqual((await bottom(card)) + 0.5);
+        }
+        expect((await box(detached)).y).toBeGreaterThanOrEqual((await bottom(card)) - 0.5);
+        expect(await bottom(detached)).toBeLessThanOrEqual((await bottom(left)) + 0.5);
+    };
+
+    // Height-bounded: the board gives up exactly the bar and its gap, whatever the bar's height.
+    await page.setViewportSize({ width: 1440, height: 700 });
+    await expect.poll(boardSize).toBeLessThan((await box(left)).width - 50);
+    const above = await boardSize();
+    await belowBoard();
+    await expectFits();
+    const reserve = async () => (await bottom(detached)) - (await bottom(card));
+    await expect
+        .poll(async () => above - (await boardSize()) - (await reserve()))
+        .toBeCloseTo(0, 0);
+    const fourLines = { board: await boardSize(), bar: (await box(detached)).height };
+    await lineCount.getByText("1", { exact: true }).click();
+    await expect(scores).toHaveCount(1);
+    await expect
+        .poll(
+            async () =>
+                (await boardSize()) -
+                fourLines.board -
+                (fourLines.bar - (await box(detached)).height),
+        )
+        .toBeCloseTo(0, 0);
+    expect((await box(detached)).height).toBeLessThan(fourLines.bar - 20);
+    await expectFits();
+    await lineCount.getByText("4", { exact: true }).click();
+    await expect(scores).toHaveCount(4);
+    await swapTo("Move above the tabs", "Move above the notation");
+    await expect.poll(boardSize).toBeCloseTo(above, 0);
+
+    // Width-bounded with room below: the board keeps its size.
+    await page.setViewportSize({ width: 1000, height: 1400 });
+    await expect
+        .poll(async () => (await bottom(left)) - (await bottom(surface)))
+        .toBeGreaterThan(400);
+    const wide = await boardSize();
+    await belowBoard();
+    await expect.poll(boardSize).toBeCloseTo(wide, 0);
+    await expectFits();
+    await expect(left).toHaveScreenshot("pinned-engine-below-board.png", {
+        animations: "disabled",
+    });
+
+    // Stacked: the bar follows the board in flow, before the next pane.
+    await page.setViewportSize({ width: 600, height: 900 });
+    await expect(page.locator("[data-board-layout='stacked']")).toBeVisible();
+    await detached.scrollIntoViewIfNeeded();
+    await expect(detached).toBeVisible();
+    expect((await box(detached)).y).toBeGreaterThanOrEqual((await bottom(card)) - 0.5);
+    expect(await bottom(detached)).toBeLessThanOrEqual(
+        (await box(page.locator("[data-board-slot='topRight']"))).y + 0.5,
+    );
+    expect(await card.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
 });
 
 test("engine-gap: legal threat after a double push becomes unavailable in check and recovers", async ({

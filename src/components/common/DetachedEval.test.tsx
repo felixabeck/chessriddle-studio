@@ -401,6 +401,9 @@ async function renderBothSlots(stored: string | null) {
       <div data-slot="notation">
         <DetachedEval placement="notation" />
       </div>
+      <div data-slot="board">
+        <DetachedEval placement="board" />
+      </div>
     </TreeStateContext.Provider>,
   );
   return tree;
@@ -408,44 +411,51 @@ async function renderBothSlots(stored: string | null) {
 
 const slot = (name: string) => h.host.querySelector(`[data-slot=${name}]`)!;
 
+const SLOTS = ["tabs", "notation", "board"];
+
+/** The bar shows in `expected` and in no other slot. */
+function expectOnlyIn(expected: string) {
+  expect(slot(expected).textContent).toContain(LINE);
+  for (const other of SLOTS.filter((name) => name !== expected)) {
+    expect(slot(other).childElementCount).toBe(0);
+  }
+}
+
 test.each([
   ['"notation"', "notation"],
+  ['"board"', "board"],
   ['"sideways"', "tabs"],
   ["not json", "tabs"],
 ])("DetachedEval hydrates stored placement %s into the %s slot", async (stored, expected) => {
   try {
     const tree = await renderBothSlots(stored);
-    const other = expected === "tabs" ? "notation" : "tabs";
-    expect(slot(expected).textContent).toContain(LINE);
-    expect(slot(other).childElementCount).toBe(0);
+    expectOnlyIn(expected);
     tree.dispose();
   } finally {
     localStorage.removeItem(PLACEMENT_KEY);
   }
 });
 
-test("DetachedEval renders in the stored slot only, and its swap button moves it and persists", async () => {
+test("DetachedEval renders in the stored slot only, and its swap button cycles it through the slots and persists", async () => {
   try {
     const tree = await renderBothSlots(null);
-    const swap = (label: string) =>
-      slot(label === "Engine.MoveAboveNotation" ? "tabs" : "notation").querySelector<HTMLElement>(
-        `[aria-label="${label}"]`,
-      );
+    const swap = (label: string) => h.host.querySelector<HTMLElement>(`[aria-label="${label}"]`);
 
     expect(h.store.get(detachedEnginePlacementAtom)).toBe("tabs");
-    expect(slot("tabs").textContent).toContain(LINE);
-    expect(slot("notation").childElementCount).toBe(0);
+    expectOnlyIn("tabs");
 
-    await act(async () => swap("Engine.MoveAboveNotation")!.click());
-    expect(localStorage.getItem(PLACEMENT_KEY)).toBe('"notation"');
-    expect(slot("tabs").childElementCount).toBe(0);
-    expect(slot("notation").textContent).toContain(LINE);
-    expect(document.activeElement).toBe(swap("Engine.MoveAboveTabs"));
-
-    await act(async () => swap("Engine.MoveAboveTabs")!.click());
-    expect(h.store.get(detachedEnginePlacementAtom)).toBe("tabs");
-    expect(slot("tabs").textContent).toContain(LINE);
-    expect(slot("notation").childElementCount).toBe(0);
+    // Each step names the next slot, stores it, and hands focus to the new slot's swap button.
+    for (const [label, next, nextLabel] of [
+      ["Engine.MoveAboveNotation", "notation", "Engine.MoveBelowBoard"],
+      ["Engine.MoveBelowBoard", "board", "Engine.MoveAboveTabs"],
+      ["Engine.MoveAboveTabs", "tabs", "Engine.MoveAboveNotation"],
+    ]) {
+      await act(async () => swap(label)!.click());
+      expect(localStorage.getItem(PLACEMENT_KEY)).toBe(JSON.stringify(next));
+      expectOnlyIn(next);
+      expect(slot(next).contains(swap(nextLabel))).toBe(true);
+      expect(document.activeElement).toBe(swap(nextLabel));
+    }
     tree.dispose();
   } finally {
     localStorage.removeItem(PLACEMENT_KEY);

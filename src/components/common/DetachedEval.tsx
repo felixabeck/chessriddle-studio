@@ -1,5 +1,5 @@
 import { Box, Group, Paper, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core";
-import { ArrowDownToLine, ArrowUpToLine, PinOff, Pause, Play } from "lucide-react";
+import { ArrowDownLeft, ArrowDownToLine, ArrowUpToLine, PinOff, Pause, Play } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
 import { memo, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -30,13 +30,13 @@ import { TreeStateContext } from "./TreeStateContext";
 const MOVES_PER_LINE = 12;
 
 /**
- * Set by the swap button: the bar remounts in its other slot, so the new instance takes focus on
+ * Set by the swap button: the bar remounts in its next slot, so the new instance takes focus on
  * its own swap button instead of leaving it on the body.
  */
 let focusSwapOnMount = false;
 
 /**
- * The pinned engine bar. The analysis board mounts it in both slots it can occupy; only the one
+ * The pinned engine bar. The analysis board mounts it in every slot it can occupy; only the one
  * matching the stored placement renders, so the bar exists once.
  */
 function DetachedEval({ placement }: { placement: DetachedEnginePlacement }) {
@@ -79,6 +79,26 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
     swapRef.current?.focus();
   }, []);
   const theme = useMantineTheme();
+  // The swap button cycles through the slots; its label and icon name the next one.
+  const swap = (
+    {
+      tabs: {
+        next: "notation",
+        label: t("Engine.MoveAboveNotation"),
+        icon: <ArrowDownToLine size="0.875rem" />,
+      },
+      notation: {
+        next: "board",
+        label: t("Engine.MoveBelowBoard"),
+        icon: <ArrowDownLeft size="0.875rem" />,
+      },
+      board: {
+        next: "tabs",
+        label: t("Engine.MoveAboveTabs"),
+        icon: <ArrowUpToLine size="0.875rem" />,
+      },
+    } as const
+  )[placement];
 
   const { settings, setSettings } = useTabEngineSettings(engine);
 
@@ -162,13 +182,13 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
           </Tooltip>
         )}
         <IconAction
-          label={t(placement === "tabs" ? "Engine.MoveAboveNotation" : "Engine.MoveAboveTabs")}
+          label={swap.label}
           size="sm"
           variant="subtle"
           ref={swapRef}
           onClick={() => {
             focusSwapOnMount = true;
-            setPlacement(placement === "tabs" ? "notation" : "tabs");
+            setPlacement(swap.next);
             // A click is a discrete update, so the new slot mounts and runs its effect before this
             // task ends. When no slot mounts (board editing hides the notation slot), the flag
             // must not leak into a later, unrelated mount.
@@ -177,11 +197,7 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
             }, 0);
           }}
         >
-          {placement === "tabs" ? (
-            <ArrowDownToLine size="0.875rem" />
-          ) : (
-            <ArrowUpToLine size="0.875rem" />
-          )}
+          {swap.icon}
         </IconAction>
         <IconAction label={t("Engine.Unpin")} size="sm" variant="subtle" onClick={onClose}>
           <PinOff size="0.875rem" />

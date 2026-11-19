@@ -601,6 +601,7 @@
     "Databases.Upgrading.Label": "Oppgraderer…",
     "Engine.MoveAboveNotation": "Flytt over notasjonen",
     "Engine.MoveAboveTabs": "Flytt over fanene",
+    "Engine.MoveBelowBoard": "Flytt under brettet",
     "Engine.PauseAnalysis": "Sett motoranalyse på pause",
     "Engine.StartAnalysis": "Start motoranalyse",
     "Engine.Unpin": "Løsne motor",

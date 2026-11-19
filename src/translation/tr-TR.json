@@ -601,6 +601,7 @@
     "Databases.Upgrading.Label": "Yükseltiliyor…",
     "Engine.MoveAboveNotation": "Notasyonun üstüne taşı",
     "Engine.MoveAboveTabs": "Sekmelerin üstüne taşı",
+    "Engine.MoveBelowBoard": "Tahtanın altına taşı",
     "Engine.PauseAnalysis": "Motor analizini duraklat",
     "Engine.StartAnalysis": "Motor analizini başlat",
     "Engine.Unpin": "Motor sabitlemesini kaldır",

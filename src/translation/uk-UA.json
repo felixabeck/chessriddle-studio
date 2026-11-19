@@ -617,6 +617,7 @@
     "Databases.Upgrading.Label": "Оновлення…",
     "Engine.MoveAboveNotation": "Перемістити над нотацією",
     "Engine.MoveAboveTabs": "Перемістити над вкладками",
+    "Engine.MoveBelowBoard": "Перемістити під дошку",
     "Engine.PauseAnalysis": "Призупинити аналіз рушія",
     "Engine.StartAnalysis": "Почати аналіз рушія",
     "Engine.Unpin": "Відкріпити рушій",

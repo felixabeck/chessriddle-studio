@@ -85,6 +85,7 @@ vi.mock("react-i18next", async (importOriginal) => ({
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.showNotification } }));
 
 vi.mock("@mantine/hooks", () => ({
+  useElementSize: () => ({ ref: { current: null }, width: 0, height: 0 }),
   useHotkeys: vi.fn(),
   useToggle: () => [mocks.editingMode, vi.fn()],
 }));
@@ -203,7 +204,9 @@ vi.mock("../panels/info/InfoPanel", () => ({
   },
 }));
 
-vi.mock("../common/DetachedEval", () => ({ default: () => null }));
+vi.mock("../common/DetachedEval", () => ({
+  default: ({ placement }: { placement: string }) => <span data-engine-slot={placement} />,
+}));
 vi.mock("../common/GameNotation", () => ({ default: () => null }));
 vi.mock("../common/MoveControls", () => ({ default: () => null }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
@@ -413,6 +416,16 @@ describe("BoardAnalysis", () => {
       expect(board.mock.lastCall?.[0].repertoire).toBe(type === "repertoire");
     },
   );
+
+  test("mounts one pinned-engine slot per placement, the board's below the board", () => {
+    const slots = [...document.querySelectorAll("[data-engine-slot]")].map((slot) =>
+      slot.getAttribute("data-engine-slot"),
+    );
+    expect(slots.sort()).toEqual(["board", "notation", "tabs"]);
+    expect(
+      document.querySelector('[data-slot="below-board"] [data-engine-slot="board"]'),
+    ).not.toBeNull();
+  });
 
   async function resetToFirstMove() {
     await act(async () => {

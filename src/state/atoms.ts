@@ -1240,13 +1240,14 @@ export const detachedEngineLinesAtom = atomWithStorage<number | null>(
     createZodStorage(z.number().int().min(1).max(5).nullable(), localStorage),
 );
 
-/** Where the pinned engine bar sits: above the panel tabs, or above the move notation. */
-export type DetachedEnginePlacement = "tabs" | "notation";
+/** Where the pinned engine bar sits: above the panel tabs, above the move notation, or below the board. */
+export const DETACHED_ENGINE_PLACEMENTS = ["tabs", "notation", "board"] as const;
+export type DetachedEnginePlacement = (typeof DETACHED_ENGINE_PLACEMENTS)[number];
 
 export const detachedEnginePlacementAtom = atomWithStorage<DetachedEnginePlacement>(
     "detached-engine-placement",
     "tabs",
-    createZodStorage(z.enum(["tabs", "notation"]), localStorage),
+    createZodStorage(z.enum(DETACHED_ENGINE_PLACEMENTS), localStorage),
 );
 
 export const pgnOptionsFamily = atomFamily((_tab: string) =>

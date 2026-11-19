@@ -2,7 +2,7 @@ import { useTabAtom, useOwnerTab, useOwnerTabId } from "@/state/tabScope";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { errorUnlessCancelled } from "@/platform/errors";
 import { Paper, Portal, Stack, Tabs } from "@mantine/core";
-import { useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
+import { useElementSize, useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
 import { Database, Info, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
 import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
@@ -57,6 +57,7 @@ import { useAutoSave } from "./useAutoSave";
 import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
+import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
 
 function BoardAnalysis() {
@@ -74,6 +75,8 @@ function BoardAnalysis() {
   const [saveToModal, setSaveToModal] = useState(false);
   const autoSave = useAtomValue(autoSaveAtom);
   const boardRef = useRef(null);
+  // The engine bar below the board: the board gives up the bar's rendered height.
+  const { ref: belowBoardRef, height: belowBoardHeight } = useElementSize<HTMLDivElement>();
 
   const store = useContext(TreeStateContext)!;
 
@@ -304,15 +307,29 @@ function BoardAnalysis() {
       />
       <EvalListener />
       <Portal target="#left" style={{ height: "100%" }}>
-        <Paper withBorder h="100%" style={{ overflow: "hidden" }}>
-          <Board
-            repertoire={isRepertoire}
-            practiceMove={practicing ? (practiceMoveController ?? undefined) : undefined}
-            editingMode={editingMode}
-            boardRef={boardRef}
-            selectedPiece={selectedPiece}
-          />
-        </Paper>
+        <Stack
+          h="100%"
+          gap="xs"
+          style={{
+            "--board-below-height":
+              belowBoardHeight > 0
+                ? `calc(${belowBoardHeight}px + var(--mantine-spacing-xs))`
+                : undefined,
+          }}
+        >
+          <Paper withBorder style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <Board
+              repertoire={isRepertoire}
+              practiceMove={practicing ? (practiceMoveController ?? undefined) : undefined}
+              editingMode={editingMode}
+              boardRef={boardRef}
+              selectedPiece={selectedPiece}
+            />
+          </Paper>
+          <div ref={belowBoardRef} className={classes.belowBoard} data-slot="below-board">
+            <DetachedEval placement="board" />
+          </div>
+        </Stack>
       </Portal>
       <Portal target="#topRight" className={paneClasses.root} style={{ height: "100%" }}>
         <Stack h="100%" gap="xs" className={paneClasses.root}>
