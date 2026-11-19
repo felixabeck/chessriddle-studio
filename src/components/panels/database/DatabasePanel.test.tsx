@@ -12,12 +12,14 @@ import {
   comparisonDbAtom,
   dbTypeFamily,
   dbTabFamily,
+  DEFAULT_LICHESS_OPTIONS,
   explorerGamesSourceFamily,
   explorerSortFamily,
   sessionsAtom,
   tabsAtom,
   activeTabAtom,
   explorerDatabaseFiltersAtom,
+  lichessOptionsAtom,
   localOptionsFamily,
   pinnedExplorerDatabaseFamily,
   referenceDbAtom,
@@ -162,6 +164,8 @@ describe("explorer game failure catalogues", () => {
   );
 });
 
+const HEADER_COLLAPSED_KEY = "explorer-header-collapsed";
+
 describe("DatabasePanel", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -175,6 +179,8 @@ describe("DatabasePanel", () => {
     });
     sessionStorage.clear();
     localStorage.clear();
+    // These tests operate the header's controls; the collapsed header has its own tests.
+    localStorage.setItem(HEADER_COLLAPSED_KEY, "false");
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -1236,6 +1242,102 @@ describe("DatabasePanel", () => {
       Array.from(container.querySelectorAll("button")).find(
         (button) => button.textContent === "Board.Database.Compare",
       );
+
+    const settingsButton = () =>
+      container.querySelector<HTMLButtonElement>(
+        '[aria-label="Board.Database.ShowSettings"], [aria-label="Board.Database.HideSettings"]',
+      )!;
+    const headerControls = () =>
+      container.querySelectorAll('.mantine-Select-input, [role="tab"], [role="radiogroup"]');
+
+    test("collapsed by default: captions name both databases and their active filters, and the settings button opens the controls", async () => {
+      localStorage.removeItem(HEADER_COLLAPSED_KEY);
+      await mountCompared();
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+
+      expect(headerControls()).toHaveLength(0);
+      expect(compareButton()).toBeUndefined();
+      // The saved reference carries filters, the comparison none.
+      expect(sources()[0].textContent).toBe(
+        "Saved reference · Board.Database.Local.Elo 1800–2400 · Board.Analysis.Tablebase.Draw · Board.Database.FilterSummary.NoFastEvents",
+      );
+      expect(sources()[1].textContent).toBe("Correspondence");
+      // The view is a plain region: no tab panel names a tab that is not shown.
+      expect(container.querySelector('[role="tabpanel"]')).toBeNull();
+      expect(
+        Array.from(
+          container.querySelectorAll("tbody tr"),
+          (row) => row.querySelector("td")?.textContent,
+        ),
+      ).toContain("d4");
+      expect(settingsButton().getAttribute("aria-label")).toBe("Board.Database.ShowSettings");
+      expect(settingsButton().getAttribute("aria-pressed")).toBe("false");
+
+      await act(async () => settingsButton().click());
+      expect(localStorage.getItem(HEADER_COLLAPSED_KEY)).toBe("false");
+      expect(settingsButton().getAttribute("aria-label")).toBe("Board.Database.HideSettings");
+      expect(settingsButton().getAttribute("aria-pressed")).toBe("true");
+      expect(
+        sources().map(
+          (source) => source.querySelector<HTMLInputElement>(".mantine-Select-input")?.value,
+        ),
+      ).toEqual(["Saved reference", "Correspondence"]);
+      selectedPanel("stats");
+
+      await act(async () => settingsButton().click());
+      expect(localStorage.getItem(HEADER_COLLAPSED_KEY)).toBe("true");
+      expect(headerControls()).toHaveLength(0);
+    });
+
+    test.each([
+      [null, true],
+      ["true", true],
+      ["false", false],
+      ["not json", true],
+      ['"yes"', true],
+    ])("the header preference %s hydrates as collapsed=%s", async (stored, collapsed) => {
+      if (stored === null) localStorage.removeItem(HEADER_COLLAPSED_KEY);
+      else localStorage.setItem(HEADER_COLLAPSED_KEY, stored);
+      await mountCompared();
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      expect(headerControls().length === 0).toBe(collapsed);
+    });
+
+    test("a collapsed caption names a partial position", async () => {
+      localStorage.setItem(HEADER_COLLAPSED_KEY, "true");
+      const { store } = await mountCompared();
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      await act(async () =>
+        store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
+      );
+      for (const source of sources()) {
+        expect(source.textContent).toContain(
+          "Board.Database.PositionMode Board.Database.Local.Partial",
+        );
+      }
+    });
+
+    test("without a database the controls stay open and the stored preference is kept", async () => {
+      localStorage.setItem(HEADER_COLLAPSED_KEY, "true");
+      await mountCompared({ list: [] });
+      await vi.waitFor(() => expect(settingsButton().disabled).toBe(true));
+      expect(container.querySelector(".mantine-Select-input")).not.toBeNull();
+      expect(settingsButton().getAttribute("aria-label")).toBe("Board.Database.HideSettings");
+      expect(localStorage.getItem(HEADER_COLLAPSED_KEY)).toBe("true");
+    });
+
+    test("a collapsed online source marks its filters only when they differ from the defaults", async () => {
+      localStorage.setItem(HEADER_COLLAPSED_KEY, "true");
+      const store = await mountExplorer();
+      await vi.waitFor(() => expect(sources()).toHaveLength(1));
+      expect(headerControls()).toHaveLength(0);
+      expect(sources()[0].textContent).toBe("Board.Database.LichessAll");
+
+      await act(async () => {
+        await store.set(lichessOptionsAtom, { ...DEFAULT_LICHESS_OPTIONS, speeds: ["blitz"] });
+      });
+      expect(sources()[0].textContent).toBe("Board.Database.LichessAll · Board.Database.Filters");
+    });
 
     test("a cancellation on the database list keeps the comparison database", async () => {
       const { revalidate } = await mountCompared();

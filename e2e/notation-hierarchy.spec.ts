@@ -451,7 +451,8 @@ async function assertStackedBoardGeometry(page: Page, label: string) {
         const hostStyle = getComputedStyle(host);
         const stack = host.parentElement!;
         const stackStyle = getComputedStyle(stack);
-        const card = target.firstElementChild!;
+        // The board's card; the pane wraps it together with the slot below the board.
+        const card = target.querySelector(".mantine-Paper-root")!;
         const tile = target.getBoundingClientRect();
         const cardBox = card.getBoundingClientRect();
         const style = getComputedStyle(card);

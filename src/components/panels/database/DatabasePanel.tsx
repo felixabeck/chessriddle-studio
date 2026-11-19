@@ -1,12 +1,23 @@
 import { useTabAtom, useOwnerTab } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
-import { Alert, Button, Group, Menu, SegmentedControl, Select, Stack, Tabs } from "@mantine/core";
+import {
+  Alert,
+  Box,
+  Button,
+  Group,
+  Menu,
+  SegmentedControl,
+  Select,
+  Stack,
+  Tabs,
+} from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Plus, X } from "lucide-react";
+import { Plus, Settings, X } from "lucide-react";
 import { memo, type ReactNode, useCallback, useContext, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import equal from "fast-deep-equal";
 import useSWR from "swr/immutable";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
@@ -18,9 +29,12 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import {
   comparisonDbAtom,
+  DEFAULT_LICHESS_OPTIONS,
+  DEFAULT_MASTER_OPTIONS,
   dbTabFamily,
   dbTypeFamily,
   explorerGamesSourceFamily,
+  explorerHeaderCollapsedAtom,
   explorerSortFamily,
   localOptionsFamily,
   pinnedExplorerDatabaseFamily,
@@ -46,13 +60,14 @@ import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/ex
 import classes from "./DatabasePanel.module.css";
 import DatabaseLoader from "./DatabaseLoader";
 import { comparisonState } from "./explorerComparison";
-import ExplorerSourceHeader from "./ExplorerSourceHeader";
+import ExplorerSourceHeader, { ExplorerSourceCaption } from "./ExplorerSourceHeader";
 import { localFilterSummary } from "./filterSummary";
 import GamesTable from "./GamesTable";
 import NoDatabaseWarning from "./NoDatabaseWarning";
 import OpeningsTable from "./OpeningsTable";
 import LichessOptionsPanel from "./options/LichessOptionsPanel";
 import LocalFiltersForm from "./options/LocalFiltersForm";
+import { isDefaultExplorerFilters } from "@/state/explorerFilters";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { failureUnlessCancelled } from "@/platform/errors";
 import MasterOptionsPanel from "./options/MastersOptionsPanel";
@@ -412,6 +427,91 @@ function DatabasePanel() {
       ),
     });
 
+  const [storedCollapsed, setStoredCollapsed] = useAtom(explorerHeaderCollapsedAtom);
+  // The panel asks for a database through its select, so the controls stay open until the list
+  // has answered with one. The stored preference is left as it is.
+  const needsDatabase =
+    db === "local" &&
+    !effectiveReferenceDatabase &&
+    (databases !== undefined || databasesFailure !== undefined);
+  const collapsed = storedCollapsed && !needsDatabase;
+  // Collapsed, each source still names whatever narrows its numbers.
+  const partialPosition =
+    effectiveLocalOptions.type === "partial"
+      ? t("Board.Database.PositionMode", { mode: t("Board.Database.Local.Partial") })
+      : null;
+  const localCaption = (source: {
+    key: string;
+    name: string;
+    binding: Pick<ReturnType<typeof useExplorerFilters>, "filters">;
+    explorer: Pick<ReturnType<typeof useLocalExplorer>, "loading" | "progressId">;
+  }) => (
+    <ExplorerSourceCaption
+      key={source.key}
+      name={source.name}
+      detail={[
+        isDefaultExplorerFilters(source.binding.filters)
+          ? null
+          : localFilterSummary(source.binding.filters, t),
+        partialPosition,
+      ]
+        .filter((part) => part !== null)
+        .join(" · ")}
+      loader={
+        <DatabaseLoader isLoading={source.explorer.loading} tab={source.explorer.progressId} />
+      }
+    />
+  );
+  const onlineCaption = (name: string, filtered: boolean) => (
+    <ExplorerSourceCaption
+      key={db}
+      name={name}
+      detail={filtered ? t("Board.Database.Filters") : undefined}
+      loader={onlineLoader}
+    />
+  );
+  const sourceCaptions = match(db)
+    .with("local", () => [
+      localCaption({
+        key: db,
+        name: primaryTitle,
+        binding: { filters: localFilters },
+        explorer: localExplorer,
+      }),
+      comparison.kind === "source" &&
+        localCaption({
+          key: "comparison",
+          name: comparison.title,
+          binding: comparisonFilters,
+          explorer: comparisonExplorer,
+        }),
+    ])
+    .with("lch_all", () =>
+      onlineCaption(
+        t("Board.Database.LichessAll"),
+        !equal(lichessOptions, DEFAULT_LICHESS_OPTIONS),
+      ),
+    )
+    .with("lch_master", () =>
+      onlineCaption(
+        t("Board.Database.LichessMaster"),
+        !equal(masterOptions, DEFAULT_MASTER_OPTIONS),
+      ),
+    )
+    .exhaustive();
+  const headerActions = (
+    <IconAction
+      label={collapsed ? t("Board.Database.ShowSettings") : t("Board.Database.HideSettings")}
+      variant="subtle"
+      size="sm"
+      pressed={!collapsed}
+      disabled={needsDatabase}
+      onClick={() => setStoredCollapsed(!storedCollapsed)}
+    >
+      <Settings size="0.875rem" />
+    </IconAction>
+  );
+
   // With two sources a failure belongs to its source: it is named, and the other one stays.
   const twoSources =
     comparison.kind === "source"
@@ -452,51 +552,71 @@ function DatabasePanel() {
       display="flex"
       style={{ flexDirection: "column", overflow: "hidden" }}
     >
-      <Group justify="space-between" wrap="nowrap" gap="xs">
-        <Group gap="xs">
-          <SegmentedControl
-            data={[
-              { label: t("Board.Database.Local"), value: "local" },
-              { label: t("Board.Database.LichessAll"), value: "lch_all" },
-              { label: t("Board.Database.LichessMaster"), value: "lch_master" },
-            ]}
-            value={db}
-            onChange={(value) => setDb(value as "local" | "lch_all" | "lch_master")}
-          />
-          {db === "local" && <PositionSearchControl boardFen={debouncedFen} />}
-          {canCompare && (
-            <Menu position="bottom-start" withinPortal>
-              <Menu.Target>
-                <Button
-                  variant="subtle"
-                  size="compact-sm"
-                  leftSection={<Plus size="0.875rem" />}
-                  aria-label={t("Board.Database.CompareWith")}
-                >
-                  {t("Board.Database.Compare")}
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                {comparisonChoices.map((choice) => (
-                  <Menu.Item key={choice.value} onClick={() => chooseComparison(choice.value)}>
-                    {choice.label}
-                  </Menu.Item>
-                ))}
-              </Menu.Dropdown>
-            </Menu>
-          )}
-        </Group>
-        <Tabs.List style={{ flexWrap: "nowrap" }}>
-          <Tabs.Tab value="stats" disabled={statsUnavailable}>
-            {t("Board.Database.Stats")}
-          </Tabs.Tab>
-          <Tabs.Tab value="games">{t("Board.Database.Games")}</Tabs.Tab>
-        </Tabs.List>
-      </Group>
-      <div className={classes.sources} data-two-sources={twoSources ? true : undefined}>
-        {sourceHeader}
-        {comparisonHeader}
-      </div>
+      {collapsed ? (
+        <div className={classes.captions}>
+          <div
+            className={classes.sources}
+            data-two-sources={twoSources ? true : undefined}
+            data-collapsed
+          >
+            {sourceCaptions}
+          </div>
+          <Group gap={4} wrap="nowrap" className={classes.actions}>
+            {headerActions}
+          </Group>
+        </div>
+      ) : (
+        <>
+          <Group justify="space-between" wrap="nowrap" gap="xs">
+            <Group gap="xs">
+              <SegmentedControl
+                data={[
+                  { label: t("Board.Database.Local"), value: "local" },
+                  { label: t("Board.Database.LichessAll"), value: "lch_all" },
+                  { label: t("Board.Database.LichessMaster"), value: "lch_master" },
+                ]}
+                value={db}
+                onChange={(value) => setDb(value as "local" | "lch_all" | "lch_master")}
+              />
+              {db === "local" && <PositionSearchControl boardFen={debouncedFen} />}
+              {canCompare && (
+                <Menu position="bottom-start" withinPortal>
+                  <Menu.Target>
+                    <Button
+                      variant="subtle"
+                      size="compact-sm"
+                      leftSection={<Plus size="0.875rem" />}
+                      aria-label={t("Board.Database.CompareWith")}
+                    >
+                      {t("Board.Database.Compare")}
+                    </Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    {comparisonChoices.map((choice) => (
+                      <Menu.Item key={choice.value} onClick={() => chooseComparison(choice.value)}>
+                        {choice.label}
+                      </Menu.Item>
+                    ))}
+                  </Menu.Dropdown>
+                </Menu>
+              )}
+            </Group>
+            <Group gap="xs" wrap="nowrap">
+              <Tabs.List style={{ flexWrap: "nowrap" }}>
+                <Tabs.Tab value="stats" disabled={statsUnavailable}>
+                  {t("Board.Database.Stats")}
+                </Tabs.Tab>
+                <Tabs.Tab value="games">{t("Board.Database.Games")}</Tabs.Tab>
+              </Tabs.List>
+              {headerActions}
+            </Group>
+          </Group>
+          <div className={classes.sources} data-two-sources={twoSources ? true : undefined}>
+            {sourceHeader}
+            {comparisonHeader}
+          </div>
+        </>
+      )}
       {comparison.kind === "unreadable" && (
         <Alert
           color="warning"
@@ -510,7 +630,7 @@ function DatabasePanel() {
         </Alert>
       )}
 
-      <ViewPanel value="stats">
+      <ViewPanel value="stats" view={view} plain={collapsed}>
         {twoSources ? (
           <>
             {failedSources.map(sourceAlert)}
@@ -537,7 +657,7 @@ function DatabasePanel() {
           ))
         )}
       </ViewPanel>
-      <ViewPanel value="games">
+      <ViewPanel value="games" view={view} plain={collapsed}>
         {twoSources && gamesFrom ? (
           <Stack gap="xs" flex={1} style={{ overflow: "hidden" }}>
             <SegmentedControl
@@ -591,14 +711,31 @@ function DatabasePanel() {
   );
 }
 
-function ViewPanel({ value, children }: { value: string; children: ReactNode }) {
+/**
+ * One of the two views. Collapsed, the header shows no view switch, so the view is a plain
+ * region instead of a tab panel naming a tab that is not there.
+ */
+function ViewPanel({
+  value,
+  view,
+  plain,
+  children,
+}: {
+  value: string;
+  view: string;
+  plain: boolean;
+  children: ReactNode;
+}) {
+  const layout = { display: "flex", flexDirection: "column", overflow: "hidden" } as const;
+  if (plain) {
+    return value === view ? (
+      <Box pt="xs" flex={1} style={layout}>
+        {children}
+      </Box>
+    ) : null;
+  }
   return (
-    <Tabs.Panel
-      pt="xs"
-      value={value}
-      flex={1}
-      style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}
-    >
+    <Tabs.Panel pt="xs" value={value} flex={1} style={layout}>
       {children}
     </Tabs.Panel>
   );

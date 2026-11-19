@@ -1197,20 +1197,34 @@ export const explorerSortFamily = atomFamily((_tab: string) =>
     }),
 );
 
+export const DEFAULT_LICHESS_OPTIONS: LichessGamesOptions = {
+    ratings: [1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500],
+    speeds: ["bullet", "blitz", "rapid", "classical", "correspondence"],
+    color: "white",
+};
+
 export const lichessOptionsAtom = documentPreferences.atomWithStorage<LichessGamesOptions>(
     "lichess-all-options",
-    {
-        ratings: [1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500],
-        speeds: ["bullet", "blitz", "rapid", "classical", "correspondence"],
-        color: "white",
-    },
+    DEFAULT_LICHESS_OPTIONS,
     createZodStorage(lichessGamesOptionsSchema, localStorage),
 );
 
+export const DEFAULT_MASTER_OPTIONS: MasterGamesOptions = {};
+
 export const masterOptionsAtom = documentPreferences.atomWithStorage<MasterGamesOptions>(
     "lichess-master-options",
-    {},
+    DEFAULT_MASTER_OPTIONS,
     createZodStorage(masterOptionsSchema, localStorage),
+);
+
+/**
+ * Whether the board explorer folds its source, position and filter controls into one caption
+ * line. One preference for every tab: the sources are set up once and then only read.
+ */
+export const explorerHeaderCollapsedAtom = atomWithStorage<boolean>(
+    "explorer-header-collapsed",
+    true,
+    createZodStorage(z.boolean(), localStorage),
 );
 
 export const dbTypeFamily = atomFamily((_tab: string) =>

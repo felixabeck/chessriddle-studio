@@ -194,7 +194,10 @@ for (const timezoneId of ["America/Los_Angeles", "Europe/Berlin"]) {
                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
             );
             await page.getByRole("tab", { name: "Database", exact: true }).click();
+            // No local database is chosen yet, so the header's controls are open; with an
+            // online source it collapses to its caption until the settings button opens it.
             await page.getByText("Lichess All", { exact: true }).click();
+            await page.getByRole("button", { name: "Show database settings", exact: true }).click();
             const filterButton = page.getByRole("button", { name: /^Filters: / });
             await filterButton.click();
             const options = page.locator("[data-explorer-filters]");

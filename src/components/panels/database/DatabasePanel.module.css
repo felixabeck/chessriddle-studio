@@ -18,3 +18,24 @@
 .sources[data-two-sources] > [data-explorer-source]:first-of-type {
   grid-column-start: 2;
 }
+
+/* Collapsed, the sources are captions on the same grid, and the header's actions sit over the
+   end of the line so the grid keeps the table's full width. */
+.captions {
+  position: relative;
+}
+
+.sources[data-collapsed] {
+  margin-top: 0;
+  min-height: 1.75rem;
+}
+
+.sources[data-collapsed] > [data-explorer-source]:last-child {
+  padding-inline-end: 3.5rem;
+}
+
+.actions {
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+}

@@ -392,8 +392,11 @@ for (const width of [1920, 320]) {
         await expect(page).toHaveURL("/");
         const database = page.getByRole("tab", { name: "Database", exact: true });
         await expect(database).toHaveAttribute("aria-selected", "true");
-        const stats = page.getByRole("tab", { name: "Stats", exact: true });
-        await expect(stats).toHaveAttribute("aria-selected", "true");
+        // The explorer opens with its header collapsed: the caption names the database.
+        await expect(
+            page.getByRole("button", { name: "Show database settings", exact: true }),
+        ).toBeVisible();
+        await expect(page.getByRole("tab", { name: "Stats", exact: true })).toHaveCount(0);
         await expect(page.getByRole("button", { name: "e4", exact: true })).toBeVisible();
         await expect(page.getByRole("button", { name: "e5", exact: true })).toBeVisible();
         const tab = await activeWorkspaceTab(page);
@@ -568,10 +571,15 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.getByRole("button", { name: "Open database", exact: true })).toBeVisible();
     await navbar.getByRole("link", { name: "Board", exact: true }).click();
-    await expect(picker).toHaveValue(gameOpeningFixture.databaseTitle);
-    await expect(stats.getByText("No reference database selected.", { exact: true })).toHaveCount(
-        0,
+    // With a database chosen the header collapses to its caption, and the view is a plain region.
+    const explorer = page.getByRole("tabpanel", { name: "Database", exact: true });
+    await expect(explorer.locator("[data-explorer-source]")).toHaveText(
+        gameOpeningFixture.databaseTitle,
     );
+    await expect(picker).toHaveCount(0);
+    await expect(
+        explorer.getByText("No reference database selected.", { exact: true }),
+    ).toHaveCount(0);
     await expect.poll(async () => (await searches()).length).toBeGreaterThan(0);
     expect(
         (await searches()).every(
@@ -579,7 +587,7 @@ test("database-files: unreadable saved reference stays unselected and resumes se
                 JSON.stringify((args as { file: unknown }).file) === JSON.stringify(reference),
         ),
     ).toBe(true);
-    await expect(stats.getByText("e4", { exact: true })).toBeVisible();
+    await expect(explorer.getByText("e4", { exact: true })).toBeVisible();
     expect(await savedChoice()).toEqual(reference);
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
@@ -613,6 +621,7 @@ test("database-files: the local explorer options keep their controls legible and
         .click();
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
+    await page.getByRole("button", { name: "Show database settings", exact: true }).click();
     await expect(page.getByPlaceholder("add a database", { exact: true })).toHaveValue(
         gameOpeningFixture.databaseTitle,
     );
@@ -3425,8 +3434,33 @@ test("database-files: the board explorer compares two databases side by side", a
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
 
-    // Each database has its own cell in the sources bar, with its own saved filters.
+    // Collapsed by default: one caption per database, naming its active filters, each above
+    // its column group; no control but the settings button.
     const sources = page.locator("[data-explorer-source]");
+    const databasePanel = page.getByRole("tabpanel", { name: "Database", exact: true });
+    await expect(sources).toHaveText(["Mega Database · Elo 1900–2500", "Correspondence"]);
+    await expect(databasePanel.getByRole("textbox")).toHaveCount(0);
+    await expect(databasePanel.getByRole("tab")).toHaveCount(0);
+    await expect(databasePanel.locator("tbody tr")).toHaveCount(5);
+    const sourceEdges = () =>
+        page.evaluate(() => {
+            const left = (element: Element) => Math.round(element.getBoundingClientRect().left);
+            return {
+                cells: [...document.querySelectorAll("[data-explorer-source]")].map(left),
+                headers: [...document.querySelectorAll("thead th")]
+                    .filter((th) => (th as HTMLElement).offsetParent !== null)
+                    .map(left),
+            };
+        });
+    const captionEdges = await sourceEdges();
+    expect(Math.abs(captionEdges.cells[0] - captionEdges.headers[1])).toBeLessThanOrEqual(2);
+    expect(Math.abs(captionEdges.cells[1] - captionEdges.headers[3])).toBeLessThanOrEqual(2);
+    await expect(databasePanel).toHaveScreenshot("explorer-two-databases-collapsed.png");
+    await page.getByRole("button", { name: "Show database settings", exact: true }).click();
+    // Take the pointer off the button, so its tooltip is in no later image.
+    await page.mouse.move(0, 0);
+
+    // Each database has its own cell in the sources bar, with its own saved filters.
     await expect(sources).toHaveCount(2);
     await expect(sources.nth(0).getByRole("textbox")).toHaveValue("Mega Database");
     await expect(sources.nth(1).getByRole("textbox")).toHaveValue("Correspondence");

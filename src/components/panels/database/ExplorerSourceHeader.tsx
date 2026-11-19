@@ -1,4 +1,4 @@
-import { Button, Group, Popover, Stack } from "@mantine/core";
+import { Button, Group, Popover, Stack, Text } from "@mantine/core";
 import { ListFilter } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -64,6 +64,34 @@ function ExplorerSourceHeader({
           </Popover.Dropdown>
         </Popover>
       </Group>
+      {loader}
+    </Stack>
+  );
+}
+
+/**
+ * One explorer source while the header is collapsed: its name, whatever narrows its numbers,
+ * and its own progress bar. It takes the header's cell, so it lines up with the same columns.
+ */
+export function ExplorerSourceCaption({
+  name,
+  detail,
+  loader,
+}: {
+  name: string;
+  detail?: string;
+  loader: ReactNode;
+}) {
+  return (
+    <Stack gap={0} miw={0} data-explorer-source>
+      <Text fz="sm" fw={600} truncate>
+        {name}
+        {detail && (
+          <Text span fw={400} c="dimmed">
+            {` · ${detail}`}
+          </Text>
+        )}
+      </Text>
       {loader}
     </Stack>
   );

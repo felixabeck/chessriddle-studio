@@ -167,6 +167,8 @@ beforeEach(async () => {
   const i18n = await catalogueI18n("en-US");
   translate = (key, options) => i18n.t(key, options);
   localStorage.clear();
+  // The explorer's filter button is reached below; its header is collapsed by default.
+  localStorage.setItem("explorer-header-collapsed", "false");
   sessionStorage.clear();
   // Hydrate the existing preference without writing it through the application atom.
   localStorage.setItem("reference-database", JSON.stringify(reference));
