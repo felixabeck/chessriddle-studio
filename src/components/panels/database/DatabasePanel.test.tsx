@@ -31,6 +31,7 @@ import type { DatabaseHandle } from "@/bindings";
 import { databaseHandleKey, type DatabaseList, type ManagedDatabaseInfo } from "@/utils/db";
 import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { formatNumber } from "@/utils/format";
@@ -125,15 +126,7 @@ globalThis.ResizeObserver = MockResizeObserver;
 
 // DataTable checks an empty media query for columns without a visibility restriction.
 installMatchMediaStub({ matches: (query) => query === "" });
-// jsdom computes every CSS property on each getComputedStyle call. Mantine's floating indicator,
-// ScrollArea scrollbars, and floating-ui dropdown positioning call it each render for layout values
-// jsdom cannot produce. This stub returns only the element's inline style, deliberately dropping
-// jsdom's default stylesheet and inherited values, which no assertion here reads. Under coverage, it
-// took 1.2 s of a 1.5 s test (f-20261109-08).
-Object.defineProperty(window, "getComputedStyle", {
-  writable: true,
-  value: (element: Element): CSSStyleDeclaration => (element as HTMLElement).style,
-});
+installInlineComputedStyleStub();
 
 describe("explorer game failure catalogues", () => {
   const templates = {

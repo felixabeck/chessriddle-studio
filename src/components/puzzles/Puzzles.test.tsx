@@ -47,6 +47,7 @@ import { keyMapAtom } from "@/state/keybinds";
 import * as puzzleSessions from "@/state/puzzleSession";
 import { TauriCommandError } from "@/platform/tauri";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import i18n from "@/i18n";
 import type { SupportedLocale } from "@/i18n";
@@ -243,6 +244,7 @@ Object.defineProperty(window, "ResizeObserver", {
   writable: true,
   value: ResizeObserverStub,
 });
+installInlineComputedStyleStub();
 Object.defineProperty(Element.prototype, "scrollIntoView", {
   configurable: true,
   value: () => undefined,
@@ -662,11 +664,10 @@ test("noMatch explains the filters and opens the settings dialog", async () => {
   await renderSource("chessriddle");
   expect(document.body.textContent).toContain("Training.Error.NoMatch");
   await clickTraining("Training.Settings.Title");
-  await act(async () => {
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
-  });
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-    "Training.Settings.Difficulty",
+  await vi.waitFor(() =>
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Training.Settings.Difficulty",
+    ),
   );
 });
 
@@ -732,11 +733,10 @@ test("training shortcuts respect bindings, disabled submit, fields, dialogs, mod
   await fire("Enter", "Enter");
   expect(mocks.chessriddleTrainingNext).toHaveBeenCalledTimes(2);
   await fire("?", "Slash", { shiftKey: true });
-  await act(async () => {
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
-  });
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-    "Training.Shortcuts.Title",
+  await vi.waitFor(() =>
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Training.Shortcuts.Title",
+    ),
   );
 });
 

@@ -3,12 +3,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { OpponentSettings } from "@/state/opponentSettings";
+import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { OpponentForm } from "./OpponentForm";
 
 installMatchMediaStub();
 installResizeObserverStub();
+installInlineComputedStyleStub();
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 vi.mock("react-i18next", () => ({

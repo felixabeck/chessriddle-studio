@@ -25,6 +25,7 @@ import {
 } from "@/state/atoms";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { WorkspaceTabScope } from "@/state/tabScope";
+import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
@@ -150,6 +151,7 @@ let cache: Map<any, any>;
 let treeStore: TreeStore | undefined;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub({ matches: () => false });
+installInlineComputedStyleStub();
 globalThis.ResizeObserver = class {
   observe() {}
   unobserve() {}

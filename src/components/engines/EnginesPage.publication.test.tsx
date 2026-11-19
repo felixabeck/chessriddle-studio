@@ -16,6 +16,7 @@ import { Route } from "@/routes/engines";
 import { enginesAtom } from "@/state/atoms";
 import { decodeCompressedOrJson } from "@/state/store/debouncedStorage";
 import { resetEngineOwnerCoordinatorForTests } from "@/state/engineOwnerStorage";
+import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import type { Engine, LocalEngine } from "@/utils/engines";
@@ -57,6 +58,7 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
 installResizeObserverStub();
+installInlineComputedStyleStub();
 const engine: LocalEngine = {
   type: "local",
   id: "publication",
