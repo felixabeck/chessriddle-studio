@@ -25,7 +25,9 @@ const mocks = vi.hoisted(() => {
     useDocumentLanguage: vi.fn(),
     sessionPersistenceNotice: vi.fn((): React.ReactNode => null),
     automaticStockfishNotice: vi.fn((): React.ReactNode => null),
-    notifications: vi.fn((_props: { classNames: { root?: string } }) => null),
+    notifications: vi.fn(
+      (_props: { classNames: { root?: string }; styles?: { root?: unknown } }) => null,
+    ),
     closeSplashscreen: vi.fn(),
     getDefaultStore: vi.fn(),
     getMatches: vi.fn(),
@@ -926,6 +928,9 @@ describe("App", () => {
     expect(stacks).toHaveLength(1);
     expect(stacks[0].querySelector('[role="alert"]')?.textContent).toBe("persistence");
     expect(stacks[0].querySelector('[role="status"]')?.textContent).toBe("stockfish");
-    expect(mocks.notifications.mock.lastCall![0].classNames.root).toBe("fixed-notice-toast-root");
+    const toastProps = mocks.notifications.mock.lastCall![0];
+    expect(toastProps.classNames.root).toBe("fixed-notice-toast-root");
+    // An inline root max-height would override the class's stack-aware one.
+    expect(toastProps.styles?.root).toBeUndefined();
   });
 });

@@ -2232,6 +2232,7 @@ test("accounts-puzzles-engines: retains unsaved public cards and retries only th
             "position",
             "fixed",
         );
+        await expect(notice).not.toHaveCSS("position", "fixed");
         const geometry = await notice.evaluate((element) => {
             const rect = element.getBoundingClientRect();
             return {

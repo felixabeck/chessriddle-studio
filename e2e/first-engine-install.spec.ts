@@ -103,18 +103,46 @@ test("automatic install stays visible across routes, cancels, and never starts a
         progressId,
     );
     await expect(notice.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "37");
-    // f-20261119-12: the toast column shares this corner and must start above the notice
-    // stack, not on top of it.
+    // f-20261119-12: the notice is placed by the shared stack, not by itself, and the toast
+    // column that shares this corner starts above the stack and is shortened by it.
+    await expect(notice).not.toHaveCSS("position", "fixed");
     const stack = page.locator("[data-fixed-notice-stack]").filter({ has: notice });
+    await expect(stack).toHaveCSS("position", "fixed");
     const toastColumn = page.locator('.mantine-Notifications-root[data-position="bottom-right"]');
     await expect
-        .poll(async () => {
-            const [stackBox, toastBox] = await Promise.all([
-                stack.boundingBox(),
-                toastColumn.boundingBox(),
-            ]);
-            return stackBox && toastBox && toastBox.y + toastBox.height <= stackBox.y;
-        })
+        .poll(() =>
+            Promise.all([stack.elementHandle(), toastColumn.elementHandle()]).then(
+                ([stackElement, toastElement]) =>
+                    page.evaluate(
+                        ([stackNode, toastNode]) => {
+                            const resolve = (length: string) => {
+                                const probe = document.createElement("div");
+                                probe.style.height = length;
+                                document.body.append(probe);
+                                const px = probe.getBoundingClientRect().height;
+                                probe.remove();
+                                return px;
+                            };
+                            const md = resolve("var(--mantine-spacing-md)");
+                            const xs = resolve("var(--mantine-spacing-xs)");
+                            const stackRect = stackNode!.getBoundingClientRect();
+                            const toastRect = toastNode!.getBoundingClientRect();
+                            const expectedMaxHeight =
+                                window.innerHeight - 2 * md - (stackRect.height + xs);
+                            return (
+                                stackRect.height > 0 &&
+                                toastRect.bottom <= stackRect.top &&
+                                (toastNode as HTMLElement).style.maxHeight === "" &&
+                                Math.abs(
+                                    parseFloat(getComputedStyle(toastNode!).maxHeight) -
+                                        expectedMaxHeight,
+                                ) <= 1
+                            );
+                        },
+                        [stackElement, toastElement] as const,
+                    ),
+            ),
+        )
         .toBe(true);
     // The element clip includes the page behind the fixed notice along its fractional top edge
     // and rounded corners. Hiding that page keeps the snapshot about the notice alone.
