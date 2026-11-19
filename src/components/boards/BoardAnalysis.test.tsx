@@ -481,10 +481,16 @@ describe("BoardAnalysis", () => {
     const slots = [...document.querySelectorAll("[data-engine-slot]")].map((slot) =>
       slot.getAttribute("data-engine-slot"),
     );
-    expect(slots.sort()).toEqual(["board", "notation", "tabs"]);
+    expect(slots.sort()).toEqual(["belowNotation", "board", "notation", "tabs"]);
     expect(
       document.querySelector('[data-slot="below-board"] [data-engine-slot="board"]'),
     ).not.toBeNull();
+    // The two notation slots open and close the same notation column.
+    const above = document.querySelector('[data-engine-slot="notation"]')!;
+    const below = document.querySelector('[data-engine-slot="belowNotation"]')!;
+    expect(above.parentElement).toBe(below.parentElement);
+    expect(above.parentElement!.firstElementChild).toBe(above);
+    expect(below.parentElement!.lastElementChild).toBe(below);
   });
 
   async function resetToFirstMove() {

@@ -401,6 +401,9 @@ async function renderEverySlot(stored: string | null) {
       <div data-slot="notation">
         <DetachedEval placement="notation" />
       </div>
+      <div data-slot="belowNotation">
+        <DetachedEval placement="belowNotation" />
+      </div>
       <div data-slot="board">
         <DetachedEval placement="board" />
       </div>
@@ -411,7 +414,7 @@ async function renderEverySlot(stored: string | null) {
 
 const slot = (name: string) => h.host.querySelector(`[data-slot=${name}]`)!;
 
-const SLOTS = ["tabs", "notation", "board"];
+const SLOTS = ["tabs", "notation", "belowNotation", "board"];
 
 /** The bar shows in `expected` and in no other slot. */
 function expectOnlyIn(expected: string) {
@@ -423,6 +426,7 @@ function expectOnlyIn(expected: string) {
 
 test.each([
   ['"notation"', "notation"],
+  ['"belowNotation"', "belowNotation"],
   ['"board"', "board"],
   ['"sideways"', "tabs"],
   ["not json", "tabs"],
@@ -436,25 +440,62 @@ test.each([
   }
 });
 
-test("DetachedEval renders in the stored slot only, and its swap button cycles it through the slots and persists", async () => {
+const POSITION = "Engine.Position";
+const positionButton = () => h.host.querySelector<HTMLElement>(`[aria-label="${POSITION}"]`);
+const positionItems = () => Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+
+/** Opens the position menu and picks the entry labelled `label`. */
+async function choosePosition(label: string) {
+  await act(async () => positionButton()!.click());
+  const item = positionItems().find((entry) => entry.textContent === label);
+  expect(item?.textContent).toBe(label);
+  await act(async () => item!.click());
+}
+
+test("DetachedEval renders in the stored slot only, and its position menu lists every slot, marks the current one, moves the bar and persists", async () => {
   try {
     const tree = await renderEverySlot(null);
-    const swap = (label: string) => h.host.querySelector<HTMLElement>(`[aria-label="${label}"]`);
 
     expect(h.store.get(detachedEnginePlacementAtom)).toBe("tabs");
     expectOnlyIn("tabs");
 
-    // Each step names the next slot, stores it, and hands focus to the new slot's swap button.
-    for (const [label, next, nextLabel] of [
-      ["Engine.MoveAboveNotation", "notation", "Engine.MoveBelowBoard"],
-      ["Engine.MoveBelowBoard", "board", "Engine.MoveAboveTabs"],
-      ["Engine.MoveAboveTabs", "tabs", "Engine.MoveAboveNotation"],
+    for (const [label, next] of [
+      ["Engine.PositionBelowNotation", "belowNotation"],
+      ["Engine.PositionBelowBoard", "board"],
+      ["Engine.PositionAboveNotation", "notation"],
+      ["Engine.PositionAboveTabs", "tabs"],
     ]) {
-      await act(async () => swap(label)!.click());
+      await act(async () => positionButton()!.click());
+      // Every slot is offered by name, in layout order, and only the current one is marked.
+      expect(positionItems().map((item) => item.textContent)).toEqual([
+        "Engine.PositionAboveTabs",
+        "Engine.PositionAboveNotation",
+        "Engine.PositionBelowNotation",
+        "Engine.PositionBelowBoard",
+      ]);
+      const current = h.store.get(detachedEnginePlacementAtom);
+      expect(
+        positionItems()
+          .filter((item) => item.getAttribute("aria-current") === "true")
+          .map((item) => item.textContent),
+      ).toEqual([
+        {
+          tabs: "Engine.PositionAboveTabs",
+          notation: "Engine.PositionAboveNotation",
+          belowNotation: "Engine.PositionBelowNotation",
+          board: "Engine.PositionBelowBoard",
+        }[current],
+      ]);
+      await act(async () =>
+        positionItems()
+          .find((item) => item.textContent === label)!
+          .click(),
+      );
       expect(localStorage.getItem(PLACEMENT_KEY)).toBe(JSON.stringify(next));
       expectOnlyIn(next);
-      expect(slot(next).contains(swap(nextLabel))).toBe(true);
-      expect(document.activeElement).toBe(swap(nextLabel));
+      // The bar remounts in its new slot and hands focus to that slot's position button.
+      expect(slot(next).contains(positionButton())).toBe(true);
+      expect(document.activeElement).toBe(positionButton());
     }
     tree.dispose();
   } finally {
@@ -462,7 +503,23 @@ test("DetachedEval renders in the stored slot only, and its swap button cycles i
   }
 });
 
-test("DetachedEval swap focus does not leak into a later mount when the other slot is absent", async () => {
+test("DetachedEval keeps the bar in place when the current position is chosen again", async () => {
+  try {
+    const tree = await renderEverySlot('"notation"');
+    await choosePosition("Engine.PositionAboveNotation");
+    expect(localStorage.getItem(PLACEMENT_KEY)).toBe(JSON.stringify("notation"));
+    expectOnlyIn("notation");
+    // No remount happened, so a later mount must not steal focus.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(async () => h.store.set(detachedEnginePlacementAtom, "board"));
+    expect(document.activeElement).not.toBe(positionButton());
+    tree.dispose();
+  } finally {
+    localStorage.removeItem(PLACEMENT_KEY);
+  }
+});
+
+test("DetachedEval position focus does not leak into a later mount when the other slot is absent", async () => {
   try {
     localStorage.removeItem(PLACEMENT_KEY);
     installResizeObserverStub();
@@ -476,13 +533,12 @@ test("DetachedEval swap focus does not leak into a later mount when the other sl
         <DetachedEval placement="tabs" />
       </TreeStateContext.Provider>,
     );
-    const swap = () => h.host.querySelector<HTMLElement>('[aria-label="Engine.MoveAboveNotation"]');
-    await act(async () => swap()!.click());
+    await choosePosition("Engine.PositionAboveNotation");
     expect(h.host.textContent).not.toContain(LINE);
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     await act(async () => h.store.set(detachedEnginePlacementAtom, "tabs"));
     expect(h.host.textContent).toContain(LINE);
-    expect(document.activeElement).not.toBe(swap());
+    expect(document.activeElement).not.toBe(positionButton());
     tree.dispose();
   } finally {
     localStorage.removeItem(PLACEMENT_KEY);

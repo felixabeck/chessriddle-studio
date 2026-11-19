@@ -1,5 +1,5 @@
-import { Box, Group, Paper, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core";
-import { ArrowDownLeft, ArrowDownToLine, ArrowUpToLine, PinOff, Pause, Play } from "lucide-react";
+import { Box, Group, Menu, Paper, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core";
+import { Check, Move, PinOff, Pause, Play } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
 import { memo, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +7,7 @@ import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import {
   currentDetachedEngineAtom,
+  DETACHED_ENGINE_PLACEMENTS,
   type DetachedEnginePlacement,
   detachedEngineLinesAtom,
   detachedEnginePlacementAtom,
@@ -30,10 +31,10 @@ import { TreeStateContext } from "./TreeStateContext";
 const MOVES_PER_LINE = 12;
 
 /**
- * Set by the swap button: the bar remounts in its next slot, so the new instance takes focus on
- * its own swap button instead of leaving it on the body.
+ * Set by the position menu: the bar remounts in the chosen slot, so the new instance takes focus
+ * on its own position button instead of leaving it on the body.
  */
-let focusSwapOnMount = false;
+let focusPositionOnMount = false;
 
 /**
  * The pinned engine bar. The analysis board mounts it in every slot it can occupy; only the one
@@ -72,33 +73,30 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
   const orientation = useStore(store, (s) => s.headers.orientation || "white");
   const [lineCap, setLineCap] = useAtom(detachedEngineLinesAtom);
   const [placement, setPlacement] = useAtom(detachedEnginePlacementAtom);
-  const swapRef = useRef<HTMLButtonElement>(null);
+  const positionRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!focusSwapOnMount) return;
-    focusSwapOnMount = false;
-    swapRef.current?.focus();
+    if (!focusPositionOnMount) return;
+    focusPositionOnMount = false;
+    positionRef.current?.focus();
   }, []);
   const theme = useMantineTheme();
-  // The swap button cycles through the slots; its label and icon name the next one.
-  const swap = (
-    {
-      tabs: {
-        next: "notation",
-        label: t("Engine.MoveAboveNotation"),
-        icon: <ArrowDownToLine size="0.875rem" />,
-      },
-      notation: {
-        next: "board",
-        label: t("Engine.MoveBelowBoard"),
-        icon: <ArrowDownLeft size="0.875rem" />,
-      },
-      board: {
-        next: "tabs",
-        label: t("Engine.MoveAboveTabs"),
-        icon: <ArrowUpToLine size="0.875rem" />,
-      },
-    } as const
-  )[placement];
+  const positionLabels: Record<DetachedEnginePlacement, string> = {
+    tabs: t("Engine.PositionAboveTabs"),
+    notation: t("Engine.PositionAboveNotation"),
+    belowNotation: t("Engine.PositionBelowNotation"),
+    board: t("Engine.PositionBelowBoard"),
+  };
+  const moveTo = (next: DetachedEnginePlacement) => {
+    if (next === placement) return;
+    focusPositionOnMount = true;
+    setPlacement(next);
+    // A click is a discrete update, so the new slot mounts and runs its effect before this task
+    // ends. When no slot mounts (board editing hides the notation slots), the flag must not leak
+    // into a later, unrelated mount.
+    setTimeout(() => {
+      focusPositionOnMount = false;
+    }, 0);
+  };
 
   const { settings, setSettings } = useTabEngineSettings(engine);
 
@@ -181,24 +179,31 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
             </Box>
           </Tooltip>
         )}
-        <IconAction
-          label={swap.label}
-          size="sm"
-          variant="subtle"
-          ref={swapRef}
-          onClick={() => {
-            focusSwapOnMount = true;
-            setPlacement(swap.next);
-            // A click is a discrete update, so the new slot mounts and runs its effect before this
-            // task ends. When no slot mounts (board editing hides the notation slot), the flag
-            // must not leak into a later, unrelated mount.
-            setTimeout(() => {
-              focusSwapOnMount = false;
-            }, 0);
-          }}
-        >
-          {swap.icon}
-        </IconAction>
+        <Menu position="bottom-end" shadow="md">
+          <Menu.Target>
+            <IconAction label={t("Engine.Position")} size="sm" variant="subtle" ref={positionRef}>
+              <Move size="0.875rem" />
+            </IconAction>
+          </Menu.Target>
+          <Menu.Dropdown>
+            {DETACHED_ENGINE_PLACEMENTS.map((option) => (
+              <Menu.Item
+                key={option}
+                aria-current={option === placement || undefined}
+                leftSection={
+                  option === placement ? (
+                    <Check size="0.875rem" />
+                  ) : (
+                    <Box w="0.875rem" aria-hidden />
+                  )
+                }
+                onClick={() => moveTo(option)}
+              >
+                {positionLabels[option]}
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
         <IconAction label={t("Engine.Unpin")} size="sm" variant="subtle" onClick={onClose}>
           <PinOff size="0.875rem" />
         </IconAction>

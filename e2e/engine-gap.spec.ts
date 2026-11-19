@@ -660,31 +660,66 @@ test("engine-gap: pinned engine shows up to its own line count and swaps between
     await expect(scores).toHaveText(["+0.34", "+0.21", "0.00", "-0.10"]);
     await expect(detached).toContainText("1.c4e5");
 
-    // The bar starts above the panel tabs; its swap button cycles it above the notation, below
-    // the board and back.
+    // The bar starts above the panel tabs. Its position menu names every slot and moves it there.
     const tabList = page.locator("#topRight").getByRole("tablist").first();
-    const notation = page.locator("#bottomRight");
-    const top = async (locator: typeof detached) => (await locator.boundingBox())!.y;
+    const right = page.locator("#bottomRight");
+    // The first card in the column that is not the engine bar itself.
+    const notationCard = right
+        .locator(".mantine-Paper-root:not([data-testid='pinned-engine'])")
+        .first();
+    const rect = async (locator: Locator) => (await locator.boundingBox())!;
+    const top = async (locator: Locator) => (await rect(locator)).y;
+    const bottom = async (locator: Locator) => {
+        const { y, height } = await rect(locator);
+        return y + height;
+    };
     expect(await top(detached)).toBeLessThan(await top(tabList));
-    await detached.getByRole("button", { name: "Move above the notation", exact: true }).click();
-    await expect(
-        detached.getByRole("button", { name: "Move below the board", exact: true }),
-    ).toBeVisible();
-    expect(await top(detached)).toBeGreaterThan(await top(tabList));
-    expect(await top(detached)).toBeGreaterThanOrEqual(await top(notation));
+    await detached.getByRole("button", { name: "Engine position", exact: true }).click();
+    const items = page.getByRole("menuitem");
+    await expect(items).toHaveText([
+        "Above the tabs",
+        "Above the notation",
+        "Below the notation",
+        "Below the board",
+    ]);
+    await expect(items.and(page.locator("[aria-current='true']"))).toHaveText("Above the tabs");
+    await items.getByText("Above the notation", { exact: true }).click();
+    await expect(page.getByRole("menu")).toHaveCount(0);
     await expect(detached).toHaveCount(1);
-    // The next step puts it below the board, the third returns it above the tabs.
-    await detached.getByRole("button", { name: "Move below the board", exact: true }).click();
+    expect(await top(detached)).toBeGreaterThan(await top(tabList));
+    expect(await bottom(detached)).toBeLessThanOrEqual((await top(notationCard)) + 0.5);
+    // Focus follows the bar into its new slot.
     await expect(
-        detached.getByRole("button", { name: "Move above the tabs", exact: true }),
-    ).toBeVisible();
+        detached.getByRole("button", { name: "Engine position", exact: true }),
+    ).toBeFocused();
+
+    // Below the notation, the bar closes the right column and takes the same room from the
+    // notation as above it.
+    // The notation card cannot shrink below its tool column, so a short pane scrolls the column
+    // in either notation slot; this check uses a pane tall enough for all four lines.
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    const cardAbove = (await rect(notationCard)).height;
+    await detached.getByRole("button", { name: "Engine position", exact: true }).click();
+    await items.getByText("Below the notation", { exact: true }).click();
+    await expect(detached).toHaveCount(1);
+    expect(await top(detached)).toBeGreaterThanOrEqual((await bottom(notationCard)) - 0.5);
+    await expect.poll(async () => (await bottom(right)) - (await bottom(detached))).toBeLessThan(2);
+    expect(await bottom(detached)).toBeLessThanOrEqual((await bottom(right)) + 0.5);
+    expect((await rect(notationCard)).height).toBeCloseTo(cardAbove, 0);
+    await expect(right).toHaveScreenshot("pinned-engine-below-notation.png", {
+        animations: "disabled",
+    });
+
+    await detached.getByRole("button", { name: "Engine position", exact: true }).click();
+    await items.getByText("Below the board", { exact: true }).click();
     await expect(page.locator("#left").getByTestId("pinned-engine")).toHaveCount(1);
     await expect(detached).toHaveCount(1);
-    await detached.getByRole("button", { name: "Move above the tabs", exact: true }).click();
-    await expect(
-        detached.getByRole("button", { name: "Move above the notation", exact: true }),
-    ).toBeVisible();
+    await detached.getByRole("button", { name: "Engine position", exact: true }).click();
+    await items.getByText("Above the tabs", { exact: true }).click();
     expect(await top(detached)).toBeLessThan(await top(tabList));
+    await expect(
+        detached.getByRole("button", { name: "Engine position", exact: true }),
+    ).toBeFocused();
 });
 
 test("engine-gap: the pinned engine below the board stays inside the left pane and the board makes room", async ({
@@ -736,13 +771,14 @@ test("engine-gap: the pinned engine below the board stays inside the left pane a
         return y + height;
     };
     const boardSize = async () => (await box(surface)).height;
-    const swapTo = async (name: string, next: string) => {
-        await detached.getByRole("button", { name, exact: true }).click();
-        await expect(detached.getByRole("button", { name: next, exact: true })).toBeVisible();
+    const moveTo = async (position: string) => {
+        await detached.getByRole("button", { name: "Engine position", exact: true }).click();
+        await page.getByRole("menuitem", { name: position, exact: true }).click();
+        await expect(page.getByRole("menu")).toHaveCount(0);
     };
     const belowBoard = async () => {
-        await swapTo("Move above the notation", "Move below the board");
-        await swapTo("Move below the board", "Move above the tabs");
+        await moveTo("Below the board");
+        await expect(left.getByTestId("pinned-engine")).toHaveCount(1);
     };
     /** Board, player bars and engine bar lie inside the left pane, and none is clipped or overlaps. */
     const expectFits = async () => {
@@ -779,7 +815,7 @@ test("engine-gap: the pinned engine below the board stays inside the left pane a
     await expectFits();
     await lineCount.getByText("4", { exact: true }).click();
     await expect(scores).toHaveCount(4);
-    await swapTo("Move above the tabs", "Move above the notation");
+    await moveTo("Above the notation");
     await expect.poll(boardSize).toBeCloseTo(above, 0);
 
     // Width-bounded with room below: the board keeps its size.

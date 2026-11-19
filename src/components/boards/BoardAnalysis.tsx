@@ -453,6 +453,7 @@ function BoardAnalysis() {
               }
             />
             <MoveControls />
+            <DetachedEval placement="belowNotation" />
           </NotationColumn>
         )}
       </Portal>
