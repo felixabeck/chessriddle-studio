@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { deserializeStorageValue } from "@/state/store/debouncedStorage";
 import type { DatabaseList, SuccessDatabaseInfo } from "@/utils/db";
+import { DatabaseLibraryDetail } from "./DatabaseLibraryDetail";
+import { DatabaseLibraryRow } from "./DatabaseLibraryRow";
 import { useDatabaseLibrary } from "./useDatabaseLibrary";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -129,8 +131,8 @@ function Harness() {
       <button data-open onClick={() => library.openDatabase(database)}>
         Open
       </button>
-      {library.renderRow(database)}
-      {library.detail}
+      <DatabaseLibraryRow library={library} item={database} />
+      <DatabaseLibraryDetail library={library} />
     </>
   );
 }

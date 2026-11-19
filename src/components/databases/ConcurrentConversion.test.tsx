@@ -280,6 +280,10 @@ vi.mock("lucide-react", () => ({
   Trash2: () => null,
 }));
 
+import { DatabaseLibraryDetail } from "./DatabaseLibraryDetail";
+import { DatabaseLibraryDialogs } from "./DatabaseLibraryDialogs";
+import { DatabaseLibraryRow } from "./DatabaseLibraryRow";
+import { DatabaseLibraryProgress, DatabaseLibraryStatus } from "./DatabaseLibraryStatus";
 import { useDatabaseLibrary } from "./useDatabaseLibrary";
 function DatabasesPage() {
   const [selected, setSelected] = useState<string | null>(null);
@@ -294,11 +298,13 @@ function DatabasesPage() {
       >
         Add New
       </button>
-      {source.status}
-      {source.progress}
-      {source.dialogs}
-      {source.visibleDatabases.map(source.renderRow)}
-      {source.detail}
+      <DatabaseLibraryStatus library={source} />
+      <DatabaseLibraryProgress library={source} />
+      <DatabaseLibraryDialogs library={source} />
+      {source.visibleDatabases.map((item) => (
+        <DatabaseLibraryRow key={databaseHandleKey(item.file)} library={source} item={item} />
+      ))}
+      <DatabaseLibraryDetail library={source} />
     </>
   );
 }

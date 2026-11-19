@@ -29,6 +29,20 @@ import DirectoryTree, { type CollectionPeer } from "@/components/files/Directory
 import { FILE_TYPES } from "@/components/files/file";
 import { useFileWorkspace } from "@/components/files/useFileWorkspace";
 import { useDatabaseLibrary } from "@/components/databases/useDatabaseLibrary";
+import {
+  DatabaseLibraryRow,
+  DatabaseLibraryUnreadRow,
+} from "@/components/databases/DatabaseLibraryRow";
+import {
+  DatabaseLibraryProgress,
+  DatabaseLibraryStatus,
+} from "@/components/databases/DatabaseLibraryStatus";
+import { DatabaseLibraryDetail } from "@/components/databases/DatabaseLibraryDetail";
+import { DatabaseLibraryDialogs } from "@/components/databases/DatabaseLibraryDialogs";
+import { FileWorkspaceCreation, FileWorkspaceStatus } from "@/components/files/FileWorkspaceStatus";
+import { FileTrashNotice, FileTrashView } from "@/components/files/FileTrash";
+import { FileWorkspaceDetail } from "@/components/files/FileWorkspaceDetail";
+import { FileWorkspaceDialogs } from "@/components/files/FileWorkspaceDialogs";
 import { databaseHandleKey } from "@/utils/db";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
@@ -180,7 +194,9 @@ export default function LibraryPage() {
         selected: selection?.kind === "database" && selection.key === databaseHandleKey(item.file),
         onSelect: () => setSelection({ kind: "database", key: databaseHandleKey(item.file) }),
         onOpen: () => databases.openDatabase(item),
-        content: databases.renderRow(item),
+        content: (
+          <DatabaseLibraryRow key={databaseHandleKey(item.file)} library={databases} item={item} />
+        ),
       })),
     ...databases.unread
       .filter(
@@ -196,7 +212,7 @@ export default function LibraryPage() {
         key: item.key,
         name: item.filename,
         selected: false,
-        content: databases.renderUnreadRow(item),
+        content: <DatabaseLibraryUnreadRow key={item.key} item={item} />,
       })),
   ];
   const loadedEmpty =
@@ -230,7 +246,7 @@ export default function LibraryPage() {
         wrap="wrap"
         style={{ flexShrink: split ? 0 : undefined }}
       >
-        {files.creation}
+        <FileWorkspaceCreation files={files} />
         <Button
           miw={0}
           disabled={databases.conversionInProgress}
@@ -301,9 +317,9 @@ export default function LibraryPage() {
                 ]}
               />
             </Group>
-            {files.trash}
-            {files.status}
-            {databases.status}
+            <FileTrashNotice files={files} />
+            <FileWorkspaceStatus files={files} />
+            <DatabaseLibraryStatus library={databases} />
             <Box
               mah={split ? undefined : "60vh"}
               mih="8rem"
@@ -312,7 +328,7 @@ export default function LibraryPage() {
               pr={split ? "xs" : undefined}
               style={{ overflow: "auto", scrollbarGutter: split ? "stable" : undefined }}
             >
-              {databases.progress}
+              <DatabaseLibraryProgress library={databases} />
               <DirectoryTree
                 {...files.listProps}
                 selectedFile={fileSelection}
@@ -348,7 +364,7 @@ export default function LibraryPage() {
                   )}
                 </>
               )}
-              {files.trashView}
+              <FileTrashView files={files} />
             </Box>
           </Stack>
         </Paper>
@@ -373,11 +389,11 @@ export default function LibraryPage() {
                   h={linked.status === "preservedOriginal" ? "100%" : undefined}
                   miw={0}
                 >
-                  {files.detail}
+                  <FileWorkspaceDetail files={files} />
                 </Box>
               </Stack>
             ) : (
-              files.detail
+              <FileWorkspaceDetail files={files} />
             )
           ) : selectedMissing && files.workspace ? (
             <LinkedCollection
@@ -388,7 +404,7 @@ export default function LibraryPage() {
             />
           ) : databases.selectedDatabase ? (
             <Stack key={`database:${databaseHandleKey(databases.selectedDatabase.file)}`} miw={0}>
-              {databases.detail}
+              <DatabaseLibraryDetail library={databases} />
               {linkSupported &&
                 databases.selectedDatabase.type === "success" &&
                 files.workspace && (
@@ -416,8 +432,8 @@ export default function LibraryPage() {
           )}
         </Paper>
       </SimpleGrid>
-      {files.dialogs}
-      {databases.dialogs}
+      <FileWorkspaceDialogs files={files} />
+      <DatabaseLibraryDialogs library={databases} />
       {databases.selectedDatabase?.type === "success" && files.workspace && (
         <CollectionMigration
           opened={migrationDatabase === databaseHandleKey(databases.selectedDatabase.file)}

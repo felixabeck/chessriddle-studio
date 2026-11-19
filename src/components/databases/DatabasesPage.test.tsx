@@ -5,17 +5,25 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import i18n from "i18next";
 import english from "@/translation/en-US.json";
 import type { RootFailure } from "@/bindings";
-import type { SuccessDatabaseInfo } from "@/utils/db";
+import { databaseHandleKey, type SuccessDatabaseInfo } from "@/utils/db";
+import { DatabaseLibraryDetail } from "./DatabaseLibraryDetail";
+import { DatabaseLibraryDialogs } from "./DatabaseLibraryDialogs";
+import { DatabaseLibraryRow, DatabaseLibraryUnreadRow } from "./DatabaseLibraryRow";
+import { DatabaseLibraryStatus } from "./DatabaseLibraryStatus";
 import { useDatabaseLibrary } from "./useDatabaseLibrary";
 function DatabasesPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const source = useDatabaseLibrary(selected, setSelected);
   return (
     <>
-      {source.status}
+      <DatabaseLibraryStatus library={source} />
       {!source.databases && source.failure === "silent" && <span data-testid="loading" />}
-      {source.visibleDatabases.map(source.renderRow)}
-      {source.unread.map(source.renderUnreadRow)}
+      {source.visibleDatabases.map((item) => (
+        <DatabaseLibraryRow key={databaseHandleKey(item.file)} library={source} item={item} />
+      ))}
+      {source.unread.map((item) => (
+        <DatabaseLibraryUnreadRow key={item.key} item={item} />
+      ))}
       {source.databases?.length === 0 &&
         source.unread.length === 0 &&
         source.failure === "silent" && (
@@ -24,8 +32,10 @@ function DatabasesPage() {
             <span>Add a database to get started</span>
           </>
         )}
-      <div data-testid="selected-detail">{source.detail}</div>
-      {source.dialogs}
+      <div data-testid="selected-detail">
+        <DatabaseLibraryDetail library={source} />
+      </div>
+      <DatabaseLibraryDialogs library={source} />
     </>
   );
 }

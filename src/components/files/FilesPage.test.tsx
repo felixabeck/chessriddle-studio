@@ -336,6 +336,10 @@ const destination = {
 
 import { TauriCommandError } from "@/platform/tauri";
 import { useFileWorkspace } from "./useFileWorkspace";
+import { FileTrashNotice, FileTrashView } from "./FileTrash";
+import { FileWorkspaceDetail } from "./FileWorkspaceDetail";
+import { FileWorkspaceDialogs } from "./FileWorkspaceDialogs";
+import { FileWorkspaceCreation, FileWorkspaceStatus } from "./FileWorkspaceStatus";
 import DirectoryTree from "./DirectoryTree";
 import type { Entry } from "./file";
 import { Input, Select } from "@mantine/core";
@@ -350,7 +354,7 @@ function FilesPage() {
   controller = source;
   return (
     <>
-      {source.creation}
+      <FileWorkspaceCreation files={source} />
       <Input
         aria-label="Common.Search"
         value={search}
@@ -365,14 +369,14 @@ function FilesPage() {
           label: value,
         }))}
       />
-      {source.trash}
-      {source.status}
+      <FileTrashNotice files={source} />
+      <FileWorkspaceStatus files={source} />
       {source.data && source.failure === "silent" && (
         <DirectoryTree {...source.listProps} search={search} filter={filter} />
       )}
-      {source.trashView}
-      {source.detail}
-      {source.dialogs}
+      <FileTrashView files={source} />
+      <FileWorkspaceDetail files={source} />
+      <FileWorkspaceDialogs files={source} />
     </>
   );
 }
@@ -1910,22 +1914,20 @@ test.each(["trash", "restore"] as const)(
     expect(container.textContent).not.toContain("list unavailable");
 
     // The handlers preserve the original rejection even when relisting fails.
-    const confirmation = (
-      controller.dialogs.props.children as Array<
-        { props: { title: string; onConfirm: () => Promise<void> } } | null | false
-      >
-    ).find(
-      (child) =>
-        child && child.props.title === (action === "trash" ? "Move to trash" : "Restore file"),
-    );
-    if (!confirmation) throw new Error("Missing confirmation");
+    const deleteTarget = controller.deleteTarget;
+    const restoreTarget = controller.restoreTarget;
+    const confirm =
+      action === "trash"
+        ? deleteTarget && (() => controller.confirmTrash(deleteTarget))
+        : restoreTarget && (() => controller.confirmRestore(restoreTarget));
+    if (!confirm) throw new Error("Missing confirmation");
     for (const category of ["operation-and-cleanup", "durability"] as const) {
       const cause = commandError(category, "original mutation failure");
       command.mockRejectedValueOnce(cause);
       mocks.mutate.mockClear();
       mocks.mutate.mockRejectedValueOnce(new Error("list unavailable"));
       await act(async () => {
-        await expect(confirmation.props.onConfirm()).rejects.toBe(cause);
+        await expect(confirm()).rejects.toBe(cause);
       });
       expect(mocks.mutate).toHaveBeenCalledTimes(1);
     }

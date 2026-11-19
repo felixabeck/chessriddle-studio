@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { databaseHandleKey, NAME_SEARCH_DEBOUNCE_MS, type SuccessDatabaseInfo } from "@/utils/db";
+import { DatabaseLibraryDetail } from "./DatabaseLibraryDetail";
 import { useDatabaseLibrary } from "./useDatabaseLibrary";
 
 const mocks = vi.hoisted(() => ({
@@ -60,7 +61,8 @@ const originalScroll = Object.getOwnPropertyDescriptor(Element.prototype, "scrol
 
 function Library() {
   const [selected, setSelected] = useState<string | null>(databaseHandleKey(database.file));
-  return useDatabaseLibrary(selected, setSelected).detail;
+  const library = useDatabaseLibrary(selected, setSelected);
+  return <DatabaseLibraryDetail library={library} />;
 }
 
 beforeEach(() => {

@@ -16,6 +16,9 @@ import { activeDatabaseViewStore } from "@/state/store/database";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { databaseHandleKey, type DatabaseList, type SuccessDatabaseInfo } from "@/utils/db";
+import { DatabaseLibraryDetail } from "./DatabaseLibraryDetail";
+import { DatabaseLibraryDialogs } from "./DatabaseLibraryDialogs";
+import { DatabaseLibraryProgress, DatabaseLibraryStatus } from "./DatabaseLibraryStatus";
 import { useDatabaseLibrary } from "./useDatabaseLibrary";
 
 const mocks = vi.hoisted(() => ({
@@ -112,10 +115,10 @@ function Library() {
   return (
     <>
       <output data-selected>{selected ?? "none"}</output>
-      {library.status}
-      {library.progress}
-      {library.detail}
-      {library.dialogs}
+      <DatabaseLibraryStatus library={library} />
+      <DatabaseLibraryProgress library={library} />
+      <DatabaseLibraryDetail library={library} />
+      <DatabaseLibraryDialogs library={library} />
     </>
   );
 }
