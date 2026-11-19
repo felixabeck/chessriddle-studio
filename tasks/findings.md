@@ -27328,3 +27328,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** derive `const topColor = opposite(orientation)`, `const bottomColor = orientation`, and a small `playerBarProps(color)` that returns name, Elo and `onNameClick` from `headers[color]` / `headers[`${color}_elo`]`. Pass `color` to `ShowMaterial` and `Clock`. Replace the two flags with `const [fideColor, setFideColor] = useState<Color | null>(null)` and one `FideInfo` whose name comes from `headers[fideColor]`. The repertoire top bar keeps its own title/detail branch. No behaviour change. The existing Board tests that flip orientation cover it.
 * **Proof:** the line references above at origin/master `7086448c7`. Upstream had the same mirrored shape at merge-base `9654961d6`, so it predates the fork.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### AddDatabase's `DatabaseCard` and AddPuzzle's `PuzzleDbCard` are one catalogue download card copied twice
+
+* **ID:** f-20261119-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
+* **Where:** `src/components/databases/AddDatabase.tsx:303-401` (`DatabaseCard`, `downloadDatabase`) and `src/components/puzzles/AddPuzzle.tsx:101-192` (`PuzzleDbCard`, its download handler). Both cards were already present upstream at merge-base `9654961d6`.
+* **Defect:** a line diff of the two bodies differs only in names, the destination call (`tauri.getDatabaseWorkspace()` + `databaseDownloadDestination(root)` vs `tauri.issuePuzzleDownloadDestination()`), the leaf (`catalogDatabaseFilename(title)` vs an inline `` `${puzzleDb.title}.db3` ``), the error kind (`"database"` / `"puzzle"`), and the stat cells (size/games/players vs size/puzzles). Everything else is identical: the `inProgress` state, `useDownloadJob`, `runUnlessCancelled(runDownloadJob(… tauri.downloadFile(progressId, link, destination, leaf, null, ticket, { sha256, signature })))`, the reload after download, and the whole `Paper`/`Group`/`Stack`/`ProgressButton` layout. A copy-window scan of `src/` (10 normalised lines) found this as the largest duplicated block in the renderer.
+* **Failure scenario:** download-card fixes have already had to be made twice. f-20260830-12 moved AddPuzzle onto `errorUnlessCancelled` separately, and the progress-id fix (`db:${downloadLink}` / `puzzle_db:${downloadLink}`) had to touch both files. The next change to verification, cancellation, the install check or the card layout will need the same double edit, or the two will drift. The leaf rule has already split: puzzles inline `.db3` instead of using `catalogDatabaseFilename`.
+* **Fix:** extract one `CatalogDownloadCard` (for example in `src/components/common/`) that takes `{ progressId, initInstalled, kindLabel, title, description, stats: { label, value }[], resolveDestination, leaf, onInstalled, errorKind, digest }` and owns the in-progress state, the `runDownloadJob` call and the layout. Both catalogues pass their own destination and reload callbacks. Give puzzles a `catalogPuzzleFilename` (or reuse `catalogDatabaseFilename`) so both leaf rules live in `utils/db.ts`. No behaviour change. `AddDatabase.test.tsx` and `AddPuzzle.test.tsx` stay as the guard.
+* **Proof:** `diff <(sed -n 295,350p AddDatabase.tsx) <(sed -n 93,148p AddPuzzle.tsx)` and the same for `350-420` / `149-220` at origin/master show only the name, destination, leaf, error-kind and stat-cell differences listed above.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
