@@ -27376,3 +27376,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** delete the four declarations and the now-unused `SuccessDatabaseInfo` import in `atoms.ts`. `pnpm exec tsc --noEmit` is the guard. No behaviour change.
 * **Proof:** at origin/master `7086448c7`, `rg -n -w "selectedDatabaseAtom|CompleteGame|SetCurrentTab" src e2e scripts` prints only the three declarations, and `rg -l -w Speed src` lists only `src/utils/db.ts` (the declaration). The candidates came from a scan of every `export` in `src` (1433) for a word-boundary use outside its file; the rest of that list are names used inside their own module (needlessly exported, not dead) and are not part of this finding.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### SettingsPage hand-writes every category tab and panel even though `categoryInfo` already holds each title, description and icon
+
+* **ID:** f-20261119-08 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
+* **Where:** `src/components/settings/SettingsPage.tsx` (`SettingsPage`): the `SettingCategory` union `:82-89`, the `categoryInfo` map `:640-681` (title, description and icon per category, used only by search results `:690-730`), the hand-written `Tabs.List` `:797-818` (seven `Tabs.Tab` blocks that restate the same `t("Settings.X")` title and icon), and the hand-written `Tabs.Panel` blocks `:823-917`. Six of these panels restate the same title `Text` + `Settings.X.Desc` `Text` + `renderCategorySettings(x)`; only `keybinds` adds content (Reset action, key table, `DrawingKeybinds`).
+* **Defect:** each category's identity is spelled in four places: the union, `categoryInfo`, the tab, and the panel. The browse UI ignores `categoryInfo`, so the same 21 title/description/icon facts exist twice, with nothing tying them together. Upstream added `categoryInfo` for search (52bcb515a, f0f2132fd) next to the older hand-written tabs without folding the tabs onto it.
+* **Failure scenario:** a new settings category (Felix's fork already added `repertoire` and `directories`) needs the union entry, the `categoryInfo` entry, a `Tabs.Tab` and a `Tabs.Panel`. Forgetting the panel leaves its settings reachable only through search. Forgetting `categoryInfo` makes TypeScript fail, but nothing checks that the tab icon or title matches the search heading.
+* **Fix:** keep one ordered `const SETTING_CATEGORIES: SettingCategory[]`. Render the tab list and panels by mapping it through `categoryInfo` (`<Tabs.Tab value={c} leftSection={categoryInfo[c].icon}>{categoryInfo[c].title}</Tabs.Tab>`). Use a `CategoryPanelHeader` for the title + description. Let `keybinds` pass its extra header action and body through an optional `extra` slot (or a `categoryBody` override). No behaviour change; `SettingsPage.test.tsx` and the settings e2e screenshots guard the layout.
+* **Proof:** `rg -n 'Settings\.(Board|Inputs|Appearance|Sound|Keybinds|Directories|Repertoire)"' SettingsPage.tsx` at origin/master hits each title three times: `categoryInfo` `:646-676`, the tab `:799-817`, and the panel `:825-910`.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
