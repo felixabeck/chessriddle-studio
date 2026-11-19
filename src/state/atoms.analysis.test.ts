@@ -435,7 +435,7 @@ test("threat arrows compare White-perspective scores against the searched turn a
     disposeTabAtoms(tab);
 });
 
-test("unavailable threat returns no arrows or line owner despite poisoned cache and recovers the available key", async () => {
+test("unavailable threat returns no arrows despite poisoned cache and recovers the available key", async () => {
     const store = createStore();
     const tab = "unavailable-threat-arrows";
     store.set(tabsAtom, [

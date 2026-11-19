@@ -5,12 +5,16 @@ import type { Score } from "@/bindings";
 import { ENGINE_LINES_LOADING_DELAY_MS } from "@/components/panels/analysis/useDisplayedEngineLines";
 import {
   engineMovesFamily,
+  engineTerminalFamily,
   enginesAtom,
   tabEngineSettingsFamily,
   threatFamily,
 } from "@/state/atoms";
 import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
-import { engineLineContext } from "@/components/panels/analysis/analysisLineContext";
+import {
+  engineIdentity,
+  engineLineContext,
+} from "@/components/panels/analysis/analysisLineContext";
 import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
 import { displayEngine, displayLines, engineDisplayHarness } from "@/tests/engineDisplay";
 import { useEvalBarScore } from "./useEvalBarScore";
@@ -191,13 +195,10 @@ test("the node's stored score shows unnamed when no engine has lines for the pos
 });
 
 test("shows a local engine's remembered lines for a position the node has no score for", async () => {
-  const memory = new AnalysisLineMemory();
-  memory.context = engineLineContext(h.store.get(h.settingsAtom), displayEngine);
-  memory.set(analysisSearch(INITIAL_FEN, E4, false).key!, displayLines);
-  await act(async () => h.store.set(h.memoryAtom, memory));
+  await remember(displayEngine, 34);
   await show({ score: cp(100), moves: [] });
   await show({ score: null, moves: E4 });
-  expect(shown).toEqual(displayLines[0].score);
+  expect(shown).toEqual(cp(34));
 });
 
 test("once the bar has shown empty, a later wait does not bring back an older score", async () => {
@@ -232,16 +233,41 @@ test("only a loaded, enabled engine counts, wherever it sits in the engine list"
 
 test("a second local engine's remembered lines win over the first engine still computing", async () => {
   const second = { ...displayEngine, id: "second" };
-  const settings = tabEngineSettingsFamily({ tab: "display-tab", engineId: second.id });
-  await act(async () => h.store.set(settings, { ...h.store.get(settings), enabled: true }));
-  const memory = new AnalysisLineMemory();
-  memory.context = engineLineContext(h.store.get(settings), second);
-  memory.set(analysisSearch(INITIAL_FEN, E4, false).key!, displayLines);
-  await act(async () => {
-    h.store.set(engineMovesFamily({ tab: "display-tab", engine: second.id }), memory);
-    h.store.set(enginesAtom, [displayEngine, second] as never);
-  });
+  await remember(second, 34);
+  await act(async () => h.store.set(enginesAtom, [displayEngine, second] as never));
   await show({ score: cp(100), moves: [] });
   await show({ score: null, moves: E4 });
-  expect(shown).toEqual(displayLines[0].score);
+  expect(shown).toEqual(cp(34));
+});
+
+/** Marks `engine`'s search of E4 as finished without lines, as an unknown cloud position is. */
+async function finishWithoutLines(engine: typeof cloud) {
+  const settings = tabEngineSettingsFamily({ tab: "display-tab", engineId: engine.id });
+  await act(async () => h.store.set(settings, { ...h.store.get(settings), enabled: true }));
+  await act(async () =>
+    h.store.set(engineTerminalFamily({ tab: "display-tab", engine: engine.id }), {
+      type: "not-in-database",
+      searchedKey: analysisSearch(INITIAL_FEN, E4, false).key!,
+      context: engineLineContext(h.store.get(settings), engine as never),
+      fingerprint: "",
+      engineIdentity: engineIdentity(engine as never),
+      generation: null,
+      retry: 0,
+    }),
+  );
+}
+
+test("a cloud engine that does not know the position neither holds nor blocks the bar", async () => {
+  await finishWithoutLines(cloud);
+  await act(async () => h.store.set(enginesAtom, [cloud] as never));
+  await show({ score: cp(100), moves: [] });
+  await show({ score: null, moves: E4 });
+  // Nothing is pending any more, so the previous move's score does not linger.
+  expect(shown).toBeNull();
+
+  await remember(displayEngine, 34);
+  await act(async () => h.store.set(enginesAtom, [cloud, displayEngine] as never));
+  await show({ score: null, moves: E4 });
+  expect(shown).toEqual(cp(34));
+  expect(shownEngine).toBe("Stockfish");
 });

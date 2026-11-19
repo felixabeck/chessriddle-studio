@@ -7,7 +7,7 @@ import {
 } from "@/components/panels/analysis/useDisplayedEngineLines";
 
 /** What the evaluation bar shows. `engineName` is null for a score no running engine gives. */
-export type EvalBarScore = { score: Score; engineName: string | null };
+type EvalBarScore = { score: Score; engineName: string | null };
 
 /**
  * The score the evaluation bar shows for the current node.

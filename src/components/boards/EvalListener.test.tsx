@@ -37,6 +37,7 @@ const fixtures = vi.hoisted(() => ({
   nodeScore: undefined as unknown,
   // The tree store's position when it has moved on since the listener last rendered.
   storeFen: null as string | null,
+  storeMoves: null as string[] | null,
   t: (key: string) => key,
 }));
 
@@ -58,7 +59,10 @@ vi.mock("@/utils/engines", () => ({
   stopEngine: fixtures.stopEngine,
   releaseEngineSearch: fixtures.releaseEngineSearch,
 }));
-vi.mock("@/utils/chess", () => ({ getVariationLine: () => fixtures.moves }));
+// The tree store's own root carries `storeMoves` once it has moved on; renders read `moves`.
+vi.mock("@/utils/chess", () => ({
+  getVariationLine: (root?: { storeMoves?: string[] | null }) => root?.storeMoves ?? fixtures.moves,
+}));
 vi.mock("@/utils/chessdb/api", () => ({ getBestMoves: fixtures.chessdbGetBestMoves }));
 vi.mock("@/utils/lichess/api", () => ({ getBestMoves: fixtures.lichessGetBestMoves }));
 vi.mock("@/platform/tauri", () => ({
@@ -130,7 +134,10 @@ vi.mock("@/components/common/TreeStateContext", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
   return {
     TreeStateContext: React.createContext({
-      getState: () => ({ ...treeState(), root: { fen: fixtures.storeFen ?? fixtures.fen } }),
+      getState: () => ({
+        ...treeState(),
+        root: { fen: fixtures.storeFen ?? fixtures.fen, storeMoves: fixtures.storeMoves },
+      }),
     }),
   };
 });
@@ -228,6 +235,7 @@ beforeEach(() => {
   fixtures.moves = [];
   fixtures.nodeScore = undefined;
   fixtures.storeFen = null;
+  fixtures.storeMoves = null;
   fixtures.setEngineScore.mockImplementation((score: unknown) => {
     fixtures.nodeScore = score;
   });
@@ -1368,9 +1376,12 @@ test("a cloud engine running alone writes the node score", async () => {
   expect(fixtures.setEngineScore).toHaveBeenCalledExactlyOnceWith(lines[0].score);
 });
 
-test("a live score is not written to a position the tree has already left", async () => {
+test.each([
+  ["another root", () => (fixtures.storeFen = positionB)],
+  ["another move of the same game", () => (fixtures.storeMoves = ["e2e4"])],
+])("a live score is not written once the tree has left for %s", async (_where, leave) => {
   await rerender();
-  fixtures.storeFen = positionB;
+  leave();
   await broadcast(payload("generation-1"));
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toBeDefined();
   expect(fixtures.setEngineScore).not.toHaveBeenCalled();

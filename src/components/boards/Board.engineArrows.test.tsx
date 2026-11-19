@@ -8,6 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { BestMoves } from "@/bindings";
 import { TreeStateProvider } from "@/components/common/TreeStateContext";
+import { engineLineContext } from "@/components/panels/analysis/analysisLineContext";
 import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
 import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
 import { tauri } from "@/platform/tauri";
@@ -110,11 +111,16 @@ afterEach(async () => {
 });
 
 async function publish(payload: BestMoves[]) {
+  const memory = new AnalysisLineMemory(
+    new Map([[analysisSearch(INITIAL_FEN, [], false).key!, payload]]),
+  );
+  // As the listener records it: lines belong to the settings they were computed under.
+  memory.context = engineLineContext(
+    atoms.get(tabEngineSettingsFamily({ tab, engineId: engine.id })),
+    engine,
+  );
   await act(async () => {
-    atoms.set(
-      engineMovesFamily({ tab, engine: engine.id }),
-      new AnalysisLineMemory(new Map([[analysisSearch(INITIAL_FEN, [], false).key!, payload]])),
-    );
+    atoms.set(engineMovesFamily({ tab, engine: engine.id }), memory);
     tree.getState().setEngineScore({ ...payload[0].score, value: { ...payload[0].score.value } });
   });
 }
@@ -211,11 +217,25 @@ test("the eval bar shows the live engine score ahead of the node's saved score",
   // mountBoard published a live cp 10 for this node; it stays the shown score.
   expect(host.textContent).toContain("0.1");
   expect(host.textContent).not.toContain("3.0");
-  await act(async () => {
-    tree.getState().setEngineScore({ value: { type: "cp", value: 250 }, wdl: null });
-  });
+  const deeper = lines("e2e4", 25);
+  deeper[0].score = { value: { type: "cp", value: 250 }, wdl: null };
+  await publish(deeper);
   expect(host.textContent).toContain("2.5");
   expect(host.textContent).not.toContain("3.0");
   expect(tree.getState().root.score).toEqual({ value: { type: "cp", value: -300 }, wdl: null });
   expect(tree.getState().dirty).toBe(false);
+});
+
+test("the eval bar's tooltip names the engine its live score comes from", async () => {
+  await mountBoard();
+  const label = [...host.querySelectorAll("p")].find((text) => text.textContent === "0.1")!;
+  // The score label sits in its bar section, which sits in the bar the tooltip is bound to.
+  const bar = label.parentElement!.parentElement!;
+  await act(async () => {
+    bar.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    bar.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+  });
+  await vi.waitFor(() =>
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("+0.10 · Stockfish"),
+  );
 });
