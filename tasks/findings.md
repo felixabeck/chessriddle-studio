@@ -27498,6 +27498,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * No behaviour change. The `tree.test.ts` cases added by f-20261011-11 and f-20261114-15 are the guard.
 * **Proof:** `sed -n 644,688p src/state/store/tree.ts` at origin/master `7086448c7` (a 7-line copy scan of `src/` flagged the pair). `rg -n "drillAllows" src/state/store/tree.ts` lists the six call sites above. `git show 9654961d6:src/state/store/tree.ts` shows the pair at `:294-333`.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+* **Update (2026-11-19, same session, origin/master `d79fa979e`):** the first half is already done upstream of this filing: `bcdb0d816` / `d79fa979e` fold `nextBranch` / `previousBranch` into `stepSibling(1 | -1)` (`src/state/store/tree.ts:420-445`, `:583-584`). What remains is the second half: `if (!drillAllows(state.practicePath, target)) return; state.position = target;` is still restated in `stepSibling` `:442`, `goToAnnotation` `:505`, `goToEnd` `:522`, `goToBranchEnd` `:565` and `nextBranching` `:600`. Related player-visible leak through the unguarded `goToMove` path: f-20261119-15.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"ae6643948338404a2950394b6b94ab717be51464c7894723a18cf827edde9ea7","input_sha256":"4fd24b7b35e85362e7098c937bfc390b2f65e5eae700d8066ac86dc151749394","kind":"mutation-receipt","operation":"4fdc3aabbf0522a4ce44bfcccef2a3343c379331a0320127c30c35815aca5c18","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-13"],"target":"f-20261119-13","v":1} -->
 
 ---
 
