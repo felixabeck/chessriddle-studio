@@ -27267,3 +27267,19 @@ Push review (rounds 1-5) extended the fix. 8466c52c9 maps `DraftNumberInput.tsx`
 * **Fix:** add `.or_else(PositionError::ignore_invalid_ep_square)` to `database_setup_to_chess` and store the FEN with the ep field rewritten to `-` (keeping other bytes) so `games.fen`, the decode path that replays from it, and the renderer's `normalizeFen` agree. Check every other caller of `database_setup_to_chess` (explorer exact search, decode) for the same policy. Regression: import a PGN with that tag, the game is stored with the `-` FEN and its moves decode.
 * **Related:** f-20261115-25 (renderer entry points, handled), f-20261114-20.
 * **Found by:** review-root-cause lens (agy) in Claude Code drain session 107ac52f-7328-410b-bdd3-407f3a4977f3
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### Pinned Database strip screenshot flakes on the table's scrollbar thumb
+
+* **ID:** f-20261119-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (CI `Test` run 44498623129, job e2e, on 6d53b2c97; the image was added in 755a280d3)
+* **Where:** `e2e/database-files.spec.ts:3490` (`await expect(pane).toHaveScreenshot("explorer-pinned-strip.png")`).
+* **Defect:** the pinned strip is capped at half the pane, so its table scrolls, and Mantine's ScrollArea scrollbar thumb is visible or not depending on timing. The committed image holds the thumb; a run where it is hidden differs by 713 pixels, all in the scrollbar column.
+* **Failure scenario:** CI run 44498623129 failed `database-files: the board explorer compares two databases side by side` on that image while local container runs and CI run 44492744777 passed the same image.
+* **Proof:** the CI diff image marks only the strip's right-edge scrollbar column; actual has no thumb, expected has one.
+* **Fix:** take the screenshot with `stylePath` `e2e/scrollbar-free-screenshot.css`, as the pinned-engine hover preview image already does, and re-record the image in the e2e container.
+* **Found by:** Claude Code, push of the engine position menu (d-20261119-05)
