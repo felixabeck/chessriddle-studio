@@ -98,10 +98,11 @@ const RECONCILIATION_INITIAL_BACKOFF_MS = 1000;
 const RECONCILIATION_BACKOFF_FACTOR = 2;
 const RECONCILIATION_MAX_BACKOFF_MS = 8000;
 
-// Raw `makeUci` on purpose, not `getMainLine`: once a game starts, `setFen` rebuilds the tree
-// from native's moves, so its castles carry native's notation (`e1g1` in standard games).
-// `getMainLine` would normalise them to `e1h1` and break the poll's prefix check against
-// native's raw UCI. Native start accepts both castle notations in `initialMoves`.
+// Raw `makeUci` on purpose, not `getMainLine`: during a game the tree is rebuilt from native's
+// reported moves (`setFen`, then `syncTreeWithMoves`), and native echoes each move in the
+// notation it received — `e1g1` from a board move or a standard engine, `e1h1` from a parsed
+// PGN castle sent as `initialMoves`. The poll compares against that raw echo; `getMainLine`
+// would normalise every castle to `e1h1` and break the prefix check.
 function getMainlineUcis(root: TreeNode): string[] {
   const moves: string[] = [];
   let node = root;

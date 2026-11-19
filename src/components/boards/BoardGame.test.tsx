@@ -3692,41 +3692,40 @@ describe("native game delivery reconciliation", () => {
     vi.useRealTimers();
   });
 
-  test("a game continued from a castled tree still recognises polled native castles as a prefix", async () => {
+  test("a standard-notation castle echoed by native still counts as a prefix of the polled line", async () => {
     vi.useFakeTimers();
     const castlingFen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
-    const afterCastleFen = "r3k2r/8/8/8/8/8/8/R4RK1 b kq - 1 1";
     store.set(gamePlayer1SettingsAtom, { type: "human", name: "Alice" });
     store.set(gamePlayer2SettingsAtom, {
       type: "engine",
       engine: engine("engine-black"),
       go: { t: "Infinite" },
     });
-    // The tree holds O-O in chessops' king-takes-rook form, as a parsed PGN does.
-    fixtures.tree.root = {
-      fen: castlingFen,
-      children: [{ fen: afterCastleFen, move: parseUci("e1h1")!, children: [] }],
-    };
-    // Native reports the same castle in standard UCI; start rebuilds the tree from it.
+    fixtures.tree.root = { fen: castlingFen, children: [] };
     fixtures.startGame.mockImplementationOnce(async (gameId) =>
-      state({
-        gameId,
-        revision: 1n,
-        initialFen: castlingFen,
-        currentFen: afterCastleFen,
-        moves: [{ uci: "e1g1", clock: null }],
-        turn: "black",
-      }),
+      state({ gameId, initialFen: castlingFen, currentFen: castlingFen }),
     );
 
     await render();
     await start();
     const gameId = store.get(gameIdFamily("tab-a"));
-    expect(fixtures.startGame.mock.calls[0]?.[1]).toMatchObject({
-      initialFen: castlingFen,
-      initialMoves: ["e1h1"],
-    });
+
+    // The human castles; native echoes the move verbatim in standard UCI.
+    act(() =>
+      fixtures.listeners.get("gameMove")?.({
+        payload: {
+          gameId,
+          session: 1n,
+          revision: 1n,
+          moves: [{ uci: "e1g1", clock: null }],
+          whiteTime: null,
+          blackTime: null,
+        },
+      }),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(200));
     expect(treeMoves().map(makeUci)).toEqual(["e1g1"]);
+    fixtures.playPremove.mockClear();
 
     expect(fixtures.boardProps.onKeyboardPremove("a1", "b1")).toBe(true);
 
