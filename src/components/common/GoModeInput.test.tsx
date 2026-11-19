@@ -12,11 +12,13 @@ vi.mock("@mantine/core", () => ({
     value,
     rightSection,
     onChange,
+    onBlur,
     "aria-label": ariaLabel,
   }: {
     value: number | string;
     rightSection?: React.ReactNode;
     onChange: (value: number | string) => void;
+    onBlur?: () => void;
     "aria-label"?: string;
   }) => (
     <>
@@ -24,6 +26,7 @@ vi.mock("@mantine/core", () => ({
         type="number"
         aria-label={ariaLabel}
         value={value}
+        onBlur={onBlur}
         // Mantine reports a cleared field as "", not as a number.
         onChange={(event) =>
           onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
@@ -260,3 +263,28 @@ test.each(["Depth", "Nodes"] as const)(
     expect(input.value).toBe("");
   },
 );
+
+test("a cleared Depth shows the stored limit again on blur, and switching mode drops the draft", async () => {
+  const setGoMode = vi.fn();
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: "Depth", c: 20 }} setGoMode={setGoMode} />);
+  });
+  const field = () => host.querySelector("input")!;
+  const clear = () =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field(), "");
+      field().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  clear();
+  act(() => {
+    field().focus();
+    field().blur();
+  });
+  expect(field().value).toBe("20");
+
+  clear();
+  act(() => {
+    root.render(<GoModeInput goMode={{ t: "Nodes", c: 1_000_000 }} setGoMode={setGoMode} />);
+  });
+  expect(field().value).toBe("1000000");
+});

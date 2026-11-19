@@ -549,6 +549,17 @@ test("a cleared or out-of-range spin draft is held until blur and never saved", 
   expect(mocks.spinBounds.get("Unbounded")).toEqual({ min: undefined, max: undefined });
   // With no default and nothing stored it shows an empty field, not a 0 the clamp could raise.
   expect(optionInput("Unbounded")!.value).toBe("");
+  await act(async () => changeField(optionInput("Memory (MB)")!, "0"));
+  expect(atomEngines[0].settings).toEqual(engine.settings);
+  // With no default, 0 is a real choice and is saved rather than treated as "the default".
+  await act(async () => changeField(optionInput("Unbounded")!, "0"));
+  await vi.waitFor(() =>
+    expect(atomEngines[0].settings).toContainEqual({
+      type: "string",
+      name: "Unbounded",
+      value: "0",
+    }),
+  );
 });
 
 test.each([false, true])(

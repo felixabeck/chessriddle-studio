@@ -159,7 +159,17 @@ vi.mock("@mantine/core", () => {
     Checkbox: () => null,
     Divider: () => null,
     Group: Box,
-    NumberInput: () => null,
+    // Controlled like Mantine's: the shown text is the `value` prop, a cleared field reports "".
+    NumberInput: ({ label, value, onChange, onBlur }: any) => (
+      <input
+        aria-label={label}
+        value={value}
+        onBlur={onBlur}
+        onChange={(event) =>
+          onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
+        }
+      />
+    ),
     Paper: Box,
     Portal: Box,
     ScrollArea: Box,
@@ -245,6 +255,9 @@ import {
   gameSameTimeControlAtom,
   gameSessionFamily,
   gameInterruptionFamily,
+  gameOpeningBookEnabledAtom,
+  gameOpeningBookHandleAtom,
+  gameOpeningBookMaxPlyAtom,
   gameStateFamily,
   pendingGameStartFamily,
   playersFamily,
@@ -428,6 +441,9 @@ beforeEach(() => {
   store.set(closingTabsAtom, new Set());
   store.set(enginesAtom, []);
   store.set(flipBoardAfterMoveAtom, false);
+  store.set(gameOpeningBookEnabledAtom, false);
+  store.set(gameOpeningBookHandleAtom, null);
+  store.set(gameOpeningBookMaxPlyAtom, 20);
   store.set(tabsAtom, [
     { name: "A", value: "tab-a", type: "play", gameOrigin: { kind: "none" } },
     { name: "B", value: "tab-b", type: "play", gameOrigin: { kind: "none" } },
@@ -3767,4 +3783,35 @@ describe("native game delivery reconciliation", () => {
 
     vi.useRealTimers();
   });
+});
+
+test("the opening-book ply limit holds a cleared or below-1 draft until blur and never stores it", async () => {
+  store.set(gameOpeningBookEnabledAtom, true);
+  store.set(gameOpeningBookHandleAtom, { id: "book" } as any);
+  await render();
+  const field = () =>
+    document.querySelector<HTMLInputElement>(
+      'input[aria-label="Board.Opponent.OpeningBookMaxPlies"]',
+    )!;
+  const type = (text: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        field(),
+        text,
+      );
+      field().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+  for (const draft of ["", "0", "-5"]) {
+    await type(draft);
+    expect(field().value).toBe(draft);
+    expect(store.get(gameOpeningBookMaxPlyAtom)).toBe(20);
+  }
+  await act(async () => {
+    field().focus();
+    field().blur();
+  });
+  expect(field().value).toBe("20");
+  await type("12");
+  expect(store.get(gameOpeningBookMaxPlyAtom)).toBe(12);
 });
