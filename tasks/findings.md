@@ -27089,7 +27089,7 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 
 ### The analysis board's frame is cut at its right edge in the stacked layout
 
-* **ID:** f-20261117-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261117-02 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 3fe53cbf-45f9-4f1a-9427-75ce692eb6a3
 * **Impact class:** ux
 * **Spotted outside diff:** yes (eval-chevron clipping fix, branch fix/icon-clipping)
@@ -27098,6 +27098,8 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 * **Failure scenario:** open an Analysis Board in a window under about 646px wide (or under about 1286px at 200% font scale); the board's right frame and the h-file squares' outer edge are not visible.
 * **Fix shape:** size the board so its frame fits inside the wrapper (subtract the frame from `--board-max-width` / the board's width calculation), then add an `assertNothingClipped(board, { mode: "reachable" })` check at 320px and 500px to the board-keyboard project.
 * **Found by:** Claude (interactive session, icon clipping fix)
+* **Closed (2026-11-19, drain):** fixed in `3db17966a`. Root cause measured in the e2e container: the clipped "gold frame" is the grid's global `:focus-visible` ring (3px at 3px offset, `src/styles/global.css`), not a board border. The grid's box fits its `overflow: hidden` wrapper (grid R305.0 = clip R305.0), so the box-based `assertNothingClipped` the filed fix shape named cannot see an outline and passes on the broken layout. The ring's right 6px was cut at 320, 500 and 800px. Fix: the ring's width/offset became `--cf-focus-ring-width`/`--cf-focus-ring-offset`. The board row reserves their sum on its right (`paddingInlineEnd`), the absolute annotation overlay takes the same `paddingRight` so percentage-placed hints stay over their squares, and the desktop height-derived `maxWidth` fallback adds the reserve back so height-limited boards keep their painted size (board-material stays 720px). Proof: board-keyboard checks the focused ring against every clipping ancestor at 800/320/500px (red with the fix reverted: `x 94.0..425.0 outside 63.0..419.0`), notation-hierarchy's stacked fill guards subtract the measured reserve, and the full container suite passes with re-recorded baselines (closed ring, or a width-limited board a few px narrower). Rejected: an inset ring (negative offset), which would paint over the edge squares and break the uniform focus treatment DESIGN.md requires; `overflow-clip-margin`, which needs `overflow: clip` and is not reliably supported in WebKitGTK.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"14e70b1c1e80f3c2c4f7bb9c18bb6f7ffd16949f105971ee6efe75b184a364ba","header_sha256":"538b64a30d2aec7ae437118d775083475eb7bada321e8cba9d45980e59b4a55b","header_status":"handled","input_sha256":"ad513427f92aa0e9b8d0cb45f044f2f4d3fc13c72aebdfb7b55ce68adc9045f0","kind":"mutation-receipt","operation":"5ff4844f04ac6217edee7cf44507a8c5952db6628bcaa43794bd3bf6d185d40e","options":{"section":null},"request_id_sha256":null,"results":["f-20261117-02"],"target":"f-20261117-02","v":1} -->
 
 ---
 
