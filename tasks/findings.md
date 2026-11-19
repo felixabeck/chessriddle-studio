@@ -27360,3 +27360,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** add one hook, for example `useOpenDatabaseGame(database, { databaseTitle?, signal? })` in `src/utils/databaseGame.ts` or `src/hooks/`. It owns the atoms, `navigate`, `runTabCreation`, `notifyUnlessCancelled` and `useGameOpen`, and returns the `gameOpen` handle. It looks up the database title once (from the handle/workspace) rather than relying on each caller to pass it. Replace the seven call sites. NewTabHome's abort-signal paths can pass `signal`. Low priority, no player-visible change except a consistent recent-list title.
 * **Proof:** `rg -n "openDatabaseGame\(" src -g '!*test*'` at origin/master lists the call sites above; `rg -n databaseTitle` in those files shows the split. The Home fallback is `NewTabHome.tsx:739-741`.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### Four exports outlived their last user: `selectedDatabaseAtom`, `CompleteGame`, `Speed` and `SetCurrentTab`
+
+* **ID:** f-20261119-07 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`, dead-export scan after f-20261111-73
+* **Where:** `src/state/atoms.ts:1043-1044` (`selectedDatabaseAtom`, plus the `SuccessDatabaseInfo` import at `:38` that only it uses), `src/utils/db.ts:195-198` (`CompleteGame`), `src/utils/db.ts:200-207` (`Speed`), `src/utils/tabs.ts:158` (`SetCurrentTab`).
+* **Defect:** none of the four is referenced anywhere outside its own declaration. Word-boundary `rg` over `src`, `e2e` and `scripts` (tests included) finds only the defining line. `selectedDatabaseAtom` and `CompleteGame` are upstream leftovers (present at merge-base `9654961d6`). `SetCurrentTab` lost its last user when `UpdateTab` replaced it (490831c77, 813563b7c). `Speed` is a string union nothing uses. f-20261111-73 removed the dead exports `ts-prune` listed then; these four were not on that list. The atom's comment ("Database metadata is authoritative in native storage, not in renderer persistence.") describes a design for state nobody reads or writes.
+* **Failure scenario:** an AI working on database selection finds `selectedDatabaseAtom` with an authoritative-sounding comment and wires new UI to it. The atom is never set anywhere, so that UI would always see `null`. `SetCurrentTab` beside `UpdateTab` invites a caller to type a new prop with the retired signature, which skips the `tabId` and admission callback.
+* **Fix:** delete the four declarations and the now-unused `SuccessDatabaseInfo` import in `atoms.ts`. `pnpm exec tsc --noEmit` is the guard. No behaviour change.
+* **Proof:** at origin/master `7086448c7`, `rg -n -w "selectedDatabaseAtom|CompleteGame|SetCurrentTab" src e2e scripts` prints only the three declarations, and `rg -l -w Speed src` lists only `src/utils/db.ts` (the declaration). The candidates came from a scan of every `export` in `src` (1433) for a word-boundary use outside its file; the rest of that list are names used inside their own module (needlessly exported, not dead) and are not part of this finding.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
