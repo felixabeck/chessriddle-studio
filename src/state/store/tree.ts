@@ -416,7 +416,11 @@ type TreeMarkupActions = Pick<
     | "clearShapes"
 >;
 
-/** Moves to the next (`1`) or previous (`-1`) sibling of the current move, wrapping around the fork. */
+/**
+ * The `set` producer for nextBranch (`1`) / previousBranch (`-1`): steps to the adjacent sibling,
+ * wrapping around the fork. On a single-child move that opens a fork it steps among that fork's
+ * children instead.
+ */
 function stepSibling(step: 1 | -1) {
     return produce((state: Draft<TreeStoreState>) => {
         if (state.position.length === 0) return;
@@ -616,7 +620,7 @@ function treeNavigationActions(set: TreeSet, get: TreeGet): TreeNavigationAction
     };
 }
 
-/** Tree edits; the node bookkeeping lives in the module-level helpers below the factory. */
+/** Tree edits; the node bookkeeping lives in the module-level helpers (`installRoot`, `makeMove`, `deleteMove`, `promoteVariation`). */
 function treeMutationActions(set: TreeSet, get: TreeGet): TreeMutationActions {
     return {
         setFen: (fen) =>
