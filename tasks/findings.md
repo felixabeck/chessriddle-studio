@@ -27408,3 +27408,31 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** add a small `tabAtomFamily(init)` / `tabEngineAtomFamily(init)` helper in `atoms.ts` that creates the family and pushes it into a module-level registry. Have `disposeTabAtoms` iterate the registry. Convert the 37 declarations (a mechanical change). Then the lifecycle test can assert, for every registered family, that a seeded entry is gone after `disposeTabAtoms`, instead of a hand-picked nine. No behaviour change today.
 * **Proof:** at origin/master, `rg -n "export const (\w+Family)\s*=" src` lists 39 families. A word check of each name against `atoms.ts:1628-1680` reports only `deckAtomFamily` and `scoreTypeFamily` missing. `sed -n 1630,1663p src/state/atoms.ts | rg -c "Family,"` gives 32. The test at `atoms.lifecycle.test.ts:1210-1249` seeds `tabFamily`, `pinnedExplorerDatabaseFamily`, `explorerGamesSourceFamily`, `explorerSortFamily`, `gameIdFamily`, `pendingGameStartFamily`, `engineMovesFamily`, `engineProgressFamily` and `tabEngineSettingsFamily` only.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### GameTable, PlayerTable and TournamentTable each restate the same paged, selectable DataTable wiring
+
+* **ID:** f-20261119-10 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
+* **Where:** `src/components/databases/GameTable.tsx` (`GameTable`: hotkeys `:100-115`, DataTable `:229-316`), `src/components/databases/PlayerTable.tsx` (`PlayerTable`: hotkeys `:52-63`, DataTable `:135-206`), `src/components/databases/TournamentTable.tsx` (`TournamentTable`: hotkeys `:48-59`, DataTable `:81-183`). All three were upstream list views at merge-base `9654961d6`.
+* **Defect:** each table repeats the same list contract around `mantine-datatable`:
+  * ArrowUp/ArrowDown `useHotkeys` through `getAdjacentRecordId`. GameTable uses the array form, the other two use two calls.
+  * `withTableBorder highlightOnHover records fetching`.
+  * `customRowAttributes` = `gameRowActivation(…)` + `aria-selected`.
+  * `rowClassName` selected class.
+  * `noRecordsText = inlineFailureMessage(error, "database", t("Databases.LoadError.Title")) ?? <empty text>`.
+  * `totalRecords={count!}`, `recordsPerPage` / `page` from `query.options`.
+  * Identical `onPageChange` and `onRecordsPerPageChange` spreads into `setQuery`.
+  * A per-table `sortStatus` / `onSortStatusChange` accessor map.
+  * `recordsPerPageLabel={t("Common.RecordsPerPage")}`, `recordsPerPageOptions={[10, 25, 50]}`.
+  * `onRowClick` selection.
+
+  A 7-normalised-line copy scan of `src/` finds these blocks duplicated across all three files. The copies have already drifted in small ways: `query.options.pageSize` vs `query.options?.pageSize`, `query.options.page` vs `?.page`, and `onRowClick` by `record` vs by `index`.
+* **Failure scenario:** list-wide fixes have had to be repeated per table. f-20261104-03 translated the titles, empty texts and "Records per page" in each table and card separately, and f-20261112-57 added row activation per component. The next list-wide change (a page-size option, an accessible table label, keyboard paging, a loading or failure state) has to be made three times. A missed copy shows up as one table behaving differently from its siblings.
+* **Fix:** add one `useDatabaseListTable({ records, count, error, isLoading, query, setQuery, selectedId, setSelectedId, sortAccessors, emptyText, activate })` hook in `src/components/databases/` (next to `pageSelection.ts`). It returns the shared DataTable props and registers the arrow-key hotkeys. Each table keeps only its columns, sort-accessor map and preview. No behaviour change. The existing GameTable/PlayerTable/TournamentTable tests stay as the guard.
+* **Proof:** line references above at origin/master `7086448c7`. `rg -n "getAdjacentRecordId|onPageChange=|onRecordsPerPageChange=|recordsPerPageOptions" src/components/databases` shows the three parallel sets.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
