@@ -27581,3 +27581,35 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * No behaviour change except the label. `BoardGame.test.tsx` and `gameSession.test.ts` are the guard.
 * **Proof:** line references above at origin/master `d79fa979e`. `rg -c "useRef\(" src/components/boards/BoardGame.tsx` reports 30, and the counted hook lines number 28. `cycleColor`'s three-way `match` is at `:167-175`, and its button's label is at `:1370-1371`. `git show 9654961d6:src/components/boards/BoardGame.tsx` already has the three-way `cycleColor` (`:95-100`) and the two mirrored inline side matches (`:644`, `:654`) on an unlabeled `ActionIcon`; the fork added the "Swap colors" accessible name.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### `state/atoms.ts` is a 1,680-line, 156-export module that also hosts tab lifecycle, recent-file, conversion-job and best-move logic
+
+* **ID:** f-20261119-17 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `d79fa979e`
+* **Where:** `src/state/atoms.ts`. It is imported by 184 files under `src/`, and it was touched by 47 commits in the last 31 days. Its `//` section banners (`Tabs` `:151`, `Directories` `:339`, `Settings` `:501`, `Recent Files` `:681`, `Database` `:764`, `Game Settings` `:1046`, `Puzzles` `:1100`, `CP / WDL` `:1146`, `Per tab settings` `:1152`, `Game` `:1320`, `Practice` `:1338`) already describe the domains. Besides atoms, it carries behaviour that is not atom declaration:
+  * Renderer/workspace bootstrap: `initializeRendererState` `:124`, `initializeWorkspace` `:166`, `workspaceStartedFresh` `:180`.
+  * Tab lifecycle: `reclaimTabLocalState` `:266`, `closeWorkspaceTabAtom` `:285`, `updateTabById` `:299`, `disposeTabAtoms` `:1628` (see f-20261119-09).
+  * The engine-owner atom factory `:371-500`.
+  * Recent-file keying and dedupe: `recentFileKey` `:693`, `dedupeRecentFiles` `:704`, and three write atoms `:718-760`.
+  * Explorer-database migration on replace/delete `:891-925`.
+  * The conversion-job runner `runDatabaseConversion` `:963-1040` (cancel tickets, native `tauri.cancelConversion`).
+  * Practice deck invalidation `invalidateFileDeckAtoms` `:1348`.
+  * The best-move arrow derivation `createBestMovesAtom` / `equalBestMoveArrows` `:1491-1627` (win-chance maths over engine lines).
+* **Defect:** "atoms" has become the default place for any renderer state and the logic around it. Unrelated domains share one module, one import graph and one review surface. Some banners no longer match their contents: everything from the explorer strip preferences (`:1187-1318`) to the pinned engine bar sits under `Per tab settings`, and `CP / WDL` holds one global atom and one per-engine family. Because the module imports native, analysis and practice helpers to support that logic, it is also part of the `state → components` coupling recorded in f-20261111-87.
+* **Failure scenario:** two unrelated changes (for example a recent-files fix and a practice-stats field) both edit `atoms.ts` and conflict, or a reviewer has to page through 1,680 lines to see whether a tab-lifecycle edit touches anything else. Any module that needs one preference atom loads the whole file's imports, including the conversion runner's native calls, and 39 test files replace `@/state/atoms` wholesale with `vi.mock` to stay isolated.
+* **Fix:**
+  * Split by the existing banners into `src/state/atoms/` (`workspace.ts`, `preferences.ts`, `recentFiles.ts`, `database.ts`, `game.ts`, `practice.ts`, `analysis.ts`).
+  * Keep `src/state/atoms.ts` as a re-export barrel, so the 184 importers do not change in the first step.
+  * Move the non-atom behaviour next to its domain (`runDatabaseConversion` beside the database atoms or into `src/state/databaseConversion.ts`; `createBestMovesAtom` into `analysis.ts`; tab lifecycle into `workspace.ts`).
+  * Mechanical move, no behaviour change. `pnpm exec tsc --noEmit` and the existing `atoms.*.test.ts` files are the guard.
+* **Proof:**
+  * `wc -l src/state/atoms.ts` gives 1680; `rg -c "^export " src/state/atoms.ts` gives 156.
+  * `rg -l 'from "@/state/atoms"' src | wc -l` gives 184.
+  * `git log --since=2026-10-19 --format=%h origin/master -- src/state/atoms.ts | wc -l` gives 47.
+  * The line ranges above are at `d79fa979e`.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
