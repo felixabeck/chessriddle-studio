@@ -169,25 +169,29 @@ export function useEngineWaitExpired(request: string, waiting: boolean): boolean
     return waiting && expired === request;
 }
 
+/** A position's live engine score and the engine it comes from. */
+export type LiveEngineScore = { score: Score; engineName: string };
+
 /**
- * What the engines know about this position's live score, mirroring who writes it: only local
- * engines call `setEngineScore`, and never for a threat search. `cached` is the first such
- * engine's remembered score for this exact position (the node may lack it after a reload, or
- * while a fresh search is still shallower than the remembered one); `pending` says a local
- * engine is still computing the position's first lines.
+ * The live score the engines give this position. `source` is the remembered top line of the
+ * first loaded, enabled engine in list order that has lines for this exact position, whatever
+ * its type, so the user's engine order decides whose score the position shows and a later
+ * engine fills in while an earlier one has none. `pending` says an engine is still computing
+ * the position's first lines and none has a score yet. A threat search scores another
+ * position, so it yields neither.
  */
 export const createLiveEngineScoreAtom = (tab: string, fen: string, moves: string[]) =>
-    atom((get): { cached: Score | null; pending: boolean } => {
-        if (get(threatFamily(tab))) return { cached: null, pending: false };
+    atom((get): { source: LiveEngineScore | null; pending: boolean } => {
+        if (get(threatFamily(tab))) return { source: null, pending: false };
         let pending = false;
         for (const engine of get(enginesAtom) ?? []) {
-            if (!engine.loaded || engine.type !== "local") continue;
+            if (!engine.loaded) continue;
             const read = readEngineLines(get, tab, engine, fen, moves, false);
-            const cached = read.eligible ? read.current?.[0]?.score : undefined;
-            if (cached) return { cached, pending: false };
+            const score = read.eligible ? read.current?.[0]?.score : undefined;
+            if (score) return { source: { score, engineName: engine.name }, pending: false };
             pending ||= engineLinesWaiting(read);
         }
-        return { cached: null, pending };
+        return { source: null, pending };
     });
 
 /** Retains one committed display per mode and reader, scoped to its owner and settings. */

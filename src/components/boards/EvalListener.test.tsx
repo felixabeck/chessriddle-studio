@@ -34,7 +34,9 @@ const fixtures = vi.hoisted(() => ({
   setEngineScore: vi.fn(),
   stopEngine: vi.fn(),
   releaseEngineSearch: vi.fn(),
-  scoreOwner: null as string | null,
+  nodeScore: undefined as unknown,
+  // The tree store's position when it has moved on since the listener last rendered.
+  storeFen: null as string | null,
   t: (key: string) => key,
 }));
 
@@ -101,7 +103,6 @@ vi.mock("@/state/atoms", async () => {
       ({ tab: _tab, engine: _engine }: { tab: string; engine: string }) => atom<any>(null),
       (a, b) => a.tab === b.tab && a.engine === b.engine,
     ),
-    createFirstEngineWithLinesAtom: () => atom(() => fixtures.scoreOwner),
     tabEngineSettingsFamily: atomFamily(
       ({ defaultSettings, defaultGo }: { defaultSettings?: any[]; defaultGo?: any }) =>
         atom({
@@ -115,18 +116,23 @@ vi.mock("@/state/atoms", async () => {
     tabsAtom: atom<any[]>([{ value: "tab-1" }, { value: "tab-2" }]),
   };
 });
+const treeState = () => ({
+  root: { fen: fixtures.fen },
+  position: [],
+  currentNode: () => ({ engineScore: fixtures.nodeScore }),
+  setEngineScore: fixtures.setEngineScore,
+});
 vi.mock("zustand", () => ({
-  useStore: (_store: unknown, selector: (state: any) => unknown) =>
-    selector({
-      root: { fen: fixtures.fen },
-      position: [],
-      setEngineScore: fixtures.setEngineScore,
-    }),
+  useStore: (_store: unknown, selector: (state: any) => unknown) => selector(treeState()),
 }));
 vi.mock("zustand/react/shallow", () => ({ useShallow: (selector: unknown) => selector }));
 vi.mock("@/components/common/TreeStateContext", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
-  return { TreeStateContext: React.createContext({}) };
+  return {
+    TreeStateContext: React.createContext({
+      getState: () => ({ ...treeState(), root: { fen: fixtures.storeFen ?? fixtures.fen } }),
+    }),
+  };
 });
 
 import {
@@ -220,7 +226,11 @@ beforeEach(() => {
     mock.mockReset();
   fixtures.fen = INITIAL_FEN;
   fixtures.moves = [];
-  fixtures.scoreOwner = null;
+  fixtures.nodeScore = undefined;
+  fixtures.storeFen = null;
+  fixtures.setEngineScore.mockImplementation((score: unknown) => {
+    fixtures.nodeScore = score;
+  });
   fixtures.listeners = [];
   fixtures.prepareEngineSearch.mockResolvedValue("generation-1");
   fixtures.stopEngine.mockResolvedValue(true);
@@ -1315,20 +1325,55 @@ test("normal and threat entries coexist and threat toggles restore lines without
   expect(fixtures.setEngineScore).toHaveBeenCalledTimes(1);
 });
 
-test("only the first engine with lines writes the engine score", async () => {
-  fixtures.scoreOwner = "another-engine";
+test("the first engine in list order with lines owns the node score, whatever its type", async () => {
+  const cloudLines = remoteResult(100)[1];
+  cloudLines[0].score.value.value = 94;
+  const cloud = deferred<ReturnType<typeof remoteResult>>();
+  fixtures.chessdbGetBestMoves.mockReturnValueOnce(cloud.promise);
+  store.set(enginesAtom, [chessdbEngine, engine] as any);
   await rerender();
+  await settleTransition();
+  // The later local engine fills in while the cloud engine above it has no lines.
+  const local = payload("generation-1");
+  await broadcast(local);
+  expect(fixtures.setEngineScore).toHaveBeenCalledExactlyOnceWith(local.bestLines[0].score);
+  await act(async () => {
+    cloud.resolve([100, cloudLines]);
+    await flush();
+  });
+  expect(fixtures.setEngineScore).toHaveBeenLastCalledWith(cloudLines[0].score);
+  expect(fixtures.setEngineScore).toHaveBeenCalledTimes(2);
+  // Once the top engine has lines, the lower engine's later output no longer takes the score.
+  const later = payload("generation-1");
+  later.bestLines[0].score.value.value = 7;
+  await broadcast(later);
+  expect(fixtures.setEngineScore).toHaveBeenCalledTimes(2);
+  // Reordering hands the score to the new top engine without waiting for another payload.
+  await act(async () => store.set(enginesAtom, [engine, chessdbEngine] as any));
+  expect(fixtures.setEngineScore).toHaveBeenLastCalledWith(later.bestLines[0].score);
+  // Disabling it hands the score back to the next engine with lines.
+  await act(async () =>
+    store.set(settingsAtom("tab-1"), { ...store.get(settingsAtom("tab-1")), enabled: false }),
+  );
+  expect(fixtures.setEngineScore).toHaveBeenLastCalledWith(cloudLines[0].score);
+  expect(fixtures.setEngineScore).toHaveBeenCalledTimes(4);
+});
+
+test("a cloud engine running alone writes the node score", async () => {
+  const lines = remoteResult(100)[1];
+  fixtures.chessdbGetBestMoves.mockResolvedValueOnce([100, lines]);
+  store.set(enginesAtom, [chessdbEngine] as any);
+  await rerender();
+  await settleTransition();
+  expect(fixtures.setEngineScore).toHaveBeenCalledExactlyOnceWith(lines[0].score);
+});
+
+test("a live score is not written to a position the tree has already left", async () => {
+  await rerender();
+  fixtures.storeFen = positionB;
   await broadcast(payload("generation-1"));
   expect(store.get(movesAtom()).get(`${INITIAL_FEN}:`)).toBeDefined();
   expect(fixtures.setEngineScore).not.toHaveBeenCalled();
-});
-
-test("the current first engine with lines can update its score", async () => {
-  fixtures.scoreOwner = engine.id;
-  await rerender();
-  const result = payload("generation-1");
-  await broadcast(result);
-  expect(fixtures.setEngineScore).toHaveBeenCalledExactlyOnceWith(result.bestLines[0].score);
 });
 
 test("a synchronous launch failure marks its key, notifies once and retires the transition slot", async () => {

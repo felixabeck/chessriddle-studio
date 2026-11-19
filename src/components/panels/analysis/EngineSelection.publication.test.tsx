@@ -6,6 +6,7 @@ import { INITIAL_FEN } from "chessops/fen";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { BestMovesPayload } from "@/bindings";
 import EvalListener from "@/components/boards/EvalListener";
+import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   activeTabAtom,
   engineMovesFamily,
@@ -61,9 +62,14 @@ vi.mock("@/utils/chess", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/utils/chess")>()),
   getVariationLine: () => mocks.moves,
 }));
+const treeState = {
+  root: { fen: INITIAL_FEN },
+  position: [],
+  currentNode: () => ({}),
+  setEngineScore: () => undefined,
+};
 vi.mock("zustand", () => ({
-  useStore: (_store: unknown, selector: (state: unknown) => unknown) =>
-    selector({ root: { fen: INITIAL_FEN }, position: [], setEngineScore: () => undefined }),
+  useStore: (_store: unknown, selector: (state: unknown) => unknown) => selector(treeState),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -127,7 +133,9 @@ beforeEach(async () => {
       <MantineProvider env="test">
         <WorkspaceTabScope tabId={tab}>
           <EngineSelection />
-          <EvalListener />
+          <TreeStateContext.Provider value={{ getState: () => treeState } as never}>
+            <EvalListener />
+          </TreeStateContext.Provider>
         </WorkspaceTabScope>
       </MantineProvider>,
     ),

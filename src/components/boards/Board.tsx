@@ -627,7 +627,13 @@ function Board({
                   </IconAction>
                 </Center>
               )}
-              {evalOpen && <EvalBar score={evalBarScore} orientation={orientation} />}
+              {evalOpen && (
+                <EvalBar
+                  score={evalBarScore?.score ?? null}
+                  engineName={evalBarScore?.engineName ?? null}
+                  orientation={orientation}
+                />
+              )}
             </Box>
             <BoardFrame>
               <Box

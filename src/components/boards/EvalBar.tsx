@@ -6,7 +6,16 @@ import type { Score } from "@/bindings";
 import { evalBarDisplayFamily, evalOpenFamily } from "@/state/atoms";
 import { formatScore, getWinChance } from "@/utils/score";
 
-function EvalBar({ score, orientation }: { score: Score | null; orientation: Color }) {
+function EvalBar({
+  score,
+  engineName = null,
+  orientation,
+}: {
+  score: Score | null;
+  /** The engine the score comes from, named in the tooltip. */
+  engineName?: string | null;
+  orientation: Color;
+}) {
   const [evalDisplay, setEvalDisplay] = useAtom(useTabAtom(evalBarDisplayFamily));
   const [, setEvalOpen] = useAtom(useTabAtom(evalOpenFamily));
 
@@ -129,7 +138,7 @@ function EvalBar({ score, orientation }: { score: Score | null; orientation: Col
     <Tooltip
       position="right"
       color="var(--cf-popover)"
-      label={score ? formatScore(score.value) : undefined}
+      label={score ? [formatScore(score.value), engineName].filter(Boolean).join(" · ") : undefined}
       disabled={!score}
     >
       <Box

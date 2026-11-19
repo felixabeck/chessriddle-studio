@@ -27,7 +27,6 @@ import {
   engineRetryFamily,
   engineProgressFamily,
   enginesAtom,
-  createFirstEngineWithLinesAtom,
   tabEngineSettingsFamily,
   tabsAtom,
 } from "@/state/atoms";
@@ -39,6 +38,7 @@ import {
   engineIdentity,
   engineLineContext,
 } from "@/components/panels/analysis/analysisLineContext";
+import { createLiveEngineScoreAtom } from "@/components/panels/analysis/useDisplayedEngineLines";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
 import {
   type Engine,
@@ -115,9 +115,21 @@ function EvalListener() {
   const isGameOver = position?.isEnd() ?? false;
 
   const tabId = useOwnerTabId();
-  const firstEngineWithLines = useAtomValue(
-    useMemo(() => createFirstEngineWithLinesAtom(tabId, fen, moves), [tabId, fen, moves]),
-  );
+  // The one writer of the node's engine score. It follows the engines' live score for this
+  // position, so the score belongs to the first engine in list order that has lines, whatever
+  // its type, and changes hands when that engine is reordered, disabled or outpaced. The write
+  // is bound to the position the score was read for, never to when the effect happens to run.
+  const liveScore = useAtomValue(
+    useMemo(() => createLiveEngineScoreAtom(tabId, fen, moves), [tabId, fen, moves]),
+  ).source?.score;
+  useEffect(() => {
+    if (!liveScore) return;
+    const state = store.getState();
+    if (state.root.fen !== fen || !equal(getVariationLine(state.root, state.position), moves))
+      return;
+    if (equal(state.currentNode().engineScore, liveScore)) return;
+    state.setEngineScore(liveScore);
+  }, [liveScore, store, fen, moves]);
 
   return (engines ?? [])
     .filter((e) => e.loaded)
@@ -125,36 +137,28 @@ function EvalListener() {
       <EngineListener
         key={e.id}
         engine={e}
-        firstEngineWithLines={firstEngineWithLines}
         isGameOver={isGameOver}
         searchingFen={searchingFen}
         searchingMoves={searchingMoves}
         searchedKey={key}
-        threat={threat}
       />
     ));
 }
 
 function EngineListener({
   engine,
-  firstEngineWithLines,
   isGameOver,
   searchingFen,
   searchingMoves,
   searchedKey,
-  threat,
 }: {
   engine: Engine;
-  firstEngineWithLines: string | null;
   isGameOver: boolean;
   searchingFen: string | null;
   searchingMoves: string[] | null;
   searchedKey: string | null;
-  threat: boolean;
 }) {
   const { t } = useTranslation();
-  const store = useContext(TreeStateContext)!;
-  const setEngineScore = useStore(store, (s) => s.setEngineScore);
   const ownerTabId = useOwnerTabId();
 
   const [, setProgress] = useAtom(engineProgressFamily({ engine: engine.id, tab: ownerTabId }));
@@ -280,10 +284,7 @@ function EngineListener({
         startTransition(() => {
           setEngineVariation((prev) => {
             const newMap = new AnalysisLineMemory(prev);
-            const replaced = newMap.remember(searchedKey, ev, attempt);
-            const shouldSetEngineScore =
-              firstEngineWithLines === engine.id || firstEngineWithLines === null;
-            if (replaced && !threat && shouldSetEngineScore) setEngineScore(ev[0].score);
+            newMap.remember(searchedKey, ev, attempt);
             return newMap;
           });
           setProgress(payload.progress);
@@ -292,15 +293,12 @@ function EngineListener({
     },
     [
       ownerTabId,
-      setEngineScore,
       searchingFen,
       searchingMoves,
       engine.id,
       setEngineVariation,
       setTerminal,
       setProgress,
-      firstEngineWithLines,
-      threat,
       searchedKey,
       isCurrentAttempt,
     ],

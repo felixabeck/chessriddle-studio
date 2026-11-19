@@ -1490,27 +1490,6 @@ export const createBestMovesAtom = (tab: string, fen: string, gameMoves: string[
     });
 };
 
-/** Returns the first engine with lines for this position. Callers must memoize the result. */
-export const createFirstEngineWithLinesAtom = (tab: string, fen: string, gameMoves: string[]) =>
-    atom<string | null>((get) => {
-        const engines = get(enginesAtom);
-        if (!engines) return null;
-
-        const search = analysisSearch(fen, gameMoves, get(threatFamily(tab)));
-        if (!search.available) return null;
-        const { key } = search;
-
-        for (const engine of engines.filter((e) => e.loaded)) {
-            const engineMoves = get(engineMovesFamily({ tab, engine: engine.id }));
-            const moves = engineMoves.get(key);
-
-            if (moves && moves.length > 0) {
-                return engine.id;
-            }
-        }
-        return null;
-    });
-
 export const tabEngineSettingsFamily = atomFamily(
     ({
         tab: _tab,
