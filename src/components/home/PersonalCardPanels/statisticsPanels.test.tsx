@@ -636,6 +636,47 @@ test("RatingsPanel filters All websites rapid by each row's site", async () => {
   );
 });
 
+test("RatingsPanel counts an unrated day's games but plots no rating for it", async () => {
+  const info: PlayerGameInfo = {
+    site_stats_data: [
+      {
+        site: "Chess.com",
+        player: "Magnus",
+        colors: [],
+        latest: [],
+        openings: [],
+        daily: [
+          {
+            date: "2026.09.01",
+            time_control: "1800+0",
+            won: 1,
+            drawn: 0,
+            lost: 0,
+            max_player_elo: 2100,
+          },
+          {
+            date: "2026.09.02",
+            time_control: "1800+0",
+            won: 0,
+            drawn: 1,
+            lost: 2,
+            max_player_elo: null,
+          },
+        ],
+      },
+    ],
+  };
+  await render(<RatingsPanel playerKey="Magnus" info={info} />);
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("[data-testid='select-all-websites']")!.click();
+    container.querySelector<HTMLButtonElement>("[data-testid='select-rapid']")!.click();
+  });
+
+  expect(container.querySelector("[data-testid='result-counts']")?.textContent).toContain("1:1:2");
+  expect(container.textContent).toContain("4 Common.Games");
+  expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("2100");
+});
+
 test("OpeningsPanel filters All websites rapid by each row's site", async () => {
   await renderAllWebsitesRapid(OpeningsPanel);
 

@@ -3955,7 +3955,9 @@ pub struct DailyStatsData {
     pub won: u32,
     pub drawn: u32,
     pub lost: u32,
-    pub max_player_elo: i32,
+    /// The player's highest positive rating among that day's games; `None` when every game of
+    /// the day is unrated (rating absent, or stored as 0 from `"-"`/`"0"`).
+    pub max_player_elo: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Type, Default)]
@@ -4218,7 +4220,8 @@ struct EvaluatedPlayerStatisticsRow {
     player: String,
     date: String,
     is_player_white: bool,
-    player_elo: i32,
+    /// Positive ratings only: absent and 0 (the importer's spelling of `"-"`/`"0"`) are unrated.
+    player_elo: Option<i32>,
     result: GameOutcome,
     time_control: String,
     opening: String,
@@ -4244,9 +4247,10 @@ impl PlayerStatisticsOutcomeCounts {
     }
 }
 
+#[derive(Default)]
 struct PlayerStatisticsDailyAccumulator {
     outcomes: PlayerStatisticsOutcomeCounts,
-    max_player_elo: i32,
+    max_player_elo: Option<i32>,
 }
 
 #[derive(Default)]
@@ -4286,17 +4290,20 @@ impl PlayerStatisticsAccumulator {
         } = row;
         let date = pgn_date::canonical(&date).into_owned();
 
-        // Only complete, valid calendar dates participate in chronological rating selection.
-        if date.len() == 10
-            && date.bytes().enumerate().all(|(index, byte)| {
-                if index == 4 || index == 7 {
-                    byte == b'.'
-                } else {
-                    byte.is_ascii_digit()
-                }
-            })
-            && NaiveDate::parse_from_str(&date, "%Y.%m.%d").is_ok()
-        {
+        // Only rated games with complete, valid calendar dates participate in chronological
+        // rating selection.
+        let rated_complete_date = player_elo.filter(|_| {
+            date.len() == 10
+                && date.bytes().enumerate().all(|(index, byte)| {
+                    if index == 4 || index == 7 {
+                        byte == b'.'
+                    } else {
+                        byte.is_ascii_digit()
+                    }
+                })
+                && NaiveDate::parse_from_str(&date, "%Y.%m.%d").is_ok()
+        });
+        if let Some(player_elo) = rated_complete_date {
             let candidate = LatestRatingData {
                 time_control: time_control.clone(),
                 date: date.clone(),
@@ -4332,10 +4339,7 @@ impl PlayerStatisticsAccumulator {
         let daily = self
             .daily
             .entry((site.clone(), player.clone(), time_control.clone(), date))
-            .or_insert_with(|| PlayerStatisticsDailyAccumulator {
-                outcomes: PlayerStatisticsOutcomeCounts::default(),
-                max_player_elo: player_elo,
-            });
+            .or_default();
         daily.outcomes.add(&result);
         daily.max_player_elo = daily.max_player_elo.max(player_elo);
 
@@ -4438,6 +4442,8 @@ fn player_statistics_site_group<'a>(
         })
 }
 
+const UNKNOWN_PGN_DATE: &str = "????.??.??";
+
 fn evaluate_player_statistics_row(
     row: &PlayerStatisticsRow,
     id: i32,
@@ -4453,9 +4459,12 @@ fn evaluate_player_statistics_row(
     let Some(player) = row.player.clone() else {
         return Ok(None);
     };
-    let Some(date) = row.date.clone() else {
-        return Ok(None);
-    };
+    // A game without a Date tag still counts in the results; it is grouped under the PGN
+    // unknown date, which never enters the time axis or rating selection (d-20261107-04).
+    let date = row
+        .date
+        .clone()
+        .unwrap_or_else(|| UNKNOWN_PGN_DATE.to_string());
     let Some(result) = row
         .outcome
         .as_deref()
@@ -4463,22 +4472,13 @@ fn evaluate_player_statistics_row(
     else {
         return Ok(None);
     };
+    // The player's own rating is needed only for the rating series, never for eligibility.
     let player_elo = if is_white {
-        if is_black && row.black_elo.is_none() {
-            // Preserve the prior eligibility rule for malformed self-play rows: both
-            // appearances of the selected player must carry a rating.
-            return Ok(None);
-        }
-        let Some(white_elo) = row.white_elo else {
-            return Ok(None);
-        };
-        white_elo
+        row.white_elo
     } else {
-        let Some(black_elo) = row.black_elo else {
-            return Ok(None);
-        };
-        black_elo
-    };
+        row.black_elo
+    }
+    .filter(|elo| *elo > 0);
     let Some(site) = row.site.as_deref().map(|site| {
         if site.starts_with("https://lichess.org/") {
             "Lichess".to_string()
@@ -13449,7 +13449,7 @@ mod tests {
                 .find(|day| day.time_control == "300+0" && day.date == "2026.11.08")
                 .unwrap()
                 .max_player_elo,
-            2000
+            Some(2000)
         );
         assert!(group.daily.iter().any(|day| day.date == "2099.??.??"));
         let repeated = load_player_statistics(&app, handle, player_id);
@@ -13494,7 +13494,7 @@ mod tests {
         assert_eq!(group.daily.len(), 1);
         assert_eq!(group.daily[0].date, "2026.01.15");
         assert_eq!(group.daily[0].won, 2);
-        assert_eq!(group.daily[0].max_player_elo, 1900);
+        assert_eq!(group.daily[0].max_player_elo, Some(1900));
         assert_eq!(group.latest.len(), 1);
         assert_eq!(group.latest[0].date, "2026.01.15");
         assert_eq!(group.latest[0].player_elo, 1900);
@@ -13590,7 +13590,7 @@ mod tests {
         assert_eq!(rows[0].date, "2026.08.01");
         assert_eq!(rows[0].time_control, "");
         assert_eq!((rows[0].won, rows[0].drawn, rows[0].lost), (1, 0, 0));
-        assert_eq!(rows[0].max_player_elo, 2800);
+        assert_eq!(rows[0].max_player_elo, Some(2800));
 
         assert_eq!(rows[1].date, "2026.08.02");
         assert_eq!(rows[1].time_control, "300+3");
@@ -13640,7 +13640,8 @@ mod tests {
     }
 
     #[test]
-    fn player_statistics_exclude_each_missing_or_invalid_required_value() {
+    fn player_statistics_exclude_each_missing_or_invalid_required_value_but_keep_unrated_and_undated_games(
+    ) {
         let (_dir, app, handle, database) = blocking_database_case();
         let (player_id, nameless_player_id) = {
             let state = app.state::<AppState>();
@@ -13747,14 +13748,127 @@ mod tests {
             (player.id, nameless_player.id)
         };
 
+        // Excluded: missing or unfinished result, nameless site, custom start position and
+        // nameless player. Kept: the base game, the undated game, both unrated games
+        // (d-20260907-05 reversal, f-20261114-21) and the self-play game without Black's
+        // rating, which counts once from White's side.
         let info = load_player_statistics(&app, handle.clone(), player_id);
         assert_eq!(info.site_stats_data.len(), 1);
-        assert_eq!(info.site_stats_data[0].daily.len(), 1);
-        assert_eq!(info.site_stats_data[0].daily[0].date, "2026.08.09");
-        assert_eq!(info.site_stats_data[0].openings.len(), 1);
+        let group = &info.site_stats_data[0];
+        let daily: Vec<_> = group
+            .daily
+            .iter()
+            .map(|day| {
+                (
+                    day.date.as_str(),
+                    day.won,
+                    day.drawn,
+                    day.lost,
+                    day.max_player_elo,
+                )
+            })
+            .collect();
+        assert_eq!(
+            daily,
+            [
+                ("2026.08.09", 3, 0, 1, Some(2800)),
+                (UNKNOWN_PGN_DATE, 1, 0, 0, Some(2800)),
+            ]
+        );
+        let openings: Vec<_> = group
+            .openings
+            .iter()
+            .map(|row| (row.is_player_white, row.won, row.drawn, row.lost))
+            .collect();
+        assert_eq!(openings, [(false, 0, 0, 1), (true, 4, 0, 0)]);
+        let colors: Vec<_> = group
+            .colors
+            .iter()
+            .map(|row| {
+                (
+                    row.is_player_white,
+                    row.won,
+                    row.lost,
+                    row.rated_won,
+                    row.rated_lost,
+                )
+            })
+            .collect();
+        assert_eq!(colors, [(false, 0, 1, 0, 1), (true, 4, 0, 3, 0)]);
+        assert_eq!(group.latest.len(), 1);
+        assert_eq!(group.latest[0].date, "2026.08.09");
+        assert_eq!(group.latest[0].player_elo, 2800);
 
         let nameless_info = load_player_statistics(&app, handle, nameless_player_id);
         assert!(nameless_info.site_stats_data.is_empty());
+    }
+
+    #[test]
+    fn player_statistics_treat_zero_and_absent_player_ratings_as_unrated() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let player_id = {
+            let mut db = SqliteConnection::establish(&database.to_string_lossy()).unwrap();
+            let player = create_player(&mut db, "Player").unwrap();
+            let opponent = create_player(&mut db, "Opponent").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
+            let site = create_site(&mut db, "Site").unwrap();
+            for (date, player_elo, result) in [
+                ("2026.03.01", Some(2100), "1-0"),
+                ("2026.03.01", Some(0), "1-0"),
+                ("2026.03.02", Some(0), "0-1"),
+                ("2026.03.03", None, "1/2-1/2"),
+                ("2026.03.03", Some(0), "1-0"),
+            ] {
+                insert_player_statistics_game(
+                    &mut db,
+                    PlayerStatisticsGame {
+                        player_id: player.id,
+                        opponent_id: opponent.id,
+                        event_id: event.id,
+                        site_id: site.id,
+                        is_player_white: true,
+                        player_elo,
+                        opponent_elo: Some(1900),
+                        moves: Vec::new(),
+                        date: Some(date),
+                        result: Some(result),
+                        time_control: Some("600+0"),
+                        fen: None,
+                    },
+                );
+            }
+            player.id
+        };
+
+        let info = load_player_statistics(&app, handle, player_id);
+        let group = &info.site_stats_data[0];
+        let daily: Vec<_> = group
+            .daily
+            .iter()
+            .map(|day| {
+                (
+                    day.date.as_str(),
+                    day.won,
+                    day.drawn,
+                    day.lost,
+                    day.max_player_elo,
+                )
+            })
+            .collect();
+        assert_eq!(
+            daily,
+            [
+                ("2026.03.01", 2, 0, 0, Some(2100)),
+                ("2026.03.02", 0, 0, 1, None),
+                ("2026.03.03", 1, 1, 0, None),
+            ]
+        );
+        // The later unrated games never replace the latest rating.
+        assert_eq!(group.latest.len(), 1);
+        assert_eq!(group.latest[0].date, "2026.03.01");
+        assert_eq!(group.latest[0].player_elo, 2100);
+        let white = group.colors.iter().find(|row| row.is_player_white).unwrap();
+        assert_eq!((white.won, white.drawn, white.lost), (3, 1, 1));
     }
 
     #[test]
@@ -14118,7 +14232,7 @@ mod tests {
                     db,
                     PlayerStatisticsGame {
                         player_id: player.id,
-                        opponent_id: player.id,
+                        opponent_id: opponent.id,
                         event_id: event.id,
                         site_id: site.id,
                         is_player_white: true,
@@ -14126,7 +14240,8 @@ mod tests {
                         opponent_elo: None,
                         moves: moves.clone(),
                         date: Some("2026.09.01"),
-                        result: Some("1-0"),
+                        // Unfinished, so filtered out of every aggregate.
+                        result: Some("*"),
                         time_control: Some("600+0"),
                         fen: None,
                     },
@@ -14156,7 +14271,7 @@ mod tests {
             ),
             (128, 0, 128)
         );
-        assert_eq!(standard_daily.max_player_elo, 2_255);
+        assert_eq!(standard_daily.max_player_elo, Some(2_255));
 
         let missing_time_control = group
             .daily
@@ -14173,7 +14288,7 @@ mod tests {
         );
         assert_eq!(
             missing_time_control.max_player_elo,
-            2_000 + FULL_BATCH_ROW_COUNT as i32
+            Some(2_000 + FULL_BATCH_ROW_COUNT as i32)
         );
 
         assert_eq!(group.openings.len(), 3);

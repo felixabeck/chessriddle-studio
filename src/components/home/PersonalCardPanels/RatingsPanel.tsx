@@ -110,9 +110,11 @@ function RatingsPanel({
       const map = new Map<number, { date: number; player_elo: number }>();
       for (const day of filteredDailyStats) {
         const date = parseCompleteDailyDate(day.date);
-        if (date === null) continue;
-        if (!map.has(date) || map.get(date)!.player_elo < day.max_player_elo) {
-          map.set(date, { date, player_elo: day.max_player_elo });
+        const playerElo = day.max_player_elo;
+        // A day with only unrated games has no rating point.
+        if (date === null || playerElo === null) continue;
+        if (!map.has(date) || map.get(date)!.player_elo < playerElo) {
+          map.set(date, { date, player_elo: playerElo });
         }
       }
       return Array.from(map.values()).sort((a, b) => a.date - b.date);

@@ -46,7 +46,7 @@ function daily(partial: Partial<DailyStatsData> & Pick<DailyStatsData, "date">):
         won: 0,
         drawn: 0,
         lost: 0,
-        max_player_elo: 0,
+        max_player_elo: null,
         ...partial,
     };
 }
@@ -232,6 +232,22 @@ describe("rated opponents and FIDE performance", () => {
 });
 
 describe("latest rating chronology", () => {
+    test("an unrated day never sets the peak", () => {
+        const stats = deriveOverviewStatistics([
+            site({
+                daily: [
+                    daily({ date: "2026.03.01", won: 1, max_player_elo: 1800 }),
+                    daily({ date: "2026.03.02", lost: 1, max_player_elo: null }),
+                ],
+            }),
+        ]);
+        expect(stats.peakRating).toBe(1800);
+        const unrated = deriveOverviewStatistics([
+            site({ daily: [daily({ date: "2026.03.02", lost: 1, max_player_elo: null })] }),
+        ]);
+        expect(unrated.peakRating).toBeNull();
+    });
+
     test("same-day decline keeps peak 1800 and latest 1750", () => {
         const stats = deriveOverviewStatistics([
             site({

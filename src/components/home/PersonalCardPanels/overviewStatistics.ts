@@ -237,7 +237,10 @@ export function deriveOverviewStatistics(sites: SiteStatsData[]): OverviewStatis
             addColor(row.is_player_white ? white : black, row);
         }
         for (const row of site.daily) {
-            if (peakRating === null || row.max_player_elo > peakRating) {
+            if (
+                row.max_player_elo !== null &&
+                (peakRating === null || row.max_player_elo > peakRating)
+            ) {
                 peakRating = row.max_player_elo;
             }
         }
@@ -247,8 +250,6 @@ export function deriveOverviewStatistics(sites: SiteStatsData[]): OverviewStatis
             }
         }
     }
-
-    if (peakRating === 0) peakRating = null;
 
     return {
         total: summarizeColor(mergeColors(white, black)),

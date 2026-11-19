@@ -1526,7 +1526,12 @@ export type CompletionOutcome<T> = { state: "running" } | { state: "succeeded"; 
  * rather than a percentage.
  */
 export type ConvertProgress = { id: string; imported_games: number; elapsed_ms: number; source_file_name: string | null }
-export type DailyStatsData = { date: string; time_control: string; won: number; drawn: number; lost: number; max_player_elo: number }
+export type DailyStatsData = { date: string; time_control: string; won: number; drawn: number; lost: number; 
+/**
+ * The player's highest positive rating among that day's games; `None` when every game of
+ * the day is unrated (rating absent, or stored as 0 from `"-"`/`"0"`).
+ */
+max_player_elo: number | null }
 export type DatabaseContentFailure = { filename: string; message: string }
 export type DatabaseDescriptor = { handle: DatabaseHandle; filename: string; availability: PathAvailability }
 /**
