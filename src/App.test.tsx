@@ -23,8 +23,9 @@ const mocks = vi.hoisted(() => {
     useConversionProgress: vi.fn(),
     useDatabaseContentValidation: vi.fn(),
     useDocumentLanguage: vi.fn(),
-    sessionPersistenceNotice: vi.fn(() => null),
-    automaticStockfishNotice: vi.fn(() => null),
+    sessionPersistenceNotice: vi.fn((): React.ReactNode => null),
+    automaticStockfishNotice: vi.fn((): React.ReactNode => null),
+    notifications: vi.fn((_props: { classNames: { root?: string } }) => null),
     closeSplashscreen: vi.fn(),
     getDefaultStore: vi.fn(),
     getMatches: vi.fn(),
@@ -90,7 +91,7 @@ vi.mock("@mantine/core", () => ({
   localStorageColorSchemeManager: vi.fn(() => ({})),
 }));
 vi.mock("@mantine/notifications", () => ({
-  Notifications: () => null,
+  Notifications: mocks.notifications,
   notifications: { show: mocks.showNotification },
 }));
 vi.mock("@tanstack/react-router", () => ({
@@ -120,6 +121,12 @@ vi.mock("./components/home/SessionPersistenceNotice", () => ({
 }));
 vi.mock("./components/home/AutomaticStockfishNotice", () => ({
   AutomaticStockfishNotice: mocks.automaticStockfishNotice,
+}));
+vi.mock("./components/home/FixedNoticeStack", () => ({
+  fixedNoticeToastRoot: "fixed-notice-toast-root",
+  FixedNoticeStack: ({ children }: { children: React.ReactNode }) => (
+    <div data-fixed-notice-stack="">{children}</div>
+  ),
 }));
 vi.mock("./routeTree.gen", () => ({ routeTree: {} }));
 vi.mock("./styles/theme", () => ({
@@ -202,6 +209,7 @@ beforeEach(() => {
   mocks.useDocumentLanguage.mockReset();
   mocks.sessionPersistenceNotice.mockClear();
   mocks.automaticStockfishNotice.mockClear();
+  mocks.notifications.mockClear();
   mocks.useAtomValue.mockReset();
 
   storeValues = { referenceDb: undefined };
@@ -901,5 +909,23 @@ describe("App", () => {
     expect(mocks.automaticStockfishNotice).toHaveBeenCalled();
     expect(mocks.useDatabaseContentValidation).toHaveBeenCalled();
     expect(mocks.useDocumentLanguage).toHaveBeenCalled();
+  });
+
+  /** f-20261119-12: both app-wide notices once hand-placed themselves in the toast corner and
+   * drew over each other. They share one stack, and the toast column is lifted above it. */
+  test("renders both notices in one stack and lifts the toast column above it", async () => {
+    mockLaunchWithoutCliFile();
+    mocks.sessionPersistenceNotice.mockImplementationOnce(() => (
+      <div role="alert">persistence</div>
+    ));
+    mocks.automaticStockfishNotice.mockImplementationOnce(() => <div role="status">stockfish</div>);
+
+    await act(async () => root.render(<App />));
+
+    const stacks = container.querySelectorAll("[data-fixed-notice-stack]");
+    expect(stacks).toHaveLength(1);
+    expect(stacks[0].querySelector('[role="alert"]')?.textContent).toBe("persistence");
+    expect(stacks[0].querySelector('[role="status"]')?.textContent).toBe("stockfish");
+    expect(mocks.notifications.mock.lastCall![0].classNames.root).toBe("fixed-notice-toast-root");
   });
 });

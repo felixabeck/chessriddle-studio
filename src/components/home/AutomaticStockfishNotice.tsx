@@ -1,4 +1,4 @@
-import { Alert, getDefaultZIndex } from "@mantine/core";
+import { Alert } from "@mantine/core";
 import { useAtomValue, useStore } from "jotai";
 import { Suspense, useEffect } from "react";
 import { StockfishInstallProgress } from "@/components/engines/InstallStockfishButton";
@@ -22,14 +22,9 @@ export function AutomaticStockfishNotice() {
         bg="var(--mantine-color-body)"
         title={`${job.engine.name} ${job.engine.version}`}
         role="status"
-        pos="fixed"
-        bottom="var(--mantine-spacing-xs)"
-        right="var(--mantine-spacing-xs)"
-        w="36rem"
         style={{
-          zIndex: getDefaultZIndex("modal") - 1,
-          maxWidth: "calc(100vw - 2rem)",
-          maxHeight: "calc(100dvh - 2rem)",
+          // Placed by FixedNoticeStack; shrink with it and scroll its own content.
+          minHeight: 0,
           overflowY: "auto",
           overflowWrap: "anywhere",
         }}

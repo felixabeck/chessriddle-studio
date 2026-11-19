@@ -1,4 +1,4 @@
-import { Alert, Button, getDefaultZIndex, Stack, Text } from "@mantine/core";
+import { Alert, Button, Stack, Text } from "@mantine/core";
 import { useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import enUS from "@/translation/en-US.json";
@@ -28,15 +28,9 @@ export function SessionPersistenceNotice() {
       bg="var(--mantine-color-body)"
       title={title}
       role="alert"
-      pos="fixed"
-      bottom="var(--mantine-spacing-xs)"
-      right="var(--mantine-spacing-xs)"
-      w="36rem"
       style={{
-        // Keep dialogs and menus above this nonmodal recovery warning.
-        zIndex: getDefaultZIndex("modal") - 1,
-        maxWidth: "calc(100vw - 2rem)",
-        maxHeight: "calc(100dvh - 2rem)",
+        // Placed by FixedNoticeStack; shrink with it so the Retry action stays reachable.
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
         overflowWrap: "anywhere",

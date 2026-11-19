@@ -2228,7 +2228,10 @@ test("accounts-puzzles-engines: retains unsaved public cards and retries only th
     async function expectNoticeReachable(width: number, height: number) {
         expect(page.viewportSize()).toEqual({ width, height });
         await expect(page.locator("html")).toHaveCSS("font-size", "32px");
-        await expect(notice).toHaveCSS("position", "fixed");
+        await expect(page.locator("[data-fixed-notice-stack]").filter({ has: notice })).toHaveCSS(
+            "position",
+            "fixed",
+        );
         const geometry = await notice.evaluate((element) => {
             const rect = element.getBoundingClientRect();
             return {

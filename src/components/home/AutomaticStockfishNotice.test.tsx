@@ -1,4 +1,4 @@
-import { MantineProvider, getDefaultZIndex } from "@mantine/core";
+import { MantineProvider } from "@mantine/core";
 import { atom, createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -91,9 +91,6 @@ test("shows only a running automatic job, names it, and routes cancel to the sha
   await render();
   expect(host.textContent).toContain("Stockfish 17");
   expect(host.textContent).toContain("Common.Downloading");
-  expect(host.querySelector<HTMLElement>('[role="status"]')!.style.zIndex).toBe(
-    String(getDefaultZIndex("modal") - 1),
-  );
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Common.Cancel"]')!.click(),
   );

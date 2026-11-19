@@ -103,6 +103,19 @@ test("automatic install stays visible across routes, cancels, and never starts a
         progressId,
     );
     await expect(notice.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "37");
+    // f-20261119-12: the toast column shares this corner and must start above the notice
+    // stack, not on top of it.
+    const stack = page.locator("[data-fixed-notice-stack]").filter({ has: notice });
+    const toastColumn = page.locator('.mantine-Notifications-root[data-position="bottom-right"]');
+    await expect
+        .poll(async () => {
+            const [stackBox, toastBox] = await Promise.all([
+                stack.boundingBox(),
+                toastColumn.boundingBox(),
+            ]);
+            return stackBox && toastBox && toastBox.y + toastBox.height <= stackBox.y;
+        })
+        .toBe(true);
     // The element clip includes the page behind the fixed notice along its fractional top edge
     // and rounded corners. Hiding that page keeps the snapshot about the notice alone.
     const hiddenPage = await page.addStyleTag({

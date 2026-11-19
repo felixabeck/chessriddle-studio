@@ -1,0 +1,13 @@
+/* The Mantine toast roots. `--fixed-notice-stack-offset` is published by FixedNoticeStack on
+   <html>; only the bottom-right root shares the stack's corner, so only it rises above the stack.
+   Mantine renders one root per position, so the offset must never reach the others: a `bottom`
+   on a top root stretches it over the page and swallows clicks. */
+.toastRoot {
+  max-height: calc(100dvh - 2 * var(--mantine-spacing-md));
+  overflow-y: auto;
+}
+
+.toastRoot[data-position="bottom-right"] {
+  bottom: calc(var(--mantine-spacing-md) + var(--fixed-notice-stack-offset, 0px));
+  max-height: calc(100dvh - 2 * var(--mantine-spacing-md) - var(--fixed-notice-stack-offset, 0px));
+}

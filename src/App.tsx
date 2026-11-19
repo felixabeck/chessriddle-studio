@@ -58,6 +58,7 @@ import { appCssVariablesResolver, createAppTheme } from "./styles/theme";
 import { initializePathOwners } from "./state/pathOwners";
 import { SessionPersistenceNotice } from "./components/home/SessionPersistenceNotice";
 import { AutomaticStockfishNotice } from "./components/home/AutomaticStockfishNotice";
+import { FixedNoticeStack, fixedNoticeToastRoot } from "./components/home/FixedNoticeStack";
 import { installNativeContextMenuSuppression } from "./utils/nativeContextMenu";
 
 const router = createRouter({
@@ -288,16 +289,17 @@ export default function App() {
       >
         <ContextMenuProvider>
           <Notifications
-            classNames={{ notification: "wrap-anywhere" }}
+            classNames={{ root: fixedNoticeToastRoot, notification: "wrap-anywhere" }}
             notificationMaxHeight={notificationMaxHeight}
             styles={{
-              root: { maxHeight: notificationMaxHeight, overflowY: "auto" },
               notification: { overflowY: "auto", alignItems: "safe center" },
             }}
           />
           <RouterProvider router={router} />
-          <SessionPersistenceNotice />
-          <AutomaticStockfishNotice />
+          <FixedNoticeStack>
+            <SessionPersistenceNotice />
+            <AutomaticStockfishNotice />
+          </FixedNoticeStack>
         </ContextMenuProvider>
       </MantineProvider>
     </DndProvider>
