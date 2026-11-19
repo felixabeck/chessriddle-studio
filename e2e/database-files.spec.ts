@@ -3553,6 +3553,13 @@ test("database-files: the board explorer compares two databases side by side", a
     await handle.focus();
     const dragged = (await rect(strip)).height;
     await page.keyboard.press("ArrowDown");
+    // Reached from the keyboard, the divider shows its focus ring.
+    expect(
+        await handle.evaluate((element) => [
+            element.matches(":focus-visible"),
+            getComputedStyle(element).outlineStyle,
+        ]),
+    ).toEqual([true, "solid"]);
     await expect.poll(async () => (await rect(strip)).height).toBeCloseTo(dragged + 24, 0);
     await handle.dblclick();
     await page.mouse.move(0, 0);
@@ -3612,6 +3619,16 @@ test("database-files: the board explorer compares two databases side by side", a
     await expect.poll(async () => (await rect(board)).height).toBeLessThan(boardBefore - 50);
     expect((await rect(strip)).y).toBeGreaterThanOrEqual((await bottom(board)) - 0.5);
     expect(await bottom(strip)).toBeLessThanOrEqual((await bottom(page.locator("#left"))) + 0.5);
+
+    // In the narrow stacked layout, outside the mosaic, the divider still looks like the pane
+    // divider: no fill on hover, the same hover line.
+    await pinMenu("Database position", "Above the tabs");
+    await page.setViewportSize({ width: 600, height: 900 });
+    await expect(page.locator("[data-board-layout='stacked']")).toBeVisible();
+    await expect(page.locator(".mosaic")).toHaveCount(0);
+    await handle.scrollIntoViewIfNeeded();
+    expect(await look(handle)).toEqual(paneLook);
+    await page.setViewportSize(viewport);
 
     // Unpinned from the strip's menu, it is a tab again, and that tab is shown.
     await pinMenu("Database position", "Unpin database");
