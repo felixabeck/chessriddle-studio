@@ -27256,7 +27256,7 @@ Push review (rounds 1-5) extended the fix. 8466c52c9 maps `DraftNumberInput.tsx`
 
 ### Importing a PGN file into a database skips every game whose FEN tag carries an impossible en-passant square
 
-* **ID:** f-20261119-01 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-01 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 107ac52f-7328-410b-bdd3-407f3a4977f3
 * **Impact class:** ux
 * **Spotted outside diff:** yes (review-root-cause lens during the push of f-20261115-25, which fixed the renderer entry points only)
@@ -27267,6 +27267,8 @@ Push review (rounds 1-5) extended the fix. 8466c52c9 maps `DraftNumberInput.tsx`
 * **Fix:** add `.or_else(PositionError::ignore_invalid_ep_square)` to `database_setup_to_chess` and store the FEN with the ep field rewritten to `-` (keeping other bytes) so `games.fen`, the decode path that replays from it, and the renderer's `normalizeFen` agree. Check every other caller of `database_setup_to_chess` (explorer exact search, decode) for the same policy. Regression: import a PGN with that tag, the game is stored with the `-` FEN and its moves decode.
 * **Related:** f-20261115-25 (renderer entry points, handled), f-20261114-20.
 * **Found by:** review-root-cause lens (agy) in Claude Code drain session 107ac52f-7328-410b-bdd3-407f3a4977f3
+* **Handled 2026-11-19 (58009f604):** `database_setup_to_chess` (`src-tauri/src/db/encoding.rs`) now adds `.or_else(PositionError::ignore_invalid_ep_square)`, so every caller of the database policy (importer `FEN` tag, decode, exact position search, mainline replay in search, `engine::parse_fen_to_position` for engine-less Play, opening-book EPD and the opening-book PGN visitor) accepts the setup and drops the square, matching the renderer's `dropInvalidEpSquare`. The importer stores the FEN with the ep field rewritten to `-` through the new `fen_text_without_ep_square` (other bytes and separators kept) only when the square was dropped; a legal ep square is stored unchanged. The engine policy `engine_setup_to_chess` is unchanged: engine starts receive the renderer's already-cleaned FEN. Regressions: `import_keeps_a_game_whose_fen_has_an_impossible_ep_square_and_stores_it_dropped` (stored FEN is `4k3/8/8/8/4P3/8/8/4K3 b - - 0 1`, moves decode), `import_keeps_a_legal_ep_square_in_the_stored_fen`, `database_setup_drops_an_impossible_ep_square_and_keeps_a_legal_one`, `fen_text_without_ep_square_rewrites_only_the_fourth_field`; the first and third fail with the policy line removed. Full `cargo test --bin chessriddle-studio`: 3464 passed.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"7cd9afd8c667b7a0e297e09dccce58d3e93687841f2f2def5da8eac8e8344928","header_sha256":"f8541ebd365c27cf1fa7d7f9d1106dd2ae869f44be359e6e9b99f7480449c742","header_status":"handled","input_sha256":"9226a17a04443b3651e95e26848b911b95109af3a9bf0d4e341e18ed7a4f10ec","kind":"mutation-receipt","operation":"263a61cffb9ed2d31a29acc63883e5443157bc09120d9fd596372f4cd46845ff","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-01"],"target":"f-20261119-01","v":1} -->
 
 ---
 
