@@ -67,6 +67,7 @@ function getYValue(node: TreeNode): number | undefined {
       }
     }
   }
+  return undefined;
 }
 
 function EvalChart(props: EvalChartProps) {

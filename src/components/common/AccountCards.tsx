@@ -387,6 +387,7 @@ function LichessOrChessCom({
       />
     );
   }
+  return null;
 }
 
 export default AccountCards;

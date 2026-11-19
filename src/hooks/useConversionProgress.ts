@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useSetAtom } from "jotai";
-import { type ConvertProgress } from "@/bindings";
+import type { ConvertProgress } from "@/bindings";
 import { notifyListenerError } from "@/components/files/notifyError";
 import { tauriSubscriptions } from "@/platform/tauri";
 import { useTauriListener } from "@/platform/useTauriListener";

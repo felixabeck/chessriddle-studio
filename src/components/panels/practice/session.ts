@@ -152,19 +152,6 @@ export function practiceSessionReducer(
     }
 }
 
-export function emptyPracticeStats(): PracticeSessionStats {
-    return {
-        mode: "anki",
-        remainingPositionKeys: [],
-        reappendedPositionKeys: [],
-        introducedPositionKeys: [],
-        correct: 0,
-        incorrect: 0,
-        streak: 0,
-        bestStreak: 0,
-    };
-}
-
 export function canSubmitPracticeMove(state: PracticeSession, currentFen: string): boolean {
     return (
         (state.phase === "waiting" ||

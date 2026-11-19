@@ -576,7 +576,8 @@ export function useFileWorkspace(
                 openMove(entry);
             },
             onMove: (entry: Entry, destination: Entry) => {
-                if (destination.type !== "unreadable") return moveEntry(entry, destination.handle);
+                if (destination.type === "unreadable") return undefined;
+                return moveEntry(entry, destination.handle);
             },
         },
         action,

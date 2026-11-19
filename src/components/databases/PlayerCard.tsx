@@ -2,7 +2,7 @@ import { tauri } from "@/platform/tauri";
 import { Center, Loader, Paper, Stack, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
-import { type DatabaseHandle, type Player } from "@/bindings";
+import type { DatabaseHandle, Player } from "@/bindings";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useDatabaseContentRevision } from "@/state/linkedCollections";

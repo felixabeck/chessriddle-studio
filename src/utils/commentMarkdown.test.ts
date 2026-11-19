@@ -1,7 +1,7 @@
 import { Markdown } from "@tiptap/markdown";
 import { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { type marked } from "marked";
+import type { marked } from "marked";
 import { expect, test } from "vitest";
 import { createCommentMarkdown, type CommentMarkdownToken } from "./commentMarkdown";
 

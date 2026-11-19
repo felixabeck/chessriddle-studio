@@ -49,6 +49,7 @@ export default function UpgradeEngineModal({
   async function cancel(progressId: string | null) {
     if (pending?.completion.outcome.state === "succeeded") return;
     if (progressId) return cancelDownloadJob(progressId, t("Common.Error"));
+    return undefined;
   }
 
   async function upgrade(catalog: DefaultEngine, progressId: string) {

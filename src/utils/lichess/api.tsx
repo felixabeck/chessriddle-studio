@@ -3,13 +3,13 @@ import { logFailureSafely, safeFailureContext } from "@/platform/errors";
 import { parseUci } from "chessops";
 import { makeFen } from "chessops/fen";
 import { z } from "zod";
-import {
-  type ArtifactPublication,
-  type BestMoves,
-  type EngineOptions,
-  type GoMode,
-  type NormalizedGame,
-  type PathRef,
+import type {
+  ArtifactPublication,
+  BestMoves,
+  EngineOptions,
+  GoMode,
+  NormalizedGame,
+  PathRef,
 } from "@/bindings";
 import { parsePGN, replayUciMoves } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";

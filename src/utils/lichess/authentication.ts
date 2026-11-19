@@ -1,6 +1,6 @@
 import { tauri } from "@/platform/tauri";
 import { getDefaultStore } from "jotai";
-import { type AuthenticationStatus } from "@/bindings";
+import type { AuthenticationStatus } from "@/bindings";
 import { sessionsAtom } from "@/state/atoms";
 import { getLichessAccount } from "@/utils/lichess/api";
 import { upsertLichessSession } from "@/utils/session";

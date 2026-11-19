@@ -4,7 +4,7 @@ import { Autocomplete } from "@mantine/core";
 import { Search } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type DatabaseHandle, type Player } from "@/bindings";
+import type { DatabaseHandle, Player } from "@/bindings";
 import { NAME_SEARCH_DEBOUNCE_MS, query_players } from "@/utils/db";
 import classes from "./SideInput.module.css";
 

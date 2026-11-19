@@ -1,18 +1,18 @@
 import { tauri } from "@/platform/tauri";
-import { type Platform } from "@/platform/native";
+import type { Platform } from "@/platform/native";
 import { CatalogVerificationError, loadSignedCatalog } from "@/utils/signedCatalog";
 import useSWR from "swr";
 import { z } from "zod";
-import {
-    type BestMoves,
-    type EngineHandle,
-    type EngineImageHandle,
-    type EngineResourceHandle,
-    type EngineOption,
-    type EngineConfig,
-    type EngineOptions,
-    type GoMode,
-    type InstalledEngineResult,
+import type {
+    BestMoves,
+    EngineHandle,
+    EngineImageHandle,
+    EngineResourceHandle,
+    EngineOption,
+    EngineConfig,
+    EngineOptions,
+    GoMode,
+    InstalledEngineResult,
 } from "@/bindings";
 
 export const requiredEngineSettings = ["MultiPV", "Threads", "Hash"];

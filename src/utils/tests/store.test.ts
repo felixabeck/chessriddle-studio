@@ -8,7 +8,7 @@ import {
     defaultTree,
     displayedScore,
     getMemoizedBoardStateMap,
-    TreeNode,
+    type TreeNode,
     type TreeState,
 } from "@/utils/treeReducer";
 

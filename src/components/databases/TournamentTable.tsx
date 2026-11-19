@@ -8,7 +8,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
-import { type Event, type TournamentSort } from "@/bindings";
+import type { Event, TournamentSort } from "@/bindings";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";

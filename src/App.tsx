@@ -245,7 +245,8 @@ export function useAppStartup() {
     void startupSequence()
       .catch((startupError) => warn(`Application startup failed: ${String(startupError)}`))
       .then(() => {
-        if (!signal.aborted) return checkForAppUpdate(signal);
+        if (signal.aborted) return undefined;
+        return checkForAppUpdate(signal);
       });
 
     return () => {

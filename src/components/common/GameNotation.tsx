@@ -244,6 +244,7 @@ function GameNotation({
     } else if (model.rows.length > 0) {
       return scrollNotationToIndex(rowVirtualizer, 0, "start");
     }
+    return undefined;
   }, [currentNode, model, rowVirtualizer]);
 
   useHotkeys(keyMap.TOGGLE_BLUR.keys, () => setInvisible((value) => !value));

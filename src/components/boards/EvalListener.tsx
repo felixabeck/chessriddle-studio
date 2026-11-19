@@ -16,7 +16,7 @@ import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
-import { type BestMovesPayload, type EngineOptions, type GoMode } from "@/bindings";
+import type { BestMovesPayload, EngineOptions, GoMode } from "@/bindings";
 import { notifyListenerError, notifyUnlessCancelled } from "@/components/files/notifyError";
 import {
   activeTabAtom,

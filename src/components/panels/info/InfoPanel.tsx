@@ -4,7 +4,7 @@ import { use, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
-import { type DatabaseHandle } from "@/bindings";
+import type { DatabaseHandle } from "@/bindings";
 import GameInfo from "@/components/common/GameInfo";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { getTabFile, isFileBackedTab, matchesFileGameTab, sameTabOwner } from "@/utils/tabs";

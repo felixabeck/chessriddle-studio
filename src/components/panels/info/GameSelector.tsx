@@ -163,7 +163,7 @@ export default function GameSelector({
   const loadMoreRows = useVirtualPageLoader(
     `${path.id.id}:${reloadGeneration}:${repertoire}:${verifiedRevision ?? ""}`,
     loadPage,
-    (startIndex, entries) => {
+    (_startIndex, entries) => {
       if (reloading.current) return;
       setGames((previous) => {
         if (entries.length === 0) return previous;

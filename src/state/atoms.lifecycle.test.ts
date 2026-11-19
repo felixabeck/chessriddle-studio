@@ -10,6 +10,7 @@ import {
     closingTabsAtom,
     disposeTabAtoms,
     explorerGamesSourceFamily,
+    practiceSessionStatsFamily,
     explorerSortFamily,
     engineMovesFamily,
     engineProgressFamily,
@@ -20,6 +21,7 @@ import {
     tabEngineSettingsFamily,
     tabFamily,
 } from "./atoms";
+import { emptyPracticeStats } from "./practiceSessionStats";
 import { tabStorage, TabStorageRepository } from "./store/tabStorage";
 import {
     captureReportOwner,
@@ -1945,4 +1947,13 @@ test("closes inactive, active, and last tabs and ignores a stale close id", () =
     expect(store.get(tabsAtom)).toEqual([]);
     expect(store.get(activeTabAtom)).toBeNull();
     expect(tabStorage.read(tabs[1]!.value)).toBeNull();
+});
+
+test("a fresh tab's practice stats start from the same value a reset publishes", () => {
+    const store = createStore();
+    const stats = store.get(practiceSessionStatsFamily("fresh-practice-tab"));
+    expect(stats).toEqual(emptyPracticeStats());
+    expect(stats).not.toBe(store.get(practiceSessionStatsFamily("other-practice-tab")));
+    practiceSessionStatsFamily.remove("fresh-practice-tab");
+    practiceSessionStatsFamily.remove("other-practice-tab");
 });

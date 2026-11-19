@@ -2,7 +2,21 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["eslint", "import", "react", "react-perf", "oxc", "typescript", "vitest"],
   "categories": {},
-  "rules": {},
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "mantine-flagpack",
+            "allowTypeImports": true,
+            "message": "mantine-flagpack is ~240 kB gzip; reach it only through the dynamic import in src/components/databases/flagpack.ts (d-20260927-22)."
+          }
+        ]
+      }
+    ],
+    "typescript/no-import-type-side-effects": "error"
+  },
   "settings": {
     "jsx-a11y": {
       "polymorphicPropName": null,

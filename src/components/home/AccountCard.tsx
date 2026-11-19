@@ -47,7 +47,7 @@ import {
   observeAccountCompletions,
   runAccountImport,
 } from "@/state/accountCompletions";
-import { type ManagedDatabaseInfo } from "@/utils/db";
+import type { ManagedDatabaseInfo } from "@/utils/db";
 import { accountDatabaseFilename, type AccountDatabaseIssue } from "./accountDatabase";
 import { capitalize } from "@/utils/format";
 import { useTauriListener } from "@/platform/useTauriListener";

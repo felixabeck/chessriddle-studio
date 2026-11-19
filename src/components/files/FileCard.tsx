@@ -127,6 +127,7 @@ function FileCard({
       });
     } catch (error) {
       notifyUnlessCancelled(t("Common.Error"), error);
+      return undefined;
     }
   };
 

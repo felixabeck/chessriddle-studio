@@ -255,7 +255,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                     ...numericColumn,
                     accessor: "rank",
                     title: t("Databases.Tournament.Rank"),
-                    render: (player, index) => (
+                    render: (_player, index) => (
                       <Text size="sm" fw={500}>
                         {index + 1}
                       </Text>

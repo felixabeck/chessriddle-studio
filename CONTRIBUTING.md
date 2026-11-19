@@ -76,7 +76,11 @@ Do not add repository Cargo configuration. CI does not require sccache.
 
 `pnpm test`
 
-- Runs all tests, generating a report
+- Runs the frontend unit tests (`vitest run`). `pnpm test:coverage` adds the coverage report.
+
+`pnpm test:e2e:container`
+
+- Runs the visual Playwright tests in the pinned container. This is the acceptance run for UI changes. Native `pnpm test:e2e` renders fonts with the host's antialiasing, so its screenshots differ from the committed snapshots even when the product is fine.
 
 `pnpm format`
 

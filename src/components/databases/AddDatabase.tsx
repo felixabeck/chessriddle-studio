@@ -23,7 +23,7 @@ import { AlertCircle } from "lucide-react";
 import { useSetAtom } from "jotai";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type DatabaseHandle, type FileWorkspaceHandle } from "@/bindings";
+import type { DatabaseHandle, FileWorkspaceHandle } from "@/bindings";
 import {
   databaseConversionStateAtom,
   databaseConversionRefreshFailedAtom,
@@ -193,9 +193,7 @@ function AddDatabase({
       // identically titled databases distinct and native creation reports only
       // an actual filename collision.
       title: (value) => (!value ? t("Common.RequireName") : undefined),
-      files: (value) => {
-        if (value.length === 0) return t("Common.RequirePath");
-      },
+      files: (value) => (value.length === 0 ? t("Common.RequirePath") : undefined),
     },
   });
 

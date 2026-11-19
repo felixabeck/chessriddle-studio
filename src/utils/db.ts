@@ -5,18 +5,18 @@ import puzzleCatalogDocument from "@/catalogs/puzzles.json?raw";
 import puzzleCatalogSignature from "@/catalogs/puzzles.json.minisig?raw";
 import { z } from "zod";
 import useSWR, { type Arguments, type ScopedMutator } from "swr";
-import {
-    type DatabaseInfo,
-    type DatabaseInfoResult,
-    type DatabaseHandle,
-    type DatabaseRootHandle,
-    type GameListQuery,
-    type NormalizedGame,
-    type Player,
-    type PlayerQuery,
-    type PositionSearchQuery,
-    type PuzzleDatabaseInfo,
-    type QueryResponse,
+import type {
+    DatabaseInfo,
+    DatabaseInfoResult,
+    DatabaseHandle,
+    DatabaseRootHandle,
+    GameListQuery,
+    NormalizedGame,
+    Player,
+    PlayerQuery,
+    PositionSearchQuery,
+    PuzzleDatabaseInfo,
+    QueryResponse,
 } from "@/bindings";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { collectSequential } from "@/utils/collectSequential";
@@ -191,20 +191,6 @@ export function manifestPuzzleDatabaseInstallCard(
 }
 
 export type Sides = "WhiteBlack" | "BlackWhite" | "Any";
-
-export interface CompleteGame {
-    game: NormalizedGame;
-    currentMove: number[];
-}
-
-export type Speed =
-    | "UltraBullet"
-    | "Bullet"
-    | "Blitz"
-    | "Rapid"
-    | "Classical"
-    | "Correspondence"
-    | "Unknown";
 
 export const ELO_FILTER_MAX = 3000;
 

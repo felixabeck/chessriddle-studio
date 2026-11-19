@@ -2,7 +2,7 @@ import { Group, Select } from "@mantine/core";
 import { Settings, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type PathRef, type PuzzleDatabaseInfo } from "@/bindings";
+import type { PathRef, PuzzleDatabaseInfo } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import { puzzleDatabaseExtension } from "@/utils/db";
 import { capabilityKey } from "@/utils/pathCapabilities";

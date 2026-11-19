@@ -6,7 +6,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { DatabaseLayoutContext } from "@/state/databaseLayout";
 import { useSWRConfig } from "swr";
-import { type DatabaseHandle, type NormalizedGame } from "@/bindings";
+import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { OpenGameButton } from "@/components/common/gameOpen";
 import { IconAction } from "@/components/common/IconAction";
 import ConfirmModal from "@/components/common/ConfirmModal";

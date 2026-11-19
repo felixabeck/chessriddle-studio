@@ -39,6 +39,7 @@ vi.mock("@/components/files/notifyError", () => ({
       return await action();
     } catch (error) {
       mocks.notify(error);
+      return undefined;
     }
   },
 }));

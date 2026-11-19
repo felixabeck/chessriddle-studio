@@ -22,7 +22,7 @@ import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
-import { type DatabaseHandle, type NormalizedGame } from "@/bindings";
+import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import { PinnedPlacementItems } from "@/components/boards/PinnedPlacementItems";
 import { TreeStateContext } from "@/components/common/TreeStateContext";

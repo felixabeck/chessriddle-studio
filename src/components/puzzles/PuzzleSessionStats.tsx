@@ -2,7 +2,7 @@ import { Group, Paper, Text } from "@mantine/core";
 import { Flame } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { formatDecimal, formatTime } from "@/utils/format";
-import { type Puzzle } from "@/utils/puzzles";
+import type { Puzzle } from "@/utils/puzzles";
 
 export const unavailableValue = "-";
 

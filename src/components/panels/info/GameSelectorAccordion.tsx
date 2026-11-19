@@ -9,7 +9,7 @@ import { use, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
-import { type FileWorkspaceHandle } from "@/bindings";
+import type { FileWorkspaceHandle } from "@/bindings";
 import { GameTitle } from "@/components/files/GameTitle";
 import { lineTitleOf, type LineTitle } from "@/components/files/lineTitle";
 import { getGameName } from "@/utils/treeReducer";

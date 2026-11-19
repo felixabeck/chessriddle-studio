@@ -35,8 +35,7 @@ import {
 } from "./explorerFilters";
 import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
 import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
-import type { SuccessDatabaseInfo } from "@/utils/db";
-import { type Engine, type EngineSettings } from "@/utils/engines";
+import type { Engine, EngineSettings } from "@/utils/engines";
 import {
     type LichessGamesOptions,
     lichessGamesOptionsSchema,
@@ -109,7 +108,8 @@ import {
 } from "./engineOwnerStorage";
 import { serializeStorageValue } from "./store/debouncedStorage";
 import { defaultPlayerSettings, opponentSettingsSchema } from "@/state/opponentSettings";
-import { createPracticeDeckAtom, type PracticeData } from "./practiceStorage";
+import { createPracticeDeckAtom } from "./practiceStorage";
+import { emptyPracticeStats } from "./practiceSessionStats";
 import { removeFileFreshness } from "./fileFreshness";
 import { projectAnalysisSettings, type AnalysisSettings } from "./analysisSettings";
 import { cancellationError, tauri, withConversionTicket } from "@/platform/tauri";
@@ -1040,9 +1040,6 @@ export async function runDatabaseConversion<T>(
     }
 }
 
-/** Database metadata is authoritative in native storage, not in renderer persistence. */
-export const selectedDatabaseAtom = atom<SuccessDatabaseInfo | null>(null);
-
 // Game Settings
 
 export type GameInputColor = "white" | "random" | "black";
@@ -1397,16 +1394,7 @@ export type PracticeSessionStats = {
 };
 
 export const practiceSessionStatsFamily = atomFamily((_tab: string) =>
-    atom<PracticeSessionStats>({
-        mode: "anki",
-        remainingPositionKeys: [],
-        reappendedPositionKeys: [],
-        introducedPositionKeys: [],
-        correct: 0,
-        incorrect: 0,
-        streak: 0,
-        bestStreak: 0,
-    }),
+    atom<PracticeSessionStats>(emptyPracticeStats()),
 );
 
 /** Completed runs remain visible without keeping an inactive session alive. */

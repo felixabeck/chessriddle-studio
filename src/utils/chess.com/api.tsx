@@ -5,7 +5,7 @@ import { error } from "@/platform/native";
 import { ChildNode, defaultGame, makePgn, type PgnNodeData, startingPosition } from "chessops/pgn";
 import { makeSan } from "chessops/san";
 import { z } from "zod";
-import { type ArtifactPublication, type PathRef } from "@/bindings";
+import type { ArtifactPublication, PathRef } from "@/bindings";
 import i18n from "@/i18n";
 import { decodeTCN } from "./tcn";
 

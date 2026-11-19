@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type ProgressItem } from "@/bindings";
+import type { ProgressItem } from "@/bindings";
 import { notifyListenerError } from "@/components/files/notifyError";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
 import { useTauriListener } from "@/platform/useTauriListener";

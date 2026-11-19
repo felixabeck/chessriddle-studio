@@ -119,13 +119,13 @@ const swrConfig = {
 };
 
 class AccountRouteBoundary extends Component<{ children: ReactNode }, { crashed: boolean }> {
-  state = { crashed: false };
+  override state = { crashed: false };
 
   static getDerivedStateFromError() {
     return { crashed: true };
   }
 
-  render() {
+  override render() {
     return this.state.crashed ? <div>Account route crashed</div> : this.props.children;
   }
 }

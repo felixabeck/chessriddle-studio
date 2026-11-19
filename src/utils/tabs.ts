@@ -155,7 +155,6 @@ export function rebindFileTabsAfterStructureChange({
     );
     return { matched, saved };
 }
-export type SetCurrentTab = (update: React.SetStateAction<Tab>) => boolean;
 /** Acknowledges the canonical persisted successor before workspace observers run. */
 export type UpdateTab = (
     tabId: string,
@@ -1516,6 +1515,7 @@ async function saveToFileNow({
                 }
             }
             currentFileOperation = false;
+            return undefined;
         };
         const finishWrite = (
             written?: Awaited<ReturnType<typeof writeFileGame>>,

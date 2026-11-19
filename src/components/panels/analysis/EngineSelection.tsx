@@ -8,7 +8,7 @@ import EnginePortrait from "@/components/engines/EnginePortrait";
 import InstallStockfishButton from "@/components/engines/InstallStockfishButton";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { enginesAtom } from "@/state/atoms";
-import { type Engine } from "@/utils/engines";
+import type { Engine } from "@/utils/engines";
 
 function EngineBox({ engine, toggleLoaded }: { engine: Engine; toggleLoaded: () => void }) {
   return (

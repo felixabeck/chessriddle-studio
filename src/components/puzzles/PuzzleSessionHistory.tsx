@@ -1,5 +1,5 @@
 import { Paper, ScrollArea, Stack } from "@mantine/core";
-import { type Puzzle } from "@/utils/puzzles";
+import type { Puzzle } from "@/utils/puzzles";
 import ChallengeHistory from "../common/ChallengeHistory";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";

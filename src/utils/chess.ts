@@ -6,7 +6,7 @@ import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
 import { isPawns } from "chessops/pgn";
 import { makeSan } from "chessops/san";
 import { match } from "ts-pattern";
-import { type Outcome, type Score, type Token } from "@/bindings";
+import type { Outcome, Score, Token } from "@/bindings";
 import { isBasicAnnotation, isNagCode, nagGlyph, sortedNags } from "./annotation";
 import { parseSanOrUci, positionFromFen } from "./chessops";
 import { makePgnDrawings, PGN_COMMENT_COMMAND, toDrawShape } from "./drawings";

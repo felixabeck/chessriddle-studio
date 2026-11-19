@@ -165,12 +165,8 @@ function ReportModal({
   const form = useForm({
     initialValues: reportSettings,
     validate: {
-      engine: (value) => {
-        if (!value) return t("Board.Analysis.EngineRequired");
-      },
-      novelty: (value) => {
-        if (value && !referenceDb) return t("Board.Analysis.RefDBRequired");
-      },
+      engine: (value) => (!value ? t("Board.Analysis.EngineRequired") : undefined),
+      novelty: (value) => (value && !referenceDb ? t("Board.Analysis.RefDBRequired") : undefined),
     },
   });
 

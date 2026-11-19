@@ -1,6 +1,6 @@
 # Product decisions
 
-This record holds product precedent: what ChessFable is for and how it behaves.
+This record holds product precedent: what ChessRiddle Studio is for and how it behaves.
 Technical precedent lives in `tasks/decisions.md`. `/decide` writes product decisions
 here per `~/.claude/skills/decide/SKILL.md` section 4.
 

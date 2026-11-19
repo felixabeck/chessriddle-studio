@@ -3,7 +3,7 @@ import type { DatabaseHandle, PositionStats } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { searchPosition } from "./db";
 import { getNodeAtPath, type TreeNode, getBoardState } from "./treeReducer";
-import { TreeStoreState } from "@/state/store/tree";
+import type { TreeStoreState } from "@/state/store/tree";
 import { memoize } from "proxy-memoize";
 
 export type PositionMove = {

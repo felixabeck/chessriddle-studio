@@ -63,6 +63,7 @@ import { collectRetainedPracticePositions } from "./retainedPositions";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "@/components/common/PaneTabs.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "@/components/boards/paneTabs";
+import { emptyPracticeStats } from "@/state/practiceSessionStats";
 import {
   advancePracticeQueue,
   buildPracticeQueue,
@@ -70,7 +71,6 @@ import {
   getAutomaticPracticeGrade,
   PRACTICE_REPLAY_STEP_MS,
   canSubmitPracticeMove,
-  emptyPracticeStats,
   idlePracticeSession,
   practiceSessionReducer,
   type PracticeSession,

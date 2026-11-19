@@ -62,6 +62,7 @@ export function resolvePracticeCard(
     for (const card of practiceCardsFromTree(tree, color, start)) {
         if (getBoardState(card.fen) === positionKey) return card;
     }
+    return undefined;
 }
 
 export function buildFromTree(tree: TreeNode, color: "white" | "black", start: number[]) {

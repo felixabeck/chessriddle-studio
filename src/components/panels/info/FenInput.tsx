@@ -1,5 +1,5 @@
 import { Button, Checkbox, Group, Select, Stack, Text } from "@mantine/core";
-import { type Setup } from "chessops";
+import type { Setup } from "chessops";
 import { EMPTY_FEN, INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
 import { memo, useCallback, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";

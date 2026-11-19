@@ -24,7 +24,7 @@ import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import type { Outcome } from "@/bindings";
-import { type EngineLog, type GameResult, type GameState as NativeGameState } from "@/bindings";
+import type { EngineLog, GameResult, GameState as NativeGameState } from "@/bindings";
 import type { ChessgroundRef } from "@/chessground/Chessground";
 import {
   notifyListenerError,

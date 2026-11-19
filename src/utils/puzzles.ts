@@ -1,5 +1,5 @@
 import { tauri } from "@/platform/tauri";
-import { type PuzzleDatabaseInfo, type PuzzleRootDescriptor } from "@/bindings";
+import type { PuzzleDatabaseInfo, PuzzleRootDescriptor } from "@/bindings";
 import { isNormal, parseUci, type Move, type NormalMove } from "chessops";
 import type { Chess } from "chessops/chess";
 import type { TreeStore } from "@/state/store/tree";

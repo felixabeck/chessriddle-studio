@@ -7,7 +7,7 @@ import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
-import { type PathRef, type PuzzleDatabaseInfo } from "@/bindings";
+import type { PathRef, PuzzleDatabaseInfo } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import {
@@ -422,6 +422,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
       return true;
     } catch (error) {
       if (isCurrent()) notifyUnlessCancelled(commonErrorRef.current, error);
+      return undefined;
     }
   }
 
@@ -534,6 +535,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
                 jumpToNextPuzzleImmediately
               )
                 return generatePuzzle(effectiveSelectedDb, false, isCurrent);
+              return undefined;
             })
             .catch((error) => {
               if (owns()) notifyUnlessCancelled(commonErrorRef.current, error);
