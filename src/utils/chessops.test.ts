@@ -86,6 +86,8 @@ describe("dropInvalidEpSquare", () => {
         ["4k3/8/4n3/4p3/8/8/8/4K3 w - e6 0 1", "4k3/8/4n3/4p3/8/8/8/4K3 w - - 0 1"],
         // The pawn's origin is occupied.
         ["4k3/4n3/8/4p3/8/8/8/4K3 w - e6 0 1", "4k3/4n3/8/4p3/8/8/8/4K3 w - - 0 1"],
+        // Only the rank is wrong: an opposing pawn stands in front and both squares are empty.
+        ["4k3/8/8/8/8/8/4p3/K7 w - e3 0 1", "4k3/8/8/8/8/8/4p3/K7 w - - 0 1"],
         // The piece in front of the square is not an opposing pawn.
         ["4k3/8/8/4n3/8/8/8/4K3 w - e6 0 1", "4k3/8/8/4n3/8/8/8/4K3 w - - 0 1"],
         ["4k3/8/8/4P3/8/8/8/4K3 w - e6 0 1", "4k3/8/8/4P3/8/8/8/4K3 w - - 0 1"],
