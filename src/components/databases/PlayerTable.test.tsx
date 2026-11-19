@@ -331,7 +331,10 @@ test("headers omit ID and sortable Games requests both directions with native pl
   }
 });
 
-test("a rejected Elo draft stays on screen until blur, which shows the stored bound again", async () => {
+test.each([
+  ["Databases.Player.MinELO", "0"],
+  ["Databases.Player.MaxELO", String(ELO_FILTER_MAX)],
+])("%s holds a rejected or cleared draft, and blur shows the bound again", async (label, bound) => {
   await act(async () =>
     root.render(
       <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
@@ -341,24 +344,26 @@ test("a rejected Elo draft stays on screen until blur, which shows the stored bo
       </SWRConfig>,
     ),
   );
-  const field = () =>
-    container.querySelector<HTMLInputElement>('input[aria-label="Databases.Player.MinELO"]')!;
-  // No range stored yet: the field shows the omitted lower bound.
-  expect(field().value).toBe("0");
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      field(),
-      "5000",
-    );
-    field().dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  const field = () => container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  const type = (text: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        field(),
+        text,
+      );
+      field().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  // No range stored yet: the field shows the omitted bound.
+  expect(field().value).toBe(bound);
+  // An out-of-range draft stays on screen unstored (Mantine clamps it on blur; the mock does not).
+  await type("5000");
   expect(field().value).toBe("5000");
+  // An emptied field drops the bound, keeps the empty draft, and shows the bound after blur.
+  await type("");
+  expect(field().value).toBe("");
   await act(async () => {
     field().focus();
     field().blur();
   });
-  expect(field().value).toBe("0");
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Databases.Player.MaxELO"]')!.value,
-  ).toBe(String(ELO_FILTER_MAX));
+  expect(field().value).toBe(bound);
 });

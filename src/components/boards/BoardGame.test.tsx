@@ -3802,7 +3802,9 @@ test("the opening-book ply limit holds a cleared or below-1 draft until blur and
       field().dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-  for (const draft of ["", "0", "-5"]) {
+  // The mock has no blur clamp, so only the cleared draft is blurred here; Mantine's clamp of a
+  // below-1 draft to 1 on blur is covered against the real input in DraftNumberInput.test.tsx.
+  for (const draft of ["0", "-5", ""]) {
     await type(draft);
     expect(field().value).toBe(draft);
     expect(store.get(gameOpeningBookMaxPlyAtom)).toBe(20);
@@ -3812,6 +3814,7 @@ test("the opening-book ply limit holds a cleared or below-1 draft until blur and
     field().blur();
   });
   expect(field().value).toBe("20");
+  expect(store.get(gameOpeningBookMaxPlyAtom)).toBe(20);
   await type("12");
   expect(store.get(gameOpeningBookMaxPlyAtom)).toBe(12);
 });
