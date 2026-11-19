@@ -27647,7 +27647,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### BoardGame keeps a private `getMainlineUcis` that skips the castling normalisation of `utils/chess.ts` `getMainLine`, so its poll-path prefix check misreads castled games
 
-* **ID:** f-20261119-19 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-19 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** refactoring review (Felix t67u) at origin/master `d79fa979e`
 * **Where:** `src/components/boards/BoardGame.tsx:101-111` (`getMainlineUcis`: `makeUci(node.move)` along first children), used at `:503` (`getTreeMoves` → the `initialMoves` sent to native start at `:646`) and at `:1128-1133` (reconciliation poll: `isPrefix(currentLiveMoves, backendUcis)` decides `eligibleForPremove`). Shared helper: `src/utils/chess.ts:150-152` `getMainLine` → `getVariationLine` `:173-192`, which maps every move through `uciNormalize` (`normalizeMove` + `makeUci`) as the rest of the app does.
@@ -27656,6 +27656,12 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** delete `getMainlineUcis` and use `getMainLine(root)` from `utils/chess.ts` (normalised, and also correct for custom start FENs) at both call sites. Add a BoardGame test that starts from a tree containing `O-O` and asserts that a polled `e1g1` state still counts as a prefix.
 * **Proof:** a node probe using the repo's `chessops` (`dist/esm`) gave `parseSan(pos, "O-O")` → `{"from":4,"to":7}`, with `makeUci` → `e1h1`. `rg -n "from_move\(&mv" src-tauri/src/game.rs` shows the native writer uses the game's castling mode, which is Standard unless a Chess960 FEN is detected. Line references are at origin/master `d79fa979e`. The poll-path consequence was traced from code, not reproduced end to end.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+* **Closed 2026-11-19 (drain):** the defect does not hold as filed, and the proposed fix would have introduced it. Commit `32273970e`.
+  * A game start calls `applyAuthoritativeState(..., initialize = true)`, whose `setFen(state.initialFen)` replaces the tree. `syncTreeWithMoves` then rebuilds it from native's reported moves. During a game, human moves reach the tree only through the native echo (`Board.tsx` `makeMove` → `onMove`). So a live game tree holds native's own notation (`e1g1` in standard games), and the raw `makeUci` comparison against native's raw UCI already matches. A pre-game PGN castle (`e1h1`) reaches native only through `initialMoves`, and shakmaty 0.27.1 `UciMove::to_move` (`uci.rs:316-334`) accepts both notations.
+  * A probe confirmed that chessops `normalizeMove` maps `e1g1` → `e1h1`. `getMainLine` would therefore produce `e1h1` while native reports `e1g1`, and the poll's `isPrefix` check would fail. That is the silent premove drop this finding described.
+  * Done instead: a comment on `getMainlineUcis` explains why it stays raw. The new test `a game continued from a castled tree still recognises polled native castles as a prefix` starts from a tree holding O-O as `e1h1`, asserts `initialMoves: ["e1h1"]` and the rebuilt `e1g1` tree, and checks that a polled `e8c8` reply plays the queued premove. With the proposed `getMainLine` swap applied, the test fails (`playPremove` called 0 times).
+  * Rejected: normalising both sides (`getMainLine` plus replaying native's moves through `replayUciMoves`). It is correct too, but it adds a replay to every poll to fix a mismatch that cannot occur. Not done.
+<!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"8d8484212618c15ac88cd0596d8d1e9305a30a3fcff41836da152776a5d64e4b","header_sha256":"8c4fd8e32feb430b6364f5b138ccd80cb42a174984d3d9d917dbb2cc77ee6bce","header_status":"handled","input_sha256":"cf272b62e05b85e23958cae53d68a26415ee8b95a5ab8450b203167eb27f4e84","kind":"mutation-receipt","operation":"7fe0fb6d7e5120cceb85bf6c2c23b3ab9ae554b1b5788f1ef9d4c19570936a6c","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-19"],"target":"f-20261119-19","v":1} -->
 
 ---
 
