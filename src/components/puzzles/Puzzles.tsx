@@ -1,23 +1,7 @@
 import { useTabAtom } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
-import {
-  Accordion,
-  Alert,
-  Badge,
-  Button,
-  Divider,
-  Group,
-  Paper,
-  Portal,
-  RangeSlider,
-  ScrollArea,
-  Select,
-  SimpleGrid,
-  Stack,
-  Switch,
-  Text,
-} from "@mantine/core";
-import { TriangleAlert, Flame, Plus, Settings, Trash2, X, ScanSearch } from "lucide-react";
+import { Badge, Button, Divider, Group, Paper, Portal, Stack, Text } from "@mantine/core";
+import { Plus, X, ScanSearch } from "lucide-react";
 import { makeSquare } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -51,8 +35,7 @@ import {
 } from "@/state/puzzleSession";
 import { persistStorageWriteError } from "@/state/store/tabStorage";
 import { reportPersistError } from "@/state/persistError";
-import { puzzleDatabaseExtension } from "@/utils/db";
-import { formatDecimal, formatThemeLabel, formatTime } from "@/utils/format";
+import { formatThemeLabel } from "@/utils/format";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { normalizeError, runDestructiveWithRefresh } from "@/platform/errors";
 import {
@@ -73,16 +56,13 @@ import {
   getNodeAtPath,
   getResolvedPathLength,
 } from "@/utils/treeReducer";
-import ChallengeHistory from "../common/ChallengeHistory";
-import ConfirmModal from "../common/ConfirmModal";
-import GameNotation from "../common/GameNotation";
-import MoveControls from "../common/MoveControls";
 import { TreeStateContext } from "../common/TreeStateContext";
 import AddPuzzle from "./AddPuzzle";
 import PuzzleBoard from "./PuzzleBoard";
-
-const puzzleRatingMarks = [600, 1700, 2800] as const;
-const unavailableValue = "-";
+import PuzzleDatabaseToolbar from "./PuzzleDatabaseToolbar";
+import PuzzleSessionHistory from "./PuzzleSessionHistory";
+import PuzzleSessionStats from "./PuzzleSessionStats";
+import PuzzleSettingsPanel from "./PuzzleSettingsPanel";
 
 function timerElapsed(timer: PuzzleTimer): number {
   return timer.startedAt === undefined ? timer.elapsed : Date.now() - timer.startedAt;
@@ -96,7 +76,6 @@ function pausedTimer(timer: PuzzleTimer, elapsed: number): PuzzleTimer {
   return timer.startedAt === undefined ? timer : { attemptId: timer.attemptId, elapsed };
 }
 
-const addOptionLabel = (label: string) => `+ ${label}`;
 const emptySession = emptyPuzzleSession();
 
 function Puzzles({ id }: { id: string }) {
@@ -165,7 +144,7 @@ function OfflinePuzzles({ id, sourceControl }: { id: string; sourceControl: Reac
 }
 
 function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const commonErrorRef = useRef(t("Common.Error"));
   commonErrorRef.current = t("Common.Error");
   const store = useContext(TreeStateContext)!;
@@ -354,29 +333,7 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
     };
   }, [effectiveSelectedDb]);
 
-  const [jumpToNextPuzzleImmediately, setJumpToNextPuzzleImmediately] =
-    useAtom(jumpToNextPuzzleAtom);
-
-  const wonPuzzles = puzzles.filter((p) => p.completion === "correct");
-  const lostPuzzles = puzzles.filter((p) => p.completion === "incorrect");
-
-  const totalCompleted = wonPuzzles.length + lostPuzzles.length;
-  const accuracy =
-    totalCompleted > 0 ? Math.round((wonPuzzles.length / totalCompleted) * 100) : null;
-
-  let currentStreak = 0;
-  for (let i = puzzles.length - 1; i >= 0; i--) {
-    if (puzzles[i].completion === "correct") currentStreak++;
-    else if (puzzles[i].completion === "incorrect") break;
-  }
-
-  const timedWonPuzzles = wonPuzzles.filter((p) => p.timeSpent !== undefined);
-  const avgTimeSeconds =
-    timedWonPuzzles.length > 0
-      ? timedWonPuzzles.reduce((acc, p) => acc + (p.timeSpent ?? 0), 0) /
-        timedWonPuzzles.length /
-        1000
-      : 0;
+  const jumpToNextPuzzleImmediately = useAtomValue(jumpToNextPuzzleAtom);
 
   function admitPuzzle(
     puzzle: Puzzle,
@@ -665,12 +622,11 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
   }
 
   const [addOpened, setAddOpened] = useState(false);
-  const [deleteModalOpened, setDeleteModalOpened] = useState(false);
   const [isPlayingSolution, setIsPlayingSolution] = useState(false);
 
-  const [progressive, setProgressive] = useAtom(progressivePuzzlesAtom);
-  const [hideRating, setHideRating] = useAtom(hidePuzzleRatingAtom);
-  const [trackTime, setTrackTime] = useAtom(trackPuzzleTimeAtom);
+  const progressive = useAtomValue(progressivePuzzlesAtom);
+  const hideRating = useAtomValue(hidePuzzleRatingAtom);
+  const trackTime = useAtomValue(trackPuzzleTimeAtom);
 
   const atomStore = useAtomStore();
   const timerAtom = useTabAtom(puzzleTimerFamily);
@@ -811,6 +767,41 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
 
   const hintMove = getPuzzleProgress(puzzles[currentPuzzle], root, position).nextMove;
 
+  async function deleteDatabase(deletedDb: PathRef, close: () => void) {
+    try {
+      await runDestructiveWithRefresh(
+        () => tauri.deletePuzzleDatabase(deletedDb),
+        () => {
+          setPuzzleDbs((dbs) =>
+            dbs.filter((db) => capabilityKey(db.path) !== capabilityKey(deletedDb)),
+          );
+          if (
+            selectedDbRef.current &&
+            capabilityKey(selectedDbRef.current) === capabilityKey(deletedDb)
+          ) {
+            requestGeneration.current++;
+            puzzleRequest.current?.abort();
+            setSelectedDb(null);
+            resetWorkspaceRef.current();
+          }
+          close();
+        },
+      );
+    } catch (error) {
+      notifyUnlessCancelled(t("Common.Error"), error, "puzzle");
+    }
+  }
+
+  function pauseSelectedTimer() {
+    const live = store.getState();
+    const ownsSession = live.capturePuzzleSessionOwner();
+    const current = atomStore.get(timerAtom);
+    if (current && current.attemptId === live.puzzleSession?.selectedAttemptId) {
+      const paused = pausedTimer(current, timerElapsed(current));
+      setTimer((value) => (ownsSession() && value === current ? paused : value));
+    }
+  }
+
   return (
     <>
       <Portal target="#left" style={{ height: "100%" }}>
@@ -845,235 +836,36 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
               setWorkspaceGeneration((generation) => generation + 1);
             }}
           />
-          <ConfirmModal
-            title={t("Puzzle.DeleteDatabase")}
-            description={t("Puzzle.DeleteDatabaseConfirm")}
-            opened={deleteModalOpened}
-            onClose={() => setDeleteModalOpened(false)}
-            onConfirm={async () => {
-              if (effectiveSelectedDb) {
-                const deletedDb = effectiveSelectedDb;
-                try {
-                  await runDestructiveWithRefresh(
-                    () => tauri.deletePuzzleDatabase(deletedDb),
-                    () => {
-                      setPuzzleDbs((dbs) =>
-                        dbs.filter((db) => capabilityKey(db.path) !== capabilityKey(deletedDb)),
-                      );
-                      if (
-                        selectedDbRef.current &&
-                        capabilityKey(selectedDbRef.current) === capabilityKey(deletedDb)
-                      ) {
-                        requestGeneration.current++;
-                        puzzleRequest.current?.abort();
-                        setSelectedDb(null);
-                        resetWorkspaceRef.current();
-                      }
-                      setDeleteModalOpened(false);
-                    },
-                  );
-                } catch (error) {
-                  notifyUnlessCancelled(t("Common.Error"), error, "puzzle");
-                }
-              }
+          <PuzzleDatabaseToolbar
+            puzzleDbs={puzzleDbs}
+            selectedDb={effectiveSelectedDb}
+            onSelectDb={(database) => {
+              requestGeneration.current++;
+              puzzleRequest.current?.abort();
+              setSelectedDb(database);
             }}
+            onAdd={() => setAddOpened(true)}
+            settingsOpened={settingsOpened}
+            onToggleSettings={() => setSettingsOpened((o) => !o)}
+            onDeleteConfirmed={deleteDatabase}
           />
-          <Group justify="space-between" pb="sm">
-            <Select
-              style={{ flex: 1 }}
-              data={puzzleDbs
-                .map((p) => ({
-                  label: p.title.split(puzzleDatabaseExtension)[0],
-                  value: capabilityKey(p.path),
-                }))
-                .concat({ label: addOptionLabel(t("Common.AddNew")), value: "add" })}
-              value={effectiveSelectedDb ? capabilityKey(effectiveSelectedDb) : null}
-              clearable={false}
-              placeholder={t("Puzzle.SelectDatabase")}
-              onChange={(v) => {
-                if (v === "add") {
-                  setAddOpened(true);
-                } else {
-                  requestGeneration.current++;
-                  puzzleRequest.current?.abort();
-                  setSelectedDb(
-                    puzzleDbs.find((database) => capabilityKey(database.path) === v)?.path ?? null,
-                  );
-                }
-              }}
-            />
-            <Group gap="xs">
-              <IconAction
-                label={t("Puzzle.DeleteDatabase")}
-                color="danger"
-                disabled={!effectiveSelectedDb}
-                onClick={() => setDeleteModalOpened(true)}
-              >
-                <Trash2 size={20} />
-              </IconAction>
-              <IconAction
-                label={t("SideBar.Settings")}
-                pressed={settingsOpened}
-                onClick={() => setSettingsOpened((o) => !o)}
-              >
-                <Settings size={20} />
-              </IconAction>
-            </Group>
-          </Group>
-          <Accordion
-            value={settingsOpened ? "settings" : null}
-            onChange={(v) => setSettingsOpened(v === "settings")}
-            mb="sm"
-          >
-            <Accordion.Item value="settings">
-              <Accordion.Panel>
-                <Stack gap="md">
-                  {themesTableMissing && (
-                    <Alert
-                      icon={<TriangleAlert />}
-                      title={t("Puzzle.DatabaseOutdated")}
-                      color="warning"
-                    >
-                      {t("Puzzle.DatabaseOutdatedDesc")}
-                    </Alert>
-                  )}
-                  <div>
-                    <Text size="sm" fw={500} mb={4}>
-                      {t("Puzzle.RatingRange")}
-                    </Text>
-                    <RangeSlider
-                      min={600}
-                      my="md"
-                      max={2800}
-                      value={ratingRange}
-                      onChange={setRatingRange}
-                      disabled={progressive}
-                      marks={puzzleRatingMarks.map((value) => ({ value, label: String(value) }))}
-                    />
-                  </div>
-                  <Select
-                    label={t("Puzzle.Theme")}
-                    placeholder={t("Puzzle.AllThemes")}
-                    data={availableThemes.map((theme) => ({
-                      label: formatThemeLabel(theme),
-                      value: theme,
-                    }))}
-                    value={effectiveSelectedTheme}
-                    onChange={setSelectedTheme}
-                    clearable
-                    searchable
-                  />
-                  <SimpleGrid cols={2} spacing="sm">
-                    <Switch
-                      label={t("Puzzle.Progressive")}
-                      description={t("Puzzle.Progressive.Desc")}
-                      checked={progressive}
-                      onChange={(event) => setProgressive(event.currentTarget.checked)}
-                    />
-                    <Switch
-                      label={t("Puzzle.HideRating")}
-                      description={t("Puzzle.HideRating.Desc")}
-                      checked={hideRating}
-                      onChange={(event) => setHideRating(event.currentTarget.checked)}
-                    />
-                    <Switch
-                      label={t("Puzzle.JumpToNextPuzzleImmediately")}
-                      description={t("Puzzle.JumpToNextPuzzleImmediately.Desc")}
-                      checked={jumpToNextPuzzleImmediately}
-                      onChange={(event) =>
-                        setJumpToNextPuzzleImmediately(event.currentTarget.checked)
-                      }
-                    />
-                    <Switch
-                      label={t("Puzzle.TrackPuzzleTime")}
-                      description={t("Puzzle.TrackPuzzleTime.Desc")}
-                      checked={trackTime}
-                      onChange={(event) => {
-                        if (!event.currentTarget.checked) {
-                          const live = store.getState();
-                          const ownsSession = live.capturePuzzleSessionOwner();
-                          const current = atomStore.get(timerAtom);
-                          if (
-                            current &&
-                            current.attemptId === live.puzzleSession?.selectedAttemptId
-                          ) {
-                            const paused = pausedTimer(current, timerElapsed(current));
-                            setTimer((value) =>
-                              ownsSession() && value === current ? paused : value,
-                            );
-                          }
-                          setTrackTime(false);
-                        } else {
-                          setTrackTime(true);
-                        }
-                      }}
-                    />
-                  </SimpleGrid>
-                </Stack>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
-          <Group grow>
-            <Paper withBorder p="xs">
-              <Text size="xs" c="dimmed">
-                {t("Puzzle.Rating")}
-              </Text>
-              <Text fw={700} size="lg">
-                {isPuzzleIncomplete && hideRating && puzzles[currentPuzzle]?.rating
-                  ? "?"
-                  : puzzles[currentPuzzle]?.rating || unavailableValue}
-              </Text>
-            </Paper>
-
-            {trackTime && (
-              <Paper withBorder p="xs">
-                <Text size="xs" c="dimmed">
-                  {t("Puzzle.Time")}
-                </Text>
-                <Text fw={700} size="lg" ff="monospace">
-                  {formatTime(elapsedTime, i18n.language)}
-                </Text>
-              </Paper>
-            )}
-
-            <Paper withBorder p="xs">
-              <Text size="xs" c="dimmed">
-                {t("Puzzle.Accuracy")}
-              </Text>
-              <Text
-                fw={700}
-                size="lg"
-                c={accuracy === null ? "dimmed" : accuracy >= 50 ? "success" : "warning"}
-              >
-                {accuracy !== null ? `${accuracy}%` : unavailableValue}
-              </Text>
-            </Paper>
-
-            <Paper withBorder p="xs">
-              <Text size="xs" c="dimmed">
-                {t("Puzzle.Streak")}
-              </Text>
-              <Group gap={2}>
-                <Text fw={700} size="lg">
-                  {currentStreak}
-                </Text>
-                <Flame size={20} color="var(--cf-warning)" />
-              </Group>
-            </Paper>
-
-            {trackTime && avgTimeSeconds > 0 && (
-              <Paper withBorder p="xs">
-                <Text size="xs" c="dimmed">
-                  {t("Puzzle.AvgTime")}
-                </Text>
-                <Text fw={700} size="lg">
-                  {t("Common.SecondsShort", {
-                    value: formatDecimal(avgTimeSeconds, i18n.language),
-                  })}
-                </Text>
-              </Paper>
-            )}
-          </Group>
+          <PuzzleSettingsPanel
+            opened={settingsOpened}
+            onOpenedChange={setSettingsOpened}
+            themesTableMissing={themesTableMissing}
+            availableThemes={availableThemes}
+            selectedTheme={effectiveSelectedTheme}
+            onSelectedThemeChange={setSelectedTheme}
+            onTrackTimeDisabled={pauseSelectedTimer}
+          />
+          <PuzzleSessionStats
+            puzzles={puzzles}
+            currentPuzzle={currentPuzzle}
+            isPuzzleIncomplete={isPuzzleIncomplete}
+            hideRating={hideRating}
+            trackTime={trackTime}
+            elapsedTime={elapsedTime}
+          />
           <Divider my="sm" />
           {completionRetry?.attemptId === attemptId && completionRetry.owns() && (
             <Button onClick={completionRetry.retry}>{t("Board.Practice.Retry")}</Button>
@@ -1308,27 +1100,11 @@ function PuzzleSessionView({ sourceControl }: { sourceControl: ReactNode }) {
         </Paper>
       </Portal>
       <Portal target="#bottomRight" style={{ height: "100%" }}>
-        <Stack h="100%" gap="xs">
-          <Paper withBorder p="md" mih="5rem">
-            <ScrollArea h="100%" offsetScrollbars>
-              <ChallengeHistory
-                challenges={puzzles.map((p) => ({
-                  ...p,
-                  label: p.rating?.toString() ?? unavailableValue,
-                }))}
-                current={currentPuzzle}
-                select={(i) => {
-                  if (i === currentPuzzle) return;
-                  admitPuzzle(puzzles[i], session.attempts[i].attemptId);
-                }}
-              />
-            </ScrollArea>
-          </Paper>
-          <Stack flex={1} gap="xs">
-            <GameNotation />
-            <MoveControls readOnly />
-          </Stack>
-        </Stack>
+        <PuzzleSessionHistory
+          puzzles={puzzles}
+          currentPuzzle={currentPuzzle}
+          onSelect={(i) => admitPuzzle(puzzles[i], session.attempts[i].attemptId)}
+        />
       </Portal>
     </>
   );
