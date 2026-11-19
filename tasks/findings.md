@@ -27551,3 +27551,33 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * Add a GameNotation test asserting that with `invisible` the move buttons are not focusable and activation does not change `position`.
   * Inert rows are the simpler fix and also stop the screen-reader leak.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### `BoardGame` is a 1,150-line component that holds game setup, native session ownership, reconciliation polling, premoves and engine logs in one body
+
+* **ID:** f-20261119-16 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `d79fa979e`
+* **Where:** `src/components/boards/BoardGame.tsx` (`BoardGame`, `:140-1559`, 1,559 lines in the file). It holds 30 `useRef`s and 28 top-level `useCallback`/`useMemo`/`useEffect` hooks. The body interleaves five separable concerns:
+  1. Game setup: `inputColor` + `cycleColor` `:166-176`, both player settings atoms `:178-179`, the mirrored `player1Side` / `player2Side` matches `:181-191` (`player2Side` is `player1Side` inverted), `getPlayers` `:193-204`, and the setup UI `:1362-1400`.
+  2. Native session ownership: about 20 identity refs `:225-250`, plus `ownerTabExists` / `ownsMountedOwner` / `ownsUiEpoch` / `ownsUiSession` / `clearOwnershipIfMatches` / `invalidateUiSession` / `cleanupExactIdentity` `:279-384`.
+  3. Reconciliation polling with backoff: 8 refs `:252-259`, and the effect `:1064-1188` with a 14-entry dependency list.
+  4. Move transport and premoves: `runGameCommand`, `handleHumanMove`, `queueKeyboardPremove`, `scheduleDeferredPremove`, `applyPendingUpdates`, `scheduleUpdate` (`:772-947`).
+  5. Engine logs (`fetchEngineLogs`, `changeLogsColor` `:395-433`).
+
+  `gameSession.ts` already holds one extracted helper (`isCurrentQueuedGameUpdate`), so there is a home for the rest.
+* **Defect:** every change to any one concern is made inside one closure scope whose callbacks capture the others' refs. The reconciliation effect depends on ownership predicates, `applyAuthoritativeState`, premove scheduling, players and the tree store at once. The setup half also restates small things: `player2Side` is a second `match` that mirrors `player1Side`. The control that calls `cycleColor` (white → black → random → white) is labelled "Swap colors" (`Board.Action.SwapColors`, `:1371`), but from Black it goes to Random rather than swapping.
+* **Failure scenario:** past defects in this component were ownership and ordering bugs between these concerns (f-20260901-22, the native game session had no terminal state; f-20260901-23, late command results overwrote newer state, with the start/terminal-result header race in its notes). They were hard to isolate because the concerns share one scope. The next change to the reconciliation backoff or premove timing has to be reviewed against the ownership refs it happens to touch. Separately, a player clicking "Swap colors" while Black is selected gets "Random", which the label does not describe.
+* **Fix:**
+  * Extract three hooks into `src/components/boards/gameSession.ts` (or sibling files):
+    * `useGameSetup()`: colour cycle, both player settings, side labels derived once via `opposite`, and `getPlayers`.
+    * `useNativeGameOwnership(ownerTabId)`: the identity refs and `owns*` / `invalidate*` / `cleanup*` callbacks, returning a small owner API.
+    * `useGameReconciliation({ owner, gameId, gameState, applyAuthoritativeState, … })`: the backoff refs and the polling effect.
+  * Leave move transport in the component, or extract it after the first three.
+  * Relabel the colour control "Change colour" or "Next colour option" (or make it a three-option segmented control) so it matches the cycle.
+  * No behaviour change except the label. `BoardGame.test.tsx` and `gameSession.test.ts` are the guard.
+* **Proof:** line references above at origin/master `d79fa979e`. `rg -c "useRef\(" src/components/boards/BoardGame.tsx` reports 30, and the counted hook lines number 28. `cycleColor`'s three-way `match` is at `:167-175`, and its button's label is at `:1370-1371`. `git show 9654961d6:src/components/boards/BoardGame.tsx` already has the three-way `cycleColor` (`:95-100`) and the two mirrored inline side matches (`:644`, `:654`) on an unlabeled `ActionIcon`; the fork added the "Swap colors" accessible name.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
