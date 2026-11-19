@@ -27483,7 +27483,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### `nextBranch` and `previousBranch` are one function written twice, and the drill guard is restated in each navigation action
 
-* **ID:** f-20261119-13 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-13 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
 * **Where:** `src/state/store/tree.ts` (`createTreeStore`):
@@ -27506,6 +27506,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
 * **Update (2026-11-19, same session, origin/master `d79fa979e`):** the first half is already done upstream of this filing: `bcdb0d816` / `d79fa979e` fold `nextBranch` / `previousBranch` into `stepSibling(1 | -1)` (`src/state/store/tree.ts:420-445`, `:583-584`). What remains is the second half: `if (!drillAllows(state.practicePath, target)) return; state.position = target;` is still restated in `stepSibling` `:442`, `goToAnnotation` `:505`, `goToEnd` `:522`, `goToBranchEnd` `:565` and `nextBranching` `:600`. Related player-visible leak through the unguarded `goToMove` path: f-20261119-15.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"ae6643948338404a2950394b6b94ab717be51464c7894723a18cf827edde9ea7","input_sha256":"4fd24b7b35e85362e7098c937bfc390b2f65e5eae700d8066ac86dc151749394","kind":"mutation-receipt","operation":"4fdc3aabbf0522a4ce44bfcccef2a3343c379331a0320127c30c35815aca5c18","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-13"],"target":"f-20261119-13","v":1} -->
+
+* **Handled (2026-11-19, drain):** `28f60bfa7` adds `moveCursorWithinDrill(state, target)` beside `drillAllows` in `src/state/store/tree.ts` and routes `stepSibling`, `goToAnnotation`, `goToEnd`, `goToBranchEnd` and `nextBranching` through it. `goToMove` stays unguarded (Practice positions the board through it); its notation leak is closed by f-20261119-15. No behaviour change; `tree.test.ts` drill cases pass.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"0e078d71848f7fe0c7fbc17fca7cce0193f7ee8b1e2df6b17d1b945b5b395c7b","header_sha256":"8d3b073f9bc7c3c846e20ed1425b6ba1dfd8e9b34f770325c37748bfdd5e8c35","header_status":"handled","input_sha256":"570b4bd4ec267bc5dc9bb28c6adbebc3ce35f431973e2d25160c43bbf7613d80","kind":"mutation-receipt","operation":"3f8e79cefdc5554eb2cf5b9d92c5c32ea95b56f02386f646afa74031cfed6aa0","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-13"],"target":"f-20261119-13","v":1} -->
 
 ---
 
