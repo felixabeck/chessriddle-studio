@@ -27496,3 +27496,29 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * No behaviour change. The `tree.test.ts` cases added by f-20261011-11 and f-20261114-15 are the guard.
 * **Proof:** `sed -n 644,688p src/state/store/tree.ts` at origin/master `7086448c7` (a 7-line copy scan of `src/` flagged the pair). `rg -n "drillAllows" src/state/store/tree.ts` lists the six call sites above. `git show 9654961d6:src/state/store/tree.ts` shows the pair at `:294-333`.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### The tree-stats row (Variations / Max depth / Total moves) exists twice, with separate catalogue keys that already read differently
+
+* **ID:** f-20261119-14 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
+* **Where:**
+  * `src/components/panels/info/InfoPanel.tsx`:
+    * `InfoPanel` computes `stats` at `:28` with `isTreeViewDeferred(store) ? { total: 0, leafs: 0, depth: 0 } : getStats(view)`.
+    * It renders an inline `Group` of three dimmed `Text`s at `:73-83`, keyed `PgnInput.Variations`, `PgnInput.MaxDepth` and `PgnInput.TotalMoves` (the upstream original).
+  * `src/components/panels/practice/RepertoireInfo.tsx`:
+    * `RepertoireInfo` computes the same stats line verbatim at `:99`.
+    * `TreeStatsBar` (`:523-544`) renders the same three `Text`s, keyed `Board.Practice.Variations`, `Board.Practice.MaxDepth` and `Board.Practice.TotalMoves`.
+* **Defect:** one stats display is implemented twice, with its own computation line and its own set of three translation keys. The copies have already drifted in what the user reads:
+  * en-US: `PgnInput.TotalMoves` "Total Moves" vs `Board.Practice.TotalMoves` "Total moves".
+  * de-DE: "Gesamtzüge" vs "Züge insgesamt".
+
+  So the same number is labelled differently in the Info tab (`BoardAnalysis.tsx:414`) and the Practice tab's repertoire info (`PracticePanel.tsx:1120`). Each of the 17 locale catalogues carries both triples.
+* **Failure scenario:** a fix to the stats display (the counting rule, cf. f-20260906-05; the deferred-view placeholder; or a label wording) lands in one panel only. Translators keep maintaining six strings for three labels.
+* **Fix:** export `TreeStatsBar` (or move it to `src/components/common/TreeStatsBar.tsx`) together with a `useTreeStats(store)` hook that owns the deferred check, and use both in `InfoPanel`. Keep one key triple (the `Board.Practice.*` set, or a neutral `TreeStats.*`), drop the other from all catalogues, and run `pnpm i18n:extract` / `pnpm i18n:check`. The only visible change is one consistent label.
+* **Proof:** the line references above at origin/master `7086448c7`. `rg -n '"(PgnInput|Board.Practice)\.(Variations|MaxDepth|TotalMoves)"' src/translation/en-US.json src/translation/de-DE.json` shows the two triples and the wording drift. A 7-line copy scan of `src/` flagged the pair.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
