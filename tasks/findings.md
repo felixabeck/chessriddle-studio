@@ -27241,3 +27241,21 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 * **Proof:** agy correctness-lens probe during the f-20261114-07 review (Vitest/jsdom against real `@mantine/core` 8.3.14) showed the identical mechanism on `RepertoireMinGamesSetting` before its draft repair: clearing to `""` or typing `0` and blurring left the input text `""`/`0` with the atom unchanged. The two sites above use the same controlled-value-without-draft shape (read, not separately probed).
 * **Related:** f-20261114-07 (same mechanism, fixed there for the minimum-games field).
 * **Found by:** Claude Code drain session, push review of f-20261114-07
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### Importing a PGN file into a database skips every game whose FEN tag carries an impossible en-passant square
+
+* **ID:** f-20261119-01 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 107ac52f-7328-410b-bdd3-407f3a4977f3
+* **Impact class:** ux
+* **Spotted outside diff:** yes (review-root-cause lens during the push of f-20261115-25, which fixed the renderer entry points only)
+* **Where:** `src-tauri/src/db/mod.rs` ~710-725 (`Importer::header`, `FEN` tag: `database_setup_to_chess(fen.into_setup())` failure sets `self.skip = true`), `src-tauri/src/db/encoding.rs:15-21` (`database_setup_to_chess` ignores too-much-material and invalid castling rights, not `INVALID_EP_SQUARE`).
+* **Defect:** a `[FEN]` tag whose en-passant square shakmaty's `EnPassant::from_setup` rejects (wrong rank, no opposing pawn pushed in front, square or origin occupied), e.g. `4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1`, makes the database importer skip the whole game. The renderer now drops such a square when it installs a root (f-20261115-25, `dropInvalidEpSquare` in `src/utils/chessops.ts`), so opening the same PGN in a tab works while importing it into a database silently loses the game.
+* **Failure scenario:** import a PGN file containing a game with `[FEN "4k3/8/8/8/4P3/8/8/4K3 b - e6 0 1"]` into a database: the game is not in the database and no error names it.
+* **Proof:** /tmp shakmaty 0.27.1 probe (2026-11-19, f-20261115-25 push): `setup.position::<Chess>(CastlingMode::Standard)` returns `illegal position: invalid ep square` for that FEN and `ok` for the same FEN with `-`; `database_setup_to_chess` has no `ignore_invalid_ep_square` arm.
+* **Fix:** add `.or_else(PositionError::ignore_invalid_ep_square)` to `database_setup_to_chess` and store the FEN with the ep field rewritten to `-` (keeping other bytes) so `games.fen`, the decode path that replays from it, and the renderer's `normalizeFen` agree. Check every other caller of `database_setup_to_chess` (explorer exact search, decode) for the same policy. Regression: import a PGN with that tag, the game is stored with the `-` FEN and its moves decode.
+* **Related:** f-20261115-25 (renderer entry points, handled), f-20261114-20.
+* **Found by:** review-root-cause lens (agy) in Claude Code drain session 107ac52f-7328-410b-bdd3-407f3a4977f3
