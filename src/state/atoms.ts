@@ -109,7 +109,7 @@ import {
 import { serializeStorageValue } from "./store/debouncedStorage";
 import { defaultPlayerSettings, opponentSettingsSchema } from "@/state/opponentSettings";
 import { createPracticeDeckAtom } from "./practiceStorage";
-import { emptyPracticeStats } from "./practiceSessionStats";
+import { emptyPracticeStats, type PracticeSessionStats } from "./practiceSessionStats";
 import { removeFileFreshness } from "./fileFreshness";
 import { projectAnalysisSettings, type AnalysisSettings } from "./analysisSettings";
 import { cancellationError, tauri, withConversionTicket } from "@/platform/tauri";
@@ -1382,16 +1382,7 @@ export const practiceMoveControllerFamily = atomFamily((_tab: string) =>
     atom<PracticeMoveController | null>(null),
 );
 
-export type PracticeSessionStats = {
-    mode: "anki" | "full";
-    remainingPositionKeys: string[];
-    reappendedPositionKeys: string[];
-    introducedPositionKeys: string[];
-    correct: number;
-    incorrect: number;
-    streak: number;
-    bestStreak: number;
-};
+export type { PracticeSessionStats } from "./practiceSessionStats";
 
 export const practiceSessionStatsFamily = atomFamily((_tab: string) =>
     atom<PracticeSessionStats>(emptyPracticeStats()),

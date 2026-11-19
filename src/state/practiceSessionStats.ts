@@ -1,4 +1,13 @@
-import type { PracticeSessionStats } from "./atoms";
+export type PracticeSessionStats = {
+    mode: "anki" | "full";
+    remainingPositionKeys: string[];
+    reappendedPositionKeys: string[];
+    introducedPositionKeys: string[];
+    correct: number;
+    incorrect: number;
+    streak: number;
+    bestStreak: number;
+};
 
 /** The one starting value for a tab's practice stats: first mount and every reset use it. */
 export function emptyPracticeStats(): PracticeSessionStats {
