@@ -27296,3 +27296,19 @@ Push review (rounds 1-5) extended the fix. 8466c52c9 maps `DraftNumberInput.tsx`
 
 Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css and the image is re-recorded without the thumb in the e2e container. Evidence: --repeat-each=5 of "database-files: the board explorer compares two databases side by side" in the container passed 5/5; the test's own scroll and half-pane height assertions are unchanged. Lenses correctness, root-cause and tests (agy) approved.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ec3821f1974b63632f8bf3cd6b06002fa73dee8c53fadbd561fb1104eff82779","header_sha256":"2fc334600436fe964cc5fe72b9f4ef822266201b818f8a2baa0ca92f68dab5f9","header_status":"handled","input_sha256":"280f2325d4cafcd41d4d200b2ae913e6d2ce0f77ef981ec8e55dcf02b151de8a","kind":"mutation-receipt","operation":"cf7054a5dd66e2631470b0c5645d1870a3e8c8ea9ebb81bb3f613f3f787d13cd","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-02"],"target":"f-20261119-02","v":1} -->
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### Board.tsx's column labels for the board max-width `calc()` sit over the wrong terms, and two of them are `???`
+
+* **ID:** f-20261119-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
+* **Where:** `src/components/boards/Board.tsx:555-556`: the `//` label row above the `maxWidth` template `var(--board-max-width, calc(100vh - 2.25rem - … - var(--board-below-height, 0px)))`.
+* **Defect:** the label row is meant to be read by column: each label names the term printed under it. Upstream wrote it that way (merge-base `9654961d6`, `Board.tsx:393-394`: `topbar` over `2.25rem`, `tabs` over `2.5rem`, and so on). The expression was later prefixed with `var(--board-max-width, ` (24 columns), but the labels did not move. Measured from the columns: `topbar` now sits over `ax-width, calc(100vh`, `tabs` over `spacing-sm)`, `bars and gutters` over the second `spacing-sm`, `evalbar` over `${barsHeight}`, the first `???` over `+ 1.563rem`, and `focus ring` over `- 0.2rem`. The new `--board-below-height` term has no label. Two terms (`1.563rem`, `var(--mantine-spacing-md)` / `0.2rem`) are labelled only `???`.
+* **Failure scenario:** an AI fixing board sizing (the bar height, the eval bar width, the focus ring) reads the labels as written and changes the wrong term. For example, it treats `${barsHeight}` as the eval bar width, or the `0.2rem` fudge as the focus ring. The `???` labels say the remaining constants are not understood, but the comment gives no way to check that.
+* **Fix:** replace the column art with one short line per term (for example a `const` array, or a list comment naming each term: top bar, bottom padding, tab strip, its spacing, bars and gutters, the eval-bar compensation `1.563rem`, `md` spacing, `0.2rem`, focus ring, below-board height). Mark the two unexplained constants honestly as "empirical, see git blame `9654961d6`" instead of `???`. Comment only; no sizing change.
+* **Proof:** a Python column check over lines 555-556 of `git show origin/master:src/components/boards/Board.tsx` printed each label's start column and the text under it (values above). `git show 9654961d6:src/components/boards/Board.tsx` lines 393-394 shows the original alignment.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
