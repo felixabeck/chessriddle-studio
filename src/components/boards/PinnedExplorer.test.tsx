@@ -424,3 +424,26 @@ test("an engine bar that grows in the strip's pane shrinks the strip's largest h
   await resize(200, pane.querySelector('[data-testid="pinned-engine"]')!);
   expect(strip().style.height).toBe(`${PANE_PX - 200 - GAP_PX - NEIGHBOUR_MIN_PX}px`);
 });
+
+test("the automatic cap also leaves room for an engine bar in the same pane", async () => {
+  enginePx = 300;
+  await renderPanes({ engineIn: "tabs" });
+  await pin("tabs");
+  // Half the pane would be 300px; the bar and the tabs' 160px leave 140px.
+  expect(strip().style.maxHeight).toBe(`${PANE_PX - 300 - NEIGHBOUR_MIN_PX}px`);
+});
+
+test("in a pane too short for both minimums the strip keeps its own", async () => {
+  paneHeight = 200;
+  await renderPanes();
+  await pin("tabs", { tabs: 1 });
+  expect(strip().style.height).toBe(`${STRIP_MIN_PX}px`);
+  expect(strip().style.minHeight).toBe(`${STRIP_MIN_PX}px`);
+});
+
+test("keys other than ArrowUp and ArrowDown leave the divider alone", async () => {
+  await renderPanes();
+  await pin("tabs");
+  for (const other of ["Enter", "Tab", "ArrowLeft", "Home"]) await key(other);
+  expect(store.get(explorerStripHeightsAtom)).toEqual({});
+});
