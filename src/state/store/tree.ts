@@ -345,14 +345,14 @@ export function nextSiblingVariationOrMainMove(
     return [...prefix, next < parent.children.length ? next : 0];
 }
 
-/** d-20260923-04/-05: during a practice drill navigation may only land on the drill line up to the card position; anything past or beside it shows the answer. */
-function drillAllows(practicePath: number[] | null, target: number[]): boolean {
-    return practicePath === null || isPrefix(target, practicePath);
-}
-
-/** The one place a navigation action moves the cursor during a drill: lands on `target` only where {@link drillAllows} permits it. */
+/**
+ * Shared cursor assignment of the jump actions (`stepSibling`, `goToAnnotation`, `goToEnd`,
+ * `goToBranchEnd`, `nextBranching`). d-20260923-04/-05: during a practice drill they may only land
+ * on the drill line up to the card position; anything past or beside it shows the answer.
+ */
 function moveCursorWithinDrill(state: Draft<TreeStoreState>, target: number[]): void {
-    if (drillAllows(state.practicePath, target)) state.position = target;
+    if (state.practicePath === null || isPrefix(target, state.practicePath))
+        state.position = target;
 }
 
 function stepIntoChild(

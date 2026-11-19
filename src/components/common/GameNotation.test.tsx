@@ -990,5 +990,11 @@ test.each([false, true])(
     const answer = host.querySelector('[data-node="Nf3"]');
     expect(answer).not.toBeNull();
     expect(answer!.closest("[inert]") !== null).toBe(invisible);
+    // The reveal toggle in the header must stay operable while the moves are hidden.
+    const toggle = host.querySelector(
+      `[aria-label="${invisible ? "Notation.ShowMoves" : "Notation.HideMoves"}"]`,
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle!.closest("[inert]")).toBeNull();
   },
 );
