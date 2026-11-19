@@ -27312,3 +27312,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** replace the column art with one short line per term (for example a `const` array, or a list comment naming each term: top bar, bottom padding, tab strip, its spacing, bars and gutters, the eval-bar compensation `1.563rem`, `md` spacing, `0.2rem`, focus ring, below-board height). Mark the two unexplained constants honestly as "empirical, see git blame `9654961d6`" instead of `???`. Comment only; no sizing change.
 * **Proof:** a Python column check over lines 555-556 of `git show origin/master:src/components/boards/Board.tsx` printed each label's start column and the text under it (values above). `git show 9654961d6:src/components/boards/Board.tsx` lines 393-394 shows the original alignment.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+---
+
+## 2026-11-19 — filed through the inbox spool
+
+### Board.tsx builds the top and bottom player bars from mirrored orientation ternaries and keeps one FIDE dialog flag per colour
+
+* **ID:** f-20261119-04 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
+* **Where:** `src/components/boards/Board.tsx` (`Board`): `:194-195` (`whiteFideOpen` / `blackFideOpen`), `:440-441` (`topPlayer` / `bottomPlayer`), the top `BoardBar` `:559-597` (rating `orientation === "white" ? headers.black_elo : headers.white_elo`; `onNameClick` `if (orientation === "white") setBlackFideOpen(true) else setWhiteFideOpen(true)`; `ShowMaterial color={opposite(orientation)}`; `Clock color={orientation === "black" ? "white" : "black"}`), the bottom `BoardBar` `:829-849` (the same four decisions inverted), and the two `FideInfo` dialogs `:861-862`.
+* **Defect:** which colour sits on which bar is decided again in each of six places: the name, the Elo, the FIDE click, the material colour, the clock colour, and the dialog flag. Each place uses its own form (`orientation === "white" ?`, `orientation === "black" ?`, `opposite(orientation)`, or an `if`). The bars differ only by side and the repertoire variant. The two FIDE flags are parallel state for "which player's FIDE card is open", which can only ever be one of `white | black | null`.
+* **Failure scenario:** a change to one bar's side logic (a new per-player field, a flip edge case, or the repertoire branch that f-20261111-68 already had to thread through both bars) must be mirrored by hand in the other bar and every ternary. Missing one shows the wrong player's rating, clock or FIDE card after a flip.
+* **Fix:** derive `const topColor = opposite(orientation)`, `const bottomColor = orientation`, and a small `playerBarProps(color)` that returns name, Elo and `onNameClick` from `headers[color]` / `headers[`${color}_elo`]`. Pass `color` to `ShowMaterial` and `Clock`. Replace the two flags with `const [fideColor, setFideColor] = useState<Color | null>(null)` and one `FideInfo` whose name comes from `headers[fideColor]`. The repertoire top bar keeps its own title/detail branch. No behaviour change. The existing Board tests that flip orientation cover it.
+* **Proof:** the line references above at origin/master `7086448c7`. Upstream had the same mirrored shape at merge-base `9654961d6`, so it predates the fork.
+* **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
