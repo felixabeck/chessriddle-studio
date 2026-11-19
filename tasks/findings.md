@@ -27452,6 +27452,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** move `emptyPracticeStats()` next to `PracticeSessionStats` in `src/state/atoms.ts`, use it as the family's initial value (`atomFamily((_tab: string) => atom<PracticeSessionStats>(emptyPracticeStats()))`), and re-export or import it from `session.ts`. Keeping it in `atoms.ts` avoids adding another `state → components` import (cf. f-20261111-87). No behaviour change.
 * **Proof:** `sed -n 1399-1410p src/state/atoms.ts` and `sed -n 155-166p src/components/panels/practice/session.ts` at origin/master show the identical literals; a 7-line copy scan of `src/` flagged the pair.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+* **Correction (2026-11-19, same session):** the Proof commands should read `sed -n 1399,1410p src/state/atoms.ts` and `sed -n 155,166p src/components/panels/practice/session.ts` (comma, not dash).
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d3313025a455663bf2936ead2080ef772237712cd3fe8143c32409aa8ee37dfe","input_sha256":"46457411e855e161ef68b7c6bde65ce9b2d433f96197dbb3654cfdfdaf20dd18","kind":"mutation-receipt","operation":"9d3ff61dc39a8aec0796d6565a7372aebf2d032ed6c2bdfb526c05d96a7ed3d5","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-11"],"target":"f-20261119-11","v":1} -->
 
 ---
 
