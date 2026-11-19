@@ -32,40 +32,49 @@ let store: ReturnType<typeof createStore>;
 /** The strip's rendered height as the drag and keyboard handlers read it. */
 let stripRect = 200;
 /** A pinned engine bar's rendered height. */
+let enginePx = 100;
 const ENGINE_PX = 100;
+/** The gap between a pane's children. */
+const GAP_PX = 10;
 /** Each pane's height; tests change it and then report a resize. */
 let paneHeight = PANE_PX;
 
-/** Observers created by the strip; `resize()` reports a size change to all of them. */
-const observers = new Set<ResizeObserverCallback>();
+/** What each live observer watches; `resize()` reports a size change of one or every target. */
+const observed = new Map<ResizeObserverCallback, Set<Element>>();
 class ManualResizeObserver {
   constructor(private callback: ResizeObserverCallback) {}
-  observe() {
-    observers.add(this.callback);
+  observe(target: Element) {
+    observed.set(this.callback, (observed.get(this.callback) ?? new Set()).add(target));
   }
-  unobserve() {}
+  unobserve(target: Element) {
+    observed.get(this.callback)?.delete(target);
+  }
   disconnect() {
-    observers.delete(this.callback);
+    observed.delete(this.callback);
   }
 }
-/** Reports a size change to every observer; Mantine's element size reads `height` from it. */
-const resize = (height = stripRect) =>
+/** Reports a size change to the observers watching `target` (any target when omitted);
+ * Mantine's element size reads `height` from it. */
+const resize = (height = stripRect, target?: Element) =>
   act(async () => {
     const entry = { contentRect: { height, width: 300 } } as unknown as ResizeObserverEntry;
-    for (const callback of [...observers]) callback([entry], {} as ResizeObserver);
+    for (const [callback, targets] of [...observed]) {
+      if (!target || targets.has(target)) callback([entry], {} as ResizeObserver);
+    }
     await new Promise((resolve) => requestAnimationFrame(resolve));
   });
 
 beforeEach(() => {
   localStorage.clear();
-  observers.clear();
+  observed.clear();
+  enginePx = ENGINE_PX;
   Object.defineProperty(window, "ResizeObserver", { writable: true, value: ManualResizeObserver });
   installMatchMediaStub();
   Element.prototype.setPointerCapture = vi.fn();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       return {
-        height: this.getAttribute("data-testid") === "pinned-engine" ? ENGINE_PX : stripRect,
+        height: this.getAttribute("data-testid") === "pinned-engine" ? enginePx : stripRect,
       } as DOMRect;
     },
   );
@@ -401,4 +410,17 @@ test("with the content height the divider reports the strip's measured share", a
   await pin("tabs");
   await resize(180);
   expect(handle().getAttribute("aria-valuenow")).toBe(String(Math.round((180 / PANE_PX) * 100)));
+});
+
+test("an engine bar that grows in the strip's pane shrinks the strip's largest height, gap included", async () => {
+  await renderPanes({ engineIn: "tabs" });
+  const pane = host.querySelector<HTMLElement>('[data-pane="tabs"]')!;
+  pane.style.rowGap = `${GAP_PX}px`;
+  await pin("tabs", { tabs: 1 });
+  await resize(stripRect, pane);
+  expect(strip().style.height).toBe(`${PANE_PX - ENGINE_PX - GAP_PX - NEIGHBOUR_MIN_PX}px`);
+  // More engine lines: only the bar reports a new size.
+  enginePx = 200;
+  await resize(200, pane.querySelector('[data-testid="pinned-engine"]')!);
+  expect(strip().style.height).toBe(`${PANE_PX - 200 - GAP_PX - NEIGHBOUR_MIN_PX}px`);
 });
