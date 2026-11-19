@@ -1,4 +1,4 @@
-import { Center, Collapse, Flex, Group, NumberInput, Text, TextInput } from "@mantine/core";
+import { Center, Collapse, Flex, Group, Text, TextInput } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { EllipsisVertical, Search } from "lucide-react";
 import { DataTable } from "mantine-datatable";
@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
 import type { Player, PlayerSort } from "@/bindings";
+import DraftNumberInput from "@/components/common/DraftNumberInput";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { IconAction } from "@/components/common/IconAction";
 import { inlineFailureMessage } from "@/components/files/notifyError";
@@ -90,31 +91,34 @@ function PlayerTable() {
 
           <Collapse in={open}>
             <Group mt="md">
-              <NumberInput
+              <DraftNumberInput
                 label={t("Databases.Player.MinELO")}
-                value={query.range?.[0]}
-                onChange={(v) =>
-                  setQuery({
-                    ...query,
-                    range: [(v || 0) as number, query.range?.[1] ?? ELO_FILTER_MAX],
-                  })
-                }
+                value={query.range?.[0] ?? 0}
+                // An emptied field drops the bound; other non-number drafts are not stored.
+                onChange={(v) => {
+                  if (typeof v === "number" || v === "")
+                    setQuery({
+                      ...query,
+                      range: [v === "" ? 0 : v, query.range?.[1] ?? ELO_FILTER_MAX],
+                    });
+                }}
                 min={0}
                 max={ELO_FILTER_MAX}
                 step={100}
               />
-              <NumberInput
+              <DraftNumberInput
                 label={t("Databases.Player.MaxELO")}
-                value={query.range?.[1]}
+                value={query.range?.[1] ?? ELO_FILTER_MAX}
                 min={0}
                 max={ELO_FILTER_MAX}
                 step={100}
-                onChange={(v) =>
-                  setQuery({
-                    ...query,
-                    range: [query.range?.[0] ?? 0, (v === "" ? ELO_FILTER_MAX : v) as number],
-                  })
-                }
+                onChange={(v) => {
+                  if (typeof v === "number" || v === "")
+                    setQuery({
+                      ...query,
+                      range: [query.range?.[0] ?? 0, v === "" ? ELO_FILTER_MAX : v],
+                    });
+                }}
               />
             </Group>
           </Collapse>

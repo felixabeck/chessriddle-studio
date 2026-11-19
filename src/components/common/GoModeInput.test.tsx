@@ -16,7 +16,7 @@ vi.mock("@mantine/core", () => ({
   }: {
     value: number;
     rightSection?: React.ReactNode;
-    onChange: (value: number) => void;
+    onChange: (value: number | string) => void;
     "aria-label"?: string;
   }) => (
     <>
@@ -24,7 +24,10 @@ vi.mock("@mantine/core", () => ({
         type="number"
         aria-label={ariaLabel}
         value={value}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        // Mantine reports a cleared field as "", not as a number.
+        onChange={(event) =>
+          onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
+        }
       />
       {rightSection}
     </>
@@ -239,3 +242,21 @@ test.each([true, false])("the type Select cannot be deselected with gameMode %s"
     gameMode ? ["Time", "Depth", "Nodes"] : ["Time", "Depth", "Nodes", "Infinite"],
   );
 });
+
+test.each(["Depth", "Nodes"] as const)(
+  "clearing %s stores nothing until a number is typed",
+  (t) => {
+    const setGoMode = vi.fn();
+    act(() => {
+      root.render(<GoModeInput goMode={{ t, c: 20 }} setGoMode={setGoMode} />);
+    });
+    const input = host.querySelector("input")!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(setGoMode).not.toHaveBeenCalled();
+    // The field holds the cleared draft instead of snapping back to the stored limit.
+    expect(input.value).toBe("");
+  },
+);

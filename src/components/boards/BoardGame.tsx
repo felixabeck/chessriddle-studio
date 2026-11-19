@@ -5,7 +5,6 @@ import {
   Checkbox,
   Divider,
   Group,
-  NumberInput,
   Paper,
   Portal,
   ScrollArea,
@@ -56,6 +55,7 @@ import { uciNormalize } from "@/utils/chess";
 import { isPrefix } from "@/utils/misc";
 import { useTauriListener } from "@/platform/useTauriListener";
 import { getNodeAtPath, type GameHeaders, type TreeNode } from "@/utils/treeReducer";
+import DraftNumberInput from "../common/DraftNumberInput";
 import EngineLogsView from "../common/EngineLogsView";
 import FileInput from "../common/FileInput";
 import GameInfo from "../common/GameInfo";
@@ -1435,7 +1435,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                                 onClick={handleSelectOpeningBook}
                               />
                               {openingBookHandle && (
-                                <NumberInput
+                                <DraftNumberInput
                                   label={t("Board.Opponent.OpeningBookMaxPlies")}
                                   description={t("Board.Opponent.OpeningBookMaxPlies.Desc")}
                                   min={1}

@@ -29,6 +29,13 @@ function TimeInput({
 }) {
   const [internalTimeType, setInternalTimeType] = useState<TimeType>(defaultType ?? "ms");
   const timeType = type ?? internalTimeType;
+  const displayedValue = match(timeType)
+    .with("ms", () => value)
+    .with("s", () => value / 1000)
+    .with("m", () => value / 1000 / 60)
+    .with("h", () => value / 1000 / 60 / 60)
+    .exhaustive();
+  const draft = useNumberInputDraft(displayedValue);
   const handleTypeChange = (newType: TimeType) => {
     draft.reset();
     if (onTypeChange) {
@@ -37,14 +44,6 @@ function TimeInput({
       setInternalTimeType(newType);
     }
   };
-
-  const displayedValue = match(timeType)
-    .with("ms", () => value)
-    .with("s", () => value / 1000)
-    .with("m", () => value / 1000 / 60)
-    .with("h", () => value / 1000 / 60 / 60)
-    .exhaustive();
-  const draft = useNumberInputDraft(displayedValue);
 
   const toMilliseconds = (amount: number) =>
     Math.round(

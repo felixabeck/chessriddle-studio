@@ -6,6 +6,7 @@ import type { Engine, LocalEngine } from "@/utils/engines";
 
 const mocks = vi.hoisted(() => ({
   widgetProps: new Map<string, Record<string, unknown>>(),
+  spinBounds: new Map<string, { min?: number; max?: number }>(),
   fileExists: vi.fn(),
   navigate: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
@@ -122,19 +123,22 @@ vi.mock("@mantine/core", () => ({
     description,
     value,
     onChange,
+    onBlur,
     min,
     max,
     allowDecimal,
   }: {
     label: string;
     description?: React.ReactNode;
-    value: number;
+    value: number | string;
     onChange: (value: number | string) => void;
+    onBlur?: (event: React.FocusEvent<HTMLInputElement>) => void;
     min?: number;
     max?: number;
     allowDecimal?: boolean;
   }) => {
     mocks.widgetProps.set(label, { allowDecimal });
+    mocks.spinBounds.set(label, { min, max });
     return (
       <label>
         <span>{label}</span>
@@ -144,6 +148,7 @@ vi.mock("@mantine/core", () => ({
           value={value}
           min={min}
           max={max}
+          onBlur={onBlur}
           // Mantine reports a cleared field as "", not as a number.
           onChange={(event) =>
             onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
@@ -507,6 +512,41 @@ test("clearing a spin field or deselecting a combo never saves an empty option v
     { type: "string", name: "Hash", value: "64" },
     { type: "string", name: "Unknown Option", value: "5" },
   ]);
+});
+
+test("a cleared or out-of-range spin draft is held until blur and never saved", async () => {
+  const engine = makeEngine("engine-spin-draft");
+  engine.settings = [
+    { type: "string", name: "MultiPV", value: "1" },
+    { type: "string", name: "Threads", value: "1" },
+    { type: "string", name: "Hash", value: "64" },
+  ];
+  atomEngines = [engine];
+  mocks.getEngineConfig.mockResolvedValue({
+    name: "Stockfish",
+    options: [
+      { type: "spin", value: { name: "Hash", default: 16, min: 1, max: 1024 } },
+      { type: "spin", value: { name: "Unbounded", default: null, min: null, max: null } },
+    ],
+  });
+  await renderSettings();
+  await vi.waitFor(() => expect(optionInput("Memory (MB)")).not.toBeNull());
+  const memory = optionInput("Memory (MB)")!;
+
+  await act(async () => changeField(memory, ""));
+  // The draft stays on screen while it is edited ...
+  expect(memory.value).toBe("");
+  await act(async () => {
+    memory.focus();
+    memory.blur();
+  });
+  // ... and blur shows the saved value again.
+  expect(optionInput("Memory (MB)")!.value).toBe("64");
+
+  await act(async () => changeField(optionInput("Memory (MB)")!, "5000"));
+  expect(atomEngines[0].settings).toEqual(engine.settings);
+  // A spin that omits its bounds gets none, rather than a 0..0 range the blur clamp would write.
+  expect(mocks.spinBounds.get("Unbounded")).toEqual({ min: undefined, max: undefined });
 });
 
 test.each([false, true])(

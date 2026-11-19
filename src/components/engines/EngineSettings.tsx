@@ -245,19 +245,30 @@ export default function EngineSettings({
     const note = renderDescription(option.value.name, label, description);
     return match(option)
       .with({ type: "spin", value: P.select() }, (v: any) => {
+        // UCI lets a spin omit its bounds or default; a missing one stays missing rather than
+        // becoming 0, which the blur clamp would otherwise write back as the option's value.
+        const min = v.min == null ? undefined : Number(v.min);
+        const max = v.max == null ? undefined : Number(v.max);
+        const def = v.default == null ? null : Number(v.default);
         return (
           <DraftNumberInput
             key={v.name}
             label={label}
             description={note}
             inputWrapperOrder={["label", "input", "description", "error"]}
-            min={Number(v.min)}
-            max={Number(v.max)}
+            min={min}
+            max={max}
             allowDecimal={false}
             value={Number(v.value)}
-            // A cleared field reports "" mid-edit; only a number is saved, and blur shows the saved value again.
+            // A cleared or out-of-range draft is not saved: blur clamps it into range (that value
+            // arrives here and is saved) or shows the saved value again.
             onChange={(e) => {
-              if (typeof e === "number") setSetting(v.name, e, Number(v.default));
+              if (
+                typeof e === "number" &&
+                (min === undefined || e >= min) &&
+                (max === undefined || e <= max)
+              )
+                setSetting(v.name, e, def);
             }}
           />
         );

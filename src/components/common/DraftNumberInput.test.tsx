@@ -12,9 +12,11 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root;
 let host: HTMLDivElement;
 const stored = vi.fn();
+const blurred = vi.fn();
 
 beforeEach(() => {
   stored.mockReset();
+  blurred.mockReset();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -35,6 +37,7 @@ function Harness({ initial }: { initial: number }) {
       max={32}
       allowDecimal={false}
       value={value}
+      onBlur={blurred}
       onChange={(next) => {
         if (typeof next === "number" && next >= 1 && next <= 32) {
           stored(next);
@@ -78,6 +81,7 @@ test("a cleared field shows the stored value again on blur", async () => {
   await blur(input);
   expect(input.value).toBe("4");
   expect(stored).not.toHaveBeenCalled();
+  expect(blurred).toHaveBeenCalledOnce();
 });
 
 test("an out-of-range draft is clamped on blur and the clamped value is stored", async () => {
