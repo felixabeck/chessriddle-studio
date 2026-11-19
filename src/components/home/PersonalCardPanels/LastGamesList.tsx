@@ -147,7 +147,8 @@ function LastGameRow({
           </Text>
           <Text size="sm" truncate>
             {opponent}
-            {opponentElo != null ? ` (${opponentElo})` : ""}
+            {/* 0 is the database's unrated value ("-" or "0" in the PGN). */}
+            {opponentElo != null && opponentElo > 0 ? ` (${opponentElo})` : ""}
           </Text>
         </Group>
         <Group gap="xs" wrap="nowrap">

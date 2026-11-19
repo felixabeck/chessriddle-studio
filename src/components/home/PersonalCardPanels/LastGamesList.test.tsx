@@ -287,6 +287,16 @@ test("renders returned games in order and opens the clicked row", async () => {
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/" });
 });
 
+test("an opponent stored as unrated (0) shows no rating", async () => {
+  mocks.queryGames.mockResolvedValue({
+    data: [game({ id: 3, white: "Magnus", black: "Club player", black_elo: 0 })],
+    count: 1,
+  });
+  await renderList();
+  await vi.waitFor(() => expect(container.textContent).toContain("Club player"));
+  expect(container.textContent).not.toContain("(0)");
+});
+
 test("a pending open admits only one click across rows", async () => {
   const first = game({
     id: 2,

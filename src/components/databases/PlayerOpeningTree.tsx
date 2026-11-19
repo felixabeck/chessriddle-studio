@@ -165,6 +165,11 @@ function combineSourceResults(results: SourceResult[]) {
   };
 }
 
+/** 0 is the database's unrated value ("-" or "0" in the PGN), shown like a missing rating. */
+export function formatOpponentRating(elo: number | null | undefined) {
+  return elo != null && elo > 0 ? elo : "–";
+}
+
 function failureText({ label, error }: { label: string; error: string }) {
   return label ? `${label}: ${error}` : error;
 }
@@ -593,7 +598,9 @@ function OpeningTree({
                             <td>
                               {color === "white" ? game.black : game.white}
                               <Text size="xs" c="dimmed">
-                                {(color === "white" ? game.black_elo : game.white_elo) ?? "–"}
+                                {formatOpponentRating(
+                                  color === "white" ? game.black_elo : game.white_elo,
+                                )}
                               </Text>
                             </td>
                             <td>{game.result}</td>

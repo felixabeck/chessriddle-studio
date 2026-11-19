@@ -30,7 +30,11 @@ import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { getNodeAtPath } from "@/utils/treeReducer";
 import { databaseHandleKey } from "@/utils/db";
-import PlayerOpeningTree, { AccountOpeningTree, type OpeningTreeSource } from "./PlayerOpeningTree";
+import PlayerOpeningTree, {
+  AccountOpeningTree,
+  formatOpponentRating,
+  type OpeningTreeSource,
+} from "./PlayerOpeningTree";
 
 const mocks = vi.hoisted(() => ({
   searchPosition: vi.fn(),
@@ -273,6 +277,13 @@ test.each([
     player1: undefined,
     player2: 42,
   });
+});
+
+test("an opponent rating of 0 or none reads as unrated", () => {
+  expect(formatOpponentRating(1800)).toBe(1800);
+  expect(formatOpponentRating(0)).toBe("–");
+  expect(formatOpponentRating(null)).toBe("–");
+  expect(formatOpponentRating(undefined)).toBe("–");
 });
 
 test("the tree enlarges W/D/L labels, shows 25% and hides 15%", async () => {

@@ -4292,7 +4292,7 @@ impl PlayerStatisticsAccumulator {
 
         // Only rated games with complete, valid calendar dates participate in chronological
         // rating selection.
-        let rated_complete_date = player_elo.filter(|_| {
+        let rating_on_complete_date = player_elo.filter(|_| {
             date.len() == 10
                 && date.bytes().enumerate().all(|(index, byte)| {
                     if index == 4 || index == 7 {
@@ -4303,7 +4303,7 @@ impl PlayerStatisticsAccumulator {
                 })
                 && NaiveDate::parse_from_str(&date, "%Y.%m.%d").is_ok()
         });
-        if let Some(player_elo) = rated_complete_date {
+        if let Some(player_elo) = rating_on_complete_date {
             let candidate = LatestRatingData {
                 time_control: time_control.clone(),
                 date: date.clone(),
@@ -4442,8 +4442,6 @@ fn player_statistics_site_group<'a>(
         })
 }
 
-const UNKNOWN_PGN_DATE: &str = "????.??.??";
-
 fn evaluate_player_statistics_row(
     row: &PlayerStatisticsRow,
     id: i32,
@@ -4464,7 +4462,7 @@ fn evaluate_player_statistics_row(
     let date = row
         .date
         .clone()
-        .unwrap_or_else(|| UNKNOWN_PGN_DATE.to_string());
+        .unwrap_or_else(|| GameSignature::ABSENT_DATE.to_string());
     let Some(result) = row
         .outcome
         .as_deref()
@@ -13772,7 +13770,7 @@ mod tests {
             daily,
             [
                 ("2026.08.09", 3, 0, 1, Some(2800)),
-                (UNKNOWN_PGN_DATE, 1, 0, 0, Some(2800)),
+                (GameSignature::ABSENT_DATE, 1, 0, 0, Some(2800)),
             ]
         );
         let openings: Vec<_> = group
@@ -13812,12 +13810,13 @@ mod tests {
             let opponent = create_player(&mut db, "Opponent").unwrap();
             let event = create_event(&mut db, "Event", None).unwrap();
             let site = create_site(&mut db, "Site").unwrap();
-            for (date, player_elo, result) in [
-                ("2026.03.01", Some(2100), "1-0"),
-                ("2026.03.01", Some(0), "1-0"),
-                ("2026.03.02", Some(0), "0-1"),
-                ("2026.03.03", None, "1/2-1/2"),
-                ("2026.03.03", Some(0), "1-0"),
+            for (date, is_player_white, player_elo, result) in [
+                ("2026.03.01", true, Some(2100), "1-0"),
+                ("2026.03.01", true, Some(0), "1-0"),
+                ("2026.03.02", true, Some(0), "0-1"),
+                ("2026.03.03", true, None, "1/2-1/2"),
+                ("2026.03.03", true, Some(0), "1-0"),
+                ("2026.03.04", false, Some(0), "0-1"),
             ] {
                 insert_player_statistics_game(
                     &mut db,
@@ -13826,7 +13825,7 @@ mod tests {
                         opponent_id: opponent.id,
                         event_id: event.id,
                         site_id: site.id,
-                        is_player_white: true,
+                        is_player_white,
                         player_elo,
                         opponent_elo: Some(1900),
                         moves: Vec::new(),
@@ -13861,6 +13860,7 @@ mod tests {
                 ("2026.03.01", 2, 0, 0, Some(2100)),
                 ("2026.03.02", 0, 0, 1, None),
                 ("2026.03.03", 1, 1, 0, None),
+                ("2026.03.04", 1, 0, 0, None),
             ]
         );
         // The later unrated games never replace the latest rating.
@@ -13869,6 +13869,12 @@ mod tests {
         assert_eq!(group.latest[0].player_elo, 2100);
         let white = group.colors.iter().find(|row| row.is_player_white).unwrap();
         assert_eq!((white.won, white.drawn, white.lost), (3, 1, 1));
+        let openings: Vec<_> = group
+            .openings
+            .iter()
+            .map(|row| (row.is_player_white, row.won, row.drawn, row.lost))
+            .collect();
+        assert_eq!(openings, [(false, 1, 0, 0), (true, 3, 1, 1)]);
     }
 
     #[test]
