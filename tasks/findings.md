@@ -27940,3 +27940,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** build the plugin with `StateFlags::all() & !StateFlags::VISIBLE` so visibility stays owned by `close_splashscreen`. Two obligations follow. (1) Today the plugin's early `show()` is also what reveals the window when the renderer never reaches `closeSplashscreen` (bundle fails to load, a script error before `bootstrap.tsx`); with the flag removed that case would leave an invisible running process, so the same change needs a native reveal on that path (a bounded fallback owned by setup, not a renderer promise) per `.claude/rules/async-resource-invariants.md`. (2) After the flag change, observe a dark start in the real app (`pnpm verify:app` or the installed build, WebKitGTK): only if a blank frame is still visible at `show()` add a pre-React background from the ChessRiddle surface tokens in `DESIGN.md` (not upstream's `#1A1B1E`). The CSP is `script-src 'self'`, so upstream's inline `<script>` in `index.html` is not an option as written; a same-origin classic script or a stylesheet is, and the CSP is not widened.
 * **Proof:** a source/unit assertion beside the existing setup pins in `main.rs` (`:3931`) that the window-state plugin is built without `VISIBLE`, plus a `close_splashscreen_tests` case for the fallback reveal; real-app observation of a dark start recorded in the closing note.
 * **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### The puzzle board and the ChessRiddle tactics board ignore the "show piece destinations" setting
+
+* **ID:** f-20261120-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (audit of upstream En Croissant 0.16 against master c20f15301; upstream fixed its puzzle board in 0702da96e, #839)
+* **Where:** `src/components/puzzles/PuzzleBoardSurface.tsx:76-97` builds the chessground `movable` config without `showDests`; `src/chessground/Chessground.tsx:152-207` does not inject it; chessground defaults `movable.showDests` to `true`. Only `src/components/boards/Board.tsx:198,755` reads `showDestsAtom`. `src/components/chessriddle/ChessRiddleTraining.tsx:151` renders the same surface.
+* **Defect:** the setting is honoured on the analysis and play boards and silently ignored on both puzzle surfaces.
+* **Failure scenario:** Settings → Board → turn "piece destinations" off → open an offline puzzle (or ChessRiddle training) → select a piece → the legal-move dots are still drawn, giving the hint the user switched off.
+* **Fix:** read `showDestsAtom` in `PuzzleBoardSurface` and pass it as `movable.showDests`; this covers both callers.
+* **Proof:** a `PuzzleBoardSurface.test.tsx` case that sets `showDestsAtom` to `false` and expects the config handed to Chessground to carry `movable.showDests === false` (fails at HEAD: the key is absent).
+* **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
