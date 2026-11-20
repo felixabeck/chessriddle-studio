@@ -27913,7 +27913,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### A Chess.com account whose stats omit the rating deviation cannot be added or refreshed
 
-* **ID:** f-20261120-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261120-03 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (audit of upstream En Croissant 0.16 against master c20f15301; upstream fixed the same line in 8928a59dc, #1017, for its issue #842)
 * **Where:** `src/utils/chess.com/api.tsx:14-25` (`ChessComPerf.last.rd: z.number()`), consumed by `getChessComAccount` at `:35-50`.
@@ -27923,6 +27923,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** `rd: z.number().optional()`. Keep the rest of the schema strict.
 * **Proof:** a Vitest case in the existing Chess.com API test file that mocks `tauri.getPublicChessComJson` with a `chess_blitz.last` object lacking `rd` and expects `getChessComAccount` to return the parsed stats (fails at HEAD: returns `null`).
 * **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
+* **Handled (2026-11-20, Claude Code orchestration on Felix's order, Opus 5.5 write leaf, worktree build/upstream-016-adoptions-20261120):** commit "fix(accounts): accept Chess.com stats without a rating deviation". `ChessComPerf.last.rd` is `z.number().optional()`; the rest of the schema stays strict. `src/utils/chess.com/api.test.ts` gains a case with a `chess_blitz.last` lacking `rd` (returned `null` before the change) and a case showing a block without `rating` is still rejected with the notification. Still not checked against a live Chess.com response without `rd`.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5a898924077a765557372a9bb0208dd90617b50f4c13a08247e03ef3cae00f80","header_sha256":"07539dfa5fff15cb31da7c6905b30fb8a19c004718f33f864dcb799a4e8a3749","header_status":"handled","input_sha256":"da8f3b0d51c33df69e13894273a278eb27fc5f42d37ed10298f2742ccc9a0256","kind":"mutation-receipt","operation":"17e03f0438c63f28197f403dd2fa0f78d4e3a3fb825ec150796a648a7d44d495","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-03"],"target":"f-20261120-03","v":1} -->
 
 ---
 
