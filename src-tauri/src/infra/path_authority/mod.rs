@@ -47,8 +47,6 @@ mod catalog_install;
 mod databases;
 mod dialogs;
 mod engine_attachments;
-#[cfg(target_os = "macos")]
-mod engine_launch;
 mod listing;
 mod registry;
 mod shared;
@@ -57,17 +55,17 @@ use dialogs::DialogGrant;
 use engine_attachments::ActiveImageIssuances;
 pub(crate) use engine_attachments::{engine_image_reader_for, read_engine_image_bytes};
 #[cfg(target_os = "macos")]
-pub(crate) use engine_launch::{
+pub(crate) use engine_attachments::{
     initialize_engine_launch_root, EngineLaunchRoot, MaterializedFile, ENGINE_EXECUTABLE_LEAF_MODE,
     ENGINE_RESOURCE_LEAF_MODE,
 };
 #[cfg(all(test, target_os = "macos"))]
-use engine_launch::{
+use engine_attachments::{
     set_engine_launch_before_clone_hook, set_engine_launch_lock_created_hook,
     sweep_engine_launch_root, ENGINE_LAUNCH_FAILURES, ENGINE_LAUNCH_LOCK_MODE,
 };
 #[cfg(all(test, target_os = "macos"))]
-pub(crate) use engine_launch::{set_engine_launch_failure, EngineLaunchFailure};
+pub(crate) use engine_attachments::{set_engine_launch_failure, EngineLaunchFailure};
 pub(crate) use listing::CapabilityDirectory;
 #[cfg(test)]
 use listing::DirectoryListingSnapshot;

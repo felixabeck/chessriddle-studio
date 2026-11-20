@@ -24,10 +24,6 @@ pub(crate) const PRODUCTION_FILES: &[(&str, &str)] = &[
         include_str!("engine_attachments.rs"),
     ),
     (
-        "infra/path_authority/engine_launch.rs",
-        include_str!("engine_launch.rs"),
-    ),
-    (
         "infra/path_authority/listing.rs",
         include_str!("listing.rs"),
     ),
