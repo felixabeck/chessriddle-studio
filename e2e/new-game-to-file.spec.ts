@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import {
     test,
     expect,
@@ -50,6 +51,27 @@ function repertoireCommands() {
             result: { entries: [repertoireFile], unread: [] },
         },
     });
+}
+
+/**
+ * Waits until the app's 2 s file revision poll has read the bound file twice — a second read
+ * starts only after the first one's outcome was applied — and asserts the tab still shows its
+ * board. A stale revision would reconcile the tab against the fixture game and replace the board
+ * with the "different game" panel, but only on a run slow enough to reach the poll.
+ */
+async function expectBoundTabSurvivesRevisionPoll(page: Page) {
+    const revisionReads = () =>
+        page.evaluate(
+            () =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .filter((item) => item.command === "file_revision").length,
+        );
+    await expect.poll(revisionReads, { timeout: 8_000 }).toBeGreaterThan(1);
+    await expect(page.getByText("The file now has a different game at this position.")).toHaveCount(
+        0,
+    );
+    await expect(page.locator("cg-board").first()).toBeVisible();
 }
 
 test("Library New game opens a fileDraft, asks for the line name and appends on explicit save", async ({
@@ -124,20 +146,8 @@ test("Library New game opens a fileDraft, asks for the line name and appends on 
     expect(written?.args.pgn).toContain('[White "Two Knights"]');
     expect(written?.args.pgn).toContain('[Black "3...Bg4"]');
     expect((await activeWorkspaceTab(page))?.name).toBe("Two Knights");
-    // The bound tab survives the app's file revision poll: the written revision verifies it.
-    // A second read starts only after the first one's outcome was applied.
-    const revisionReads = () =>
-        page.evaluate(
-            () =>
-                window.__E2E_TAURI__
-                    .invocations()
-                    .filter((item) => item.command === "file_revision").length,
-        );
-    await expect.poll(revisionReads, { timeout: 8_000 }).toBeGreaterThan(1);
+    await expectBoundTabSurvivesRevisionPoll(page);
     await expect(page.getByRole("button", { name: "Two Knights", exact: true })).toBeVisible();
-    await expect(page.getByText("The file now has a different game at this position.")).toHaveCount(
-        0,
-    );
 });
 
 test("Save to file or database appends to a repertoire file and rebinds the tab", async ({
@@ -187,4 +197,5 @@ test("Save to file or database appends to a repertoire file and rebinds the tab"
             expected: { kind: "append" },
         },
     });
+    await expectBoundTabSurvivesRevisionPoll(page);
 });
