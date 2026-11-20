@@ -19,6 +19,8 @@ const atoms = vi.hoisted(() => ({
   invisible: Symbol("invisible"),
   comments: Symbol("comments"),
   variations: Symbol("variations"),
+  diagrams: Symbol("diagrams"),
+  moveHighlight: Symbol("move-highlight"),
   table: Symbol("table"),
   keyMap: Symbol("key-map"),
 }));
@@ -37,6 +39,8 @@ vi.mock("@/state/atoms", () => ({
   invisibleFamily: () => atoms.invisible,
   showCommentsFamily: () => atoms.comments,
   showVariationsFamily: () => atoms.variations,
+  showDiagramsFamily: () => atoms.diagrams,
+  moveHighlightAtom: atoms.moveHighlight,
   tableViewAtom: atoms.table,
 }));
 vi.mock("@/state/keybinds", () => ({ keyMapAtom: atoms.keyMap }));
@@ -67,6 +71,8 @@ vi.mock("lucide-react", () => {
     MessageSquareOff: Icon,
     Eye: Icon,
     EyeOff: Icon,
+    Grid2x2: Icon,
+    Grid2x2X: Icon,
     TableProperties: Icon,
     List: Icon,
     Minus: Icon,
@@ -124,6 +130,11 @@ vi.mock("@mantine/core", () => {
     Stack: element,
     Table: table,
     Text: ({ children, ...props }: any) => <span {...props}>{children}</span>,
+    UnstyledButton: ({ children, ...props }: any) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
     useComputedColorScheme: () => "light",
   };
 });
@@ -657,6 +668,7 @@ test("scrolls to a deep current node row after navigation", async () => {
   const model = buildNotationRows(state.root, {
     showVariations: true,
     showComments: false,
+    showDiagrams: true,
     tableView: false,
   });
   const targetRow = model.rowForNode.get(target);
@@ -724,6 +736,7 @@ test("scrolls to the nearest listed ancestor inside a collapsed variation", asyn
   const collapsedModel = buildNotationRows(state.root, {
     showVariations: true,
     showComments: false,
+    showDiagrams: true,
     tableView: false,
     collapsedVariations: new Set([variationCollapseKey(state.root, [0])]),
   });
@@ -808,6 +821,7 @@ test.each([false, true])(
     const model = buildNotationRows(state.root, {
       showVariations: true,
       showComments: true,
+      showDiagrams: true,
       tableView,
     });
     const firstLevelToggle = model.rows.find((row) => row.type === "variation" && row.depth === 0);

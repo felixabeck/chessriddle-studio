@@ -3,8 +3,6 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import { Box, Center, Group, Text, useMantineTheme, VisuallyHidden } from "@mantine/core";
 import { ChevronRight } from "lucide-react";
 import {
-  isNormal,
-  kingCastlesTo,
   makeSquare,
   makeUci,
   type NormalMove,
@@ -12,7 +10,6 @@ import {
   type Piece,
   parseSquare,
   parseUci,
-  squareRank,
   type SquareName,
 } from "chessops";
 import { chessgroundDests, chessgroundMove } from "chessops/compat";
@@ -50,7 +47,13 @@ import classes from "@/styles/Chessboard.module.css";
 import { ANNOTATION_INFO, isBasicAnnotation, nagGlyphs } from "@/utils/annotation";
 import { getVariationLine } from "@/utils/chess";
 import { displayedScore } from "@/utils/treeReducer";
-import { normalizeEditedFen, positionFromFen, translateChessopsError } from "@/utils/chessops";
+import {
+  lastMoveSquares,
+  lastMoveTarget,
+  normalizeEditedFen,
+  positionFromFen,
+  translateChessopsError,
+} from "@/utils/chessops";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import ShowMaterial from "../common/ShowMaterial";
 import { TreeStateContext, useVariationChooser } from "@/components/common/TreeStateContext";
@@ -425,20 +428,8 @@ function Board({
 
   useHotkeys(keyMap.TOGGLE_EVAL_BAR.keys, () => setEvalOpen((e) => !e), backgroundHotkeyOptions);
 
-  let square = currentNode.move?.to;
-  if (currentNode.move && isNormal(currentNode.move)) {
-    const color = squareRank(currentNode.move.from) === 0 ? "white" : "black";
-    if (currentNode.san?.startsWith("O-O-O")) {
-      square = kingCastlesTo(color, "a");
-    } else if (currentNode.san?.startsWith("O-O")) {
-      square = kingCastlesTo(color, "h");
-    }
-  }
-
-  const lastMove =
-    currentNode.move && square !== undefined
-      ? [chessgroundMove(currentNode.move)[0], makeSquare(square)!]
-      : undefined;
+  const square = lastMoveTarget(currentNode);
+  const lastMove = lastMoveSquares(currentNode);
 
   const topPlayer = orientation === "white" ? headers.black : headers.white;
   const bottomPlayer = orientation === "white" ? headers.white : headers.black;

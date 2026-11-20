@@ -1,8 +1,12 @@
+import type { Key } from "@lichess-org/chessground/types";
 import {
     Castles,
     Chess,
     type Color,
     IllegalSetup,
+    isNormal,
+    kingCastlesTo,
+    makeSquare,
     type Move,
     type PositionError,
     opposite,
@@ -12,6 +16,7 @@ import {
     squareFile,
     squareRank,
 } from "chessops";
+import { chessgroundMove } from "chessops/compat";
 import { type FenError, InvalidFen, makeFen, parseFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import type { TFunction } from "i18next";
@@ -207,4 +212,27 @@ export function getCastlingSquare(setup: Setup, color: "w" | "b", side: "q" | "k
             castlingSide
         ]
     );
+}
+
+type MovedNode = { move: Move | null; san: string | null };
+
+/**
+ * The square the move that led to a node arrived on. chessops encodes castling as
+ * king-takes-rook, so a castling move arrives on the king's destination square instead.
+ */
+export function lastMoveTarget(node: MovedNode): Square | undefined {
+    if (!node.move) return undefined;
+    if (isNormal(node.move)) {
+        const color = squareRank(node.move.from) === 0 ? "white" : "black";
+        if (node.san?.startsWith("O-O-O")) return kingCastlesTo(color, "a");
+        if (node.san?.startsWith("O-O")) return kingCastlesTo(color, "h");
+    }
+    return node.move.to;
+}
+
+/** The squares a board highlights for the move that led to a node. */
+export function lastMoveSquares(node: MovedNode): Key[] | undefined {
+    const target = lastMoveTarget(node);
+    if (!node.move || target === undefined) return undefined;
+    return [chessgroundMove(node.move)[0], makeSquare(target)];
 }

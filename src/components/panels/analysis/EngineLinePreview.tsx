@@ -7,15 +7,12 @@ import { parseSan } from "chessops/san";
 import { useAtomValue } from "jotai";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { Chessground } from "@/chessground/Chessground";
+import { MINI_BOARD_SIZE, MiniBoard } from "@/components/common/MiniBoard";
 import { moveHighlightAtom, previewBoardOnHoverAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { positionFromFen } from "@/utils/chessops";
 import { backgroundHotkeyOptions, ENGINE_LINE_PREVIEW_ATTRIBUTE } from "@/utils/keyboardOwnership";
 import EngineLineMove from "./EngineLineMove";
-
-/** Edge length of the hover preview board, in pixels. */
-const PREVIEW_SIZE = 200;
 
 /** The preview index of the line's start position, before its first move; only keys reach it. */
 const LINE_START = -1;
@@ -54,9 +51,9 @@ function startPosition(fen: string): PreviewPosition | null {
  * line) pinned to the bottom of the window, so the board is never cut off.
  */
 export function previewTop(top: number, bottom: number, viewportHeight: number) {
-  if (bottom + PREVIEW_SIZE <= viewportHeight) return bottom;
-  if (top - PREVIEW_SIZE >= 0) return top - PREVIEW_SIZE;
-  return Math.max(0, viewportHeight - PREVIEW_SIZE);
+  if (bottom + MINI_BOARD_SIZE <= viewportHeight) return bottom;
+  if (top - MINI_BOARD_SIZE >= 0) return top - MINI_BOARD_SIZE;
+  return Math.max(0, viewportHeight - MINI_BOARD_SIZE);
 }
 
 function previewPlacement(anchor: HTMLElement | null) {
@@ -152,7 +149,7 @@ export function useEngineLinePreview({
       <Box
         data-testid="engine-line-preview"
         {...{ [ENGINE_LINE_PREVIEW_ATTRIBUTE]: true }}
-        w={PREVIEW_SIZE}
+        w={MINI_BOARD_SIZE}
         // The board may overlap the hovered move (a clamped placement); it must not take
         // the pointer from it, or the line's mouse-leave would dismiss the board.
         // It opens above a line below the board (the pinned engine) and so over the main
@@ -160,20 +157,12 @@ export function useEngineLinePreview({
         style={{ ...placement, pointerEvents: "none", zIndex: getDefaultZIndex("popover") }}
         pos="fixed"
       >
-        <Chessground
+        <MiniBoard
           fen={shown.fen}
-          coordinates={false}
-          viewOnly
           orientation={orientation}
           lastMove={moveHighlight ? shown.lastMove : undefined}
           turnColor={shown.turn}
           check={moveHighlight && shown.isCheck}
-          drawable={{
-            enabled: true,
-            visible: true,
-            defaultSnapToValidMove: true,
-            eraseOnMovablePieceClick: true,
-          }}
         />
       </Box>
     </Portal>

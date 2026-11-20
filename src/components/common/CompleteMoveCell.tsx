@@ -1,6 +1,6 @@
 import { useOwnerTab } from "@/state/tabScope";
 import { Box, Menu, Text } from "@mantine/core";
-import { Merge, ArrowUpRight, Copy, Flag, Trash2 } from "lucide-react";
+import { Merge, ArrowUpRight, Copy, Flag, Grid2x2, Trash2 } from "lucide-react";
 import equal from "fast-deep-equal";
 import { createContext, memo, useContext, useMemo, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -187,6 +187,7 @@ function CompleteMoveCell({
             store={store}
             root={root}
             path={path}
+            hasDiagram={node.diagram === true}
             move={move}
             annotations={annotations}
             isStart={isStart}
@@ -229,6 +230,7 @@ function TranspositionAction({ onClick }: { onClick: () => void }) {
 }
 
 type MoveMenuActions = {
+  toggleDiagram?: () => void;
   markGameEnd?: () => void;
   markStart?: () => void;
   promoteToMainline?: () => void;
@@ -240,15 +242,25 @@ type MoveMenuActions = {
 function MoveActionItems({
   actions,
   isGameEnd,
+  hasDiagram,
   onAction,
 }: {
   actions: MoveMenuActions;
   isGameEnd?: boolean;
+  hasDiagram?: boolean;
   onAction: (action: () => void) => void;
 }) {
   const { t } = useTranslation();
   return (
     <>
+      {actions.toggleDiagram && (
+        <Menu.Item
+          leftSection={<Grid2x2 size="0.875rem" />}
+          onClick={() => onAction(actions.toggleDiagram!)}
+        >
+          {hasDiagram ? t("Notation.RemoveDiagram") : t("Notation.AddDiagram")}
+        </Menu.Item>
+      )}
       {actions.markGameEnd && (
         <Menu.Item
           leftSection={<Flag size="0.875rem" />}
@@ -299,6 +311,7 @@ function OpenMoveMenu({
   store,
   root,
   path,
+  hasDiagram,
   move,
   annotations,
   isStart,
@@ -311,6 +324,7 @@ function OpenMoveMenu({
   store: NonNullable<React.ContextType<typeof TreeStateContext>>;
   root: TreeNode;
   path: number[];
+  hasDiagram: boolean;
   move: string;
   annotations: Annotation[];
   isStart: boolean;
@@ -348,6 +362,7 @@ function OpenMoveMenu({
       <Menu.Dropdown>
         <MoveActionItems
           actions={{
+            toggleDiagram: () => actions.toggleDiagram(path),
             markGameEnd:
               currentTab && mainline
                 ? () => {
@@ -362,6 +377,7 @@ function OpenMoveMenu({
             delete: () => actions.deleteMove(path),
           }}
           isGameEnd={isGameEnd}
+          hasDiagram={hasDiagram}
           onAction={(action) => {
             if (store.getState().root !== root) return;
             action();

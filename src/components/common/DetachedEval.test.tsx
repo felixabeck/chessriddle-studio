@@ -327,7 +327,7 @@ const moveButton = (san: string, root: ParentNode = h.host) =>
   [...root.querySelectorAll("button")].find((b) => b.textContent === san)!;
 const previewFen = () =>
   document
-    .querySelector("[data-testid=engine-line-preview] [data-preview-fen]")
+    .querySelector("[data-testid=engine-line-preview] [data-mini-board] [data-preview-fen]")
     ?.getAttribute("data-preview-fen");
 
 test("DetachedEval header shows the best line's depth and advantage symbol", async () => {

@@ -52,6 +52,7 @@ describe("buildNotationRows", () => {
                 const model = buildNotationRows(tree.root, {
                     tableView: false,
                     showComments: false,
+                    showDiagrams: true,
                     showVariations: true,
                     collapsedVariations: collapsed
                         ? new Set([variationCollapseKey(tree.root, [0, 0])])
@@ -88,6 +89,7 @@ describe("buildNotationRows", () => {
         const model = buildNotationRows(root, {
             tableView: false,
             showComments: false,
+            showDiagrams: true,
             showVariations: true,
         });
         const row = model.rows[model.rowForNode.get(resumed)!];
@@ -108,6 +110,7 @@ describe("buildNotationRows", () => {
             const model = buildNotationRows(tree.root, {
                 tableView,
                 showComments: true,
+                showDiagrams: true,
                 showVariations: true,
             });
             const boundary = model.rows.findIndex((row) => row.type === "gameEnd");
@@ -150,6 +153,7 @@ describe("buildNotationRows", () => {
             const model = buildNotationRows(tree.root, {
                 tableView,
                 showComments: false,
+                showDiagrams: true,
                 showVariations: false,
             });
             expect(model.rows[1]).toEqual({ type: "gameEnd", hasAnalysis: true });
@@ -176,6 +180,7 @@ describe("buildNotationRows", () => {
             const model = buildNotationRows(tree.root, {
                 tableView,
                 showComments: true,
+                showDiagrams: true,
                 showVariations: true,
                 collapsedVariations: new Set(["a3 a6 h3", variationCollapseKey(tree.root, [0])]),
             });
@@ -197,6 +202,7 @@ describe("buildNotationRows", () => {
             const model = buildNotationRows(tree.root, {
                 tableView,
                 showComments: true,
+                showDiagrams: true,
                 showVariations: true,
             });
             expect(model.rows.some((row) => row.type === "gameEnd")).toBe(false);
@@ -239,6 +245,7 @@ describe("buildNotationRows", () => {
         const model = buildNotationRows(root, {
             tableView: false,
             showComments: false,
+            showDiagrams: true,
             showVariations: true,
             collapsedVariations: new Set(["e4 e5 Nf3"]),
         });
@@ -269,6 +276,7 @@ describe("buildNotationRows", () => {
         const result = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: false,
         });
 
@@ -287,6 +295,7 @@ describe("buildNotationRows", () => {
         const hidden = buildNotationRows(tree.root, {
             showVariations: false,
             showComments: false,
+            showDiagrams: true,
             tableView: false,
         });
         expect(moveNames(hidden.rows)).toEqual(["e4", "e5", "Nf3", "Nc6", "Bb5", "a6"]);
@@ -295,6 +304,7 @@ describe("buildNotationRows", () => {
         const shown = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: false,
         });
         expect(
@@ -305,6 +315,7 @@ describe("buildNotationRows", () => {
         const collapsed = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: false,
             collapsedVariations: new Set([variationCollapseKey(tree.root, [0])]),
         });
@@ -324,6 +335,7 @@ describe("buildNotationRows", () => {
         const rows = buildNotationRows(root, {
             showVariations: false,
             showComments: false,
+            showDiagrams: true,
             tableView: false,
         }).rows.filter((row) => row.type === "moves");
         expect(rows.map((row) => row.moves.length)).toEqual([
@@ -338,7 +350,12 @@ describe("buildNotationRows", () => {
         const mainline = [tree.e4, tree.e5, tree.nf3, tree.nc6, tree.bb5, tree.a6];
         for (const node of mainline) node.comment = `After ${node.san}`;
         tree.nc6.comment = "After Nc6\n\nA second paragraph";
-        const options = { showVariations: false, showComments: true, tableView: false };
+        const options = {
+            showVariations: false,
+            showComments: true,
+            showDiagrams: true,
+            tableView: false,
+        };
         const inline = buildNotationRows(tree.root, options);
         expect(inline.rows).toHaveLength(1);
         expect(inline.rows[0]).toMatchObject({
@@ -368,6 +385,7 @@ describe("buildNotationRows", () => {
         const result = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: true,
         });
 
@@ -394,6 +412,7 @@ describe("buildNotationRows", () => {
             const result = buildNotationRows(tree.root, {
                 showVariations: true,
                 showComments: true,
+                showDiagrams: true,
                 tableView: true,
             });
 
@@ -434,6 +453,7 @@ describe("buildNotationRows", () => {
         const result = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: true,
         });
         const tableRows = result.rows.filter((row) => row.type === "table");
@@ -451,6 +471,7 @@ describe("buildNotationRows", () => {
         const rows = buildNotationRows(root, {
             showVariations: false,
             showComments: false,
+            showDiagrams: true,
             tableView: false,
         }).rows;
         expect(rows[0]).toMatchObject({ type: "moves" });
@@ -472,6 +493,7 @@ describe("buildNotationRows", () => {
             const model = buildNotationRows(root, {
                 tableView,
                 showComments: false,
+                showDiagrams: true,
                 showVariations: false,
             });
             expect(end.halfMoves).toBe(46);
@@ -514,6 +536,7 @@ describe("buildNotationRows", () => {
         const result = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: false,
         });
         const expected = new Map<TreeNode, number[]>();
@@ -544,6 +567,7 @@ describe("buildNotationRows", () => {
         const result = buildNotationRows(root, {
             showVariations: false,
             showComments: false,
+            showDiagrams: true,
             tableView: false,
         });
         expect(result.rows.filter((row) => row.type === "moves").length).toBeGreaterThan(700);
@@ -560,6 +584,7 @@ describe("variation starting comments", () => {
         const result = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: false,
         });
 
@@ -574,7 +599,12 @@ describe("variation starting comments", () => {
     test("add no row when the starting comment is only commands or comments are hidden", () => {
         const tree = variedTree();
         tree.d4.startingComment = "[%evp 0,34]";
-        const options = { showVariations: true, showComments: true, tableView: false };
+        const options = {
+            showVariations: true,
+            showComments: true,
+            showDiagrams: true,
+            tableView: false,
+        };
         const commandsOnly = buildNotationRows(tree.root, options);
         expect(commandsOnly.rows.some((r) => r.type === "comment")).toBe(false);
         const commandRow = commandsOnly.rows[commandsOnly.rowForNode.get(tree.d4)!];
@@ -604,6 +634,7 @@ describe("starting comments off a variation's first move", () => {
         const result = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: false,
         });
 
@@ -633,6 +664,7 @@ describe("starting comments off a variation's first move", () => {
         const result = buildNotationRows(tree.root, {
             showVariations: true,
             showComments: true,
+            showDiagrams: true,
             tableView: true,
         });
 
@@ -640,5 +672,136 @@ describe("starting comments off a variation's first move", () => {
             type: "comment",
             comment: "Before this move",
         });
+    });
+});
+
+describe("diagram rows", () => {
+    const options = {
+        showVariations: true,
+        showComments: true,
+        showDiagrams: true,
+        tableView: false,
+    };
+    const shape = (rows: NotationRow[]) =>
+        rows.map((row) => {
+            if (row.type === "moves") return row.moves.map((move) => move.node.san).join(" ");
+            if (row.type === "table")
+                return `${row.white?.node.san ?? "…"}|${row.black?.node.san ?? (row.splitRow ? "…" : "")}`;
+            if (row.type === "diagram") return `[${row.node.san ?? "root"}:${row.comment}]`;
+            return row.type;
+        });
+
+    test("an inline diagram ends its move's row, sits before that move's alternatives and carries the comment", () => {
+        const tree = variedTree();
+        tree.e5.diagram = true;
+        tree.e5.comment = "Key";
+        const { rows } = buildNotationRows(tree.root, options);
+        expect(shape(rows)).toEqual([
+            "e4",
+            "variation",
+            "d4",
+            "e5",
+            "[e5:Key]",
+            "variation",
+            "c5",
+            "Nf3 Nc6 Bb5 a6",
+        ]);
+        const e5Row = rows[3];
+        if (e5Row.type !== "moves") throw new Error("expected a moves row");
+        // The cell leaves the comment to the diagram row.
+        expect(e5Row.moves[0].diagram).toBe(true);
+        const resumed = rows[7];
+        if (resumed.type !== "moves") throw new Error("expected a moves row");
+        expect(resumed.moves[0].first).toBe(true);
+        expect(resumed.moves[0].diagram).toBe(false);
+    });
+
+    test("a diagram inside a variation keeps the variation's depth, and a leaf diagram closes the line", () => {
+        const tree = variedTree();
+        tree.c5.diagram = true;
+        tree.a6.diagram = true;
+        const { rows } = buildNotationRows(tree.root, options);
+        expect(shape(rows)).toEqual([
+            "e4",
+            "variation",
+            "d4",
+            "e5",
+            "variation",
+            "c5",
+            "[c5:]",
+            "Nf3 Nc6 Bb5 a6",
+            "[a6:]",
+        ]);
+        expect(rows[6]).toMatchObject({ type: "diagram", depth: 1, node: tree.c5 });
+        expect(rows[8]).toMatchObject({ type: "diagram", depth: 0, node: tree.a6 });
+    });
+
+    test("hidden diagrams leave the rows exactly as without a marker", () => {
+        const marked = variedTree();
+        marked.e5.diagram = true;
+        marked.e5.comment = "Key";
+        const plain = variedTree();
+        plain.e5.comment = "Key";
+        for (const tableView of [false, true]) {
+            const hidden = { ...options, tableView, showDiagrams: false };
+            expect(shape(buildNotationRows(marked.root, hidden).rows)).toEqual(
+                shape(buildNotationRows(plain.root, hidden).rows),
+            );
+            const flagged = buildNotationRows(marked.root, hidden).rows.flatMap((row) =>
+                row.type === "moves" ? row.moves.filter((move) => move.diagram) : [],
+            );
+            expect(flagged).toEqual([]);
+        }
+    });
+
+    test("hidden comments keep the board and drop its text", () => {
+        const tree = variedTree();
+        tree.e5.diagram = true;
+        tree.e5.comment = "Key";
+        const { rows } = buildNotationRows(tree.root, { ...options, showComments: false });
+        expect(shape(rows)).toContain("[e5:]");
+    });
+
+    test("table view splits a White move with a diagram and no comment from its Black reply", () => {
+        const tree = variedTree();
+        tree.e4.children = [tree.e5];
+        tree.root.children = [tree.e4];
+        tree.e4.diagram = true;
+        const { rows } = buildNotationRows(tree.root, { ...options, tableView: true });
+        expect(shape(rows).slice(0, 4)).toEqual(["e4|…", "[e4:]", "…|e5", "Nf3|Nc6"]);
+    });
+
+    test("table view replaces a marked move's comment row with its diagram row", () => {
+        const tree = variedTree();
+        tree.e4.children = [tree.e5];
+        tree.root.children = [tree.e4];
+        tree.e5.diagram = true;
+        tree.e5.comment = "Reply";
+        tree.nf3.comment = "Plain";
+        const { rows } = buildNotationRows(tree.root, { ...options, tableView: true });
+        expect(shape(rows)).toEqual(["e4|e5", "[e5:Reply]", "Nf3|…", "comment", "…|Nc6", "Bb5|a6"]);
+    });
+
+    test.each([false, true])(
+        "a marked root gets a diagram row with or without a comment (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            tree.root.diagram = true;
+            const bare = buildNotationRows(tree.root, { ...options, tableView }).rows;
+            expect(shape(bare)[0]).toBe("[root:]");
+            tree.root.comment = "Start";
+            const commented = buildNotationRows(tree.root, { ...options, tableView }).rows;
+            expect(shape(commented).slice(0, 2)).toEqual([
+                "[root:Start]",
+                tableView ? "e4|…" : "e4",
+            ]);
+        },
+    );
+
+    test("a diagram row is not the scroll target of its move", () => {
+        const tree = variedTree();
+        tree.e5.diagram = true;
+        const model = buildNotationRows(tree.root, options);
+        expect(model.rows[model.rowForNode.get(tree.e5)!].type).toBe("moves");
     });
 });

@@ -1,5 +1,6 @@
 import { RichTextEditor } from "@mantine/tiptap";
 import { Box, Text } from "@mantine/core";
+import { Grid2x2 } from "lucide-react";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import { Markdown } from "@tiptap/markdown";
@@ -86,6 +87,8 @@ function AnnotationEditor() {
   const keyMap = useAtomValue(keyMapAtom);
 
   const store = useContext(TreeStateContext)!;
+  const hasDiagram = useStore(store, (s) => s.currentNode().diagram === true);
+  const toggleDiagram = useStore(store, (s) => s.toggleDiagram);
   const root = useStore(store, (s) => s.root);
   const position = useStore(store, (s) => s.position);
   const documentId = useStore(store, (s) => s.documentId);
@@ -228,6 +231,23 @@ function AnnotationEditor() {
         <RichTextEditor.ControlsGroup>
           <RichTextEditor.Link />
           <RichTextEditor.Unlink />
+        </RichTextEditor.ControlsGroup>
+
+        {/* In the toolbar, so the editor keeps its height in a short panel. */}
+        <RichTextEditor.ControlsGroup>
+          <RichTextEditor.Control
+            active={hasDiagram}
+            aria-pressed={hasDiagram}
+            aria-label={t("Board.Annotate.Diagram")}
+            onClick={() => toggleDiagram()}
+            w="auto"
+            px={6}
+          >
+            <Grid2x2 size="1rem" />
+            <Text span size="xs" ml={4}>
+              {t("Board.Annotate.Diagram")}
+            </Text>
+          </RichTextEditor.Control>
         </RichTextEditor.ControlsGroup>
       </RichTextEditor.Toolbar>
 

@@ -1,5 +1,16 @@
 import { useTabAtom } from "@/state/tabScope";
-import { Box, Divider, Group, Overlay, Paper, ScrollArea, Stack, Table, Text } from "@mantine/core";
+import {
+  Box,
+  Divider,
+  Group,
+  Overlay,
+  Paper,
+  ScrollArea,
+  Stack,
+  Table,
+  Text,
+  UnstyledButton,
+} from "@mantine/core";
 import {
   ArrowRight,
   Split,
@@ -7,6 +18,8 @@ import {
   MessageSquareOff,
   Eye,
   EyeOff,
+  Grid2x2,
+  Grid2x2X,
   TableProperties,
   List,
   Minus,
@@ -16,6 +29,7 @@ import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useAtom, useAtomValue } from "jotai";
 import type { TFunction } from "i18next";
 import { memo, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { MiniBoard } from "@/components/common/MiniBoard";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -25,10 +39,13 @@ import IconAction from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   invisibleFamily,
+  moveHighlightAtom,
   showCommentsFamily,
+  showDiagramsFamily,
   showVariationsFamily,
   tableViewAtom,
 } from "@/state/atoms";
+import { lastMoveSquares, positionFromFen } from "@/utils/chessops";
 import { keyMapAtom } from "@/state/keybinds";
 import { nagGlyphs } from "@/utils/annotation";
 import { formatScore } from "@/utils/score";
@@ -142,6 +159,7 @@ function GameNotation({
   const copyPgn = useStore(store, (s) => s.copyPgn);
   const showComments = useAtomValue(useTabAtom(showCommentsFamily));
   const showVariations = useAtomValue(useTabAtom(showVariationsFamily));
+  const showDiagrams = useAtomValue(useTabAtom(showDiagramsFamily));
   const [tableView] = useAtom(tableViewAtom);
   const [collapsedVariations, setCollapsedVariations] = useState<Set<string>>(() => new Set());
   const viewport = useRef<HTMLDivElement>(null);
@@ -158,10 +176,20 @@ function GameNotation({
     return buildNotationRows(root, {
       showVariations: moveActions === undefined ? showVariations : true,
       showComments,
+      showDiagrams,
       tableView: moveActions === undefined ? tableView : false,
       collapsedVariations,
     });
-  }, [root, showVariations, showComments, tableView, collapsedVariations, store, moveActions]);
+  }, [
+    root,
+    showVariations,
+    showComments,
+    showDiagrams,
+    tableView,
+    collapsedVariations,
+    store,
+    moveActions,
+  ]);
   const startNode = useMemo(() => getNodeAtPath(root, headers.start || []), [root, headers.start]);
   const rowVirtualizer = useVirtualizer({
     count: model.rows.length,
@@ -306,6 +334,7 @@ function GameNotation({
                       startNode={startNode}
                       showComments={showComments}
                       tableView={tableView}
+                      orientation={headers.orientation ?? "white"}
                       onToggleVariation={(parent) => {
                         const path = pathForNotationNode(model.index, parent);
                         if (path === undefined) return;
@@ -359,6 +388,7 @@ function NotationHeader() {
   const [invisible, setInvisible] = useAtom(useTabAtom(invisibleFamily));
   const [showComments, setShowComments] = useAtom(useTabAtom(showCommentsFamily));
   const [showVariations, setShowVariations] = useAtom(useTabAtom(showVariationsFamily));
+  const [showDiagrams, setShowDiagrams] = useAtom(useTabAtom(showDiagramsFamily));
   const [tableView, setTableView] = useAtom(tableViewAtom);
   return (
     <Stack gap="xs" pt="xs">
@@ -387,6 +417,13 @@ function NotationHeader() {
             {showComments ? <MessageSquare size="1rem" /> : <MessageSquareOff size="1rem" />}
           </IconAction>
           <IconAction
+            label={showDiagrams ? t("Notation.HideDiagrams") : t("Notation.ShowDiagrams")}
+            onClick={() => setShowDiagrams((value) => !value)}
+            pressed={showDiagrams}
+          >
+            {showDiagrams ? <Grid2x2 size="1rem" /> : <Grid2x2X size="1rem" />}
+          </IconAction>
+          <IconAction
             label={showVariations ? t("Notation.HideVariations") : t("Notation.ShowVariations")}
             onClick={() => setShowVariations((value) => !value)}
             pressed={showVariations}
@@ -410,6 +447,7 @@ function NotationVirtualRow({
   startNode,
   showComments,
   tableView,
+  orientation,
   onToggleVariation,
   measureRef,
   style,
@@ -424,6 +462,7 @@ function NotationVirtualRow({
   startNode: TreeNode;
   showComments: boolean;
   tableView: boolean;
+  orientation: "white" | "black";
   onToggleVariation: (parent: TreeNode) => void;
   measureRef: (element: Element | null) => void;
   style: React.CSSProperties;
@@ -435,6 +474,9 @@ function NotationVirtualRow({
         <GameEndRow result={result} termination={termination} hasAnalysis={row.hasAnalysis} />
       )}
       {row.type === "comment" && <CommentRow row={row} tableView={tableView} />}
+      {row.type === "diagram" && (
+        <DiagramRow row={row} index={index} root={root} orientation={orientation} />
+      )}
       {row.type === "variation" && (
         <VariationRow row={row} onToggle={() => onToggleVariation(row.parent)} />
       )}
@@ -514,7 +556,8 @@ function moveProps(
     halfMoves: move.node.halfMoves,
     move: move.node.san,
     fen: move.node.fen,
-    comment: move.node.comment,
+    // A diagram row below the move shows the comment under its board.
+    comment: move.diagram ? "" : move.node.comment,
     startingComment: move.startingComment,
     annotations: nagGlyphs(move.node.nags),
     showComments,
@@ -587,6 +630,57 @@ function CommentRow({
   return (
     <Box pl="sm" pt="xs">
       <Comment comment={row.comment} />
+    </Box>
+  );
+}
+
+function DiagramRow({
+  row,
+  index,
+  root,
+  orientation,
+}: {
+  row: Extract<NotationRow, { type: "diagram" }>;
+  index: NotationNodeIndex;
+  root: TreeNode;
+  orientation: "white" | "black";
+}) {
+  const { t } = useTranslation();
+  const store = useContext(TreeStateContext)!;
+  const moveHighlight = useAtomValue(moveHighlightAtom);
+  const { node } = row;
+  // Side to move and check come from the position itself: ply parity is wrong for a game that
+  // starts from a Black-to-move FEN.
+  const position = useMemo(() => positionFromFen(node.fen)[0], [node.fen]);
+  const isVariationBlock = row.depth >= 1;
+  return (
+    <Box
+      data-notation-diagram
+      className={isVariationBlock ? `${styles.diagram} ${styles.variationBlock}` : styles.diagram}
+      style={isVariationBlock ? variationBlockStyle(row.depth) : undefined}
+    >
+      <UnstyledButton
+        className={styles.diagramBoard}
+        aria-label={t("Notation.DiagramGoTo")}
+        onClick={() => {
+          const path = pathForNotationNode(index, node);
+          if (path && store.getState().root === root) store.getState().goToMove(path);
+        }}
+      >
+        <MiniBoard
+          fen={node.fen}
+          orientation={orientation}
+          lastMove={moveHighlight ? lastMoveSquares(node) : undefined}
+          turnColor={position?.turn ?? "white"}
+          check={moveHighlight && position?.isCheck()}
+          shapes={node.shapes}
+        />
+      </UnstyledButton>
+      {row.comment && (
+        <Box pt="xs">
+          <Comment comment={row.comment} />
+        </Box>
+      )}
     </Box>
   );
 }

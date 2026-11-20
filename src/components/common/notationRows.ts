@@ -10,6 +10,8 @@ export type NotationMove = {
     first: boolean;
     startingComment?: string;
     analysis?: boolean;
+    /** A diagram row follows this move and carries its comment. */
+    diagram?: boolean;
 };
 
 export type InlineNotationRow = {
@@ -40,10 +42,19 @@ export type VariationNotationRow = {
     collapsed: boolean;
 };
 
+/** The small board of a move that carries a diagram marker, with that move's comment below. */
+export type DiagramNotationRow = {
+    type: "diagram";
+    depth: number;
+    node: TreeNode;
+    comment: string;
+};
+
 export type NotationRow =
     | InlineNotationRow
     | TableNotationRow
     | CommentNotationRow
+    | DiagramNotationRow
     | VariationNotationRow
     | GameEndNotationRow;
 
@@ -75,6 +86,7 @@ export type NotationRows = {
 export type NotationRowOptions = {
     showVariations: boolean;
     showComments: boolean;
+    showDiagrams: boolean;
     tableView: boolean;
     collapsedVariations?: ReadonlySet<string>;
 };
@@ -177,6 +189,39 @@ function addComment(
     addRow(rows, rowForNode, { type: "comment", depth, comment });
 }
 
+function hasDiagram(node: TreeNode, options: NotationRowOptions): boolean {
+    return options.showDiagrams && node.diagram === true;
+}
+
+function addDiagram(
+    rows: NotationRow[],
+    rowForNode: Map<TreeNode, number>,
+    depth: number,
+    node: TreeNode,
+    options: NotationRowOptions,
+): void {
+    addRow(rows, rowForNode, {
+        type: "diagram",
+        depth,
+        node,
+        comment: options.showComments ? node.comment : "",
+    });
+}
+
+/**
+ * The comment row of a table-view mainline move, or its diagram row, which carries the comment.
+ */
+function addTableMoveNote(
+    rows: NotationRow[],
+    rowForNode: Map<TreeNode, number>,
+    node: TreeNode,
+    options: NotationRowOptions,
+): void {
+    if (hasDiagram(node, options)) addDiagram(rows, rowForNode, 0, node, options);
+    else if (options.showComments && node.comment.length > 0)
+        addComment(rows, rowForNode, 0, node.comment);
+}
+
 /**
  * The prose of a comment that precedes a move: a variation's opening comment, which stays on its
  * move when the variation is promoted. Commands are never shown.
@@ -253,11 +298,13 @@ function appendInlineTasks(
         while (parent.children[childIndex]) {
             const node = parent.children[childIndex];
             const starting = startingCommentText(node, options);
+            const diagram = hasDiagram(node, options);
             moves.push({
                 node,
                 first: first || !!starting,
                 startingComment: starting,
                 analysis: options.analysisNodes.has(node),
+                diagram,
             });
             first = false;
 
@@ -267,20 +314,22 @@ function appendInlineTasks(
             const reachedLimit = moves.length >= NOTATION_ROW_MAX_MOVES;
 
             const isGameEnd = node === options.gameEnd;
-            if (hasVariations || reachedLimit || isGameEnd) {
+            if (hasVariations || reachedLimit || isGameEnd || diagram) {
                 addRow(rows, rowForNode, {
                     type: "moves",
                     depth: task.depth,
                     moves: moves.splice(0),
                     variationParent: task.variationParent,
                 });
+                // Directly below its move, before that move's alternatives.
+                if (diagram) addDiagram(rows, rowForNode, task.depth, node, options);
 
                 if (node.children.length > 0) {
                     stack.push({
                         parent: node,
                         childIndex: 0,
                         depth: task.depth,
-                        first: hasVariations,
+                        first: hasVariations || diagram,
                         variationParent: task.variationParent,
                     });
                 }
@@ -369,10 +418,9 @@ function appendTableRows(
         if (childStarting) addComment(rows, rowForNode, 0, childStarting);
 
         if (!isWhite) {
-            const hasComment = options.showComments && child.comment.length > 0;
             const hasVariations = options.showVariations && variations.length > 0;
             addTableRow(rows, rowForNode, moveNumber, null, child, false, options);
-            if (hasComment) addComment(rows, rowForNode, 0, child.comment);
+            addTableMoveNote(rows, rowForNode, child, options);
             if (hasVariations) addInlineVariationRows(rows, rowForNode, current, 0, options);
             if (child === options.gameEnd)
                 addRow(rows, rowForNode, {
@@ -385,19 +433,19 @@ function appendTableRows(
 
         const black = child.children[0]?.halfMoves % 2 === 0 ? child.children[0] : null;
         const blackVariations = black ? child.children.slice(1) : [];
-        const whiteHasComment = options.showComments && child.comment.length > 0;
+        const whiteHasNote =
+            (options.showComments && child.comment.length > 0) || hasDiagram(child, options);
         const whiteHasVariations = options.showVariations && variations.length > 0;
-        const blackHasComment = !!black && options.showComments && black.comment.length > 0;
         const blackHasVariations = options.showVariations && blackVariations.length > 0;
         const blackStarting = black ? startingCommentText(black, options) : "";
         const whiteBoundary =
-            whiteHasComment ||
+            whiteHasNote ||
             whiteHasVariations ||
             blackStarting.length > 0 ||
             child === options.gameEnd;
         if (whiteBoundary) {
             addTableRow(rows, rowForNode, moveNumber, child, null, !!black, options);
-            if (whiteHasComment) addComment(rows, rowForNode, 0, child.comment);
+            addTableMoveNote(rows, rowForNode, child, options);
             if (whiteHasVariations) addInlineVariationRows(rows, rowForNode, current, 0, options);
             if (child === options.gameEnd)
                 addRow(rows, rowForNode, {
@@ -408,12 +456,12 @@ function appendTableRows(
             if (black) {
                 if (blackStarting) addComment(rows, rowForNode, 0, blackStarting);
                 addTableRow(rows, rowForNode, moveNumber, null, black, false, options);
-                if (blackHasComment) addComment(rows, rowForNode, 0, black.comment);
+                addTableMoveNote(rows, rowForNode, black, options);
                 if (blackHasVariations) addInlineVariationRows(rows, rowForNode, child, 0, options);
             }
         } else {
             addTableRow(rows, rowForNode, moveNumber, child, black, false, options);
-            if (blackHasComment) addComment(rows, rowForNode, 0, black.comment);
+            if (black) addTableMoveNote(rows, rowForNode, black, options);
             if (blackHasVariations) addInlineVariationRows(rows, rowForNode, child, 0, options);
         }
 
@@ -444,7 +492,9 @@ export function buildNotationRows(root: TreeNode, options: NotationRowOptions): 
         collapseKeys: new Map(),
     };
 
-    if (options.showComments && root.comment.length > 0) {
+    if (hasDiagram(root, options)) {
+        addDiagram(rows, rowForNode, 0, root, options);
+    } else if (options.showComments && root.comment.length > 0) {
         addComment(rows, rowForNode, 0, root.comment);
     }
 

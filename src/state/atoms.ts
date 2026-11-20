@@ -1161,6 +1161,8 @@ export const showCommentsFamily = atomFamily((_tab: string) => atom(true));
 
 export const showVariationsFamily = atomFamily((_tab: string) => atom(true));
 
+export const showDiagramsFamily = atomFamily((_tab: string) => atom(true));
+
 export const tabFamily = atomFamily((_tab: string) => atom("info"));
 
 export const reportModalOpenFamily = atomFamily((_tab: string) => atom(false));
@@ -1617,6 +1619,7 @@ export function disposeTabAtoms(tabId: string) {
         invisibleFamily,
         showCommentsFamily,
         showVariationsFamily,
+        showDiagramsFamily,
         tabFamily,
         reportModalOpenFamily,
         localOptionsFamily,

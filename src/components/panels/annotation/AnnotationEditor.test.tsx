@@ -687,6 +687,7 @@ test("keeps inline controls and removes every block control", async () => {
     "RichText.ClearFormatting",
     "RichText.Link",
     "RichText.RemoveLink",
+    "Board.Annotate.Diagram",
   ]);
   expect(
     editor()
@@ -1404,4 +1405,28 @@ test("node switches keep each editor's tokenizer registrations bounded and isola
   expect(instances.map(registeredCounts)).toEqual(counts);
   expect(registeredCounts(marked)).toEqual(globalCounts);
   expect(writeComment).not.toHaveBeenCalled();
+});
+
+test("the Diagram control marks and unmarks the current position, the start position included", async () => {
+  await mount("");
+  const control = () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (candidate) => candidate.getAttribute("aria-label") === "Board.Annotate.Diagram",
+    )!;
+  expect(control().getAttribute("aria-pressed")).not.toBe("true");
+
+  await act(async () => control().click());
+  expect(store.getState().root.diagram).toBe(true);
+  expect(control().getAttribute("aria-pressed")).toBe("true");
+  expect(store.getState().dirty).toBe(true);
+
+  await act(async () => {
+    store.getState().makeMove({ payload: "e4" });
+  });
+  expect(control().getAttribute("aria-pressed")).not.toBe("true");
+  await act(async () => control().click());
+  expect(store.getState().root.children[0].diagram).toBe(true);
+  await act(async () => control().click());
+  expect(store.getState().root.children[0].diagram).toBeUndefined();
+  expect(store.getState().root.diagram).toBe(true);
 });

@@ -7,6 +7,15 @@
   border-bottom: 1px solid var(--cf-border);
 }
 
+.diagram {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+}
+
+.diagramBoard {
+  display: block;
+  border-radius: var(--mantine-radius-sm);
+}
+
 .toolbar {
   /* Desktop defaults keep toolbar contents out of the card's intrinsic height while filling
      its final row. The stacked layout overrides these custom properties to use natural height. */

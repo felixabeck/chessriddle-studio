@@ -36,6 +36,7 @@ vi.mock("lucide-react", () => {
     ArrowUpRight: Icon,
     Copy: Icon,
     Flag: Icon,
+    Grid2x2: Icon,
     Trash2: Icon,
   };
 });
@@ -280,7 +281,7 @@ test.each([
     });
     expect(host.querySelectorAll('[data-menu="true"]').length).toBe(1);
     expect(host.querySelectorAll('[data-menu-item="true"]').length).toBe(
-      scope === "workspace" ? 6 : 4,
+      scope === "workspace" ? 7 : 5,
     );
 
     const expectedPath = [0];
@@ -337,6 +338,7 @@ test.each(["training", "disabled", "default"] as const)(
       copyVariationPgn: vi.fn(),
       setStart: vi.fn(),
       setGameEnd: vi.fn(),
+      toggleDiagram: vi.fn(),
     };
     store.setState({ root: tree.root, ...storeActions });
     const sessionActions = { promote: vi.fn(), delete: vi.fn() };
@@ -382,6 +384,7 @@ test.each(["training", "disabled", "default"] as const)(
         : capability === "training"
           ? ["Menu.PromoteVariation", "Menu.DeleteMove"]
           : [
+              "Notation.AddDiagram",
               "Notation.MarkGameEndHere",
               "Menu.MarkAsStart",
               "Menu.PromoteToMainLine",
@@ -686,4 +689,49 @@ test("marks the current move for screen readers and follows goToMove", async () 
 
   expect(moveButton("e5").getAttribute("aria-current")).toBe("true");
   expect(moveButton("e4").hasAttribute("aria-current")).toBe(false);
+});
+
+test("the move menu offers to remove the diagram of a marked move", async () => {
+  const tree = defaultTree();
+  const node = createNode({
+    fen: "move b - - 0 1",
+    move: parseUci("e2e4")!,
+    san: "e4",
+    halfMoves: 1,
+  });
+  node.diagram = true;
+  tree.root.children = [node];
+  const store = createTreeStore();
+  const toggleDiagram = vi.fn();
+  store.setState({ root: tree.root, toggleDiagram });
+  await act(async () =>
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="tab">
+          <CompleteMoveCell
+            node={node}
+            nodeIndex={createNotationNodeIndex(tree.root)}
+            root={tree.root}
+            halfMoves={1}
+            move="e4"
+            fen={node.fen}
+            comment=""
+            annotations={[]}
+            showComments={false}
+          />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    ),
+  );
+  await act(async () =>
+    host
+      .querySelector("[data-move]")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  const items = [...host.querySelectorAll<HTMLButtonElement>("[data-menu-item]")];
+  expect(items.some((item) => item.textContent === "Notation.AddDiagram")).toBe(false);
+  await act(async () =>
+    items.find((item) => item.textContent === "Notation.RemoveDiagram")!.click(),
+  );
+  expect(toggleDiagram.mock.calls).toEqual([[[0]]]);
 });
