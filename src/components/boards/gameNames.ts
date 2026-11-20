@@ -48,9 +48,9 @@ function retitledTab(tab: Tab, before: GameHeaders, next: GameHeaders): Tab {
         file?.metadata.type === "repertoire"
             ? !!lineTitleOf(next).name
             : getGameName(next) !== "Unknown";
-    const untitledDraft =
+    const stillNewGameTitle =
         draft && tab.name === i18n.t("Databases.NewGame", { defaultValue: "New game" });
-    if (titleOf(next) === titleOf(before) && !(named && untitledDraft)) return tab;
+    if (titleOf(next) === titleOf(before) && !(named && stillNewGameTitle)) return tab;
     if (!named && (draft || !file)) return tab;
     const name = titleOf(next);
     return name === tab.name ? tab : { ...tab, name };

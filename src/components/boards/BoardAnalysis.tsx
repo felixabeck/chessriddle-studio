@@ -150,8 +150,7 @@ function BoardAnalysis() {
   }, [saveFile, currentTab, getTab]);
   // File menu → Save / Save to…: handled here with the same handlers as the board controls.
   const openSaveTo = useCallback(() => setSaveToModal(true), []);
-  const saveFromMenu = requestUserSave;
-  useBoardCommands(currentTab?.value, { save: saveFromMenu, saveTo: openSaveTo });
+  useBoardCommands(currentTab?.value, { save: requestUserSave, saveTo: openSaveTo });
   useAutoSave(store, hasPersistentOrigin && autoSave, saveFile);
 
   const addGameAction = useContext(AddGameContext);

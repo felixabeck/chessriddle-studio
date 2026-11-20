@@ -199,7 +199,7 @@ test("changing only whiteTime does not set native Chessground config", async () 
 });
 
 test.each(["white", "black"] as const)(
-  "the repertoire title sits above the board, non-clickable, in %s orientation",
+  "the repertoire title sits above the board, non-clickable without a rename handler, in %s orientation",
   async (orientation) => {
     tree.getState().setHeaders({
       ...tree.getState().headers,
