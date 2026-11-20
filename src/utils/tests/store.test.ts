@@ -1259,3 +1259,37 @@ test("practice mode: goToNext follows the drill path and stops at its end", () =
     store.getState().goToNext();
     expect(store.getState().position).toEqual([1, 1]);
 });
+
+test("toggleDiagram flips the marker of the current node, a variation path and the root", () => {
+    const store = createTreeStore();
+    store.getState().setState(treeE4D5());
+    store.getState().goToMove([0]);
+    store.getState().makeMove({ payload: parseUci("c7c5")!, changePosition: false });
+
+    store.getState().toggleDiagram();
+    expect(store.getState().root.children[0].diagram).toBe(true);
+    store.getState().toggleDiagram();
+    expect("diagram" in store.getState().root.children[0]).toBe(false);
+
+    store.getState().toggleDiagram([0, 1]);
+    expect(store.getState().root.children[0].children[1].san).toBe("c5");
+    expect(store.getState().root.children[0].children[1].diagram).toBe(true);
+    expect(store.getState().root.children[0].children[0].diagram).toBeUndefined();
+
+    store.getState().toggleDiagram([]);
+    expect(store.getState().root.diagram).toBe(true);
+});
+
+test("toggleDiagram ignores a path that does not resolve to a node", () => {
+    const store = createTreeStore();
+    store.getState().setState(treeE4D5());
+    const before = store.getState().root;
+    store.getState().toggleDiagram([0, 0, 0, 0]);
+    store.getState().toggleDiagram([5]);
+    store.getState().toggleDiagram("0" as unknown as number[]);
+    expect(store.getState().root).toBe(before);
+    expect(store.getState().dirty).toBe(false);
+
+    store.getState().toggleDiagram([0]);
+    expect(store.getState().dirty).toBe(true);
+});

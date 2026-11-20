@@ -2135,3 +2135,49 @@ test("mixed adjacent opaque and malformed commands stay in order and within thei
 
     expect(root.children[0].commands).toBe(source);
 });
+
+test.each([
+    ["{[#]}", "", "{[#]}"],
+    ["{[#] Key position}", "Key position", "{[#] Key position}"],
+    ["{Key position [#]}", "Key position", "{[#] Key position}"],
+    ["{before [#] after}", "before after", "{[#] before after}"],
+])(
+    "ChessBase diagram marker %s becomes the node flag and is written back",
+    async (source, comment, written) => {
+        mockCommentLexer();
+        const { tree, losses } = await parsePGNWithLossReport(`1. e4 ${source} e5 *`);
+        const marked = tree.root.children[0];
+        expect(losses).toEqual([]);
+        expect(marked.diagram).toBe(true);
+        expect(marked.comment).toBe(comment);
+        expect(marked.children[0].diagram).toBeUndefined();
+        const pgn = getPGN(tree.root, { ...ALL_MARKUPS, headers: null });
+        expect(pgn).toContain(`1. e4 ${written} e5`);
+        expect((await parsePGN(pgn)).root).toEqual(tree.root);
+    },
+);
+
+test("a diagram marker survives beside drawings and on the root, and stays verbatim in a variation's leading comment", async () => {
+    mockCommentLexer();
+    const tree = await parsePGN("{[#]} 1. e4 {[%cal Ge2e4] [#] Plan} ({[#] before} 1. d4) e5 *");
+    const [e4, d4] = tree.root.children;
+    expect(tree.root.diagram).toBe(true);
+    expect(tree.root.comment).toBe("");
+    expect(e4.diagram).toBe(true);
+    expect(e4.comment).toBe("Plan");
+    expect(e4.shapes).toEqual([{ orig: "e2", dest: "e4", brush: "green" }]);
+    expect(d4.diagram).toBeUndefined();
+    expect(d4.startingComment).toBe("[#] before");
+
+    const pgn = getPGN(tree.root, { ...ALL_MARKUPS, headers: null });
+    expect(pgn).toContain("{[#]} 1. e4 {[%cal Ge2e4] [#] Plan}");
+    expect(pgn).toContain("({[#] before} 1. d4");
+    expect((await parsePGN(pgn)).root).toEqual(tree.root);
+    // The marker is comment content: it travels with the comments, not with the extra markups.
+    expect(getPGN(tree.root, { ...ALL_MARKUPS, extraMarkups: false, headers: null })).toContain(
+        "1. e4 {[#] Plan}",
+    );
+    expect(getPGN(tree.root, { ...ALL_MARKUPS, comments: false, headers: null })).not.toContain(
+        "[#]",
+    );
+});

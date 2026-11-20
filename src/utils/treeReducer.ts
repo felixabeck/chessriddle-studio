@@ -49,6 +49,8 @@ export interface TreeNode {
     startingComment?: string;
     clock?: number;
     gameEnd?: { termination?: string };
+    /** The notation shows a small board of this position (ChessBase's `[#]` comment marker). */
+    diagram?: true;
 }
 
 export type ListNode = {

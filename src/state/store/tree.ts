@@ -130,6 +130,8 @@ export interface TreeStoreState extends TreeState {
 
     setAnnotation: (payload: Annotation) => void;
     setComment: (payload: string) => void;
+    /** Flips the diagram marker of the node at `path`, or of the current node without one. */
+    toggleDiagram: (path?: number[]) => void;
     setHeaders: (payload: GameHeaders) => void;
     setResult: (payload: Outcome) => void;
     setGameEnd: (path: number[]) => void;
@@ -408,6 +410,7 @@ type TreeMarkupActions = Pick<
     | "setStart"
     | "setAnnotation"
     | "setComment"
+    | "toggleDiagram"
     | "setGameEnd"
     | "clearGameEnd"
     | "setTermination"
@@ -773,6 +776,21 @@ function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
                     if (node) {
                         node.comment = payload;
                     }
+                }),
+            ),
+        toggleDiagram: (path) =>
+            set(
+                produce((state) => {
+                    const target = path ?? state.position;
+                    if (
+                        !Array.isArray(target) ||
+                        getResolvedPathLength(state.root, target) !== target.length
+                    )
+                        return;
+                    const node = getNodeAtPath(state.root, target);
+                    if (node.diagram) delete node.diagram;
+                    else node.diagram = true;
+                    state.dirty = true;
                 }),
             ),
         setGameEnd: (path) =>

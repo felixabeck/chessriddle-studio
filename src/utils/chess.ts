@@ -11,7 +11,7 @@ import { isBasicAnnotation, isNagCode, nagGlyph, sortedNags } from "./annotation
 import { parseSanOrUci, positionFromFen } from "./chessops";
 import { makePgnDrawings, PGN_COMMENT_COMMAND, toDrawShape } from "./drawings";
 import { harmonicMean, isPrefix, mean } from "./misc";
-import { splitPgnComment } from "./pgnComment";
+import { DIAGRAM_MARKER, splitPgnComment } from "./pgnComment";
 import { formatScore, getAccuracy, getCPLoss, INITIAL_SCORE } from "./score";
 import {
     createNode,
@@ -121,6 +121,12 @@ export function getMoveText(
         // comments: an "Update" from a PGN shown without extra markups must not drop them.
         if (opt.comments && tree.commands) {
             content += `${safeComment(tree.commands)} `;
+        }
+
+        // The marker leads the prose: the diagram is shown above its comment.
+        if (opt.comments && tree.diagram) {
+            const separated = content.endsWith("{") || content.endsWith(" ");
+            content += `${separated ? "" : " "}${DIAGRAM_MARKER}${tree.comment !== "" ? " " : ""}`;
         }
 
         if (opt.comments && tree.comment !== "") {
@@ -493,6 +499,8 @@ function innerParsePGN(
             if (comment.clock !== undefined) {
                 node.clock = comment.clock;
             }
+
+            if (comment.diagram) node.diagram = true;
 
             if (comment.text) {
                 // Match starting comments: a space replaces the boundary between comment tokens.

@@ -3132,3 +3132,43 @@ test("tree-key snapshot reports enumeration failures and returns no snapshot", (
     expect(persistError.reportPersistError).toHaveBeenCalledOnce();
     expect(persistError.reportPersistError).toHaveBeenCalledWith(scanError);
 });
+
+function firstStoredChild(tabId: string) {
+    return (storage.read(tabId)!.state as ReturnType<typeof defaultTree>).root.children[0];
+}
+
+test("a diagram marker survives a storage round trip", () => {
+    const tree = treeWith((state) => {
+        state.root.children = [{ ...structuredClone(state.root), diagram: true, comment: "Key" }];
+    });
+    storage.seed("diagram", tree);
+    expect(firstStoredChild("diagram")).toMatchObject({ diagram: true, comment: "Key" });
+});
+
+test.each([
+    ["without a commands key", false],
+    ["with a commands key", true],
+])(
+    "hydration lifts a ChessBase diagram marker stored in comment text %s, once",
+    (_name, withCommands) => {
+        const tree = structuredClone(defaultTree());
+        const child: Record<string, unknown> = {
+            ...tree.root,
+            children: [],
+            comment: "[#] Nice",
+        };
+        if (withCommands) child.commands = "[%evp 0,34]";
+        else delete child.commands;
+        tree.root.children = [child as never];
+        storeLegacyTree("legacy-diagram", tree);
+
+        const first = firstStoredChild("legacy-diagram");
+        expect(first).toMatchObject({ comment: "Nice", diagram: true });
+        expect(first.commands).toBe(withCommands ? "[%evp 0,34]" : undefined);
+        storage.flush();
+        const stored = sessionStorage.getItem("legacy-diagram");
+        expect(firstStoredChild("legacy-diagram")).toEqual(first);
+        storage.flush();
+        expect(sessionStorage.getItem("legacy-diagram")).toBe(stored);
+    },
+);

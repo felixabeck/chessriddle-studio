@@ -2,7 +2,7 @@ import { warnSafely } from "@/platform/errors";
 import { ANNOTATION_INFO, MAX_NAG } from "@/utils/annotation";
 import { reportPersistError } from "@/state/persistError";
 import { puzzleSessionSchema } from "@/state/puzzleSession";
-import { splitPgnComment } from "@/utils/pgnComment";
+import { extractDiagramMarker, splitPgnComment } from "@/utils/pgnComment";
 import { extractPgnDrawings, toDrawShape, type PgnDrawing } from "@/utils/drawings";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import {
@@ -197,6 +197,7 @@ function createPersistedTreeSchema() {
         gameEnd: z
             .object({ termination: z.string().max(MAX_GAME_END_TERMINATION_LENGTH).optional() })
             .optional(),
+        diagram: z.literal(true).optional(),
     });
 
     return {
@@ -311,15 +312,25 @@ function migrateLegacyNode(
             !Object.prototype.hasOwnProperty.call(node, "commands") &&
             typeof node.comment === "string"
         ) {
-            const { text, commands, shapes } = splitPgnComment(node.comment);
+            const { text, commands, shapes, diagram } = splitPgnComment(node.comment);
             migrated.comment = text;
             if (commands.length > 0) migrated.commands = commands;
+            if (diagram) migrated.diagram = true;
             retainHydratedDrawings(migrated, shapes);
         } else if (typeof node.commands === "string") {
             const { text, shapes } = extractPgnDrawings(node.commands);
             if (shapes.length > 0) {
                 migrated.commands = text.trim();
                 retainHydratedDrawings(migrated, shapes);
+            }
+        }
+        // Before the tree modeled diagrams, ChessBase's marker stayed in the comment text. A node
+        // with the flag keeps its prose untouched, which makes repeated reads idempotent.
+        if (migrated.diagram !== true && typeof migrated.comment === "string") {
+            const { text, diagram } = extractDiagramMarker(migrated.comment);
+            if (diagram) {
+                migrated.comment = text;
+                migrated.diagram = true;
             }
         }
     };

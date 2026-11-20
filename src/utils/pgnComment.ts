@@ -11,6 +11,19 @@ const MODELED_COMMANDS = new Set(["eval", "clk"]);
  */
 export const COMMENT_UNDERLINE = /\+\+((?!\s)(?:(?!\+\+)[^\n])*?[^\s\n])\+\+/;
 
+/** ChessBase's diagram marker inside a comment: "show a board of this position here". */
+export const DIAGRAM_MARKER = "[#]";
+const DIAGRAM_MARKER_PATTERN = /\s*\[#\]\s*/g;
+
+/**
+ * Lifts every diagram marker out of comment text. Each marker and the whitespace around it
+ * becomes one space and the result is trimmed; text without a marker is returned untouched.
+ */
+export function extractDiagramMarker(comment: string): { text: string; diagram: boolean } {
+    if (!comment.includes(DIAGRAM_MARKER)) return { text: comment, diagram: false };
+    return { text: comment.replace(DIAGRAM_MARKER_PATTERN, " ").trim(), diagram: true };
+}
+
 export type SplitComment = {
     /** What a reader sees: the comment without any `[%…]` command. */
     text: string;
@@ -21,6 +34,8 @@ export type SplitComment = {
     shapes: PgnDrawing[];
     clock?: number;
     gameEnds: NonNullable<TreeNode["gameEnd"]>[];
+    /** The comment carried a diagram marker, which is not part of `text`. */
+    diagram: boolean;
 };
 
 /** A modeled command chessops accepts: parsing it alone leaves no text behind. */
@@ -38,19 +53,17 @@ export function splitPgnComment(comment: string, modelGameEnd = false): SplitCom
     const drawings = extractPgnDrawings(comment);
     const commands: string[] = [];
     const gameEnds: SplitComment["gameEnds"] = [];
-    const rest = drawings.text.replace(
-        PGN_COMMENT_COMMAND,
-        (match, name: string, body?: string) => {
-            if (modelGameEnd && name === GAME_END_COMMAND) {
-                const termination = body?.trim();
-                gameEnds.push(termination ? { termination } : {});
-                return " ";
-            }
-            if (MODELED_COMMANDS.has(name) && isWellFormedModeled(match.trim())) return match;
-            commands.push(match);
+    const marker = extractDiagramMarker(drawings.text);
+    const rest = marker.text.replace(PGN_COMMENT_COMMAND, (match, name: string, body?: string) => {
+        if (modelGameEnd && name === GAME_END_COMMAND) {
+            const termination = body?.trim();
+            gameEnds.push(termination ? { termination } : {});
             return " ";
-        },
-    );
+        }
+        if (MODELED_COMMANDS.has(name) && isWellFormedModeled(match.trim())) return match;
+        commands.push(match);
+        return " ";
+    });
     const parsed = parseComment(rest);
     return {
         text: gameEnds.length > 0 && parsed.text.trim() === GAME_END_PROSE ? "" : parsed.text,
@@ -59,5 +72,6 @@ export function splitPgnComment(comment: string, modelGameEnd = false): SplitCom
         shapes: drawings.shapes,
         clock: parsed.clock,
         gameEnds,
+        diagram: marker.diagram,
     };
 }
