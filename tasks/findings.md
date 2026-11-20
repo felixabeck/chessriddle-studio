@@ -27949,7 +27949,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### The puzzle board and the ChessRiddle tactics board ignore the "show piece destinations" setting
 
-* **ID:** f-20261120-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261120-05 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (audit of upstream En Croissant 0.16 against master c20f15301; upstream fixed its puzzle board in 0702da96e, #839)
 * **Where:** `src/components/puzzles/PuzzleBoardSurface.tsx:76-97` builds the chessground `movable` config without `showDests`; `src/chessground/Chessground.tsx:152-207` does not inject it; chessground defaults `movable.showDests` to `true`. Only `src/components/boards/Board.tsx:198,755` reads `showDestsAtom`. `src/components/chessriddle/ChessRiddleTraining.tsx:151` renders the same surface.
@@ -27958,6 +27958,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** read `showDestsAtom` in `PuzzleBoardSurface` and pass it as `movable.showDests`; this covers both callers.
 * **Proof:** a `PuzzleBoardSurface.test.tsx` case that sets `showDestsAtom` to `false` and expects the config handed to Chessground to carry `movable.showDests === false` (fails at HEAD: the key is absent).
 * **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
+* **Handled (2026-11-20, Claude Code orchestration on Felix's order, Opus 5.5 write leaf, worktree build/upstream-016-adoptions-20261120):** commit "fix(puzzles): honour the show-destinations setting on puzzle boards". `PuzzleBoardSurface` reads `showDestsAtom` and passes `movable.showDests`, which covers the offline puzzle board and `ChessRiddleTraining`. `PuzzleBoardSurface.test.tsx` asserts the value reaching Chessground for `false` and `true`; both cases failed (`undefined`) without the line.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"91636d47c9b39f20ed013e8fa9f911e1d14788f96ebc8fd3cac5279732fa01ef","header_sha256":"3b39d4355b02854f40a8e6e5ae5c83c46e51b7e8d5bae69913afb1c446e2b534","header_status":"handled","input_sha256":"b5cce72073376fee0ca86b425d73fbeb466ac70382f216923b0eabc13c7963fa","kind":"mutation-receipt","operation":"83fb0d610c06b4049e8b0e8af45f85e05e6dd0f988bc1d975461a96581970114","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-05"],"target":"f-20261120-05","v":1} -->
 
 ---
 
