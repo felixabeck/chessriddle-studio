@@ -27019,7 +27019,7 @@ Push review (review-root-cause) found the same race in `e2e/accounts-puzzles-eng
 
 ### e2e `files-preview: returning to Library restores a late game after section headings load` timed out once on an unchanged tree and passed on rerun
 
-* **ID:** f-20261112-94 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-94 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Filed from:** 05f42646-de5d-4da2-96b0-1e9a8533ea66
 * **Spotted outside diff:** final push gates for f-20261111-81 (drain 05f42646), HEAD `0e7612453`
@@ -27029,6 +27029,8 @@ Push review (review-root-cause) found the same race in `e2e/accounts-puzzles-eng
 * **Fix:** Read the retained trace to see whether the option detached or scrolled out after `toBeInViewport`. Then either fold the `dblclick` into the retried block, or fix the list if section headings landing after the user has scrolled move the scroll position. That second case would be a product defect: a user who scrolled to the end loses their place.
 * **Proof:** Failing transcript `artifacts/gates/20261112T003638632Z-954524/receipt-e2e-container.log` (`✘ 411 [files-preview] … (45.1s)`, `locator.dblclick: Test timeout of 45000ms exceeded`), trace `artifacts/frontend-audit/test-results/files-preview-files-previe-2a3c3-after-section-headings-load-files-preview/trace.zip` (may be overwritten by later runs). Rerun with no tree change: `/tmp/nf-81/gates3.log` `finish e2e duration=220.2s exit=0`.
 * **Found by:** Claude Code (drain orchestrator), 2026-11-12.
+* **Handled 2026-11-20 (stale on pickup, duplicate of f-20261113-02):** The same flake (dblclick at the old `:341` after the in-viewport `toPass`, `lex_pgn` delay 80) was filed again as f-20261113-02 and fixed in `b8ec2232a` on 2026-11-13. That commit removed both causes. `GameSelector` now keeps the scroll anchor when section headings load above the offset, which was the product defect this entry suspected. The journey now waits through `expectCellStaysInViewport(late)` (`e2e/files-preview.spec.ts:407`, 32 settled frames) before the dblclick, and the companion journey `a late game stays in place when headings above it load` holds the anchor in place. Re-check on pickup: the anchor code in `GameSelector.tsx` is unchanged apart from two unrelated refactors (`79008214d`, `fb8b7ce49`). Across 100 gate runs in `artifacts/gates/` since 2026-11-13, 40 logs ran this test and none recorded a failure (`grep "✘.*late game after section"` finds no match). No code change.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"20d2e68c54da058e1b6eb66425dec24ecf259b0647589b29438df94541d45412","header_sha256":"bb83acee5f4c3fe5008606f0475b75c80dd607edb8fecc50569b36bc016d7ae6","header_status":"handled","input_sha256":"28580da82900e9dc8e9bfd2c84cb1e7977129867bd5941e2ad075a19be305998","kind":"mutation-receipt","operation":"08113552fc4fc21602754caa456830773884c07662d9c663257af89145fc886f","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-94"],"target":"f-20261112-94","v":1} -->
 
 ### e2e `files-preview` late-game restore test times out on dblclick under gate load
 * **ID:** f-20261112-95 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
