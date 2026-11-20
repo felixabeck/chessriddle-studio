@@ -5,7 +5,7 @@ import { useAtom } from "jotai";
 import { useEffect, useState } from "react";
 import { useRecordHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
-import { keyMapAtom } from "@/state/keybinds";
+import { keybindLabel, keyMapAtom } from "@/state/keybinds";
 import { formatKeymap } from "@/utils/formatKeymap";
 import { IconAction } from "../common/IconAction";
 import classes from "./KeybindInput.module.css";
@@ -20,6 +20,7 @@ function KeybindInput({
     keys: string;
   };
 }) {
+  const { t } = useTranslation();
   const [hovering, setHovering] = useState(false);
 
   const [keys, { start, stop, isRecording }] = useRecordHotkeys();
@@ -49,7 +50,7 @@ function KeybindInput({
         <Button
           variant="subtle"
           color="gray"
-          aria-label={keybind.name}
+          aria-label={keybindLabel(t, action, keybind)}
           onMouseEnter={() => setHovering(true)}
           onMouseLeave={() => setHovering(false)}
           onClick={() => start()}

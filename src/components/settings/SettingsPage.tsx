@@ -52,7 +52,7 @@ import {
   boardWoodTextureAtom,
   puzzleWorkspaceGenerationAtom,
 } from "@/state/atoms";
-import { keyMapAtom } from "@/state/keybinds";
+import { keybindLabel, keyMapAtom } from "@/state/keybinds";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
 import { PIECE_SCALE_MAX, PIECE_SCALE_MIN, PIECE_SCALE_STEP } from "@/state/pieceScale";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -882,8 +882,8 @@ export default function Page() {
                     <Table.Tbody>
                       {Object.entries(keyMap).map(([action, keybind]) => {
                         return (
-                          <Table.Tr key={keybind.name}>
-                            <Table.Td>{keybind.name}</Table.Td>
+                          <Table.Tr key={action}>
+                            <Table.Td>{keybindLabel(t, action, keybind)}</Table.Td>
                             <Table.Td>
                               <KeybindInput action={action} keybind={keybind} />
                             </Table.Td>

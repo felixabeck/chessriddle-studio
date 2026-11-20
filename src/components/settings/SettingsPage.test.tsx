@@ -1,4 +1,5 @@
 import { MantineProvider } from "@mantine/core";
+import { createInstance } from "i18next";
 import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -7,6 +8,7 @@ import { practiceGradingAtom, practiceNewPerSessionAtom } from "@/state/atoms";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
+import german from "@/translation/de-DE.json";
 import Page from "./SettingsPage";
 
 vi.mock("@/platform/native", () => ({
@@ -18,8 +20,15 @@ vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
   useLoaderData: () => ({ version: "test" }),
 }));
+const translation = vi.hoisted(() => ({
+  identity: (key: string) => key,
+  t: (key: string, _options?: Record<string, unknown>): string => key,
+}));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en-US" } }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => translation.t(key, options),
+    i18n: { language: "en-US" },
+  }),
 }));
 vi.mock("@/i18n", async (original) => ({
   ...(await original<typeof import("@/i18n")>()),
@@ -53,6 +62,7 @@ afterEach(async () => {
   if (root) await act(async () => root!.unmount());
   host?.remove();
   localStorage.clear();
+  translation.t = translation.identity;
   root = undefined;
   if (originalScroll) Object.defineProperty(Element.prototype, "scrollIntoView", originalScroll);
   else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
@@ -119,6 +129,38 @@ test("practice settings expose automatic/manual grading and the session new-move
   await blur();
   expect(limit.value).toBe("100");
   expect(atoms.get(practiceNewPerSessionAtom)).toBe(100);
+});
+
+test("keybind actions are labelled in the active language", async () => {
+  const i18n = createInstance();
+  await i18n.init({
+    lng: "de",
+    fallbackLng: false,
+    keySeparator: false,
+    nsSeparator: false,
+    resources: { de: german },
+  });
+  translation.t = (key, options) => i18n.t(key, options);
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () =>
+    root!.render(
+      <Provider store={createStore()}>
+        <MantineProvider env="test">
+          <Page />
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === german.translation["Settings.Keybinds"],
+  )!;
+  await act(async () => tab.click());
+  const labels = [...host.querySelectorAll("td:first-child")].map((cell) => cell.textContent);
+  expect(labels).toContain("Neuer Tab");
+  expect(labels).toContain("Zum Anfang der Partie");
+  expect(labels).not.toContain("New tab");
 });
 
 test.each(["{", '"invalid"', "null", "101", "-1", "1.5"])(

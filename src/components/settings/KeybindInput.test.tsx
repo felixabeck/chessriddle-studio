@@ -1,11 +1,14 @@
 import { MantineProvider } from "@mantine/core";
+import { createInstance } from "i18next";
 import { Provider, createStore } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { platform } from "@/platform/native";
 import { keyMapAtom } from "@/state/keybinds";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import german from "@/translation/de-DE.json";
 import KeybindInput from "./KeybindInput";
 
 vi.mock("@/platform/native", () => ({ platform: vi.fn(() => "linux") }));
@@ -43,11 +46,37 @@ test.each([
     );
   });
 
-  const button = host.querySelector<HTMLButtonElement>('button[aria-label="Copy PGN"]');
+  const button = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Settings.Keybinds.Actions.COPY_PGN"]',
+  );
   expect(button).not.toBeNull();
   expect([...button!.querySelectorAll("kbd")].map((keycap) => keycap.textContent)).toEqual(
     expected,
   );
+});
+
+test("the shortcut button is named by the action label in the active language", async () => {
+  const i18n = createInstance();
+  await i18n.init({
+    lng: "de",
+    fallbackLng: false,
+    keySeparator: false,
+    nsSeparator: false,
+    resources: { de: german },
+  });
+  await act(async () => {
+    root.render(
+      <I18nextProvider i18n={i18n}>
+        <MantineProvider>
+          <Provider store={createStore()}>
+            <KeybindInput action="NEW_TAB" keybind={{ name: "New tab", keys: "ctrl+t" }} />
+          </Provider>
+        </MantineProvider>
+      </I18nextProvider>,
+    );
+  });
+
+  expect(host.querySelector("button")?.getAttribute("aria-label")).toBe("Neuer Tab");
 });
 
 async function startRecording() {
@@ -62,7 +91,7 @@ async function startRecording() {
     );
   });
   const original = { ...store.get(keyMapAtom).COPY_PGN };
-  const shortcutSelector = `button[aria-label="${original.name}"]`;
+  const shortcutSelector = 'button[aria-label="Settings.Keybinds.Actions.COPY_PGN"]';
 
   await act(async () => {
     host.querySelector<HTMLButtonElement>(shortcutSelector)!.click();
