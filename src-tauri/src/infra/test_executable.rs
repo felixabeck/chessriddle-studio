@@ -480,7 +480,7 @@ pub(crate) mod tests {
     fn executable_copy_writer_audit() {
         for (source, function) in [
             (
-                include_str!("../engine/process.rs"),
+                include_str!("../engine/process/tests.rs"),
                 "copy_closed_cat_fixture",
             ),
             (
@@ -524,6 +524,22 @@ pub(crate) mod tests {
         ];
         let mut sources = vec![
             ("process", include_str!("../engine/process.rs")),
+            ("process-actor", include_str!("../engine/process/actor.rs")),
+            ("process-child", include_str!("../engine/process/child.rs")),
+            ("process-logs", include_str!("../engine/process/logs.rs")),
+            (
+                "process-registration",
+                include_str!("../engine/process/registration.rs"),
+            ),
+            (
+                "process-supervisor",
+                include_str!("../engine/process/supervisor.rs"),
+            ),
+            (
+                "process-test-doubles",
+                include_str!("../engine/process/test_doubles.rs"),
+            ),
+            ("process-tests", include_str!("../engine/process/tests.rs")),
             ("chess", include_str!("../chess.rs")),
             ("game", include_str!("../game.rs")),
             ("authority-tests", include_str!("path_authority/tests.rs")),

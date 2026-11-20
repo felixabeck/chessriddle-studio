@@ -49,7 +49,7 @@ thread_local! {
 }
 
 /// Source-text scanning shared by the blocking-offload invariant tests in `main.rs`, `chess.rs`,
-/// `engine/process.rs`, `fs.rs`, `infra/fs.rs`, `infra/path_authority/mod.rs`,
+/// `engine/process/tests.rs`, `fs.rs`, `infra/fs.rs`, `infra/path_authority/mod.rs`,
 /// `infra/path_authority/test_source_files.rs`, `infra/platform_support/tests.rs` and `sound.rs`.
 /// It lives here, beside the non-nesting rule it exists to prove, and there is exactly one copy on
 /// purpose: all scans and inline-test-module blanking (`production_region`) depend on the same

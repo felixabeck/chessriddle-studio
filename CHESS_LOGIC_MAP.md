@@ -64,7 +64,9 @@ Where the bindings are consumed:
 
 ## 3. Engine connection and the UCI protocol
 
-Implemented in `src-tauri/src/engine/process.rs`.
+Implemented under `src-tauri/src/engine/process/`: `child.rs` (UCI I/O, child ownership and
+termination), `supervisor.rs` (supervision and admission), `registration.rs` (registration and
+launch), `actor.rs` (the actor and its command loop) and `logs.rs` (transcripts and redaction).
 
 1. **Spawn** — `tokio::process::Command` with `Stdio::piped()` for `stdin`/`stdout`/`stderr`, under
    a spawn deadline (`deadlines.spawn`).
