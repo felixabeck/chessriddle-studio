@@ -148,7 +148,7 @@ function BoardAnalysis() {
     }
     void saveFile(true);
   }, [saveFile, currentTab, getTab]);
-  // File menu → Save / Save to…: handled here with the same handlers as the board controls.
+  // File menu → Save / Save to…: handled here, Save through the board controls' own handler.
   const openSaveTo = useCallback(() => setSaveToModal(true), []);
   useBoardCommands(currentTab?.value, { save: requestUserSave, saveTo: openSaveTo });
   useAutoSave(store, hasPersistentOrigin && autoSave, saveFile);

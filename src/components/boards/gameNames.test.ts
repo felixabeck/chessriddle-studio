@@ -105,6 +105,21 @@ describe("a new game already named in the Info panel", () => {
         );
     });
 
+    test("stays New game when its names are the PGN unknown marker", () => {
+        const database = tab("New game", {
+            kind: "databaseDraft",
+            database: { id: { id: "database-token" }, kind: "database" },
+        });
+        // Headers parsed from a PGN carry "?" for unknown names, which are no name either.
+        expect(
+            apply(
+                database,
+                { white: "?", black: "?", event: "?" },
+                { white: "?", black: "?", event: "?" },
+            ).tab.name,
+        ).toBe("New game");
+    });
+
     test("keeps a tab title the user chose", () => {
         const draft = tab("My tab", { kind: "fileDraft", file: file("repertoire") });
         expect(apply(draft, { white: "Two Knights" }, { white: "Two Knights" }).tab.name).toBe(

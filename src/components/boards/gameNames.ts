@@ -47,7 +47,8 @@ function retitledTab(tab: Tab, before: GameHeaders, next: GameHeaders): Tab {
     const named =
         file?.metadata.type === "repertoire"
             ? !!lineTitleOf(next).name
-            : getGameName(next) !== "Unknown";
+            : // The PGN unknown marker "?" is no name, as the naming fields show it.
+              [next.white, next.black, next.event].some((value) => !!titleValue(value));
     const stillNewGameTitle =
         draft && tab.name === i18n.t("Databases.NewGame", { defaultValue: "New game" });
     if (titleOf(next) === titleOf(before) && !(named && stillNewGameTitle)) return tab;

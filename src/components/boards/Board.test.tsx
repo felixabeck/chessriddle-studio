@@ -219,7 +219,7 @@ test.each(["white", "black"] as const)(
   },
 );
 
-test("a repertoire title opens the naming dialog, with Untitled line for an unnamed line", async () => {
+test("a repertoire title hands its click to onRenameLine, with Untitled line for an unnamed line", async () => {
   const onRenameLine = vi.fn();
   tree.getState().setHeaders({ ...tree.getState().headers, white: "", event: "", black: "" });
   await render({ repertoire: true, onRenameLine });
