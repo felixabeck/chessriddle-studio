@@ -488,14 +488,12 @@ pub(crate) mod tests {
                 "warm_resource_and_executable_changes_relaunch_and_duplicate_ids_stay_separate",
             ),
         ] {
-            let signature = format!("fn {function}(");
-            let body = source
-                .split(&signature)
-                .nth(1)
-                .unwrap()
-                .split("\n    }")
-                .next()
-                .unwrap();
+            // The fixture is top-level in `engine/process/tests.rs` and nested in `chess.rs`'s
+            // test module, so the body ends at the signature's own indentation.
+            let body = crate::infra::blocking::source_scan::body_at_indent(
+                source,
+                &format!("fn {function}("),
+            );
             assert!(body.contains("publish_test_executable("), "{function}");
             assert!(body.contains("std::fs::read("), "{function}");
             assert!(!body.contains("std::fs::copy("), "{function}");
