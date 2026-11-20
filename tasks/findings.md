@@ -28080,3 +28080,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Related:** f-20261112-08 (handled; the same race shape in a neighbouring test). No shared Root is claimed: that finding is closed and this is a different test.
 * **Note on the rerun:** the filing session reran the failed job once before any repair, because the pushed commit could not have changed Rust behaviour and the red job was blocking other sessions' pushes.
 * **Found by:** Claude Code interactive session 221f2973-b40a-4d00-8ef4-cb6dae0ca5aa
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### Master `aedd9206e` is red: three e2e specs fail in CI after the notation-diagrams push
+
+* **ID:** f-20261120-13 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 0181f1c7-76cb-4e4e-8962-1d829f4c05ec
+* **Impact class:** behaviour
+* **Lens:** `review-tests`
+* **Where:** `e2e/notation-diagram.spec.ts:25` (both inline and table view, `toHaveScreenshot` of `#bottomRight` at line 84), `e2e/new-game-to-file.spec.ts:51`, pushed range `d52695834..aedd9206e` (`2a015c583` … `aedd9206e`, notation diagrams, `d-20261120-03`/`-04`).
+* **Defect:** `Test` run 44772186085 on `aedd9206e` concluded `failure` in job `e2e` (136412445087); every other job succeeded. `notation-diagram-inline` and `notation-diagram-table` fail `toHaveScreenshot` against `e2e/notation-diagram.spec.ts-snapshots/notation-diagram-{inline,table}-notation-diagram.png` after repeated "waiting for element to be stable"; `Library New game opens a fileDraft, asks for the line name and appends on explicit save` fails `toBeVisible()` with "element(s) not found" after 8 s. The previous master `d52695834` (run 44743375344) was green, so the regression is in the notation-diagrams range, whose `01f9551eb` re-recorded the new-game snapshots for the diagrams toggle.
+* **Failure scenario:** Every `$push` to master runs `pnpm ci:remote:check`, which exits 1 on this red job and refuses the push; on 2026-11-20 it blocked the drain push of f-20261116-03 (`f7a0c2fa3..669232365`, push-skill and gate-checker only, no e2e input). All master pushes stay blocked until this is repaired.
+* **Fix:** Reproduce with `pnpm test:e2e:container` filtered to the two specs on `aedd9206e`; decide per spec whether the snapshot is unstable (board not settling before capture) or the committed baseline is wrong, and why the New game line-name control is no longer found. Re-record only through the container route, never natively.
+* **Proof:** A `Test` run on the repaired master with `e2e` conclusion `success`, and `pnpm ci:remote:check` exit 0.
