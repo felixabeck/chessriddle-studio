@@ -85,7 +85,7 @@ function EngineSettingsForm({
         <>
           <Group grow>
             <Text size="sm" fw="bold">
-              {t("Engines.Settings.NumOfCores")}
+              {t("Engines.Options.Threads.Label")}
             </Text>
             <CoresSlider
               value={Number(threads.type === "string" ? threads.value || 1 : 1)}
@@ -100,7 +100,7 @@ function EngineSettingsForm({
                 }))
               }
               color={color}
-              ariaLabel={t("Engines.Settings.NumOfCores")}
+              ariaLabel={t("Engines.Options.Threads.Label")}
             />
           </Group>
 

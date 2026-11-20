@@ -697,7 +697,6 @@
     "Engines.Settings.ExpertSettings_one": "Uzman ayarları ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Uzman ayarları ({{count}})",
     "Engines.Settings.NoEngine": "Hiçbir motor seçili değil",
-    "Engines.Settings.NumOfCores": "Çekirdek sayısı",
     "Engines.Settings.NumOfLines": "Varyant sayısı",
     "Engines.Settings.OpenEngineSettings": "Motor ayarlarını aç",
     "Engines.Settings.Reset": "Varsayılana sıfırla",

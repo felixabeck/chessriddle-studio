@@ -719,7 +719,6 @@
     "Engines.Settings.ExpertSettings_many": "Ustawienia eksperckie ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Ustawienia eksperckie ({{count}})",
     "Engines.Settings.NoEngine": "Nie wybrano silnika",
-    "Engines.Settings.NumOfCores": "Liczba rdzeni",
     "Engines.Settings.NumOfLines": "Liczba linii",
     "Engines.Settings.OpenEngineSettings": "Otwórz ustawienia silnika",
     "Engines.Settings.Reset": "Przywróć domyślne",

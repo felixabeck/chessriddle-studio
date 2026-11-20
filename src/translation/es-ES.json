@@ -708,7 +708,6 @@
     "Engines.Settings.ExpertSettings_many": "Configuración experta ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Configuración experta ({{count}})",
     "Engines.Settings.NoEngine": "Ningún motor seleccionado",
-    "Engines.Settings.NumOfCores": "Número de núcleos",
     "Engines.Settings.NumOfLines": "Número de líneas",
     "Engines.Settings.OpenEngineSettings": "Abrir configuración del motor",
     "Engines.Settings.Reset": "Restablecer valores predeterminados",

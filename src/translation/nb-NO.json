@@ -697,7 +697,6 @@
     "Engines.Settings.ExpertSettings_one": "Ekspertinnstillinger ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Ekspertinnstillinger ({{count}})",
     "Engines.Settings.NoEngine": "Ingen computer valgt",
-    "Engines.Settings.NumOfCores": "Antall kjerner",
     "Engines.Settings.NumOfLines": "Antall varianter",
     "Engines.Settings.OpenEngineSettings": "Åpne motorinnstillinger",
     "Engines.Settings.Reset": "Tilbakestill til standard",

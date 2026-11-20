@@ -686,7 +686,6 @@
     "Engines.Settings.EditJSON": "編輯 JSON",
     "Engines.Settings.ExpertSettings_other": "專家設定 ({{count}})",
     "Engines.Settings.NoEngine": "未選取引擎",
-    "Engines.Settings.NumOfCores": "核心數",
     "Engines.Settings.NumOfLines": "變例數量",
     "Engines.Settings.OpenEngineSettings": "開啟引擎設定",
     "Engines.Settings.Reset": "重設為預設值",

@@ -719,7 +719,6 @@
     "Engines.Settings.ExpertSettings_many": "Экспертныя налады ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Экспертныя налады ({{count}})",
     "Engines.Settings.NoEngine": "Рухавік не абраны",
-    "Engines.Settings.NumOfCores": "Колькасць ядраў",
     "Engines.Settings.NumOfLines": "Колькасць ліній",
     "Engines.Settings.OpenEngineSettings": "Адкрыць налады рухавіка",
     "Engines.Settings.Reset": "Скінуць па змаўчанні",

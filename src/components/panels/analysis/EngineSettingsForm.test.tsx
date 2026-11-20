@@ -261,7 +261,7 @@ test("names the lines, cores, and hash controls with the settings captions", asy
     ),
   ).toEqual([
     "Engines.Settings.NumOfLines",
-    "Engines.Settings.NumOfCores",
+    "Engines.Options.Threads.Label",
     "Engines.Settings.SizeOfHash",
   ]);
 });

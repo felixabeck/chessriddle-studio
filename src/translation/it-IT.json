@@ -708,7 +708,6 @@
     "Engines.Settings.ExpertSettings_many": "Impostazioni esperte ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Impostazioni esperte ({{count}})",
     "Engines.Settings.NoEngine": "Nessun motore selezionato",
-    "Engines.Settings.NumOfCores": "Numero di core",
     "Engines.Settings.NumOfLines": "Numero di varianti",
     "Engines.Settings.OpenEngineSettings": "Apri impostazioni del motore",
     "Engines.Settings.Reset": "Ripristina impostazioni predefinite",

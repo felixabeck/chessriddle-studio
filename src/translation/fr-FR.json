@@ -708,7 +708,6 @@
     "Engines.Settings.ExpertSettings_many": "Paramètres experts ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Paramètres experts ({{count}})",
     "Engines.Settings.NoEngine": "Aucun moteur sélectionné",
-    "Engines.Settings.NumOfCores": "Nombre de noeuds",
     "Engines.Settings.NumOfLines": "Nombre de variantes",
     "Engines.Settings.OpenEngineSettings": "Ouvrir les paramètres du moteur",
     "Engines.Settings.Reset": "Remise à zéro",

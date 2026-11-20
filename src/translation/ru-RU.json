@@ -719,7 +719,6 @@
     "Engines.Settings.ExpertSettings_many": "Экспертные настройки ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Экспертные настройки ({{count}})",
     "Engines.Settings.NoEngine": "Движок не выбран",
-    "Engines.Settings.NumOfCores": "Количество ядер",
     "Engines.Settings.NumOfLines": "Количество линий",
     "Engines.Settings.OpenEngineSettings": "Открыть настройки движка",
     "Engines.Settings.Reset": "Сбросить по умолчанию",

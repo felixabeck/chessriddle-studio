@@ -719,7 +719,6 @@
     "Engines.Settings.ExpertSettings_many": "Експертні налаштування ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Експертні налаштування ({{count}})",
     "Engines.Settings.NoEngine": "Рушій не вибрано",
-    "Engines.Settings.NumOfCores": "Кількість ядер",
     "Engines.Settings.NumOfLines": "Кількість ліній",
     "Engines.Settings.OpenEngineSettings": "Відкрити налаштування рушія",
     "Engines.Settings.Reset": "Скинути за замовчуванням",

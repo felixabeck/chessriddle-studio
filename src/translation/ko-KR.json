@@ -686,7 +686,6 @@
     "Engines.Settings.EditJSON": "JSON 편집",
     "Engines.Settings.ExpertSettings_other": "전문가 설정 ({{count}})",
     "Engines.Settings.NoEngine": "선택된 엔진 없음",
-    "Engines.Settings.NumOfCores": "코어 수",
     "Engines.Settings.NumOfLines": "라인 수",
     "Engines.Settings.OpenEngineSettings": "엔진 설정 열기",
     "Engines.Settings.Reset": "기본값으로 재설정",

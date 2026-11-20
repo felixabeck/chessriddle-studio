@@ -686,7 +686,6 @@
     "Engines.Settings.EditJSON": "编辑 JSON",
     "Engines.Settings.ExpertSettings_other": "专家设置 ({{count}})",
     "Engines.Settings.NoEngine": "未选择引擎",
-    "Engines.Settings.NumOfCores": "核心数",
     "Engines.Settings.NumOfLines": "线程数",
     "Engines.Settings.OpenEngineSettings": "打开引擎设置",
     "Engines.Settings.Reset": "重置为默认值",

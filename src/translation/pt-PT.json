@@ -708,7 +708,6 @@
     "Engines.Settings.ExpertSettings_many": "Definições para especialistas ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Definições para especialistas ({{count}})",
     "Engines.Settings.NoEngine": "Nenhum motor selecionado",
-    "Engines.Settings.NumOfCores": "Número de cores",
     "Engines.Settings.NumOfLines": "Número de linhas",
     "Engines.Settings.OpenEngineSettings": "Abrir definições do motor",
     "Engines.Settings.Reset": "Repor as predefinições",

@@ -697,7 +697,6 @@
     "Engines.Settings.ExpertSettings_one": "Experteneinstellungen ({{count}})",
     "Engines.Settings.ExpertSettings_other": "Experteneinstellungen ({{count}})",
     "Engines.Settings.NoEngine": "Keine Engine ausgewählt",
-    "Engines.Settings.NumOfCores": "Anzahl der Kerne",
     "Engines.Settings.NumOfLines": "Anzahl der Linien",
     "Engines.Settings.OpenEngineSettings": "Engine-Einstellungen öffnen",
     "Engines.Settings.Reset": "Auf Standard zurücksetzen",
