@@ -382,7 +382,8 @@ function validateGateCommands(
   const fencedLines = shellFencedCommandLines(pushSkill);
   // `agent-gate <command>` only places <command> in its own memory scope
   // (f-20261116-03), so the routed command is what follows the launcher.
-  const directGateCommands = fencedLines.map((line) => line.replace(/^agent-gate\s+/u, ""));
+  const launcherPrefix = new RegExp(`^${GATE_LAUNCHER}\\s+`, "u");
+  const directGateCommands = fencedLines.map((line) => line.replace(launcherPrefix, ""));
   const routedCommands = [];
 
   for (const [index, line] of directGateCommands.entries()) {
@@ -400,7 +401,7 @@ function validateGateCommands(
       const target = resolve(repoRoot, words[1]);
       const scriptsDirectory = resolve(repoRoot, "scripts");
       if (target !== scriptsDirectory && !target.startsWith(`${scriptsDirectory}${sep}`)) {
-        findings.push(`gate command escapes scripts/: ${line}; use a path inside scripts/`);
+        findings.push(`gate command escapes scripts/: ${fencedLine}; use a path inside scripts/`);
       }
       continue;
     }
