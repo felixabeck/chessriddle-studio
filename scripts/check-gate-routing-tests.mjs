@@ -284,6 +284,25 @@ test("rejects a fenced gate command that is none of the accepted forms", async (
   );
 });
 
+test("resolves a fenced gate command behind the agent-gate launcher", async () => {
+  // The push skill runs the installer as `agent-gate bash scripts/install-local.sh`
+  // (f-20261116-03). The launcher prefix must not hide the routed script, and an
+  // unroutable command behind it must still fail.
+  const root = await fixture();
+  const path = join(root, ".claude/skills/push/SKILL.md");
+  const original = await readFile(path, "utf8");
+  await writeFile(
+    path,
+    `${original}\n\`\`\`bash\nagent-gate bash scripts/check-example.mjs\n\`\`\`\n`,
+  );
+  assert.deepEqual(await checkGateRouting(root, { paths }), []);
+  await writeFile(path, `${original}\n\`\`\`bash\nagent-gate kit sync --check .\n\`\`\`\n`);
+  assert.match(
+    (await checkGateRouting(root, { paths })).join("\n"),
+    /unresolved gate command in .claude\/skills\/push\/SKILL.md: agent-gate kit sync --check \./u,
+  );
+});
+
 test("rejects a missing package script reached through a nested pnpm command", async () => {
   const root = await fixture();
   const packagePath = join(root, "package.json");

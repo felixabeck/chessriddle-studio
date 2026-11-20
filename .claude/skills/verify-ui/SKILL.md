@@ -77,7 +77,8 @@ now does (proof 2 below).
    GStreamer's `fakeaudiosink` (`sudo apt install gstreamer1.0-plugins-bad
    gstreamer1.0-tools`), which keeps the off-screen window's move sounds off
    the desktop's audio output. It needs
-   `pnpm build` first, because it drives the release binary. Not a push gate:
+   `agent-gate pnpm build` first, because it drives the release binary (the
+   release `rustc` outgrows an agent session's 8 GiB scope, f-20261116-03). Not a push gate:
    CI has no compositor and it wants a release build.
 3. **Live product window:** `pnpm dev` opens the Tauri webview. This is still
    Felix's check, and still the only route for native menus, native dialogs and
@@ -127,7 +128,7 @@ in the actual product: it drives the real window off-screen through `kwin_waylan
 `tauri-driver` → `WebKitWebDriver` → the release binary, with the real Rust backend and real IPC
 (`scripts/app-driver.mjs`). Use it for lifecycle, IPC and process-teardown claims. It needs
 `webkit2gtk-driver` and `gstreamer1.0-plugins-bad` (apt) and `tauri-driver` (cargo), plus a
-`pnpm build`, and is not a push gate.
+`agent-gate pnpm build`, and is not a push gate.
 
 What remains Felix's is now only **native GTK chrome** — menus, file dialogs, window decorations.
 WebDriver sees the page, not the GTK widgets around it, and `issue_engine_binary` always opens a

@@ -379,10 +379,14 @@ function validateGateCommands(
   preReviewCommands = new Set(preReviewGateScheduleCommands()),
 ) {
   const findings = [];
-  const directGateCommands = shellFencedCommandLines(pushSkill);
+  const fencedLines = shellFencedCommandLines(pushSkill);
+  // `agent-gate <command>` only places <command> in its own memory scope
+  // (f-20261116-03), so the routed command is what follows the launcher.
+  const directGateCommands = fencedLines.map((line) => line.replace(/^agent-gate\s+/u, ""));
   const routedCommands = [];
 
-  for (const line of directGateCommands) {
+  for (const [index, line] of directGateCommands.entries()) {
+    const fencedLine = fencedLines[index];
     const pnpmScripts = pnpmReferences(line);
     if (pnpmScripts.length > 0) {
       routedCommands.push({ command: line, source: `${PUSH_SKILL}: ${line}` });
@@ -400,7 +404,7 @@ function validateGateCommands(
       }
       continue;
     }
-    findings.push(`unresolved gate command in ${PUSH_SKILL}: ${line}`);
+    findings.push(`unresolved gate command in ${PUSH_SKILL}: ${fencedLine}`);
   }
 
   const routed = routeCommands(routedCommands, scripts, findings);
