@@ -425,10 +425,10 @@ pnpm ci:remote:check
 - After a verified push to `master`, including the required remote-CI wait above, run the installer only from a checkout whose `HEAD` equals the verified pushed SHA, normally the pushing worktree. Check that equality immediately before invoking the installer. A main checkout on `master` is eligible only when its `HEAD` equals that same SHA. The installer performs a Tauri release build followed by an atomic swap of `~/.local/opt/chessriddle-studio/current`:
 
 ```bash
-bash scripts/install-local.sh
+agent-gate bash scripts/install-local.sh
 ```
 
-  This is how a pushed change reaches the application-menu entry Felix uses; nothing else updates it, and it is not a release or deployment. Report the installed short commit from `~/.local/opt/chessriddle-studio/current/VERSION`. If the build fails, the push stands and the failure is reported as its own blocker — the previous installed copy keeps running.
+  The release `rustc` alone peaks above 4 GB, so the installer runs in its own `agent-gate` scope like the other heavy gates; run directly inside an agent session's 8 GiB scope it was OOM-killed on 2026-11-16 (f-20261116-03). Exit 125 means `agent-gate` refused before anything started. This is how a pushed change reaches the application-menu entry Felix uses; nothing else updates it, and it is not a release or deployment. Report the installed short commit from `~/.local/opt/chessriddle-studio/current/VERSION`. If the build fails, the push stands and the failure is reported as its own blocker — the previous installed copy keeps running.
 - On any persistent red gate, follow the shared policy: do not push and report the exact blocker.
 
 ChessRiddle Studio override to shared policy §7: this workflow never performs a force push. A message containing `force push` requires a separate stop for the exact refspec and force-with-lease decision; it is not treated as an automatic gate-skip-and-push marker here.
