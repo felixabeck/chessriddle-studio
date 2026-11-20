@@ -15,6 +15,7 @@ import BoardFrame from "@/components/boards/BoardFrame";
 import AppModal from "./AppModal";
 import Comment from "./Comment";
 import { GameReferenceProvider } from "./GameReference";
+import { MoveDeletionContext, type MoveDeletion } from "./MoveDeletionContext";
 
 const citationMocks = vi.hoisted(() => ({ lookup: vi.fn(), navigate: vi.fn() }));
 
@@ -108,6 +109,7 @@ function render({
   readOnly = false,
   citation = false,
   editors = false,
+  deletion = undefined as MoveDeletion | undefined,
 } = {}) {
   act(() => {
     root.render(
@@ -119,7 +121,11 @@ function render({
             <BoardFrame>
               <div role="grid" />
             </BoardFrame>
-            {!controlsInModal && <MoveControls readOnly={readOnly} />}
+            {!controlsInModal && (
+              <MoveDeletionContext.Provider value={deletion}>
+                <MoveControls readOnly={readOnly} />
+              </MoveDeletionContext.Provider>
+            )}
             {editors && (
               <>
                 <input aria-label="Comment input" />
@@ -768,6 +774,31 @@ test("readOnly keeps Delete harmless while ArrowLeft still navigates", () => {
   expect(store.getState().position).toEqual([]);
   expect(store.getState().root).toBe(before.root);
   expect(store.getState().dirty).toBe(false);
+});
+
+test("a provided move deletion receives Delete at the cursor and the tree stays untouched", () => {
+  store = middleGameStore();
+  const deletion = { canDelete: vi.fn(() => true), delete: vi.fn() };
+  render({ deletion });
+  const before = store.getState();
+
+  press("Delete");
+
+  expect(deletion.delete).toHaveBeenCalledExactlyOnceWith([0]);
+  expect(store.getState().root).toBe(before.root);
+  expect(store.getState().position).toEqual([0]);
+  expect(store.getState().dirty).toBe(false);
+});
+
+test("readOnly keeps Delete harmless even with a provided move deletion", () => {
+  store = middleGameStore();
+  const deletion = { canDelete: vi.fn(() => true), delete: vi.fn() };
+  render({ readOnly: true, deletion });
+
+  press("Delete");
+
+  expect(deletion.delete).not.toHaveBeenCalled();
+  expect(store.getState().root.children).toHaveLength(1);
 });
 
 test("opening a real commentary citation suspends background Delete and ArrowLeft", async () => {

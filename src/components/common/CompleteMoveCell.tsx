@@ -16,6 +16,7 @@ import type { NotationNodeIndex } from "./notationRows";
 import { pathForNotationNode } from "./notationRows";
 import MoveCell, { releasePointerFocus } from "./MoveCell";
 import { TreeStateContext } from "./TreeStateContext";
+import { MoveDeletionContext } from "./MoveDeletionContext";
 import classes from "./GameNotation.module.css";
 
 const transpositionCache = new WeakMap<TreeNode, Map<string, TreeNode[]>>();
@@ -236,7 +237,7 @@ type MoveMenuActions = {
   promoteToMainline?: () => void;
   promote: () => void;
   copy?: () => void;
-  delete: () => void;
+  delete?: () => void;
 };
 
 function MoveActionItems({
@@ -296,13 +297,15 @@ function MoveActionItems({
           {t("Menu.CopyVariationPGN")}
         </Menu.Item>
       )}
-      <Menu.Item
-        color="danger"
-        leftSection={<Trash2 size="0.875rem" />}
-        onClick={() => onAction(actions.delete)}
-      >
-        {t("Menu.DeleteMove")}
-      </Menu.Item>
+      {actions.delete && (
+        <Menu.Item
+          color="danger"
+          leftSection={<Trash2 size="0.875rem" />}
+          onClick={() => onAction(actions.delete!)}
+        >
+          {t("Menu.DeleteMove")}
+        </Menu.Item>
+      )}
     </>
   );
 }
@@ -335,6 +338,7 @@ function OpenMoveMenu({
   onClose: () => void;
 }) {
   const [currentTab] = useOwnerTab();
+  const deletion = useContext(MoveDeletionContext);
   const actions = store.getState();
   const mainline = path.length > 0 && path.every((index) => index === 0);
   const isGameEnd = equal(getEffectiveGameEnd(root)?.position, path);
@@ -374,7 +378,11 @@ function OpenMoveMenu({
             promoteToMainline: () => actions.promoteToMainline(path),
             promote: () => actions.promoteVariation(path),
             copy: () => actions.copyVariationPgn(path),
-            delete: () => actions.deleteMove(path),
+            delete: !deletion
+              ? () => actions.deleteMove(path)
+              : deletion.canDelete(path)
+                ? () => deletion.delete(path)
+                : undefined,
           }}
           isGameEnd={isGameEnd}
           hasDiagram={hasDiagram}

@@ -97,6 +97,7 @@ import CompleteMoveCell, {
   NotationMoveActionsContext,
   type NotationMoveActions,
 } from "./CompleteMoveCell";
+import { MoveDeletionContext } from "./MoveDeletionContext";
 
 function CurrentGameMoves({
   first,
@@ -735,3 +736,59 @@ test("the move menu offers to remove the diagram of a marked move", async () => 
   );
   expect(toggleDiagram.mock.calls).toEqual([[[0]]]);
 });
+
+test.each([true, false])(
+  "a provided move deletion decides the delete entry (deletable: %s) and the store stays untouched",
+  async (deletable) => {
+    const tree = defaultTree();
+    const node = createNode({
+      fen: "move b - - 0 1",
+      move: parseUci("e2e4")!,
+      san: "e4",
+      halfMoves: 1,
+    });
+    tree.root.children = [node];
+    const store = createTreeStore();
+    const deleteMove = vi.fn();
+    store.setState({ root: tree.root, deleteMove });
+    const deletion = { canDelete: vi.fn(() => deletable), delete: vi.fn() };
+    const index = createNotationNodeIndex(tree.root);
+    await act(async () =>
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="tab">
+            <MoveDeletionContext.Provider value={deletion}>
+              <CompleteMoveCell
+                node={node}
+                nodeIndex={index}
+                root={tree.root}
+                halfMoves={1}
+                move="e4"
+                fen={node.fen}
+                comment=""
+                annotations={[]}
+                showComments={false}
+              />
+            </MoveDeletionContext.Provider>
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      ),
+    );
+    await act(async () =>
+      host
+        .querySelector("[data-move]")!
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    const deleteItem = () =>
+      [...host.querySelectorAll<HTMLButtonElement>("[data-menu-item]")].find(
+        (item) => item.textContent === "Menu.DeleteMove",
+      );
+
+    expect(deletion.canDelete).toHaveBeenCalledWith([0]);
+    expect(deleteItem() !== undefined).toBe(deletable);
+    if (deletable) await act(async () => deleteItem()!.click());
+
+    expect(deletion.delete.mock.calls).toEqual(deletable ? [[[0]]] : []);
+    expect(deleteMove).not.toHaveBeenCalled();
+  },
+);

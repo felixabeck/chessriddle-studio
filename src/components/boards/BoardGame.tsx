@@ -61,6 +61,7 @@ import FileInput from "../common/FileInput";
 import GameInfo from "../common/GameInfo";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
+import { MoveDeletionContext, type MoveDeletion } from "../common/MoveDeletionContext";
 import NotationColumn from "../common/NotationColumn";
 import { TreeStateContext } from "../common/TreeStateContext";
 import Board from "./Board";
@@ -386,16 +387,20 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   const isPlayerVsEngine =
     (players.white.type === "human" && players.black.type === "engine") ||
     (players.black.type === "human" && players.white.type === "engine");
+  const isHumanVsHuman = players.white.type === "human" && players.black.type === "human";
 
+  const setOrientation = useCallback(
+    (orientation: "white" | "black") => {
+      const tree = store.getState();
+      if ((tree.headers.orientation || "white") === orientation) return;
+      tree.setHeaders({ ...tree.headers, fen: tree.root.fen, orientation });
+    },
+    [store],
+  );
   const toggleOrientation = useCallback(() => {
-    const tree = store.getState();
-    const currentOrientation = tree.headers.orientation || "white";
-    tree.setHeaders({
-      ...tree.headers,
-      fen: tree.root.fen,
-      orientation: currentOrientation === "black" ? "white" : "black",
-    });
-  }, [store]);
+    const currentOrientation = store.getState().headers.orientation || "white";
+    setOrientation(currentOrientation === "black" ? "white" : "black");
+  }, [setOrientation, store]);
 
   const fetchEngineLogs = useCallback(async () => {
     const expectedSession = backendSession;
@@ -957,10 +962,20 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
       unavailable: undefined,
       action: ({ gameId, session }) => tauri.takeBackGameMove(gameId, session),
       onSuccess: (state, { gameId, session, generation }) => {
-        applyAuthoritativeState(state, gameId, session, generation);
+        const applied = applyAuthoritativeState(state, gameId, session, generation);
+        // A takeback removes one or two plies, so a toggle could leave the board facing the
+        // wrong side; the authoritative side to move decides instead.
+        if (
+          applied &&
+          isHumanVsHuman &&
+          autoFlipBoard &&
+          (state.turn === "white" || state.turn === "black")
+        ) {
+          setOrientation(state.turn);
+        }
       },
     });
-  }, [applyAuthoritativeState, runGameCommand]);
+  }, [applyAuthoritativeState, autoFlipBoard, isHumanVsHuman, runGameCommand, setOrientation]);
 
   const reportGameEventError = useCallback(
     (error: unknown, event?: { payload?: unknown }) => {
@@ -1210,8 +1225,27 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   const timeControlsStartable =
     hasStartableTimeControl(player1Settings) && hasStartableTimeControl(player2Settings);
 
-  const onePlayerIsEngine = players.white.type !== players.black.type;
+  const hasHuman = players.white.type === "human" || players.black.type === "human";
   const isEngineVsEngine = players.white.type === "engine" && players.black.type === "engine";
+
+  // While this tab owns a live game its tree mirrors native, so a local deletion would be undone
+  // by the next snapshot and make the next move fail its ply check. Deleting the last move is the
+  // takeback; any other deletion is not offered.
+  const isLiveGame = gameState === "playing" && gameId !== null;
+  const liveMoveDeletion = useMemo<MoveDeletion | undefined>(() => {
+    if (!isLiveGame) return undefined;
+    const canDelete = (path: number[]) =>
+      hasHuman &&
+      path.length > 0 &&
+      path.every((index) => index === 0) &&
+      path.length === getMainlineUcis(store.getState().root).length;
+    return {
+      canDelete,
+      delete: (path) => {
+        if (canDelete(path)) void onTakeBack();
+      },
+    };
+  }, [hasHuman, isLiveGame, onTakeBack, store]);
 
   function getResignationLosingColor(): "white" | "black" {
     if (isPlayerVsEngine) {
@@ -1536,25 +1570,27 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
             setSelectedPiece={setSelectedPiece}
           />
         ) : (
-          <NotationColumn>
-            <GameNotation
-              topBar
-              controls={
-                <BoardControls
-                  boardRef={boardRef}
-                  editingMode={gameState === "settingUp" && editingMode}
-                  toggleEditingMode={toggleEditingMode}
-                  dirty={false}
-                  canTakeBack={onePlayerIsEngine}
-                  onTakeBack={onTakeBack}
-                  takeBackPending={pendingCommand === "takeback"}
-                  disableVariations
-                  allowEditing={gameState === "settingUp"}
-                />
-              }
-            />
-            <MoveControls />
-          </NotationColumn>
+          <MoveDeletionContext.Provider value={liveMoveDeletion}>
+            <NotationColumn>
+              <GameNotation
+                topBar
+                controls={
+                  <BoardControls
+                    boardRef={boardRef}
+                    editingMode={gameState === "settingUp" && editingMode}
+                    toggleEditingMode={toggleEditingMode}
+                    dirty={false}
+                    canTakeBack={hasHuman}
+                    onTakeBack={onTakeBack}
+                    takeBackPending={pendingCommand === "takeback"}
+                    disableVariations
+                    allowEditing={gameState === "settingUp"}
+                  />
+                }
+              />
+              <MoveControls />
+            </NotationColumn>
+          </MoveDeletionContext.Provider>
         )}
       </Portal>
     </>

@@ -12,6 +12,7 @@ import { isEngineLinePreviewOpen, isHotkeySuppressed } from "@/utils/keyboardOwn
 import { TreeStateContext, useVariationChooser } from "@/components/common/TreeStateContext";
 import IconAction from "./IconAction";
 import { releaseFocusOnMoveKey } from "./MoveCell";
+import { MoveDeletionContext } from "./MoveDeletionContext";
 
 function isBareVerticalArrow(event: KeyboardEvent) {
   return (
@@ -33,6 +34,7 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   const start = useStore(store, (s) => s.goToStart);
   const end = useStore(store, (s) => s.goToEnd);
   const deleteMove = useStore(store, (s) => s.deleteMove);
+  const deletion = useContext(MoveDeletionContext);
   const startBranch = useStore(store, (s) => s.goToBranchStart);
   const endBranch = useStore(store, (s) => s.goToBranchEndOrNextLine);
   const nextBranch = useStore(store, (s) => s.nextBranch);
@@ -95,7 +97,11 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   useHotkeys(keyMap.GO_TO_END.keys, moveKey(navigate(end)), shortcutOptions());
   useHotkeys(
     keyMap.DELETE_MOVE.keys,
-    navigate(readOnly ? () => {} : () => deleteMove()),
+    navigate(() => {
+      if (readOnly) return;
+      if (deletion) deletion.delete(store.getState().position);
+      else deleteMove();
+    }),
     shortcutOptions(),
   );
   // While the list is open, only bare ArrowUp/ArrowDown select, whatever the branch key bindings.

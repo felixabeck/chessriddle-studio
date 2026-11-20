@@ -70,6 +70,7 @@
         "src/components/common/MiniBoard.tsx",
         "src/components/common/MoveCell.tsx",
         "src/components/common/MoveControls.tsx",
+        "src/components/common/MoveDeletionContext.ts",
         "src/components/common/NotationColumn.tsx",
         "src/components/common/OpeningName.tsx",
         "src/components/common/Piece.tsx",
