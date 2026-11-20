@@ -121,8 +121,6 @@ use crate::sound::get_sound_server_port;
 use crate::unsaved_games::{
     clear_unsaved_games, list_unsaved_games, remove_unsaved_game, write_unsaved_game,
 };
-#[cfg(all(test, unix))]
-use crate::workspace_commands::create_workspace_database_blocking;
 use crate::workspace_commands::{
     create_workspace_database, database_download_destination, download_destination_is_known,
     get_database_workspace, get_engine_workspace, issue_database_workspace,
@@ -130,10 +128,6 @@ use crate::workspace_commands::{
     issue_engine_workspace, issue_opening_book, issue_pgn_export_destination, issue_pgn_workspace,
     list_workspace_databases, open_engine_workspace, read_engine_image, save_board_snapshot,
     save_engine_logs,
-};
-#[cfg(test)]
-use crate::workspace_commands::{
-    get_default_database_workspace, list_workspace_databases_blocking,
 };
 use crate::{
     chess::get_best_moves,

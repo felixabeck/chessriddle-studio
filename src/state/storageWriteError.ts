@@ -1,4 +1,4 @@
-export function createTabStorageQuotaError(cause: unknown): Error {
+function createTabStorageQuotaError(cause: unknown): Error {
     return new Error(
         "Could not open the game: the browser's session storage is full. Close some open tabs and try again.",
         { cause },

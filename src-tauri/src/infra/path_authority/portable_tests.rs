@@ -1700,9 +1700,12 @@ fn root_failure_database_child_replaced_during_listing_is_unlabelled() {
             fs::write(&child, b"new").unwrap();
         }));
     });
-    let error =
-        crate::list_workspace_databases_blocking(&registry, handle, &CancellationToken::new())
-            .unwrap_err();
+    let error = crate::workspace_commands::list_workspace_databases_blocking(
+        &registry,
+        handle,
+        &CancellationToken::new(),
+    )
+    .unwrap_err();
     assert_eq!(error.root_failure(), None);
     assert_eq!(error.category(), crate::error::ErrorCategory::Conflict);
     assert_eq!(
@@ -1727,9 +1730,12 @@ fn root_failure_database_root_swap_or_removal_first_seen_in_child_keeps_original
                 }
             }));
         });
-        let error =
-            crate::list_workspace_databases_blocking(&registry, handle, &CancellationToken::new())
-                .unwrap_err();
+        let error = crate::workspace_commands::list_workspace_databases_blocking(
+            &registry,
+            handle,
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
         assert_eq!(
             error.root_failure(),
             Some(if replace {
@@ -1777,9 +1783,12 @@ fn root_failure_database_root_removed_or_replaced_before_listing_keeps_original_
             .list_database_children_cancellable(&handle, &CancellationToken::new())
             .unwrap_err();
         assert_eq!(original.root_failure(), None);
-        let error =
-            crate::list_workspace_databases_blocking(&registry, handle, &CancellationToken::new())
-                .unwrap_err();
+        let error = crate::workspace_commands::list_workspace_databases_blocking(
+            &registry,
+            handle,
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
         assert_eq!(
             error.root_failure(),
             Some(if replace {
@@ -1819,7 +1828,9 @@ fn root_failure_database_failed_listing_cancels_at_probe_is_unlabelled() {
             cancel.cancel();
         }),
     );
-    let error = crate::list_workspace_databases_blocking(&registry, handle, &token).unwrap_err();
+    let error =
+        crate::workspace_commands::list_workspace_databases_blocking(&registry, handle, &token)
+            .unwrap_err();
     assert!(
         token.is_cancelled(),
         "the failed listing must reach its probe"
@@ -1838,9 +1849,12 @@ fn root_failure_database_root_swap_during_resolution_keeps_original_message() {
             fs::create_dir(&root).unwrap();
         }));
     });
-    let error =
-        crate::list_workspace_databases_blocking(&registry, handle, &CancellationToken::new())
-            .unwrap_err();
+    let error = crate::workspace_commands::list_workspace_databases_blocking(
+        &registry,
+        handle,
+        &CancellationToken::new(),
+    )
+    .unwrap_err();
     assert_eq!(
         error.root_failure(),
         Some(crate::error::RootFailure::Changed)
@@ -1858,7 +1872,7 @@ fn root_failure_database_listing_authority_poison_and_initialization_stay_unlabe
         } else {
             registry.uninstall();
         }
-        let error = crate::list_workspace_databases_blocking(
+        let error = crate::workspace_commands::list_workspace_databases_blocking(
             &registry,
             handle.clone(),
             &CancellationToken::new(),
@@ -1994,9 +2008,12 @@ fn root_failure_database_listing_bound_is_too_large_and_keeps_message() {
     for index in 0..=crate::infra::fs::MAX_DIRECTORY_LISTING_ENTRIES {
         fs::write(root.join(index.to_string()), b"").unwrap();
     }
-    let error =
-        crate::list_workspace_databases_blocking(&registry, handle, &CancellationToken::new())
-            .unwrap_err();
+    let error = crate::workspace_commands::list_workspace_databases_blocking(
+        &registry,
+        handle,
+        &CancellationToken::new(),
+    )
+    .unwrap_err();
     assert_eq!(
         error.root_failure(),
         Some(crate::error::RootFailure::TooLarge)
@@ -2153,7 +2170,8 @@ fn root_failure_default_registry_persistence_and_capacity_are_unlabelled() {
     directory_listing_bound_fill(&mut registry, workspace.path_ref(), MAX_AUTHORITY_IDS).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let app_data = AppDataDir::for_test(directory.path());
-    let error = crate::get_default_database_workspace(&mut registry, &app_data).unwrap_err();
+    let error = crate::workspace_commands::get_default_database_workspace(&mut registry, &app_data)
+        .unwrap_err();
     assert_eq!(error.root_failure(), None);
     assert_eq!(error.category(), crate::error::ErrorCategory::ResourceLimit);
 }
@@ -2168,8 +2186,11 @@ fn root_failure_root_read_without_search_permission_is_permission() {
     let (_directory, registry, handle, root) = root_failure_database_fixture();
     fs::write(root.join("child.db3"), b"").unwrap();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o400)).unwrap();
-    let result =
-        crate::list_workspace_databases_blocking(&registry, handle, &CancellationToken::new());
+    let result = crate::workspace_commands::list_workspace_databases_blocking(
+        &registry,
+        handle,
+        &CancellationToken::new(),
+    );
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
     let error = result.unwrap_err();
     assert_eq!(

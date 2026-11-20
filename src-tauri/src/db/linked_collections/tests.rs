@@ -1454,7 +1454,7 @@ mod native_tests {
                 .unwrap()
                 .unwrap();
             // Use the same exclusive raw-file producer as create_workspace_database.
-            let destination = crate::create_workspace_database_blocking(
+            let destination = crate::workspace_commands::create_workspace_database_blocking(
                 &fixture.state.pgn_path_authority,
                 root,
                 "restored.db3".into(),
