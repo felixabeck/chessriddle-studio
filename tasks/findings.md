@@ -27918,6 +27918,17 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Correction 2026-11-20 (same drain session, after a rebase):** the closing note above names the wrong commit. The `file_revision` mock fix landed upstream first, from the fullscreen-hotkey session, in `6b7e662e7` and `198c89a16` (its own measurement: 25 of 80 failed before, 80 of 80 passed after, `--repeat-each=40 --workers=12`). This drain's identical mock line was dropped in the rebase. What this drain adds is `18095ff9a`: the spec waits for two `file_revision` reads and asserts that the "different game at this position" panel never appears, so a regression goes red on a fast runner too. On the rebased tree, removing the mock line fails the spec in the container, and `--repeat-each=20` passes 40 of 40.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"2698e3686b9568c02648f3fe8df1dab628b47545a902847af3a7e14d995fa115","input_sha256":"807b4b9517bd9b2b248a6a31a4444faec863473b5588f9347f7b2bd1fa14f99a","kind":"mutation-receipt","operation":"e58064713912b002935471438020fef7fd78a56ea739d29ba065dae949ae5482","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-10"],"target":"f-20261120-10","v":1} -->
 
+Handled by 6b7e662e7 and 198c89a16 (rebased SHAs; see `git log -- e2e/new-game-to-file.spec.ts`), found while the F11 full-screen push hit this red e2e gate.
+
+Cause: a mock gap, not a product race. `repertoireCommands()` answered `write_game` with revision `saved-generation`, while `file_revision` kept answering the fixture's `e2e-pgn-revision`. After the append rebinds the tab with `verifiedRevision: "saved-generation"`, the 2 s poll (`FILE_REVISION_INTERVAL_MS`, `src/state/fileFreshness.ts`) saw a different revision, reconciled, read the fixture game through `read_game` and showed `FileFreshness.GameReplaced`. Fast runs finished inside the 2 s window and passed.
+
+Product reachability: no. Native `write_game` returns the revision of its read-back (`src-tauri/src/pgn.rs`, `readback.revision`), built by `revision_string_for_key`, the same function `file_revision_core` uses, so a real file reports the saved revision after the append.
+
+Fix: `repertoireCommands()` now answers `file_revision` with `savedWrite.revision` for both tests in the spec. Only file tabs poll it and neither test has one before its save. The sibling "Save to file or database" test had the same gap and passed only because it asserts nothing on the board after the poll window.
+
+Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --workers=12` → 25 of 80 failed before, 80 of 80 passed after (twice: after each of the two commits). Reviewed by the tests and root-cause lenses (agy), both approved.
+<!-- ledger-meta {"command":"close","effect_lines":9,"effect_sha256":"2a93e381bd470cc19e0fa023b910055c347c40fa3d56433dda86fdf20f1135a3","header_sha256":"7a43064b9d5ed7d8804cc24be3d5272d23883bc6ae849bae48064d47a23fdbef","header_status":"handled","input_sha256":"7dfe3bc4fdc0f45af0435a3d6a0000d40613d474e3543a7c55c5ca78cc5cc179","kind":"mutation-receipt","operation":"24e3c9d09af1650fdcb41ce84cb676fa6ff830b37a577ca8370b3eb5547915cd","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-10"],"target":"f-20261120-10","v":1} -->
+
 ---
 
 ## 2026-11-20 — filed through the inbox spool
