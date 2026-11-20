@@ -67,6 +67,7 @@
         "src/components/common/GameInfo.tsx",
         "src/components/common/GameNotation.tsx",
         "src/components/common/GameReference.tsx",
+        "src/components/common/MiniBoard.tsx",
         "src/components/common/MoveCell.tsx",
         "src/components/common/MoveControls.tsx",
         "src/components/common/NotationColumn.tsx",
