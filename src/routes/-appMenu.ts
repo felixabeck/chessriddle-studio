@@ -45,6 +45,11 @@ export function menuWindowPlatform(vitePlatform: string): WindowPlatform {
     return "other";
 }
 
+/** Full-screen shortcut, shown in the View menu. The native menu registers it as its accelerator; the in-app TopBar has none, so the root binds it as a hotkey there. */
+export function fullscreenShortcut(isMacOS: boolean): string {
+    return isMacOS ? "Ctrl+Cmd+F" : "F11";
+}
+
 export function wantNativeDecorations(isNative: boolean, windowPlatform: WindowPlatform): boolean {
     return isNative || windowPlatform === "other";
 }
@@ -180,7 +185,7 @@ export function buildAppMenuTree(args: {
                 {
                     label: t("Menu.View.Fullscreen"),
                     id: "toggle_fullscreen",
-                    shortcut: isMacOS ? "Ctrl+Cmd+F" : "F11",
+                    shortcut: fullscreenShortcut(isMacOS),
                     action: callbacks.toggleFullscreen,
                 },
             ],

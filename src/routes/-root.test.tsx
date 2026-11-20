@@ -135,7 +135,10 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 import { clearSavedDataAfterConfirmation, RootLayout, startRootFileFreshnessPoll } from "./__root";
-import { clearSavedDataFromMenu } from "./-appMenu";
+import { clearSavedDataFromMenu, menuWindowPlatform } from "./-appMenu";
+import { getDefaultStore } from "jotai";
+import { getCurrentWindow } from "@/platform/native";
+import { nativeBarAtom } from "@/state/atoms";
 import type { Tab } from "@/utils/tabs";
 
 beforeEach(() => {
@@ -500,3 +503,72 @@ test("the root binds no Save hotkey; Ctrl+S belongs to the board alone", async (
     host.remove();
   }
 });
+
+const drawsOwnTopBar = menuWindowPlatform(String(import.meta.env.VITE_PLATFORM)) !== "other";
+
+async function renderWithWindow(isNative: boolean) {
+  const fullscreen = { value: false };
+  const window = {
+    isFullscreen: vi.fn(async () => fullscreen.value),
+    setFullscreen: vi.fn(async (next: boolean) => {
+      fullscreen.value = next;
+    }),
+  };
+  vi.mocked(getCurrentWindow).mockReturnValue(window as never);
+  getDefaultStore().set(nativeBarAtom, isNative);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => root.render(<RootLayout />));
+  return {
+    window,
+    async unmount() {
+      await act(async () => root.unmount());
+      host.remove();
+      getDefaultStore().set(nativeBarAtom, false);
+    },
+  };
+}
+
+test.runIf(drawsOwnTopBar)(
+  "F11 toggles full screen with the in-app menu bar, also from a text field",
+  async () => {
+    const { window, unmount } = await renderWithWindow(false);
+    const input = document.createElement("input");
+    document.body.append(input);
+    try {
+      let keydown: KeyboardEvent | undefined;
+      await act(async () => {
+        keydown = press("F11");
+      });
+      await vi.waitFor(() => expect(window.setFullscreen).toHaveBeenLastCalledWith(true));
+      expect(keydown?.defaultPrevented).toBe(true);
+
+      input.focus();
+      await act(async () => {
+        press("F11", { target: input });
+      });
+      await vi.waitFor(() => expect(window.setFullscreen).toHaveBeenLastCalledWith(false));
+      expect(window.setFullscreen).toHaveBeenCalledTimes(2);
+    } finally {
+      input.remove();
+      await unmount();
+    }
+  },
+);
+
+test.runIf(drawsOwnTopBar)(
+  "F11 is left to the native menu's accelerator when the native bar is on",
+  async () => {
+    const { window, unmount } = await renderWithWindow(true);
+    try {
+      await act(async () => {
+        expect(press("F11").defaultPrevented).toBe(false);
+      });
+      expect(window.setFullscreen).not.toHaveBeenCalled();
+    } finally {
+      await unmount();
+    }
+  },
+);
