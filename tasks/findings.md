@@ -27466,7 +27466,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### The practice session-stats default is written out twice, in `practiceSessionStatsFamily` and `emptyPracticeStats`
 
-* **ID:** f-20261119-11 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-11 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review (Felix t67u) at origin/master `7086448c7`
 * **Where:** `src/state/atoms.ts:1388-1410` (`PracticeSessionStats` type, and `practiceSessionStatsFamily`, whose initial value is an inline object literal) and `src/components/panels/practice/session.ts:155-166` (`emptyPracticeStats()`, the same eight fields and values). `PracticePanel.tsx:247` and `:572` reset through `emptyPracticeStats()`; a fresh tab starts from the atom's own literal.
@@ -27477,6 +27477,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
 * **Correction (2026-11-19, same session):** the Proof commands should read `sed -n 1399,1410p src/state/atoms.ts` and `sed -n 155,166p src/components/panels/practice/session.ts` (comma, not dash).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d3313025a455663bf2936ead2080ef772237712cd3fe8143c32409aa8ee37dfe","input_sha256":"46457411e855e161ef68b7c6bde65ce9b2d433f96197dbb3654cfdfdaf20dd18","kind":"mutation-receipt","operation":"9d3ff61dc39a8aec0796d6565a7372aebf2d032ed6c2bdfb526c05d96a7ed3d5","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-11"],"target":"f-20261119-11","v":1} -->
+
+* **Handled (2026-11-20, drain):** `fb8b7ce49`, `e379987ef`. `emptyPracticeStats()` and the `PracticeSessionStats` type now live in the new `src/state/practiceSessionStats.ts`. `atoms.ts` seeds `practiceSessionStatsFamily` with `emptyPracticeStats()` and re-exports the type. `PracticePanel.tsx` and `session.test.ts` import the function from there, and `session.ts` no longer declares it. The new module sits in `state/` rather than inside `atoms.ts` because `PracticePanel.test.tsx` mocks `@/state/atoms` wholesale. It also avoids a `state → components` import. New test in `atoms.lifecycle.test.ts`: a fresh tab's stats equal `emptyPracticeStats()`, and each tab gets its own object. Practice and atoms lifecycle suites pass (369 tests).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"96f3cdeab18255539d3b120335a30ccb1bcd2da0c75c3aea43e5db9e36b20290","header_sha256":"e847eddf2bb38b02f6c69370246092d8a0cf22817f0427f80c91ed8dba6af6be","header_status":"handled","input_sha256":"b7dc08050895adf30875d4871751b3fdde5123797882754d7ce0333417870534","kind":"mutation-receipt","operation":"24f188f9a9076c65dd37b987b131d37422c1d03757d7e4b651d294e7c426d023","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-11"],"target":"f-20261119-11","v":1} -->
 
 ---
 
