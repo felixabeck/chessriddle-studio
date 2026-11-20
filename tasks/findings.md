@@ -27906,3 +27906,20 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** find which reconcile runs against the pre-save identity (the tab's headers change to the entered names while a reconcile captured before the save is still in flight, or the reconcile after the rebind reads before the mock serves the appended game) and make the save path's own stamp win; then decide whether the product can reach it.
 * **Proof:** the repeat command above green at `--repeat-each=20`.
 * **Found by:** Claude Code (Fable 5.2), notation-diagrams build, 2026-11-20
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### A Chess.com account whose stats omit the rating deviation cannot be added or refreshed
+
+* **ID:** f-20261120-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (audit of upstream En Croissant 0.16 against master c20f15301; upstream fixed the same line in 8928a59dc, #1017, for its issue #842)
+* **Where:** `src/utils/chess.com/api.tsx:14-25` (`ChessComPerf.last.rd: z.number()`), consumed by `getChessComAccount` at `:35-50`.
+* **Defect:** `rd` is required in every time-control block. `ChessComStatsSchema.safeParse` therefore fails for the whole account when a single block's `last` object has no `rd`, and `getChessComAccount` returns `null` after showing the "invalid response" notification. Nothing in `src` reads `rd` (grep for `.rd` over `src/**/*.ts{,x}` is empty), so the requirement protects no consumer.
+* **Failure scenario:** Home → Accounts → add (or reload) a Chess.com user whose `/stats` response carries a `last` block without `rd` → the card shows "invalid response" and the account cannot be added, although rating, date and record are all present.
+* **Not verified here:** no live Chess.com response without `rd` was fetched in this session; the response shape rests on upstream's issue #842 and its merged fix.
+* **Fix:** `rd: z.number().optional()`. Keep the rest of the schema strict.
+* **Proof:** a Vitest case in the existing Chess.com API test file that mocks `tauri.getPublicChessComJson` with a `chess_blitz.last` object lacking `rd` and expects `getChessComAccount` to return the parsed stats (fails at HEAD: returns `null`).
+* **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
