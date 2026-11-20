@@ -1414,6 +1414,7 @@ test("the Diagram control marks and unmarks the current position, the start posi
       (candidate) => candidate.getAttribute("aria-label") === "Board.Annotate.Diagram",
     )!;
   expect(control().getAttribute("aria-pressed")).not.toBe("true");
+  expect(control().textContent).toBe("Board.Annotate.Diagram");
 
   await act(async () => control().click());
   expect(store.getState().root.diagram).toBe(true);
