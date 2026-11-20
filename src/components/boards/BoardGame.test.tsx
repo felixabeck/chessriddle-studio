@@ -19,6 +19,7 @@ const fixtures = vi.hoisted(() => ({
   onTakeBack: null as null | (() => Promise<void>),
   boardControls: null as any,
   moveDeletion: undefined as undefined | import("../common/MoveDeletionContext").MoveDeletion,
+  notationDeletion: undefined as undefined | import("../common/MoveDeletionContext").MoveDeletion,
   positionTurn: undefined as "white" | "black" | undefined,
   boardProps: null as any,
   playPremove: vi.fn(),
@@ -236,9 +237,19 @@ vi.mock("../common/EngineLogsView", () => ({
 }));
 vi.mock("../common/FileInput", () => ({ default: () => null }));
 vi.mock("../common/GameInfo", () => ({ default: () => null }));
-vi.mock("../common/GameNotation", () => ({
-  default: ({ controls }: { controls?: React.ReactNode }) => <>{controls}</>,
-}));
+vi.mock("../common/GameNotation", async () => {
+  const { useContext } = await vi.importActual<typeof import("react")>("react");
+  const { MoveDeletionContext } = await vi.importActual<
+    typeof import("../common/MoveDeletionContext")
+  >("../common/MoveDeletionContext");
+  return {
+    // The notation's move menu (CompleteMoveCell) reads the deletion from inside this subtree.
+    default: ({ controls }: { controls?: React.ReactNode }) => {
+      fixtures.notationDeletion = useContext(MoveDeletionContext);
+      return <>{controls}</>;
+    },
+  };
+});
 vi.mock("../common/MoveControls", async () => {
   const { useContext } = await vi.importActual<typeof import("react")>("react");
   const { MoveDeletionContext } = await vi.importActual<
@@ -375,6 +386,7 @@ beforeEach(() => {
   fixtures.onTakeBack = null;
   fixtures.boardControls = null;
   fixtures.moveDeletion = undefined;
+  fixtures.notationDeletion = undefined;
   fixtures.logRefresh = null;
   fixtures.logColorChange = null;
   fixtures.boardProps = null;
@@ -3981,23 +3993,42 @@ describe("takeback between two humans", () => {
     expect(mainlineUcis(fixtures.tree.root)).toEqual(opening.map(({ uci }) => uci));
   });
 
-  // Starting the game sets a white orientation, so with three plies the board starts out of step
-  // with the side to move: a blind toggle would leave it wrong, derivation from the turn does not.
+  // `facing` is the orientation just before the takeback. A blind toggle gets the first case
+  // wrong; the first two cases each need a real flip, the third proves an aligned board stays.
   test.each([
-    { plies: 3, left: 2, orientation: "white" },
-    { plies: 2, left: 1, orientation: "black" },
+    { plies: 3, left: 2, facing: "black", orientation: "white" },
+    { plies: 2, left: 1, facing: "white", orientation: "black" },
+    { plies: 3, left: 2, facing: "white", orientation: "white" },
   ])(
-    "auto-flip orients the board to the side to move after a takeback to $left plies",
-    async ({ plies, left, orientation }) => {
+    "auto-flip turns a board facing $facing to the side to move after a takeback to $left plies",
+    async ({ plies, left, facing, orientation }) => {
       store.set(flipBoardAfterMoveAtom, true);
       const gameId = await startWith(opening.slice(0, plies));
+      fixtures.tree.headers = { ...fixtures.tree.headers, orientation: facing };
+      fixtures.setHeaders.mockClear();
       fixtures.takeBackGameMove.mockResolvedValueOnce(takenBack(gameId, opening.slice(0, left)));
 
       await act(async () => fixtures.onTakeBack!());
 
       expect(fixtures.tree.headers.orientation).toBe(orientation);
+      expect(fixtures.setHeaders).toHaveBeenCalledTimes(facing === orientation ? 0 : 1);
     },
   );
+
+  test("auto-flip leaves the board alone after a takeback against an engine", async () => {
+    store.set(flipBoardAfterMoveAtom, true);
+    useEngines(false, true);
+    const gameId = await startWith(opening.slice(0, 2));
+    fixtures.tree.headers = { ...fixtures.tree.headers, orientation: "black" };
+    fixtures.setHeaders.mockClear();
+    fixtures.takeBackGameMove.mockResolvedValueOnce(takenBack(gameId, []));
+
+    await act(async () => fixtures.onTakeBack!());
+
+    expect(mainlineUcis(fixtures.tree.root)).toEqual([]);
+    expect(fixtures.tree.headers.orientation).toBe("black");
+    expect(fixtures.setHeaders).not.toHaveBeenCalled();
+  });
 
   test("without auto-flip a takeback leaves the orientation alone", async () => {
     const gameId = await startWith(opening.slice(0, 2));
@@ -4042,16 +4073,55 @@ describe("takeback between two humans", () => {
     },
   );
 
-  test("deleting the last move against an engine is the engine game's takeback", async () => {
-    useEngines(false, true);
-    const gameId = await startWith(opening.slice(0, 2));
-    fixtures.takeBackGameMove.mockResolvedValueOnce(takenBack(gameId, []));
+  test("deleting at the root of a live game without moves does nothing", async () => {
+    await startWith([]);
+    fixtures.tree.deleteMove.mockClear();
+    expect(fixtures.moveDeletion!.canDelete([])).toBe(false);
 
-    await act(async () => fixtures.moveDeletion!.delete([0, 0]));
+    act(() => fixtures.moveDeletion!.delete([]));
 
-    expect(fixtures.takeBackGameMove).toHaveBeenCalledExactlyOnceWith(gameId, 1n);
-    expect(mainlineUcis(fixtures.tree.root)).toEqual([]);
+    expect(fixtures.takeBackGameMove).not.toHaveBeenCalled();
+    expect(fixtures.tree.deleteMove).not.toHaveBeenCalled();
   });
+
+  test("deleting a side variation as deep as the main line does nothing in a live game", async () => {
+    await startWith(opening);
+    // 1.e4 e5 (1...c5 2.Nf3): [0, 1, 0] has the main line's length but is not on it.
+    const e4 = fixtures.tree.root.children[0];
+    e4.children.push({
+      fen: e4.fen,
+      move: parseUci("c7c5"),
+      children: [{ fen: e4.fen, move: parseUci("g1f3"), children: [] }],
+    });
+    fixtures.tree.deleteMove.mockClear();
+    expect(fixtures.moveDeletion!.canDelete([0, 1, 0])).toBe(false);
+
+    act(() => fixtures.moveDeletion!.delete([0, 1, 0]));
+
+    expect(fixtures.takeBackGameMove).not.toHaveBeenCalled();
+    expect(fixtures.tree.deleteMove).not.toHaveBeenCalled();
+    expect(e4.children).toHaveLength(2);
+  });
+
+  // The human plays the side with the takeback; the engine may sit on either side.
+  test.each([
+    { engineWhite: false, engineBlack: true },
+    { engineWhite: true, engineBlack: false },
+  ])(
+    "against an engine (white engine: $engineWhite) the takeback is offered and deleting the last move is it",
+    async ({ engineWhite, engineBlack }) => {
+      useEngines(engineWhite, engineBlack);
+      const gameId = await startWith(opening.slice(0, 2));
+      expect(fixtures.boardControls.canTakeBack).toBe(true);
+      expect(fixtures.moveDeletion!.canDelete([0, 0])).toBe(true);
+      fixtures.takeBackGameMove.mockResolvedValueOnce(takenBack(gameId, []));
+
+      await act(async () => fixtures.moveDeletion!.delete([0, 0]));
+
+      expect(fixtures.takeBackGameMove).toHaveBeenCalledExactlyOnceWith(gameId, 1n);
+      expect(mainlineUcis(fixtures.tree.root)).toEqual([]);
+    },
+  );
 
   test("a rejected takeback through deletion leaves the tree intact", async () => {
     await startWith(opening);
@@ -4066,8 +4136,11 @@ describe("takeback between two humans", () => {
   test("outside a live game deletion keeps the plain tree behaviour", async () => {
     await render();
     expect(fixtures.moveDeletion).toBeUndefined();
+    expect(fixtures.notationDeletion).toBeUndefined();
     await startWith(opening);
     expect(fixtures.moveDeletion).toBeDefined();
+    // The notation's move menu and the move keys see the same live deletion.
+    expect(fixtures.notationDeletion).toBe(fixtures.moveDeletion);
     const gameId = store.get(gameIdFamily("tab-a"));
 
     await act(async () =>
@@ -4084,5 +4157,6 @@ describe("takeback between two humans", () => {
 
     expect(store.get(gameStateFamily("tab-a"))).toBe("gameOver");
     expect(fixtures.moveDeletion).toBeUndefined();
+    expect(fixtures.notationDeletion).toBeUndefined();
   });
 });

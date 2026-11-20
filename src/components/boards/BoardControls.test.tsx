@@ -42,8 +42,21 @@ vi.mock("lucide-react", () => ({
 }));
 
 vi.mock("@/components/common/IconAction", () => ({
-  default: ({ label, onClick }: { label: string; onClick?: () => void }) => (
-    <button type="button" aria-label={label} onClick={onClick}>
+  default: ({
+    label,
+    onClick,
+    pending,
+  }: {
+    label: string;
+    onClick?: () => void;
+    pending?: boolean;
+  }) => (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      data-pending={pending ? "true" : "false"}
+    >
       {label}
     </button>
   ),
@@ -148,6 +161,60 @@ describe("BoardControls tab type durability", () => {
         return originalSetItem.call(this, key, value);
       });
   }
+
+  async function renderTakeBack(props: {
+    canTakeBack?: boolean;
+    onTakeBack?: () => void;
+    takeBackPending?: boolean;
+  }) {
+    await act(async () => {
+      root.render(
+        <JotaiProvider store={jotaiStore}>
+          <TreeStateContext.Provider value={treeStore}>
+            <WorkspaceTabScope tabId={tabId}>
+              <BoardControls
+                boardRef={boardRef}
+                editingMode={false}
+                toggleEditingMode={vi.fn()}
+                dirty={false}
+                {...props}
+              />
+            </WorkspaceTabScope>
+          </TreeStateContext.Provider>
+        </JotaiProvider>,
+      );
+    });
+  }
+
+  const takeBackButton = () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeBack"]');
+
+  test("a game that can take back renders the control and runs the takeback on click", async () => {
+    const onTakeBack = vi.fn();
+    await renderTakeBack({ canTakeBack: true, onTakeBack, takeBackPending: false });
+
+    expect(takeBackButton()).not.toBeNull();
+    expect(takeBackButton()!.dataset.pending).toBe("false");
+    await act(async () => takeBackButton()!.click());
+
+    expect(onTakeBack).toHaveBeenCalledOnce();
+  });
+
+  test("a pending takeback reaches the control", async () => {
+    await renderTakeBack({ canTakeBack: true, onTakeBack: vi.fn(), takeBackPending: true });
+
+    expect(takeBackButton()!.dataset.pending).toBe("true");
+  });
+
+  test.each([
+    { canTakeBack: false, onTakeBack: vi.fn() },
+    { canTakeBack: true, onTakeBack: undefined },
+    {},
+  ])("without both a takeback permission and handler there is no control (%o)", async (props) => {
+    await renderTakeBack(props);
+
+    expect(takeBackButton()).toBeNull();
+  });
 
   test("snapshots the owned board when an unrelated board appears first", async () => {
     const unrelatedBoard = document.createElement("div");
