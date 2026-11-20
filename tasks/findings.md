@@ -28058,3 +28058,22 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Related:** f-20261115-26 (handled; same spec, the directory-trash snapshot, repaired in 91d123381 for the five Library-folder flows only, its entry says other goto-and-click flows were left because none had failed), f-20261101-03 (handled; the font-swap mechanism). No shared Root is claimed because the cause here is not established. The planned navigation-row build (`tasks/plans/2026-11-20-navigation-row.md`) replaces the "Bibliothek" link this test clicks and re-records this snapshot, so it must not be taken as the repair.
 * **Note on the rerun:** the filing session reran the failed job once before any repair, because the pushed commit could not have changed the rendering and the red job was blocking other sessions' pushes. That made master green again and hides the flake until it recurs.
 * **Found by:** Claude Code interactive session 221f2973-b40a-4d00-8ef4-cb6dae0ca5aa
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### `staged_artifact_cancels_at_real_install_precommit_without_publication` times out on the hosted Windows runner on a commit that changes only the findings ledger
+
+* **ID:** f-20261120-12 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (post-push CI wait of the interactive build session 221f2973-b40a-4d00-8ef4-cb6dae0ca5aa for the ledger commit that filed f-20261120-11)
+* **CI run:** 44814936985 (job `rust-windows-test` 136560699423, master `c90bf7795`, 2026-11-20). The first attempt failed, the rerun of the failed job on the same commit passed.
+* **Where:** `src-tauri/src/fs.rs:11761` (the test), the wait at `:11792-11795` (`tokio::time::timeout(Duration::from_secs(2), entered_rx).await.unwrap()`), injector `HoldSecondPrecommit` at `:10579-10601`.
+* **Defect:** the test spawns `install_staged_pgn_artifact` and gives it 2 s of wall-clock time to reach the second `PreCommitRevalidate` fault point. On the hosted Windows runner, inside a full-suite run of 2,210 tests that took 411 s, the task did not reach that point in time and the test panicked with `called Result::unwrap() on an Err value: Elapsed(())`. The pushed commit `c90bf7795` changes only `tasks/findings.md`; its parent `8fddd9214` passed the same job (run 44808834328). The test therefore measures runner load, and its red job makes `pnpm ci:remote:check` refuse every later push.
+* **Failure scenario:** each time the runner is slow enough, every push on every machine is refused until someone reruns or repairs the job.
+* **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/136560699423/logs` (first attempt), lines ~1366 and ~2482-2496: `panicked at src\fs.rs:11795:14`, `test result: FAILED. 2198 passed; 1 failed; 11 ignored`.
+* **Fix:** the same repair f-20261112-08 made for `catalog_install_publication_confirmation_admitted_tail_keeps_actual_result`: do not race the worker against a short wall-clock timeout. Wait for the `entered` signal without the 2 s bound (the test harness timeout still bounds a real hang), or use a bound far above runner jitter, and check the sibling tests that use `HoldSecondPrecommit` or the same `timeout(Duration::from_secs(2), …)` pattern in `fs.rs` for the same race. The injector's own `recv_timeout(Duration::from_secs(5))` at `:10597` releases the held writer after 5 s whatever the test does, so a slow runner can also let the install proceed before the cancellation; decide whether that bound must go too.
+* **Related:** f-20261112-08 (handled; the same race shape in a neighbouring test). No shared Root is claimed: that finding is closed and this is a different test.
+* **Note on the rerun:** the filing session reran the failed job once before any repair, because the pushed commit could not have changed Rust behaviour and the red job was blocking other sessions' pushes.
+* **Found by:** Claude Code interactive session 221f2973-b40a-4d00-8ef4-cb6dae0ca5aa
