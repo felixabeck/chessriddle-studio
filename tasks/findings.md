@@ -27990,3 +27990,20 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** on Windows, keep MAXIMIZED out of the plugin's restore and apply the saved maximized state at reveal time (in `close_splashscreen` and the native fallback, from the plugin's saved state), or reveal first and maximize in the same step; decide after observing the behaviour on Windows. The saved state must still be written with MAXIMIZED so the next start knows it.
 * **Proof:** a Windows observation (or the CI Windows job with a window-visibility probe) showing no visible window between creation and the renderer's reveal when the saved state is maximized; a source assertion on the chosen flag set for `target_os = "windows"`.
 * **Found by:** review-platform-semantics lens (agy), push review of the upstream 0.16 adoption batch, 2026-11-20; source lines re-read by the orchestrator
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### The new-game-to-file e2e intermittently misses the "Two Knights" title button within 8 s under full-suite load
+
+* **ID:** f-20261120-08 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (full `pnpm test:e2e:container` run for the upstream 0.16 adoption batch, worktree build/upstream-016-adoptions-20261120 at 3b0951900, on top of origin/master d52695834)
+* **Where:** `e2e/new-game-to-file.spec.ts:123` (`await expect(page.getByRole("button", { name: "Two Knights", exact: true })).toBeVisible();`, added on 2026-11-20 with the name-on-first-save work, commits da23a6b41..5177789e8), in the test "Library New game opens a fileDraft, asks for the line name and appends on explicit save" (`:51`).
+* **Defect:** in a full container run (473 tests, 5.1 min) the test failed once at that line: the preceding assertions passed, including `activeWorkspaceTab(page)?.name === "Two Knights"` one line earlier, but no button with the exact accessible name "Two Knights" appeared within the 8 s expect timeout (the test took 13.6 s). Run alone (`pnpm test:e2e:container --project=new-game-to-file`) the same test passed in 4.3 s on the same tree. So the workspace tab already carries the new name while the element the assertion targets is rendered later, or under a different accessible name, when the machine is loaded.
+* **Failure scenario:** `pnpm test:e2e:container` (or the e2e lane of `pnpm gates:push -- --frontend`) on a loaded machine → `1 failed`, `Error: expect(locator).toBeVisible() failed … element(s) not found`, and the push gate is red although no product behaviour is wrong.
+* **Not verified here:** which element the locator is meant to match (tab strip button or board title) and why it lags; the batch that observed it does not touch the tab strip, the title or `e2e/new-game-to-file.spec.ts`. Seen once in one full run; not reproduced in the isolated rerun.
+* **Fix:** find what renders the "Two Knights" button and what it waits on after the append (the trace is at `artifacts/frontend-audit/test-results/new-game-to-file-Library-N-…/trace.zip` of the failing run), then either wait on that state in the spec (as the neighbouring `expect.poll` on `gameOrigin` does) or remove the lag if the title really updates late for users.
+* **Proof:** the spec passes 10 consecutive full-suite container runs, or a targeted repeat (`--project=new-game-to-file --repeat-each=30` with the full suite's worker count) shows no failure.
+* **Found by:** Claude Code orchestrating the upstream 0.16 adoption batch, 2026-11-20, full e2e container run
