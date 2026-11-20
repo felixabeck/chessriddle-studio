@@ -10332,6 +10332,9 @@ const APP_OWNED_DEFAULT_ROOT_LEAVES: &[(AppOwnedDefaultRoot, &str)] = &[
 #[cfg(test)]
 pub(crate) mod portable_tests;
 
+#[cfg(test)]
+pub(crate) mod test_source_files;
+
 #[cfg(unix)]
 #[cfg(test)]
 mod tests;

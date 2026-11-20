@@ -7670,7 +7670,7 @@ fn authorized_dir_remove_leaf_refuses_a_non_leaf_name() {
 
 #[test]
 fn authorized_dir_has_no_arbitrary_path_constructor() {
-    let source = include_str!("mod.rs");
+    let source = test_source_files::production_source();
     for signature in ["impl AuthorizedDir {", "impl super::AuthorizedDir {"] {
         let implementation = body_at_indent(source, signature);
         assert!(!implementation.contains("for_test"), "{implementation}");

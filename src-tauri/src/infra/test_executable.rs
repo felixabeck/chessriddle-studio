@@ -522,12 +522,10 @@ pub(crate) mod tests {
             "terminal_snapshot_production_child_broken_pipe_keeps_unread_reason",
             "hold_original_waiting_script_open_for_writing",
         ];
-        let sources = [
+        let mut sources = vec![
             ("process", include_str!("../engine/process.rs")),
             ("chess", include_str!("../chess.rs")),
             ("game", include_str!("../game.rs")),
-            ("catalog", include_str!("path_authority/catalog_install.rs")),
-            ("authority", include_str!("path_authority/mod.rs")),
             ("authority-tests", include_str!("path_authority/tests.rs")),
             (
                 "authority-portable-tests",
@@ -547,6 +545,8 @@ pub(crate) mod tests {
             ),
             ("archives", include_str!("../fs.rs")),
         ];
+        sources
+            .extend_from_slice(crate::infra::path_authority::test_source_files::PRODUCTION_FILES);
         // An allowlisted fixture that moves to a file outside `sources` would leave this audit
         // reading nothing for it; every exemption must still name a scanned function.
         for function in resolution_only {

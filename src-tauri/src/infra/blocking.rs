@@ -50,10 +50,12 @@ thread_local! {
 
 /// Source-text scanning shared by the blocking-offload invariant tests in `main.rs`, `chess.rs`,
 /// `engine/process.rs`, `fs.rs`, `infra/fs.rs`, `infra/path_authority/mod.rs`,
-/// `infra/platform_support/tests.rs` and `sound.rs`. It lives here, beside the non-nesting rule it
-/// exists to prove, and there is exactly one copy on purpose: all scans depend on the same
-/// delimiter list, so a private second copy would let an edit to one (a new `fn` prefix,
-/// attribute placement, CRLF) silently change what the other treats as a function body.
+/// `infra/path_authority/test_source_files.rs`, `infra/platform_support/tests.rs` and `sound.rs`.
+/// It lives here, beside the non-nesting rule it exists to prove, and there is exactly one copy on
+/// purpose: all scans and inline-test-module blanking (`production_region`) depend on the same
+/// lexer and delimiter rules, so a private second copy would let an edit to one (a new `fn`
+/// prefix, attribute placement, CRLF) silently change what another treats as production code or a
+/// function body.
 #[cfg(test)]
 pub(crate) mod source_scan {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -347,6 +349,151 @@ pub(crate) mod source_scan {
             || trimmed.starts_with("impl ")
             || trimmed.starts_with("mod ")
             || trimmed == "}"
+    }
+
+    pub(crate) fn compact(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut string = false;
+        let mut escaped = false;
+        for ch in text.chars() {
+            if string {
+                out.push(ch);
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    string = false;
+                }
+            } else if ch == '"' {
+                string = true;
+                out.push(ch);
+            } else if !ch.is_whitespace() {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    pub(crate) fn ascii_ident(byte: u8) -> bool {
+        byte.is_ascii_alphanumeric() || byte == b'_'
+    }
+
+    /// Keyword, ASCII item name and its end offset, without depending on a fixed whitespace spelling.
+    pub(crate) fn named_items<'a>(
+        normalised: &'a str,
+        keyword: &str,
+    ) -> Vec<(usize, &'a str, usize)> {
+        normalised
+            .match_indices(keyword)
+            .filter_map(|(start, _)| {
+                let after = start + keyword.len();
+                if start > 0 && ascii_ident(normalised.as_bytes()[start - 1])
+                    || !normalised
+                        .as_bytes()
+                        .get(after)
+                        .is_some_and(u8::is_ascii_whitespace)
+                {
+                    return None;
+                }
+                let name_start = after
+                    + normalised[after..].find(|character: char| !character.is_whitespace())?;
+                let name_length = normalised.as_bytes()[name_start..]
+                    .iter()
+                    .take_while(|byte| ascii_ident(**byte))
+                    .count();
+                (name_length > 0).then_some((
+                    start,
+                    &normalised[name_start..name_start + name_length],
+                    name_start + name_length,
+                ))
+            })
+            .collect()
+    }
+
+    /// Collect preceding attributes nearest-first, including rustfmt's multi-line spellings.
+    /// Match brackets in blanked text so comments and literals cannot fake their boundaries.
+    pub(crate) fn attribute_lines_before(source: &str, start: usize) -> Vec<&str> {
+        let normalised = normalise(source, Literals::Blank);
+        let bytes = normalised.as_bytes();
+        // Callers may point at a keyword after visibility or qualifier prefixes.
+        let mut cursor = source[..start].rfind('\n').map_or(0, |offset| offset + 1);
+        let mut attributes = Vec::new();
+        while cursor > 0 {
+            // Blanked comments (including doc comments) are whitespace: they do not
+            // detach an attribute from its item, just as a multi-line attribute's tail
+            // does not end the attribute scan.
+            while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+                cursor -= 1;
+            }
+            if cursor == 0 || bytes[cursor - 1] != b']' {
+                break;
+            }
+            let end = cursor;
+            let mut depth = 0;
+            while cursor > 0 {
+                cursor -= 1;
+                match bytes[cursor] {
+                    b']' => depth += 1,
+                    b'[' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if depth != 0 {
+                break;
+            }
+            while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+                cursor -= 1;
+            }
+            if cursor > 0 && bytes[cursor - 1] == b'!' {
+                cursor -= 1;
+                while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+                    cursor -= 1;
+                }
+            }
+            if cursor == 0 || bytes[cursor - 1] != b'#' {
+                break;
+            }
+            cursor -= 1;
+            attributes.push(source[cursor..end].trim());
+        }
+        attributes
+    }
+
+    pub(crate) fn is_test_cfg_attribute(attribute: &str) -> bool {
+        let attribute = compact(attribute);
+        attribute == compact("#[cfg(test)]") || attribute.starts_with("#[cfg(all(test,")
+    }
+
+    /// Blank only the braced bodies of inline test modules; retain every production byte's offset.
+    pub(crate) fn production_region(source: &str) -> String {
+        let normalised = normalise(source, Literals::Blank);
+        let mut bytes = source.as_bytes().to_vec();
+        for (start, _, end) in named_items(&normalised, "mod") {
+            let opening = end
+                + normalised[end..]
+                    .find(|character: char| !character.is_whitespace())
+                    .unwrap_or(0);
+            if normalised.as_bytes().get(opening) != Some(&b'{')
+                || !attribute_lines_before(source, start)
+                    .iter()
+                    .any(|attribute| is_test_cfg_attribute(attribute))
+            {
+                continue;
+            }
+            let body = body_from_opening(&normalised, opening).expect("unterminated source body");
+            for byte in &mut bytes[body] {
+                if *byte != b'\n' {
+                    *byte = b' ';
+                }
+            }
+        }
+        String::from_utf8(bytes).expect("production blanking replaces only with ASCII bytes")
     }
 
     #[cfg(test)]

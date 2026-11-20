@@ -9,12 +9,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[test]
 fn instance_admission_production_wires_all_per_user_roots() {
     use crate::infra::blocking::source_scan::{body_at_indent, normalise, Literals};
-    let source = include_str!("mod.rs");
-    let (production, _) = source
+    let mod_source = include_str!("mod.rs");
+    let (mod_production, _) = mod_source
         .split_once("#[cfg(test)]\npub(crate) mod portable_tests;")
         .expect("mod.rs declares portable_tests after its production items");
     let body = body_at_indent(
-        production,
+        mod_production,
         "pub(crate) fn admit_instance<R: tauri::Runtime>(",
     );
     let compact = |text: &str| {
@@ -32,11 +32,11 @@ fn instance_admission_production_wires_all_per_user_roots() {
         .expect("local-data resolution");
     let call = body.find(&compact("admit_instance_with_lock(app_data, &[(\"configuration\", &config), (\"local data\", &local)], |file| {")).expect("data, configuration and local-data admission in that order");
     assert!(config < local && local < call);
-    let production = normalise(production, Literals::Blank);
+    let production = normalise(test_source_files::production_source(), Literals::Blank);
     assert_eq!(
         production.matches("admit_instance_with_lock(").count(),
         2,
-        "only the definition and the production admission call may occur"
+        "only the definition and the production admission call may occur in infra/path_authority"
     );
     assert_eq!(body.matches("admit_instance_with_lock(").count(), 1);
 }

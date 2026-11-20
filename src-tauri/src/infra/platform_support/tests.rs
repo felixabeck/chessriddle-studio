@@ -794,7 +794,8 @@ byte-identical.
 */
 use super::*;
 use crate::infra::blocking::source_scan::{
-    body_from_opening, braced_body, normalise, string_literals, Literals,
+    ascii_ident, attribute_lines_before, body_from_opening, braced_body, compact,
+    is_test_cfg_attribute, named_items, normalise, production_region, string_literals, Literals,
 };
 use std::{
     ffi::{OsStr, OsString},
@@ -1025,30 +1026,6 @@ fn probe_error_caller_rows_keep_the_split_explicit() {
         deletion.contains("ProbeErrorClass::Other"),
         "deletion must propagate Other"
     );
-}
-
-fn compact(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut string = false;
-    let mut escaped = false;
-    for ch in text.chars() {
-        if string {
-            out.push(ch);
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                string = false;
-            }
-        } else if ch == '"' {
-            string = true;
-            out.push(ch);
-        } else if !ch.is_whitespace() {
-            out.push(ch);
-        }
-    }
-    out
 }
 
 fn singular_message(operation: &str) -> String {
@@ -1867,12 +1844,13 @@ fn directory_listing_bound_options_survive_platform_wrappers() {
     let sync = compact(&source[braced_body(source, "fn sync_windows_tree(")]);
     assert!(sync.contains("enumerate_directory(dir,&CancellationToken::new(),None)?"));
     let authority = source_for("infra/path_authority/mod.rs");
-    let whole = compact(authority);
+    let whole = compact(crate::infra::path_authority::test_source_files::production_source());
     assert_eq!(
         whole
             .matches("Some(crate::infra::fs::MAX_DIRECTORY_LISTING_ENTRIES)")
             .count(),
-        2
+        2,
+        "infra/path_authority must have exactly two bounded directory-listing calls"
     );
     let capability = compact(&authority[braced_body(authority, "impl CapabilityDirectory")]);
     assert!(capability.contains("read_directory_entries_at(&self.directory,cancellation,Some(crate::infra::fs::MAX_DIRECTORY_LISTING_ENTRIES),keep,)"));
@@ -2650,9 +2628,10 @@ fn register_installed_engine_marks_executable_without_off_unix_refusal() {
 }
 
 fn source_for(file: &str) -> &'static str {
+    if let Some(source) = crate::infra::path_authority::test_source_files::source_for(file) {
+        return source;
+    }
     match file {
-        "infra/path_authority/mod.rs" => include_str!("../path_authority/mod.rs"),
-        "infra/path_authority/resolved.rs" => include_str!("../path_authority/resolved.rs"),
         "infra/path_authority/windows_tests.rs" => {
             include_str!("../path_authority/windows_tests.rs")
         }
@@ -2759,60 +2738,6 @@ fn function_starts(source: &str, signature: &str) -> Vec<usize> {
         .match_indices(signature)
         .map(|(start, _)| start)
         .collect()
-}
-
-/// Collect preceding attributes nearest-first, including rustfmt's multi-line spellings.
-/// Match brackets in blanked text so comments and literals cannot fake their boundaries.
-fn attribute_lines_before(source: &str, start: usize) -> Vec<&str> {
-    let normalised = normalise(source, Literals::Blank);
-    let bytes = normalised.as_bytes();
-    // Callers may point at a keyword after visibility or qualifier prefixes.
-    let mut cursor = source[..start].rfind('\n').map_or(0, |offset| offset + 1);
-    let mut attributes = Vec::new();
-    while cursor > 0 {
-        // Blanked comments (including doc comments) are whitespace: they do not
-        // detach an attribute from its item, just as a multi-line attribute's tail
-        // does not end the attribute scan.
-        while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
-            cursor -= 1;
-        }
-        if cursor == 0 || bytes[cursor - 1] != b']' {
-            break;
-        }
-        let end = cursor;
-        let mut depth = 0;
-        while cursor > 0 {
-            cursor -= 1;
-            match bytes[cursor] {
-                b']' => depth += 1,
-                b'[' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        if depth != 0 {
-            break;
-        }
-        while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
-            cursor -= 1;
-        }
-        if cursor > 0 && bytes[cursor - 1] == b'!' {
-            cursor -= 1;
-            while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
-                cursor -= 1;
-            }
-        }
-        if cursor == 0 || bytes[cursor - 1] != b'#' {
-            break;
-        }
-        cursor -= 1;
-        attributes.push(source[cursor..end].trim());
-    }
-    attributes
 }
 
 #[test]
@@ -3300,10 +3225,6 @@ fn source_line(source: &str, offset: usize) -> usize {
         + 1
 }
 
-fn ascii_ident(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_'
-}
-
 /// C and D use the same exact-key exclusions; B pins their subject and test-only declaration.
 fn for_each_refusal_region(mut visit: impl FnMut(&str, &str, &str)) {
     for_each_production_region(|key, source, blanked| {
@@ -3492,11 +3413,6 @@ fn refusal_wording_has_one_production_source() {
     assert!(errors.is_empty(), "{}", errors.join("\n"));
 }
 
-fn is_test_cfg_attribute(attribute: &str) -> bool {
-    let attribute = compact(attribute);
-    attribute == compact("#[cfg(test)]") || attribute.starts_with("#[cfg(all(test,")
-}
-
 /// Every source file compiled only as part of a test module declared out of line
 /// (`#[cfg(test)] mod name;`), plus the files of that module's own submodules. A declaration
 /// whose file cannot be found panics, so a renamed test module cannot silently turn back into
@@ -3556,6 +3472,7 @@ fn out_of_line_test_modules_are_classified_and_production_files_are_not() {
         "infra/platform_support/tests.rs",
         "infra/path_authority/tests.rs",
         "infra/path_authority/portable_tests.rs",
+        "infra/path_authority/test_source_files.rs",
         "infra/path_authority/windows_tests.rs",
         "infra/path_authority/windows_parent_identity_tests.rs",
         "infra/path_authority/workspace_directory_enumeration_tests.rs",
@@ -3574,30 +3491,40 @@ fn out_of_line_test_modules_are_classified_and_production_files_are_not() {
     }
 }
 
-/// Blank only the braced bodies of inline test modules; retain every production byte's offset.
-fn production_region(source: &str) -> String {
-    let normalised = normalise(source, Literals::Blank);
-    let mut bytes = source.as_bytes().to_vec();
-    for (start, _, end) in named_items(&normalised, "mod") {
-        let opening = end
-            + normalised[end..]
-                .find(|character: char| !character.is_whitespace())
-                .unwrap_or(0);
-        if normalised.as_bytes().get(opening) != Some(&b'{')
-            || !attribute_lines_before(source, start)
-                .iter()
-                .any(|attribute| is_test_cfg_attribute(attribute))
-        {
-            continue;
+#[test]
+fn path_authority_test_source_files_match_production_directory_and_disk_bytes() {
+    use std::collections::BTreeSet;
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut visited = BTreeSet::new();
+    for_each_production_region(|key, _, _| {
+        if key.starts_with("infra/path_authority/") {
+            visited.insert(key.to_owned());
         }
-        let body = body_from_opening(&normalised, opening).expect("unterminated source body");
-        for byte in &mut bytes[body] {
-            if *byte != b'\n' {
-                *byte = b' ';
-            }
-        }
+    });
+    let listed: BTreeSet<String> =
+        crate::infra::path_authority::test_source_files::PRODUCTION_FILES
+            .iter()
+            .map(|(key, _)| (*key).to_owned())
+            .collect();
+    assert_eq!(
+        listed.len(),
+        crate::infra::path_authority::test_source_files::PRODUCTION_FILES.len(),
+        "path_authority::test_source_files::PRODUCTION_FILES must not contain duplicate keys"
+    );
+    assert_eq!(
+        listed, visited,
+        "path_authority::test_source_files::PRODUCTION_FILES must match every production file visited under infra/path_authority/"
+    );
+    for (key, included) in crate::infra::path_authority::test_source_files::PRODUCTION_FILES {
+        let on_disk = std::fs::read(root.join(key))
+            .unwrap_or_else(|error| panic!("failed to read {key} from disk: {error}"));
+        assert_eq!(
+            included.as_bytes(),
+            on_disk.as_slice(),
+            "path_authority::test_source_files entry {key} must match the file bytes on disk"
+        );
     }
-    String::from_utf8(bytes).expect("production blanking replaces only with ASCII bytes")
 }
 
 /// The `src`-relative slash-joined key of a scanned path, so the two expected files can be
@@ -3640,35 +3567,6 @@ fn enclosing_function_name(source: &str, call: usize) -> Option<String> {
             body.contains(&call).then(|| name.to_owned())
         })
         .next_back()
-}
-
-/// Keyword, ASCII item name and its end offset, without depending on a fixed whitespace spelling.
-fn named_items<'a>(normalised: &'a str, keyword: &str) -> Vec<(usize, &'a str, usize)> {
-    normalised
-        .match_indices(keyword)
-        .filter_map(|(start, _)| {
-            let after = start + keyword.len();
-            if start > 0 && ascii_ident(normalised.as_bytes()[start - 1])
-                || !normalised
-                    .as_bytes()
-                    .get(after)
-                    .is_some_and(u8::is_ascii_whitespace)
-            {
-                return None;
-            }
-            let name_start =
-                after + normalised[after..].find(|character: char| !character.is_whitespace())?;
-            let name_length = normalised.as_bytes()[name_start..]
-                .iter()
-                .take_while(|byte| ascii_ident(**byte))
-                .count();
-            (name_length > 0).then_some((
-                start,
-                &normalised[name_start..name_start + name_length],
-                name_start + name_length,
-            ))
-        })
-        .collect()
 }
 
 /// The half of `check_helper` that pins the *shape* of a helper: exactly one declaration of
@@ -3883,11 +3781,13 @@ fn refusal_constant_and_callees_are_exact() {
     let mut errors = Vec::new();
     let authority = source_for("infra/path_authority/mod.rs");
     let constant = "UNSUPPORTED_DIRECTORY_ENUMERATION";
-    let normalised = normalise(authority, Literals::Keep);
+    let normalised = normalise(
+        crate::infra::path_authority::test_source_files::production_source(),
+        Literals::Keep,
+    );
     if normalised.matches(constant).count() != 0 {
-        errors.push(
-            "infra/path_authority/mod.rs: UNSUPPORTED_DIRECTORY_ENUMERATION was not removed".into(),
-        );
+        errors
+            .push("infra/path_authority: UNSUPPORTED_DIRECTORY_ENUMERATION was not removed".into());
     }
     check_helper(
         "infra/fs.rs",
