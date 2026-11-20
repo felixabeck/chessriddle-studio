@@ -63,6 +63,7 @@ vi.mock("@tanstack/react-virtual", async (importOriginal) => ({
 }));
 
 import GameNotation from "./GameNotation";
+import styles from "./GameNotation.module.css";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
@@ -137,6 +138,23 @@ test("a marked move shows the shared small board with its shapes, below the move
   const rows = [...host.querySelectorAll("[data-index]")];
   const moveRow = rows.findIndex((row) => row.querySelector('[data-move-cell="e4"]'));
   expect(rows[moveRow + 1]).toBe(diagram.closest("[data-index]"));
+});
+
+test("a diagram inside a variation is drawn inside that variation's guide", async () => {
+  play("e4", "e5");
+  tree.getState().goToMove([0]);
+  tree.getState().makeMove({ payload: "c5" });
+  tree.getState().toggleDiagram([0, 1]);
+  tree.getState().toggleDiagram([0, 0]);
+  await renderNotation();
+
+  const [mainline, variation] = diagrams();
+  expect(board(mainline).dataset.fen).toBe(tree.getState().root.children[0].children[0].fen);
+  expect(board(variation).dataset.fen).toBe(tree.getState().root.children[0].children[1].fen);
+  expect(mainline.classList.contains(styles.variationBlock)).toBe(false);
+  expect(mainline.style.getPropertyValue("--notation-variation-depth")).toBe("");
+  expect(variation.classList.contains(styles.variationBlock)).toBe(true);
+  expect(variation.style.getPropertyValue("--notation-variation-depth")).toBe("1");
 });
 
 test("clicking a diagram moves the board to its position", async () => {

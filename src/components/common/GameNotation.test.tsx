@@ -51,7 +51,7 @@ vi.mock("jotai", () => ({
     return [false, vi.fn()];
   },
   useAtomValue: (atom: symbol) => {
-    if (atom === atoms.variations) return true;
+    if (atom === atoms.variations || atom === atoms.diagrams) return true;
     if (atom === atoms.comments) return notationSettings.showComments;
     if (atom === atoms.keyMap) {
       return { TOGGLE_BLUR: { keys: "ctrl+b" }, COPY_PGN: { keys: "ctrl+k" } };

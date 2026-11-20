@@ -189,7 +189,7 @@ function addComment(
     addRow(rows, rowForNode, { type: "comment", depth, comment });
 }
 
-function hasDiagram(node: TreeNode, options: NotationRowOptions): boolean {
+function showsDiagram(node: TreeNode, options: NotationRowOptions): boolean {
     return options.showDiagrams && node.diagram === true;
 }
 
@@ -217,7 +217,7 @@ function addTableMoveNote(
     node: TreeNode,
     options: NotationRowOptions,
 ): void {
-    if (hasDiagram(node, options)) addDiagram(rows, rowForNode, 0, node, options);
+    if (showsDiagram(node, options)) addDiagram(rows, rowForNode, 0, node, options);
     else if (options.showComments && node.comment.length > 0)
         addComment(rows, rowForNode, 0, node.comment);
 }
@@ -298,7 +298,7 @@ function appendInlineTasks(
         while (parent.children[childIndex]) {
             const node = parent.children[childIndex];
             const starting = startingCommentText(node, options);
-            const diagram = hasDiagram(node, options);
+            const diagram = showsDiagram(node, options);
             moves.push({
                 node,
                 first: first || !!starting,
@@ -434,7 +434,7 @@ function appendTableRows(
         const black = child.children[0]?.halfMoves % 2 === 0 ? child.children[0] : null;
         const blackVariations = black ? child.children.slice(1) : [];
         const whiteHasNote =
-            (options.showComments && child.comment.length > 0) || hasDiagram(child, options);
+            (options.showComments && child.comment.length > 0) || showsDiagram(child, options);
         const whiteHasVariations = options.showVariations && variations.length > 0;
         const blackHasVariations = options.showVariations && blackVariations.length > 0;
         const blackStarting = black ? startingCommentText(black, options) : "";
@@ -492,7 +492,7 @@ export function buildNotationRows(root: TreeNode, options: NotationRowOptions): 
         collapseKeys: new Map(),
     };
 
-    if (hasDiagram(root, options)) {
+    if (showsDiagram(root, options)) {
         addDiagram(rows, rowForNode, 0, root, options);
     } else if (options.showComments && root.comment.length > 0) {
         addComment(rows, rowForNode, 0, root.comment);

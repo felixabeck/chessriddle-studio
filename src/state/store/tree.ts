@@ -130,7 +130,7 @@ export interface TreeStoreState extends TreeState {
 
     setAnnotation: (payload: Annotation) => void;
     setComment: (payload: string) => void;
-    /** Flips the diagram marker of the node at `path`, or of the current node without one. */
+    /** Flips the diagram marker of the node at `path`; without a path, of the current node. */
     toggleDiagram: (path?: number[]) => void;
     setHeaders: (payload: GameHeaders) => void;
     setResult: (payload: Outcome) => void;
