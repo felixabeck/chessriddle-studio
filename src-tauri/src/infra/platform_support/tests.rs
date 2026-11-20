@@ -1861,7 +1861,9 @@ fn directory_listing_bound_options_survive_platform_wrappers() {
     assert!(authorized.contains(
         "read_directory_entries_at(self.directory.as_file(),&CancellationToken::new(),None,keep,)"
     ));
-    let sweep = compact(&authority[braced_body(authority, "fn sweep_engine_launch_root(")]);
+    let sweep = compact(
+        &authority_production[braced_body(authority_production, "fn sweep_engine_launch_root(")],
+    );
     assert!(sweep.contains("read_directory_entries_at(root.directory.as_file(),&CancellationToken::new(),None,&mut|_|true,)"));
 }
 
@@ -2540,7 +2542,7 @@ fn phase_e_removed_rows_have_one_ungated_definition_without_refusals() {
 /// regress to `take_file()` or a platform refusal (R3-04).
 #[test]
 fn engine_resource_directory_arm_takes_a_directory_and_target_without_refusals() {
-    let source = source_for("infra/path_authority/mod.rs");
+    let source = crate::infra::path_authority::test_source_files::production_source();
     let arm = braced_body(source, "EngineResourceHandleKind::Directory => {");
     let arm = compact(&source[arm]);
     assert!(arm.contains("resolved.take_directory()"), "{arm}");
@@ -2612,7 +2614,7 @@ fn mark_engine_executable_windows_is_a_checked_noop() {
 ///   `deleted executable command must be absent from fs.rs and main.rs`; exit status 101.
 #[test]
 fn register_installed_engine_marks_executable_without_off_unix_refusal() {
-    let source = source_for("infra/path_authority/mod.rs");
+    let source = crate::infra::path_authority::test_source_files::production_source();
     let body = compact(&source[braced_body(source, "pub(crate) fn register_installed_engine(")]);
     assert!(
         body.contains(".mark_engine_executable()?"),

@@ -1,0 +1,994 @@
+use super::*;
+use crate::infra::fs::{atomic_replace, read_bounded_bytes, AtomicFileOutcome};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::sync::Notify;
+
+/// Counts complete blocking image issuances so shutdown cannot clean up before they settle.
+pub(crate) struct ActiveImageIssuances {
+    pub(super) active: AtomicUsize,
+    pub(super) notify: Notify,
+}
+
+impl ActiveImageIssuances {
+    pub(super) fn new() -> Self {
+        Self {
+            active: AtomicUsize::new(0),
+            notify: Notify::new(),
+        }
+    }
+
+    pub(crate) async fn wait_for_zero(&self) {
+        loop {
+            // Arm the notification before observing the count. Otherwise a release between
+            // the check and `notified().await` can leave shutdown asleep forever.
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.active.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+pub(crate) struct ActiveImageIssuanceLease {
+    pub(super) tracker: Arc<ActiveImageIssuances>,
+}
+
+impl Drop for ActiveImageIssuanceLease {
+    fn drop(&mut self) {
+        self.tracker.active.fetch_sub(1, Ordering::AcqRel);
+        self.tracker.notify.notify_waiters();
+    }
+}
+
+impl PathAuthority {
+    pub(crate) fn active_engine_root(&mut self) -> Result<Option<EngineRootHandle>, Error> {
+        self.resolve_active_root(
+            self.active_engine_root.clone(),
+            PathOperation::EngineInstall,
+        )
+        .map(|id| id.map(EngineRootHandle::new))
+    }
+
+    pub(crate) fn engine_root_path(&mut self, root: &EngineRootHandle) -> Result<PathBuf, Error> {
+        self.root_path(root.path_ref(), PathOperation::EngineInstall)
+    }
+
+    pub(crate) fn set_active_engine_root(&mut self, root: &EngineRootHandle) -> Result<(), Error> {
+        let _ = self.engine_root_path(root)?;
+        let durability = self.commit_state(
+            self.persistent.clone(),
+            self.active_database_root.clone(),
+            self.active_puzzle_root.clone(),
+            Some(root.path_ref().clone()),
+            self.pending_artifacts.clone(),
+            None,
+        )?;
+        if let CommitDurability::DurabilityUncertain(stage) = durability {
+            log::warn!("active engine root committed with uncertain durability: {stage}");
+        }
+        Ok(())
+    }
+
+    /// Registers one exact executable picked in a native dialog. The renderer receives only
+    /// its opaque handle; every later execution and probe revalidates this identity. A file
+    /// replaced at a stored path gets a fresh capability, and the stale entry is left for
+    /// startup reconciliation once the renderer stops retaining it (d-20261113-02).
+    pub(crate) fn register_engine_file(
+        &mut self,
+        path: &Path,
+        display_name: impl Into<String>,
+    ) -> Result<EngineHandle, Error> {
+        let operations = engine_file_operations();
+        let commit = self.get_or_create_persistent_file_inner(
+            path,
+            display_name.into(),
+            operations,
+            None,
+            None,
+            RegistrationDoor::PickerSelection,
+        )?;
+        let registered = self
+            .persistent
+            .get(&commit.id.id)
+            .ok_or_else(|| Error::Conflict("registered engine authority disappeared".into()))?
+            .stored
+            .path
+            .to_path()?;
+        self.protect_catalog_path(&registered, false, false, None)?;
+        Ok(keep_adopted_handle(
+            commit.durability,
+            EngineHandle::new(commit.id),
+        ))
+    }
+
+    pub(super) fn register_engine_file_from_resolved(
+        &mut self,
+        path: &Path,
+        display_name: String,
+        identity: VerifiedIdentity,
+        parent_identity: VerifiedIdentity,
+    ) -> Result<EngineHandle, Error> {
+        let operations = engine_file_operations();
+        let binding = IdentityBinding::from_pairs(identity.pair(), parent_identity.pair());
+        let commit = self.get_or_create_persistent_file_from_identity(
+            path,
+            display_name,
+            operations,
+            binding,
+            RegistrationDoor::ExplicitReauthorization,
+        )?;
+        Ok(keep_adopted_handle(
+            commit.durability,
+            EngineHandle::new(commit.id),
+        ))
+    }
+
+    /// Persists a picker-selected UCI resource with only resource-read
+    /// authority.  Callers must hand us the one-time dialog grant; raw paths
+    /// never cross the IPC boundary.
+    pub(crate) fn promote_engine_resource(
+        &mut self,
+        grant: &PathRef,
+        kind: EngineResourceHandleKind,
+        display_name: impl Into<String>,
+    ) -> Result<EngineResourceHandle, Error> {
+        let display_name = display_name.into();
+        let class = match kind {
+            EngineResourceHandleKind::File => PathClass::PersistentFile,
+            EngineResourceHandleKind::Directory => PathClass::PersistentCustomRoot,
+        };
+        let commit = self.promote_dialog(
+            grant,
+            class,
+            display_name.clone(),
+            canonical_operations(EntryPurpose::EngineResource),
+        )?;
+        Ok(keep_adopted_handle(
+            commit.durability,
+            EngineResourceHandle::new(commit.id, kind, display_name),
+        ))
+    }
+
+    /// Resolves a UCI resource through no-follow traversal and returns a
+    /// descriptor lease. The caller owns this object until the engine exits.
+    pub(crate) fn engine_resource(
+        &mut self,
+        resource: &EngineResourceHandle,
+    ) -> Result<EngineResourceLease, Error> {
+        #[cfg(all(test, unix))]
+        observe_engine_resolution("resource");
+        let mut resolved =
+            self.resolve(resource.path_ref(), PathOperation::EngineResourceRead, &[])?;
+        #[cfg(windows)]
+        let directories = resolved.windows_resource_directory_seals()?;
+        match resource.kind {
+            EngineResourceHandleKind::File => {
+                #[cfg(unix)]
+                let file = resolved
+                    .take_file()
+                    .ok_or_else(|| Error::InvalidInput("engine resource must be a file".into()))?;
+                #[cfg(windows)]
+                let _file = resolved
+                    .take_file()
+                    .ok_or_else(|| Error::InvalidInput("engine resource must be a file".into()))?;
+                #[cfg(unix)]
+                return EngineResourceLease::from_file(file, false, None);
+                #[cfg(windows)]
+                Ok(EngineResourceLease {
+                    _file,
+                    _directories: directories,
+                    target: resolved.take_target().ok_or_else(|| {
+                        Error::Conflict("engine resource target is unavailable".into())
+                    })?,
+                })
+            }
+            EngineResourceHandleKind::Directory => {
+                #[cfg(unix)]
+                {
+                    let file = resolved.take_directory().ok_or_else(|| {
+                        Error::InvalidInput("engine resource must be a directory".into())
+                    })?;
+                    EngineResourceLease::from_file(OwnedFile::directory(file)?, true, None)
+                }
+                #[cfg(windows)]
+                {
+                    // The no-follow walk leaves the verified directory handle in the
+                    // `directory` slot and its computed path in `target`, mirroring the File
+                    // arm above. The handle is retained for the lease lifetime; the path is
+                    // only the UCI/CreateProcess string.
+                    Ok(EngineResourceLease {
+                        _directories: directories,
+                        _file: OwnedFile::directory(resolved.take_directory().ok_or_else(
+                            || Error::InvalidInput("engine resource must be a directory".into()),
+                        )?)?,
+                        target: resolved.take_target().ok_or_else(|| {
+                            Error::Conflict("engine resource target is unavailable".into())
+                        })?,
+                    })
+                }
+            }
+        }
+    }
+
+    /// Registers an app-owned copied engine-image asset. The native picker is
+    /// consumed before this point, so only the managed copy is persistent.
+    pub(crate) fn register_engine_image(
+        &mut self,
+        dir: &AuthorizedDir,
+        leaf: &OsStr,
+        installed: VerifiedIdentity,
+        display_name: String,
+    ) -> Result<EngineImageHandle, Error> {
+        if self.attachments_sealed {
+            return Err(Error::Conflict(
+                "engine attachment mutations are sealed".into(),
+            ));
+        }
+        crate::infra::fs::single_leaf(leaf)
+            .map_err(|_| Error::InvalidInput("engine image leaf must be one component".into()))?;
+        let path = dir.path().join(leaf);
+        #[cfg(test)]
+        ENGINE_IMAGE_PRE_REGISTRATION_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().take() {
+                hook();
+            }
+        });
+        let commit = self.get_or_create_persistent_file_verified(
+            &path,
+            display_name,
+            canonical_operations(EntryPurpose::EngineImage),
+            installed,
+            dir.identity(),
+            RegistrationDoor::ExplicitReauthorization,
+        )?;
+        Ok(keep_adopted_handle(
+            commit.durability,
+            EngineImageHandle::new(commit.id),
+        ))
+    }
+
+    /// Keeps an installed, unregistered UUID image reachable by startup and shutdown cleanup.
+    /// Sealed attachments still admit cleanup intents while issuance leases drain.
+    pub(crate) fn record_engine_image_cleanup(
+        &mut self,
+        dir: &AuthorizedDir,
+        leaf: &OsStr,
+        installed: VerifiedIdentity,
+    ) -> EngineImageCleanupIntent {
+        self.record_engine_image_cleanup_with(dir, leaf, installed, |target, write| {
+            atomic_replace(target, write)
+        })
+    }
+
+    pub(super) fn record_engine_image_cleanup_with<F>(
+        &mut self,
+        dir: &AuthorizedDir,
+        leaf: &OsStr,
+        installed: VerifiedIdentity,
+        mut replace: F,
+    ) -> EngineImageCleanupIntent
+    where
+        F: FnMut(
+            &Path,
+            Box<dyn FnOnce(&mut OwnedFile) -> Result<(), Error>>,
+        ) -> Result<AtomicFileOutcome, Error>,
+    {
+        if crate::infra::fs::single_leaf(leaf).is_err()
+            || leaf
+                .to_str()
+                .is_none_or(|leaf| uuid::Uuid::parse_str(leaf).is_err())
+        {
+            return EngineImageCleanupIntent::NotRecorded(Error::InvalidInput(
+                "engine image cleanup leaf must be one UUID component".into(),
+            ));
+        }
+        let baseline = match self.registry_admission_snapshot(
+            &self.persistent,
+            &self.active_database_root,
+            &self.active_puzzle_root,
+            &self.active_engine_root,
+            &self.pending_artifacts,
+            &self.provisional_attachments,
+            &self.retired_attachments,
+            &self.image_cleanup,
+        ) {
+            Ok(baseline) => baseline,
+            Err(error) => return EngineImageCleanupIntent::NotRecorded(error),
+        };
+        let id = loop {
+            let id = uuid::Uuid::new_v4().to_string();
+            if !self.persistent.contains_key(&id)
+                && !self.retired_attachments.contains_key(&id)
+                && !self.image_cleanup.contains_key(&id)
+            {
+                break id;
+            }
+        };
+        self.image_cleanup.insert(
+            id.clone(),
+            StoredEntry {
+                id: PathRef { id: id.clone() },
+                display_name: UNREGISTERED_ENGINE_IMAGE_DISPLAY_NAME.into(),
+                class: PathClass::PersistentFile,
+                operations: canonical_operations(EntryPurpose::EngineImage),
+                path: NativePath::from_path(&dir.path().join(leaf)),
+                identity: Identity {
+                    a: installed.pair().0,
+                    b: installed.pair().1,
+                },
+                parent_identity: Some(Identity {
+                    a: dir.identity().pair().0,
+                    b: dir.identity().pair().1,
+                }),
+                target_is_dir: false,
+                purpose: Some(EntryPurpose::EngineImage),
+                practice_key: None,
+            },
+        );
+        let mut write_started = false;
+        let result = self.save_entries_with_baseline(
+            &self.persistent,
+            &self.active_database_root,
+            &self.active_puzzle_root,
+            &self.active_engine_root,
+            &self.pending_artifacts,
+            Some(baseline),
+            |target, write| {
+                write_started = true;
+                replace(target, write)
+            },
+        );
+        match result {
+            Ok(CommitDurability::Durable) => {
+                self.registry_durability_pending = false;
+                EngineImageCleanupIntent::Recorded
+            }
+            Ok(CommitDurability::DurabilityUncertain(_)) => {
+                self.registry_durability_pending = true;
+                EngineImageCleanupIntent::DurabilityUncertain
+            }
+            Err(error) if write_started => {
+                self.registry_durability_pending = true;
+                EngineImageCleanupIntent::Retained(error)
+            }
+            Err(error) => {
+                self.image_cleanup.remove(&id);
+                EngineImageCleanupIntent::NotRecorded(error)
+            }
+        }
+    }
+
+    pub(crate) fn register_opening_book(
+        &mut self,
+        path: &Path,
+        display_name: impl Into<String>,
+    ) -> Result<OpeningBookHandle, Error> {
+        let commit = self.get_or_create_persistent_file_inner(
+            path,
+            display_name.into(),
+            canonical_operations(EntryPurpose::OpeningBook),
+            None,
+            None,
+            RegistrationDoor::PickerSelection,
+        )?;
+        Ok(keep_adopted_handle(
+            commit.durability,
+            OpeningBookHandle::new(commit.id),
+        ))
+    }
+
+    /// Resolves an exact opening-book descriptor without exposing a native path.
+    /// The caller moves this already-opened file to its bounded blocking worker.
+    pub(crate) fn opening_book_descriptor(
+        &mut self,
+        book: &OpeningBookHandle,
+    ) -> Result<OpeningBookDescriptor, Error> {
+        let mut resolved = self.resolve(book.path_ref(), PathOperation::OpeningBookRead, &[])?;
+        let file_name = self.display_name(book.path_ref())?;
+        let file = resolved.take_file().ok_or_else(|| {
+            Error::InvalidInput("opening-book capability names a directory".into())
+        })?;
+        Ok(OpeningBookDescriptor { file_name, file })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn register_installed_engine_for_test(
+        &mut self,
+        root: &EngineRootHandle,
+        relative_path: &str,
+    ) -> Result<EngineHandle, Error> {
+        self.register_installed_engine(root, relative_path, &mut EngineRootProbe::default())
+    }
+
+    pub(crate) fn register_installed_engine(
+        &mut self,
+        root: &EngineRootHandle,
+        relative_path: &str,
+        probe: &mut EngineRootProbe,
+    ) -> Result<EngineHandle, Error> {
+        let components = engine_relative_components(relative_path)?;
+        let (catalog_root, catalog_path, root_directory) =
+            self.prepare_catalog_engine_registration(root, &components, probe)?;
+        let resolved = self.resolve_with_engine_probe(
+            root.path_ref(),
+            PathOperation::EngineInstall,
+            &components,
+            probe,
+        )?;
+        if resolved.file().is_none() {
+            return Err(Error::InvalidInput(
+                "installed engine must be a regular file".into(),
+            ));
+        }
+        let identity = resolved.identity()?;
+        let parent_identity = VerifiedIdentity::from_pair(resolved.parent_identity()?);
+        let path = resolved
+            .target()
+            .ok_or_else(|| Error::InvalidInput("installed engine must be a regular file".into()))?
+            .to_path_buf();
+        #[cfg(test)]
+        INSTALLED_ENGINE_POST_RESOLVE_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().take() {
+                hook();
+            }
+        });
+        self.confirm_catalog_engine_registration(
+            &catalog_root,
+            &catalog_path,
+            &root_directory,
+            Some((&path, identity)),
+            probe,
+        )?;
+        resolved.mark_engine_executable()?;
+        let display_name = components
+            .last()
+            .ok_or_else(|| Error::InvalidInput("engine path is required".into()))?
+            .to_string_lossy()
+            .into_owned();
+        self.register_engine_file_from_resolved(&path, display_name, identity, parent_identity)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn engine_archive_destination(
+        &mut self,
+        root: &EngineRootHandle,
+    ) -> Result<PathRef, Error> {
+        self.engine_archive_destination_with_probe(root, &mut EngineRootProbe::default())
+    }
+
+    pub(crate) fn engine_archive_destination_with_probe(
+        &mut self,
+        root: &EngineRootHandle,
+        probe: &mut EngineRootProbe,
+    ) -> Result<PathRef, Error> {
+        let _ = self.resolve_with_engine_probe(
+            root.path_ref(),
+            PathOperation::DownloadArchive,
+            &[],
+            probe,
+        )?;
+        Ok(root.path_ref().clone())
+    }
+
+    /// Resolves one exact engine object after capability and identity validation. The native
+    /// path is for the backend actor only and is never serialized to the renderer.
+    pub(crate) fn engine_executable(
+        &mut self,
+        engine: &EngineHandle,
+        operation: PathOperation,
+    ) -> Result<EngineExecutable, Error> {
+        #[cfg(all(test, unix))]
+        observe_engine_resolution("executable");
+        if !matches!(
+            operation,
+            PathOperation::EngineExecute | PathOperation::EngineConfigure
+        ) {
+            return Err(Error::InvalidInput("invalid engine operation".into()));
+        }
+        let mut resolved = self.resolve(engine.path_ref(), operation, &[])?;
+        let working_directory = resolved
+            .parent()
+            .ok_or_else(|| Error::Conflict("engine has no validated working directory".into()))?
+            .try_clone()?;
+        #[cfg(unix)]
+        let file = resolved
+            .take_file()
+            .ok_or_else(|| Error::InvalidInput("engine capability is not a file".into()))?;
+        #[cfg(windows)]
+        let _file = resolved
+            .take_file()
+            .ok_or_else(|| Error::InvalidInput("engine capability is not a file".into()))?;
+        let verified_path = self.workspace_entry_path(
+            &FileWorkspaceHandle::new(engine.path_ref().clone()),
+            operation,
+        )?;
+        let _working_directory_path = verified_path
+            .parent()
+            .ok_or_else(|| Error::InvalidInput("engine executable has no parent directory".into()))?
+            .to_path_buf();
+        #[cfg(target_os = "macos")]
+        let command_path = descriptor_path(&file)?;
+        Ok(EngineExecutable {
+            #[cfg(unix)]
+            file,
+            _working_directory: working_directory,
+            #[cfg(windows)]
+            working_directory_path: _working_directory_path,
+            resource_leases: Vec::new(),
+            #[cfg(target_os = "macos")]
+            command_path,
+            #[cfg(target_os = "macos")]
+            launch_root: self.engine_launch_root.clone(),
+            #[cfg(target_os = "macos")]
+            materialized_files: Vec::new(),
+            #[cfg(windows)]
+            _file,
+            #[cfg(windows)]
+            command_path: verified_path,
+        })
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn engine_launch_root(&self) -> Result<EngineLaunchRoot, Error> {
+        self.engine_launch_root
+            .clone()
+            .ok_or_else(|| Error::Conflict("engine launch root is not initialized".into()))
+    }
+
+    pub(crate) fn engine_root_descriptor(
+        &self,
+        root: EngineRootHandle,
+    ) -> Result<EngineRootDescriptor, Error> {
+        let display_name = self.root_display_name(root.path_ref(), "engine")?;
+        Ok(EngineRootDescriptor { root, display_name })
+    }
+
+    pub(super) fn attachment_entry(entry: &Entry) -> bool {
+        is_attachment_purpose(entry.stored.purpose)
+    }
+
+    pub(crate) fn seal_engine_attachments(&mut self) {
+        self.attachments_sealed = true;
+    }
+
+    pub(crate) fn begin_engine_image_issuance(
+        &mut self,
+    ) -> Result<ActiveImageIssuanceLease, Error> {
+        if self.attachments_sealed {
+            return Err(Error::Conflict(
+                "engine attachment mutations are sealed".into(),
+            ));
+        }
+        self.active_image_issuances
+            .active
+            .fetch_add(1, Ordering::AcqRel);
+        Ok(ActiveImageIssuanceLease {
+            tracker: Arc::clone(&self.active_image_issuances),
+        })
+    }
+
+    pub(crate) fn active_image_issuances(&self) -> Arc<ActiveImageIssuances> {
+        Arc::clone(&self.active_image_issuances)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn engine_attachments_are_sealed(&self) -> bool {
+        self.attachments_sealed
+    }
+
+    /// Applies one validated whole attachment transaction. Retired entries remain resolvable only
+    /// in this process; only the authority and cleanup intent are written to the registry.
+    pub(crate) fn reconcile_engine_attachments(
+        &mut self,
+        action: EngineAttachmentAction,
+    ) -> Result<(), Error> {
+        if self.attachments_sealed {
+            return Err(Error::Conflict(
+                "engine attachment mutations are sealed".into(),
+            ));
+        }
+        let (retained, abandoned, startup, reconcile) = match action {
+            EngineAttachmentAction::Prepare { retained_ids } => {
+                (Some(retained_ids), Vec::new(), false, false)
+            }
+            EngineAttachmentAction::Reconcile {
+                retained_ids,
+                abandoned_ids,
+                startup,
+            } => (retained_ids, abandoned_ids, startup, true),
+        };
+        if retained.as_ref().is_some_and(|ids| {
+            ids.len()
+                > self
+                    .authority_id_input_limit()
+                    .saturating_add(MAX_OWNER_UNKNOWN_IDS)
+        }) || abandoned.len() > self.authority_id_input_limit()
+            || (startup && retained.is_none())
+        {
+            return Err(Error::ResourceLimit(
+                "engine attachment action exceeds its limit".into(),
+            ));
+        }
+        let mut retained_ids = BTreeSet::new();
+        for id in retained.as_ref().into_iter().flatten().map(|id| &id.id) {
+            let Some(entry) = self
+                .persistent
+                .get(id)
+                .or_else(|| self.retired_attachments.get(id))
+            else {
+                continue;
+            };
+            if !Self::attachment_entry(entry) {
+                return Err(Error::InvalidInput(
+                    "retained capability is not an engine attachment".into(),
+                ));
+            }
+            retained_ids.insert(id.clone());
+        }
+        for id in abandoned.iter().map(|id| &id.id) {
+            if let Some(entry) = self
+                .persistent
+                .get(id)
+                .or_else(|| self.retired_attachments.get(id))
+            {
+                if !Self::attachment_entry(entry) {
+                    return Err(Error::InvalidInput(
+                        "abandoned capability is not an engine attachment".into(),
+                    ));
+                }
+            }
+        }
+
+        let old_provisional = self.provisional_attachments.clone();
+        let old_cleanup = self.image_cleanup.clone();
+        let old_retired = self.retired_attachments.clone();
+        let old_admission = self.registry_admission_snapshot(
+            &self.persistent,
+            &self.active_database_root,
+            &self.active_puzzle_root,
+            &self.active_engine_root,
+            &self.pending_artifacts,
+            &old_provisional,
+            &old_retired,
+            &old_cleanup,
+        )?;
+        let mut candidate = self.persistent.clone();
+        let mut readopted_retired_ids = Vec::new();
+        for id in &retained_ids {
+            if let Some(entry) = self.retired_attachments.get(id).cloned() {
+                candidate.insert(id.clone(), entry);
+                readopted_retired_ids.push(id.clone());
+            }
+            self.provisional_attachments.remove(id);
+            self.image_cleanup.remove(id);
+        }
+        if reconcile {
+            let abandon_only = retained.is_none();
+            let explicit_abandoned: BTreeSet<_> = abandoned.into_iter().map(|id| id.id).collect();
+            let retire_ids = candidate
+                .iter()
+                .filter_map(|(id, entry)| {
+                    if !Self::attachment_entry(entry) || retained_ids.contains(id) {
+                        return None;
+                    }
+                    let provisional = self.provisional_attachments.contains(id);
+                    let explicitly_abandoned = explicit_abandoned.contains(id);
+                    let should_retire = if abandon_only {
+                        explicitly_abandoned && provisional
+                    } else {
+                        explicitly_abandoned
+                            || (!provisional
+                                && !(startup && self.session_protected_ids.contains(id)))
+                            || (startup
+                                && self.loaded_candidate_ids.contains(id)
+                                && !self.session_protected_ids.contains(id))
+                    };
+                    should_retire.then(|| id.clone())
+                })
+                .collect::<Vec<_>>();
+            for id in retire_ids {
+                if let Some(entry) = candidate.remove(&id) {
+                    self.provisional_attachments.remove(&id);
+                    if entry.stored.purpose == Some(EntryPurpose::EngineImage) {
+                        self.image_cleanup.insert(id.clone(), entry.stored.clone());
+                    }
+                    self.retired_attachments.insert(id, entry);
+                }
+            }
+        }
+        if candidate == self.persistent
+            && self.provisional_attachments == old_provisional
+            && self.image_cleanup == old_cleanup
+            && self.retired_attachments == old_retired
+        {
+            if self.registry_durability_pending {
+                return self.retry_registry_durability();
+            }
+            return Ok(());
+        }
+        match self.commit_candidate_with_pending_baseline(
+            candidate,
+            self.pending_artifacts.clone(),
+            None,
+            Some(old_admission),
+        ) {
+            Ok(durability) => {
+                for id in readopted_retired_ids {
+                    self.retired_attachments.remove(&id);
+                }
+                match durability {
+                    CommitDurability::Durable => {
+                        self.registry_durability_pending = false;
+                        Ok(())
+                    }
+                    CommitDurability::DurabilityUncertain(stage) => {
+                        self.registry_durability_pending = true;
+                        Err(Error::CommittedDurabilityUncertain(stage))
+                    }
+                }
+            }
+            Err(error) => {
+                self.provisional_attachments = old_provisional;
+                self.image_cleanup = old_cleanup;
+                self.retired_attachments = old_retired;
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn set_engine_image_sweep_root(&mut self, root: Option<AppDataDir>) {
+        self.engine_image_sweep_root = root;
+    }
+
+    /// Seals attachment mutations before process teardown. Cleanup never follows a stored path:
+    /// intents use the caller's directory, and the orphan sweep uses the retained admitted root.
+    pub(crate) fn cleanup_engine_images(
+        &mut self,
+        image_dir: &AuthorizedDir,
+        seal: bool,
+    ) -> Result<(), Error> {
+        if seal {
+            self.seal_engine_attachments();
+        }
+        if self.image_cleanup.is_empty() {
+            if self.registry_durability_pending {
+                self.retry_registry_durability()?;
+            }
+            self.sweep_engine_image_orphans();
+            return Ok(());
+        }
+        let ids = self.image_cleanup.keys().cloned().collect::<Vec<_>>();
+        let original_cleanup = self.image_cleanup.clone();
+        let mut next_cleanup = original_cleanup.clone();
+        let mut failures = Vec::new();
+        let mut registry_persistence_error = None;
+        for id in ids {
+            let Some(stored) = original_cleanup.get(&id).cloned() else {
+                continue;
+            };
+            let Ok(path) = stored.path.to_path() else {
+                next_cleanup.remove(&id);
+                continue;
+            };
+            let Some(leaf) = path.file_name() else {
+                next_cleanup.remove(&id);
+                continue;
+            };
+            let valid_uuid = uuid::Uuid::parse_str(&leaf.to_string_lossy()).is_ok();
+            if !valid_uuid || path.parent() != Some(image_dir.path()) {
+                next_cleanup.remove(&id);
+                continue;
+            }
+            let acquired = match image_dir.open_leaf_identified(leaf) {
+                Ok(identity) if identity.agrees_with(&stored.identity) => identity,
+                Ok(_) => {
+                    next_cleanup.remove(&id);
+                    continue;
+                }
+                Err(error) if error.is_missing_entry() => {
+                    next_cleanup.remove(&id);
+                    continue;
+                }
+                Err(Error::Conflict(_)) => {
+                    next_cleanup.remove(&id);
+                    continue;
+                }
+                Err(error) => {
+                    failures.push(error);
+                    continue;
+                }
+            };
+            match image_dir.remove_leaf_identified(leaf, acquired) {
+                Ok(()) => {
+                    next_cleanup.remove(&id);
+                }
+                Err(error) if error.is_missing_entry() => {
+                    next_cleanup.remove(&id);
+                }
+                Err(Error::Conflict(_)) => {
+                    // A substituted leaf is not ours. Complete the obsolete intent without unlinking.
+                    next_cleanup.remove(&id);
+                }
+                Err(error) => failures.push(error),
+            }
+        }
+        if next_cleanup != original_cleanup {
+            self.image_cleanup = next_cleanup;
+            let durability = self.save_entries(
+                &self.persistent,
+                &self.active_database_root,
+                &self.active_puzzle_root,
+                &self.active_engine_root,
+                &self.pending_artifacts,
+            );
+            match durability {
+                Ok(CommitDurability::Durable) => {
+                    self.registry_durability_pending = false;
+                }
+                Ok(CommitDurability::DurabilityUncertain(stage)) => {
+                    log::warn!(
+                        "engine image cleanup registry sync is uncertain at {stage}; completed intents are adopted"
+                    );
+                    self.registry_durability_pending = true;
+                    registry_persistence_error = Some(Error::CommittedDurabilityUncertain(stage));
+                }
+                Err(error) => {
+                    self.image_cleanup = original_cleanup;
+                    return match failures.into_iter().next() {
+                        Some(cleanup) => Err(Error::with_cleanup(error, Err(cleanup))),
+                        None => Err(error),
+                    };
+                }
+            }
+        } else if self.registry_durability_pending {
+            registry_persistence_error = self.retry_registry_durability().err();
+        }
+        if let Some(error) = registry_persistence_error {
+            return match failures.into_iter().next() {
+                Some(cleanup) => Err(Error::with_cleanup(error, Err(cleanup))),
+                None => Err(error),
+            };
+        }
+        if let Some(error) = failures.into_iter().next() {
+            return Err(error);
+        }
+        self.sweep_engine_image_orphans();
+        Ok(())
+    }
+
+    pub(super) fn sweep_engine_image_orphans(&mut self) {
+        let Some(root) = self.engine_image_sweep_root.as_ref() else {
+            return;
+        };
+        if self.active_image_issuances.active.load(Ordering::Acquire) != 0 {
+            return;
+        }
+        let image_dir = match ensure_app_owned_default_dir(root, AppOwnedDefaultRoot::EngineImages)
+        {
+            Ok(image_dir) => image_dir,
+            Err(error) => {
+                log::warn!(
+                    "engine image orphan sweep directory derivation failed: {}",
+                    error.category()
+                );
+                return;
+            }
+        };
+        let mut protected = BTreeSet::new();
+        for stored in self
+            .persistent
+            .values()
+            .chain(self.retired_attachments.values())
+            .map(|entry| &entry.stored)
+            .chain(self.image_cleanup.values())
+        {
+            let path = match stored.path.to_path() {
+                Ok(path) => path,
+                Err(error) => {
+                    log::warn!(
+                        "engine image orphan sweep skipped for unreadable reference: {}",
+                        error.category()
+                    );
+                    return;
+                }
+            };
+            let Some(leaf) = path.file_name().filter(|_| has_normal_leaf(&path)) else {
+                log::warn!(
+                    "engine image orphan sweep skipped for leafless reference: {}",
+                    ErrorCategory::InvalidInput
+                );
+                return;
+            };
+            protected.insert(leaf.to_ascii_lowercase());
+        }
+        let entries = match read_directory_entries_at(
+            image_dir.directory.as_file(),
+            &CancellationToken::new(),
+            Some(MAX_ENGINE_IMAGE_SWEEP_ENTRIES),
+            &mut |_| true,
+        ) {
+            Ok(entries) => entries,
+            Err(error) => {
+                log::warn!(
+                    "engine image orphan sweep listing failed: {}",
+                    error.category()
+                );
+                return;
+            }
+        };
+        for entry in entries {
+            Self::sweep_engine_image_candidate(&image_dir, &protected, &entry);
+        }
+    }
+
+    pub(super) fn sweep_engine_image_candidate(
+        image_dir: &AuthorizedDir,
+        protected: &BTreeSet<OsString>,
+        entry: &DirectoryEntry,
+    ) {
+        if entry.kind != DirectoryEntryKind::RegularFile
+            || protected.contains(&entry.name.to_ascii_lowercase())
+        {
+            return;
+        }
+        let Some(name) = entry.name.to_str() else {
+            return;
+        };
+        if Uuid::parse_str(name).is_err()
+            && !name
+                .strip_prefix(".atomic-")
+                .is_some_and(|suffix| Uuid::parse_str(suffix).is_ok())
+        {
+            return;
+        }
+        let identity = match image_dir.open_leaf_identified(&entry.name) {
+            Ok(identity) if identity.pair() == entry.identity => identity,
+            Ok(_) => return,
+            Err(error) if error.is_missing_entry() => return,
+            Err(Error::Conflict(_)) => return,
+            Err(error) => {
+                log::warn!(
+                    "engine image orphan sweep open failed for {name}: {}",
+                    error.category()
+                );
+                return;
+            }
+        };
+        if let Err(error) = image_dir.remove_leaf_identified(&entry.name, identity) {
+            log::warn!(
+                "engine image orphan sweep removal failed for {name}: {}",
+                error.category()
+            );
+        }
+    }
+}
+
+/// Takes the process-wide authority lock only long enough to open and bound the
+/// image descriptor. The guard is dropped before this function returns.
+pub(crate) fn engine_image_reader_for(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    image: &EngineImageHandle,
+    max_bytes: usize,
+) -> Result<(VerifiedFile, u64), Error> {
+    authority.with_mut(|authority| authority.open_engine_image(image, max_bytes))?
+}
+
+/// Consumes the no-follow descriptor. `declared` is capped before it sizes the allocation, and
+/// each read is limited to the remaining allowance plus one byte used to detect excess.
+pub(crate) fn read_engine_image_bytes(
+    file: VerifiedFile,
+    declared: u64,
+    max_bytes: usize,
+) -> Result<Vec<u8>, Error> {
+    let mut file = file.into_inner();
+    read_bounded_bytes(
+        &mut file,
+        declared,
+        max_bytes,
+        "engine image exceeds the supported size limit",
+        || Ok(()),
+    )
+}

@@ -9674,7 +9674,7 @@ fn engine_image_split_keeps_reads_off_the_opener_and_lock_wrapper() {
         );
     }
 
-    let source = include_str!("mod.rs");
+    let source = test_source_files::production_source();
     let reader = body_at_indent(source, "fn engine_image_reader_for(");
     assert!(
         reader.contains("open_engine_image"),
