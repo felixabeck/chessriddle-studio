@@ -27923,3 +27923,20 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** `rd: z.number().optional()`. Keep the rest of the schema strict.
 * **Proof:** a Vitest case in the existing Chess.com API test file that mocks `tauri.getPublicChessComJson` with a `chess_blitz.last` object lacking `rd` and expects `getChessComAccount` to return the parsed stats (fails at HEAD: returns `null`).
 * **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### The main window is shown at creation, before the renderer has painted, because the window-state plugin restores visibility
+
+* **ID:** f-20261120-04 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (audit of upstream En Croissant 0.16 against master c20f15301; upstream fixed the same mechanism in 64ed26648, #1068)
+* **Where:** `src-tauri/src/main.rs:1411` (`tauri_plugin_window_state::Builder::new().build()`, default `StateFlags::all()`); `src-tauri/tauri.conf.json` main window `"create": false, "visible": false`; the window is built at `main.rs:1593` and is meant to be revealed only by `close_splashscreen` (`main.rs:744-757`, called from `src/App.tsx:241` and `src/bootstrap.tsx:80,123`). `index.html` sets no background.
+* **Defect:** the design keeps the window hidden until the renderer calls `close_splashscreen`. The plugin defeats it: `tauri-plugin-window-state` 2.4.1 `on_window_ready` calls `restore_state(state_flags)` (`src/lib.rs:407-429`), which ends with `if flags.contains(StateFlags::VISIBLE) && should_show { self.show()?; self.set_focus()?; }` (`:262-265`). `should_show` starts `true` (`:179`) and becomes the saved `state.visible` (`:227`), which is `true` for any window that was visible when its state was saved. So the window is shown the moment it is created, on a first launch and on every later one, while the document is still the empty `index.html`.
+* **Failure scenario:** start the installed app with the dark colour scheme → the native window appears immediately with an unpainted webview and stays blank until the bundle has loaded and React has rendered → then the dark UI replaces it. `close_splashscreen` arrives after the window is already visible and changes nothing.
+* **Not verified here:** the flash was not observed on screen in this session (mechanism traced in the plugin source and `main.rs` only), and the colour of the unpainted WebKitGTK surface was not measured.
+* **Fix:** build the plugin with `StateFlags::all() & !StateFlags::VISIBLE` so visibility stays owned by `close_splashscreen`. Two obligations follow. (1) Today the plugin's early `show()` is also what reveals the window when the renderer never reaches `closeSplashscreen` (bundle fails to load, a script error before `bootstrap.tsx`); with the flag removed that case would leave an invisible running process, so the same change needs a native reveal on that path (a bounded fallback owned by setup, not a renderer promise) per `.claude/rules/async-resource-invariants.md`. (2) After the flag change, observe a dark start in the real app (`pnpm verify:app` or the installed build, WebKitGTK): only if a blank frame is still visible at `show()` add a pre-React background from the ChessRiddle surface tokens in `DESIGN.md` (not upstream's `#1A1B1E`). The CSP is `script-src 'self'`, so upstream's inline `<script>` in `index.html` is not an option as written; a same-origin classic script or a stylesheet is, and the CSP is not widened.
+* **Proof:** a source/unit assertion beside the existing setup pins in `main.rs` (`:3931`) that the window-state plugin is built without `VISIBLE`, plus a `close_splashscreen_tests` case for the fallback reveal; real-app observation of a dark start recorded in the closing note.
+* **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
