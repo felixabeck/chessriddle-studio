@@ -28018,3 +28018,20 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** find what renders the "Two Knights" button and what it waits on after the append (the trace is at `artifacts/frontend-audit/test-results/new-game-to-file-Library-N-…/trace.zip` of the failing run), then either wait on that state in the spec (as the neighbouring `expect.poll` on `gameOrigin` does) or remove the lag if the title really updates late for users.
 * **Proof:** the spec passes 10 consecutive full-suite container runs, or a targeted repeat (`--project=new-game-to-file --repeat-each=30` with the full suite's worker count) shows no failure.
 * **Found by:** Claude Code orchestrating the upstream 0.16 adoption batch, 2026-11-20, full e2e container run
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### The board-keyboard e2e clip check can measure chessground's stale container after the board moves back into the Mosaic tile
+
+* **ID:** f-20261120-09 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Follow-up of:** f-20261117-05
+* **Spotted outside diff:** yes (final push gate for the upstream 0.16 adoption batch, e2e lane, 2026-11-20: 472 passed, 1 failed; the same test passed in a full container run on nearly the same tree an hour earlier)
+* **Where:** `e2e/board-keyboard.spec.ts:936` ("board-keyboard: opens analysis and exposes a keyboard-operable board"), `assertNothingClipped(showEvaluation, { mode: "reachable" })` after `setViewportSize({ width: 800 })` and the `z` key; `e2e/fixtures.ts` `assertNothingClipped`.
+* **Defect:** `content clipped: div.: x 733px > 356px; div.: y 741px > 610px`. Same cause as f-20261117-05 through a different trigger. `BoardTabLayout` chooses stacked or Mosaic from a ResizeObserver; going from 500px to 800px, chessground first sizes `cg-container` for the stacked board (wrap 706px), then the layout switches to Mosaic and moves the same board node into the tile (wrap 313px). chessground re-sizes its container only from its own wrap observer, so the check could run while the container was still 696px wide: 696 + 37px offset = 733px against the 356px column `Box` in `Board.tsx`. The state is never painted (the failure screenshot shows a 312px board).
+* **Failure scenario:** `pnpm gates:push -- --frontend` on a loaded machine → the e2e lane fails on this one test and the frontend-mutation lane never starts, although nothing is clipped on screen.
+* **Fix:** wait for the Mosaic layout, the Show evaluation button and `waitForBoardSizeSettled` before the unchanged clip check; share that helper from `e2e/fixtures.ts`.
+* **Proof:** a probe delaying only shrinking `.cg-wrap` ResizeObserver callbacks by 1000 ms fails the test with `content clipped: div.: x 741px > 356px; div.: y 749px > 610px` before the wait and passes after it.
+* **Found by:** Claude Code orchestrating the upstream 0.16 adoption batch, 2026-11-20, final push gate
