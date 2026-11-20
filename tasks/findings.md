@@ -27900,7 +27900,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### Naming a new line on first save intermittently ends on "This game or its file is no longer available" in the browser suite
 
-* **ID:** f-20261120-10 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261120-10 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes (failed on CI in the notation-diagrams push, run 44772186085 on aedd9206e; the test and the save path came with the new-game name dialog, da23a6b41..5177789e8)
 * **Where:** `e2e/new-game-to-file.spec.ts:51` ("Library New game opens a fileDraft, asks for the line name and appends on explicit save"), last assertion at `:123`; the message is set in `src/components/tabs/FileFreshnessGate.tsx:473-481` (`sameGameIdentity` false → `FileFreshness.GameReplaced`).
@@ -27909,6 +27909,11 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** find which reconcile runs against the pre-save identity (the tab's headers change to the entered names while a reconcile captured before the save is still in flight, or the reconcile after the rebind reads before the mock serves the appended game) and make the save path's own stamp win; then decide whether the product can reach it.
 * **Proof:** the repeat command above green at `--repeat-each=20`.
 * **Found by:** Claude Code (Fable 5.2), notation-diagrams build, 2026-11-20
+* **Closed 2026-11-20 (drain session 8a8ae642-30d1-4a5d-9513-1998e6b482f1, working f-20261120-13):** fixed in `bb4f622b5`. This is the new-game half of f-20261120-13.
+  * **Cause:** a fixture race, not a product path. Once the save binds the tab (revision `saved-generation` from the mocked `write_game`), the app-level 2 s revision poll (`startFileRevisionPoll`, `FILE_REVISION_INTERVAL_MS`) reads `file_revision`. The shared `pgnFileCommands` mock still answered the pre-write `e2e-pgn-revision`, so `applyFilePollOutcome` marked the tab unverified. The reconcile then read the fixture game through `read_game`, and `sameGameIdentity` correctly reported `GameReplaced`. It failed only on runs slow enough to reach the first poll before the final assertion. A real backend answers the revision its own write returned, so the product cannot reach this from a save alone.
+  * **Fix:** `repertoireCommands` answers `file_revision` with the written revision. The spec waits for two `file_revision` reads before its final assertions, so every run exercises the poll.
+  * **Proof:** `pnpm test:e2e:container -- --project=new-game-to-file --repeat-each=20` → 40 passed (both tests ×20). Removing only the mock line makes the spec fail in the container exactly as CI did.
+<!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"2a08140f54acb39fe1a838f01cabae8a00364ec33c5eff05d16fcfee3373e627","header_sha256":"7a43064b9d5ed7d8804cc24be3d5272d23883bc6ae849bae48064d47a23fdbef","header_status":"handled","input_sha256":"11d26468e8ed0d16bbe43fb02655106568222cc39681198a2160205bdb998e28","kind":"mutation-receipt","operation":"85c5bbdd9b70e331df3f02d13d634113cee2db1e4a16e7a26357adf32ea9a06a","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-10"],"target":"f-20261120-10","v":1} -->
 
 ---
 
