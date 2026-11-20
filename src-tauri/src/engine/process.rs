@@ -65,6 +65,20 @@ const MAX_PENDING_ENGINE_SEARCHES: usize = 256;
 /// drain is then aborted so `terminate` cannot stall on a logging task.
 const STDERR_REAP_TIMEOUT: Duration = Duration::from_millis(200);
 
+/// Folds a primary shutdown step and the step that follows it (stop then terminate, termination
+/// then reap or join) into one result; a failed primary keeps the follow-up as its cleanup. The
+/// actor, the supervisor and pending-actor registration all call it.
+fn combine_shutdown_results(
+    stop: Result<(), Error>,
+    terminate: Result<(), Error>,
+) -> Result<(), Error> {
+    match (stop, terminate) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(terminate)) => Err(terminate),
+        (Err(stop), terminate) => Err(Error::with_cleanup(stop, terminate)),
+    }
+}
+
 mod actor;
 mod child;
 mod logs;

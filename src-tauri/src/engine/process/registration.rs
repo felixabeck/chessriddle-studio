@@ -769,17 +769,6 @@ where
     }
 }
 
-pub(super) fn combine_shutdown_results(
-    stop: Result<(), Error>,
-    terminate: Result<(), Error>,
-) -> Result<(), Error> {
-    match (stop, terminate) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Ok(()), Err(terminate)) => Err(terminate),
-        (Err(stop), terminate) => Err(Error::with_cleanup(stop, terminate)),
-    }
-}
-
 pub(super) fn aggregate_shutdown_failures(
     failures: Vec<ActorShutdownFailure>,
 ) -> Result<(), Error> {
