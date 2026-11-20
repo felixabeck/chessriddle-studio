@@ -5,6 +5,7 @@ import type { Config } from "@lichess-org/chessground/config";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
+import { showDestsAtom } from "@/state/atoms";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { positionFromFen } from "@/utils/chessops";
 import PuzzleBoardSurface from "./PuzzleBoardSurface";
@@ -58,6 +59,32 @@ test("a surface without tree context refuses illegal moves and contains rejected
   expect(onMove).toHaveBeenCalledOnce();
   expect(position.turn).toBe("white");
 });
+
+test.each([false, true])(
+  "the show-destinations setting %s reaches the board",
+  async (showDests) => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const store = createStore();
+    store.set(showDestsAtom, showDests);
+    await act(async () =>
+      root!.render(
+        <MantineProvider>
+          <Provider store={store}>
+            <PuzzleBoardSurface
+              position={positionFromFen(INITIAL_FEN)[0]!}
+              orientation="white"
+              canPlay
+              onMove={vi.fn()}
+            />
+          </Provider>
+        </MantineProvider>,
+      ),
+    );
+    expect(board.config!.movable!.showDests).toBe(showDests);
+  },
+);
 
 async function pendingPromotion() {
   container = document.createElement("div");

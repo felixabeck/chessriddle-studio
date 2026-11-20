@@ -9,7 +9,7 @@ import { useState } from "react";
 import { Chessground } from "@/chessground/Chessground";
 import BoardFrame from "@/components/boards/BoardFrame";
 import PromotionModal from "@/components/boards/PromotionModal";
-import { moveHighlightAtom, showCoordinatesAtom } from "@/state/atoms";
+import { moveHighlightAtom, showCoordinatesAtom, showDestsAtom } from "@/state/atoms";
 import classes from "@/styles/Chessboard.module.css";
 
 export default function PuzzleBoardSurface({
@@ -38,6 +38,7 @@ export default function PuzzleBoardSurface({
   if (pending && pending.fen !== positionFen) setPending(null);
   const moveHighlight = useAtomValue(moveHighlightAtom);
   const coordinates = useAtomValue(showCoordinatesAtom);
+  const showDests = useAtomValue(showDestsAtom);
   const turn = position?.turn ?? "white";
   async function accept(move: Move) {
     try {
@@ -77,6 +78,7 @@ export default function PuzzleBoardSurface({
               free: false,
               color: canPlay ? turn : undefined,
               dests: position ? chessgroundDests(position) : new Map(),
+              showDests,
               events: {
                 after: (orig, dest) => {
                   const from = parseSquare(orig);
