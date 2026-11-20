@@ -114,6 +114,19 @@ async function piecePaintBounds(page: Page, piece: Locator) {
     );
 }
 
+// A parsed stylesheet does not mean the piece's background image is decoded and painted;
+// under load both screenshots can show an empty square, so sample until paint appears.
+async function paintedBounds(page: Page, piece: Locator) {
+    let bounds: Awaited<ReturnType<typeof piecePaintBounds>> | undefined;
+    await expect
+        .poll(async () => {
+            bounds = await piecePaintBounds(page, piece);
+            return bounds.paintDetected;
+        })
+        .toBe(true);
+    return bounds!;
+}
+
 async function setPieceSizeToSeventy(page: Page) {
     const slider = page.getByRole("slider", { name: "Piece Size", exact: true });
     await slider.scrollIntoViewIfNeeded();
@@ -205,8 +218,7 @@ test("piece-size: merida paint at 100% extends outside the centred 70% box, and 
     await expect(board).toBeVisible();
     const queen = boardPiece(page, "piece.white.queen");
     await expect(queen).toBeVisible();
-    const atFull = await piecePaintBounds(page, queen);
-    expect(atFull.paintDetected).toBe(true);
+    const atFull = await paintedBounds(page, queen);
     const insetX = CENTRED_70_INSET * atFull.width;
     const insetY = CENTRED_70_INSET * atFull.height;
     expect(
@@ -222,8 +234,7 @@ test("piece-size: merida paint at 100% extends outside the centred 70% box, and 
     await expect(board).toBeVisible();
     const shrunkQueen = boardPiece(page, "piece.white.queen");
     await expect(shrunkQueen).toBeVisible();
-    const atSeventy = await piecePaintBounds(page, shrunkQueen);
-    expect(atSeventy.paintDetected).toBe(true);
+    const atSeventy = await paintedBounds(page, shrunkQueen);
     const seventyInsetX = CENTRED_70_INSET * atSeventy.width;
     const seventyInsetY = CENTRED_70_INSET * atSeventy.height;
     expect(atSeventy.minX).toBeGreaterThanOrEqual(seventyInsetX - 1);
