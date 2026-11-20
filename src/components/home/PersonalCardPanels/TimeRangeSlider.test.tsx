@@ -16,8 +16,18 @@ vi.mock("react-i18next", () => ({
 vi.mock("@mantine/core", () => ({
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  RangeSlider: ({ label }: { label: (value: number) => ReactNode }) => (
-    <span data-testid="slider-label">{label(0)}</span>
+  RangeSlider: ({
+    label,
+    value,
+    onChange,
+  }: {
+    label: (value: number) => ReactNode;
+    value: [number, number];
+    onChange: (value: [number, number]) => void;
+  }) => (
+    <span data-testid="slider-label" data-value={value.join(",")} onClick={() => onChange([1, 4])}>
+      {label(0)}
+    </span>
   ),
 }));
 vi.mock("recharts", () => ({
@@ -90,7 +100,11 @@ function expectLocalizedDate(testId: string, language: string, otherLanguage: st
 }
 
 test("slider label uses the interface language", async () => {
-  const props = { ratingDates: [date], onDateRangeChange: vi.fn() };
+  const props = {
+    ratingDates: [date],
+    dateRange: { start: 0, end: 0 },
+    onDateRangeChange: vi.fn(),
+  };
   await act(async () => {
     root.render(<TimeRangeSlider {...props} />);
   });
@@ -101,6 +115,26 @@ test("slider label uses the interface language", async () => {
     root.render(<TimeRangeSlider {...props} />);
   });
   expectLocalizedDate("slider-label", "en-US", "de-DE");
+});
+
+test("slider shows the parent's range and reports changes without a local copy", async () => {
+  const onDateRangeChange = vi.fn();
+  const ratingDates = Array.from({ length: 10 }, (_, i) => date + i);
+  await act(async () => {
+    root.render(
+      <TimeRangeSlider
+        ratingDates={ratingDates}
+        dateRange={{ start: 2, end: 3 }}
+        onDateRangeChange={onDateRangeChange}
+      />,
+    );
+  });
+  const slider = () => container.querySelector('[data-testid="slider-label"]') as HTMLElement;
+  expect(slider().dataset.value).toBe("2,3");
+
+  await act(async () => slider().click());
+  expect(onDateRangeChange).toHaveBeenCalledWith({ start: 1, end: 4 });
+  expect(slider().dataset.value).toBe("2,3");
 });
 
 test("rating ticks and tooltip labels use the interface language", async () => {
