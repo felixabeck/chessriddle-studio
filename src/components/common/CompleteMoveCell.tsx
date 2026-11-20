@@ -10,7 +10,7 @@ import IconAction from "@/components/common/IconAction";
 import type { Annotation } from "@/utils/annotation";
 import { hasMorePriority, stripClock } from "@/utils/chess";
 import { formatMoveNumber } from "@/utils/format";
-import { getTabFile } from "@/utils/tabs";
+import { isRepertoireTab } from "@/utils/tabs";
 import { getEffectiveGameEnd, type TreeNode } from "@/utils/treeReducer";
 import type { NotationNodeIndex } from "./notationRows";
 import { pathForNotationNode } from "./notationRows";
@@ -321,7 +321,6 @@ function OpenMoveMenu({
   onClose: () => void;
 }) {
   const [currentTab] = useOwnerTab();
-  const tabFile = getTabFile(currentTab);
   const actions = store.getState();
   const mainline = path.length > 0 && path.every((index) => index === 0);
   const isGameEnd = equal(getEffectiveGameEnd(root)?.position, path);
@@ -356,8 +355,7 @@ function OpenMoveMenu({
                     else actions.setGameEnd(path);
                   }
                 : undefined,
-            markStart:
-              tabFile?.metadata.type === "repertoire" ? () => actions.setStart(path) : undefined,
+            markStart: isRepertoireTab(currentTab) ? () => actions.setStart(path) : undefined,
             promoteToMainline: () => actions.promoteToMainline(path),
             promote: () => actions.promoteVariation(path),
             copy: () => actions.copyVariationPgn(path),

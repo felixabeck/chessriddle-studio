@@ -7,6 +7,8 @@ interface BoardBarProps {
   detail?: string;
   rating?: string | number | null;
   onNameClick?: () => void;
+  /** Muted text shown in place of an empty name, for a name that can be set by clicking it. */
+  placeholder?: string;
   height: string;
   /** Which side of the board the bar sits on; its content always hugs the board. */
   placement: "above" | "below";
@@ -18,6 +20,7 @@ export function BoardBar({
   detail,
   rating,
   onNameClick,
+  placeholder,
   height,
   placement,
   children,
@@ -36,11 +39,11 @@ export function BoardBar({
       align={towardBoard}
     >
       <Group gap={6} align="baseline">
-        {hasPlayerName &&
+        {(hasPlayerName || (placeholder && onNameClick)) &&
           (onNameClick ? (
             <UnstyledButton type="button" onClick={onNameClick}>
-              <Text fw="bold" size="md">
-                {name}
+              <Text fw="bold" size="md" c={hasPlayerName ? undefined : "dimmed"}>
+                {hasPlayerName ? name : placeholder}
               </Text>
             </UnstyledButton>
           ) : (

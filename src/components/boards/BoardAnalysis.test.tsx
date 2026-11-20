@@ -79,6 +79,9 @@ const mocks = vi.hoisted(() => ({
   addGameActivation: undefined as (() => void) | undefined,
   realTabs: false,
   compactTabs: false,
+  gameNameModal: undefined as
+    | React.ComponentProps<typeof import("./GameNameModal").default>
+    | undefined,
   editingMode: false,
 }));
 
@@ -233,6 +236,12 @@ vi.mock("../panels/practice/PracticePanel", () => ({ default: () => null }));
 const board = vi.hoisted(() => vi.fn((_props: React.ComponentProps<typeof Board>) => null));
 vi.mock("./Board", () => ({ default: board }));
 vi.mock("./BoardControls", () => ({ default: () => null }));
+vi.mock("./GameNameModal", () => ({
+  default: (props: React.ComponentProps<typeof import("./GameNameModal").default>) => {
+    mocks.gameNameModal = props;
+    return <div role="dialog" data-game-name-modal={props.title} />;
+  },
+}));
 vi.mock("./EditingCard", () => ({ default: () => null }));
 vi.mock("./EvalListener", () => ({ default: () => null }));
 
@@ -323,6 +332,7 @@ describe("BoardAnalysis", () => {
 
   beforeEach(async () => {
     board.mockClear();
+    mocks.gameNameModal = undefined;
     mocks.editingMode = false;
     mocks.realTabs = false;
     mocks.compactTabs = false;
@@ -1365,6 +1375,146 @@ describe("BoardAnalysis", () => {
     } finally {
       save.mockRestore();
     }
+  });
+
+  describe("naming", () => {
+    const repertoireFile: Extract<Tab["gameOrigin"], { kind: "fileDraft" }>["file"] = {
+      type: "file",
+      handle: fileHandle,
+      name: "Weiß_Caro Kann.pgn",
+      numGames: 8,
+      metadata: { type: "repertoire", tags: [] },
+      lastModified: 1,
+    };
+
+    async function setOrigin(gameOrigin: Tab["gameOrigin"], name = "New game") {
+      await act(async () => {
+        // A stored game needs a move, as on the real New game board.
+        if (!treeStore.getState().root.children.length)
+          treeStore.getState().makeMove({ payload: "e4" });
+        updateTabById(
+          (...args) => jotaiStore.set(tabsAtom, ...args),
+          tabId,
+          (previous) => ({ ...previous, name, gameOrigin }),
+        );
+      });
+    }
+
+    function nameModal() {
+      return container.querySelector("[data-game-name-modal]");
+    }
+
+    test("a new repertoire line is a repertoire board before its first save", async () => {
+      await setOrigin({ kind: "fileDraft", file: repertoireFile });
+      expect(board.mock.lastCall?.[0].repertoire).toBe(true);
+    });
+
+    test("the first Save of a new line asks for its name before writing", async () => {
+      await setOrigin({ kind: "fileDraft", file: repertoireFile });
+      await act(async () => latestSaveHotkey()());
+
+      expect(nameModal()?.getAttribute("data-game-name-modal")).toBe("GameNameModal.SaveLine");
+      expect(mocks.gameNameModal?.repertoire).toBe(true);
+      expect(mocks.gameNameModal?.confirmLabel).toBe("GameNameModal.SaveTo");
+      expect(mocks.countPgnGames).not.toHaveBeenCalled();
+      expect(mocks.writeGame).not.toHaveBeenCalled();
+
+      await act(async () =>
+        mocks.gameNameModal!.onConfirm({
+          ...treeStore.getState().headers,
+          white: "Caro-Kann Two Knights",
+          black: "3...Lg4",
+        }),
+      );
+
+      expect(nameModal()).toBeNull();
+      expect(treeStore.getState().headers.white).toBe("Caro-Kann Two Knights");
+      expect(treeStore.getState().headers.black).toBe("3...Lg4");
+      expect(jotaiStore.get(tabsAtom)[0]?.name).toBe("Caro-Kann Two Knights");
+      await vi.waitFor(() => expect(mocks.countPgnGames).toHaveBeenCalledOnce());
+    });
+
+    test("cancelling the name dialog writes nothing and keeps the tab title", async () => {
+      await setOrigin({ kind: "fileDraft", file: repertoireFile });
+      await act(async () => latestSaveHotkey()());
+      await act(async () => mocks.gameNameModal!.onClose());
+
+      expect(nameModal()).toBeNull();
+      expect(jotaiStore.get(tabsAtom)[0]?.name).toBe("New game");
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(mocks.countPgnGames).not.toHaveBeenCalled();
+    });
+
+    test("a new line saved without a name keeps its New game title", async () => {
+      await setOrigin({ kind: "fileDraft", file: repertoireFile });
+      await act(async () => latestSaveHotkey()());
+      await act(async () =>
+        mocks.gameNameModal!.onConfirm({
+          ...treeStore.getState().headers,
+          white: "",
+          black: "",
+          event: "",
+        }),
+      );
+      expect(jotaiStore.get(tabsAtom)[0]?.name).toBe("New game");
+      await vi.waitFor(() => expect(mocks.countPgnGames).toHaveBeenCalledOnce());
+    });
+
+    test("a new database game is named by its players and saved with a plain Save", async () => {
+      mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
+      mocks.writeDbGame.mockReset();
+      await setOrigin({
+        kind: "databaseDraft",
+        database: { id: { id: "database-token" }, kind: "database" },
+      });
+      await act(async () => latestSaveHotkey()());
+      expect(mocks.gameNameModal?.title).toBe("GameNameModal.SaveGame");
+      expect(mocks.gameNameModal?.repertoire).toBe(false);
+      expect(mocks.gameNameModal?.confirmLabel).toBe("Common.Save");
+      await act(async () =>
+        mocks.gameNameModal!.onConfirm({
+          ...treeStore.getState().headers,
+          white: "Carlsen",
+          black: "Nakamura",
+        }),
+      );
+      expect(jotaiStore.get(tabsAtom)[0]?.name).toBe("Carlsen - Nakamura");
+    });
+
+    test("a stored game saves without asking", async () => {
+      await act(async () => latestSaveHotkey()());
+      expect(nameModal()).toBeNull();
+      await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledOnce());
+    });
+
+    test("renaming a stored line from its title edits the names without saving", async () => {
+      const headers = treeStore.getState().headers;
+      await act(async () => treeStore.getState().setHeaders({ ...headers, white: "Old name" }));
+      await setOrigin({ kind: "file", gameNumber: 1, file: repertoireFile }, "Old name");
+      await act(async () => board.mock.lastCall![0].onRenameLine!());
+
+      expect(mocks.gameNameModal?.title).toBe("GameNameModal.RenameLine");
+      expect(mocks.gameNameModal?.confirmLabel).toBe("Files.Rename");
+      await act(async () =>
+        mocks.gameNameModal!.onConfirm({ ...treeStore.getState().headers, white: "New name" }),
+      );
+
+      expect(treeStore.getState().headers.white).toBe("New name");
+      expect(treeStore.getState().dirty).toBe(true);
+      expect(jotaiStore.get(tabsAtom)[0]?.name).toBe("New name");
+      expect(mocks.writeGame).not.toHaveBeenCalled();
+    });
+
+    test("renaming a line keeps a tab title the user chose", async () => {
+      await setOrigin({ kind: "file", gameNumber: 1, file: repertoireFile }, "My tab");
+      await act(async () => board.mock.lastCall![0].onRenameLine!());
+      await act(async () =>
+        mocks.gameNameModal!.onConfirm({ ...treeStore.getState().headers, white: "New name" }),
+      );
+      expect(jotaiStore.get(tabsAtom)[0]?.name).toBe("My tab");
+    });
   });
 
   test("a database orientation flip autosaves its PGN tag and advances the row stamp", async () => {

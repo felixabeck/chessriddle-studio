@@ -7,7 +7,13 @@ import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import type { DatabaseHandle } from "@/bindings";
 import GameInfo from "@/components/common/GameInfo";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
-import { getTabFile, isFileBackedTab, matchesFileGameTab, sameTabOwner } from "@/utils/tabs";
+import {
+  getTabFile,
+  isFileBackedTab,
+  isRepertoireTab,
+  matchesFileGameTab,
+  sameTabOwner,
+} from "@/utils/tabs";
 import FenSearch from "./FenSearch";
 import FileInfo from "./FileInfo";
 import GameSelectorAccordion from "./GameSelectorAccordion";
@@ -30,7 +36,7 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
   const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map());
   const [currentTab, setCurrentTab] = useOwnerTab();
   const tabFile = getTabFile(currentTab);
-  const isReportoire = tabFile?.metadata.type === "repertoire";
+  const isReportoire = isRepertoireTab(currentTab);
   const derivedTabName = tabFile ? getFileGameName(headers, tabFile) : undefined;
   const previousTabTitle = useRef({ tab: currentTab, store, name: derivedTabName });
 

@@ -32,12 +32,19 @@ import { keyMapAtom } from "@/state/keybinds";
 import type { Annotation } from "@/utils/annotation";
 import {
   AddGameContext,
+  getTabDestinationFile,
   getTabFile,
   isDraftGameOrigin,
   isPersistentGameOrigin,
+  isRepertoireTab,
   saveToFile,
   useTabActions,
+  type Tab,
 } from "@/utils/tabs";
+import { getFileGameName } from "@/utils/files";
+import { getGameName, type GameHeaders } from "@/utils/treeReducer";
+import { lineTitleOf } from "@/utils/lineTitle";
+import GameNameModal from "./GameNameModal";
 import { useBoardCommands } from "./boardCommands";
 import SaveToTargetModal from "./SaveToTargetModal";
 import DetachedEval from "../common/DetachedEval";
@@ -61,6 +68,22 @@ import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
 import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
+
+/** The tab title follows the new names unless the user renamed the tab by hand. A new game keeps
+ * its "New game" title until it has a name. */
+function renamedTab(tab: Tab, before: GameHeaders, next: GameHeaders): Tab {
+  const file = getTabDestinationFile(tab);
+  const titleOf = (headers: GameHeaders) =>
+    file ? getFileGameName(headers, file) : getGameName(headers);
+  const named =
+    file?.metadata.type === "repertoire"
+      ? !!lineTitleOf(next).name
+      : getGameName(next) !== "Unknown";
+  if (!named) return tab;
+  if (!isDraftGameOrigin(tab.gameOrigin) && tab.name !== titleOf(before)) return tab;
+  const name = titleOf(next);
+  return name === tab.name ? tab : { ...tab, name };
+}
 
 function BoardAnalysis() {
   const { t } = useTranslation();
@@ -133,7 +156,26 @@ function BoardAnalysis() {
     },
     [updateTab, getTab, currentTab, store, t, notifyError],
   );
-  const userSaveFile = useCallback(() => saveFile(true), [saveFile]);
+  // A new game is named before its first save; later saves write straight away.
+  const [nameDialog, setNameDialog] = useState<"save" | "rename" | null>(null);
+  const userSaveFile = useCallback(() => {
+    const tab = currentTab && getTab(currentTab.value);
+    if (tab && isDraftGameOrigin(tab.gameOrigin)) {
+      setNameDialog("save");
+      return Promise.resolve();
+    }
+    return saveFile(true);
+  }, [saveFile, currentTab, getTab]);
+  const applyGameNames = useCallback(
+    (next: GameHeaders) => {
+      const before = store.getState().headers;
+      if (next.white !== before.white || next.black !== before.black || next.event !== before.event)
+        store.getState().setHeaders(next);
+      if (!currentTab) return;
+      updateTab(currentTab.value, (tab) => renamedTab(tab, before, next));
+    },
+    [store, currentTab, updateTab],
+  );
 
   // File menu → Save / Save to…: handled here with the same handlers as the board controls.
   const openSaveTo = useCallback(() => setSaveToModal(true), []);
@@ -168,7 +210,9 @@ function BoardAnalysis() {
     explorerDetached && currentTabSelected === "database" ? "annotate" : currentTabSelected;
   const [, setReportModalOpen] = useAtom(useTabAtom(reportModalOpenFamily));
   const practiceTabSelected = useAtomValue(useTabAtom(practiceTabFamily));
-  const isRepertoire = tabFile?.metadata.type === "repertoire";
+  const isRepertoire = isRepertoireTab(currentTab);
+  const destinationFile = getTabDestinationFile(currentTab);
+  const headers = useStore(store, (s) => s.headers);
   const practicing = currentTabSelected === "practice" && practiceTabSelected === "train";
   const practiceState = useAtomValue(useTabAtom(practiceStateFamily));
   const practiceMoveController = useAtomValue(useTabAtom(practiceMoveControllerFamily));
@@ -299,6 +343,34 @@ function BoardAnalysis() {
 
   return (
     <>
+      {nameDialog && (
+        <GameNameModal
+          opened
+          onClose={() => setNameDialog(null)}
+          headers={headers}
+          repertoire={isRepertoire}
+          title={
+            nameDialog === "rename"
+              ? t("GameNameModal.RenameLine")
+              : isRepertoire
+                ? t("GameNameModal.SaveLine")
+                : t("GameNameModal.SaveGame")
+          }
+          confirmLabel={
+            nameDialog === "rename"
+              ? t("Files.Rename")
+              : destinationFile
+                ? t("GameNameModal.SaveTo", { target: destinationFile.name.replace(/\.pgn$/i, "") })
+                : t("Common.Save")
+          }
+          onConfirm={(next) => {
+            const saving = nameDialog === "save";
+            setNameDialog(null);
+            applyGameNames(next);
+            if (saving) void saveFile(true);
+          }}
+        />
+      )}
       {saveToModal && (
         <SaveToTargetModal
           opened
@@ -335,6 +407,7 @@ function BoardAnalysis() {
           <Paper withBorder style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
             <Board
               repertoire={isRepertoire}
+              onRenameLine={() => setNameDialog("rename")}
               practiceMove={practicing ? (practiceMoveController ?? undefined) : undefined}
               editingMode={editingMode}
               boardRef={boardRef}

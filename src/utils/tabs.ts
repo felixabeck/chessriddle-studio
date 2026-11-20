@@ -66,6 +66,16 @@ export function getTabFile(tab?: Tab | null): FileMetadata | undefined {
     return isFileBackedTab(tab) ? tab.gameOrigin.file : undefined;
 }
 
+/** The file a tab's game belongs to, including a new game not yet stored in it. */
+export function getTabDestinationFile(tab?: Tab | null): FileMetadata | undefined {
+    if (tab?.gameOrigin.kind === "fileDraft") return tab.gameOrigin.file;
+    return getTabFile(tab);
+}
+
+export function isRepertoireTab(tab?: Tab | null): boolean {
+    return getTabDestinationFile(tab)?.metadata.type === "repertoire";
+}
+
 export function getTabGameNumber(tab?: Tab | null): number {
     return isFileBackedTab(tab) ? tab.gameOrigin.gameNumber : 0;
 }

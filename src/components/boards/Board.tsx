@@ -100,6 +100,8 @@ const VISUALLY_HIDDEN_STYLE = {
 interface ChessboardProps {
   editingMode: boolean;
   repertoire?: boolean;
+  /** Opens the line naming dialog when a repertoire line's title is clicked. */
+  onRenameLine?: () => void;
   viewOnly?: boolean;
   disableVariations?: boolean;
   movable?: "both" | "white" | "black" | "turn" | "none";
@@ -121,6 +123,7 @@ interface ChessboardProps {
 function Board({
   editingMode,
   repertoire,
+  onRenameLine,
   viewOnly,
   disableVariations,
   movable = "turn",
@@ -566,9 +569,12 @@ function Board({
                   ? headers.black_elo
                   : headers.white_elo
             }
+            placeholder={repertoire ? t("GameInfo.UntitledLine") : undefined}
             onNameClick={
               repertoire
-                ? undefined
+                ? viewOnly
+                  ? undefined
+                  : onRenameLine
                 : () => {
                     if (orientation === "white") {
                       setBlackFideOpen(true);

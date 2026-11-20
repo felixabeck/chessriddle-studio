@@ -26,7 +26,7 @@ vi.mock("jotai", () => ({
   useAtom: (atom: unknown) => [atom === "type" ? "letters" : true],
 }));
 vi.mock("@/utils/tabs", () => ({
-  getTabFile: (tab: unknown) => (tab ? { metadata: { type: "repertoire" } } : undefined),
+  isRepertoireTab: (tab: unknown) => !!tab,
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("lucide-react", () => {

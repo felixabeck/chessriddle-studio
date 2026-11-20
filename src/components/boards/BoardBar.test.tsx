@@ -92,3 +92,41 @@ test("each bar aligns its content toward the board", async () => {
   expect(bars.map(align)).toEqual(["flex-end", "flex-start"]);
   expect(bars.map((bar) => align(bar.lastElementChild!))).toEqual(["flex-end", "flex-start"]);
 });
+
+test("an empty clickable title shows its muted placeholder, and a set name replaces it", async () => {
+  const onNameClick = vi.fn();
+  const bar = (name: string) => (
+    <MantineProvider>
+      <BoardBar
+        name={name}
+        placeholder="Untitled line"
+        height="1.9rem"
+        placement="above"
+        onNameClick={onNameClick}
+      />
+    </MantineProvider>
+  );
+  await act(async () => root.render(bar("")));
+  const button = host.querySelector("button");
+  expect(button?.textContent).toBe("Untitled line");
+  expect(button?.querySelector("p")?.getAttribute("data-dimmed") ?? button?.innerHTML).toContain(
+    "dimmed",
+  );
+  await act(async () => button?.click());
+  expect(onNameClick).toHaveBeenCalledOnce();
+
+  await act(async () => root.render(bar("Two Knights")));
+  expect(host.querySelector("button")?.textContent).toBe("Two Knights");
+  expect(host.querySelector("button")?.innerHTML).not.toContain("dimmed");
+});
+
+test("a placeholder is not shown when the title cannot be clicked", async () => {
+  await act(async () =>
+    root.render(
+      <MantineProvider>
+        <BoardBar name="" placeholder="Untitled line" height="1.9rem" placement="above" />
+      </MantineProvider>,
+    ),
+  );
+  expect(host.querySelector("[data-board-bar]")?.textContent).toBe("");
+});
