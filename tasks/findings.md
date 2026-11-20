@@ -27126,7 +27126,7 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 
 ### `$push`'s post-push `bash scripts/install-local.sh` is OOM-killed inside a drain session's 8 GiB scope
 
-* **ID:** f-20261116-03 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261116-03 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** master-ci-green
 * **Filed from:** 90e15052-ece7-4bce-9a2d-7565b31795a5
 * **Impact class:** tooling
 * **Where:** `.claude/skills/push/SKILL.md` §4, the installer step (`bash scripts/install-local.sh`), and `scripts/install-local.sh`.
@@ -27134,6 +27134,9 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 * **Failure scenario:** 2026-11-16, drain session for f-20261112-96, after the verified push of d8db999cd: `bash scripts/install-local.sh` failed with `rustc ... (signal: 9, SIGKILL: kill)`; kernel log `Memory cgroup out of memory: Killed process 659710 (rustc) total-vm:6467336kB, anon-rss:4338340kB`, `oom_memcg=.../agents.slice/run-rfac169f409e54f95a0700b6c37542bc7.scope` (memory.max 8589934592). Rerunning as `agent-gate bash scripts/install-local.sh` from the same checkout built and installed d8db999cd in 1 m 22 s. Every agent-run install hits the same cap when the session already holds a few GB, so the menu entry Felix uses silently stays on an older commit.
 * **Fix:** Route the installer's Tauri release build through `agent-gate` (either in the push skill's command or inside `scripts/install-local.sh` for its build step), matching how `pnpm gates:push` and `pnpm checks:pre-review` already run, and update `.claude/rules/desktop-installation.md` if it names the command.
 * **Proof:** Run the installer from a drain session after a push and confirm `~/.local/opt/chessriddle-studio/current/VERSION` names the pushed commit with no OOM entry in `journalctl -k`.
+
+2026-11-20 drain session 0181f1c7: fix committed and reviewed, push refused by `pnpm ci:remote:check` (master `aedd9206e` e2e red, filed through the inbox spool as "Master `aedd9206e` is red: three e2e specs fail in CI after the notation-diagrams push"). Commits on `drain/drain-20261102`, rebased on `aedd9206e`: `f7a0c2fa3` push skill runs `agent-gate bash scripts/install-local.sh`; `4080498c8` `check-gate-routing.mjs` strips a leading `agent-gate` before classifying and routing fenced push-skill commands (test red on revert), verify-ui release build via `agent-gate pnpm build`; `669232365` reachability-anchored test and app-driver hint. Lenses: correctness APPROVED; root-cause REVISE → closed, APPROVED; tests REVISE → closed, APPROVED. Final `pnpm gates:push` (contract) exit 0 on `669232365`. Re-check: `pnpm ci:remote:check` exit 0 on master, then rebase, gates, push, and the finding's proof (`agent-gate bash scripts/install-local.sh` installs the pushed SHA with no OOM in `journalctl -k`), then close.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"322c71a73a21cfe0611a1edf8e247cb77421722271ec6d22587f4024d93c1360","header_sha256":"b0a7946fc920310c2b14e9887fa1c94c06777afe1f3723fabfb13d672dd06b1a","header_status":"open","input_sha256":"ba981ec9d9cc1bd85fce26151a86cc09b391e69d9fe9251ec5d1389901ea90a0","kind":"mutation-receipt","operation":"440bfad0cc6cba81e39f2a42bb582a8eda7f7bf0e8d512713f874010bf567670","options":{"headers":{"Blocked":"master-ci-green"},"section":null},"request_id_sha256":null,"results":["f-20261116-03"],"target":"f-20261116-03","v":1} -->
 
 ---
 
