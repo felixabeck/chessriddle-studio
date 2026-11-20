@@ -185,3 +185,29 @@ finding ids and date.
   that I can't distinguish between different moragambit files". Also: "The chapter
   picker should definitely be part of it."
 - **Date:** 2026-11-10.
+
+## 2026-11-20 — Which upstream En Croissant 0.16 features Studio adopts
+
+- **Question:** Upstream shipped 96 commits since the fork point. Which of its
+  user-visible features does Studio take, in what form, and which does it leave out?
+- **Choice:** Adopt four: the material display can be switched off; a "Default panel"
+  setting chooses the side panel a board opens on (default Info, repertoires still
+  open Practice only on request); the analysis-panel control for the engine's Threads
+  option is called "CPU threads" like the Engines page; two humans playing on one
+  board get a takeback. Upstream's hide toggles for the sidebar and tab bar are not
+  adopted as such; the one-row navigation redesign replaces them (its own entry).
+- **Ruled out:** Long algebraic notation; engine Elo in the PGN headers of engine
+  games; the colour square beside "White/Black to move" in puzzles; the Kiwen Suwi
+  piece set and the blue4 board. The database game preview keeps opening on the
+  starting position, with no setting for it.
+- **Felix's reason:** Material: "Yes, adopt this." Default panel: "Yes, adopt this as
+  a setting. Seems sensible." Threads: "Number of threads, yes, also adopt." Takeback:
+  "adopt this". Long algebraic notation: "I don't even know what this is, so maybe…
+  we can just skip it." Engine Elo: "I don't understand the clear benefit behind
+  this, so maybe we can just skip the engine ELO." Preview: "I would definitely keep
+  it on the starting position". The agent recommended against a setting for the
+  preview (no evidence of demand, "go to end" is one click away) and Felix did not
+  ask for one.
+- **Findings:** f-20261120-03 to f-20261120-06 are the upstream bug fixes taken in
+  the same run; they needed no product decision.
+- **Date:** 2026-11-20.
