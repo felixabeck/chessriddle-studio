@@ -217,4 +217,51 @@ finding ids and date.
   ask for one.
 - **Findings:** f-20261120-03 to f-20261120-06 are the upstream bug fixes taken in
   the same run; they needed no product decision.
+
+## 2026-11-20 — One navigation row replaces the title row, the tab row and the rail
+
+- **Question:** The title row, the tab row and the left rail each take space while
+  showing little. How should navigation be arranged?
+- **Choice:** One row at the top of the window.
+  - The title row, the tab row and the left rail merge into one row. No hide toggle
+    and no window per game.
+  - Tabs look like browser tabs on a tinted bar, and the current one merges into the
+    page (variant B of the three rendered mockups).
+  - Every tab carries its own close X. The separate close button at the right edge
+    goes.
+  - The "..." button next to the tabs goes. Its actions stay on the tab's right-click
+    menu.
+  - File, View and Help collapse into one menu button. Settings, Accounts and Engines
+    move into it as entries that open their own pages.
+  - The Board icon of the rail disappears because the tabs are the boards. Library is
+    the only destination left in the row, shown with its label as the pinned first
+    tab.
+  - Send feedback stays one click away: a small labelled "Feedback" button at the
+    right end of the row, before the window buttons, in addition to its menu entry.
+- **Agent proposals Felix confirmed, not his wording** (asked as four details, answered
+  "yes to all"):
+  - Reload, Clear saved data and Open logs move into a new Advanced section of
+    Settings.
+  - On the Settings, Accounts and Engines pages the page appears in the row as a
+    temporary item with its own X. Closing it returns to the tab the user came from.
+  - A button lists every open tab when the tabs overflow.
+  - F2 renames a tab.
+- **Shown on the mockup sheets of the options he chose, not confirmed item by item:**
+  - The menu holds New tab, Open file, Save, Save to file or database, Accounts,
+    Engines, Settings, Fullscreen, Send feedback, About and Exit.
+  - With many tabs open, tabs shrink to a minimum width and then the strip scrolls.
+    Only the current tab keeps its X then; the others show it on hover.
+- **Supersedes in part:** the 2026-10-04 entry "One Library with linked collections"
+  places Library as a sidebar entry. Library stays the one entry for files and
+  databases; its place becomes the first tab of the row.
+- **Ruled out:** A hide toggle for the bars. One window per game. Accounts and Engines
+  as sections of the Settings page. Variant A (today's pill tabs in a strip) and
+  variant C (flat labels with a gold line).
+- **Felix's reason:** With one or two tabs open "the whole tab bar on top is wasted",
+  the left bar has "only the four items on top", and in the header line "a lot of
+  space is wasted". He uses the navigation a lot between files, but not while working
+  inside one. The only things he uses all the time are board and library; accounts and
+  engines are set up once and do not deserve a prominent spot. If feedback is hidden
+  and a user has to click too much first, he might not send it. On the mockups and the
+  proposals: "B Browser Taps, 2 menue entries, yes to all".
 - **Date:** 2026-11-20.
