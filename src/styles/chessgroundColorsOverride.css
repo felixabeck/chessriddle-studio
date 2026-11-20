@@ -17,7 +17,11 @@ cg-board square.premove-dest {
   background: radial-gradient(rgba(20, 30, 85, 0.5) 22%, rgba(0, 0, 0, 0) calc(22% + 1px));
 }
 cg-board square.oc.premove-dest {
-  background: radial-gradient(transparent 0%, transparent 80%, rgba(20, 30, 85, 0.2) 80%);
+  background: radial-gradient(
+    transparent 0%,
+    transparent calc(80% - 1px),
+    rgba(20, 30, 85, 0.2) 80%
+  );
 }
 cg-board square.premove-dest:hover {
   background: rgba(20, 30, 85, 0.2);
