@@ -3145,6 +3145,24 @@ test("a diagram marker survives a storage round trip", () => {
     expect(firstStoredChild("diagram")).toMatchObject({ diagram: true, comment: "Key" });
 });
 
+test("hydration keeps the prose of a node that already carries the diagram flag", () => {
+    const tree = structuredClone(defaultTree());
+    tree.root.children = [
+        {
+            ...tree.root,
+            children: [],
+            commands: "",
+            diagram: true,
+            comment: "the [#] marker",
+        } as never,
+    ];
+    storeLegacyTree("flagged-diagram", tree);
+    expect(firstStoredChild("flagged-diagram")).toMatchObject({
+        diagram: true,
+        comment: "the [#] marker",
+    });
+});
+
 test.each([
     ["without a commands key", false],
     ["with a commands key", true],
