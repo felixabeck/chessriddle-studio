@@ -28008,7 +28008,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### The new-game-to-file e2e intermittently misses the "Two Knights" title button within 8 s under full-suite load
 
-* **ID:** f-20261120-08 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261120-08 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (full `pnpm test:e2e:container` run for the upstream 0.16 adoption batch, worktree build/upstream-016-adoptions-20261120 at 3b0951900, on top of origin/master d52695834)
 * **Where:** `e2e/new-game-to-file.spec.ts:123` (`await expect(page.getByRole("button", { name: "Two Knights", exact: true })).toBeVisible();`, added on 2026-11-20 with the name-on-first-save work, commits da23a6b41..5177789e8), in the test "Library New game opens a fileDraft, asks for the line name and appends on explicit save" (`:51`).
@@ -28018,6 +28018,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** find what renders the "Two Knights" button and what it waits on after the append (the trace is at `artifacts/frontend-audit/test-results/new-game-to-file-Library-N-…/trace.zip` of the failing run), then either wait on that state in the spec (as the neighbouring `expect.poll` on `gameOrigin` does) or remove the lag if the title really updates late for users.
 * **Proof:** the spec passes 10 consecutive full-suite container runs, or a targeted repeat (`--project=new-game-to-file --repeat-each=30` with the full suite's worker count) shows no failure.
 * **Found by:** Claude Code orchestrating the upstream 0.16 adoption batch, 2026-11-20, full e2e container run
+* **Handled (2026-11-20):** same defect as f-20261120-10, which carries the mechanism; that finding was filed from another session's CI failure (run 44772186085) while this one was still unpublished. Cause established here by an Opus 5.5 leaf with a probe (a 2.5 s wait before the last assertion failed 2 of 2): the spec's mocked backend kept answering `file_revision` with the old file's revision after `write_game`, so the app's 2 s file revision poll saw a change, re-read the fixture's old game and `FileFreshnessGate` judged the saved tab replaced. Native `write_game` returns the revision of a readback of the written file, so a user cannot reach this through the app's own save; three lenses (correctness, root-cause, tests) confirmed that claim against `src-tauri/src/pgn.rs`. The repair on master is another session's: commits "test(e2e): report the saved file revision after the New game append" and "test(e2e): answer the saved revision for both New game file specs" (`file_revision: { result: savedWrite.revision }` in `repertoireCommands`), identical to the mock change developed here, which was therefore not pushed. Not a product defect. f-20261120-10 is left for its filing session to close.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"cc9226fc7a3ccccfc37cd082e7a61a7e75be6b24b3859fac17e55195d3fe35dd","header_sha256":"78e66de81246fcb6de3164b43507d44e7913c5ac881fc1552734a3f9c8bda6ac","header_status":"handled","input_sha256":"ce5d28cd52eba496bf9737297bf6d5a3b6a8a1421f48ee1ca609907c580af524","kind":"mutation-receipt","operation":"7597403211d27c94b17db44303c4a6fdc2175e8f5ee4da375aa9a2098b0e911a","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-08"],"target":"f-20261120-08","v":1} -->
 
 ---
 
