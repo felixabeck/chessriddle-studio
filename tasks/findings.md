@@ -27956,3 +27956,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** read `showDestsAtom` in `PuzzleBoardSurface` and pass it as `movable.showDests`; this covers both callers.
 * **Proof:** a `PuzzleBoardSurface.test.tsx` case that sets `showDestsAtom` to `false` and expects the config handed to Chessground to carry `movable.showDests === false` (fails at HEAD: the key is absent).
 * **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### Keybind action labels in Settings are hard-coded English in every language
+
+* **ID:** f-20261120-06 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (audit of upstream En Croissant 0.16 against master c20f15301; upstream translated the labels in 17e7ad8a9, #1032)
+* **Where:** `src/components/settings/SettingsPage.tsx:885-886` renders `{keybind.name}`; the names are English literals in `src/state/keybinds.ts:17-63` (43 actions); `src/components/settings/KeybindInput.tsx:52` uses the same string as `aria-label`. `src/translation/en-US.json:1231-1233` holds only three `Settings.Keybinds*` keys.
+* **Defect:** the action column of the keybind table, and each row's accessible name, never pass through i18next. The JSX literal check does not catch it because the text is a variable.
+* **Failure scenario:** switch the language to Deutsch → Settings → Keybinds → every action ("Go to end of branch", "Toggle eval bar", …) is still English while the rest of the page is German. The same holds for the other 14 non-English catalogues.
+* **Fix:** give each action a translation key and render through `t()`, following `docs/localization.md` (literal keys preferred over upstream's dynamic `Settings.Keybinds.Actions.<ACTION>` lookup with `defaultValue`; every shipped catalogue needs a non-empty value, so 43 keys × 16 catalogues). Run `pnpm i18n:extract`. Check the bundle total against `docs/bundle-budgets.md` before pushing; the added strings count toward it.
+* **Proof:** a `SettingsPage` (or keybind table) test that renders with the de-DE catalogue and expects a translated action label and `aria-label` (fails at HEAD: English literal).
+* **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
