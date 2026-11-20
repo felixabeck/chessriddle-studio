@@ -7,6 +7,7 @@ import {
     selectFilesTreeRow,
     test,
     waitForFontsSettled,
+    waitForScrollAreaScrollbarsHidden,
 } from "./fixtures";
 
 // A ChessBase export: `[#]` marks the diagram, the drawing commands sit in the same comment.
@@ -80,6 +81,8 @@ for (const tableView of [false, true]) {
         await expect(diagram).toHaveCount(1);
 
         await page.mouse.move(0, 0);
+        // The notation's hover scrollbar outlives the pointer for a moment; capture after it hides.
+        await waitForScrollAreaScrollbarsHidden(page);
         await waitForFontsSettled(page);
         await expect(notation).toHaveScreenshot(
             `notation-diagram-${tableView ? "table" : "inline"}.png`,
