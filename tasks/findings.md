@@ -24082,7 +24082,7 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 
 ### `TimeRangeSlider` mirrors its controlled range into state through a mis-parenthesised initializer
 
-* **ID:** f-20261112-13 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261112-13 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** general review chunk (Felix t40u) at HEAD `8927ceb72` (file identical on origin/master `ba81d9264`), selection-math pass over `PersonalCardPanels`
 * **Where:** `src/components/home/PersonalCardPanels/TimeRangeSlider.tsx` ~13-22. The initializer's second element is `(dateRange?.end ?? ratingDates.length > 0) ? ratingDates.length - 1 : 0`: `??` binds tighter than the conditional, so whenever `dateRange.end` is non-zero it yields `ratingDates.length - 1` and ignores `end`. A `useEffect` then copies `dateRange` into `internalRange` after mount, and `onChange` writes both the local state and the parent. The only caller, `RatingsPanel.tsx` ~207-214, always passes `dateRange={timeRange}` and owns the range itself. Same component family as `f-20261112-11` (different defect: day anchor).
@@ -24091,6 +24091,9 @@ Handled in 1ab8c70cc. `load_themes_for_puzzle` now shares `themes_query_error` w
 * **Fix:** Make the slider controlled: `value={[dateRange.start, dateRange.end]}` and `onChange={(v) => onDateRangeChange({ start: v[0], end: v[1] })}`, make `dateRange` required, and delete `internalRange` and its effect. If an uncontrolled mode is wanted, parenthesise as `dateRange?.end ?? (ratingDates.length > 0 ? ratingDates.length - 1 : 0)`.
 * **Proof:** Node evaluation of the initializer expression on atlas: `{start:2,end:3}` with 10 dates → `[2,9]` (expected `[2,3]`); `undefined` with 10 dates → `[0,9]`; `{start:0,end:0}` → `[0,0]`. `rg TimeRangeSlider src` shows `RatingsPanel` as the only caller, always passing `dateRange`.
 * **Found by:** Grok Bot, general review (t40u), HEAD `8927ceb72`.
+
+Handled in 03db60768: `TimeRangeSlider` is now fully controlled. `dateRange` is required, the slider renders `[dateRange.start, dateRange.end]` and `onChange` only calls `onDateRangeChange`; `internalRange`, its mis-parenthesised initializer and the mirroring effect are deleted. The only caller (`RatingsPanel`) already owned and passed the range, so behaviour is unchanged except the stale first frame is gone. New test `slider shows the parent's range and reports changes without a local copy` asserts the rendered value equals the parent's `{2,3}` and stays there after a change is reported. It fails on the old code, whose local copy would show `1,4`. Rejected: parenthesising the initializer and keeping an uncontrolled mode, because no caller needs it.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"96d1559c8eeeef3085d01954882a38d294196d41184693f9b858946683b227b3","header_sha256":"86a83ad43155591100e09a4df35d458c36cd516b839614494b7e22e7be9ab26d","header_status":"handled","input_sha256":"3a8a3da727db21972f51ce4482e839bd2735a6f23489eec451b1f5d98c5a1e20","kind":"mutation-receipt","operation":"8ca71e3546d3184500ce3e8373bbc0cc5a89f899fd2015f99a665427cd156c36","options":{"section":null},"request_id_sha256":null,"results":["f-20261112-13"],"target":"f-20261112-13","v":1} -->
 
 ---
 
