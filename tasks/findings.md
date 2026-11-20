@@ -27972,3 +27972,21 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** give each action a translation key and render through `t()`, following `docs/localization.md` (literal keys preferred over upstream's dynamic `Settings.Keybinds.Actions.<ACTION>` lookup with `defaultValue`; every shipped catalogue needs a non-empty value, so 43 keys × 16 catalogues). Run `pnpm i18n:extract`. Check the bundle total against `docs/bundle-budgets.md` before pushing; the added strings count toward it.
 * **Proof:** a `SettingsPage` (or keybind table) test that renders with the de-DE catalogue and expects a translated action label and `aria-label` (fails at HEAD: English literal).
 * **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### On Windows a maximized start still flashes the unpainted window, because restoring "maximized" shows a hidden window
+
+* **ID:** f-20261120-07 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Follow-up of:** f-20261120-04
+* **Spotted outside diff:** yes (review-platform-semantics over the f-20261120-04 fix, commit "fix(startup): keep the main window hidden until the renderer reveals it")
+* **Where:** `src-tauri/src/main.rs`, the window-state plugin builder (`StateFlags::all() & !StateFlags::VISIBLE`); `tauri-plugin-window-state` 2.4.1 `src/lib.rs:219-221` (`if flags.contains(StateFlags::MAXIMIZED) && state.maximized { self.maximize()?; }`, run from `on_window_ready` while the window is hidden); `tao` 0.34.5 `src/platform_impl/windows/window_state.rs:377-387` (`ShowWindow(window, SW_MAXIMIZE)` whenever the MAXIMIZED flag changes or is set) and `:420-424` (`ShowWindow(window, SW_HIDE)` afterwards when the window is not VISIBLE).
+* **Defect:** f-20261120-04 keeps the main window hidden until the renderer reveals it. On Windows the plugin still restores the maximized state on the hidden window, and tao implements that with `ShowWindow(SW_MAXIMIZE)`, which shows and activates a hidden Win32 window before the following `SW_HIDE` hides it again. The window ends up hidden and is later revealed maximized, so nothing is stuck; the residue is one brief appearance of the unpainted window.
+* **Failure scenario:** on Windows, close the app while its window is maximized, start it again → the empty maximized window appears for a moment, disappears, and the painted window appears when the renderer reveals it.
+* **Not verified here:** traced in the tao and plugin sources only; no Windows machine was available, so the flash was not observed and its duration is unknown. Linux and macOS do not take this code path.
+* **Fix:** on Windows, keep MAXIMIZED out of the plugin's restore and apply the saved maximized state at reveal time (in `close_splashscreen` and the native fallback, from the plugin's saved state), or reveal first and maximize in the same step; decide after observing the behaviour on Windows. The saved state must still be written with MAXIMIZED so the next start knows it.
+* **Proof:** a Windows observation (or the CI Windows job with a window-visibility probe) showing no visible window between creation and the renderer's reveal when the saved state is maximized; a source assertion on the chosen flag set for `target_os = "windows"`.
+* **Found by:** review-platform-semantics lens (agy), push review of the upstream 0.16 adoption batch, 2026-11-20; source lines re-read by the orchestrator
