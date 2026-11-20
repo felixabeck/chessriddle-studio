@@ -3508,15 +3508,16 @@ fn out_of_line_test_modules_are_classified_and_production_files_are_not() {
 
 #[test]
 fn path_authority_test_source_files_match_production_directory_and_disk_bytes() {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut visited = BTreeSet::new();
-    for_each_production_region(|key, _, _| {
+    let mut visited_production = BTreeMap::new();
+    for_each_production_region(|key, production, _| {
         if key.starts_with("infra/path_authority/") {
-            visited.insert(key.to_owned());
+            visited_production.insert(key.to_owned(), production.to_owned());
         }
     });
+    let visited: BTreeSet<String> = visited_production.keys().cloned().collect();
     let listed: BTreeSet<String> =
         crate::infra::path_authority::test_source_files::PRODUCTION_FILES
             .iter()
@@ -3540,6 +3541,16 @@ fn path_authority_test_source_files_match_production_directory_and_disk_bytes() 
             "path_authority::test_source_files entry {key} must match the file bytes on disk"
         );
     }
+    let expected_production = crate::infra::path_authority::test_source_files::PRODUCTION_FILES
+        .iter()
+        .map(|(key, _)| visited_production[*key].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        crate::infra::path_authority::test_source_files::production_source(),
+        expected_production,
+        "path_authority::test_source_files::production_source() must equal the production regions of PRODUCTION_FILES joined by newline"
+    );
 }
 
 /// The `src`-relative slash-joined key of a scanned path, so the two expected files can be
