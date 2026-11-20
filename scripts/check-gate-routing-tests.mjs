@@ -289,11 +289,18 @@ test("resolves a fenced gate command behind the agent-gate launcher", async () =
   // (f-20261116-03). The launcher prefix must not hide the routed script, and an
   // unroutable command behind it must still fail.
   const root = await fixture();
+  // Reachable only through the fenced line, so the empty result proves the launcher
+  // prefix keeps the script's route as well as its classification.
+  await write(root, "scripts/check-fenced-only.mjs", "\n");
   const path = join(root, ".claude/skills/push/SKILL.md");
   const original = await readFile(path, "utf8");
+  assert.match(
+    (await checkGateRouting(root, { paths })).join("\n"),
+    /checker file scripts\/check-fenced-only\.mjs is not reachable/u,
+  );
   await writeFile(
     path,
-    `${original}\n\`\`\`bash\nagent-gate bash scripts/check-example.mjs\n\`\`\`\n`,
+    `${original}\n\`\`\`bash\nagent-gate bash scripts/check-fenced-only.mjs\n\`\`\`\n`,
   );
   assert.deepEqual(await checkGateRouting(root, { paths }), []);
   await writeFile(path, `${original}\n\`\`\`bash\nagent-gate kit sync --check .\n\`\`\`\n`);

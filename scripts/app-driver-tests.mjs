@@ -129,11 +129,12 @@ test("prerequisites check the selected application even when the default binary 
   assert.ok(exists.mock.calls.some(({ arguments: [path] }) => path === application));
   assert.throws(
     () => requirePrerequisites(missingApplication),
-    (error) => error.message.includes(`${missingApplication} — build it with: pnpm build`),
+    (error) =>
+      error.message.includes(`${missingApplication} — build it with: agent-gate pnpm build`),
   );
   assert.throws(
     () => requirePrerequisites(),
-    (error) => error.message.includes(`${APP_BINARY} — build it with: pnpm build`),
+    (error) => error.message.includes(`${APP_BINARY} — build it with: agent-gate pnpm build`),
   );
 });
 

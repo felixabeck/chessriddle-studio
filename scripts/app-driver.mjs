@@ -157,7 +157,7 @@ export function requirePrerequisites(application = APP_BINARY) {
     );
   }
   if (!existsSync(application)) {
-    missing.push(`${application} — build it with: pnpm build`);
+    missing.push(`${application} — build it with: agent-gate pnpm build`);
   }
   if (missing.length > 0) {
     throw new Error(`missing prerequisites:\n  - ${missing.join("\n  - ")}`);
