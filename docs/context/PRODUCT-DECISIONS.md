@@ -194,9 +194,12 @@ finding ids and date.
   setting chooses the side panel a board opens on (default Info, repertoires still
   open Practice only on request); the analysis-panel control for the engine's Threads
   option is called "CPU threads" like the Engines page; two humans playing on one
-  board get a takeback. The first three shipped on 2026-11-20. The takeback is
-  decided but not built yet; what deleting the last move does during such a game is
-  still open. Upstream's hide toggles for the sidebar and tab bar are not adopted as
+  board get a takeback, and deleting the last move of such a game acts as a takeback.
+  All four shipped on 2026-11-20. Deleting any other move while a game is running is
+  not offered, because the game's moves belong to the backend. The agent applied the
+  same rule to games against an engine, where deleting the last move runs the
+  existing engine takeback; Felix was told and can restrict it to two humans.
+  Upstream's hide toggles for the sidebar and tab bar are not adopted as
   such: Felix chose a one-row navigation redesign instead, which is being planned in
   its own run and gets its own entry once he has picked a variant.
 - **Ruled out:** Long algebraic notation; engine Elo in the PGN headers of engine
@@ -205,7 +208,8 @@ finding ids and date.
   starting position, with no setting for it.
 - **Felix's reason:** Material: "Yes, adopt this." Default panel: "Yes, adopt this as
   a setting. Seems sensible." Threads: "Number of threads, yes, also adopt." Takeback:
-  "adopt this". Long algebraic notation: "I don't even know what this is, so maybe…
+  "adopt this", and on deleting the last move: "Act as a take back. Yes, I'm fine
+  with it." Long algebraic notation: "I don't even know what this is, so maybe…
   we can just skip it." Engine Elo: "I don't understand the clear benefit behind
   this, so maybe we can just skip the engine ELO." Preview: "I would definitely keep
   it on the starting position". The agent recommended against a setting for the
