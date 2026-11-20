@@ -35,7 +35,7 @@ vi.mock("@/platform/tauri", async () => {
     };
 });
 
-import { downloadChessCom, getChesscomGame } from "./api";
+import { downloadChessCom, getChessComAccount, getChesscomGame } from "./api";
 
 const destination: PathRef = { id: "destination" };
 const publication: ArtifactPublication = {
@@ -195,6 +195,40 @@ describe("getChesscomGame", () => {
             expect(mocks.getPublicChessComJson).not.toHaveBeenCalled();
         },
     );
+});
+
+describe("getChessComAccount", () => {
+    const record = { win: 10, loss: 5, draw: 2 };
+
+    test("accepts stats whose last rating omits the rating deviation", async () => {
+        const stats = {
+            chess_blitz: { last: { rating: 1500, date: 1700000000 }, record },
+            chess_rapid: { last: { rating: 1600, date: 1700000001, rd: 45 }, record },
+        };
+        mocks.getPublicChessComJson.mockResolvedValue(JSON.stringify(stats));
+
+        await expect(getChessComAccount("player")).resolves.toEqual(stats);
+        expect(mocks.getPublicChessComJson).toHaveBeenCalledExactlyOnceWith({
+            kind: "account",
+            player: "player",
+        });
+        expect(mocks.showNotification).not.toHaveBeenCalled();
+    });
+
+    test("rejects a perf block missing its rating", async () => {
+        mocks.getPublicChessComJson.mockResolvedValue(
+            JSON.stringify({ chess_blitz: { last: { date: 1700000000, rd: 45 }, record } }),
+        );
+
+        await expect(getChessComAccount("player")).resolves.toBeNull();
+        expect(mocks.logError).toHaveBeenCalledTimes(1);
+        expect(mocks.showNotification).toHaveBeenCalledExactlyOnceWith({
+            title: i18n.t("ChessCom.FetchAccountFailed"),
+            message: i18n.t("ChessCom.InvalidResponse", { value: "player" }),
+            color: "danger",
+            icon: expect.objectContaining({ type: expect.anything() }),
+        });
+    });
 });
 
 describe("downloadChessCom", () => {
