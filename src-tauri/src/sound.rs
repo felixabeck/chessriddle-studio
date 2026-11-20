@@ -306,11 +306,18 @@ mod tests {
     /// must not come back. This pin lives under `sound::tests` so `cargo test sound::` selects it.
     #[test]
     fn sound_resource_path_is_gone_from_main() {
-        let main = include_str!("main.rs");
-        assert!(
-            !main.contains("sound_resource_path"),
-            "sound_resource_path must not be registered or imported in main.rs"
-        );
+        for (name, source) in [
+            ("main.rs", include_str!("main.rs")),
+            (
+                "workspace_commands.rs",
+                include_str!("workspace_commands.rs"),
+            ),
+        ] {
+            assert!(
+                !source.contains("sound_resource_path"),
+                "sound_resource_path must not be registered or imported in {name}"
+            );
+        }
     }
 
     /// A restored per-test platform gate would only redden CI on macOS and Windows. Construct the

@@ -2636,9 +2636,12 @@ fn register_installed_engine_marks_executable_without_off_unix_refusal() {
     );
     let fs = source_for("fs.rs");
     let main = source_for("main.rs");
+    let workspace_commands = source_for("workspace_commands.rs");
     assert!(
-        !fs.contains("set_file_as_executable") && !main.contains("set_file_as_executable"),
-        "deleted executable command must be absent from fs.rs and main.rs"
+        !fs.contains("set_file_as_executable")
+            && !main.contains("set_file_as_executable")
+            && !workspace_commands.contains("set_file_as_executable"),
+        "deleted executable command must be absent from fs.rs, main.rs, and workspace_commands.rs"
     );
 }
 
@@ -2652,6 +2655,7 @@ fn source_for(file: &str) -> &'static str {
         }
         "infra/fs.rs" => include_str!("../fs.rs"),
         "fs.rs" => include_str!("../../fs.rs"),
+        "chessbase.rs" => include_str!("../../chessbase.rs"),
         "chesscom.rs" => include_str!("../../chesscom.rs"),
         "credentials.rs" => include_str!("../../credentials.rs"),
         "main.rs" => include_str!("../../main.rs"),
@@ -2670,6 +2674,7 @@ fn source_for(file: &str) -> &'static str {
         "db/linked_collections/batch.rs" => include_str!("../../db/linked_collections/batch.rs"),
         "file_workspace.rs" => include_str!("../../file_workspace.rs"),
         "pgn.rs" => include_str!("../../pgn.rs"),
+        "workspace_commands.rs" => include_str!("../../workspace_commands.rs"),
         other => panic!("unknown source-test file {other}"),
     }
 }
@@ -2688,6 +2693,7 @@ fn module_source(file: &str) -> &'static str {
 fn module_declarations(file: &str) -> &'static [(&'static str, &'static str)] {
     match file {
         "fs.rs" => &[("main.rs", "mod fs;")],
+        "chessbase.rs" => &[("main.rs", "mod chessbase;")],
         "chesscom.rs" => &[("main.rs", "mod chesscom;")],
         "oauth.rs" => &[("main.rs", "mod oauth;")],
         "puzzle.rs" => &[("main.rs", "mod puzzle;")],
@@ -2703,6 +2709,7 @@ fn module_declarations(file: &str) -> &'static [(&'static str, &'static str)] {
         ],
         "file_workspace.rs" => &[("main.rs", "mod file_workspace;")],
         "pgn.rs" => &[("main.rs", "mod pgn;")],
+        "workspace_commands.rs" => &[("main.rs", "mod workspace_commands;")],
         "db/mod.rs" => &[("main.rs", "mod db;")],
         "db/repository.rs" => &[("main.rs", "mod db;"), ("db/mod.rs", "mod repository;")],
         "db/search.rs" => &[("main.rs", "mod db;"), ("db/mod.rs", "mod search;")],
@@ -3498,6 +3505,8 @@ fn out_of_line_test_modules_are_classified_and_production_files_are_not() {
         "infra/path_authority/mod.rs",
         "infra/platform_support.rs",
         "main.rs",
+        "workspace_commands.rs",
+        "chessbase.rs",
     ] {
         assert!(
             !test_only.contains(&root.join(production_file)),
@@ -3791,7 +3800,12 @@ fn pgn_tests_carry_no_unported_marker_for_this_finding() {
 /// still exits 0, so this pin is what makes a re-added marker fail on Linux.
 #[test]
 fn startup_registry_files_carry_no_unported_marker_for_this_finding() {
-    for file in ["credentials.rs", "oauth.rs", "main.rs"] {
+    for file in [
+        "credentials.rs",
+        "oauth.rs",
+        "main.rs",
+        "workspace_commands.rs",
+    ] {
         assert_eq!(
             source_for(file)
                 .matches(&unported_marker("f-20260914-11"))
@@ -3934,6 +3948,7 @@ fn search_index_deletion_unlinks_once_between_invalidations() {
 fn assert_no_mapping_gate_symbols() {
     for file in [
         "main.rs",
+        "workspace_commands.rs",
         "db/mod.rs",
         "db/import.rs",
         "db/queries.rs",

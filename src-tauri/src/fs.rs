@@ -2138,7 +2138,7 @@ async fn engine_install_workflow_core<R: tauri::Runtime>(
             authority.with_mut(|authority| {
                 authority.retain_completion_resources(&workflow_id, resources)
             })??;
-            crate::engine_archive_destination_blocking(&authority, root)
+            crate::workspace_commands::engine_archive_destination_blocking(&authority, root)
         })
         .await?;
     let archive = request
@@ -2176,8 +2176,11 @@ async fn engine_install_workflow_core<R: tauri::Runtime>(
     };
     let handle = crate::infra::blocking::BLOCKING_GATEWAY
         .spawn(move || {
-            let handle =
-                crate::register_installed_engine_blocking(&authority, root.clone(), relative)?;
+            let handle = crate::workspace_commands::register_installed_engine_blocking(
+                &authority,
+                root.clone(),
+                relative,
+            )?;
             let mut resources = vec![root.id, handle.id.clone()];
             resources.extend(old);
             authority.with_mut(|authority| {
@@ -4103,8 +4106,11 @@ mod tests {
         let (authority, destination, path, root) = engine_destination(&directory);
         let state = AppState::default();
         state.pgn_path_authority.install(authority).unwrap();
-        crate::engine_archive_destination_blocking(&state.pgn_path_authority, root.clone())
-            .unwrap();
+        crate::workspace_commands::engine_archive_destination_blocking(
+            &state.pgn_path_authority,
+            root.clone(),
+        )
+        .unwrap();
         (directory, state, destination, path, root)
     }
 
@@ -4161,9 +4167,11 @@ mod tests {
         }
         let (_directory, state, destination, path, root) = root_failure_engine_fixture();
         let permissions = TestRootPermissionGuard::restrict(&path, 0o300);
-        let destination_error =
-            crate::engine_archive_destination_blocking(&state.pgn_path_authority, root.clone())
-                .unwrap_err();
+        let destination_error = crate::workspace_commands::engine_archive_destination_blocking(
+            &state.pgn_path_authority,
+            root.clone(),
+        )
+        .unwrap_err();
         let resolution_error = resolve_engine_archive_destination(
             &state,
             &destination,
@@ -4183,7 +4191,11 @@ mod tests {
             );
         }
         assert!(!path.join("installed").exists());
-        crate::engine_archive_destination_blocking(&state.pgn_path_authority, root).unwrap();
+        crate::workspace_commands::engine_archive_destination_blocking(
+            &state.pgn_path_authority,
+            root,
+        )
+        .unwrap();
     }
 
     #[cfg(unix)]
@@ -4275,7 +4287,7 @@ mod tests {
                 });
             let registration_error =
                 root_failure_engine_error_preserves_original(&destination, || {
-                    crate::register_installed_engine_blocking(
+                    crate::workspace_commands::register_installed_engine_blocking(
                         &state.pgn_path_authority,
                         root,
                         "engine".into(),
@@ -4305,7 +4317,7 @@ mod tests {
         assert_eq!(error.root_failure(), None);
         assert_eq!(error.category(), crate::error::ErrorCategory::InvalidInput);
         let error = root_failure_engine_error_preserves_original(&destination, || {
-            crate::register_installed_engine_blocking(
+            crate::workspace_commands::register_installed_engine_blocking(
                 &state.pgn_path_authority,
                 root.clone(),
                 "missing".into(),
@@ -4318,8 +4330,11 @@ mod tests {
             if poison {
                 authority.poison();
             }
-            let error =
-                crate::engine_archive_destination_blocking(&authority, root.clone()).unwrap_err();
+            let error = crate::workspace_commands::engine_archive_destination_blocking(
+                &authority,
+                root.clone(),
+            )
+            .unwrap_err();
             assert_eq!(error.root_failure(), None);
             assert_eq!(error.category(), crate::error::ErrorCategory::Conflict);
         }
@@ -4346,14 +4361,17 @@ mod tests {
             0
         );
         let child_permissions = TestRootPermissionGuard::restrict(&child, 0o000);
-        crate::engine_archive_destination_blocking(&state.pgn_path_authority, root.clone())
-            .unwrap();
+        crate::workspace_commands::engine_archive_destination_blocking(
+            &state.pgn_path_authority,
+            root.clone(),
+        )
+        .unwrap();
         assert_eq!(
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o700
         );
         let error = root_failure_engine_error_preserves_original(&destination, || {
-            crate::register_installed_engine_blocking(
+            crate::workspace_commands::register_installed_engine_blocking(
                 &state.pgn_path_authority,
                 root,
                 "blocked-child/engine".into(),
@@ -4447,8 +4465,10 @@ mod tests {
             };
             let mut security =
                 crate::infra::fs::TestTargetSecurityGuard::restrict(&path, access).unwrap();
-            let result =
-                crate::engine_archive_destination_blocking(&state.pgn_path_authority, root.clone());
+            let result = crate::workspace_commands::engine_archive_destination_blocking(
+                &state.pgn_path_authority,
+                root.clone(),
+            );
             let resolution = resolve_engine_archive_destination(
                 &state,
                 &destination,
@@ -4467,7 +4487,11 @@ mod tests {
                 );
                 assert_eq!(error.to_string(), "I/O failure");
             }
-            crate::engine_archive_destination_blocking(&state.pgn_path_authority, root).unwrap();
+            crate::workspace_commands::engine_archive_destination_blocking(
+                &state.pgn_path_authority,
+                root,
+            )
+            .unwrap();
         }
     }
 
