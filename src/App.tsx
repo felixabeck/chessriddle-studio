@@ -183,7 +183,8 @@ function closeUpdate(update: Update | null) {
   void update.close().catch((e) => warn(`Failed to release update handle: ${e}`));
 }
 
-/** Runs after the splash is closed and never blocks it; every failure ends in `warn`. */
+/** Runs after the window reveal and the startup sequence settled and never blocks the reveal;
+ * every failure ends in `warn`. */
 async function checkForAppUpdate(signal: AbortSignal) {
   let update: Update | null;
   let pendingUpdate: Promise<Update | null> | undefined;
@@ -216,30 +217,39 @@ export function useAppStartup() {
     const controller = new AbortController();
     const { signal } = controller;
     const startupSequence = async () => {
+      // The native window stays hidden until this reveal (the window-state plugin does not
+      // restore visibility). Reveal as soon as the shell has committed, before the slow
+      // startup steps, and without a frame callback: a hidden webview may never fire one.
+      // The invoke is issued synchronously in this effect, so it runs exactly once per startup.
+      // A refused reveal is logged and startup continues; the native fallback in setup shows
+      // the window if it is still hidden.
       try {
-        await initializePathOwners().catch((error) =>
-          warn(`Path owner reconciliation failed: ${String(error)}`),
-        );
-        if (signal.aborted) return;
-
-        info("React app started successfully");
-
-        const store = getDefaultStore();
-        try {
-          const matches = await getMatches();
-          if (matches.args.file.occurrences > 0) {
-            info(`Opening file from command line: ${matches.args.file.value}`);
-            // CLI paths are intentionally not forwarded into the renderer. Use the native
-            // capability picker so the backend can issue an opaque handle instead.
-          }
-        } catch (e) {
-          warn(`Failed to parse CLI args: ${e}`);
-        }
-
-        await preloadReferenceDb(store, signal);
-      } finally {
-        if (!signal.aborted) await tauri.closeSplashscreen();
+        await tauri.closeSplashscreen();
+      } catch (error) {
+        warn(`Failed to reveal the main window: ${String(error)}`);
       }
+      if (signal.aborted) return;
+
+      await initializePathOwners().catch((error) =>
+        warn(`Path owner reconciliation failed: ${String(error)}`),
+      );
+      if (signal.aborted) return;
+
+      info("React app started successfully");
+
+      const store = getDefaultStore();
+      try {
+        const matches = await getMatches();
+        if (matches.args.file.occurrences > 0) {
+          info(`Opening file from command line: ${matches.args.file.value}`);
+          // CLI paths are intentionally not forwarded into the renderer. Use the native
+          // capability picker so the backend can issue an opaque handle instead.
+        }
+      } catch (e) {
+        warn(`Failed to parse CLI args: ${e}`);
+      }
+
+      await preloadReferenceDb(store, signal);
     };
 
     void startupSequence()

@@ -756,6 +756,51 @@ async fn close_splashscreen(window: Window) -> Result<(), Error> {
     show_labeled_main_window(&window)
 }
 
+/// How long setup waits for the renderer's `close_splashscreen` before revealing the main window
+/// itself, so a renderer that never boots (bundle load failure, early script error) does not
+/// leave an invisible running process.
+const MAIN_WINDOW_REVEAL_FALLBACK: Duration = Duration::from_secs(5);
+
+#[derive(Debug, PartialEq, Eq)]
+enum FallbackReveal {
+    /// The renderer (or anything else) already showed the window; nothing to do.
+    AlreadyVisible,
+    /// The window was still hidden and has now been shown.
+    Revealed,
+}
+
+/// The fallback decision: show the labeled main window only if `is_visible` reports it hidden.
+/// The probe is injected because the mock runtime always reports windows as visible.
+fn reveal_main_window_if_hidden<R: tauri::Runtime>(
+    manager: &impl tauri::Manager<R>,
+    is_visible: impl FnOnce(&tauri::WebviewWindow<R>) -> tauri::Result<bool>,
+) -> Result<FallbackReveal, Error> {
+    let window = manager
+        .get_webview_window("main")
+        .ok_or_else(|| Error::InvalidInput("no window labeled 'main' found".into()))?;
+    if is_visible(&window)? {
+        return Ok(FallbackReveal::AlreadyVisible);
+    }
+    show_labeled_main_window(manager)?;
+    Ok(FallbackReveal::Revealed)
+}
+
+/// Owned by setup: one detached task, no lock held, ends after its single check (or with the
+/// runtime at application exit). Showing an already visible window is a no-op, so it is
+/// idempotent with `close_splashscreen`.
+fn arm_main_window_reveal_fallback<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(MAIN_WINDOW_REVEAL_FALLBACK).await;
+        match reveal_main_window_if_hidden(&app, |window| window.is_visible()) {
+            Ok(FallbackReveal::AlreadyVisible) => {}
+            Ok(FallbackReveal::Revealed) => log::warn!(
+                "the renderer did not reveal the main window within {MAIN_WINDOW_REVEAL_FALLBACK:?}; shown by the native fallback"
+            ),
+            Err(error) => log::warn!("main window reveal fallback failed: {error}"),
+        }
+    });
+}
+
 #[tauri::command]
 #[specta::specta]
 async fn reconcile_startup_path_owners<'a>(
@@ -1408,7 +1453,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         })
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        // Visibility is not restored: the main window stays hidden until the renderer reveals
+        // it through `close_splashscreen` (or the bounded fallback armed in setup), so the
+        // user never sees the empty document before the first paint.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_log::Builder::default()
@@ -1591,6 +1646,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .first()
                 .ok_or("main window configuration is missing")?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;
+            arm_main_window_reveal_fallback(app.handle().clone());
 
             log::info!("Finished rust initialization");
 
@@ -3932,7 +3988,37 @@ mod blocking_offload_scans {
             .unwrap();
         assert!(cli < config && config < window);
         assert!(setup[config..window].contains(".windows\n                .first()\n                .ok_or(\"main window configuration is missing\")?;"));
-        assert_eq!(setup[window..].trim(), "tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;\n\n            log::info!(\"Finished rust initialization\");\n\n            Ok(())");
+        // The reveal fallback is armed only after the window exists, and before setup reports
+        // success; nothing else may slip in between.
+        assert_eq!(setup[window..].trim(), "tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;\n            arm_main_window_reveal_fallback(app.handle().clone());\n\n            log::info!(\"Finished rust initialization\");\n\n            Ok(())");
+        assert_eq!(setup.matches("arm_main_window_reveal_fallback(").count(), 1);
+    }
+
+    #[test]
+    fn window_state_plugin_never_restores_visibility() {
+        let main = include_str!("main.rs");
+        let builder = main
+            .split_once("    let app = tauri::Builder::default()")
+            .expect("application builder chain")
+            .1
+            .split_once(".setup(move |app| {")
+            .expect("setup after the plugin chain")
+            .0;
+        let compact: String = builder.chars().filter(|c| !c.is_whitespace()).collect();
+        assert_eq!(
+            compact
+                .matches("tauri_plugin_window_state::Builder::new()")
+                .count(),
+            1
+        );
+        assert!(
+            compact.contains(
+                "tauri_plugin_window_state::Builder::new().with_state_flags(tauri_plugin_window_state::StateFlags::all()&!tauri_plugin_window_state::StateFlags::VISIBLE,).build()"
+            ),
+            "{builder}"
+        );
+        assert!(!compact.contains("tauri_plugin_window_state::Builder::new().build()"));
+        assert!(!compact.contains("tauri_plugin_window_state::Builder::default()"));
     }
 
     #[test]
@@ -5017,7 +5103,7 @@ mod blocking_offload_scans {
 
 #[cfg(test)]
 mod close_splashscreen_tests {
-    use super::{show_labeled_main_window, Error};
+    use super::{reveal_main_window_if_hidden, show_labeled_main_window, Error, FallbackReveal};
     use crate::error::ErrorCategory;
 
     #[test]
@@ -5033,6 +5119,55 @@ mod close_splashscreen_tests {
             payload["message"],
             "Invalid input: no window labeled 'main' found"
         );
+    }
+
+    #[test]
+    fn fallback_shows_a_main_window_the_renderer_left_hidden() {
+        let app = tauri::test::mock_app();
+        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("create labeled main window");
+        let mut probed = false;
+        let outcome = reveal_main_window_if_hidden(app.handle(), |window| {
+            probed = true;
+            assert_eq!(window.label(), "main");
+            Ok(false)
+        })
+        .expect("reveal hidden main window");
+        assert!(probed);
+        assert_eq!(outcome, FallbackReveal::Revealed);
+    }
+
+    #[test]
+    fn fallback_leaves_a_revealed_main_window_alone() {
+        let app = tauri::test::mock_app();
+        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("create labeled main window");
+        let outcome = reveal_main_window_if_hidden(app.handle(), |window| window.is_visible())
+            .expect("probe visible main window");
+        assert_eq!(outcome, FallbackReveal::AlreadyVisible);
+    }
+
+    #[test]
+    fn fallback_reports_a_missing_main_window_without_panicking() {
+        let app = tauri::test::mock_app();
+        let error =
+            reveal_main_window_if_hidden(app.handle(), |_| panic!("no window exists to probe"))
+                .expect_err("mock app has no main window");
+        assert_eq!(error.category(), ErrorCategory::InvalidInput);
+    }
+
+    #[test]
+    fn fallback_reports_a_failed_visibility_probe_without_showing() {
+        let app = tauri::test::mock_app();
+        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("create labeled main window");
+        let error =
+            reveal_main_window_if_hidden(app.handle(), |_| Err(tauri::Error::WindowNotFound))
+                .expect_err("probe failure is returned");
+        assert_eq!(error.category(), ErrorCategory::Platform);
     }
 
     #[test]

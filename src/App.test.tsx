@@ -373,7 +373,8 @@ describe("useAppStartup", () => {
     expect(mocks.warn).not.toHaveBeenCalledWith(
       expect.stringContaining("Failed to preload reference database"),
     );
-    expect(mocks.closeSplashscreen).not.toHaveBeenCalled();
+    // The window was revealed at mount, before the preload began; cancellation cannot undo it.
+    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
   });
 
   test("skips the reference preload when startup was cancelled before it began", async () => {
@@ -396,7 +397,7 @@ describe("useAppStartup", () => {
     });
 
     expect(mocks.preloadReferenceDb).not.toHaveBeenCalled();
-    expect(mocks.closeSplashscreen).not.toHaveBeenCalled();
+    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
   });
 
   test("stops before CLI handling when startup is cancelled during reconciliation", async () => {
@@ -413,7 +414,7 @@ describe("useAppStartup", () => {
     await act(async () => resolveOwners());
 
     expect(mocks.getMatches).not.toHaveBeenCalled();
-    expect(mocks.closeSplashscreen).not.toHaveBeenCalled();
+    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
   });
 
   test("reports unreadable CLI arguments and still finishes startup", async () => {
@@ -427,15 +428,50 @@ describe("useAppStartup", () => {
     expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
   });
 
-  test("reports a startup failure when the splashscreen refuses to close", async () => {
+  test("reveals the window before the reference database preload settles", async () => {
+    storeValues.referenceDb = "reference.db3";
+    mockLaunchWithoutCliFile();
+    let resolvePreload: () => void = () => undefined;
+    mocks.preloadReferenceDb.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePreload = resolve;
+        }),
+    );
+
+    await act(async () => root.render(<Probe />));
+
+    expect(mocks.preloadReferenceDb).toHaveBeenCalledOnce();
+    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
+    expect(mocks.closeSplashscreen.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.reconcileStartupPathOwners.mock.invocationCallOrder[0],
+    );
+    expect(mocks.check).not.toHaveBeenCalled();
+
+    await act(async () => resolvePreload());
+
+    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
+    expect(mocks.check).toHaveBeenCalledOnce();
+  });
+
+  test("reports a refused window reveal and still runs the rest of startup", async () => {
+    storeValues.referenceDb = "reference.db3";
     mockLaunchWithoutCliFile();
     mocks.closeSplashscreen.mockRejectedValue(new Error("splash window gone"));
 
     await act(async () => root.render(<Probe />));
 
     expect(mocks.warn).toHaveBeenCalledWith(
-      expect.stringContaining("Application startup failed: Error: splash window gone"),
+      "Failed to reveal the main window: Error: splash window gone",
     );
+    expect(mocks.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("Application startup failed"),
+    );
+    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
+    expect(mocks.reconcileStartupPathOwners).toHaveBeenCalledOnce();
+    expect(mocks.getMatches).toHaveBeenCalledOnce();
+    expect(mocks.preloadReferenceDb).toHaveBeenCalledOnce();
+    expect(mocks.check).toHaveBeenCalledOnce();
   });
 
   test("does not subscribe the renderer to native log records", async () => {
