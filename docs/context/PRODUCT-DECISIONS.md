@@ -194,8 +194,11 @@ finding ids and date.
   setting chooses the side panel a board opens on (default Info, repertoires still
   open Practice only on request); the analysis-panel control for the engine's Threads
   option is called "CPU threads" like the Engines page; two humans playing on one
-  board get a takeback. Upstream's hide toggles for the sidebar and tab bar are not
-  adopted as such; the one-row navigation redesign replaces them (its own entry).
+  board get a takeback. The first three shipped on 2026-11-20. The takeback is
+  decided but not built yet; what deleting the last move does during such a game is
+  still open. Upstream's hide toggles for the sidebar and tab bar are not adopted as
+  such: Felix chose a one-row navigation redesign instead, which is being planned in
+  its own run and gets its own entry once he has picked a variant.
 - **Ruled out:** Long algebraic notation; engine Elo in the PGN headers of engine
   games; the colour square beside "White/Black to move" in puzzles; the Kiwen Suwi
   piece set and the blue4 board. The database game preview keeps opening on the
