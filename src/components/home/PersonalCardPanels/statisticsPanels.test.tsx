@@ -188,13 +188,16 @@ vi.mock("./DateRangeTabs", () => ({
 vi.mock("./TimeRangeSlider", () => ({
   default: ({
     ratingDates,
+    dateRange,
     onDateRangeChange,
   }: {
     ratingDates: number[];
+    dateRange: { start: number; end: number };
     onDateRangeChange: (range: { start: number; end: number }) => void;
   }) => (
     <>
       <div data-testid="rating-dates">{ratingDates.join("|")}</div>
+      <div data-testid="slider-range">{`${dateRange.start}-${dateRange.end}`}</div>
       <button
         data-testid="manual-full-range"
         type="button"
@@ -959,10 +962,20 @@ test("Ratings manual slider counts incomplete dates only on the full timeline", 
 
   await render(<RatingsPanel playerKey="Magnus" info={mixedDateStatistics} isDatabase />);
   expect(container.textContent).toContain("3 Common.Games");
+  const sliderRange = () => container.querySelector("[data-testid='slider-range']")?.textContent;
+  expect(sliderRange()).toBe("0-1");
+
+  // The first manual change leaves the All time preset and must keep the picked range.
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("[data-testid='manual-narrow-range']")?.click();
+  });
+  expect(sliderRange()).toBe("1-1");
+  expect(container.textContent).toContain("0 Common.Games");
 
   await act(async () => {
     container.querySelector<HTMLButtonElement>("[data-testid='manual-full-range']")?.click();
   });
+  expect(sliderRange()).toBe("0-1");
   expect(container.textContent).toContain("3 Common.Games");
 
   await act(async () => {

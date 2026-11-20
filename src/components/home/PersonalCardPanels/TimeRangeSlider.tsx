@@ -18,7 +18,7 @@ const TimeRangeSlider = ({ ratingDates, dateRange, onDateRangeChange }: TimeRang
       min={0}
       max={ratingDates.length - 1 > 0 ? ratingDates.length - 1 : 0}
       step={1}
-      minRange={2}
+      minRange={1}
       styles={{
         root: {
           paddingLeft: "4rem",

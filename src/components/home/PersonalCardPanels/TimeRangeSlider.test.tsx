@@ -8,6 +8,7 @@ import type { PlayerGameInfo } from "@/bindings";
 dayjs.extend(customParseFormat);
 
 const locale = vi.hoisted(() => ({ language: "de-DE" }));
+const slider = vi.hoisted(() => ({ nextValue: [0, 0] as [number, number] }));
 const date = new Date("2024-06-22T12:00:00Z").getTime();
 
 vi.mock("react-i18next", () => ({
@@ -25,7 +26,11 @@ vi.mock("@mantine/core", () => ({
     value: [number, number];
     onChange: (value: [number, number]) => void;
   }) => (
-    <span data-testid="slider-label" data-value={value.join(",")} onClick={() => onChange([1, 4])}>
+    <span
+      data-testid="slider-label"
+      data-value={value.join(",")}
+      onClick={() => onChange(slider.nextValue)}
+    >
       {label(0)}
     </span>
   ),
@@ -117,24 +122,35 @@ test("slider label uses the interface language", async () => {
   expectLocalizedDate("slider-label", "en-US", "de-DE");
 });
 
-test("slider shows the parent's range and reports changes without a local copy", async () => {
+test("slider renders the parent's range and only reports changes", async () => {
   const onDateRangeChange = vi.fn();
   const ratingDates = Array.from({ length: 10 }, (_, i) => date + i);
-  await act(async () => {
-    root.render(
-      <TimeRangeSlider
-        ratingDates={ratingDates}
-        dateRange={{ start: 2, end: 3 }}
-        onDateRangeChange={onDateRangeChange}
-      />,
-    );
-  });
-  const slider = () => container.querySelector('[data-testid="slider-label"]') as HTMLElement;
-  expect(slider().dataset.value).toBe("2,3");
+  const renderSlider = (dateRange: { start: number; end: number }) =>
+    act(async () => {
+      root.render(
+        <TimeRangeSlider
+          ratingDates={ratingDates}
+          dateRange={dateRange}
+          onDateRangeChange={onDateRangeChange}
+        />,
+      );
+    });
+  const sliderValue = () =>
+    (container.querySelector('[data-testid="slider-label"]') as HTMLElement).dataset.value;
 
-  await act(async () => slider().click());
+  await renderSlider({ start: 2, end: 3 });
+  expect(sliderValue()).toBe("2,3");
+
+  slider.nextValue = [1, 4];
+  await act(async () =>
+    (container.querySelector('[data-testid="slider-label"]') as HTMLElement).click(),
+  );
   expect(onDateRangeChange).toHaveBeenCalledWith({ start: 1, end: 4 });
-  expect(slider().dataset.value).toBe("2,3");
+  // The parent has not accepted the change, so the slider keeps showing its range.
+  expect(sliderValue()).toBe("2,3");
+
+  await renderSlider({ start: 5, end: 8 });
+  expect(sliderValue()).toBe("5,8");
 });
 
 test("rating ticks and tooltip labels use the interface language", async () => {

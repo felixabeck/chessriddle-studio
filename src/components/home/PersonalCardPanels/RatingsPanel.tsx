@@ -1,6 +1,6 @@
 import { Stack, Text } from "@mantine/core";
 import dayjs from "dayjs";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Area,
@@ -57,7 +57,12 @@ function RatingsPanel({
   const [timeControl, setTimeControl] = useState<string | null>(null);
   const [website, setWebsite] = useState<string | null>(null);
   const [account, setAccount] = useState<string | null>("All accounts");
-  const [timeRange, setTimeRange] = useState({ start: 0, end: 0 });
+  // A manual slider range is only meaningful against the dates it was picked on.
+  const [manualRange, setManualRange] = useState<{
+    start: number;
+    end: number;
+    dates: number[];
+  } | null>(null);
 
   const dailyStats = useMemo(
     () =>
@@ -80,15 +85,17 @@ function RatingsPanel({
     ).sort((a, b) => a - b);
   }, [dailyStats]);
 
-  useEffect(() => {
+  const timeRange = useMemo(() => {
     if (dateRange) {
       const earliestDate = calculateEarliestDate(dateRange as DateRange, dates);
       const earliestIndex = dates.findIndex((date) => date >= earliestDate);
-      setTimeRange({ start: earliestIndex, end: dates.length - 1 });
-    } else {
-      setTimeRange({ start: 0, end: dates.length > 0 ? dates.length - 1 : 0 });
+      return { start: earliestIndex, end: dates.length - 1 };
     }
-  }, [dateRange, dates]);
+    if (manualRange?.dates === dates) {
+      return { start: manualRange.start, end: manualRange.end };
+    }
+    return { start: 0, end: dates.length > 0 ? dates.length - 1 : 0 };
+  }, [dateRange, dates, manualRange]);
 
   const [summary, ratingData] = useMemo(() => {
     const filteredDailyStats = dailyStats.filter((day) => {
@@ -210,7 +217,7 @@ function RatingsPanel({
             dateRange={timeRange}
             onDateRangeChange={(range) => {
               setDateRange(null);
-              setTimeRange(range);
+              setManualRange({ ...range, dates });
             }}
           />
         </>
