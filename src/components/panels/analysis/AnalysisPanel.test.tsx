@@ -8,7 +8,7 @@ import { engineIdentity, engineLineContext } from "./analysisLineContext";
 import { afterEach, expect, test, vi } from "vitest";
 import { displayEngine, displayLines, engineDisplayHarness } from "@/tests/engineDisplay";
 import AnalysisPanel, { applyEngineOrder, EngineSummary } from "./AnalysisPanel";
-import { analysisSearch } from "./analysisSearch";
+import { analysisSearch } from "@/utils/analysisSearch";
 import scoreBubbleClasses from "./ScoreBubble.module.css";
 
 const reorder = vi.hoisted(() => ({

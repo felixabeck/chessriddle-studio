@@ -29,8 +29,8 @@ import {
 import { displayEngine, displayLines } from "@/tests/engineDisplay";
 import { focusedDialogButton, press } from "@/tests/keyboard";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
-import { analysisSearch } from "../panels/analysis/analysisSearch";
-import { AnalysisLineMemory } from "../panels/analysis/analysisLineMemory";
+import { analysisSearch } from "@/utils/analysisSearch";
+import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import { engineIdentity, engineLineContext } from "../panels/analysis/analysisLineContext";
 import type { Engine } from "@/utils/engines";
 import { keyMapAtom } from "@/state/keybinds";

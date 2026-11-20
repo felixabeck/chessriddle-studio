@@ -33,8 +33,8 @@ import {
     withExplorerFilters,
     withoutExplorerFilters,
 } from "./explorerFilters";
-import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
-import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
+import { analysisSearch } from "@/utils/analysisSearch";
+import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import type { Engine, EngineSettings } from "@/utils/engines";
 import {
     type LichessGamesOptions,
@@ -92,7 +92,8 @@ import {
     saveWorkspace,
     type Workspace,
 } from "./workspace";
-import { persistStorageWriteError, tabStorage } from "./store/tabStorage";
+import { persistStorageWriteError } from "./storageWriteError";
+import { tabStorage } from "./store/tabStorage";
 import { reportPersistError } from "./persistError";
 import { initializeOriginalPathOwners } from "./pathOwners";
 import {

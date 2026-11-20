@@ -19,7 +19,7 @@ import { memo, useContext, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
-import { lineTitleOf } from "@/components/files/lineTitle";
+import { lineTitleOf } from "@/utils/lineTitle";
 import {
   getEffectiveGameEnd,
   getEffectiveTermination,

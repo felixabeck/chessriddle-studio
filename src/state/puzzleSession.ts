@@ -11,7 +11,7 @@ import {
 import { positionFromFen } from "@/utils/chessops";
 import { pathRefSchema } from "@/utils/pathCapabilities";
 import { decodeCompressedOrJson, serializeStorageValue } from "./store/debouncedStorage";
-import { persistStorageWriteError } from "./store/tabStorage";
+import { persistStorageWriteError } from "./storageWriteError";
 import { reportPersistError } from "./persistError";
 
 export const MAX_PUZZLE_ATTEMPTS = 100;

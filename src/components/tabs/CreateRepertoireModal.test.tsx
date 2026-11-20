@@ -23,6 +23,8 @@ vi.mock("@/utils/chess", () => ({ headersToPGN: () => '[Event "White"]\n\n*' }))
 vi.mock("@/utils/files", () => ({
   createFile: fixtures.createFile,
   ensureFileWorkspace: fixtures.ensureFileWorkspace,
+}));
+vi.mock("@/utils/openFile", () => ({
   openFile: fixtures.openFile,
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => fixtures.navigate }));

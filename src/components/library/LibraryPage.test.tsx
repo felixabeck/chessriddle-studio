@@ -105,9 +105,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("@/utils/files", async () => ({
   ...(await vi.importActual<typeof import("@/utils/files")>("@/utils/files")),
-  openFile: mocks.openFile,
   pickPgnFile: mocks.pickPgnFile,
 }));
+vi.mock("@/utils/openFile", () => ({ openFile: mocks.openFile }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
 vi.mock("@/components/files/FileCard", () => ({
   default: ({ selected, omitNewGame }: { selected: Entry; omitNewGame?: boolean }) => (

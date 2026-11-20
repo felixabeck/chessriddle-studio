@@ -79,6 +79,8 @@
         "src/components/panels/analysis/**",
         "src/components/panels/annotation/**",
         "src/components/panels/practice/**",
+        "src/utils/analysisLineMemory.ts",
+        "src/utils/analysisSearch.ts",
         "src/utils/annotation.ts",
         "src/utils/chess.ts",
         "src/utils/chessops.ts",
@@ -114,7 +116,11 @@
         "src/utils/pgnDate.ts",
         "src/utils/gameReferences.ts",
         "src/utils/directories.ts",
-        "src/utils/files.ts"
+        "src/utils/files.ts",
+        "src/utils/lineTitle.ts",
+        "src/utils/openFile.ts",
+        "src/utils/practicePosition.ts",
+        "src/utils/workspaceListing.ts"
       ]
     },
     {

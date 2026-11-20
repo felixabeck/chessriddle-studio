@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import type { FileWorkspaceHandle } from "@/bindings";
 import { GameTitle } from "@/components/files/GameTitle";
-import { lineTitleOf, type LineTitle } from "@/components/files/lineTitle";
+import { lineTitleOf, type LineTitle } from "@/utils/lineTitle";
 import { getGameName } from "@/utils/treeReducer";
 import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";

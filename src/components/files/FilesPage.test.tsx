@@ -344,7 +344,7 @@ import DirectoryTree from "./DirectoryTree";
 import type { Entry } from "./file";
 import { Input, Select } from "@mantine/core";
 import { SWRConfig, unstable_serialize, useSWRConfig } from "swr";
-import { workspaceListingKey, type WorkspaceListingCache } from "./workspaceListing";
+import { workspaceListingKey, type WorkspaceListingCache } from "@/utils/workspaceListing";
 let controller!: ReturnType<typeof useFileWorkspace>;
 function FilesPage() {
   const [selected, setSelected] = useState<Entry | null>(null);

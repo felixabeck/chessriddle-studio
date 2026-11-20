@@ -61,7 +61,7 @@ import {
   continuationBrushes,
 } from "@/components/boards/continuationArrows";
 import FideInfo from "../databases/FideInfo";
-import { lineTitleOf } from "../files/lineTitle";
+import { lineTitleOf } from "@/utils/lineTitle";
 import { arrowColors } from "../panels/analysis/BestMoves";
 import AnnotationHint from "./AnnotationHint";
 import IconAction from "../common/IconAction";

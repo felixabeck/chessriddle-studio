@@ -14,7 +14,7 @@ import { gameRowActivation } from "@/components/common/gameOpen";
 import { moveKeyReleasesFocus } from "@/components/common/MoveCell";
 import { GameTitle } from "@/components/files/GameTitle";
 import { lineSectionOf } from "@/components/files/lineSection";
-import { lineTitleOf, type LineTitle } from "@/components/files/lineTitle";
+import { lineTitleOf, type LineTitle } from "@/utils/lineTitle";
 import type { MoveLines } from "@/components/files/reorderLines";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useVirtualPageLoader } from "@/hooks/useVirtualPageLoader";

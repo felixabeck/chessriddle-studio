@@ -24,7 +24,7 @@ import {
     reconcileWorkspaceListing,
     workspaceListingKey,
     type WorkspaceListingCache,
-} from "./workspaceListing";
+} from "@/utils/workspaceListing";
 import type { FileWorkspaceHandle, TrashItemId, WorkspaceTrashPage } from "@/bindings";
 
 type TrashTarget = { item: TrashItemId; name: string };

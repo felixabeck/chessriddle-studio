@@ -156,11 +156,14 @@ vi.mock("@/state/store/tree", () => ({
   invalidateReportOwner: fixtures.invalidateReportOwner,
   restoreReportOwner: fixtures.restoreReportOwner,
 }));
+vi.mock("@/state/storageWriteError", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/state/storageWriteError")>()),
+  persistStorageWriteError: (cause: unknown) => cause,
+}));
 vi.mock("@/state/store/tabStorage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/state/store/tabStorage")>();
   return {
     ...actual,
-    persistStorageWriteError: (cause: unknown) => cause,
     tabStorage: {
       storageFor: actual.tabStorage.storageFor.bind(actual.tabStorage),
       cloneDurable: fixtures.cloneDurable,

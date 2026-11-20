@@ -86,7 +86,7 @@ vi.mock("@/utils/db", async (original) => ({
   ...(await original<typeof import("@/utils/db")>()),
   query_games: mocks.query,
 }));
-vi.mock("@/utils/files", () => ({ openFile: mocks.openFile }));
+vi.mock("@/utils/openFile", () => ({ openFile: mocks.openFile }));
 vi.mock("@/utils/chess", async (original) => ({
   ...(await original<typeof import("@/utils/chess")>()),
   parsePGN: async (pgn: string) => {

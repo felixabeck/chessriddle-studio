@@ -1,7 +1,8 @@
 import { parseUci } from "chessops";
 import { createEmptyCard } from "ts-fsrs";
 import { describe, expect, it } from "vitest";
-import { buildFromTree, type Position } from "@/components/files/opening";
+import { buildFromTree } from "@/components/files/opening";
+import type { Position } from "@/utils/practicePosition";
 import { emptyPracticeStats } from "@/state/practiceSessionStats";
 import { createNode, defaultTree, getBoardState, getNodeAtPath } from "@/utils/treeReducer";
 import {

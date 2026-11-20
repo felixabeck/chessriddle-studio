@@ -58,7 +58,7 @@ vi.mock("@/components/common/IconAction", () => ({
     </button>
   ),
 }));
-vi.mock("@/utils/files", () => ({ openFile: mocks.openFile }));
+vi.mock("@/utils/openFile", () => ({ openFile: mocks.openFile }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

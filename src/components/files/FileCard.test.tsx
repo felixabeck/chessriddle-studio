@@ -9,7 +9,7 @@ import { createStore, getDefaultStore, Provider } from "jotai";
 import { tabsAtom } from "@/state/atoms";
 import { libraryGamePositionAtom } from "@/components/library/memory";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
-import * as files from "@/utils/files";
+import * as openFileModule from "@/utils/openFile";
 import i18n, { initializeI18n } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -747,7 +747,7 @@ describe("FileCard", () => {
       await initializeI18n();
       await renderActualList();
       const seed = vi.spyOn(tabStorage, "seed");
-      const openFile = vi.spyOn(files, "openFile");
+      const openFile = vi.spyOn(openFileModule, "openFile");
       const currentGame = stampedGame('[Event "Fresh second"]\n\n1. d4 *', "changed");
       mocks.readGame.mockResolvedValue(currentGame);
       const second = container.querySelectorAll<HTMLElement>('[role="option"]')[1];

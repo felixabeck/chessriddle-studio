@@ -10,12 +10,12 @@ import {
   tabEngineSettingsFamily,
   threatFamily,
 } from "@/state/atoms";
-import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
+import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import {
   engineIdentity,
   engineLineContext,
 } from "@/components/panels/analysis/analysisLineContext";
-import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
+import { analysisSearch } from "@/utils/analysisSearch";
 import { displayEngine, displayLines, engineDisplayHarness } from "@/tests/engineDisplay";
 import { useEvalBarScore } from "./useEvalBarScore";
 

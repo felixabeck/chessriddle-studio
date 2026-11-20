@@ -28,9 +28,9 @@ import {
   ensureFileWorkspace,
   getFileGameName,
   loadFileGame,
-  openFile,
   pickPgnFile,
 } from "@/utils/files";
+import { openFile } from "@/utils/openFile";
 import { getLichessGame } from "@/utils/lichess/api";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { replaceNewTab, type ReplaceNewTabResult, type SetTabs, type Tab } from "@/utils/tabs";

@@ -10,9 +10,9 @@ import { persist, type PersistStorage } from "zustand/middleware";
 import type { BestMoves, Outcome, Score } from "@/bindings";
 import i18n from "@/i18n";
 import { writeClipboardText } from "@/utils/clipboard";
+import { persistStorageWriteError } from "../storageWriteError";
 import {
     prepareTreeForStorage,
-    persistStorageWriteError,
     tabStorage,
     TREE_STORAGE_VERSION,
     type TabTreeStorageStatus,

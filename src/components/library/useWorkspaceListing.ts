@@ -1,6 +1,6 @@
 import type { FileWorkspaceHandle } from "@/bindings";
 import { workspaceListingToEntries } from "@/components/files/file";
-import { workspaceListingKey } from "@/components/files/workspaceListing";
+import { workspaceListingKey } from "@/utils/workspaceListing";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { tauri } from "@/platform/tauri";
 import useSWR from "swr";

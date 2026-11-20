@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { createFile } from "@/utils/files";
 import { TauriCommandError } from "@/platform/tauri";
-import { workspaceListingToEntries } from "./file";
+import { workspaceListingToEntries } from "@/components/files/file";
 import {
   reconcileWorkspaceListing,
   workspaceListingKey,

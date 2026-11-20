@@ -15,7 +15,7 @@ import { rootFontPx } from "@/state/paneLayout";
 import { IconAction } from "@/components/common/IconAction";
 import { OpenGameButton, useGameOpen } from "@/components/common/gameOpen";
 import NewGameButton from "@/components/boards/NewGameButton";
-import { openFile } from "@/utils/files";
+import { openFile } from "@/utils/openFile";
 import { runTabCreation } from "@/utils/tabs";
 import { capitalize, formatNumber } from "@/utils/format";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";

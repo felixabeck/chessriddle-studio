@@ -48,7 +48,7 @@ import {
 import { deserializeStorageValue, serializeStorageValue } from "./store/debouncedStorage";
 import { getFileFreshness, setFileFreshness } from "./fileFreshness";
 import { tauri } from "@/platform/tauri";
-import { openFile } from "@/utils/files";
+import { openFile } from "@/utils/openFile";
 import { lastOpenedAtom, recentFilesAtom } from "./atoms";
 
 const persistError = vi.hoisted(() => ({ reportPersistError: vi.fn() }));

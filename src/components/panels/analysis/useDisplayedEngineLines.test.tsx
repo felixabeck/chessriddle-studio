@@ -9,8 +9,8 @@ import {
   engineRetryFamily,
 } from "@/state/atoms";
 import { displayEngine, displayLines, engineDisplayHarness } from "@/tests/engineDisplay";
-import { analysisSearch } from "./analysisSearch";
-import { AnalysisLineMemory } from "./analysisLineMemory";
+import { analysisSearch } from "@/utils/analysisSearch";
+import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import { engineIdentity, engineLineContext } from "./analysisLineContext";
 import { readEngineLines, useDisplayedEngineLines } from "./useDisplayedEngineLines";
 import type { Engine } from "@/utils/engines";

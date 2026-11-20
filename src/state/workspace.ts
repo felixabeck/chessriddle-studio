@@ -3,7 +3,8 @@ import { z } from "zod";
 import i18n from "@/i18n";
 import enUSCatalogue from "@/translation/en-US.json";
 import { decodeCompressedOrJson, serializeStorageValue } from "./store/debouncedStorage";
-import { createTabIdSchema, persistStorageWriteError, tabStorage } from "./store/tabStorage";
+import { persistStorageWriteError } from "./storageWriteError";
+import { createTabIdSchema, tabStorage } from "./store/tabStorage";
 import { reportPersistError } from "./persistError";
 import { getTabTreeKey, newWorkspaceId, tabSchema, type Tab } from "./workspaceTypes";
 import {

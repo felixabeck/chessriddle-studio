@@ -12,11 +12,8 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
     };
 });
 import type { BestMoves } from "@/bindings";
-import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
-import {
-    AnalysisLineMemory,
-    ENGINE_LINE_MEMORY_CAPACITY,
-} from "@/components/panels/analysis/analysisLineMemory";
+import { analysisSearch } from "@/utils/analysisSearch";
+import { AnalysisLineMemory, ENGINE_LINE_MEMORY_CAPACITY } from "@/utils/analysisLineMemory";
 import {
     activeTabAtom,
     allEnabledFamily,

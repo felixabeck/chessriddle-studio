@@ -38,7 +38,8 @@ import {
   runPracticeMigrationPass,
   type PracticeMigrationPassResult,
 } from "@/state/practiceStorage";
-import { openFile, pickPgnFile } from "@/utils/files";
+import { pickPgnFile } from "@/utils/files";
+import { openFile } from "@/utils/openFile";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { createQuitTabSaver } from "@/state/quitSave";
 import {

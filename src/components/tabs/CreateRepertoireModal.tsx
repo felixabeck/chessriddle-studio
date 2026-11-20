@@ -10,7 +10,8 @@ import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { normalizeError } from "@/platform/errors";
 import { tabsAtom } from "@/state/atoms";
 import { headersToPGN } from "@/utils/chess";
-import { createFile, ensureFileWorkspace, openFile } from "@/utils/files";
+import { createFile, ensureFileWorkspace } from "@/utils/files";
+import { openFile } from "@/utils/openFile";
 import AppModal from "../common/AppModal";
 
 export default function CreateRepertoireModal({

@@ -7,29 +7,19 @@ import { defaultGame, makePgn } from "chessops/pgn";
 import { getDefaultStore } from "jotai";
 import useSWR from "swr";
 import type { FileMetadata, FileType } from "@/components/files/file";
-import { lineTitleOf } from "@/components/files/lineTitle";
-import {
-    reconcileWorkspaceListing,
-    type WorkspaceListingCache,
-} from "@/components/files/workspaceListing";
+import { lineTitleOf } from "./lineTitle";
+import { reconcileWorkspaceListing, type WorkspaceListingCache } from "./workspaceListing";
 import type {
     FileWorkspaceHandle,
     WorkspaceFileContent,
     WriteExpectation,
     WriteStamp,
 } from "@/bindings";
-import {
-    addRecentFileAtom,
-    fileWorkspaceAtom,
-    fileWorkspaceDisplayNameAtom,
-    tabFamily,
-} from "@/state/atoms";
-import { beginFileWrite, setFileFreshness } from "@/state/fileFreshness";
+import { fileWorkspaceAtom, fileWorkspaceDisplayNameAtom } from "@/state/atoms";
+import { beginFileWrite } from "@/state/fileFreshness";
 import { isAbsentHeader } from "@/state/gameSignature";
-import { beginFileOpen, StaleFileGameError } from "@/state/fileStructureChange";
 import { parsePGN } from "./chess";
 import { fileWorkspaceKey } from "./pathCapabilities";
-import { createTab, type SetTabs } from "./tabs";
 import { getGameName, type GameHeaders } from "./treeReducer";
 
 const NATIVE_TRIM =
@@ -187,74 +177,6 @@ export async function loadFileGame(
     const linkedSource = game.linked ?? null;
     if (signal?.aborted) throw new DOMException("Cancellation", "AbortError");
     return { ...game, tree: linkedSource ? { ...tree, linkedSource } : tree };
-}
-
-export async function openFile(
-    file: FileMetadata,
-    setTabs: SetTabs,
-    options?: {
-        gameNumber?: number;
-        tabName?: string;
-        ownerId?: string;
-        panel?: "practice";
-        store?: ReturnType<typeof getDefaultStore>;
-        signal?: AbortSignal;
-        expected?: { stamp: string; revision: string };
-    },
-) {
-    const store = options?.store ?? getDefaultStore();
-    const gameNumber = options?.gameNumber ?? 0;
-    const endOpen = beginFileOpen(fileWorkspaceKey(file.handle));
-    try {
-        const loaded = await loadFileGame(file.handle, gameNumber, options?.signal);
-        const expected = options?.expected;
-        if (
-            expected &&
-            (expected.stamp !== loaded.stamp || expected.revision !== loaded.revision)
-        ) {
-            throw new StaleFileGameError();
-        }
-        const tabName = options?.tabName ?? getFileGameName(loaded.tree.headers, file);
-
-        const id = await createTab({
-            tab: {
-                name: tabName,
-                type: "analysis",
-            },
-            setTabs,
-            initialTree: loaded.tree,
-            ownerId: options?.ownerId,
-            store,
-            signal: options?.signal,
-            gameOrigin: {
-                kind: "file",
-                file,
-                gameNumber,
-            },
-        });
-        if (id === null) return null;
-
-        // The tree was just read from disk, so the gate need not read it a second time.
-        if (!loaded.present && gameNumber < file.numGames) {
-            setFileFreshness(id, "unavailable");
-        } else {
-            setFileFreshness(id, "verified", { verifiedRevision: loaded.revision });
-        }
-
-        if (options?.panel === "practice") {
-            store.set(tabFamily(id), "practice");
-        }
-
-        store.set(addRecentFileAtom, {
-            name: file.name,
-            handle: file.handle,
-            type: file.metadata.type,
-        });
-
-        return id;
-    } finally {
-        endOpen();
-    }
 }
 
 export async function createFile({

@@ -156,7 +156,7 @@ import {
 } from "@/state/atoms";
 import EvalListener from "./EvalListener";
 import { useDisplayedEngineLines } from "../panels/analysis/useDisplayedEngineLines";
-import { analysisSearch } from "../panels/analysis/analysisSearch";
+import { analysisSearch } from "@/utils/analysisSearch";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 

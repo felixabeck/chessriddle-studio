@@ -21,8 +21,8 @@ import {
 } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
 import type { Engine } from "@/utils/engines";
-import { analysisSearch } from "./analysisSearch";
-import { AnalysisLineMemory } from "./analysisLineMemory";
+import { analysisSearch } from "@/utils/analysisSearch";
+import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import { engineIdentity, engineLineContext } from "./analysisLineContext";
 
 export const ENGINE_LINES_LOADING_DELAY_MS = 1000;

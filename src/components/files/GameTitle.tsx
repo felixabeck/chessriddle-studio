@@ -1,6 +1,6 @@
 import { Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
-import type { LineTitle } from "./lineTitle";
+import type { LineTitle } from "@/utils/lineTitle";
 
 export function GameTitle({ title, repertoire }: { title: LineTitle; repertoire: boolean }) {
   const { t } = useTranslation();

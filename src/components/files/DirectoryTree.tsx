@@ -14,7 +14,7 @@ import { IconAction } from "@/components/common/IconAction";
 import type { ErrorCategory } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { expandedDirectoriesAtom, tabsAtom } from "@/state/atoms";
-import { openFile } from "@/utils/files";
+import { openFile } from "@/utils/openFile";
 import { runTabCreation } from "@/utils/tabs";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { FILE_TYPES, findEntry, type Directory, type Entry, type FileMetadata } from "./file";

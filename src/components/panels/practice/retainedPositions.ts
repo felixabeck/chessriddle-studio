@@ -1,4 +1,5 @@
-import { anyScopeBoardStates, type Position } from "@/components/files/opening";
+import { anyScopeBoardStates } from "@/components/files/opening";
+import type { Position } from "@/utils/practicePosition";
 import type { PracticeDeckKey } from "@/state/practiceStorage";
 import { tabStorage } from "@/state/store/tabStorage";
 import { getCachedTreeStore } from "@/state/store/tree";

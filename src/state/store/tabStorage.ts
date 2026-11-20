@@ -14,6 +14,7 @@ import { z } from "zod";
 import { linkedGameLocatorSchema } from "@/utils/pathCapabilities";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
 import { decodeCompressedOrJson, serializeStorageValue } from "./debouncedStorage";
+import { persistStorageWriteError } from "../storageWriteError";
 
 export const TREE_STORAGE_VERSION = 1;
 const DEBOUNCE_MS = 300;
@@ -527,27 +528,6 @@ export function prepareTreeForStorage(state: unknown): TreeState {
     if (result === null) refuseAdmission(null);
     if ("limit" in result) refuseAdmission(result.limit);
     return result.value.state as TreeState;
-}
-
-export function createTabStorageQuotaError(cause: unknown): Error {
-    return new Error(
-        "Could not open the game: the browser's session storage is full. Close some open tabs and try again.",
-        { cause },
-    );
-}
-
-export function persistStorageWriteError(cause: unknown): Error {
-    if (
-        typeof cause === "object" &&
-        cause !== null &&
-        "name" in cause &&
-        String((cause as { name: unknown }).name) === "QuotaExceededError"
-    ) {
-        return createTabStorageQuotaError(cause);
-    }
-    // jsdom's DOMException is not an Error; the browser one is, so the first arm covers WebKit.
-    if (cause instanceof Error || cause instanceof DOMException) return cause;
-    return new Error("Could not save this game. Session storage rejected the write.", { cause });
 }
 
 function decodeLegacyOrCompressedResult(value: string): ParseTreeResult {

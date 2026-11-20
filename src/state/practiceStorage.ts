@@ -13,7 +13,7 @@ import { tauri } from "@/platform/tauri";
 import i18n from "@/i18n";
 import type { ReviewLog } from "ts-fsrs";
 import { z } from "zod";
-import { type Position, positionSchema } from "@/components/files/opening";
+import { type Position, positionSchema } from "@/utils/practicePosition";
 import { pathRefSchema } from "@/utils/pathCapabilities";
 import { getBoardState } from "@/utils/treeReducer";
 import { reportPersistError } from "./persistError";

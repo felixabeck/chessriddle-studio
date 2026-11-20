@@ -11,11 +11,11 @@ import {
     getStats,
     inScopeCards,
     isInPracticeScope,
-    positionSchema,
     resolvePracticeCard,
     syncDeck,
     updateCardPerformance,
 } from "./opening";
+import { positionSchema } from "@/utils/practicePosition";
 import {
     createNode,
     defaultTree,

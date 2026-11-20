@@ -51,9 +51,9 @@ vi.mock("@/utils/files", async (importOriginal) => ({
   createFile: fixtures.createFile,
   ensureFileWorkspace: fixtures.ensureFileWorkspace,
   loadFileGame: fixtures.loadFileGame,
-  openFile: fixtures.openFile,
   pickPgnFile: fixtures.pickPgnFile,
 }));
+vi.mock("@/utils/openFile", () => ({ openFile: fixtures.openFile }));
 vi.mock("@/components/files/notifyError", () => ({
   notifyUnlessCancelled: fixtures.notifyUnlessCancelled,
   runUnlessCancelled: async (_title: string, action: () => Promise<void>) => action(),

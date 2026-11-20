@@ -2,7 +2,7 @@ import { createStore } from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ReviewLog } from "ts-fsrs";
 import type { PracticeMigrationOutcome } from "@/bindings";
-import type { Position } from "@/components/files/opening";
+import type { Position } from "@/utils/practicePosition";
 import { createZodStorage } from "./utils";
 import { beginFileStructureChange } from "./fileStructureChange";
 

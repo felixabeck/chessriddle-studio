@@ -5,7 +5,8 @@ import { getDefaultStore, useSetAtom, useStore } from "jotai";
 import type { StoreApi } from "zustand";
 import { createContext, startTransition, useCallback } from "react";
 import type { FileMetadata } from "@/components/files/file";
-import { MAX_STORE_ATTEMPTS, persistStorageWriteError, tabStorage } from "@/state/store/tabStorage";
+import { persistStorageWriteError } from "@/state/storageWriteError";
+import { MAX_STORE_ATTEMPTS, tabStorage } from "@/state/store/tabStorage";
 import { reportPersistError } from "@/state/persistError";
 import {
     getTabTreeKey,

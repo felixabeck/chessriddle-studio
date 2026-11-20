@@ -33,7 +33,7 @@ import {
 } from "@/state/atoms";
 import { gameSignature, openDatabaseGame } from "@/utils/databaseGame";
 import { runTabCreation, type Tab } from "@/utils/tabs";
-import { openFile } from "@/utils/files";
+import { openFile } from "@/utils/openFile";
 import { useGameOpen } from "@/components/common/gameOpen";
 import GameSelector, { type GameSelectorRow } from "@/components/panels/info/GameSelector";
 import { StaleFileGameError } from "@/state/fileStructureChange";

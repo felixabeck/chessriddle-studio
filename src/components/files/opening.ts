@@ -6,28 +6,13 @@ import {
     type ReviewLog,
     generatorParameters,
 } from "ts-fsrs";
-import { z } from "zod";
 import { isPrefix } from "@/utils/misc";
+import type { Position } from "@/utils/practicePosition";
 import { getBoardState, type TreeNode, treeIterator } from "@/utils/treeReducer";
 
 const params = generatorParameters({ enable_fuzz: true });
 
 const f = fsrs(params);
-
-export const positionSchema = z.object({
-    fen: z.string(),
-    answer: z.string(),
-    card: z.object({}).passthrough(),
-    outOfScope: z.literal(true).optional(),
-});
-
-export type Position = {
-    fen: string;
-    answer: string;
-    card: Card;
-    /** A card whose position is still in the tree but outside the current (orientation, Start) practice scope; it keeps its schedule and is excluded from practice and stats until the scope includes it again (f-20261115-21). */
-    outOfScope?: true;
-};
 
 export function inScopeCards(positions: readonly Position[]): Position[] {
     return positions.filter((position) => !position.outOfScope);

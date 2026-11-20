@@ -100,7 +100,8 @@ vi.mock("@/components/Sidebar", () => ({
 vi.mock("@/components/TopBar", () => ({ default: () => null }));
 vi.mock("@/components/WindowResizeHandles", () => ({ WindowResizeHandles: () => null }));
 vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
-vi.mock("@/utils/files", () => ({ openFile: vi.fn(), pickPgnFile: mocks.pickPgnFile }));
+vi.mock("@/utils/files", () => ({ pickPgnFile: mocks.pickPgnFile }));
+vi.mock("@/utils/openFile", () => ({ openFile: vi.fn() }));
 vi.mock("@/utils/tabs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/utils/tabs")>()),
   createTab: mocks.createTab,

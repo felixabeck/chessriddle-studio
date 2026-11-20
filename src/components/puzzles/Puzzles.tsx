@@ -33,7 +33,7 @@ import {
   restorePuzzleSession,
   selectedPuzzleIndex,
 } from "@/state/puzzleSession";
-import { persistStorageWriteError } from "@/state/store/tabStorage";
+import { persistStorageWriteError } from "@/state/storageWriteError";
 import { reportPersistError } from "@/state/persistError";
 import { formatThemeLabel } from "@/utils/format";
 import { capabilityKey } from "@/utils/pathCapabilities";

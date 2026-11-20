@@ -18,7 +18,7 @@ import { decodeCompressedOrJson } from "@/state/store/debouncedStorage";
 import { decodeEngineOwnerValue } from "@/state/engineOwnerStorage";
 import { useAtomValue } from "jotai";
 import type { Settings } from "./EngineSettingsForm";
-import { analysisSearch } from "./analysisSearch";
+import { analysisSearch } from "@/utils/analysisSearch";
 import { engineIdentity, engineLineContext } from "./analysisLineContext";
 import BestMoves from "./BestMoves";
 import { errorUnlessCancelled } from "@/platform/errors";

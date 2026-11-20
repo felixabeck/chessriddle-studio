@@ -1,4 +1,5 @@
-import { inScopeCards, type Position } from "@/components/files/opening";
+import { inScopeCards } from "@/components/files/opening";
+import type { Position } from "@/utils/practicePosition";
 import type { PracticePhase, PracticeSessionStats, PracticeState } from "@/state/atoms";
 import { getBoardState } from "@/utils/treeReducer";
 

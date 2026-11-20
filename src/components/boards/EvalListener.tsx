@@ -32,8 +32,8 @@ import {
 } from "@/state/atoms";
 import { getVariationLine } from "@/utils/chess";
 import { getBestMoves as chessdbGetBestMoves } from "@/utils/chessdb/api";
-import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
-import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
+import { analysisSearch } from "@/utils/analysisSearch";
+import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import {
   engineIdentity,
   engineLineContext,

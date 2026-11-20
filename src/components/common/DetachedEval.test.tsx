@@ -18,7 +18,7 @@ import { press } from "@/tests/keyboard";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { TreeStateContext } from "./TreeStateContext";
 import DetachedEval from "./DetachedEval";
-import { analysisSearch } from "../panels/analysis/analysisSearch";
+import { analysisSearch } from "@/utils/analysisSearch";
 import scoreBubbleClasses from "../panels/analysis/ScoreBubble.module.css";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));

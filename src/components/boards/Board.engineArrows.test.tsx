@@ -9,8 +9,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { BestMoves } from "@/bindings";
 import { TreeStateProvider } from "@/components/common/TreeStateContext";
 import { engineLineContext } from "@/components/panels/analysis/analysisLineContext";
-import { AnalysisLineMemory } from "@/components/panels/analysis/analysisLineMemory";
-import { analysisSearch } from "@/components/panels/analysis/analysisSearch";
+import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
+import { analysisSearch } from "@/utils/analysisSearch";
 import { tauri } from "@/platform/tauri";
 import {
   disposeTabAtoms,
