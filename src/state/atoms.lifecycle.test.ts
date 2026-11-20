@@ -1,5 +1,5 @@
 import { createStore, getDefaultStore } from "jotai";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, onTestFinished, test, vi } from "vitest";
 import { defaultTree, type TreeState } from "@/utils/treeReducer";
 import { denyStorageRemoval } from "@/utils/tests/storageMocks";
 import { errorUnlessCancelled } from "@/platform/errors";
@@ -8,6 +8,7 @@ import {
     activeTabAtom,
     closeWorkspaceTabAtom,
     closingTabsAtom,
+    defaultPanelTabAtom,
     disposeTabAtoms,
     explorerGamesSourceFamily,
     practiceSessionStatsFamily,
@@ -1323,6 +1324,9 @@ test("returns the admitted tab id and activates it for a valid create", async ()
 test.each([false, true])(
     "a file replaces its New Tab among other tabs with explicit Practice: %s",
     async (practice) => {
+        // A non-default panel setting proves Practice-on-request wins and the plain open follows it.
+        getDefaultStore().set(defaultPanelTabAtom, "analysis");
+        onTestFinished(() => getDefaultStore().set(defaultPanelTabAtom, "info"));
         const fixture = makeReplacementFixture({ ownerActive: true });
         fixture.store.set(lastOpenedAtom, {});
         fixture.store.set(recentFilesAtom, []);
@@ -1359,7 +1363,7 @@ test.each([false, true])(
         ]);
         expect(fixture.store.get(activeTabAtom)).toBe(id);
         expect(tabStorage.read<TreeState>(id!)?.state.sourceStamp).toBe("a".repeat(64));
-        expect(fixture.store.get(tabFamily(id!))).toBe(practice ? "practice" : "info");
+        expect(fixture.store.get(tabFamily(id!))).toBe(practice ? "practice" : "analysis");
         expect(fixture.store.get(recentFilesAtom)).toHaveLength(1);
         expect(fixture.store.get(lastOpenedAtom)[file.handle.id.id]).toBeGreaterThan(0);
         expect(getFileFreshness(id!).state).toBe("verified");

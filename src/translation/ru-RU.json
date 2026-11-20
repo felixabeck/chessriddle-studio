@@ -1232,6 +1232,8 @@
     "Settings.Coordinates.Desc": "Показать координаты на доске",
     "Settings.Coordinates.Edge": "По краю",
     "Settings.Coordinates.None": "Нет",
+    "Settings.DefaultPanel": "Панель по умолчанию",
+    "Settings.DefaultPanel.Desc": "Какая боковая панель показывается при открытии доски",
     "Settings.Directories": "Каталоги",
     "Settings.Directories.Databases": "Каталог для баз данных",
     "Settings.Directories.Databases.Desc": "Здесь хранятся базы данных на странице баз данных",

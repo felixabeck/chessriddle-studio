@@ -1232,6 +1232,8 @@
     "Settings.Coordinates.Desc": "Pokaż współrzędne na szachownicy",
     "Settings.Coordinates.Edge": "Na krawędzi",
     "Settings.Coordinates.None": "Nie",
+    "Settings.DefaultPanel": "Domyślny panel",
+    "Settings.DefaultPanel.Desc": "Który panel boczny pokazuje się po otwarciu szachownicy",
     "Settings.Directories": "Katalogi",
     "Settings.Directories.Databases": "Katalog baz danych",
     "Settings.Directories.Databases.Desc": "To miejsce, gdzie są przechowywane twoje bazy danych",

@@ -52,10 +52,11 @@ test("file deck invalidation evicts every cached ordinal and preserves other fil
     expect(atoms.deckAtomFamily({ file: "file-b", game: 0 })).toBe(other);
 });
 
-test("the seven eager preferences share declaration-ordered synchronous document initial values", async () => {
+test("the eight eager preferences share declaration-ordered synchronous document initial values", async () => {
     const values = [
         ["download-destination-capability", { id: "download" }],
         ["file-workspace", { id: { id: "workspace" }, kind: "fileWorkspace" }],
+        ["default-panel-tab", "database"],
         ["show-coordinates-v2", "all"],
         ["sound-collection", "piano"],
         ["sound-volume", 0.25],
@@ -76,6 +77,7 @@ test("the seven eager preferences share declaration-ordered synchronous document
     const preferences: Atom<unknown>[] = [
         atoms.downloadDestinationAtom,
         atoms.fileWorkspaceAtom,
+        atoms.defaultPanelTabAtom,
         atoms.showCoordinatesAtom,
         atoms.soundCollectionAtom,
         atoms.soundVolumeAtom,
@@ -644,4 +646,44 @@ test("the fresh-start flag is sampled before the default workspace is written", 
     const reloaded = await importAtoms();
     reloaded.atoms.initializeWorkspace();
     expect(reloaded.atoms.workspaceStartedFresh()).toBe(false);
+});
+
+test("a new board's panel starts on the stored default panel setting", async () => {
+    localStorage.setItem("default-panel-tab", JSON.stringify("analysis"));
+    const { atoms } = await importAtoms();
+    const { getDefaultStore } = await import("jotai");
+    const tabId = "a1111111-1111-4111-8111-111111111111";
+    try {
+        expect(getDefaultStore().get(atoms.tabFamily(tabId))).toBe("analysis");
+    } finally {
+        atoms.tabFamily.remove(tabId);
+    }
+});
+
+test("changing the default panel moves no existing board, only boards created afterwards", async () => {
+    const { atoms } = await importAtoms();
+    const { getDefaultStore } = await import("jotai");
+    const store = getDefaultStore();
+    const untouched = "b1111111-1111-4111-8111-111111111111";
+    const switched = "b2222222-2222-4222-8222-222222222222";
+    const later = "b3333333-3333-4333-8333-333333333333";
+    try {
+        expect(store.get(atoms.defaultPanelTabAtom)).toBe("info");
+        expect(store.get(atoms.tabFamily(untouched))).toBe("info");
+        store.set(atoms.tabFamily(switched), "annotate");
+
+        store.set(atoms.defaultPanelTabAtom, "database");
+        expect(localStorage.getItem("default-panel-tab")).toBe(JSON.stringify("database"));
+        expect(store.get(atoms.tabFamily(untouched))).toBe("info");
+        expect(store.get(atoms.tabFamily(switched))).toBe("annotate");
+        expect(store.get(atoms.tabFamily(later))).toBe("database");
+
+        // Closing a board drops its panel, so a reopened id follows the current setting.
+        atoms.tabFamily.remove(untouched);
+        expect([...atoms.tabFamily.getParams()]).not.toContain(untouched);
+        expect(store.get(atoms.tabFamily(untouched))).toBe("database");
+    } finally {
+        store.set(atoms.defaultPanelTabAtom, "info");
+        for (const id of [untouched, switched, later]) atoms.tabFamily.remove(id);
+    }
 });

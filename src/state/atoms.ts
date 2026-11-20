@@ -1,5 +1,5 @@
 import type { SetStateAction } from "react";
-import { atom } from "jotai";
+import { atom, getDefaultStore } from "jotai";
 import { atomFamily, atomWithStorage, unwrap } from "jotai/utils";
 import { chessRiddleTrainingSessions } from "./chessRiddleTraining";
 import { z } from "zod";
@@ -626,6 +626,16 @@ export const boardAnimationSpeedAtom = atomWithStorage<BoardAnimationSpeed>(
     "normal",
     createZodStorage(z.enum(BOARD_ANIMATION_SPEEDS), localStorage),
 );
+/** Side-panel tab a board opens on. Practice is not offered: repertoires open it only on request. */
+export const DEFAULT_PANEL_TABS = ["info", "analysis", "database", "annotate"] as const;
+export type DefaultPanelTab = (typeof DEFAULT_PANEL_TABS)[number];
+// Hydrated with the document's eager preferences, so `tabFamily` sees the stored choice even when
+// no settings page has mounted it.
+export const defaultPanelTabAtom = documentPreferences.atomWithStorage<DefaultPanelTab>(
+    "default-panel-tab",
+    "info",
+    createZodStorage(z.enum(DEFAULT_PANEL_TABS), localStorage),
+);
 export const showCoordinatesAtom = documentPreferences.atomWithStorage<"no" | "edge" | "all">(
     "show-coordinates-v2",
     "no",
@@ -1166,7 +1176,11 @@ export const showVariationsFamily = atomFamily((_tab: string) => atom(true));
 
 export const showDiagramsFamily = atomFamily((_tab: string) => atom(true));
 
-export const tabFamily = atomFamily((_tab: string) => atom("info"));
+// A board's panel starts on the default-panel setting as it stands when the board's atom is created
+// (the app runs on the default store). Later setting changes leave existing boards where they are.
+export const tabFamily = atomFamily((_tab: string) =>
+    atom<string>(getDefaultStore().get(defaultPanelTabAtom)),
+);
 
 export const reportModalOpenFamily = atomFamily((_tab: string) => atom(false));
 

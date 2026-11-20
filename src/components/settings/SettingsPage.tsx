@@ -23,6 +23,8 @@ import {
   autoPromoteAtom,
   autoSaveAtom,
   chooseVariationAtom,
+  defaultPanelTabAtom,
+  type DefaultPanelTab,
   enableBoardScrollAtom,
   eraseDrawablesOnClickAtom,
   materialDisplayAtom,
@@ -123,6 +125,7 @@ export default function Page() {
   const [showCoordinates, setShowCoordinates] = useAtom(showCoordinatesAtom);
   const [animationSpeed, setAnimationSpeed] = useAtom(boardAnimationSpeedAtom);
   const [materialDisplay, setMaterialDisplay] = useAtom(materialDisplayAtom);
+  const [defaultPanelTab, setDefaultPanelTab] = useAtom(defaultPanelTabAtom);
   const [practiceGrading, setPracticeGrading] = useAtom(practiceGradingAtom);
   const [practiceNewPerSession, setPracticeNewPerSession] = useAtom(practiceNewPerSessionAtom);
 
@@ -325,6 +328,26 @@ export default function Page() {
             allowDeselect={false}
             value={materialDisplay}
             onChange={(val) => setMaterialDisplay(val as MaterialDisplay)}
+          />
+        ),
+      },
+      {
+        id: "default-panel-tab",
+        category: "board",
+        title: t("Settings.DefaultPanel"),
+        description: t("Settings.DefaultPanel.Desc"),
+        keywords: ["default", "panel", "tab", "open", "info", "analysis", "database", "annotate"],
+        render: () => (
+          <SettingsSelect
+            data={[
+              { label: t("Board.Tabs.Info"), value: "info" },
+              { label: t("Board.Tabs.Analysis"), value: "analysis" },
+              { label: t("Board.Tabs.Database"), value: "database" },
+              { label: t("Board.Tabs.Annotate"), value: "annotate" },
+            ]}
+            allowDeselect={false}
+            value={defaultPanelTab}
+            onChange={(val) => setDefaultPanelTab(val as DefaultPanelTab)}
           />
         ),
       },
@@ -629,6 +652,8 @@ export default function Page() {
       setShowCoordinates,
       setAnimationSpeed,
       setMaterialDisplay,
+      defaultPanelTab,
+      setDefaultPanelTab,
       practiceGrading,
       setPracticeGrading,
       practiceNewPerSession,

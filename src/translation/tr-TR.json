@@ -1204,6 +1204,8 @@
     "Settings.Coordinates.Desc": "Kordinatları tahtada göster",
     "Settings.Coordinates.Edge": "Kenarlarda",
     "Settings.Coordinates.None": "Hiçbiri",
+    "Settings.DefaultPanel": "Varsayılan panel",
+    "Settings.DefaultPanel.Desc": "Bir tahta açıldığında gösterilecek yan panel",
     "Settings.Directories": "Klasörler",
     "Settings.Directories.Databases": "Veritabanları Klasörü",
     "Settings.Directories.Databases.Desc": "Veritabanları sayfasındaki veritabanları burada saklanır",

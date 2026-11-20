@@ -1232,6 +1232,8 @@
     "Settings.Coordinates.Desc": "Показати координати на дошці",
     "Settings.Coordinates.Edge": "На краю",
     "Settings.Coordinates.None": "Не показувати",
+    "Settings.DefaultPanel": "Панель за замовчуванням",
+    "Settings.DefaultPanel.Desc": "Яка бічна панель показується під час відкриття дошки",
     "Settings.Directories": "Каталоги",
     "Settings.Directories.Databases": "Каталог для баз даних",
     "Settings.Directories.Databases.Desc": "Тут зберігаються бази даних на сторінці баз даних",

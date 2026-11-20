@@ -1204,6 +1204,8 @@
     "Settings.Coordinates.Desc": "Show coordinates on the board",
     "Settings.Coordinates.Edge": "On the edge",
     "Settings.Coordinates.None": "No",
+    "Settings.DefaultPanel": "Default panel",
+    "Settings.DefaultPanel.Desc": "Which side panel a board opens on",
     "Settings.Directories": "Directories",
     "Settings.Directories.Databases": "Databases directory",
     "Settings.Directories.Databases.Desc": "This is where your databases are stored",

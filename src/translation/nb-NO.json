@@ -1204,6 +1204,8 @@
     "Settings.Coordinates.Desc": "Vis kordinater på brette",
     "Settings.Coordinates.Edge": "På kanten",
     "Settings.Coordinates.None": "Nei",
+    "Settings.DefaultPanel": "Standardpanel",
+    "Settings.DefaultPanel.Desc": "Hvilket sidepanel som vises når et brett åpnes",
     "Settings.Directories": "Mapper",
     "Settings.Directories.Databases": "Databasekatalog",
     "Settings.Directories.Databases.Desc": "Dette er hvor databasene dine blir lagret",

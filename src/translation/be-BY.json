@@ -1232,6 +1232,8 @@
     "Settings.Coordinates.Desc": "Паказаць каардынаты на дошцы",
     "Settings.Coordinates.Edge": "Па краі",
     "Settings.Coordinates.None": "Не паказваць",
+    "Settings.DefaultPanel": "Панэль па змаўчанні",
+    "Settings.DefaultPanel.Desc": "Якая бакавая панэль паказваецца пры адкрыцці дошкі",
     "Settings.Directories": "Каталогі",
     "Settings.Directories.Databases": "Каталог для баз дадзеных",
     "Settings.Directories.Databases.Desc": "Тут захоўваюцца вашы базы дадзеных",

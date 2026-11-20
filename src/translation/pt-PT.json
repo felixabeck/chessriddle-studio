@@ -1218,6 +1218,8 @@
     "Settings.Coordinates.Desc": "Mostra coordenadas no tabuleiro",
     "Settings.Coordinates.Edge": "Na margem",
     "Settings.Coordinates.None": "Não",
+    "Settings.DefaultPanel": "Painel predefinido",
+    "Settings.DefaultPanel.Desc": "Que painel lateral é mostrado ao abrir um tabuleiro",
     "Settings.Directories": "Diretórios",
     "Settings.Directories.Databases": "Diretório das bases de dados",
     "Settings.Directories.Databases.Desc": "Aqui são guardados os ficheiros das bases de dados na página de bases de dados",

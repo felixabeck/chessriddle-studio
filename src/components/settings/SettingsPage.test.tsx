@@ -4,7 +4,12 @@ import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { materialDisplayAtom, practiceGradingAtom, practiceNewPerSessionAtom } from "@/state/atoms";
+import {
+  defaultPanelTabAtom,
+  materialDisplayAtom,
+  practiceGradingAtom,
+  practiceNewPerSessionAtom,
+} from "@/state/atoms";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
@@ -164,6 +169,41 @@ test("the material display select offers Off and stores none", async () => {
   await act(async () => none.click());
   expect(atoms.get(materialDisplayAtom)).toBe("none");
   expect(select.value).toBe("Settings.MaterialDisplay.None");
+});
+
+test("the default panel select offers the four board panels and stores the choice", async () => {
+  const atoms = createStore();
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () =>
+    root!.render(
+      <Provider store={atoms}>
+        <MantineProvider env="test">
+          <Page />
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  const select = host.querySelector<HTMLInputElement>('input[aria-label="Settings.DefaultPanel"]')!;
+  expect(select.value).toBe("Board.Tabs.Info");
+  await act(async () => select.click());
+  const options = [
+    ...document.querySelectorAll<HTMLElement>(
+      `#${select.getAttribute("aria-controls")} [role="option"]`,
+    ),
+  ];
+  expect(options.map((node) => node.textContent)).toEqual([
+    "Board.Tabs.Info",
+    "Board.Tabs.Analysis",
+    "Board.Tabs.Database",
+    "Board.Tabs.Annotate",
+  ]);
+  const database = options.find((node) => node.textContent === "Board.Tabs.Database")!;
+  await act(async () => database.click());
+  expect(atoms.get(defaultPanelTabAtom)).toBe("database");
+  expect(localStorage.getItem("default-panel-tab")).toBe(JSON.stringify("database"));
+  expect(select.value).toBe("Board.Tabs.Database");
 });
 
 test("keybind actions are labelled in the active language", async () => {

@@ -1218,6 +1218,8 @@
     "Settings.Coordinates.Desc": "Mostra le coordinate sulla scacchiera",
     "Settings.Coordinates.Edge": "A bordo scacchiera",
     "Settings.Coordinates.None": "Nascondi coordinate",
+    "Settings.DefaultPanel": "Pannello predefinito",
+    "Settings.DefaultPanel.Desc": "Quale pannello laterale viene mostrato all'apertura di una scacchiera",
     "Settings.Directories": "Cartelle",
     "Settings.Directories.Databases": "Cartella dei database",
     "Settings.Directories.Databases.Desc": "Qui vengono archiviati i tuoi database",

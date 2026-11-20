@@ -1,7 +1,12 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { act, useContext, useRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { Provider as JotaiProvider, createStore as createJotaiStore, useAtomValue } from "jotai";
+import {
+  Provider as JotaiProvider,
+  createStore as createJotaiStore,
+  getDefaultStore,
+  useAtomValue,
+} from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import {
@@ -9,6 +14,7 @@ import {
   autoSaveAtom,
   closeWorkspaceTabAtom,
   currentTabAtom,
+  defaultPanelTabAtom,
   tabFamily,
   explorerDetachedAtom,
   explorerPlacementAtom,
@@ -512,6 +518,42 @@ describe("BoardAnalysis", () => {
     expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
     expect(panels()).toHaveLength(1);
     expect(panels()[0].closest('[role="tabpanel"]')).not.toBeNull();
+  });
+
+  test("a board opening on a Database default shows Annotate while the explorer is pinned", async () => {
+    mocks.realTabs = true;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    await act(async () => root.unmount());
+    tabFamily.remove(tabId);
+    getDefaultStore().set(defaultPanelTabAtom, "database");
+    try {
+      jotaiStore.set(explorerDetachedAtom, true);
+      root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <MantineProvider>
+            <JotaiProvider store={jotaiStore}>
+              <TreeStateContext.Provider value={treeStore}>
+                <RetainedBoardHarness />
+              </TreeStateContext.Provider>
+            </JotaiProvider>
+          </MantineProvider>,
+        );
+      });
+      const selected = () =>
+        container.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
+      expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
+      expect(selected()).toBe("Board.Tabs.Annotate");
+
+      await act(async () => jotaiStore.set(explorerDetachedAtom, false));
+      expect(selected()).toBe("Board.Tabs.Database");
+    } finally {
+      getDefaultStore().set(defaultPanelTabAtom, "info");
+      tabFamily.remove(tabId);
+    }
   });
 
   test("mounts one pinned-engine slot per placement, the board's below the board", () => {

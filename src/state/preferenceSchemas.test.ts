@@ -27,7 +27,8 @@ type PreferenceCase = {
         | "gameOpeningBookMaxPlyAtom"
         | "puzzleRatingRangeAtom"
         | "coverageMinGamesAtom"
-        | "materialDisplayAtom";
+        | "materialDisplayAtom"
+        | "defaultPanelTabAtom";
     defaultValue: unknown;
     invalidValues: unknown[];
     validValues: unknown[];
@@ -91,6 +92,13 @@ const preferences: PreferenceCase[] = [
         defaultValue: "diff",
         invalidValues: ["hidden", "None", "", 0],
         validValues: ["diff", "all", "none"],
+    },
+    {
+        key: "default-panel-tab",
+        atomName: "defaultPanelTabAtom",
+        defaultValue: "info",
+        invalidValues: ["practice", "Info", "", 0, null],
+        validValues: ["info", "analysis", "database", "annotate"],
     },
 ];
 
