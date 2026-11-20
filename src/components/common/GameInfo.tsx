@@ -188,6 +188,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           <Text size="sm">{t("GameInfo.OpeningFor")}</Text>
 
           <Select
+            aria-label={t("GameInfo.OpeningFor")}
             allowDeselect={false}
             value={headers.orientation || "white"}
             variant="unstyled"

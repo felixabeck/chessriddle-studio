@@ -139,9 +139,21 @@ test("New game inserts on explicit save, updates that row, and Save to database 
         );
     expect(await saves()).toHaveLength(0);
     await page.getByRole("button", { name: /^Save PGN/ }).click();
+    // The first save of a new game asks for its players and event before inserting.
+    const naming = page.getByRole("dialog", { name: "Save game", exact: true });
+    await expect(naming.getByRole("textbox", { name: "White", exact: true })).toBeFocused();
+    expect(await saves()).toHaveLength(0);
+    await naming.getByRole("textbox", { name: "White", exact: true }).fill("Carlsen");
+    await naming.getByRole("textbox", { name: "Black", exact: true }).fill("Nakamura");
+    await naming.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(naming).toHaveCount(0);
     await expect
         .poll(async () => (await activeWorkspaceTab(page))?.gameOrigin)
         .toMatchObject({ kind: "database", gameId: 501 });
+    expect((await saves())[0]?.args).toMatchObject({
+        pgn: expect.stringContaining('[White "Carlsen"]'),
+    });
+    expect((await activeWorkspaceTab(page))?.name).toBe("Carlsen - Nakamura");
     await playBoardMove(page, board, "e7", "e5");
     await page.getByRole("button", { name: /^Save PGN/ }).click();
     await expect
@@ -276,6 +288,9 @@ test("linked collection New game appends to its PGN without inserting into the i
     await expect(page).toHaveURL("/");
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
     await page.getByRole("button", { name: /^Save PGN/ }).click();
+    const naming = page.getByRole("dialog", { name: "Save game", exact: true });
+    await naming.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(naming).toHaveCount(0);
     await expect
         .poll(async () => (await activeWorkspaceTab(page))?.gameOrigin)
         .toMatchObject({ kind: "file", gameNumber: 2, file: { handle: file.handle } });
