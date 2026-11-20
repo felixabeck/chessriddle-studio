@@ -12,6 +12,10 @@ pub(crate) const PRODUCTION_FILES: &[(&str, &str)] = &[
         include_str!("catalog_install.rs"),
     ),
     (
+        "infra/path_authority/databases.rs",
+        include_str!("databases.rs"),
+    ),
+    (
         "infra/path_authority/dialogs.rs",
         include_str!("dialogs.rs"),
     ),
@@ -27,6 +31,10 @@ pub(crate) const PRODUCTION_FILES: &[(&str, &str)] = &[
     (
         "infra/path_authority/verified.rs",
         include_str!("verified.rs"),
+    ),
+    (
+        "infra/path_authority/workspace.rs",
+        include_str!("workspace.rs"),
     ),
 ];
 

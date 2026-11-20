@@ -1306,7 +1306,7 @@ fn windows_mutation_directory_handles_are_acquired_writable() {
 /// `std::fs::canonicalize` on its own does not provide.
 #[test]
 fn windows_pgn_export_adopts_an_existing_file_and_creates_only_a_missing_one() {
-    let source = source_for("infra/path_authority/mod.rs");
+    let source = crate::infra::path_authority::test_source_files::production_source();
     let signature = "pub(crate) fn create_pgn_export_destination(";
     let start = function_starts(source, signature)
         .into_iter()
@@ -1348,7 +1348,7 @@ fn windows_pgn_export_adopts_an_existing_file_and_creates_only_a_missing_one() {
 
 #[test]
 fn pgn_export_cleanup_is_classified_after_the_durability_guard_on_both_platforms() {
-    let source = source_for("infra/path_authority/mod.rs");
+    let source = crate::infra::path_authority::test_source_files::production_source();
     let signature = "pub(crate) fn create_pgn_export_destination(";
     for attribute in ["#[cfg(windows)]", "#[cfg(unix)]"] {
         let start = function_starts(source, signature)
@@ -2270,8 +2270,10 @@ fn phase_a_parent_access_predicate_and_call_sites_are_explicit() {
     let authority_production = crate::infra::path_authority::test_source_files::production_source();
     let fs_source = source_for("infra/fs.rs");
     let search_index = source_for("db/search_index.rs");
-    let database =
-        compact(&authority[braced_body(authority, "pub(crate) fn database_file_target(")]);
+    let database = compact(
+        &authority_production
+            [braced_body(authority_production, "pub(crate) fn database_file_target(")],
+    );
     let dialog = compact(
         &authority_production[braced_body(authority_production, "pub fn grant_dialog_operations(")],
     );
@@ -2279,7 +2281,9 @@ fn phase_a_parent_access_predicate_and_call_sites_are_explicit() {
         compact(&authority_production[braced_body(authority_production, "pub fn promote_dialog(")]);
     let registration = compact(&authority[braced_body(authority, "fn registration_target(")]);
     let current = compact(&authority[braced_body(authority, "pub(crate) fn probe_current(")]);
-    let retained = compact(&authority[braced_body(authority, "fn retained_workspace_target(")]);
+    let retained = compact(
+        &authority_production[braced_body(authority_production, "fn retained_workspace_target(")],
+    );
     let fs_open_directory =
         compact(&fs_source[braced_body(fs_source, "pub(crate) fn open_verified_directory(")]);
     let acquire = compact(&authority[braced_body(authority, "fn acquire_target(")]);
@@ -2340,7 +2344,7 @@ fn phase_a_parent_access_predicate_and_call_sites_are_explicit() {
 
 #[test]
 fn database_leaf_bound_is_checked_at_creation_and_registration() {
-    let authority = source_for("infra/path_authority/mod.rs");
+    let authority = crate::infra::path_authority::test_source_files::production_source();
     let create =
         compact(&authority[braced_body(authority, "pub(crate) fn create_database_child(")]);
     let register =
@@ -2464,11 +2468,11 @@ fn phase_a_removed_rows_have_one_ungated_definition_without_refusals() {
                 "pub(crate) fn capability_directory(",
             ),
             (
-                "infra/path_authority/mod.rs",
+                "infra/path_authority/databases.rs",
                 "pub(crate) fn create_database_child(",
             ),
             (
-                "infra/path_authority/mod.rs",
+                "infra/path_authority/databases.rs",
                 "pub(crate) fn database_file_target(",
             ),
         ],

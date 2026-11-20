@@ -1313,7 +1313,7 @@ fn create_database_child_registry_failure_cleans_created_leaf_and_reports_cleanu
 
 #[test]
 fn guarded_registrars_require_the_resolved_descriptor_identity() {
-    let source = include_str!("mod.rs");
+    let source = super::test_source_files::production_source();
     for signature in [
         "pub(crate) fn register_installed_engine(",
         "fn prepare_puzzle_listing_child(",
@@ -2077,11 +2077,7 @@ fn database_file_target_test_door_binds_absent_relative_and_non_utf8_paths() {
 
 #[test]
 fn database_file_target_production_surface_is_private_and_canonically_bound() {
-    let source = include_str!("mod.rs");
-    let production = source
-        .split("#[cfg(unix)]\n#[cfg(test)]\nmod tests")
-        .next()
-        .unwrap();
+    let production = super::test_source_files::production_source();
     let target = production
         .split("pub(crate) struct DatabaseFileTarget {")
         .nth(1)
