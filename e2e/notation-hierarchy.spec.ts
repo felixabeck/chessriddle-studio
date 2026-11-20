@@ -9,6 +9,7 @@ import {
     pgnFileCommands,
     selectFilesTreeRow,
     test,
+    waitForBoardSizeSettled,
     waitForFontsSettled,
     waitForScrollAreaScrollbarsHidden,
     type MockScenario,
@@ -407,40 +408,6 @@ test("notation-hierarchy: overflow-only in both views", async ({ page, mockScena
     await showTableView(page, notation);
     await assertNotationNoOverflow(notation, "table");
 });
-
-async function waitForBoardSizeSettled(page: Page) {
-    await expect
-        .poll(() =>
-            page.evaluate(() => {
-                const wraps = [...document.querySelectorAll("#left .cg-wrap")].filter((wrap) => {
-                    const rect = wrap.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0;
-                });
-                if (wraps.length === 0) return "no laid-out #left .cg-wrap";
-                const dpr = window.devicePixelRatio;
-                const reports: string[] = [];
-                for (const wrap of wraps) {
-                    const wrapRect = wrap.getBoundingClientRect();
-                    const container = wrap.querySelector("cg-container");
-                    if (!(container instanceof HTMLElement)) {
-                        return `wrap ${wrapRect.width}px missing cg-container`;
-                    }
-                    // Chessground's updateBounds rounds the wrap width down to a multiple of
-                    // eight device pixels.
-                    const expected = (Math.floor((wrapRect.width * dpr) / 8) * 8) / dpr;
-                    const actual = parseFloat(container.style.width);
-                    // Negated so an unset inline width (NaN) counts as not settled.
-                    if (!(Math.abs(actual - expected) < 1 / dpr)) {
-                        reports.push(
-                            `wrap ${wrapRect.width}px container ${actual}px expected ${expected}px`,
-                        );
-                    }
-                }
-                return reports.length === 0 ? "settled" : reports.join("; ");
-            }),
-        )
-        .toBe("settled");
-}
 
 async function assertStackedBoardGeometry(page: Page, label: string) {
     await expect(page.locator('[data-board-layout="stacked"]')).toHaveCount(1);

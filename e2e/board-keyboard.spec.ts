@@ -13,6 +13,7 @@ import {
     preserveStorageForReload,
     selectFilesTreeRow,
     test,
+    waitForBoardSizeSettled,
     waitForFontsSettled,
 } from "./fixtures";
 import type { ErrorPayload } from "../src/bindings/generated";
@@ -1070,6 +1071,12 @@ test("board-keyboard: opens analysis and exposes a keyboard-operable board", asy
     // Collapsing the evaluation bar leaves a 16px button that clips an icon larger than itself.
     await page.keyboard.press("z");
     const showEvaluation = page.getByRole("button", { name: "Show evaluation", exact: true });
+    // Moving the board from the stacked layout into its Mosaic tile shrinks its wrap from 706px to
+    // 313px. Wait for that move to commit, else the stacked board already counts as settled, then
+    // for chessground to re-size its container. The 500px step below only widens the wrap.
+    await expect(page.locator('[data-board-layout="mosaic"]')).toHaveCount(1);
+    await expect(showEvaluation).toBeVisible();
+    await waitForBoardSizeSettled(page);
     await assertNothingClipped(showEvaluation, { mode: "reachable" });
     // The stacked layout's open bar is 8px wide; the collapsed column widens to hold the button.
     await page.setViewportSize({ width: 500, height: 720 });
