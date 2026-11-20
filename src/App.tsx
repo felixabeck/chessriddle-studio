@@ -12,6 +12,7 @@ import {
   type Update,
   warn,
 } from "@/platform/native";
+import { warnSafely } from "@/platform/errors";
 import { getDefaultStore, useAtomValue } from "jotai";
 import { ContextMenuProvider } from "mantine-contextmenu";
 import { useEffect, useMemo, useRef } from "react";
@@ -222,11 +223,12 @@ export function useAppStartup() {
       // startup steps, and without a frame callback: a hidden webview may never fire one.
       // The invoke is issued synchronously in this effect, so it runs exactly once per startup.
       // A refused reveal is logged and startup continues; the native fallback in setup shows
-      // the window if it is still hidden.
+      // the window if the reveal was never recorded. The log is `warnSafely`: when IPC is
+      // degraded the logger rejects too, and the diagnostic must still reach the console.
       try {
         await tauri.closeSplashscreen();
       } catch (error) {
-        warn(`Failed to reveal the main window: ${String(error)}`);
+        warnSafely(`Failed to reveal the main window: ${String(error)}`);
       }
       if (signal.aborted) return;
 

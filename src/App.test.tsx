@@ -454,16 +454,49 @@ describe("useAppStartup", () => {
     expect(mocks.check).toHaveBeenCalledOnce();
   });
 
+  test("starts no further startup step when unmounted while the reveal is pending", async () => {
+    storeValues.referenceDb = "reference.db3";
+    mockLaunchWithoutCliFile();
+    let resolveReveal: () => void = () => undefined;
+    mocks.closeSplashscreen.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReveal = resolve;
+        }),
+    );
+
+    await act(async () => root.render(<Probe />));
+    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
+    await act(async () => root.unmount());
+    await act(async () => resolveReveal());
+
+    expect(mocks.reconcileStartupPathOwners).not.toHaveBeenCalled();
+    expect(mocks.info).not.toHaveBeenCalledWith("React app started successfully");
+    expect(mocks.getMatches).not.toHaveBeenCalled();
+    expect(mocks.preloadReferenceDb).not.toHaveBeenCalled();
+    expect(mocks.check).not.toHaveBeenCalled();
+  });
+
   test("reports a refused window reveal and still runs the rest of startup", async () => {
     storeValues.referenceDb = "reference.db3";
     mockLaunchWithoutCliFile();
     mocks.closeSplashscreen.mockRejectedValue(new Error("splash window gone"));
+    // Degraded IPC: the native logger rejects as well, so the diagnostic must reach the console.
+    mocks.warn.mockRejectedValue(new Error("log channel closed"));
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    await act(async () => root.render(<Probe />));
+    const message = "Failed to reveal the main window: Error: splash window gone";
+    try {
+      await act(async () => root.render(<Probe />));
+      expect(consoleWarn).toHaveBeenCalledWith(
+        message,
+        expect.objectContaining({ loggerFailure: expect.anything() }),
+      );
+    } finally {
+      consoleWarn.mockRestore();
+    }
 
-    expect(mocks.warn).toHaveBeenCalledWith(
-      "Failed to reveal the main window: Error: splash window gone",
-    );
+    expect(mocks.warn).toHaveBeenCalledWith(message);
     expect(mocks.warn).not.toHaveBeenCalledWith(
       expect.stringContaining("Application startup failed"),
     );

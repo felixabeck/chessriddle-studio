@@ -750,10 +750,54 @@ fn show_labeled_main_window<R: tauri::Runtime>(
     Ok(())
 }
 
+/// Whether the main window's startup reveal has happened, managed by setup before the window is
+/// built. The fallback decides on this flag rather than on `is_visible()`, so a window the user
+/// hid or minimised after a normal reveal is never re-shown, and a failing visibility probe can
+/// never keep a hidden window hidden.
+#[derive(Debug, Default)]
+struct MainWindowReveal {
+    revealed: std::sync::atomic::AtomicBool,
+}
+
+impl MainWindowReveal {
+    fn record(&self) {
+        self.revealed.store(true, Ordering::SeqCst);
+    }
+
+    /// Atomically claims the reveal: `true` only for the first caller, while it has not happened.
+    fn claim(&self) -> bool {
+        !self.revealed.swap(true, Ordering::SeqCst)
+    }
+
+    /// Returns a claim whose show failed, so the flag never records a reveal that did not happen.
+    fn release_claim(&self) {
+        self.revealed.store(false, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    fn is_revealed(&self) -> bool {
+        self.revealed.load(Ordering::SeqCst)
+    }
+}
+
+/// The renderer's reveal: show the main window, then record the reveal for the fallback.
+fn reveal_main_window_for_renderer<R: tauri::Runtime>(
+    manager: &impl tauri::Manager<R>,
+) -> Result<(), Error> {
+    show_labeled_main_window(manager)?;
+    match manager.try_state::<MainWindowReveal>() {
+        Some(reveal) => reveal.record(),
+        // Only reachable if setup's registration is removed; the fallback then shows the window
+        // again, which is a no-op on a visible window.
+        None => log::warn!("main window reveal state is not managed; the reveal is not recorded"),
+    }
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 async fn close_splashscreen(window: Window) -> Result<(), Error> {
-    show_labeled_main_window(&window)
+    reveal_main_window_for_renderer(&window)
 }
 
 /// How long setup waits for the renderer's `close_splashscreen` before revealing the main window
@@ -763,42 +807,58 @@ const MAIN_WINDOW_REVEAL_FALLBACK: Duration = Duration::from_secs(5);
 
 #[derive(Debug, PartialEq, Eq)]
 enum FallbackReveal {
-    /// The renderer (or anything else) already showed the window; nothing to do.
-    AlreadyVisible,
-    /// The window was still hidden and has now been shown.
+    /// The renderer already revealed the window; nothing to do.
+    AlreadyRevealed,
+    /// The reveal had not been recorded and the window has now been shown.
     Revealed,
+    /// The reveal had not been recorded and showing the window failed (logged).
+    Failed,
 }
 
-/// The fallback decision: show the labeled main window only if `is_visible` reports it hidden.
-/// The probe is injected because the mock runtime always reports windows as visible.
-fn reveal_main_window_if_hidden<R: tauri::Runtime>(
-    manager: &impl tauri::Manager<R>,
-    is_visible: impl FnOnce(&tauri::WebviewWindow<R>) -> tauri::Result<bool>,
-) -> Result<FallbackReveal, Error> {
-    let window = manager
-        .get_webview_window("main")
-        .ok_or_else(|| Error::InvalidInput("no window labeled 'main' found".into()))?;
-    if is_visible(&window)? {
-        return Ok(FallbackReveal::AlreadyVisible);
+/// The fallback's whole lifetime: wait `delay`, then show the main window unless the renderer's
+/// reveal was recorded. Fails open: every path on which no reveal was recorded ends in an attempt
+/// to show. Holds no lock across the await and never panics on missing state or window.
+async fn run_main_window_reveal_fallback<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    delay: Duration,
+) -> FallbackReveal {
+    tokio::time::sleep(delay).await;
+    let reveal = app.try_state::<MainWindowReveal>();
+    match &reveal {
+        Some(reveal) if !reveal.claim() => return FallbackReveal::AlreadyRevealed,
+        Some(_) => {}
+        None => log::warn!(
+            "main window reveal state is not managed; the native fallback shows the window unconditionally"
+        ),
     }
-    show_labeled_main_window(manager)?;
-    Ok(FallbackReveal::Revealed)
+    match show_labeled_main_window(&app) {
+        Ok(()) => {
+            log::warn!(
+                "the renderer did not reveal the main window within {delay:?}; shown by the native fallback"
+            );
+            FallbackReveal::Revealed
+        }
+        Err(error) => {
+            if let Some(reveal) = &reveal {
+                reveal.release_claim();
+            }
+            // Native log only: Debug keeps the platform detail that Display redacts for the
+            // renderer.
+            log::warn!(
+                "main window reveal fallback failed to show the main window after {delay:?}: {error:?}"
+            );
+            FallbackReveal::Failed
+        }
+    }
 }
 
-/// Owned by setup: one detached task, no lock held, ends after its single check (or with the
-/// runtime at application exit). Showing an already visible window is a no-op, so it is
-/// idempotent with `close_splashscreen`.
+/// Owned by setup: one detached task, no lock held, ends after its single decision (or with the
+/// runtime at application exit).
 fn arm_main_window_reveal_fallback<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(MAIN_WINDOW_REVEAL_FALLBACK).await;
-        match reveal_main_window_if_hidden(&app, |window| window.is_visible()) {
-            Ok(FallbackReveal::AlreadyVisible) => {}
-            Ok(FallbackReveal::Revealed) => log::warn!(
-                "the renderer did not reveal the main window within {MAIN_WINDOW_REVEAL_FALLBACK:?}; shown by the native fallback"
-            ),
-            Err(error) => log::warn!("main window reveal fallback failed: {error}"),
-        }
-    });
+    tauri::async_runtime::spawn(run_main_window_reveal_fallback(
+        app,
+        MAIN_WINDOW_REVEAL_FALLBACK,
+    ));
 }
 
 #[tauri::command]
@@ -1639,6 +1699,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
 
+            app.manage(MainWindowReveal::default());
             let main_window = app
                 .config()
                 .app
@@ -3988,10 +4049,36 @@ mod blocking_offload_scans {
             .unwrap();
         assert!(cli < config && config < window);
         assert!(setup[config..window].contains(".windows\n                .first()\n                .ok_or(\"main window configuration is missing\")?;"));
+        // The reveal state exists before the window does, so the renderer's `close_splashscreen`
+        // can always record its reveal.
+        let reveal_state = setup
+            .find("app.manage(MainWindowReveal::default());")
+            .unwrap();
+        assert!(cli < reveal_state && reveal_state < config);
+        assert_eq!(setup.matches("MainWindowReveal").count(), 1);
         // The reveal fallback is armed only after the window exists, and before setup reports
         // success; nothing else may slip in between.
         assert_eq!(setup[window..].trim(), "tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;\n            arm_main_window_reveal_fallback(app.handle().clone());\n\n            log::info!(\"Finished rust initialization\");\n\n            Ok(())");
         assert_eq!(setup.matches("arm_main_window_reveal_fallback(").count(), 1);
+    }
+
+    #[test]
+    fn reveal_fallback_is_spawned_with_the_bounded_delay() {
+        let main = include_str!("main.rs");
+        let arm = main
+            .split_once(
+                "fn arm_main_window_reveal_fallback<R: tauri::Runtime>(app: tauri::AppHandle<R>) {",
+            )
+            .expect("arm function")
+            .1
+            .split_once("\n}\n")
+            .expect("arm function end")
+            .0;
+        let compact: String = arm.chars().filter(|c| !c.is_whitespace()).collect();
+        assert_eq!(
+            compact,
+            "tauri::async_runtime::spawn(run_main_window_reveal_fallback(app,MAIN_WINDOW_REVEAL_FALLBACK,));"
+        );
     }
 
     #[test]
@@ -5103,8 +5190,27 @@ mod blocking_offload_scans {
 
 #[cfg(test)]
 mod close_splashscreen_tests {
-    use super::{reveal_main_window_if_hidden, show_labeled_main_window, Error, FallbackReveal};
+    use super::{
+        reveal_main_window_for_renderer, run_main_window_reveal_fallback, show_labeled_main_window,
+        Error, FallbackReveal, MainWindowReveal, MAIN_WINDOW_REVEAL_FALLBACK,
+    };
     use crate::error::ErrorCategory;
+    use std::time::Duration;
+    use tauri::Manager;
+
+    const TEST_DELAY: Duration = Duration::from_millis(1);
+
+    fn mock_app_with_main_window() -> tauri::App<tauri::test::MockRuntime> {
+        let app = tauri::test::mock_app();
+        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("create labeled main window");
+        app
+    }
+
+    fn revealed(app: &tauri::App<tauri::test::MockRuntime>) -> bool {
+        app.state::<MainWindowReveal>().is_revealed()
+    }
 
     #[test]
     fn missing_main_window_is_typed_invalid_input() {
@@ -5122,52 +5228,72 @@ mod close_splashscreen_tests {
     }
 
     #[test]
-    fn fallback_shows_a_main_window_the_renderer_left_hidden() {
+    fn reveal_fallback_waits_five_seconds() {
+        assert_eq!(MAIN_WINDOW_REVEAL_FALLBACK, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn renderer_reveal_records_the_reveal_after_showing() {
+        let app = mock_app_with_main_window();
+        app.manage(MainWindowReveal::default());
+        reveal_main_window_for_renderer(app.handle()).expect("renderer reveals main window");
+        assert!(revealed(&app));
+    }
+
+    #[test]
+    fn failed_renderer_reveal_is_not_recorded() {
         let app = tauri::test::mock_app();
-        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
-            .build()
-            .expect("create labeled main window");
-        let mut probed = false;
-        let outcome = reveal_main_window_if_hidden(app.handle(), |window| {
-            probed = true;
-            assert_eq!(window.label(), "main");
-            Ok(false)
-        })
-        .expect("reveal hidden main window");
-        assert!(probed);
+        app.manage(MainWindowReveal::default());
+        let error =
+            reveal_main_window_for_renderer(app.handle()).expect_err("mock app has no main window");
+        assert_eq!(error.category(), ErrorCategory::InvalidInput);
+        assert!(!revealed(&app));
+    }
+
+    #[tokio::test]
+    async fn fallback_reveals_a_main_window_the_renderer_never_revealed() {
+        let app = mock_app_with_main_window();
+        app.manage(MainWindowReveal::default());
+        let outcome = run_main_window_reveal_fallback(app.handle().clone(), TEST_DELAY).await;
+        assert_eq!(outcome, FallbackReveal::Revealed);
+        assert!(revealed(&app));
+    }
+
+    #[tokio::test]
+    async fn fallback_leaves_a_window_the_renderer_revealed_alone() {
+        let app = mock_app_with_main_window();
+        app.manage(MainWindowReveal::default());
+        reveal_main_window_for_renderer(app.handle()).expect("renderer reveals main window");
+        let outcome = run_main_window_reveal_fallback(app.handle().clone(), TEST_DELAY).await;
+        assert_eq!(outcome, FallbackReveal::AlreadyRevealed);
+        assert!(revealed(&app));
+    }
+
+    #[tokio::test]
+    async fn fallback_reports_a_missing_main_window_without_recording_a_reveal() {
+        let app = tauri::test::mock_app();
+        app.manage(MainWindowReveal::default());
+        let outcome = run_main_window_reveal_fallback(app.handle().clone(), TEST_DELAY).await;
+        assert_eq!(outcome, FallbackReveal::Failed);
+        assert!(!revealed(&app));
+    }
+
+    #[tokio::test]
+    async fn fallback_without_reveal_state_still_shows_the_window() {
+        let app = mock_app_with_main_window();
+        let outcome = run_main_window_reveal_fallback(app.handle().clone(), TEST_DELAY).await;
         assert_eq!(outcome, FallbackReveal::Revealed);
     }
 
-    #[test]
-    fn fallback_leaves_a_revealed_main_window_alone() {
-        let app = tauri::test::mock_app();
-        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
-            .build()
-            .expect("create labeled main window");
-        let outcome = reveal_main_window_if_hidden(app.handle(), |window| window.is_visible())
-            .expect("probe visible main window");
-        assert_eq!(outcome, FallbackReveal::AlreadyVisible);
-    }
-
-    #[test]
-    fn fallback_reports_a_missing_main_window_without_panicking() {
-        let app = tauri::test::mock_app();
-        let error =
-            reveal_main_window_if_hidden(app.handle(), |_| panic!("no window exists to probe"))
-                .expect_err("mock app has no main window");
-        assert_eq!(error.category(), ErrorCategory::InvalidInput);
-    }
-
-    #[test]
-    fn fallback_reports_a_failed_visibility_probe_without_showing() {
-        let app = tauri::test::mock_app();
-        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
-            .build()
-            .expect("create labeled main window");
-        let error =
-            reveal_main_window_if_hidden(app.handle(), |_| Err(tauri::Error::WindowNotFound))
-                .expect_err("probe failure is returned");
-        assert_eq!(error.category(), ErrorCategory::Platform);
+    #[tokio::test]
+    async fn fallback_waits_for_its_delay_before_deciding() {
+        let app = mock_app_with_main_window();
+        app.manage(MainWindowReveal::default());
+        let delay = Duration::from_millis(200);
+        let started = std::time::Instant::now();
+        let outcome = run_main_window_reveal_fallback(app.handle().clone(), delay).await;
+        assert!(started.elapsed() >= delay);
+        assert_eq!(outcome, FallbackReveal::Revealed);
     }
 
     #[test]
