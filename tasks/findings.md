@@ -27088,7 +27088,7 @@ Push review (review-root-cause) found the same race in `e2e/accounts-puzzles-eng
 
 ### The Play-tab date tests changed TZ at runtime, so all four frontend-mutation CI jobs failed Stryker's initial run on 8d9bc1814
 
-* **ID:** f-20261116-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261116-01 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** b78c4543-e189-45a0-906e-78b305f41191
 * **Impact class:** tooling
 * **CI run:** 43878646803
@@ -27097,6 +27097,8 @@ Push review (review-root-cause) found the same race in `e2e/accounts-puzzles-eng
 * **Failure scenario:** CI run 43878646803 on `8d9bc1814`: frontend-mutation (workspace-storage, game-practice, annotate-comment, tree-path) all failed with "There were failed tests in the initial test run", which made the remote red and refused every later push. Reproduced locally with `pnpm vitest run --pool=threads src/utils/pgnDate.test.ts` (the New York case fails).
 * **Fix:** stub the local calendar and clock getters on a fixed instant instead of changing `TZ`, so the tests prove the local-versus-UTC split in any zone and pool.
 * **Found by:** Claude (drain orchestrator), post-push CI wait for f-20261115-05
+* **Closed (2026-11-20, drain pickup re-check):** already fixed by `da9450fc6` ("test(play): stub local calendar fields instead of changing TZ", on `origin/master`). Neither `src/utils/pgnDate.test.ts` nor `src/components/boards/BoardGame.test.tsx` calls `vi.stubEnv("TZ", …)` any more; both stub the local calendar getters on a fixed instant, which is the fix this entry named. Proof: `pnpm vitest run --pool=threads src/utils/pgnDate.test.ts src/components/boards/BoardGame.test.tsx -t date` passes (9 tests), `TZ=America/New_York pnpm vitest run --pool=threads src/utils/pgnDate.test.ts` passes (4 tests), and the latest Mutation workflow on `2c4e1e5ed` had all four frontend-mutation jobs (workspace-storage, game-practice, annotate-comment, tree-path) green. No code change in this session.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"678dbffb54e08184fc75167fa760bc0c89638445c47bab9c7ef0359e384eb929","header_sha256":"4675d45d5583386cd4b1d2ccb7d49472e4e20fab1dce654c8260b55976f2ab51","header_status":"handled","input_sha256":"2fcf2fbfbf32ffa1911318605ac8053a1f35942147243e54c351489f6402af53","kind":"mutation-receipt","operation":"485c3e48aa569344cdd3b256050a5a86e441d7f9446024f17cd5c1efe78e7b9c","options":{"section":null},"request_id_sha256":null,"results":["f-20261116-01"],"target":"f-20261116-01","v":1} -->
 
 ---
 
