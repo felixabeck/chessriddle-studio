@@ -1,5 +1,4 @@
 import { MantineProvider } from "@mantine/core";
-import { createInstance } from "i18next";
 import { Provider, createStore } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -7,8 +6,8 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { platform } from "@/platform/native";
 import { keyMapAtom } from "@/state/keybinds";
+import { catalogueI18n } from "@/tests/catalogues";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import german from "@/translation/de-DE.json";
 import KeybindInput from "./KeybindInput";
 
 vi.mock("@/platform/native", () => ({ platform: vi.fn(() => "linux") }));
@@ -56,14 +55,7 @@ test.each([
 });
 
 test("the shortcut button is named by the action label in the active language", async () => {
-  const i18n = createInstance();
-  await i18n.init({
-    lng: "de",
-    fallbackLng: false,
-    keySeparator: false,
-    nsSeparator: false,
-    resources: { de: german },
-  });
+  const i18n = await catalogueI18n("de-DE");
   await act(async () => {
     root.render(
       <I18nextProvider i18n={i18n}>

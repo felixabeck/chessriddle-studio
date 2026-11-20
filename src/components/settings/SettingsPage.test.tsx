@@ -1,5 +1,4 @@
 import { MantineProvider } from "@mantine/core";
-import { createInstance } from "i18next";
 import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -10,10 +9,10 @@ import {
   practiceGradingAtom,
   practiceNewPerSessionAtom,
 } from "@/state/atoms";
+import { catalogueI18n } from "@/tests/catalogues";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
-import german from "@/translation/de-DE.json";
 import Page from "./SettingsPage";
 
 vi.mock("@/platform/native", () => ({
@@ -73,11 +72,12 @@ afterEach(async () => {
   else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
-test("practice settings expose automatic/manual grading and the session new-move limit", async () => {
+async function renderSettingsPage() {
   const atoms = createStore();
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
+  const container = document.createElement("div");
+  host = container;
+  document.body.append(container);
+  root = createRoot(container);
   await act(async () =>
     root!.render(
       <Provider store={atoms}>
@@ -87,6 +87,31 @@ test("practice settings expose automatic/manual grading and the session new-move
       </Provider>,
     ),
   );
+  return { atoms, host: container };
+}
+
+/** Opens the select named `label`, checks its current value and option order, and picks `choice`. */
+async function pickSelectOption(
+  container: HTMLElement,
+  label: string,
+  { initial, options, choice }: { initial: string; options: string[]; choice: string },
+) {
+  const select = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  expect(select.value).toBe(initial);
+  await act(async () => select.click());
+  const rendered = [
+    ...document.querySelectorAll<HTMLElement>(
+      `#${select.getAttribute("aria-controls")} [role="option"]`,
+    ),
+  ];
+  expect(rendered.map((node) => node.textContent)).toEqual(options);
+  const picked = rendered.find((node) => node.textContent === choice)!;
+  await act(async () => picked.click());
+  expect(select.value).toBe(choice);
+}
+
+test("practice settings expose automatic/manual grading and the session new-move limit", async () => {
+  const { atoms, host } = await renderSettingsPage();
   expect(host.querySelector('input[placeholder="Common.Search"]')?.getAttribute("aria-label")).toBe(
     "Common.Search",
   );
@@ -137,99 +162,42 @@ test("practice settings expose automatic/manual grading and the session new-move
 });
 
 test("the material display select offers Off and stores none", async () => {
-  const atoms = createStore();
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(async () =>
-    root!.render(
-      <Provider store={atoms}>
-        <MantineProvider env="test">
-          <Page />
-        </MantineProvider>
-      </Provider>,
-    ),
-  );
-  const select = host.querySelector<HTMLInputElement>(
-    'input[aria-label="Settings.MaterialDisplay"]',
-  )!;
-  expect(select.value).toBe("Settings.MaterialDisplay.Diff");
-  await act(async () => select.click());
-  const options = [
-    ...document.querySelectorAll<HTMLElement>(
-      `#${select.getAttribute("aria-controls")} [role="option"]`,
-    ),
-  ];
-  expect(options.map((node) => node.textContent)).toEqual([
-    "Settings.MaterialDisplay.Diff",
-    "Settings.MaterialDisplay.All",
-    "Settings.MaterialDisplay.None",
-  ]);
-  const none = options.find((node) => node.textContent === "Settings.MaterialDisplay.None")!;
-  await act(async () => none.click());
+  const { atoms, host } = await renderSettingsPage();
+  await pickSelectOption(host, "Settings.MaterialDisplay", {
+    initial: "Settings.MaterialDisplay.Diff",
+    options: [
+      "Settings.MaterialDisplay.Diff",
+      "Settings.MaterialDisplay.All",
+      "Settings.MaterialDisplay.None",
+    ],
+    choice: "Settings.MaterialDisplay.None",
+  });
   expect(atoms.get(materialDisplayAtom)).toBe("none");
-  expect(select.value).toBe("Settings.MaterialDisplay.None");
+  expect(localStorage.getItem("material-display")).toBe(JSON.stringify("none"));
 });
 
 test("the default panel select offers the four board panels and stores the choice", async () => {
-  const atoms = createStore();
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(async () =>
-    root!.render(
-      <Provider store={atoms}>
-        <MantineProvider env="test">
-          <Page />
-        </MantineProvider>
-      </Provider>,
-    ),
-  );
-  const select = host.querySelector<HTMLInputElement>('input[aria-label="Settings.DefaultPanel"]')!;
-  expect(select.value).toBe("Board.Tabs.Info");
-  await act(async () => select.click());
-  const options = [
-    ...document.querySelectorAll<HTMLElement>(
-      `#${select.getAttribute("aria-controls")} [role="option"]`,
-    ),
-  ];
-  expect(options.map((node) => node.textContent)).toEqual([
-    "Board.Tabs.Info",
-    "Board.Tabs.Analysis",
-    "Board.Tabs.Database",
-    "Board.Tabs.Annotate",
-  ]);
-  const database = options.find((node) => node.textContent === "Board.Tabs.Database")!;
-  await act(async () => database.click());
+  const { atoms, host } = await renderSettingsPage();
+  await pickSelectOption(host, "Settings.DefaultPanel", {
+    initial: "Board.Tabs.Info",
+    options: [
+      "Board.Tabs.Info",
+      "Board.Tabs.Analysis",
+      "Board.Tabs.Database",
+      "Board.Tabs.Annotate",
+    ],
+    choice: "Board.Tabs.Database",
+  });
   expect(atoms.get(defaultPanelTabAtom)).toBe("database");
   expect(localStorage.getItem("default-panel-tab")).toBe(JSON.stringify("database"));
-  expect(select.value).toBe("Board.Tabs.Database");
 });
 
 test("keybind actions are labelled in the active language", async () => {
-  const i18n = createInstance();
-  await i18n.init({
-    lng: "de",
-    fallbackLng: false,
-    keySeparator: false,
-    nsSeparator: false,
-    resources: { de: german },
-  });
+  const i18n = await catalogueI18n("de-DE");
   translation.t = (key, options) => i18n.t(key, options);
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(async () =>
-    root!.render(
-      <Provider store={createStore()}>
-        <MantineProvider env="test">
-          <Page />
-        </MantineProvider>
-      </Provider>,
-    ),
-  );
+  const { host } = await renderSettingsPage();
   const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === german.translation["Settings.Keybinds"],
+    (node) => node.textContent === "Tastenkombinationen",
   )!;
   await act(async () => tab.click());
   const labels = [...host.querySelectorAll("td:first-child")].map((cell) => cell.textContent);

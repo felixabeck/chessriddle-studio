@@ -245,7 +245,7 @@ test("a successful kill disables the engine", async () => {
   expect(update(settings).enabled).toBe(false);
 });
 
-test("names the lines, cores, and hash controls with the settings captions", async () => {
+test("names the lines, threads, and hash controls with their visible settings captions", async () => {
   await render(vi.fn(), {
     ...settings,
     settings: [
@@ -255,13 +255,13 @@ test("names the lines, cores, and hash controls with the settings captions", asy
     ],
   });
 
-  expect(
-    [...host.querySelectorAll('[role="group"]')].map((control) =>
-      control.getAttribute("aria-label"),
-    ),
-  ).toEqual([
+  const captions = [
     "Engines.Settings.NumOfLines",
     "Engines.Options.Threads.Label",
     "Engines.Settings.SizeOfHash",
-  ]);
+  ];
+  const controls = [...host.querySelectorAll('[role="group"]')];
+  expect(controls.map((control) => control.getAttribute("aria-label"))).toEqual(captions);
+  // The caption a user reads beside each slider is the same key that names the control.
+  expect(controls.map((control) => control.previousElementSibling?.textContent)).toEqual(captions);
 });

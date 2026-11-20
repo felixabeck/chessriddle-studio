@@ -4,7 +4,8 @@ vi.mock("@/components/files/notifyError", () => ({ notifyListenerError: vi.fn() 
 import { notifyListenerError } from "@/components/files/notifyError";
 import { createKeybindStorage } from "./keybinds";
 import { createStore } from "jotai";
-import { keyMapAtom } from "./keybinds";
+import { keybindLabel, keyMapAtom } from "./keybinds";
+import type { TFunction } from "i18next";
 
 const defaults = {
     OPEN: { name: "Open", keys: "ctrl+o" },
@@ -112,5 +113,22 @@ test.each(["repair", "migration", "invalid"])(
         expect(backing.getItem()).toBe(bytes);
         expect(backing.setItem).toHaveBeenCalledOnce();
         expect(notifyListenerError).toHaveBeenCalledWith(refused);
+    },
+);
+
+const translate = ((key: string) => `translated:${key}`) as unknown as TFunction;
+
+test("a known action is labelled through its translation key", () => {
+    expect(keybindLabel(translate, "NEW_TAB", { name: "New tab", keys: "ctrl+t" })).toBe(
+        "translated:Settings.Keybinds.Actions.NEW_TAB",
+    );
+});
+
+test.each(["NOT_A_SHIPPED_ACTION", "toString", "constructor", "__proto__", "hasOwnProperty"])(
+    "unknown or prototype action id %s falls back to its stored name",
+    (action) => {
+        expect(keybindLabel(translate, action, { name: "Stored label", keys: "ctrl+k" })).toBe(
+            "Stored label",
+        );
     },
 );
