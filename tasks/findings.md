@@ -26047,7 +26047,7 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 
 ### piece-size e2e samples the merida queen before its background image is painted (paintDetected false)
 
-* **ID:** f-20261115-23 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261115-23 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** bfce3456-ab46-42ea-bc2c-33851aa0ee67
 * **Impact class:** tooling
 * **Where:** `e2e/piece-size.spec.ts:195-207` (`selectMeridaPieceSet` waits only for `merida.css` to have a `sheet`, then `piecePaintBounds` screenshots the queen with and without visibility and expects a pixel difference), `e2e/piece-size.spec.ts:57-69`.
@@ -26055,6 +26055,8 @@ Handled in `ff8b5115b` (taken into the f-20261111-78 drain session because the r
 * **Failure scenario:** a push to master shows the Test job red at random and holds the post-push install until the job is rerun.
 * **Fix:** wait until the queen's computed `background-image` URL has decoded (e.g. load it through `new Image()` / `img.decode()` in the page) or poll `piecePaintBounds` until paint is detected within the expect timeout; prove with `--repeat-each` in the container.
 * **Found by:** drain session bfce3456-ab46-42ea-bc2c-33851aa0ee67 while waiting on hosted CI for the f-20261112-52 push, 2026-11-15.
+* **Handled (drain 62e3b7c0-ec1a-43d2-9c0c-8c3472472846, 2026-11-20, commit `4005f9796`):** `e2e/piece-size.spec.ts` gained `paintedBounds`, which polls `piecePaintBounds` with `expect.poll` until `paintDetected` is true and returns those bounds; both the 100% and 70% queen samples use it in place of a single sample followed by `expect(paintDetected).toBe(true)`. The poll waits for the observable that the assertions need (pixels changed by the piece), not a proxy for it. Proof: `pnpm test:e2e:container e2e/piece-size.spec.ts --grep merida --repeat-each 20` passed 20/20. The hosted race itself was not reproduced locally. Rejected alternative: decoding the computed `background-image` through `new Image().decode()` in the page; a decoded image still does not prove the next screenshot shows it, so polling would have been needed anyway.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"577a505870f374b74a88b4a2e22181e91bced995d3f6d2421bfaee9f0d029ccb","header_sha256":"d51418b1e6ccdfde43d55d4de3aa1c7bc82c95186db02da3926ec10dab635189","header_status":"handled","input_sha256":"22f373b5bfa6ce49c474be4fa64997b7d6ce781db7f8cf589eafe46bfd1d9f08","kind":"mutation-receipt","operation":"5b98a1c23940f847013b978ab26cc488cdce47e4c0e5dd63b7f77bca150da1a2","options":{"section":null},"request_id_sha256":null,"results":["f-20261115-23"],"target":"f-20261115-23","v":1} -->
 
 ---
 
