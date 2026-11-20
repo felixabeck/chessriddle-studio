@@ -54,11 +54,9 @@ test("a missing key reads as undefined, and a stored undefined value is still an
     expect(cache.has("b")).toBe(false);
 });
 
-test("delete and clear remove entries", () => {
+test("clear removes every entry", () => {
     const cache = filled(3);
-    expect(cache.delete("k1")).toBe(true);
-    expect(cache.delete("k1")).toBe(false);
-    expect(cache.size).toBe(2);
+    expect(cache.size).toBe(3);
     cache.clear();
     expect(cache.size).toBe(0);
     expect(cache.get("k0")).toBeUndefined();

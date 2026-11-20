@@ -37,10 +37,6 @@ export class LruCache<K, V> {
         }
     }
 
-    delete(key: K) {
-        return this.entries.delete(key);
-    }
-
     clear() {
         this.entries.clear();
     }
