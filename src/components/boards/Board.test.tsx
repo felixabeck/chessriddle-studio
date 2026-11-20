@@ -8,6 +8,8 @@ import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { createVariationChooserStore } from "@/state/store/variationChooser";
 import {
   enableBoardScrollAtom,
+  materialDisplayAtom,
+  type MaterialDisplay,
   moveHighlightAtom,
   moveInputAtom,
   showVariationArrowsAtom,
@@ -39,7 +41,7 @@ vi.mock("@/state/atoms", async () => {
     evalOpenFamily: () => evalOpen,
     showCommentsFamily: () => showComments,
     enableBoardScrollAtom: atom(false),
-    materialDisplayAtom: atom("none"),
+    materialDisplayAtom: atom("diff"),
     moveHighlightAtom: atom(false),
     moveInputAtom: atom(false),
     showArrowsAtom: atom(false),
@@ -94,9 +96,18 @@ const promotionModal = vi.hoisted(() =>
 );
 vi.mock("./PromotionModal", () => ({ default: promotionModal }));
 vi.mock("./AnnotationHint", () => ({ default: () => null }));
-vi.mock("../common/ShowMaterial", () => ({
-  default: ({ color }: { color?: string }) => <span data-show-material={color ?? "both"} />,
-}));
+const realMaterial = vi.hoisted(() => ({ enabled: false }));
+vi.mock("../common/ShowMaterial", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../common/ShowMaterial")>();
+  return {
+    default: (props: ComponentProps<typeof actual.default>) =>
+      realMaterial.enabled ? (
+        <actual.default {...props} />
+      ) : (
+        <span data-show-material={props.color ?? "both"} />
+      ),
+  };
+});
 vi.mock("../common/IconAction", () => ({ default: () => null }));
 const fideInfo = vi.hoisted(() => vi.fn((_props: ComponentProps<typeof FideInfo>) => null));
 vi.mock("../databases/FideInfo", () => ({ default: fideInfo }));
@@ -108,6 +119,7 @@ let tree: TreeStore;
 
 beforeEach(() => {
   nativeBoard.enabled = false;
+  realMaterial.enabled = false;
   vi.clearAllMocks();
   installMatchMediaStub();
   host = document.createElement("div");
@@ -136,8 +148,10 @@ async function render(
   props: Partial<ComponentProps<typeof Board>> = {},
   moveInput = false,
   boardScroll = false,
+  materialDisplay: MaterialDisplay = "diff",
 ) {
   const atoms = createJotaiStore();
+  atoms.set(materialDisplayAtom, materialDisplay);
   atoms.set(moveInputAtom, moveInput);
   atoms.set(enableBoardScrollAtom, boardScroll);
   atoms.set(moveHighlightAtom, true);
@@ -290,6 +304,29 @@ test("a game keeps the move input, the position error and each side's material i
   expect(above.querySelector('[aria-label="MoveInput.EnterMove"]')).toBeNull();
   expect(below.textContent).toContain("Errors.EmptyBoard");
   expect(above.textContent).not.toContain("Errors.EmptyBoard");
+});
+
+test.each([
+  { name: "a game", repertoire: false, bars: ["above", "below"] },
+  { name: "an opening line", repertoire: true, bars: ["above"] },
+])("$name shows no material in any bar when the display is off", async ({ repertoire, bars }) => {
+  realMaterial.enabled = true;
+  // White has a bishop for Black's knight and pawn, so both sides have something to show.
+  tree.getState().setFen("r2q1rk1/1p2ppbp/1n1p4/p2P1p2/P1n5/2N4P/1P2BPP1/R1BQ1RK1 w - - 0 15");
+  const barsWithMaterial = () =>
+    Array.from(host.querySelectorAll<HTMLElement>("[data-bar]"))
+      .filter((bar) => bar.querySelector("[data-material]"))
+      .map((bar) => bar.dataset.bar);
+  await render({ repertoire }, false, false, "diff");
+  expect(barsWithMaterial()).toEqual(bars);
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render({ repertoire }, false, false, "none");
+  expect(
+    Array.from(host.querySelectorAll<HTMLElement>("[data-bar]"), (bar) => bar.dataset.bar),
+  ).toEqual(bars);
+  expect(barsWithMaterial()).toEqual([]);
+  expect(host.querySelector("[data-material-piece]")).toBeNull();
 });
 
 test("a flipped game shows Black's material below and White's above", async () => {

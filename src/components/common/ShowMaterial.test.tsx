@@ -107,3 +107,13 @@ test("equal material renders nothing", async () => {
   await render({ fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" });
   expect(host.querySelector("[data-material]")).toBeNull();
 });
+
+test.each([undefined, "white", "black"] as const)(
+  "none mode renders nothing even with unequal material (colour %s)",
+  async (color) => {
+    await render({ fen: KNIGHT_AND_PAWN_FOR_BISHOP, color, mode: "none" });
+    expect(host.querySelector("[data-material]")).toBeNull();
+    expect(sides()).toEqual([]);
+    expect(host.querySelector("[data-material-piece]")).toBeNull();
+  },
+);

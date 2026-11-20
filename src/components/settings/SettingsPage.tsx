@@ -26,6 +26,7 @@ import {
   enableBoardScrollAtom,
   eraseDrawablesOnClickAtom,
   materialDisplayAtom,
+  type MaterialDisplay,
   boardAnimationSpeedAtom,
   type BoardAnimationSpeed,
   moveHighlightAtom,
@@ -313,16 +314,17 @@ export default function Page() {
         category: "board",
         title: t("Settings.MaterialDisplay"),
         description: t("Settings.MaterialDisplay.Desc"),
-        keywords: ["material", "captured", "pieces", "difference"],
+        keywords: ["material", "captured", "pieces", "difference", "hide"],
         render: () => (
           <SettingsSelect
             data={[
               { label: t("Settings.MaterialDisplay.Diff"), value: "diff" },
               { label: t("Settings.MaterialDisplay.All"), value: "all" },
+              { label: t("Settings.MaterialDisplay.None"), value: "none" },
             ]}
             allowDeselect={false}
             value={materialDisplay}
-            onChange={(val) => setMaterialDisplay(val as "diff" | "all")}
+            onChange={(val) => setMaterialDisplay(val as MaterialDisplay)}
           />
         ),
       },

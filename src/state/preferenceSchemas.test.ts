@@ -26,7 +26,8 @@ type PreferenceCase = {
         | "soundVolumeAtom"
         | "gameOpeningBookMaxPlyAtom"
         | "puzzleRatingRangeAtom"
-        | "coverageMinGamesAtom";
+        | "coverageMinGamesAtom"
+        | "materialDisplayAtom";
     defaultValue: unknown;
     invalidValues: unknown[];
     validValues: unknown[];
@@ -83,6 +84,13 @@ const preferences: PreferenceCase[] = [
         defaultValue: 50,
         invalidValues: [0, -3, 1.5, 1e16],
         validValues: [1, 40, 500, Number.MAX_SAFE_INTEGER],
+    },
+    {
+        key: "material-display",
+        atomName: "materialDisplayAtom",
+        defaultValue: "diff",
+        invalidValues: ["hidden", "None", "", 0],
+        validValues: ["diff", "all", "none"],
     },
 ];
 

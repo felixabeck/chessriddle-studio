@@ -605,10 +605,13 @@ export const chooseVariationAtom = atomWithStorage<boolean>(
     true,
     createPreferenceStorage(true),
 );
-export const materialDisplayAtom = atomWithStorage<"diff" | "all">(
+/** How captured material shows beside the players: surplus only, every capture, or not at all. */
+export const MATERIAL_DISPLAY_MODES = ["diff", "all", "none"] as const;
+export type MaterialDisplay = (typeof MATERIAL_DISPLAY_MODES)[number];
+export const materialDisplayAtom = atomWithStorage<MaterialDisplay>(
     "material-display",
     "diff",
-    createZodStorage(z.enum(["diff", "all"]), localStorage),
+    createZodStorage(z.enum(MATERIAL_DISPLAY_MODES), localStorage),
 );
 export const BOARD_ANIMATION_SPEEDS = ["off", "fast", "normal", "slow"] as const;
 export type BoardAnimationSpeed = (typeof BOARD_ANIMATION_SPEEDS)[number];

@@ -4,7 +4,7 @@ import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { practiceGradingAtom, practiceNewPerSessionAtom } from "@/state/atoms";
+import { materialDisplayAtom, practiceGradingAtom, practiceNewPerSessionAtom } from "@/state/atoms";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
@@ -129,6 +129,41 @@ test("practice settings expose automatic/manual grading and the session new-move
   await blur();
   expect(limit.value).toBe("100");
   expect(atoms.get(practiceNewPerSessionAtom)).toBe(100);
+});
+
+test("the material display select offers Off and stores none", async () => {
+  const atoms = createStore();
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () =>
+    root!.render(
+      <Provider store={atoms}>
+        <MantineProvider env="test">
+          <Page />
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  const select = host.querySelector<HTMLInputElement>(
+    'input[aria-label="Settings.MaterialDisplay"]',
+  )!;
+  expect(select.value).toBe("Settings.MaterialDisplay.Diff");
+  await act(async () => select.click());
+  const options = [
+    ...document.querySelectorAll<HTMLElement>(
+      `#${select.getAttribute("aria-controls")} [role="option"]`,
+    ),
+  ];
+  expect(options.map((node) => node.textContent)).toEqual([
+    "Settings.MaterialDisplay.Diff",
+    "Settings.MaterialDisplay.All",
+    "Settings.MaterialDisplay.None",
+  ]);
+  const none = options.find((node) => node.textContent === "Settings.MaterialDisplay.None")!;
+  await act(async () => none.click());
+  expect(atoms.get(materialDisplayAtom)).toBe("none");
+  expect(select.value).toBe("Settings.MaterialDisplay.None");
 });
 
 test("keybind actions are labelled in the active language", async () => {

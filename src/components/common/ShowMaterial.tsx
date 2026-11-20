@@ -1,6 +1,7 @@
 import { Group, Text } from "@mantine/core";
 import { type Color, opposite } from "chessops";
 import PieceComponent from "@/components/common/Piece";
+import type { MaterialDisplay } from "@/state/atoms";
 import { getMaterialDiff, MATERIAL_ROLES } from "@/utils/chess";
 import classes from "@/components/common/ShowMaterial.module.css";
 
@@ -13,6 +14,7 @@ const PIECE_OVERLAP = "-0.7rem";
  *
  * `diff` shows the pieces a side has more of, in that side's colour. `all` shows every piece a
  * side has captured, in the captured pieces' colour. The leading side gets the point lead.
+ * `none` renders nothing.
  * Without `color`, both sides render in one group, White first.
  */
 export default function ShowMaterial({
@@ -22,8 +24,9 @@ export default function ShowMaterial({
 }: {
   fen: string;
   color?: Color;
-  mode?: "diff" | "all";
+  mode?: MaterialDisplay;
 }) {
+  if (mode === "none") return null;
   const materialDiff = getMaterialDiff(fen);
   if (!materialDiff) return null;
 
