@@ -48,9 +48,10 @@ function repertoireCommands() {
     });
 }
 
-test("Library New game opens a fileDraft and appends on explicit save", async ({
+test("Library New game opens a fileDraft, asks for the line name and appends on explicit save", async ({
     page,
     mockScenario,
+    assertAccessible,
 }) => {
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     await mockScenario({ commands: repertoireCommands() });
@@ -83,7 +84,21 @@ test("Library New game opens a fileDraft and appends on explicit save", async ({
     expect(await writes()).toHaveLength(0);
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
     expect(await writes()).toHaveLength(0);
+    // An unnamed line shows a muted title that opens the same naming dialog.
+    await expect(page.getByRole("button", { name: "Untitled line", exact: true })).toBeVisible();
     await page.getByRole("button", { name: /^Save PGN/ }).click();
+    const naming = page.getByRole("dialog", { name: "Save line", exact: true });
+    await expect(naming.getByRole("textbox", { name: "Line name", exact: true })).toBeFocused();
+    expect(await writes()).toHaveLength(0);
+    await naming.getByRole("textbox", { name: "Line name", exact: true }).fill("Two Knights");
+    await naming.getByRole("textbox", { name: "Idea", exact: true }).fill("3...Bg4");
+    await assertNothingClipped(naming);
+    await assertAccessible();
+    await expect(page).toHaveScreenshot("file-new-game-name-dialog.png");
+    await naming
+        .getByRole("button", { name: `Save to ${repertoireFile.name}`, exact: true })
+        .click();
+    await expect(naming).toHaveCount(0);
     await expect
         .poll(async () => (await activeWorkspaceTab(page))?.gameOrigin)
         .toMatchObject({
@@ -101,6 +116,11 @@ test("Library New game opens a fileDraft and appends on explicit save", async ({
             },
         },
     ]);
+    const [written] = await writes();
+    expect(written?.args.pgn).toContain('[White "Two Knights"]');
+    expect(written?.args.pgn).toContain('[Black "3...Bg4"]');
+    expect((await activeWorkspaceTab(page))?.name).toBe("Two Knights");
+    await expect(page.getByRole("button", { name: "Two Knights", exact: true })).toBeVisible();
 });
 
 test("Save to file or database appends to a repertoire file and rebinds the tab", async ({

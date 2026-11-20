@@ -14,6 +14,7 @@ import {
 } from "@/state/fileFreshness";
 import { defaultTree } from "@/utils/treeReducer";
 import { tabStorage, TabStorageRepository } from "@/state/store/tabStorage";
+import * as tabs from "@/utils/tabs";
 import ConfirmChangesModal from "./ConfirmChangesModal";
 import FileFreshnessGate from "./FileFreshnessGate";
 
@@ -56,6 +57,26 @@ vi.mock("../common/AppModal", () => ({
         {children}
       </div>
     ) : null,
+}));
+
+vi.mock("../boards/GameNameModal", () => ({
+  GameNameFields: ({
+    names,
+    onChange,
+    repertoire,
+  }: {
+    names: import("../boards/gameNames").GameNames;
+    onChange: (names: import("../boards/gameNames").GameNames) => void;
+    repertoire: boolean;
+  }) => (
+    <input
+      aria-label={repertoire ? "line name" : "white"}
+      value={names[repertoire ? names.lineNameKey : "white"]}
+      onChange={(e) =>
+        onChange({ ...names, [repertoire ? names.lineNameKey : "white"]: e.currentTarget.value })
+      }
+    />
+  ),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -714,4 +735,76 @@ test("pending save ignores dialog dismiss and still completes onSaved", async ()
   await dismissDialog();
   expect(onCancel).toHaveBeenCalledOnce();
   expect(host.querySelector('[role="dialog"]')).toBeNull();
+});
+
+test("closing a new line asks for its name and saves it under that name", async () => {
+  const draftTab: Tab = {
+    ...backgroundTab,
+    name: "New game",
+    gameOrigin: {
+      kind: "fileDraft",
+      file: {
+        type: "file",
+        name: "Weiß_Caro Kann.pgn",
+        handle: { id: { id: "repertoire" }, kind: "fileWorkspace" },
+        numGames: 8,
+        metadata: { type: "repertoire", tags: [] },
+        lastModified: 1,
+      },
+    },
+  };
+  jotaiStore.set(tabsAtom, [currentTab, draftTab], currentTab.value);
+  const saved: { white: string; tabName?: string }[] = [];
+  const save = vi.spyOn(tabs, "saveToFile").mockImplementation(async (args) => {
+    saved.push({
+      white: args.store.getState().headers.white,
+      tabName: jotaiStore.get(tabsAtom).find((tab) => tab.value === draftTab.value)?.name,
+    });
+    return "saved";
+  });
+  const onSaved = vi.fn();
+  await act(async () =>
+    root.render(
+      <Provider store={jotaiStore}>
+        <ConfirmChangesModal
+          pendingClose={{ tabId: draftTab.value, store: treeStore }}
+          tab={draftTab}
+          onCancel={vi.fn()}
+          onDiscard={vi.fn()}
+          onSaved={onSaved}
+        />
+      </Provider>,
+    ),
+  );
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="line name"]')!;
+  expect(field.value).toBe("");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      field,
+      "Two Knights",
+    );
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await saveAndClose();
+
+  expect(save).toHaveBeenCalledOnce();
+  expect(saved).toEqual([{ white: "Two Knights", tabName: "Two Knights" }]);
+  expect(onSaved).toHaveBeenCalledOnce();
+});
+
+test("closing a stored game shows no name fields", async () => {
+  await act(async () =>
+    root.render(
+      <Provider store={jotaiStore}>
+        <ConfirmChangesModal
+          pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
+          tab={backgroundTab}
+          onCancel={vi.fn()}
+          onDiscard={vi.fn()}
+          onSaved={vi.fn()}
+        />
+      </Provider>,
+    ),
+  );
+  expect(host.querySelector("input")).toBeNull();
 });

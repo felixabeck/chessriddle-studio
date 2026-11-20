@@ -39,11 +39,8 @@ import {
   isRepertoireTab,
   saveToFile,
   useTabActions,
-  type Tab,
 } from "@/utils/tabs";
-import { getFileGameName } from "@/utils/files";
-import { getGameName, type GameHeaders } from "@/utils/treeReducer";
-import { lineTitleOf } from "@/utils/lineTitle";
+import { applyGameNames } from "./gameNames";
 import GameNameModal from "./GameNameModal";
 import { useBoardCommands } from "./boardCommands";
 import SaveToTargetModal from "./SaveToTargetModal";
@@ -68,22 +65,6 @@ import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
 import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
-
-/** The tab title follows the new names unless the user renamed the tab by hand. A new game keeps
- * its "New game" title until it has a name. */
-function renamedTab(tab: Tab, before: GameHeaders, next: GameHeaders): Tab {
-  const file = getTabDestinationFile(tab);
-  const titleOf = (headers: GameHeaders) =>
-    file ? getFileGameName(headers, file) : getGameName(headers);
-  const named =
-    file?.metadata.type === "repertoire"
-      ? !!lineTitleOf(next).name
-      : getGameName(next) !== "Unknown";
-  if (!named) return tab;
-  if (!isDraftGameOrigin(tab.gameOrigin) && tab.name !== titleOf(before)) return tab;
-  const name = titleOf(next);
-  return name === tab.name ? tab : { ...tab, name };
-}
 
 function BoardAnalysis() {
   const { t } = useTranslation();
@@ -156,9 +137,10 @@ function BoardAnalysis() {
     },
     [updateTab, getTab, currentTab, store, t, notifyError],
   );
-  // A new game is named before its first save; later saves write straight away.
+  // A new game is named before its first save, so a user save of a draft only opens the naming
+  // dialog and its confirmation writes; later saves write straight away.
   const [nameDialog, setNameDialog] = useState<"save" | "rename" | null>(null);
-  const userSaveFile = useCallback(() => {
+  const requestUserSave = useCallback(() => {
     const tab = currentTab && getTab(currentTab.value);
     if (tab && isDraftGameOrigin(tab.gameOrigin)) {
       setNameDialog("save");
@@ -166,20 +148,9 @@ function BoardAnalysis() {
     }
     return saveFile(true);
   }, [saveFile, currentTab, getTab]);
-  const applyGameNames = useCallback(
-    (next: GameHeaders) => {
-      const before = store.getState().headers;
-      if (next.white !== before.white || next.black !== before.black || next.event !== before.event)
-        store.getState().setHeaders(next);
-      if (!currentTab) return;
-      updateTab(currentTab.value, (tab) => renamedTab(tab, before, next));
-    },
-    [store, currentTab, updateTab],
-  );
-
   // File menu → Save / Save to…: handled here with the same handlers as the board controls.
   const openSaveTo = useCallback(() => setSaveToModal(true), []);
-  const saveFromMenu = useCallback(() => void userSaveFile(), [userSaveFile]);
+  const saveFromMenu = useCallback(() => void requestUserSave(), [requestUserSave]);
   useBoardCommands(currentTab?.value, { save: saveFromMenu, saveTo: openSaveTo });
   useAutoSave(store, hasPersistentOrigin && autoSave, saveFile);
 
@@ -283,7 +254,7 @@ function BoardAnalysis() {
 
   useHotkeys(
     withKeyboardOwnership([
-      [keyMap.SAVE_FILE.keys, () => userSaveFile()],
+      [keyMap.SAVE_FILE.keys, () => requestUserSave()],
       [keyMap.CLEAR_SHAPES.keys, () => clearShapes()],
     ]),
   );
@@ -366,7 +337,7 @@ function BoardAnalysis() {
           onConfirm={(next) => {
             const saving = nameDialog === "save";
             setNameDialog(null);
-            applyGameNames(next);
+            applyGameNames({ store, tab: currentTab, updateTab, next });
             if (saving) void saveFile(true);
           }}
         />
@@ -521,7 +492,7 @@ function BoardAnalysis() {
                   editingMode={editingMode}
                   toggleEditingMode={toggleEditingMode}
                   dirty={dirty}
-                  saveFile={userSaveFile}
+                  saveFile={requestUserSave}
                   saveTo={() => setSaveToModal(true)}
                 />
               }

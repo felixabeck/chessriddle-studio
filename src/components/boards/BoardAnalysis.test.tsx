@@ -55,6 +55,7 @@ import * as tabs from "@/utils/tabs";
 import { useHotkeys } from "@mantine/hooks";
 import { MantineProvider } from "@mantine/core";
 import BoardAnalysis from "./BoardAnalysis";
+import { requestBoardCommand } from "./boardCommands";
 import type Board from "./Board";
 import { normalizeError, type AppError } from "@/platform/errors";
 import FileFreshnessGate from "@/components/tabs/FileFreshnessGate";
@@ -75,7 +76,10 @@ const mocks = vi.hoisted(() => ({
   writeDbGame: vi.fn(),
   collectionForDatabase: vi.fn(),
   showNotification: vi.fn(),
-  translate: (key: string) => key,
+  // A destination argument stays visible, so a label that names it can be checked.
+  translate: (key: string, options?: { target?: string }) =>
+    options?.target === undefined ? key : `${key}(${options.target})`,
+  boardControls: undefined as { saveFile?: () => void } | undefined,
   addGameActivation: undefined as (() => void) | undefined,
   realTabs: false,
   compactTabs: false,
@@ -225,7 +229,9 @@ vi.mock("../panels/info/InfoPanel", () => ({
 vi.mock("../common/DetachedEval", () => ({
   default: ({ placement }: { placement: string }) => <span data-engine-slot={placement} />,
 }));
-vi.mock("../common/GameNotation", () => ({ default: () => <span data-game-notation /> }));
+vi.mock("../common/GameNotation", () => ({
+  default: ({ controls }: { controls?: ReactNode }) => <span data-game-notation>{controls}</span>,
+}));
 vi.mock("../common/MoveControls", () => ({ default: () => <span data-move-controls /> }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
 vi.mock("../panels/annotation/AnnotationPanel", () => ({ default: () => null }));
@@ -235,7 +241,12 @@ vi.mock("../panels/database/DatabasePanel", () => ({
 vi.mock("../panels/practice/PracticePanel", () => ({ default: () => null }));
 const board = vi.hoisted(() => vi.fn((_props: React.ComponentProps<typeof Board>) => null));
 vi.mock("./Board", () => ({ default: board }));
-vi.mock("./BoardControls", () => ({ default: () => null }));
+vi.mock("./BoardControls", () => ({
+  default: (props: { saveFile?: () => void }) => {
+    mocks.boardControls = props;
+    return null;
+  },
+}));
 vi.mock("./GameNameModal", () => ({
   default: (props: React.ComponentProps<typeof import("./GameNameModal").default>) => {
     mocks.gameNameModal = props;
@@ -1415,7 +1426,7 @@ describe("BoardAnalysis", () => {
 
       expect(nameModal()?.getAttribute("data-game-name-modal")).toBe("GameNameModal.SaveLine");
       expect(mocks.gameNameModal?.repertoire).toBe(true);
-      expect(mocks.gameNameModal?.confirmLabel).toBe("GameNameModal.SaveTo");
+      expect(mocks.gameNameModal?.confirmLabel).toBe("GameNameModal.SaveTo(Weiß_Caro Kann)");
       expect(mocks.countPgnGames).not.toHaveBeenCalled();
       expect(mocks.writeGame).not.toHaveBeenCalled();
 
@@ -1507,13 +1518,19 @@ describe("BoardAnalysis", () => {
       expect(mocks.writeGame).not.toHaveBeenCalled();
     });
 
-    test("renaming a line keeps a tab title the user chose", async () => {
-      await setOrigin({ kind: "file", gameNumber: 1, file: repertoireFile }, "My tab");
-      await act(async () => board.mock.lastCall![0].onRenameLine!());
-      await act(async () =>
-        mocks.gameNameModal!.onConfirm({ ...treeStore.getState().headers, white: "New name" }),
-      );
-      expect(jotaiStore.get(tabsAtom)[0]?.name).toBe("My tab");
+    test.each([
+      ["the board's Save button", () => mocks.boardControls!.saveFile!()],
+      [
+        "File → Save",
+        () => {
+          requestBoardCommand(jotaiStore, "save");
+        },
+      ],
+    ])("%s on a new line asks for its name before writing", async (_label, save) => {
+      await setOrigin({ kind: "fileDraft", file: repertoireFile });
+      await act(async () => save());
+      expect(mocks.gameNameModal?.title).toBe("GameNameModal.SaveLine");
+      expect(mocks.countPgnGames).not.toHaveBeenCalled();
     });
   });
 

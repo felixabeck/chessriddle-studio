@@ -73,30 +73,43 @@ async function submit() {
   await act(async () => host.querySelector("form")!.requestSubmit());
 }
 
-test("a repertoire line asks for its name and idea, prefilled from the line title", async () => {
-  const { onConfirm } = await render(
-    headersWith({ white: "", event: "Caro-Kann", black: "?" }),
-    true,
-  );
-  expect(input("GameInfo.LineName").value).toBe("Caro-Kann");
-  expect(input("GameInfo.Idea").value).toBe("");
+test("a repertoire line asks for its name and idea, with the cursor in the name", async () => {
+  const { onConfirm } = await render(headersWith({ white: "Main", black: "?" }), true);
   expect([...host.querySelectorAll("label")].map((l) => l.textContent)).toEqual([
     "GameInfo.LineName",
     "GameInfo.Idea",
   ]);
+  expect(input("GameInfo.LineName").value).toBe("Main");
+  expect(input("GameInfo.LineName").hasAttribute("data-autofocus")).toBe(true);
+  expect(input("GameInfo.Idea").value).toBe("");
 
   await type(input("GameInfo.LineName"), "  Two Knights  ");
   await type(input("GameInfo.Idea"), "3...Lg4");
   await submit();
 
-  expect(onConfirm).toHaveBeenCalledWith(
-    headersWith({ white: "Two Knights", event: "Caro-Kann", black: "3...Lg4" }),
-  );
+  expect(onConfirm).toHaveBeenCalledWith(headersWith({ white: "Two Knights", black: "3...Lg4" }));
+});
+
+test("a line named by its Event edits the Event, so clearing it leaves the line untitled", async () => {
+  const headers = headersWith({ white: "", event: "Caro-Kann", black: "?" });
+  const { onConfirm } = await render(headers, true);
+  expect(input("GameInfo.LineName").value).toBe("Caro-Kann");
+  await type(input("GameInfo.LineName"), "");
+  await submit();
+  expect(onConfirm).toHaveBeenCalledWith({ ...headers, event: "" });
+});
+
+test("confirming untouched names keeps every header spelling", async () => {
+  const headers = headersWith({ white: "?", event: "Caro-Kann", black: "?" });
+  const { onConfirm } = await render(headers, true);
+  await submit();
+  expect(onConfirm).toHaveBeenCalledWith(headers);
 });
 
 test("a game asks for its players and event", async () => {
   const { onConfirm } = await render(headersWith({ white: "?", black: "?", event: "?" }), false);
   expect(input("Fen.White").value).toBe("");
+  expect(input("Fen.White").hasAttribute("data-autofocus")).toBe(true);
   expect(input("Databases.Game.Event").value).toBe("");
 
   await type(input("Fen.White"), "Carlsen");

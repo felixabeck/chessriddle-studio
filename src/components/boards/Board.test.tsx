@@ -219,6 +219,21 @@ test.each(["white", "black"] as const)(
   },
 );
 
+test("a repertoire title opens the naming dialog, with Untitled line for an unnamed line", async () => {
+  const onRenameLine = vi.fn();
+  tree.getState().setHeaders({ ...tree.getState().headers, white: "", event: "", black: "" });
+  await render({ repertoire: true, onRenameLine });
+  const bar = repertoireBar();
+  expect(bar.name).toBe("");
+  expect(bar.placeholder).toBe("GameInfo.UntitledLine");
+  expect(bar.onNameClick).toBe(onRenameLine);
+});
+
+test("a view-only repertoire board does not rename its line", async () => {
+  await render({ repertoire: true, onRenameLine: vi.fn(), viewOnly: true });
+  expect(repertoireBar().onNameClick).toBeUndefined();
+});
+
 test("repertoire bars use trimmed line titles with the event fallback for an unknown White header", async () => {
   tree.getState().setHeaders({
     ...tree.getState().headers,

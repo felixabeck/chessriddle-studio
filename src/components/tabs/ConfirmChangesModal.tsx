@@ -5,10 +5,24 @@ import { useTranslation } from "react-i18next";
 import { activeTabAtom, currentTabAtom, tabsAtom, updateTabById } from "@/state/atoms";
 import { normalizeError } from "@/platform/errors";
 import type { TreeStore } from "@/state/store/tree";
-import { sameTabOwner, saveToFile, type Tab, type UpdateTab } from "@/utils/tabs";
+import {
+  isDraftGameOrigin,
+  isRepertoireTab,
+  sameTabOwner,
+  saveToFile,
+  type Tab,
+  type UpdateTab,
+} from "@/utils/tabs";
 import { getFileFreshness, saveFileConflictVersion, useFileFreshness } from "@/state/fileFreshness";
 import { TreeStateContext } from "../common/TreeStateContext";
 import AppModal from "../common/AppModal";
+import { GameNameFields } from "../boards/GameNameModal";
+import {
+  applyGameNames,
+  initialGameNames,
+  withGameNames,
+  type GameNames,
+} from "../boards/gameNames";
 
 function ConfirmChangesModal({
   pendingClose,
@@ -47,6 +61,14 @@ function ConfirmChangesModal({
   const targetStore = pendingClose?.store ?? contextStore;
   const modalOpen = pendingClose !== undefined ? pendingClose !== null : (opened ?? false);
   const freshness = useFileFreshness(targetTab?.value ?? "");
+  // A new game is named before its first save here too, with the fields of the Save dialog.
+  const naming = !!targetTab && isDraftGameOrigin(targetTab.gameOrigin) && !!targetStore;
+  const [names, setNames] = useState<GameNames | null>(null);
+  if (modalOpen && naming && names === null)
+    setNames(initialGameNames(targetStore!.getState().headers));
+  if (!modalOpen && names !== null) setNames(null);
+  const writeTab: UpdateTab =
+    updateTab ?? ((tabId, update, onAdmitted) => updateTabById(setTabs, tabId, update, onAdmitted));
 
   const cancel = () => {
     if (pendingClose !== undefined) onCancel?.();
@@ -100,10 +122,15 @@ function ConfirmChangesModal({
       }
       return;
     }
+    if (naming && names)
+      applyGameNames({
+        store: targetStore,
+        tab: targetTab,
+        updateTab: writeTab,
+        next: withGameNames(targetStore.getState().headers, names),
+      });
     const result = await saveToFile({
-      updateTab:
-        updateTab ??
-        ((tabId, update, onAdmitted) => updateTabById(setTabs, tabId, update, onAdmitted)),
+      updateTab: writeTab,
       getTab: (tabId) => jotaiStore.get(tabsAtom).find((candidate) => candidate.value === tabId),
       tab: targetTab,
       store: targetStore,
@@ -152,6 +179,13 @@ function ConfirmChangesModal({
           <Text>{t("Tab.UnsavedChangesConfirm")}</Text>
           {saveMessage && <Text c="danger">{saveMessage}</Text>}
         </div>
+        {naming && names && (
+          <GameNameFields
+            names={names}
+            onChange={setNames}
+            repertoire={isRepertoireTab(targetTab)}
+          />
+        )}
 
         <Group justify="right">
           <Button variant="default" onClick={discard} disabled={savePending}>
