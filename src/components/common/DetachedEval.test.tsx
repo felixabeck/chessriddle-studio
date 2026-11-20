@@ -1,4 +1,5 @@
 import { act } from "react";
+import { getDefaultZIndex } from "@mantine/core";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createTreeStore } from "@/state/store/tree";
 import {
@@ -373,6 +374,9 @@ test("DetachedEval flips the preview above a line at the window bottom, without 
   expect(preview.style.top).toBe(`${window.innerHeight - 240}px`);
   expect(preview.style.left).toBe("40px");
   expect(preview.style.pointerEvents).toBe("none");
+  // Opened above a pinned line below the board, it overlaps the main board and must stack over
+  // its chessground layers (z-index up to 11).
+  expect(preview.style.zIndex).toBe(String(getDefaultZIndex("popover")));
   tree.dispose();
 });
 

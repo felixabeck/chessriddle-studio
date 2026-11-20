@@ -1,5 +1,5 @@
 import type { Key } from "@lichess-org/chessground/types";
-import { Box, Portal } from "@mantine/core";
+import { Box, getDefaultZIndex, Portal } from "@mantine/core";
 import type { Color } from "chessops";
 import { chessgroundMove } from "chessops/compat";
 import { makeFen } from "chessops/fen";
@@ -155,7 +155,9 @@ export function useEngineLinePreview({
         w={PREVIEW_SIZE}
         // The board may overlap the hovered move (a clamped placement); it must not take
         // the pointer from it, or the line's mouse-leave would dismiss the board.
-        style={{ ...placement, pointerEvents: "none" }}
+        // It opens above a line below the board (the pinned engine) and so over the main
+        // board, whose positioned chessground layers would otherwise paint over it.
+        style={{ ...placement, pointerEvents: "none", zIndex: getDefaultZIndex("popover") }}
         pos="fixed"
       >
         <Chessground

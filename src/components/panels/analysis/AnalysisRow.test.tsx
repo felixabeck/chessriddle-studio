@@ -40,6 +40,7 @@ vi.mock("@mantine/core", () => {
     Tooltip: ({ label, children }: any) => <div title={label}>{children}</div>,
     Portal: Container,
     rem: (value: number) => value,
+    getDefaultZIndex: () => 300,
     Table: { Tr: Container, Td: Container, Th: Container },
   };
 });

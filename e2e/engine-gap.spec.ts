@@ -796,6 +796,36 @@ test("engine-gap: the pinned engine below the board stays inside the left pane a
     const above = await boardSize();
     await belowBoard();
     await expectFits();
+
+    // A preview from the last line has no room below it, so it opens upward over the board and
+    // must paint in front of it, not behind its chessground layers.
+    await detached.getByRole("button", { name: "e5", exact: true }).last().hover();
+    const preview = page.getByTestId("engine-line-preview");
+    await expect(preview.locator("cg-board")).toBeVisible();
+    const boardSurface = await surface.elementHandle();
+    const previewOnTop = await preview.evaluate((node: HTMLElement, board) => {
+        const a = node.getBoundingClientRect();
+        const b = (board as HTMLElement).getBoundingClientRect();
+        const overlap = {
+            left: Math.max(a.left, b.left),
+            right: Math.min(a.right, b.right),
+            top: Math.max(a.top, b.top),
+            bottom: Math.min(a.bottom, b.bottom),
+        };
+        if (overlap.right <= overlap.left || overlap.bottom <= overlap.top) return "no overlap";
+        // Hit testing skips `pointer-events: none`; enable it just for this synchronous probe.
+        node.style.pointerEvents = "auto";
+        const hit = document.elementFromPoint(
+            (overlap.left + overlap.right) / 2,
+            (overlap.top + overlap.bottom) / 2,
+        );
+        node.style.pointerEvents = "none";
+        return hit !== null && node.contains(hit) ? "preview" : (hit?.tagName ?? "nothing");
+    }, boardSurface);
+    expect(previewOnTop).toBe("preview");
+    await page.mouse.move(0, 0);
+    await expect(preview).toHaveCount(0);
+
     const reserve = async () => (await bottom(detached)) - (await bottom(card));
     await expect
         .poll(async () => above - (await boardSize()) - (await reserve()))
