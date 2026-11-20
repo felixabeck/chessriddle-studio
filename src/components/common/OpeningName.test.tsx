@@ -22,7 +22,7 @@ vi.mock("@/platform/errors", async (importOriginal) => ({
   warnSafely: mocks.warnSafely,
 }));
 
-import OpeningName from "./OpeningName";
+import OpeningName, { OPENING_NAME_CACHE_CAPACITY, openingNameCache } from "./OpeningName";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -56,6 +56,8 @@ beforeEach(() => {
   document.body.append(host);
   root = createRoot(host);
   store = createTreeStore();
+  // The cache is module-wide, as in the app; it outlives remounts inside one test.
+  openingNameCache.clear();
   mocks.getOpening.mockReset();
   mocks.warnSafely.mockReset();
   unhandledReasons = [];
@@ -69,14 +71,16 @@ afterEach(async () => {
   store.dispose();
 });
 
-async function renderOpeningName() {
-  await act(async () =>
-    root.render(
-      <TreeStateContext.Provider value={store}>
-        <OpeningName />
-      </TreeStateContext.Provider>,
-    ),
+function openingNameTree(visible = true) {
+  return (
+    <TreeStateContext.Provider value={store}>
+      {visible && <OpeningName />}
+    </TreeStateContext.Provider>
   );
+}
+
+async function renderOpeningName(visible = true) {
+  await act(async () => root.render(openingNameTree(visible)));
 }
 
 async function flushPromises() {
@@ -155,4 +159,70 @@ test("ignores a stale rejected opening lookup after a newer success", async () =
   expect(host.textContent).toBe("Sicilian Defense");
   expect(mocks.warnSafely).not.toHaveBeenCalled();
   expect(unhandledReasons).toEqual([]);
+});
+
+test("a remount with the same line renders the cached name at once without a second lookup", async () => {
+  mocks.getOpening.mockResolvedValue("Ruy Lopez");
+
+  await renderOpeningName();
+  expect(host.textContent).toBe("Ruy Lopez");
+
+  await renderOpeningName(false);
+  expect(host.textContent).toBe("");
+
+  // Synchronous render, no act flush of pending promises: the first committed frame has the name.
+  act(() => root.render(openingNameTree()));
+  expect(host.textContent).toBe("Ruy Lopez");
+  await flushPromises();
+  expect(mocks.getOpening).toHaveBeenCalledTimes(1);
+});
+
+test("a different line does not show the previous line's name while its lookup is pending", async () => {
+  const second = deferred<string>();
+  mocks.getOpening.mockResolvedValueOnce("Ruy Lopez").mockReturnValueOnce(second.promise);
+
+  await renderOpeningName();
+  expect(host.textContent).toBe("Ruy Lopez");
+
+  await act(async () => {
+    store.setState(defaultTree(ENDGAME_FEN));
+  });
+  expect(host.textContent).toBe("");
+
+  await act(async () => {
+    second.resolve("Sicilian Defense");
+    await second.promise;
+  });
+  expect(host.textContent).toBe("Sicilian Defense");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(2);
+});
+
+test("the cache keeps at most its capacity of lines and looks an evicted line up again", async () => {
+  mocks.getOpening.mockResolvedValue("Ruy Lopez");
+  const lineFen = (n: number) => `8/8/8/4k3/8/8/4K3/8 w - - ${n} 1`;
+
+  await renderOpeningName();
+  for (let n = 0; n < OPENING_NAME_CACHE_CAPACITY; n++) {
+    await act(async () => {
+      store.setState(defaultTree(lineFen(n)));
+    });
+    await flushPromises();
+  }
+  expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 1);
+  expect(openingNameCache.entries.size).toBe(OPENING_NAME_CACHE_CAPACITY);
+
+  // The first line was the oldest of capacity + 1 and was dropped.
+  await act(async () => {
+    store.setState(defaultTree());
+  });
+  await flushPromises();
+  expect(host.textContent).toBe("Ruy Lopez");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 2);
+
+  // The most recent line is still cached.
+  await act(async () => {
+    store.setState(defaultTree(lineFen(OPENING_NAME_CACHE_CAPACITY - 1)));
+  });
+  expect(host.textContent).toBe("Ruy Lopez");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 2);
 });

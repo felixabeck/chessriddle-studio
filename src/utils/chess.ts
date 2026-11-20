@@ -413,7 +413,8 @@ export function parseKeyboardMove(san: string, fen: string) {
     return null;
 }
 
-export async function getOpening(root: TreeNode, position: number[]): Promise<string> {
+/** The full FENs from the root along `position`, stopping at the first index with no such child. */
+export function openingLineFens(root: TreeNode, position: number[]): string[] {
     const fens: string[] = [root.fen];
     let currentNode = root;
 
@@ -425,7 +426,11 @@ export async function getOpening(root: TreeNode, position: number[]): Promise<st
         fens.push(currentNode.fen);
     }
 
-    return await tauri.getOpeningFromFens(fens);
+    return fens;
+}
+
+export async function getOpening(root: TreeNode, position: number[]): Promise<string> {
+    return await tauri.getOpeningFromFens(openingLineFens(root, position));
 }
 
 function innerParsePGN(

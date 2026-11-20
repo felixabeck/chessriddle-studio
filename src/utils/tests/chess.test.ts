@@ -17,9 +17,11 @@ import {
 import {
     getLastMainlinePosition,
     getGameStats,
+    getOpening,
     getPGN,
     hasMorePriority,
     headersToPGN,
+    openingLineFens,
     parsePGN,
     parsePGNWithLossReport,
     parseStartHeader,
@@ -42,7 +44,7 @@ import {
     type TreeNode,
 } from "../treeReducer";
 
-const mocks = vi.hoisted(() => ({ lexPgn: vi.fn() }));
+const mocks = vi.hoisted(() => ({ lexPgn: vi.fn(), getOpeningFromFens: vi.fn() }));
 
 test("effective game end resolves the last flagged node on a 20,000-node mainline", () => {
     const tree = defaultTree();
@@ -467,7 +469,7 @@ test("clean variations, NAGs, comments and verbatim starting commands are lossle
 
 vi.mock("@/platform/tauri", () => ({
     cancellationError: () => new Error("cancelled"),
-    tauri: { lexPgn: mocks.lexPgn },
+    tauri: { lexPgn: mocks.lexPgn, getOpeningFromFens: mocks.getOpeningFromFens },
 }));
 
 function tokens(fen: string, san: string): Token[] {
@@ -2180,4 +2182,34 @@ test("a diagram marker survives beside drawings and on the root, and stays verba
     expect(getPGN(tree.root, { ...ALL_MARKUPS, comments: false, headers: null })).not.toContain(
         "[#]",
     );
+});
+
+function openingTestTree() {
+    const tree = defaultTree();
+    const e4 = createNode({ fen: "e4-fen", move: parseUci("e2e4")!, san: "e4", halfMoves: 1 });
+    const d4 = createNode({ fen: "d4-fen", move: parseUci("d2d4")!, san: "d4", halfMoves: 1 });
+    const e5 = createNode({ fen: "e5-fen", move: parseUci("e7e5")!, san: "e5", halfMoves: 2 });
+    e4.children.push(e5);
+    tree.root.children.push(e4, d4);
+    return tree.root;
+}
+
+test("openingLineFens follows the path's variations from the root", () => {
+    const root = openingTestTree();
+    expect(openingLineFens(root, [])).toEqual([INITIAL_FEN]);
+    expect(openingLineFens(root, [0, 0])).toEqual([INITIAL_FEN, "e4-fen", "e5-fen"]);
+    expect(openingLineFens(root, [1])).toEqual([INITIAL_FEN, "d4-fen"]);
+});
+
+test("openingLineFens stops at the first out-of-range index", () => {
+    const root = openingTestTree();
+    expect(openingLineFens(root, [2, 0])).toEqual([INITIAL_FEN]);
+    expect(openingLineFens(root, [0, 1, 0])).toEqual([INITIAL_FEN, "e4-fen"]);
+});
+
+test("getOpening sends exactly the opening line's FENs", async () => {
+    const root = openingTestTree();
+    mocks.getOpeningFromFens.mockResolvedValueOnce("King's Pawn Game");
+    await expect(getOpening(root, [0, 0, 3])).resolves.toBe("King's Pawn Game");
+    expect(mocks.getOpeningFromFens).toHaveBeenCalledExactlyOnceWith(openingLineFens(root, [0, 0]));
 });
