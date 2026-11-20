@@ -36,7 +36,7 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
   const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map());
   const [currentTab, setCurrentTab] = useOwnerTab();
   const tabFile = getTabFile(currentTab);
-  const isReportoire = isRepertoireTab(currentTab);
+  const isRepertoire = isRepertoireTab(currentTab);
   const derivedTabName = tabFile ? getFileGameName(headers, tabFile) : undefined;
   const previousTabTitle = useRef({ tab: currentTab, store, name: derivedTabName });
 
@@ -72,7 +72,7 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
       <ScrollArea pb="sm">
         <FileInfo setGames={setGames} />
         <Stack px="sm">
-          <GameInfo headers={headers} simplified={isReportoire} />
+          <GameInfo headers={headers} simplified={isRepertoire} />
           <FenSearch />
           <PgnInput />
 

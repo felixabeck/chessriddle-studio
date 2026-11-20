@@ -67,7 +67,8 @@ function ConfirmChangesModal({
   if (modalOpen && naming && names === null)
     setNames(initialGameNames(targetStore!.getState().headers));
   if (!modalOpen && names !== null) setNames(null);
-  const writeTab: UpdateTab =
+  // Admission needs the workspace's committed tab and its callback, as BoardAnalysis passes them.
+  const updateTabs: UpdateTab =
     updateTab ?? ((tabId, update, onAdmitted) => updateTabById(setTabs, tabId, update, onAdmitted));
 
   const cancel = () => {
@@ -126,11 +127,11 @@ function ConfirmChangesModal({
       applyGameNames({
         store: targetStore,
         tab: targetTab,
-        updateTab: writeTab,
+        updateTab: updateTabs,
         next: withGameNames(targetStore.getState().headers, names),
       });
     const result = await saveToFile({
-      updateTab: writeTab,
+      updateTab: updateTabs,
       getTab: (tabId) => jotaiStore.get(tabsAtom).find((candidate) => candidate.value === tabId),
       tab: targetTab,
       store: targetStore,

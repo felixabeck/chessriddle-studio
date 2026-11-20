@@ -74,6 +74,7 @@ const mocks = vi.hoisted(() => ({
   issuePgnExportDestination: vi.fn(),
   readGame: vi.fn(),
   writeDbGame: vi.fn(),
+  insertDbGame: vi.fn(),
   collectionForDatabase: vi.fn(),
   showNotification: vi.fn(),
   // A destination argument stays visible, so a label that names it can be checked.
@@ -178,6 +179,7 @@ vi.mock("@/platform/tauri", async () => {
       issuePgnExportDestination: mocks.issuePgnExportDestination,
       readGame: mocks.readGame,
       writeDbGame: mocks.writeDbGame,
+      insertDbGame: mocks.insertDbGame,
       collectionForDatabase: mocks.collectionForDatabase,
       reconcileEngineAttachments: vi.fn().mockResolvedValue(undefined),
     },
@@ -1476,6 +1478,7 @@ describe("BoardAnalysis", () => {
     test("a new database game is named by its players and saved with a plain Save", async () => {
       mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
       mocks.writeDbGame.mockReset();
+      mocks.insertDbGame.mockReset().mockResolvedValue({ id: 501, stamp: "c".repeat(64) });
       await setOrigin({
         kind: "databaseDraft",
         database: { id: { id: "database-token" }, kind: "database" },
@@ -1492,6 +1495,8 @@ describe("BoardAnalysis", () => {
         }),
       );
       expect(jotaiStore.get(tabsAtom)[0]?.name).toBe("Carlsen - Nakamura");
+      await vi.waitFor(() => expect(mocks.insertDbGame).toHaveBeenCalledOnce());
+      expect(mocks.insertDbGame.mock.calls[0]?.[1]).toContain('[White "Carlsen"]');
     });
 
     test("a stored game saves without asking", async () => {
@@ -1531,6 +1536,10 @@ describe("BoardAnalysis", () => {
       await act(async () => save());
       expect(mocks.gameNameModal?.title).toBe("GameNameModal.SaveLine");
       expect(mocks.countPgnGames).not.toHaveBeenCalled();
+      await act(async () =>
+        mocks.gameNameModal!.onConfirm({ ...treeStore.getState().headers, white: "Named" }),
+      );
+      await vi.waitFor(() => expect(mocks.countPgnGames).toHaveBeenCalledOnce());
     });
   });
 

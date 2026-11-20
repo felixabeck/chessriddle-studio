@@ -1,4 +1,5 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
+import { initializeI18n } from "@/i18n";
 import { createTreeStore } from "@/state/store/tree";
 import type { Tab } from "@/utils/tabs";
 import { defaultTree, type GameHeaders } from "@/utils/treeReducer";
@@ -90,5 +91,24 @@ describe("game names", () => {
         );
         // Clearing a stored line's name falls back to the file's name, as its title does.
         expect(apply(stored, { white: "Old" }, { white: "" }).tab.name).toBe("Weiß_Caro Kann");
+    });
+});
+
+describe("a new game already named in the Info panel", () => {
+    // The New game tab title is the translated default, as NewGameButton creates it.
+    beforeAll(() => initializeI18n());
+
+    test("takes that name when it is saved unchanged", () => {
+        const draft = tab("New game", { kind: "fileDraft", file: file("repertoire") });
+        expect(apply(draft, { white: "Two Knights" }, { white: "Two Knights" }).tab.name).toBe(
+            "Two Knights",
+        );
+    });
+
+    test("keeps a tab title the user chose", () => {
+        const draft = tab("My tab", { kind: "fileDraft", file: file("repertoire") });
+        expect(apply(draft, { white: "Two Knights" }, { white: "Two Knights" }).tab.name).toBe(
+            "My tab",
+        );
     });
 });

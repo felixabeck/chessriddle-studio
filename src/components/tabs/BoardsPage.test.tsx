@@ -18,6 +18,7 @@ const fixtures = vi.hoisted(() => ({
     pendingClose: { tabId: string } | null;
     onCancel: () => void;
     onDiscard: () => void;
+    updateTab?: unknown;
   },
   createTreeStore: vi.fn<(...args: any[]) => any>(() => ({
     dispose: fixtures.dispose,
@@ -1387,6 +1388,9 @@ test("dirty confirmation leaves analysis eligible until discard establishes clos
     await Promise.resolve();
   });
   expect(fixtures.confirm?.pendingClose?.tabId).toBe("current");
+  // The prompt keeps its own admission-capable tab writer: a first save from it must admit the
+  // stored game through the workspace commit and its callback.
+  expect(fixtures.confirm?.updateTab).toBeUndefined();
   expect(store.get(closingTabsAtom).has("current")).toBe(false);
   expect(store.get(tabsAtom).some((candidate) => candidate.value === "current")).toBe(true);
   expect(fixtures.killEngines).not.toHaveBeenCalled();

@@ -144,13 +144,13 @@ function BoardAnalysis() {
     const tab = currentTab && getTab(currentTab.value);
     if (tab && isDraftGameOrigin(tab.gameOrigin)) {
       setNameDialog("save");
-      return Promise.resolve();
+      return;
     }
-    return saveFile(true);
+    void saveFile(true);
   }, [saveFile, currentTab, getTab]);
   // File menu → Save / Save to…: handled here with the same handlers as the board controls.
   const openSaveTo = useCallback(() => setSaveToModal(true), []);
-  const saveFromMenu = useCallback(() => void requestUserSave(), [requestUserSave]);
+  const saveFromMenu = requestUserSave;
   useBoardCommands(currentTab?.value, { save: saveFromMenu, saveTo: openSaveTo });
   useAutoSave(store, hasPersistentOrigin && autoSave, saveFile);
 

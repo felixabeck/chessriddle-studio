@@ -1,6 +1,7 @@
 import type { TreeStore } from "@/state/store/tree";
 import { getFileGameName } from "@/utils/files";
-import { titleValue } from "@/utils/lineTitle";
+import i18n from "i18next";
+import { lineTitleOf, titleValue } from "@/utils/lineTitle";
 import { getTabDestinationFile, isDraftGameOrigin, type Tab, type UpdateTab } from "@/utils/tabs";
 import { getGameName, type GameHeaders } from "@/utils/treeReducer";
 
@@ -36,17 +37,21 @@ export function withGameNames(headers: GameHeaders, names: GameNames): GameHeade
 }
 
 /** The tab title follows a changed name, as title editing in the Info panel does. A new game
- * keeps its "New game" title until it has a name. */
+ * keeps its "New game" title until it has a name, and takes the name it is saved under even
+ * when that name was set earlier in the Info panel. */
 function retitledTab(tab: Tab, before: GameHeaders, next: GameHeaders): Tab {
     const file = getTabDestinationFile(tab);
     const titleOf = (headers: GameHeaders) =>
         file ? getFileGameName(headers, file) : getGameName(headers);
-    if (titleOf(next) === titleOf(before)) return tab;
+    const draft = isDraftGameOrigin(tab.gameOrigin);
     const named =
         file?.metadata.type === "repertoire"
-            ? !!titleValue(next.white) || !!titleValue(next.event)
+            ? !!lineTitleOf(next).name
             : getGameName(next) !== "Unknown";
-    if (!named && (isDraftGameOrigin(tab.gameOrigin) || !file)) return tab;
+    const untitledDraft =
+        draft && tab.name === i18n.t("Databases.NewGame", { defaultValue: "New game" });
+    if (titleOf(next) === titleOf(before) && !(named && untitledDraft)) return tab;
+    if (!named && (draft || !file)) return tab;
     const name = titleOf(next);
     return name === tab.name ? tab : { ...tab, name };
 }

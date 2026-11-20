@@ -503,13 +503,6 @@ export default function BoardsPage() {
       <ConfirmChangesModal
         pendingClose={pendingClose}
         tab={tabs.find((tab) => tab.value === pendingClose?.tabId)}
-        updateTab={(tabId, update) =>
-          setTabs((previous) =>
-            previous.map((tab) =>
-              tab.value === tabId ? (typeof update === "function" ? update(tab) : update) : tab,
-            ),
-          )
-        }
         onCancel={() => {
           pendingClose?.store.dispose();
           setPendingClose(null);
