@@ -27388,7 +27388,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### Four exports outlived their last user: `selectedDatabaseAtom`, `CompleteGame`, `Speed` and `SetCurrentTab`
 
-* **ID:** f-20261119-07 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-07 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`, dead-export scan after f-20261111-73
 * **Where:** `src/state/atoms.ts:1043-1044` (`selectedDatabaseAtom`, plus the `SuccessDatabaseInfo` import at `:38` that only it uses), `src/utils/db.ts:195-198` (`CompleteGame`), `src/utils/db.ts:200-207` (`Speed`), `src/utils/tabs.ts:158` (`SetCurrentTab`).
@@ -27397,6 +27397,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** delete the four declarations and the now-unused `SuccessDatabaseInfo` import in `atoms.ts`. `pnpm exec tsc --noEmit` is the guard. No behaviour change.
 * **Proof:** at origin/master `7086448c7`, `rg -n -w "selectedDatabaseAtom|CompleteGame|SetCurrentTab" src e2e scripts` prints only the three declarations, and `rg -l -w Speed src` lists only `src/utils/db.ts` (the declaration). The candidates came from a scan of every `export` in `src` (1433) for a word-boundary use outside its file; the rest of that list are names used inside their own module (needlessly exported, not dead) and are not part of this finding.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+* **Handled (2026-11-20, drain):** `fb8b7ce49`. Deleted `selectedDatabaseAtom` and its now-unused `SuccessDatabaseInfo` import (`atoms.ts`), `CompleteGame` and `Speed` (`utils/db.ts`), and `SetCurrentTab` (`utils/tabs.ts`). A re-check before deletion found no use outside each declaration (`rg -w` over `src`, `e2e`, `scripts`). `pnpm lint` (tsgo + oxlint) is green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5be6974f246e1126baa56ae19d134baa0ae31100754f54ed46425b657860abbf","header_sha256":"0825ddb361aee4966820f06affb186a9ff6fc954d4664c422b88954c6f92206c","header_status":"handled","input_sha256":"5035e347849bb111184989b7417db15c36032d57f6fb86c58d48c336acc3f71d","kind":"mutation-receipt","operation":"4231c226c0ee576a8448b72d3717919e1f8c11769b8159e52182ee506f71d2cf","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-07"],"target":"f-20261119-07","v":1} -->
 
 ---
 
