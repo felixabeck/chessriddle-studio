@@ -386,13 +386,14 @@ export function RootLayout() {
   const showTopBar = renderTopBar(isNative, windowPlatform);
 
   // The native menu fires its own accelerator; binding the key there too would toggle twice.
+  // A window command, so it works from any field or dialog; a held key toggles once.
   useHotkeys(
     fullscreenShortcut(isMacOS),
-    () => {
+    (event) => {
+      if (event.repeat) return;
       void menuCallbacks.toggleFullscreen();
     },
     {
-      ...backgroundHotkeyOptions,
       enabled: showTopBar,
       enableOnFormTags: true,
       enableOnContentEditable: true,

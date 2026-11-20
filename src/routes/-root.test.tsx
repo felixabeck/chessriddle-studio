@@ -508,13 +508,13 @@ const drawsOwnTopBar = menuWindowPlatform(String(import.meta.env.VITE_PLATFORM))
 
 async function renderWithWindow(isNative: boolean) {
   const fullscreen = { value: false };
-  const window = {
+  const appWindow = {
     isFullscreen: vi.fn(async () => fullscreen.value),
     setFullscreen: vi.fn(async (next: boolean) => {
       fullscreen.value = next;
     }),
   };
-  vi.mocked(getCurrentWindow).mockReturnValue(window as never);
+  vi.mocked(getCurrentWindow).mockReturnValue(appWindow as never);
   getDefaultStore().set(nativeBarAtom, isNative);
   const host = document.createElement("div");
   document.body.append(host);
@@ -522,7 +522,7 @@ async function renderWithWindow(isNative: boolean) {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   await act(async () => root.render(<RootLayout />));
   return {
-    window,
+    appWindow,
     async unmount() {
       await act(async () => root.unmount());
       host.remove();
@@ -532,43 +532,80 @@ async function renderWithWindow(isNative: boolean) {
 }
 
 test.runIf(drawsOwnTopBar)(
-  "F11 toggles full screen with the in-app menu bar, also from a text field",
+  "F11 toggles full screen with the in-app menu bar from the page, a text field, a rich-text editor and a dialog",
   async () => {
-    const { window, unmount } = await renderWithWindow(false);
+    const { appWindow, unmount } = await renderWithWindow(false);
     const input = document.createElement("input");
-    document.body.append(input);
+    const editor = document.createElement("div");
+    editor.contentEditable = "true";
+    // jsdom does not implement isContentEditable, which react-hotkeys-hook reads.
+    Object.defineProperty(editor, "isContentEditable", { value: true });
+    document.body.append(input, editor);
+    const targets: { name: string; focus: () => HTMLElement | undefined }[] = [
+      { name: "page", focus: () => undefined },
+      { name: "input", focus: () => (input.focus(), input) },
+      { name: "contenteditable", focus: () => (editor.focus(), editor) },
+      { name: "dialog", focus: () => focusedDialogButton().button },
+    ];
     try {
-      let keydown: KeyboardEvent | undefined;
-      await act(async () => {
-        keydown = press("F11");
-      });
-      await vi.waitFor(() => expect(window.setFullscreen).toHaveBeenLastCalledWith(true));
-      expect(keydown?.defaultPrevented).toBe(true);
-
-      input.focus();
-      await act(async () => {
-        press("F11", { target: input });
-      });
-      await vi.waitFor(() => expect(window.setFullscreen).toHaveBeenLastCalledWith(false));
-      expect(window.setFullscreen).toHaveBeenCalledTimes(2);
+      let expected = false;
+      for (const { name, focus } of targets) {
+        const target = focus();
+        let keydown: KeyboardEvent | undefined;
+        await act(async () => {
+          keydown = press("F11", target ? { target } : {});
+        });
+        expected = !expected;
+        await vi.waitFor(() =>
+          expect({ name, lastCall: appWindow.setFullscreen.mock.lastCall }).toEqual({
+            name,
+            lastCall: [expected],
+          }),
+        );
+        expect({ name, prevented: keydown?.defaultPrevented }).toEqual({ name, prevented: true });
+      }
+      expect(appWindow.setFullscreen).toHaveBeenCalledTimes(targets.length);
     } finally {
+      document.querySelectorAll('[aria-modal="true"]').forEach((dialog) => dialog.remove());
       input.remove();
+      editor.remove();
       await unmount();
     }
   },
 );
 
-test.runIf(drawsOwnTopBar)(
-  "F11 is left to the native menu's accelerator when the native bar is on",
-  async () => {
-    const { window, unmount } = await renderWithWindow(true);
-    try {
-      await act(async () => {
-        expect(press("F11").defaultPrevented).toBe(false);
-      });
-      expect(window.setFullscreen).not.toHaveBeenCalled();
-    } finally {
-      await unmount();
-    }
-  },
-);
+test.runIf(drawsOwnTopBar)("holding F11 toggles full screen once", async () => {
+  const { appWindow, unmount } = await renderWithWindow(false);
+  try {
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "F11", code: "F11", bubbles: true }),
+      );
+      for (let i = 0; i < 3; i++) {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "F11", code: "F11", repeat: true, bubbles: true }),
+        );
+      }
+      document.dispatchEvent(
+        new KeyboardEvent("keyup", { key: "F11", code: "F11", bubbles: true }),
+      );
+    });
+    await vi.waitFor(() => expect(appWindow.setFullscreen).toHaveBeenCalledWith(true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(appWindow.setFullscreen).toHaveBeenCalledTimes(1);
+  } finally {
+    await unmount();
+  }
+});
+
+test("F11 is left to the native menu's accelerator when the native bar is on", async () => {
+  const { appWindow, unmount } = await renderWithWindow(true);
+  try {
+    await act(async () => {
+      expect(press("F11").defaultPrevented).toBe(false);
+    });
+    expect(appWindow.setFullscreen).not.toHaveBeenCalled();
+  } finally {
+    await unmount();
+  }
+});
