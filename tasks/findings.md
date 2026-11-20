@@ -27890,3 +27890,19 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** measure the test's cost (spawned processes, repository fixtures created per case) and remove it at its source, as in f-20261109-08; d-20260901-36 rejects raising the timeout. Lens: review-tests.
 * **Related:** f-20261115-27 (handled; same push-gate symptom, different cause).
 * **Found by:** Claude Code drain session f45e25ea-dbe9-473f-a401-c199e5b3579e
+
+---
+
+## 2026-11-20 — filed through the inbox spool
+
+### Naming a new line on first save intermittently ends on "This game or its file is no longer available" in the browser suite
+
+* **ID:** f-20261120-10 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes (failed on CI in the notation-diagrams push, run 44772186085 on aedd9206e; the test and the save path came with the new-game name dialog, da23a6b41..5177789e8)
+* **Where:** `e2e/new-game-to-file.spec.ts:51` ("Library New game opens a fileDraft, asks for the line name and appends on explicit save"), last assertion at `:123`; the message is set in `src/components/tabs/FileFreshnessGate.tsx:473-481` (`sameGameIdentity` false → `FileFreshness.GameReplaced`).
+* **Defect:** after the naming dialog saves the line, the tab sometimes shows "This game or its file is no longer available. The file now has a different game at this position." instead of the board. The write itself is correct (the `write_game` assertions pass, the tab is named "Two Knights"); the freshness reconcile then judges the tab against a game with different headers. Whether this is only an ordering race against the mocked `read_file_game` or also reachable with a real file is not established.
+* **Failure scenario:** measured without the notation-diagrams change, on d52695834 in the e2e container: `pnpm test:e2e:container -- --project=new-game-to-file --repeat-each=4` → 1 of 4 runs of the test failed at `:123`. With the change: 2 of 3. On CI it failed once on aedd9206e and passed on 5177789e8 and d52695834. The CI error context shows the tab panel with the two messages and the buttons "Open the game now at this position", "Save my version as a new game…", "Close tab".
+* **Fix:** find which reconcile runs against the pre-save identity (the tab's headers change to the entered names while a reconcile captured before the save is still in flight, or the reconcile after the rebind reads before the mock serves the appended game) and make the save path's own stamp win; then decide whether the product can reach it.
+* **Proof:** the repeat command above green at `--repeat-each=20`.
+* **Found by:** Claude Code (Fable 5.2), notation-diagrams build, 2026-11-20
