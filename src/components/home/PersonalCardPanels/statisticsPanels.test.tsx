@@ -986,6 +986,56 @@ test("Ratings manual slider counts incomplete dates only on the full timeline", 
   expect(container.textContent).toContain("0 Common.Games");
 });
 
+test("Ratings preset tabs override a manual range, and new dates reset it", async () => {
+  const yesterday = dayjs().subtract(1, "day").format("YYYY.MM.DD");
+  const day = (date: string) => ({
+    date,
+    time_control: "600+0",
+    won: 1,
+    drawn: 0,
+    lost: 0,
+    max_player_elo: 2_600,
+  });
+  const statistics = (dates: string[]): PlayerGameInfo => ({
+    site_stats_data: [
+      {
+        site: "Lichess",
+        player: "Magnus",
+        daily: dates.map(day),
+        colors: [],
+        latest: [],
+        openings: [],
+      },
+    ],
+  });
+  const sliderRange = () => container.querySelector("[data-testid='slider-range']")?.textContent;
+  const click = (testId: string) =>
+    act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-testid='${testId}']`)?.click();
+    });
+
+  // Timeline: 2024-01-01, yesterday, today.
+  await render(
+    <RatingsPanel playerKey="Magnus" info={statistics(["2024.01.01", yesterday])} isDatabase />,
+  );
+  await click("manual-full-range");
+  expect(sliderRange()).toBe("0-2");
+  await click("select-seven-days");
+  expect(sliderRange()).toBe("1-2");
+
+  await click("manual-narrow-range");
+  expect(sliderRange()).toBe("1-2");
+  // A filter or data change rebuilds the timeline, so the manual range no longer applies.
+  await render(
+    <RatingsPanel
+      playerKey="Magnus"
+      info={statistics(["2024.01.01", "2024.02.01", yesterday])}
+      isDatabase
+    />,
+  );
+  expect(sliderRange()).toBe("0-3");
+});
+
 test("opening names are single-flight buttons", async () => {
   mocks.getOpeningFromName.mockReturnValueOnce(new Promise(() => {}));
   await render(<OpeningsPanel playerKey="Magnus" info={duplicatedOpeningStatistics} isDatabase />);
