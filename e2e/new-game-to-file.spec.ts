@@ -95,6 +95,13 @@ test("Library New game opens a fileDraft, asks for the line name and appends on 
     await assertNothingClipped(naming);
     await assertAccessible();
     await expect(page).toHaveScreenshot("file-new-game-name-dialog.png");
+    // Native file_revision reports the written generation after the append. Without this, the
+    // 2 s freshness poll after the save compares against the stale fixture revision, reloads
+    // the fixture game and shows "different game at this position" on slow runs.
+    await page.evaluate((commands) => window.__E2E_TAURI__.configure({ commands }), {
+        ...repertoireCommands(),
+        file_revision: { result: savedWrite.revision },
+    });
     await naming
         .getByRole("button", { name: `Save to ${repertoireFile.name}`, exact: true })
         .click();
