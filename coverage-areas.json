@@ -91,6 +91,7 @@
         "src/utils/commentSerializer.ts",
         "src/utils/drawings.ts",
         "src/utils/keyboardOwnership.ts",
+        "src/utils/lruCache.ts",
         "src/utils/misc.ts",
         "src/utils/pgnComment.ts",
         "src/utils/phase.ts",

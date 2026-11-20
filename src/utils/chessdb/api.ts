@@ -7,6 +7,7 @@ import { positionFromFen } from "../chessops";
 import { getBoardState } from "../treeReducer";
 import { replayUciMoves } from "../chess";
 import { engineMultiPv } from "../engines";
+import { LruCache } from "../lruCache";
 
 const endpoint = "https://www.chessdb.cn/cdb.php";
 
@@ -48,30 +49,20 @@ export const CHESSDB_QUEUE_CAPACITY = 128;
 export const CHESSDB_MAX_MULTIPV = 5;
 
 class PositionRequests<T> {
-    private cache = new Map<string, T>();
+    private cache = new LruCache<string, T>(CHESSDB_CACHE_CAPACITY);
     private pending = new Map<string, Promise<T>>();
 
     get(fen: string, load: () => Promise<T>, cacheable: (value: T) => boolean): Promise<T> {
         const key = getBoardState(fen);
         const cached = this.cache.get(key);
-        if (cached !== undefined) {
-            this.cache.delete(key);
-            this.cache.set(key, cached);
-            return Promise.resolve(cached);
-        }
+        if (cached !== undefined) return Promise.resolve(cached);
         const pending = this.pending.get(key);
         if (pending) return pending;
         if (this.pending.size >= CHESSDB_MAX_IN_FLIGHT)
             return Promise.reject(new Error("Too many pending ChessDB requests"));
         const request = load()
             .then((value) => {
-                if (cacheable(value)) {
-                    this.cache.set(key, value);
-                    if (this.cache.size > CHESSDB_CACHE_CAPACITY) {
-                        const oldest = this.cache.keys().next().value;
-                        if (oldest !== undefined) this.cache.delete(oldest);
-                    }
-                }
+                if (cacheable(value)) this.cache.set(key, value);
                 return value;
             })
             .finally(() => this.pending.delete(key));

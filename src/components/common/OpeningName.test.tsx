@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
+import { openingLineFens } from "@/utils/chess";
 import { defaultTree } from "@/utils/treeReducer";
 import { TreeStateContext } from "./TreeStateContext";
 
@@ -81,6 +82,20 @@ function openingNameTree(visible = true) {
 
 async function renderOpeningName(visible = true) {
   await act(async () => root.render(openingNameTree(visible)));
+}
+
+function currentLineKey() {
+  const { root, position } = store.getState();
+  return openingLineFens(root, position).join("\n");
+}
+
+const lineFen = (n: number) => `8/8/8/4k3/8/8/4K3/8 w - - ${n} 1`;
+
+async function showLine(fen?: string) {
+  await act(async () => {
+    store.setState(defaultTree(fen));
+  });
+  await flushPromises();
 }
 
 async function flushPromises() {
@@ -199,7 +214,6 @@ test("a different line does not show the previous line's name while its lookup i
 
 test("the cache keeps at most its capacity of lines and looks an evicted line up again", async () => {
   mocks.getOpening.mockResolvedValue("Ruy Lopez");
-  const lineFen = (n: number) => `8/8/8/4k3/8/8/4K3/8 w - - ${n} 1`;
 
   await renderOpeningName();
   for (let n = 0; n < OPENING_NAME_CACHE_CAPACITY; n++) {
@@ -209,7 +223,7 @@ test("the cache keeps at most its capacity of lines and looks an evicted line up
     await flushPromises();
   }
   expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 1);
-  expect(openingNameCache.entries.size).toBe(OPENING_NAME_CACHE_CAPACITY);
+  expect(openingNameCache.size).toBe(OPENING_NAME_CACHE_CAPACITY);
 
   // The first line was the oldest of capacity + 1 and was dropped.
   await act(async () => {
@@ -224,5 +238,65 @@ test("the cache keeps at most its capacity of lines and looks an evicted line up
     store.setState(defaultTree(lineFen(OPENING_NAME_CACHE_CAPACITY - 1)));
   });
   expect(host.textContent).toBe("Ruy Lopez");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 2);
+});
+
+test("an unexpected failure is not cached, so showing the line again looks it up again", async () => {
+  mocks.getOpening
+    .mockRejectedValueOnce(new Error("boom"))
+    .mockRejectedValueOnce(new Error("boom"));
+
+  await renderOpeningName();
+  await flushPromises();
+  expect(host.textContent).toBe("");
+  expect(mocks.warnSafely).toHaveBeenCalledExactlyOnceWith("boom");
+  expect(openingNameCache.has(currentLineKey())).toBe(false);
+
+  await renderOpeningName(false);
+  await renderOpeningName();
+  await flushPromises();
+  expect(mocks.getOpening).toHaveBeenCalledTimes(2);
+  expect(mocks.warnSafely).toHaveBeenCalledTimes(2);
+  expect(openingNameCache.has(currentLineKey())).toBe(false);
+  expect(openingNameCache.size).toBe(0);
+  expect(unhandledReasons).toEqual([]);
+});
+
+test("a line with no opening is cached, so showing it again does not look it up again", async () => {
+  mocks.getOpening.mockRejectedValue(NO_OPENING_PAYLOAD);
+
+  await renderOpeningName();
+  await flushPromises();
+  expect(host.textContent).toBe("");
+  expect(openingNameCache.get(currentLineKey())).toBe("");
+
+  await renderOpeningName(false);
+  await renderOpeningName();
+  await flushPromises();
+  expect(host.textContent).toBe("");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(1);
+  expect(mocks.warnSafely).not.toHaveBeenCalled();
+});
+
+test("a line shown again before the cache overflows survives, and the next oldest is evicted", async () => {
+  mocks.getOpening.mockResolvedValue("Ruy Lopez");
+
+  // The starting line plus capacity - 1 more fill the cache exactly.
+  await renderOpeningName();
+  for (let n = 0; n < OPENING_NAME_CACHE_CAPACITY - 1; n++) await showLine(lineFen(n));
+  expect(openingNameCache.size).toBe(OPENING_NAME_CACHE_CAPACITY);
+  expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY);
+
+  // The oldest line is shown again from the cache, which makes it the most recently used.
+  await showLine();
+  expect(host.textContent).toBe("Ruy Lopez");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY);
+
+  await showLine(lineFen(OPENING_NAME_CACHE_CAPACITY));
+  expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 1);
+
+  await showLine();
+  expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 1);
+  await showLine(lineFen(0));
   expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 2);
 });
