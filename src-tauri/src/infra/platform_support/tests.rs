@@ -1933,7 +1933,7 @@ fn windows_nt_create_sites_open_synchronous_file_objects() {
     }
     for (file, mask) in [
         (
-            "infra/path_authority/mod.rs",
+            "infra/path_authority/windows_tests.rs",
             "letread_access=SYNCHRONIZE|GENERIC_READ;",
         ),
         (
@@ -2653,6 +2653,9 @@ fn source_for(file: &str) -> &'static str {
     match file {
         "infra/path_authority/mod.rs" => include_str!("../path_authority/mod.rs"),
         "infra/path_authority/resolved.rs" => include_str!("../path_authority/resolved.rs"),
+        "infra/path_authority/windows_tests.rs" => {
+            include_str!("../path_authority/windows_tests.rs")
+        }
         "infra/fs.rs" => include_str!("../fs.rs"),
         "fs.rs" => include_str!("../../fs.rs"),
         "chesscom.rs" => include_str!("../../chesscom.rs"),
@@ -3251,13 +3254,15 @@ fn production_calls_of_every_pgn_atomic_path_node_are_only_from_allowed_callers(
 }
 
 fn for_each_production_region(mut visit: impl FnMut(&str, &str, &str)) {
+    let test_only = out_of_line_test_module_paths();
     for path in rust_source_paths() {
-        let source = std::fs::read_to_string(&path).unwrap();
-        let key = file_key(&path);
-        // The verifier file is test-only and is skipped since the move.
-        if key == "infra/platform_support/tests.rs" {
+        // An out-of-line test module (`#[cfg(test)] mod x;`, including the verifier file itself)
+        // is test code as a whole, exactly like the inline bodies `production_region` blanks.
+        if test_only.contains(&path) {
             continue;
         }
+        let source = std::fs::read_to_string(&path).unwrap();
+        let key = file_key(&path);
         let production = production_region(&source);
         let normalised = normalise(&production, Literals::Blank);
         visit(&key, &production, &normalised);
@@ -3487,6 +3492,88 @@ fn refusal_wording_has_one_production_source() {
     assert!(errors.is_empty(), "{}", errors.join("\n"));
 }
 
+fn is_test_cfg_attribute(attribute: &str) -> bool {
+    let attribute = compact(attribute);
+    attribute == compact("#[cfg(test)]") || attribute.starts_with("#[cfg(all(test,")
+}
+
+/// Every source file compiled only as part of a test module declared out of line
+/// (`#[cfg(test)] mod name;`), plus the files of that module's own submodules. A declaration
+/// whose file cannot be found panics, so a renamed test module cannot silently turn back into
+/// scanned production code.
+fn out_of_line_test_module_paths() -> std::collections::HashSet<std::path::PathBuf> {
+    let paths = rust_source_paths();
+    let mut roots = Vec::new();
+    for path in &paths {
+        let source = std::fs::read_to_string(path).unwrap();
+        let normalised = normalise(&source, Literals::Blank);
+        for (start, name, end) in named_items(&normalised, "mod") {
+            let next = normalised[end..].trim_start().as_bytes().first().copied();
+            if next != Some(b';')
+                || !attribute_lines_before(&source, start)
+                    .iter()
+                    .any(|attribute| is_test_cfg_attribute(attribute))
+            {
+                continue;
+            }
+            let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap();
+            let parent = path.parent().unwrap();
+            let directory = if matches!(stem, "mod" | "main" | "lib") {
+                parent.to_path_buf()
+            } else {
+                parent.join(stem)
+            };
+            let file = directory.join(format!("{name}.rs"));
+            let nested = directory.join(name).join("mod.rs");
+            let declared = if file.is_file() {
+                file
+            } else if nested.is_file() {
+                nested
+            } else {
+                panic!(
+                    "{}: test module `{name}` has no source file",
+                    path.display()
+                );
+            };
+            roots.push((declared, directory.join(name)));
+        }
+    }
+    paths
+        .into_iter()
+        .filter(|path| {
+            roots
+                .iter()
+                .any(|(file, subtree)| path == file || path.starts_with(subtree))
+        })
+        .collect()
+}
+
+#[test]
+fn out_of_line_test_modules_are_classified_and_production_files_are_not() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let test_only = out_of_line_test_module_paths();
+    for test_file in [
+        "infra/platform_support/tests.rs",
+        "infra/path_authority/tests.rs",
+        "infra/path_authority/portable_tests.rs",
+        "infra/path_authority/windows_tests.rs",
+        "infra/path_authority/windows_parent_identity_tests.rs",
+        "infra/path_authority/workspace_directory_enumeration_tests.rs",
+    ] {
+        assert!(test_only.contains(&root.join(test_file)), "{test_file}");
+    }
+    for production_file in [
+        "infra/path_authority/mod.rs",
+        "infra/platform_support.rs",
+        "main.rs",
+    ] {
+        assert!(
+            !test_only.contains(&root.join(production_file)),
+            "{production_file}"
+        );
+    }
+}
+
 /// Blank only the braced bodies of inline test modules; retain every production byte's offset.
 fn production_region(source: &str) -> String {
     let normalised = normalise(source, Literals::Blank);
@@ -3499,10 +3586,7 @@ fn production_region(source: &str) -> String {
         if normalised.as_bytes().get(opening) != Some(&b'{')
             || !attribute_lines_before(source, start)
                 .iter()
-                .any(|attribute| {
-                    let attribute = compact(attribute);
-                    attribute == compact("#[cfg(test)]") || attribute.starts_with("#[cfg(all(test,")
-                })
+                .any(|attribute| is_test_cfg_attribute(attribute))
         {
             continue;
         }

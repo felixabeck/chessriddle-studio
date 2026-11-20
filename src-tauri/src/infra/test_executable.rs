@@ -522,14 +522,43 @@ pub(crate) mod tests {
             "terminal_snapshot_production_child_broken_pipe_keeps_unread_reason",
             "hold_original_waiting_script_open_for_writing",
         ];
-        for (name, source) in [
+        let sources = [
             ("process", include_str!("../engine/process.rs")),
             ("chess", include_str!("../chess.rs")),
             ("game", include_str!("../game.rs")),
             ("catalog", include_str!("path_authority/catalog_install.rs")),
             ("authority", include_str!("path_authority/mod.rs")),
+            ("authority-tests", include_str!("path_authority/tests.rs")),
+            (
+                "authority-portable-tests",
+                include_str!("path_authority/portable_tests.rs"),
+            ),
+            (
+                "authority-enumeration-tests",
+                include_str!("path_authority/workspace_directory_enumeration_tests.rs"),
+            ),
+            (
+                "authority-windows-tests",
+                include_str!("path_authority/windows_tests.rs"),
+            ),
+            (
+                "authority-windows-parent-tests",
+                include_str!("path_authority/windows_parent_identity_tests.rs"),
+            ),
             ("archives", include_str!("../fs.rs")),
-        ] {
+        ];
+        // An allowlisted fixture that moves to a file outside `sources` would leave this audit
+        // reading nothing for it; every exemption must still name a scanned function.
+        for function in resolution_only {
+            let signature = format!("fn {function}(");
+            assert!(
+                sources
+                    .iter()
+                    .any(|(_, source)| source.contains(&signature)),
+                "{function} is allowlisted but lives in no audited source"
+            );
+        }
+        for (name, source) in sources {
             let mut function = "";
             let mut producer = "";
             for line in source.lines() {

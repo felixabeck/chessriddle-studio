@@ -10,10 +10,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 fn instance_admission_production_wires_all_per_user_roots() {
     use crate::infra::blocking::source_scan::{body_at_indent, normalise, Literals};
     let source = include_str!("mod.rs");
-    let production = source
-        .split("#[cfg(test)]\npub(crate) mod portable_tests {")
-        .next()
-        .unwrap();
+    let (production, _) = source
+        .split_once("#[cfg(test)]\npub(crate) mod portable_tests;")
+        .expect("mod.rs declares portable_tests after its production items");
     let body = body_at_indent(
         production,
         "pub(crate) fn admit_instance<R: tauri::Runtime>(",
