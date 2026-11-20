@@ -1844,7 +1844,8 @@ fn directory_listing_bound_options_survive_platform_wrappers() {
     let sync = compact(&source[braced_body(source, "fn sync_windows_tree(")]);
     assert!(sync.contains("enumerate_directory(dir,&CancellationToken::new(),None)?"));
     let authority = source_for("infra/path_authority/mod.rs");
-    let whole = compact(crate::infra::path_authority::test_source_files::production_source());
+    let authority_production = crate::infra::path_authority::test_source_files::production_source();
+    let whole = compact(authority_production);
     assert_eq!(
         whole
             .matches("Some(crate::infra::fs::MAX_DIRECTORY_LISTING_ENTRIES)")
@@ -1852,7 +1853,9 @@ fn directory_listing_bound_options_survive_platform_wrappers() {
         2,
         "infra/path_authority must have exactly two bounded directory-listing calls"
     );
-    let capability = compact(&authority[braced_body(authority, "impl CapabilityDirectory")]);
+    let capability = compact(
+        &authority_production[braced_body(authority_production, "impl CapabilityDirectory")],
+    );
     assert!(capability.contains("read_directory_entries_at(&self.directory,cancellation,Some(crate::infra::fs::MAX_DIRECTORY_LISTING_ENTRIES),keep,)"));
     let authorized = compact(&authority[braced_body(authority, "impl AuthorizedDir")]);
     assert!(authorized.contains(
@@ -2037,7 +2040,9 @@ fn windows_reparse_swap_is_a_conflict_in_listing_and_on_the_mutation_open() {
             && swap.contains("Errno::NOTDIR.raw_os_error()"),
         "the NT counterparts of LOOP/NOTDIR/NOENT must be remapped too: {swap}"
     );
-    let child_swap = compact(&authority[braced_body(authority, "fn child_open_swap(")]);
+    let authority_production = crate::infra::path_authority::test_source_files::production_source();
+    let child_swap =
+        compact(&authority_production[braced_body(authority_production, "fn child_open_swap(")]);
     assert_eq!(
         child_swap
             .matches("\"workspace directory changed concurrently\"")
@@ -2262,12 +2267,16 @@ fn phase_a_parent_access_predicate_and_call_sites_are_explicit() {
     }
 
     let authority = source_for("infra/path_authority/mod.rs");
+    let authority_production = crate::infra::path_authority::test_source_files::production_source();
     let fs_source = source_for("infra/fs.rs");
     let search_index = source_for("db/search_index.rs");
     let database =
         compact(&authority[braced_body(authority, "pub(crate) fn database_file_target(")]);
-    let dialog = compact(&authority[braced_body(authority, "pub fn grant_dialog_operations(")]);
-    let promote = compact(&authority[braced_body(authority, "pub fn promote_dialog(")]);
+    let dialog = compact(
+        &authority_production[braced_body(authority_production, "pub fn grant_dialog_operations(")],
+    );
+    let promote =
+        compact(&authority_production[braced_body(authority_production, "pub fn promote_dialog(")]);
     let registration = compact(&authority[braced_body(authority, "fn registration_target(")]);
     let current = compact(&authority[braced_body(authority, "pub(crate) fn probe_current(")]);
     let retained = compact(&authority[braced_body(authority, "fn retained_workspace_target(")]);
@@ -2451,7 +2460,7 @@ fn phase_a_removed_rows_have_one_ungated_definition_without_refusals() {
                 "pub(crate) fn probe_current(",
             ),
             (
-                "infra/path_authority/mod.rs",
+                "infra/path_authority/listing.rs",
                 "pub(crate) fn capability_directory(",
             ),
             (

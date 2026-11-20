@@ -8139,7 +8139,8 @@ mod tests {
             ],
             "DirectoryEntry field set changed: {directory}"
         );
-        let capability_source = include_str!("path_authority/mod.rs");
+        let capability_source =
+            crate::infra::path_authority::test_source_files::production_source();
         let capability =
             body_at_indent(capability_source, "pub(crate) struct CapabilityDirectory {");
         assert_eq!(

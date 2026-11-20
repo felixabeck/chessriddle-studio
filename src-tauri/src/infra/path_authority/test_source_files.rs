@@ -12,6 +12,14 @@ pub(crate) const PRODUCTION_FILES: &[(&str, &str)] = &[
         include_str!("catalog_install.rs"),
     ),
     (
+        "infra/path_authority/dialogs.rs",
+        include_str!("dialogs.rs"),
+    ),
+    (
+        "infra/path_authority/listing.rs",
+        include_str!("listing.rs"),
+    ),
+    (
         "infra/path_authority/resolved.rs",
         include_str!("resolved.rs"),
     ),

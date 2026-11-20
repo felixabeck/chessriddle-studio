@@ -580,15 +580,15 @@ fn enumeration_consumers_use_no_direct_pathname_producer() {
             concat!("fn map_db3_children_cancellable", "<T>("),
         ),
         (
-            include_str!("mod.rs"),
+            super::test_source_files::production_source(),
             concat!("pub(crate) fn open_child_directory(", "\n        &self"),
         ),
         (
-            include_str!("mod.rs"),
+            super::test_source_files::production_source(),
             concat!("pub(crate) fn confirm_entry", "(&self"),
         ),
         (
-            include_str!("mod.rs"),
+            super::test_source_files::production_source(),
             concat!("pub(crate) fn open_metadata_sidecar(", "\n        &self"),
         ),
         (
