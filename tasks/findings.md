@@ -27967,7 +27967,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### Keybind action labels in Settings are hard-coded English in every language
 
-* **ID:** f-20261120-06 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261120-06 · **Status:** handled · **Area:** i18n · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (audit of upstream En Croissant 0.16 against master c20f15301; upstream translated the labels in 17e7ad8a9, #1032)
 * **Where:** `src/components/settings/SettingsPage.tsx:885-886` renders `{keybind.name}`; the names are English literals in `src/state/keybinds.ts:17-63` (43 actions); `src/components/settings/KeybindInput.tsx:52` uses the same string as `aria-label`. `src/translation/en-US.json:1231-1233` holds only three `Settings.Keybinds*` keys.
@@ -27976,6 +27976,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** give each action a translation key and render through `t()`, following `docs/localization.md` (literal keys preferred over upstream's dynamic `Settings.Keybinds.Actions.<ACTION>` lookup with `defaultValue`; every shipped catalogue needs a non-empty value, so 43 keys × 16 catalogues). Run `pnpm i18n:extract`. Check the bundle total against `docs/bundle-budgets.md` before pushing; the added strings count toward it.
 * **Proof:** a `SettingsPage` (or keybind table) test that renders with the de-DE catalogue and expects a translated action label and `aria-label` (fails at HEAD: English literal).
 * **Found by:** Claude Code, upstream 0.16 adoption audit, 2026-11-20
+* **Handled (2026-11-20, Claude Code orchestration on Felix's order, Opus 5.5 write leaf, worktree build/upstream-016-adoptions-20261120):** commit "fix(i18n): translate the keybind action labels in Settings". Each of the 41 actions in `src/state/keybinds.ts` carries a literal key `Settings.Keybinds.Actions.<ACTION>` via `i18nKey`; `keybindLabel(t, action, keybind)` is the one function the table cell and the `KeybindInput` aria-label call, and an action this build does not define keeps its stored name. The stored keymap keeps its `{ name, keys }` shape (older builds validate `name`), so `name` stays and the label key is never persisted. All 16 catalogues carry the 41 keys with translated values. Tests render with the de-DE catalogue (`catalogueI18n`, no English fallback) and pin the fallback branch. The catalogue growth exceeded the total bundle ceiling; measurements and the raise to 1,920,000 B are d-20261120-05. Korean, Belarusian and Turkish wording was not checked by a native speaker.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"b40c2a13e05201a630e33cce391efbbe69cc820f7d0aba39f47a2bb6e9716180","header_sha256":"9bd6a68f7775e5b0da8c967cdbbf901ba47a206b65b29c88456abd2c66f05cd4","header_status":"handled","input_sha256":"8e084ea784706cd09304961f257675ef1872134203b6e2dccdd5c8ffbc97ada4","kind":"mutation-receipt","operation":"deed23f47448de00ef168d20d0fc1c85370a5ff9532c5f237d87061ec1eb068e","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-06"],"target":"f-20261120-06","v":1} -->
 
 ---
 
