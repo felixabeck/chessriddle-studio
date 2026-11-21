@@ -27635,7 +27635,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### The tree-stats row (Variations / Max depth / Total moves) exists twice, with separate catalogue keys that already read differently
 
-* **ID:** f-20261119-14 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-14 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
 * **Where:**
@@ -27656,6 +27656,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
 * **Correction (2026-11-19, same session):** there are 16 locale catalogues, not 17 (`src/translation/` holds 16 `*.json` plus `de-DE.test.ts`); all 16 carry both key triples (`rg -l` count 16 for each).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"b5aef9183d4207e341204ca61cb96212c0f62181966ffd78ab6ec865fc0d5cec","input_sha256":"0fe8082ebb77549afe169e3ca85af7a980b2a6a5a7e216f819916d4216ab02a3","kind":"mutation-receipt","operation":"23cdd67439f0d4883c76b101ad8040455369e098028a41be5f349ec2d1f482e8","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-14"],"target":"f-20261119-14","v":1} -->
+
+**Closed 2026-11-21:** the row lives once, in `src/components/common/TreeStatsBar.tsx`: `useTreeStats(store)` owns the deferred-view check (zero counts while a file install defers the view) and `TreeStatsBar({ store })` renders the three labels. `InfoPanel` and both `RepertoireInfo` sites render it; the inline `Group` and the local `TreeStatsBar` are gone. One neutral `TreeStats.{Variations,MaxDepth,TotalMoves}` triple replaces `Board.Practice.*` and `PgnInput.MaxDepth/TotalMoves` in all 16 catalogues, taking the Practice values, so the Info tab now reads "Total moves" / "Züge insgesamt" like the Practice tab. `PgnInput.Variations` stays: the PGN-options checkbox still uses it. New `TreeStatsBar.test.tsx` covers live counts and the defer/release path; verified red with the deferred check removed. `pnpm i18n:check` and `i18n:extract` clean, typecheck clean, 1209 tests in the info/practice/common/translation suites pass. Commit 1567dc2e3.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"7294a34bfe540cbefddd8993495d98d731853f5679bdd37af829192e55a821df","header_sha256":"a3164eef1f84d3d9790a784c82632d5fc820d18ad699572313cadfe4c9c587a0","header_status":"handled","input_sha256":"197a22971dee6f761b976e1fd3086c85922b5451e8afdd9d24478981814f7016","kind":"mutation-receipt","operation":"9ea4c97e24d9830468ce27add9177fd071df9fd53299146d5e6106c25161be85","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-14"],"target":"f-20261119-14","v":1} -->
 
 ---
 
