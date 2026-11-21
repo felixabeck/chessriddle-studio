@@ -28172,7 +28172,7 @@ Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --wo
 
 ### The `root permission guidance: add desktop` e2e test failed once in CI with no notification, while the same SHA passed locally
 
-* **ID:** f-20261121-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261121-02 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 40de9f47-40c6-47f3-a261-366e987f0bcf
 * **Impact class:** tooling
 * **Spotted outside diff:** push of f-20261119-03/04 (Board/GameInfo refactor), CI run 44870465215, job 136743602960, SHA f9779470c
@@ -28182,3 +28182,11 @@ Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --wo
 * **Fix:** read the CI trace (`artifacts/frontend-audit/test-results/accounts-puzzles-engines-r-0b2fb-ission-guidance-add-desktop-accounts-puzzles-engines/trace.zip` in the job's artefacts) to see whether the install command was invoked before Escape. If Escape races it, wait for the mocked `install_engine_workflow` call (or the notification) before dismissing the dialog. Do not raise the timeout blindly.
 * **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/136743602960/logs` prints `1 failed … root permission guidance: add desktop`, `474 passed`. Locally, `artifacts/gates/` in the drain worktree shows the push-gate run at f9779470c with `e2e passed`.
 * **Found by:** Claude Code drain session 40de9f47-40c6-47f3-a261-366e987f0bcf, push of f-20261119-03/04.
+
+Handled 2026-11-21 in a45adc11d (lens tier, review-tests lens at push).
+
+* **Cause (from the CI trace, not the Escape race the entry suspected):** the trace's DOM snapshots show the Add Engine modal at `opacity: 0; transform: translateY(-30px)` just before the click and mid-transition at the click. 60–100 ms later the Install button still read "Install" and was enabled. No `setInProgress`, no install job, no notification ever existed. A press and release straddling the 30px slide dispatch `click` to the common ancestor, so the button's handler never ran.
+* **Proof:** a disposable probe slowed the modal slide (1 s linear) and split the click (`force`, `delay: 1200`). The old test failed 3/3 with the CI signature (`element(s) not found` at the notification text). The fixed test passed 6/6 (add and upgrade). Without the probe: 80/80 repeats passed, and both touched specs passed in the e2e container (120 passed).
+* **Fix:** the test waits for the dialog's entrance (opacity 1, identity transform) before clicking Install, and polls for the boundary command before Escape. A lost action now fails at the right line. `expectNotificationSettled` became `expectEntranceSettled`, shared by toasts and modals. `showPermissionNotifications` and the reload-error retry flow click Install right after opening the modal, and get the same wait.
+* **Rejected:** raising the 8 s timeout (the click never took effect, so no wait would help), and turning off modal transitions suite-wide (it would change committed screenshots and hide entrance geometry).
+<!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"5b235ed1f2a37dc1dad8233e6a25022ea2a6479fdc159433ba647f86ed8a6e0e","header_sha256":"902d0202b01e3f5c4ec726b71095046141efa2af61119b07db86ad78ce6d1901","header_status":"handled","input_sha256":"7b4dc92e7c4e5c341808744ff6e4999d467e76000b9d20f1c0417bc10a4e9f48","kind":"mutation-receipt","operation":"1430217dce74de6965c358d7a7b52ededfdb1655714686fb3a4cb43f1011b0be","options":{"section":null},"request_id_sha256":null,"results":["f-20261121-02"],"target":"f-20261121-02","v":1} -->
