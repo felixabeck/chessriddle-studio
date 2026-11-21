@@ -28165,3 +28165,20 @@ Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --wo
 * **Spotted outside diff:** yes. Found while proving the RF5 fix, which changes only `verifySelectedRootPermissions`, and NG1 runs before it.
 * **Open question:** whether `Save PGN` on a new game now saves somewhere else or asks for a target (the unsaved-games build of 2026-11-17 changed save behaviour), and whether the Settings nav link lost its `aria-label` or is covered at that moment: verifier drift or product regression. Start with `git log -S'Save PGN'` and the unsaved-games commits, then rerun `pnpm verify:app`.
 * **Found by:** Claude Code drain session fe4cac75, 2026-11-21, proof run for f-20261117-04.
+
+---
+
+## 2026-11-21 — filed through the inbox spool
+
+### The `root permission guidance: add desktop` e2e test failed once in CI with no notification, while the same SHA passed locally
+
+* **ID:** f-20261121-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 40de9f47-40c6-47f3-a261-366e987f0bcf
+* **Impact class:** tooling
+* **Spotted outside diff:** push of f-20261119-03/04 (Board/GameInfo refactor), CI run 44870465215, job 136743602960, SHA f9779470c
+* **Where:** `e2e/accounts-puzzles-engines.spec.ts:343-413` (`root permission guidance: ${surface} ${layout}`), the `add` surface: click `Add New`, click the dialog's first `Install`, then immediately `page.mouse.move(0, 0)` and `page.keyboard.press("Escape")`, then wait 8 s for `.mantine-Notification-description`.
+* **Defect:** in CI the notification never appeared ("element(s) not found" after the 8000 ms timeout at `:410`). The other five layout/surface cases and the other 474 tests passed. The same SHA passed the full e2e container gate locally (`pnpm gates:push -- --frontend`, e2e 296.5 s, exit 0). Unconfirmed suspect: the test presses Escape right after the Install click, so on a slow runner Escape can close the Add Engine dialog, or cancel its pending install, before `install_engine_workflow` rejects. The notification then never fires.
+* **Failure scenario:** a push whose diff does not touch engines or notifications gets a red `e2e` job on master. `ci:remote:check` then refuses the next push until a rerun or repair.
+* **Fix:** read the CI trace (`artifacts/frontend-audit/test-results/accounts-puzzles-engines-r-0b2fb-ission-guidance-add-desktop-accounts-puzzles-engines/trace.zip` in the job's artefacts) to see whether the install command was invoked before Escape. If Escape races it, wait for the mocked `install_engine_workflow` call (or the notification) before dismissing the dialog. Do not raise the timeout blindly.
+* **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/136743602960/logs` prints `1 failed … root permission guidance: add desktop`, `474 passed`. Locally, `artifacts/gates/` in the drain worktree shows the push-gate run at f9779470c with `e2e passed`.
+* **Found by:** Claude Code drain session 40de9f47-40c6-47f3-a261-366e987f0bcf, push of f-20261119-03/04.
