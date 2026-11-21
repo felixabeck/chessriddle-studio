@@ -3,6 +3,7 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import { Box, Center, Group, Text, useMantineTheme, VisuallyHidden } from "@mantine/core";
 import { ChevronRight } from "lucide-react";
 import {
+  type Color,
   makeSquare,
   makeUci,
   type NormalMove,
@@ -63,7 +64,7 @@ import {
   chooserArrows,
   continuationBrushes,
 } from "@/components/boards/continuationArrows";
-import FideInfo from "../databases/FideInfo";
+import { FidePlayerDialogs } from "../databases/FidePlayerDialogs";
 import { lineTitleOf } from "@/utils/lineTitle";
 import { arrowColors } from "../panels/analysis/BestMoves";
 import AnnotationHint from "./AnnotationHint";
@@ -197,8 +198,7 @@ function Board({
   const setFen = useStore(store, (s) => s.setFen);
 
   const [pos, error] = positionFromFen(currentNode.fen);
-  const [whiteFideOpen, setWhiteFideOpen] = useState(false);
-  const [blackFideOpen, setBlackFideOpen] = useState(false);
+  const [fideColor, setFideColor] = useState<Color | null>(null);
 
   const moveInput = useAtomValue(moveInputAtom);
   const showDests = useAtomValue(showDestsAtom);
@@ -431,8 +431,15 @@ function Board({
   const square = lastMoveTarget(currentNode);
   const lastMove = lastMoveSquares(currentNode);
 
-  const topPlayer = orientation === "white" ? headers.black : headers.white;
-  const bottomPlayer = orientation === "white" ? headers.white : headers.black;
+  // The side the board is oriented for plays from the bottom bar.
+  const bottomColor = orientation;
+  const topColor = opposite(orientation);
+  const playerBar = (color: Color) => ({
+    name: headers[color],
+    rating: color === "white" ? headers.white_elo : headers.black_elo,
+    onNameClick: () => setFideColor(color),
+  });
+  const topPlayer = playerBar(topColor);
   const lineTitle = repertoire ? lineTitleOf(headers) : undefined;
   // A repertoire line's name and idea form one title above the board; an idea-only line shows
   // its idea as the title.
@@ -546,34 +553,20 @@ function Board({
             flexWrap: "nowrap",
             overflow: "hidden",
             maxWidth:
-              //            topbar   bottompadding                tabs                                  bars and gutters   evalbar   ???                               ???     focus ring
+              // The board is square, so its width is capped by the height left for it. Terms in order:
+              // top bar (2.25rem) and its bottom padding (sm); tab strip (2.5rem) and its spacing
+              // (sm); the player bars and their gutters; the eval bar beside the board (1.563rem,
+              // i.e. its 25px); md spacing and a 0.2rem fudge, both empirical and unexplained
+              // since upstream `3eff3087f`; the focus-ring extent; the height reserved below the board.
               `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${barsHeight} + 1.563rem + var(--mantine-spacing-md) - 0.2rem + ${FOCUS_RING_EXTENT} - var(--board-below-height, 0px)))`,
           }}
         >
           <BoardBar
-            name={repertoire ? repertoireTitle : topPlayer}
+            name={repertoire ? repertoireTitle : topPlayer.name}
             detail={repertoire ? repertoireDetail : undefined}
-            rating={
-              repertoire
-                ? undefined
-                : orientation === "white"
-                  ? headers.black_elo
-                  : headers.white_elo
-            }
+            rating={repertoire ? undefined : topPlayer.rating}
             placeholder={repertoire ? t("GameInfo.UntitledLine") : undefined}
-            onNameClick={
-              repertoire
-                ? viewOnly
-                  ? undefined
-                  : onRenameLine
-                : () => {
-                    if (orientation === "white") {
-                      setBlackFideOpen(true);
-                    } else {
-                      setWhiteFideOpen(true);
-                    }
-                  }
-            }
+            onNameClick={repertoire ? (viewOnly ? undefined : onRenameLine) : topPlayer.onNameClick}
             height={BAR_HEIGHT}
             placement="above"
           >
@@ -581,16 +574,11 @@ function Board({
             {repertoire && moveInputField}
             <ShowMaterial
               fen={currentNode.fen}
-              color={repertoire ? undefined : opposite(orientation)}
+              color={repertoire ? undefined : topColor}
               mode={materialDisplay}
             />
             {hasClock && (
-              <Clock
-                color={orientation === "black" ? "white" : "black"}
-                turn={turn}
-                whiteTime={whiteTime}
-                blackTime={blackTime}
-              />
+              <Clock color={topColor} turn={turn} whiteTime={whiteTime} blackTime={blackTime} />
             )}
           </BoardBar>
           {/* Gutters can shrink when the square board leaves less than the bars' minimum height. */}
@@ -824,25 +812,13 @@ function Board({
           {!repertoire && (
             <>
               <Box h={BAR_GUTTER} />
-              <BoardBar
-                name={bottomPlayer}
-                rating={orientation === "white" ? headers.white_elo : headers.black_elo}
-                onNameClick={() => {
-                  if (orientation === "white") {
-                    setWhiteFideOpen(true);
-                  } else {
-                    setBlackFideOpen(true);
-                  }
-                }}
-                height={BAR_HEIGHT}
-                placement="below"
-              >
+              <BoardBar {...playerBar(bottomColor)} height={BAR_HEIGHT} placement="below">
                 {errorText}
                 {moveInputField}
-                <ShowMaterial fen={currentNode.fen} color={orientation} mode={materialDisplay} />
+                <ShowMaterial fen={currentNode.fen} color={bottomColor} mode={materialDisplay} />
                 {hasClock && (
                   <Clock
-                    color={orientation}
+                    color={bottomColor}
                     turn={turn}
                     whiteTime={whiteTime}
                     blackTime={blackTime}
@@ -854,10 +830,11 @@ function Board({
         </Box>
       </Box>
       {!repertoire && (
-        <>
-          <FideInfo opened={whiteFideOpen} setOpened={setWhiteFideOpen} name={headers.white} />
-          <FideInfo opened={blackFideOpen} setOpened={setBlackFideOpen} name={headers.black} />
-        </>
+        <FidePlayerDialogs
+          openColor={fideColor}
+          setOpenColor={setFideColor}
+          names={{ white: headers.white, black: headers.black }}
+        />
       )}
     </>
   );

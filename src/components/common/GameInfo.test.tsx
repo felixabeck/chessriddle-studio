@@ -413,6 +413,25 @@ test("full layout names every header field", async () => {
   }
 });
 
+test.each([
+  ["GameInfo.WhiteElo", "white_elo"],
+  ["GameInfo.BlackElo", "black_elo"],
+] as const)("%s parses Unrated, dash, blank and numbers into %s", async (label, field) => {
+  await act(async () => root.render(<Editor />));
+  const input = () => host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  for (const [typed, stored, shown] of [
+    ["2400", 2400, "2400"],
+    ["gameinfo.unrated", 0, "GameInfo.Unrated"],
+    ["-", 0, "GameInfo.Unrated"],
+    ["abc", undefined, ""],
+    ["", undefined, ""],
+  ] as const) {
+    await act(async () => setNativeInputValue(input(), typed));
+    expect(store.getState().headers[field]).toBe(stored);
+    expect(input().value).toBe(shown);
+  }
+});
+
 function resultField() {
   return host.querySelector<HTMLInputElement>("#game-result")!;
 }

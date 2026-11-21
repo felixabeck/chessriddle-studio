@@ -19,13 +19,14 @@ import { memo, useContext, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
+import type { Color } from "chessops";
 import { lineTitleOf } from "@/utils/lineTitle";
 import {
   getEffectiveGameEnd,
   getEffectiveTermination,
   type GameHeaders,
 } from "@/utils/treeReducer";
-import FideInfo from "../databases/FideInfo";
+import { FidePlayerDialogs } from "../databases/FidePlayerDialogs";
 import classes from "./GameInfo.module.css";
 import { InlineInput } from "./InlineInput";
 import { TreeStateContext } from "./TreeStateContext";
@@ -63,8 +64,16 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
       : null
     : null;
   const partialDate = headers.date && date === null ? headers.date : null;
-  const [whiteOpened, setWhiteOpened] = useState(false);
-  const [blackOpened, setBlackOpened] = useState(false);
+  const [fideColor, setFideColor] = useState<Color | null>(null);
+  const eloInputValue = (elo: number | null | undefined) =>
+    elo === 0 ? t("GameInfo.Unrated") : elo || "";
+  // "Unrated" (any case) or "-" stores 0; an empty or non-numeric entry clears the rating.
+  const parseEloInput = (val: string) =>
+    val.toLowerCase() === t("GameInfo.Unrated").toLowerCase() || val === "-"
+      ? 0
+      : val === "" || Number.isNaN(Number.parseInt(val))
+        ? undefined
+        : Number.parseInt(val);
 
   const event = headers.event === "?" ? "" : headers.event;
   const site = headers.site === "?" ? "" : headers.site;
@@ -81,8 +90,11 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
 
   return (
     <Box px="md" pt="md">
-      <FideInfo opened={whiteOpened} setOpened={setWhiteOpened} name={headers.white} />
-      <FideInfo opened={blackOpened} setOpened={setBlackOpened} name={headers.black} />
+      <FidePlayerDialogs
+        openColor={fideColor}
+        setOpenColor={setFideColor}
+        names={{ white: headers.white, black: headers.black }}
+      />
 
       <Group w="100%" wrap="nowrap">
         {!simplified && (
@@ -93,7 +105,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             tt="uppercase"
             fw="bold"
             className={classes.colorHover}
-            onClick={() => setWhiteOpened(true)}
+            onClick={() => setFideColor("white")}
           >
             {t("Fen.White")}
           </Text>
@@ -176,7 +188,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             tt="uppercase"
             fw="bold"
             ta="right"
-            onClick={() => setBlackOpened(true)}
+            onClick={() => setFideColor("black")}
             className={classes.colorHover}
           >
             {t("Fen.Black")}
@@ -292,19 +304,10 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             className={classes.textInput}
             aria-label={t("GameInfo.WhiteElo")}
             placeholder={t("GameInfo.UnknownElo")}
-            value={headers.white_elo === 0 ? t("GameInfo.Unrated") : headers.white_elo || ""}
-            onChange={(n) => {
-              const val = n.currentTarget.value;
-              setHeaders({
-                ...headers,
-                white_elo:
-                  val.toLowerCase() === t("GameInfo.Unrated").toLowerCase() || val === "-"
-                    ? 0
-                    : val === "" || Number.isNaN(Number.parseInt(val))
-                      ? undefined
-                      : Number.parseInt(val),
-              });
-            }}
+            value={eloInputValue(headers.white_elo)}
+            onChange={(n) =>
+              setHeaders({ ...headers, white_elo: parseEloInput(n.currentTarget.value) })
+            }
             disabled={disabled}
           />
           <Box>
@@ -329,19 +332,10 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             className={cx(classes.textInput, classes.right)}
             aria-label={t("GameInfo.BlackElo")}
             placeholder={t("GameInfo.UnknownElo")}
-            value={headers.black_elo === 0 ? t("GameInfo.Unrated") : headers.black_elo || ""}
-            onChange={(n) => {
-              const val = n.currentTarget.value;
-              setHeaders({
-                ...headers,
-                black_elo:
-                  val.toLowerCase() === t("GameInfo.Unrated").toLowerCase() || val === "-"
-                    ? 0
-                    : val === "" || Number.isNaN(Number.parseInt(val))
-                      ? undefined
-                      : Number.parseInt(val),
-              });
-            }}
+            value={eloInputValue(headers.black_elo)}
+            onChange={(n) =>
+              setHeaders({ ...headers, black_elo: parseEloInput(n.currentTarget.value) })
+            }
             disabled={disabled}
           />
         </SimpleGrid>

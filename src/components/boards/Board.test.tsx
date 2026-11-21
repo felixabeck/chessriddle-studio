@@ -363,6 +363,30 @@ test("player bars remain clickable and open FideInfo for that player", async () 
   ]);
 });
 
+test("a flipped board puts white on the top bar and its name opens white's FideInfo", async () => {
+  tree.getState().setHeaders({
+    ...tree.getState().headers,
+    white: "White Player",
+    black: "Black Player",
+    white_elo: 2400,
+    black_elo: 2300,
+    orientation: "black",
+  });
+  await render();
+  const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
+  expect(bars.map((props) => props.name)).toEqual(["White Player", "Black Player"]);
+  expect(bars.map((props) => props.rating)).toEqual([2400, 2300]);
+  await act(async () => bars[0].onNameClick?.());
+  expect(
+    fideInfo.mock.calls.slice(-2).map(([props]) => ({ name: props.name, opened: props.opened })),
+  ).toEqual([
+    { name: "White Player", opened: true },
+    { name: "Black Player", opened: false },
+  ]);
+  await act(async () => fideInfo.mock.calls.at(-2)?.[0].setOpened(false));
+  expect(fideInfo.mock.calls.slice(-2).map(([props]) => props.opened)).toEqual([false, false]);
+});
+
 async function press(grid: HTMLDivElement, ...keys: string[]) {
   for (const key of keys) {
     await act(async () => {
