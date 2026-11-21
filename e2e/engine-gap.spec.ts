@@ -190,6 +190,49 @@ test("notation-focus: arrow keys after a pointer click leave no focus ring on th
     await expect(move("Bc4")).toBeFocused();
 });
 
+/** The background a move cell has now, and the one `expression` resolves to beside it. */
+async function moveBackground(move: Locator, expression: string) {
+    return move.evaluate((cell, expression) => {
+        const probe = document.createElement("span");
+        probe.style.backgroundColor = expression;
+        cell.parentElement!.append(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { actual: getComputedStyle(cell).backgroundColor, expected };
+    }, expression);
+}
+
+const CURRENT_MOVE_HOVER = "color-mix(in srgb, var(--cf-primary) 20%, transparent)";
+
+for (const colorScheme of ["light", "dark"] as const) {
+    test(`notation-hover: a plain move hovers in the warm interactive tint, the current move in gold, ${colorScheme}`, async ({
+        page,
+        mockScenario,
+    }) => {
+        await page.emulateMedia({ colorScheme });
+        await page.addInitScript(
+            (colorScheme) => localStorage.setItem("mantine-color-scheme", colorScheme),
+            colorScheme,
+        );
+        const notation = await setupNotationMenu(page, mockScenario, "workspace", false);
+        await expect(page.locator("html")).toHaveAttribute(
+            "data-mantine-color-scheme",
+            colorScheme,
+        );
+        const move = (name: string) => notation.getByRole("button", { name, exact: true });
+        await move("e5").click();
+        await expect(move("e5")).toHaveAttribute("aria-current", "true");
+
+        await move("Bc4").hover();
+        const plain = await moveBackground(move("Bc4"), "var(--cf-interactive-hover)");
+        expect(plain.actual).toBe(plain.expected);
+
+        await move("e5").hover();
+        const current = await moveBackground(move("e5"), CURRENT_MOVE_HOVER);
+        expect(current.actual).toBe(current.expected);
+    });
+}
+
 test("engine-gap: warm actor contract preserves ownership and isolates searches", async ({
     page,
 }) => {
@@ -611,6 +654,10 @@ test("engine-gap: pinned engine shows up to its own line count and moves between
     await move.hover();
     const preview = page.getByTestId("engine-line-preview");
     await expect(preview.locator("cg-board")).toBeVisible();
+    // The previewed move takes the notation's gold current-move hover, not a gray fill.
+    await expect(move).toHaveAttribute("aria-current", "true");
+    const previewed = await moveBackground(move, CURRENT_MOVE_HOVER);
+    expect(previewed.actual).toBe(previewed.expected);
     const box = (await preview.boundingBox())!;
     const viewport = page.viewportSize()!;
     expect(box.width).toBeGreaterThan(150);

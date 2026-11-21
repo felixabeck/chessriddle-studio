@@ -6557,8 +6557,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           `
       return [...document.querySelectorAll('button[class*="cell"]')].some((button) =>
         button.textContent.trim().replace('♘', 'N').replace(/[!?□=⩲]+$/, '') === arguments[0] &&
-        button.style.getPropertyValue('--light-bg') !== '' &&
-        button.style.getPropertyValue('--light-bg') !== 'transparent');
+        button.getAttribute('aria-current') === 'true');
     `,
           [move],
         ),

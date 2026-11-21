@@ -12,7 +12,7 @@ vi.mock("@mantine/core", () => ({
   Box: ({ component: Component = "div", children, ...props }: any) => (
     <Component {...props}>{children}</Component>
   ),
-  rgba: () => "transparent",
+  rgba: (color: string, alpha: number) => `rgba(${color}, ${alpha})`,
   useMantineTheme: () => ({
     colors: { gray: Array(10).fill("#888"), teal: Array(10).fill("#099") },
   }),
@@ -137,15 +137,17 @@ test.each([false, true])(
 );
 
 test.each([
-  [false, "transparent", "var(--cf-interactive-hover)"],
-  [true, "var(--move-current-fill)", "var(--move-current-hover)"],
-])(
-  "an unannotated move takes the warm palette, never the neutral gray (current: %s)",
-  async (current, fill, hover) => {
+  [[], false, "transparent", "var(--cf-interactive-hover)"],
+  [[], true, "var(--move-current-fill)", "var(--move-current-hover)"],
+  [["!"], false, "transparent", "rgba(#099, 0.1)"],
+  [["!"], true, "rgba(#099, 0.2)", "rgba(rgba(#099, 0.2), 0.25)"],
+] as const)(
+  "an unannotated move takes the warm palette and an annotated one its colour (%j, current: %s)",
+  async (annotations, current, fill, hover) => {
     await act(async () =>
       root.render(
         <MoveCell
-          annotations={[]}
+          annotations={[...annotations]}
           isStart={false}
           isCurrentVariation={current}
           move="c6"
