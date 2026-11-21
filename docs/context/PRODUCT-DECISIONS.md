@@ -284,3 +284,16 @@ finding ids and date.
   first, only making them as tabs but without the setting or without the option to fix
   them, as you recommend."
 - **Date:** 2026-11-21.
+
+## 2026-11-21 — The last tab can be closed; the Library takes its place
+
+- **Question:** Closing the only open tab brought a fresh New Tab straight back, so the
+  last tab could never be closed. Should a closed last tab stay closed?
+- **Choice:** Yes. The workspace may hold no tabs. With none open, the board view sends
+  the user to the Library, right after the last close and when the app opens with a
+  restored empty workspace. "+" and the New Tab hotkey open a fresh tab. A first start
+  without a saved workspace still opens one New Tab.
+- **Reason:** Felix reported that the closed tab "disappears for a fraction of a second
+  and then opens again" and approved this recommendation: the Library is now its own
+  page in the navigation row, so an empty tab row has a clear place to go.
+- **Date:** 2026-11-21.
