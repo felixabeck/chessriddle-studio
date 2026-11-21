@@ -14,6 +14,12 @@ import { analysisSearch } from "@/utils/analysisSearch";
 import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import { engineIdentity, engineLineContext } from "./analysisLineContext";
 import { readEngineLines, useDisplayedEngineLines } from "./useDisplayedEngineLines";
+import type { Engine } from "@/utils/engines";
+import { createInstance } from "i18next";
+import english from "@/translation/en-US.json";
+import german from "@/translation/de-DE.json";
+import { engineFailureMessage, reportEngineFailure } from "./useDisplayedEngineLines";
+import { errorUnlessCancelled } from "@/platform/errors";
 
 vi.mock("@/platform/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/platform/tauri")>();
@@ -22,12 +28,6 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
     tauri: { ...actual.tauri, reconcileEngineAttachments: vi.fn().mockResolvedValue(undefined) },
   };
 });
-import type { Engine } from "@/utils/engines";
-import { createInstance } from "i18next";
-import english from "@/translation/en-US.json";
-import german from "@/translation/de-DE.json";
-import { engineFailureMessage, reportEngineFailure } from "./useDisplayedEngineLines";
-import { errorUnlessCancelled } from "@/platform/errors";
 
 let h: ReturnType<typeof engineDisplayHarness>;
 let display: ReturnType<typeof useDisplayedEngineLines>;

@@ -10,13 +10,8 @@ import {
     closingTabsAtom,
     defaultPanelTabAtom,
     disposeTabAtoms,
-    explorerGamesSourceFamily,
     practiceSessionStatsFamily,
-    explorerSortFamily,
-    engineMovesFamily,
-    engineProgressFamily,
     gameIdFamily,
-    pendingGameStartFamily,
     pinnedExplorerDatabaseFamily,
     registeredTabAtomFamilies,
     tabsAtom,
@@ -1207,47 +1202,10 @@ test.each(["not-new", "closing"] as const)(
     },
 );
 
-test("closing a tab removes all cached tab and per-engine atom-family entries", () => {
-    const tabId = "closing-tab";
-    const store = getDefaultStore();
-    store.set(tabFamily(tabId), "practice");
-    store.set(pinnedExplorerDatabaseFamily(tabId), { id: { id: "pinned" }, kind: "database" });
-    store.set(explorerGamesSourceFamily(tabId), "comparison");
-    store.set(explorerSortFamily(tabId), { source: "comparison", direction: "asc" });
-    store.set(gameIdFamily(tabId), "native-game");
-    store.set(pendingGameStartFamily(tabId), Promise.resolve());
-    store.set(engineMovesFamily({ tab: tabId, engine: "engine" }), new Map());
-    store.set(engineProgressFamily({ tab: tabId, engine: "engine" }), 42);
-    store.set(tabEngineSettingsFamily({ tab: tabId, engineId: "engine" }), {
-        enabled: true,
-        settings: [],
-        go: { t: "Infinite" },
-        synced: true,
-    });
-
-    disposeTabAtoms(tabId);
-
-    expect([...tabFamily.getParams()]).not.toContain(tabId);
-    expect([...pinnedExplorerDatabaseFamily.getParams()]).not.toContain(tabId);
-    expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toBeNull();
-    pinnedExplorerDatabaseFamily.remove(tabId);
-    expect([...explorerGamesSourceFamily.getParams()]).not.toContain(tabId);
-    expect([...explorerSortFamily.getParams()]).not.toContain(tabId);
-    expect([...gameIdFamily.getParams()]).not.toContain(tabId);
-    expect([...pendingGameStartFamily.getParams()]).not.toContain(tabId);
-    expect([...engineMovesFamily.getParams()]).not.toContainEqual({ tab: tabId, engine: "engine" });
-    expect([...engineProgressFamily.getParams()]).not.toContainEqual({
-        tab: tabId,
-        engine: "engine",
-    });
-    expect([...tabEngineSettingsFamily.getParams()]).not.toContainEqual(
-        expect.objectContaining({ tab: tabId }),
-    );
-});
-
 test("closing a tab releases every registered family's entries and leaves other tabs alone", () => {
     const closing = "registry-closing-tab";
     const surviving = "registry-surviving-tab";
+    const store = getDefaultStore();
     expect(registeredTabAtomFamilies.length).toBeGreaterThan(0);
     for (const entry of registeredTabAtomFamilies) {
         entry.create(closing, "engine-a");
@@ -1255,6 +1213,8 @@ test("closing a tab releases every registered family's entries and leaves other 
         entry.create(surviving, "engine-a");
         expect(entry.has(closing)).toBe(true);
     }
+
+    store.set(pinnedExplorerDatabaseFamily(closing), { id: { id: "pinned" }, kind: "database" });
 
     disposeTabAtoms(closing);
 
@@ -1264,6 +1224,9 @@ test("closing a tab releases every registered family's entries and leaves other 
         entry.dispose(surviving);
     }
     expect([...tabFamily.getParams()]).not.toContain(closing);
+    // A recreated entry starts from its default, not the closed tab's value.
+    expect(store.get(pinnedExplorerDatabaseFamily(closing))).toBeNull();
+    pinnedExplorerDatabaseFamily.remove(closing);
     expect([...tabEngineSettingsFamily.getParams()]).not.toContainEqual(
         expect.objectContaining({ tab: closing }),
     );
