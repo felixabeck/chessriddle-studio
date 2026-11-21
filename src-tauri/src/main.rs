@@ -777,16 +777,18 @@ mod window_cloak {
         set_cloaked(window, false);
     }
 
+    fn set_cloaked<R: Runtime>(window: &tauri::Window<R>, cloaked: bool) {
+        #[cfg(test)]
+        test_record::push(window.label(), cloaked);
+        set_platform_cloak(window, cloaked);
+    }
+
     /// Best effort in both directions, logged on failure. A failed cloak leaves the old brief
     /// appearance; a failed uncloak cannot be retried to better effect, and the show that follows
     /// must still happen, because a window that was never cloaked has to appear.
     #[cfg(windows)]
-    fn set_cloaked<R: Runtime>(window: &tauri::Window<R>, cloaked: bool) {
-        use windows_sys::core::BOOL;
-        use windows_sys::Win32::Foundation::HWND;
-        use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
-
-        let hwnd: HWND = match window.hwnd() {
+    fn set_platform_cloak<R: Runtime>(window: &tauri::Window<R>, cloaked: bool) {
+        let hwnd = match window.hwnd() {
             Ok(hwnd) => hwnd.0,
             Err(error) => {
                 log::warn!(
@@ -795,17 +797,7 @@ mod window_cloak {
                 return;
             }
         };
-        let value = BOOL::from(cloaked);
-        // SAFETY: `hwnd` comes from the live tauri window, and the attribute pointer and size
-        // describe the local `BOOL` for the duration of the call; DWM does not retain the pointer.
-        let result = unsafe {
-            DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_CLOAK as u32,
-                (&value as *const BOOL).cast(),
-                std::mem::size_of::<BOOL>() as u32,
-            )
-        };
+        let result = set_hwnd_cloaked(hwnd, cloaked);
         if result < 0 {
             log::warn!(
                 "DwmSetWindowAttribute(DWMWA_CLOAK, {cloaked}) failed with HRESULT {result:#010x}"
@@ -814,7 +806,51 @@ mod window_cloak {
     }
 
     #[cfg(not(windows))]
-    fn set_cloaked<R: Runtime>(_window: &tauri::Window<R>, _cloaked: bool) {}
+    fn set_platform_cloak<R: Runtime>(_window: &tauri::Window<R>, _cloaked: bool) {}
+
+    /// Sets or clears the application cloak of `hwnd` and returns the call's HRESULT.
+    #[cfg(windows)]
+    pub(super) fn set_hwnd_cloaked(
+        hwnd: windows_sys::Win32::Foundation::HWND,
+        cloaked: bool,
+    ) -> windows_sys::core::HRESULT {
+        use windows_sys::core::BOOL;
+        use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+
+        let value = BOOL::from(cloaked);
+        // SAFETY: the attribute pointer and size describe the local `BOOL` for the duration of
+        // the call and DWM does not retain the pointer; an invalid `hwnd` is reported through the
+        // returned HRESULT, not undefined behaviour.
+        unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_CLOAK as u32,
+                (&value as *const BOOL).cast(),
+                std::mem::size_of::<BOOL>() as u32,
+            )
+        }
+    }
+
+    /// Records every cloak decision on the calling thread, so tests can observe which window was
+    /// cloaked or uncloaked on platforms where the native call is a no-op. Mock window creation
+    /// and the reveal run on the test's own thread.
+    #[cfg(test)]
+    pub(super) mod test_record {
+        use std::cell::RefCell;
+
+        thread_local! {
+            static CALLS: RefCell<Vec<(String, bool)>> = const { RefCell::new(Vec::new()) };
+        }
+
+        pub(in crate::window_cloak) fn push(label: &str, cloaked: bool) {
+            CALLS.with(|calls| calls.borrow_mut().push((label.to_owned(), cloaked)));
+        }
+
+        /// Returns and clears the calls recorded on this thread.
+        pub(crate) fn take() -> Vec<(String, bool)> {
+            CALLS.with(|calls| std::mem::take(&mut *calls.borrow_mut()))
+        }
+    }
 }
 
 fn show_labeled_main_window<R: tauri::Runtime>(
@@ -4165,16 +4201,9 @@ mod blocking_offload_scans {
     }
 
     #[test]
-    fn main_window_is_cloaked_before_restore_and_uncloaked_before_every_show() {
+    fn main_window_cloak_is_registered_before_window_state_and_lifted_before_show() {
         let main = include_str!("main.rs");
-        let builder = main
-            .split_once("    let app = tauri::Builder::default()")
-            .expect("application builder chain")
-            .1
-            .split_once(".setup(move |app| {")
-            .expect("setup after the plugin chain")
-            .0;
-        let compact: String = builder.chars().filter(|c| !c.is_whitespace()).collect();
+        let (builder, compact) = app_builder_plugin_chain();
         // Window-ready hooks run in plugin registration order, so the cloak must come first.
         assert_eq!(
             compact.matches(".plugin(window_cloak::plugin())").count(),
@@ -4186,7 +4215,8 @@ mod blocking_offload_scans {
             ),
             "{builder}"
         );
-        // Both reveal paths (renderer and native fallback) show through this one function.
+        // Both reveal paths (renderer and native fallback) show through this one function; the
+        // recorder tests in `close_splashscreen_tests` prove each of them reaches the uncloak.
         let show = main
             .split_once("fn show_labeled_main_window<R: tauri::Runtime>(")
             .expect("show function")
@@ -4203,17 +4233,22 @@ mod blocking_offload_scans {
         assert!(uncloak < shown);
     }
 
-    #[test]
-    fn window_state_plugin_never_restores_visibility() {
-        let main = include_str!("main.rs");
-        let builder = main
+    /// The application's builder chain up to `.setup`, as written and with whitespace removed.
+    fn app_builder_plugin_chain() -> (&'static str, String) {
+        let builder = include_str!("main.rs")
             .split_once("    let app = tauri::Builder::default()")
             .expect("application builder chain")
             .1
             .split_once(".setup(move |app| {")
             .expect("setup after the plugin chain")
             .0;
-        let compact: String = builder.chars().filter(|c| !c.is_whitespace()).collect();
+        let compact = builder.chars().filter(|c| !c.is_whitespace()).collect();
+        (builder, compact)
+    }
+
+    #[test]
+    fn window_state_plugin_never_restores_visibility() {
+        let (builder, compact) = app_builder_plugin_chain();
         assert_eq!(
             compact
                 .matches("tauri_plugin_window_state::Builder::new()")
@@ -5334,6 +5369,71 @@ mod close_splashscreen_tests {
         app.state::<MainWindowReveal>().is_revealed()
     }
 
+    /// The cloak decisions recorded on this test's thread since the last call.
+    fn cloak_calls() -> Vec<(String, bool)> {
+        super::window_cloak::test_record::take()
+    }
+
+    /// A real top-level Win32 window, cloaked and uncloaked through the production primitive and
+    /// read back through DWM, so the attribute, value and size passed to DWM are proven on Windows.
+    #[cfg(windows)]
+    #[test]
+    fn hwnd_cloak_round_trips_through_dwm() {
+        use super::window_cloak::set_hwnd_cloaked;
+        use windows_sys::Win32::Graphics::Dwm::{
+            DwmGetWindowAttribute, DWMWA_CLOAKED, DWM_CLOAKED_APP,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, WS_POPUP,
+        };
+
+        fn cloaked_state(hwnd: windows_sys::Win32::Foundation::HWND) -> u32 {
+            let mut state = 0u32;
+            // SAFETY: the output pointer and size describe the local `u32` for the call's duration.
+            let result = unsafe {
+                DwmGetWindowAttribute(
+                    hwnd,
+                    DWMWA_CLOAKED as u32,
+                    (&mut state as *mut u32).cast(),
+                    std::mem::size_of::<u32>() as u32,
+                )
+            };
+            assert!(result >= 0, "DwmGetWindowAttribute failed: {result:#010x}");
+            state
+        }
+
+        let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+        // SAFETY: a hidden popup of the predefined STATIC class with no parent, menu or creation
+        // data; the class name is NUL-terminated and outlives the call.
+        let hwnd = unsafe {
+            CreateWindowExW(
+                0,
+                class.as_ptr(),
+                std::ptr::null(),
+                WS_POPUP,
+                0,
+                0,
+                64,
+                64,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            )
+        };
+        assert!(!hwnd.is_null(), "CreateWindowExW failed");
+        let cloak = set_hwnd_cloaked(hwnd, true);
+        let cloaked = cloaked_state(hwnd);
+        let uncloak = set_hwnd_cloaked(hwnd, false);
+        let uncloaked = cloaked_state(hwnd);
+        // SAFETY: `hwnd` was created above on this thread and is destroyed once.
+        unsafe { DestroyWindow(hwnd) };
+        assert!(cloak >= 0, "cloak failed: {cloak:#010x}");
+        assert_eq!(cloaked & DWM_CLOAKED_APP, DWM_CLOAKED_APP);
+        assert!(uncloak >= 0, "uncloak failed: {uncloak:#010x}");
+        assert_eq!(uncloaked, 0);
+    }
+
     #[test]
     fn missing_main_window_is_typed_invalid_input() {
         let app = tauri::test::mock_app();
@@ -5350,7 +5450,8 @@ mod close_splashscreen_tests {
     }
 
     #[test]
-    fn cloak_plugin_lets_the_main_window_be_created_and_revealed() {
+    fn cloak_plugin_cloaks_only_the_main_window_and_the_renderer_reveal_uncloaks_it() {
+        cloak_calls();
         let app = tauri::test::mock_builder()
             .plugin(super::window_cloak::plugin())
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
@@ -5361,9 +5462,11 @@ mod close_splashscreen_tests {
         tauri::WebviewWindowBuilder::new(&app, "other", Default::default())
             .build()
             .expect("create a window the cloak hook ignores");
+        assert_eq!(cloak_calls(), [("main".to_owned(), true)]);
         app.manage(MainWindowReveal::default());
         reveal_main_window_for_renderer(app.handle()).expect("renderer reveals main window");
         assert!(revealed(&app));
+        assert_eq!(cloak_calls(), [("main".to_owned(), false)]);
     }
 
     #[test]
@@ -5393,9 +5496,11 @@ mod close_splashscreen_tests {
     async fn fallback_reveals_a_main_window_the_renderer_never_revealed() {
         let app = mock_app_with_main_window();
         app.manage(MainWindowReveal::default());
+        cloak_calls();
         let outcome = run_main_window_reveal_fallback(app.handle().clone(), TEST_DELAY).await;
         assert_eq!(outcome, FallbackReveal::Revealed);
         assert!(revealed(&app));
+        assert_eq!(cloak_calls(), [("main".to_owned(), false)]);
     }
 
     #[tokio::test]
