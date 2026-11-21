@@ -5,6 +5,8 @@ import {
     bestMovesPayload,
     seedAnalysisEngines,
     type AnalysisRequest,
+    moveBackground,
+    CURRENT_MOVE_FILL,
 } from "./fixtures";
 import type { Page } from "@playwright/test";
 
@@ -178,6 +180,9 @@ test("move keys step an open engine-line preview board in place and leave the ga
     await expect(move("c4")).toHaveAttribute("aria-current", "true");
     await expect(current).toHaveCount(0);
     expect(await preview.boundingBox()).toEqual(opened);
+    // The stepped move is not under the pointer, so it shows the resting gold fill.
+    const stepped = await moveBackground(move("c4"), CURRENT_MOVE_FILL);
+    expect(stepped.actual).toBe(stepped.expected);
 
     await page.keyboard.press("ArrowLeft");
     await expect(move("d5")).toHaveAttribute("aria-current", "true");

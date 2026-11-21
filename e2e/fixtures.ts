@@ -194,6 +194,22 @@ export async function waitForTransitionsSettled(page: Page) {
     });
 }
 
+/** MoveCell.module.css's gold current-move fill and hover, resolved by moveBackground. */
+export const CURRENT_MOVE_FILL = "color-mix(in srgb, var(--cf-primary) 10%, transparent)";
+export const CURRENT_MOVE_HOVER = "color-mix(in srgb, var(--cf-primary) 20%, transparent)";
+
+/** The background a move cell has now, and the one `expression` resolves to beside it. */
+export async function moveBackground(move: Locator, expression: string) {
+    return move.evaluate((cell, expression) => {
+        const probe = document.createElement("span");
+        probe.style.backgroundColor = expression;
+        cell.parentElement!.append(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { actual: getComputedStyle(cell).backgroundColor, expected };
+    }, expression);
+}
+
 export async function splitTextWords(labels: Locator): Promise<string[]> {
     return labels.evaluateAll((elements) =>
         elements.flatMap((element) => {

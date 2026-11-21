@@ -13,6 +13,8 @@ import {
     type MockScenario,
     goToSettings,
     scrollbarFreeScreenshot,
+    moveBackground,
+    CURRENT_MOVE_HOVER,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 import type { EngineOptions, ErrorPayload } from "../src/bindings/generated";
@@ -22,6 +24,8 @@ async function setupNotationMenu(
     mockScenario: (scenario: MockScenario) => Promise<void>,
     scope: "workspace" | "preview",
     tableLayout: boolean,
+    /** Tokens inserted after e5, for a test that annotates it. */
+    afterE5: { type: "Nag"; value: string }[] = [],
 ) {
     await mockScenario({
         commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
@@ -31,6 +35,7 @@ async function setupNotationMenu(
                 result: [
                     { type: "San", value: "e4" },
                     { type: "San", value: "e5" },
+                    ...afterE5,
                     { type: "ParenOpen" },
                     { type: "San", value: "c5" },
                     { type: "San", value: "Nf3" },
@@ -190,20 +195,6 @@ test("notation-focus: arrow keys after a pointer click leave no focus ring on th
     await expect(move("Bc4")).toBeFocused();
 });
 
-/** The background a move cell has now, and the one `expression` resolves to beside it. */
-async function moveBackground(move: Locator, expression: string) {
-    return move.evaluate((cell, expression) => {
-        const probe = document.createElement("span");
-        probe.style.backgroundColor = expression;
-        cell.parentElement!.append(probe);
-        const expected = getComputedStyle(probe).backgroundColor;
-        probe.remove();
-        return { actual: getComputedStyle(cell).backgroundColor, expected };
-    }, expression);
-}
-
-const CURRENT_MOVE_HOVER = "color-mix(in srgb, var(--cf-primary) 20%, transparent)";
-
 for (const colorScheme of ["light", "dark"] as const) {
     test(`notation-hover: a plain move hovers in the warm interactive tint, the current move in gold, ${colorScheme}`, async ({
         page,
@@ -214,21 +205,24 @@ for (const colorScheme of ["light", "dark"] as const) {
             (colorScheme) => localStorage.setItem("mantine-color-scheme", colorScheme),
             colorScheme,
         );
-        const notation = await setupNotationMenu(page, mockScenario, "workspace", false);
+        // e5 carries "!", so its own annotation hover competes with the current-move hover.
+        const notation = await setupNotationMenu(page, mockScenario, "workspace", false, [
+            { type: "Nag", value: "$1" },
+        ]);
         await expect(page.locator("html")).toHaveAttribute(
             "data-mantine-color-scheme",
             colorScheme,
         );
         const move = (name: string) => notation.getByRole("button", { name, exact: true });
-        await move("e5").click();
-        await expect(move("e5")).toHaveAttribute("aria-current", "true");
+        await move("e5!").click();
+        await expect(move("e5!")).toHaveAttribute("aria-current", "true");
 
         await move("Bc4").hover();
         const plain = await moveBackground(move("Bc4"), "var(--cf-interactive-hover)");
         expect(plain.actual).toBe(plain.expected);
 
-        await move("e5").hover();
-        const current = await moveBackground(move("e5"), CURRENT_MOVE_HOVER);
+        await move("e5!").hover();
+        const current = await moveBackground(move("e5!"), CURRENT_MOVE_HOVER);
         expect(current.actual).toBe(current.expected);
     });
 }
