@@ -42,7 +42,9 @@ test("tree-recovery: retains an unreadable play tab behind its recovery panel", 
     ).toBeVisible();
     await expect(page.getByRole("grid")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Close tab" }).click();
+    await page
+        .locator("header [role='tablist'] [role='tab'][aria-selected='true'] + button")
+        .click();
     await expect(page.getByRole("tab")).toHaveCount(1);
     await expect(recovery).toBeVisible();
 

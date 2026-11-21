@@ -1,6 +1,6 @@
 import { Button, Group, TextInput } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { getDefaultStore, useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   createContext,
@@ -9,6 +9,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -35,7 +36,16 @@ import {
   restoreReportOwner,
   type TreeStore,
 } from "@/state/store/tree";
+import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { isKeyboardOwnedElsewhere, withKeyboardOwnership } from "@/utils/keyboardOwnership";
+import { useHotkeys as useDocumentHotkeys } from "react-hotkeys-hook";
+import {
+  isBoardsPath,
+  isLibraryFamilyPath,
+  returnTargetFromPath,
+  temporaryPageOf,
+  type ReturnTarget,
+} from "./boardTabDom";
 import {
   asksBeforeDiscardingChanges,
   commitNewTab,
@@ -59,6 +69,7 @@ export type TabCommands = {
   renameTab: (tabId: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   newTab: () => void;
+  closeTemporaryPage: () => void;
 };
 
 const TabCommandsContext = createContext<TabCommands | null>(null);
@@ -72,6 +83,8 @@ export function useTabCommands(): TabCommands {
 export function TabCommandsProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const returnTargetRef = useRef<ReturnTarget>({ to: "/" });
 
   const [tabs, setTabs] = useAtom(tabsAtom);
   const [activeTab, setActiveTab] = useAtom(activeTabAtom);
@@ -100,6 +113,21 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     },
     [handleSetActiveTab, navigate],
   );
+
+  useEffect(() => {
+    if (isBoardsPath(pathname) || isLibraryFamilyPath(pathname)) {
+      returnTargetRef.current = returnTargetFromPath(pathname);
+    }
+  }, [pathname]);
+
+  const goToBoards = useCallback(() => {
+    if (!isBoardsPath(pathname)) void navigate({ to: "/" });
+  }, [navigate, pathname]);
+
+  const closeTemporaryPage = useCallback(() => {
+    if (!temporaryPageOf(pathname)) return;
+    void navigate(returnTargetRef.current);
+  }, [navigate, pathname]);
 
   useEffect(() => {
     if (tabs.length === 0) {
@@ -189,16 +217,18 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     (tabId: string) => {
       if (!tabs.some((tab) => tab.value === tabId)) return;
       handleSetActiveTab(tabId);
+      goToBoards();
     },
-    [handleSetActiveTab, tabs],
+    [goToBoards, handleSetActiveTab, tabs],
   );
 
   const selectTabAt = useCallback(
     (index: number) => {
       if (tabs.length === 0) return;
       handleSetActiveTab(tabs[Math.min(index, tabs.length - 1)].value);
+      goToBoards();
     },
-    [handleSetActiveTab, tabs],
+    [goToBoards, handleSetActiveTab, tabs],
   );
 
   const cycleTabs = useCallback(
@@ -219,8 +249,9 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
           handleSetActiveTab(tabs[index + 1].value);
         }
       }
+      goToBoards();
     },
-    [activeTab, handleSetActiveTab, tabs],
+    [activeTab, goToBoards, handleSetActiveTab, tabs],
   );
 
   const duplicateTab = useCallback(
@@ -296,9 +327,21 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   const newTab = useCallback(() => {
     void runTabCreation({
       create: () => createTab({ tab: { name: t("Tab.NewTab"), type: "new" }, setTabs }),
+      onSuccess: async () => {
+        await navigate({ to: "/" });
+      },
       onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
     });
-  }, [setTabs, t]);
+  }, [navigate, setTabs, t]);
+
+  const closeActiveOrTemporary = useCallback(() => {
+    if (temporaryPageOf(pathname)) {
+      closeTemporaryPage();
+      return;
+    }
+    if (isLibraryFamilyPath(pathname)) return;
+    void closeTab(activeTab);
+  }, [activeTab, closeTab, closeTemporaryPage, pathname]);
 
   useEffect(() => {
     if (platform() !== "macos") return;
@@ -308,19 +351,20 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       if (e.metaKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         e.stopPropagation();
-        void closeTab(activeTab);
+        closeActiveOrTemporary();
       }
     };
 
     window.addEventListener("keydown", handler, { capture: true });
 
     return () => window.removeEventListener("keydown", handler, { capture: true });
-  }, [closeTab, activeTab]);
+  }, [closeActiveOrTemporary]);
 
   const keyMap = useAtomValue(keyMapAtom);
+  useDocumentHotkeys(keyMap.NEW_TAB.keys, () => newTab(), backgroundHotkeyOptions);
   useHotkeys(
     withKeyboardOwnership([
-      [keyMap.CLOSE_TAB.keys, () => void closeTab(activeTab)],
+      [keyMap.CLOSE_TAB.keys, closeActiveOrTemporary],
       [keyMap.CYCLE_TABS.keys, () => cycleTabs()],
       [keyMap.REVERSE_CYCLE_TABS.keys, () => cycleTabs(true)],
       ["alt+1", () => selectTabAt(0)],
@@ -354,8 +398,19 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       renameTab,
       reorderTabs,
       newTab,
+      closeTemporaryPage,
     }),
-    [activeTab, closeTab, duplicateTab, newTab, renameTab, reorderTabs, selectTab, tabs],
+    [
+      activeTab,
+      closeTab,
+      closeTemporaryPage,
+      duplicateTab,
+      newTab,
+      renameTab,
+      reorderTabs,
+      selectTab,
+      tabs,
+    ],
   );
 
   return (

@@ -13,7 +13,7 @@ not this app's verifier.
 ## Verification
 
 Chrome MCP cannot attach to the Tauri webview. `pnpm start-vite` plus a
-browser is invalid layout evidence: Vite-only crashes in `TopBar.tsx`
+browser is invalid layout evidence: Vite-only crashes in `NavigationRow.tsx`
 (`getCurrentWebviewWindow()` at module scope) and stays blank.
 
 - Gates: the commands in `.claude/skills/push/SKILL.md`.

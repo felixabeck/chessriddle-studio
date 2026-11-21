@@ -28,12 +28,11 @@ export type AppMenuCallbacks = {
     openNewFile: () => void | Promise<void>;
     saveGame: () => void | Promise<void>;
     saveGameTo: () => void | Promise<void>;
+    openAccounts: () => void | Promise<void>;
+    openEngines: () => void | Promise<void>;
     openSettings: () => void | Promise<void>;
     exit: () => void | Promise<void>;
-    reload: () => void;
     toggleFullscreen: () => void | Promise<void>;
-    clearSavedData: () => void | Promise<void>;
-    openLogs: () => void | Promise<void>;
 };
 
 export type WindowPlatform = "win32" | "linux" | "other";
@@ -45,7 +44,7 @@ export function menuWindowPlatform(vitePlatform: string): WindowPlatform {
     return "other";
 }
 
-/** Full-screen shortcut, shown in the View menu. The native menu registers it as its accelerator; the in-app TopBar has none, so the root binds it as a hotkey there. */
+/** Full-screen shortcut. The native macOS menu registers it as its accelerator; Linux and Windows bind F11 in the renderer. */
 export function fullscreenShortcut(isMacOS: boolean): string {
     return isMacOS ? "Ctrl+Cmd+F" : "F11";
 }
@@ -54,10 +53,9 @@ export function wantNativeDecorations(isNative: boolean, windowPlatform: WindowP
     return isNative || windowPlatform === "other";
 }
 
-export function renderTopBar(isNative: boolean, windowPlatform: WindowPlatform): boolean {
-    if (windowPlatform === "linux") return !isNative;
-    if (windowPlatform === "win32") return !isNative;
-    return false;
+/** Native application menu is macOS only. Linux and Windows use the row's menu button in both decoration modes. */
+export function wantRealMenu(windowPlatform: WindowPlatform): boolean {
+    return windowPlatform === "other";
 }
 
 /** Windows keeps the window library's own hit-testing, whose cursor shows there. */
@@ -177,12 +175,6 @@ export function buildAppMenuTree(args: {
             label: t("Menu.View"),
             options: [
                 {
-                    label: t("Menu.View.Reload"),
-                    id: "reload",
-                    shortcut: "Ctrl+R",
-                    action: callbacks.reload,
-                },
-                {
                     label: t("Menu.View.Fullscreen"),
                     id: "toggle_fullscreen",
                     shortcut: fullscreenShortcut(isMacOS),
@@ -198,20 +190,90 @@ export function buildAppMenuTree(args: {
                     id: "send_feedback",
                     action: callbacks.sendFeedback,
                 },
-                {
-                    label: t("Menu.Help.ClearSavedData"),
-                    id: "clear_saved_data",
-                    action: callbacks.clearSavedData,
-                },
-                {
-                    label: t("Menu.Help.OpenLogs"),
-                    id: "logs",
-                    action: callbacks.openLogs,
-                },
-                { kind: "separator" },
-                ...(!isMacOS ? [aboutOption] : []),
+                ...(!isMacOS ? [{ kind: "separator" as const }, aboutOption] : []),
             ],
         },
+    ];
+}
+
+export function buildInAppMenuItems(args: {
+    t: MenuTranslator;
+    isMacOS: boolean;
+    newTabShortcut: string;
+    openFileShortcut: string;
+    saveShortcut: string;
+    callbacks: AppMenuCallbacks;
+}): MenuAction[] {
+    const { t, isMacOS, newTabShortcut, openFileShortcut, saveShortcut, callbacks } = args;
+    return [
+        {
+            label: t("Menu.File.NewTab"),
+            id: "new_tab",
+            shortcut: newTabShortcut,
+            action: callbacks.createNewTab,
+        },
+        {
+            label: t("Menu.File.OpenFile"),
+            id: "open_file",
+            shortcut: openFileShortcut,
+            action: callbacks.openNewFile,
+        },
+        { kind: "separator" },
+        {
+            label: t("Common.Save"),
+            id: "save",
+            shortcut: saveShortcut,
+            action: callbacks.saveGame,
+        },
+        {
+            label: t("Board.Database.Save"),
+            id: "save_to",
+            action: callbacks.saveGameTo,
+        },
+        { kind: "separator" },
+        {
+            label: t("SideBar.Accounts"),
+            id: "accounts",
+            action: callbacks.openAccounts,
+        },
+        {
+            label: t("SideBar.Engines"),
+            id: "engines",
+            action: callbacks.openEngines,
+        },
+        {
+            label: t("SideBar.Settings"),
+            id: "settings",
+            action: callbacks.openSettings,
+        },
+        { kind: "separator" },
+        {
+            label: t("Menu.View.Fullscreen"),
+            id: "toggle_fullscreen",
+            shortcut: fullscreenShortcut(isMacOS),
+            action: callbacks.toggleFullscreen,
+        },
+        { kind: "separator" },
+        {
+            label: t("Menu.Help.SendFeedback"),
+            id: "send_feedback",
+            action: callbacks.sendFeedback,
+        },
+        {
+            label: t("Menu.Help.About"),
+            id: "about",
+            action: callbacks.about,
+        },
+        ...(!isMacOS
+            ? [
+                  { kind: "separator" as const },
+                  {
+                      label: t("Menu.File.Exit"),
+                      id: "exit",
+                      action: callbacks.exit,
+                  },
+              ]
+            : []),
     ];
 }
 
@@ -240,14 +302,16 @@ export async function openSettingsFromMenu(deps: {
     await deps.navigate({ to: "/settings" });
 }
 
-export async function clearSavedDataFromMenu(deps: {
-    ask: (message: string, options: { title: string }) => Promise<boolean>;
-    confirmMessage: string;
-    title: string;
-    clear: () => void | Promise<void>;
+export async function openAccountsFromMenu(deps: {
+    navigate: (opts: { to: string }) => void | Promise<unknown>;
 }): Promise<void> {
-    const confirmed = await deps.ask(deps.confirmMessage, { title: deps.title });
-    if (confirmed) await deps.clear();
+    await deps.navigate({ to: "/accounts" });
+}
+
+export async function openEnginesFromMenu(deps: {
+    navigate: (opts: { to: string }) => void | Promise<unknown>;
+}): Promise<void> {
+    await deps.navigate({ to: "/engines" });
 }
 
 export async function runNativeMenuAction(
@@ -276,33 +340,30 @@ export type AppMenuCommandBindings = {
     runMenu: (command: () => Promise<unknown>, successMessage?: string) => Promise<void>;
     about: () => void;
     sendFeedback: () => void;
-    createNewTab: () => Promise<unknown>;
+    createNewTab: () => Promise<unknown> | void;
     openNewFile: () => Promise<unknown>;
     saveGame: () => Promise<unknown>;
     saveGameTo: () => Promise<unknown>;
+    openAccounts: () => Promise<unknown>;
+    openEngines: () => Promise<unknown>;
     openSettings: () => Promise<unknown>;
     exit: () => Promise<unknown>;
-    reload: () => void;
     toggleFullscreen: () => Promise<unknown>;
-    clearSavedData: () => Promise<unknown>;
-    openLogs: () => Promise<unknown>;
-    openLogsSuccessMessage?: string;
 };
 
 export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuCallbacks {
     return {
         about: bindings.about,
         sendFeedback: bindings.sendFeedback,
-        createNewTab: () => bindings.runMenu(bindings.createNewTab),
+        createNewTab: () => bindings.runMenu(async () => bindings.createNewTab()),
         openNewFile: () => bindings.runMenu(bindings.openNewFile),
         saveGame: () => bindings.runMenu(bindings.saveGame),
         saveGameTo: () => bindings.runMenu(bindings.saveGameTo),
+        openAccounts: () => bindings.runMenu(bindings.openAccounts),
+        openEngines: () => bindings.runMenu(bindings.openEngines),
         openSettings: () => bindings.runMenu(bindings.openSettings),
         exit: () => bindings.runMenu(bindings.exit),
-        reload: bindings.reload,
         toggleFullscreen: () => bindings.runMenu(bindings.toggleFullscreen),
-        clearSavedData: () => bindings.runMenu(bindings.clearSavedData),
-        openLogs: () => bindings.runMenu(bindings.openLogs, bindings.openLogsSuccessMessage),
     };
 }
 

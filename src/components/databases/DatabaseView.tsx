@@ -119,7 +119,7 @@ function DatabaseView() {
 
   if (resolution.status === "loading" || resolution.status === "synchronizing") {
     return (
-      <Box p="sm" h="100%">
+      <Box px="sm" py="xs" h="100%">
         <Center ref={ref} h="100%">
           {resolution.status === "loading" && listingFailure(error) !== "silent" ? (
             <Stack role="alert" align="center">
@@ -141,7 +141,7 @@ function DatabaseView() {
 
   if (resolution.status === "unavailable") {
     return (
-      <Box p="sm" h="100%">
+      <Box px="sm" py="xs" h="100%">
         <Center ref={ref} h="100%">
           <Stack align="center" role="status">
             {resolution.database.upgradeFailed && (
@@ -157,7 +157,7 @@ function DatabaseView() {
 
   if (resolution.status === "not_found") {
     return (
-      <Box p="sm" h="100%">
+      <Box px="sm" py="xs" h="100%">
         <Center ref={ref} h="100%">
           <Stack align="center" role={preserveUnread ? "alert" : undefined}>
             <Text c={preserveUnread ? "danger" : "dimmed"} className="wrap-anywhere">
@@ -193,7 +193,8 @@ function DatabaseView() {
 
   return (
     <Box
-      p="sm"
+      px="sm"
+      py="xs"
       h="100%"
       className={classes.view}
       data-database-view
@@ -232,13 +233,13 @@ function DatabaseView() {
                   {t("Databases.Settings.Events")}
                 </Tabs.Tab>
               </Tabs.List>
-              <Tabs.Panel value="games" className={classes.panel} pt="md">
+              <Tabs.Panel value="games" className={classes.panel} pt={0}>
                 <GameTable />
               </Tabs.Panel>
-              <Tabs.Panel value="players" className={classes.panel} pt="md">
+              <Tabs.Panel value="players" className={classes.panel} pt={0}>
                 <PlayerTable />
               </Tabs.Panel>
-              <Tabs.Panel value="tournaments" className={classes.panel} pt="md">
+              <Tabs.Panel value="tournaments" className={classes.panel} pt={0}>
                 <TournamentTable />
               </Tabs.Panel>
             </Tabs>

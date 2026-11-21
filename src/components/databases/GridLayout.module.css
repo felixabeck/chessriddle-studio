@@ -23,7 +23,7 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
-  gap: var(--mantine-spacing-xs);
+  gap: 0.25rem;
 }
 
 .splitControls {
@@ -97,7 +97,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: var(--mantine-spacing-xs);
+  gap: 0.25rem;
   > :first-child {
     flex-shrink: 0;
   }

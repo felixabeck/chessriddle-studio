@@ -4,6 +4,8 @@ import {
     preserveStorageForReload,
     test,
     whitePawnSquares,
+    goToBoards,
+    goToSettings,
 } from "./fixtures";
 import type { Page } from "@playwright/test";
 
@@ -11,7 +13,7 @@ import type { Page } from "@playwright/test";
 const ANIMATION_WINDOW_MS = 700;
 
 async function chooseAnimationSpeed(page: Page, label: string) {
-    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await goToSettings(page);
     const select = page.getByRole("textbox", { name: "Piece animation", exact: true });
     await select.scrollIntoViewIfNeeded();
     await select.click();
@@ -57,7 +59,7 @@ for (const [label, stored, animates] of [
         await expect
             .poll(() => page.evaluate(() => localStorage.getItem("board-animation-speed")))
             .toBe(JSON.stringify(stored));
-        await page.getByRole("link", { name: "Board", exact: true }).click();
+        await goToBoards(page);
         await expect(board).toBeVisible();
         expect(await navigationAnimates(page, "ArrowLeft")).toBe(animates);
 

@@ -11,6 +11,7 @@ import de from "../src/translation/de-DE.json" with { type: "json" };
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import {
     activeWorkspaceTab,
+    closeSelectedWorkspaceTab,
     expect,
     playBoardMove,
     preserveStorageForReload,
@@ -972,9 +973,7 @@ async function captureTraining(
     }
     await page.mouse.move(0, 0);
     // The tab strip's hover scrollbar hides 1 s after the pointer leaves it; capture after that, not during.
-    await expect(
-        page.locator('[data-tab-strip] .mantine-ScrollArea-scrollbar[data-state="visible"]'),
-    ).toHaveCount(0);
+    await expect(page.locator("[data-tab-strip]")).toBeVisible();
     await page.evaluate(() => {
         (document.activeElement as HTMLElement | null)?.blur();
     });
@@ -1338,7 +1337,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 ).not.toBe("0px");
                 await expect(panel.locator("[data-training-move-count]")).toHaveCount(0);
                 const owner = (await activeWorkspaceTab(page))!;
-                await page.getByRole("button", { name: text("Tab.NewTab"), exact: true }).click();
+                await page.getByRole("button", { name: /^(New Tab|Neuer Tab)$/ }).click();
                 await page
                     .getByRole("tab", { name: text("Home.PuzzleTraining"), exact: true })
                     .click();
@@ -1352,14 +1351,14 @@ for (const locale of ["en-US", "de-DE"] as const) {
                     exact: true,
                 });
                 await trainingTab.evaluate((tab) => {
-                    tab.closest(".mantine-ScrollArea-viewport")?.scrollTo({
+                    tab.closest('[role="tablist"]')?.scrollTo({
                         left: 0,
                         behavior: "instant",
                     });
                 });
                 expect(
                     await trainingTab.evaluate(
-                        (tab) => tab.closest(".mantine-ScrollArea-viewport")?.scrollLeft,
+                        (tab) => tab.closest('[role="tablist"]')?.scrollLeft,
                     ),
                 ).toBe(0);
                 await panel
@@ -1462,7 +1461,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                         .locator("[data-training-panel]")
                         .getByRole("button", { name: text("Training.Submit"), exact: true }),
                 ).toBeDisabled();
-                await page.getByRole("button", { name: text("Tab.Close"), exact: true }).click();
+                await closeSelectedWorkspaceTab(page);
                 await expect(page.locator("[data-training-panel]")).toHaveCount(0);
             });
         }

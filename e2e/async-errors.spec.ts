@@ -633,10 +633,9 @@ async function assertCompactTitleBar(page: Page, controls = true) {
         target,
         "compact application-menu affordance is visible without scrolling",
     ).toBeVisible();
-    await expect(header.locator("img")).toHaveCount(0);
+    await expect(header.locator("img")).toHaveCount(1);
     const headerBox = (await header.boundingBox())!;
     const targetBox = (await target.boundingBox())!;
-    expect(targetBox.width).toBe(64);
     expect(targetBox.x).toBeGreaterThanOrEqual(0);
     expect(targetBox.y).toBeGreaterThanOrEqual(headerBox.y);
     expect(targetBox.y + targetBox.height).toBeLessThanOrEqual(headerBox.y + headerBox.height);
@@ -660,19 +659,31 @@ async function assertCompactTitleBar(page: Page, controls = true) {
     expect(exposed, "whole target is exposed and interactive").toBe(true);
     const dragBox = (await header.locator("[data-tauri-drag-region]").last().boundingBox())!;
     expect(dragBox.width, "remaining title-bar drag area").toBeGreaterThan(0);
-    await assertNothingClipped(header);
+    await assertNothingClipped(header, { mode: "reachable" });
     await assertPageNotClipped(page);
     return target;
 }
 
-async function assertCompactGroups(page: Page) {
-    for (const name of ["Datei", "Ansicht", "Hilfe"]) {
-        const item = page.getByRole("menuitem", { name, exact: true });
+async function assertFlatMenu(page: Page) {
+    for (const name of ["Neuer Tab", "Einstellungen", "Vollbild", "Über", "Beenden"]) {
+        const item = page.getByRole("menuitem", {
+            name,
+            exact: name === "Vollbild" ? false : true,
+        });
         await expect(item).toBeVisible();
         await assertNothingClipped(item);
     }
     const root = page.getByRole("menu");
-    expect(await root.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+    expect(
+        await root.evaluate((node) => {
+            const overflowY = getComputedStyle(node).overflowY;
+            return (
+                node.scrollHeight <= node.clientHeight ||
+                overflowY === "auto" ||
+                overflowY === "scroll"
+            );
+        }),
+    ).toBe(true);
     await assertMenuPanelsFit(page);
 }
 
@@ -692,22 +703,20 @@ test("compact title-bar: mouse actions and German popup geometry at 320px / 200%
     await page.goto("/library");
     const target = await assertCompactTitleBar(page);
     await target.click();
-    await assertCompactGroups(page);
+    await assertFlatMenu(page);
     await capture("compact-menu-root");
     await expect(page).toHaveScreenshot("compact-menu-root.png", { fullPage: true });
-    for (const [group, action, command] of [
-        ["Datei", "Beenden", "plugin:window|destroy"],
-        ["Ansicht", "Vollbild F11", "plugin:window|set_fullscreen"],
-        ["Hilfe", "Über", null],
+    for (const [action, command] of [
+        ["Beenden", "plugin:window|destroy"],
+        ["Vollbild", "plugin:window|set_fullscreen"],
+        ["Über", null],
     ] as const) {
-        if (group !== "Datei") await target.click();
-        // Hover and pointer entry must work even when the shifted submenu overlaps its parent.
-        await page.getByRole("menuitem", { name: group, exact: true }).hover();
-        const option = page.getByRole("menuitem", { name: action, exact: true });
+        if (action !== "Beenden") await target.click();
+        const option = page.getByRole("menuitem", { name: action, exact: action !== "Vollbild" });
         await expect(option).toBeVisible();
         await option.hover();
         await assertMenuPanelsFit(page);
-        await capture(`compact-menu-${group}`);
+        await capture(`compact-menu-${action}`);
         await option.click();
         await expect(page.getByRole("menu")).toHaveCount(0);
         if (command) {
@@ -742,40 +751,58 @@ test("compact title-bar: all groups and actions by keyboard", async ({
     });
     await page.goto("/library");
     const target = await assertCompactTitleBar(page);
-    for (const [index, group] of ["Datei", "Ansicht", "Hilfe"].entries()) {
-        await target.focus();
-        await page.keyboard.press(index === 1 ? "Space" : "Enter");
-        await expect(page.locator("[data-autofocus]")).toBeFocused();
+    await target.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menuitem", { name: "Neuer Tab", exact: true })).toBeFocused();
+    await page.keyboard.press("End");
+    await expect(page.getByRole("menuitem", { name: "Beenden", exact: true })).toBeFocused();
+    await assertMenuPanelsFit(page);
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () =>
+                    window.__E2E_TAURI__
+                        .invocations()
+                        .filter((entry) => entry.command === "plugin:window|destroy").length,
+            ),
+        )
+        .toBe(1);
+    await target.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menuitem", { name: "Neuer Tab", exact: true })).toBeFocused();
+    const fullscreen = page.getByRole("menuitem", { name: /^Vollbild/ });
+    for (let i = 0; i < 20; i++) {
+        if (await fullscreen.evaluate((item) => item === document.activeElement)) break;
         await page.keyboard.press("ArrowDown");
-        for (let move = 0; move < index; move++) await page.keyboard.press("ArrowDown");
-        const item = page.getByRole("menuitem", { name: group, exact: true });
-        await expect(item).toBeFocused();
-        await page.keyboard.press("ArrowRight");
-        const first = page.getByRole("menuitem", {
-            name: ["Neuer Tab", "Neu laden", "Feedback senden"][index]!,
-            exact: false,
-        });
-        await expect(first).toBeFocused();
-        await page.keyboard.press("ArrowLeft");
-        await expect(item).toBeFocused();
-        await page.keyboard.press(index === 1 ? "Space" : "Enter");
-        await expect(first).toBeFocused();
-        await page.keyboard.press("End");
-        await expect(
-            page.getByRole("menuitem", {
-                name: ["Beenden", "Vollbild F11", "Über"][index]!,
-                exact: true,
-            }),
-        ).toBeFocused();
-        await assertMenuPanelsFit(page);
-        await page.keyboard.press("Enter");
-        await expect(page.getByRole("menu")).toHaveCount(0);
-        if (index === 2) {
-            const dialog = page.getByRole("dialog", { name: "ChessRiddle Studio" });
-            await expect(dialog).toBeVisible();
-            await dialog.getByRole("button", { name: "Dialog schließen" }).click();
-        }
     }
+    await expect(fullscreen).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () =>
+                    window.__E2E_TAURI__
+                        .invocations()
+                        .filter((entry) => entry.command === "plugin:window|set_fullscreen").length,
+            ),
+        )
+        .toBe(1);
+    await target.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menuitem", { name: "Neuer Tab", exact: true })).toBeFocused();
+    const about = page.getByRole("menuitem", { name: "Über", exact: true });
+    for (let i = 0; i < 20; i++) {
+        if (await about.evaluate((item) => item === document.activeElement)) break;
+        await page.keyboard.press("ArrowDown");
+    }
+    await expect(about).toBeFocused();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "ChessRiddle Studio" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Dialog schließen" }).click();
     for (const command of ["plugin:window|destroy", "plugin:window|set_fullscreen"]) {
         expect(
             await page.evaluate(
@@ -788,7 +815,7 @@ test("compact title-bar: all groups and actions by keyboard", async ({
     }
     await target.focus();
     await page.keyboard.press("Enter");
-    await expect(page.locator("[data-autofocus]")).toBeFocused();
+    await expect(page.getByRole("menuitem", { name: "Neuer Tab", exact: true })).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Escape");
@@ -807,61 +834,39 @@ test("compact title-bar: wide baseline, resizing and live font scaling preserve 
     await page.goto("/settings");
     const slider = await setTitleBarFontScale(page, 100);
     const header = page.locator("header");
-    await expect(header.getByRole("button", { name: "Datei", exact: true })).toBeVisible();
-    // Recorded before production edits in wide-baseline/geometry.json, pinned renderer, de-DE.
-    expect(await header.boundingBox()).toEqual({ x: 0, y: 0, width: 1280, height: 36 });
-    expect(await header.locator("img").boundingBox()).toEqual({
-        x: 12,
-        y: 8,
-        width: 20,
-        height: 20,
-    });
-    await expect(header).toContainText("ChessRiddle Studio");
-    // Tauri reads the attribute from the event target only, so the brand must not swallow drags.
-    for (const brandPart of [
-        header.locator("img"),
-        header.getByText("ChessRiddle Studio", { exact: true }),
-    ])
-        expect(
-            await brandPart.evaluate((element) => {
-                const { left, top, width, height } = element.getBoundingClientRect();
-                return document
-                    .elementFromPoint(left + width / 2, top + height / 2)
-                    ?.hasAttribute("data-tauri-drag-region");
-            }),
-        ).toBe(true);
-    // Inter changes text widths while the title bar keeps its height and window-control space.
-    const boxes = [
-        ["Datei", 195, 7, 48, 22],
-        ["Ansicht", 243, 7, 61, 22],
-        ["Hilfe", 304, 7, 44, 22],
-        ["Fenster minimieren", 1145, 0, 45, 36],
-        ["Fenster maximieren", 1190, 0, 45, 36],
-        ["Fenster schließen", 1235, 0, 45, 36],
-    ] as const;
-    for (const [name, x, y, width, height] of boxes)
-        expect(await header.getByRole("button", { name, exact: true }).boundingBox()).toEqual({
-            x,
-            y,
-            width,
-            height,
-        });
-    await capture("title-bar-wide-100");
-    await header.getByRole("button", { name: "Hilfe", exact: true }).focus();
-    await page.keyboard.press("Enter");
-    await page.getByRole("menuitem", { name: "Über", exact: true }).focus();
-    await page.setViewportSize({ width: 760, height: 720 });
     const target = header.getByRole("button", { name: "Anwendungsmenü", exact: true });
-    await expect(target).toBeFocused();
-    await expect(page.getByRole("menu")).toHaveCount(0);
-    await target.press("Enter");
-    await expect(page.locator("[data-autofocus]")).toBeFocused();
-    await page.keyboard.press("ArrowDown");
-    await expect(page.getByRole("menuitem", { name: "Datei", exact: true })).toBeFocused();
-    await page.keyboard.press("ArrowRight");
+    await expect(target).toBeVisible();
+    expect(await header.boundingBox()).toEqual({ x: 0, y: 0, width: 1280, height: 42 });
+    await expect(header.locator("img")).toHaveCount(1);
+    await expect(header.getByRole("button", { name: "Datei", exact: true })).toHaveCount(0);
+    await expect(header.getByRole("button", { name: "Ansicht", exact: true })).toHaveCount(0);
+    await expect(header.getByRole("button", { name: "Hilfe", exact: true })).toHaveCount(0);
+    expect(await target.evaluate((button) => button.hasAttribute("data-tauri-drag-region"))).toBe(
+        false,
+    );
+    const dragGap = header.locator("[data-tauri-drag-region]").last();
+    expect((await dragGap.boundingBox())!.width).toBeGreaterThan(0);
+    for (const name of ["Fenster minimieren", "Fenster maximieren", "Fenster schließen"]) {
+        const box = (await header.getByRole("button", { name, exact: true }).boundingBox())!;
+        expect(box.height).toBe(42);
+        expect(box.y).toBe(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(1280);
+        expect(box.x).toBeGreaterThan(900);
+    }
+    await capture("title-bar-wide-100");
+    await target.focus();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("menuitem", { name: /Neuer Tab/ })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(target).toBeFocused();
+    await page.setViewportSize({ width: 760, height: 720 });
+    await expect(target).toBeFocused();
+    await target.press("Enter");
+    await expect(page.getByRole("menuitem", { name: /Neuer Tab/ })).toBeFocused();
+    await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 1280, height: 720 });
-    await expect(header.getByRole("button", { name: "Datei", exact: true })).toBeFocused();
+    await expect(target).toBeFocused();
     await expect(page.getByRole("menu")).toHaveCount(0);
     await slider.focus();
     await page.setViewportSize({ width: 760, height: 720 });
@@ -872,7 +877,7 @@ test("compact title-bar: wide baseline, resizing and live font scaling preserve 
     await expect(slider).toBeFocused();
     await assertCompactTitleBar(page);
     await setTitleBarFontScale(page, 100);
-    await expect(target).toHaveCount(0);
+    await expect(target).toBeVisible();
     await expect(slider).toBeFocused();
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
@@ -888,7 +893,8 @@ test("compact title-bar: failed Custom installation preserves native decorations
     const selector = page.getByRole("textbox", { name: "Titelleiste", exact: true });
     await selector.click();
     await page.getByRole("option", { name: "Native", exact: true }).click();
-    await expect(page.locator("header")).toHaveCount(0);
+    await expect(page.locator("header")).toHaveCount(1);
+    await expect(page.locator("header").getByRole("button", { name: /^Fenster / })).toHaveCount(0);
     await expect
         .poll(() =>
             page.evaluate(() =>
@@ -917,16 +923,8 @@ test("compact title-bar: failed Custom installation preserves native decorations
     await expect(page.locator(".mantine-Notification-root")).toHaveCount(0);
     const target = await assertCompactTitleBar(page, false);
     await target.click();
-    await assertCompactGroups(page);
+    await assertFlatMenu(page);
     await capture("compact-menu-no-controls");
-    for (const name of ["Datei", "Ansicht", "Hilfe"]) {
-        const item = page.getByRole("menuitem", { name, exact: true });
-        await item.click();
-        await expect(page.getByRole("menu").last().getByRole("menuitem").first()).toBeFocused();
-        await assertMenuPanelsFit(page);
-        await page.keyboard.press("ArrowLeft");
-        await expect(item).toBeFocused();
-    }
     await page.keyboard.press("Escape");
     await expect(target).toBeFocused();
     await assertNoHorizontalOverflow();

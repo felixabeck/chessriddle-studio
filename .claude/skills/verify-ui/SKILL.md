@@ -84,7 +84,7 @@ now does (proof 2 below).
    Felix's check, and still the only route for native menus, native dialogs and
    window chrome. Do not report the Tauri window as browser-verified.
 4. **Invalid evidence:** `pnpm start-vite` on `http://localhost:1420`
-   plus any Chrome MCP. Vite-only has no Tauri backend. `TopBar.tsx` calls
+   plus any Chrome MCP. Vite-only has no Tauri backend. `src/components/tabs/NavigationRow.tsx` calls
    `getCurrentWebviewWindow()` at module scope and crashes with
    `Cannot read properties of undefined (reading 'metadata')`. A blank
    page is not a layout check.
@@ -119,7 +119,7 @@ claim `pnpm verify:app` verified a menu, a dialog or a window decoration.
 
 `.claude/skills/verify-ui/SKILL.md` is the canonical contract. **Read it before verifying any
 visible change.** Chrome MCP cannot attach to the Tauri webview — the window is WebKitGTK and speaks no CDP — and `pnpm start-vite` plus a browser is not evidence,
-because `TopBar.tsx` calls `getCurrentWebviewWindow()` at module scope and the page crashes without
+because `src/components/tabs/NavigationRow.tsx` calls `getCurrentWebviewWindow()` at module scope and the page crashes without
 a Tauri backend.
 
 There are two automated proofs, answering different questions. `pnpm test:e2e:container` pins
@@ -141,7 +141,7 @@ download and registers the engine.
 
 
 `.claude/skills/verify-ui/SKILL.md` is the canonical contract. **Read it before verifying any UI
-change.** Chrome MCP cannot attach to the Tauri webview, and `pnpm start-vite` plus a browser is not evidence — `TopBar.tsx` calls
+change.** Chrome MCP cannot attach to the Tauri webview, and `pnpm start-vite` plus a browser is not evidence — `src/components/tabs/NavigationRow.tsx` calls
 `getCurrentWebviewWindow()` at module scope and the page crashes without a Tauri backend. Automated
 proof for pixels is `pnpm test:e2e:container`, which runs the suite inside the pinned Playwright
 image so the committed screenshots do not depend on which machine recorded them. Never re-record

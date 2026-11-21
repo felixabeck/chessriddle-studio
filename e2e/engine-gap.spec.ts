@@ -12,6 +12,7 @@ import {
     seedAnalysisEngines,
     type AnalysisRequest,
     type MockScenario,
+    goToSettings,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 import type { EngineOptions, ErrorPayload } from "../src/bindings/generated";
@@ -435,7 +436,7 @@ for (const colorScheme of ["light", "dark"] as const) {
             rightColumn.getByRole("button", { name: "Enable engine", exact: true }),
         ).toHaveCount(2);
         if (colorScheme === "dark") {
-            await page.getByRole("link", { name: "Settings", exact: true }).click();
+            await goToSettings(page);
             await page.getByRole("tab", { name: "Appearance", exact: true }).click();
             // The sidebar link's tooltip fades out once the pointer leaves it; axe must not sample it.
             await expect(page.getByRole("tooltip")).toHaveCount(0);

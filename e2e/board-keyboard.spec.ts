@@ -15,6 +15,8 @@ import {
     test,
     waitForBoardSizeSettled,
     waitForFontsSettled,
+    goToBoards,
+    goToSettings,
 } from "./fixtures";
 import type { ErrorPayload } from "../src/bindings/generated";
 import {
@@ -112,8 +114,8 @@ for (const mode of ["diff", "all"] as const) {
             });
             await page.screenshot({ path: testInfo.outputPath(`${mode}-${orientation}.png`) });
             // The correction must recover spacing, without resizing the painted chessboard.
-            expect(geometry.board.width).toBe(720);
-            expect(geometry.board.height).toBe(720);
+            expect(geometry.board.width).toBe(768);
+            expect(geometry.board.height).toBe(768);
             const indicators = geometry.bars.flatMap((bar) => bar.indicators);
             expect(geometry.bars.map((bar) => bar.placement)).toEqual(["above", "below"]);
             expect(indicators.filter((indicator) => indicator.tag === "piece")).toHaveLength(
@@ -1191,7 +1193,7 @@ test("board-keyboard: next move at a branch asks which continuation to play", as
 
     const start = page.getByRole("button", { name: "Go to start", exact: true });
     await start.click();
-    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await goToSettings(page);
     await page.getByRole("tab", { name: "Board", exact: true }).click();
     const chooseVariations = page.getByRole("switch", {
         name: "Choose Variations at Branches",
@@ -1203,7 +1205,7 @@ test("board-keyboard: next move at a branch asks which continuation to play", as
 
     await preserveStorageForReload(page);
     await expect(chooseVariations).not.toBeChecked();
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(board).toBeVisible();
     await start.click();
     await expect(page.getByRole("gridcell", { name: "e2, White Pawn" })).toHaveCount(1);

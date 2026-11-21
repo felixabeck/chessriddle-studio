@@ -9,6 +9,13 @@ import {
     gameOpeningFixture,
     test,
     type MockScenario,
+    goToBoards,
+    goToSettings,
+    goToAccounts,
+    goToEngines,
+    goToLibrary,
+    closeSelectedWorkspaceTab,
+    openWorkspaceTabActions,
 } from "./fixtures";
 import {
     decodeCompressedOrJson,
@@ -305,7 +312,7 @@ for (const layout of ["desktop", "narrow"] as const) {
         await assertNoHorizontalOverflow();
         if (layout === "narrow") await editor.scrollIntoViewIfNeeded();
         await capture(`saved-catalog-portraits-reloaded-${layout}`);
-        await page.getByRole("link", { name: "Board", exact: true }).click();
+        await goToBoards(page);
         await page.getByRole("button", { name: /^Analysis Board$/ }).click();
         await page.getByRole("tab", { name: "Analysis", exact: true }).click();
         await page.getByRole("button", { name: "Select engines", exact: true }).click();
@@ -2324,7 +2331,7 @@ test("accounts-puzzles-engines: retains unsaved public cards and retries only th
     });
 
     // Route changes keep the document owner and warning mounted without another bootstrap.
-    await page.locator('a[href="/engines"]').click();
+    await goToEngines(page);
     await expect(notice).toBeVisible();
     await page.setViewportSize({ width: 320, height: 720 });
     await expect(page.locator("html")).toHaveCSS("font-size", "32px");
@@ -2339,7 +2346,7 @@ test("accounts-puzzles-engines: retains unsaved public cards and retries only th
         fullPage: true,
     });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.locator('a[href="/accounts"]').click();
+    await goToAccounts(page);
     await expect(page.getByText("Latest alias", { exact: true }).first()).toBeVisible();
     await page.evaluate(() =>
         (window as typeof window & { __restoreSessionWrites: () => void }).__restoreSessionWrites(),
@@ -3364,11 +3371,11 @@ test("accounts-puzzles-engines: navigates empty account, puzzle, and engine stat
     await expect(accountDialog.getByLabel(/username/i)).toBeVisible();
     await accountDialog.getByRole("button", { name: /close/i }).click();
 
-    await page.getByRole("link", { name: /engines/i }).click();
+    await goToEngines(page);
     await expect(page.getByRole("heading", { name: /engines/i })).toBeVisible();
     await expect(page.getByText(/no engines installed/i)).toBeVisible();
 
-    await page.getByRole("link", { name: /board/i }).click();
+    await goToBoards(page);
     await page.getByRole("button", { name: /^puzzles$/i }).click();
     await expect(page.getByText(/puzzle training/i)).toBeVisible();
     await assertNoHorizontalOverflow();
@@ -3615,7 +3622,7 @@ test("accounts-puzzles-engines: selected puzzle B survives reload, refused admis
     expect((await read()).root).toEqual(progress.root);
     await capture("puzzle-session-b-reloaded");
     const sourceBytes = await page.evaluate((key) => sessionStorage.getItem(key), key);
-    await page.getByRole("button", { name: "Tab actions", exact: true }).click();
+    await openWorkspaceTabActions(page);
     await page.getByRole("menuitem", { name: "Duplicate tab", exact: true }).click();
     const copy = (await activeWorkspaceTab(page))!;
     expect(copy.value).not.toBe(tab.value);
@@ -3652,7 +3659,7 @@ test("accounts-puzzles-engines: selected puzzle B survives reload, refused admis
     expect((await read()).position).toEqual(progress.position);
     expect(await page.evaluate((key) => sessionStorage.getItem(key), key)).toBe(sourceBytes);
     await capture("puzzle-session-completion-retried");
-    await page.getByRole("button", { name: "Close tab", exact: true }).click();
+    await closeSelectedWorkspaceTab(page);
     await expect
         .poll(() => page.evaluate((key) => sessionStorage.getItem(key), copyKey))
         .toBeNull();
@@ -3674,7 +3681,7 @@ test("accounts-puzzles-engines: selected puzzle B survives reload, refused admis
     expect((await read()).puzzleSession!.selectedAttemptId).not.toBe(selectedB);
     await capture("puzzle-session-save-retried");
     await page.evaluate((logical) => sessionStorage.setItem(`${logical}-puzzles`, "[]"), tab.value);
-    await page.getByRole("button", { name: "Close tab", exact: true }).click();
+    await closeSelectedWorkspaceTab(page);
     await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), key)).toBeNull();
     expect(
         await page.evaluate((logical) => sessionStorage.getItem(`${logical}-puzzles`), tab.value),
@@ -3682,43 +3689,34 @@ test("accounts-puzzles-engines: selected puzzle B survives reload, refused admis
     await capture("puzzle-session-closed-keys-reclaimed");
 });
 
-test("accounts-puzzles-engines: moves the active sidebar marker with navigation", async ({
+test("accounts-puzzles-engines: moves the current marker with navigation", async ({
     page,
     mockScenario,
 }) => {
     await mockScenario({ commands: {} });
     await page.goto("/");
 
-    const navbar = page.locator("nav.mantine-AppShell-navbar");
-    const linkNames = ["User", "Library", "Engines", "Settings", "Board"];
-    const noMarker = "none";
-    await expect(navbar.getByRole("link")).toHaveCount(linkNames.length);
+    const library = page.getByRole("link", { name: "Library", exact: true });
+    const current = () => page.locator("header [aria-current='page']");
 
-    for (const name of linkNames) {
-        const clickedLink = navbar.getByRole("link", { name, exact: true });
-        await clickedLink.click();
-        await expect(clickedLink).toHaveAttribute("aria-current", "page");
-        await expect(navbar.locator('a[aria-current="page"]')).toHaveCount(1);
-        await expect
-            .poll(() => clickedLink.evaluate((link) => getComputedStyle(link).backgroundImage))
-            .not.toBe(noMarker);
-        // WebKitGTK paints a coloured side border's colour into the opposite rounded
-        // corners; Chromium does not, so guard the cause rather than the pixels.
-        expect(
-            await clickedLink.evaluate((link) => {
-                const style = getComputedStyle(link);
-                return [style.borderLeftWidth, style.borderRightWidth];
-            }),
-        ).toEqual(["0px", "0px"]);
+    await goToAccounts(page);
+    await expect(page).toHaveURL("/accounts");
+    await expect(current()).toContainText("Accounts");
 
-        for (const otherName of linkNames) {
-            if (otherName === name) continue;
+    await goToEngines(page);
+    await expect(page).toHaveURL("/engines");
+    await expect(current()).toContainText("Engines");
 
-            const otherLink = navbar.getByRole("link", { name: otherName, exact: true });
-            await expect(otherLink).not.toHaveAttribute("aria-current", "page");
-            await expect
-                .poll(() => otherLink.evaluate((link) => getComputedStyle(link).backgroundImage))
-                .toBe(noMarker);
-        }
-    }
+    await goToLibrary(page);
+    await expect(page).toHaveURL("/library");
+    await expect(library).toHaveAttribute("aria-current", "page");
+
+    await goToSettings(page);
+    await expect(page).toHaveURL("/settings");
+    await expect(current()).toContainText("Settings");
+
+    await goToBoards(page);
+    await expect(page).toHaveURL("/");
+    await expect(page.locator("header [role='tab'][aria-selected='true']")).toHaveCount(1);
+    await expect(library).not.toHaveAttribute("aria-current", "page");
 });

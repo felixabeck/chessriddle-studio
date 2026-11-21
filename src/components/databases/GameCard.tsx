@@ -83,7 +83,14 @@ function GameCard({
   };
 
   return (
-    <Paper shadow="sm" p="sm" withBorder h={compact ? "auto" : "100%"} className={classes.gameCard}>
+    <Paper
+      shadow="sm"
+      px="sm"
+      py="xs"
+      withBorder
+      h={compact ? "auto" : "100%"}
+      className={classes.gameCard}
+    >
       <ConfirmModal
         title={t("Databases.Game.Delete")}
         description={t("Databases.Game.DeleteConfirm", {

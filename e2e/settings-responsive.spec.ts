@@ -11,7 +11,10 @@ test("settings-responsive: preserves keyboard focus at narrow 200% font scale", 
 
     await expect(page.getByRole("heading", { name: /settings/i })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Anarchy", exact: true })).toHaveCount(0);
-    const categoryTabs = page.locator("[role='tablist'] [role='tab']");
+    const categoryTabs = page
+        .getByRole("heading", { name: /settings/i })
+        .locator("../..")
+        .getByRole("tab");
     await expect(categoryTabs).toHaveCount(8);
     await expect(categoryTabs.last()).toHaveText("Advanced");
     // The Board tab is open first, so it has to be there to be measured.
@@ -31,15 +34,16 @@ test("settings-responsive: preserves keyboard focus at narrow 200% font scale", 
 
     await page.getByRole("button", { name: "Application menu", exact: true }).focus();
     await page.keyboard.press("Enter");
-    await expect(page.locator("[data-autofocus]")).toBeFocused();
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
-    await expect(page.getByRole("menuitem", { name: /^help$/i })).toBeFocused();
-    await page.keyboard.press("ArrowRight");
-    await expect(page.getByRole("menuitem", { name: /^send feedback$/i })).toBeFocused();
+    await expect(page.getByRole("menuitem", { name: "New Tab", exact: true })).toBeFocused();
     await page.keyboard.press("End");
-    await expect(page.getByRole("menuitem", { name: /^about$/i })).toBeFocused();
+    await expect(page.getByRole("menuitem", { name: "Exit", exact: true })).toBeFocused();
+    await page.keyboard.press("Home");
+    const aboutItem = page.getByRole("menuitem", { name: "About", exact: true });
+    for (let i = 0; i < 20; i++) {
+        if (await aboutItem.evaluate((item) => item === document.activeElement)) break;
+        await page.keyboard.press("ArrowDown");
+    }
+    await expect(aboutItem).toBeFocused();
     await page.keyboard.press("Enter");
     const about = page.getByRole("dialog", { name: "ChessRiddle Studio" });
     await expect(about).toBeVisible();
@@ -122,20 +126,17 @@ test("settings search TextInput keeps Mantine outline-none on keyboard focus", a
     await expect(search).toHaveCSS("outline-style", "none");
 });
 
-test("sidebar Send feedback button keeps its 2px inset outline on keyboard focus", async ({
-    page,
-}) => {
+test("row Feedback button keeps its 2px inset outline on keyboard focus", async ({ page }) => {
     await page.goto("/settings");
-    const feedback = page.getByRole("button", { name: "Send feedback", exact: true });
+    const feedback = page.getByRole("button", { name: "Feedback", exact: true });
     await expect(feedback).toBeVisible();
     await feedback.focus();
     await page.keyboard.press("Shift+Tab");
     await page.keyboard.press("Tab");
     await expect(feedback).toBeFocused();
     expect(await feedback.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
-    // BASE: Sidebar.module.css .link:focus-visible { outline: 2px; outline-offset: -3px }.
     await expect(feedback).toHaveCSS("outline-width", "2px");
-    await expect(feedback).toHaveCSS("outline-offset", "-3px");
+    await expect(feedback).toHaveCSS("outline-offset", "-2px");
 });
 
 test("settings-responsive: retired Anarchy setting is absent from search", async ({

@@ -11,6 +11,7 @@ import {
     playBoardMove,
     selectFilesTreeRow,
     waitForScrollAreaScrollbarsHidden,
+    goToBoards,
 } from "./fixtures";
 
 const repertoireFile = {
@@ -160,7 +161,7 @@ test("Save to file or database appends to a repertoire file and rebinds the tab"
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
     await page.getByRole("button", { name: "Save to file or database…", exact: true }).click();

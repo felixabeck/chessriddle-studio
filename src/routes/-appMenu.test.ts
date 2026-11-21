@@ -2,19 +2,20 @@ import { afterEach, expect, test, vi } from "vitest";
 import {
     assembleNativeMenuResources,
     buildAppMenuTree,
-    clearSavedDataFromMenu,
+    buildInAppMenuItems,
     createNewTabFromMenu,
     installAppMenuSurface,
     menuWindowPlatform,
     openPgnFromMenu,
     openSettingsFromMenu,
     renderResizeHandles,
-    renderTopBar,
     resetInstallChainForTests,
     runNativeMenuAction,
     bindAppMenuCallbacks,
     wantNativeDecorations,
+    wantRealMenu,
     type AppMenuCallbacks,
+    type MenuAction,
     type MenuGroup,
     type MenuHandle,
     type NativeMenuResource,
@@ -59,21 +60,34 @@ function callbacks(overrides: Partial<AppMenuCallbacks> = {}): AppMenuCallbacks 
         openNewFile: () => undefined,
         saveGame: () => undefined,
         saveGameTo: () => undefined,
+        openAccounts: () => undefined,
+        openEngines: () => undefined,
         openSettings: () => undefined,
         exit: () => undefined,
-        reload: () => undefined,
         toggleFullscreen: () => undefined,
-        clearSavedData: () => undefined,
-        openLogs: () => undefined,
         ...overrides,
     };
 }
 
 const t = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
 
-test("non-macOS tree has File/View/Help with Exit and About", () => {
+function idsOfItems(items: MenuAction[]): string[] {
+    return items.flatMap((option) =>
+        "kind" in option && option.kind === "separator" ? [] : option.id ? [option.id] : [],
+    );
+}
+
+function item(items: MenuAction[], id: string) {
+    const found = items.find(
+        (option) => !("kind" in option && option.kind === "separator") && option.id === id,
+    );
+    if (!found || "kind" in found) throw new Error(`missing ${id}`);
+    return found;
+}
+
+test("the in-app menu is flat, omits the Advanced entries, and drops Exit on macOS", () => {
     const actions = callbacks();
-    const groups = buildAppMenuTree({
+    const linux = buildInAppMenuItems({
         t,
         isMacOS: false,
         newTabShortcut: "Ctrl+T",
@@ -81,44 +95,74 @@ test("non-macOS tree has File/View/Help with Exit and About", () => {
         saveShortcut: "ctrl+s",
         callbacks: actions,
     });
-    expect(groups.map((group) => group.label)).toEqual(["Menu.File", "Menu.View", "Menu.Help"]);
-    expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file", "save", "save_to", "exit"]);
-    expect(option(groups, "Menu.File", "save").label).toBe("Common.Save");
-    expect(option(groups, "Menu.File", "save").shortcut).toBe("ctrl+s");
-    expect(option(groups, "Menu.File", "save").action).toBe(actions.saveGame);
-    expect(option(groups, "Menu.File", "save_to").label).toBe("Board.Database.Save");
-    expect(option(groups, "Menu.File", "save_to").action).toBe(actions.saveGameTo);
-    expect(groups[0].options.map((item) => ("kind" in item ? "|" : item.id))).toEqual([
+    expect(linux.map((option) => ("kind" in option ? "|" : option.id))).toEqual([
         "new_tab",
         "open_file",
         "|",
         "save",
         "save_to",
         "|",
+        "accounts",
+        "engines",
+        "settings",
+        "|",
+        "toggle_fullscreen",
+        "|",
+        "send_feedback",
+        "about",
+        "|",
         "exit",
     ]);
-    expect(idsOf(groups, "Menu.View")).toEqual(["reload", "toggle_fullscreen"]);
-    expect(idsOf(groups, "Menu.Help")).toEqual([
+    expect(idsOfItems(linux)).toEqual([
+        "new_tab",
+        "open_file",
+        "save",
+        "save_to",
+        "accounts",
+        "engines",
+        "settings",
+        "toggle_fullscreen",
         "send_feedback",
-        "clear_saved_data",
-        "logs",
+        "about",
+        "exit",
+    ]);
+    expect(item(linux, "save").label).toBe("Common.Save");
+    expect(item(linux, "save").shortcut).toBe("ctrl+s");
+    expect(item(linux, "save").action).toBe(actions.saveGame);
+    expect(item(linux, "save_to").label).toBe("Board.Database.Save");
+    expect(item(linux, "new_tab").shortcut).toBe("Ctrl+T");
+    expect(item(linux, "open_file").shortcut).toBe("Ctrl+O");
+    expect(item(linux, "toggle_fullscreen").shortcut).toBe("F11");
+    expect(item(linux, "new_tab").action).toBe(actions.createNewTab);
+    expect(item(linux, "accounts").action).toBe(actions.openAccounts);
+    expect(item(linux, "engines").action).toBe(actions.openEngines);
+    expect(item(linux, "settings").action).toBe(actions.openSettings);
+    expect(item(linux, "exit").action).toBe(actions.exit);
+    expect(linux.some((option) => "id" in option && option.id === "reload")).toBe(false);
+    expect(linux.some((option) => "id" in option && option.id === "clear_saved_data")).toBe(false);
+    expect(linux.some((option) => "id" in option && option.id === "logs")).toBe(false);
+
+    const mac = buildInAppMenuItems({
+        t,
+        isMacOS: true,
+        newTabShortcut: "Cmd+T",
+        openFileShortcut: "Cmd+O",
+        saveShortcut: "meta+s",
+        callbacks: actions,
+    });
+    expect(idsOfItems(mac)).toEqual([
+        "new_tab",
+        "open_file",
+        "save",
+        "save_to",
+        "accounts",
+        "engines",
+        "settings",
+        "toggle_fullscreen",
+        "send_feedback",
         "about",
     ]);
-    expect(option(groups, "Menu.File", "new_tab").shortcut).toBe("Ctrl+T");
-    expect(option(groups, "Menu.File", "open_file").shortcut).toBe("Ctrl+O");
-    expect(option(groups, "Menu.View", "toggle_fullscreen").shortcut).toBe("F11");
-    expect(option(groups, "Menu.File", "new_tab").action).toBe(actions.createNewTab);
-    expect(option(groups, "Menu.File", "open_file").action).toBe(actions.openNewFile);
-    expect(option(groups, "Menu.File", "exit").action).toBe(actions.exit);
-    expect(option(groups, "Menu.View", "reload").action).toBe(actions.reload);
-    expect(option(groups, "Menu.View", "toggle_fullscreen").action).toBe(actions.toggleFullscreen);
-    expect(option(groups, "Menu.Help", "send_feedback").action).toBe(actions.sendFeedback);
-    expect(option(groups, "Menu.Help", "clear_saved_data").action).toBe(actions.clearSavedData);
-    expect(option(groups, "Menu.Help", "logs").action).toBe(actions.openLogs);
-    expect(option(groups, "Menu.Help", "about").action).toBe(actions.about);
-    expect(groups.some((group) => group.options.some((item) => "item" in item && item.item))).toBe(
-        false,
-    );
+    expect(item(mac, "toggle_fullscreen").shortcut).toBe("Ctrl+Cmd+F");
 });
 
 test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
@@ -140,16 +184,25 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
     ]);
     expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file", "save", "save_to"]);
     expect(option(groups, "Menu.File", "save").shortcut).toBe("meta+s");
-    expect(idsOf(groups, "Menu.Help")).toEqual(["send_feedback", "clear_saved_data", "logs"]);
+    expect(idsOf(groups, "Menu.View")).toEqual(["toggle_fullscreen"]);
+    expect(idsOf(groups, "Menu.Help")).toEqual(["send_feedback"]);
     expect(option(groups, "Menu.Application.Menu", "about").action).toBe(actions.about);
     expect(option(groups, "Menu.Application.Menu", "settings").action).toBe(actions.openSettings);
     expect(option(groups, "Menu.File", "new_tab").action).toBe(actions.createNewTab);
     expect(option(groups, "Menu.File", "open_file").action).toBe(actions.openNewFile);
-    expect(option(groups, "Menu.View", "reload").action).toBe(actions.reload);
     expect(option(groups, "Menu.View", "toggle_fullscreen").action).toBe(actions.toggleFullscreen);
     expect(option(groups, "Menu.Help", "send_feedback").action).toBe(actions.sendFeedback);
-    expect(option(groups, "Menu.Help", "clear_saved_data").action).toBe(actions.clearSavedData);
-    expect(option(groups, "Menu.Help", "logs").action).toBe(actions.openLogs);
+    expect(
+        groups.some((group) => group.options.some((item) => "id" in item && item.id === "reload")),
+    ).toBe(false);
+    expect(
+        groups.some((group) =>
+            group.options.some((item) => "id" in item && item.id === "clear_saved_data"),
+        ),
+    ).toBe(false);
+    expect(
+        groups.some((group) => group.options.some((item) => "id" in item && item.id === "logs")),
+    ).toBe(false);
     const hide = groups[0].options.find((item) => "item" in item && item.item === "Hide");
     const quit = option(groups, "Menu.Application.Menu", "quit");
     expect(hide).toBeDefined();
@@ -164,7 +217,7 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
 });
 
 test("changing t changes labels", () => {
-    const groups = buildAppMenuTree({
+    const items = buildInAppMenuItems({
         t: (key) => `${key}.fr`,
         isMacOS: false,
         newTabShortcut: "Ctrl+T",
@@ -172,8 +225,8 @@ test("changing t changes labels", () => {
         saveShortcut: "ctrl+s",
         callbacks: callbacks(),
     });
-    expect(groups[0].label).toBe("Menu.File.fr");
-    expect(option(groups, "Menu.File.fr", "exit").label).toBe("Menu.File.Exit.fr");
+    expect(item(items, "exit").label).toBe("Menu.File.Exit.fr");
+    expect(item(items, "new_tab").label).toBe("Menu.File.NewTab.fr");
 });
 
 test("openPgnFromMenu waits for committed admission before navigating", async () => {
@@ -285,50 +338,6 @@ test("openSettingsFromMenu awaits navigate", async () => {
     await pending;
 });
 
-test("clearSavedDataFromMenu does not clear when ask is false", async () => {
-    let cleared = false;
-    await clearSavedDataFromMenu({
-        ask: async () => false,
-        confirmMessage: "sure?",
-        title: "clear",
-        clear: () => {
-            cleared = true;
-        },
-    });
-    expect(cleared).toBe(false);
-});
-
-test("clearSavedDataFromMenu clears when ask is true", async () => {
-    const clear = deferred<void>();
-    const pending = clearSavedDataFromMenu({
-        ask: async () => true,
-        confirmMessage: "sure?",
-        title: "clear",
-        clear: () => clear.promise,
-    });
-    let settled = false;
-    void pending.then(() => {
-        settled = true;
-    });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    clear.resolve();
-    await pending;
-    expect(settled).toBe(true);
-});
-
-test("clearSavedDataFromMenu rejects when clearing rejects", async () => {
-    const clear = deferred<void>();
-    const pending = clearSavedDataFromMenu({
-        ask: async () => true,
-        confirmMessage: "sure?",
-        title: "clear",
-        clear: () => clear.promise,
-    });
-    clear.reject(new Error("migration failed"));
-    await expect(pending).rejects.toThrow("migration failed");
-});
-
 test("bindAppMenuCallbacks returns runMenu's promise for each wired command", async () => {
     const opened = deferred<void>();
     const seen: unknown[] = [];
@@ -357,17 +366,15 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
         saveGameTo: async () => {
             seen.push("save-to");
         },
+        openAccounts: async () => {
+            seen.push("accounts");
+        },
+        openEngines: async () => {
+            seen.push("engines");
+        },
         openSettings: async () => undefined,
         exit: async () => undefined,
-        reload: () => {
-            seen.push("reload");
-        },
         toggleFullscreen: async () => undefined,
-        clearSavedData: async () => {
-            throw new Error("clear failed");
-        },
-        openLogs: async () => undefined,
-        openLogsSuccessMessage: "logs-ok",
     });
 
     const pending = callbacks.createNewTab();
@@ -388,23 +395,22 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
     await callbacks.openSettings();
     await callbacks.exit();
     await callbacks.toggleFullscreen();
-    await callbacks.clearSavedData();
+    await callbacks.openAccounts();
+    await callbacks.openEngines();
     expect(seen).toEqual([
         expect.objectContaining({ message: "open failed" }),
-        expect.objectContaining({ message: "clear failed" }),
+        "accounts",
+        "engines",
     ]);
 
     callbacks.about();
     callbacks.sendFeedback();
-    callbacks.reload();
-    await callbacks.openLogs();
     expect(seen).toEqual([
         expect.objectContaining({ message: "open failed" }),
-        expect.objectContaining({ message: "clear failed" }),
+        "accounts",
+        "engines",
         "about",
         "send-feedback",
-        "reload",
-        "logs-ok",
     ]);
 });
 
@@ -679,11 +685,10 @@ test("surface helpers match the current linux/win32/macos coupling", () => {
     expect(menuWindowPlatform("darwin")).toBe("other");
     expect(wantNativeDecorations(true, "linux")).toBe(true);
     expect(wantNativeDecorations(true, "win32")).toBe(true);
-    expect(renderTopBar(true, "linux")).toBe(false);
-    expect(renderTopBar(false, "linux")).toBe(true);
-    expect(renderTopBar(true, "win32")).toBe(false);
-    expect(renderTopBar(false, "other")).toBe(false);
     expect(wantNativeDecorations(false, "other")).toBe(true);
+    expect(wantRealMenu("linux")).toBe(false);
+    expect(wantRealMenu("win32")).toBe(false);
+    expect(wantRealMenu("other")).toBe(true);
 });
 
 test("resize handles appear only on Linux with the custom window controls", () => {

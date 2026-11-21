@@ -22,6 +22,9 @@ import {
     waitForScrollAreaScrollbarsHidden,
     dragMosaicDivider,
     splitTextWords,
+    goToBoards,
+    libraryLink,
+    goToLibrary,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
@@ -437,7 +440,9 @@ test("database-files: owner inference opens Black and a manual flip survives aut
             window.__E2E_TAURI__.invocations().filter(({ command }) => command === "write_db_game"),
         ),
     ).toHaveLength(0);
-    await page.getByRole("button", { name: /close tab/i }).click();
+    await page
+        .locator("header [role='tablist'] [role='tab'][aria-selected='true'] + button")
+        .click();
 
     await open(whiteGame.white);
     await expect(
@@ -465,7 +470,9 @@ test("database-files: owner inference opens Black and a manual flip survives aut
                 }),
             },
         ]);
-    await page.getByRole("button", { name: /close tab/i }).click();
+    await page
+        .locator("header [role='tablist'] [role='tab'][aria-selected='true'] + button")
+        .click();
     await open(whiteGame.white);
     await expect(
         page.getByRole("grid", { name: "Chessboard, Black orientation", exact: true }),
@@ -539,8 +546,7 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     await page.goto("/library");
     // Wait for metadata admission to finish before inspecting the board's effective choice.
     await expect(page.getByRole("treeitem", { name: "opening.db3", exact: true })).toBeVisible();
-    const navbar = page.locator("nav.mantine-AppShell-navbar");
-    await navbar.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
     const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
@@ -567,11 +573,11 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     });
 
     await page.evaluate((next) => window.__E2E_TAURI__.configure({ commands: next }), commands);
-    await navbar.getByRole("link", { name: "Library", exact: true }).click();
+    await goToLibrary(page);
     // Choosing the existing workspace loads its files and revalidates the shared database list.
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.getByRole("button", { name: "Open database", exact: true })).toBeVisible();
-    await navbar.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     // With a database chosen the header collapses to its caption, and the view is a plain region.
     const explorer = page.getByRole("tabpanel", { name: "Database", exact: true });
     await expect(explorer.locator("[data-explorer-source]")).toHaveText(
@@ -616,10 +622,7 @@ test("database-files: the local explorer options keep their controls legible and
     // Choosing the workspace loads its files and admits the shared database list.
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.getByRole("button", { name: "Open database", exact: true })).toBeVisible();
-    await page
-        .locator("nav.mantine-AppShell-navbar")
-        .getByRole("link", { name: "Board", exact: true })
-        .click();
+    await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
     await page.getByRole("button", { name: "Show database settings", exact: true }).click();
@@ -3104,7 +3107,7 @@ test("database-files: concurrent conversions render their own live progress coun
     await expect(firstRow).toHaveText("Convert: first.pgn120 games • 60.0 games/sCancel");
     await expect(secondRow).toHaveText("Convert: second.pgn42 games • 14.0 games/sCancel");
     // Client navigation preserves the fixture session and the app-owned conversion registry.
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("tab", { name: "New Tab", exact: true })).toBeVisible();
     await page.getByRole("link", { name: "Library", exact: true }).click();
@@ -3272,10 +3275,9 @@ test("database-files: Back opens the overview and ends the active database sessi
     await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: databaseTitle, exact: true })).toBeHidden();
 
-    const navbar = page.locator("nav.mantine-AppShell-navbar");
-    await navbar.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(page).toHaveURL(/\/$/);
-    await navbar.getByRole("link", { name: "Library", exact: true }).click();
+    await goToLibrary(page);
     await expect(page).toHaveURL("/library");
     await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
 });
@@ -3291,10 +3293,9 @@ test("database-files: the sidebar resumes the active database view", async ({
     await expect(page).toHaveURL(`/databases/${databaseKey}`);
     await expect(page.getByRole("heading", { name: databaseTitle, exact: true })).toBeVisible();
 
-    const navbar = page.locator("nav.mantine-AppShell-navbar");
-    await navbar.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(page).toHaveURL(/\/$/);
-    const databasesLink = navbar.getByRole("link", { name: "Library", exact: true });
+    const databasesLink = libraryLink(page);
     await expect(databasesLink).not.toHaveAttribute("aria-current", "page");
     await databasesLink.click();
     await expect(page).toHaveURL(`/databases/${databaseKey}`);
@@ -3428,10 +3429,7 @@ test("database-files: the board explorer compares two databases side by side", a
     await expect(
         page.getByRole("button", { name: "Open database", exact: true }).first(),
     ).toBeVisible();
-    await page
-        .locator("nav.mantine-AppShell-navbar")
-        .getByRole("link", { name: "Board", exact: true })
-        .click();
+    await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
 

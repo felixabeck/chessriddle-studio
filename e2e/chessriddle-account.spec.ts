@@ -1,4 +1,4 @@
-import { assertNothingClipped, expect, test } from "./fixtures";
+import { assertNothingClipped, expect, goToAccounts, goToEngines, test } from "./fixtures";
 import type { AccountStatus } from "../src/bindings/generated";
 import { serializeStorageValue } from "../src/state/store/debouncedStorage";
 import english from "../src/translation/en-US.json" with { type: "json" };
@@ -268,9 +268,9 @@ test("leaving Accounts during connect retires only the view", async ({ page, moc
     await page.goto("/accounts");
     await page.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(page.getByText(english.translation["Home.ChessRiddle.Connecting"])).toBeVisible();
-    await page.locator('a[href="/engines"]').click();
+    await goToEngines(page);
     await expect(page.getByRole("heading", { name: /engines/i })).toBeVisible();
-    await page.locator('a[href="/accounts"]').click();
+    await goToAccounts(page);
     await expect(page.getByText("Connected as Alex", { exact: true })).toBeVisible();
     expect(
         await page.evaluate(

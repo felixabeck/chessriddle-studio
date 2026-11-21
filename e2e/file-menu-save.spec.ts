@@ -1,9 +1,8 @@
 import type { Page } from "@playwright/test";
-import { activeWorkspaceTab, expect, test } from "./fixtures";
+import { activeWorkspaceTab, expect, openApplicationMenu, test } from "./fixtures";
 
 async function openFileMenu(page: Page) {
-    await page.getByRole("button", { name: "Application menu", exact: true }).click();
-    await page.getByRole("menuitem", { name: "File", exact: true }).hover();
+    await openApplicationMenu(page);
 }
 
 const saveToDialog = (page: Page) =>

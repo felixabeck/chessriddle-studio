@@ -29,6 +29,7 @@ const fixtures = vi.hoisted(() => ({
       setReportOperationId: fixtures.setReportOperationId,
     }),
   })),
+  providerStores: new Map<string, unknown>(),
   createTab: vi.fn(),
   duplicateHandler: null as (() => void) | null,
   mountPanels: true,
@@ -64,6 +65,7 @@ const fixtures = vi.hoisted(() => ({
   restoreReportOwner: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
   navigate: vi.fn(),
+  pathname: "/",
   tabsOnChange: null as ((value: string | null) => void) | null,
   nextPromise: null as Promise<void> | null,
   nextReady: false,
@@ -136,6 +138,7 @@ vi.mock("@/state/keybinds", async () => {
   const { atom } = await vi.importActual<typeof import("jotai")>("jotai");
   return {
     keyMapAtom: atom({
+      NEW_TAB: { keys: "mod+t" },
       CLOSE_TAB: { keys: "mod+w" },
       CYCLE_TABS: { keys: "mod+tab" },
       REVERSE_CYCLE_TABS: { keys: "mod+shift+tab" },
@@ -205,6 +208,11 @@ vi.mock("@mantine/hooks", async (importOriginal) => {
 });
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => fixtures.navigate,
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { pathname: string } }) => unknown;
+  }) => select({ location: { pathname: fixtures.pathname } }),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@hello-pangea/dnd", () => ({
@@ -345,7 +353,7 @@ vi.mock("./ConfirmChangesModal", () => ({
 }));
 vi.mock("./NewTabHome", () => ({
   default: ({ id }: { id: string }) => {
-    if (id === "next" && !fixtures.nextReady) throw fixtures.nextPromise;
+    if (id === "next" && !fixtures.nextReady && fixtures.mountPanels) throw fixtures.nextPromise;
     return <div data-testid={`view-${id}`}>{id}</div>;
   },
 }));
@@ -353,9 +361,36 @@ vi.mock("react-mosaic-component", () => ({ Mosaic: () => null }));
 vi.mock("./BoardTabLayout", () => ({
   default: ({ children }: { children: ReactNode }) => children,
 }));
+vi.mock("../common/TreeStateContext", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../common/TreeStateContext")>();
+  return {
+    ...actual,
+    TreeStateProvider: ({
+      id,
+      treeKey,
+      children,
+    }: {
+      id?: string;
+      treeKey?: string;
+      children: ReactNode;
+    }) => {
+      if (!fixtures.mountPanels) return null;
+      if (id && !fixtures.providerStores.has(id)) {
+        fixtures.providerStores.set(id, fixtures.createTreeStore(id, undefined, treeKey ?? id));
+      }
+      return (
+        <actual.TreeStateContext.Provider
+          value={(id ? fixtures.providerStores.get(id) : null) as never}
+        >
+          {children}
+        </actual.TreeStateContext.Provider>
+      );
+    },
+  };
+});
 
 import BoardsPage from "./BoardsPage";
-import { TabCommandsProvider } from "./TabCommands";
+import { TabCommandsProvider, useTabCommands, type TabCommands } from "./TabCommands";
 import {
   activeTabAtom,
   closingTabsAtom,
@@ -370,7 +405,15 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let container: HTMLDivElement;
 let root: Root;
+let latest: TabCommands | null;
 const store = getDefaultStore();
+
+function Probe() {
+  latest = useTabCommands();
+  fixtures.closeHandler = () => latest!.closeTab(latest!.activeTab);
+  fixtures.duplicateHandler = () => latest!.duplicateTab(latest!.activeTab!);
+  return null;
+}
 
 function deferred<T>() {
   let resolve: (value: T | PromiseLike<T>) => void = () => undefined;
@@ -386,6 +429,7 @@ function renderPage() {
       <Suspense fallback={<div data-testid="fallback">Loading</div>}>
         <MantineProvider env="test">
           <TabCommandsProvider>
+            <Probe />
             <BoardsPage />
           </TabCommandsProvider>
         </MantineProvider>
@@ -409,6 +453,7 @@ beforeEach(() => {
   fixtures.commitReceipt = true;
   fixtures.treeStatuses.clear();
   fixtures.mountPanels = true;
+  fixtures.providerStores.clear();
   fixtures.duplicateHandler = null;
   fixtures.getStatus.mockImplementation(
     (key) => fixtures.treeStatuses.get(key) ?? fixtures.treeStatus,
@@ -454,7 +499,9 @@ beforeEach(() => {
     return true;
   });
   fixtures.hotkeyBindings = null;
+  fixtures.pathname = "/";
   fixtures.navigate.mockReset();
+  latest = null;
   fixtures.notifyUnlessCancelled.mockReset();
   fixtures.tabsOnChange = null;
   fixtures.nextPromise = new Promise<void>((resolve) => {
@@ -559,40 +606,6 @@ test.each(["linux", "macos"])(
   },
 );
 
-async function renderMenuPage() {
-  fixtures.realMenus = true;
-  fixtures.mountPanels = false;
-  await renderPage();
-}
-
-function contextClick(tabId: string, clientX = 80, clientY = 30) {
-  const event = new MouseEvent("contextmenu", {
-    bubbles: true,
-    cancelable: true,
-    clientX,
-    clientY,
-  });
-  container.querySelector(`[data-testid="tab-${tabId}"]`)!.dispatchEvent(event);
-  expect(event.defaultPrevented).toBe(true);
-}
-
-async function openMenu(trigger: "context" | "actions") {
-  await act(async () => {
-    if (trigger === "context") contextClick("next");
-    else container.querySelector<HTMLButtonElement>('[aria-label="Tab.Actions"]')!.click();
-  });
-  expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(3);
-  expect(store.get(activeTabAtom)).toBe("current");
-}
-
-function menuAction(label: string) {
-  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-    (candidate) => candidate.textContent === label,
-  );
-  if (!item) throw new Error(`Missing menu action: ${label}`);
-  item.click();
-}
-
 function enterRename(value: string) {
   const input = container.querySelector<HTMLInputElement>('input[aria-label="Tab.Rename"]')!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
@@ -605,25 +618,22 @@ function saveRename() {
     .click();
 }
 
-test.each(["context", "actions"] as const)("%s menu duplicates its target tab", async (trigger) => {
-  await renderMenuPage();
-  await openMenu(trigger);
-  await act(async () => menuAction("Tab.Duplicate"));
-  const target = trigger === "context" ? "next" : "current";
+test.each(["current", "next"] as const)("duplicate command clones %s", async (target) => {
+  fixtures.mountPanels = false;
+  await renderPage();
+  await act(async () => latest!.duplicateTab(target));
   expect(fixtures.cloneDurable.mock.calls[0]?.[0]).toBe(target);
   const tabs = store.get(tabsAtom);
   expect(tabs).toHaveLength(3);
   expect(tabs[2]?.name).toBe(target === "next" ? "Next" : "Current");
-  expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
-test.each(["context", "actions"] as const)(
-  "%s menu renames its recorded target after selection changes",
-  async (trigger) => {
-    await renderMenuPage();
-    await openMenu(trigger);
-    await act(async () => menuAction("Tab.Rename"));
-    const target = trigger === "context" ? "next" : "current";
+test.each(["current", "next"] as const)(
+  "rename command records %s after selection changes",
+  async (target) => {
+    fixtures.mountPanels = false;
+    await renderPage();
+    await act(async () => latest!.renameTab(target));
     expect(container.querySelector<HTMLInputElement>("input")!.value).toBe(
       target === "next" ? "Next" : "Current",
     );
@@ -638,23 +648,23 @@ test.each(["context", "actions"] as const)(
   },
 );
 
-test.each(["context", "actions"] as const)("%s menu closes its target tab", async (trigger) => {
-  await renderMenuPage();
-  await openMenu(trigger);
-  await act(async () => menuAction("Tab.Close"));
-  const target = trigger === "context" ? "next" : "current";
+test.each(["current", "next"] as const)("close command closes %s", async (target) => {
+  fixtures.mountPanels = false;
+  await renderPage();
+  await act(async () => {
+    await latest!.closeTab(target);
+  });
   expect(fixtures.closeWorkspaceTab).toHaveBeenCalledWith(target);
   expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual([
     target === "next" ? "current" : "next",
   ]);
   expect(store.get(activeTabAtom)).toBe(target === "next" ? "current" : "next");
-  expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
 test("rename with a closed target closes the dialog without writing workspace metadata", async () => {
-  await renderMenuPage();
-  await openMenu("context");
-  await act(async () => menuAction("Tab.Rename"));
+  fixtures.mountPanels = false;
+  await renderPage();
+  await act(async () => latest!.renameTab("next"));
   await act(async () => enterRename("Orphaned rename"));
   await act(async () => store.set(tabsAtom, [fixtures.tabs[0]!]));
   const before = store.get(tabsAtom);
@@ -668,46 +678,6 @@ test("rename with a closed target closes the dialog without writing workspace me
   } finally {
     unsubscribe();
   }
-});
-
-test("context menu retargets, anchors at the pointer or keyboard tab and preserves left-click activation", async () => {
-  await renderMenuPage();
-  await openMenu("context");
-  let anchor = container.querySelector<HTMLElement>('span[aria-hidden="true"]')!;
-  expect(anchor.style.left).toBe("80px");
-  expect(anchor.style.top).toBe("30px");
-  const tab = container.querySelector<HTMLButtonElement>('[data-testid="tab-current"]')!;
-  vi.spyOn(tab, "getBoundingClientRect").mockReturnValue({ left: 12, bottom: 45 } as DOMRect);
-  await act(async () => contextClick("current", 0, 0));
-  expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
-  anchor = container.querySelector<HTMLElement>('span[aria-hidden="true"]')!;
-  expect(anchor.style.left).toBe("12px");
-  expect(anchor.style.top).toBe("45px");
-  await act(async () => menuAction("Tab.Duplicate"));
-  expect(fixtures.cloneDurable.mock.calls[0]?.[0]).toBe("current");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[data-testid="tab-next"]')!.click(),
-  );
-  expect(store.get(activeTabAtom)).toBe("next");
-});
-
-test("context menu dismisses on Escape, an outside click and target removal", async () => {
-  await renderMenuPage();
-  await openMenu("context");
-  await act(async () =>
-    document
-      .querySelector('[role="menu"]')!
-      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
-  );
-  expect(document.querySelector('[role="menu"]')).toBeNull();
-  await openMenu("context");
-  await act(async () =>
-    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })),
-  );
-  expect(document.querySelector('[role="menu"]')).toBeNull();
-  await openMenu("context");
-  await act(async () => store.set(tabsAtom, [fixtures.tabs[0]!]));
-  expect(document.querySelector('[role="menu"]')).toBeNull();
 });
 
 test("keeps the current view while closing into a suspending next tab", async () => {
@@ -778,12 +748,9 @@ test("duplicate clones the requested tab and preserves metadata and selection on
   fixtures.commitReceipt = false;
   await renderPage();
   const before = store.get(tabsAtom);
-  const duplicate = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Tab.Duplicate",
-  )!;
 
   await act(async () => {
-    duplicate.click();
+    latest!.duplicateTab("current");
     await Promise.resolve();
   });
 
@@ -799,10 +766,7 @@ test("duplicate uses the physical generation and clears its inherited reference"
   const original = { ...fixtures.tabs[0]!, treeKey: physical };
   store.set(tabsAtom, [original]);
   await renderPage();
-  const duplicate = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Tab.Duplicate",
-  )!;
-  await act(async () => duplicate.click());
+  await act(async () => latest!.duplicateTab(original.value));
   expect(fixtures.cloneDurable.mock.calls[0]?.[0]).toBe(physical);
   const tabs = store.get(tabsAtom);
   expect(tabs).toHaveLength(2);
@@ -849,7 +813,6 @@ test.each(["cold", "vanished"] as const)(
     fixtures.mountPanels = false;
     store.set(activeTabAtom, owner.value);
     await renderPage();
-    const duplicateOriginal = fixtures.duplicateHandler!;
     fixtures.mountPanels = true;
     await act(async () => store.set(activeTabAtom, "current"));
     expect(realTree.getCachedTreeStore(owner.value)).toBeUndefined();
@@ -867,7 +830,7 @@ test.each(["cold", "vanished"] as const)(
     const unsubscribe = repository.subscribeStatus(owner.treeKey, () => {
       publishedSourceStatuses.push(repository.getStatus(owner.treeKey).kind);
     });
-    await act(async () => duplicateOriginal());
+    await act(async () => latest!.duplicateTab(owner.value));
     unsubscribe();
     expect(store.get(tabsAtom)).toEqual(originalTabs);
     expect(store.get(activeTabAtom)).toBe("current");
@@ -1156,12 +1119,9 @@ test("reports a tree-copy failure without admitting a duplicate tab", async () =
   });
   await renderPage();
   const before = store.get(tabsAtom);
-  const duplicate = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Tab.Duplicate",
-  )!;
 
   await act(async () => {
-    duplicate.click();
+    latest!.duplicateTab("current");
     await Promise.resolve();
   });
 
@@ -1195,11 +1155,7 @@ test("keeps a gated game tab open and allows close after its tree recovers", asy
 });
 
 const suspendedNavigationCases = [
-  {
-    name: "a BoardTab click",
-    navigate: () => container.querySelector<HTMLButtonElement>('[data-testid="tab-next"]')?.click(),
-  },
-  { name: "the Mantine tab selection", navigate: () => fixtures.tabsOnChange?.("next") },
+  { name: "selectTab", navigate: () => latest!.selectTab("next") },
   { name: "the forward cycle hotkey", navigate: () => invokeHotkey("mod+tab") },
   { name: "the reverse cycle hotkey", navigate: () => invokeHotkey("mod+shift+tab") },
   { name: "the numbered selection hotkey", navigate: () => invokeHotkey("alt+2") },

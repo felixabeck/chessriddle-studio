@@ -798,6 +798,62 @@ export async function activeWorkspaceTab(page: Page) {
     return workspace ? workspace.tabs.find((tab) => tab.value === workspace.activeTab)! : undefined;
 }
 
+export function applicationMenuButton(page: Page) {
+    return page.getByRole("button", { name: /^(Application menu|Anwendungsmenü)$/ });
+}
+
+export async function openApplicationMenu(page: Page) {
+    await applicationMenuButton(page).click();
+}
+
+export async function chooseApplicationMenuItem(page: Page, name: string | RegExp) {
+    await openApplicationMenu(page);
+    await page.getByRole("menuitem", { name, exact: typeof name === "string" }).click();
+}
+
+export function libraryLink(page: Page) {
+    return page.getByRole("link", { name: /^(Library|Bibliothek)$/, exact: true });
+}
+
+export async function goToLibrary(page: Page) {
+    await libraryLink(page).click();
+}
+
+export async function goToBoards(page: Page) {
+    await page.locator("header [role='tablist'] [role='tab']").first().click();
+}
+
+export async function goToSettings(page: Page) {
+    await chooseApplicationMenuItem(page, /^(Settings|Einstellungen)$/);
+}
+
+export async function goToAccounts(page: Page) {
+    await chooseApplicationMenuItem(page, /^(Accounts|Konten)$/);
+}
+
+export async function goToEngines(page: Page) {
+    await chooseApplicationMenuItem(page, /^(Engines)$/);
+}
+
+export function newWorkspaceTabButton(page: Page) {
+    return page.getByRole("button", { name: /^(New Tab|Neuer Tab)$/ });
+}
+
+export function selectedWorkspaceTabClose(page: Page) {
+    return page.locator("header [role='tablist'] [role='tab'][aria-selected='true'] + button");
+}
+
+export async function closeSelectedWorkspaceTab(page: Page) {
+    await selectedWorkspaceTabClose(page).click();
+}
+
+export async function openWorkspaceTabActions(page: Page, tab?: Locator) {
+    const target =
+        tab ?? page.locator("header [role='tablist'] [role='tab'][aria-selected='true']");
+    await target.click({ button: "right" });
+    return page.getByRole("menu");
+}
+
 export function whitePawnSquares(board: Locator) {
     return board
         .locator("piece.white.pawn")

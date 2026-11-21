@@ -1,7 +1,6 @@
 import { ask } from "@/platform/native";
 import { tauri } from "@/platform/tauri";
 import i18n from "@/i18n";
-import { clearSavedDataFromMenu } from "@/routes/-appMenu";
 import { initializePathOwners, startupLegacyDeckScanComplete } from "@/state/pathOwners";
 import {
     ensurePracticeMigration,
@@ -76,6 +75,19 @@ export function requireUnsavedGameMirror(): UnsavedGameMirror {
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
+export async function confirmThenClear(args: {
+    ask: (
+        message: string,
+        options: { title: string; kind: "error" | "info" | "warning" },
+    ) => Promise<boolean>;
+    confirmMessage: string;
+    title: string;
+    clear: () => void | Promise<void>;
+}): Promise<void> {
+    if (!(await args.ask(args.confirmMessage, { title: args.title, kind: "warning" }))) return;
+    await args.clear();
+}
+
 /** Confirms, then clears saved data through the window's unsaved-games mirror. */
 export async function clearSavedData(options?: {
     mirror?: Pick<UnsavedGameMirror, "pause" | "resume" | "drain">;
@@ -83,7 +95,7 @@ export async function clearSavedData(options?: {
 }): Promise<void> {
     const mirror = options?.mirror ?? requireUnsavedGameMirror();
     const t = options?.t ?? ((key, vars) => i18n.t(key, vars));
-    await clearSavedDataFromMenu({
+    await confirmThenClear({
         ask,
         confirmMessage: t("Menu.Help.ClearSavedData.Confirm"),
         title: t("Menu.Help.ClearSavedData.Title"),

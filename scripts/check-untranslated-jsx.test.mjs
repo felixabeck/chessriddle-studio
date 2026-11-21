@@ -99,10 +99,8 @@ describe("untranslated UI literal gate", () => {
     ]);
   });
 
-  test("permits only the wordmark parts in the title bar", () => {
+  test("does not exempt split brand fragments outside documented product identity", () => {
     const wordmark = `<span><span>Chess</span><span>Riddle</span> <span>Studio</span></span>`;
-    expect(findLiterals(wordmark, "src/components/TopBar.tsx")).toEqual([]);
-    expect(findLiterals(`<Text>Window</Text>`, "src/components/TopBar.tsx")).toEqual(["Window"]);
     expect(findLiterals(wordmark, "src/components/home/Welcome.tsx")).toEqual([
       "Chess",
       "Riddle",

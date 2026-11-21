@@ -7,81 +7,12 @@
   min-height: 0;
 }
 
-.tabsHeader {
-  flex-shrink: 0;
-}
-
-.tabsHeaderRow {
-  display: flex;
-  min-width: 0;
-  flex: 0 0 auto;
-  background: var(--cf-card);
-  border-bottom: 1px solid var(--cf-border);
-  margin-bottom: 0.5rem;
-  gap: 4px;
-}
-
-/* The inset surface spans the whole bar; the tabs and the new-tab button sit inside it. */
-.tabStrip {
-  display: flex;
-  align-items: center;
-  flex: 1 1 auto;
-  min-width: 0;
-  background: var(--cf-surface-inset);
-  border-radius: var(--cf-radius-lg);
-}
-
-/* Only as wide as its tabs, so the new-tab button follows the last tab; once the tabs
-   overflow it takes the remaining width and scrolls. */
-.tabStrip .tabsHeader {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.tabsHeader .tabList {
-  background: transparent;
-}
-
-.tabList {
-  display: flex;
-  flex-wrap: nowrap;
-}
-
-/* Tabs shrink toward a readable minimum before the bar scrolls. */
-.tabSlot {
-  flex: 0 1 auto;
-  min-width: 7rem;
-  max-width: 15rem;
-}
-
-/* The bar's icon buttons share one size; the new-tab button inside the strip drops the
-   bordered surface the trailing actions carry. */
-.headerAction,
-.stripNewTab {
-  flex-shrink: 0;
-  height: 2.2rem;
-  width: 2.2rem;
-  border-radius: var(--cf-radius-md);
-}
-
-.headerAction:hover,
-.stripNewTab:hover {
-  background: var(--cf-interactive-hover);
-}
-
-.headerAction {
-  padding: 0.5em;
-  border: 1px solid color-mix(in srgb, var(--cf-primary) 20%, transparent);
-  background: var(--cf-interactive);
-}
-
-.stripNewTab {
-  margin-inline: 2px;
-  color: var(--mantine-color-dimmed);
-}
-
-.stripNewTab:hover {
-  color: var(--cf-foreground);
+.panel {
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  padding-bottom: var(--mantine-spacing-sm);
+  padding-inline: var(--mantine-spacing-xs);
 }
 
 .boardLayout {

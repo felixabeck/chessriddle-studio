@@ -1,4 +1,4 @@
-import { MantineProvider, Tabs } from "@mantine/core";
+import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -62,18 +62,18 @@ test.each([
     await act(async () =>
       root.render(
         <MantineProvider>
-          <Tabs value="tab">
-            <Tabs.List>
-              <BoardTab
-                tab={tab}
-                tabType="analysis"
-                selected
-                setActiveTab={() => {}}
-                dragHandleProps={null}
-                onContextMenu={() => {}}
-              />
-            </Tabs.List>
-          </Tabs>
+          <BoardTab
+            tab={tab}
+            tabType="analysis"
+            selected
+            tabStop
+            controlsPanel
+            overflowing={false}
+            setActiveTab={() => {}}
+            dragHandleProps={null}
+            onContextMenu={() => {}}
+            onClose={() => {}}
+          />
         </MantineProvider>,
       ),
     );
@@ -107,18 +107,18 @@ test("a fileDraft analysis tab uses the file icon", async () => {
   await act(async () =>
     root.render(
       <MantineProvider>
-        <Tabs value="tab">
-          <Tabs.List>
-            <BoardTab
-              tab={tab}
-              tabType="analysis"
-              selected
-              setActiveTab={() => {}}
-              dragHandleProps={null}
-              onContextMenu={() => {}}
-            />
-          </Tabs.List>
-        </Tabs>
+        <BoardTab
+          tab={tab}
+          tabType="analysis"
+          selected
+          tabStop
+          controlsPanel
+          overflowing={false}
+          setActiveTab={() => {}}
+          dragHandleProps={null}
+          onContextMenu={() => {}}
+          onClose={() => {}}
+        />
       </MantineProvider>,
     ),
   );

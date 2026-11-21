@@ -5,6 +5,8 @@ import {
     pgnFileCommands,
     selectFilesTreeRow,
     test,
+    goToBoards,
+    goToSettings,
 } from "./fixtures";
 import type { Page } from "@playwright/test";
 import type { MockScenario } from "./fixtures";
@@ -81,11 +83,11 @@ async function makeEditedMove(page: Page) {
 }
 
 async function switchTheme(page: Page, scheme: "light" | "dark") {
-    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await goToSettings(page);
     await page.getByRole("tab", { name: "Appearance", exact: true }).click();
     await page.getByText(scheme === "dark" ? "Dark" : "Light", { exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", scheme);
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await page.mouse.move(400, 650);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
 }

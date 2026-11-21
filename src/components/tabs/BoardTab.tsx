@@ -1,27 +1,44 @@
-import { Tabs, Tooltip } from "@mantine/core";
-import { type MouseEventHandler, useEffect, useRef, useState } from "react";
+import { Tooltip } from "@mantine/core";
+import {
+  type KeyboardEventHandler,
+  type MouseEventHandler,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
-import { ChessKnight, Database, Puzzle, ScanSearch } from "lucide-react";
+import { ChessKnight, Database, Puzzle, ScanSearch, X } from "lucide-react";
 import cx from "clsx";
 import { getTabFile, tabLabelWithFile, type Tab } from "@/utils/tabs";
 import classes from "./BoardTab.module.css";
 import { FileIcon } from "../files/FileIcon";
 import { useTranslation } from "react-i18next";
+import { boardTabId, boardTabPanelId } from "./boardTabDom";
 
 export function BoardTab({
   tab,
   tabType,
   setActiveTab,
   selected,
+  tabStop,
+  controlsPanel,
+  overflowing,
   dragHandleProps,
   onContextMenu,
+  onKeyDown,
+  onClose,
 }: {
   tab: Tab;
   tabType: string;
   setActiveTab: (v: string) => void;
   selected: boolean;
+  tabStop: boolean;
+  controlsPanel: boolean;
+  overflowing: boolean;
   dragHandleProps: DraggableProvidedDragHandleProps | null | undefined;
   onContextMenu: MouseEventHandler<HTMLButtonElement>;
+  onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
+  onClose: (tabId: string) => void;
 }) {
   const { t } = useTranslation();
   const { role: _dragRole, tabIndex: _dragTabIndex, ...tabDragHandleProps } = dragHandleProps ?? {};
@@ -43,7 +60,13 @@ export function BoardTab({
   }, [name]);
 
   return (
-    <div className={classes.tabItem} role="presentation">
+    <div
+      className={cx(classes.tabItem, {
+        [classes.selected]: selected,
+        [classes.overflowing]: overflowing,
+      })}
+      role="presentation"
+    >
       <Tooltip
         label={tooltip}
         disabled={!file && !truncated}
@@ -51,12 +74,16 @@ export function BoardTab({
         position="bottom"
         withinPortal
       >
-        <Tabs.Tab
+        <button
+          type="button"
           {...tabDragHandleProps}
-          value={tab.value}
-          className={cx(classes.tab, { [classes.selected]: selected })}
-          classNames={{ tabLabel: classes.tabLabelSlot }}
-          leftSection={<TabIcon tab={tab} tabType={tabType} />}
+          role="tab"
+          id={boardTabId(tab.value)}
+          data-tab-id={tab.value}
+          className={cx(classes.tab, { [classes.selectedTab]: selected })}
+          aria-selected={selected}
+          aria-controls={controlsPanel ? boardTabPanelId(tab.value) : undefined}
+          tabIndex={tabStop ? 0 : -1}
           onClick={(event) => {
             // The drag sensor prevents the mousedown default, which would otherwise focus the
             // tab; focus it here so the arrow keys continue from the clicked tab.
@@ -64,17 +91,34 @@ export function BoardTab({
             setActiveTab(tab.value);
           }}
           onContextMenu={onContextMenu}
+          onKeyDown={onKeyDown}
         >
+          <BoardTabIcon tab={tab} tabType={tabType} />
           <span ref={labelRef} className={classes.tabLabel}>
             {name}
           </span>
-        </Tabs.Tab>
+        </button>
       </Tooltip>
+      <button
+        type="button"
+        tabIndex={-1}
+        className={classes.close}
+        // Presentation wrappers promote a named sibling button into the tab list.
+        aria-hidden
+        aria-label={t("Tab.CloseNamed", { name })}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClose(tab.value);
+        }}
+      >
+        <X size="0.875rem" aria-hidden />
+      </button>
     </div>
   );
 }
 
-function TabIcon({ tab, tabType }: { tab: Tab; tabType: string }) {
+export function BoardTabIcon({ tab, tabType }: { tab: Tab; tabType: string }) {
   if (tabType === "puzzles") {
     return <Puzzle size="0.875rem" />;
   }

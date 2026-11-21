@@ -251,7 +251,7 @@ function FileCard({
       )}
       {/* Reserve the preview's share while reading so the list never moves between clicks. */}
       {selected.numGames > 0 && (
-        <Box flex="3 1 0" mih={0} px="xs" pb="xs">
+        <Box flex="3 1 0" mih={0} px="xs" pb="xs" style={{ overflow: "visible" }}>
           {previewOmitted && <Text>{t("Files.GameTooLarge")}</Text>}
           {selectedGame !== null && (
             <GamePreview pgn={selectedGame} hideControls={narrow} fitHeight />

@@ -99,7 +99,6 @@ async function clickTitleBarClose(page: Page) {
 async function clickCompactFileExit(page: Page) {
     const menu = page.getByRole("button", { name: "Application menu", exact: true });
     await menu.click();
-    await page.getByRole("menuitem", { name: "File", exact: true }).hover();
     const exit = page.getByRole("menuitem", { name: "Exit", exact: true });
     await expect(exit).toBeVisible();
     await exit.click();

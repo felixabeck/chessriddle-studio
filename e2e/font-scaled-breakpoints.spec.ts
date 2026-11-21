@@ -18,6 +18,7 @@ import {
     waitForScrollAreaScrollbarsHidden,
     wheelBoardStackTo,
     wheelColumnTo,
+    goToLibrary,
 } from "./fixtures";
 
 const databaseTitle = "Breakpoint database";
@@ -486,7 +487,7 @@ function labelledSliderControl(scope: Locator | Page, title: "Font Size" | "Volu
 }
 
 async function assertSettingsLayout(page: Page, compact: boolean, { initialViewport = true } = {}) {
-    const tabList = page.getByRole("tablist");
+    const tabList = settingsRoot(page).getByRole("tablist");
     await expect(tabList).toHaveAttribute("aria-orientation", compact ? "horizontal" : "vertical");
     if (compact) {
         await expect(settingsRoot(page)).toHaveAttribute("data-compact", "true");
@@ -726,7 +727,7 @@ for (const scale of [200, 100] as const) {
         if (scale === 100) await seedFontScale(page, scale);
         await page.goto("/settings");
         await page.getByPlaceholder("Search", { exact: true }).fill("font-size");
-        await expect(page.getByRole("tablist")).toHaveCount(0);
+        await expect(settingsRoot(page).getByRole("tablist")).toHaveCount(0);
         const control = labelledSliderControl(page, "Font Size");
         // This branch runs independently, so removing shared compact rules reports its own failure.
         await assertSettingRow(control, compact);
@@ -756,7 +757,7 @@ test("font-scaled-breakpoints: volume search card is unclipped at 200%", async (
 }) => {
     await page.goto("/settings");
     await page.getByPlaceholder("Search", { exact: true }).fill("volume");
-    await expect(page.getByRole("tablist")).toHaveCount(0);
+    await expect(settingsRoot(page).getByRole("tablist")).toHaveCount(0);
     const control = labelledSliderControl(page, "Volume");
     await assertSettingRow(control, true);
     await expect(control.getByRole("slider", { name: "Volume", exact: true })).toBeVisible();
@@ -802,10 +803,7 @@ test("font-scaled-breakpoints: live slider change stacks Settings and database p
     await assertPageNotClipped(page);
     await capture("live-settings-200");
 
-    await page
-        .locator("nav.mantine-AppShell-navbar")
-        .getByRole("link", { name: "Library", exact: true })
-        .click();
+    await goToLibrary(page);
     await expect(page).toHaveURL("/library");
     await selectDatabase(page);
     await assertDatabasePanes(page, true);

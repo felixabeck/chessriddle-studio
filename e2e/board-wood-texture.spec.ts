@@ -8,6 +8,8 @@ import {
     selectFilesTreeRow,
     test,
     waitForTransitionsSettled,
+    goToBoards,
+    goToSettings,
 } from "./fixtures";
 import type { Page, Request } from "@playwright/test";
 
@@ -27,7 +29,7 @@ async function openBoard(page: Page) {
 }
 
 async function openAppearanceTab(page: Page) {
-    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await goToSettings(page);
     await page.getByRole("tab", { name: "Appearance", exact: true }).click();
     const woodTexture = page.getByRole("switch", { name: "Wood texture", exact: true });
     await expect(woodTexture).toBeVisible();
@@ -54,7 +56,7 @@ test("board-wood-texture: the real stylesheet layers the tile over the board ima
 
     // A navigation by URL clears storage, so the stored value is read back by reloading the board
     // page itself; the preserve flag is consumed by that one load.
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(board).toBeVisible();
     await preserveStorageForReload(page);
     await expect(board).toBeVisible();
@@ -353,7 +355,7 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
     const woodTexture = await openAppearanceTab(page);
     await woodTexture.uncheck();
     await expect(woodTexture).not.toBeChecked();
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(board).toHaveCSS("background-image", /^none, url\(/);
     await page.mouse.move(0, 0);
     const withoutTexture = await exportedBytes();

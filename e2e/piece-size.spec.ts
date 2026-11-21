@@ -4,6 +4,8 @@ import {
     preserveStorageForReload,
     test,
     whitePawnSquares,
+    goToBoards,
+    goToSettings,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
@@ -18,7 +20,7 @@ async function openBoard(page: Page) {
 }
 
 async function openAppearanceTab(page: Page) {
-    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await goToSettings(page);
     await page.getByRole("tab", { name: "Appearance", exact: true }).click();
 }
 
@@ -162,7 +164,7 @@ test("piece-size: Appearance slider stores 70, insets the image, keeps click-mov
     await expect(slider).toHaveAttribute("aria-valuenow", "70");
     await expect.poll(() => page.evaluate(() => localStorage.getItem("piece-size"))).toBe("70");
 
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(board).toBeVisible();
     const piece = boardPiece(page);
     await expect(piece).toHaveCSS("background-size", "cover");
@@ -214,7 +216,7 @@ test("piece-size: merida paint at 100% extends outside the centred 70% box, and 
     await openAppearanceTab(page);
     await selectMeridaPieceSet(page);
 
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(board).toBeVisible();
     const queen = boardPiece(page, "piece.white.queen");
     await expect(queen).toBeVisible();
@@ -230,7 +232,7 @@ test("piece-size: merida paint at 100% extends outside the centred 70% box, and 
 
     await openAppearanceTab(page);
     await setPieceSizeToSeventy(page);
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await expect(board).toBeVisible();
     const shrunkQueen = boardPiece(page, "piece.white.queen");
     await expect(shrunkQueen).toBeVisible();

@@ -1183,7 +1183,7 @@ async function verifyUnsavedGameRecovery(profileDirectory) {
     "recovery: after closing the window the restart restores the game, still unsaved",
   );
   if (!afterClose) throw new Error("recovery: the game was not restored after a window close");
-  await clickButton(third, "Close tab", true);
+  await closeSelectedWorkspaceTab(third);
   const discard = await reachableStableCoordinates(
     third,
     "Close without saving",
@@ -1827,7 +1827,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
       "RF1 puzzle read denial preserves Permission and I/O failure with a permission root label",
       JSON.stringify(puzzleDenied),
     );
-    await session.execute(`document.querySelector('a[href="/"]')?.click(); return true;`);
+    await goToBoards(session);
     await click("Puzzles");
     // A new puzzle tab opens on ChessRiddle whenever that connection is available (d-20261110-01).
     // The permission notice belongs to the offline databases, so select that source first.
@@ -1865,7 +1865,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
       JSON.stringify(destinationDenied),
     );
     await settleProbe();
-    await session.execute(`document.querySelector('a[href="/engines"]')?.click(); return true;`);
+    await goToEngines(session);
     await click("Add New");
     await click("Install");
     check(
@@ -2309,7 +2309,7 @@ async function verifyProgressContract(session) {
 }
 
 /**
- * Native Help menus are GTK chrome, so the sidebar Send feedback button is the
+ * Native Help menus are GTK chrome, so the row's Feedback button is the
  * reachable entry. Never click Send: this scenario must not reach the network.
  */
 async function verifyFeedbackScreenshot(session) {
@@ -2350,8 +2350,8 @@ async function verifyFeedbackScreenshot(session) {
   };
 
   try {
-    await assertion("the sidebar Send feedback control opens the feedback dialog", async () => {
-      await clickButton(session, "Send feedback", true);
+    await assertion("the row Feedback control opens the feedback dialog", async () => {
+      await clickFeedback(session);
       await wait("the feedback dialog", feedbackDialogOpen);
     });
     await assertion(
@@ -2678,6 +2678,111 @@ async function clickButton(session, name, icon = false) {
     name,
     `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : node.textContent.trim() === arguments[0]))`,
     [name, icon],
+  );
+  await clickAt(session, point.x, point.y);
+}
+
+const applicationMenuSelector = `[...document.querySelectorAll('button')].find(node => {
+  const label = node.getAttribute('aria-label') || '';
+  return label === 'Application menu' || label === 'Anwendungsmenü';
+})`;
+
+async function openApplicationMenu(session) {
+  const point = await reachableStableCoordinates(
+    session,
+    "Application menu",
+    applicationMenuSelector,
+  );
+  await clickAt(session, point.x, point.y);
+  await waitFor("the application menu", () =>
+    session.execute(`return document.querySelector('[role="menu"]') !== null`).catch(() => false),
+  );
+}
+
+async function chooseApplicationMenuItem(session, names) {
+  await openApplicationMenu(session);
+  const point = await reachableStableCoordinates(
+    session,
+    names[0],
+    `[...document.querySelectorAll('[role="menuitem"]')].find(node => {
+      const text = node.textContent.replace(/\\s+/g, ' ').trim();
+      return arguments[0].some((name) => text === name || text.startsWith(name + ' ') || text.startsWith(name));
+    })`,
+    [names],
+  );
+  await clickAt(session, point.x, point.y);
+}
+
+async function goToSettings(session) {
+  const here = await session.execute("return location.pathname");
+  if (here === "/settings" || here.startsWith("/settings/")) return;
+  await chooseApplicationMenuItem(session, ["Settings", "Einstellungen"]);
+  await waitFor("Settings route", () =>
+    session
+      .execute(
+        "return location.pathname === '/settings' || location.pathname.startsWith('/settings/')",
+      )
+      .catch(() => false),
+  );
+}
+
+async function goToEngines(session) {
+  const here = await session.execute("return location.pathname");
+  if (here === "/engines" || here.startsWith("/engines/")) return;
+  await chooseApplicationMenuItem(session, ["Engines"]);
+  await waitFor("Engines route", () =>
+    session
+      .execute(
+        "return location.pathname === '/engines' || location.pathname.startsWith('/engines/')",
+      )
+      .catch(() => false),
+  );
+}
+
+export async function goToAccounts(session) {
+  const here = await session.execute("return location.pathname");
+  if (here === "/accounts" || here.startsWith("/accounts/")) return;
+  await chooseApplicationMenuItem(session, ["Accounts", "Konten"]);
+  await waitFor("Accounts route", () =>
+    session
+      .execute(
+        "return location.pathname === '/accounts' || location.pathname.startsWith('/accounts/')",
+      )
+      .catch(() => false),
+  );
+}
+
+async function goToBoards(session) {
+  const here = await session.execute("return location.pathname");
+  if (here === "/") return;
+  const point = await reachableStableCoordinates(
+    session,
+    "board tab",
+    `document.querySelector('header [role="tablist"] [role="tab"]')`,
+  );
+  await clickAt(session, point.x, point.y);
+  await waitFor("boards route", () =>
+    session.execute("return location.pathname === '/'").catch(() => false),
+  );
+}
+
+async function closeSelectedWorkspaceTab(session) {
+  const point = await reachableStableCoordinates(
+    session,
+    "Close selected tab",
+    `document.querySelector('header [role="tablist"] [role="tab"][aria-selected="true"] + button')`,
+  );
+  await clickAt(session, point.x, point.y);
+}
+
+async function clickFeedback(session) {
+  const point = await reachableStableCoordinates(
+    session,
+    "Feedback",
+    `[...document.querySelectorAll('button')].find(node => {
+      const label = node.getAttribute('aria-label') || '';
+      return label === 'Feedback';
+    })`,
   );
   await clickAt(session, point.x, point.y);
 }
@@ -3340,11 +3445,7 @@ async function verifyDatabaseOrientation(session) {
   // for this scenario and restore its prior value before returning to the surrounding checks.
   let previousAutoSave;
   const setAutoSave = async (enabled) => {
-    const settings = await coordinates(
-      "orientation Settings navigation",
-      `document.querySelector('nav a[aria-label="Settings"]')`,
-    );
-    await clickAt(session, settings.x, settings.y);
+    await goToSettings(session);
     const checked = await wait("orientation Auto Save control", () =>
       session.execute(`
       const input = document.querySelector('input[aria-label="Auto Save"]');
@@ -3453,7 +3554,7 @@ async function verifyDatabaseOrientation(session) {
         current.game.stamp !== blackGame.stamp
       )
         throw new Error(`inference wrote the database row: ${JSON.stringify(current)}`);
-      await clickButton(session, "Close tab", true);
+      await closeSelectedWorkspaceTab(session);
     },
   );
   await assertion(
@@ -3482,13 +3583,13 @@ async function verifyDatabaseOrientation(session) {
         const tree = await activeTree();
         return tree?.dirty === false && tree.sourceStamp === saved.stamp;
       });
-      await clickButton(session, "Close tab", true);
+      await closeSelectedWorkspaceTab(session);
       await open(whiteGame);
       await boardIs("Black");
       const path = `${screenshotPath ?? join(tmpdir(), `chessfable-orientation-${process.pid}`)}.database-orientation.png`;
       await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
       console.log(`  .. database-orientation screenshot: ${path}`);
-      await clickButton(session, "Close tab", true);
+      await closeSelectedWorkspaceTab(session);
     },
   );
   await assertion(
@@ -3781,7 +3882,7 @@ async function verifyPlayerOverview(session) {
       });
     },
   );
-  if (!analysis.error) await clickButton(session, "Close tab", true);
+  if (!analysis.error) await closeSelectedWorkspaceTab(session);
   await showLibraryOverview(session);
 }
 
@@ -4411,8 +4512,7 @@ async function verifyGameOpening(session, ownedRoot, filesWorkspace) {
           },
           { timeoutMs: FILES_PROBE_TIMEOUT_MS },
         );
-      const navigation = await coordinates(`document.querySelector('nav a[href="/"]')`);
-      await clickAt(session, navigation.x, navigation.y);
+      await goToBoards(session);
       await wait(
         "discard owner's second game on the analysis surface",
         "return location.pathname === '/' && document.body.innerText.replace(/\\s+/g, '').includes(arguments[0])",
@@ -5941,13 +6041,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   const retainedEnginePortrait = await waitFor(
     "the retained engine portrait to render and decode",
     async () => {
-      await session
-        .execute(
-          `const link = document.querySelector('a[href="/engines"]');
-         if (link && location.pathname !== "/engines") link.click();
-         return true`,
-        )
-        .catch(() => false);
+      await goToEngines(session).catch(() => false);
       return session
         .execute(
           `const image = document.querySelector('img[alt="Fixture retained"]');
@@ -6929,9 +7023,9 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       () =>
         session
           .execute(
-            `const link = document.querySelector('a[href="/"]');
-         if (link && location.pathname !== "/") link.click();
-         return location.pathname === "/" && !!document.querySelector('[role="tablist"] [role="tab"]');`,
+            `const tab = document.querySelector('header [role="tablist"] [role="tab"]');
+         if (tab && location.pathname !== "/") tab.click();
+         return location.pathname === "/" && !!document.querySelector('header [role="tablist"] [role="tab"]');`,
           )
           .catch(() => false),
       { timeoutMs: FILES_PROBE_TIMEOUT_MS },
@@ -6976,13 +7070,13 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
         session
           .execute(
             `if (document.readyState !== "complete" || location.pathname !== "/") return false;
-         const tablist = document.querySelector('[role="tablist"]');
+         const tablist = document.querySelector('header [role="tablist"]');
          const tabs = [...(tablist?.querySelectorAll('[role="tab"]') ?? [])];
          if (tabs.length === 0 || !tabs.some((tab) => tab.getAttribute("aria-selected") === "true")) return false;
+         const tabId = (tab) => tab.id.replace(/^board-tab-/, "");
          return {
-           ids: tabs.map((tab) => tab.getAttribute("aria-controls")?.split("-panel-").at(-1) ?? null),
-           selectedIds: tabs.filter((tab) => tab.getAttribute("aria-selected") === "true")
-             .map((tab) => tab.getAttribute("aria-controls")?.split("-panel-").at(-1) ?? null),
+           ids: tabs.map(tabId),
+           selectedIds: tabs.filter((tab) => tab.getAttribute("aria-selected") === "true").map(tabId),
          };`,
           )
           .catch(() => false),
@@ -7196,12 +7290,7 @@ async function verifyFallbackEngineInstall(session) {
     "FE4 the empty Engines page offers Install Stockfish",
     async () => {
       if (!unseeded) throw new Error("FE3 profile is not unseeded");
-      await session.execute(`
-      const link = document.querySelector('a[href="/engines"]');
-      if (!link) throw new Error('Engines navigation link is absent');
-      link.click();
-      return true;
-    `);
+      await goToEngines(session);
       await waitFor("the empty Engines fallback button", () =>
         session.execute(`
       return location.pathname === '/engines' && [...document.querySelectorAll('button')]

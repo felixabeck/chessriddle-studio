@@ -1,0 +1,325 @@
+.row {
+  display: flex;
+  align-items: flex-end;
+  height: 2.625rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-inline-start: 0.25rem;
+  background: var(--cf-surface-inset);
+  color: var(--cf-foreground);
+  user-select: none;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.scrollGroup {
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  flex: 1 1 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.scrollGroup::-webkit-scrollbar {
+  display: none;
+}
+
+.menu {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1875rem;
+  height: 2rem;
+  padding: 0 0.3125rem 0 0.4375rem;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  flex: none;
+  cursor: pointer;
+}
+
+.menu:hover,
+.menu[data-expanded] {
+  background: var(--cf-interactive-hover);
+}
+
+.menu:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: -2px;
+}
+
+.logo {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: block;
+  pointer-events: none;
+}
+
+.pinned {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.1875rem;
+  padding: 0 0.875rem 0 0.75rem;
+  margin: 0;
+  border: 0;
+  border-radius: 0.625rem 0.625rem 0 0;
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  flex: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pinned:hover {
+  background: var(--cf-interactive-hover);
+}
+
+.pinned:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: -2px;
+}
+
+.current {
+  background: var(--cf-background);
+  color: var(--cf-foreground);
+}
+
+.current:hover {
+  background: var(--cf-background);
+}
+
+.compactLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact .menu {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  gap: 0;
+}
+
+.compact .menu svg {
+  display: none;
+}
+
+.compact .compactLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.temporary {
+  padding-inline-end: 0.375rem;
+}
+
+.temporaryClose {
+  box-sizing: border-box;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.375rem;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: inherit;
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+.temporaryClose:hover {
+  background: var(--cf-interactive-hover);
+}
+
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  min-width: 7rem;
+  flex: 0 1 auto;
+  height: 100%;
+}
+
+.tabList {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  height: 100%;
+}
+
+.tabList::-webkit-scrollbar {
+  display: none;
+}
+
+.tabSlot {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 7rem;
+  max-width: 15rem;
+}
+
+.tabSlot + .tabSlot:not(:has([aria-selected="true"]))::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.625rem;
+  bottom: 0.5625rem;
+  width: 1px;
+  background: var(--cf-border-strong);
+  pointer-events: none;
+}
+
+.tabSlot:has([aria-selected="true"]) + .tabSlot::before,
+.tabSlot:has(+ .tabSlot:has([aria-selected="true"]))::before {
+  content: none;
+}
+
+.stripAction {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  flex: none;
+  cursor: pointer;
+}
+
+.stripAction:hover {
+  background: var(--cf-interactive-hover);
+  color: var(--cf-foreground);
+}
+
+.dragGap {
+  flex: 1 1 2.5rem;
+  align-self: stretch;
+  min-width: 2.5rem;
+}
+
+.feedback {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 1.875rem;
+  padding: 0 0.625rem;
+  margin: 0 0.375rem 0 0;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: color-mix(in srgb, var(--cf-foreground) 80%, transparent);
+  font: inherit;
+  font-weight: 500;
+  flex: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.feedback:hover {
+  background: var(--cf-interactive-hover);
+}
+
+.feedback:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: -2px;
+}
+
+.windowControls {
+  display: flex;
+  align-self: stretch;
+  flex: 0 0 calc(3 * 2.8125rem);
+  width: calc(3 * 2.8125rem);
+  min-width: calc(3 * 2.25rem);
+}
+
+.compact .windowControls {
+  flex-basis: calc(3 * 2.25rem);
+  width: calc(3 * 2.25rem);
+}
+
+.windowButton,
+.closeWindow {
+  box-sizing: border-box;
+  height: 2.625rem;
+  min-height: 2.625rem;
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 0;
+}
+
+.closeWindow {
+  --cf-action-hover: var(--cf-destructive);
+}
+
+.closeWindow:hover:not(:disabled) {
+  color: var(--cf-destructive-foreground);
+}
+
+.menuDropdown {
+  max-width: calc(100vw - 8px);
+  max-height: calc(100dvh - 2.625rem - 16px);
+  overflow-y: auto;
+}
+
+.compactMenu {
+  padding: 0.25rem;
+}
+
+.compactMenu :global(.mantine-Menu-item) {
+  padding: 0.25rem 0.5rem;
+  min-height: 0;
+}
+
+.compactMenu :global(.mantine-Menu-item) + :global(.mantine-Menu-item) {
+  margin-top: 0.125rem;
+}
+
+.compactMenu :global(.mantine-Menu-itemLabel) {
+  min-width: 0;
+}
+
+.compactMenu :global(.mantine-Menu-divider) {
+  margin: 0.125rem 0;
+}
+
+.allTabsItem {
+  justify-content: flex-start;
+}
+
+.activeMark {
+  margin-inline-start: auto;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--cf-primary);
+}

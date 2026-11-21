@@ -10,6 +10,7 @@ import {
     gameOpeningFixture,
     dragMosaicDivider,
     activeWorkspaceTab,
+    newWorkspaceTabButton,
     playBoardMove,
     drawMark,
     assertNothingClipped,
@@ -269,7 +270,7 @@ test("workspace-tabs: search opens a Library file outside recents and replaces o
     await page.goto("/");
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     const existing = (await activeWorkspaceTab(page))!;
-    await page.getByRole("button", { name: /new tab/i }).click();
+    await newWorkspaceTabButton(page).click();
     const requesting = (await activeWorkspaceTab(page))!;
     expect(requesting.type).toBe("new");
     expect(await page.evaluate(() => localStorage.getItem("recent-files") ?? "")).not.toContain(
@@ -582,7 +583,9 @@ test("workspace-tabs: closing the last tab of an opened repertoire file leaves a
     await page.getByRole("tab", { name: "Practice", exact: true }).click();
     // Train is an inner tab rendered by PracticePanel, proving its cleanup has mounted.
     await expect(page.getByRole("tab", { name: "Train", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /close tab/i }).click();
+    await page
+        .locator("header [role='tablist'] [role='tab'][aria-selected='true'] + button")
+        .click();
     await expect(page.getByText(/an error occurred/i)).toHaveCount(0);
     const workspaceTabs = page.getByRole("tablist").first().getByRole("tab");
     await expect(workspaceTabs).toHaveCount(1);
@@ -874,14 +877,14 @@ function practiceFeedbackSetup(now: Date) {
     return { repertoireFile, pgn, game, cardFen, commands };
 }
 
-test("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer at 800×647", async ({
+test("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer at 800×500", async ({
     page,
     mockScenario,
     assertNoHorizontalOverflow,
 }, testInfo) => {
     const now = new Date("2026-10-21T12:00:00Z");
     await page.clock.install({ time: now });
-    await page.setViewportSize({ width: 800, height: 647 });
+    await page.setViewportSize({ width: 800, height: 500 });
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     const { repertoireFile, commands } = practiceFeedbackSetup(now);
     await mockScenario({ commands });
@@ -933,7 +936,7 @@ test("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer 
         const box = (await train.boundingBox())!;
         const before = await geometry();
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-        await page.mouse.wheel(0, 100);
+        await page.mouse.wheel(0, 40);
         await expect.soft
             .poll(async () => (await geometry()).scrollTop, {
                 message: `${stage}: wheel must scroll Train`,
@@ -1536,7 +1539,7 @@ test("workspace-tabs: creates, focuses, and cycles workspace tabs", async ({
     await expect(tabs).toHaveCount(1);
     await expect(tabs.first()).toBeFocused();
 
-    await page.getByRole("button", { name: /new tab/i }).click();
+    await newWorkspaceTabButton(page).click();
     await expect(tabs).toHaveCount(2);
     await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
 
@@ -1558,9 +1561,14 @@ test("workspace-tabs: the new-tab button follows the last tab and stays reachabl
     const newTab = page.getByRole("button", { name: /^new tab$/i });
     await expect(tabs).toHaveCount(1);
     const gapAfterLastTab = async () => {
-        const last = (await tabs.last().boundingBox())!;
+        const lastTab = tabs.last();
+        const lastBox = await lastTab.evaluate((tab) => {
+            const item = tab.parentElement ?? tab;
+            const box = item.getBoundingClientRect();
+            return { x: box.x, width: box.width };
+        });
         const button = (await newTab.boundingBox())!;
-        return button.x - (last.x + last.width);
+        return button.x - (lastBox.x + lastBox.width);
     };
     await newTab.click();
     await expect(tabs).toHaveCount(2);
@@ -1603,12 +1611,16 @@ test("workspace-tabs: the new-tab button follows the last tab and stays reachabl
     // Overflowing tabs scroll; the button stays at the strip's end, inside the viewport.
     expect(
         await strip.evaluate((node) => {
-            const viewport = node.querySelector(".mantine-ScrollArea-viewport")!;
-            return viewport.scrollWidth > viewport.clientWidth;
+            const list = node.querySelector('[role="tablist"]')!;
+            return list.scrollWidth > list.clientWidth;
         }),
     ).toBe(true);
-    expect(button.x + button.width).toBeLessThanOrEqual(stripBox.x + stripBox.width + 0.5);
-    expect(stripBox.x + stripBox.width - (button.x + button.width)).toBeLessThanOrEqual(8);
+    const allTabs = page.getByRole("button", { name: /all tabs/i });
+    await expect(allTabs).toBeVisible();
+    const allBox = (await allTabs.boundingBox())!;
+    expect(button.x + button.width).toBeLessThanOrEqual(allBox.x + 0.5);
+    expect(allBox.x + allBox.width).toBeLessThanOrEqual(stripBox.x + stripBox.width + 0.5);
+    expect(stripBox.x + stripBox.width - (allBox.x + allBox.width)).toBeLessThanOrEqual(8);
     await expect(tabs.last()).toHaveAttribute("aria-selected", "true");
     await expect(tabs.last()).toBeInViewport();
     await assertNoHorizontalOverflow();
@@ -1620,7 +1632,7 @@ test("workspace-tabs: right-click closes the inactive target through the shared 
     await page.goto("/");
     const tabs = page.getByRole("tablist").first().getByRole("tab");
     await expect(tabs).toHaveCount(1);
-    await page.getByRole("button", { name: /new tab/i }).click();
+    await newWorkspaceTabButton(page).click();
     await expect(tabs).toHaveCount(2);
     const targetId = await tabs.first().getAttribute("id");
     const activeId = await tabs.nth(1).getAttribute("id");
@@ -1666,7 +1678,9 @@ test("workspace-tabs: native menu is suppressed on a plain surface and preserved
     await expect(page.locator("html")).toHaveAttribute("data-context-menu-prevented", "true");
     await expect(page.locator("html")).toHaveAttribute("data-context-menu-trusted", "true");
 
-    await page.getByRole("button", { name: "Tab actions", exact: true }).click();
+    await page.locator("header [role='tablist'] [role='tab'][aria-selected='true']").click({
+        button: "right",
+    });
     await page.getByRole("menuitem", { name: "Rename tab", exact: true }).click();
     const input = page
         .getByRole("dialog")
@@ -1683,8 +1697,10 @@ test("workspace-tabs: refuses failed creation and close until durable retry", as
 }) => {
     await page.goto("/");
     const tabs = page.getByRole("tab");
-    const newTab = page.getByRole("button", { name: /new tab/i });
-    const closeTab = page.getByRole("button", { name: /close tab/i });
+    const newTab = newWorkspaceTabButton(page);
+    const closeTab = page.locator(
+        "header [role='tablist'] [role='tab'][aria-selected='true'] + button",
+    );
 
     await rejectWorkspaceWrites(page);
     await newTab.click();
@@ -1859,3 +1875,84 @@ for (const scheme of ["light", "dark"] as const) {
         });
     });
 }
+
+test("workspace-tabs: selected tab on `/` pairs with its panel through shared ids", async ({
+    page,
+}) => {
+    await page.goto("/");
+    const tab = page.locator("header [role='tablist'] [role='tab'][aria-selected='true']");
+    await expect(tab).toHaveCount(1);
+    const controls = await tab.getAttribute("aria-controls");
+    expect(controls).toBeTruthy();
+    const panel = page.locator(`[id="${controls}"]`);
+    await expect(panel).toHaveAttribute("role", "tabpanel");
+    const labelledBy = await panel.getAttribute("aria-labelledby");
+    expect(labelledBy).toBe(await tab.getAttribute("id"));
+});
+
+test("workspace-tabs: tabs stay in the row on Library and Settings, with a temporary Settings item", async ({
+    page,
+}) => {
+    await page.goto("/");
+    await newWorkspaceTabButton(page).click();
+    const tabs = page.locator("header [role='tablist'] [role='tab']");
+    await expect(tabs).toHaveCount(2);
+    await page.getByRole("link", { name: "Library", exact: true }).click();
+    await expect(page).toHaveURL("/library");
+    await expect(tabs).toHaveCount(2);
+    for (const tab of await tabs.all()) {
+        await expect(tab).toHaveAttribute("aria-selected", "false");
+        expect(await tab.getAttribute("aria-controls")).toBeNull();
+    }
+    await page.getByRole("button", { name: "Application menu", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await expect(page).toHaveURL("/settings");
+    await expect(tabs).toHaveCount(2);
+    const temporary = page.locator("header [aria-current='page']").filter({ hasText: "Settings" });
+    await expect(temporary).toBeVisible();
+    await temporary.getByRole("button").click();
+    await expect(page).toHaveURL("/library");
+    await expect(
+        page.locator("header [aria-current='page']").filter({ hasText: "Settings" }),
+    ).toHaveCount(0);
+});
+
+test("workspace-tabs: F2 and Shift+F10 reach rename and the tab menu", async ({ page }) => {
+    await page.goto("/");
+    const tab = page.locator("header [role='tablist'] [role='tab']").first();
+    await tab.focus();
+    await page.keyboard.press("F2");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("textbox", { name: "Rename tab", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await tab.focus();
+    await page.keyboard.press("Shift+F10");
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem", { name: "Duplicate tab", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(tab).toBeFocused();
+});
+
+test("workspace-tabs: an overflowing unselected tab shows its close control on hover and focus", async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    const newTab = page.getByRole("button", { name: /^new tab$/i });
+    for (let count = 2; count <= 14; count++) {
+        await newTab.click();
+        await expect(page.locator("header [role='tablist'] [role='tab']")).toHaveCount(count);
+    }
+    const unselected = page
+        .locator("header [role='tablist'] [role='tab'][aria-selected='false']")
+        .first();
+    const close = unselected.locator("xpath=following-sibling::button[1]");
+    await expect(close).toHaveCSS("opacity", "0");
+    await unselected.hover();
+    await expect(close).not.toHaveCSS("opacity", "0");
+    await page.mouse.move(0, 0);
+    await expect(close).toHaveCSS("opacity", "0");
+    await unselected.focus();
+    await expect(close).not.toHaveCSS("opacity", "0");
+});

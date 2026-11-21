@@ -13,10 +13,9 @@ import AboutModal from "@/components/About";
 import ChessBaseGuide from "@/components/library/ChessBaseGuide";
 import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { SideBar } from "@/components/Sidebar";
-import TopBar from "@/components/TopBar";
 import { WindowResizeHandles } from "@/components/WindowResizeHandles";
-import { TabCommandsProvider } from "@/components/tabs/TabCommands";
+import NavigationRow from "@/components/tabs/NavigationRow";
+import { TabCommandsProvider, useTabCommands } from "@/components/tabs/TabCommands";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
 import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
@@ -40,22 +39,23 @@ import {
   nativeUnsavedGames,
   restoreUnsavedGames,
 } from "@/state/unsavedGames";
-import { clearSavedData, openAppLogs, reloadApp } from "@/components/settings/advancedActions";
-import { createTab, type Tab } from "@/utils/tabs";
+import type { Tab } from "@/utils/tabs";
 import {
   assembleNativeMenuResources,
   bindAppMenuCallbacks,
   buildAppMenuTree,
-  createNewTabFromMenu,
+  buildInAppMenuItems,
   fullscreenShortcut,
   installAppMenuSurface,
   menuWindowPlatform,
+  openAccountsFromMenu,
+  openEnginesFromMenu,
   openPgnFromMenu,
   openSettingsFromMenu,
   renderResizeHandles,
-  renderTopBar,
   runNativeMenuAction,
   wantNativeDecorations,
+  wantRealMenu,
   type AppMenuCallbacks,
   type MenuGroup,
   type MenuHandle,
@@ -100,9 +100,18 @@ export function startRootFileFreshnessPoll(getTabs: () => readonly Tab[]): () =>
 }
 
 export function RootLayout() {
+  return (
+    <TabCommandsProvider>
+      <RootShell />
+    </TabCommandsProvider>
+  );
+}
+
+function RootShell() {
   const isNative = useAtomValue(nativeBarAtom);
   const navigate = useNavigate();
   const jotaiStore = useJotaiStore();
+  const { newTab } = useTabCommands();
 
   const [, setTabs] = useAtom(tabsAtom);
   const unsavedGames = getUnsavedGameMirror(() => ({
@@ -157,20 +166,13 @@ export function RootLayout() {
     [navigate, setTabs],
   );
 
-  const createNewTab = useCallback(
-    () =>
-      createNewTabFromMenu({
-        navigate,
-        createTab: () =>
-          createTab({
-            tab: { name: t("Tab.NewTab"), type: "new" },
-            setTabs,
-          }),
-      }),
-    [navigate, setTabs, t],
-  );
+  const createNewTab = useCallback(() => {
+    newTab();
+  }, [newTab]);
 
   const openSettings = useCallback(() => openSettingsFromMenu({ navigate }), [navigate]);
+  const openAccounts = useCallback(() => openAccountsFromMenu({ navigate }), [navigate]);
+  const openEngines = useCallback(() => openEnginesFromMenu({ navigate }), [navigate]);
 
   // The board consumes the request once it is mounted, so show the workspace first. No root
   // hotkey: Ctrl+S stays bound in the board alone, so one key press never starts two saves.
@@ -259,34 +261,25 @@ export function RootLayout() {
         openNewFile,
         saveGame: () => requestSave("save"),
         saveGameTo: () => requestSave("saveTo"),
+        openAccounts,
+        openEngines,
         openSettings,
         exit: () => requestQuit(),
-        reload: reloadApp,
         toggleFullscreen,
-        clearSavedData: () => clearSavedData({ mirror: unsavedGames, t }),
-        openLogs: openAppLogs,
-        openLogsSuccessMessage: t("Menu.Help.OpenLogs"),
       }),
     [
       createNewTab,
+      openAccounts,
+      openEngines,
       openNewFile,
       openSettings,
       requestQuit,
       requestSave,
       runMenu,
-      t,
       toggleFullscreen,
-      unsavedGames,
     ],
   );
 
-  useHotkeys(
-    keyMap.NEW_TAB.keys,
-    () => {
-      void menuCallbacks.createNewTab();
-    },
-    backgroundHotkeyOptions,
-  );
   useHotkeys(
     keyMap.OPEN_FILE.keys,
     () => {
@@ -295,9 +288,23 @@ export function RootLayout() {
     backgroundHotkeyOptions,
   );
 
-  const menuActions = useMemo(
+  const nativeMenuActions = useMemo(
     () =>
-      buildAppMenuTree({
+      isMacOS
+        ? buildAppMenuTree({
+            t,
+            isMacOS,
+            newTabShortcut: keyMap.NEW_TAB.keys,
+            openFileShortcut: keyMap.OPEN_FILE.keys,
+            saveShortcut: keyMap.SAVE_FILE.keys,
+            callbacks: menuCallbacks,
+          })
+        : [],
+    [isMacOS, keyMap.NEW_TAB.keys, keyMap.OPEN_FILE.keys, keyMap.SAVE_FILE.keys, menuCallbacks, t],
+  );
+  const inAppMenuActions = useMemo(
+    () =>
+      buildInAppMenuItems({
         t,
         isMacOS,
         newTabShortcut: keyMap.NEW_TAB.keys,
@@ -308,9 +315,7 @@ export function RootLayout() {
     [isMacOS, keyMap.NEW_TAB.keys, keyMap.OPEN_FILE.keys, keyMap.SAVE_FILE.keys, menuCallbacks, t],
   );
 
-  const showTopBar = renderTopBar(isNative, windowPlatform);
-
-  // The native menu fires its own accelerator; binding the key there too would toggle twice.
+  // The native macOS menu fires its own accelerator; binding F11 there too would toggle twice.
   // A window command, so it works from any field or dialog; a held key toggles once.
   useHotkeys(
     fullscreenShortcut(isMacOS),
@@ -319,19 +324,19 @@ export function RootLayout() {
       void menuCallbacks.toggleFullscreen();
     },
     {
-      enabled: showTopBar,
+      enabled: windowPlatform !== "other",
       enableOnFormTags: true,
       enableOnContentEditable: true,
       preventDefault: true,
     },
   );
-  const showWindowControls = showTopBar && !decorationsApplied;
+  const showWindowControls = windowPlatform !== "other" && !isNative && !decorationsApplied;
 
   useEffect(() => {
     const myGen = ++installGeneration.current;
     void installAppMenuSurface({
-      groups: menuActions,
-      wantRealMenu: wantNativeDecorations(isNative, windowPlatform),
+      groups: nativeMenuActions,
+      wantRealMenu: wantRealMenu(windowPlatform),
       wantDecorations: wantNativeDecorations(isNative, windowPlatform),
       previousDecorationsApplied: decorationsAppliedRef.current,
       isCurrent: () => installGeneration.current === myGen,
@@ -349,61 +354,57 @@ export function RootLayout() {
     return () => {
       installGeneration.current += 1;
     };
-  }, [isNative, menuActions, notifyMenuError, windowPlatform]);
+  }, [isNative, nativeMenuActions, notifyMenuError, windowPlatform]);
 
   return (
-    <TabCommandsProvider>
-      <AppShell
-        navbar={{
-          width: "3rem",
-          breakpoint: 0,
+    <AppShell
+      padding={0}
+      header={{ height: "2.625rem" }}
+      styles={{
+        main: {
+          height: "100vh",
+          minHeight: 0,
+          paddingTop: "2.625rem",
+          paddingBottom: 0,
+          overflow: "auto",
+          userSelect: "none",
+          background: "var(--cf-background)",
+        },
+        header: {
+          background: "var(--cf-surface-inset)",
+          borderBottom: "none",
+          minWidth: 0,
+          padding: 0,
+        },
+      }}
+    >
+      <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
+      <ChessBaseGuide />
+      <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
+      <QuitConfirmModal
+        opened={quitDialog !== null}
+        failClosed={quitDialog?.failClosed ?? false}
+        tabs={quitDialog?.tabs ?? []}
+        onCancel={() => {
+          setQuitDialog(null);
+          cancelQuitGate();
         }}
-        header={
-          showTopBar
-            ? {
-                height: "2.25rem",
-              }
-            : undefined
-        }
-        styles={{
-          main: {
-            height: "100vh",
-            userSelect: "none",
-            background: "var(--cf-background)",
-          },
-          navbar: { background: "var(--cf-card)", borderColor: "var(--cf-border)" },
-          header: { background: "var(--cf-card)", borderColor: "var(--cf-border)" },
+        onQuitWithoutSaving={() => {
+          void quitWithoutSaving();
         }}
-      >
-        <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
-        <ChessBaseGuide />
-        <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
-        <QuitConfirmModal
-          opened={quitDialog !== null}
-          failClosed={quitDialog?.failClosed ?? false}
-          tabs={quitDialog?.tabs ?? []}
-          onCancel={() => {
-            setQuitDialog(null);
-            cancelQuitGate();
-          }}
-          onQuitWithoutSaving={() => {
-            void quitWithoutSaving();
-          }}
-          onSaveAndQuit={saveAndQuit}
+        onSaveAndQuit={saveAndQuit}
+      />
+      <AppShell.Header>
+        <NavigationRow
+          menuActions={inAppMenuActions}
+          showWindowControls={showWindowControls}
+          onSendFeedback={menuCallbacks.sendFeedback}
         />
-        {showTopBar && (
-          <AppShell.Header>
-            <TopBar menuActions={menuActions} showWindowControls={showWindowControls} />
-          </AppShell.Header>
-        )}
-        {renderResizeHandles(windowPlatform, showWindowControls) && <WindowResizeHandles />}
-        <AppShell.Navbar>
-          <SideBar onSendFeedback={menuCallbacks.sendFeedback} />
-        </AppShell.Navbar>
-        <AppShell.Main>
-          <Outlet />
-        </AppShell.Main>
-      </AppShell>
-    </TabCommandsProvider>
+      </AppShell.Header>
+      {renderResizeHandles(windowPlatform, showWindowControls) && <WindowResizeHandles />}
+      <AppShell.Main>
+        <Outlet />
+      </AppShell.Main>
+    </AppShell>
   );
 }

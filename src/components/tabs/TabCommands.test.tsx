@@ -35,6 +35,7 @@ const fixtures = vi.hoisted(() => ({
   restoreReportOwner: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
   navigate: vi.fn(),
+  pathname: "/",
   tabs: [
     { value: "current", name: "Current", type: "new", gameOrigin: { kind: "none" } },
     { value: "next", name: "Next", type: "new", gameOrigin: { kind: "none" } },
@@ -87,6 +88,7 @@ vi.mock("@/state/keybinds", async () => {
   const { atom } = await vi.importActual<typeof import("jotai")>("jotai");
   return {
     keyMapAtom: atom({
+      NEW_TAB: { keys: "mod+t" },
       CLOSE_TAB: { keys: "mod+w" },
       CYCLE_TABS: { keys: "mod+tab" },
       REVERSE_CYCLE_TABS: { keys: "mod+shift+tab" },
@@ -126,6 +128,11 @@ vi.mock("@/utils/tabs", async (importOriginal) => ({
 vi.mock("../files/notifyError", () => ({ notifyUnlessCancelled: fixtures.notifyUnlessCancelled }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => fixtures.navigate,
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { pathname: string } }) => unknown;
+  }) => select({ location: { pathname: fixtures.pathname } }),
 }));
 vi.mock("@mantine/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mantine/hooks")>();
@@ -217,6 +224,7 @@ beforeEach(() => {
   fixtures.closeReceipt = true;
   fixtures.createTab.mockResolvedValue("created");
   fixtures.hotkeyBindings = null;
+  fixtures.pathname = "/";
   fixtures.navigate.mockReset();
   fixtures.killEngines.mockResolvedValue(undefined);
   fixtures.invalidateReportOwner.mockReturnValue({ previous: {}, invalidated: {} });
@@ -334,6 +342,38 @@ test("select, duplicate, rename, reorder and new tab are callable without Boards
 
   await act(async () => latest!.newTab());
   expect(fixtures.createTab).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" }));
+});
+
+test("selectTab and newTab navigate to the boards page from another route", async () => {
+  fixtures.pathname = "/library";
+  await renderOwner();
+  await act(async () => latest!.selectTab("next"));
+  expect(store.get(activeTabAtom)).toBe("next");
+  expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" });
+  fixtures.navigate.mockClear();
+  await act(async () => latest!.newTab());
+  await vi.waitFor(() => expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" }));
+});
+
+test("CLOSE_TAB closes a board tab, leaves a temporary page, and ignores the Library family", async () => {
+  fixtures.pathname = "/";
+  await renderOwner();
+  invokeHotkey("mod+w");
+  await vi.waitFor(() => expect(fixtures.closeWorkspaceTab).toHaveBeenCalledWith("current"));
+
+  fixtures.closeWorkspaceTab.mockClear();
+  fixtures.pathname = "/settings";
+  await renderOwner();
+  invokeHotkey("mod+w");
+  expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" });
+
+  fixtures.navigate.mockClear();
+  fixtures.closeWorkspaceTab.mockClear();
+  fixtures.pathname = "/library";
+  await renderOwner();
+  invokeHotkey("mod+w");
+  expect(fixtures.closeWorkspaceTab).not.toHaveBeenCalled();
 });
 
 test("select and cycle do nothing when there is no tab", async () => {

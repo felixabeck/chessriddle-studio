@@ -77,20 +77,30 @@ vi.mock("@/components/feedback/LazyFeedbackModal", () => ({
       </div>
     ) : null,
 }));
-vi.mock("@/components/Sidebar", () => ({
-  SideBar: ({ onSendFeedback }: { onSendFeedback: () => void }) => (
-    <button type="button" data-testid="sidebar-feedback" onClick={onSendFeedback}>
+vi.mock("@/components/tabs/NavigationRow", () => ({
+  default: ({ onSendFeedback }: { onSendFeedback: () => void }) => (
+    <button type="button" data-testid="row-feedback" onClick={onSendFeedback}>
       feedback
     </button>
   ),
 }));
-vi.mock("@/components/TopBar", () => ({ default: () => null }));
 vi.mock("@/components/WindowResizeHandles", () => ({ WindowResizeHandles: () => null }));
 vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
 vi.mock("@/components/tabs/TabCommands", () => ({
   TabCommandsProvider: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="tab-commands-owner">{children}</div>
   ),
+  useTabCommands: () => ({
+    newTab: mocks.createTab,
+    tabs: [],
+    activeTab: null,
+    selectTab: () => undefined,
+    closeTab: async () => undefined,
+    duplicateTab: () => undefined,
+    renameTab: () => undefined,
+    reorderTabs: () => undefined,
+    closeTemporaryPage: () => undefined,
+  }),
 }));
 vi.mock("@/utils/files", () => ({ pickPgnFile: mocks.pickPgnFile }));
 vi.mock("@/utils/openFile", () => ({ openFile: vi.fn() }));
@@ -111,6 +121,10 @@ vi.mock("./-appMenu", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./-appMenu")>();
   return {
     ...actual,
+    buildInAppMenuItems: (args: Parameters<typeof actual.buildInAppMenuItems>[0]) => {
+      mocks.lastCallbacks = args.callbacks;
+      return actual.buildInAppMenuItems(args);
+    },
     buildAppMenuTree: (args: Parameters<typeof actual.buildAppMenuTree>[0]) => {
       mocks.lastCallbacks = args.callbacks;
       return actual.buildAppMenuTree(args);
@@ -127,8 +141,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 import { RootLayout, startRootFileFreshnessPoll } from "./__root";
-import { menuWindowPlatform } from "./-appMenu";
-import { reloadApp } from "@/components/settings/advancedActions";
+import { installAppMenuSurface, menuWindowPlatform, wantRealMenu } from "./-appMenu";
 import { getDefaultStore } from "jotai";
 import { getCurrentWindow } from "@/platform/native";
 import { nativeBarAtom } from "@/state/atoms";
@@ -143,63 +156,35 @@ beforeEach(() => {
   mocks.ask.mockReset().mockResolvedValue(false);
 });
 
-test.each([
-  { name: "NEW_TAB", key: "t", action: mocks.createTab },
-  { name: "OPEN_FILE", key: "o", action: mocks.pickPgnFile },
-])("$name yields to a focused dialog button and works after dismissal", async ({ key, action }) => {
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  await act(async () => root.render(<RootLayout />));
-  const { dialog, button } = focusedDialogButton();
-  dialog.setAttribute("role", "dialog");
-  try {
-    expect(document.activeElement).toBe(button);
-    await act(async () => {
-      expect(press(key, { target: button, ctrlKey: true }).defaultPrevented).toBe(false);
-    });
-    expect(action).not.toHaveBeenCalled();
-    dialog.remove();
+test.each([{ name: "OPEN_FILE", key: "o", action: mocks.pickPgnFile }])(
+  "$name yields to a focused dialog button and works after dismissal",
+  async ({ key, action }) => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    await act(async () => root.render(<RootLayout />));
+    const { dialog, button } = focusedDialogButton();
+    dialog.setAttribute("role", "dialog");
+    try {
+      expect(document.activeElement).toBe(button);
+      await act(async () => {
+        expect(press(key, { target: button, ctrlKey: true }).defaultPrevented).toBe(false);
+      });
+      expect(action).not.toHaveBeenCalled();
+      dialog.remove();
 
-    await act(async () => {
-      press(key, { ctrlKey: true });
-    });
-    expect(action).toHaveBeenCalledOnce();
-  } finally {
-    dialog.remove();
-    await act(async () => root.unmount());
-    host.remove();
-  }
-});
-
-test("the menu reload, clear-saved-data and open-logs actions call the Settings implementation", async () => {
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  await act(async () => root.render(<RootLayout />));
-  try {
-    expect(mocks.lastCallbacks).not.toBeNull();
-    expect(mocks.lastCallbacks!.reload).toBe(reloadApp);
-
-    const { tauri } = await import("@/platform/tauri");
-    await act(async () => {
-      await mocks.lastCallbacks!.openLogs();
-    });
-    expect(tauri.openAppLog).toHaveBeenCalledOnce();
-
-    await act(async () => {
-      await mocks.lastCallbacks!.clearSavedData();
-    });
-    expect(mocks.ask).toHaveBeenCalledExactlyOnceWith("Menu.Help.ClearSavedData.Confirm", {
-      title: "Menu.Help.ClearSavedData.Title",
-    });
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
-  }
-});
+      await act(async () => {
+        press(key, { ctrlKey: true });
+      });
+      expect(action).toHaveBeenCalledOnce();
+    } finally {
+      dialog.remove();
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  },
+);
 
 test("the root poll follows current file tabs, listens for focus, and stops its resources", async () => {
   vi.useFakeTimers();
@@ -235,7 +220,7 @@ test("the root poll follows current file tabs, listens for focus, and stops its 
   vi.useRealTimers();
 });
 
-test("the sidebar feedback button opens the same dialog", async () => {
+test("the row feedback button opens the same dialog", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root: Root = createRoot(host);
@@ -246,7 +231,7 @@ test("the sidebar feedback button opens the same dialog", async () => {
   expect(host.querySelector("[data-testid='tab-commands-owner']")).not.toBeNull();
   expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
   await act(async () => {
-    host.querySelector<HTMLButtonElement>("[data-testid='sidebar-feedback']")?.click();
+    host.querySelector<HTMLButtonElement>("[data-testid='row-feedback']")?.click();
   });
   expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
   await act(async () => root.unmount());
@@ -299,7 +284,7 @@ test("the root binds no Save hotkey; Ctrl+S belongs to the board alone", async (
   }
 });
 
-const drawsOwnTopBar = menuWindowPlatform(String(import.meta.env.VITE_PLATFORM)) !== "other";
+const bindsRendererF11 = menuWindowPlatform(String(import.meta.env.VITE_PLATFORM)) !== "other";
 
 async function renderWithWindow(isNative: boolean) {
   const fullscreen = { value: false };
@@ -326,8 +311,8 @@ async function renderWithWindow(isNative: boolean) {
   };
 }
 
-test.runIf(drawsOwnTopBar)(
-  "F11 toggles full screen with the in-app menu bar from the page, a text field, a rich-text editor and a dialog",
+test.runIf(bindsRendererF11)(
+  "F11 toggles full screen from the page, a text field, a rich-text editor and a dialog",
   async () => {
     const { appWindow, unmount } = await renderWithWindow(false);
     const input = document.createElement("input");
@@ -369,7 +354,7 @@ test.runIf(drawsOwnTopBar)(
   },
 );
 
-test.runIf(drawsOwnTopBar)("holding F11 toggles full screen once", async () => {
+test.runIf(bindsRendererF11)("holding F11 toggles full screen once", async () => {
   const { appWindow, unmount } = await renderWithWindow(false);
   try {
     await act(async () => {
@@ -393,7 +378,22 @@ test.runIf(drawsOwnTopBar)("holding F11 toggles full screen once", async () => {
   }
 });
 
-test("F11 is left to the native menu's accelerator when the native bar is on", async () => {
+test.runIf(bindsRendererF11)(
+  "F11 still toggles full screen with native decorations on Linux and Windows",
+  async () => {
+    const { appWindow, unmount } = await renderWithWindow(true);
+    try {
+      await act(async () => {
+        expect(press("F11").defaultPrevented).toBe(true);
+      });
+      await vi.waitFor(() => expect(appWindow.setFullscreen).toHaveBeenCalledWith(true));
+    } finally {
+      await unmount();
+    }
+  },
+);
+
+test.runIf(!bindsRendererF11)("F11 is left to the native menu's accelerator on macOS", async () => {
   const { appWindow, unmount } = await renderWithWindow(true);
   try {
     await act(async () => {
@@ -402,5 +402,49 @@ test("F11 is left to the native menu's accelerator when the native bar is on", a
     expect(appWindow.setFullscreen).not.toHaveBeenCalled();
   } finally {
     await unmount();
+  }
+});
+
+test.runIf(bindsRendererF11)(
+  "F11 reports a fullscreen error through the same callback as the menu entry",
+  async () => {
+    const { appWindow, unmount } = await renderWithWindow(false);
+    const { notifications } = await import("@mantine/notifications");
+    vi.mocked(appWindow.setFullscreen).mockRejectedValueOnce(new Error("fullscreen failed"));
+    try {
+      await act(async () => {
+        expect(press("F11").defaultPrevented).toBe(true);
+      });
+      await vi.waitFor(() =>
+        expect(notifications.show).toHaveBeenCalledWith(
+          expect.objectContaining({ color: "danger" }),
+        ),
+      );
+    } finally {
+      await unmount();
+    }
+  },
+);
+
+test("the root asks for a native menu only on macOS", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => root.render(<RootLayout />));
+  try {
+    expect(vi.mocked(installAppMenuSurface)).toHaveBeenCalled();
+    const windowPlatform = menuWindowPlatform(String(import.meta.env.VITE_PLATFORM));
+    expect(vi.mocked(installAppMenuSurface).mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        wantRealMenu: wantRealMenu(windowPlatform),
+      }),
+    );
+    expect(wantRealMenu("linux")).toBe(false);
+    expect(wantRealMenu("win32")).toBe(false);
+    expect(wantRealMenu("other")).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
   }
 });

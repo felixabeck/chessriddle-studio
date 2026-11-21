@@ -8,6 +8,8 @@ import {
     expect,
     test,
     type MockScenario,
+    goToEngines,
+    goToBoards,
 } from "./fixtures";
 
 const stockfish = catalog.find(
@@ -151,7 +153,7 @@ test("automatic install stays visible across routes, cancels, and never starts a
     });
     await expect(notice).toHaveScreenshot("automatic-stockfish-notice.png");
     await hiddenPage.evaluate((style) => style.remove());
-    await page.getByRole("link", { name: "Engines", exact: true }).click();
+    await goToEngines(page);
     await expect(notice).toBeVisible();
     await expect(page.getByRole("button", { name: /Downloading/ })).toHaveCount(2);
     await expect(notice).toBeVisible();
@@ -182,7 +184,7 @@ test("automatic install stays visible across routes, cancels, and never starts a
     await expect(button).toBeVisible();
     const observations = await assertNoAutomaticInstall(page);
     expect(observations.every((sample) => sample.marker === marker)).toBe(true);
-    await page.getByRole("link", { name: "Board", exact: true }).click();
+    await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
     await expect(page.getByRole("button", { name: "Manage Engines", exact: true })).toBeVisible();
