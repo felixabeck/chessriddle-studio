@@ -1700,6 +1700,38 @@ test("preserves unowned stored trees across loads for a parseable unsupported ve
     expect(sessionStorage.getItem(treeId)).toBe(storedTree);
 });
 
+test("a stored workspace without tabs restores empty, while an absent one starts with a New Tab", () => {
+    sessionStorage.clear();
+    const fresh = loadStoredWorkspace();
+    expect(fresh.tabs).toEqual([expect.objectContaining({ type: "new" })]);
+    expect(fresh.activeTab).toBe(fresh.tabs[0]!.value);
+
+    sessionStorage.setItem(
+        WORKSPACE_STORAGE_KEY,
+        serializeStorageValue({ version: 1, tabs: [], activeTab: null }),
+    );
+    expect(loadStoredWorkspace()).toEqual({ version: 1, tabs: [], activeTab: null });
+    expect(readStoredWorkspace()).toEqual({ version: 1, tabs: [], activeTab: null });
+});
+
+test("a refused repair of a tab list scrubbed to empty keeps the empty workspace", () => {
+    sessionStorage.clear();
+    const stored = JSON.stringify({ version: 1, tabs: [null], activeTab: null });
+    sessionStorage.setItem(WORKSPACE_STORAGE_KEY, stored);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new DOMException("quota", "QuotaExceededError");
+    });
+
+    expect(loadStoredWorkspace()).toEqual({
+        version: 1,
+        tabs: [],
+        activeTab: null,
+        treeOwnershipUncertain: true,
+        treeOwnershipProtectedIds: [],
+    });
+    expect(sessionStorage.getItem(WORKSPACE_STORAGE_KEY)).toBe(stored);
+});
+
 test("leaves a genuinely empty first workspace load without an ownership marker", () => {
     sessionStorage.clear();
 
@@ -2911,19 +2943,19 @@ test("destination copy refusal keeps the unrepaired workspace and original unrea
 test("bounds and scrubs malformed workspace shapes without throwing", () => {
     sessionStorage.clear();
     const clone = vi.spyOn(tabStorage, "clone");
-    for (const raw of [
-        null,
-        [],
-        "workspace",
-        0,
-        { tabs: null, activeTab: 1 },
-        { tabs: [null], activeTab: null },
-        { tabs: [], activeTab: "x".repeat(129) },
-    ]) {
+    for (const raw of [null, [], "workspace", 0, { tabs: null, activeTab: 1 }]) {
         sessionStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(raw));
         const workspace = loadStoredWorkspace();
         expect(workspace.tabs).toHaveLength(1);
         expect(workspace.activeTab).toBe(workspace.tabs[0].value);
+    }
+    // A tab list that is empty once corrupt entries are scrubbed restores as no tabs.
+    for (const raw of [
+        { tabs: [null], activeTab: null },
+        { tabs: [], activeTab: "x".repeat(129) },
+    ]) {
+        sessionStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(raw));
+        expect(loadStoredWorkspace()).toMatchObject({ version: 1, tabs: [], activeTab: null });
     }
 
     const valid = { ...legacyTab, value: crypto.randomUUID() };

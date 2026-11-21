@@ -785,10 +785,23 @@ export async function assertFilesColumnsNotClipped(page: Page) {
     }
 }
 
+/** Read by the per-load init script: when set, the next load keeps storage instead of resetting it. */
+const PRESERVE_STORAGE_ONCE_KEY = "__E2E_PRESERVE_STORAGE_ONCE__";
+
+async function preserveStorageForNextLoad(page: Page) {
+    await page.evaluate((key) => sessionStorage.setItem(key, "1"), PRESERVE_STORAGE_ONCE_KEY);
+}
+
 /** Reloads once without the fixture's per-load storage reset, as a real reload would. */
 export async function preserveStorageForReload(page: Page) {
-    await page.evaluate(() => sessionStorage.setItem("__E2E_PRESERVE_STORAGE_ONCE__", "1"));
+    await preserveStorageForNextLoad(page);
     await page.reload();
+}
+
+/** Navigates once without the fixture's per-load storage reset, as in-app navigation would. */
+export async function gotoPreservingStorage(page: Page, url: string) {
+    await preserveStorageForNextLoad(page);
+    await page.goto(url);
 }
 
 export async function activeWorkspaceTab(page: Page) {
@@ -1663,10 +1676,9 @@ export const test = base.extend<{
 
         await page.addInitScript(tauriBootstrap);
         await page.addInitScript(
-            ({ scale, scheme, locale }) => {
-                const preserveStorageOnce =
-                    sessionStorage.getItem("__E2E_PRESERVE_STORAGE_ONCE__") === "1";
-                sessionStorage.removeItem("__E2E_PRESERVE_STORAGE_ONCE__");
+            ({ scale, scheme, locale, preserveKey }) => {
+                const preserveStorageOnce = sessionStorage.getItem(preserveKey) === "1";
+                sessionStorage.removeItem(preserveKey);
                 if (!preserveStorageOnce) {
                     localStorage.clear();
                     sessionStorage.clear();
@@ -1686,7 +1698,12 @@ export const test = base.extend<{
                     { once: true },
                 );
             },
-            { scale: fontScale, scheme: colorScheme, locale },
+            {
+                scale: fontScale,
+                scheme: colorScheme,
+                locale,
+                preserveKey: PRESERVE_STORAGE_ONCE_KEY,
+            },
         );
         await page.context().route("**/*", async (route) => {
             const url = new URL(route.request().url());

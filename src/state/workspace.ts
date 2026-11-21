@@ -107,17 +107,13 @@ function createWorkspaceLoadSchemas() {
 
 type WorkspaceLoadSchemas = ReturnType<typeof createWorkspaceLoadSchemas>;
 
-function newTab(used: Iterable<string>): Tab {
-    return {
+export function defaultWorkspace(): Workspace {
+    const first: Tab = {
         name: "Tab.NewTab",
-        value: newWorkspaceId(used),
+        value: newWorkspaceId(),
         type: "new",
         gameOrigin: { kind: "none" },
     };
-}
-
-export function defaultWorkspace(): Workspace {
-    const first = newTab(new Set());
     return { version: WORKSPACE_VERSION, tabs: [first], activeTab: first.value };
 }
 
@@ -184,18 +180,25 @@ function planWorkspaceRepair(
         return repaired;
     });
 
-    if (tabs.length === 0) tabs.push(newTab(ids));
+    // A stored workspace without tabs is the user's own state (they closed the last one), so it
+    // restores empty. Only an absent or unparseable workspace starts with a New Tab, above.
+    if (tabs.length === 0) {
+        // Two objects: `loadWorkspace` annotates `unrepairedWorkspace` in place.
+        return {
+            workspace: { version: WORKSPACE_VERSION, tabs: [], activeTab: null },
+            unrepairedWorkspace: { version: WORKSPACE_VERSION, tabs: [], activeTab: null },
+            cloneTargets,
+        };
+    }
     const legacyActive = parsed.activeTab;
     const legacyActiveIndex = candidates.findIndex((tab) => tab.value === legacyActive);
     const activeTab = legacyActiveIndex === -1 ? tabs[0]!.value : tabs[legacyActiveIndex]!.value;
-    const unrepairedTabs = candidates.length > 0 ? candidates : tabs;
-    const unrepairedActiveTab = resolveActiveTab(unrepairedTabs, legacyActive);
     return {
         workspace: { version: WORKSPACE_VERSION, tabs, activeTab },
         unrepairedWorkspace: {
             version: WORKSPACE_VERSION,
-            tabs: unrepairedTabs,
-            activeTab: unrepairedActiveTab,
+            tabs: candidates,
+            activeTab: resolveActiveTab(candidates, legacyActive),
         },
         cloneTargets,
     };

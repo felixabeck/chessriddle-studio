@@ -10,6 +10,7 @@ import {
     type MockScenario,
     goToEngines,
     goToBoards,
+    preserveStorageForReload,
 } from "./fixtures";
 
 const stockfish = catalog.find(
@@ -179,8 +180,7 @@ test("automatic install stays visible across routes, cancels, and never starts a
     await expect(button).toHaveScreenshot("engines-install-stockfish.png");
     const marker = await page.evaluate(() => localStorage.getItem("first-launch-stockfish"));
     expect(marker).not.toBeNull();
-    await page.evaluate(() => sessionStorage.setItem("__E2E_PRESERVE_STORAGE_ONCE__", "1"));
-    await page.reload();
+    await preserveStorageForReload(page);
     await expect(button).toBeVisible();
     const observations = await assertNoAutomaticInstall(page);
     expect(observations.every((sample) => sample.marker === marker)).toBe(true);

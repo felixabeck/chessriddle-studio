@@ -4,6 +4,7 @@ import {
     filesWorkspaceFixture,
     pgnFileCommands,
     preserveStorageForReload,
+    gotoPreservingStorage,
     selectFilesTreeRow,
     test,
     gameOpeningCommands,
@@ -564,9 +565,10 @@ test("workspace-tabs: analysis row and nested column drags resize panes and rest
         .toEqual(dimensions);
 });
 
-test("workspace-tabs: closing the last tab of an opened repertoire file leaves a New Tab", async ({
+test("workspace-tabs: closing the last tab of an opened repertoire file leaves no tab and shows the Library", async ({
     page,
     mockScenario,
+    capture,
 }) => {
     const repertoireFile = {
         ...filesWorkspaceFixture.pgnFile,
@@ -587,7 +589,25 @@ test("workspace-tabs: closing the last tab of an opened repertoire file leaves a
         .locator("header [role='tablist'] [role='tab'][aria-selected='true'] + button")
         .click();
     await expect(page.getByText(/an error occurred/i)).toHaveCount(0);
-    const workspaceTabs = page.getByRole("tablist").first().getByRole("tab");
+    const workspaceTabs = page.locator("header [role='tablist'] [role='tab']");
+    await expect(page).toHaveURL("/library");
+    await expect(workspaceTabs).toHaveCount(0);
+
+    // The empty workspace is what restores; no New Tab is recreated behind the user's back.
+    await preserveStorageForReload(page);
+    await expect(page).toHaveURL("/library");
+    await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
+    await expect(workspaceTabs).toHaveCount(0);
+    await capture("workspace-tabs-no-tab-library");
+
+    // Opening the board view with the restored empty workspace lands on the Library as well.
+    await gotoPreservingStorage(page, "/");
+    await expect(page).toHaveURL("/library");
+    await expect(page.getByRole("heading", { name: "Library", exact: true })).toBeVisible();
+    await expect(workspaceTabs).toHaveCount(0);
+
+    await newWorkspaceTabButton(page).click();
+    await expect(page).toHaveURL(/\/$/);
     await expect(workspaceTabs).toHaveCount(1);
     await expect(workspaceTabs).toHaveText("New Tab");
     await expect(workspaceTabs).toHaveAttribute("aria-selected", "true");

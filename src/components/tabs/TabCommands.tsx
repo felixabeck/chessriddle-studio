@@ -1,7 +1,7 @@
 import { Button, Group, TextInput } from "@mantine/core";
 import { useHotkeys } from "@mantine/hooks";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { getDefaultStore, useAtom, useAtomValue, useSetAtom } from "jotai";
+import { getDefaultStore, useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import {
   createContext,
   startTransition,
@@ -172,24 +172,27 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     [navigate, pathname, setPageTabs],
   );
 
-  const createNewWorkspaceTab = useCallback(
-    (options?: { navigateHome?: boolean }) => {
-      void runTabCreation({
-        create: () => createTab({ tab: { name: t("Tab.NewTab"), type: "new" }, setTabs }),
-        onSuccess: options?.navigateHome
-          ? async () => {
-              await navigate({ to: "/" });
-            }
-          : undefined,
-        onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
-      });
-    },
-    [navigate, setTabs, t],
-  );
+  const newTab = useCallback(() => {
+    void runTabCreation({
+      create: () => createTab({ tab: { name: t("Tab.NewTab"), type: "new" }, setTabs }),
+      onSuccess: async () => {
+        await navigate({ to: "/" });
+      },
+      onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
+    });
+  }, [navigate, setTabs, t]);
 
+  // Closing the last board tab leaves none open. The board view has nothing to show then, so the
+  // Library stands in for it; a new tab opens only on request. The store is read instead of this
+  // render's `tabs`: a new tab is admitted in a transition, so the urgent navigation to "/" can
+  // render first with the tab still missing, and must not be sent back to the Library.
+  const workspaceStore = useStore();
+  const noBoardTabs = tabs.length === 0;
   useEffect(() => {
-    if (tabs.length === 0) createNewWorkspaceTab();
-  }, [createNewWorkspaceTab, tabs]);
+    if (!noBoardTabs || !isBoardsPath(pathname)) return;
+    if (workspaceStore.get(tabsAtom).length > 0) return;
+    void navigate({ to: "/library", replace: true });
+  }, [navigate, noBoardTabs, pathname, workspaceStore]);
 
   const closeTab = useCallback(
     async (value: string | null, discard = false) => {
@@ -374,11 +377,6 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       });
     },
     [setTabs],
-  );
-
-  const newTab = useCallback(
-    () => createNewWorkspaceTab({ navigateHome: true }),
-    [createNewWorkspaceTab],
   );
 
   const closeActiveOrPage = useCallback(() => {

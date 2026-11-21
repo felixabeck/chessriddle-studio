@@ -1,4 +1,4 @@
-import { act, Suspense, type ReactNode } from "react";
+import { act, startTransition, Suspense, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { getDefaultStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -365,18 +365,22 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function mountPage() {
+  root.render(
+    <Suspense fallback={<div data-testid="fallback">Loading</div>}>
+      <MantineProvider env="test">
+        <TabCommandsProvider>
+          <Probe />
+          <BoardsPage />
+        </TabCommandsProvider>
+      </MantineProvider>
+    </Suspense>,
+  );
+}
+
 function renderPage() {
   return act(async () => {
-    root.render(
-      <Suspense fallback={<div data-testid="fallback">Loading</div>}>
-        <MantineProvider env="test">
-          <TabCommandsProvider>
-            <Probe />
-            <BoardsPage />
-          </TabCommandsProvider>
-        </MantineProvider>
-      </Suspense>,
-    );
+    mountPage();
   });
 }
 
@@ -666,12 +670,12 @@ test("restores the report owner and tree store when durable close is refused", a
   expect(store.get(closingTabsAtom)).toEqual(new Set());
 });
 
-test("does not loop when replacement creation after the last close is refused", async () => {
+test("closing the last tab leaves none open and shows the Library", async () => {
   const onlyTab = fixtures.tabs[0]!;
   store.set(tabsAtom, [onlyTab]);
   store.set(activeTabAtom, onlyTab.value);
-  fixtures.createTab.mockResolvedValue(null);
   await renderPage();
+  expect(fixtures.navigate).not.toHaveBeenCalled();
 
   await act(async () => {
     await fixtures.closeHandler!();
@@ -679,8 +683,48 @@ test("does not loop when replacement creation after the last close is refused", 
   });
 
   expect(store.get(tabsAtom)).toEqual([]);
-  expect(fixtures.createTab).toHaveBeenCalledOnce();
+  expect(store.get(activeTabAtom)).toBeNull();
+  expect(fixtures.createTab).not.toHaveBeenCalled();
+  expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/library", replace: true });
   expect(fixtures.notifyUnlessCancelled).not.toHaveBeenCalled();
+});
+
+test("a workspace without tabs stays empty and leaves the board view for the Library", async () => {
+  store.set(tabsAtom, []);
+  await renderPage();
+
+  expect(store.get(tabsAtom)).toEqual([]);
+  expect(fixtures.createTab).not.toHaveBeenCalled();
+  expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/library", replace: true });
+});
+
+test("a New Tab admitted in a transition is not sent back to the Library by its own navigation", async () => {
+  store.set(tabsAtom, []);
+  fixtures.pathname = "/library";
+  await renderPage();
+
+  // Tab admission is a transition (`stageAndCommitTab` in utils/tabs.ts); the navigation to "/" renders urgently, so
+  // that render still sees no tabs while the store already holds the admitted one.
+  await act(async () => {
+    startTransition(() => {
+      store.set(tabsAtom, [fixtures.tabs[0]!]);
+    });
+    fixtures.pathname = "/";
+    mountPage();
+  });
+
+  expect(store.get(tabsAtom)).toHaveLength(1);
+  expect(fixtures.navigate).not.toHaveBeenCalled();
+});
+
+test("a workspace without tabs stays on a page other than the board view", async () => {
+  store.set(tabsAtom, []);
+  fixtures.pathname = "/library";
+  await renderPage();
+
+  expect(store.get(tabsAtom)).toEqual([]);
+  expect(fixtures.createTab).not.toHaveBeenCalled();
+  expect(fixtures.navigate).not.toHaveBeenCalled();
 });
 
 test("duplicate clones the requested tab and preserves metadata and selection on refusal", async () => {

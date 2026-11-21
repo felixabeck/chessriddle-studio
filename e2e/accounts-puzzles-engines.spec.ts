@@ -766,8 +766,7 @@ test("accounts-puzzles-engines: default-true check stays disabled after save and
     await capture("engine-check-false-pending");
     await expect.poll(() => page.evaluate(() => localStorage.getItem("engines"))).not.toBe(bytes);
     await expect(ponder).not.toBeChecked();
-    await page.evaluate(() => sessionStorage.setItem("__E2E_PRESERVE_STORAGE_ONCE__", "1"));
-    await page.reload();
+    await preserveStorageForReload(page);
     if ((await expert.getAttribute("aria-expanded")) === "false") await expert.click();
     await expect(ponder).not.toBeChecked();
     await capture("engine-check-false-rehydrated");

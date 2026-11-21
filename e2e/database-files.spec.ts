@@ -18,6 +18,7 @@ import {
     databaseLayoutCommands,
     playerOverviewLastGames,
     preserveStorageForReload,
+    gotoPreservingStorage,
     whitePawnSquares,
     waitForScrollAreaScrollbarsHidden,
     dragMosaicDivider,
@@ -154,11 +155,10 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
         await page.evaluate(({ scale, scheme }) => {
             localStorage.setItem("font-size", scale);
             localStorage.setItem("mantine-color-scheme", scheme);
-            sessionStorage.setItem("__E2E_PRESERVE_STORAGE_ONCE__", "1");
         }, surface);
         await page.emulateMedia({ colorScheme: surface.scheme });
         await page.setViewportSize({ width: surface.width, height: 1000 });
-        await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+        await gotoPreservingStorage(page, `/databases/${gameOpeningFixture.databaseId}`);
         await page.getByRole("tab", { name: "Players", exact: true }).click();
         const players = page.getByRole("tabpanel", { name: "Players", exact: true });
         await players
