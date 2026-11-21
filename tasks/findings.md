@@ -27148,7 +27148,7 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 
 ### `rust-macos-test` on master `09d65e4e7` timed out after its Rust cache download aborted mid-transfer
 
-* **ID:** f-20261117-01 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261117-01 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 32517be2-a170-4058-9a56-2f017130bfe5
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (post-push CI wait for f-20261115-06, drain 32517be2)
@@ -27157,6 +27157,9 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 * **Failure scenario:** every later push stops at `pnpm ci:remote:check` (exit 1) until this job succeeds on a rerun. Any cold macOS build (download abort or eviction) needs about 42 min to compile, so the remaining 18 min do not cover the test run.
 * **Fix shape:** `gh run rerun 43994514248 --failed -R felixabeck/chessriddle-studio` and confirm `rust-macos-test` succeeds; close with the new job id. Only if a cold build recurs, raise the job's budget for the cold-cache case.
 * **Found by:** Claude (drain orchestrator), drain 32517be2
+* **Closed 2026-11-21 (drain, no code change):** the filed fix shape's rerun has already happened. Run 43994514248 is on `run_attempt` 2 with conclusion `success`. Its `rust-macos-test` job 133768996781 passed in 14 min (02:20:43Z–02:34:49Z on 2026-11-17).
+  * **Cold-build recurrence check:** across the last 40 Test runs, all `rust-macos-test` jobs succeeded in 10 to 30 min, well inside the 60 min budget. No cold build has recurred, so the conditional budget raise in the fix shape is not triggered. Rejected: raising `timeout-minutes` without a recurrence, because the one observed abort was a transfer failure on an entry that still existed.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"4d64a917f261ae44da4a3528970d2386947a6627e739ba3fda289aa0ae170231","header_sha256":"e6fc00ca0cde6efb98a7c8bd3632464679190d2819c1ff4efbb6e76a25df62ef","header_status":"handled","input_sha256":"126cf6908a3244f13c7acb37af2efd3dadf64ec6242de1b45840b90e2287a908","kind":"mutation-receipt","operation":"78c56d2509339c0338f695ba39a15c6dcf88b8b371f252f3c9e54c8f72ca5dd6","options":{"section":null},"request_id_sha256":null,"results":["f-20261117-01"],"target":"f-20261117-01","v":1} -->
 
 ---
 
