@@ -45,7 +45,6 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
-  treeStore.dispose();
 });
 
 async function renderTable(rows: Opening[] = openings, total?: Opening) {

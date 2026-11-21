@@ -69,7 +69,6 @@ afterEach(async () => {
   window.removeEventListener("unhandledrejection", onUnhandled);
   await act(async () => root.unmount());
   host.remove();
-  store.dispose();
 });
 
 function openingNameTree(visible = true) {

@@ -85,7 +85,6 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
-  tree.dispose();
 });
 
 async function renderNotation() {

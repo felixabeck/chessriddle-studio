@@ -84,7 +84,6 @@ test("DetachedEval drops historical threat PV and score in check and restores le
   expect(h.store.get(threatFamily("display-tab"))).toBe(true);
   await act(async () => h.store.set(threatFamily("display-tab"), false));
   expect(h.host.querySelector('[data-testid="threat-badge"]')).toBeNull();
-  tree.dispose();
 });
 test("DetachedEval uses the shared dimmed fallback and replaces it with current lines", async () => {
   const tree = createTreeStore();
@@ -107,7 +106,6 @@ test("DetachedEval uses the shared dimmed fallback and replaces it with current 
   await h.remember([{ ...displayLines[0], sanMoves: ["d5"], uciMoves: ["d7d5"] }], ["d2d4"]);
   expect(h.host.querySelector("[inert]")).toBeNull();
   expect(h.host.textContent).toContain("d5");
-  tree.dispose();
 });
 
 test.each([false, true])(
@@ -136,7 +134,6 @@ test.each([false, true])(
     expect(h.host.textContent).toContain("Board.Analysis.EngineFailed");
     expect(h.host.querySelector("[inert]") !== null).toBe(partial);
     expect(h.host.querySelector("[inert]")?.textContent).toBe(partial ? `+0.34${LINE}` : undefined);
-    tree.dispose();
   },
 );
 
@@ -184,12 +181,11 @@ const lineCountInput = (count: number) =>
   h.host.querySelector<HTMLInputElement>(`input[type="radio"][value="${count}"]`);
 
 test("DetachedEval displays the pinned engine's shared WDL preference", async () => {
-  const tree = await renderPinned(null, [
+  await renderPinned(null, [
     { ...displayLines[0], score: { ...displayLines[0].score, wdl: [450, 300, 250] } },
   ]);
   await act(async () => h.store.set(scoreTypeFamily(displayEngine.id), "wdl"));
   expect(h.host.querySelector('[aria-label="Board.Analysis.Tablebase.WhiteWins"]')).not.toBeNull();
-  tree.dispose();
 });
 
 test("DetachedEval toggles the engine's score preference only for current lines", async () => {
@@ -204,11 +200,10 @@ test("DetachedEval toggles the engine's score preference only for current lines"
   expect(chip().closest("[inert]")).not.toBeNull();
   await act(async () => chip().click());
   expect(h.store.get(scoreTypeFamily(displayEngine.id))).toBe("wdl");
-  tree.dispose();
 });
 
 test("DetachedEval shows every computed line until a cap is chosen, and never more than computed", async () => {
-  const tree = await renderPinned("3");
+  await renderPinned("3");
   for (const text of [LINE, "1.d4d5", "1.c4e5"]) expect(h.host.textContent).toContain(text);
   expect(lineCountInput(3)?.checked).toBe(true);
   expect([1, 2, 3, 4, 5].map((count) => lineCountInput(count)?.disabled)).toEqual([
@@ -231,13 +226,12 @@ test("DetachedEval shows every computed line until a cap is chosen, and never mo
   await act(async () => h.store.set(detachedEngineLinesAtom, 5));
   expect(h.host.textContent).toContain("1.c4e5");
   expect(lineCountInput(3)?.checked).toBe(true);
-  tree.dispose();
 });
 
 test.each([false, true])(
   "DetachedEval raises MultiPV to four on a synced %s tab",
   async (synced) => {
-    const tree = await renderPinned("3", threeLines, synced);
+    await renderPinned("3", threeLines, synced);
     await act(async () => lineCountInput(4)!.click());
     expect(h.store.get(h.settingsAtom).settings).toEqual([
       { type: "string", name: "MultiPV", value: "4" },
@@ -258,14 +252,13 @@ test.each([false, true])(
     await h.remember([...threeLines, fourth]);
     expect(h.host.querySelectorAll(`.${scoreBubbleClasses.bubble}`)).toHaveLength(4);
     expect(h.host.textContent).toContain("1.♘f3d5");
-    tree.dispose();
   },
 );
 
 test.each([false, true])(
   "DetachedEval keeps MultiPV three when choosing two on a synced %s tab",
   async (synced) => {
-    const tree = await renderPinned("3", threeLines, synced);
+    await renderPinned("3", threeLines, synced);
     await act(async () => lineCountInput(2)!.click());
     expect(h.store.get(h.settingsAtom).settings).toEqual([
       { type: "string", name: "MultiPV", value: "3" },
@@ -275,28 +268,24 @@ test.each([false, true])(
     ]);
     expect(h.store.get(detachedEngineLinesAtom)).toBe(2);
     expect(lineCountInput(2)?.checked).toBe(true);
-    tree.dispose();
   },
 );
 
 test("DetachedEval shows the line selector with MultiPV one", async () => {
-  const tree = await renderPinned("1", [displayLines[0]]);
+  await renderPinned("1", [displayLines[0]]);
   expect(lineCountInput(1)?.checked).toBe(true);
   expect(lineCountInput(5)?.disabled).toBe(false);
-  tree.dispose();
 });
 
 test("DetachedEval clamps the selected line count to five with a larger MultiPV", async () => {
-  const tree = await renderPinned("8");
+  await renderPinned("8");
   expect(lineCountInput(5)?.checked).toBe(true);
-  tree.dispose();
 });
 
 test("DetachedEval hides the line selector when the engine has no MultiPV option", async () => {
-  const tree = await renderPinned(null, [displayLines[0]]);
+  await renderPinned(null, [displayLines[0]]);
   expect(h.host.textContent).toContain(LINE);
   expect(lineCountInput(1)).toBeNull();
-  tree.dispose();
 });
 
 test("DetachedEval numbers moves from the current position and plays a clicked line", async () => {
@@ -312,7 +301,6 @@ test("DetachedEval numbers moves from the current position and plays a clicked l
   await act(async () => knight!.click());
   expect(tree.getState().currentNode().san).toBe("Nf3");
   expect(tree.getState().currentNode().halfMoves).toBe(3);
-  tree.dispose();
 });
 
 const hover = (element: Element) =>
@@ -331,12 +319,11 @@ const previewFen = () =>
     ?.getAttribute("data-preview-fen");
 
 test("DetachedEval header shows the best line's depth and advantage symbol", async () => {
-  const tree = await renderPinned("3");
+  await renderPinned("3");
   expect(h.host.textContent).toContain("GoMode.Depth20");
   const symbol = h.host.querySelector("[data-testid=assessment-symbol]");
   expect(symbol?.textContent).toBe("⩲");
   expect(symbol?.getAttribute("aria-label")).toBe("Annotate.WhiteEdge");
-  tree.dispose();
 });
 
 test("DetachedEval previews the position after a hovered move, and not on dimmed lines", async () => {
@@ -350,21 +337,19 @@ test("DetachedEval previews the position after a hovered move, and not on dimmed
   const dimmed = h.host.querySelector("[inert]")!;
   await hover(moveButton("e5", dimmed));
   expect(previewFen()).toBeUndefined();
-  tree.dispose();
 });
 
 test("DetachedEval shows no preview board when previews on hover are turned off", async () => {
-  const tree = await renderPinned("3");
+  await renderPinned("3");
   await act(async () => h.store.set(previewBoardOnHoverAtom, false));
   await hover(moveButton("e5"));
   expect(previewFen()).toBeUndefined();
   // The setting persists in localStorage; later tests expect the default.
   await act(async () => h.store.set(previewBoardOnHoverAtom, true));
-  tree.dispose();
 });
 
 test("DetachedEval flips the preview above a line at the window bottom, without taking the pointer", async () => {
-  const tree = await renderPinned("3");
+  await renderPinned("3");
   const line = moveButton("e5").closest(".mantine-Group-root")!;
   vi.spyOn(line, "getBoundingClientRect").mockReturnValue(
     DOMRect.fromRect({ x: 40, y: window.innerHeight - 40, width: 600, height: 40 }),
@@ -377,7 +362,6 @@ test("DetachedEval flips the preview above a line at the window bottom, without 
   // Opened above a pinned line below the board, it overlaps the main board and must stack over
   // its chessground layers (z-index up to 11).
   expect(preview.style.zIndex).toBe(String(getDefaultZIndex("popover")));
-  tree.dispose();
 });
 
 const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
@@ -412,11 +396,10 @@ test("DetachedEval move keys step the open preview through its line and leave th
   expect(previewFen()).toBe(INITIAL_FEN);
   expect(previewed()).toBeNull();
   expect(tree.getState().position).toEqual([]);
-  tree.dispose();
 });
 
 test("DetachedEval keeps the stepped preview board where it opened", async () => {
-  const tree = await renderPinned("1");
+  await renderPinned("1");
   const line = moveButton("e5").closest(".mantine-Group-root")!;
   const rect = vi.spyOn(line, "getBoundingClientRect");
   rect.mockReturnValue(DOMRect.fromRect({ x: 40, y: 100, width: 600, height: 40 }));
@@ -430,11 +413,10 @@ test("DetachedEval keeps the stepped preview board where it opened", async () =>
   expect(previewFen()).toBe(AFTER_NF3);
   expect(preview().style.top).toBe("140px");
   expect(preview().style.left).toBe("40px");
-  tree.dispose();
 });
 
 test("DetachedEval freezes a stepped line against engine updates until the pointer leaves", async () => {
-  const tree = await renderPinned("1");
+  await renderPinned("1");
   await hover(moveButton("e4"));
   press("ArrowRight");
   await h.remember([{ ...displayLines[0], sanMoves: ["d4", "d5"], uciMoves: ["d2d4", "d7d5"] }]);
@@ -450,7 +432,6 @@ test("DetachedEval freezes a stepped line against engine updates until the point
   await unhover(moveButton("e4"));
   expect(previewFen()).toBeUndefined();
   expect(h.host.textContent).toContain("1.d4d5");
-  tree.dispose();
 });
 
 test("DetachedEval plays the frozen line a stepped preview shows when one of its moves is clicked", async () => {
@@ -461,7 +442,6 @@ test("DetachedEval plays the frozen line a stepped preview shows when one of its
   await act(async () => moveButton("♘f3").click());
   expect(tree.getState().currentNode().san).toBe("Nf3");
   expect(tree.getState().currentNode().halfMoves).toBe(3);
-  tree.dispose();
 });
 
 test("DetachedEval closes the preview and its frozen line when the game moves", async () => {
@@ -476,17 +456,15 @@ test("DetachedEval closes the preview and its frozen line when the game moves", 
   press("ArrowRight");
   expect(previewFen()).toBeUndefined();
   expect(previewed()).toBeNull();
-  tree.dispose();
 });
 
 test("DetachedEval renders a line only up to its first illegal move", async () => {
-  const tree = await renderPinned(null, [
+  await renderPinned(null, [
     { ...displayLines[0], sanMoves: ["e4", "Ke7", "Nf3"], uciMoves: ["e2e4", "e8e7", "g1f3"] },
   ]);
   expect(h.host.textContent).toContain("1.e4");
   expect(h.host.textContent).not.toContain("e7");
   expect(h.host.textContent).not.toContain("f3");
-  tree.dispose();
 });
 
 const PLACEMENT_KEY = "detached-engine-placement";
@@ -538,9 +516,8 @@ test.each([
   ["not json", "tabs"],
 ])("DetachedEval hydrates stored placement %s into the %s slot", async (stored, expected) => {
   try {
-    const tree = await renderEverySlot(stored);
+    await renderEverySlot(stored);
     expectOnlyIn(expected);
-    tree.dispose();
   } finally {
     localStorage.removeItem(PLACEMENT_KEY);
   }
@@ -560,7 +537,7 @@ async function choosePosition(label: string) {
 
 test("DetachedEval renders in the stored slot only, and its position menu lists every slot, marks the current one, moves the bar and persists", async () => {
   try {
-    const tree = await renderEverySlot(null);
+    await renderEverySlot(null);
 
     expect(h.store.get(detachedEnginePlacementAtom)).toBe("tabs");
     expectOnlyIn("tabs");
@@ -603,7 +580,6 @@ test("DetachedEval renders in the stored slot only, and its position menu lists 
       expect(slot(next).contains(positionButton())).toBe(true);
       expect(document.activeElement).toBe(positionButton());
     }
-    tree.dispose();
   } finally {
     localStorage.removeItem(PLACEMENT_KEY);
   }
@@ -611,7 +587,7 @@ test("DetachedEval renders in the stored slot only, and its position menu lists 
 
 test("DetachedEval keeps the bar in place when the current position is chosen again", async () => {
   try {
-    const tree = await renderEverySlot('"notation"');
+    await renderEverySlot('"notation"');
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     try {
       await choosePosition("Pinned.AboveNotation");
@@ -624,7 +600,6 @@ test("DetachedEval keeps the bar in place when the current position is chosen ag
     // No move was requested, so the next mount, before any timer runs, must not take focus.
     await act(async () => h.store.set(detachedEnginePlacementAtom, "board"));
     expect(document.activeElement).not.toBe(positionButton());
-    tree.dispose();
   } finally {
     localStorage.removeItem(PLACEMENT_KEY);
   }
@@ -650,7 +625,6 @@ test("DetachedEval position focus does not leak into a later mount when the othe
     await act(async () => h.store.set(detachedEnginePlacementAtom, "tabs"));
     expect(h.host.textContent).toContain(LINE);
     expect(document.activeElement).not.toBe(positionButton());
-    tree.dispose();
   } finally {
     localStorage.removeItem(PLACEMENT_KEY);
   }

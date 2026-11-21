@@ -102,7 +102,6 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
-  tree.dispose();
   disposeTabAtoms(tab);
   host.remove();
   vi.unstubAllGlobals();

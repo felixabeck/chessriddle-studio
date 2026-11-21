@@ -202,7 +202,6 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
-  treeStore?.dispose();
   treeStore = undefined;
   container.remove();
   vi.useRealTimers();

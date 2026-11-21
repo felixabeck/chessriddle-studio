@@ -102,7 +102,6 @@ test("real-store drag intent cannot resurrect a queued removal or overwrite newe
       { ...added, legacyAssessment: null },
     ]),
   );
-  tree.dispose();
 });
 
 test("refused routed drag rolls its presentation back to committed order", async () => {
@@ -136,7 +135,6 @@ test("refused routed drag rolls its presentation back to committed order", async
   await act(async () => reject(new Error("drag refused")));
   await vi.waitFor(() => expect(order()).toEqual(["first", "second"]));
   expect(h.store.get(enginesAtom)?.map((item) => item.id)).toEqual(["first", "second"]);
-  tree.dispose();
 });
 test("EngineSummary uses the shared dimmed fallback instead of ??? until a current result", async () => {
   h = engineDisplayHarness();

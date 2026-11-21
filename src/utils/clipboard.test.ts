@@ -86,7 +86,6 @@ test.each(
             color: "danger",
         });
         expect(store.getState()).toBe(before);
-        store.dispose();
     },
 );
 
@@ -111,7 +110,6 @@ test.each(["copyPgn", "copyVariationPgn"] as const)(
         await expect(pending).resolves.toBe(true);
         expect(notifications.show).not.toHaveBeenCalled();
         expect(store.getState()).toBe(replaced);
-        store.dispose();
     },
 );
 

@@ -26,7 +26,6 @@ let tree: TreeStore;
 afterEach(async () => {
   await act(async () => root?.unmount());
   host?.remove();
-  tree?.dispose();
 });
 
 async function renderPanel() {

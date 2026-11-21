@@ -27,7 +27,6 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
-  store.dispose();
 });
 
 test("the close button has the translated position-editor name and closes editing", async () => {

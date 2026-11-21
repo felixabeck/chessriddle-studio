@@ -412,7 +412,6 @@ test.each([false, true])(
         expect(result.coverageMap.get("") === 1).toBe(!missing);
         expect(result.coverageMap.get("")).toBeCloseTo(missing ? 0.9 : 1, 14);
         expect(result.missingGamesMap.get("")).toBe(missing ? 10 : 0);
-        builder.dispose();
     },
 );
 

@@ -172,7 +172,7 @@ export type PuzzleSessionTransitionResult =
     | { success: true; persistence: "saved" | "memory" }
     | { success: false; error: Error };
 
-export type TreeStore = StoreApi<TreeStoreState> & { dispose: () => void };
+export type TreeStore = StoreApi<TreeStoreState>;
 const installAdmittedTree = Symbol("installAdmittedTree");
 type PersistedTreeStore = TreeStore & {
     [installAdmittedTree]: StoreApi<TreeStoreState>["setState"];
@@ -1024,8 +1024,6 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
         const store = createStore<TreeStoreState>()(capturedCreator);
         const ownedStore = Object.assign(store, {
             [installAdmittedTree]: install,
-            // Provider unmount also calls dispose during ordinary tab switching.
-            dispose: () => undefined,
         });
         treeStores.set(id, ownedStore);
         isCurrent = () => treeStores.get(id) === ownedStore;
@@ -1035,10 +1033,14 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
 
     const store = createStore<TreeStoreState>()(stateCreator);
     install = store.setState;
-    return Object.assign(store, {
-        dispose: () => undefined,
-    });
+    return store;
 };
+
+export const getOrCreateTreeStore = (
+    id: string,
+    initTree?: CompleteTreeState,
+    treeKey = id,
+): TreeStore => createTreeStore(id, initTree, treeKey);
 
 export function makeMove({
     state,

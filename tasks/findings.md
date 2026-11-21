@@ -27794,7 +27794,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### `TreeStore.dispose()` is a no-op that six call sites still invoke, and `createTreeStore(id)` reads as "new store" where it returns the live cached one
 
-* **ID:** f-20261119-20 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-20 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `d79fa979e`
 * **Where:**
@@ -27821,6 +27821,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * `rg -n "\.dispose\(\)" src -g '!*test*'` lists the six tree-store calls above, plus the unrelated `feed.dispose()`.
   * `git log -S"dispose: () => undefined" -- src/state/store/tree.ts` returns 3afed0317 only.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+
+**Closed 2026-11-21:** Dropped `dispose` from `TreeStore` and removed both no-op `dispose: () => undefined` properties in `src/state/store/tree.ts`, and exported `getOrCreateTreeStore(id, initTree?, treeKey?)` as the explicit lookup-or-create alias while keeping `createTreeStore`'s caching behaviour intact. Removed the six production `.dispose()` calls (`TreeStateContext.tsx`, `BoardsPage.tsx`, `chessRiddleTraining.ts`) and switched the keyed lookup callers (`BoardsPage.tsx`, `quitSave.ts`, `unsavedGames.ts`, and keyed `TreeStateContext.tsx`) to `getOrCreateTreeStore`. Updated `BoardsPage.test.tsx`, `chessRiddleTraining.test.ts` (verifying listener unsubscribe on session replacement and removal instead of spying on `dispose`), and the test suites calling the removed `TreeStore.dispose()`. Proof: `pnpm exec tsc --noEmit`, `pnpm exec oxlint`, `pnpm exec oxfmt --check`, and 28 Vitest files (1,113 tests) green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d179345a65c058274f45a4ad4ba0924b96cb58f417c25579babbfbcc11df6752","header_sha256":"74800f6f3a0879aeacb8919e96429a2774fb9bb46277d089ad93f4089f360bbc","header_status":"handled","input_sha256":"521c48679f36496725aa3e0481ec330e6f503025b26c3c3df590de23487c23d3","kind":"mutation-receipt","operation":"e29b5e954a2140485bd93b0b0ed971c24ffdf795b21877abcc1971135b416f09","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-20"],"target":"f-20261119-20","v":1} -->
 
 ---
 

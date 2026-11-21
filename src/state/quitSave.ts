@@ -1,6 +1,6 @@
 import type { getDefaultStore } from "jotai";
 import { activeTabAtom, tabsAtom, updateTabById } from "@/state/atoms";
-import { createTreeStore } from "@/state/store/tree";
+import { getOrCreateTreeStore } from "@/state/store/tree";
 import { getTabTreeKey, type Tab } from "@/state/workspaceTypes";
 import { saveToFile, type SaveResult } from "@/utils/tabs";
 
@@ -21,7 +21,7 @@ export function createQuitTabSaver(
         return saveToFile({
             tab,
             // The tab's cached store, or one hydrated from its stored tree if it never mounted.
-            store: createTreeStore(tab.value, undefined, getTabTreeKey(tab)),
+            store: getOrCreateTreeStore(tab.value, undefined, getTabTreeKey(tab)),
             getTab: (tabId) =>
                 jotaiStore.get(tabsAtom).find((candidate) => candidate.value === tabId),
             updateTab: (tabId, update, onAdmitted) =>

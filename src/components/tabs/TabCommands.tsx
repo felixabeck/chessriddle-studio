@@ -31,7 +31,7 @@ import { restorePuzzleSession } from "@/state/puzzleSession";
 import { tabStorage } from "@/state/store/tabStorage";
 import {
   closeTreeStore,
-  createTreeStore,
+  getOrCreateTreeStore,
   invalidateReportOwner,
   restoreReportOwner,
   type TreeStore,
@@ -156,7 +156,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
         if (!closedTab) return;
         const jotaiStore = getDefaultStore();
         if (jotaiStore.get(closingTabsAtom).has(value)) return;
-        const store = createTreeStore(value, undefined, getTabTreeKey(closedTab));
+        const store = getOrCreateTreeStore(value, undefined, getTabTreeKey(closedTab));
         if (
           (closedTab.type === "play" ||
             closedTab.type === "analysis" ||
@@ -207,7 +207,6 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
             restoreReportOwner(value, reportInvalidation);
             return;
           }
-          store.dispose();
         } catch (error) {
           restoreReportOwner(value, reportInvalidation);
           notifyUnlessCancelled(t("Common.Error"), error);
@@ -449,18 +448,15 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
         pendingClose={pendingClose}
         tab={tabs.find((tab) => tab.value === pendingClose?.tabId)}
         onCancel={() => {
-          pendingClose?.store.dispose();
           setPendingClose(null);
         }}
         onDiscard={() => {
           const tabId = pendingClose?.tabId;
-          pendingClose?.store.dispose();
           setPendingClose(null);
           if (tabId) void closeTab(tabId, true);
         }}
         onSaved={() => {
           const tabId = pendingClose?.tabId;
-          pendingClose?.store.dispose();
           setPendingClose(null);
           if (tabId) void closeTab(tabId, true);
         }}

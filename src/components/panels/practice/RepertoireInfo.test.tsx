@@ -174,7 +174,6 @@ async function realCoverageFixture() {
   builder.getState().makeMove({ payload: "d4", changePosition: false });
   builder.getState().save();
   const initial = builder.getState();
-  builder.dispose();
 
   const e4 = initial.root.children[0];
   const d4 = initial.root.children[1];
@@ -539,7 +538,6 @@ test("renders the shared tree-stats row with and without a reference database", 
   const builder = createTreeStore();
   expect(builder.getState().makeMoves({ payload: ["e4", "e5"] }).success).toBe(true);
   const initial = builder.getState();
-  builder.dispose();
   const atoms = await renderRepertoireInfo(initial, "repertoire-info-tree-stats");
   const stats = () =>
     [...host.querySelectorAll("p")]
@@ -1389,7 +1387,6 @@ test.each([100, 9])(
       builder.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6", "Bc4"] }).success,
     ).toBe(true);
     const startFen = getBoardState(builder.getState().currentNode().fen);
-    builder.dispose();
     mocks.computeTreeCoverage.mockImplementation(actual.computeTreeCoverage);
     mocks.fetchPositionMoves.mockImplementation(actual.fetchPositionMoves);
     mocks.searchPosition.mockImplementation(async ({ fen }: { fen: string }) => [
@@ -1487,7 +1484,6 @@ test("ten fully covered fractional continuations admit healthy completeness and 
   const atoms = await renderRepertoireInfo(initial, "fractional-complete-start", (value) => {
     tree = value;
   });
-  builder.dispose();
   await act(async () => atoms.set(coverageMinGamesAtom, 10));
   expect(host.textContent).toContain("Board.Practice.Build.NoGapsFound");
   let result = await mocks.computeTreeCoverage.mock.results.at(-1)!.value;

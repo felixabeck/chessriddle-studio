@@ -142,7 +142,6 @@ beforeEach(() => {
 });
 afterEach(async () => {
   if (mounted) await act(async () => root.unmount());
-  tree?.dispose();
   host.remove();
   vi.useRealTimers();
   sessionStorage.clear();
@@ -759,22 +758,18 @@ test.each(["delete representative", "reload clocks"] as const)(
           undefined,
           defaultTree(standard.replace("0 1", "8 10")),
         );
-        try {
-          for (const payload of [
-            ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"],
-            ["g3", "g6", "Nf3", "Nf6", "Bg2", "Bg7"],
-          ]) {
-            replacement.getState().goToStart();
-            replacement.getState().makeMoves({ payload });
-          }
-          tree.getState().setState({
-            ...defaultTree(replacement.getState().root.fen),
-            root: replacement.getState().root,
-            headers: { ...tree.getState().headers, fen: replacement.getState().root.fen },
-          });
-        } finally {
-          replacement.dispose();
+        for (const payload of [
+          ["Nf3", "Nf6", "g3", "g6", "Bg2", "Bg7"],
+          ["g3", "g6", "Nf3", "Nf6", "Bg2", "Bg7"],
+        ]) {
+          replacement.getState().goToStart();
+          replacement.getState().makeMoves({ payload });
         }
+        tree.getState().setState({
+          ...defaultTree(replacement.getState().root.fen),
+          root: replacement.getState().root,
+          headers: { ...tree.getState().headers, fen: replacement.getState().root.fen },
+        });
       }
     });
     const rebound = atoms.get(practiceStateFamily(owner.value));

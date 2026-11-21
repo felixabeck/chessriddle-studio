@@ -12,7 +12,6 @@ const fixtures = vi.hoisted(() => ({
   closeWorkspaceTab: vi.fn(),
   closeTreeStore: vi.fn(),
   createTreeStore: vi.fn<(...args: any[]) => any>(() => ({
-    dispose: fixtures.dispose,
     subscribe: fixtures.subscribe,
     getState: () => ({ dirty: fixtures.dirty }),
   })),
@@ -23,7 +22,6 @@ const fixtures = vi.hoisted(() => ({
   getStatus: vi.fn((key: string) => fixtures.treeStatuses.get(key) ?? fixtures.treeStatus),
   treeStatus: { kind: "available" } as TabTreeStorageStatus,
   treeStatuses: new Map<string, TabTreeStorageStatus>(),
-  dispose: vi.fn(),
   subscribe: vi.fn(() => vi.fn()),
   dirty: false,
   closeReceipt: true,
@@ -105,6 +103,7 @@ vi.mock("@/platform/tauri", () => ({
 vi.mock("@/state/store/tree", () => ({
   closeTreeStore: fixtures.closeTreeStore,
   createTreeStore: fixtures.createTreeStore,
+  getOrCreateTreeStore: fixtures.createTreeStore,
   invalidateReportOwner: fixtures.invalidateReportOwner,
   restoreReportOwner: fixtures.restoreReportOwner,
 }));
@@ -230,7 +229,6 @@ beforeEach(() => {
   fixtures.invalidateReportOwner.mockReturnValue({ previous: {}, invalidated: {} });
   fixtures.abortGame.mockResolvedValue(undefined);
   fixtures.createTreeStore.mockImplementation(() => ({
-    dispose: fixtures.dispose,
     subscribe: fixtures.subscribe,
     getState: () => ({ dirty: fixtures.dirty }),
   }));

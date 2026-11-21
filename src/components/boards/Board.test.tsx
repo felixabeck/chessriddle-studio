@@ -132,7 +132,6 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
-  tree.dispose();
   host.remove();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();

@@ -86,7 +86,6 @@ beforeEach(() => {
 afterEach(async () => {
   i18nState.language = "en-US";
   await act(async () => root.unmount());
-  store?.dispose();
   host.remove();
   vi.restoreAllMocks();
   if (contentEditableDescriptor) {

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef } from "react";
 import { useStore } from "zustand";
-import { createTreeStore, type TreeStore } from "@/state/store/tree";
+import { createTreeStore, getOrCreateTreeStore, type TreeStore } from "@/state/store/tree";
 import {
   createVariationChooserStore,
   subscribeVariationChooser,
@@ -31,7 +31,9 @@ export function TreeStateProvider({
 }) {
   const storeRef = useRef<TreeStore | null>(null);
   if (storeRef.current === null && !externalStore) {
-    storeRef.current = createTreeStore(id, initial, treeKey);
+    storeRef.current = id
+      ? getOrCreateTreeStore(id, initial, treeKey)
+      : createTreeStore(undefined, initial);
   }
   const store = externalStore ?? storeRef.current!;
   const chooserRef = useRef<VariationChooserStore | null>(null);
@@ -43,9 +45,8 @@ export function TreeStateProvider({
     return () => {
       unsubscribe();
       chooser.getState().close();
-      if (!externalStore) store.dispose();
     };
-  }, [store, chooser, externalStore]);
+  }, [store, chooser]);
 
   return (
     <TreeStateContext.Provider value={store}>

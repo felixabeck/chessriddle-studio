@@ -56,7 +56,6 @@ const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboar
 afterEach(async () => {
   await act(async () => root?.unmount());
   host?.remove();
-  tree?.dispose();
   mocks.searchOpeningName.mockReset();
   vi.useRealTimers();
   if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);

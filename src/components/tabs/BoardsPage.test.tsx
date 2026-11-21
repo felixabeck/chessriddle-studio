@@ -21,7 +21,6 @@ const fixtures = vi.hoisted(() => ({
     updateTab?: unknown;
   },
   createTreeStore: vi.fn<(...args: any[]) => any>(() => ({
-    dispose: fixtures.dispose,
     subscribe: fixtures.subscribe,
     getState: () => ({
       dirty: fixtures.dirty,
@@ -52,7 +51,6 @@ const fixtures = vi.hoisted(() => ({
     };
   }),
   treeStatusListeners: new Set<() => void>(),
-  dispose: vi.fn(),
   subscribe: vi.fn(() => vi.fn()),
   dirty: false,
   closeHandler: null as (() => unknown) | null,
@@ -153,6 +151,7 @@ vi.mock("@/platform/tauri", () => ({
 vi.mock("@/state/store/tree", () => ({
   closeTreeStore: fixtures.closeTreeStore,
   createTreeStore: fixtures.createTreeStore,
+  getOrCreateTreeStore: fixtures.createTreeStore,
   retryTreeStoreStorage: fixtures.retryTreeStoreStorage,
   discardTreeStoreStorage: fixtures.discardTreeStoreStorage,
   invalidateReportOwner: fixtures.invalidateReportOwner,
@@ -453,7 +452,6 @@ beforeEach(() => {
   fixtures.invalidateReportOwner.mockReturnValue({ previous: {}, invalidated: {} });
   fixtures.abortGame.mockResolvedValue(undefined);
   fixtures.createTreeStore.mockImplementation(() => ({
-    dispose: fixtures.dispose,
     subscribe: fixtures.subscribe,
     getState: () => ({
       dirty: fixtures.dirty,
@@ -664,7 +662,6 @@ test("restores the report owner and tree store when durable close is refused", a
 
   expect(fixtures.restoreReportOwner).toHaveBeenCalledOnce();
   expect(fixtures.closeTreeStore).not.toHaveBeenCalled();
-  expect(fixtures.dispose).not.toHaveBeenCalled();
   expect(store.get(tabsAtom).some((tab) => tab.value === "current")).toBe(true);
   expect(store.get(closingTabsAtom)).toEqual(new Set());
 });

@@ -188,7 +188,6 @@ function game(moves: string[], comment: string) {
   builder.getState().goToStart();
   builder.getState().setComment(comment);
   const state = builder.getState();
-  builder.dispose();
   return {
     ...treeReducer.defaultTree(),
     root: state.root,

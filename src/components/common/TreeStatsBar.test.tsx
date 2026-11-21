@@ -30,7 +30,6 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
-  store.dispose();
 });
 
 const labels = () => Array.from(host.querySelectorAll("p"), (p) => p.textContent);

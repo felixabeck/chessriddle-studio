@@ -181,7 +181,6 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   for (const tab of workspace.get(tabsAtom)) closeTreeStore(tab.value);
-  owner.dispose();
   host.remove();
   vi.unstubAllGlobals();
 });

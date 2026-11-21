@@ -121,6 +121,7 @@ vi.mock("@/platform/tauri", () => ({
 vi.mock("@/state/store/tree", () => ({
   closeTreeStore: fixtures.closeTreeStore,
   createTreeStore: fixtures.createTreeStore,
+  getOrCreateTreeStore: fixtures.createTreeStore,
   invalidateReportOwner: fixtures.invalidateReportOwner,
   restoreReportOwner: fixtures.restoreReportOwner,
 }));

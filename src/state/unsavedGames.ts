@@ -21,7 +21,7 @@ import { normalizeError, warnSafely } from "@/platform/errors";
 import { tauri } from "@/platform/tauri";
 import { tabsAtom, workspaceStartedFresh } from "@/state/atoms";
 import { prepareTreeForStorage, TREE_STORAGE_VERSION, tabStorage } from "@/state/store/tabStorage";
-import { createTreeStore, getCachedTreeStore, type TreeStore } from "@/state/store/tree";
+import { getCachedTreeStore, getOrCreateTreeStore, type TreeStore } from "@/state/store/tree";
 import { getTabTreeKey, type Tab } from "@/state/workspaceTypes";
 import type { TreeState } from "@/utils/treeReducer";
 import { asksBeforeDiscardingChanges, commitNewTab, type SetTabs } from "@/utils/tabs";
@@ -139,7 +139,7 @@ function defaultTreeStoreFor(tab: Tab): TreeStore | null {
     // store over it would hide the stored game.
     const inspected = tabStorage.inspectTree(treeKey, treeKey !== tab.value);
     if (inspected.kind !== "available" && inspected.kind !== "absent") return null;
-    return createTreeStore(tab.value, undefined, treeKey);
+    return getOrCreateTreeStore(tab.value, undefined, treeKey);
 }
 
 /** The native category when the error came from a command, otherwise the renderer one. */

@@ -175,7 +175,6 @@ async function lookupUI(
         await inspect(host);
     } finally {
         await act(async () => root.unmount());
-        owner.dispose();
         host.remove();
         vi.unstubAllGlobals();
     }

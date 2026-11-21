@@ -130,7 +130,6 @@ export function createChessRiddleTrainingSessions(
     const disposeTree = (entry: Entry) => {
         entry.unsubscribeTree?.();
         entry.unsubscribeTree = undefined;
-        entry.state.treeStore?.dispose();
     };
     const current = (tabId: string, entry: Entry, identity: symbol) =>
         entries.get(tabId) === entry && entry.request === identity;
