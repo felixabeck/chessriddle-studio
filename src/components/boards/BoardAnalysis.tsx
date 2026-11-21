@@ -230,8 +230,6 @@ function BoardAnalysis() {
                 tabEngineSettingsFamily({
                   tab: tabId,
                   engineId: engine.id,
-                  defaultSettings: engine.settings ?? undefined,
-                  defaultGo: engine.go ?? undefined,
                 }),
               ).enabled,
           );

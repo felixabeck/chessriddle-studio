@@ -100,8 +100,6 @@ export function readEngineLines(
         tabEngineSettingsFamily({
             tab,
             engineId: engine.id,
-            defaultSettings: engine.settings ?? undefined,
-            defaultGo: engine.go ?? undefined,
         }),
     );
     const memory = get(engineMovesFamily({ tab, engine: engine.id }));
@@ -208,8 +206,6 @@ export function useDisplayedEngineLines(
         tabEngineSettingsFamily({
             tab,
             engineId: engine.id,
-            defaultSettings: engine.settings ?? undefined,
-            defaultGo: engine.go ?? undefined,
         }),
     );
     useAtomValue(engineMovesFamily({ tab, engine: engine.id }));

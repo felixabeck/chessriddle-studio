@@ -13,8 +13,6 @@ export function useTabEngineSettings(engine: Engine) {
     const store = useStore();
     const settingsAtom = tabEngineSettingsFamily({
         engineId: engine.id,
-        defaultSettings: engine.settings ?? undefined,
-        defaultGo: engine.go ?? undefined,
         tab: ownerTabId,
     });
     const [committedSettings, setSettings2] = useAtom(settingsAtom);

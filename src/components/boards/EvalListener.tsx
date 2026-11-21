@@ -169,8 +169,6 @@ function EngineListener({
   const [settings] = useAtom(
     tabEngineSettingsFamily({
       engineId: engine.id,
-      defaultSettings: engine.settings ?? undefined,
-      defaultGo: engine.go ?? undefined,
       tab: ownerTabId,
     }),
   );

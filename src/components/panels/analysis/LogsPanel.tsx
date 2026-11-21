@@ -53,8 +53,6 @@ function SelectedEngineLogs({
     tabEngineSettingsFamily({
       tab: ownerTabId,
       engineId: engine.id,
-      defaultSettings: engine.settings ?? undefined,
-      defaultGo: engine.go ?? undefined,
     }),
   );
   const currentTerminal = matchingEngineTerminal(

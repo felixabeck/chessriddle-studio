@@ -108,12 +108,12 @@ vi.mock("@/state/atoms", async () => {
       (a, b) => a.tab === b.tab && a.engine === b.engine,
     ),
     tabEngineSettingsFamily: atomFamily(
-      ({ defaultSettings, defaultGo }: { defaultSettings?: any[]; defaultGo?: any }) =>
+      (_param: { tab: string; engineId: string }) =>
         atom({
           enabled: true,
           synced: true,
-          go: defaultGo ?? { t: "Infinite" },
-          settings: defaultSettings ?? [],
+          go: { t: "Infinite" },
+          settings: [],
         }),
       (a: any, b: any) => a.tab === b.tab && a.engineId === b.engineId,
     ),
@@ -168,8 +168,6 @@ const settingsAtom = (tab = store.get(activeTabAtom)!, engineId = engine.id) =>
   tabEngineSettingsFamily({
     engineId,
     tab,
-    defaultSettings: [],
-    defaultGo: { t: "Infinite" },
   });
 const movesAtom = (tab = store.get(activeTabAtom)!, engineId = engine.id) =>
   engineMovesFamily({ tab, engine: engineId });

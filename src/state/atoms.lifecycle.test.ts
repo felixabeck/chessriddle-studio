@@ -18,10 +18,12 @@ import {
     gameIdFamily,
     pendingGameStartFamily,
     pinnedExplorerDatabaseFamily,
+    registeredTabAtomFamilies,
     tabsAtom,
     tabEngineSettingsFamily,
     tabFamily,
 } from "./atoms";
+import * as atoms from "./atoms";
 import { emptyPracticeStats } from "./practiceSessionStats";
 import { tabStorage, TabStorageRepository } from "./store/tabStorage";
 import {
@@ -597,12 +599,7 @@ test.each([true, false])(
         const { fixture, owner, tree, replace } = fileReplacementFixture(ownerActive);
         const reportOwner = captureReportOwner(owner.value);
         fixture.store.set(gameIdFamily(owner.value), "native-game");
-        const settingsAtom = tabEngineSettingsFamily({
-            tab: owner.value,
-            engineId: "engine",
-            defaultSettings: [],
-            defaultGo: { t: "Infinite" },
-        });
+        const settingsAtom = tabEngineSettingsFamily({ tab: owner.value, engineId: "engine" });
         const settings = {
             enabled: true,
             settings: [],
@@ -1221,15 +1218,12 @@ test("closing a tab removes all cached tab and per-engine atom-family entries", 
     store.set(pendingGameStartFamily(tabId), Promise.resolve());
     store.set(engineMovesFamily({ tab: tabId, engine: "engine" }), new Map());
     store.set(engineProgressFamily({ tab: tabId, engine: "engine" }), 42);
-    store.set(
-        tabEngineSettingsFamily({
-            tab: tabId,
-            engineId: "engine",
-            defaultSettings: [],
-            defaultGo: { t: "Infinite" },
-        }),
-        { enabled: true, settings: [], go: { t: "Infinite" }, synced: true },
-    );
+    store.set(tabEngineSettingsFamily({ tab: tabId, engineId: "engine" }), {
+        enabled: true,
+        settings: [],
+        go: { t: "Infinite" },
+        synced: true,
+    });
 
     disposeTabAtoms(tabId);
 
@@ -1249,6 +1243,44 @@ test("closing a tab removes all cached tab and per-engine atom-family entries", 
     expect([...tabEngineSettingsFamily.getParams()]).not.toContainEqual(
         expect.objectContaining({ tab: tabId }),
     );
+});
+
+test("closing a tab releases every registered family's entries and leaves other tabs alone", () => {
+    const closing = "registry-closing-tab";
+    const surviving = "registry-surviving-tab";
+    expect(registeredTabAtomFamilies.length).toBeGreaterThan(0);
+    for (const entry of registeredTabAtomFamilies) {
+        entry.create(closing, "engine-a");
+        entry.create(closing, "engine-b");
+        entry.create(surviving, "engine-a");
+        expect(entry.has(closing)).toBe(true);
+    }
+
+    disposeTabAtoms(closing);
+
+    for (const entry of registeredTabAtomFamilies) {
+        expect(entry.has(closing)).toBe(false);
+        expect(entry.has(surviving)).toBe(true);
+        entry.dispose(surviving);
+    }
+    expect([...tabFamily.getParams()]).not.toContain(closing);
+    expect([...tabEngineSettingsFamily.getParams()]).not.toContainEqual(
+        expect.objectContaining({ tab: closing }),
+    );
+});
+
+test("every exported atom family is tab-registered unless it is not keyed by a tab", () => {
+    const registered = new Set(registeredTabAtomFamilies.map((entry) => entry.family));
+    const unregistered = Object.entries(atoms)
+        .filter(
+            ([, value]) =>
+                typeof value === "function" && "getParams" in value && !registered.has(value),
+        )
+        .map(([name]) => name)
+        .sort();
+    // scoreTypeFamily is keyed by engine; deckAtomFamily by file and game, invalidated by
+    // invalidateFileDeckAtoms.
+    expect(unregistered).toEqual(["deckAtomFamily", "scoreTypeFamily"]);
 });
 
 test("close intent is transient and explicitly reclaimed", () => {

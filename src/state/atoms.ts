@@ -1,5 +1,5 @@
 import type { SetStateAction } from "react";
-import { atom, getDefaultStore } from "jotai";
+import { type Atom, atom, getDefaultStore } from "jotai";
 import { atomFamily, atomWithStorage, unwrap } from "jotai/utils";
 import { chessRiddleTrainingSessions } from "./chessRiddleTraining";
 import { z } from "zod";
@@ -18,7 +18,6 @@ import type {
     DatabaseHandle,
     CollectionDescriptor,
     FileWorkspaceHandle,
-    GoMode,
     OpeningBookHandle,
     PathRef,
 } from "@/bindings";
@@ -35,7 +34,7 @@ import {
 } from "./explorerFilters";
 import { analysisSearch } from "@/utils/analysisSearch";
 import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
-import type { Engine, EngineSettings } from "@/utils/engines";
+import type { Engine } from "@/utils/engines";
 import {
     type LichessGamesOptions,
     lichessGamesOptionsSchema,
@@ -147,6 +146,60 @@ export function initializeRendererState() {
     }
     documentPreferences.initialize();
     rendererStateInitialized = true;
+}
+
+// Tab-scoped atom families
+
+/**
+ * A runtime atom family whose entries belong to one tab. Every such family is declared through
+ * `tabAtomFamily` or `tabEngineAtomFamily`, which register it here, so `disposeTabAtoms` releases
+ * it when the tab closes without a second hand-kept list.
+ */
+type TabScopedFamily = {
+    readonly family: object;
+    /** Creates the entry for `tab` (and `engine`, for per-engine families). */
+    create(tab: string, engine: string): Atom<unknown>;
+    has(tab: string): boolean;
+    dispose(tab: string): void;
+};
+
+const tabScopedFamilies: TabScopedFamily[] = [];
+
+/** Read-only view for the lifecycle test that proves every registered family is released. */
+export const registeredTabAtomFamilies: readonly TabScopedFamily[] = tabScopedFamilies;
+
+function tabAtomFamily<AtomType extends Atom<unknown>>(init: (tab: string) => AtomType) {
+    const family = atomFamily(init);
+    tabScopedFamilies.push({
+        family,
+        create: (tab) => family(tab),
+        has: (tab) => Array.from(family.getParams()).includes(tab),
+        dispose: (tab) => family.remove(tab),
+    });
+    return family;
+}
+
+/** A family keyed by `{ tab, [engineKey]: engine id }`; closing the tab releases every engine's entry. */
+function tabEngineAtomFamily<EngineKey extends string, AtomType extends Atom<unknown>>(
+    engineKey: EngineKey,
+    init: (param: { tab: string } & Record<EngineKey, string>) => AtomType,
+) {
+    type Param = { tab: string } & Record<EngineKey, string>;
+    const family = atomFamily(
+        init,
+        (a: Param, b: Param) => a.tab === b.tab && a[engineKey] === b[engineKey],
+    );
+    const owned = (tab: string) =>
+        Array.from(family.getParams()).filter((param) => param.tab === tab);
+    tabScopedFamilies.push({
+        family,
+        create: (tab, engine) => family({ tab, [engineKey]: engine } as Param),
+        has: (tab) => owned(tab).length > 0,
+        dispose: (tab) => {
+            for (const param of owned(tab)) family.remove(param);
+        },
+    });
+    return family;
 }
 
 // Tabs
@@ -1152,7 +1205,7 @@ export type PuzzleTimer = { attemptId: string } & (
     | { elapsed: number; startedAt?: never }
 );
 
-export const puzzleTimerFamily = atomFamily((_tab: string) => atom<PuzzleTimer | null>(null));
+export const puzzleTimerFamily = tabAtomFamily((_tab: string) => atom<PuzzleTimer | null>(null));
 
 // CP / WDL
 
@@ -1162,29 +1215,29 @@ export const scoreTypeFamily = atomFamily((_engine: string) => atom<"cp" | "wdl"
 
 // Per tab settings
 
-export const threatFamily = atomFamily((_tab: string) => atom(false));
+export const threatFamily = tabAtomFamily((_tab: string) => atom(false));
 
-export const evalOpenFamily = atomFamily((_tab: string) => atom(true));
+export const evalOpenFamily = tabAtomFamily((_tab: string) => atom(true));
 
-export const evalBarDisplayFamily = atomFamily((_tab: string) => atom<"cp" | "wdl">("cp"));
+export const evalBarDisplayFamily = tabAtomFamily((_tab: string) => atom<"cp" | "wdl">("cp"));
 
-export const invisibleFamily = atomFamily((_tab: string) => atom(false));
+export const invisibleFamily = tabAtomFamily((_tab: string) => atom(false));
 
-export const showCommentsFamily = atomFamily((_tab: string) => atom(true));
+export const showCommentsFamily = tabAtomFamily((_tab: string) => atom(true));
 
-export const showVariationsFamily = atomFamily((_tab: string) => atom(true));
+export const showVariationsFamily = tabAtomFamily((_tab: string) => atom(true));
 
-export const showDiagramsFamily = atomFamily((_tab: string) => atom(true));
+export const showDiagramsFamily = tabAtomFamily((_tab: string) => atom(true));
 
 // A board's panel starts on the default-panel setting as it stands when the board's atom is created
 // (the app runs on the default store). Later setting changes leave existing boards where they are.
-export const tabFamily = atomFamily((_tab: string) =>
+export const tabFamily = tabAtomFamily((_tab: string) =>
     atom<string>(getDefaultStore().get(defaultPanelTabAtom)),
 );
 
-export const reportModalOpenFamily = atomFamily((_tab: string) => atom(false));
+export const reportModalOpenFamily = tabAtomFamily((_tab: string) => atom(false));
 
-export const localOptionsFamily = atomFamily((_tab: string) =>
+export const localOptionsFamily = tabAtomFamily((_tab: string) =>
     atom<LocalOptions>({
         path: null,
         type: "exact",
@@ -1195,19 +1248,19 @@ export const localOptionsFamily = atomFamily((_tab: string) =>
     }),
 );
 
-export const pinnedExplorerDatabaseFamily = atomFamily((_tab: string) =>
+export const pinnedExplorerDatabaseFamily = tabAtomFamily((_tab: string) =>
     atom<DatabaseHandle | null>(null),
 );
 
 export type ExplorerSourceRole = "primary" | "comparison";
 
 /** Whose sample games the Games view lists while two local sources are shown. */
-export const explorerGamesSourceFamily = atomFamily((_tab: string) =>
+export const explorerGamesSourceFamily = tabAtomFamily((_tab: string) =>
     atom<ExplorerSourceRole>("primary"),
 );
 
 /** The two-source move table's sort: which source's game count, in which direction. */
-export const explorerSortFamily = atomFamily((_tab: string) =>
+export const explorerSortFamily = tabAtomFamily((_tab: string) =>
     atom<{ source: ExplorerSourceRole; direction: "asc" | "desc" }>({
         source: "primary",
         direction: "desc",
@@ -1291,17 +1344,17 @@ export const explorerStripHeightsAtom = atomWithStorage<Partial<Record<PinnedPla
     ),
 );
 
-export const dbTypeFamily = atomFamily((_tab: string) =>
+export const dbTypeFamily = tabAtomFamily((_tab: string) =>
     atom<"local" | "lch_all" | "lch_master">("local"),
 );
 
-export const dbTabFamily = atomFamily((_tab: string) => atom("stats"));
+export const dbTabFamily = tabAtomFamily((_tab: string) => atom("stats"));
 
-export const analysisTabFamily = atomFamily((_tab: string) => atom("engines"));
+export const analysisTabFamily = tabAtomFamily((_tab: string) => atom("engines"));
 
-export const practiceTabFamily = atomFamily((_tab: string) => atom("train"));
+export const practiceTabFamily = tabAtomFamily((_tab: string) => atom("train"));
 
-export const expandedEnginesFamily = atomFamily((_tab: string) =>
+export const expandedEnginesFamily = tabAtomFamily((_tab: string) =>
     atom<string[] | undefined>(undefined),
 );
 
@@ -1325,7 +1378,7 @@ export const detachedEnginePlacementAtom = atomWithStorage<PinnedPlacement>(
     createZodStorage(z.enum(PINNED_PLACEMENTS), localStorage),
 );
 
-export const pgnOptionsFamily = atomFamily((_tab: string) =>
+export const pgnOptionsFamily = tabAtomFamily((_tab: string) =>
     atom({
         comments: true,
         glyphs: true,
@@ -1337,18 +1390,18 @@ export const pgnOptionsFamily = atomFamily((_tab: string) =>
 // Game
 
 type GameState = "settingUp" | "playing" | "gameOver";
-export const gameStateFamily = atomFamily((_tab: string) => atom<GameState>("settingUp"));
+export const gameStateFamily = tabAtomFamily((_tab: string) => atom<GameState>("settingUp"));
 
-export const playersFamily = atomFamily((_tab: string) =>
+export const playersFamily = tabAtomFamily((_tab: string) =>
     atom<{
         white: OpponentSettings;
         black: OpponentSettings;
     }>({ white: {} as OpponentSettings, black: {} as OpponentSettings }),
 );
 
-export const gameIdFamily = atomFamily((_tab: string) => atom<string | null>(null));
-export const gameSessionFamily = atomFamily((_tab: string) => atom<bigint | null>(null));
-export const pendingGameStartFamily = atomFamily((_tab: string) =>
+export const gameIdFamily = tabAtomFamily((_tab: string) => atom<string | null>(null));
+export const gameSessionFamily = tabAtomFamily((_tab: string) => atom<bigint | null>(null));
+export const pendingGameStartFamily = tabAtomFamily((_tab: string) =>
     atom<Promise<void> | null>(null),
 );
 
@@ -1387,7 +1440,7 @@ export type PracticeState = {
     positionKey?: string;
 };
 
-export const practiceStateFamily = atomFamily((_tab: string) =>
+export const practiceStateFamily = tabAtomFamily((_tab: string) =>
     atom<PracticeState>({ phase: "idle" }),
 );
 
@@ -1398,18 +1451,18 @@ export type PracticeMoveController = {
     submitMove: (san: string) => void;
 };
 
-export const practiceMoveControllerFamily = atomFamily((_tab: string) =>
+export const practiceMoveControllerFamily = tabAtomFamily((_tab: string) =>
     atom<PracticeMoveController | null>(null),
 );
 
 export type { PracticeSessionStats } from "./practiceSessionStats";
 
-export const practiceSessionStatsFamily = atomFamily((_tab: string) =>
+export const practiceSessionStatsFamily = tabAtomFamily((_tab: string) =>
     atom<PracticeSessionStats>(emptyPracticeStats()),
 );
 
 /** Completed runs remain visible without keeping an inactive session alive. */
-export const practiceCompletedSummaryFamily = atomFamily((_tab: string) =>
+export const practiceCompletedSummaryFamily = tabAtomFamily((_tab: string) =>
     atom<PracticeSessionStats | null>(null),
 );
 
@@ -1430,18 +1483,13 @@ export const practiceNewPerSessionAtom = atomWithStorage<number>(
     ),
 );
 
-export const practiceCardStartTimeFamily = atomFamily((_tab: string) => atom<number>(0));
+export const practiceCardStartTimeFamily = tabAtomFamily((_tab: string) => atom<number>(0));
 
-export const engineMovesFamily = atomFamily(
-    ({ tab: _tab, engine: _engine }: { tab: string; engine: string }) =>
-        atom<Map<string, BestMoves[]>>(new AnalysisLineMemory()),
-    (a, b) => a.tab === b.tab && a.engine === b.engine,
+export const engineMovesFamily = tabEngineAtomFamily("engine", () =>
+    atom<Map<string, BestMoves[]>>(new AnalysisLineMemory()),
 );
 
-export const engineProgressFamily = atomFamily(
-    ({ tab: _tab, engine: _engine }: { tab: string; engine: string }) => atom<number>(0),
-    (a, b) => a.tab === b.tab && a.engine === b.engine,
-);
+export const engineProgressFamily = tabEngineAtomFamily("engine", () => atom<number>(0));
 
 export type AnalysisTerminal = {
     searchedKey: string;
@@ -1462,7 +1510,7 @@ export type AnalysisTerminal = {
 );
 
 /** Retained only while the owner tab exists, including inactive-tab unmounts. */
-export const gameInterruptionFamily = atomFamily((_tab: string) =>
+export const gameInterruptionFamily = tabAtomFamily((_tab: string) =>
     atom<
         | (Extract<GameResult, { type: "interrupted" }> & {
               engineColor: "white" | "black" | null;
@@ -1472,16 +1520,11 @@ export const gameInterruptionFamily = atomFamily((_tab: string) =>
 );
 
 /** One ephemeral terminal outcome for the owned engine's current attempt. */
-export const engineTerminalFamily = atomFamily(
-    ({ tab: _tab, engine: _engine }: { tab: string; engine: string }) =>
-        atom<AnalysisTerminal | null>(null),
-    (a, b) => a.tab === b.tab && a.engine === b.engine,
+export const engineTerminalFamily = tabEngineAtomFamily("engine", () =>
+    atom<AnalysisTerminal | null>(null),
 );
 
-export const engineRetryFamily = atomFamily(
-    ({ tab: _tab, engine: _engine }: { tab: string; engine: string }) => atom(0),
-    (a, b) => a.tab === b.tab && a.engine === b.engine,
-);
+export const engineRetryFamily = tabEngineAtomFamily("engine", () => atom(0));
 
 const BEST_MOVE_ARROW_MAX_WIN_CHANCE_LOSS = 10; // win-chance percentage points
 
@@ -1548,44 +1591,36 @@ export const createBestMovesAtom = (tab: string, fen: string, gameMoves: string[
     });
 };
 
-export const tabEngineSettingsFamily = atomFamily(
-    ({
-        tab: _tab,
-        engineId,
-        defaultSettings,
-        defaultGo,
-    }: {
-        tab: string;
-        engineId: string;
-        defaultSettings?: EngineSettings;
-        defaultGo?: GoMode;
-    }) => {
-        const local = atom<AnalysisSettings>({
-            enabled: false,
-            settings: defaultSettings || [],
-            go: defaultGo || { t: "Infinite" },
-            synced: true,
-        });
-        const effective = atom(
-            (get) => {
-                const settings = get(local);
-                const engine = get(enginesAtom)?.find((item) => item.id === engineId);
-                return projectAnalysisSettings(settings, engine);
-            },
-            (
-                get,
-                set,
-                update: AnalysisSettings | ((current: AnalysisSettings) => AnalysisSettings),
-            ) => {
-                set(local, typeof update === "function" ? update(get(effective)) : update);
-            },
-        );
-        return effective;
-    },
-    (a, b) => a.tab === b.tab && a.engineId === b.engineId,
-);
+/**
+ * A tab's analysis settings for one engine. While `synced`, reads project the engine's own settings
+ * and go mode, so the stored defaults matter only once the tab unsyncs, and the unsync write copies
+ * the projected value in.
+ */
+export const tabEngineSettingsFamily = tabEngineAtomFamily("engineId", ({ engineId }) => {
+    const local = atom<AnalysisSettings>({
+        enabled: false,
+        settings: [],
+        go: { t: "Infinite" },
+        synced: true,
+    });
+    const effective = atom(
+        (get) => {
+            const settings = get(local);
+            const engine = get(enginesAtom)?.find((item) => item.id === engineId);
+            return projectAnalysisSettings(settings, engine);
+        },
+        (
+            get,
+            set,
+            update: AnalysisSettings | ((current: AnalysisSettings) => AnalysisSettings),
+        ) => {
+            set(local, typeof update === "function" ? update(get(effective)) : update);
+        },
+    );
+    return effective;
+});
 
-export const allEnabledFamily = atomFamily((tab: string) =>
+export const allEnabledFamily = tabAtomFamily((tab: string) =>
     atom((get) => {
         const engines = get(enginesAtom);
         if (!engines) return false;
@@ -1593,12 +1628,7 @@ export const allEnabledFamily = atomFamily((tab: string) =>
         const v = engines
             .filter((e) => e.loaded)
             .every((engine) => {
-                const atom = tabEngineSettingsFamily({
-                    tab,
-                    engineId: engine.id,
-                    defaultSettings: engine.type === "local" ? engine.settings || [] : undefined,
-                    defaultGo: engine.go ?? undefined,
-                });
+                const atom = tabEngineSettingsFamily({ tab, engineId: engine.id });
                 return get(atom).enabled;
             });
 
@@ -1606,18 +1636,13 @@ export const allEnabledFamily = atomFamily((tab: string) =>
     }),
 );
 
-export const enableAllFamily = atomFamily((tab: string) =>
+export const enableAllFamily = tabAtomFamily((tab: string) =>
     atom(null, (get, set, value: boolean) => {
         const engines = get(enginesAtom);
         if (!engines) return;
 
         for (const engine of engines.filter((e) => e.loaded)) {
-            const atom = tabEngineSettingsFamily({
-                tab,
-                engineId: engine.id,
-                defaultSettings: engine.type === "local" ? engine.settings || [] : undefined,
-                defaultGo: engine.go ?? undefined,
-            });
+            const atom = tabEngineSettingsFamily({ tab, engineId: engine.id });
             set(atom, { ...get(atom), enabled: value });
         }
     }),
@@ -1626,55 +1651,5 @@ export const enableAllFamily = atomFamily((tab: string) =>
 /** Remove every runtime atom whose identity is a closed tab, including per-engine entries. */
 export function disposeTabAtoms(tabId: string) {
     chessRiddleTrainingSessions.remove(tabId);
-    for (const family of [
-        allEnabledFamily,
-        enableAllFamily,
-        puzzleTimerFamily,
-        threatFamily,
-        evalOpenFamily,
-        evalBarDisplayFamily,
-        invisibleFamily,
-        showCommentsFamily,
-        showVariationsFamily,
-        showDiagramsFamily,
-        tabFamily,
-        reportModalOpenFamily,
-        localOptionsFamily,
-        pinnedExplorerDatabaseFamily,
-        explorerGamesSourceFamily,
-        explorerSortFamily,
-        dbTypeFamily,
-        dbTabFamily,
-        analysisTabFamily,
-        practiceTabFamily,
-        expandedEnginesFamily,
-        pgnOptionsFamily,
-        gameStateFamily,
-        playersFamily,
-        gameIdFamily,
-        gameSessionFamily,
-        gameInterruptionFamily,
-        pendingGameStartFamily,
-        practiceStateFamily,
-        practiceMoveControllerFamily,
-        practiceSessionStatsFamily,
-        practiceCompletedSummaryFamily,
-        practiceCardStartTimeFamily,
-    ]) {
-        family.remove(tabId);
-    }
-
-    for (const family of [
-        engineMovesFamily,
-        engineProgressFamily,
-        engineTerminalFamily,
-        engineRetryFamily,
-    ]) {
-        for (const param of Array.from(family.getParams())) {
-            if (param.tab === tabId) family.remove(param);
-        }
-    }
-    for (const param of Array.from(tabEngineSettingsFamily.getParams())) {
-        if (param.tab === tabId) tabEngineSettingsFamily.remove(param);
-    }
+    for (const family of tabScopedFamilies) family.dispose(tabId);
 }

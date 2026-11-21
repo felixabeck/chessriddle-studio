@@ -4,6 +4,7 @@ import { act } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   activeTabAtom,
+  enginesAtom,
   threatFamily,
   engineTerminalFamily,
   engineRetryFamily,
@@ -13,6 +14,14 @@ import { analysisSearch } from "@/utils/analysisSearch";
 import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import { engineIdentity, engineLineContext } from "./analysisLineContext";
 import { readEngineLines, useDisplayedEngineLines } from "./useDisplayedEngineLines";
+
+vi.mock("@/platform/tauri", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/platform/tauri")>();
+  return {
+    ...actual,
+    tauri: { ...actual.tauri, reconcileEngineAttachments: vi.fn().mockResolvedValue(undefined) },
+  };
+});
 import type { Engine } from "@/utils/engines";
 import { createInstance } from "i18next";
 import english from "@/translation/en-US.json";
@@ -461,18 +470,18 @@ test("contextual remembered lines remain current across pause, resume and sync t
   }
 });
 
-test("the shared reader initializes per-engine option and go defaults", async () => {
+test("the shared reader projects a synced tab's settings from the installed engine", async () => {
   const options = [{ type: "string" as const, name: "Hash", value: "32" }];
-  await h.render(
-    <Probe
-      engine={{
-        ...displayEngine,
-        id: "default-engine",
-        settings: options,
-        go: { t: "Depth", c: 12 },
-      }}
-    />,
-  );
+  const engine = {
+    ...displayEngine,
+    id: "default-engine",
+    settings: options,
+    go: { t: "Depth" as const, c: 12 },
+  };
+  await act(async () => {
+    await h.store.set(enginesAtom, [engine]);
+  });
+  await h.render(<Probe engine={engine} />);
   expect(display.settings.settings).toEqual(options);
   expect(display.settings.go).toEqual({ t: "Depth", c: 12 });
 });

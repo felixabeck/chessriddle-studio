@@ -43,13 +43,9 @@ const engine = {
 
 test("synced settings derive committed defaults without a visual owner and preserve tab identity and isolation", async () => {
     const store = createStore();
-    const param = {
-        tab: "shared-defaults",
-        engineId: engine.id,
-        defaultGo: { t: "Depth" as const, c: 3 },
-    };
+    const param = { tab: "shared-defaults", engineId: engine.id };
     const settings = tabEngineSettingsFamily(param);
-    expect(store.get(settings).go).toEqual(param.defaultGo);
+    expect(store.get(settings).go).toEqual({ t: "Infinite" });
     await store.set(enginesAtom, [
         {
             ...engine,
@@ -77,7 +73,7 @@ test("synced settings derive committed defaults without a visual owner and prese
     });
     await store.set(enginesAtom, (current) => current.map((item) => ({ ...item, go: undefined })));
     expect(store.get(settings).go).toEqual({ t: "Infinite" });
-    expect(tabEngineSettingsFamily({ ...param, defaultGo: { t: "Infinite" } })).toBe(settings);
+    expect(tabEngineSettingsFamily({ ...param })).toBe(settings);
     disposeTabAtoms(param.tab);
     expect(tabEngineSettingsFamily(param)).not.toBe(settings);
     expect(tabEngineSettingsFamily({ tab: "isolated-defaults", engineId: engine.id })).toBe(other);
