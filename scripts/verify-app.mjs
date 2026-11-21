@@ -1772,10 +1772,11 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     ownedProbe = undefined;
     if (notification) await dismissNotification(stage, notification);
   };
-  const visible = (message) =>
+  // `prepare` runs before every probe, for a step whose target renders asynchronously.
+  const visible = (message, prepare = "") =>
     waitFor(message, () =>
       session.execute(
-        `
+        `${prepare}
     return [...document.querySelectorAll('.mantine-Notification-description')].some(node =>
       node.textContent === arguments[0] && node.getBoundingClientRect().height > 0 &&
       getComputedStyle(node).visibility !== 'hidden');
@@ -1828,8 +1829,12 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     );
     await session.execute(`document.querySelector('a[href="/"]')?.click(); return true;`);
     await click("Puzzles");
+    // A new puzzle tab opens on ChessRiddle whenever that connection is available (d-20261110-01).
+    // The permission notice belongs to the offline databases, so select that source first.
     const puzzleGuidance = await visible(
       "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings.",
+      `const offline = document.querySelector('input[type="radio"][value="offline"]');
+       if (offline && !offline.checked) offline.click();`,
     );
     check(
       puzzleGuidance,
@@ -1839,7 +1844,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
         : JSON.stringify(
             await session
               .execute(
-                `return { path: location.pathname, notifications: [...document.querySelectorAll('.mantine-Notification-root')].map(node => node.innerText) };`,
+                `return { path: location.pathname, offlineSource: document.querySelector('input[type="radio"][value="offline"]')?.checked ?? null, notifications: [...document.querySelectorAll('.mantine-Notification-root')].map(node => node.innerText) };`,
               )
               .catch((error) => String(error)),
           ),
