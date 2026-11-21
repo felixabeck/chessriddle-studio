@@ -948,6 +948,12 @@ async function openMixedLibrary(
     const detail = panes.nth(1);
     const reachable = async (control: Locator) => {
         await control.scrollIntoViewIfNeeded();
+        // Then bring the whole border box into view: after an earlier nearest scroll of the same
+        // pane, scrollIntoViewIfNeeded can stop with a control's 2px border still outside the
+        // scrollport although the pane has scroll range left.
+        await control.evaluate((element) =>
+            element.scrollIntoView({ block: "nearest", inline: "nearest" }),
+        );
         await expect(control).toBeInViewport({ ratio: 1 });
         await assertNothingClipped(control, { mode: "reachable" });
     };
@@ -2264,7 +2270,10 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     capture,
 }) => {
     await page.addInitScript(() => localStorage.setItem("font-size", "100"));
-    await page.setViewportSize({ width: 2000, height: 1200 });
+    // The 3rem left rail is gone, so each 50% pane is 3rem wider and a 2000×1200
+    // preview is height-limited from the start. A taller window keeps the board
+    // width-limited at 50% so dragging the table to 20% still grows it.
+    await page.setViewportSize({ width: 2000, height: 1280 });
     await mockScenario({ commands: databaseLayoutCommands });
     await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
     await expect
@@ -2323,7 +2332,7 @@ test("database-files: bounded drag and keyboard steps share a preference across 
         await expect(page.getByRole("button", { name, exact: true })).toBeInViewport({ ratio: 1 });
     }
     await assertPreview();
-    await page.mouse.move(1999, 1199);
+    await page.mouse.move(1999, 1279);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
     await waitForScrollAreaScrollbarsHidden(page);
     await capture("database-adaptive-wide");
@@ -2344,7 +2353,7 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     );
     await expect.poll(() => whitePawnSquares(board)).toEqual(selected);
     await assertPreview();
-    await page.mouse.move(1999, 1199);
+    await page.mouse.move(1999, 1279);
     await waitForScrollAreaScrollbarsHidden(page);
     await capture("database-adaptive-tall");
     await expect.soft(page).toHaveScreenshot("database-adaptive-tall.png");
@@ -2367,7 +2376,7 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     await expect(split).toHaveCount(0);
     expect(await saved()).toBe("75");
     await expect.poll(() => whitePawnSquares(board)).toEqual(selected);
-    await page.setViewportSize({ width: 2000, height: 1200 });
+    await page.setViewportSize({ width: 2000, height: 1280 });
     await expect(layout).toHaveAttribute("data-percentage", "75");
     await expect.poll(() => whitePawnSquares(board)).toEqual(selected);
     await preserveStorageForReload(page);

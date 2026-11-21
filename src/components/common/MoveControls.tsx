@@ -132,15 +132,12 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
     shortcutOptions(),
   );
 
-  const scrollMargin = { scrollMarginBlock: "0.25rem" } as const;
-
   return (
     <Group ref={groupRef} grow gap="xs">
       <IconAction
         label={t("Common.MoveControls.GoToStart", { defaultValue: "Go to start" })}
         variant="default"
         size="lg"
-        style={scrollMargin}
         onClick={navigate(start)}
       >
         <ChevronFirst />
@@ -149,7 +146,6 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
         label={t("Common.MoveControls.Previous", { defaultValue: "Previous move" })}
         variant="default"
         size="lg"
-        style={scrollMargin}
         onClick={previous}
       >
         <ChevronLeft />
@@ -158,7 +154,6 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
         label={t("Common.MoveControls.Next", { defaultValue: "Next move" })}
         variant="default"
         size="lg"
-        style={scrollMargin}
         onClick={next}
       >
         <ChevronRight />
@@ -167,7 +162,6 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
         label={t("Common.MoveControls.GoToEnd", { defaultValue: "Go to end" })}
         variant="default"
         size="lg"
-        style={scrollMargin}
         onClick={navigate(end)}
       >
         <ChevronLast />

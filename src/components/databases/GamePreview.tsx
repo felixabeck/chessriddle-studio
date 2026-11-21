@@ -162,7 +162,7 @@ function GamePreview({
             className={adaptive ? classes.adaptiveFrame : undefined}
             data-preview-arrangement={adaptive ? (stacked ? "below" : "beside") : undefined}
             style={{
-              overflow: adaptive || fitHeight ? "visible" : "hidden",
+              overflow: adaptive ? "visible" : "hidden",
               height: adaptive ? (compact ? "auto" : undefined) : "100%",
               flex: adaptive && compact ? "none" : undefined,
               flexDirection: stacked ? "column" : undefined,

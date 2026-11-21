@@ -56,8 +56,6 @@ export function FileWorkspaceDetail({ files }: { files: FileWorkspace }) {
               }}
             />
           </Box>
-          {/* Scroll-space below the card so the last preview control can sit fully in the pane. */}
-          <Box h="0.25rem" />
         </Stack>
       ) : selected?.type === "directory" ? (
         <Center mih={EMPTY_PANE_MIN_HEIGHT}>
