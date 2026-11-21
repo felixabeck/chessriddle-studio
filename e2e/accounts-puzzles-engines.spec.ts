@@ -1961,6 +1961,10 @@ test("accounts-puzzles-engines: warns when a downloaded game file's save is not 
     await page.goto("/accounts");
     const download = page.getByRole("button", { name: "Download games", exact: true });
     await download.click();
+    // The pending import disables the button under the pointer, so whether its hover tooltip
+    // survives to the capture is timing-dependent. Leave the button and capture without it.
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
 
     const warning = page.getByText(
         "The games were downloaded, but the save could not be fully confirmed. Do not retry.",
