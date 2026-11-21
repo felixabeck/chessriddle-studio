@@ -27508,7 +27508,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### Per-tab atom families are released by a hand-kept list in `disposeTabAtoms`, and the test that says "all" checks nine
 
-* **ID:** f-20261119-09 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-09 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
 * **Where:** `src/state/atoms.ts:1628-1680` (`disposeTabAtoms`): an array literal of 32 tab-keyed families (`allEnabledFamily` … `practiceCardStartTimeFamily`), a second literal of four `{ tab, engine }` families, and a separate loop for `tabEngineSettingsFamily`. The families themselves are declared across `atoms.ts` (for example `:1152-1160` "Per tab settings", `:1320` "Game", `:1338` "Practice"). Test: `src/state/atoms.lifecycle.test.ts:1210-1249` ("closing a tab removes all cached tab and per-engine atom-family entries").
@@ -27517,6 +27517,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** add a small `tabAtomFamily(init)` / `tabEngineAtomFamily(init)` helper in `atoms.ts` that creates the family and pushes it into a module-level registry. Have `disposeTabAtoms` iterate the registry. Convert the 37 declarations (a mechanical change). Then the lifecycle test can assert, for every registered family, that a seeded entry is gone after `disposeTabAtoms`, instead of a hand-picked nine. No behaviour change today.
 * **Proof:** at origin/master, `rg -n "export const (\w+Family)\s*=" src` lists 39 families. A word check of each name against `atoms.ts:1628-1680` reports only `deckAtomFamily` and `scoreTypeFamily` missing. `sed -n 1630,1663p src/state/atoms.ts | rg -c "Family,"` gives 32. The test at `atoms.lifecycle.test.ts:1210-1249` seeds `tabFamily`, `pinnedExplorerDatabaseFamily`, `explorerGamesSourceFamily`, `explorerSortFamily`, `gameIdFamily`, `pendingGameStartFamily`, `engineMovesFamily`, `engineProgressFamily` and `tabEngineSettingsFamily` only.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+
+**Closed 2026-11-21:** tab-keyed families are now declared through `tabAtomFamily` / `tabEngineAtomFamily` in `src/state/atoms.ts`, which register each family. `disposeTabAtoms` iterates that registry, so the hand-kept list is gone. All 33 tab families and the five per-engine families (including `tabEngineSettingsFamily`) were converted. `atoms.lifecycle.test.ts` now creates entries for two engines in a closing tab and one in a surviving tab for every registered family, then checks that only the closing tab's entries are released. A second test fails for any exported family that is neither registered nor `deckAtomFamily` / `scoreTypeFamily`. Both tests went red under mutation: `threatFamily` declared with a plain `atomFamily`, and a no-op dispose. Commit 4426dc5ea. Proof: tsc, oxlint, full vitest (9514 tests) green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d53547375cb022e3528810dc47511911f2b2a3ba3cfb7e076eb3194690c78559","header_sha256":"d22be01be2ca997562fc35912b30ced57d11c314250646d6380278f191e41c41","header_status":"handled","input_sha256":"2b287063ca5ef64c7b555ed926dabb6c7add912cee3059301aecd73c8ade9f48","kind":"mutation-receipt","operation":"f327712a2f7c9a49b74d5b7ab2e2888b73b7bed7fb99d1a7e547b70a67156eaf","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-09"],"target":"f-20261119-09","v":1} -->
 
 ---
 
