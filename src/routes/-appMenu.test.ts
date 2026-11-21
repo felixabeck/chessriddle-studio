@@ -1,13 +1,12 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import {
     assembleNativeMenuResources,
     buildAppMenuTree,
     buildInAppMenuItems,
-    createNewTabFromMenu,
     installAppMenuSurface,
     menuWindowPlatform,
+    openPageFromMenu,
     openPgnFromMenu,
-    openSettingsFromMenu,
     renderResizeHandles,
     resetInstallChainForTests,
     runNativeMenuAction,
@@ -287,56 +286,30 @@ test("openPgnFromMenu rejects when openFile rejects", async () => {
     ).rejects.toThrow("read failed");
 });
 
-test("createNewTabFromMenu waits for committed admission before navigating", async () => {
-    const created = deferred<string | null>();
-    let navigated = false;
-    const pending = createNewTabFromMenu({
-        navigate: async () => {
-            navigated = true;
-        },
-        createTab: () => created.promise,
-    });
-    await Promise.resolve();
-    expect(navigated).toBe(false);
-    let settled = false;
-    void pending.then(() => {
-        settled = true;
-    });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    created.resolve("tab-id");
-    await pending;
-    expect(navigated).toBe(true);
-});
-
-test("createNewTabFromMenu preserves null and rejected creation outcomes", async () => {
-    const navigate = vi.fn();
-    await createNewTabFromMenu({ navigate, createTab: async () => null });
-    expect(navigate).not.toHaveBeenCalled();
-
-    await expect(
-        createNewTabFromMenu({
-            navigate,
-            createTab: async () => {
-                throw new Error("create failed");
+test.each(["/settings", "/accounts", "/engines"] as const)(
+    "openPageFromMenu awaits navigate to %s",
+    async (to) => {
+        const nav = deferred<void>();
+        let navigatedTo: string | undefined;
+        const pending = openPageFromMenu({
+            navigate: (opts) => {
+                navigatedTo = opts.to;
+                return nav.promise;
             },
-        }),
-    ).rejects.toThrow("create failed");
-    expect(navigate).not.toHaveBeenCalled();
-});
-
-test("openSettingsFromMenu awaits navigate", async () => {
-    const nav = deferred<void>();
-    const pending = openSettingsFromMenu({ navigate: () => nav.promise });
-    let settled = false;
-    void pending.then(() => {
-        settled = true;
-    });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    nav.resolve();
-    await pending;
-});
+            to,
+        });
+        let settled = false;
+        void pending.then(() => {
+            settled = true;
+        });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect(navigatedTo).toBe(to);
+        nav.resolve();
+        await pending;
+        expect(settled).toBe(true);
+    },
+);
 
 test("bindAppMenuCallbacks returns runMenu's promise for each wired command", async () => {
     const opened = deferred<void>();

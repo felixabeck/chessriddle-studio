@@ -1,9 +1,8 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
-import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useSetAtom, useStore as useJotaiStore } from "jotai";
 import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { activeTabAtom, currentTabAtom, tabsAtom, updateTabById } from "@/state/atoms";
+import { currentTabAtom, tabsAtom, updateTabById } from "@/state/atoms";
 import { normalizeError } from "@/platform/errors";
 import type { TreeStore } from "@/state/store/tree";
 import {
@@ -18,6 +17,7 @@ import { getFileFreshness, saveFileConflictVersion, useFileFreshness } from "@/s
 import { TreeStateContext } from "../common/TreeStateContext";
 import AppModal from "../common/AppModal";
 import { GameNameFields } from "../boards/GameNameModal";
+import { useTabCommands } from "./TabCommands";
 import {
   applyGameNames,
   initialGameNames,
@@ -51,9 +51,8 @@ function ConfirmChangesModal({
   preserveChanges?: boolean;
 }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const { showTab } = useTabCommands();
   const [currentTab] = useAtom(currentTabAtom);
-  const [, setActiveTab] = useAtom(activeTabAtom);
   const setTabs = useSetAtom(tabsAtom);
   const jotaiStore = useJotaiStore();
   const contextStore = useContext(TreeStateContext);
@@ -88,11 +87,6 @@ function ConfirmChangesModal({
       closeTab?.();
       toggle?.();
     }
-  };
-
-  const showTab = (tabId: string) => {
-    setActiveTab(tabId);
-    void navigate({ to: "/" });
   };
 
   async function save() {

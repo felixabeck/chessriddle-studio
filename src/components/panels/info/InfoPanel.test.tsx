@@ -31,6 +31,7 @@ import type { SuccessDatabaseInfo } from "@/utils/db";
 import type { loadFileGame } from "@/utils/files";
 import type { GameSelectorRow } from "./GameSelector";
 import InfoPanel from "./InfoPanel";
+import { TabCommandsProvider } from "@/components/tabs/TabCommands";
 import classes from "./InfoPanel.module.css";
 
 const mocks = vi.hoisted(() => ({
@@ -60,6 +61,11 @@ vi.mock("react-i18next", async (original) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { pathname: string } }) => unknown;
+  }) => select({ location: { pathname: "/" } }),
 }));
 
 vi.mock("@mantine/notifications", () => ({
@@ -462,11 +468,13 @@ describe("InfoPanel game loading and cancellation", () => {
     return (
       <MantineProvider env="test">
         <JotaiProvider store={jotaiStore}>
-          <TreeStateContext.Provider value={store}>
-            <WorkspaceTabScope tabId={tabId}>
-              <InfoPanel />
-            </WorkspaceTabScope>
-          </TreeStateContext.Provider>
+          <TabCommandsProvider>
+            <TreeStateContext.Provider value={store}>
+              <WorkspaceTabScope tabId={tabId}>
+                <InfoPanel />
+              </WorkspaceTabScope>
+            </TreeStateContext.Provider>
+          </TabCommandsProvider>
         </JotaiProvider>
       </MantineProvider>
     );

@@ -67,55 +67,42 @@ export async function openAppLogs(): Promise<void> {
     await tauri.openAppLog();
 }
 
-export function requireUnsavedGameMirror(): UnsavedGameMirror {
-    return getUnsavedGameMirror(() => {
-        throw new Error("Unsaved-game mirror was not started");
-    });
-}
-
 type Translate = (key: string, options?: Record<string, unknown>) => string;
-
-export async function confirmThenClear(args: {
-    ask: (
-        message: string,
-        options: { title: string; kind: "error" | "info" | "warning" },
-    ) => Promise<boolean>;
-    confirmMessage: string;
-    title: string;
-    clear: () => void | Promise<void>;
-}): Promise<void> {
-    if (!(await args.ask(args.confirmMessage, { title: args.title, kind: "warning" }))) return;
-    await args.clear();
-}
 
 /** Confirms, then clears saved data through the window's unsaved-games mirror. */
 export async function clearSavedData(options?: {
     mirror?: Pick<UnsavedGameMirror, "pause" | "resume" | "drain">;
     t?: Translate;
 }): Promise<void> {
-    const mirror = options?.mirror ?? requireUnsavedGameMirror();
+    const mirror =
+        options?.mirror ??
+        getUnsavedGameMirror(() => {
+            throw new Error("Unsaved-game mirror was not started");
+        });
     const t = options?.t ?? ((key, vars) => i18n.t(key, vars));
-    await confirmThenClear({
-        ask,
-        confirmMessage: t("Menu.Help.ClearSavedData.Confirm"),
-        title: t("Menu.Help.ClearSavedData.Title"),
+    if (
+        !(await ask(t("Menu.Help.ClearSavedData.Confirm"), {
+            title: t("Menu.Help.ClearSavedData.Title"),
+            kind: "warning",
+        }))
+    ) {
+        return;
+    }
+    await clearSavedDataAfterConfirmation({
+        blockedMessage: (decks) =>
+            t("Menu.Help.ClearSavedData.MigrationBlocked", {
+                decks: decks.join(", "),
+                practiceData: t("Board.Practice.Data"),
+            }),
         clear: () =>
-            clearSavedDataAfterConfirmation({
-                blockedMessage: (decks) =>
-                    t("Menu.Help.ClearSavedData.MigrationBlocked", {
-                        decks: decks.join(", "),
-                        practiceData: t("Board.Practice.Data"),
-                    }),
-                clear: () =>
-                    clearUnsavedGamesBeforeWipe({
-                        mirror,
-                        native: nativeUnsavedGames,
-                        wipe: () => {
-                            localStorage.clear();
-                            sessionStorage.clear();
-                            location.reload();
-                        },
-                    }),
+            clearUnsavedGamesBeforeWipe({
+                mirror,
+                native: nativeUnsavedGames,
+                wipe: () => {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    location.reload();
+                },
             }),
     });
 }

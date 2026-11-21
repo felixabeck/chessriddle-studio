@@ -48,10 +48,8 @@ import {
   fullscreenShortcut,
   installAppMenuSurface,
   menuWindowPlatform,
-  openAccountsFromMenu,
-  openEnginesFromMenu,
+  openPageFromMenu,
   openPgnFromMenu,
-  openSettingsFromMenu,
   renderResizeHandles,
   runNativeMenuAction,
   wantNativeDecorations,
@@ -166,13 +164,15 @@ function RootShell() {
     [navigate, setTabs],
   );
 
-  const createNewTab = useCallback(() => {
-    newTab();
-  }, [newTab]);
-
-  const openSettings = useCallback(() => openSettingsFromMenu({ navigate }), [navigate]);
-  const openAccounts = useCallback(() => openAccountsFromMenu({ navigate }), [navigate]);
-  const openEngines = useCallback(() => openEnginesFromMenu({ navigate }), [navigate]);
+  const openSettings = useCallback(
+    () => openPageFromMenu({ navigate, to: "/settings" }),
+    [navigate],
+  );
+  const openAccounts = useCallback(
+    () => openPageFromMenu({ navigate, to: "/accounts" }),
+    [navigate],
+  );
+  const openEngines = useCallback(() => openPageFromMenu({ navigate, to: "/engines" }), [navigate]);
 
   // The board consumes the request once it is mounted, so show the workspace first. No root
   // hotkey: Ctrl+S stays bound in the board alone, so one key press never starts two saves.
@@ -257,7 +257,7 @@ function RootShell() {
         runMenu,
         about: () => setAboutOpened(true),
         sendFeedback: () => setFeedbackOpened(true),
-        createNewTab,
+        createNewTab: newTab,
         openNewFile,
         saveGame: () => requestSave("save"),
         saveGameTo: () => requestSave("saveTo"),
@@ -268,7 +268,7 @@ function RootShell() {
         toggleFullscreen,
       }),
     [
-      createNewTab,
+      newTab,
       openAccounts,
       openEngines,
       openNewFile,

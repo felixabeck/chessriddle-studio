@@ -394,6 +394,68 @@ test("select and cycle do nothing when there is no tab", async () => {
   expect(store.get(activeTabAtom)).toBeNull();
 });
 
+test("macOS meta+w capture closes a temporary item, the active tab on `/`, and nothing on Library", async () => {
+  fixtures.platform.mockReturnValue("macos");
+
+  fixtures.pathname = "/settings";
+  await renderOwner();
+  await act(async () => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "w", metaKey: true, bubbles: true, cancelable: true }),
+    );
+  });
+  expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" });
+  expect(fixtures.closeWorkspaceTab).not.toHaveBeenCalled();
+
+  fixtures.navigate.mockClear();
+  fixtures.pathname = "/";
+  await renderOwner();
+  await act(async () => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "w", metaKey: true, bubbles: true, cancelable: true }),
+    );
+  });
+  await vi.waitFor(() => expect(fixtures.closeWorkspaceTab).toHaveBeenCalledWith("current"));
+
+  fixtures.closeWorkspaceTab.mockClear();
+  fixtures.navigate.mockClear();
+  fixtures.pathname = "/library";
+  await renderOwner();
+  await act(async () => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "w", metaKey: true, bubbles: true, cancelable: true }),
+    );
+  });
+  expect(fixtures.closeWorkspaceTab).not.toHaveBeenCalled();
+  expect(fixtures.navigate).not.toHaveBeenCalled();
+});
+
+test("cycleTabs and selectTabAt from /library navigate home and select the right tab", async () => {
+  fixtures.pathname = "/library";
+  await renderOwner();
+
+  await act(async () => invokeHotkey("mod+tab"));
+  expect(store.get(activeTabAtom)).toBe("next");
+  expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" });
+
+  fixtures.navigate.mockClear();
+  store.set(activeTabAtom, "current");
+  await act(async () => invokeHotkey("alt+2"));
+  expect(store.get(activeTabAtom)).toBe("next");
+  expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" });
+});
+
+test("cycleTabs does nothing when tabs are present but none matches the active tab", async () => {
+  store.set(activeTabAtom, "missing");
+  await renderOwner();
+  fixtures.navigate.mockClear();
+
+  await act(async () => invokeHotkey("mod+tab"));
+
+  expect(store.get(activeTabAtom)).toBe("missing");
+  expect(fixtures.navigate).not.toHaveBeenCalled();
+});
+
 test("close of a healthy tab still tears the tab down", async () => {
   await renderOwner();
   await act(async () => {

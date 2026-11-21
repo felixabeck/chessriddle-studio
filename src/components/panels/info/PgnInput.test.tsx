@@ -16,6 +16,7 @@ import {
 import { loadWorkspace, WORKSPACE_STORAGE_KEY } from "@/state/workspace";
 import { getTabTreeKey, replaceFileGame, saveToFile, type FileBackedTab } from "@/utils/tabs";
 import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
+import { TabCommandsProvider } from "@/components/tabs/TabCommands";
 import { defaultTree, type TreeState } from "@/utils/treeReducer";
 import { cancellationError } from "@/platform/tauri";
 import PgnInput from "./PgnInput";
@@ -45,6 +46,18 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
     },
   };
 });
+vi.mock("@/platform/native", () => ({
+  platform: () => "linux",
+  warn: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => vi.fn(),
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { pathname: string } }) => unknown;
+  }) => select({ location: { pathname: "/" } }),
+}));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.showNotification } }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("@/components/common/AppModal", () => ({
@@ -78,6 +91,13 @@ vi.mock("@mantine/core", () => ({
     </label>
   ),
   Group: ({ children }: React.HTMLAttributes<HTMLDivElement>) => <div>{children}</div>,
+  TextInput: ({
+    label,
+    autoFocus: _autoFocus,
+    ...props
+  }: React.InputHTMLAttributes<HTMLInputElement> & { label?: string }) => (
+    <input aria-label={label} {...props} />
+  ),
   rem: (value: number) => `${value}rem`,
   Stack: ({ children }: React.HTMLAttributes<HTMLDivElement>) => <div>{children}</div>,
   Text: ({ children, ...props }: React.HTMLAttributes<HTMLElement>) => (
@@ -406,12 +426,14 @@ test.each([true, false])(
     await act(async () =>
       root.render(
         <Provider store={fixture.workspace}>
-          <ConfirmChangesModal
-            pendingClose={{ tabId: fixture.id, store: cold }}
-            tab={fixture.getTab(fixture.id)}
-            updateTab={fixture.updateTab}
-            onSaved={onSaved}
-          />
+          <TabCommandsProvider>
+            <ConfirmChangesModal
+              pendingClose={{ tabId: fixture.id, store: cold }}
+              tab={fixture.getTab(fixture.id)}
+              updateTab={fixture.updateTab}
+              onSaved={onSaved}
+            />
+          </TabCommandsProvider>
         </Provider>,
       ),
     );

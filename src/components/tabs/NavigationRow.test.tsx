@@ -519,6 +519,71 @@ test("arrow keys activate tabs on `/` and only move focus away from `/`", async 
   expect(router.state.location.pathname).toBe("/");
 });
 
+test("choosing an all-tabs entry selects that tab and navigates to `/`", async () => {
+  fixtures.overflowing = true;
+  const router = await renderRow({ path: "/library" });
+  const allTabs = host!.querySelector<HTMLButtonElement>('[aria-label="Tab.AllTabs"]')!;
+  await act(async () => {
+    allTabs.click();
+  });
+  await vi.waitFor(() => {
+    const names = [...document.querySelectorAll('[role="menuitem"]')].map((node) =>
+      (node.textContent ?? "").trim(),
+    );
+    expect(names).toEqual(expect.arrayContaining(["Current", "Next"]));
+  });
+  const next = [...document.querySelectorAll('[role="menuitem"]')].find((node) =>
+    (node.textContent ?? "").includes("Next"),
+  );
+  await act(async () => {
+    (next as HTMLElement).click();
+  });
+  expect(store.get(activeTabAtom)).toBe("next");
+  expect(router.state.location.pathname).toBe("/");
+});
+
+test("Home and End move focus to the first and last tab and activate on `/`", async () => {
+  const router = await renderRow({ path: "/" });
+  tabs()[1]!.focus();
+  await act(async () => {
+    tabs()[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+  });
+  expect(document.activeElement).toBe(tabs()[0]);
+  expect(store.get(activeTabAtom)).toBe("current");
+
+  await act(async () => {
+    tabs()[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+  });
+  expect(document.activeElement).toBe(tabs()[1]);
+  expect(store.get(activeTabAtom)).toBe("next");
+
+  await act(async () => {
+    await router.navigate({ to: "/library" });
+  });
+  store.set(activeTabAtom, "current");
+  await act(async () => {
+    await router.navigate({ to: "/library" });
+  });
+  tabs()[0]!.focus();
+  await act(async () => {
+    tabs()[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+  });
+  expect(document.activeElement).toBe(tabs()[1]);
+  expect(store.get(activeTabAtom)).toBe("current");
+});
+
+test("ContextMenu on a focused tab opens the tab menu", async () => {
+  await renderRow();
+  const first = tabs()[0]!;
+  first.focus();
+  await act(async () => {
+    first.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }));
+  });
+  expect(
+    [...document.querySelectorAll('[role="menuitem"]')].map((node) => node.textContent),
+  ).toEqual(expect.arrayContaining(["Duplicate tab", "Rename tab", "Close tab"]));
+});
+
 test("F2 opens rename and Shift+F10 opens the tab menu under the tab", async () => {
   await renderRow();
   const first = tabs()[0]!;

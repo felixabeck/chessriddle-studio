@@ -95,6 +95,7 @@ vi.mock("@/components/tabs/TabCommands", () => ({
     tabs: [],
     activeTab: null,
     selectTab: () => undefined,
+    showTab: () => undefined,
     closeTab: async () => undefined,
     duplicateTab: () => undefined,
     renameTab: () => undefined,

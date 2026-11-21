@@ -4,7 +4,6 @@ import enUSCatalogue from "@/translation/en-US.json";
 import {
     clearSavedData,
     clearSavedDataAfterConfirmation,
-    confirmThenClear,
     openAppLogs,
     reloadApp,
 } from "./advancedActions";
@@ -96,15 +95,9 @@ async function clearThroughProductionPath(
     clear: () => void | Promise<void>,
 ): Promise<void> {
     mocks.runMigration.mockResolvedValue(result);
-    await confirmThenClear({
-        ask: async () => true,
-        confirmMessage: "confirm",
-        title: "title",
-        clear: () =>
-            clearSavedDataAfterConfirmation({
-                blockedMessage: (decks) => `blocked: ${decks.join(", ")}`,
-                clear,
-            }),
+    await clearSavedDataAfterConfirmation({
+        blockedMessage: (decks) => `blocked: ${decks.join(", ")}`,
+        clear,
     });
 }
 
@@ -193,15 +186,9 @@ test("the production clear path waits for migration and runs a fresh pass before
         inventoryTrusted: true,
     });
 
-    const clearing = confirmThenClear({
-        ask: async () => true,
-        confirmMessage: "confirm",
-        title: "title",
-        clear: () =>
-            clearSavedDataAfterConfirmation({
-                blockedMessage: (decks) => `blocked: ${decks.join(", ")}`,
-                clear,
-            }),
+    const clearing = clearSavedDataAfterConfirmation({
+        blockedMessage: (decks) => `blocked: ${decks.join(", ")}`,
+        clear,
     });
     await Promise.resolve();
     expect(clear).not.toHaveBeenCalled();

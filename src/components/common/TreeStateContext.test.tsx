@@ -22,12 +22,8 @@ afterEach(async () => {
   while (roots.length) await act(async () => roots.pop()!.unmount());
   closeTreeStore("report-remount");
   closeTreeStore("stale-report-hydration");
-  closeTreeStore("first-tab");
-  closeTreeStore("second-tab");
   tabStorage.remove("report-remount");
   tabStorage.remove("stale-report-hydration");
-  tabStorage.remove("first-tab");
-  tabStorage.remove("second-tab");
   sessionStorage.clear();
 });
 
@@ -50,34 +46,6 @@ function mountStore(id: string): TreeStore {
   );
   return captured!;
 }
-
-test("provider follows a new tab id without remounting", () => {
-  const host = document.createElement("div");
-  const root = createRoot(host);
-  roots.push(root);
-  let captured: TreeStore | null = null;
-  function Capture() {
-    captured = useContext(TreeStateContext);
-    return null;
-  }
-  act(() =>
-    root.render(
-      <TreeStateProvider id="first-tab">
-        <Capture />
-      </TreeStateProvider>,
-    ),
-  );
-  const first = captured!;
-  act(() =>
-    root.render(
-      <TreeStateProvider id="second-tab">
-        <Capture />
-      </TreeStateProvider>,
-    ),
-  );
-  expect(captured).not.toBe(first);
-  expect(captured).toBe(createTreeStore("second-tab"));
-});
 
 test("tab report store survives provider switching and is replaced only by actual close", async () => {
   const first = mountStore("report-remount");

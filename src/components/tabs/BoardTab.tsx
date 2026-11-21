@@ -17,11 +17,10 @@ import { boardTabId, boardTabPanelId } from "./boardTabDom";
 
 export function BoardTab({
   tab,
-  tabType,
-  setActiveTab,
+  onSelect,
   selected,
   tabStop,
-  controlsPanel,
+  panelMounted,
   overflowing,
   dragHandleProps,
   onContextMenu,
@@ -29,11 +28,10 @@ export function BoardTab({
   onClose,
 }: {
   tab: Tab;
-  tabType: string;
-  setActiveTab: (v: string) => void;
+  onSelect: (v: string) => void;
   selected: boolean;
   tabStop: boolean;
-  controlsPanel: boolean;
+  panelMounted: boolean;
   overflowing: boolean;
   dragHandleProps: DraggableProvidedDragHandleProps | null | undefined;
   onContextMenu: MouseEventHandler<HTMLButtonElement>;
@@ -82,18 +80,18 @@ export function BoardTab({
           data-tab-id={tab.value}
           className={cx(classes.tab, { [classes.selectedTab]: selected })}
           aria-selected={selected}
-          aria-controls={controlsPanel ? boardTabPanelId(tab.value) : undefined}
+          aria-controls={panelMounted ? boardTabPanelId(tab.value) : undefined}
           tabIndex={tabStop ? 0 : -1}
           onClick={(event) => {
             // The drag sensor prevents the mousedown default, which would otherwise focus the
             // tab; focus it here so the arrow keys continue from the clicked tab.
             event.currentTarget.focus();
-            setActiveTab(tab.value);
+            onSelect(tab.value);
           }}
           onContextMenu={onContextMenu}
           onKeyDown={onKeyDown}
         >
-          <BoardTabIcon tab={tab} tabType={tabType} />
+          <BoardTabIcon tab={tab} />
           <span ref={labelRef} className={classes.tabLabel}>
             {name}
           </span>
@@ -103,7 +101,8 @@ export function BoardTab({
         type="button"
         tabIndex={-1}
         className={classes.close}
-        // Presentation wrappers promote a named sibling button into the tab list.
+        // Sibling of the tab, not nested in it. aria-hidden keeps this labelled close out of the
+        // tab list; it is not a tab stop. Keyboard users close via the tab menu or CLOSE_TAB.
         aria-hidden
         aria-label={t("Tab.CloseNamed", { name })}
         onPointerDown={(event) => event.stopPropagation()}
@@ -118,11 +117,11 @@ export function BoardTab({
   );
 }
 
-export function BoardTabIcon({ tab, tabType }: { tab: Tab; tabType: string }) {
-  if (tabType === "puzzles") {
+export function BoardTabIcon({ tab }: { tab: Tab }) {
+  if (tab.type === "puzzles") {
     return <Puzzle size="0.875rem" />;
   }
-  if (tabType === "play") {
+  if (tab.type === "play") {
     return <ChessKnight size="0.875rem" />;
   }
   if (tab.gameOrigin.kind === "database" || tab.gameOrigin.kind === "databaseDraft") {
@@ -135,7 +134,7 @@ export function BoardTabIcon({ tab, tabType }: { tab: Tab; tabType: string }) {
   ) {
     return <FileIcon type={tab.gameOrigin.file.metadata.type} size="0.875rem" />;
   }
-  if (tabType === "analysis") {
+  if (tab.type === "analysis") {
     return <ScanSearch size="0.875rem" />;
   }
   return null;

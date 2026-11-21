@@ -64,12 +64,11 @@ test.each([
         <MantineProvider>
           <BoardTab
             tab={tab}
-            tabType="analysis"
             selected
             tabStop
-            controlsPanel
+            panelMounted
             overflowing={false}
-            setActiveTab={() => {}}
+            onSelect={() => {}}
             dragHandleProps={null}
             onContextMenu={() => {}}
             onClose={() => {}}
@@ -109,12 +108,11 @@ test("a fileDraft analysis tab uses the file icon", async () => {
       <MantineProvider>
         <BoardTab
           tab={tab}
-          tabType="analysis"
           selected
           tabStop
-          controlsPanel
+          panelMounted
           overflowing={false}
-          setActiveTab={() => {}}
+          onSelect={() => {}}
           dragHandleProps={null}
           onContextMenu={() => {}}
           onClose={() => {}}

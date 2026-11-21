@@ -651,7 +651,7 @@ export async function assertNothingClipped(
             if (container(node, axis)) return false;
             // Onto the page: sideways it is lost only past the viewport, since the page never scrolls
             // sideways; downwards it is lost out of a fixed box, which does not move while the page
-            // scrolls and whose spill other fixed chrome paints over (the navbar over the title bar).
+            // scrolls and whose spill other fixed chrome paints over (the navigation row).
             if (axis.name === "x") return contentPasses(node, axis, window.innerWidth);
             return insideFixed(node) && contentPasses(node, axis, ownEdge);
         };

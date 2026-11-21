@@ -288,30 +288,13 @@ export async function openPgnFromMenu<File>(deps: {
     if (id !== null) await deps.navigate({ to: "/" });
 }
 
-export async function createNewTabFromMenu(deps: {
-    navigate: (opts: { to: string }) => void | Promise<unknown>;
-    createTab: () => string | null | Promise<string | null>;
-}): Promise<void> {
-    const id = await deps.createTab();
-    if (id !== null) await deps.navigate({ to: "/" });
-}
+export type MenuPagePath = "/settings" | "/accounts" | "/engines";
 
-export async function openSettingsFromMenu(deps: {
+export async function openPageFromMenu(deps: {
     navigate: (opts: { to: string }) => void | Promise<unknown>;
+    to: MenuPagePath;
 }): Promise<void> {
-    await deps.navigate({ to: "/settings" });
-}
-
-export async function openAccountsFromMenu(deps: {
-    navigate: (opts: { to: string }) => void | Promise<unknown>;
-}): Promise<void> {
-    await deps.navigate({ to: "/accounts" });
-}
-
-export async function openEnginesFromMenu(deps: {
-    navigate: (opts: { to: string }) => void | Promise<unknown>;
-}): Promise<void> {
-    await deps.navigate({ to: "/engines" });
+    await deps.navigate({ to: deps.to });
 }
 
 export async function runNativeMenuAction(

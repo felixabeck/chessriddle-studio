@@ -17,6 +17,7 @@ import { tabStorage, TabStorageRepository } from "@/state/store/tabStorage";
 import * as tabs from "@/utils/tabs";
 import ConfirmChangesModal from "./ConfirmChangesModal";
 import FileFreshnessGate from "./FileFreshnessGate";
+import { TabCommandsProvider } from "./TabCommands";
 
 const mocks = vi.hoisted(() => ({
   pickPgnFile: vi.fn(),
@@ -38,8 +39,17 @@ vi.mock("@/utils/files", async (importOriginal) => ({
   pickPgnFile: mocks.pickPgnFile,
   readFileGame: mocks.readFileGame,
 }));
+vi.mock("@/platform/native", () => ({
+  platform: () => "linux",
+  warn: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { pathname: string } }) => unknown;
+  }) => select({ location: { pathname: "/" } }),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@mantine/core", () => ({
@@ -47,6 +57,9 @@ vi.mock("@mantine/core", () => ({
   Group: ({ children }: any) => <div>{children}</div>,
   Stack: ({ children }: any) => <div>{children}</div>,
   Text: ({ children, ...props }: any) => <p {...props}>{children}</p>,
+  TextInput: ({ label, autoFocus: _autoFocus, ...props }: any) => (
+    <input aria-label={label} {...props} />
+  ),
 }));
 vi.mock("../common/AppModal", () => ({
   default: ({ opened, children, pending, onClose }: any) =>
@@ -143,6 +156,14 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+function Owner({ children }: { children: React.ReactNode }) {
+  return (
+    <Provider store={jotaiStore}>
+      <TabCommandsProvider>{children}</TabCommandsProvider>
+    </Provider>
+  );
+}
+
 async function saveAndClose() {
   await act(async () => {
     const buttons = host.querySelectorAll<HTMLButtonElement>('[role="dialog"] button');
@@ -173,7 +194,7 @@ test("a successful background save forwards the receipt to the captured pending 
   const onSaved = vi.fn();
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
           tab={backgroundTab}
@@ -182,7 +203,7 @@ test("a successful background save forwards the receipt to the captured pending 
           onDiscard={vi.fn()}
           onSaved={onSaved}
         />
-      </Provider>,
+      </Owner>,
     ),
   );
 
@@ -222,9 +243,9 @@ test("first-save pending close retains a no-throw subscriber edit and saves it l
   }
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <PendingCloseHarness />
-      </Provider>,
+      </Owner>,
     ),
   );
   const unsubscribe = jotaiStore.sub(tabsAtom, () =>
@@ -287,7 +308,7 @@ test("a failed fresh background append keeps its captured pending close open", a
   );
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
           tab={backgroundTab}
@@ -296,7 +317,7 @@ test("a failed fresh background append keeps its captured pending close open", a
           onDiscard={vi.fn()}
           onSaved={onSaved}
         />
-      </Provider>,
+      </Owner>,
     ),
   );
 
@@ -337,11 +358,11 @@ test("a typed current-tab save failure is shown and keeps the modal open", async
   const toggle = vi.fn();
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <TreeStateContext.Provider value={currentTreeStore}>
           <ConfirmChangesModal opened toggle={toggle} closeTab={closeTab} />
         </TreeStateContext.Provider>
-      </Provider>,
+      </Owner>,
     ),
   );
 
@@ -414,9 +435,9 @@ async function startUnavailableRecoveryClose() {
   }
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <RecoveryCloseHarness />
-      </Provider>,
+      </Owner>,
     ),
   );
   await saveAndClose();
@@ -546,7 +567,7 @@ test("close-tab conflict closes the dialog, keeps the tab, and activates it", as
       store: TreeStore;
     } | null>({ tabId: sourceTab.value, store: treeStore });
     return (
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={pendingClose}
           tab={sourceTab}
@@ -558,7 +579,7 @@ test("close-tab conflict closes the dialog, keeps the tab, and activates it", as
           onDiscard={vi.fn()}
           onSaved={onSaved}
         />
-      </Provider>
+      </Owner>
     );
   }
 
@@ -592,7 +613,7 @@ test("page-switch conflict leaves the tree and selected game in place", async ()
 
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <TreeStateContext.Provider value={currentTree}>
           <ConfirmChangesModal
             opened
@@ -608,7 +629,7 @@ test("page-switch conflict leaves the tree and selected game in place", async ()
             }
           />
         </TreeStateContext.Provider>
-      </Provider>,
+      </Owner>,
     ),
   );
   await saveAndClose();
@@ -628,7 +649,7 @@ test("Save on an unavailable tab runs the registered append action", async () =>
 
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
           tab={backgroundTab}
@@ -636,7 +657,7 @@ test("Save on an unavailable tab runs the registered append action", async () =>
           onDiscard={vi.fn()}
           onSaved={onSaved}
         />
-      </Provider>,
+      </Owner>,
     ),
   );
   await saveAndClose();
@@ -655,7 +676,7 @@ test("Save for an unavailable tab with no registered action shows the tab and st
 
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
           tab={backgroundTab}
@@ -663,7 +684,7 @@ test("Save for an unavailable tab with no registered action shows the tab and st
           onDiscard={vi.fn()}
           onSaved={onSaved}
         />
-      </Provider>,
+      </Owner>,
     ),
   );
   await saveAndClose();
@@ -686,7 +707,7 @@ test("Save for an unavailable tab keeps today's failure when the registered acti
 
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
           tab={backgroundTab}
@@ -694,7 +715,7 @@ test("Save for an unavailable tab keeps today's failure when the registered acti
           onDiscard={vi.fn()}
           onSaved={onSaved}
         />
-      </Provider>,
+      </Owner>,
     ),
   );
   await saveAndClose();
@@ -729,7 +750,7 @@ test("Save shows the real Gate append failure inside the unavailable-tab modal",
 
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <TreeStateContext.Provider value={unavailableStore}>
           <FileFreshnessGate tab={unavailableTab} closeTab={vi.fn()}>
             <div>board</div>
@@ -743,7 +764,7 @@ test("Save shows the real Gate append failure inside the unavailable-tab modal",
             onSaved={onSaved}
           />
         </TreeStateContext.Provider>
-      </Provider>,
+      </Owner>,
     ),
   );
   await saveAndClose();
@@ -776,7 +797,7 @@ test("pending save ignores dialog dismiss and still completes onSaved", async ()
       store: TreeStore;
     } | null>({ tabId: backgroundTab.value, store: treeStore });
     return (
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={pendingClose}
           tab={backgroundTab}
@@ -787,7 +808,7 @@ test("pending save ignores dialog dismiss and still completes onSaved", async ()
           onDiscard={vi.fn()}
           onSaved={onSaved}
         />
-      </Provider>
+      </Owner>
     );
   }
 
@@ -834,7 +855,7 @@ test("closing a new line asks for its name and saves it under that name", async 
   const onSaved = vi.fn();
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={{ tabId: draftTab.value, store: treeStore }}
           tab={draftTab}
@@ -842,7 +863,7 @@ test("closing a new line asks for its name and saves it under that name", async 
           onDiscard={vi.fn()}
           onSaved={onSaved}
         />
-      </Provider>,
+      </Owner>,
     ),
   );
   const field = host.querySelector<HTMLInputElement>('input[aria-label="line name"]')!;
@@ -864,7 +885,7 @@ test("closing a new line asks for its name and saves it under that name", async 
 test("closing a stored game shows no name fields", async () => {
   await act(async () =>
     root.render(
-      <Provider store={jotaiStore}>
+      <Owner>
         <ConfirmChangesModal
           pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
           tab={backgroundTab}
@@ -872,7 +893,7 @@ test("closing a stored game shows no name fields", async () => {
           onDiscard={vi.fn()}
           onSaved={vi.fn()}
         />
-      </Provider>,
+      </Owner>,
     ),
   );
   expect(host.querySelector("input")).toBeNull();

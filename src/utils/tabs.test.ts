@@ -66,12 +66,26 @@ vi.mock("./chess", async (importOriginal) => ({
     ...(await importOriginal<typeof import("./chess")>()),
     parsePGN: mocks.parsePGN,
 }));
+vi.mock("@/platform/native", () => ({
+    platform: () => "linux",
+    warn: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@tanstack/react-router", () => ({
+    useNavigate: () => vi.fn(),
+    useRouterState: ({
+        select,
+    }: {
+        select: (state: { location: { pathname: string } }) => unknown;
+    }) => select({ location: { pathname: "/" } }),
+}));
 vi.mock("@mantine/core", () => ({
     Button: ({ children, onClick, disabled }: React.ComponentProps<"button">) =>
         createElement("button", { onClick, disabled }, children),
     Group: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
     Stack: ({ children }: { children: React.ReactNode }) => createElement("div", null, children),
     Text: ({ children }: { children: React.ReactNode }) => createElement("p", null, children),
+    TextInput: ({ label, ...props }: { label: string } & React.ComponentProps<"input">) =>
+        createElement("input", { "aria-label": label, ...props }),
 }));
 vi.mock("@/components/common/AppModal", () => ({
     default: ({ opened, children }: { opened: boolean; children: React.ReactNode }) =>
@@ -976,6 +990,7 @@ test.each(
         const { loadFileGame } = await import("./files");
         const { default: ConfirmChangesModal } =
             await import("@/components/tabs/ConfirmChangesModal");
+        const { TabCommandsProvider } = await import("@/components/tabs/TabCommands");
         const workspace = createStore();
         const id = crypto.randomUUID();
         const previousLocator = {
@@ -1153,12 +1168,16 @@ test.each(
                     createElement(
                         Provider,
                         { store: workspace },
-                        createElement(ConfirmChangesModal, {
-                            pendingClose: { tabId: id, store: cold },
-                            tab: getTab(id),
-                            updateTab,
-                            onSaved,
-                        }),
+                        createElement(
+                            TabCommandsProvider,
+                            null,
+                            createElement(ConfirmChangesModal, {
+                                pendingClose: { tabId: id, store: cold },
+                                tab: getTab(id),
+                                updateTab,
+                                onSaved,
+                            }),
+                        ),
                     ),
                 ),
             );

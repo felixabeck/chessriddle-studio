@@ -91,7 +91,3 @@
 .overflowing:not(.selected):focus-within .close {
   opacity: 0.55;
 }
-
-.renameInput {
-  width: 10rem;
-}

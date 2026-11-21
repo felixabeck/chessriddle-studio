@@ -1,4 +1,4 @@
-import { act, createContext, Suspense, useContext, type ReactNode } from "react";
+import { act, Suspense, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { getDefaultStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -66,7 +66,6 @@ const fixtures = vi.hoisted(() => ({
   notifyUnlessCancelled: vi.fn(),
   navigate: vi.fn(),
   pathname: "/",
-  tabsOnChange: null as ((value: string | null) => void) | null,
   nextPromise: null as Promise<void> | null,
   nextReady: false,
   resolveNext: null as (() => void) | null,
@@ -97,8 +96,6 @@ function setTreeStatus(status: TabTreeStorageStatus) {
   fixtures.treeStatus = status;
   for (const listener of fixtures.treeStatusListeners) listener();
 }
-
-const TabsContext = createContext<string | null>(null);
 
 vi.mock("@/state/atoms", async () => {
   const { atom } = await vi.importActual<typeof import("jotai")>("jotai");
@@ -215,61 +212,8 @@ vi.mock("@tanstack/react-router", () => ({
   }) => select({ location: { pathname: fixtures.pathname } }),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("@hello-pangea/dnd", () => ({
-  DragDropContext: ({ children }: { children: ReactNode }) => children,
-  Draggable: ({ children }: { children: (provided: Record<string, unknown>) => ReactNode }) =>
-    children({ dragHandleProps: null, draggableProps: {}, innerRef: vi.fn() }),
-  Droppable: ({ children }: { children: (provided: Record<string, unknown>) => ReactNode }) =>
-    children({ droppableProps: {}, innerRef: vi.fn(), placeholder: null }),
-  useMouseSensor: vi.fn(),
-  useTouchSensor: vi.fn(),
-}));
 vi.mock("@mantine/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mantine/core")>();
-  const Tabs = Object.assign(
-    ({
-      children,
-      onChange,
-      value,
-    }: {
-      children: ReactNode;
-      onChange?: (value: string | null) => void;
-      value: string | null;
-    }) => {
-      fixtures.tabsOnChange = onChange ?? null;
-      return (
-        <TabsContext.Provider value={value}>
-          <div>{children}</div>
-        </TabsContext.Provider>
-      );
-    },
-    {
-      List: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-      Panel: ({ children, value }: { children: ReactNode; value: string }) =>
-        useContext(TabsContext) === value && fixtures.mountPanels ? (
-          <div data-testid={`panel-${value}`}>{children}</div>
-        ) : null,
-      Tab: ({
-        children,
-        value,
-        onClick,
-        onContextMenu,
-        classNames: _classNames,
-        leftSection: _leftSection,
-        ...props
-      }: any) => (
-        <button
-          type="button"
-          data-testid={`tab-${value}`}
-          onClick={onClick}
-          onContextMenu={onContextMenu}
-          {...props}
-        >
-          {children}
-        </button>
-      ),
-    },
-  );
 
   const passthrough = ({ children }: { children: ReactNode }) => <div>{children}</div>;
   return {
@@ -310,7 +254,6 @@ vi.mock("@mantine/core", async (importOriginal) => {
       },
     ),
     ScrollArea: passthrough,
-    Tabs,
     TextInput: ({ label, autoFocus: _autoFocus, ...props }: any) => (
       <input aria-label={label} {...props} />
     ),
@@ -503,7 +446,6 @@ beforeEach(() => {
   fixtures.navigate.mockReset();
   latest = null;
   fixtures.notifyUnlessCancelled.mockReset();
-  fixtures.tabsOnChange = null;
   fixtures.nextPromise = new Promise<void>((resolve) => {
     fixtures.resolveNext = resolve;
   });

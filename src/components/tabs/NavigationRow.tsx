@@ -41,7 +41,7 @@ import { useTabCommands } from "./TabCommands";
 import classes from "./NavigationRow.module.css";
 
 const appWindow = getCurrentWebviewWindow();
-const COMPACT_TITLE_BAR_WIDTH_EM = 48;
+const COMPACT_NAVIGATION_ROW_WIDTH_EM = 48;
 const POINTER_DRAG_SENSORS = [useMouseSensor, useTouchSensor];
 
 function IconMinimize() {
@@ -59,7 +59,7 @@ function IconMinimize() {
   );
 }
 
-function IconMaximize() {
+function IconRestore() {
   return (
     <svg
       width="16"
@@ -73,7 +73,7 @@ function IconMaximize() {
   );
 }
 
-function IconSquare() {
+function IconMaximize() {
   return (
     <svg
       width="16"
@@ -139,7 +139,7 @@ export default function NavigationRow({
   const onBoards = isBoardsPath(pathname);
   const libraryCurrent = isLibraryFamilyPath(pathname);
   const temporaryPage = temporaryPageOf(pathname);
-  const compact = useScaledMaxWidth(COMPACT_TITLE_BAR_WIDTH_EM);
+  const compact = useScaledMaxWidth(COMPACT_NAVIGATION_ROW_WIDTH_EM);
   const database = useActiveDatabaseViewStore((s) => s.database);
   const libraryTarget = databaseRouteTarget(database);
   const {
@@ -257,11 +257,6 @@ export default function NavigationRow({
       renameTab(tabId);
       return;
     }
-    if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
-      event.preventDefault();
-      openTabMenu(tabId, { clientX: 0, clientY: 0, currentTarget: event.currentTarget }, true);
-      return;
-    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       selectTab(tabId);
@@ -304,7 +299,7 @@ export default function NavigationRow({
         }}
         offset={2}
         shadow="md"
-        width={compact ? "min(12.5rem, calc(100vw - 8px))" : 200}
+        width={compact ? "min(12.5rem, calc(100vw - 8px))" : "12.5rem"}
         position="bottom-start"
         transitionProps={{ duration: 0 }}
         withinPortal
@@ -399,11 +394,10 @@ export default function NavigationRow({
                         >
                           <BoardTab
                             tab={tab}
-                            tabType={tab.type}
-                            setActiveTab={selectTab}
+                            onSelect={selectTab}
                             selected={onBoards && activeTab === tab.value}
                             tabStop={tabStopId === tab.value}
-                            controlsPanel={onBoards && activeTab === tab.value}
+                            panelMounted={onBoards && activeTab === tab.value}
                             overflowing={overflowing}
                             dragHandleProps={provided.dragHandleProps}
                             onContextMenu={(event) => {
@@ -451,7 +445,7 @@ export default function NavigationRow({
                     <Menu.Item
                       key={tab.value}
                       className={classes.allTabsItem}
-                      leftSection={<BoardTabIcon tab={tab} tabType={tab.type} />}
+                      leftSection={<BoardTabIcon tab={tab} />}
                       rightSection={current ? <span className={classes.activeMark} /> : undefined}
                       onClick={() => selectTab(tab.value)}
                     >
@@ -495,7 +489,7 @@ export default function NavigationRow({
             onClick={() => void windowControls.toggleMaximize()}
             className={classes.windowButton}
           >
-            {isMaximized ? <IconMaximize /> : <IconSquare />}
+            {isMaximized ? <IconRestore /> : <IconMaximize />}
           </IconAction>
           <IconAction
             label={t("Window.Close")}

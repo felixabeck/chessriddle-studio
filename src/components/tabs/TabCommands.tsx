@@ -64,6 +64,7 @@ export type TabCommands = {
   tabs: Tab[];
   activeTab: string | null;
   selectTab: (tabId: string) => void;
+  showTab: (tabId: string) => void;
   closeTab: (tabId: string | null, discard?: boolean) => Promise<void>;
   duplicateTab: (tabId: string) => void;
   renameTab: (tabId: string) => void;
@@ -129,14 +130,24 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     void navigate(returnTargetRef.current);
   }, [navigate, pathname]);
 
-  useEffect(() => {
-    if (tabs.length === 0) {
+  const createNewWorkspaceTab = useCallback(
+    (options?: { navigateHome?: boolean }) => {
       void runTabCreation({
         create: () => createTab({ tab: { name: t("Tab.NewTab"), type: "new" }, setTabs }),
+        onSuccess: options?.navigateHome
+          ? async () => {
+              await navigate({ to: "/" });
+            }
+          : undefined,
         onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
       });
-    }
-  }, [setTabs, tabs, t]);
+    },
+    [navigate, setTabs, t],
+  );
+
+  useEffect(() => {
+    if (tabs.length === 0) createNewWorkspaceTab();
+  }, [createNewWorkspaceTab, tabs]);
 
   const closeTab = useCallback(
     async (value: string | null, discard = false) => {
@@ -324,15 +335,10 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     [setTabs],
   );
 
-  const newTab = useCallback(() => {
-    void runTabCreation({
-      create: () => createTab({ tab: { name: t("Tab.NewTab"), type: "new" }, setTabs }),
-      onSuccess: async () => {
-        await navigate({ to: "/" });
-      },
-      onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
-    });
-  }, [navigate, setTabs, t]);
+  const newTab = useCallback(
+    () => createNewWorkspaceTab({ navigateHome: true }),
+    [createNewWorkspaceTab],
+  );
 
   const closeActiveOrTemporary = useCallback(() => {
     if (temporaryPageOf(pathname)) {
@@ -393,6 +399,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       tabs,
       activeTab,
       selectTab,
+      showTab,
       closeTab,
       duplicateTab,
       renameTab,
@@ -409,6 +416,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       renameTab,
       reorderTabs,
       selectTab,
+      showTab,
       tabs,
     ],
   );
