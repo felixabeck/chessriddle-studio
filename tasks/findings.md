@@ -27205,7 +27205,7 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 
 ### Real-app verifier RF5 never sees the puzzle permission guidance — the Puzzles click leaves the route at `/`
 
-* **ID:** f-20261117-04 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261117-04 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Why it matters:** `pnpm verify:app` exits 1 on an unchanged upstream tree, so no change can show a fully green real-app run until this is understood.
 * **Where:** `scripts/verify-app.mjs` `verifySelectedRootPermissions` (RF5: navigate to `/`, click `Puzzles`, wait for the notification "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings."); the Puzzles entry on the new-tab page and the puzzle-root permission notice in the renderer.
@@ -27213,6 +27213,8 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 * **Spotted outside diff:** yes — found while verifying the unsaved-games build; RF5's code and the puzzle notice are untouched by it.
 * **Open question:** whether the `Puzzles` action no longer exists or changed on the seeded workspace's active tab (verifier selector drift), or the puzzle page now opens without raising the permission notice (product regression). The ledger shows RF5 green at `2512acd1c` (f-20261004 proof), so bisecting between that commit and `cfb5c6eb8` with `pnpm verify:app` decides it.
 * **Found by:** Claude Code session bf68be41-99b5-4990-a962-020401d47967, 2026-11-17, real-app verification of the unsaved-games build.
+* **Entry revalidation (2026-11-21, drain fe4cac75):** build → inline. The open question is answered by the code: verifier drift, not a product regression. Since `c0f2e7c76` (d-20261110-01) the New Tab `Puzzles` action opens the tab with `puzzleSource: "chessriddle"` whenever the ChessRiddle connection is available, and `Puzzles.tsx` then renders `ChessRiddleTraining` instead of `OfflinePuzzles`, so the offline database load that raises `Puzzle.LoadError.RootPermission` never runs. The recorded `{"path":"/"}` is expected because puzzle tabs live on `/`. The fix is a one-file verifier change selecting the offline source; no design question remains.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"ff2e4749474f43db9e6e2023de2d25d908e52e0deb50885470e9c9e7ad6ac108","header_sha256":"f5ab4e86166680ed71d06764a7f64726b2931ceaade0f9ed047a4880050f2b16","header_status":"open","input_sha256":"fdedc9a90798e9d7f1fab31dbbbe7828a37bdd4b02ac8f1c4d1ba280d36e1531","kind":"mutation-receipt","operation":"f1e04d89227be2ec3788f887c881c44670988ccbe93b8fd4bbc6303850318989","options":{"headers":{"Entry":"inline"},"section":null},"request_id_sha256":null,"results":["f-20261117-04"],"target":"f-20261117-04","v":1} -->
 
 ---
 
