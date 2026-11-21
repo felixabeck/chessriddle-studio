@@ -73,6 +73,7 @@ and cards lg, and switches, segments and badges use full.
 | Button `subtle`, `transparent` | Ghost text and a visible hover surface |
 | Button `danger` colour | Destructive feedback or action |
 | Tabs | Tinted active pill in default, outline and pills variants |
+| Window tabs (navigation row only) | Browser tabs on a `--cf-surface-inset` bar; the current item takes `--cf-background` and merges into the page through a gap in the bar's bottom border; other items are flat and take `--cf-interactive-hover` on hover |
 | SegmentedControl | Inset pill shell, card indicator and gold ring |
 | Inputs and select triggers | Inset or interactive fill, primary focus border and ring |
 | Combobox, Menu, Popover | Card surface, quiet gold border, rounded selected options |
@@ -96,7 +97,7 @@ and existing per-board coordinate colours retain their board meaning.
 ## Icon identities
 
 Every migrated icon imports from `lucide-react`, pinned exactly to `1.61.0`, the
-ChessRiddle version. The rail uses monochrome catalogue `ui` identities. The
+ChessRiddle version. The navigation row uses monochrome catalogue `ui` identities. The
 following table records the implemented mapping. Reference paths are relative to
 `chess-tactics-app/frontend/`. A source reference identifies the matched artwork
 and meaning. Entries marked closest by meaning have no exact reference slot.
@@ -105,9 +106,10 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | --- | --- | --- |
 | Board, play and game tabs | `ChessKnight` | `shared/icon-catalog.json:664` |
 | Account and human opponent | `User` | `shared/icon-catalog.json:655` |
-| Library rail | `Library` | `shared/icon-catalog.json:790` |
-| Engine rail, local engine portraits and computer opponent | `Brain` | `web/src/components/analysis/EnginePanel.tsx:272` |
+| Library tab in the navigation row | `Library` | `shared/icon-catalog.json:790` |
+| Engines page item, local engine portraits and computer opponent | `Brain` | `web/src/components/analysis/EnginePanel.tsx:272` |
 | Settings and engine configuration | `Settings` | `shared/icon-catalog.json:793` |
+| Advanced settings category | `Wrench` | Closest by meaning |
 | Appearance category | `Palette` | `shared/icon-catalog.json:661` |
 | Sound category | `Volume2` | `shared/icon-catalog.json:667` |
 | Privacy category | `Shield` | `shared/icon-catalog.json:676` |
@@ -138,8 +140,8 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Authenticated account status | `CircleCheckBig` | Closest by meaning, reference success status uses the same icon in `web/src/components/history/AttemptHistoryItem.tsx:59` |
 | More actions | `Ellipsis` | `web/src/components/profile/ProfileActionsMenu.tsx:71` |
 | Engine drag and resize handles | `GripVertical` | `web/src/components/entityEditor/SortableReorderList.tsx:20` |
-| Compact application menu | `Menu` | `web/src/components/layout/Header.tsx:11` |
-| Send feedback (sidebar, above Settings) | `MessageSquarePlus` | `web/src/components/feedback/FeedbackButton.tsx:47` (`UI_ICONS.feedback`) |
+| Application menu button (beside the ChessRiddle logo) and the all-tabs list | `ChevronDown` | Closest by meaning |
+| Send feedback (Feedback button at the right end of the navigation row, and its menu entry) | `MessageSquarePlus` | `web/src/components/feedback/FeedbackButton.tsx:47` (`UI_ICONS.feedback`) |
 | Add an account | `UserPlus` | `shared/icon-catalog.json:700` |
 | Download account games | `Download` | `web/src/components/legal/WithdrawalFormLink.tsx:1` |
 | Practice streak | `Flame` | `shared/icon-catalog.json:763` |
@@ -178,7 +180,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Captured bishop, rook and queen | `ChessBishop`, `ChessRook`, `ChessQueen` | Closest by meaning |
 
 Existing rendered sizes are retained for this import and JSX migration, including
-the rail's 24px icons and compact 12–14px slots. This follows Phase 2's explicit
+compact 12–14px slots. This follows Phase 2's explicit
 size-preservation constraint. ChessRiddle's reference uses 16px inline controls
 (`web/src/app/globals.css:1077`) and 20px medium/large icon buttons
 (`web/src/components/ui/IconButton.tsx:10`). Lucide's default stroke width is 2,
@@ -186,7 +188,7 @@ and explicit Tabler stroke props are replaced with `strokeWidth={2}`. Sizes can
 be reconciled separately when layout changes are authorised.
 
 `IconAction` keeps its existing accessible labels, tooltips and pending treatment.
-The native window-control SVGs in `TopBar.tsx` and local chessboard artwork remain.
+The native window-control SVGs in `src/components/tabs/NavigationRow.tsx` and local chessboard artwork remain.
 
 ## Board defaults and maintenance
 
