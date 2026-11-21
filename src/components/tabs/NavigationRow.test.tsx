@@ -16,7 +16,7 @@ import type { Tab } from "@/state/workspaceTypes";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { activeDatabaseViewStore } from "@/state/store/database";
-import { boardTabPanelId } from "./boardTabDom";
+import { boardTabId, boardTabPanelId } from "./boardTabDom";
 import classes from "./NavigationRow.module.css";
 import type { MenuAction } from "@/routes/-appMenu";
 import { TabCommandsProvider, useTabCommands } from "./TabCommands";
@@ -444,6 +444,14 @@ test("a tab carries no aria-controls while its panel is not mounted: unselected 
     expect(tab.hasAttribute("aria-controls")).toBe(false);
   }
   expect(away.filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
+});
+
+test("away from `/` the single tab stop is the active tab, not the first tab", async () => {
+  store.set(activeTabAtom, "next");
+  await renderRow({ path: "/library" });
+  const away = tabs();
+  expect(away.map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+  expect(away[1]!.id).toBe(boardTabId("next"));
 });
 
 test("clicking a tab away from `/` selects it and navigates home", async () => {

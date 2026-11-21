@@ -972,7 +972,7 @@ async function captureTraining(
         );
     }
     await page.mouse.move(0, 0);
-    // The navigation row's tab strip hover scrollbar hides 1 s after the pointer leaves it; capture after that, not during.
+    // Park the pointer off the row so no tab shows its hover state or tooltip in the capture.
     await expect(page.locator("[data-tab-strip]")).toBeVisible();
     await page.evaluate(() => {
         (document.activeElement as HTMLElement | null)?.blur();
