@@ -820,9 +820,9 @@ test("two-engine terminal diagnostics follow only the failed side's selected col
 test("settingUp opponent forms receive the side headings and swap with colour", async () => {
   await render();
   expect(opponentSides()).toEqual(["Fen.White", "Fen.Black"]);
-  await act(async () => button("Board.Action.SwapColors").click());
+  await act(async () => button("Board.Action.ChangeColors").click());
   expect(opponentSides()).toEqual(["Fen.Black", "Fen.White"]);
-  await act(async () => button("Board.Action.SwapColors").click());
+  await act(async () => button("Board.Action.ChangeColors").click());
   expect(opponentSides()).toEqual(["Board.Opponent.Random", "Board.Opponent.Random"]);
 });
 

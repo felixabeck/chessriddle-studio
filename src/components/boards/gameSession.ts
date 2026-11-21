@@ -1,4 +1,23 @@
+import { makeUci } from "chessops";
 import { normalizeError } from "@/platform/errors";
+import type { TreeNode } from "@/utils/treeReducer";
+
+// Raw `makeUci` on purpose, not `getMainLine`: during a game the tree is rebuilt from native's
+// reported moves (`setFen`, then `syncTreeWithMoves`), and native echoes each move in the
+// notation it received — `e1g1` from a board move or a standard engine, `e1h1` from a parsed
+// PGN castle sent as `initialMoves`. The poll compares against that raw echo; `getMainLine`
+// would normalise every castle to `e1h1` and break the prefix check.
+export function getMainlineUcis(root: TreeNode): string[] {
+    const moves: string[] = [];
+    let node = root;
+    while (node.children.length > 0) {
+        node = node.children[0];
+        if (node.move) {
+            moves.push(makeUci(node.move));
+        }
+    }
+    return moves;
+}
 
 /**
  * A throttled renderer update belongs to exactly one native game session.

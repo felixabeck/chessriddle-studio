@@ -16,12 +16,12 @@ import { useToggle } from "@mantine/hooks";
 import { ArrowRightLeft, FileText, Plus, X, ScanSearch } from "lucide-react";
 import type { Piece } from "chessops";
 import type { Key } from "@lichess-org/chessground/types";
-import { makeUci, parseUci } from "chessops";
+import { parseUci } from "chessops";
 import { INITIAL_FEN } from "chessops/fen";
 import { getDefaultStore, useAtom, useAtomValue } from "jotai";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { match } from "ts-pattern";
+
 import { useStore } from "zustand";
 import type { Outcome } from "@/bindings";
 import type { EngineLog, GameResult, GameState as NativeGameState } from "@/bindings";
@@ -35,16 +35,11 @@ import {
   closingTabsAtom,
   enginesAtom,
   flipBoardAfterMoveAtom,
-  gameIdFamily,
-  gameSessionFamily,
   gameInterruptionFamily,
   gameStateFamily,
-  gameInputColorAtom,
   gameOpeningBookEnabledAtom,
   gameOpeningBookMaxPlyAtom,
   gameOpeningBookHandleAtom,
-  gamePlayer1SettingsAtom,
-  gamePlayer2SettingsAtom,
   gameSameTimeControlAtom,
   pendingGameStartFamily,
   playersFamily,
@@ -52,9 +47,8 @@ import {
 } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
 import { uciNormalize } from "@/utils/chess";
-import { isPrefix } from "@/utils/misc";
 import { useTauriListener } from "@/platform/useTauriListener";
-import { getNodeAtPath, type GameHeaders, type TreeNode } from "@/utils/treeReducer";
+import { getNodeAtPath, type GameHeaders } from "@/utils/treeReducer";
 import DraftNumberInput from "../common/DraftNumberInput";
 import EngineLogsView from "../common/EngineLogsView";
 import FileInput from "../common/FileInput";
@@ -68,7 +62,10 @@ import Board from "./Board";
 import IconAction from "../common/IconAction";
 import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
-import { isCurrentQueuedGameUpdate, abortExactGame } from "./gameSession";
+import { getMainlineUcis, isCurrentQueuedGameUpdate } from "./gameSession";
+import { useGameReconciliation, useReconciliationState } from "./useGameReconciliation";
+import { useGameSetup } from "./useGameSetup";
+import { useNativeGameOwnership } from "./useNativeGameOwnership";
 import {
   recordGameCommandError,
   translateGameCommandError,
@@ -92,28 +89,6 @@ function gameResultToOutcome(result: GameResult): Outcome {
     interrupted: "*",
   } satisfies Record<GameResult["type"], Outcome>;
   return outcomes[result.type];
-}
-
-const RECONCILIATION_INTERVAL_MS = 1000;
-const RECONCILIATION_INITIAL_BACKOFF_MS = 1000;
-const RECONCILIATION_BACKOFF_FACTOR = 2;
-const RECONCILIATION_MAX_BACKOFF_MS = 8000;
-
-// Raw `makeUci` on purpose, not `getMainLine`: during a game the tree is rebuilt from native's
-// reported moves (`setFen`, then `syncTreeWithMoves`), and native echoes each move in the
-// notation it received — `e1g1` from a board move or a standard engine, `e1h1` from a parsed
-// PGN castle sent as `initialMoves`. The poll compares against that raw echo; `getMainLine`
-// would normalise every castle to `e1h1` and break the prefix check.
-function getMainlineUcis(root: TreeNode): string[] {
-  const moves: string[] = [];
-  let node = root;
-  while (node.children.length > 0) {
-    node = node.children[0];
-    if (node.move) {
-      moves.push(makeUci(node.move));
-    }
-  }
-  return moves;
 }
 
 type BackendMove = { uci: string; clock: number | null; fenAfter?: string };
@@ -148,65 +123,30 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   const tRef = useRef(t);
   tRef.current = t;
   const atomStore = getDefaultStore();
-  const {
-    ownerGameStateAtom,
-    ownerPlayersAtom,
-    ownerGameIdAtom,
-    ownerSessionAtom,
-    ownerPendingStartAtom,
-    ownerInterruptionAtom,
-  } = useMemo(
-    () => ({
-      ownerGameStateAtom: gameStateFamily(ownerTabId),
-      ownerPlayersAtom: playersFamily(ownerTabId),
-      ownerGameIdAtom: gameIdFamily(ownerTabId),
-      ownerSessionAtom: gameSessionFamily(ownerTabId),
-      ownerPendingStartAtom: pendingGameStartFamily(ownerTabId),
-      ownerInterruptionAtom: gameInterruptionFamily(ownerTabId),
-    }),
-    [ownerTabId],
-  );
+  const { ownerGameStateAtom, ownerPlayersAtom, ownerPendingStartAtom, ownerInterruptionAtom } =
+    useMemo(
+      () => ({
+        ownerGameStateAtom: gameStateFamily(ownerTabId),
+        ownerPlayersAtom: playersFamily(ownerTabId),
+        ownerPendingStartAtom: pendingGameStartFamily(ownerTabId),
+        ownerInterruptionAtom: gameInterruptionFamily(ownerTabId),
+      }),
+      [ownerTabId],
+    );
 
   const [editingMode, toggleEditingMode] = useToggle();
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
 
-  const [inputColor, setInputColor] = useAtom(gameInputColorAtom);
-  function cycleColor() {
-    setInputColor((prev) =>
-      match(prev)
-        .with("white", () => "black" as const)
-        .with("black", () => "random" as const)
-        .with("random", () => "white" as const)
-        .exhaustive(),
-    );
-  }
-
-  const [player1Settings, setPlayer1Settings] = useAtom(gamePlayer1SettingsAtom);
-  const [player2Settings, setPlayer2Settings] = useAtom(gamePlayer2SettingsAtom);
-
-  const player1Side = match(inputColor)
-    .with("white", () => t("Fen.White"))
-    .with("random", () => t("Board.Opponent.Random"))
-    .with("black", () => t("Fen.Black"))
-    .exhaustive();
-  const player2Side = match(inputColor)
-    .with("white", () => t("Fen.Black"))
-    .with("random", () => t("Board.Opponent.Random"))
-    .with("black", () => t("Fen.White"))
-    .exhaustive();
-
-  function getPlayers() {
-    let isPlayer1White = inputColor === "white";
-
-    if (inputColor === "random") {
-      isPlayer1White = Math.random() > 0.5;
-    }
-
-    return {
-      white: isPlayer1White ? player1Settings : player2Settings,
-      black: isPlayer1White ? player2Settings : player1Settings,
-    };
-  }
+  const {
+    player1Settings,
+    setPlayer1Settings,
+    player2Settings,
+    setPlayer2Settings,
+    player1Side,
+    player2Side,
+    cycleColor,
+    getPlayers,
+  } = useGameSetup();
 
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
@@ -226,13 +166,23 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
 
   const [whiteTime, setWhiteTime] = useState<number | null>(null);
   const [blackTime, setBlackTime] = useState<number | null>(null);
-  const gameId = useAtomValue(ownerGameIdAtom);
-  const backendSession = useAtomValue(ownerSessionAtom);
-  const liveGameIdRef = useRef<string | null>(gameId);
-  liveGameIdRef.current = gameId;
-  const sessionGenerationRef = useRef(0);
-  const backendSessionRef = useRef<bigint | null>(backendSession);
-  backendSessionRef.current = backendSession;
+  const owner = useNativeGameOwnership(ownerTabId);
+  const {
+    gameId,
+    backendSession,
+    currentIdentity,
+    currentSession,
+    currentGeneration,
+    advanceGeneration,
+    setMounted,
+    ownsMountedOwner,
+    ownsUiEpoch,
+    ownsUiSession,
+    claimOwnership,
+    clearOwnershipIfMatches,
+    cleanupExactIdentity,
+  } = owner;
+  const reconciliation = useReconciliationState();
   const moveRevisionRef = useRef(BigInt(-1));
   const clockRevisionRef = useRef(BigInt(-1));
   const pendingMovesRef = useRef<{
@@ -252,17 +202,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   const commandTokenRef = useRef<symbol | null>(null);
   const logSequenceRef = useRef(0);
   const logsOpenedRef = useRef(false);
-  const mountedRef = useRef(true);
-  mountedRef.current = true;
   const mountLeaseRef = useRef<symbol | null>(null);
-  const reconciliationInFlightRef = useRef(false);
-  const reconciliationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconciliationPollRef = useRef<(() => Promise<void>) | null>(null);
-  const reconciliationScheduleRef = useRef<((delayMs: number) => void) | null>(null);
-  const reconciliationBackoffMsRef = useRef(RECONCILIATION_INITIAL_BACKOFF_MS);
-  const reconciliationOutageNotifiedRef = useRef(false);
-  const reconciliationRequestIdRef = useRef(0);
-  const reconciliationValidAfterRequestIdRef = useRef(0);
   const [pendingCommand, setPendingCommand] = useState<
     "start" | "move" | "takeback" | "abort" | "resign" | null
   >(null);
@@ -282,61 +222,13 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     queuedUpdateGameIdRef.current = null;
     queuedUpdateSessionRef.current = null;
   }, []);
-  const ownerTabExists = useCallback(
-    () => atomStore.get(tabsAtom).some((tab) => tab.value === ownerTabId),
-    [atomStore, ownerTabId],
-  );
-  const ownsMountedOwner = useCallback(
-    () => mountedRef.current && ownerTabExists(),
-    [ownerTabExists],
-  );
-  const ownsUiEpoch = useCallback(
-    (generation: number) => ownsMountedOwner() && sessionGenerationRef.current === generation,
-    [ownsMountedOwner],
-  );
-  const ownsUiSession = useCallback(
-    (ownedGameId: string, ownedSession: bigint, generation: number) =>
-      ownsUiEpoch(generation) &&
-      liveGameIdRef.current === ownedGameId &&
-      backendSessionRef.current === ownedSession &&
-      atomStore.get(ownerGameIdAtom) === ownedGameId &&
-      atomStore.get(ownerSessionAtom) === ownedSession,
-    [atomStore, ownerGameIdAtom, ownerSessionAtom, ownsUiEpoch],
-  );
-  const clearOwnershipIfMatches = useCallback(
-    (ownedGameId: string, ownedSession: bigint) => {
-      const refsMatch =
-        liveGameIdRef.current === ownedGameId && backendSessionRef.current === ownedSession;
-      const atomsMatch =
-        atomStore.get(ownerGameIdAtom) === ownedGameId &&
-        atomStore.get(ownerSessionAtom) === ownedSession;
-      if (refsMatch) {
-        liveGameIdRef.current = null;
-        backendSessionRef.current = null;
-      }
-      if (atomsMatch) {
-        atomStore.set(ownerGameIdAtom, null);
-        atomStore.set(ownerSessionAtom, null);
-      }
-      return atomsMatch;
-    },
-    [atomStore, ownerGameIdAtom, ownerSessionAtom],
-  );
   const invalidateUiSession = useCallback(
     (preserveCommandToken?: symbol) => {
       clearQueuedGameUpdates();
       // Chessground keeps the stored premove across configure; the board outlives the session.
       cgRef.current?.cancelPremove();
-      if (reconciliationTimerRef.current !== null) {
-        clearTimeout(reconciliationTimerRef.current);
-        reconciliationTimerRef.current = null;
-      }
-      reconciliationPollRef.current = null;
-      reconciliationScheduleRef.current = null;
-      reconciliationBackoffMsRef.current = RECONCILIATION_INITIAL_BACKOFF_MS;
-      reconciliationOutageNotifiedRef.current = false;
-      reconciliationValidAfterRequestIdRef.current = reconciliationRequestIdRef.current + 1;
-      sessionGenerationRef.current += 1;
+      reconciliation.invalidate();
+      advanceGeneration();
       if (!preserveCommandToken || commandTokenRef.current !== preserveCommandToken) {
         commandTokenRef.current = null;
         setPendingCommand(null);
@@ -344,25 +236,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
       setCommandError(null);
       logSequenceRef.current += 1;
     },
-    [clearQueuedGameUpdates],
-  );
-
-  const cleanupExactIdentity = useCallback(
-    async (
-      ownedGameId: string,
-      ownedSession: bigint,
-      options: { finish?: true } = {},
-    ): Promise<boolean> => {
-      await abortExactGame(ownedGameId, ownedSession, (id, session) =>
-        tauri.abortGame(id, session),
-      );
-      const retiredOwnedAtoms = clearOwnershipIfMatches(ownedGameId, ownedSession);
-      if (options.finish && retiredOwnedAtoms && ownerTabExists()) {
-        atomStore.set(ownerGameStateAtom, "gameOver");
-      }
-      return retiredOwnedAtoms;
-    },
-    [atomStore, clearOwnershipIfMatches, ownerGameStateAtom, ownerTabExists],
+    [advanceGeneration, clearQueuedGameUpdates, reconciliation],
   );
 
   const [logsOpened, toggleLogsOpened] = useToggle();
@@ -405,7 +279,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   const fetchEngineLogs = useCallback(async () => {
     const expectedSession = backendSession;
     if (!gameId || expectedSession === null || !hasEngine || terminalSnapshot) return;
-    const generation = sessionGenerationRef.current;
+    const generation = currentGeneration();
     if (!ownsUiSession(gameId, expectedSession, generation)) return;
     const request = ++logSequenceRef.current;
     try {
@@ -426,7 +300,15 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         notifyUnlessCancelled(tRef.current("Common.Error"), error);
       }
     }
-  }, [gameId, selectedLogsColor, terminalSnapshot, hasEngine, backendSession, ownsUiSession]);
+  }, [
+    gameId,
+    selectedLogsColor,
+    terminalSnapshot,
+    hasEngine,
+    backendSession,
+    ownsUiSession,
+    currentGeneration,
+  ]);
 
   useEffect(() => {
     logSequenceRef.current += 1;
@@ -613,7 +495,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
       atomStore.get(ownerPendingStartAtom)
     )
       return;
-    const generation = sessionGenerationRef.current + 1;
+    const generation = currentGeneration() + 1;
     const admission = Promise.withResolvers<void>();
     const startToken = Symbol("start");
     commandTokenRef.current = startToken;
@@ -621,15 +503,12 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     setCommandError(null);
     const run = async () => {
       try {
-        const retainedGameId = liveGameIdRef.current;
-        const retainedSession = backendSessionRef.current;
-        if (retainedGameId && retainedSession !== null) {
-          await cleanupExactIdentity(retainedGameId, retainedSession);
-        }
+        const retained = currentIdentity();
+        if (retained) await cleanupExactIdentity(retained.gameId, retained.session);
         if (
           !ownsMountedOwner() ||
           atomStore.get(closingTabsAtom).has(ownerTabId) ||
-          sessionGenerationRef.current + 1 !== generation
+          currentGeneration() + 1 !== generation
         )
           return;
 
@@ -679,10 +558,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         };
 
         const state = await tauri.startGame(newGameId, config);
-        liveGameIdRef.current = newGameId;
-        backendSessionRef.current = state.session;
-        atomStore.set(ownerGameIdAtom, newGameId);
-        atomStore.set(ownerSessionAtom, state.session);
+        claimOwnership(newGameId, state.session);
 
         if (
           !ownsUiSession(newGameId, state.session, generation) ||
@@ -789,9 +665,9 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
       canApplySuccess,
     }: GameCommandOptions<TResult, TReturn>): Promise<TReturn> => {
       if (!gameId || gameState !== "playing") return unavailable;
-      const session = backendSessionRef.current;
+      const session = currentSession();
       if (session === null || commandTokenRef.current !== null) return unavailable;
-      const generation = sessionGenerationRef.current;
+      const generation = currentGeneration();
       const token = Symbol(command);
       const context = { gameId, session, generation };
       const ownsToken = () => commandTokenRef.current === token;
@@ -839,7 +715,16 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         }
       }
     },
-    [applyAuthoritativeState, gameId, gameState, ownerTabId, ownsMountedOwner, ownsUiSession],
+    [
+      applyAuthoritativeState,
+      gameId,
+      gameState,
+      ownerTabId,
+      ownsMountedOwner,
+      ownsUiSession,
+      currentGeneration,
+      currentSession,
+    ],
   );
 
   const handleHumanMove = useCallback(
@@ -871,18 +756,13 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
 
   const queueKeyboardPremove = useCallback(
     (from: Key, to: Key) => {
-      const ownedGameId = liveGameIdRef.current;
-      const ownedSession = backendSessionRef.current;
-      if (
-        !ownedGameId ||
-        ownedSession === null ||
-        !ownsUiSession(ownedGameId, ownedSession, sessionGenerationRef.current)
-      ) {
+      const owned = currentIdentity();
+      if (!owned || !ownsUiSession(owned.gameId, owned.session, currentGeneration())) {
         return false;
       }
       return cgRef.current?.queuePremove(from, to) ?? false;
     },
-    [ownsUiSession],
+    [currentGeneration, currentIdentity, ownsUiSession],
   );
 
   const THROTTLE_MS = 150;
@@ -897,9 +777,9 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         if (
           isCurrentQueuedGameUpdate(
             targetGeneration,
-            sessionGenerationRef.current,
+            currentGeneration(),
             targetSession,
-            backendSessionRef.current,
+            currentSession(),
           ) &&
           ownsUiSession(targetGameId, targetSession, targetGeneration)
         ) {
@@ -908,7 +788,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         premoveTimerRef.current = null;
       }, 0);
     },
-    [ownsUiSession],
+    [currentGeneration, currentSession, ownsUiSession],
   );
 
   const applyPendingUpdates = useCallback(() => {
@@ -918,9 +798,9 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     const isCurrent =
       isCurrentQueuedGameUpdate(
         queuedGeneration,
-        sessionGenerationRef.current,
+        currentGeneration(),
         queuedSession,
-        backendSessionRef.current,
+        currentSession(),
       ) &&
       queuedGeneration !== null &&
       queuedGameId !== null &&
@@ -947,7 +827,13 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     if (queuedGeneration !== null && queuedGameId !== null && queuedSession !== null) {
       scheduleDeferredPremove(queuedGameId, queuedSession, queuedGeneration);
     }
-  }, [clearQueuedGameUpdates, ownsUiSession, scheduleDeferredPremove]);
+  }, [
+    clearQueuedGameUpdates,
+    ownsUiSession,
+    scheduleDeferredPremove,
+    currentGeneration,
+    currentSession,
+  ]);
 
   const scheduleUpdate = useCallback(() => {
     if (!throttleTimerRef.current) {
@@ -983,27 +869,19 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         if (ownsMountedOwner()) notifyListenerError(error);
         return;
       }
-      const ownedGameId = liveGameIdRef.current;
-      const ownedSession = backendSessionRef.current;
-      const generation = sessionGenerationRef.current;
-      if (
-        !ownedGameId ||
-        ownedSession === null ||
-        !ownsUiSession(ownedGameId, ownedSession, generation)
-      ) {
-        return;
-      }
+      const owned = currentIdentity();
+      if (!owned || !ownsUiSession(owned.gameId, owned.session, currentGeneration())) return;
       const payload = event.payload as { gameId?: unknown; session?: unknown };
-      if (payload.gameId !== ownedGameId) return;
+      if (payload.gameId !== owned.gameId) return;
       try {
-        if (decodeCounter(payload.session, "session") !== ownedSession) return;
+        if (decodeCounter(payload.session, "session") !== owned.session) return;
       } catch {
         // The current valid owner pair plus its unique game id correlate this error;
         // the malformed counter itself is never accepted as a session identity.
       }
       notifyListenerError(error);
     },
-    [ownsMountedOwner, ownsUiSession],
+    [currentGeneration, currentIdentity, ownsMountedOwner, ownsUiSession],
   );
 
   useTauriListener(
@@ -1011,7 +889,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     ({ payload }) => {
       if (
         atomStore.get(ownerGameStateAtom) !== "playing" ||
-        !ownsUiSession(payload.gameId, payload.session, sessionGenerationRef.current) ||
+        !ownsUiSession(payload.gameId, payload.session, currentGeneration()) ||
         payload.revision <= moveRevisionRef.current
       )
         return;
@@ -1029,7 +907,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
           revision: payload.revision,
         };
       }
-      queuedUpdateGenerationRef.current = sessionGenerationRef.current;
+      queuedUpdateGenerationRef.current = currentGeneration();
       queuedUpdateGameIdRef.current = payload.gameId;
       queuedUpdateSessionRef.current = payload.session;
       scheduleUpdate();
@@ -1042,7 +920,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     ({ payload }) => {
       if (
         atomStore.get(ownerGameStateAtom) !== "playing" ||
-        !ownsUiSession(payload.gameId, payload.session, sessionGenerationRef.current) ||
+        !ownsUiSession(payload.gameId, payload.session, currentGeneration()) ||
         payload.revision <= clockRevisionRef.current
       )
         return;
@@ -1058,7 +936,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     ({ payload }) => {
       if (
         atomStore.get(ownerGameStateAtom) !== "playing" ||
-        !ownsUiSession(payload.gameId, payload.session, sessionGenerationRef.current) ||
+        !ownsUiSession(payload.gameId, payload.session, currentGeneration()) ||
         payload.revision < moveRevisionRef.current
       )
         return;
@@ -1068,7 +946,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         mapBackendMoves(payload.moves),
         payload.gameId,
         payload.session,
-        sessionGenerationRef.current,
+        currentGeneration(),
         payload.revision,
       );
     },
@@ -1081,131 +959,18 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     };
   }, [clearQueuedGameUpdates]);
 
-  useEffect(() => {
-    if (gameState !== "playing" || !gameId) {
-      if (reconciliationTimerRef.current !== null) {
-        clearTimeout(reconciliationTimerRef.current);
-        reconciliationTimerRef.current = null;
-      }
-      reconciliationPollRef.current = null;
-      reconciliationScheduleRef.current = null;
-      return;
-    }
-    const polledGameId = gameId;
-    const expectedSession = backendSessionRef.current;
-    if (expectedSession === null) return;
-    const generation = sessionGenerationRef.current;
-
-    if (isTabClosing) {
-      if (reconciliationTimerRef.current !== null) {
-        clearTimeout(reconciliationTimerRef.current);
-        reconciliationTimerRef.current = null;
-      }
-      reconciliationPollRef.current = null;
-      reconciliationScheduleRef.current = null;
-      reconciliationValidAfterRequestIdRef.current = reconciliationRequestIdRef.current + 1;
-      return;
-    }
-
-    const isCurrentEpoch = () =>
-      ownsMountedOwner() &&
-      !atomStore.get(closingTabsAtom).has(ownerTabId) &&
-      ownsUiSession(polledGameId, expectedSession, generation) &&
-      atomStore.get(ownerGameStateAtom) === "playing";
-
-    if (!isCurrentEpoch()) return;
-
-    const scheduleNext = (delayMs: number) => {
-      if (!isCurrentEpoch() || reconciliationTimerRef.current !== null) return;
-      reconciliationTimerRef.current = setTimeout(() => {
-        reconciliationTimerRef.current = null;
-        void reconciliationPollRef.current?.();
-      }, delayMs);
-    };
-
-    const poll = async () => {
-      if (!isCurrentEpoch() || reconciliationInFlightRef.current) return;
-      reconciliationInFlightRef.current = true;
-      const requestId = ++reconciliationRequestIdRef.current;
-      let nextDelay = RECONCILIATION_INTERVAL_MS;
-
-      try {
-        const state = await tauri.getGameState(polledGameId, expectedSession);
-        const canApply =
-          isCurrentEpoch() && requestId >= reconciliationValidAfterRequestIdRef.current;
-
-        if (canApply) {
-          reconciliationBackoffMsRef.current = RECONCILIATION_INITIAL_BACKOFF_MS;
-          reconciliationOutageNotifiedRef.current = false;
-
-          let eligibleForPremove = false;
-          if (state.status === "playing" && isPlayerVsEngine) {
-            const nextTurnIsHuman =
-              state.turn === "white"
-                ? players.white.type === "human"
-                : players.black.type === "human";
-            if (nextTurnIsHuman) {
-              const currentLiveMoves = getMainlineUcis(store.getState().root);
-              const backendUcis = state.moves.map((m) => m.uci);
-              if (
-                backendUcis.length > currentLiveMoves.length &&
-                isPrefix(currentLiveMoves, backendUcis)
-              ) {
-                eligibleForPremove = true;
-              }
-            }
-          }
-
-          const applied = applyAuthoritativeState(state, polledGameId, expectedSession, generation);
-
-          if (applied && eligibleForPremove) {
-            scheduleDeferredPremove(polledGameId, expectedSession, generation);
-          }
-        }
-      } catch (error) {
-        const canReport =
-          isCurrentEpoch() && requestId >= reconciliationValidAfterRequestIdRef.current;
-
-        if (canReport) {
-          if (!reconciliationOutageNotifiedRef.current) {
-            reconciliationOutageNotifiedRef.current = true;
-            notifyUnlessCancelled(tRef.current("Common.Error"), error);
-          }
-
-          nextDelay = reconciliationBackoffMsRef.current;
-          reconciliationBackoffMsRef.current = Math.min(
-            reconciliationBackoffMsRef.current * RECONCILIATION_BACKOFF_FACTOR,
-            RECONCILIATION_MAX_BACKOFF_MS,
-          );
-        }
-      } finally {
-        reconciliationInFlightRef.current = false;
-        reconciliationScheduleRef.current?.(nextDelay);
-      }
-    };
-
-    reconciliationPollRef.current = poll;
-    reconciliationScheduleRef.current = scheduleNext;
-
-    if (!reconciliationInFlightRef.current && reconciliationTimerRef.current === null) {
-      void poll();
-    }
-  }, [
-    gameId,
-    gameState,
-    applyAuthoritativeState,
-    backendSession,
-    ownsMountedOwner,
-    ownsUiSession,
-    atomStore,
-    ownerGameStateAtom,
+  useGameReconciliation(reconciliation, {
     ownerTabId,
+    gameState,
+    isTabClosing,
+    owner,
+    applyAuthoritativeState,
+    scheduleDeferredPremove,
     players,
     isPlayerVsEngine,
-    scheduleDeferredPremove,
     store,
-    isTabClosing,
-  ]);
+    tRef,
+  });
 
   const movable = useMemo(() => {
     if (players.white.type === "human" && players.black.type === "human") {
@@ -1280,11 +1045,10 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   }
 
   async function handleNewGame() {
-    const ownedGameId = liveGameIdRef.current;
-    const ownedSession = backendSessionRef.current;
-    if (ownedGameId && ownedSession !== null) {
+    const owned = currentIdentity();
+    if (owned) {
       try {
-        await cleanupExactIdentity(ownedGameId, ownedSession);
+        await cleanupExactIdentity(owned.gameId, owned.session);
       } catch (error) {
         notifyUnlessCancelled(t("Common.Error"), error);
         return;
@@ -1302,24 +1066,21 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   useEffect(() => {
     const mountLease = Symbol("board-game-mount");
     mountLeaseRef.current = mountLease;
-    mountedRef.current = true;
+    setMounted(true);
     return () => {
-      mountedRef.current = false;
-      const ownedGameId = liveGameIdRef.current;
-      const ownedSession = backendSessionRef.current;
+      setMounted(false);
+      const owned = currentIdentity();
       void Promise.resolve()
         .then(async () => {
           if (mountLeaseRef.current !== mountLease) return;
           invalidateUiSession();
-          if (ownedGameId && ownedSession !== null) {
-            await cleanupExactIdentity(ownedGameId, ownedSession, { finish: true });
-          }
+          if (owned) await cleanupExactIdentity(owned.gameId, owned.session, { finish: true });
         })
         .catch((error) => {
           notifyUnlessCancelled(tRef.current("Common.Error"), error);
         });
     };
-  }, [cleanupExactIdentity, invalidateUiSession]);
+  }, [cleanupExactIdentity, currentIdentity, invalidateUiSession, setMounted]);
 
   async function handleSelectOpeningBook() {
     const handle = await runUnlessCancelled(t("Common.Error"), () => tauri.issueOpeningBook());
@@ -1407,7 +1168,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
                           {player1Side}
                         </Text>
                         <IconAction
-                          label={t("Board.Action.SwapColors", { defaultValue: "Swap colors" })}
+                          label={t("Board.Action.ChangeColors", { defaultValue: "Change colors" })}
                           onClick={cycleColor}
                         >
                           <ArrowRightLeft />
