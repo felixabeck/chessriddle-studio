@@ -95,6 +95,7 @@ vi.mock("@/components/common/IconAction", () => ({
   ),
 }));
 vi.mock("./OpeningName", () => ({ default: () => null }));
+vi.mock("@/components/common/MiniBoard", () => ({ MiniBoard: () => null }));
 vi.mock("./CompleteMoveCell", async () => ({
   NotationMoveActionsContext: (await import("react")).createContext<
     import("./CompleteMoveCell").NotationMoveActions | undefined
@@ -588,6 +589,36 @@ test("table comments annotate their move's position, or before it for a pre-move
     host.querySelector(`[data-comment="${comment}"]`)?.getAttribute("data-annotated-fen");
   expect(annotated("After e4")).toBe(e4.fen);
   expect(annotated("Before e5")).toBe(e4.fen);
+});
+
+test("a diagram's comment annotates the diagram's position", async () => {
+  notationSettings.showComments = true;
+  const state = defaultTree();
+  const e4 = createNode({
+    fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+    move: parseUci("e2e4")!,
+    san: "e4",
+    halfMoves: 1,
+  });
+  e4.diagram = true;
+  e4.comment = "Diagram note";
+  state.root.children = [e4];
+  store.getState().setState(state);
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  expect(host.querySelector("[data-notation-diagram]")).not.toBeNull();
+  expect(
+    host.querySelector('[data-comment="Diagram note"]')?.getAttribute("data-annotated-fen"),
+  ).toBe(e4.fen);
 });
 
 test("forwards a variation's starting comment prose to its mounted move cell", async () => {
