@@ -32,6 +32,7 @@ mod puzzle;
 mod sound;
 mod system_appearance;
 mod unsaved_games;
+mod window_cloak;
 mod workspace_commands;
 
 #[cfg(test)]
@@ -743,10 +744,13 @@ impl Default for AppState {
 fn show_labeled_main_window<R: tauri::Runtime>(
     manager: &impl tauri::Manager<R>,
 ) -> Result<(), Error> {
-    manager
-        .get_webview_window("main")
-        .ok_or_else(|| Error::InvalidInput("no window labeled 'main' found".into()))?
-        .show()?;
+    let window = manager
+        .get_webview_window(window_cloak::MAIN_WINDOW_LABEL)
+        .ok_or_else(|| Error::InvalidInput("no window labeled 'main' found".into()))?;
+    // Uncloaking a hidden window draws nothing; the show that follows makes it appear, already
+    // painted and in its restored maximized state.
+    window_cloak::uncloak(&window.as_ref().window());
+    window.show()?;
     Ok(())
 }
 
@@ -1515,7 +1519,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         // Visibility is not restored: the main window stays hidden until the renderer reveals
         // it through `close_splashscreen` (or the bounded fallback armed in setup), so the
-        // user never sees the empty document before the first paint.
+        // user never sees the empty document before the first paint. On Windows restoring a
+        // maximized state shows the hidden window for a moment, so the cloak plugin, whose
+        // window-ready hook runs first, keeps it undrawn until that reveal.
+        .plugin(window_cloak::plugin())
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
@@ -4079,6 +4086,45 @@ mod blocking_offload_scans {
             compact,
             "tauri::async_runtime::spawn(run_main_window_reveal_fallback(app,MAIN_WINDOW_REVEAL_FALLBACK,));"
         );
+    }
+
+    #[test]
+    fn main_window_is_cloaked_before_restore_and_uncloaked_before_every_show() {
+        let main = include_str!("main.rs");
+        let builder = main
+            .split_once("    let app = tauri::Builder::default()")
+            .expect("application builder chain")
+            .1
+            .split_once(".setup(move |app| {")
+            .expect("setup after the plugin chain")
+            .0;
+        let compact: String = builder.chars().filter(|c| !c.is_whitespace()).collect();
+        // Window-ready hooks run in plugin registration order, so the cloak must come first.
+        assert_eq!(
+            compact.matches(".plugin(window_cloak::plugin())").count(),
+            1
+        );
+        assert!(
+            compact.contains(
+                ".plugin(window_cloak::plugin()).plugin(tauri_plugin_window_state::Builder::new()"
+            ),
+            "{builder}"
+        );
+        // Both reveal paths (renderer and native fallback) show through this one function.
+        let show = main
+            .split_once("fn show_labeled_main_window<R: tauri::Runtime>(")
+            .expect("show function")
+            .1
+            .split_once("\n}\n")
+            .expect("show function end")
+            .0;
+        let uncloak = show
+            .find("window_cloak::uncloak(&window.as_ref().window());")
+            .expect("reveal uncloaks the main window");
+        let shown = show
+            .find("window.show()?;")
+            .expect("reveal shows the window");
+        assert!(uncloak < shown);
     }
 
     #[test]

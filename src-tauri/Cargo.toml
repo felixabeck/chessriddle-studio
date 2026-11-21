@@ -91,7 +91,7 @@ minisign-verify = "0.2.2"
 gtk = "0.18.1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_SystemServices"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_SystemServices"] }
 
 [features]
 # by default Tauri runs in production mode
