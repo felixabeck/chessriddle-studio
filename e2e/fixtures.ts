@@ -168,12 +168,10 @@ export function localRequestFailure(request: Request, allowedOrigin: string): st
     return `Failed local request: ${request.url()}`;
 }
 
-/** Waits out a Mantine notification's or modal's opacity-and-transform entrance. A click while a
- * modal still slides can press on one element and release on another, so it never fires. */
-export async function expectEntranceSettled(element: Locator) {
-    await expect(element).toHaveCSS("opacity", "1");
+export async function expectNotificationSettled(notification: Locator) {
+    await expect(notification).toHaveCSS("opacity", "1");
     // Opacity completes before Mantine's cubic transform stops overshooting its container.
-    await expect(element).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+    await expect(notification).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
 }
 
 /** Skip cancelled or retargeted transitions and await their replacements before geometry or colour reads.
@@ -1620,6 +1618,17 @@ export const test = base.extend<{
                     localStorage.setItem("font-size", JSON.stringify(scale));
                     localStorage.setItem("mantine-color-scheme", scheme);
                 }
+                // Mantine slides a modal 30px into place. On a starved runner Playwright can
+                // judge the sliding button stable, then press and release on different targets,
+                // so the click is lost (CI run 44870465215). Modals appear in place instead.
+                const instantModals = document.createElement("style");
+                instantModals.textContent =
+                    ".mantine-Modal-content { transition-duration: 0s !important; }";
+                document.addEventListener(
+                    "DOMContentLoaded",
+                    () => document.head.append(instantModals),
+                    { once: true },
+                );
             },
             { scale: fontScale, scheme: colorScheme, locale },
         );
