@@ -82,14 +82,18 @@ const PIECE_SIZE_MARKS = [PIECE_SCALE_MIN, 85, PIECE_SCALE_MAX];
 
 const COMPACT_SETTINGS_WIDTH_EM = 50;
 
-type SettingCategory =
-  | "board"
-  | "inputs"
-  | "appearance"
-  | "sound"
-  | "keybinds"
-  | "directories"
-  | "repertoire";
+/** Tab order of the settings browser; each entry's title, description and icon is in `categoryInfo`. */
+const SETTING_CATEGORIES = [
+  "board",
+  "inputs",
+  "appearance",
+  "sound",
+  "keybinds",
+  "directories",
+  "repertoire",
+] as const;
+
+type SettingCategory = (typeof SETTING_CATEGORIES)[number];
 
 interface SettingItem {
   id: string;
@@ -776,6 +780,30 @@ export default function Page() {
     ));
   };
 
+  const renderKeybinds = () => (
+    <>
+      <Table>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>{t("Common.Description")}</Table.Th>
+            <Table.Th>{t("Settings.Key")}</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {Object.entries(keyMap).map(([action, keybind]) => (
+            <Table.Tr key={action}>
+              <Table.Td>{keybindLabel(t, action, keybind)}</Table.Td>
+              <Table.Td>
+                <KeybindInput action={action} keybind={keybind} />
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+      <DrawingKeybinds titleClassName={classes.title} />
+    </>
+  );
+
   return (
     <Stack h="100%" gap={0} data-compact={compactTabs || undefined}>
       <Group px="md" pt="md" pb="sm" className={classes.searchRow}>
@@ -822,125 +850,41 @@ export default function Page() {
           }}
         >
           <Tabs.List h={compactTabs ? undefined : "100%"}>
-            <Tabs.Tab value="board" leftSection={<ChessKnight size="1rem" />}>
-              {t("Settings.Board")}
-            </Tabs.Tab>
-            <Tabs.Tab value="inputs" leftSection={<Mouse size="1rem" />}>
-              {t("Settings.Inputs")}
-            </Tabs.Tab>
-            <Tabs.Tab value="appearance" leftSection={<Palette size="1rem" />}>
-              {t("Settings.Appearance")}
-            </Tabs.Tab>
-            <Tabs.Tab value="sound" leftSection={<Volume2 size="1rem" />}>
-              {t("Settings.Sound")}
-            </Tabs.Tab>
-            <Tabs.Tab value="keybinds" leftSection={<Keyboard size="1rem" />}>
-              {t("Settings.Keybinds")}
-            </Tabs.Tab>
-            <Tabs.Tab value="directories" leftSection={<Folder size="1rem" />}>
-              {t("Settings.Directories")}
-            </Tabs.Tab>
-            <Tabs.Tab value="repertoire" leftSection={<BookOpen size="1rem" />}>
-              {t("Settings.Repertoire")}
-            </Tabs.Tab>
+            {SETTING_CATEGORIES.map((category) => (
+              <Tabs.Tab key={category} value={category} leftSection={categoryInfo[category].icon}>
+                {categoryInfo[category].title}
+              </Tabs.Tab>
+            ))}
           </Tabs.List>
           <Stack flex={1} className={classes.settingsContent}>
             <ScrollArea className={classes.settingsScroll}>
               <Card withBorder className={`${classes.card} wrap-anywhere`} w="100%">
-                <Tabs.Panel value="board">
-                  <Text size="lg" fw={500} className={classes.title}>
-                    {t("Settings.Board")}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={3} mb="lg">
-                    {t("Settings.Board.Desc")}
-                  </Text>
-                  {renderCategorySettings("board")}
-                </Tabs.Panel>
-
-                <Tabs.Panel value="inputs">
-                  <Text size="lg" fw={500} className={classes.title}>
-                    {t("Settings.Inputs")}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={3} mb="lg">
-                    {t("Settings.Inputs.Desc")}
-                  </Text>
-                  {renderCategorySettings("inputs")}
-                </Tabs.Panel>
-
-                <Tabs.Panel value="appearance">
-                  <Text size="lg" fw={500} className={classes.title}>
-                    {t("Settings.Appearance")}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={3} mb="lg">
-                    {t("Settings.Appearance.Desc")}
-                  </Text>
-                  {renderCategorySettings("appearance")}
-                </Tabs.Panel>
-
-                <Tabs.Panel value="sound">
-                  <Text size="lg" fw={500} className={classes.title}>
-                    {t("Settings.Sound")}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={3} mb="lg">
-                    {t("Settings.Sound.Desc")}
-                  </Text>
-                  {renderCategorySettings("sound")}
-                </Tabs.Panel>
-
-                <Tabs.Panel value="keybinds">
-                  <Group>
+                {SETTING_CATEGORIES.map((category) => {
+                  const title = (
                     <Text size="lg" fw={500} className={classes.title}>
-                      {t("Settings.Keybinds")}
+                      {categoryInfo[category].title}
                     </Text>
-                    <IconAction label={t("Common.Reset")} onClick={() => setKeyMap(RESET)}>
-                      <RotateCcw size="1rem" />
-                    </IconAction>
-                  </Group>
-                  <Text size="xs" c="dimmed" mt={3} mb="lg">
-                    {t("Settings.Keybinds.Desc")}
-                  </Text>
-                  <Table>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th>{t("Common.Description")}</Table.Th>
-                        <Table.Th>{t("Settings.Key")}</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {Object.entries(keyMap).map(([action, keybind]) => {
-                        return (
-                          <Table.Tr key={action}>
-                            <Table.Td>{keybindLabel(t, action, keybind)}</Table.Td>
-                            <Table.Td>
-                              <KeybindInput action={action} keybind={keybind} />
-                            </Table.Td>
-                          </Table.Tr>
-                        );
-                      })}
-                    </Table.Tbody>
-                  </Table>
-                  <DrawingKeybinds titleClassName={classes.title} />
-                </Tabs.Panel>
-
-                <Tabs.Panel value="directories">
-                  <Text size="lg" fw={500} className={classes.title}>
-                    {t("Settings.Directories")}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={3} mb="lg">
-                    {t("Settings.Directories.Desc")}
-                  </Text>
-                  {renderCategorySettings("directories")}
-                </Tabs.Panel>
-
-                <Tabs.Panel value="repertoire">
-                  <Text size="lg" fw={500} className={classes.title}>
-                    {t("Settings.Repertoire")}
-                  </Text>
-                  <Text size="xs" c="dimmed" mt={3} mb="lg">
-                    {t("Settings.Repertoire.Desc")}
-                  </Text>
-                  {renderCategorySettings("repertoire")}
-                </Tabs.Panel>
+                  );
+                  const isKeybinds = category === "keybinds";
+                  return (
+                    <Tabs.Panel key={category} value={category}>
+                      {isKeybinds ? (
+                        <Group>
+                          {title}
+                          <IconAction label={t("Common.Reset")} onClick={() => setKeyMap(RESET)}>
+                            <RotateCcw size="1rem" />
+                          </IconAction>
+                        </Group>
+                      ) : (
+                        title
+                      )}
+                      <Text size="xs" c="dimmed" mt={3} mb="lg">
+                        {categoryInfo[category].description}
+                      </Text>
+                      {isKeybinds ? renderKeybinds() : renderCategorySettings(category)}
+                    </Tabs.Panel>
+                  );
+                })}
               </Card>
             </ScrollArea>
             <Text size="xs" c="dimmed" ta="right">
