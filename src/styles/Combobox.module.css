@@ -38,6 +38,6 @@
 
 @media (hover: hover) {
   .option:hover:not([data-combobox-disabled], [data-combobox-active], [aria-selected="true"]) {
-    background: var(--cf-interactive);
+    background: var(--cf-primary-hover);
   }
 }

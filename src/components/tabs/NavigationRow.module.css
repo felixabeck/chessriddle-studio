@@ -46,7 +46,7 @@
 
 .menu:hover,
 .menu[data-expanded] {
-  background: var(--cf-interactive-hover);
+  background: var(--cf-primary-hover);
 }
 
 .menu:focus-visible {
@@ -344,4 +344,10 @@
   height: 0.375rem;
   border-radius: 50%;
   background: var(--cf-primary);
+}
+
+/* A pointer-opened menu parks focus on the container (NavigationRow.tsx); the container
+   is not an actionable target, so it draws no ring. Items keep theirs. */
+.menuDropdown:focus {
+  outline: none;
 }

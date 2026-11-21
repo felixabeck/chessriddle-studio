@@ -76,7 +76,7 @@ and cards lg, and switches, segments and badges use full.
 | Window tabs (navigation row only) | Browser tabs on a `--cf-surface-inset` bar; the current item takes `--cf-background` and merges into the page through a gap in the bar's bottom border; other items are flat and take `--cf-interactive-hover` on hover |
 | SegmentedControl | Inset pill shell, card indicator and gold ring |
 | Inputs and select triggers | Inset or interactive fill, primary focus border and ring |
-| Combobox, Menu, Popover | Card surface, quiet gold border, rounded selected options |
+| Combobox, Menu, Popover | Card surface, quiet gold border, rounded selected options; hovered items and the application-menu button take the `--cf-primary-hover` gold tint, never a gray |
 | Checkbox, Switch | Gold checked state, square checkbox and card switch thumb |
 | Badge | Primary, muted or semantic tinted pill with inset ring |
 | Slider, RangeSlider, Progress | Primary or explicit semantic fill |

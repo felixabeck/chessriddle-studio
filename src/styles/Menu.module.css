@@ -12,8 +12,12 @@
   margin-top: 4px;
 }
 
-.item[data-hovered] {
-  background: var(--cf-interactive);
+/* Mantine 8 marks the pointer or keyboard item with :hover/:focus (no data-hovered) and
+   paints it cool gray-1 inside @layer mantine; this unlayered rule replaces that with the
+   gold tint. Weaker than the checked state below, which adds the ring and gold text.
+   A coloured item (color="danger") keeps its own --menu-item-hover. */
+.item:where(:hover, :focus):where(:not(:disabled, [data-disabled])) {
+  background: var(--menu-item-hover, var(--cf-primary-hover));
   color: var(--menu-item-color, var(--cf-foreground));
 }
 

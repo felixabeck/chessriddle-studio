@@ -403,7 +403,9 @@ export function createAppTheme({
             } satisfies Parameters<typeof Textarea.extend>[0],
             Autocomplete: {
                 defaultProps: { spellCheck },
-                classNames: inputClassNames,
+                // Its Combobox resolves classNames under the "Autocomplete" selector, so the
+                // shared option styles reach it only through this entry, as for Select.
+                classNames: { ...comboboxClasses, ...inputClassNames },
             } satisfies Parameters<typeof Autocomplete.extend>[0],
             NumberInput: { classNames: inputClassNames } satisfies Parameters<
                 typeof NumberInput.extend
