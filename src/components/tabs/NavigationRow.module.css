@@ -270,6 +270,8 @@
 
 .feedback:hover {
   background: var(--cf-bar-hover);
+  /* The 80% label falls below 4.5:1 on the dark bar-hover fill. */
+  color: var(--cf-foreground);
 }
 
 .feedback:focus-visible {
