@@ -168,10 +168,12 @@ export function localRequestFailure(request: Request, allowedOrigin: string): st
     return `Failed local request: ${request.url()}`;
 }
 
-export async function expectNotificationSettled(notification: Locator) {
-    await expect(notification).toHaveCSS("opacity", "1");
+/** Waits out a Mantine notification's or modal's opacity-and-transform entrance. A click while a
+ * modal still slides can press on one element and release on another, so it never fires. */
+export async function expectEntranceSettled(element: Locator) {
+    await expect(element).toHaveCSS("opacity", "1");
     // Opacity completes before Mantine's cubic transform stops overshooting its container.
-    await expect(notification).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+    await expect(element).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
 }
 
 /** Skip cancelled or retargeted transitions and await their replacements before geometry or colour reads.

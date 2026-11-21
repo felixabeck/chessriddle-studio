@@ -6,7 +6,7 @@ import englishCatalogue from "../src/translation/en-US.json" with { type: "json"
 import {
     databaseCommands,
     expect,
-    expectNotificationSettled,
+    expectEntranceSettled,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
     pgnFileCommands,
@@ -131,7 +131,7 @@ for (const scenario of [
         await expect(notification).toContainText(copy[key]);
         const guidance = notification.locator(".mantine-Notification-description");
         await expect(guidance).toHaveText(copy[key]);
-        await expectNotificationSettled(notification);
+        await expectEntranceSettled(notification);
         await expect(download).toBeEnabled();
         const invocations = await page.evaluate(() => window.__E2E_TAURI__.invocations());
         expect(
@@ -1377,7 +1377,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
             await expect(notification).toContainText(copy["Common.DurabilityUncertain"]);
             await expect(notification).not.toContainText("typed durability diagnostic");
             await expect(page.locator("body")).not.toContainText(copy["Files.OperationFailed"]);
-            await expectNotificationSettled(notification);
+            await expectEntranceSettled(notification);
             await assertNothingClipped(notification, { mode: "reachable" });
             await assertNoHorizontalOverflow();
             await expect(notification).toBeInViewport({ ratio: 1 });

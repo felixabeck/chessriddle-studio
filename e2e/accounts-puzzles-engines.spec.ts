@@ -5,7 +5,7 @@ import {
     playBoardMove,
     preserveStorageForReload,
     expect,
-    expectNotificationSettled,
+    expectEntranceSettled,
     gameOpeningFixture,
     test,
     type MockScenario,
@@ -401,8 +401,18 @@ for (const layout of ["desktop", "320-200"] as const) {
                     name: surface === "add" ? "Add Engine" : "Upgrade from catalog",
                     exact: true,
                 });
+                // The modal slides 30px in. A press and release straddling it click nothing.
+                await expectEntranceSettled(dialog);
                 await dialog.getByRole("button", { name: "Install", exact: true }).first().click();
             }
+            // Escape dismisses the dialog over the toast; only after the action reached native code.
+            await expect
+                .poll(async () =>
+                    (await page.evaluate(() => window.__E2E_TAURI__.invocations())).some(
+                        ({ command }) => command === boundary,
+                    ),
+                )
+                .toBe(true);
             await page.mouse.move(0, 0);
             await page.keyboard.press("Escape");
             const notification = page.locator(".mantine-Notification-root");
@@ -410,13 +420,8 @@ for (const layout of ["desktop", "320-200"] as const) {
             await expect(guidance).toHaveText(
                 `ChessRiddle Studio is not allowed to read this ${surface === "puzzle" ? "puzzle" : "engine"} folder. Choose another in Settings.`,
             );
-            await expectNotificationSettled(notification);
+            await expectEntranceSettled(notification);
             expect(await page.evaluate(() => localStorage.getItem("engines"))).toBe(saved);
-            expect(
-                (await page.evaluate(() => window.__E2E_TAURI__.invocations())).some(
-                    ({ command }) => command === boundary,
-                ),
-            ).toBe(true);
             await assertNoHorizontalOverflow();
             await assertNothingClipped(notification, { mode: "reachable" });
             await expect(guidance).toBeInViewport({ ratio: 1 });
@@ -461,6 +466,7 @@ async function showPermissionNotifications(
     await expect(
         dialog.getByRole("button", { name: "Install", exact: true }).first(),
     ).toBeVisible();
+    await expectEntranceSettled(dialog);
     // Let startup and the catalog finish before pausing notification expiry timers. The target is a
     // fixed minute after install: a target read from the running clock can already have passed by
     // the time pauseAt arrives on a stalled runner ("Cannot fast-forward to the past").
@@ -471,7 +477,7 @@ async function showPermissionNotifications(
         // expiry settings. Geometry still waits on the actual final CSS transform below.
         await page.clock.runFor(400);
         await expect(page.locator(".mantine-Notification-root")).toHaveCount(index + 1);
-        await expectNotificationSettled(page.locator(".mantine-Notification-root").nth(index));
+        await expectEntranceSettled(page.locator(".mantine-Notification-root").nth(index));
     }
     await page.keyboard.press("Escape");
     await page.clock.runFor(400);
@@ -479,7 +485,7 @@ async function showPermissionNotifications(
 }
 
 async function expectResizedNotificationSettled(notification: Locator) {
-    await expectNotificationSettled(notification);
+    await expectEntranceSettled(notification);
     const height = await notification.evaluate(
         (node) => getComputedStyle(node.closest(".mantine-Notifications-root")!).maxHeight,
     );
@@ -1974,7 +1980,7 @@ test("accounts-puzzles-engines: warns when a downloaded game file's save is not 
     await expect(download).toBeEnabled();
     const notification = page.locator(".mantine-Notification-root");
     await expect(notification).toHaveCount(1);
-    await expectNotificationSettled(notification);
+    await expectEntranceSettled(notification);
 
     const invocations = await page.evaluate(() => window.__E2E_TAURI__.invocations());
     expect(invocations.filter(({ command }) => command === "import_account_games")).toMatchObject([
@@ -2596,7 +2602,7 @@ for (const [outcome, reason] of [
         const notifications = page.locator(".mantine-Notification-root");
         await expect(notifications).toHaveCount(2);
         for (const notification of await notifications.all())
-            await expectNotificationSettled(notification);
+            await expectEntranceSettled(notification);
         await capture(`account-logout-${outcome}`);
         await expect(page).toHaveScreenshot(`account-logout-${outcome}.png`, { fullPage: true });
     });
@@ -3243,6 +3249,7 @@ for (const kind of ["add", "upgrade"] as const) {
         await expect(
             dialog.getByRole("button", { name: "Install", exact: true }).first(),
         ).toBeVisible();
+        await expectEntranceSettled(dialog);
         await page.evaluate(
             (key) => {
                 const original = Storage.prototype.setItem;
@@ -3267,7 +3274,7 @@ for (const kind of ["add", "upgrade"] as const) {
                 }[],
         );
         expect(retained).toHaveLength(1);
-        await expectNotificationSettled(page.locator(".mantine-Notification-root").last());
+        await expectEntranceSettled(page.locator(".mantine-Notification-root").last());
         await capture(`engine-${kind}-reload-error-retry`);
         await preserveStorageForReload(page);
         await expect
