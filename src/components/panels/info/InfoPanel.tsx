@@ -1,11 +1,11 @@
 import { useOwnerTab } from "@/state/tabScope";
-import { Box, Divider, Group, ScrollArea, Stack, Text } from "@mantine/core";
+import { Box, Divider, ScrollArea, Stack, Text } from "@mantine/core";
 import { use, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
-import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import type { DatabaseHandle } from "@/bindings";
 import GameInfo from "@/components/common/GameInfo";
+import { TreeStatsBar } from "@/components/common/TreeStatsBar";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   getTabFile,
@@ -19,7 +19,6 @@ import FileInfo from "./FileInfo";
 import GameSelectorAccordion from "./GameSelectorAccordion";
 import classes from "./InfoPanel.module.css";
 import PgnInput from "./PgnInput";
-import { getStats } from "@/utils/repertoire";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { sameDatabaseHandle } from "@/utils/db";
 import { databaseRouteTarget } from "@/components/databases/databaseRoute";
@@ -30,8 +29,6 @@ import type { GameSelectorRow } from "./GameSelector";
 
 function InfoPanel({ addGame }: { addGame?: () => void }) {
   const store = use(TreeStateContext)!;
-  const view = useTreeView(store);
-  const stats = isTreeViewDeferred(store) ? { total: 0, leafs: 0, depth: 0 } : getStats(view);
   const headers = useStore(store, (s) => s.headers);
   const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map());
   const [currentTab, setCurrentTab] = useOwnerTab();
@@ -61,8 +58,6 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
     );
   }, [currentTab, derivedTabName, setCurrentTab, store]);
 
-  const { t } = useTranslation();
-
   return (
     <Stack h="100%" gap={0}>
       {currentTab?.gameOrigin.kind === "database" && (
@@ -76,17 +71,7 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
           <FenSearch />
           <PgnInput />
 
-          <Group>
-            <Text fz="xs" c="dimmed">
-              {t("PgnInput.Variations")}: {stats.leafs}
-            </Text>
-            <Text fz="xs" c="dimmed">
-              {t("PgnInput.MaxDepth")}: {stats.depth}
-            </Text>
-            <Text fz="xs" c="dimmed">
-              {t("PgnInput.TotalMoves")}: {stats.total}
-            </Text>
-          </Group>
+          <TreeStatsBar store={store} />
         </Stack>
       </ScrollArea>
     </Stack>

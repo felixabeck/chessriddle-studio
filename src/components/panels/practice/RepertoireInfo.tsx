@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
+import { TreeStatsBar } from "@/components/common/TreeStatsBar";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { coverageMinGamesAtom, referenceDbAtom } from "@/state/atoms";
 import { useCollectionCurrency } from "@/state/linkedCollections";
@@ -33,7 +34,6 @@ import {
   fetchPositionMoves,
   findBiggestGap,
   findNextGap,
-  getStats,
   type PositionMove,
 } from "@/utils/repertoire";
 import {
@@ -95,8 +95,6 @@ function RepertoireInfo() {
   const minGames = useAtomValue(coverageMinGamesAtom);
 
   const orientation = useMemo(() => headers.orientation || "white", [headers.orientation]);
-
-  const stats = isTreeViewDeferred(store) ? { total: 0, leafs: 0, depth: 0 } : getStats(view);
 
   const [dbMovesMap, setDbMovesMap] = useState<
     Map<
@@ -391,7 +389,7 @@ function RepertoireInfo() {
   if (!referenceDb) {
     return (
       <Stack h="100%" p="sm" className={`${paneClasses.root} ${paneClasses.content}`}>
-        <TreeStatsBar stats={stats} t={t} />
+        <TreeStatsBar store={store} />
         <Alert icon={<Info />} color={selectedReference ? "warning" : undefined}>
           {selectedReference
             ? t("Collections.Unavailable", {
@@ -515,30 +513,8 @@ function RepertoireInfo() {
       />
 
       <Divider pb="sm" />
-      <TreeStatsBar stats={stats} t={t} />
+      <TreeStatsBar store={store} />
     </Stack>
-  );
-}
-
-function TreeStatsBar({
-  stats,
-  t,
-}: {
-  stats: { leafs: number; depth: number; total: number };
-  t: ReturnType<typeof useTranslation>["t"];
-}) {
-  return (
-    <Group gap="md">
-      <Text fz="xs" c="dimmed">
-        {t("Board.Practice.Variations")}: {stats.leafs}
-      </Text>
-      <Text fz="xs" c="dimmed">
-        {t("Board.Practice.MaxDepth")}: {stats.depth}
-      </Text>
-      <Text fz="xs" c="dimmed">
-        {t("Board.Practice.TotalMoves")}: {stats.total}
-      </Text>
-    </Group>
   );
 }
 
