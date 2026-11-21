@@ -493,8 +493,9 @@ const TERMINATION_SUGGESTIONS = [
   "Unterminated",
 ] as const;
 type TerminationSuggestion = (typeof TERMINATION_SUGGESTIONS)[number];
-/** Six two-line options fit; a shorter window still scrolls the list instead of clipping it. */
-const TERMINATION_DROPDOWN_MAX_HEIGHT = 400;
+/** Six two-line options at the shared Combobox option padding (411px measured in WebKit) fit;
+ *  a shorter window still scrolls the list instead of clipping it. */
+const TERMINATION_DROPDOWN_MAX_HEIGHT = 440;
 
 /**
  * Lists every suggestion while the field is empty or holds one of them, so switching from one
