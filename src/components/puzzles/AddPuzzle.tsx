@@ -1,20 +1,19 @@
 import { tauri } from "@/platform/tauri";
-import { Alert, Box, Button, Divider, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
+import { Alert, Button, ScrollArea, Stack } from "@mantine/core";
 import { AlertCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import type { PuzzleDatabaseInfo } from "@/bindings";
 import {
+  catalogPuzzleFilename,
   getDefaultPuzzleDatabases,
   manifestPuzzleDatabaseInstallCard,
-  type DownloadablePuzzleDatabase,
 } from "@/utils/db";
 import { formatBytes, formatNumber } from "@/utils/format";
-import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
-import { cancelDownloadJob, runDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
+import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { choosePuzzleDatabase } from "@/utils/puzzles";
-import ProgressButton from "../common/ProgressButton";
+import CatalogDownloadCard from "../common/CatalogDownloadCard";
 import { CatalogVerificationError } from "@/utils/signedCatalog";
 import AppModal from "../common/AppModal";
 
@@ -74,12 +73,20 @@ function AddPuzzle({
           {dbs?.map((db) => {
             const card = manifestPuzzleDatabaseInstallCard(puzzleDbs, db);
             return (
-              <PuzzleDbCard
-                puzzleDb={db}
+              <CatalogDownloadCard
+                item={db}
                 key={card.progressId}
+                kindLabel={t("Puzzle.Database")}
+                stats={[
+                  { label: t("Common.Size"), value: formatBytes(db.storageSize) },
+                  { label: t("Puzzle.Puzzles"), value: formatNumber(db.puzzleCount) },
+                ]}
                 progressId={card.progressId}
-                refreshPuzzleDbs={refreshPuzzleDbs}
                 initInstalled={card.initInstalled}
+                resolveDestination={() => tauri.issuePuzzleDownloadDestination()}
+                leaf={catalogPuzzleFilename(db.title)}
+                onInstalled={() => refreshPuzzleDbs()}
+                errorDomain="puzzle"
               />
             );
           })}
@@ -95,99 +102,6 @@ function AddPuzzle({
         </Stack>
       </ScrollArea.Autosize>
     </AppModal>
-  );
-}
-
-function PuzzleDbCard({
-  refreshPuzzleDbs,
-  puzzleDb,
-  progressId,
-  initInstalled,
-}: {
-  refreshPuzzleDbs: (signal?: AbortSignal) => Promise<void>;
-  puzzleDb: DownloadablePuzzleDatabase;
-  progressId: string;
-  initInstalled: boolean;
-}) {
-  const { t } = useTranslation();
-  const [inProgress, setInProgress] = useState<boolean>(false);
-  const hasJob = useDownloadJob(progressId);
-
-  async function downloadDatabase() {
-    setInProgress(true);
-    try {
-      await runUnlessCancelled(
-        t("Common.Error"),
-        () =>
-          runDownloadJob(progressId, async (ticket) => {
-            const destination = await tauri.issuePuzzleDownloadDestination();
-            await tauri.downloadFile(
-              progressId,
-              puzzleDb.downloadLink,
-              destination,
-              `${puzzleDb.title}.db3`,
-              null,
-              ticket,
-              { sha256: puzzleDb.sha256, signature: puzzleDb.signature },
-            );
-            await refreshPuzzleDbs();
-          }),
-        "puzzle",
-      );
-    } finally {
-      setInProgress(false);
-    }
-  }
-
-  return (
-    <Paper withBorder radius="md" p={0} key={puzzleDb.title}>
-      <Group wrap="nowrap" gap={0} grow>
-        <Box p="md" flex={1}>
-          <Text tt="uppercase" c="dimmed" fw={700} size="xs">
-            {t("Puzzle.Database")}
-          </Text>
-          <Text fw="bold" mb="xs">
-            {puzzleDb.title}
-          </Text>
-
-          <Text size="xs" c="dimmed">
-            {puzzleDb.description}
-          </Text>
-          <Divider />
-          <Group wrap="nowrap" grow my="md">
-            <Stack gap={0} align="center">
-              <Text tt="uppercase" c="dimmed" fw={700} size="xs">
-                {t("Common.Size")}
-              </Text>
-              <Text size="xs">{formatBytes(puzzleDb.storageSize)}</Text>
-            </Stack>
-            <Stack gap={0} align="center">
-              <Text tt="uppercase" c="dimmed" fw={700} size="xs">
-                {t("Puzzle.Puzzles")}
-              </Text>
-              <Text size="xs">{formatNumber(puzzleDb.puzzleCount)}</Text>
-            </Stack>
-          </Group>
-          <ProgressButton
-            id={progressId}
-            initInstalled={initInstalled}
-            labels={{
-              completed: t("Common.Installed"),
-              action: t("Common.Install"),
-              inProgress: t("Common.Downloading"),
-              finalizing: t("Common.Extracting"),
-            }}
-            onClick={() => {
-              void downloadDatabase();
-            }}
-            onCancel={() => cancelDownloadJob(progressId, t("Common.Error"))}
-            clearOnCancel={false}
-            inProgress={inProgress || hasJob}
-            setInProgress={setInProgress}
-          />
-        </Box>
-      </Group>
-    </Paper>
   );
 }
 

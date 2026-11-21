@@ -161,6 +161,11 @@ export function catalogDatabaseFilename(title: string): string {
     return `${title}.db3`;
 }
 
+/** Puzzle workspace leaf a catalog puzzle database downloads to. */
+export function catalogPuzzleFilename(title: string): string {
+    return `${title}${puzzleDatabaseExtension}`;
+}
+
 /**
  * A catalog card is installed when its download leaf already exists in the
  * workspace root, the same condition under which the native download refuses.

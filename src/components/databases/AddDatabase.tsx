@@ -4,24 +4,17 @@ import { ChessBaseGuideLink } from "../library/ChessBaseGuideLink";
 import i18n from "@/i18n";
 import {
   Alert,
-  Box,
   Button,
   Center,
-  Divider,
-  Group,
   Loader,
-  Paper,
   ScrollArea,
   SimpleGrid,
-  Stack,
   Tabs,
-  Text,
   TextInput,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { AlertCircle } from "lucide-react";
 import { useSetAtom } from "jotai";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DatabaseHandle, FileWorkspaceHandle } from "@/bindings";
 import {
@@ -33,7 +26,6 @@ import {
 import {
   catalogDatabaseFilename,
   manifestDatabaseInstallCard,
-  type DownloadableDatabaseInfo,
   useDefaultDatabases,
 } from "@/utils/db";
 import { capitalize, formatBytes, formatNumber } from "@/utils/format";
@@ -44,12 +36,11 @@ import {
   safeFailureContext,
 } from "@/platform/errors";
 import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
-import { cancelDownloadJob, runDownloadJob, useDownloadJob } from "@/hooks/downloadJobs";
 import { CatalogVerificationError } from "@/utils/signedCatalog";
 import { refreshAfterDatabaseConversion } from "./databaseMutation";
 import AppModal from "../common/AppModal";
 import FileInput from "../common/FileInput";
-import ProgressButton from "../common/ProgressButton";
+import CatalogDownloadCard from "../common/CatalogDownloadCard";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 
 interface AddDatabaseFormValues {
@@ -220,12 +211,23 @@ function AddDatabase({
               {defaultDatabases?.map((db) => {
                 const card = manifestDatabaseInstallCard(workspaceFilenames, db);
                 return (
-                  <DatabaseCard
-                    database={db}
+                  <CatalogDownloadCard
+                    item={db}
                     key={card.progressId}
+                    kindLabel={t("Board.Tabs.Database")}
+                    stats={[
+                      { label: t("Common.Size"), value: formatBytes(db.storage_size ?? 0) },
+                      { label: t("Databases.Card.Games"), value: formatNumber(db.game_count) },
+                      { label: t("Databases.Card.Players"), value: formatNumber(db.player_count) },
+                    ]}
                     progressId={card.progressId}
-                    reloadDatabases={reloadDatabases}
                     initInstalled={card.initInstalled}
+                    resolveDestination={async () =>
+                      tauri.databaseDownloadDestination((await tauri.getDatabaseWorkspace()).root)
+                    }
+                    leaf={catalogDatabaseFilename(db.title)}
+                    onInstalled={reloadDatabases}
+                    errorDomain="database"
                   />
                 );
               })}
@@ -295,106 +297,6 @@ function AddDatabase({
         </Tabs.Panel>
       </Tabs>
     </AppModal>
-  );
-}
-
-function DatabaseCard({
-  reloadDatabases,
-  database,
-  progressId,
-  initInstalled,
-}: {
-  reloadDatabases: () => Promise<unknown>;
-  database: DownloadableDatabaseInfo;
-  progressId: string;
-  initInstalled: boolean;
-}) {
-  const { t } = useTranslation();
-  const [inProgress, setInProgress] = useState<boolean>(false);
-  const hasJob = useDownloadJob(progressId);
-
-  async function downloadDatabase() {
-    setInProgress(true);
-    try {
-      await runUnlessCancelled(
-        t("Common.Error"),
-        () =>
-          runDownloadJob(progressId, async (ticket) => {
-            const root = (await tauri.getDatabaseWorkspace()).root;
-            const destination = await tauri.databaseDownloadDestination(root);
-            await tauri.downloadFile(
-              progressId,
-              database.downloadLink,
-              destination,
-              catalogDatabaseFilename(database.title),
-              null,
-              ticket,
-              { sha256: database.sha256, signature: database.signature },
-            );
-            await reloadDatabases();
-          }),
-        "database",
-      );
-    } finally {
-      setInProgress(false);
-    }
-  }
-
-  return (
-    <Paper withBorder radius="md" p={0} key={database.title}>
-      <Group wrap="nowrap" gap={0} grow>
-        <Box p="md" flex={1}>
-          <Text tt="uppercase" c="dimmed" fw={700} size="xs">
-            {t("Board.Tabs.Database")}
-          </Text>
-          <Text fw="bold" mb="xs">
-            {database.title}
-          </Text>
-
-          <Text size="xs" c="dimmed">
-            {database.description}
-          </Text>
-          <Divider />
-          <Group wrap="nowrap" grow my="md">
-            <Stack gap={0} align="center">
-              <Text tt="uppercase" c="dimmed" fw={700} size="xs">
-                {t("Common.Size")}
-              </Text>
-              <Text size="xs">{formatBytes(database.storage_size ?? 0)}</Text>
-            </Stack>
-            <Stack gap={0} align="center">
-              <Text tt="uppercase" c="dimmed" fw={700} size="xs">
-                {t("Databases.Card.Games")}
-              </Text>
-              <Text size="xs">{formatNumber(database.game_count)}</Text>
-            </Stack>
-            <Stack gap={0} align="center">
-              <Text tt="uppercase" c="dimmed" fw={700} size="xs">
-                {t("Databases.Card.Players")}
-              </Text>
-              <Text size="xs">{formatNumber(database.player_count)}</Text>
-            </Stack>
-          </Group>
-          <ProgressButton
-            id={progressId}
-            initInstalled={initInstalled}
-            labels={{
-              completed: t("Common.Installed"),
-              action: t("Common.Install"),
-              inProgress: t("Common.Downloading"),
-              finalizing: t("Common.Extracting"),
-            }}
-            onClick={() => {
-              void downloadDatabase();
-            }}
-            onCancel={() => cancelDownloadJob(progressId, t("Common.Error"))}
-            clearOnCancel={false}
-            inProgress={inProgress || hasJob}
-            setInProgress={setInProgress}
-          />
-        </Box>
-      </Group>
-    </Paper>
   );
 }
 
