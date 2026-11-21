@@ -27691,7 +27691,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### `BoardGame` is a 1,150-line component that holds game setup, native session ownership, reconciliation polling, premoves and engine logs in one body
 
-* **ID:** f-20261119-16 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-16 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `d79fa979e`
 * **Where:** `src/components/boards/BoardGame.tsx` (`BoardGame`, `:140-1559`, 1,559 lines in the file). It holds 30 `useRef`s and 28 top-level `useCallback`/`useMemo`/`useEffect` hooks. The body interleaves five separable concerns:
@@ -27714,6 +27714,15 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * No behaviour change except the label. `BoardGame.test.tsx` and `gameSession.test.ts` are the guard.
 * **Proof:** line references above at origin/master `d79fa979e`. `rg -c "useRef\(" src/components/boards/BoardGame.tsx` reports 30, and the counted hook lines number 28. `cycleColor`'s three-way `match` is at `:167-175`, and its button's label is at `:1370-1371`. `git show 9654961d6:src/components/boards/BoardGame.tsx` already has the three-way `cycleColor` (`:95-100`) and the two mirrored inline side matches (`:644`, `:654`) on an unlabeled `ActionIcon`; the fork added the "Swap colors" accessible name.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+* **2026-11-21 — handled (drain, lens tier, commit `10e96eb60`):** pickup re-check confirmed all five concerns still shared one closure scope at HEAD (1,600 lines), and the "Swap colors" label still described a three-way cycle. Extracted, as the Fix named, into sibling files:
+  * `useGameSetup.ts`: colour cycle (`nextInputColor`), side colours derived once through an opposite table (`playerSideColors`, replacing the mirrored second `match`), `assignPlayers` for the start-time draw. The pure helpers are tested in `useGameSetup.test.ts` without the component graph (d-20260901-36 precedent).
+  * `useNativeGameOwnership.ts`: identity refs, `owns*` predicates, `claimOwnership`, `clearOwnershipIfMatches`, `cleanupExactIdentity`, exposed through accessors (`currentIdentity`, `currentSession`, `currentGeneration`, `advanceGeneration`, `setMounted`) rather than raw refs.
+  * `useGameReconciliation.ts`: the backoff bookkeeping (`useReconciliationState`, created before `invalidateUiSession` so it can reset it) and the polling effect (`useGameReconciliation`, called once `applyAuthoritativeState` exists). `stop` / `discardInFlight` / `invalidate` keep the three original reset depths exactly.
+  * `getMainlineUcis` moved to `gameSession.ts` with its castling-notation comment.
+  * Move transport and engine logs stay in the component, as the Fix allowed.
+  * Label: `Board.Action.SwapColors` "Swap colors" → `Board.Action.ChangeColors` "Change colors" (en-GB "Change colours") in all 16 catalogues; `pnpm i18n:check` passes. Rejected: a three-option segmented control, because that changes the control a user operates rather than correcting its description.
+  * Proof: `tsgo --noEmit`, `oxlint --deny-warnings` clean; `vitest run src/components/boards/` 27 files / 613 tests green, including `BoardGame.test.tsx` and `gameSession.test.ts`.
+<!-- ledger-meta {"command":"close","effect_lines":8,"effect_sha256":"935c3ef1401e7c4b7a2a5bb6cdd4fe81e4ad1740062dc3378a67998e73b3efbe","header_sha256":"aba24ce3606a60bc8d066568b2b00ea875a29e3f30ee424b5dcc2c8969719ab5","header_status":"handled","input_sha256":"603247f56aadf360084f57ff8c745818cec7a905552746035c4ccda977c78a46","kind":"mutation-receipt","operation":"808ed39a78aaf7306e621ab783fcfd24b344267ebeaebb244db8b7f0bc2c3123","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-16"],"target":"f-20261119-16","v":1} -->
 
 ---
 
