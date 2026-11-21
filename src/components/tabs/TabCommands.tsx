@@ -60,6 +60,8 @@ import { abortExactTabGame } from "../boards/gameSession";
 import AppModal from "../common/AppModal";
 import { notifyUnlessCancelled } from "../files/notifyError";
 import ConfirmChangesModal from "./ConfirmChangesModal";
+import { databaseRouteTarget } from "@/components/databases/databaseRoute";
+import { activeDatabaseViewStore } from "@/state/store/database";
 
 export type TabCommands = {
   tabs: Tab[];
@@ -183,7 +185,8 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   }, [navigate, setTabs, t]);
 
   // Closing the last board tab leaves none open. The board view has nothing to show then, so the
-  // Library stands in for it; a new tab opens only on request. The store is read instead of this
+  // Library stands in for it, where the navigation row's Library link leads (the open database
+  // view, if any); a new tab opens only on request. The store is read instead of this
   // render's `tabs`: a new tab is admitted in a transition, so the urgent navigation to "/" can
   // render first with the tab still missing, and must not be sent back to the Library.
   const workspaceStore = useStore();
@@ -191,7 +194,10 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!noBoardTabs || !isBoardsPath(pathname)) return;
     if (workspaceStore.get(tabsAtom).length > 0) return;
-    void navigate({ to: "/library", replace: true });
+    void navigate({
+      ...databaseRouteTarget(activeDatabaseViewStore.getState().database),
+      replace: true,
+    });
   }, [navigate, noBoardTabs, pathname, workspaceStore]);
 
   const closeTab = useCallback(

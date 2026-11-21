@@ -333,6 +333,9 @@ vi.mock("../common/TreeStateContext", async (importOriginal) => {
 
 import BoardsPage from "./BoardsPage";
 import { TabCommandsProvider, useTabCommands, type TabCommands } from "./TabCommands";
+import { databaseRouteTarget } from "@/components/databases/databaseRoute";
+import { activeDatabaseViewStore } from "@/state/store/database";
+import type { SuccessDatabaseInfo } from "@/utils/db";
 import {
   activeTabAtom,
   closingTabsAtom,
@@ -687,6 +690,29 @@ test("closing the last tab leaves none open and shows the Library", async () => 
   expect(fixtures.createTab).not.toHaveBeenCalled();
   expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/library", replace: true });
   expect(fixtures.notifyUnlessCancelled).not.toHaveBeenCalled();
+});
+
+test("closing the last tab returns to the database view the Library link leads to", async () => {
+  const onlyTab = fixtures.tabs[0]!;
+  store.set(tabsAtom, [onlyTab]);
+  store.set(activeTabAtom, onlyTab.value);
+  const file = { id: { id: "open-database" }, kind: "database" } as const;
+  activeDatabaseViewStore.getState().setDatabase({ file, title: "Open" } as SuccessDatabaseInfo);
+  try {
+    await renderPage();
+    await act(async () => {
+      await fixtures.closeHandler!();
+      await Promise.resolve();
+    });
+
+    expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({
+      ...databaseRouteTarget(activeDatabaseViewStore.getState().database),
+      replace: true,
+    });
+    expect(fixtures.navigate.mock.calls[0]![0]).toMatchObject({ to: "/databases/$databaseId" });
+  } finally {
+    activeDatabaseViewStore.getState().clearDatabase();
+  }
 });
 
 test("a workspace without tabs stays empty and leaves the board view for the Library", async () => {
