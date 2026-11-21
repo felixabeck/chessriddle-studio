@@ -2,6 +2,7 @@ import { useOwnerTab } from "@/state/tabScope";
 import { Stack } from "@mantine/core";
 import {
   Undo2,
+  Redo2,
   Camera,
   Save,
   Database,
@@ -38,6 +39,8 @@ interface BoardControlsProps {
   takeBackPending?: boolean;
   disableVariations?: boolean;
   allowEditing?: boolean;
+  /** Shows undo and redo of the game's edits. */
+  allowUndo?: boolean;
 }
 
 function BoardControls({
@@ -52,6 +55,7 @@ function BoardControls({
   takeBackPending,
   disableVariations,
   allowEditing,
+  allowUndo,
 }: BoardControlsProps) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
@@ -60,6 +64,10 @@ function BoardControls({
   const position = useStore(store, (s) => s.position);
   const setHeaders = useStore(store, (s) => s.setHeaders);
   const clearShapes = useStore(store, (s) => s.clearShapes);
+  const canUndo = useStore(store, (s) => s.history.past.length > 0 && s.practicePath === null);
+  const canRedo = useStore(store, (s) => s.history.future.length > 0 && s.practicePath === null);
+  const undo = useStore(store, (s) => s.undo);
+  const redo = useStore(store, (s) => s.redo);
 
   const keyMap = useAtomValue(keyMapAtom);
   const [currentTab, setCurrentTab] = useOwnerTab();
@@ -122,6 +130,24 @@ function BoardControls({
         >
           <Undo2 />
         </IconAction>
+      )}
+      {allowUndo && (
+        <>
+          <IconAction
+            label={t("Board.Action.Undo", { key: keyMap.UNDO.keys })}
+            onClick={() => undo()}
+            disabled={!canUndo}
+          >
+            <Undo2 size="1.2rem" />
+          </IconAction>
+          <IconAction
+            label={t("Board.Action.Redo", { key: keyMap.REDO.keys })}
+            onClick={() => redo()}
+            disabled={!canRedo}
+          >
+            <Redo2 size="1.2rem" />
+          </IconAction>
+        </>
       )}
       <IconAction
         label={t(

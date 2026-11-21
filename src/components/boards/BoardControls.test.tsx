@@ -31,6 +31,7 @@ vi.mock("@mantine/core", () => ({
 
 vi.mock("lucide-react", () => ({
   Undo2: () => null,
+  Redo2: () => null,
   Camera: () => null,
   Save: () => null,
   Pencil: () => null,
@@ -46,15 +47,18 @@ vi.mock("@/components/common/IconAction", () => ({
     label,
     onClick,
     pending,
+    disabled,
   }: {
     label: string;
     onClick?: () => void;
     pending?: boolean;
+    disabled?: boolean;
   }) => (
     <button
       type="button"
       aria-label={label}
       onClick={onClick}
+      disabled={disabled}
       data-pending={pending ? "true" : "false"}
     >
       {label}
@@ -162,10 +166,11 @@ describe("BoardControls tab type durability", () => {
       });
   }
 
-  async function renderTakeBack(props: {
+  async function renderControls(props: {
     canTakeBack?: boolean;
     onTakeBack?: () => void;
     takeBackPending?: boolean;
+    allowUndo?: boolean;
   }) {
     await act(async () => {
       root.render(
@@ -191,7 +196,7 @@ describe("BoardControls tab type durability", () => {
 
   test("a game that can take back renders the control and runs the takeback on click", async () => {
     const onTakeBack = vi.fn();
-    await renderTakeBack({ canTakeBack: true, onTakeBack, takeBackPending: false });
+    await renderControls({ canTakeBack: true, onTakeBack, takeBackPending: false });
 
     expect(takeBackButton()).not.toBeNull();
     expect(takeBackButton()!.dataset.pending).toBe("false");
@@ -200,8 +205,42 @@ describe("BoardControls tab type durability", () => {
     expect(onTakeBack).toHaveBeenCalledOnce();
   });
 
+  const historyButton = (action: "Undo" | "Redo") =>
+    container.querySelector<HTMLButtonElement>(`[aria-label="Board.Action.${action}"]`);
+
+  test("undo and redo are shown only with allowUndo", async () => {
+    expect(historyButton("Undo")).toBeNull();
+    expect(historyButton("Redo")).toBeNull();
+    await renderControls({ allowUndo: true });
+    expect(historyButton("Undo")).not.toBeNull();
+    expect(historyButton("Redo")).not.toBeNull();
+  });
+
+  test("undo and redo are enabled only with a step to take outside a drill, and clicking takes it", async () => {
+    await renderControls({ allowUndo: true });
+    expect(historyButton("Undo")!.disabled).toBe(true);
+    expect(historyButton("Redo")!.disabled).toBe(true);
+
+    await act(async () => treeStore.getState().setComment("note"));
+    expect(historyButton("Undo")!.disabled).toBe(false);
+    expect(historyButton("Redo")!.disabled).toBe(true);
+
+    await act(async () => historyButton("Undo")!.click());
+    expect(treeStore.getState().currentNode().comment).toBe("");
+    expect(historyButton("Undo")!.disabled).toBe(true);
+    expect(historyButton("Redo")!.disabled).toBe(false);
+
+    await act(async () => historyButton("Redo")!.click());
+    expect(treeStore.getState().currentNode().comment).toBe("note");
+
+    await act(async () => historyButton("Undo")!.click());
+    await act(async () => treeStore.getState().setPracticePath([]));
+    expect(historyButton("Undo")!.disabled).toBe(true);
+    expect(historyButton("Redo")!.disabled).toBe(true);
+  });
+
   test("a pending takeback reaches the control", async () => {
-    await renderTakeBack({ canTakeBack: true, onTakeBack: vi.fn(), takeBackPending: true });
+    await renderControls({ canTakeBack: true, onTakeBack: vi.fn(), takeBackPending: true });
 
     expect(takeBackButton()!.dataset.pending).toBe("true");
   });
@@ -211,7 +250,7 @@ describe("BoardControls tab type durability", () => {
     { canTakeBack: true, onTakeBack: undefined },
     {},
   ])("without both a takeback permission and handler there is no control (%o)", async (props) => {
-    await renderTakeBack(props);
+    await renderControls(props);
 
     expect(takeBackButton()).toBeNull();
   });

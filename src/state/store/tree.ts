@@ -47,6 +47,14 @@ import {
     MAX_GAME_END_TERMINATION_LENGTH,
     treeIterator,
 } from "@/utils/treeReducer";
+import {
+    editedHeaderFields,
+    documentChanged,
+    EMPTY_TREE_HISTORY,
+    recordEdit,
+    stepHistory,
+    type TreeHistory,
+} from "./treeHistory";
 
 type CompleteTreeState = TreeState & Pick<TreeStoreState, "linkedSource">;
 
@@ -166,7 +174,17 @@ export interface TreeStoreState extends TreeState {
     setSourceStamp: (stamp: string | null, revision?: string) => void;
     setAppendAttempted: (value: boolean) => void;
     setStoreAttempts: (destinations: string[]) => void;
+
+    /** Session-only undo/redo of document edits. Never persisted. */
+    history: TreeHistory;
+    /** Restores the document before the last edit; refused during a practice drill. */
+    undo: () => void;
+    /** Reapplies the last undone edit; refused during a practice drill. */
+    redo: () => void;
 }
+
+/** The store state written to tab storage: everything except `documentId` and `history`. */
+type PersistedTreeStoreState = Omit<TreeStoreState, "documentId" | "history">;
 
 export type PuzzleSessionTransitionResult =
     | { success: true; persistence: "saved" | "memory" }
@@ -181,7 +199,7 @@ type PersistedTreeStore = TreeStore & {
         getOptions: () => { name?: string };
         setOptions: (options: {
             name: string;
-            storage: PersistStorage<Omit<TreeStoreState, "documentId">>;
+            storage: PersistStorage<PersistedTreeStoreState>;
         }) => void;
     };
 };
@@ -201,6 +219,7 @@ function treeReplacementState(tree: CompleteTreeState) {
         documentId: newDocumentId(),
         linkedSource: tree.linkedSource ?? null,
         practicePath: null,
+        history: EMPTY_TREE_HISTORY,
     };
 }
 
@@ -209,7 +228,7 @@ export function prepareTreeStoreRetarget(tab: string, treeKey: string, tree: Com
     const store = treeStores.get(tab)!;
     const options = {
         name: treeKey,
-        storage: tabStorage.storageFor<Omit<TreeStoreState, "documentId">>(treeKey !== tab),
+        storage: tabStorage.storageFor<PersistedTreeStoreState>(treeKey !== tab),
     };
     const state = treeReplacementState(tree);
     const install = store[installAdmittedTree];
@@ -902,6 +921,129 @@ function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
     };
 }
 
+/**
+ * Tree and header edits a user can undo. The other mutation and markup actions are listed in
+ * `NOT_UNDOABLE`. Navigation actions never change the document and are in neither list.
+ */
+const UNDOABLE_EDITS = [
+    "setFen",
+    "makeMove",
+    "appendMove",
+    "makeMoves",
+    "deleteMove",
+    "promoteVariation",
+    "promoteToMainline",
+    "setStart",
+    "setAnnotation",
+    "setComment",
+    "toggleDiagram",
+    "setGameEnd",
+    "clearGameEnd",
+    "setTermination",
+    "setHeaders",
+    "setResult",
+    "setShapes",
+    "addAnalysis",
+    "clearShapes",
+] as const;
+
+/** Clipboard export, the engine's view-only score and report bookkeeping are not edits. */
+const NOT_UNDOABLE = [
+    "copyPgn",
+    "copyVariationPgn",
+    "setEngineScore",
+    "setReportInProgress",
+    "setReportOperationId",
+] as const;
+
+type UndoableEdit = (typeof UNDOABLE_EDITS)[number];
+type EditActions = TreeMutationActions & TreeMarkupActions;
+// A new mutation or markup action must be classified, or this assignment stops compiling.
+const _everyEditActionClassified: Exclude<
+    keyof EditActions,
+    UndoableEdit | (typeof NOT_UNDOABLE)[number]
+> extends never
+    ? true
+    : never = true;
+
+/**
+ * Typing into one comment, one header field or the termination text is one step, not one per
+ * keystroke. Any other edit, undo or redo ends the merge.
+ */
+function editMergeKey(
+    name: UndoableEdit,
+    before: TreeStoreState,
+    after: TreeStoreState,
+): string | null {
+    if (name === "setComment") return `comment:${before.position.join(".")}`;
+    if (name === "setTermination") return "termination";
+    if (name === "setHeaders" && before.root === after.root) {
+        return `headers:${editedHeaderFields(before.headers, after.headers).join(",")}`;
+    }
+    return null;
+}
+
+/**
+ * Builds the mutation and markup actions on a setter that records the replaced document in the
+ * same state write, so an edit notifies subscribers and queues persistence once. Only a call to an
+ * action in `UNDOABLE_EDITS` records; the `NOT_UNDOABLE` actions write through the same setter
+ * with no edit active, so they never record.
+ */
+function recordingEditActions(set: TreeSet, get: TreeGet): EditActions {
+    let active: UndoableEdit | null = null;
+    const recordingSet = ((partial: Parameters<TreeSet>[0], replace?: boolean) =>
+        set(
+            (state) => {
+                const update = typeof partial === "function" ? partial(state) : partial;
+                if (active === null) return update;
+                const next = { ...state, ...update };
+                if (!documentChanged(state, next)) return update;
+                return {
+                    ...update,
+                    history: recordEdit(state.history, state, editMergeKey(active, state, next)),
+                };
+            },
+            replace as false | undefined,
+        )) as TreeSet;
+    const actions: EditActions = {
+        ...treeMutationActions(recordingSet, get),
+        ...treeMarkupActions(recordingSet, get),
+    };
+    const recorded: Record<string, unknown> = { ...actions };
+    for (const name of UNDOABLE_EDITS) {
+        const action = actions[name] as (...args: unknown[]) => unknown;
+        recorded[name] = (...args: unknown[]) => {
+            active = name;
+            try {
+                return action(...args);
+            } finally {
+                active = null;
+            }
+        };
+    }
+    return recorded as EditActions;
+}
+
+/** Restores a recorded document. The board orientation stays as the user has it now. */
+function applyHistoryStep(
+    state: TreeStoreState,
+    direction: "undo" | "redo",
+): Partial<TreeStoreState> {
+    if (state.practicePath !== null) return {};
+    const step = stepHistory(state.history, state, direction);
+    if (!step) return {};
+    const { orientation: _recorded, ...headers } = step.restore.headers;
+    const { orientation } = state.headers;
+    return {
+        root: step.restore.root,
+        headers: orientation === undefined ? headers : { ...headers, orientation },
+        position: step.restore.position,
+        documentId: step.restore.documentId,
+        dirty: true,
+        history: step.history,
+    };
+}
+
 export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeKey = id) => {
     if (id) {
         const existing = treeStores.get(id);
@@ -914,6 +1056,9 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
     const stateCreator: StateCreator<TreeStoreState> = (set, get) => ({
         ...initialTree,
         documentId: newDocumentId(),
+        history: EMPTY_TREE_HISTORY,
+        undo: () => set((state) => applyHistoryStep(state, "undo")),
+        redo: () => set((state) => applyHistoryStep(state, "redo")),
 
         capturePuzzleSessionOwner: () => {
             const key = persistenceKey();
@@ -950,16 +1095,7 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
             set(() => treeReplacementState(state));
         },
 
-        reset: () =>
-            set(() => {
-                return {
-                    ...defaultTree(),
-                    documentId: newDocumentId(),
-                    linkedSource: null,
-                    puzzleSession: undefined,
-                    practicePath: null,
-                };
-            }),
+        reset: () => set(() => treeReplacementState(defaultTree())),
 
         save: (stamp, revision) => {
             set((state) => ({
@@ -987,16 +1123,15 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
         setLinkedSource: (linkedSource) => set({ linkedSource }),
 
         ...treeNavigationActions(set, get),
-        ...treeMutationActions(set, get),
-        ...treeMarkupActions(set, get),
+        ...recordingEditActions(set, get),
     });
 
     if (id) {
         const persistedCreator = persist(stateCreator, {
             name: treeKey!,
             version: TREE_STORAGE_VERSION,
-            storage: tabStorage.storageFor<Omit<TreeStoreState, "documentId">>(treeKey !== id),
-            partialize: ({ documentId: _documentId, ...state }) => state,
+            storage: tabStorage.storageFor<PersistedTreeStoreState>(treeKey !== id),
+            partialize: ({ documentId: _documentId, history: _history, ...state }) => state,
             onRehydrateStorage: () => (state, error) => {
                 if (!error && state) {
                     // A renderer reload cannot resume the JavaScript completion owner that
@@ -1004,6 +1139,8 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
                     // ordinary provider remounts reuse the live store and never rehydrate.
                     state.report.inProgress = false;
                     state.report.operationId = null;
+                    // The rehydrated tree replaces the one any recorded step belongs to.
+                    state.history = EMPTY_TREE_HISTORY;
                     normalizeTreeHalfMoves(state.root);
                     // A tab persisted before roots were normalized keeps its rejected en-passant
                     // square otherwise, and the engine, report and database refuse it.

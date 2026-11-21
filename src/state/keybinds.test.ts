@@ -19,6 +19,13 @@ test("shipped GO_TO_END and GO_TO_START defaults use arrow tokens", () => {
     expect(map.GO_TO_START.keys).toBe("shift+arrowup");
 });
 
+test("shipped UNDO and REDO defaults are the platform modifier with z and shift+z", () => {
+    localStorage.removeItem("keybinds");
+    const map = createStore().get(keyMapAtom);
+    expect(map.UNDO.keys).toBe("ctrl+z");
+    expect(map.REDO.keys).toBe("ctrl+shift+z");
+});
+
 test("refused storage read reports the error and returns defaults without writing", () => {
     const refused = new DOMException("Storage unavailable", "SecurityError");
     const backing = {

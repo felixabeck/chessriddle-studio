@@ -49,6 +49,16 @@ const definitions = {
         name: "Swap orientation",
         keys: "f",
     },
+    UNDO: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.UNDO"),
+        name: "Undo",
+        keys: `${meta}+z`,
+    },
+    REDO: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.REDO"),
+        name: "Redo",
+        keys: `${meta}+shift+z`,
+    },
     CLEAR_SHAPES: {
         labelKey: i18nKey("Settings.Keybinds.Actions.CLEAR_SHAPES"),
         name: "Clear shapes",

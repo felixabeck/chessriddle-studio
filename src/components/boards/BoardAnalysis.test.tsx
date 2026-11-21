@@ -885,6 +885,23 @@ describe("BoardAnalysis", () => {
     expect(treeStore.getState().dirty).toBe(true);
   });
 
+  test("the undo and redo shortcuts step the tree history", async () => {
+    await resetToFirstMove();
+    const keyMap = jotaiStore.get(keyMapAtom);
+    const press = (keys: string) => {
+      const binding = hotkeys.mock.calls
+        .flatMap(([bindings]) => bindings)
+        .findLast(([bound]) => bound === keys)!;
+      return act(async () => binding[1](new KeyboardEvent("keydown", { key: "z" })));
+    };
+    await act(async () => treeStore.getState().setComment("note"));
+
+    await press(keyMap.UNDO.keys);
+    expect(treeStore.getState().currentNode().comment).toBe("");
+    await press(keyMap.REDO.keys);
+    expect(treeStore.getState().currentNode().comment).toBe("note");
+  });
+
   test("Clear Shapes from a focused blocking dialog preserves shapes and the native default", async () => {
     const shapes = [{ orig: "a1", dest: "a3", brush: "green" }] as const;
     await act(async () => {

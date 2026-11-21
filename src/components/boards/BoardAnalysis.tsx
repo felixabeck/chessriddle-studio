@@ -253,6 +253,8 @@ function BoardAnalysis() {
     withKeyboardOwnership([
       [keyMap.SAVE_FILE.keys, () => requestUserSave()],
       [keyMap.CLEAR_SHAPES.keys, () => clearShapes()],
+      [keyMap.UNDO.keys, () => store.getState().undo()],
+      [keyMap.REDO.keys, () => store.getState().redo()],
     ]),
   );
   const annotate = (annotation: Annotation) => {
@@ -491,6 +493,7 @@ function BoardAnalysis() {
                   dirty={dirty}
                   saveFile={requestUserSave}
                   saveTo={() => setSaveToModal(true)}
+                  allowUndo
                 />
               }
             />
