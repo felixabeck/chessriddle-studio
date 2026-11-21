@@ -3595,7 +3595,7 @@ describe("native game delivery reconciliation", () => {
     vi.useRealTimers();
   });
 
-  test("a recovered engine move plays the premove of a human on black, and an engine turn does not", async () => {
+  test("a recovered move plays the premove of a human on black only when it hands Black the turn", async () => {
     vi.useFakeTimers();
     store.set(gamePlayer1SettingsAtom, {
       type: "engine",
@@ -3604,39 +3604,47 @@ describe("native game delivery reconciliation", () => {
     });
     store.set(gamePlayer2SettingsAtom, { type: "human", name: "Bob" });
 
-    await render();
-    await start();
-    const gameId = store.get(gameIdFamily("tab-a"));
-    expect(fixtures.boardProps.onKeyboardPremove("e7", "e5")).toBe(true);
+    try {
+      await render();
+      await start();
+      const gameId = store.get(gameIdFamily("tab-a"));
+      expect(fixtures.boardProps.onKeyboardPremove("e7", "e5")).toBe(true);
 
-    // A clock-only snapshot while White's engine thinks: still White's turn, no premove.
-    fixtures.getGameState.mockResolvedValueOnce(
-      state({
-        gameId,
-        session: 1n,
-        revision: 1n,
-        moves: [],
-        whiteTime: 299000n,
-        turn: "white",
-      }),
-    );
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
-    await act(async () => vi.advanceTimersByTimeAsync(10));
-    expect(fixtures.playPremove).not.toHaveBeenCalled();
+      // White's engine move hands the turn to the black human: the premove plays once.
+      fixtures.getGameState.mockResolvedValueOnce(
+        state({
+          gameId,
+          session: 1n,
+          revision: 1n,
+          moves: [{ uci: "e2e4", clock: null }],
+          turn: "black",
+        }),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      await act(async () => vi.advanceTimersByTimeAsync(10));
+      expect(fixtures.playPremove).toHaveBeenCalledTimes(1);
 
-    // The engine's move hands the turn to the black human: the premove plays once.
-    fixtures.getGameState.mockResolvedValueOnce(
-      state({
-        gameId,
-        session: 1n,
-        revision: 2n,
-        moves: [{ uci: "e2e4", clock: null }],
-        turn: "black",
-      }),
-    );
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
-    await act(async () => vi.advanceTimersByTimeAsync(10));
-    expect(fixtures.playPremove).toHaveBeenCalledTimes(1);
+      // A recovered human move that hands the turn to White's engine extends the mainline the
+      // same way, but nobody may premove for an engine: nothing more is played.
+      fixtures.getGameState.mockResolvedValueOnce(
+        state({
+          gameId,
+          session: 1n,
+          revision: 2n,
+          moves: [
+            { uci: "e2e4", clock: null },
+            { uci: "e7e5", clock: null },
+          ],
+          turn: "white",
+        }),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      await act(async () => vi.advanceTimersByTimeAsync(10));
+      expect(fixtures.getGameState).toHaveBeenCalledTimes(3);
+      expect(fixtures.playPremove).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("recovered engine move executes queued premove once, while clock-only or terminal snapshots do not, and stale callbacks are cancelled", async () => {
