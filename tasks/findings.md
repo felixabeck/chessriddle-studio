@@ -28294,3 +28294,19 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Fix:** derive the unannotated hover from a warm token (for example a light `--cf-primary` tint, or a warm neutral mixed from `--cf-border-strong`), keeping it distinct from the current-move and annotation colours. Verify in WebKit in both schemes and re-record any moved notation snapshots.
 * **Proof:** `MoveCell.tsx:64-70` at `498cad9af`; root-cause lens report on 2026-11-21.
 * **Found by:** Claude Code, review-root-cause lens, 2026-11-21.
+
+---
+
+## 2026-11-21 — filed through the inbox spool
+
+### Database game preview clips the game-info header: the Black column and the date run past the panel
+
+* **ID:** f-20261121-06 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** while re-recording the snapshots for the game-info date-width fix (2026-11-21), branch `build/gameinfo-date-width-20261121`
+* **Where:** `src/components/common/GameInfo.tsx:235` renders the header as `SimpleGrid cols={3} spacing={0}` with no minimum-width handling. Inside the database game preview (`e2e/database-files.spec.ts:2819`, snapshot `database-labelled-game`) the preview panel is narrower than the three columns' content.
+* **Defect:** the committed `database-labelled-game` snapshot shows the header running past the preview's right edge. The BLACK label, the Black player and the Black Elo are not visible at all, "Second event" sits flush against the edge and the date `2026.10.02` is cut at the panel border. This was already the case before the date-width fix, which only widened the date input inside the same overflowing column.
+* **Failure scenario:** open a database, select a game so the right-hand preview shows it at the snapshot's conditions (viewport 1400x900, `database-files: visible database opener and explicit game` test): Black's side of the header is missing.
+* **Fix:** let the header adapt to its container instead of the viewport, for example by stacking White / centre / Black below a container-query width or letting the centre column shrink and wrap, so every field stays inside the panel. Verify in WebKit and re-record `database-labelled-game`.
+* **Proof:** `e2e/database-files.spec.ts-snapshots/database-labelled-game-database-files.png` before and after the date-width fix.
+* **Found by:** Claude Code, 2026-11-21.
