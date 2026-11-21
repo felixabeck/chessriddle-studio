@@ -28269,3 +28269,19 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Fix:** add `src/utils/tests/phase.test.ts` covering: (1) empty and opening-only sequences returning `{ middlegamePly: null, endgamePly: null }`; (2) `backrankSparse` firing independently for White rank 1 (`0xff, 0`) and Black rank 8 (`0, 0xff000000`) with > 10 majors/minors still on the board; (3) `mixedness > 150` firing on a locked/contact middlegame with ≥ 4 pieces on each back rank and > 10 majors/minors; (4) `endgamePly` triggered only on or after `middlegamePly`, including same-ply transitions when a setup starts with ≤ 6 majors/minors.
 * **Proof:** at origin/master `162e0033f`, `rg -n "getGamePhases" src` returns only `src/utils/phase.ts:77` and `src/components/common/EvalChart.tsx:154`. `EvalChart.test.tsx:99-100` sets a starting position with 8 majors/minors (`r1b1kb1r/pppppppp/8/8/4P3/8/PPPP1PPP/R1B1KB1R b KQkq - 0 1`), so `majorsAndMinors <= 10` short-circuits before `backrankSparse` or `mixedness` can distinguish the phase.
 * **Found by:** Grok Bot, test-coverage review (t75u pass 2), origin/master `162e0033f`.
+
+---
+
+## 2026-11-21 — filed through the inbox spool
+
+### Notation move hover is Mantine's neutral gray, not the warm palette
+
+* **ID:** f-20261121-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** root-cause lens on the table and navigation-row hover change (2026-11-21), origin/master `498cad9af`
+* **Where:** `src/components/common/MoveCell.tsx:64-70` builds the unannotated-move hover from `theme.colors.gray[8]` (light) and `theme.colors.gray[1]` (dark) at 0.1 opacity (0.25 on the current variation), applied by `MoveCell.module.css:41-46`. `src/styles/theme.ts` overrides only the `dark` palette, never `gray`.
+* **Defect:** every hovered or current-variation move without an annotation colour gets a neutral or cool gray tint. Felix, 2026-11-21: "The whole color system which is focused on gold or beige but not on grey." Menus, selects, data tables and the navigation row now hover in gold or warm beige; the move list is the remaining gray hover.
+* **Failure scenario:** hover any plain move in the notation panel in either scheme: the highlight is a gray overlay beside warm gold and beige surfaces.
+* **Fix:** derive the unannotated hover from a warm token (for example a light `--cf-primary` tint, or a warm neutral mixed from `--cf-border-strong`), keeping it distinct from the current-move and annotation colours. Verify in WebKit in both schemes and re-record any moved notation snapshots.
+* **Proof:** `MoveCell.tsx:64-70` at `498cad9af`; root-cause lens report on 2026-11-21.
+* **Found by:** Claude Code, review-root-cause lens, 2026-11-21.
