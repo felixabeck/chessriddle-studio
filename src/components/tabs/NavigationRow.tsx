@@ -186,10 +186,19 @@ export default function NavigationRow({
     if (contextMenu && !tabs.some((tab) => tab.value === contextMenu.tabId)) setContextMenu(null);
   }, [contextMenu, tabs]);
 
+  // A keyboard open lands on the first item. A pointer open focuses the menu container
+  // instead: a focused item keeps Mantine's highlight and, once WebKit counts the focus as
+  // keyboard-driven, the focus ring, beside the item under the pointer. ArrowDown from the
+  // container still reaches the first item (Mantine's MenuDropdown handler).
+  const menuOpenedByPointer = useRef(false);
   useEffect(() => {
     if (!menuOpened) return;
     const id = window.setTimeout(() => {
-      document.querySelector<HTMLElement>('[role="menu"] [role="menuitem"]')?.focus();
+      const menu = document.querySelector<HTMLElement>('[role="menu"]');
+      const byPointer = menuOpenedByPointer.current;
+      menuOpenedByPointer.current = false;
+      const target = byPointer ? menu : menu?.querySelector<HTMLElement>('[role="menuitem"]');
+      target?.focus();
     }, 0);
     return () => window.clearTimeout(id);
   }, [menuOpened]);
@@ -294,6 +303,8 @@ export default function NavigationRow({
         onChange={(opened) => {
           setMenuOpened(opened);
           if (!opened) {
+            // A closing click's pointerdown must not mark the next (keyboard) open.
+            menuOpenedByPointer.current = false;
             window.setTimeout(() => menuButtonRef.current?.focus(), 0);
           }
         }}
@@ -317,6 +328,9 @@ export default function NavigationRow({
             type="button"
             ref={menuButtonRef}
             className={classes.menu}
+            onPointerDown={() => {
+              menuOpenedByPointer.current = true;
+            }}
             aria-label={t("Menu.Application.Menu")}
             data-expanded={menuOpened || undefined}
           >

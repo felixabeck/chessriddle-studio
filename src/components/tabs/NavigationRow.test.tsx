@@ -499,6 +499,38 @@ test("the flat menu lists the in-app entries in order with shortcuts", async () 
   ]);
 });
 
+test("a pointer-opened menu focuses its container, a keyboard-opened one its first item", async () => {
+  await renderRow();
+  const button = host!.querySelector<HTMLButtonElement>('[aria-label="Menu.Application.Menu"]')!;
+  await act(async () => {
+    button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    button.click();
+  });
+  // A focused item keeps Mantine's highlight (and in WebKit the focus ring) beside the
+  // item under the pointer, so a pointer open must leave every item unfocused.
+  await vi.waitFor(() => expect(document.activeElement?.getAttribute("role")).toBe("menu"));
+  await act(async () => {
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+    );
+  });
+  expect(document.activeElement?.textContent).toContain("Menu.File.NewTab");
+
+  await act(async () => {
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+  });
+  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
+  // A click without a preceding pointerdown (keyboard Enter/Space, assistive technology)
+  // takes the keyboard route, even right after a pointer open.
+  await act(async () => {
+    button.click();
+  });
+  await vi.waitFor(() => expect(document.activeElement?.getAttribute("role")).toBe("menuitem"));
+  expect(document.activeElement?.textContent).toContain("Menu.File.NewTab");
+});
+
 test("arrow keys activate tabs on `/` and only move focus away from `/`", async () => {
   const router = await renderRow({ path: "/" });
   const first = tabs()[0]!;

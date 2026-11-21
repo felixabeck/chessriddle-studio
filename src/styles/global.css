@@ -108,7 +108,8 @@ cg-board square.oc.move-dest:hover {
 /* Mantine focus treatments beat this rule by specificity before @layer mantine.
    Those states stay excluded so layering does not restyle them. :where() keeps
    the original (0,1,0) specificity so component :focus-visible rules still win
-   by specificity. */
+   by specificity. Popover and Menu dropdowns are containers that hold focus
+   (a pointer-opened application menu parks it there) without being actionable. */
 :focus-visible:where(
   :not(
     .mantine-focus-auto,
@@ -116,6 +117,7 @@ cg-board square.oc.move-dest:hover {
     .mantine-focus-never,
     .mantine-Input-input,
     .mantine-Popover-dropdown,
+    .mantine-Menu-dropdown,
     .ProseMirror
   )
 ) {
