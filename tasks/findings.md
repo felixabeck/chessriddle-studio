@@ -28240,3 +28240,19 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Proof:** Three consecutive full `pnpm test:e2e:container` runs without that snapshot failing.
 * **Spotted outside diff:** yes (full e2e run of the navigation-row build, 2026-11-21)
 * **Found by:** Claude Code (Opus 5.5), navigation-row build, 2026-11-21
+
+---
+
+## 2026-11-21 — filed through the inbox spool
+
+### `src/utils/phase.ts` (`getGamePhases`) has no unit tests for `backrankSparse`, `mixedness` or edge cases
+
+* **ID:** f-20261121-04 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** test-coverage review of old upstream code (Felix t75u, pass 2) at origin/master `162e0033f`
+* **Where:** `src/utils/phase.ts` (97 lines, upstream commit `a2f8a3e2c` before merge-base `9654961d6`, consumed by `EvalChart.tsx:154`): `majorsAndMinors` (`:6-8`), `backrankSparse` (`:10-18`, rank-1/rank-8 bitmasks `(0xff, 0)` and `(0, 0xff000000)`), `score` (`:20-43`, 15-branch white/black piece matrix), `getMixednessRegions` (`:45-60`, 49 overlapping 2×2 bitboard regions built via `BigInt` 32-bit `lo`/`hi` splits), `mixedness` (`:64-70`) and `getGamePhases` (`:77-97`).
+* **Defect:** there is no `phase.test.ts` (or equivalent). The only test that exercises `getGamePhases` is `EvalChart.test.tsx:99-155`, whose two-move fixture has 8 and 4 majors/minors and therefore hits only the `majorsAndMinors <= 10` and `<= 6` branches. None of `backrankSparse` (piece development/castling emptying rank 1 or 8), `mixedness > 150` (tangled central piece contact with full 14 majors/minors), the `BigInt` lo/hi bitshift across rank boundaries, `score(y, white, black)` branches, empty/start-only inputs, or the gate preventing `endgamePly` from firing without `middlegamePly` is tested.
+* **Failure scenario:** a refactor to `chessops` `SquareSet` construction, bitboard byte ordering, or `getGamePhases` thresholds silently misplaces or drops the Middlegame and Endgame dividers in `EvalChart` while every unit and e2e test stays green.
+* **Fix:** add `src/utils/tests/phase.test.ts` covering: (1) empty and opening-only sequences returning `{ middlegamePly: null, endgamePly: null }`; (2) `backrankSparse` firing independently for White rank 1 (`0xff, 0`) and Black rank 8 (`0, 0xff000000`) with > 10 majors/minors still on the board; (3) `mixedness > 150` firing on a locked/contact middlegame with ≥ 4 pieces on each back rank and > 10 majors/minors; (4) `endgamePly` triggered only on or after `middlegamePly`, including same-ply transitions when a setup starts with ≤ 6 majors/minors.
+* **Proof:** at origin/master `162e0033f`, `rg -n "getGamePhases" src` returns only `src/utils/phase.ts:77` and `src/components/common/EvalChart.tsx:154`. `EvalChart.test.tsx:99-100` sets a starting position with 8 majors/minors (`r1b1kb1r/pppppppp/8/8/4P3/8/PPPP1PPP/R1B1KB1R b KQkq - 0 1`), so `majorsAndMinors <= 10` short-circuits before `backrankSparse` or `mixedness` can distinguish the phase.
+* **Found by:** Grok Bot, test-coverage review (t75u pass 2), origin/master `162e0033f`.
