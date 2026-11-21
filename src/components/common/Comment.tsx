@@ -151,8 +151,11 @@ function decorate(
   });
 }
 
-/** `position` is the node whose position the comment annotates; a cited game opens there. */
-function Comment({ comment, position }: { comment: string; position?: TreeNode }) {
+/**
+ * `annotatedNode` is the node whose position the comment annotates. A cited game opens at the
+ * first position of that node's line, from it back to the root, that the game's mainline reaches.
+ */
+function Comment({ comment, annotatedNode }: { comment: string; annotatedNode?: TreeNode }) {
   const activate = useGameReference();
   const multipleLine = comment.split("\n").filter((v) => v.trim() !== "").length > 1;
 
@@ -167,7 +170,7 @@ function Comment({ comment, position }: { comment: string; position?: TreeNode }
     >
       {activate
         ? decorate(readCommentNotation(comment), multipleLine, (reference) =>
-            activate(reference, position),
+            activate(reference, annotatedNode),
           )
         : renderNotation(readCommentNotation(comment), multipleLine)}
     </Typography>

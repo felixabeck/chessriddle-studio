@@ -740,15 +740,15 @@ test("duplicate open activation is locked while admitted creation is pending and
 });
 
 // The comment's own line: after 23...Kf3 it continues 24.Kb2, which the cited game never plays.
-async function renderAtCommentedPosition(path: number[], reachedBy = owner) {
-  const at = path.reduce((node, index) => node.children[index], reachedBy.getState().root);
+async function renderAtCommentedPosition(path: number[], line = owner) {
+  const at = path.reduce((node, index) => node.children[index], line.getState().root);
   await act(async () =>
     root.render(
       <Provider store={workspace}>
-        <TreeStateContext.Provider value={reachedBy}>
+        <TreeStateContext.Provider value={line}>
           <EphemeralTabScope>
             <GameReferenceProvider>
-              <Comment comment={label} position={at} />
+              <Comment comment={label} annotatedNode={at} />
             </GameReferenceProvider>
           </EphemeralTabScope>
         </TreeStateContext.Provider>

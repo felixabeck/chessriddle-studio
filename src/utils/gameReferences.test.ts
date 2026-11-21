@@ -1901,13 +1901,35 @@ test("without any cited event, other events are not dropped", async () => {
     ]);
 });
 
-test("a cited event does not override a contradicting year-round tuple after it", async () => {
-    const text = "½-½ Pierron,P (2201)-Bontems,C (2230) FRA/Cup21/2T/07 (FRA) Plan 2020 (3)";
-    const candidate = { ...pierronGame(1, "FRA/Cup21/2T/07 (FRA)", "2021.05.25", "?"), round: "3" };
+// Each case leaves the header reading unverified, so only its own guard keeps the dialog.
+test.each([
+    {
+        guard: "a parenthesis that may extend the event",
+        text: "FRA/Cup21/2T/07 (Masters) Plan: Bauernmehrheit",
+        game: { event: "FRA/Cup21/2T/07" },
+    },
+    {
+        guard: "a year after the event that the game's unknown date cannot confirm",
+        text: "FRA/Cup21/2T/07 (FRA) 2021 Plan: Bauernmehrheit",
+        game: { date: "????.??.??" },
+    },
+    {
+        guard: "a later year-round tuple that does not fit the game",
+        text: "FRA/Cup21/2T/07 (FRA) Plan 2020 (3) und 2021 (3)",
+        game: { round: "3" },
+    },
+])("a cited event still requires a choice after $guard", async ({ text, game: overrides }) => {
+    const citation = recognizeGameReferences(`½-½ Pierron,P (2201)-Bontems,C (2230) ${text}`)[0];
+    const candidate = {
+        ...pierronGame(1, "FRA/Cup21/2T/07 (FRA)", "2021.05.25", "?"),
+        ...overrides,
+    };
     const result = await lookupGameReference(
-        recognizeGameReferences(text)[0],
+        citation,
         new AbortController().signal,
         pairSource([candidate]),
     );
-    expect(result.candidates.every((entry) => entry.verification !== "verified")).toBe(true);
+    expect(result.candidates).toEqual([
+        expect.objectContaining({ game: candidate, verification: "unverified" }),
+    ]);
 });

@@ -19,13 +19,14 @@ import {
   type ReferenceSearch,
 } from "@/utils/gameReferences";
 import { getTabTreeKey, sameTabOwner } from "@/utils/tabs";
+import { openingLineFens } from "@/utils/chess";
 import { treeIterator, type TreeNode } from "@/utils/treeReducer";
 import { OpenGameButton } from "./gameOpen";
 import { useOpenDatabaseGame } from "./useOpenDatabaseGame";
 import { AppModal } from "./AppModal";
 import { TreeStateContext } from "./TreeStateContext";
 
-type ActivateReference = (reference: GameReference, position?: TreeNode) => void;
+type ActivateReference = (reference: GameReference, annotatedNode?: TreeNode) => void;
 export const GameReferenceContext = createContext<ActivateReference | null>(null);
 
 /**
@@ -33,19 +34,11 @@ export const GameReferenceContext = createContext<ActivateReference | null>(null
  * annotated line back to its root, so a game that left the line opens where it left. A node no
  * longer in the tree contributes only its own position.
  */
-export function citationTargetFens(root: TreeNode, position: TreeNode | undefined): string[] {
-  if (!position) return [];
-  for (const { position: path, node } of treeIterator(root)) {
-    if (node !== position) continue;
-    const fens = [root.fen];
-    let current = root;
-    for (const index of path) {
-      current = current.children[index];
-      fens.push(current.fen);
-    }
-    return fens.reverse();
-  }
-  return [position.fen];
+function citationTargetFens(root: TreeNode, annotatedNode: TreeNode | undefined): string[] {
+  if (!annotatedNode) return [];
+  for (const { position, node } of treeIterator(root))
+    if (node === annotatedNode) return openingLineFens(root, position).reverse();
+  return [annotatedNode.fen];
 }
 
 /** The notation surface, rather than each virtualized comment, owns one request and dialog. */
@@ -143,8 +136,8 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
   };
   return (
     <GameReferenceContext.Provider
-      value={(reference, position) =>
-        activate(reference, citationTargetFens(store.getState().root, position))
+      value={(reference, annotatedNode) =>
+        activate(reference, citationTargetFens(store.getState().root, annotatedNode))
       }
     >
       {children}

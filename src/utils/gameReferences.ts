@@ -302,7 +302,7 @@ function referenceGameVerification(
  * known event is the same players' other game, not a reading of this citation. Occurrences
  * without a known event stay, because their header cannot be compared.
  */
-function withoutContradictedEvents(
+function withoutOtherEventsOnceOneIsCited(
     reference: GameReference,
     candidates: ReferenceOccurrence[],
 ): ReferenceOccurrence[] {
@@ -537,7 +537,7 @@ export async function lookupGameReference(
     }
     check();
     return {
-        candidates: withoutContradictedEvents(reference, candidates),
+        candidates: withoutOtherEventsOnceOneIsCited(reference, candidates),
         failures,
         complete: failures.length === 0,
     };

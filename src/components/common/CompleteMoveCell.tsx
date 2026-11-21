@@ -156,9 +156,10 @@ function CompleteMoveCell({
   return (
     <>
       {showComments && !tableLayout && startingComment && (
+        // A comment before a move annotates the position the move is played from.
         <Comment
           comment={startingComment}
-          position={nodeIndex.links.get(node)?.parent ?? undefined}
+          annotatedNode={nodeIndex.links.get(node)?.parent ?? undefined}
         />
       )}
       <Box
@@ -214,7 +215,9 @@ function CompleteMoveCell({
           />
         )}
       </Box>
-      {showComments && !tableLayout && comment && <Comment comment={comment} position={node} />}
+      {showComments && !tableLayout && comment && (
+        <Comment comment={comment} annotatedNode={node} />
+      )}
     </>
   );
 }

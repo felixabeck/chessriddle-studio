@@ -79,7 +79,11 @@ vi.mock("lucide-react", () => {
     Plus: Icon,
   };
 });
-vi.mock("@/components/common/Comment", () => ({ default: () => null }));
+vi.mock("@/components/common/Comment", () => ({
+  default: ({ comment, annotatedNode }: { comment: string; annotatedNode?: { fen: string } }) => (
+    <span data-comment={comment} data-annotated-fen={annotatedNode?.fen} />
+  ),
+}));
 vi.mock("./GameReference", () => ({
   GameReferenceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -556,6 +560,34 @@ test("table notation shows the live engine score ahead of the saved one", async 
 
   expect(host.querySelector('[data-node="e4"]')?.getAttribute("data-score-text")).toBe("+0.3");
   expect(host.querySelector('[data-node="e5"]')?.getAttribute("data-score-text")).toBe("-1.5");
+});
+
+test("table comments annotate their move's position, or before it for a pre-move comment", async () => {
+  notationSettings.showComments = true;
+  notationSettings.tableView = true;
+  const state = defaultTree();
+  const e4 = createNode({ fen: "e4 b - - 0 1", move: parseUci("e2e4")!, san: "e4", halfMoves: 1 });
+  const e5 = createNode({ fen: "e5 w - - 0 2", move: parseUci("e7e5")!, san: "e5", halfMoves: 2 });
+  e4.comment = "After e4";
+  e5.startingComment = "Before e5";
+  e4.children = [e5];
+  state.root.children = [e4];
+  store.getState().setState(state);
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  const annotated = (comment: string) =>
+    host.querySelector(`[data-comment="${comment}"]`)?.getAttribute("data-annotated-fen");
+  expect(annotated("After e4")).toBe(e4.fen);
+  expect(annotated("Before e5")).toBe(e4.fen);
 });
 
 test("forwards a variation's starting comment prose to its mounted move cell", async () => {

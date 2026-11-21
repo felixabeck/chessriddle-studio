@@ -41,7 +41,11 @@ vi.mock("lucide-react", () => {
   };
 });
 vi.mock("@/components/common/Comment", () => ({
-  default: ({ comment }: { comment: string }) => <span data-comment="true">{comment}</span>,
+  default: ({ comment, annotatedNode }: { comment: string; annotatedNode?: TreeNode }) => (
+    <span data-comment="true" data-annotated-fen={annotatedNode?.fen}>
+      {comment}
+    </span>
+  ),
 }));
 vi.mock("@/components/common/IconAction", () => ({
   default: ({ children, label, onClick }: any) => (
@@ -193,6 +197,12 @@ test("renders the starting comment before the move and updates it without changi
 
   await render("Before the move");
   expect(host.textContent).toBe("Before the move1.e4After the move");
+  // A cited game opens at the position the comment annotates: before the move, or after it.
+  expect(
+    [...host.querySelectorAll("[data-comment]")].map((comment) =>
+      comment.getAttribute("data-annotated-fen"),
+    ),
+  ).toEqual([tree.root.fen, node.fen]);
   await render("Updated starting comment");
   expect(host.textContent).toBe("Updated starting comment1.e4After the move");
   await render("Updated starting comment", false);

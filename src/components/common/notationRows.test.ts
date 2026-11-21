@@ -122,7 +122,14 @@ describe("buildNotationRows", () => {
             expect(model.rowForNode.get(nestedAlternative)).toBeLessThan(boundary);
             expect(model.rowForNode.get(tree.nf3)).toBeGreaterThan(boundary);
             const expectedComments = tableView
-                ? [{ type: "comment", depth: 0, comment: "Last played move", position: tree.e5 }]
+                ? [
+                      {
+                          type: "comment",
+                          depth: 0,
+                          comment: "Last played move",
+                          annotatedNode: tree.e5,
+                      },
+                  ]
                 : [];
             expect(model.rows.slice(0, boundary).filter((row) => row.type === "comment")).toEqual(
                 expectedComments,
@@ -672,7 +679,7 @@ describe("starting comments off a variation's first move", () => {
         expect(commentBefore(result.rows, tree[key])).toMatchObject({
             type: "comment",
             comment: "Before this move",
-            position: tree[parent],
+            annotatedNode: tree[parent],
         });
     });
 });

@@ -34,7 +34,7 @@ export type CommentNotationRow = {
     depth: number;
     comment: string;
     /** The node whose position the comment annotates: its move's node, or that move's parent. */
-    position: TreeNode;
+    annotatedNode: TreeNode;
 };
 
 export type VariationNotationRow = {
@@ -187,9 +187,9 @@ function addComment(
     rowForNode: Map<TreeNode, number>,
     depth: number,
     comment: string,
-    position: TreeNode,
+    annotatedNode: TreeNode,
 ): void {
-    addRow(rows, rowForNode, { type: "comment", depth, comment, position });
+    addRow(rows, rowForNode, { type: "comment", depth, comment, annotatedNode });
 }
 
 function showsDiagram(node: TreeNode, options: NotationRowOptions): boolean {
