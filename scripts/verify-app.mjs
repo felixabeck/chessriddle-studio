@@ -1772,18 +1772,18 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     ownedProbe = undefined;
     if (notification) await dismissNotification(stage, notification);
   };
-  // `prepare` runs before every probe, for a step whose target renders asynchronously.
-  const visible = (message, prepare = "") =>
-    waitFor(message, () =>
-      session.execute(
-        `${prepare}
+  const visible = (message, { beforeProbe } = {}) =>
+    waitFor(message, async () => {
+      await beforeProbe?.();
+      return session.execute(
+        `
     return [...document.querySelectorAll('.mantine-Notification-description')].some(node =>
       node.textContent === arguments[0] && node.getBoundingClientRect().height > 0 &&
       getComputedStyle(node).visibility !== 'hidden');
   `,
         [message],
-      ),
-    ).catch(() => false);
+      );
+    }).catch(() => false);
   const click = (label) =>
     waitFor(`root permission action ${label}`, () =>
       session.execute(
@@ -1833,8 +1833,14 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
     // The permission notice belongs to the offline databases, so select that source first.
     const puzzleGuidance = await visible(
       "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings.",
-      `const offline = document.querySelector('input[type="radio"][value="offline"]');
-       if (offline && !offline.checked) offline.click();`,
+      {
+        beforeProbe: () =>
+          session.execute(`
+            const offline = document.querySelector('input[type="radio"][value="offline"]');
+            if (offline && !offline.checked) offline.click();
+            return true;
+          `),
+      },
     );
     check(
       puzzleGuidance,
