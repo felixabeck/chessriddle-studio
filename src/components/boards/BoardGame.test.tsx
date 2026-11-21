@@ -824,7 +824,32 @@ test("settingUp opponent forms receive the side headings and swap with colour", 
   expect(opponentSides()).toEqual(["Fen.Black", "Fen.White"]);
   await act(async () => button("Board.Action.ChangeColors").click());
   expect(opponentSides()).toEqual(["Board.Opponent.Random", "Board.Opponent.Random"]);
+  await act(async () => button("Board.Action.ChangeColors").click());
+  expect(opponentSides()).toEqual(["Fen.White", "Fen.Black"]);
 });
+
+test.each([
+  { color: "white" as const, draw: 0, white: "Alice", black: "Bob" },
+  { color: "black" as const, draw: 0, white: "Bob", black: "Alice" },
+  { color: "random" as const, draw: 0.75, white: "Alice", black: "Bob" },
+  { color: "random" as const, draw: 0.25, white: "Bob", black: "Alice" },
+])(
+  "starting with player 1 on $color (draw $draw) seats $white on white",
+  async ({ color, draw, white, black }) => {
+    store.set(gameInputColorAtom, color);
+    const random = vi.spyOn(Math, "random").mockReturnValue(draw);
+    try {
+      await render();
+      await start();
+    } finally {
+      random.mockRestore();
+    }
+    expect(fixtures.startGame.mock.calls[0][1]).toMatchObject({
+      white: { type: "human", name: white },
+      black: { type: "human", name: black },
+    });
+  },
+);
 
 test("starting a human game sends numeric configuration and records ChessRiddle Studio as the PGN Site", async () => {
   await render();
@@ -3568,6 +3593,50 @@ describe("native game delivery reconciliation", () => {
     expect(store.get(gameSessionFamily("tab-a"))).toBe(1n);
 
     vi.useRealTimers();
+  });
+
+  test("a recovered engine move plays the premove of a human on black, and an engine turn does not", async () => {
+    vi.useFakeTimers();
+    store.set(gamePlayer1SettingsAtom, {
+      type: "engine",
+      engine: engine("engine-white"),
+      go: { t: "Infinite" },
+    });
+    store.set(gamePlayer2SettingsAtom, { type: "human", name: "Bob" });
+
+    await render();
+    await start();
+    const gameId = store.get(gameIdFamily("tab-a"));
+    expect(fixtures.boardProps.onKeyboardPremove("e7", "e5")).toBe(true);
+
+    // A clock-only snapshot while White's engine thinks: still White's turn, no premove.
+    fixtures.getGameState.mockResolvedValueOnce(
+      state({
+        gameId,
+        session: 1n,
+        revision: 1n,
+        moves: [],
+        whiteTime: 299000n,
+        turn: "white",
+      }),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    await act(async () => vi.advanceTimersByTimeAsync(10));
+    expect(fixtures.playPremove).not.toHaveBeenCalled();
+
+    // The engine's move hands the turn to the black human: the premove plays once.
+    fixtures.getGameState.mockResolvedValueOnce(
+      state({
+        gameId,
+        session: 1n,
+        revision: 2n,
+        moves: [{ uci: "e2e4", clock: null }],
+        turn: "black",
+      }),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    await act(async () => vi.advanceTimersByTimeAsync(10));
+    expect(fixtures.playPremove).toHaveBeenCalledTimes(1);
   });
 
   test("recovered engine move executes queued premove once, while clock-only or terminal snapshots do not, and stale callbacks are cancelled", async () => {

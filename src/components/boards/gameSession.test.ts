@@ -1,5 +1,30 @@
 import { expect, test, vi } from "vitest";
-import { abortExactTabGame, abortExactGame, isCurrentQueuedGameUpdate } from "./gameSession";
+import type { Move } from "chessops";
+import type { TreeNode } from "@/utils/treeReducer";
+import {
+    abortExactTabGame,
+    abortExactGame,
+    getMainlineUcis,
+    isCurrentQueuedGameUpdate,
+} from "./gameSession";
+
+function node(move: Move | null, children: TreeNode[] = []): TreeNode {
+    return { move, children } as unknown as TreeNode;
+}
+
+test("the live mainline follows first children only and keeps native's raw castling notation", () => {
+    // e2e4, then the side variation d2d4 is not mainline; e1h1 is the PGN castle native echoes.
+    const root = node(null, [
+        node({ from: 12, to: 28 }, [node({ from: 4, to: 7 }), node({ from: 52, to: 36 })]),
+        node({ from: 11, to: 27 }),
+    ]);
+    expect(getMainlineUcis(root)).toEqual(["e2e4", "e1h1"]);
+});
+
+test("a mainline node without a move contributes nothing and the walk continues past it", () => {
+    const root = node(null, [node(null, [node({ from: 12, to: 28 })])]);
+    expect(getMainlineUcis(root)).toEqual(["e2e4"]);
+});
 
 test("a pending move from the replaced session cannot apply after New Game", () => {
     // New Game first cancels the queue, then increments its local generation and

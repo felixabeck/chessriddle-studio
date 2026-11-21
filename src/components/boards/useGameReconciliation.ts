@@ -241,6 +241,8 @@ export function useGameReconciliation(
         gameId,
         gameState,
         applyAuthoritativeState,
+        // Unread on purpose: a new session for the same game id must restart the poll for it,
+        // while the body reads the session through `currentSession()`.
         backendSession,
         currentSession,
         currentGeneration,

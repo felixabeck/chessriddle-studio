@@ -23,7 +23,7 @@ export function getMainlineUcis(root: TreeNode): string[] {
  * A throttled renderer update belongs to exactly one native game session.
  *
  * The asymmetry between the two null checks is deliberate, so do not "restore" it:
- * `currentGeneration` is a plain counter that is never null (`useRef(0)` in `BoardGame`),
+ * `currentGeneration` is a plain counter that is never null (`useRef(0)` in `useNativeGameOwnership`),
  * so `queuedGeneration === currentGeneration` already excludes a null queue on its own.
  * `currentSession` really can be null — it is cleared during a session handoff — so without
  * the explicit check a queued update carrying no session would compare `null === null` and

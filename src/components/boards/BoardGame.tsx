@@ -391,10 +391,6 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     return positionFromFen(node.fen);
   }, [root]);
 
-  function getTreeMoves(): string[] {
-    return getMainlineUcis(root);
-  }
-
   const syncTreeWithMovesRef = useRef(syncTreeWithMoves);
   syncTreeWithMovesRef.current = syncTreeWithMoves;
 
@@ -532,7 +528,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         // correlation when a malformed session counter cannot be normalized.
         const newGameId = `${ownerTabId}-game-${crypto.randomUUID()}`;
 
-        const initialMoves = getTreeMoves();
+        const initialMoves = getMainlineUcis(root);
 
         const config: GameConfigInput = {
           white: toPlayerConfig(playerSettings.white, availableEngines),
