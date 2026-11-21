@@ -1,6 +1,5 @@
 import { Box, Collapse, Flex, Group, InputWrapper, Select, Stack } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
-import { useHotkeys } from "@mantine/hooks";
 import { EllipsisVertical } from "lucide-react";
 import dayjs from "dayjs";
 import { DataTable } from "mantine-datatable";
@@ -11,9 +10,7 @@ import { useStore } from "zustand";
 import type { GameSort, NormalizedGame, Outcome } from "@/bindings";
 import { EloRangeSlider } from "@/components/common/EloRangeSlider";
 import { IconAction } from "@/components/common/IconAction";
-import { gameRowActivation } from "@/components/common/gameOpen";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
-import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { query_games, sameDatabaseHandle } from "@/utils/db";
 import { failureUnlessCancelled } from "@/platform/errors";
@@ -22,12 +19,11 @@ import { dateColumn, numericColumn, truncatedTextColumn } from "./databaseColumn
 import GameCard from "./GameCard";
 import GridLayout from "./GridLayout";
 import layoutClasses from "./GridLayout.module.css";
-import { getAdjacentRecordId } from "./pageSelection";
 import { PlayerSearchInput } from "./PlayerSearchInput";
 import PlayerRatingCell from "./PlayerRatingCell";
 import { SideInput } from "./SideInput";
 import sideInputClasses from "./SideInput.module.css";
-import classes from "./styles.module.css";
+import { useDatabaseListTable } from "./useDatabaseListTable";
 
 type GameSortAccessor = "date" | "ply_count";
 const gameSortAccessors: Partial<Record<GameSort, GameSortAccessor>> = {
@@ -74,22 +70,20 @@ function GameTable() {
     database: file,
   }));
 
-  useHotkeys([
-    [
-      "ArrowUp",
-      () => {
-        const id = getAdjacentRecordId(games, selectedGameId, -1);
-        if (id != null) setSelectedGameId(id);
-      },
-    ],
-    [
-      "ArrowDown",
-      () => {
-        const id = getAdjacentRecordId(games, selectedGameId, 1);
-        if (id != null) setSelectedGameId(id);
-      },
-    ],
-  ]);
+  const table = useDatabaseListTable({
+    records: games,
+    count,
+    error,
+    isLoading,
+    query,
+    setQuery,
+    selectedId: selectedGameId,
+    setSelectedId: setSelectedGameId,
+    sortAccessor: (sort) => gameSortAccessors[sort ?? "date"] ?? "date",
+    sortOf: (accessor) => (isGameSortAccessor(accessor) ? gameSortByAccessor[accessor] : undefined),
+    emptyText: t("Databases.Game.NoGamesFound"),
+    activate: gameOpen.activate,
+  });
 
   return (
     <GridLayout
@@ -204,14 +198,7 @@ function GameTable() {
       }
       table={
         <DataTable<NormalizedGame>
-          withTableBorder
-          highlightOnHover
-          records={games}
-          fetching={isLoading}
-          customRowAttributes={(record) => ({
-            ...gameRowActivation(record, gameOpen.activate),
-            "aria-selected": record.id === selectedGameId,
-          })}
+          {...table}
           columns={[
             {
               accessor: "white",
@@ -246,50 +233,6 @@ function GameTable() {
               title: t("Databases.Game.Site"),
             },
           ]}
-          rowClassName={(record) => (record.id === selectedGameId ? classes.selected : "")}
-          noRecordsText={
-            inlineFailureMessage(error, "database", t("Databases.LoadError.Title")) ??
-            t("Databases.Game.NoGamesFound")
-          }
-          totalRecords={count!}
-          recordsPerPage={query.options?.pageSize ?? 25}
-          page={query.options?.page ?? 1}
-          onPageChange={(page) =>
-            setQuery({
-              ...query,
-              options: {
-                ...query.options!,
-                page,
-              },
-            })
-          }
-          onRecordsPerPageChange={(value) =>
-            setQuery({
-              ...query,
-              options: { ...query.options!, pageSize: value },
-            })
-          }
-          sortStatus={{
-            columnAccessor: gameSortAccessors[query.options?.sort ?? "date"] ?? "date",
-            direction: query.options?.direction || "desc",
-          }}
-          onSortStatusChange={(value) => {
-            const accessor = value.columnAccessor;
-            if (!isGameSortAccessor(accessor)) return;
-            setQuery({
-              ...query,
-              options: {
-                ...query.options!,
-                sort: gameSortByAccessor[accessor],
-                direction: value.direction,
-              },
-            });
-          }}
-          recordsPerPageLabel={t("Common.RecordsPerPage")}
-          recordsPerPageOptions={[10, 25, 50]}
-          onRowClick={({ record }) => {
-            setSelectedGameId(record.id);
-          }}
         />
       }
       preview={

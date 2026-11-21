@@ -22,7 +22,6 @@ vi.mock("@/i18n", async (original) => ({
   ...(await original<typeof import("@/i18n")>()),
   default: { t: (key: string) => key },
 }));
-vi.mock("react-hotkeys-hook", () => ({ useHotkeys: () => undefined }));
 vi.mock("@mantine/core", () => {
   const Wrapper = ({ children }: { children: ReactNode }) => <div>{children}</div>;
   return {

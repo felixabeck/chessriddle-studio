@@ -17,8 +17,10 @@ const mocks = vi.hoisted(() => ({
     onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
   },
 }));
-vi.mock("react-hotkeys-hook", () => ({
-  useHotkeys: (key: string, callback: () => void) => mocks.hotkeys.set(key, callback),
+vi.mock("@mantine/hooks", async (original) => ({
+  ...(await original<typeof import("@mantine/hooks")>()),
+  useHotkeys: (hotkeys: [string, () => void][]) =>
+    hotkeys.forEach(([key, callback]) => mocks.hotkeys.set(key, callback)),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -50,7 +52,7 @@ vi.mock("mantine-datatable", () => ({
     onSortStatusChange,
   }: {
     records: Array<{ id: number }>;
-    onRowClick: (row: { index: number }) => void;
+    onRowClick: (row: { record: { id: number }; index: number }) => void;
     customRowAttributes?: (record: { id: number }) => Record<string, unknown>;
     sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
     onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
@@ -63,7 +65,7 @@ vi.mock("mantine-datatable", () => ({
             key={record.id}
             data-row
             {...customRowAttributes?.(record)}
-            onClick={() => onRowClick({ index })}
+            onClick={() => onRowClick({ record, index })}
           >
             {record.id}
           </div>

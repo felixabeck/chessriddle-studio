@@ -4,13 +4,10 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { Search } from "lucide-react";
 import { DataTable } from "mantine-datatable";
 import { useContext } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
 import type { Event, TournamentSort } from "@/bindings";
-import { gameRowActivation } from "@/components/common/gameOpen";
-import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { NAME_SEARCH_DEBOUNCE_MS } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
@@ -21,9 +18,19 @@ import {
   truncatedTextColumn,
 } from "./databaseColumns";
 import GridLayout from "./GridLayout";
-import { getAdjacentRecordId } from "./pageSelection";
-import classes from "./styles.module.css";
+import { useDatabaseListTable } from "./useDatabaseListTable";
 import TournamentCard from "./TournamentCard";
+
+const tournamentSortAccessors: Record<TournamentSort, string> = {
+  date: "start_date",
+  players: "player_count",
+  games: "game_count",
+  avgElo: "avg_elo",
+  name: "name",
+};
+const tournamentSortByAccessor: Record<string, TournamentSort> = Object.fromEntries(
+  Object.entries(tournamentSortAccessors).map(([sort, accessor]) => [accessor, sort]),
+) as Record<string, TournamentSort>;
 
 function TournamentTable() {
   const { t } = useTranslation();
@@ -45,17 +52,19 @@ function TournamentTable() {
   const count = data?.count;
   const tournament = tournaments.find((t) => t.id === selected);
 
-  useHotkeys("ArrowUp", () => {
-    const id = getAdjacentRecordId(tournaments, selected, -1);
-    if (id != null) {
-      setSelected(id);
-    }
-  });
-  useHotkeys("ArrowDown", () => {
-    const id = getAdjacentRecordId(tournaments, selected, 1);
-    if (id != null) {
-      setSelected(id);
-    }
+  const table = useDatabaseListTable({
+    records: tournaments,
+    count,
+    error,
+    isLoading,
+    query,
+    setQuery,
+    selectedId: selected,
+    setSelectedId: setSelected,
+    sortAccessor: (sort) => tournamentSortAccessors[sort ?? "date"],
+    sortOf: (accessor) => tournamentSortByAccessor[accessor] ?? "date",
+    emptyText: t("Databases.Tournament.NoneFound"),
+    activate: (record) => void setSelected(record.id),
   });
 
   return (
@@ -79,14 +88,7 @@ function TournamentTable() {
       }
       table={
         <DataTable<Event>
-          withTableBorder
-          highlightOnHover
-          records={tournaments}
-          fetching={isLoading}
-          customRowAttributes={(record) => ({
-            ...gameRowActivation(record.id, (id) => void setSelected(id)),
-            "aria-selected": record.id === selected,
-          })}
+          {...table}
           columns={[
             { accessor: "name", title: t("Common.Name"), sortable: true },
             {
@@ -120,65 +122,6 @@ function TournamentTable() {
               sortable: true,
             },
           ]}
-          rowClassName={(t) => (t.id === selected ? classes.selected : "")}
-          noRecordsText={
-            inlineFailureMessage(error, "database", t("Databases.LoadError.Title")) ??
-            t("Databases.Tournament.NoneFound")
-          }
-          totalRecords={count!}
-          recordsPerPage={query.options.pageSize ?? 25}
-          page={query.options.page ?? 1}
-          onPageChange={(page) =>
-            setQuery({
-              ...query,
-              options: {
-                ...query.options!,
-                page,
-              },
-            })
-          }
-          onRecordsPerPageChange={(value) =>
-            setQuery({
-              ...query,
-              options: { ...query.options!, pageSize: value },
-            })
-          }
-          sortStatus={{
-            columnAccessor: (
-              {
-                date: "start_date",
-                players: "player_count",
-                games: "game_count",
-                avgElo: "avg_elo",
-                name: "name",
-              } as const
-            )[query.options.sort],
-            direction: query.options?.direction || "desc",
-          }}
-          onSortStatusChange={(value) =>
-            setQuery({
-              ...query,
-              options: {
-                ...query.options!,
-                sort:
-                  (
-                    {
-                      start_date: "date",
-                      player_count: "players",
-                      game_count: "games",
-                      avg_elo: "avgElo",
-                      name: "name",
-                    } as Record<string, TournamentSort>
-                  )[value.columnAccessor] ?? "date",
-                direction: value.direction,
-              },
-            })
-          }
-          recordsPerPageLabel={t("Common.RecordsPerPage")}
-          recordsPerPageOptions={[10, 25, 50]}
-          onRowClick={({ index }) => {
-            setSelected(tournaments[index].id);
-          }}
         />
       }
       preview={

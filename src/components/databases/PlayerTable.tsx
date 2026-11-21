@@ -3,23 +3,19 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { EllipsisVertical, Search } from "lucide-react";
 import { DataTable } from "mantine-datatable";
 import { useContext, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr";
 import { useStore } from "zustand";
 import type { Player, PlayerSort } from "@/bindings";
 import DraftNumberInput from "@/components/common/DraftNumberInput";
-import { gameRowActivation } from "@/components/common/gameOpen";
 import { IconAction } from "@/components/common/IconAction";
-import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { ELO_FILTER_MAX, NAME_SEARCH_DEBOUNCE_MS, query_players } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { numericColumn } from "./databaseColumns";
 import GridLayout from "./GridLayout";
-import { getAdjacentRecordId } from "./pageSelection";
 import PlayerCard from "./PlayerCard";
-import classes from "./styles.module.css";
+import { useDatabaseListTable } from "./useDatabaseListTable";
 
 // The native query takes whole-number bounds; a fraction or an out-of-range number is not stored.
 function isEloBound(value: number | string): value is number {
@@ -49,17 +45,19 @@ function PlayerTable() {
 
   const [open, setOpen] = useState(false);
 
-  useHotkeys("ArrowUp", () => {
-    const id = getAdjacentRecordId(players, selectedPlayer, -1);
-    if (id != null) {
-      setSelectedPlayer(id);
-    }
-  });
-  useHotkeys("ArrowDown", () => {
-    const id = getAdjacentRecordId(players, selectedPlayer, 1);
-    if (id != null) {
-      setSelectedPlayer(id);
-    }
+  const table = useDatabaseListTable({
+    records: players,
+    count,
+    error,
+    isLoading,
+    query,
+    setQuery,
+    selectedId: selectedPlayer,
+    setSelectedId: setSelectedPlayer,
+    sortAccessor: (sort) => (sort === "games" ? "game_count" : sort || "name"),
+    sortOf: (accessor) => (accessor === "game_count" ? "games" : (accessor as PlayerSort)),
+    emptyText: t("Databases.Player.NoPlayersFound"),
+    activate: (record) => void setSelectedPlayer(record.id),
   });
 
   return (
@@ -133,14 +131,7 @@ function PlayerTable() {
       }
       table={
         <DataTable<Player>
-          withTableBorder
-          highlightOnHover
-          records={players}
-          fetching={isLoading}
-          customRowAttributes={(record) => ({
-            ...gameRowActivation(record.id, (id) => void setSelectedPlayer(id)),
-            "aria-selected": record.id === selectedPlayer,
-          })}
+          {...table}
           columns={[
             { accessor: "name", title: t("Common.Name"), sortable: true },
             {
@@ -156,52 +147,6 @@ function PlayerTable() {
               sortable: true,
             },
           ]}
-          rowClassName={(r) => (r.id === selectedPlayer ? classes.selected : "")}
-          noRecordsText={
-            inlineFailureMessage(error, "database", t("Databases.LoadError.Title")) ??
-            t("Databases.Player.NoPlayersFound")
-          }
-          totalRecords={count!}
-          recordsPerPage={query.options.pageSize ?? 25}
-          page={query.options?.page ?? 1}
-          onPageChange={(page) =>
-            setQuery({
-              ...query,
-              options: {
-                ...query.options!,
-                page,
-              },
-            })
-          }
-          onRecordsPerPageChange={(value) =>
-            setQuery({
-              ...query,
-              options: { ...query.options!, pageSize: value },
-            })
-          }
-          sortStatus={{
-            columnAccessor:
-              query.options?.sort === "games" ? "game_count" : query.options?.sort || "name",
-            direction: query.options?.direction || "desc",
-          }}
-          onSortStatusChange={(value) =>
-            setQuery({
-              ...query,
-              options: {
-                ...query.options!,
-                sort:
-                  value.columnAccessor === "game_count"
-                    ? "games"
-                    : (value.columnAccessor as PlayerSort),
-                direction: value.direction,
-              },
-            })
-          }
-          recordsPerPageLabel={t("Common.RecordsPerPage")}
-          recordsPerPageOptions={[10, 25, 50]}
-          onRowClick={({ index }) => {
-            setSelectedPlayer(players[index].id);
-          }}
         />
       }
       preview={
