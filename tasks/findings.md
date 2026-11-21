@@ -28144,3 +28144,19 @@ Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --wo
   * **Review:** agy lenses correctness, root-cause, tests, minimalism and code-quality, plus closure rounds. The code-quality finding on the carried gate-routing commit was fixed in `83cadac33` (strip the launcher prefix through `GATE_LAUNCHER`).
   * **Proof:** `Test` run 44828891556 on `f4fe67ddf` concluded `success` in every job, including `e2e`. `pnpm ci:remote:check` exit 0 before the push.
 <!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"3ea23cfebd8df2dcfdd848744c59ee7a5f005afcce5d20a0e34372663a381a4d","header_sha256":"164954cf994ce80cc53888426ec1e36f935df6a98b101117b7364a75a8f2043f","header_status":"handled","input_sha256":"af147da2f09d4367cf614cb849a49e8772c7114e60f55bfd3eaa9e1bf0d987f7","kind":"mutation-receipt","operation":"7a3662b1b0843eda822d11881792da9b5d5557ec5ae991d53f5fd13760546e0f","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-13"],"target":"f-20261120-13","v":1} -->
+
+---
+
+## 2026-11-21 — filed through the inbox spool
+
+### Real-app verifier NG1 and AO1–AO3 time out: the new-game save never reaches the native row and the orientation scenario cannot reach Settings
+
+* **ID:** f-20261121-01 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** ccc30801-d54e-4267-9ed6-f463bafa4d93
+* **Impact class:** tooling
+* **Why it matters:** with RF5 repaired (f-20261117-04), `pnpm verify:app` still exits 1 on these four checks, so no change can show a fully green real-app run.
+* **Where:** `scripts/verify-app.mjs` `verifyNewGameToDatabase` (NG1, wait "new-game insert through native read" after `Save PGN`) and the orientation scenario around `setAutoSave` (AO1 "orientation Settings navigation" via `nav a[aria-label="Settings"]`, AO2 not attempted, AO3 "Auto Save control was unavailable").
+* **Failure scenario:** `pnpm verify:app` on 2026-11-21, drain worktree at `af236f720` plus the RF5 fix, release binary built 04:44 from the same source: `FAIL NG1 … timed out waiting for new-game insert through native read`, `FAIL AO1 … timed out waiting for orientation Settings navigation`, `FAIL AO2 … not attempted: AO1 fixture setup failed`, `FAIL AO3 … Auto Save control was unavailable`. Every other check passes, RF0–RF8 included. Log: `/tmp/rf5/run.log`.
+* **Spotted outside diff:** yes. Found while proving the RF5 fix, which changes only `verifySelectedRootPermissions`, and NG1 runs before it.
+* **Open question:** whether `Save PGN` on a new game now saves somewhere else or asks for a target (the unsaved-games build of 2026-11-17 changed save behaviour), and whether the Settings nav link lost its `aria-label` or is covered at that moment: verifier drift or product regression. Start with `git log -S'Save PGN'` and the unsaved-games commits, then rerun `pnpm verify:app`.
+* **Found by:** Claude Code drain session fe4cac75, 2026-11-21, proof run for f-20261117-04.
