@@ -271,6 +271,8 @@ function DatabasePanel() {
   // with the exact position.
   const statsUnavailable = dbType.type === "local" && dbType.options.type === "partial";
   const view = statsUnavailable || storedView === "games" ? "games" : "stats";
+  // A partial search is a pattern, not one position, so its games open at the start.
+  const gamesTargetFen = statsUnavailable ? undefined : debouncedFen;
   const localExplorer = useLocalExplorer(
     effectiveLocalOptions,
     db === "local",
@@ -712,6 +714,7 @@ function DatabasePanel() {
                 databasePath={
                   gamesFrom.role === "comparison" ? comparisonDatabase : effectiveReferenceDatabase
                 }
+                targetFen={gamesTargetFen}
               />
             )}
           </Stack>
@@ -736,6 +739,7 @@ function DatabasePanel() {
                   games={openingData?.games || []}
                   loading={isLoading}
                   databasePath={dbType.type === "local" ? dbType.options.path : null}
+                  targetFen={gamesTargetFen}
                 />
               )}
             </>

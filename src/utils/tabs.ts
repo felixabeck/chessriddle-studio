@@ -32,7 +32,7 @@ import {
 } from "@/state/store/tree";
 import { defaultPGN, getPGN, parsePGN, parsePGNWithLossReport } from "./chess";
 import { getFileGameName, pickPgnFile, readFileGame, writeFileGame } from "./files";
-import type { GameHeaders, TreeState } from "./treeReducer";
+import { findMainlinePath, type GameHeaders, type TreeState } from "./treeReducer";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import type {
     CollectionDescriptor,
@@ -669,6 +669,7 @@ export async function createTab({
     headers,
     gameOrigin,
     position,
+    targetFen,
     initialTree,
     databaseGame,
     existingTabIds,
@@ -682,6 +683,11 @@ export async function createTab({
     headers?: GameHeaders;
     gameOrigin?: GameOrigin;
     position?: number[];
+    /**
+     * A FEN to land on: after the tree is built, the cursor moves to the first mainline node with
+     * this position, replacing `position`. Without a match the cursor stays where it was seeded.
+     */
+    targetFen?: string;
     initialTree?: TreeState;
     databaseGame?: NormalizedGame;
     existingTabIds?: Iterable<string>;
@@ -757,6 +763,12 @@ export async function createTab({
             }
         }
         treeToSeed = tree;
+    }
+
+    // The tree is final here, so the path cannot outlive a mutation.
+    if (treeToSeed && targetFen !== undefined) {
+        const path = findMainlinePath(treeToSeed.root, targetFen);
+        if (path) treeToSeed.position = path;
     }
 
     if (treeToSeed && databaseOrigin) {

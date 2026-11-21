@@ -11,10 +11,13 @@ function GamesTable({
   games,
   loading,
   databasePath,
+  targetFen,
 }: {
   games: NormalizedGame[];
   loading: boolean;
   databasePath?: DatabaseHandle | null;
+  /** The position the games were searched for; each opens there when its mainline reaches it. */
+  targetFen?: string;
 }) {
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
@@ -27,6 +30,7 @@ function GamesTable({
   const gameOpen = useOpenDatabaseGame((game: NormalizedGame) => ({
     game,
     database: databasePath,
+    targetFen,
   }));
   return (
     <DataTable

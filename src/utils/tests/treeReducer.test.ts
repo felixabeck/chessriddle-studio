@@ -1,4 +1,6 @@
-import { parseUci } from "chessops";
+import { Chess, parseUci } from "chessops";
+import { makeFen, parseFen } from "chessops/fen";
+import { parseSan } from "chessops/san";
 import { describe, expect, test, vi } from "vitest";
 import * as chessops from "@/utils/chessops";
 import {
@@ -6,6 +8,7 @@ import {
     countMainPly,
     createNode,
     defaultTree,
+    findMainlinePath,
     getBoardState,
     getGameName,
     getMemoizedBoardStateMap,
@@ -621,4 +624,77 @@ test.each([
             .slice(0, 4)
             .join(" "),
     );
+});
+
+/** A tree whose mainline plays `sans` from `fen`; each returned fen is the one after that move. */
+function playedLine(sans: string[], fen?: string) {
+    const tree = defaultTree(fen);
+    const pos = fen ? Chess.fromSetup(parseFen(fen).unwrap()).unwrap() : Chess.default();
+    const fens: string[] = [];
+    let node = tree.root;
+    for (const san of sans) {
+        const move = parseSan(pos, san)!;
+        pos.play(move);
+        const next = createNode({
+            fen: makeFen(pos.toSetup()),
+            move,
+            san,
+            halfMoves: node.halfMoves + 1,
+        });
+        node.children.push(next);
+        node = next;
+        fens.push(next.fen);
+    }
+    return { tree, fens };
+}
+
+describe("findMainlinePath", () => {
+    test("finds the reached position and ignores the move clocks", () => {
+        const { tree, fens } = playedLine(["e4", "e5", "f4", "exf4", "Nf3"]);
+        expect(findMainlinePath(tree.root, fens[3])).toEqual([0, 0, 0, 0]);
+        const otherClocks = fens[3].replace(/ \d+ \d+$/, " 7 40");
+        expect(findMainlinePath(tree.root, otherClocks)).toEqual([0, 0, 0, 0]);
+        expect(findMainlinePath(tree.root, tree.root.fen)).toEqual([]);
+    });
+
+    test("a transposition lands on the game's own move order", () => {
+        const { tree } = playedLine(["Nf3", "d5", "d4", "Nf6"]);
+        const { fens } = playedLine(["d4", "d5", "Nf3", "Nf6"]);
+        expect(findMainlinePath(tree.root, fens[3])).toEqual([0, 0, 0, 0]);
+    });
+
+    test("a repeated position returns its first occurrence", () => {
+        const { tree, fens } = playedLine(["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6"]);
+        expect(getBoardState(fens[5])).toBe(getBoardState(fens[1]));
+        expect(findMainlinePath(tree.root, fens[5])).toEqual([0, 0]);
+    });
+
+    test("side to move and castling rights are part of the position", () => {
+        const { tree } = playedLine(["Nf3", "Nf6", "Ng1", "Ng8"]);
+        const start = tree.root.fen;
+        expect(findMainlinePath(tree.root, start.replace(" w ", " b "))).toBeNull();
+        expect(findMainlinePath(tree.root, start.replace(" KQkq ", " Qkq "))).toBeNull();
+        // The same squares after the knights' round trip are the start position again.
+        expect(findMainlinePath(tree.root, start)).toEqual([]);
+    });
+
+    test("a game from a Black-to-move setup is matched from its own root", () => {
+        const fen = "4k3/8/8/8/8/8/4P3/4K3 b - - 3 30";
+        const { tree, fens } = playedLine(["Kd7", "e4", "Kc6"], fen);
+        expect(findMainlinePath(tree.root, fens[1])).toEqual([0, 0]);
+    });
+
+    test("a position reached only in a variation, or never, is not found", () => {
+        const { tree } = playedLine(["e4", "e5"]);
+        const { fens } = playedLine(["d4"]);
+        const variation = createNode({
+            fen: fens[0],
+            move: parseUci("d2d4")!,
+            san: "d4",
+            halfMoves: 1,
+        });
+        tree.root.children.push(variation);
+        expect(findMainlinePath(tree.root, fens[0])).toBeNull();
+        expect(findMainlinePath(tree.root, playedLine(["c4"]).fens[0])).toBeNull();
+    });
 });

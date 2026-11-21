@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
 import { tabsAtom, recentFilesAtom } from "@/state/atoms";
 import { tabStorage } from "@/state/store/tabStorage";
-import { closeTreeStore } from "@/state/store/tree";
+import { closeTreeStore, createTreeStore } from "@/state/store/tree";
 import { defaultTree } from "@/utils/treeReducer";
 import GamesTable from "./GamesTable";
 
@@ -100,11 +100,11 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
-async function renderTable() {
+async function renderTable(targetFen?: string) {
   await act(async () =>
     root.render(
       <Provider store={workspace}>
-        <GamesTable games={[game]} loading={false} databasePath={database} />
+        <GamesTable games={[game]} loading={false} databasePath={database} targetFen={targetFen} />
       </Provider>,
     ),
   );
@@ -207,4 +207,23 @@ test("a pending open ignores Enter on the same row", async () => {
     row().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });
   expect(mocks.resolve).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  { branch: "a linked source", linked: true },
+  { branch: "the database copy", linked: false },
+])("a game from $branch opens on the position the list was searched for", async ({ linked }) => {
+  const played = createTreeStore("games-table-played-line", defaultTree());
+  for (const san of ["e4", "e5", "Nf3"]) played.getState().makeMove({ payload: san });
+  const tree = { ...defaultTree(), root: played.getState().root };
+  closeTreeStore("games-table-played-line");
+  mocks.resolve.mockResolvedValueOnce(linked ? linkedSource() : null);
+  mocks.parse.mockResolvedValueOnce(tree);
+  await renderTable(tree.root.children[0].children[0].fen);
+  await act(async () => row().click());
+  const tab = workspace.get(tabsAtom)[0];
+  expect(tab.gameOrigin.kind).toBe(linked ? "file" : "database");
+  expect(tabStorage.read<{ position: number[] }>(tab.treeKey ?? tab.value)?.state.position).toEqual(
+    [0, 0],
+  );
 });

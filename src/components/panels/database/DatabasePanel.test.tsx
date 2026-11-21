@@ -161,6 +161,8 @@ describe("explorer game failure catalogues", () => {
 
 const HEADER_COLLAPSED_KEY = "explorer-header-collapsed";
 
+const afterE4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+
 describe("DatabasePanel", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -606,6 +608,13 @@ describe("DatabasePanel", () => {
     expect(panel.querySelector("table")).toBeNull();
     expect(panel.textContent).not.toContain(diagnostic);
     expectTotal(200);
+  });
+
+  test("an online game opens at the position the explorer was asked for", async () => {
+    await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
+    await mountExplorer(mockExplorerData, []);
+    await openListedGame("W1");
+    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFen: afterE4 });
   });
 
   test("mounted empty explorer list: keeps the genuine empty state and the Total row count", async () => {
@@ -1101,8 +1110,26 @@ describe("DatabasePanel", () => {
     );
   });
 
+  async function openListedGame(name = "Listed player") {
+    const panel = selectedPanel("games");
+    const calls = mocks.openDatabaseGame.mock.calls.length;
+    const row = await vi.waitFor(() => {
+      const found = Array.from(panel.querySelectorAll<HTMLElement>("tbody tr")).find((item) =>
+        item.textContent?.includes(name),
+      );
+      expect(found).toBeDefined();
+      return found!;
+    });
+    await act(async () => row.click());
+    await vi.waitFor(() => expect(mocks.openDatabaseGame.mock.calls.length).toBe(calls + 1));
+  }
+
   test("local: a partial position shows Games with Stats disabled and keeps the stored view", async () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+    mocks.searchPosition.mockResolvedValue([
+      [],
+      [{ id: 3, white: "Listed player", black: "Opponent", result: "*", ply_count: 20 }],
+    ]);
     const { store } = await mountLocal();
     selectedPanel("stats");
     await act(async () =>
@@ -1117,12 +1144,21 @@ describe("DatabasePanel", () => {
     await vi.waitFor(() =>
       expect(mocks.searchPosition.mock.lastCall?.[1].position.type_).toBe("partial"),
     );
+    // A pattern is not one position, so its games open at their start.
+    await openListedGame();
+    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFen: undefined });
     // The stored choice returns with the exact position.
     await act(async () =>
       store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "exact" })),
     );
     selectedPanel("stats");
     expect(stats.disabled).toBe(false);
+    // An exact search opens each game at the searched position, not at the start.
+    await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 80)));
+    await act(async () => store.set(dbTabFamily(tabId), "games"));
+    await openListedGame();
+    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFen: afterE4 });
   });
 
   test("local: the position dialog switches the tab's match mode for the search", async () => {
@@ -1547,6 +1583,7 @@ describe("DatabasePanel", () => {
     });
 
     test("the Games switch lists the chosen source's games and opens them from its database", async () => {
+      await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
       const { store } = await mountCompared();
       await act(async () => store.set(dbTabFamily(tabId), "games"));
       const panel = selectedPanel("games");
@@ -1572,6 +1609,7 @@ describe("DatabasePanel", () => {
       expect(mocks.openDatabaseGame.mock.calls[0][0]).toMatchObject({
         database: corr,
         game: { id: 7 },
+        targetFen: afterE4,
       });
     });
 

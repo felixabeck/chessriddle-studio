@@ -9,7 +9,7 @@ import { closeTreeStore, createTreeStore } from "@/state/store/tree";
 import { tabStorage, TREE_STORAGE_VERSION } from "@/state/store/tabStorage";
 import { serializeStorageValue } from "@/state/store/debouncedStorage";
 import { getFileFreshness, removeFileFreshness } from "@/state/fileFreshness";
-import { defaultTree } from "./treeReducer";
+import { defaultTree, getNodeAtPath } from "./treeReducer";
 import type { FileMetadata } from "@/components/files/file";
 import {
     createTab,
@@ -1030,4 +1030,28 @@ test("fileDraft stale-game and uncertain append keep their messages", async () =
         error: { category: "applied-despite-error" },
     });
     expect(f.store.getState().storeAttempts).toEqual(["file:repertoire-file"]);
+});
+
+test.each([
+    { name: "the reached position", target: [0, 0], expected: [0, 0] },
+    { name: "the start without a match", target: null, expected: [] },
+])("createTab with a target position opens at $name", async ({ target, expected }) => {
+    const sourceId = crypto.randomUUID();
+    ids.push(sourceId);
+    const source = createTreeStore(sourceId, defaultTree());
+    for (const san of ["e4", "e5", "Nf3"]) source.getState().makeMove({ payload: san });
+    const initialTree = { ...defaultTree(), root: source.getState().root };
+    const targetFen = target
+        ? getNodeAtPath(initialTree.root, target).fen
+        : "8/8/8/8/8/8/8/K6k w - - 0 1";
+    const workspace = createStore();
+    const id = await createTab({
+        tab: { name: "Game", type: "analysis" },
+        setTabs: (...args) => workspace.set(tabsAtom, ...args),
+        initialTree,
+        targetFen,
+    });
+    expect(id).not.toBeNull();
+    ids.push(id!);
+    expect(tabStorage.read<{ position: number[] }>(id!)?.state.position).toEqual(expected);
 });

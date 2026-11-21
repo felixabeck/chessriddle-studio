@@ -17,6 +17,8 @@ export type DatabaseGameTarget = {
     database?: DatabaseHandle | null;
     /** Overrides the title the database listing records for `database`. */
     databaseTitle?: string;
+    /** The position the game was listed for; the tab opens there when its mainline reaches it. */
+    targetFen?: string;
 };
 
 type OpenOptions = Pick<Parameters<typeof openDatabaseGame>[0], "signal" | "ownerId" | "store">;
@@ -32,7 +34,7 @@ export function useDatabaseGameOpener() {
     const { cache } = useSWRConfig();
     return useCallback(
         async (
-            { game, database, databaseTitle }: DatabaseGameTarget,
+            { game, database, databaseTitle, targetFen }: DatabaseGameTarget,
             options: OpenOptions = {},
         ): Promise<string | null> => {
             const id = await openDatabaseGame({
@@ -43,6 +45,7 @@ export function useDatabaseGameOpener() {
                     listedDatabaseTitle(cache.get(DATABASE_LIST_KEY)?.data, database),
                 setTabs,
                 addRecentFile,
+                targetFen,
                 ...options,
             });
             if (id !== null) await navigate({ to: "/" });

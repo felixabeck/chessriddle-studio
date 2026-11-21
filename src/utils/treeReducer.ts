@@ -283,6 +283,18 @@ export const getNodeAtPath = (node: TreeNode, path: number[]): TreeNode => {
 };
 
 /**
+ * The path to the first mainline node (the root included) that has the same position as `fen`,
+ * or null. Database games are stored and searched as a mainline, so variations are not walked.
+ */
+export function findMainlinePath(root: TreeNode, fen: string): number[] | null {
+    const target = getBoardState(fen);
+    for (const { position, node } of treeIteratorMainLine(root)) {
+        if (getBoardState(node.fen) === target) return position;
+    }
+    return null;
+}
+
+/**
  * A new tree whose mainline is the unique path from `root` to `position`. Sibling variations,
  * comments, NAGs, shapes and scores are dropped. The cursor sits at the end of that line.
  */
