@@ -35,7 +35,8 @@ import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import { bindWindowControls, watchMaximized, type MenuAction } from "@/routes/-appMenu";
 import { useActiveDatabaseViewStore } from "@/state/store/database";
 import { BoardTab, BoardTabIcon } from "./BoardTab";
-import { boardTabId, isBoardsPath, isLibraryFamilyPath, temporaryPageOf } from "./boardTabDom";
+import { boardTabId, isBoardsPath, isLibraryFamilyPath, pageTabOf } from "./boardTabDom";
+import type { PageTab } from "@/state/pageTabs";
 import { TabActionsMenu } from "./TabActionsMenu";
 import { useTabCommands } from "./TabCommands";
 import classes from "./NavigationRow.module.css";
@@ -138,7 +139,7 @@ export default function NavigationRow({
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const onBoards = isBoardsPath(pathname);
   const libraryCurrent = isLibraryFamilyPath(pathname);
-  const temporaryPage = temporaryPageOf(pathname);
+  const currentPage = pageTabOf(pathname);
   const compact = useScaledMaxWidth(COMPACT_NAVIGATION_ROW_WIDTH_EM);
   const database = useActiveDatabaseViewStore((s) => s.database);
   const libraryTarget = databaseRouteTarget(database);
@@ -151,7 +152,9 @@ export default function NavigationRow({
     renameTab,
     reorderTabs,
     newTab,
-    closeTemporaryPage,
+    pageTabs,
+    openPageTab,
+    closePageTab,
   } = useTabCommands();
   const tabListRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -278,14 +281,11 @@ export default function NavigationRow({
     if (onBoards) selectTab(nextId);
   };
 
-  const temporary =
-    temporaryPage === "settings"
-      ? { icon: Settings, label: t("SideBar.Settings") }
-      : temporaryPage === "accounts"
-        ? { icon: User, label: t("SideBar.Accounts") }
-        : temporaryPage === "engines"
-          ? { icon: Brain, label: t("SideBar.Engines") }
-          : null;
+  const pageTabView: Record<PageTab, { icon: typeof Settings; label: string }> = {
+    accounts: { icon: User, label: t("SideBar.Accounts") },
+    engines: { icon: Brain, label: t("SideBar.Engines") },
+    settings: { icon: Settings, label: t("SideBar.Settings") },
+  };
 
   return (
     <nav className={cx(classes.row, compact && classes.compact)} data-tauri-drag-region>
@@ -341,23 +341,38 @@ export default function NavigationRow({
             <span className={classes.compactLabel}>{t("SideBar.Library")}</span>
           </Link>
         </Tooltip>
-        {temporary && (
-          <span
-            className={cx(classes.pinned, classes.temporary, classes.current)}
-            aria-current="page"
-          >
-            <temporary.icon size="0.875rem" aria-hidden />
-            <span className={classes.compactLabel}>{temporary.label}</span>
-            <button
-              type="button"
-              className={classes.temporaryClose}
-              aria-label={t("Tab.CloseNamed", { name: temporary.label })}
-              onClick={() => closeTemporaryPage()}
+        {pageTabs.map((page) => {
+          const { icon: Icon, label } = pageTabView[page];
+          const current = currentPage === page;
+          return (
+            <span
+              key={page}
+              className={cx(classes.pinned, classes.pageTab, current && classes.current)}
+              data-page-tab={page}
             >
-              <X size="0.875rem" aria-hidden />
-            </button>
-          </span>
-        )}
+              <Tooltip label={label} disabled={!compact} position="bottom" openDelay={400}>
+                <button
+                  type="button"
+                  className={classes.pageTabOpen}
+                  aria-label={label}
+                  aria-current={current ? "page" : undefined}
+                  onClick={() => openPageTab(page)}
+                >
+                  <Icon size="0.875rem" aria-hidden />
+                  <span className={classes.compactLabel}>{label}</span>
+                </button>
+              </Tooltip>
+              <button
+                type="button"
+                className={classes.pageTabClose}
+                aria-label={t("Tab.CloseNamed", { name: label })}
+                onClick={() => closePageTab(page)}
+              >
+                <X size="0.875rem" aria-hidden />
+              </button>
+            </span>
+          );
+        })}
         <div className={classes.tabs} data-tab-strip>
           <DragDropContext
             enableDefaultSensors={false}

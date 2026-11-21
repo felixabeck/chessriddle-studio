@@ -180,6 +180,7 @@ vi.mock("../common/AppModal", () => ({
 vi.mock("./ConfirmChangesModal", () => ({ default: () => null }));
 
 import { activeTabAtom, tabsAtom } from "@/state/atoms";
+import { PAGE_TABS_STORAGE_KEY, pageTabsAtom, readPageTabs } from "@/state/pageTabs";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -322,6 +323,7 @@ beforeEach(() => {
   ];
   store.set(tabsAtom, fixtures.tabs);
   store.set(activeTabAtom, "current");
+  store.set(pageTabsAtom, () => []);
   installMatchMediaStub();
   vi.stubGlobal(
     "ResizeObserver",
@@ -375,7 +377,7 @@ test("the row keeps menu, Library, tabs, New tab, Feedback and window buttons in
   expect(following(gap, feedback)).toBe(true);
   expect(following(feedback, minimize)).toBe(true);
   expect(host!.querySelector('[aria-label="Tab.AllTabs"]')).toBeNull();
-  expect(host!.querySelector("[aria-current='page'][class*='temporary']")).toBeNull();
+  expect(host!.querySelector("[data-page-tab]")).toBeNull();
 });
 
 test("window buttons are omitted when the app does not draw them", async () => {
@@ -612,7 +614,17 @@ test("F2 opens rename and Shift+F10 opens the tab menu under the tab", async () 
   ).toEqual(expect.arrayContaining(["Duplicate tab", "Rename tab", "Close tab"]));
 });
 
-test("the temporary page item appears on settings and its X returns to `/`", async () => {
+function pageTab(label: string) {
+  return host!.querySelector<HTMLButtonElement>(`[data-page-tab] [aria-label="${label}"]`);
+}
+
+function pageTabOrder() {
+  return [...host!.querySelectorAll<HTMLElement>("[data-page-tab]")].map(
+    (node) => node.dataset.pageTab,
+  );
+}
+
+test("the settings page tab appears on settings and its X returns to `/`", async () => {
   const router = await renderRow({ path: "/settings" });
   const item = [...host!.querySelectorAll("[aria-current='page']")].find((node) =>
     node.textContent?.includes("SideBar.Settings"),
@@ -627,7 +639,89 @@ test("the temporary page item appears on settings and its X returns to `/`", asy
   expect(router.state.location.pathname).toBe("/");
 });
 
-test("CLOSE_TAB on a temporary page returns home and does nothing on Library", async () => {
+test("a page tab stays open across board switches until its X closes it", async () => {
+  const router = await renderRow({ path: "/accounts" });
+  expect(pageTabOrder()).toEqual(["accounts"]);
+  expect(pageTab("SideBar.Accounts")!.getAttribute("aria-current")).toBe("page");
+
+  await act(async () => {
+    tabs()[1].click();
+  });
+  expect(router.state.location.pathname).toBe("/");
+  expect(store.get(activeTabAtom)).toBe("next");
+  expect(pageTabOrder()).toEqual(["accounts"]);
+  expect(pageTab("SideBar.Accounts")!.hasAttribute("aria-current")).toBe(false);
+
+  await act(async () => {
+    pageTab("SideBar.Accounts")!.click();
+  });
+  expect(router.state.location.pathname).toBe("/accounts");
+  expect(pageTab("SideBar.Accounts")!.getAttribute("aria-current")).toBe("page");
+
+  await act(async () => {
+    await router.navigate({ to: "/" });
+  });
+  await act(async () => {
+    host!
+      .querySelector<HTMLButtonElement>('[aria-label="Tab.CloseNamed:SideBar.Accounts"]')!
+      .click();
+  });
+  expect(pageTabOrder()).toEqual([]);
+  expect(router.state.location.pathname).toBe("/");
+});
+
+test("page tabs sit between Library and the board tabs in the order they were opened", async () => {
+  const router = await renderRow({ path: "/engines" });
+  await act(async () => {
+    await router.navigate({ to: "/accounts" });
+  });
+  await act(async () => {
+    await router.navigate({ to: "/engines" });
+  });
+  expect(pageTabOrder()).toEqual(["engines", "accounts"]);
+  const pages = [...host!.querySelectorAll("[data-page-tab]")];
+  expect(following(libraryLink(), pages[0])).toBe(true);
+  expect(following(pages[1], host!.querySelector('[role="tablist"]')!)).toBe(true);
+});
+
+test("closing the shown page tab keeps the other page tabs open", async () => {
+  const router = await renderRow({ path: "/accounts" });
+  await act(async () => {
+    await router.navigate({ to: "/settings" });
+  });
+  await act(async () => {
+    host!
+      .querySelector<HTMLButtonElement>('[aria-label="Tab.CloseNamed:SideBar.Settings"]')!
+      .click();
+  });
+  expect(router.state.location.pathname).toBe("/");
+  expect(pageTabOrder()).toEqual(["accounts"]);
+});
+
+test("a page tab returns to where the page was left", async () => {
+  const router = await renderRow({ path: "/engines?selected=2" });
+  await act(async () => {
+    await router.navigate({ to: "/" });
+  });
+  await act(async () => {
+    pageTab("SideBar.Engines")!.click();
+  });
+  expect(router.state.location.pathname).toBe("/engines");
+  expect(router.state.location.searchStr).toBe("?selected=2");
+});
+
+test("open page tabs are stored with the session and restored from it", async () => {
+  await renderRow({ path: "/accounts" });
+  expect(readPageTabs(sessionStorage)).toEqual(["accounts"]);
+  for (const corrupt of ["not json", '["accounts","accounts"]', '["boards"]', '{"a":1}']) {
+    sessionStorage.setItem(PAGE_TABS_STORAGE_KEY, corrupt);
+    expect(readPageTabs(sessionStorage)).toEqual([]);
+  }
+  sessionStorage.setItem(PAGE_TABS_STORAGE_KEY, '["settings","engines"]');
+  expect(readPageTabs(sessionStorage)).toEqual(["settings", "engines"]);
+});
+
+test("CLOSE_TAB on a page tab returns home and does nothing on Library", async () => {
   const router = await renderRow({ path: "/settings" });
   const binding = fixtures.hotkeyBindings?.find(([keys]) => keys === "mod+w");
   expect(binding).toBeDefined();

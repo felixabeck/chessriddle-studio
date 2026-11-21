@@ -42,10 +42,11 @@ import { useHotkeys as useDocumentHotkeys } from "react-hotkeys-hook";
 import {
   isBoardsPath,
   isLibraryFamilyPath,
+  pageTabOf,
   returnTargetFromPath,
-  temporaryPageOf,
   type ReturnTarget,
 } from "./boardTabDom";
+import { pageTabsAtom, type PageTab } from "@/state/pageTabs";
 import {
   asksBeforeDiscardingChanges,
   commitNewTab,
@@ -70,7 +71,9 @@ export type TabCommands = {
   renameTab: (tabId: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   newTab: () => void;
-  closeTemporaryPage: () => void;
+  pageTabs: PageTab[];
+  openPageTab: (page: PageTab) => void;
+  closePageTab: (page: PageTab) => void;
 };
 
 const TabCommandsContext = createContext<TabCommands | null>(null);
@@ -85,7 +88,18 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const href = useRouterState({ select: (state) => state.location.href });
   const returnTargetRef = useRef<ReturnTarget>({ to: "/" });
+  // Where each open page tab was last shown (e.g. the selected engine), for this run only.
+  const pageTabHrefRef = useRef<Partial<Record<PageTab, string>>>({});
+  const [openPageTabs, setPageTabs] = useAtom(pageTabsAtom);
+  // The shown page is listed from the first render on; the effect below only records it.
+  const shownPage = pageTabOf(pathname);
+  const pageTabs = useMemo(
+    () =>
+      shownPage && !openPageTabs.includes(shownPage) ? [...openPageTabs, shownPage] : openPageTabs,
+    [openPageTabs, shownPage],
+  );
 
   const [tabs, setTabs] = useAtom(tabsAtom);
   const [activeTab, setActiveTab] = useAtom(activeTabAtom);
@@ -125,10 +139,36 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     if (!isBoardsPath(pathname)) void navigate({ to: "/" });
   }, [navigate, pathname]);
 
-  const closeTemporaryPage = useCallback(() => {
-    if (!temporaryPageOf(pathname)) return;
-    void navigate(returnTargetRef.current);
-  }, [navigate, pathname]);
+  // Every way onto a page (menu, in-page links, deep links) opens its tab. Keyed on the
+  // route only, so closing the shown page's tab is not undone before the navigation lands.
+  useEffect(() => {
+    const page = pageTabOf(pathname);
+    if (!page) return;
+    setPageTabs((open) => (open.includes(page) ? open : [...open, page]));
+  }, [pathname, setPageTabs]);
+
+  useEffect(() => {
+    const page = pageTabOf(pathname);
+    if (page) pageTabHrefRef.current[page] = href;
+  }, [href, pathname]);
+
+  const openPageTab = useCallback(
+    (page: PageTab) => {
+      if (pageTabOf(pathname) === page) return;
+      const last = pageTabHrefRef.current[page];
+      void navigate(last ? { href: last } : { to: `/${page}` });
+    },
+    [navigate, pathname],
+  );
+
+  const closePageTab = useCallback(
+    (page: PageTab) => {
+      delete pageTabHrefRef.current[page];
+      setPageTabs((open) => open.filter((candidate) => candidate !== page));
+      if (pageTabOf(pathname) === page) void navigate(returnTargetRef.current);
+    },
+    [navigate, pathname, setPageTabs],
+  );
 
   const createNewWorkspaceTab = useCallback(
     (options?: { navigateHome?: boolean }) => {
@@ -339,14 +379,15 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     [createNewWorkspaceTab],
   );
 
-  const closeActiveOrTemporary = useCallback(() => {
-    if (temporaryPageOf(pathname)) {
-      closeTemporaryPage();
+  const closeActiveOrPage = useCallback(() => {
+    const page = pageTabOf(pathname);
+    if (page) {
+      closePageTab(page);
       return;
     }
     if (isLibraryFamilyPath(pathname)) return;
     void closeTab(activeTab);
-  }, [activeTab, closeTab, closeTemporaryPage, pathname]);
+  }, [activeTab, closePageTab, closeTab, pathname]);
 
   useEffect(() => {
     if (platform() !== "macos") return;
@@ -356,20 +397,20 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       if (e.metaKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         e.stopPropagation();
-        closeActiveOrTemporary();
+        closeActiveOrPage();
       }
     };
 
     window.addEventListener("keydown", handler, { capture: true });
 
     return () => window.removeEventListener("keydown", handler, { capture: true });
-  }, [closeActiveOrTemporary]);
+  }, [closeActiveOrPage]);
 
   const keyMap = useAtomValue(keyMapAtom);
   useDocumentHotkeys(keyMap.NEW_TAB.keys, () => newTab(), backgroundHotkeyOptions);
   useHotkeys(
     withKeyboardOwnership([
-      [keyMap.CLOSE_TAB.keys, closeActiveOrTemporary],
+      [keyMap.CLOSE_TAB.keys, closeActiveOrPage],
       [keyMap.CYCLE_TABS.keys, () => cycleTabs()],
       [keyMap.REVERSE_CYCLE_TABS.keys, () => cycleTabs(true)],
       ["alt+1", () => selectTabAt(0)],
@@ -404,14 +445,18 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       renameTab,
       reorderTabs,
       newTab,
-      closeTemporaryPage,
+      pageTabs,
+      openPageTab,
+      closePageTab,
     }),
     [
       activeTab,
+      closePageTab,
       closeTab,
-      closeTemporaryPage,
       duplicateTab,
       newTab,
+      openPageTab,
+      pageTabs,
       renameTab,
       reorderTabs,
       selectTab,

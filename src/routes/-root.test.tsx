@@ -100,7 +100,9 @@ vi.mock("@/components/tabs/TabCommands", () => ({
     duplicateTab: () => undefined,
     renameTab: () => undefined,
     reorderTabs: () => undefined,
-    closeTemporaryPage: () => undefined,
+    pageTabs: [],
+    openPageTab: () => undefined,
+    closePageTab: () => undefined,
   }),
 }));
 vi.mock("@/utils/files", () => ({ pickPgnFile: mocks.pickPgnFile }));

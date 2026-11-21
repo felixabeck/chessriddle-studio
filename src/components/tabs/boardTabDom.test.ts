@@ -5,7 +5,7 @@ import {
     isBoardsPath,
     isLibraryFamilyPath,
     returnTargetFromPath,
-    temporaryPageOf,
+    pageTabOf,
 } from "./boardTabDom";
 
 test("the shared tab and panel ids are a function of the tab id", () => {
@@ -26,12 +26,12 @@ test("library family matching covers databases routes and not a lookalike", () =
     expect(isBoardsPath("/library")).toBe(false);
 });
 
-test("temporary pages are derived from the route", () => {
-    expect(temporaryPageOf("/settings")).toBe("settings");
-    expect(temporaryPageOf("/accounts")).toBe("accounts");
-    expect(temporaryPageOf("/engines")).toBe("engines");
-    expect(temporaryPageOf("/library")).toBeNull();
-    expect(temporaryPageOf("/")).toBeNull();
+test("page tabs are derived from the route", () => {
+    expect(pageTabOf("/settings")).toBe("settings");
+    expect(pageTabOf("/accounts")).toBe("accounts");
+    expect(pageTabOf("/engines")).toBe("engines");
+    expect(pageTabOf("/library")).toBeNull();
+    expect(pageTabOf("/")).toBeNull();
 });
 
 test("the return target is the last boards or library-family location", () => {

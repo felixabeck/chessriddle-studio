@@ -1890,7 +1890,7 @@ test("workspace-tabs: selected tab on `/` pairs with its panel through shared id
     expect(labelledBy).toBe(await tab.getAttribute("id"));
 });
 
-test("workspace-tabs: tabs stay in the row on Library and Settings, with a temporary Settings item", async ({
+test("workspace-tabs: tabs stay in the row on Library and Settings, and the Settings page tab stays until closed", async ({
     page,
 }) => {
     await page.goto("/");
@@ -1908,13 +1908,20 @@ test("workspace-tabs: tabs stay in the row on Library and Settings, with a tempo
     await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await expect(page).toHaveURL("/settings");
     await expect(tabs).toHaveCount(2);
-    const temporary = page.locator("header [aria-current='page']").filter({ hasText: "Settings" });
-    await expect(temporary).toBeVisible();
-    await temporary.getByRole("button").click();
-    await expect(page).toHaveURL("/library");
-    await expect(
-        page.locator("header [aria-current='page']").filter({ hasText: "Settings" }),
-    ).toHaveCount(0);
+    const settings = page.locator("header [data-page-tab='settings']");
+    const openSettings = settings.getByRole("button", { name: "Settings", exact: true });
+    await expect(openSettings).toHaveAttribute("aria-current", "page");
+
+    await tabs.first().click();
+    await expect(page).toHaveURL("/");
+    await expect(settings).toBeVisible();
+    await expect(openSettings).not.toHaveAttribute("aria-current", "page");
+
+    await openSettings.click();
+    await expect(page).toHaveURL("/settings");
+    await settings.getByRole("button", { name: "Close Settings", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await expect(settings).toHaveCount(0);
 });
 
 test("workspace-tabs: F2 and Shift+F10 reach rename and the tab menu", async ({ page }) => {

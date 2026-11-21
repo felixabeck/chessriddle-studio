@@ -1,3 +1,5 @@
+import type { PageTab } from "@/state/pageTabs";
+
 export function normalizeAppPath(pathname: string): string {
     return pathname.replace(/\/+$/, "") || "/";
 }
@@ -11,9 +13,7 @@ export function isLibraryFamilyPath(pathname: string): boolean {
     return path === "/library" || path === "/databases" || path.startsWith("/databases/");
 }
 
-export type TemporaryPage = "settings" | "accounts" | "engines";
-
-export function temporaryPageOf(pathname: string): TemporaryPage | null {
+export function pageTabOf(pathname: string): PageTab | null {
     const path = normalizeAppPath(pathname);
     if (path === "/settings" || path.startsWith("/settings/")) return "settings";
     if (path === "/accounts" || path.startsWith("/accounts/")) return "accounts";
