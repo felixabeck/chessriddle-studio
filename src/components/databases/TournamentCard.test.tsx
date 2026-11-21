@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig, useSWRConfig } from "swr";
+import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle, NormalizedGame, Event as Tournament } from "@/bindings";
 import { recordDatabaseWrite } from "@/platform/databaseWrites";
@@ -480,7 +481,7 @@ async function openTournamentGame(game: NormalizedGame) {
   const database = file("tournament-open");
   mocks.getTournamentGames.mockResolvedValue({ data: [game] });
   // Recent records the title the database listing holds for this handle.
-  cache.set("databases", {
+  cache.set(DATABASE_LIST_KEY, {
     data: { databases: [{ type: "success", file: database, title: "Candidates database" }] },
   });
   await render(database);

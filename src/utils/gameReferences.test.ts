@@ -197,6 +197,7 @@ async function expectUnverifiedChoice(
         candidates: [
             {
                 database,
+                databaseTitle: "Source A",
                 source: "Source A (source-a.db3)",
                 game: candidate,
                 verification: "unverified",
@@ -335,7 +336,13 @@ test.each([
         expect(citation).toMatchObject({ label, context });
         expect(result).toMatchObject({ complete: true, failures: [] });
         expect(result.candidates).toEqual([
-            { database, source: "Source A (source-a.db3)", game, verification: "unverified" },
+            {
+                database,
+                databaseTitle: "Source A",
+                source: "Source A (source-a.db3)",
+                game,
+                verification: "unverified",
+            },
         ]);
         expect(api.query_games.mock.calls[0][1]).toMatchObject({
             player1: 11,
@@ -560,6 +567,7 @@ test.each(["Better was Bd3 (A).", "Better was Bd3 (1).", "Better was Bd3 in 2020
             candidates: [
                 {
                     database,
+                    databaseTitle: "Source A",
                     source: "Source A (source-a.db3)",
                     game: candidate,
                     verification: "verified",
@@ -725,6 +733,7 @@ test.each([
                     ? [
                           {
                               database,
+                              databaseTitle: "Source A",
                               source: "Source A (source-a.db3)",
                               game: candidate,
                               verification: "unverified",
@@ -873,6 +882,7 @@ test.each(["2024: Better was Bd3.", "2024 improvements included Bd3."])(
             candidates: [
                 {
                     database,
+                    databaseTitle: "Source A",
                     source: "Source A (source-a.db3)",
                     game: candidate,
                     verification: "unverified",
@@ -1111,6 +1121,7 @@ test.each([
             candidates: [
                 {
                     database,
+                    databaseTitle: "Source A",
                     source: "Source A (source-a.db3)",
                     game: original,
                     verification: "verified",
@@ -1305,7 +1316,13 @@ test("uses database-local IDs, ordered sides and outcome without premature date 
     const result = await search();
     expect(result.complete).toBe(true);
     expect(result.candidates).toEqual([
-        { database, source: "Source A (source-a.db3)", game, verification: "verified" },
+        {
+            database,
+            databaseTitle: "Source A",
+            source: "Source A (source-a.db3)",
+            game,
+            verification: "verified",
+        },
     ]);
     expect(api.query_games).toHaveBeenCalledWith(
         database,
@@ -1578,6 +1595,7 @@ test.each(["Tõnisson", "To\u0303nisson", "TÕNISSON"])(
         expect(result.candidates).toEqual([
             {
                 database,
+                databaseTitle: "Source A",
                 source: "Source A (source-a.db3)",
                 game: largeGame,
                 verification: "verified",
@@ -1679,7 +1697,13 @@ test("an empty page before the advertised count retains a candidate without auto
     }));
     const result = await search();
     expect(result.candidates).toEqual([
-        { database, source: "Source A (source-a.db3)", game, verification: "verified" },
+        {
+            database,
+            databaseTitle: "Source A",
+            source: "Source A (source-a.db3)",
+            game,
+            verification: "verified",
+        },
     ]);
     expect(api.query_games.mock.calls.map((call) => call[1].options)).toEqual([
         { page: 1, pageSize: 100, sort: "id", direction: "asc", skipCount: false },
@@ -1767,7 +1791,13 @@ test("more than 256 matching player IDs stop retention and visibly preserve inco
     });
     const result = await search();
     expect(result.candidates).toEqual([
-        { database, source: "Source A (source-a.db3)", game, verification: "verified" },
+        {
+            database,
+            databaseTitle: "Source A",
+            source: "Source A (source-a.db3)",
+            game,
+            verification: "verified",
+        },
     ]);
     expect(
         api.query_players.mock.calls

@@ -139,7 +139,15 @@ const game: NormalizedGame = {
 const found = (): ReferenceSearch => ({
   complete: true,
   failures: [],
-  candidates: [{ source: "Local games", database, game, verification: "verified" }],
+  candidates: [
+    {
+      source: "Local games (local.db3)",
+      database,
+      databaseTitle: "Local games",
+      game,
+      verification: "verified",
+    },
+  ],
 });
 let root: Root;
 let host: HTMLDivElement;
@@ -315,7 +323,13 @@ test.each([
   const result: ReferenceSearch = await mocks.lookup.mock.results[0].value;
   expect(result).toMatchObject({ complete: true, failures: [] });
   expect(result.candidates).toEqual([
-    { database, source: "Local games (local.db3)", game, verification: "unverified" },
+    {
+      database,
+      databaseTitle: "Local games",
+      source: "Local games (local.db3)",
+      game,
+      verification: "unverified",
+    },
   ]);
   expect(workspace.get(tabsAtom)).toHaveLength(0);
   expect(host.textContent).toContain("GameReferences.Choose");
@@ -352,7 +366,8 @@ test("a complete unique lookup opens replayable moves, the real FEN, every heade
   expect(workspace.get(recentFilesAtom)).toEqual([
     expect.objectContaining({ kind: "database", database, gameId: 8 }),
   ]);
-  expect(workspace.get(recentFilesAtom)[0]).not.toHaveProperty("databaseTitle");
+  // Recent records the database's own title, not the dialog's source label.
+  expect(workspace.get(recentFilesAtom)[0]).toHaveProperty("databaseTitle", "Local games");
   expect(mocks.lookup).toHaveBeenCalledWith(
     recognizeGameReferences(label)[0],
     expect.any(AbortSignal),

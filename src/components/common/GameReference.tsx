@@ -43,6 +43,7 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
   const opener = useOpenDatabaseGame((occurrence: ReferenceOccurrence) => ({
     game: occurrence.game,
     database: occurrence.database,
+    databaseTitle: occurrence.databaseTitle,
   }));
   const close = () => {
     request.current?.abort();

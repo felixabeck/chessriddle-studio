@@ -266,6 +266,8 @@ export function matchesReferenceGame(reference: GameReference, game: NormalizedG
 
 export type ReferenceOccurrence = {
     database: DatabaseHandle;
+    /** The database's own title, which Recent records; `source` is the dialog label. */
+    databaseTitle: string;
     source: string;
     game: NormalizedGame;
     verification: Exclude<ReferenceVerification, "rejected">;
@@ -454,6 +456,7 @@ export async function lookupGameReference(
                                 seen.add(game.id);
                                 candidates.push({
                                     database: database.file,
+                                    databaseTitle: database.title,
                                     source,
                                     game,
                                     verification,
