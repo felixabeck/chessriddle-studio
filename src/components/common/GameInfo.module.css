@@ -105,7 +105,13 @@
   text-align: right;
 }
 
+/* Sized in the input's own font. With tabular digits every "YYYY.MM.DD" date has one width, 5.72em
+   in the bundled Inter (Chromium and WebKit alike); the "????.??.??" placeholder is narrower. Not
+   `ch`: WebKit takes it from the proportional "0", which is narrower than the tabular digits. A
+   fixed 4.5rem clipped the last digit. */
 .dateInput {
+  width: 6em;
+  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 

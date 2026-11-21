@@ -97,6 +97,19 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
         {
+            // The desktop app renders in WebKitGTK, whose text metrics differ from Chromium's
+            // (its `ch` is narrower than Inter's tabular digits). Only metric assertions run here,
+            // no screenshots, because the committed snapshots are Chromium's.
+            name: "game-info-webkit",
+            testMatch: /new-game-to-database\.spec\.ts/,
+            grep: /Info date field/,
+            use: {
+                ...devices["Desktop Safari"],
+                viewport: { width: 1280, height: 900 },
+                colorScheme: "light",
+            },
+        },
+        {
             name: "new-game-to-file",
             testMatch: /new-game-to-file\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },

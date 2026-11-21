@@ -9,8 +9,10 @@ import {
     playBoardMove,
     selectFilesTreeRow,
     scrollbarFreeScreenshot,
+    waitForFontsSettled,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
+import type { MockScenario } from "./fixtures";
 
 // The board can report no box right after navigating to it (f-20261030-21). A stub board whose
 // first measurements are null proves playBoardMove waits for geometry instead of dereferencing it.
@@ -184,16 +186,23 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     await expect(page).toHaveScreenshot("saved-to-database.png");
 });
 
-test("Tab from White Elo opens the result list with a visible focus outline", async ({
-    page,
-    mockScenario,
-}) => {
+async function openNewGameInfo(
+    page: Page,
+    mockScenario: (scenario: MockScenario) => Promise<void>,
+) {
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     await mockScenario({ commands: filesWorkspaceCommands([[]], gameOpeningCommands) });
     await page.goto("/library");
     await selectFilesTreeRow(page, gameOpeningFixture.databaseTitle);
     await page.getByRole("button", { name: "New game", exact: true }).click();
     await page.getByRole("tab", { name: "Info", exact: true }).click();
+}
+
+test("Tab from White Elo opens the result list with a visible focus outline", async ({
+    page,
+    mockScenario,
+}) => {
+    await openNewGameInfo(page, mockScenario);
     const whiteElo = page.getByLabel("White Elo", { exact: true });
     await whiteElo.fill("2077");
     await page.keyboard.press("Tab");
@@ -215,6 +224,31 @@ test("Tab from White Elo opens the result list with a visible focus outline", as
     await expect(page.getByLabel("Black Elo", { exact: true })).toBeFocused();
     await expect(result).toHaveValue("1/2-1/2");
     await expect(result).toHaveAttribute("aria-expanded", "false");
+});
+
+// The date field once had a fixed 4.5rem width that cut off the last digit of "2007.03.25".
+test("the Info date field shows a full date and the placeholder without clipping", async ({
+    page,
+    mockScenario,
+}) => {
+    await openNewGameInfo(page, mockScenario);
+    // The width is calibrated to the bundled Inter; measure only once it has replaced the fallback.
+    await waitForFontsSettled(page);
+    const date = page.getByLabel("Date", { exact: true });
+    const fits = () => date.evaluate((element) => element.scrollWidth <= element.clientWidth);
+    // The centre column (site and date), so a date that fits its own box but pushes past the
+    // column is caught too.
+    const centre = date.locator("xpath=ancestor::div[contains(@class, 'mantine-Group-root')][1]");
+
+    await expect(date).toHaveAttribute("placeholder", "????.??.??");
+    expect(await fits()).toBe(true);
+
+    await date.fill("2007.03.25");
+    await page.keyboard.press("Tab");
+    await expect(date).toHaveValue("2007.03.25");
+    await waitForFontsSettled(page);
+    expect(await fits()).toBe(true);
+    await assertNothingClipped(centre);
 });
 
 test("linked collection New game appends to its PGN without inserting into the index", async ({

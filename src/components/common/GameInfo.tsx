@@ -270,7 +270,6 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
               />
             )}
             <DateInput
-              w="4.5rem"
               variant="unstyled"
               valueFormat="YYYY.MM.DD"
               placeholder={partialDate ?? "????.??.??"}
@@ -284,7 +283,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
                 });
               }}
               readOnly={disabled}
-              className={classes.dateInput}
+              classNames={{ input: classes.dateInput }}
             />
           </Group>
           <input
