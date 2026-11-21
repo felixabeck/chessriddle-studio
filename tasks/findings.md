@@ -27390,7 +27390,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### Board.tsx's column labels for the board max-width `calc()` sit over the wrong terms, and two of them are `???`
 
-* **ID:** f-20261119-03 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-03 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
 * **Where:** `src/components/boards/Board.tsx:555-556`: the `//` label row above the `maxWidth` template `var(--board-max-width, calc(100vh - 2.25rem - … - var(--board-below-height, 0px)))`.
@@ -27399,6 +27399,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** replace the column art with one short line per term (for example a `const` array, or a list comment naming each term: top bar, bottom padding, tab strip, its spacing, bars and gutters, the eval-bar compensation `1.563rem`, `md` spacing, `0.2rem`, focus ring, below-board height). Mark the two unexplained constants honestly as "empirical, see git blame `9654961d6`" instead of `???`. Comment only; no sizing change.
 * **Proof:** a Python column check over lines 555-556 of `git show origin/master:src/components/boards/Board.tsx` printed each label's start column and the text under it (values above). `git show 9654961d6:src/components/boards/Board.tsx` lines 393-394 shows the original alignment.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+* **Closed (2026-11-21, drain):** the misaligned column labels above the board `maxWidth` `calc()` are replaced by a term-by-term comment, in order: top bar 2.25rem and its sm padding, tab strip 2.5rem and its sm spacing, the player bars and gutters, the eval bar (1.563rem = its 25px, `EVAL_WIDTH`/`EvalBar.tsx`), md spacing and the 0.2rem fudge (empirical since upstream `3eff3087f`), the focus-ring extent, and `--board-below-height`. Comment only, no sizing change. Commit 7933e2976, together with f-20261119-04.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"22dcd004d63fb39aa799d15009ee39f9ba4c7a61518431a3a812f53b5b35c143","header_sha256":"374a640917e6e80fb646b5c736d9d849e86d5395bcddd93dba9c9edb91d014e9","header_status":"handled","input_sha256":"905be3a9d73a5164b992a9442c704b180efbb5fc16238615650b94a7e32f7db6","kind":"mutation-receipt","operation":"6e1a3d1bec805eb699c42d1e7a54df933c783890e1af78575e99be2fb2926533","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-03"],"target":"f-20261119-03","v":1} -->
 
 ---
 
