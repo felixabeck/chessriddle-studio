@@ -18,6 +18,7 @@ instead of repeating colour values at call sites.
 | `card`, `card-foreground`, `popover`, `popover-foreground` | Panels and floating content |
 | `surface-inset` | Nested containers inside cards |
 | `interactive`, `interactive-hover`, `inset` | Pressable controls, hover and readonly overlays |
+| `bar-hover` | Hover fill for controls on the navigation row's `surface-inset` bar; a clearly visible warm step, since `interactive-hover` sits almost on the bar colour |
 | `primary`, `primary-foreground`, `ring` | Fixed gold actions, contrasting text and focus |
 | `secondary`, `secondary-foreground`, `muted`, `muted-foreground`, `accent`, `accent-foreground` | Supporting surfaces and text |
 | `destructive`, `destructive-foreground`, `warning`, `warning-foreground` | Error and warning feedback |

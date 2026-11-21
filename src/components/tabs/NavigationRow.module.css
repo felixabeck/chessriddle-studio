@@ -82,7 +82,7 @@
 
 .pinned:hover {
   background: var(--cf-bar-hover);
-  /* The dimmed label falls below 4.5:1 on the darker hover fill. */
+  /* The dimmed label falls below 4.5:1 on the bar-hover fill in both schemes. */
   color: var(--cf-foreground);
 }
 
