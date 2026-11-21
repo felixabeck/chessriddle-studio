@@ -265,3 +265,22 @@ finding ids and date.
   and a user has to click too much first, he might not send it. On the mockups and the
   proposals: "B Browser Taps, 2 menue entries, yes to all".
 - **Date:** 2026-11-20.
+
+## 2026-11-21 — Accounts, Engines and Settings stay open as tabs until closed
+
+- **Question:** The Accounts page appeared in the navigation row with its own X, but it
+  vanished as soon as Felix switched to a board tab. Should it stay, and should users be
+  able to pin Accounts or Engines to the header?
+- **Choice:** Accounts, Engines and Settings open as tabs that stay until their X closes
+  them. They sit at the front of the row, right after Library, in the order they were
+  opened. Opening a page that is already open goes to its tab. Open page tabs come back
+  with the board tabs. There is no pin setting.
+- **Supersedes in part:** the 2026-11-20 entry's "temporary item with its own X. Closing
+  it returns to the tab the user came from". Closing still returns there; leaving the
+  page no longer closes it.
+- **Felix's reason:** "when I then switch the tab, for example, to the next one, then it
+  suddenly disappears. And this is of course very strange." On the proposal (agent's,
+  confirmed): "Yes, let's put them at the front. And alright, let's do what you suggest
+  first, only making them as tabs but without the setting or without the option to fix
+  them, as you recommend."
+- **Date:** 2026-11-21.
