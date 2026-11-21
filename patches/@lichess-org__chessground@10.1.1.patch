@@ -31,3 +31,115 @@ index 3d3cd72449d19a96174e1f9399989058f87206c6..e0864694a4519bf11e68614fee5977a7
  }
  function addShape(drawable, cur) {
      const similar = drawable.shapes.find(s => sameEndpoints(s, cur));
+diff --git a/dist/svg.js b/dist/svg.js
+index ff03f626138095fd6b2d8169874b0f9bd338be2e..1a66e4ee1e7e932a6b4bbdce48e0437e89c4e9b8 100644
+--- a/dist/svg.js
++++ b/dist/svg.js
+@@ -1,9 +1,25 @@
+ import { key2pos } from './util.js';
+ import { sameEndpoints, sameColor, } from './draw.js';
+ export { createElement, setAttributes };
++// ChessRiddle Studio: SVG ids are global to the document, and upstream gives every board and
++// plane the same marker and filter ids. WebKit can bind an arrow's url(#arrowhead-…) to another
++// board's marker and does not re-bind it when that board unmounts, so the arrow loses its head.
++// Every board and plane therefore owns its ids; the filter gets its id in syncDefs.
++let lastSvgScope = 0;
++const svgScopes = new WeakMap();
++function planeScope(state, below) {
++    let scope = svgScopes.get(state);
++    if (scope === undefined) {
++        scope = `cg${++lastSvgScope}`;
++        svgScopes.set(state, scope);
++    }
++    return below ? `${scope}-below` : scope;
++}
++const markerId = (scope, key) => `${scope}-arrowhead-${key}`;
++const blurFilterId = (scope) => `${scope}-filter-blur`;
+ export function createDefs() {
+     const defs = createElement('defs');
+-    const filter = setAttributes(createElement('filter'), { id: 'cg-filter-blur' });
++    const filter = createElement('filter');
+     filter.appendChild(setAttributes(createElement('feGaussianBlur'), { stdDeviation: '0.013' }));
+     defs.appendChild(filter);
+     return defs;
+@@ -39,14 +55,20 @@ export function renderSvg(state, els) {
+     if (fullHash === state.drawable.prevSvgHash)
+         return;
+     state.drawable.prevSvgHash = fullHash;
+-    syncDefs(d, shapes, els);
++    syncDefs(state, shapes, els);
+     syncShapes(shapes, els, s => renderShape(state, s, d.brushes, dests, bounds));
+ }
+-// append only. Don't try to update/remove.
+-function syncDefs(d, shapes, els) {
++// Names each plane's blur filter, then appends missing markers. Markers are append only: don't try to update/remove them.
++function syncDefs(state, shapes, els) {
++    const d = state.drawable;
+     for (const shapesEl of [els.shapes, els.shapesBelow]) {
+         const defsEl = shapesEl.querySelector('defs');
+-        const thisPlane = shapes.filter(s => (shapesEl === els.shapesBelow) === !!s.shape.below);
++        const below = shapesEl === els.shapesBelow;
++        const scope = planeScope(state, below);
++        const filter = defsEl.querySelector('filter');
++        if (filter && filter.id !== blurFilterId(scope))
++            filter.id = blurFilterId(scope);
++        const thisPlane = shapes.filter(s => below === !!s.shape.below);
+         const brushes = new Map();
+         for (const s of thisPlane.filter(s => s.shape.dest && s.shape.brush)) {
+             const brush = makeCustomBrush(d.brushes[s.shape.brush], s.shape.modifiers);
+@@ -63,7 +85,7 @@ function syncDefs(d, shapes, els) {
+         }
+         for (const [key, brush] of brushes.entries()) {
+             if (!keysInDom.has(key))
+-                defsEl.appendChild(renderMarker(brush));
++                defsEl.appendChild(renderMarker(brush, scope));
+         }
+     }
+ }
+@@ -139,7 +161,7 @@ function renderShape(state, { shape, current, pendingErase, hash }, brushes, des
+         const el = setAttributes(createElement('g'), { cgHash: hash });
+         svgs.push({ el });
+         if (from[0] !== to[0] || from[1] !== to[1])
+-            el.appendChild(renderArrow(shape, brush, from, to, current, isShort(shape.dest, dests), pendingErase));
++            el.appendChild(renderArrow(planeScope(state, !!shape.below), shape, brush, from, to, current, isShort(shape.dest, dests), pendingErase));
+         else
+             el.appendChild(renderCircle(brushes[shape.brush], from, current, bounds, pendingErase));
+     }
+@@ -170,7 +192,7 @@ function renderCircle(brush, at, current, bounds, pendingErase) {
+         r: radius - widths[1] / 2,
+     });
+ }
+-function renderArrow(s, brush, from, to, current, shorten, pendingErase) {
++function renderArrow(scope, s, brush, from, to, current, shorten, pendingErase) {
+     function renderLine(isHilite) {
+         const m = arrowMargin(shorten && !current), dx = to[0] - from[0], dy = to[1] - from[1], angle = Math.atan2(dy, dx), xo = Math.cos(angle) * m, yo = Math.sin(angle) * m;
+         const hilite = hiliteOf(s);
+@@ -178,7 +200,7 @@ function renderArrow(s, brush, from, to, current, shorten, pendingErase) {
+             stroke: isHilite ? hilite.color : brush.color,
+             'stroke-width': lineWidth(brush, current) * (isHilite ? 1.14 : 1),
+             'stroke-linecap': 'round',
+-            'marker-end': `url(#arrowhead-${isHilite ? hilite.key : brush.key})`,
++            'marker-end': `url(#${markerId(scope, isHilite ? hilite.key : brush.key)})`,
+             opacity: s.modifiers?.hilite && !pendingErase ? 1 : opacity(brush, current, pendingErase),
+             x1: from[0],
+             y1: from[1],
+@@ -189,16 +211,16 @@ function renderArrow(s, brush, from, to, current, shorten, pendingErase) {
+     if (!s.modifiers?.hilite)
+         return renderLine(false);
+     const g = setAttributes(createElement('g'), { opacity: brush.opacity });
+-    const blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
++    const blurred = setAttributes(createElement('g'), { filter: `url(#${blurFilterId(scope)})` });
+     blurred.appendChild(filterBox(from, to));
+     blurred.appendChild(renderLine(true));
+     g.appendChild(blurred);
+     g.appendChild(renderLine(false));
+     return g;
+ }
+-function renderMarker(brush) {
++function renderMarker(brush, scope) {
+     const marker = setAttributes(createElement('marker'), {
+-        id: 'arrowhead-' + brush.key,
++        id: markerId(scope, brush.key),
+         orient: 'auto',
+         overflow: 'visible',
+         markerWidth: 4,

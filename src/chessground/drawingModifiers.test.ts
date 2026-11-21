@@ -1,33 +1,11 @@
 import { Chessground } from "@lichess-org/chessground";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { DRAWING_MODIFIERS, makePgnDrawings, pgnDrawingBrushes } from "@/utils/drawings";
+import { SQUARE, installPatchedChessgroundHarness } from "@/tests/patchedChessground";
 
 // Drives the real, patched chessground (patches/@lichess-org__chessground@10.1.1.patch).
-const SQUARE = 50;
-let frames: FrameRequestCallback[] = [];
-
-beforeEach(() => {
-    frames = [];
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-        frames.push(callback);
-        return frames.length;
-    });
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
-        DOMRect.fromRect({ x: 0, y: 0, width: 8 * SQUARE, height: 8 * SQUARE }),
-    );
-});
-
-afterEach(() => {
-    vi.restoreAllMocks();
-    document.body.innerHTML = "";
-});
-
-function flushFrame() {
-    const pending = frames;
-    frames = [];
-    for (const callback of pending) callback(0);
-}
+const flushFrame = installPatchedChessgroundHarness();
 
 /** Center of a square from White's point of view. */
 function point(file: number, rank: number) {

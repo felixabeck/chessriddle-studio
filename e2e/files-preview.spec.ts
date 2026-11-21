@@ -1016,11 +1016,11 @@ test("files-preview: saved shapes stay beside chooser arrows and follow the chos
     await expect(savedSquare).toHaveAttribute("stroke", "#00bcd4");
     await expect(svg.locator("g[cgHash*=',e2,e4,continuationSelected'] line")).toHaveAttribute(
         "marker-end",
-        "url(#arrowhead-cs)",
+        /^url\(#cg\d+-arrowhead-cs\)$/,
     );
     await expect(svg.locator("g[cgHash*=',d2,d4,continuationOther'] line")).toHaveAttribute(
         "marker-end",
-        "url(#arrowhead-co)",
+        /^url\(#cg\d+-arrowhead-co\)$/,
     );
 
     await chooser.getByRole("option", { name: "1. d4", exact: true }).click();
