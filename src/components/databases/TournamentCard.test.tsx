@@ -30,13 +30,15 @@ vi.mock("@/state/linkedCollections", async (importOriginal) => {
     },
   };
 });
-vi.mock("@/utils/db", () => ({ getTournamentGames: mocks.getTournamentGames }));
+vi.mock("@/utils/db", async (original) => ({
+  ...(await original<typeof import("@/utils/db")>()),
+  getTournamentGames: mocks.getTournamentGames,
+}));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("zustand", () => ({
   useStore: (_store: unknown, selector: (state: unknown) => unknown) =>
     selector({
-      database: { title: "Candidates database" },
       tournaments: { activeTab: "games" },
       setTournamentsActiveTab: vi.fn(),
     }),
@@ -477,6 +479,10 @@ function tournamentGame(linked?: NormalizedGame["linked"]): NormalizedGame {
 async function openTournamentGame(game: NormalizedGame) {
   const database = file("tournament-open");
   mocks.getTournamentGames.mockResolvedValue({ data: [game] });
+  // Recent records the title the database listing holds for this handle.
+  cache.set("databases", {
+    data: { databases: [{ type: "success", file: database, title: "Candidates database" }] },
+  });
   await render(database);
   await vi.waitFor(() =>
     expect(container.querySelector('[aria-label="Common.Open"]')).not.toBeNull(),

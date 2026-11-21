@@ -1,6 +1,5 @@
 import { Alert, Button, Loader, Paper, Stack, Text } from "@mantine/core";
-import { useNavigate } from "@tanstack/react-router";
-import { useSetAtom, useStore } from "jotai";
+import { useStore } from "jotai";
 import {
   createContext,
   useContext,
@@ -10,19 +9,18 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { closingTabsAtom, addRecentFileAtom, tabsAtom } from "@/state/atoms";
+import { closingTabsAtom, tabsAtom } from "@/state/atoms";
 import { getCachedTreeStore } from "@/state/store/tree";
 import { useOwnerTab } from "@/state/tabScope";
-import { openDatabaseGame } from "@/utils/databaseGame";
 import {
   lookupGameReference,
   type GameReference,
   type ReferenceOccurrence,
   type ReferenceSearch,
 } from "@/utils/gameReferences";
-import { getTabTreeKey, runTabCreation, sameTabOwner } from "@/utils/tabs";
-import { OpenGameButton, useGameOpen } from "./gameOpen";
+import { getTabTreeKey, sameTabOwner } from "@/utils/tabs";
+import { OpenGameButton } from "./gameOpen";
+import { useOpenDatabaseGame } from "./useOpenDatabaseGame";
 import { AppModal } from "./AppModal";
 import { TreeStateContext } from "./TreeStateContext";
 
@@ -33,9 +31,6 @@ export const GameReferenceContext = createContext<((reference: GameReference) =>
 /** The notation surface, rather than each virtualized comment, owns one request and dialog. */
 export function GameReferenceProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const setTabs = useSetAtom(tabsAtom);
-  const addRecentFile = useSetAtom(addRecentFileAtom);
   const workspace = useStore();
   const store = useContext(TreeStateContext)!;
   const [ownerTab] = useOwnerTab();
@@ -45,22 +40,10 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<{ reference: GameReference; result?: ReferenceSearch } | null>(
     null,
   );
-  const reportError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
-  const opener = useGameOpen(
-    (occurrence: ReferenceOccurrence) =>
-      runTabCreation({
-        create: () =>
-          openDatabaseGame({
-            game: occurrence.game,
-            database: occurrence.database,
-            setTabs,
-            addRecentFile,
-          }),
-        onSuccess: () => navigate({ to: "/" }),
-        onError: reportError,
-      }),
-    reportError,
-  );
+  const opener = useOpenDatabaseGame((occurrence: ReferenceOccurrence) => ({
+    game: occurrence.game,
+    database: occurrence.database,
+  }));
   const close = () => {
     request.current?.abort();
     request.current = null;

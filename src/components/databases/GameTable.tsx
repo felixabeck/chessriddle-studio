@@ -2,9 +2,7 @@ import { Box, Collapse, Flex, Group, InputWrapper, Select, Stack } from "@mantin
 import { DateInput } from "@mantine/dates";
 import { useHotkeys } from "@mantine/hooks";
 import { EllipsisVertical } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
-import { useAtom, useSetAtom } from "jotai";
 import { DataTable } from "mantine-datatable";
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,13 +11,11 @@ import { useStore } from "zustand";
 import type { GameSort, NormalizedGame, Outcome } from "@/bindings";
 import { EloRangeSlider } from "@/components/common/EloRangeSlider";
 import { IconAction } from "@/components/common/IconAction";
-import { gameRowActivation, useGameOpen } from "@/components/common/gameOpen";
-import { inlineFailureMessage, notifyUnlessCancelled } from "@/components/files/notifyError";
+import { gameRowActivation } from "@/components/common/gameOpen";
+import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
+import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { query_games, sameDatabaseHandle } from "@/utils/db";
-import { runTabCreation } from "@/utils/tabs";
-import { openDatabaseGame } from "@/utils/databaseGame";
 import { failureUnlessCancelled } from "@/platform/errors";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { dateColumn, numericColumn, truncatedTextColumn } from "./databaseColumns";
@@ -50,7 +46,6 @@ function isGameSortAccessor(accessor: string): accessor is GameSortAccessor {
 function GameTable() {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
-  const databaseTitle = useStore(store, (s) => s.database?.title);
 
   const file = useStore(store, (s) => s.database?.file)!;
   const query = useStore(store, (s) => s.games.query);
@@ -61,11 +56,6 @@ function GameTable() {
   const selectedGameId = useStore(store, (s) => s.games.selectedGameId);
   const setSelectedGameId = useStore(store, (s) => s.setGamesSelectedGameId);
   const generation = useStore(store, (s) => s.database?.collection?.generation);
-
-  const navigate = useNavigate();
-
-  const [, setTabs] = useAtom(tabsAtom);
-  const addRecentFile = useSetAtom(addRecentFileAtom);
 
   const requestKey = generation
     ? (["games", file, query, generation] as const)
@@ -79,23 +69,10 @@ function GameTable() {
   const games = failure ? [] : (data?.data ?? []);
   const game = games.find((game) => game.id === selectedGameId);
   const count = failure ? undefined : data?.count;
-  const reportOpenError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
-  const gameOpen = useGameOpen(
-    (record: NormalizedGame) =>
-      runTabCreation({
-        create: () =>
-          openDatabaseGame({
-            game: record,
-            database: file,
-            setTabs,
-            addRecentFile,
-            databaseTitle: databaseTitle,
-          }),
-        onSuccess: () => navigate({ to: "/" }),
-        onError: reportOpenError,
-      }),
-    reportOpenError,
-  );
+  const gameOpen = useOpenDatabaseGame((record: NormalizedGame) => ({
+    game: record,
+    database: file,
+  }));
 
   useHotkeys([
     [

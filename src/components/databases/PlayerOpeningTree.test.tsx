@@ -80,6 +80,7 @@ vi.mock("@/state/linkedCollections", async (importOriginal) => {
   };
 });
 vi.mock("@/hooks/useDatabaseList", () => ({
+  DATABASE_LIST_KEY: "databases",
   useDatabaseList: () => ({
     data: {
       databases: [file, reference].map((handle) => ({

@@ -47,8 +47,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/components/library/useWorkspaceListing", () => ({
   useWorkspaceListing: () => mocks.listing,
 }));
-vi.mock("@/hooks/useDatabaseList", () => ({ useDatabaseList: () => mocks.databases }));
-vi.mock("swr", () => ({ useSWRConfig: () => ({ mutate: vi.fn() }) }));
+vi.mock("@/hooks/useDatabaseList", () => ({
+  DATABASE_LIST_KEY: "databases",
+  useDatabaseList: () => mocks.databases,
+}));
+vi.mock("swr", () => ({ useSWRConfig: () => ({ mutate: vi.fn(), cache: new Map() }) }));
 vi.mock("@/components/library/useLibraryDueCounts", () => ({
   useLibraryDueCounts: (rows: LibraryRow[]) => {
     const values = rows

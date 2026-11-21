@@ -1,37 +1,19 @@
 import { Box, Group, Loader, Stack, Text, UnstyledButton } from "@mantine/core";
-import { useNavigate } from "@tanstack/react-router";
-import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
-import { useGameOpen } from "@/components/common/gameOpen";
-import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { errorUnlessCancelled } from "@/platform/errors";
-import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { useDatabaseContentRevision } from "@/state/linkedCollections";
-import { openDatabaseGame } from "@/utils/databaseGame";
 import { query_games } from "@/utils/db";
-import { runTabCreation } from "@/utils/tabs";
 import classes from "./LastGamesList.module.css";
 
 const LAST_GAMES_LIMIT = 10;
 
 function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle }) {
   const { t } = useTranslation();
-  const setTabs = useSetAtom(tabsAtom);
-  const addRecentFile = useSetAtom(addRecentFileAtom);
-  const navigate = useNavigate();
-  const onError = (cause: unknown) => notifyUnlessCancelled(t("Common.Error"), cause);
-  const gameOpen = useGameOpen(
-    (game: NormalizedGame) =>
-      runTabCreation({
-        create: () => openDatabaseGame({ game, database: file, setTabs, addRecentFile }),
-        onSuccess: () => navigate({ to: "/" }),
-        onError,
-      }),
-    onError,
-  );
+  const gameOpen = useOpenDatabaseGame((game: NormalizedGame) => ({ game, database: file }));
   const { revision, unavailable } = useDatabaseContentRevision(file);
   const requestKey =
     revision && !unavailable

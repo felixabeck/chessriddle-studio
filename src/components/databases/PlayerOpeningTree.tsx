@@ -18,7 +18,7 @@ import { useTranslation } from "react-i18next";
 import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
 import { Chessground } from "@/chessground/Chessground";
 import { IconAction } from "@/components/common/IconAction";
-import { useGameOpen } from "@/components/common/gameOpen";
+import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import ResultsChart from "@/components/home/PersonalCardPanels/ResultsChart";
 import DatabaseLoader from "@/components/panels/database/DatabaseLoader";
@@ -28,7 +28,6 @@ import {
   useLocalExplorer,
 } from "@/components/panels/database/useLocalExplorer";
 import {
-  addRecentFileAtom,
   dbTabFamily,
   dbTypeFamily,
   localOptionsFamily,
@@ -38,7 +37,6 @@ import {
 } from "@/state/atoms";
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
 import { databaseGameHeaders } from "@/utils/databaseGameTree";
-import { openDatabaseGame } from "@/utils/databaseGame";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { createTab, runTabCreation } from "@/utils/tabs";
 import GamePreview from "./GamePreview";
@@ -221,18 +219,14 @@ function OpeningTree({
   }
   const [preparing, setPreparing] = useState(false);
   const setTabs = useSetAtom(tabsAtom);
-  const addRecentFile = useSetAtom(addRecentFileAtom);
   const atoms = useStore();
   const navigate = useNavigate();
   const onError = (cause: unknown) => notifyUnlessCancelled(t("Common.Error"), cause);
-  const gameOpen = useGameOpen(
-    ({ source, game }: { source: OpeningTreeSource; game: NormalizedGame }) =>
-      runTabCreation({
-        create: () => openDatabaseGame({ game, database: source.file, setTabs, addRecentFile }),
-        onSuccess: () => navigate({ to: "/" }),
-        onError,
-      }),
-    onError,
+  const gameOpen = useOpenDatabaseGame(
+    ({ source, game }: { source: OpeningTreeSource; game: NormalizedGame }) => ({
+      game,
+      database: source.file,
+    }),
   );
   const changeMoves = (next: string[]) => {
     setSelected(null);

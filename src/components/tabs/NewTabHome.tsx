@@ -22,7 +22,6 @@ import equal from "fast-deep-equal";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  addRecentFileAtom,
   updateRecentFilesAtom,
   isDatabaseRecent,
   recentFileKey,
@@ -31,10 +30,11 @@ import {
   recentFilesAtom,
   tabsAtom,
 } from "@/state/atoms";
-import { gameSignature, openDatabaseGame } from "@/utils/databaseGame";
+import { gameSignature } from "@/utils/databaseGame";
 import { runTabCreation, type Tab } from "@/utils/tabs";
 import { openFile } from "@/utils/openFile";
 import { useGameOpen } from "@/components/common/gameOpen";
+import { useDatabaseGameOpener } from "@/components/common/useOpenDatabaseGame";
 import GameSelector, { type GameSelectorRow } from "@/components/panels/info/GameSelector";
 import { StaleFileGameError } from "@/state/fileStructureChange";
 import CreateRepertoireModal from "./CreateRepertoireModal";
@@ -195,7 +195,7 @@ export default function NewTabHome({ id }: { id: string }) {
   const [, setTabs] = useAtom(tabsAtom);
 
   const [recentFiles, setRecentFiles] = useAtom(recentFilesAtom);
-  const addRecentFile = useSetAtom(addRecentFileAtom);
+  const openDatabaseGameTab = useDatabaseGameOpener();
   const updateRecentFiles = useSetAtom(updateRecentFilesAtom);
   const navigate = useNavigate();
   const [lastOpened] = useAtom(lastOpenedAtom);
@@ -377,22 +377,15 @@ export default function NewTabHome({ id }: { id: string }) {
           });
           return;
         }
-        const tabId = await openDatabaseGame({
-          game: result.game,
-          database: file.database,
-          databaseTitle: file.databaseTitle,
-          signal,
-          setTabs,
-          addRecentFile,
-          ownerId: id,
-          store,
-        });
-        if (tabId !== null) navigate({ to: "/" });
+        await openDatabaseGameTab(
+          { game: result.game, database: file.database, databaseTitle: file.databaseTitle },
+          { signal, ownerId: id, store },
+        );
       } catch (cause) {
         if (!signal.aborted) notifyUnlessCancelled(t("Common.Error"), cause);
       }
     },
-    [setTabs, setRecentFiles, addRecentFile, navigate, t, id, store],
+    [setRecentFiles, openDatabaseGameTab, t, id, store],
   );
 
   const openRow = async (row: HomeRow) => {
@@ -464,34 +457,24 @@ export default function NewTabHome({ id }: { id: string }) {
           if (controller.signal.aborted) return;
           const game = result.data[0];
           if (!game) throw new Error(t("Home.Library.OpenFailed"));
-          const tabId = await openDatabaseGame({
-            game,
-            database,
-            databaseTitle: stripPgnExtension(row.name),
-            signal: controller.signal,
-            setTabs,
-            addRecentFile,
-            ownerId: id,
-            store,
-          });
-          if (tabId !== null) navigate({ to: "/" });
+          await openDatabaseGameTab(
+            { game, database, databaseTitle: stripPgnExtension(row.name) },
+            { signal: controller.signal, ownerId: id, store },
+          );
         } else
           openDatabaseTable(
             { ...metadata, type: "success", file: database, collection: row.collection },
             navigate,
           );
       } else if (row.kind === "game" && row.own) {
-        const tabId = await openDatabaseGame({
-          game: row.own.game,
-          database: row.own.collection.database,
-          databaseTitle: stripPgnExtension(row.own.collection.name),
-          signal: controller.signal,
-          setTabs,
-          addRecentFile,
-          ownerId: id,
-          store,
-        });
-        if (tabId !== null) navigate({ to: "/" });
+        await openDatabaseGameTab(
+          {
+            game: row.own.game,
+            database: row.own.collection.database,
+            databaseTitle: stripPgnExtension(row.own.collection.name),
+          },
+          { signal: controller.signal, ownerId: id, store },
+        );
       }
     } catch (cause) {
       if (!controller.signal.aborted) notifyUnlessCancelled(t("Home.Library.OpenFailed"), cause);

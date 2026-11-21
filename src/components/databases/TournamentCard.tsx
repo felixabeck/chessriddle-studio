@@ -1,7 +1,5 @@
 import { Paper, Stack, Tabs, Text, useMantineTheme } from "@mantine/core";
 import { Eye } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
-import { useAtom, useSetAtom } from "jotai";
 import { DataTable, type DataTableSortStatus } from "mantine-datatable";
 import { useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,15 +8,12 @@ import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import type { DatabaseHandle, Event, NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
-import { useGameOpen } from "@/components/common/gameOpen";
+import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { addRecentFileAtom, tabsAtom } from "@/state/atoms";
 import { useDatabaseContentRevision } from "@/state/linkedCollections";
 import type { DatabaseViewStore } from "@/state/store/database";
 import { getTournamentGames } from "@/utils/db";
-import { runTabCreation } from "@/utils/tabs";
-import { openDatabaseGame } from "@/utils/databaseGame";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { dateColumn, numericColumn } from "./databaseColumns";
 import PlayerRatingCell from "./PlayerRatingCell";
@@ -60,31 +55,14 @@ const gamePoints = (game: NormalizedGame, player: string) => {
 function TournamentCard({ tournament, file }: { tournament: Event; file: DatabaseHandle }) {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
-  const databaseTitle = useStore(store, (s) => s.database?.title);
   const tournamentsActiveTab = useStore(store, (s) => s.tournaments.activeTab);
   const setTournamentsActiveTab = useStore(store, (s) => s.setTournamentsActiveTab);
 
   const theme = useMantineTheme();
-  const navigate = useNavigate();
-  const [, setTabs] = useAtom(tabsAtom);
-  const addRecentFile = useSetAtom(addRecentFileAtom);
-  const reportOpenError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
-  const gameOpen = useGameOpen(
-    (record: NormalizedGame) =>
-      runTabCreation({
-        create: () =>
-          openDatabaseGame({
-            game: record,
-            database: file,
-            setTabs,
-            addRecentFile,
-            databaseTitle: databaseTitle,
-          }),
-        onSuccess: () => navigate({ to: "/" }),
-        onError: reportOpenError,
-      }),
-    reportOpenError,
-  );
+  const gameOpen = useOpenDatabaseGame((record: NormalizedGame) => ({
+    game: record,
+    database: file,
+  }));
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const { revision, unavailable } = useDatabaseContentRevision(file);
