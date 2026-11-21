@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CatalogVerificationError } from "@/utils/signedCatalog";
 import { defaultPuzzleDatabaseProgressId } from "@/utils/db";
+import type { PuzzleDatabaseInfo } from "@/bindings";
 import AddPuzzle from "./AddPuzzle";
 import {
   expectRestoredDownloadCancellation,
@@ -135,7 +136,7 @@ afterEach(() => {
   host.remove();
 });
 
-async function render() {
+async function render(puzzleDbs: { title: string }[] = []) {
   const setOpened = vi.fn();
   const publish = vi.fn();
   const refreshPuzzleDbs = vi.fn(async (signal?: AbortSignal) => {
@@ -148,7 +149,7 @@ async function render() {
       <AddPuzzle
         opened
         setOpened={setOpened}
-        puzzleDbs={[]}
+        puzzleDbs={puzzleDbs as PuzzleDatabaseInfo[]}
         refreshPuzzleDbs={refreshPuzzleDbs}
         onWorkspaceChanged={onWorkspaceChanged}
       />,
@@ -211,6 +212,19 @@ test("wires progress id from the download URL, not the manifest index", async ()
     defaultPuzzleDatabaseProgressId("https://example.test/tactics.db3"),
   );
   expect(mocks.progressButtonProps?.id).not.toBe("puzzle_db_0");
+});
+
+test("marks a catalog puzzle database installed when the workspace already holds it", async () => {
+  mocks.defaultDatabases = [tacticsManifest];
+  await render([{ title: "Lichess.db3" }]);
+  expect(mocks.progressButtonProps?.initInstalled).toBe(true);
+  expect(host.textContent).toContain("Puzzle.DatabaseLichessTacticsCommon.Size42 BPuzzle.Puzzles3");
+});
+
+test("offers install while the catalog puzzle database is absent", async () => {
+  mocks.defaultDatabases = [tacticsManifest];
+  await render([{ title: "Other.db3" }]);
+  expect(mocks.progressButtonProps?.initInstalled).toBe(false);
 });
 
 test("a running puzzle download with no local job renders Cancel and calls native lookup", async () => {

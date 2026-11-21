@@ -6,6 +6,7 @@ import { databaseConversionStateAtom, databaseConversionRefreshFailedAtom } from
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CatalogVerificationError } from "@/utils/signedCatalog";
 import { defaultDatabaseProgressId } from "@/utils/db";
+import { formatBytes } from "@/utils/format";
 import {
   clickProgressCancel,
   expectRestoredDownloadCancellation,
@@ -324,6 +325,14 @@ test("wires installed state and progress id from the download URL", async () => 
   expect(mocks.progressButtonProps?.id).toBe(defaultDatabaseProgressId(manifestDb.downloadLink));
   expect(mocks.progressButtonProps?.id).not.toBe("db_0");
   expect(mocks.progressButtonProps?.initInstalled).toBe(true);
+});
+
+test("labels each catalog card stat with its own manifest value", async () => {
+  mocks.defaultDatabases = [manifestDb];
+  await renderAddDatabase();
+  expect(host.textContent).toContain(
+    `Board.Tabs.DatabaseLichessGamesCommon.Size${formatBytes(3)}Databases.Card.Games2Databases.Card.Players1`,
+  );
 });
 
 test("offers install while the catalog download leaf is absent from the workspace", async () => {
