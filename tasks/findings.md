@@ -27463,6 +27463,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Rejected:** fetching the listing (`useDatabaseList`) inside the hook. That would trigger a metadata scan from every surface that can open a game. Reading the cache keeps the lookup free and falls back to no title, which was the old behaviour.
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"f7f2f6eeca2a23d704f73c4e9af697659ce6bae159508e34b766e070cdde56b9","header_sha256":"336b5898469c8d4fc8b91f38c6d870fed1f98aef985b6634427053bd35da4403","header_status":"handled","input_sha256":"3069df0dea26d322f1e4792a68049c812e852dbf5d2ade0d2c61ff882d707010","kind":"mutation-receipt","operation":"7f3fdfeae4d61fce288dc4eb3683a61f6e46ddaa97a1a80781d503d199cdffd3","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-06"],"target":"f-20261119-06","v":1} -->
 
+* **Push review 2026-11-21 (86d0a4b00):** review-root-cause found that GameReference opens before any listing mount still recorded no title, because the SWR listing cache was empty. Every `ReferenceOccurrence` now carries its database's `databaseTitle` from the lookup's own metadata, and GameReference passes it to the opener. `useOpenDatabaseGame.test.tsx` now drives the hook itself: the cache fills an untitled open, a caller's title wins, a refused admission does not navigate, and signal/owner/store reach admission.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"10d3ae25ee62c3bff2a2714f4d465173c83b180d4494d26715f6a1a45b9b4190","input_sha256":"32de68af972e41e318ee36855ed3f76e10fc0f5f8e7502f608d3abdeb7274082","kind":"mutation-receipt","operation":"776a08a52fb7f647bac5ed51d845d7b70cbfb39c27494ad1a0f8abc7b4d803c3","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-06"],"target":"f-20261119-06","v":1} -->
+
 ---
 
 ## 2026-11-19 — filed through the inbox spool
