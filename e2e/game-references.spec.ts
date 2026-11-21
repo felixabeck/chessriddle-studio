@@ -45,7 +45,7 @@ const preparation: Token[] = [
     { type: "San", value: "c5" },
     { type: "Outcome", value: "*" },
 ];
-function commands(matches: NormalizedGame[]) {
+function commands(matches: NormalizedGame[], prepared: Token[] = preparation) {
     return filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
         ...pgnFileCommands,
         ...databaseCommands("reference-database", "citations.db3", {
@@ -59,7 +59,7 @@ function commands(matches: NormalizedGame[]) {
         }),
         lex_pgn: {
             pgnTokens: {
-                [filesWorkspaceFixture.pgnGame]: preparation,
+                [filesWorkspaceFixture.pgnGame]: prepared,
                 [game.moves]: [
                     { type: "San", value: "d4" },
                     { type: "San", value: "d5" },
@@ -168,4 +168,39 @@ test("citations: only a complete unique occurrence opens automatically", async (
         gameId: 1,
     });
     await expect(page.getByRole("button", { name: "d5", exact: true })).toBeVisible();
+});
+
+// Felix's preparation, 2026-11-21: the citation follows a move and continues with his own plan,
+// and the same pairing also met in another event.
+test("citations: the cited event opens its game directly at the commented move", async ({
+    page,
+    mockScenario,
+    capture,
+}) => {
+    const cited =
+        "0-1 Beerdsen,T (2520)-Bluebaum,M (2651) Elllobregat op 3rd Sant Boi de Llobregat 2022 Plan: Königsangriff";
+    const afterMove: Token[] = [
+        { type: "Header", value: { tag: "White", value: "Preparation" } },
+        { type: "Header", value: { tag: "Black", value: "Citations" } },
+        { type: "San", value: "d4" },
+        { type: "Comment", value: cited },
+        { type: "San", value: "d5" },
+        { type: "Outcome", value: "*" },
+    ];
+    const otherEvent = { ...game, id: 2, event: "Other open", date: "2021.04.10" };
+    await mockScenario({ commands: commands([otherEvent, game], afterMove) });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
+    await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await page.getByRole("button", { name: /^0-1 Beerdsen,T/ }).click();
+    await expect
+        .poll(async () => (await activeWorkspaceTab(page))?.gameOrigin)
+        .toMatchObject({ kind: "database", gameId: 1 });
+    await expect(page.getByRole("dialog", { name: "Find referenced game" })).toHaveCount(0);
+    await expect(page.locator('#bottomRight [data-notation-current="true"] button')).toHaveText(
+        /d4/,
+    );
+    await capture("citations-direct-open-at-move");
 });
