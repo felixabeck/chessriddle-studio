@@ -27519,7 +27519,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### GameTable, PlayerTable and TournamentTable each restate the same paged, selectable DataTable wiring
 
-* **ID:** f-20261119-10 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-10 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
 * **Where:** `src/components/databases/GameTable.tsx` (`GameTable`: hotkeys `:100-115`, DataTable `:229-316`), `src/components/databases/PlayerTable.tsx` (`PlayerTable`: hotkeys `:52-63`, DataTable `:135-206`), `src/components/databases/TournamentTable.tsx` (`TournamentTable`: hotkeys `:48-59`, DataTable `:81-183`). All three were upstream list views at merge-base `9654961d6`.
@@ -27540,6 +27540,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** add one `useDatabaseListTable({ records, count, error, isLoading, query, setQuery, selectedId, setSelectedId, sortAccessors, emptyText, activate })` hook in `src/components/databases/` (next to `pageSelection.ts`). It returns the shared DataTable props and registers the arrow-key hotkeys. Each table keeps only its columns, sort-accessor map and preview. No behaviour change. The existing GameTable/PlayerTable/TournamentTable tests stay as the guard.
 * **Proof:** line references above at origin/master `7086448c7`. `rg -n "getAdjacentRecordId|onPageChange=|onRecordsPerPageChange=|recordsPerPageOptions" src/components/databases` shows the three parallel sets.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+* **Closed 2026-11-21:** `src/components/databases/useDatabaseListTable.ts` returns the shared DataTable props and registers ArrowUp/ArrowDown through Mantine's `useHotkeys`. GameTable, PlayerTable and TournamentTable spread it and keep only their columns, sort mapping (`sortAccessor`/`sortOf`, where undefined ignores the column) and preview. Drift removed: Player and Tournament used react-hotkeys-hook and selected on click by index. All three now use one hotkey hook and select by record. Commit b096d0210. Proof: tsc, oxlint, and the database test suite (519 tests) green, including the GameTable and PlayerTournamentTable arrow, sort and paging tests, which now drive the shared hook.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"51881e83a37dfa3e476db450d3c0ffc450e07d6ca3107032d3af3b78d5d2b24a","header_sha256":"2afbdfdd69f9361a61ac6749bdc7ade4aa3c3f2d35248603c35610119ab0c730","header_status":"handled","input_sha256":"4197ed10c4f5049c80cbf6c28eb2047802e695d851582dbff0685c06af5b644a","kind":"mutation-receipt","operation":"24b390d87a3b2ce182c38f4f2682bb764c920fec45c3daf5a05ebd1c96db6cfd","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-10"],"target":"f-20261119-10","v":1} -->
 
 ---
 
