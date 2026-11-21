@@ -27183,7 +27183,7 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 
 ### The `account-download-durability-uncertain` full-page screenshot differs by 562 pixels on one CI run and passes on rerun
 
-* **ID:** f-20261117-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261117-03 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** e7f0a3b6-0b7b-40fe-95a5-4f116a445357
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (CI wait for the f-20261115-15 push, commit `7c07e63aa`)
@@ -27195,6 +27195,9 @@ Proof: injecting TerminateFailure::ReapTimeout into the NoStdout iteration repro
 * **Related:** f-20261011-07 (handled, same spec, an unsettled modal scroll position before a dialog screenshot).
 * **Id corrected (2026-11-17, drain rebase):** this entry was merged by drain commit `ed1ebad04` as `f-20261117-02` while `origin/master` (`8d52c1e88`) had already filed a different finding (analysis-board frame clipping) under the same id. Resolving the rebase conflict kept both entries and renumbered this one to `f-20261117-03`. No other record referenced the old id for this entry.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"db77118e2a6ec04e68b8381c2f0ab9bf6f5bee2f35ea7d5aa9c431b814ad3458","input_sha256":"61c1ef90471a98739bf25093a25fae369f7df7ccbe9aa67091de4b593216f0ba","kind":"mutation-receipt","operation":"332bf0f668bea6d6dd11dec232fb2cf1b3e958405043f3ae1ca3f625183e4f7c","options":{"section":null},"request_id_sha256":null,"results":["f-20261117-03"],"target":"f-20261117-03","v":1} -->
+
+* **Handled (2026-11-21, commit `239496754`):** the CI diff artifact (artifact 14321833363, run 44068624944) puts all 562 differing pixels in 439,166–732,306: the committed baseline held the "Download games" hover tooltip and the hovered button background, while the failing capture had neither. The click left the pointer on the button, and the pending import disables that button, so whether the hover tooltip survived to the capture depended on timing. The test now moves the pointer to (0,0) and asserts zero `tooltip` roles before the notification checks, following the `async-errors.spec.ts` download-click precedent. The baseline was re-recorded in the pinned container; its only change from the old baseline is that region. Proof: `pnpm test:e2e:container -- --project=accounts-puzzles-engines --grep "save is not confirmed" --repeat-each=20`, 20 passed. Rejected: masking the tooltip, because moving the pointer away removes the nondeterminism instead of hiding it.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ab85fb811ef1bda5a214e60c3bcf691ae8b14a40674dfd8108f52fb26d43c436","header_sha256":"8e715bbb872fd46fc6420b6e321b974e238f72961f8a4c82487c14b900d7b0d0","header_status":"handled","input_sha256":"188fed897a8091c446da8cc10a1f20e6d336fa337104dff27716ba5f44dcd2a7","kind":"mutation-receipt","operation":"2ef9c71121e73652c2cc889623e85b0bc7b88be2f84032e748d43256e1c88d67","options":{"section":null},"request_id_sha256":null,"results":["f-20261117-03"],"target":"f-20261117-03","v":1} -->
 
 ---
 
