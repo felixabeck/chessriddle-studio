@@ -1383,6 +1383,22 @@ describe("InfoPanel game loading and cancellation", () => {
     },
   );
 
+  test("renders the shared tree-stats row for the current tree", async () => {
+    expect(treeStore.getState().makeMoves({ payload: ["e4", "e5"] }).success).toBe(true);
+    await act(async () => {
+      root.render(renderPanel());
+    });
+
+    const stats = [...container.querySelectorAll("p")]
+      .map((element) => element.textContent)
+      .filter((text) => text?.startsWith("TreeStats."));
+    expect(stats).toEqual([
+      "TreeStats.Variations: 1",
+      "TreeStats.MaxDepth: 2",
+      "TreeStats.TotalMoves: 2",
+    ]);
+  });
+
   test("successful setPage loads game and updates tab and tree state", async () => {
     const mockTree = defaultTree();
     mockTree.headers.event = "Next chapter";

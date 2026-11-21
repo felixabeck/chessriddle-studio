@@ -5,9 +5,14 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { deferTreeView, releaseTreeView } from "@/state/deferredTreeView";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { getStats } from "@/utils/repertoire";
 import { TreeStatsBar } from "./TreeStatsBar";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("@/utils/repertoire", async (original) => {
+  const actual = await original<typeof import("@/utils/repertoire")>();
+  return { ...actual, getStats: vi.fn(actual.getStats) };
+});
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let host: HTMLDivElement;
@@ -61,8 +66,11 @@ test("shows the tree's counts under the shared keys and follows store updates", 
 
 test("a deferred file install shows zero counts until release shows the installed tree", async () => {
   deferTreeView(store);
+  vi.mocked(getStats).mockClear();
   await render();
   await act(async () => store.getState().makeMoves({ payload: ["e4"] }));
+  // The install path defers the view precisely so this render skips the tree walk.
+  expect(getStats).not.toHaveBeenCalled();
   expect(labels()).toEqual([
     "TreeStats.Variations: 0",
     "TreeStats.MaxDepth: 0",

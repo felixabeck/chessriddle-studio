@@ -535,6 +535,23 @@ test.each(["KQkq e3", "HAha -"])(
   },
 );
 
+test("renders the shared tree-stats row with and without a reference database", async () => {
+  const builder = createTreeStore();
+  expect(builder.getState().makeMoves({ payload: ["e4", "e5"] }).success).toBe(true);
+  const initial = builder.getState();
+  builder.dispose();
+  const atoms = await renderRepertoireInfo(initial, "repertoire-info-tree-stats");
+  const stats = () =>
+    [...host.querySelectorAll("p")]
+      .map((element) => element.textContent)
+      .filter((text) => text?.startsWith("TreeStats."));
+  const expected = ["TreeStats.Variations: 1", "TreeStats.MaxDepth: 2", "TreeStats.TotalMoves: 2"];
+  expect(stats()).toEqual(expected);
+
+  await act(async () => atoms.set(referenceDbAtom, null));
+  expect(stats()).toEqual(expected);
+});
+
 test("renders exact White and Black move labels", async () => {
   const initial = defaultTree();
   const whiteMove = createNode({
