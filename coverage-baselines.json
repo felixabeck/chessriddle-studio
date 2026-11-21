@@ -58,6 +58,7 @@
           "src/components/common/PointerContextMenu.tsx",
           "src/components/common/ShowMaterial.tsx",
           "src/components/common/TreeStateContext.tsx",
+          "src/components/common/TreeStatsBar.tsx",
           "src/components/common/notationRows.ts",
           "src/components/panels/analysis/**",
           "src/components/panels/annotation/**",
