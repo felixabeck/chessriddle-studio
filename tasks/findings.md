@@ -27429,7 +27429,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### AddDatabase's `DatabaseCard` and AddPuzzle's `PuzzleDbCard` are one catalogue download card copied twice
 
-* **ID:** f-20261119-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-05 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `7086448c7`
 * **Where:** `src/components/databases/AddDatabase.tsx:303-401` (`DatabaseCard`, `downloadDatabase`) and `src/components/puzzles/AddPuzzle.tsx:101-192` (`PuzzleDbCard`, its download handler). Both cards were already present upstream at merge-base `9654961d6`.
@@ -27438,6 +27438,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** extract one `CatalogDownloadCard` (for example in `src/components/common/`) that takes `{ progressId, initInstalled, kindLabel, title, description, stats: { label, value }[], resolveDestination, leaf, onInstalled, errorKind, digest }` and owns the in-progress state, the `runDownloadJob` call and the layout. Both catalogues pass their own destination and reload callbacks. Give puzzles a `catalogPuzzleFilename` (or reuse `catalogDatabaseFilename`) so both leaf rules live in `utils/db.ts`. No behaviour change. `AddDatabase.test.tsx` and `AddPuzzle.test.tsx` stay as the guard.
 * **Proof:** `diff <(sed -n 295,350p AddDatabase.tsx) <(sed -n 93,148p AddPuzzle.tsx)` and the same for `350-420` / `149-220` at origin/master show only the name, destination, leaf, error-kind and stat-cell differences listed above.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `7086448c7`.
+* **Handled (2026-11-21, drain):** `86f3e03ec` extracts `src/components/common/CatalogDownloadCard.tsx`, which owns the in-progress state, `useDownloadJob`, the `runUnlessCancelled(runDownloadJob(… tauri.downloadFile(…, { sha256, signature })))` call, the post-install callback and the card layout. `AddDatabase` and `AddPuzzle` pass `item`, `kindLabel`, `stats`, `resolveDestination`, `leaf`, `onInstalled` and `errorDomain`; `DatabaseCard` and `PuzzleDbCard` are deleted. The puzzle leaf now comes from `catalogPuzzleFilename` (built on `puzzleDatabaseExtension`) in `src/utils/db.ts`, beside `catalogDatabaseFilename`. Proof: `AddDatabase.test.tsx`, `AddPuzzle.test.tsx` and `db.test.ts` pass unchanged (220 tests), including the exact `downloadFile` argument assertions for both catalogues. Rejected: reusing `catalogDatabaseFilename` for puzzles, because the two leaves belong to different workspaces and the puzzle install check already keys on `puzzleDatabaseExtension`.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"f31e1778146594c2cc2289084ecb04efa508148986324f96a775d3c90c2d277d","header_sha256":"6ac1c613aab483120faa99e7a0e65ad7985a3774e12378c72a280809e5b5885c","header_status":"handled","input_sha256":"9a76af8137c8a4bdf232b26e77de2c76144487b6f3efe44ce2383a3c3544ad4c","kind":"mutation-receipt","operation":"9b756f4d5335df23651b473e6ba300e6f8c456760f70eefd631c4ffd4c187e45","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-05"],"target":"f-20261119-05","v":1} -->
 
 ---
 
