@@ -101,7 +101,7 @@ vi.mock("@/components/tabs/TabCommands", () => ({
     renameTab: () => undefined,
     reorderTabs: () => undefined,
     pageTabs: [],
-    openPageTab: () => undefined,
+    showPageTab: () => undefined,
     closePageTab: () => undefined,
   }),
 }));

@@ -1904,22 +1904,40 @@ test("workspace-tabs: tabs stay in the row on Library and Settings, and the Sett
         await expect(tab).toHaveAttribute("aria-selected", "false");
         expect(await tab.getAttribute("aria-controls")).toBeNull();
     }
-    await page.getByRole("button", { name: "Application menu", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
-    await expect(page).toHaveURL("/settings");
-    await expect(tabs).toHaveCount(2);
     const settings = page.locator("header [data-page-tab='settings']");
-    const openSettings = settings.getByRole("button", { name: "Settings", exact: true });
-    await expect(openSettings).toHaveAttribute("aria-current", "page");
+    const showSettings = settings.getByRole("button", { name: "Settings", exact: true });
+    const closeSettings = settings.getByRole("button", { name: "Close Settings", exact: true });
+    const openSettingsFromMenu = async () => {
+        await page.getByRole("button", { name: "Application menu", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+        await expect(page).toHaveURL("/settings");
+    };
 
+    // Closing the shown page returns to Library when the user came from Library.
+    await openSettingsFromMenu();
+    await expect(tabs).toHaveCount(2);
+    await expect(showSettings).toHaveAttribute("aria-current", "page");
+    await closeSettings.click();
+    await expect(page).toHaveURL("/library");
+    await expect(settings).toHaveCount(0);
+
+    // The page tab survives Library and a board, and comes back after a reload.
+    await openSettingsFromMenu();
+    await page.getByRole("link", { name: "Library", exact: true }).click();
+    await expect(page).toHaveURL("/library");
+    await expect(settings).toBeVisible();
+    await expect(showSettings).not.toHaveAttribute("aria-current", "page");
     await tabs.first().click();
     await expect(page).toHaveURL("/");
     await expect(settings).toBeVisible();
-    await expect(openSettings).not.toHaveAttribute("aria-current", "page");
+    await preserveStorageForReload(page);
+    await expect(tabs).toHaveCount(2);
+    await expect(settings).toBeVisible();
 
-    await openSettings.click();
+    // Its X on the shown page returns to the board the user came from.
+    await showSettings.click();
     await expect(page).toHaveURL("/settings");
-    await settings.getByRole("button", { name: "Close Settings", exact: true }).click();
+    await closeSettings.click();
     await expect(page).toHaveURL("/");
     await expect(settings).toHaveCount(0);
 });

@@ -27,6 +27,7 @@ import {
   tabsAtom,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
+import { pageTabsAtom, type PageTab } from "@/state/pageTabs";
 import { restorePuzzleSession } from "@/state/puzzleSession";
 import { tabStorage } from "@/state/store/tabStorage";
 import {
@@ -46,7 +47,6 @@ import {
   returnTargetFromPath,
   type ReturnTarget,
 } from "./boardTabDom";
-import { pageTabsAtom, type PageTab } from "@/state/pageTabs";
 import {
   asksBeforeDiscardingChanges,
   commitNewTab,
@@ -72,7 +72,7 @@ export type TabCommands = {
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   newTab: () => void;
   pageTabs: PageTab[];
-  openPageTab: (page: PageTab) => void;
+  showPageTab: (page: PageTab) => void;
   closePageTab: (page: PageTab) => void;
 };
 
@@ -92,13 +92,15 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   const returnTargetRef = useRef<ReturnTarget>({ to: "/" });
   // Where each open page tab was last shown (e.g. the selected engine), for this run only.
   const pageTabHrefRef = useRef<Partial<Record<PageTab, string>>>({});
-  const [openPageTabs, setPageTabs] = useAtom(pageTabsAtom);
+  const [storedPageTabs, setPageTabs] = useAtom(pageTabsAtom);
   // The shown page is listed from the first render on; the effect below only records it.
   const shownPage = pageTabOf(pathname);
   const pageTabs = useMemo(
     () =>
-      shownPage && !openPageTabs.includes(shownPage) ? [...openPageTabs, shownPage] : openPageTabs,
-    [openPageTabs, shownPage],
+      shownPage && !storedPageTabs.includes(shownPage)
+        ? [...storedPageTabs, shownPage]
+        : storedPageTabs,
+    [storedPageTabs, shownPage],
   );
 
   const [tabs, setTabs] = useAtom(tabsAtom);
@@ -152,7 +154,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     if (page) pageTabHrefRef.current[page] = href;
   }, [href, pathname]);
 
-  const openPageTab = useCallback(
+  const showPageTab = useCallback(
     (page: PageTab) => {
       if (pageTabOf(pathname) === page) return;
       const last = pageTabHrefRef.current[page];
@@ -446,7 +448,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       reorderTabs,
       newTab,
       pageTabs,
-      openPageTab,
+      showPageTab,
       closePageTab,
     }),
     [
@@ -455,7 +457,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       closeTab,
       duplicateTab,
       newTab,
-      openPageTab,
+      showPageTab,
       pageTabs,
       renameTab,
       reorderTabs,

@@ -33,10 +33,10 @@ import { IconAction } from "@/components/common/IconAction";
 import PointerContextMenu from "@/components/common/PointerContextMenu";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import { bindWindowControls, watchMaximized, type MenuAction } from "@/routes/-appMenu";
+import type { PageTab } from "@/state/pageTabs";
 import { useActiveDatabaseViewStore } from "@/state/store/database";
 import { BoardTab, BoardTabIcon } from "./BoardTab";
 import { boardTabId, isBoardsPath, isLibraryFamilyPath, pageTabOf } from "./boardTabDom";
-import type { PageTab } from "@/state/pageTabs";
 import { TabActionsMenu } from "./TabActionsMenu";
 import { useTabCommands } from "./TabCommands";
 import classes from "./NavigationRow.module.css";
@@ -153,7 +153,7 @@ export default function NavigationRow({
     reorderTabs,
     newTab,
     pageTabs,
-    openPageTab,
+    showPageTab,
     closePageTab,
   } = useTabCommands();
   const tabListRef = useRef<HTMLDivElement>(null);
@@ -353,10 +353,10 @@ export default function NavigationRow({
               <Tooltip label={label} disabled={!compact} position="bottom" openDelay={400}>
                 <button
                   type="button"
-                  className={classes.pageTabOpen}
+                  className={classes.pageTabButton}
                   aria-label={label}
                   aria-current={current ? "page" : undefined}
-                  onClick={() => openPageTab(page)}
+                  onClick={() => showPageTab(page)}
                 >
                   <Icon size="0.875rem" aria-hidden />
                   <span className={classes.compactLabel}>{label}</span>

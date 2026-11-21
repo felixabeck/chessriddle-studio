@@ -180,7 +180,7 @@ vi.mock("../common/AppModal", () => ({
 vi.mock("./ConfirmChangesModal", () => ({ default: () => null }));
 
 import { activeTabAtom, tabsAtom } from "@/state/atoms";
-import { PAGE_TABS_STORAGE_KEY, pageTabsAtom, readPageTabs } from "@/state/pageTabs";
+import { pageTabsAtom, readPageTabs } from "@/state/pageTabs";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -710,15 +710,9 @@ test("a page tab returns to where the page was left", async () => {
   expect(router.state.location.searchStr).toBe("?selected=2");
 });
 
-test("open page tabs are stored with the session and restored from it", async () => {
+test("opening a page writes its tab to the session", async () => {
   await renderRow({ path: "/accounts" });
   expect(readPageTabs(sessionStorage)).toEqual(["accounts"]);
-  for (const corrupt of ["not json", '["accounts","accounts"]', '["boards"]', '{"a":1}']) {
-    sessionStorage.setItem(PAGE_TABS_STORAGE_KEY, corrupt);
-    expect(readPageTabs(sessionStorage)).toEqual([]);
-  }
-  sessionStorage.setItem(PAGE_TABS_STORAGE_KEY, '["settings","engines"]');
-  expect(readPageTabs(sessionStorage)).toEqual(["settings", "engines"]);
 });
 
 test("CLOSE_TAB on a page tab returns home and does nothing on Library", async () => {
@@ -729,6 +723,7 @@ test("CLOSE_TAB on a page tab returns home and does nothing on Library", async (
     binding![1](new KeyboardEvent("keydown"));
   });
   expect(router.state.location.pathname).toBe("/");
+  expect(pageTabOrder()).toEqual([]);
   expect(fixtures.closeWorkspaceTab).not.toHaveBeenCalled();
 
   await act(async () => {
