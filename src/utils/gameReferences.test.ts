@@ -300,7 +300,7 @@ test.each([
     },
 );
 
-test("unverified remaining context preserves source completeness and requires a choice", async () => {
+test("prose after the cited event/site keeps a matching game verified and its tuple binding", async () => {
     const citation = recognizeGameReferences(
         "0-1 Beerdsen,T (2520)-Bluebaum,M (2651) Elllobregat op 3rd Sant Boi de Llobregat unclear context 2022 (3)",
     )[0];
@@ -313,21 +313,21 @@ test("unverified remaining context preserves source completeness and requires a 
     expect(result).toMatchObject({
         complete: true,
         failures: [],
-        candidates: [{ game, verification: "unverified" }],
+        candidates: [{ game, verification: "verified" }],
     });
     expect(matchesReferenceGame(citation, { ...game, date: "2021.01.01" })).toBe(false);
     expect(matchesReferenceGame(citation, { ...game, round: "4" })).toBe(false);
 });
 
 test.each([
-    "White was better.",
-    "Elllobregat op 3rd White was better.",
-    "White was better before 2020.",
-    "Elllobregat op 3rd White was better before 2020.",
-    "Elllobregat op 3rd Sant Boi de Llobregat White was better before 2020.",
-])(
-    "open tail retains one unverified occurrence through query-sensitive lookup: %s",
-    async (context) => {
+    ["White was better.", "unverified"],
+    ["Elllobregat op 3rd White was better.", "verified"],
+    ["White was better before 2020.", "unverified"],
+    ["Elllobregat op 3rd White was better before 2020.", "verified"],
+    ["Elllobregat op 3rd Sant Boi de Llobregat White was better before 2020.", "verified"],
+] as const)(
+    "an open tail is verified only after the game's own event: %s",
+    async (context, verification) => {
         const label = "0-1 Beerdsen,T-Bluebaum,M";
         const citation = recognizeGameReferences(`${label} ${context}`)[0];
         const api = querySensitiveSource([game]);
@@ -340,7 +340,7 @@ test.each([
                 databaseTitle: "Source A",
                 source: "Source A (source-a.db3)",
                 game,
-                verification: "unverified",
+                verification,
             },
         ]);
         expect(api.query_games.mock.calls[0][1]).toMatchObject({
@@ -505,7 +505,7 @@ test.each([
     });
 });
 
-test("an ambiguous parenthesized boundary retains all context and requires selection", async () => {
+test("the game's exact parenthesized event and site open it directly", async () => {
     const label = "0-1 Beerdsen,T-Bluebaum,M";
     const context = "Tata Steel (A) Wijk aan Zee";
     const candidate = { ...game, event: "Tata Steel (A)", site: "Wijk aan Zee" };
@@ -516,14 +516,8 @@ test("an ambiguous parenthesized boundary retains all context and requires selec
         new AbortController().signal,
         querySensitiveSource([candidate]),
     );
-    expect(result).toMatchObject({ complete: true, candidates: [{ verification: "unverified" }] });
-    await lookupUI(`${label} ${context}`, querySensitiveSource([candidate]), async (host) => {
-        expect(admission.create).not.toHaveBeenCalled();
-        expect(host.textContent).toContain("GameReferences.Choose");
-        const open = [...host.querySelectorAll("button")].find(
-            (node) => node.textContent === "Common.OpenGame",
-        )!;
-        await act(async () => open.click());
+    expect(result).toMatchObject({ complete: true, candidates: [{ verification: "verified" }] });
+    await lookupUI(`${label} ${context}`, querySensitiveSource([candidate]), () => {
         expect(admission.create).toHaveBeenCalledTimes(1);
     });
 });
@@ -864,7 +858,7 @@ test.each(["Wijk aan Zee", "?", ""])(
 );
 
 test.each(["2024: Better was Bd3.", "2024 improvements included Bd3."])(
-    "year-led prose retains original metadata for explicit selection: %s",
+    "year-led prose after a matching header and tuple opens the game directly: %s",
     async (prose) => {
         const label = "0-1 Beerdsen,T-Bluebaum,M Tata Steel (A) Wijk aan Zee 2022 (3)";
         const text = `${label} ${prose}`;
@@ -884,7 +878,7 @@ test.each(["2024: Better was Bd3.", "2024 improvements included Bd3."])(
                     databaseTitle: "Source A",
                     source: "Source A (source-a.db3)",
                     game: candidate,
-                    verification: "unverified",
+                    verification: "verified",
                 },
             ],
         });
@@ -893,14 +887,7 @@ test.each(["2024: Better was Bd3.", "2024 improvements included Bd3."])(
             context: `Tata Steel (A) Wijk aan Zee 2022 (3) ${prose}`,
         });
         await lookupUI(text, querySensitiveSource([candidate]), async (host) => {
-            expect(admission.create).not.toHaveBeenCalled();
             expect(host.querySelector("[data-game-reference]")?.textContent).toBe(label);
-            expect(host.textContent).toContain("GameReferences.Choose");
-            expect(host.textContent).toContain("Source A (source-a.db3)");
-            const open = [...host.querySelectorAll("button")].find(
-                (node) => node.textContent === "Common.OpenGame",
-            )!;
-            await act(async () => open.click());
             expect(admission.create).toHaveBeenCalledExactlyOnceWith(
                 expect.objectContaining({
                     headers: expect.objectContaining({
@@ -1826,4 +1813,101 @@ test("aborted lookup rejects after late native responses", async () => {
         return { data: [game], count: 1 };
     });
     await expect(search(controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+});
+
+// Felix's preparation, 2026-11-21: ChessBase `Event Site Year` followed by his own plan.
+const pierron =
+    "½-½ Pierron,P (2201)-Bontems,C (2230) FRA/Cup21/2T/07 (FRA) ICCF 2021 Plan: Bauernmehrheit am Damenflügel nutzen";
+function pierronGame(id: number, event: string, date: string, site: string): NormalizedGame {
+    return {
+        ...game,
+        id,
+        white: "Pierron, Pascal",
+        white_elo: 2201,
+        black: "Bontems, Cyrille",
+        black_elo: 2230,
+        result: "1/2-1/2",
+        event,
+        site,
+        date,
+        round: "?",
+    };
+}
+function pairSource(games: NormalizedGame[]) {
+    const api = querySensitiveSource(games);
+    api.query_players.mockImplementation(async (_database, query) => ({
+        data: [
+            query.name === "Pierron"
+                ? { id: 11, name: "Pierron, Pascal", game_count: 0, elo: 2201 }
+                : { id: 22, name: "Bontems, Cyrille", game_count: 0, elo: 2230 },
+        ],
+        count: 1,
+    }));
+    return api;
+}
+
+test.each(["ICCF", "?"])(
+    "the cited event selects the one game of a repeated pairing and opens it (site %j)",
+    async (site) => {
+        const cited = pierronGame(1, "FRA/Cup21/2T/07 (FRA)", "2021.05.25", site);
+        const other = pierronGame(2, "FRA/Cup21/1T/05 (FRA)", "2021.04.10", site);
+        const result = await lookupGameReference(
+            recognizeGameReferences(pierron)[0],
+            new AbortController().signal,
+            pairSource([cited, other]),
+        );
+        expect(result).toMatchObject({
+            complete: true,
+            candidates: [{ game: cited, verification: "verified" }],
+        });
+        expect(result.candidates).toHaveLength(1);
+        await lookupUI(pierron, pairSource([cited, other]), () => {
+            expect(admission.create).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({
+                    gameOrigin: { kind: "database", database, gameId: cited.id },
+                }),
+            );
+        });
+    },
+);
+
+test("an occurrence without a known event stays beside the cited one and requires a choice", async () => {
+    const cited = pierronGame(1, "FRA/Cup21/2T/07 (FRA)", "2021.05.25", "ICCF");
+    const unknown = pierronGame(2, "?", "2021.05.25", "?");
+    const result = await lookupGameReference(
+        recognizeGameReferences(pierron)[0],
+        new AbortController().signal,
+        pairSource([cited, unknown]),
+    );
+    expect(result.candidates.map((candidate) => candidate.game.id)).toEqual([1, 2]);
+    await lookupUI(pierron, pairSource([cited, unknown]), (host) => {
+        expect(admission.create).not.toHaveBeenCalled();
+        expect(host.textContent).toContain("GameReferences.Choose");
+    });
+});
+
+test("without any cited event, other events are not dropped", async () => {
+    const text = "½-½ Pierron,P (2201)-Bontems,C (2230) Plan: Bauernmehrheit am Damenflügel nutzen";
+    const first = pierronGame(1, "FRA/Cup21/2T/07 (FRA)", "2021.05.25", "ICCF");
+    const second = pierronGame(2, "FRA/Cup21/1T/05 (FRA)", "2021.04.10", "ICCF");
+    const result = await lookupGameReference(
+        recognizeGameReferences(text)[0],
+        new AbortController().signal,
+        pairSource([first, second]),
+    );
+    expect(result.candidates.map((candidate) => candidate.verification)).toEqual([
+        "unverified",
+        "unverified",
+    ]);
+});
+
+test("a cited event does not override a contradicting year-round tuple after it", async () => {
+    const text = "½-½ Pierron,P (2201)-Bontems,C (2230) FRA/Cup21/2T/07 (FRA) Plan 2020 (3)";
+    const candidate = { ...pierronGame(1, "FRA/Cup21/2T/07 (FRA)", "2021.05.25", "?"), round: "3" };
+    const result = await lookupGameReference(
+        recognizeGameReferences(text)[0],
+        new AbortController().signal,
+        pairSource([candidate]),
+    );
+    expect(result.candidates.every((entry) => entry.verification !== "verified")).toBe(true);
 });

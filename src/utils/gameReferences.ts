@@ -142,12 +142,9 @@ function referenceFieldsVerification(
     return verified ? "verified" : "unverified";
 }
 
-function metadataVerification(
-    reference: GameReference,
-    game: NormalizedGame,
-): ReferenceVerification {
+/** The candidate's own event/site header that begins the citation context, longest first. */
+function citedHeader(reference: GameReference, game: NormalizedGame) {
     const context = normalized(reference.context);
-    if (!context) return "verified";
     const event = knownMetadata(game.event);
     const site = knownMetadata(game.site);
     const prefixes = [
@@ -159,6 +156,47 @@ function metadataVerification(
         .sort((a, b) => b.text.length - a.text.length);
     const prefix = prefixes.find(({ text }) => context === text || context.startsWith(`${text} `));
     const remaining = prefix ? context.slice(prefix.text.length).trim() : context;
+    const citesEvent = Boolean(
+        event && prefix && (prefix.text === event || prefix.text === `${event} ${site}`),
+    );
+    return { context, event, site, prefix, remaining, citesEvent };
+}
+
+/**
+ * ChessBase writes `Event Site Year` and annotators continue with their own prose. Once the
+ * candidate's complete event begins the context, that prose cannot make the citation ambiguous.
+ * A parenthesized continuation may extend the event itself (`Tata Steel (A)`), and every complete
+ * year-round tuple after the header must still fit the game.
+ */
+function citedEventEstablishesGame(
+    header: ReturnType<typeof citedHeader>,
+    game: NormalizedGame,
+): boolean {
+    if (!header.citesEvent || header.remaining.startsWith("(")) return false;
+    const anchored = fieldsAtStart.exec(header.remaining);
+    if (anchored && referenceFieldsVerification(anchored, game) !== "verified") return false;
+    return [...header.remaining.matchAll(fieldsInText)]
+        .filter((fields) => fields[1] && fieldRound(fields))
+        .every((fields) => referenceFieldsVerification(fields, game) === "verified");
+}
+
+function metadataVerification(
+    reference: GameReference,
+    game: NormalizedGame,
+): ReferenceVerification {
+    const header = citedHeader(reference, game);
+    if (!header.context) return "verified";
+    const verification = headerVerification(reference, game, header);
+    return verification === "unverified" && citedEventEstablishesGame(header, game)
+        ? "verified"
+        : verification;
+}
+
+function headerVerification(
+    reference: GameReference,
+    game: NormalizedGame,
+    { context, event, site, prefix, remaining }: ReturnType<typeof citedHeader>,
+): ReferenceVerification {
     const anchored = fieldsAtStart.exec(remaining);
     if (!prefix && !anchored && reference.closed && event) return "rejected";
     if (reference.closed && prefix && !prefix.includesSite && site && remaining && !anchored)
@@ -257,6 +295,25 @@ function referenceGameVerification(
     const metadata = metadataVerification(reference, game);
     if (metadata === "rejected") return "rejected";
     return [white, black, metadata].includes("unverified") ? "unverified" : "verified";
+}
+
+/**
+ * Once some occurrence's own event begins the citation, an unverified occurrence from another
+ * known event is the same players' other game, not a reading of this citation. Occurrences
+ * without a known event stay, because their header cannot be compared.
+ */
+function withoutContradictedEvents(
+    reference: GameReference,
+    candidates: ReferenceOccurrence[],
+): ReferenceOccurrence[] {
+    const cites = candidates.map((candidate) => citedHeader(reference, candidate.game).citesEvent);
+    if (!cites.includes(true)) return candidates;
+    return candidates.filter(
+        (candidate, index) =>
+            cites[index] ||
+            candidate.verification === "verified" ||
+            !knownMetadata(candidate.game.event),
+    );
 }
 
 /** Whether an occurrence may be offered. Lookup retains its separate metadata certainty. */
@@ -479,5 +536,9 @@ export async function lookupGameReference(
         }
     }
     check();
-    return { candidates, failures, complete: failures.length === 0 };
+    return {
+        candidates: withoutContradictedEvents(reference, candidates),
+        failures,
+        complete: failures.length === 0,
+    };
 }

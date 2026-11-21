@@ -30,7 +30,7 @@ function GamesTable({
   const gameOpen = useOpenDatabaseGame((game: NormalizedGame) => ({
     game,
     database: databasePath,
-    targetFen,
+    targetFens: targetFen === undefined ? undefined : [targetFen],
   }));
   return (
     <DataTable

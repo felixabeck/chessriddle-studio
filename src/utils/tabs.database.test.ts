@@ -1049,7 +1049,7 @@ test.each([
         tab: { name: "Game", type: "analysis" },
         setTabs: (...args) => workspace.set(tabsAtom, ...args),
         initialTree,
-        targetFen,
+        targetFens: [targetFen],
     });
     expect(id).not.toBeNull();
     ids.push(id!);

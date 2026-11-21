@@ -19,14 +19,34 @@ import {
   type ReferenceSearch,
 } from "@/utils/gameReferences";
 import { getTabTreeKey, sameTabOwner } from "@/utils/tabs";
+import { treeIterator, type TreeNode } from "@/utils/treeReducer";
 import { OpenGameButton } from "./gameOpen";
 import { useOpenDatabaseGame } from "./useOpenDatabaseGame";
 import { AppModal } from "./AppModal";
 import { TreeStateContext } from "./TreeStateContext";
 
-export const GameReferenceContext = createContext<((reference: GameReference) => void) | null>(
-  null,
-);
+type ActivateReference = (reference: GameReference, position?: TreeNode) => void;
+export const GameReferenceContext = createContext<ActivateReference | null>(null);
+
+/**
+ * Where a cited game should open: the commented position first, then each earlier position of the
+ * annotated line back to its root, so a game that left the line opens where it left. A node no
+ * longer in the tree contributes only its own position.
+ */
+export function citationTargetFens(root: TreeNode, position: TreeNode | undefined): string[] {
+  if (!position) return [];
+  for (const { position: path, node } of treeIterator(root)) {
+    if (node !== position) continue;
+    const fens = [root.fen];
+    let current = root;
+    for (const index of path) {
+      current = current.children[index];
+      fens.push(current.fen);
+    }
+    return fens.reverse();
+  }
+  return [position.fen];
+}
 
 /** The notation surface, rather than each virtualized comment, owns one request and dialog. */
 export function GameReferenceProvider({ children }: { children: ReactNode }) {
@@ -37,14 +57,19 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
   const treeKey = ownerTab ? getTabTreeKey(ownerTab) : undefined;
   const request = useRef<AbortController | null>(null);
   const live = useRef(false);
-  const [state, setState] = useState<{ reference: GameReference; result?: ReferenceSearch } | null>(
-    null,
+  const [state, setState] = useState<{
+    reference: GameReference;
+    targetFens: string[];
+    result?: ReferenceSearch;
+  } | null>(null);
+  const opener = useOpenDatabaseGame(
+    ({ occurrence, targetFens }: { occurrence: ReferenceOccurrence; targetFens: string[] }) => ({
+      game: occurrence.game,
+      database: occurrence.database,
+      databaseTitle: occurrence.databaseTitle,
+      targetFens,
+    }),
   );
-  const opener = useOpenDatabaseGame((occurrence: ReferenceOccurrence) => ({
-    game: occurrence.game,
-    database: occurrence.database,
-    databaseTitle: occurrence.databaseTitle,
-  }));
   const close = () => {
     request.current?.abort();
     request.current = null;
@@ -60,12 +85,12 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
     };
   }, [store, treeKey]);
 
-  const activate = (reference: GameReference) => {
+  const activate = (reference: GameReference, targetFens: string[]) => {
     if (opener.pending) return;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setState({ reference });
+    setState({ reference, targetFens });
     const current = () =>
       live.current &&
       request.current === controller &&
@@ -80,20 +105,21 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
     void lookupGameReference(reference, controller.signal)
       .then((result) => {
         if (!current()) return;
-        setState({ reference, result });
+        setState({ reference, targetFens, result });
         if (
           result.complete &&
           result.candidates.length === 1 &&
           result.candidates[0].verification === "verified"
         ) {
           // Admission has its own contract. Once begun it may finish after this owner retires.
-          void opener.activate(result.candidates[0]);
+          void opener.activate({ occurrence: result.candidates[0], targetFens });
         }
       })
       .catch(() => {
         if (current())
           setState({
             reference,
+            targetFens,
             result: {
               candidates: [],
               complete: false,
@@ -116,7 +142,11 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
     budget: t("GameReferences.Failure.budget"),
   };
   return (
-    <GameReferenceContext.Provider value={activate}>
+    <GameReferenceContext.Provider
+      value={(reference, position) =>
+        activate(reference, citationTargetFens(store.getState().root, position))
+      }
+    >
       {children}
       <AppModal opened={state !== null} onClose={close} title={t("GameReferences.Title")} size="lg">
         <Stack style={{ overflowWrap: "anywhere" }}>
@@ -168,7 +198,9 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
                     </Text>
                     <OpenGameButton
                       pending={opener.pending}
-                      onOpen={() => opener.activate(candidate)}
+                      onOpen={() =>
+                        opener.activate({ occurrence: candidate, targetFens: state.targetFens })
+                      }
                     />
                   </Stack>
                 </Paper>
@@ -176,7 +208,7 @@ export function GameReferenceProvider({ children }: { children: ReactNode }) {
               <Button
                 variant="default"
                 disabled={opener.pending}
-                onClick={() => state && activate(state.reference)}
+                onClick={() => state && activate(state.reference, state.targetFens)}
               >
                 {t("GameReferences.Retry")}
               </Button>

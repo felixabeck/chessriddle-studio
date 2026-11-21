@@ -33,6 +33,8 @@ export type CommentNotationRow = {
     type: "comment";
     depth: number;
     comment: string;
+    /** The node whose position the comment annotates: its move's node, or that move's parent. */
+    position: TreeNode;
 };
 
 export type VariationNotationRow = {
@@ -185,8 +187,9 @@ function addComment(
     rowForNode: Map<TreeNode, number>,
     depth: number,
     comment: string,
+    position: TreeNode,
 ): void {
-    addRow(rows, rowForNode, { type: "comment", depth, comment });
+    addRow(rows, rowForNode, { type: "comment", depth, comment, position });
 }
 
 function showsDiagram(node: TreeNode, options: NotationRowOptions): boolean {
@@ -219,7 +222,7 @@ function addTableMoveNote(
 ): void {
     if (showsDiagram(node, options)) addDiagram(rows, rowForNode, 0, node, options);
     else if (options.showComments && node.comment.length > 0)
-        addComment(rows, rowForNode, 0, node.comment);
+        addComment(rows, rowForNode, 0, node.comment, node);
 }
 
 /**
@@ -415,7 +418,7 @@ function appendTableRows(
         const variations = current.children.slice(1);
 
         const childStarting = startingCommentText(child, options);
-        if (childStarting) addComment(rows, rowForNode, 0, childStarting);
+        if (childStarting) addComment(rows, rowForNode, 0, childStarting, current);
 
         if (!isWhite) {
             const hasVariations = options.showVariations && variations.length > 0;
@@ -454,7 +457,7 @@ function appendTableRows(
                 });
 
             if (black) {
-                if (blackStarting) addComment(rows, rowForNode, 0, blackStarting);
+                if (blackStarting) addComment(rows, rowForNode, 0, blackStarting, child);
                 addTableRow(rows, rowForNode, moveNumber, null, black, false, options);
                 addTableMoveNote(rows, rowForNode, black, options);
                 if (blackHasVariations) addInlineVariationRows(rows, rowForNode, child, 0, options);
@@ -495,7 +498,7 @@ export function buildNotationRows(root: TreeNode, options: NotationRowOptions): 
     if (showsDiagram(root, options)) {
         addDiagram(rows, rowForNode, 0, root, options);
     } else if (options.showComments && root.comment.length > 0) {
-        addComment(rows, rowForNode, 0, root.comment);
+        addComment(rows, rowForNode, 0, root.comment, root);
     }
 
     if (options.tableView) {

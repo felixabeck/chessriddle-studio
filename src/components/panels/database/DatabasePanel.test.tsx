@@ -614,7 +614,7 @@ describe("DatabasePanel", () => {
     await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
     await mountExplorer(mockExplorerData, []);
     await openListedGame("W1");
-    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFen: afterE4 });
+    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFens: [afterE4] });
   });
 
   test("mounted empty explorer list: keeps the genuine empty state and the Total row count", async () => {
@@ -1146,7 +1146,7 @@ describe("DatabasePanel", () => {
     );
     // A pattern is not one position, so its games open at their start.
     await openListedGame();
-    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFen: undefined });
+    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFens: undefined });
     // The stored choice returns with the exact position.
     await act(async () =>
       store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "exact" })),
@@ -1158,7 +1158,7 @@ describe("DatabasePanel", () => {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 80)));
     await act(async () => store.set(dbTabFamily(tabId), "games"));
     await openListedGame();
-    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFen: afterE4 });
+    expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFens: [afterE4] });
   });
 
   test("local: the position dialog switches the tab's match mode for the search", async () => {
@@ -1609,7 +1609,7 @@ describe("DatabasePanel", () => {
       expect(mocks.openDatabaseGame.mock.calls[0][0]).toMatchObject({
         database: corr,
         game: { id: 7 },
-        targetFen: afterE4,
+        targetFens: [afterE4],
       });
     });
 

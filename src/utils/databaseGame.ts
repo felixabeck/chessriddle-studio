@@ -15,7 +15,7 @@ export async function openDatabaseGame({
     ownerId,
     store,
     signal,
-    targetFen,
+    targetFens,
 }: {
     game: NormalizedGame;
     database?: DatabaseHandle | null;
@@ -25,11 +25,11 @@ export async function openDatabaseGame({
     ownerId?: string;
     store?: Parameters<typeof createTab>[0]["store"];
     signal?: AbortSignal;
-    /** The position the game was found by; the tab opens there when the mainline reaches it. */
-    targetFen?: string;
+    /** Positions to open at, in order of preference; see `createTab`. */
+    targetFens?: readonly string[];
 }) {
     const seed = databaseGameSeed(game, database);
-    const id = await createTab({ ...seed, targetFen, setTabs, ownerId, store, signal });
+    const id = await createTab({ ...seed, targetFens, setTabs, ownerId, store, signal });
     if (id !== null && database) {
         addRecentFile({
             kind: "database",

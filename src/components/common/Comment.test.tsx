@@ -122,6 +122,7 @@ test("decorates across rich formatting, retains every character and activates th
       closed: true,
       black: expect.objectContaining({ surname: "Deac" }),
     }),
+    undefined,
   );
 });
 
@@ -145,7 +146,10 @@ test("leaves an unterminated citation tail outside the action and preserves its 
   expect(container.textContent).toBe(comment);
 
   await act(async () => button?.click());
-  expect(activate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ label, context }));
+  expect(activate).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ label, context }),
+    undefined,
+  );
 });
 
 test("an external link anywhere across a citation keeps its behavior without nested actions", async () => {

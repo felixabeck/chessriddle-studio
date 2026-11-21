@@ -283,13 +283,19 @@ export const getNodeAtPath = (node: TreeNode, path: number[]): TreeNode => {
 };
 
 /**
- * The path to the first mainline node (the root included) that has the same position as `fen`,
- * or null. Database games are stored and searched as a mainline, so variations are not walked.
+ * The path to the first mainline node (the root included) that has the same position as the
+ * earliest-listed of `fens` the mainline reaches, or null. The list is in order of preference.
+ * Database games are stored and searched as a mainline, so variations are not walked.
  */
-export function findMainlinePath(root: TreeNode, fen: string): number[] | null {
-    const target = getBoardState(fen);
+export function findMainlinePath(root: TreeNode, fens: readonly string[]): number[] | null {
+    const reached = new Map<string, number[]>();
     for (const { position, node } of treeIteratorMainLine(root)) {
-        if (getBoardState(node.fen) === target) return position;
+        const board = getBoardState(node.fen);
+        if (!reached.has(board)) reached.set(board, position);
+    }
+    for (const fen of fens) {
+        const path = reached.get(getBoardState(fen));
+        if (path) return path;
     }
     return null;
 }

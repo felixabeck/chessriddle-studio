@@ -155,7 +155,12 @@ function CompleteMoveCell({
 
   return (
     <>
-      {showComments && !tableLayout && startingComment && <Comment comment={startingComment} />}
+      {showComments && !tableLayout && startingComment && (
+        <Comment
+          comment={startingComment}
+          position={nodeIndex.links.get(node)?.parent ?? undefined}
+        />
+      )}
       <Box
         component="span"
         data-notation-current={isCurrentVariation ? "true" : undefined}
@@ -209,7 +214,7 @@ function CompleteMoveCell({
           />
         )}
       </Box>
-      {showComments && !tableLayout && comment && <Comment comment={comment} />}
+      {showComments && !tableLayout && comment && <Comment comment={comment} position={node} />}
     </>
   );
 }

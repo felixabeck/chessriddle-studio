@@ -619,7 +619,7 @@ function CommentRow({
           <Table.Tr>
             <Table.Td colSpan={3}>
               <Box pl="sm" pt="xs">
-                <Comment comment={row.comment} />
+                <Comment comment={row.comment} position={row.position} />
               </Box>
             </Table.Td>
           </Table.Tr>
@@ -629,7 +629,7 @@ function CommentRow({
   }
   return (
     <Box pl="sm" pt="xs">
-      <Comment comment={row.comment} />
+      <Comment comment={row.comment} position={row.position} />
     </Box>
   );
 }
@@ -678,7 +678,7 @@ function DiagramRow({
       </UnstyledButton>
       {row.comment && (
         <Box pt="xs">
-          <Comment comment={row.comment} />
+          <Comment comment={row.comment} position={node} />
         </Box>
       )}
     </Box>

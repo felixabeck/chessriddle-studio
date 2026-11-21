@@ -277,7 +277,7 @@ test.each(["????.??.??", "2023.01.01"])(
   },
 );
 
-test("one unverified occurrence from an exhaustive real lookup requires explicit admission", async () => {
+test("prose before a matching tuple after the cited event/site opens the game directly", async () => {
   await useRealLookup(game);
   await render(
     owner,
@@ -288,12 +288,8 @@ test("one unverified occurrence from an exhaustive real lookup requires explicit
   expect(result).toMatchObject({
     complete: true,
     failures: [],
-    candidates: [{ verification: "unverified" }],
+    candidates: [{ verification: "verified" }],
   });
-  expect(workspace.get(tabsAtom)).toHaveLength(0);
-  expect(mocks.resolve).not.toHaveBeenCalled();
-  expect(host.textContent).toContain("GameReferences.Choose");
-  await button("Common.OpenGame");
   expect(workspace.get(tabsAtom)).toHaveLength(1);
   expect(tree().root.children[0].san).toBe("Kf3");
   expect(tree().headers).toMatchObject({
@@ -305,51 +301,53 @@ test("one unverified occurrence from an exhaustive real lookup requires explicit
 });
 
 test.each([
-  "White was better.",
-  "Elllobregat op 3rd White was better.",
-  "White was better before 2020.",
-  "Elllobregat op 3rd White was better before 2020.",
-  "Elllobregat op 3rd Sant Boi de Llobregat White was better before 2020.",
-])("open tail requires explicit admission after real lookup: %s", async (context) => {
-  await useRealLookup(game);
-  const citation = `0-1 Beerdsen,T-Bluebaum,M ${context}`;
-  await render(owner, citation);
-  expect(host.textContent).toContain(citation);
-  expect(host.querySelector("[data-game-reference]")?.textContent).toBe(
-    "0-1 Beerdsen,T-Bluebaum,M",
-  );
-  await click();
-  const result: ReferenceSearch = await mocks.lookup.mock.results[0].value;
-  expect(result).toMatchObject({ complete: true, failures: [] });
-  expect(result.candidates).toEqual([
-    {
+  ["White was better.", "unverified"],
+  ["Elllobregat op 3rd White was better.", "verified"],
+  ["White was better before 2020.", "unverified"],
+  ["Elllobregat op 3rd White was better before 2020.", "verified"],
+  ["Elllobregat op 3rd Sant Boi de Llobregat White was better before 2020.", "verified"],
+] as const)(
+  "an open tail opens directly only after the game's own event: %s",
+  async (context, verification) => {
+    await useRealLookup(game);
+    const citation = `0-1 Beerdsen,T-Bluebaum,M ${context}`;
+    await render(owner, citation);
+    expect(host.textContent).toContain(citation);
+    expect(host.querySelector("[data-game-reference]")?.textContent).toBe(
+      "0-1 Beerdsen,T-Bluebaum,M",
+    );
+    await click();
+    const result: ReferenceSearch = await mocks.lookup.mock.results[0].value;
+    expect(result).toMatchObject({ complete: true, failures: [] });
+    expect(result.candidates).toEqual([
+      {
+        database,
+        databaseTitle: "Local games",
+        source: "Local games (local.db3)",
+        game,
+        verification,
+      },
+    ]);
+    expect(workspace.get(tabsAtom)).toHaveLength(verification === "verified" ? 1 : 0);
+    if (verification === "unverified") await button("Common.OpenGame");
+    expect(workspace.get(tabsAtom)).toHaveLength(1);
+    expect(workspace.get(tabsAtom)[0].gameOrigin).toEqual({
+      kind: "database",
       database,
-      databaseTitle: "Local games",
-      source: "Local games (local.db3)",
-      game,
-      verification: "unverified",
-    },
-  ]);
-  expect(workspace.get(tabsAtom)).toHaveLength(0);
-  expect(host.textContent).toContain("GameReferences.Choose");
-  await button("Common.OpenGame");
-  expect(workspace.get(tabsAtom)).toHaveLength(1);
-  expect(workspace.get(tabsAtom)[0].gameOrigin).toEqual({
-    kind: "database",
-    database,
-    gameId: 8,
-  });
-  expect(tree().root.fen).toBe(game.fen);
-  expect(tree().root.children[0]).toMatchObject({ san: "Kf3", halfMoves: 46 });
-  expect(tree().headers).toMatchObject({
-    white: game.white,
-    black: game.black,
-    event: game.event,
-    site: game.site,
-    date: game.date,
-    result: game.result,
-  });
-});
+      gameId: 8,
+    });
+    expect(tree().root.fen).toBe(game.fen);
+    expect(tree().root.children[0]).toMatchObject({ san: "Kf3", halfMoves: 46 });
+    expect(tree().headers).toMatchObject({
+      white: game.white,
+      black: game.black,
+      event: game.event,
+      site: game.site,
+      date: game.date,
+      result: game.result,
+    });
+  },
+);
 
 test("a complete names-only citation retains automatic admission", async () => {
   await useRealLookup(game);
@@ -739,4 +737,53 @@ test("duplicate open activation is locked while admitted creation is pending and
   expect(mocks.resolve).toHaveBeenCalledTimes(1);
   await act(async () => finish(null));
   expect(workspace.get(tabsAtom)).toHaveLength(1);
+});
+
+// The comment's own line: after 23...Kf3 it continues 24.Kb2, which the cited game never plays.
+async function renderAtCommentedPosition(path: number[], reachedBy = owner) {
+  const at = path.reduce((node, index) => node.children[index], reachedBy.getState().root);
+  await act(async () =>
+    root.render(
+      <Provider store={workspace}>
+        <TreeStateContext.Provider value={reachedBy}>
+          <EphemeralTabScope>
+            <GameReferenceProvider>
+              <Comment comment={label} position={at} />
+            </GameReferenceProvider>
+          </EphemeralTabScope>
+        </TreeStateContext.Provider>
+      </Provider>,
+    ),
+  );
+}
+
+test.each([
+  { name: "the commented position", path: [0], expected: [0] },
+  { name: "where the game left the commented line", path: [0, 0], expected: [0] },
+  { name: "the start for a comment on the root", path: [], expected: [] },
+])("a cited game opens at $name", async ({ path, expected }) => {
+  const line = createTreeStore(undefined, defaultTree(game.fen));
+  line.getState().makeMove({ payload: "Kf3" });
+  line.getState().makeMove({ payload: "Kb2" });
+  expect(line.getState().root.children[0].children[0].san).toBe("Kb2");
+  await renderAtCommentedPosition(path, line);
+  await click();
+  expect(workspace.get(tabsAtom)).toHaveLength(1);
+  expect(tree().root.children[0].san).toBe("Kf3");
+  expect(tree().position).toEqual(expected);
+});
+
+test("a chosen occurrence also opens at the commented position", async () => {
+  mocks.lookup.mockResolvedValue({
+    ...found(),
+    candidates: [{ ...found().candidates[0], verification: "unverified" }],
+  });
+  const line = createTreeStore(undefined, defaultTree(game.fen));
+  line.getState().makeMove({ payload: "Kf3" });
+  await renderAtCommentedPosition([0], line);
+  await click();
+  expect(workspace.get(tabsAtom)).toHaveLength(0);
+  await button("Common.OpenGame");
+  expect(workspace.get(tabsAtom)).toHaveLength(1);
+  expect(tree().position).toEqual([0]);
 });

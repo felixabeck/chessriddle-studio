@@ -122,7 +122,7 @@ describe("buildNotationRows", () => {
             expect(model.rowForNode.get(nestedAlternative)).toBeLessThan(boundary);
             expect(model.rowForNode.get(tree.nf3)).toBeGreaterThan(boundary);
             const expectedComments = tableView
-                ? [{ type: "comment", depth: 0, comment: "Last played move" }]
+                ? [{ type: "comment", depth: 0, comment: "Last played move", position: tree.e5 }]
                 : [];
             expect(model.rows.slice(0, boundary).filter((row) => row.type === "comment")).toEqual(
                 expectedComments,
@@ -656,9 +656,9 @@ describe("starting comments off a variation's first move", () => {
     });
 
     test.each([
-        ["a white move", "bb5"],
-        ["a black move", "nc6"],
-    ] as const)("in table view, %s keeps its comment in front of its row", (_, key) => {
+        ["a white move", "bb5", "nc6"],
+        ["a black move", "nc6", "nf3"],
+    ] as const)("in table view, %s keeps its comment in front of its row", (_, key, parent) => {
         const tree = variedTree();
         tree[key].startingComment = "Before this move";
         const result = buildNotationRows(tree.root, {
@@ -668,9 +668,11 @@ describe("starting comments off a variation's first move", () => {
             tableView: true,
         });
 
+        // A comment before a move annotates the position the move is played from.
         expect(commentBefore(result.rows, tree[key])).toMatchObject({
             type: "comment",
             comment: "Before this move",
+            position: tree[parent],
         });
     });
 });

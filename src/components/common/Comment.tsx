@@ -2,6 +2,7 @@ import { Typography } from "@mantine/core";
 import { Fragment, memo, type ReactNode } from "react";
 import { readCommentNotation, type CommentNotationNode } from "@/utils/commentNotation";
 import { recognizeGameReferences, type GameReference } from "@/utils/gameReferences";
+import type { TreeNode } from "@/utils/treeReducer";
 import { useGameReference } from "./GameReference";
 import classes from "./GameNotation.module.css";
 
@@ -150,7 +151,8 @@ function decorate(
   });
 }
 
-function Comment({ comment }: { comment: string }) {
+/** `position` is the node whose position the comment annotates; a cited game opens there. */
+function Comment({ comment, position }: { comment: string; position?: TreeNode }) {
   const activate = useGameReference();
   const multipleLine = comment.split("\n").filter((v) => v.trim() !== "").length > 1;
 
@@ -164,7 +166,9 @@ function Comment({ comment }: { comment: string }) {
       }}
     >
       {activate
-        ? decorate(readCommentNotation(comment), multipleLine, activate)
+        ? decorate(readCommentNotation(comment), multipleLine, (reference) =>
+            activate(reference, position),
+          )
         : renderNotation(readCommentNotation(comment), multipleLine)}
     </Typography>
   );

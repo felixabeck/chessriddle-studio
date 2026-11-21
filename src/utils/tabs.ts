@@ -669,7 +669,7 @@ export async function createTab({
     headers,
     gameOrigin,
     position,
-    targetFen,
+    targetFens,
     initialTree,
     databaseGame,
     existingTabIds,
@@ -684,10 +684,11 @@ export async function createTab({
     gameOrigin?: GameOrigin;
     position?: number[];
     /**
-     * A FEN to land on: after the tree is built, the cursor moves to the first mainline node with
-     * this position, replacing `position`. Without a match the cursor stays where it was seeded.
+     * FENs to land on, in order of preference: after the tree is built, the cursor moves to the
+     * first mainline node with the earliest-listed position the mainline reaches, replacing
+     * `position`. Without a match the cursor stays where it was seeded.
      */
-    targetFen?: string;
+    targetFens?: readonly string[];
     initialTree?: TreeState;
     databaseGame?: NormalizedGame;
     existingTabIds?: Iterable<string>;
@@ -766,8 +767,8 @@ export async function createTab({
     }
 
     // The tree is final here, so the path cannot outlive a mutation.
-    if (treeToSeed && targetFen !== undefined) {
-        const path = findMainlinePath(treeToSeed.root, targetFen);
+    if (treeToSeed && targetFens !== undefined) {
+        const path = findMainlinePath(treeToSeed.root, targetFens);
         if (path) treeToSeed.position = path;
     }
 

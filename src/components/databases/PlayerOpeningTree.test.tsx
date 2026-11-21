@@ -438,7 +438,7 @@ test("game selection previews within the card, Open and double-click use the est
   expect(container.querySelector("[data-game-preview]")?.textContent).toBe(first.moves);
   await click(button("Open on board"));
   expect(mocks.openGame).toHaveBeenCalledWith(
-    expect.objectContaining({ game: first, database: file, targetFen: INITIAL_FEN }),
+    expect.objectContaining({ game: first, database: file, targetFens: [INITIAL_FEN] }),
   );
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/" });
   await act(async () =>
@@ -455,7 +455,7 @@ test("game selection previews within the card, Open and double-click use the est
       .querySelector("[data-opening-games] tbody tr")!
       .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
   );
-  expect(mocks.openGame).toHaveBeenLastCalledWith(expect.objectContaining({ targetFen: e4Fen }));
+  expect(mocks.openGame).toHaveBeenLastCalledWith(expect.objectContaining({ targetFens: [e4Fen] }));
   await click(button("Previous move"));
   expect(container.querySelector("[data-opening-games]")?.textContent).toContain("First opponent");
 });
@@ -732,7 +732,7 @@ test("an account tree merges its sources, speaks neutrally and opens a game from
   expect(container.querySelector("[data-game-preview]")?.textContent).toBe(otherGame.moves);
   await click(button("Open on board"));
   expect(mocks.openGame).toHaveBeenLastCalledWith(
-    expect.objectContaining({ game: otherGame, database: reference, targetFen: INITIAL_FEN }),
+    expect.objectContaining({ game: otherGame, database: reference, targetFens: [INITIAL_FEN] }),
   );
   await act(async () => gameRows()[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   expect(mocks.openGame).toHaveBeenLastCalledWith(

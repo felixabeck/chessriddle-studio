@@ -226,7 +226,7 @@ function OpeningTree({
     ({ source, game }: { source: OpeningTreeSource; game: NormalizedGame }) => ({
       game,
       database: source.file,
-      targetFen: line.fen,
+      targetFens: [line.fen],
     }),
   );
   const changeMoves = (next: string[]) => {

@@ -651,37 +651,46 @@ function playedLine(sans: string[], fen?: string) {
 describe("findMainlinePath", () => {
     test("finds the reached position and ignores the move clocks", () => {
         const { tree, fens } = playedLine(["e4", "e5", "f4", "exf4", "Nf3"]);
-        expect(findMainlinePath(tree.root, fens[3])).toEqual([0, 0, 0, 0]);
+        expect(findMainlinePath(tree.root, [fens[3]])).toEqual([0, 0, 0, 0]);
         const otherClocks = fens[3].replace(/ \d+ \d+$/, " 7 40");
-        expect(findMainlinePath(tree.root, otherClocks)).toEqual([0, 0, 0, 0]);
-        expect(findMainlinePath(tree.root, tree.root.fen)).toEqual([]);
+        expect(findMainlinePath(tree.root, [otherClocks])).toEqual([0, 0, 0, 0]);
+        expect(findMainlinePath(tree.root, [tree.root.fen])).toEqual([]);
     });
 
     test("a transposition lands on the game's own move order", () => {
         const { tree } = playedLine(["Nf3", "d5", "d4", "Nf6"]);
         const { fens } = playedLine(["d4", "d5", "Nf3", "Nf6"]);
-        expect(findMainlinePath(tree.root, fens[3])).toEqual([0, 0, 0, 0]);
+        expect(findMainlinePath(tree.root, [fens[3]])).toEqual([0, 0, 0, 0]);
     });
 
     test("a repeated position returns its first occurrence", () => {
         const { tree, fens } = playedLine(["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6"]);
         expect(getBoardState(fens[5])).toBe(getBoardState(fens[1]));
-        expect(findMainlinePath(tree.root, fens[5])).toEqual([0, 0]);
+        expect(findMainlinePath(tree.root, [fens[5]])).toEqual([0, 0]);
     });
 
     test("side to move and castling rights are part of the position", () => {
         const { tree } = playedLine(["Nf3", "Nf6", "Ng1", "Ng8"]);
         const start = tree.root.fen;
-        expect(findMainlinePath(tree.root, start.replace(" w ", " b "))).toBeNull();
-        expect(findMainlinePath(tree.root, start.replace(" KQkq ", " Qkq "))).toBeNull();
+        expect(findMainlinePath(tree.root, [start.replace(" w ", " b ")])).toBeNull();
+        expect(findMainlinePath(tree.root, [start.replace(" KQkq ", " Qkq ")])).toBeNull();
         // The same squares after the knights' round trip are the start position again.
-        expect(findMainlinePath(tree.root, start)).toEqual([]);
+        expect(findMainlinePath(tree.root, [start])).toEqual([]);
     });
 
     test("a game from a Black-to-move setup is matched from its own root", () => {
         const fen = "4k3/8/8/8/8/8/4P3/4K3 b - - 3 30";
         const { tree, fens } = playedLine(["Kd7", "e4", "Kc6"], fen);
-        expect(findMainlinePath(tree.root, fens[1])).toEqual([0, 0]);
+        expect(findMainlinePath(tree.root, [fens[1]])).toEqual([0, 0]);
+    });
+
+    test("the first listed position the mainline reaches wins", () => {
+        const { tree, fens } = playedLine(["e4", "e5", "Nf3"]);
+        const deviation = playedLine(["e4", "e5", "Bc4"]).fens[2];
+        expect(findMainlinePath(tree.root, [deviation, fens[1], fens[0]])).toEqual([0, 0]);
+        expect(findMainlinePath(tree.root, [fens[0], fens[1]])).toEqual([0]);
+        expect(findMainlinePath(tree.root, [deviation])).toBeNull();
+        expect(findMainlinePath(tree.root, [])).toBeNull();
     });
 
     test("a position reached only in a variation, or never, is not found", () => {
@@ -694,7 +703,7 @@ describe("findMainlinePath", () => {
             halfMoves: 1,
         });
         tree.root.children.push(variation);
-        expect(findMainlinePath(tree.root, fens[0])).toBeNull();
-        expect(findMainlinePath(tree.root, playedLine(["c4"]).fens[0])).toBeNull();
+        expect(findMainlinePath(tree.root, [fens[0]])).toBeNull();
+        expect(findMainlinePath(tree.root, [playedLine(["c4"]).fens[0]])).toBeNull();
     });
 });
