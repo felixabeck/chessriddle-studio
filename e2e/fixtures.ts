@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import type { KeyedNode } from "@lichess-org/chessground/types";
 import { expect, test as base, type Locator, type Page, type Request } from "@playwright/test";
@@ -213,11 +214,17 @@ export async function splitTextWords(labels: Locator): Promise<string[]> {
     );
 }
 
-export async function waitForScrollAreaScrollbarsHidden(page: Page) {
-    await expect(page.locator('.mantine-ScrollArea-scrollbar[data-state="visible"]')).toHaveCount(
-        0,
-    );
-}
+/**
+ * `stylePath` for a screenshot whose image must not depend on Mantine's hover scrollbars.
+ * A hover scrollbar stays on for `scrollHideDelay` after the pointer leaves, and its element
+ * unmounts and remounts while the content's overflow is re-measured. No DOM state therefore
+ * shows that it has hidden for good, so a wait on its absence can pass in such a gap and the
+ * thumb returns before the capture (f-20261121-03). `visibility` keeps the layout: the
+ * scrollbar is absolutely positioned, and `offsetScrollbars` reserves its track either way.
+ */
+export const scrollbarFreeScreenshot = fileURLToPath(
+    new URL("./scrollbar-free-screenshot.css", import.meta.url),
+);
 
 export async function wheelBoardStackTo(page: Page, target: Locator) {
     // The board tab can mount after the caller's last wait; act only on its settled layout.

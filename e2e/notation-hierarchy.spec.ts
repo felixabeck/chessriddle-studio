@@ -11,7 +11,7 @@ import {
     test,
     waitForBoardSizeSettled,
     waitForFontsSettled,
-    waitForScrollAreaScrollbarsHidden,
+    scrollbarFreeScreenshot,
     type MockScenario,
     wheelBoardStackTo,
     wheelColumnTo,
@@ -382,22 +382,22 @@ for (const colorScheme of ["light", "dark"] as const) {
         const inline = await measureHierarchy(notation);
         assertHierarchyStyles(inline, "inline");
         await capture(`notation-hierarchy-inline-${colorScheme}`);
-        await waitForScrollAreaScrollbarsHidden(page);
         await expect
             .soft(notationCard(page))
             .toHaveScreenshot(`notation-hierarchy-inline-${colorScheme}.png`, {
                 animations: "disabled",
+                stylePath: scrollbarFreeScreenshot,
             });
 
         await showTableView(page, notation);
         const table = await measureHierarchy(notation);
         assertHierarchyStyles(table, "table");
         await capture(`notation-hierarchy-table-${colorScheme}`);
-        await waitForScrollAreaScrollbarsHidden(page);
         await expect
             .soft(notationCard(page))
             .toHaveScreenshot(`notation-hierarchy-table-${colorScheme}.png`, {
                 animations: "disabled",
+                stylePath: scrollbarFreeScreenshot,
             });
     });
 }

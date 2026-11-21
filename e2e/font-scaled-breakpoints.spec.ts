@@ -15,7 +15,7 @@ import {
     selectFilesTreeRow,
     whitePawnSquares,
     waitForFontsSettled,
-    waitForScrollAreaScrollbarsHidden,
+    scrollbarFreeScreenshot,
     wheelBoardStackTo,
     wheelColumnTo,
     goToLibrary,
@@ -325,9 +325,11 @@ test("font-scaled-breakpoints: conversion Cancel remains reachable at 320px and 
     await assertNothingClipped(cancel, { mode: "reachable" });
     await assertNoHorizontalOverflow();
     await page.mouse.move(319, 899);
-    await waitForScrollAreaScrollbarsHidden(page);
     await capture("conversion-cancel-320-200");
-    await expect(page).toHaveScreenshot("conversion-cancel-320-200.png", { fullPage: true });
+    await expect(page).toHaveScreenshot("conversion-cancel-320-200.png", {
+        fullPage: true,
+        stylePath: scrollbarFreeScreenshot,
+    });
     await cancel.click();
     await expect(cancel).toBeDisabled();
     // Measure the settled loading state, since disabled alone does not await the transition.
@@ -335,10 +337,10 @@ test("font-scaled-breakpoints: conversion Cancel remains reachable at 320px and 
     await expect(cancel.locator(".mantine-Button-loader")).toHaveCSS("opacity", "1");
     await assertNothingClipped(cancel, { mode: "reachable" });
     await page.mouse.move(319, 899);
-    await waitForScrollAreaScrollbarsHidden(page);
     await capture("conversion-cancel-pending-320-200");
     await expect(page).toHaveScreenshot("conversion-cancel-pending-320-200.png", {
         fullPage: true,
+        stylePath: scrollbarFreeScreenshot,
     });
 });
 
@@ -408,9 +410,11 @@ test("font-scaled-breakpoints: visible library open controls wrap at 320px and 2
     await previewBoard.scrollIntoViewIfNeeded();
     await page.mouse.move(319, 899);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
-    await waitForScrollAreaScrollbarsHidden(page);
     await capture("database-preview-320-200");
-    await expect(page).toHaveScreenshot("database-preview-320-200.png", { fullPage: true });
+    await expect(page).toHaveScreenshot("database-preview-320-200.png", {
+        fullPage: true,
+        stylePath: scrollbarFreeScreenshot,
+    });
     await page.getByRole("button", { name: "Go to start", exact: true }).click();
     await expect
         .poll(() => whitePawnSquares(previewBoard))
@@ -418,13 +422,15 @@ test("font-scaled-breakpoints: visible library open controls wrap at 320px and 2
     await databaseGameOpen.scrollIntoViewIfNeeded();
     await assertNothingClipped(databaseGameOpen, { mode: "reachable" });
     await page.mouse.move(319, 899);
-    await waitForScrollAreaScrollbarsHidden(page);
     await capture("database-game-open-320-200");
     await expect(page.locator("[data-database-view]")).toHaveAttribute("data-compact", "true");
     await expect(page.locator("[data-database-view]")).toHaveCSS("overflow-y", "auto");
     await expect(page.locator("[data-database-view] .mosaic-split")).toHaveCount(0);
     await assertNoHorizontalOverflow();
-    await expect(page).toHaveScreenshot("database-game-open-320-200.png", { fullPage: true });
+    await expect(page).toHaveScreenshot("database-game-open-320-200.png", {
+        fullPage: true,
+        stylePath: scrollbarFreeScreenshot,
+    });
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, gameOpeningFixture.file.name);

@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import {
     contrastRatio,
     databaseCommands,
@@ -19,8 +18,8 @@ import {
     playerOverviewLastGames,
     preserveStorageForReload,
     gotoPreservingStorage,
+    scrollbarFreeScreenshot,
     whitePawnSquares,
-    waitForScrollAreaScrollbarsHidden,
     dragMosaicDivider,
     splitTextWords,
     goToBoards,
@@ -2334,9 +2333,10 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     await assertPreview();
     await page.mouse.move(1999, 1279);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
-    await waitForScrollAreaScrollbarsHidden(page);
     await capture("database-adaptive-wide");
-    await expect.soft(page).toHaveScreenshot("database-adaptive-wide.png");
+    await expect
+        .soft(page)
+        .toHaveScreenshot("database-adaptive-wide.png", { stylePath: scrollbarFreeScreenshot });
     await dragMosaicDivider(page, { root, split, percentage: 95, direction: "row" });
     await expect(layout).toHaveAttribute("data-percentage", "80");
     await expect(page.getByRole("button", { name: "Enlarge table", exact: true })).toBeDisabled();
@@ -2354,9 +2354,10 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     await expect.poll(() => whitePawnSquares(board)).toEqual(selected);
     await assertPreview();
     await page.mouse.move(1999, 1279);
-    await waitForScrollAreaScrollbarsHidden(page);
     await capture("database-adaptive-tall");
-    await expect.soft(page).toHaveScreenshot("database-adaptive-tall.png");
+    await expect
+        .soft(page)
+        .toHaveScreenshot("database-adaptive-tall.png", { stylePath: scrollbarFreeScreenshot });
     for (const name of ["Players", "Events", "Games"]) {
         await page.getByRole("tab", { name, exact: true }).first().click();
         await expect(page.locator("[data-database-layout]:visible")).toHaveAttribute(
@@ -2514,10 +2515,11 @@ test.describe("database-files: labelled colour filters", () => {
                 await expect(menu.locator(`[data-side="${side}"]`)).toBeVisible();
             }
             await page.mouse.move(surface.width - 1, 899);
-            await waitForScrollAreaScrollbarsHidden(page);
             await expect
                 .soft(page)
-                .toHaveScreenshot(`database-side-blackwhite-menu-${surface.name}-de-dark.png`);
+                .toHaveScreenshot(`database-side-blackwhite-menu-${surface.name}-de-dark.png`, {
+                    stylePath: scrollbarFreeScreenshot,
+                });
 
             await page.getByRole("menuitem", { name: "Alle", exact: true }).click();
             await expect(
@@ -2529,10 +2531,11 @@ test.describe("database-files: labelled colour filters", () => {
             await expect(page.locator('button [data-side="any"]')).toHaveCount(2);
             await assertTypingSpace();
             await page.mouse.move(surface.width - 1, 899);
-            await waitForScrollAreaScrollbarsHidden(page);
             await expect
                 .soft(page)
-                .toHaveScreenshot(`database-side-any-${surface.name}-de-dark.png`);
+                .toHaveScreenshot(`database-side-any-${surface.name}-de-dark.png`, {
+                    stylePath: scrollbarFreeScreenshot,
+                });
             await assertNoHorizontalOverflow();
         });
     }
@@ -2840,9 +2843,11 @@ for (const gesture of ["button", "double-click", "Enter"] as const) {
             await expect(openGame).toBeEnabled();
             await expect(openGame).toHaveText("Open game");
             await page.mouse.move(1399, 899);
-            await waitForScrollAreaScrollbarsHidden(page);
             await capture("database-labelled-game");
-            await expect(page).toHaveScreenshot("database-labelled-game.png", { fullPage: true });
+            await expect(page).toHaveScreenshot("database-labelled-game.png", {
+                fullPage: true,
+                stylePath: scrollbarFreeScreenshot,
+            });
             await openGame.click();
         } else if (gesture === "double-click") await second.dblclick();
         else {
@@ -3554,7 +3559,7 @@ test("database-files: the board explorer compares two databases side by side", a
     expect(Object.keys(JSON.parse(stored!))).toEqual(["tabs"]);
     // The strip's table scrolls, and whether its scrollbar thumb shows depends on timing.
     await expect(pane).toHaveScreenshot("explorer-pinned-strip.png", {
-        stylePath: fileURLToPath(new URL("./scrollbar-free-screenshot.css", import.meta.url)),
+        stylePath: scrollbarFreeScreenshot,
     });
     // The keyboard moves the same divider; a double-click returns to the content height.
     await handle.focus();
@@ -3615,7 +3620,7 @@ test("database-files: the board explorer compares two databases side by side", a
     ).toBe(true);
     expect((await rect(handle)).y).toBeLessThan((await rect(strip)).y);
     await expect(right).toHaveScreenshot("explorer-pinned-below-notation.png", {
-        stylePath: fileURLToPath(new URL("./scrollbar-free-screenshot.css", import.meta.url)),
+        stylePath: scrollbarFreeScreenshot,
     });
 
     // Below the board the board gives up the strip's room.

@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import {
     expect,
     test,
@@ -13,6 +12,7 @@ import {
     type AnalysisRequest,
     type MockScenario,
     goToSettings,
+    scrollbarFreeScreenshot,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 import type { EngineOptions, ErrorPayload } from "../src/bindings/generated";
@@ -622,7 +622,7 @@ test("engine-gap: pinned engine shows up to its own line count and moves between
     await expect(page).toHaveScreenshot("pinned-engine-hover-preview-dark.png", {
         animations: "disabled",
         // A hover scrollbar can outlive the pointer, and it is not what this image pins.
-        stylePath: fileURLToPath(new URL("./scrollbar-free-screenshot.css", import.meta.url)),
+        stylePath: scrollbarFreeScreenshot,
     });
     await page.mouse.move(0, 0);
     await expect(preview).toHaveCount(0);

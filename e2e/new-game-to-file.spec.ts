@@ -10,7 +10,7 @@ import {
     pgnFileCommands,
     playBoardMove,
     selectFilesTreeRow,
-    waitForScrollAreaScrollbarsHidden,
+    scrollbarFreeScreenshot,
     goToBoards,
 } from "./fixtures";
 
@@ -88,9 +88,10 @@ test("Library New game opens a fileDraft, asks for the line name and appends on 
     const newGame = page.getByRole("button", { name: "New game", exact: true });
     await expect(newGame).toBeEnabled();
     await newGame.scrollIntoViewIfNeeded();
-    await waitForScrollAreaScrollbarsHidden(page);
     await assertNothingClipped(page.locator("main"));
-    await expect(page).toHaveScreenshot("file-new-game.png");
+    await expect(page).toHaveScreenshot("file-new-game.png", {
+        stylePath: scrollbarFreeScreenshot,
+    });
     await newGame.click();
     await expect(page).toHaveURL("/");
     expect((await activeWorkspaceTab(page))?.gameOrigin).toEqual({

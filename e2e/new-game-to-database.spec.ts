@@ -8,7 +8,7 @@ import {
     gameOpeningFixture,
     playBoardMove,
     selectFilesTreeRow,
-    waitForScrollAreaScrollbarsHidden,
+    scrollbarFreeScreenshot,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
@@ -120,9 +120,10 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     const newGame = page.getByRole("button", { name: "New game", exact: true });
     await expect(newGame).toBeEnabled();
     await newGame.scrollIntoViewIfNeeded();
-    await waitForScrollAreaScrollbarsHidden(page);
     await assertNothingClipped(page.locator("main"));
-    await expect(page).toHaveScreenshot("database-new-game.png");
+    await expect(page).toHaveScreenshot("database-new-game.png", {
+        stylePath: scrollbarFreeScreenshot,
+    });
     await newGame.click();
     await expect(page).toHaveURL("/");
     expect((await activeWorkspaceTab(page))?.gameOrigin).toEqual({
@@ -282,8 +283,9 @@ test("linked collection New game appends to its PGN without inserting into the i
     await selectFilesTreeRow(page, file.name);
     await expect(page.getByRole("button", { name: "New game", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "New game", exact: true }).scrollIntoViewIfNeeded();
-    await waitForScrollAreaScrollbarsHidden(page);
-    await expect(page).toHaveScreenshot("linked-new-game.png");
+    await expect(page).toHaveScreenshot("linked-new-game.png", {
+        stylePath: scrollbarFreeScreenshot,
+    });
     await page.getByRole("button", { name: "New game", exact: true }).click();
     await expect(page).toHaveURL("/");
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
