@@ -354,9 +354,12 @@ export function registerFileConflictSave(
     };
 }
 
-export async function saveFileConflictVersion(tabId: string): Promise<boolean> {
+export type FileConflictSaveResult = boolean | "unregistered";
+
+export async function saveFileConflictVersion(tabId: string): Promise<FileConflictSaveResult> {
     const action = conflictSaveActions.get(tabId);
-    return action ? action() : false;
+    if (!action) return "unregistered";
+    return action();
 }
 
 /** Keeps at most one native reconcile read outstanding for a tab, even after abort. */

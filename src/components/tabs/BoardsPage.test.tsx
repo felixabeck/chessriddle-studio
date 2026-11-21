@@ -63,6 +63,7 @@ const fixtures = vi.hoisted(() => ({
   invalidateReportOwner: vi.fn(),
   restoreReportOwner: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
+  navigate: vi.fn(),
   tabsOnChange: null as ((value: string | null) => void) | null,
   nextPromise: null as Promise<void> | null,
   nextReady: false,
@@ -202,6 +203,9 @@ vi.mock("@mantine/hooks", async (importOriginal) => {
     },
   };
 });
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => fixtures.navigate,
+}));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@hello-pangea/dnd", () => ({
   DragDropContext: ({ children }: { children: ReactNode }) => children,
@@ -351,6 +355,7 @@ vi.mock("./BoardTabLayout", () => ({
 }));
 
 import BoardsPage from "./BoardsPage";
+import { TabCommandsProvider } from "./TabCommands";
 import {
   activeTabAtom,
   closingTabsAtom,
@@ -380,7 +385,9 @@ function renderPage() {
     root.render(
       <Suspense fallback={<div data-testid="fallback">Loading</div>}>
         <MantineProvider env="test">
-          <BoardsPage />
+          <TabCommandsProvider>
+            <BoardsPage />
+          </TabCommandsProvider>
         </MantineProvider>
       </Suspense>,
     );
@@ -447,6 +454,7 @@ beforeEach(() => {
     return true;
   });
   fixtures.hotkeyBindings = null;
+  fixtures.navigate.mockReset();
   fixtures.notifyUnlessCancelled.mockReset();
   fixtures.tabsOnChange = null;
   fixtures.nextPromise = new Promise<void>((resolve) => {

@@ -1,4 +1,5 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
+import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useSetAtom, useStore as useJotaiStore } from "jotai";
 import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -50,6 +51,7 @@ function ConfirmChangesModal({
   preserveChanges?: boolean;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [currentTab] = useAtom(currentTabAtom);
   const [, setActiveTab] = useAtom(activeTabAtom);
   const setTabs = useSetAtom(tabsAtom);
@@ -88,6 +90,11 @@ function ConfirmChangesModal({
     }
   };
 
+  const showTab = (tabId: string) => {
+    setActiveTab(tabId);
+    void navigate({ to: "/" });
+  };
+
   async function save() {
     if (!targetTab || !targetStore) return;
     if (savePending) return;
@@ -96,6 +103,12 @@ function ConfirmChangesModal({
     if (freshness.state === "unavailable") {
       try {
         const saved = await saveFileConflictVersion(targetTab.value);
+        if (saved === "unregistered") {
+          showTab(targetTab.value);
+          if (pendingClose !== undefined) onCancel?.();
+          else toggle?.();
+          return;
+        }
         const current = jotaiStore
           .get(tabsAtom)
           .find((candidate) => candidate.value === targetTab.value);
@@ -152,7 +165,7 @@ function ConfirmChangesModal({
     if (result === "conflict") {
       setSavePending(false);
       if (pendingClose !== undefined) {
-        setActiveTab(targetTab.value);
+        showTab(targetTab.value);
         onCancel?.();
       } else {
         toggle?.();

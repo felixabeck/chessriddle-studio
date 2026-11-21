@@ -19,6 +19,7 @@ import {
   saveFileConflictVersion,
   setFileFreshness,
   startFileRevisionPoll,
+  type FileConflictSaveResult,
 } from "@/state/fileFreshness";
 import { defaultTree } from "@/utils/treeReducer";
 import { getTabTreeKey, saveToFile, serializeStoreTree } from "@/utils/tabs";
@@ -1890,7 +1891,7 @@ async function startPendingAppend(registered = false) {
     });
   const pending = deferred<AppendResult>();
   mocks.writeGame.mockReturnValueOnce(pending.promise);
-  let completion: Promise<{ result: boolean } | { error: unknown }> | undefined;
+  let completion: Promise<{ result: FileConflictSaveResult } | { error: unknown }> | undefined;
   await act(async () => {
     if (registered) {
       completion = saveFileConflictVersion(tabId).then(
@@ -2019,7 +2020,7 @@ async function startPendingPicker(route: "button" | "registered") {
   await vi.waitFor(() => expect(getFileFreshness(tabId).state).toBe("conflict"));
   const picker = deferred<Awaited<ReturnType<(typeof import("@/utils/files"))["pickPgnFile"]>>>();
   mocks.pickPgnFile.mockReturnValueOnce(picker.promise);
-  let completion: Promise<{ result: boolean } | { error: unknown }> | undefined;
+  let completion: Promise<{ result: FileConflictSaveResult } | { error: unknown }> | undefined;
   await act(async () => {
     if (route === "registered") {
       completion = saveFileConflictVersion(tabId).then(

@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   readFileGame: vi.fn(),
   writeGame: vi.fn(),
   lexPgn: vi.fn(),
+  navigate: vi.fn(),
 }));
 
 vi.mock("@/platform/tauri", async (importOriginal) => {
@@ -36,6 +37,9 @@ vi.mock("@/utils/files", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/utils/files")>()),
   pickPgnFile: mocks.pickPgnFile,
   readFileGame: mocks.readFileGame,
+}));
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => mocks.navigate,
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@mantine/core", () => ({
@@ -125,6 +129,7 @@ beforeEach(() => {
   mocks.writeGame
     .mockReset()
     .mockResolvedValue({ stamp: "b".repeat(64), revision: "new-revision" });
+  mocks.navigate.mockReset();
 });
 
 afterEach(async () => {
@@ -565,6 +570,7 @@ test("close-tab conflict closes the dialog, keeps the tab, and activates it", as
   expect(updateTab).not.toHaveBeenCalled();
   expect(jotaiStore.get(tabsAtom)).toContainEqual(sourceTab);
   expect(jotaiStore.get(activeTabAtom)).toBe(sourceTab.value);
+  expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
   expect(host.querySelector('[role="dialog"]')).toBeNull();
 });
 
@@ -609,6 +615,7 @@ test("page-switch conflict leaves the tree and selected game in place", async ()
 
   expect(toggle).toHaveBeenCalledOnce();
   expect(changePage).not.toHaveBeenCalled();
+  expect(mocks.navigate).not.toHaveBeenCalled();
   expect(currentTree.getState()).toMatchObject({ dirty: true, sourceStamp: "a".repeat(64) });
   expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 0 });
 });
@@ -637,6 +644,68 @@ test("Save on an unavailable tab runs the registered append action", async () =>
   expect(action).toHaveBeenCalledOnce();
   expect(onSaved).toHaveBeenCalledOnce();
   expect(mocks.writeGame).not.toHaveBeenCalled();
+  expect(mocks.navigate).not.toHaveBeenCalled();
+  unregister();
+});
+
+test("Save for an unavailable tab with no registered action shows the tab and stops the close", async () => {
+  setFileFreshness(backgroundTab.value, "unavailable");
+  const onSaved = vi.fn();
+  const onCancel = vi.fn();
+
+  await act(async () =>
+    root.render(
+      <Provider store={jotaiStore}>
+        <ConfirmChangesModal
+          pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
+          tab={backgroundTab}
+          onCancel={onCancel}
+          onDiscard={vi.fn()}
+          onSaved={onSaved}
+        />
+      </Provider>,
+    ),
+  );
+  await saveAndClose();
+
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(onCancel).toHaveBeenCalledOnce();
+  expect(jotaiStore.get(activeTabAtom)).toBe(backgroundTab.value);
+  expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
+  expect(host.querySelector('[role="dialog"]')?.textContent).not.toContain(
+    "FileFreshness.SaveAsNewGameFailed",
+  );
+});
+
+test("Save for an unavailable tab keeps today's failure when the registered action returns false", async () => {
+  const action = vi.fn(async () => false);
+  const unregister = registerFileConflictSave(backgroundTab.value, action);
+  setFileFreshness(backgroundTab.value, "unavailable");
+  const onSaved = vi.fn();
+  const onCancel = vi.fn();
+
+  await act(async () =>
+    root.render(
+      <Provider store={jotaiStore}>
+        <ConfirmChangesModal
+          pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
+          tab={backgroundTab}
+          onCancel={onCancel}
+          onDiscard={vi.fn()}
+          onSaved={onSaved}
+        />
+      </Provider>,
+    ),
+  );
+  await saveAndClose();
+
+  expect(action).toHaveBeenCalledOnce();
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(onCancel).not.toHaveBeenCalled();
+  expect(mocks.navigate).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="dialog"]')?.textContent).toContain(
+    "FileFreshness.SaveAsNewGameFailed",
+  );
   unregister();
 });
 

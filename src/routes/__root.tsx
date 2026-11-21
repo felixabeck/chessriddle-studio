@@ -16,6 +16,7 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { SideBar } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import { WindowResizeHandles } from "@/components/WindowResizeHandles";
+import { TabCommandsProvider } from "@/components/tabs/TabCommands";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import i18n from "@/i18n";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
@@ -427,56 +428,58 @@ export function RootLayout() {
   }, [isNative, menuActions, notifyMenuError, windowPlatform]);
 
   return (
-    <AppShell
-      navbar={{
-        width: "3rem",
-        breakpoint: 0,
-      }}
-      header={
-        showTopBar
-          ? {
-              height: "2.25rem",
-            }
-          : undefined
-      }
-      styles={{
-        main: {
-          height: "100vh",
-          userSelect: "none",
-          background: "var(--cf-background)",
-        },
-        navbar: { background: "var(--cf-card)", borderColor: "var(--cf-border)" },
-        header: { background: "var(--cf-card)", borderColor: "var(--cf-border)" },
-      }}
-    >
-      <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
-      <ChessBaseGuide />
-      <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
-      <QuitConfirmModal
-        opened={quitDialog !== null}
-        failClosed={quitDialog?.failClosed ?? false}
-        tabs={quitDialog?.tabs ?? []}
-        onCancel={() => {
-          setQuitDialog(null);
-          cancelQuitGate();
+    <TabCommandsProvider>
+      <AppShell
+        navbar={{
+          width: "3rem",
+          breakpoint: 0,
         }}
-        onQuitWithoutSaving={() => {
-          void quitWithoutSaving();
+        header={
+          showTopBar
+            ? {
+                height: "2.25rem",
+              }
+            : undefined
+        }
+        styles={{
+          main: {
+            height: "100vh",
+            userSelect: "none",
+            background: "var(--cf-background)",
+          },
+          navbar: { background: "var(--cf-card)", borderColor: "var(--cf-border)" },
+          header: { background: "var(--cf-card)", borderColor: "var(--cf-border)" },
         }}
-        onSaveAndQuit={saveAndQuit}
-      />
-      {showTopBar && (
-        <AppShell.Header>
-          <TopBar menuActions={menuActions} showWindowControls={showWindowControls} />
-        </AppShell.Header>
-      )}
-      {renderResizeHandles(windowPlatform, showWindowControls) && <WindowResizeHandles />}
-      <AppShell.Navbar>
-        <SideBar onSendFeedback={menuCallbacks.sendFeedback} />
-      </AppShell.Navbar>
-      <AppShell.Main>
-        <Outlet />
-      </AppShell.Main>
-    </AppShell>
+      >
+        <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
+        <ChessBaseGuide />
+        <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
+        <QuitConfirmModal
+          opened={quitDialog !== null}
+          failClosed={quitDialog?.failClosed ?? false}
+          tabs={quitDialog?.tabs ?? []}
+          onCancel={() => {
+            setQuitDialog(null);
+            cancelQuitGate();
+          }}
+          onQuitWithoutSaving={() => {
+            void quitWithoutSaving();
+          }}
+          onSaveAndQuit={saveAndQuit}
+        />
+        {showTopBar && (
+          <AppShell.Header>
+            <TopBar menuActions={menuActions} showWindowControls={showWindowControls} />
+          </AppShell.Header>
+        )}
+        {renderResizeHandles(windowPlatform, showWindowControls) && <WindowResizeHandles />}
+        <AppShell.Navbar>
+          <SideBar onSendFeedback={menuCallbacks.sendFeedback} />
+        </AppShell.Navbar>
+        <AppShell.Main>
+          <Outlet />
+        </AppShell.Main>
+      </AppShell>
+    </TabCommandsProvider>
   );
 }

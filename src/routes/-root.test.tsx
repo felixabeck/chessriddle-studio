@@ -100,6 +100,11 @@ vi.mock("@/components/Sidebar", () => ({
 vi.mock("@/components/TopBar", () => ({ default: () => null }));
 vi.mock("@/components/WindowResizeHandles", () => ({ WindowResizeHandles: () => null }));
 vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
+vi.mock("@/components/tabs/TabCommands", () => ({
+  TabCommandsProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="tab-commands-owner">{children}</div>
+  ),
+}));
 vi.mock("@/utils/files", () => ({ pickPgnFile: mocks.pickPgnFile }));
 vi.mock("@/utils/openFile", () => ({ openFile: vi.fn() }));
 vi.mock("@/utils/tabs", async (importOriginal) => ({
@@ -441,6 +446,7 @@ test("the sidebar feedback button opens the same dialog", async () => {
   await act(async () => {
     root.render(<RootLayout />);
   });
+  expect(host.querySelector("[data-testid='tab-commands-owner']")).not.toBeNull();
   expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
   await act(async () => {
     host.querySelector<HTMLButtonElement>("[data-testid='sidebar-feedback']")?.click();

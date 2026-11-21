@@ -150,20 +150,28 @@ test("aborting a running reconcile queues a replacement without overlapping nati
     await vi.waitFor(() => expect(pendingFileReconcileCount()).toBe(0));
 });
 
+test("a registered conflict save that returns false is failed, not unregistered", async () => {
+    const save = vi.fn(async () => false);
+    const unregister = registerFileConflictSave(ids[0], save);
+    await expect(saveFileConflictVersion(ids[0])).resolves.toBe(false);
+    expect(save).toHaveBeenCalledOnce();
+    unregister();
+});
+
 test("conflict save registration is tab-scoped and removed with the tab", async () => {
     const save = vi.fn(async () => true);
     const unregister = registerFileConflictSave(ids[0], save);
 
     await expect(saveFileConflictVersion(ids[0])).resolves.toBe(true);
     expect(save).toHaveBeenCalledOnce();
-    await expect(saveFileConflictVersion(ids[1])).resolves.toBe(false);
+    await expect(saveFileConflictVersion(ids[1])).resolves.toBe("unregistered");
 
     unregister();
-    await expect(saveFileConflictVersion(ids[0])).resolves.toBe(false);
+    await expect(saveFileConflictVersion(ids[0])).resolves.toBe("unregistered");
 
     registerFileConflictSave(ids[0], save);
     removeFileFreshness(ids[0]);
-    await expect(saveFileConflictVersion(ids[0])).resolves.toBe(false);
+    await expect(saveFileConflictVersion(ids[0])).resolves.toBe("unregistered");
 });
 
 test("the two-second poll invalidates a changed file-backed tab without a BoardsPage owner", async () => {
