@@ -2686,13 +2686,47 @@ const applicationMenuSelector = `[...document.querySelectorAll('button')].find(n
   const label = node.getAttribute('aria-label') || '';
   return label === 'Application menu' || label === 'Anwendungsmenü';
 })`;
+export const BOARD_TAB_STOP_SELECTOR = 'header [role="tablist"] [role="tab"][tabindex="0"]';
+
+async function rendererChromeState(session) {
+  return session
+    .execute(
+      `
+    const menu = ${applicationMenuSelector};
+    const box = menu?.getBoundingClientRect();
+    const x = box ? Math.round(box.left + box.width / 2) : null;
+    const y = box ? Math.round(box.top + box.height / 2) : null;
+    const hit = x === null ? null : document.elementFromPoint(x, y);
+    return {
+      path: location.pathname,
+      dialogs: [...document.querySelectorAll('[role="dialog"]')].map((dialog) =>
+        dialog.innerText.replace(/\\s+/g, " ").trim().slice(0, 240),
+      ),
+      overlays: document.querySelectorAll(".mantine-Overlay-root, .mantine-Modal-overlay").length,
+      applicationMenu: menu
+        ? {
+            label: menu.getAttribute("aria-label"),
+            width: box.width,
+            height: box.height,
+            hit: hit && (hit === menu || menu.contains(hit)),
+            hitLabel: hit?.getAttribute?.("aria-label") ?? hit?.tagName ?? null,
+          }
+        : null,
+    };
+  `,
+    )
+    .catch((error) => ({ unavailable: error.message }));
+}
 
 async function openApplicationMenu(session) {
-  const point = await reachableStableCoordinates(
-    session,
-    "Application menu",
-    applicationMenuSelector,
-  );
+  let point;
+  try {
+    point = await reachableStableCoordinates(session, "Application menu", applicationMenuSelector);
+  } catch (error) {
+    throw new Error(
+      `${error.message}; renderer state: ${JSON.stringify(await rendererChromeState(session))}`,
+    );
+  }
   await clickAt(session, point.x, point.y);
   await waitFor("the application menu", () =>
     session.execute(`return document.querySelector('[role="menu"]') !== null`).catch(() => false),
@@ -2755,10 +2789,12 @@ export async function goToAccounts(session) {
 async function goToBoards(session) {
   const here = await session.execute("return location.pathname");
   if (here === "/") return;
+  // Off "/", the row's single tab stop is the active tab. Clicking the first tab would select a
+  // different game and still navigate to "/".
   const point = await reachableStableCoordinates(
     session,
     "board tab",
-    `document.querySelector('header [role="tablist"] [role="tab"]')`,
+    `document.querySelector(${JSON.stringify(BOARD_TAB_STOP_SELECTOR)})`,
   );
   await clickAt(session, point.x, point.y);
   await waitFor("boards route", () =>
@@ -3989,7 +4025,7 @@ async function verifyNewGameToDatabase(session) {
     check(
       false,
       "NG1 New game inserts once and the next explicit save updates the same native database row",
-      error.message,
+      `${error.message}; renderer state: ${JSON.stringify(await rendererChromeState(session))}`,
     );
   }
 }
@@ -6362,7 +6398,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
 
   check(
     closeControl === "label" || closeControl === "fallback",
-    "the custom title bar rendered its window controls",
+    "the navigation row rendered its window controls",
     closeControl === "fallback"
       ? "the translated close label was absent; the last button in the window-controls group will be used"
       : undefined,
@@ -7023,9 +7059,9 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       () =>
         session
           .execute(
-            `const tab = document.querySelector('header [role="tablist"] [role="tab"]');
+            `const tab = document.querySelector(${JSON.stringify(BOARD_TAB_STOP_SELECTOR)});
          if (tab && location.pathname !== "/") tab.click();
-         return location.pathname === "/" && !!document.querySelector('header [role="tablist"] [role="tab"]');`,
+         return location.pathname === "/" && !!document.querySelector(${JSON.stringify(BOARD_TAB_STOP_SELECTOR)});`,
           )
           .catch(() => false),
       { timeoutMs: FILES_PROBE_TIMEOUT_MS },

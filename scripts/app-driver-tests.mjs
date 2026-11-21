@@ -10,6 +10,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import {
   ASSERTION_SESSION_OPEN_PHRASE,
+  BOARD_TAB_STOP_SELECTOR,
   STARTUP_RECONCILIATION_LATENCY_PHRASE,
   createSinceOpenLogReader,
   openAssertionSession,
@@ -875,6 +876,22 @@ test("reopen diagnostics exclude log bytes written before that open", async (t) 
     },
   );
   assert.equal(typeof first.readLogSinceOpen, "function");
+});
+
+test("board tab stop selector returns the active tab, not the first tab", async () => {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM(`<!DOCTYPE html><header>
+    <div role="tablist">
+      <button role="tab" tabindex="-1" data-name="first">First</button>
+      <button role="tab" tabindex="0" data-name="active">Active</button>
+      <button role="tab" tabindex="-1" data-name="later">Later</button>
+    </div>
+  </header>`);
+  const stop = dom.window.document.querySelector(BOARD_TAB_STOP_SELECTOR);
+  const first = dom.window.document.querySelector('header [role="tablist"] [role="tab"]');
+  assert.equal(stop?.getAttribute("data-name"), "active");
+  assert.equal(first?.getAttribute("data-name"), "first");
+  assert.notEqual(stop, first);
 });
 
 test("since-open log reader treats a missing file as empty and surfaces other read errors", async (t) => {
