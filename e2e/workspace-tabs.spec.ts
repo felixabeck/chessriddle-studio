@@ -1672,7 +1672,6 @@ test("workspace-tabs: native menu is suppressed on a plain surface and preserved
         .getByRole("dialog")
         .getByRole("textbox", { name: "Rename tab", exact: true });
     await expect(input).toBeVisible();
-    // A locator click waits out the dialog's opening transition, so the pointer lands on the field.
     await input.click({ button: "right" });
     await expect(page.locator("html")).toHaveAttribute("data-context-menu-prevented", "false");
     await expect(page.locator("html")).toHaveAttribute("data-context-menu-trusted", "true");

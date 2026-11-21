@@ -2882,7 +2882,7 @@ test("accounts-puzzles-engines: engine and catalogue cards keep the shared gap",
     page,
     mockScenario,
 }) => {
-    // Reads the cards in one frame and polls, because dialogs open with a transition.
+    // Reads the cards in one frame and polls, because the catalogue cards render asynchronously.
     const expectCardGap = (grid: Locator, columns: number, rows = 1) =>
         expect
             .poll(() =>
