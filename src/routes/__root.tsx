@@ -1,7 +1,7 @@
 import { AppShell } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { createRootRouteWithContext, Outlet, useNavigate } from "@tanstack/react-router";
-import { ask, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@/platform/native";
+import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@/platform/native";
 import { exit, getCurrentWebviewWindow, getCurrentWindow, platform } from "@/platform/native";
 import { logFailureSafely, warnSafely } from "@/platform/errors";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
@@ -18,7 +18,6 @@ import TopBar from "@/components/TopBar";
 import { WindowResizeHandles } from "@/components/WindowResizeHandles";
 import { TabCommandsProvider } from "@/components/tabs/TabCommands";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
-import i18n from "@/i18n";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
 import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
 import {
@@ -32,29 +31,21 @@ import {
 } from "@/state/quitGate";
 import { startFileRevisionPoll } from "@/state/fileFreshness";
 import { keyMapAtom } from "@/state/keybinds";
-import { initializePathOwners, startupLegacyDeckScanComplete } from "@/state/pathOwners";
-import {
-  ensurePracticeMigration,
-  retireMigratedLegacyDeckKeysFromBrowser,
-  runPracticeMigrationPass,
-  type PracticeMigrationPassResult,
-} from "@/state/practiceStorage";
 import { pickPgnFile } from "@/utils/files";
 import { openFile } from "@/utils/openFile";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { createQuitTabSaver } from "@/state/quitSave";
 import {
-  clearUnsavedGamesBeforeWipe,
   getUnsavedGameMirror,
   nativeUnsavedGames,
   restoreUnsavedGames,
 } from "@/state/unsavedGames";
+import { clearSavedData, openAppLogs, reloadApp } from "@/components/settings/advancedActions";
 import { createTab, type Tab } from "@/utils/tabs";
 import {
   assembleNativeMenuResources,
   bindAppMenuCallbacks,
   buildAppMenuTree,
-  clearSavedDataFromMenu,
   createNewTabFromMenu,
   fullscreenShortcut,
   installAppMenuSurface,
@@ -94,50 +85,6 @@ async function createMenu(menuActions: MenuGroup[]): Promise<MenuHandle> {
     menu: (items) => Menu.new({ items: items as never }),
   });
   return menu as unknown as MenuHandle;
-}
-
-export type ClearSavedDataAfterConfirmationDeps = {
-  blockedMessage: (decks: string[]) => string;
-  clear: () => void | Promise<void>;
-};
-
-function affectedPracticeDecks(result: PracticeMigrationPassResult): string[] {
-  const affected = new Set<string>();
-  for (const outcome of result.outcomes) {
-    if (outcome.status === "failed") {
-      affected.add(`${outcome.identity.file} (${outcome.identity.game})`);
-    }
-  }
-  for (const anomaly of result.inventory?.anomalies ?? []) {
-    affected.add(
-      anomaly.fileId !== null && anomaly.game !== null
-        ? `${anomaly.fileId} (${anomaly.game})`
-        : anomaly.leaf,
-    );
-  }
-  if (!result.scanTrusted || !result.inventoryTrusted) {
-    affected.add(i18n.t("Board.Practice.Data"));
-  }
-  return [...affected].sort();
-}
-
-export async function clearSavedDataAfterConfirmation(
-  deps: ClearSavedDataAfterConfirmationDeps,
-): Promise<void> {
-  const pathOwnersInitialized = await initializePathOwners().then(
-    () => true,
-    () => false,
-  );
-  await ensurePracticeMigration();
-  const result = await runPracticeMigrationPass();
-  if (pathOwnersInitialized && startupLegacyDeckScanComplete()) {
-    retireMigratedLegacyDeckKeysFromBrowser(result.outcomes);
-  }
-  const affected = affectedPracticeDecks(result);
-  if (affected.length > 0) {
-    throw new Error(deps.blockedMessage(affected));
-  }
-  await deps.clear();
 }
 
 export const Route = createRootRouteWithContext<Record<string, never>>()({
@@ -314,33 +261,10 @@ export function RootLayout() {
         saveGameTo: () => requestSave("saveTo"),
         openSettings,
         exit: () => requestQuit(),
-        reload: () => location.reload(),
+        reload: reloadApp,
         toggleFullscreen,
-        clearSavedData: () =>
-          clearSavedDataFromMenu({
-            ask,
-            confirmMessage: t("Menu.Help.ClearSavedData.Confirm"),
-            title: t("Menu.Help.ClearSavedData.Title"),
-            clear: () =>
-              clearSavedDataAfterConfirmation({
-                blockedMessage: (decks) =>
-                  t("Menu.Help.ClearSavedData.MigrationBlocked", {
-                    decks: decks.join(", "),
-                    practiceData: t("Board.Practice.Data"),
-                  }),
-                clear: () =>
-                  clearUnsavedGamesBeforeWipe({
-                    mirror: unsavedGames,
-                    native: nativeUnsavedGames,
-                    wipe: () => {
-                      localStorage.clear();
-                      sessionStorage.clear();
-                      location.reload();
-                    },
-                  }),
-              }),
-          }),
-        openLogs: () => tauri.openAppLog(),
+        clearSavedData: () => clearSavedData({ mirror: unsavedGames, t }),
+        openLogs: openAppLogs,
         openLogsSuccessMessage: t("Menu.Help.OpenLogs"),
       }),
     [

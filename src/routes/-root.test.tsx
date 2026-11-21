@@ -5,31 +5,18 @@ import type { AppMenuCallbacks } from "./-appMenu";
 import { focusedDialogButton, press } from "@/tests/keyboard";
 
 const mocks = vi.hoisted(() => ({
-  initializePathOwners: vi.fn(),
-  startupLegacyDeckScanComplete: vi.fn(),
-  ensureMigration: vi.fn(),
-  runMigration: vi.fn(),
-  retireMigratedKeys: vi.fn(),
   fileRevision: vi.fn(),
   windowFocus: vi.fn(),
   lastCallbacks: null as AppMenuCallbacks | null,
   createTab: vi.fn(),
   pickPgnFile: vi.fn(),
   requestBoardCommand: vi.fn(),
+  ask: vi.fn(),
 }));
 vi.mock("@/components/boards/boardCommands", () => ({
   requestBoardCommand: mocks.requestBoardCommand,
 }));
 
-vi.mock("@/state/pathOwners", () => ({
-  initializePathOwners: mocks.initializePathOwners,
-  startupLegacyDeckScanComplete: mocks.startupLegacyDeckScanComplete,
-}));
-vi.mock("@/state/practiceStorage", () => ({
-  ensurePracticeMigration: mocks.ensureMigration,
-  runPracticeMigrationPass: mocks.runMigration,
-  retireMigratedLegacyDeckKeysFromBrowser: mocks.retireMigratedKeys,
-}));
 vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
   const analysis = {
@@ -60,7 +47,7 @@ vi.mock("@/platform/native", () => ({
   MenuItem: {},
   PredefinedMenuItem: {},
   Submenu: {},
-  ask: vi.fn(),
+  ask: mocks.ask,
   exit: vi.fn(),
   error: vi.fn().mockResolvedValue(undefined),
   warn: vi.fn().mockResolvedValue(undefined),
@@ -139,24 +126,21 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-import { clearSavedDataAfterConfirmation, RootLayout, startRootFileFreshnessPoll } from "./__root";
-import { clearSavedDataFromMenu, menuWindowPlatform } from "./-appMenu";
+import { RootLayout, startRootFileFreshnessPoll } from "./__root";
+import { menuWindowPlatform } from "./-appMenu";
+import { reloadApp } from "@/components/settings/advancedActions";
 import { getDefaultStore } from "jotai";
 import { getCurrentWindow } from "@/platform/native";
 import { nativeBarAtom } from "@/state/atoms";
 import type { Tab } from "@/utils/tabs";
 
 beforeEach(() => {
-  mocks.initializePathOwners.mockReset().mockResolvedValue(undefined);
-  mocks.startupLegacyDeckScanComplete.mockReset().mockReturnValue(true);
-  mocks.ensureMigration.mockReset().mockResolvedValue({});
-  mocks.runMigration.mockReset();
-  mocks.retireMigratedKeys.mockReset();
   mocks.fileRevision.mockReset().mockResolvedValue("dev:ino:revision");
   mocks.windowFocus.mockReset().mockResolvedValue(vi.fn());
   mocks.lastCallbacks = null;
   mocks.createTab.mockReset().mockResolvedValue("created");
   mocks.pickPgnFile.mockReset().mockResolvedValue(null);
+  mocks.ask.mockReset().mockResolvedValue(false);
 });
 
 test.each([
@@ -189,219 +173,32 @@ test.each([
   }
 });
 
-async function clearThroughProductionPath(
-  result: unknown,
-  clear: () => void | Promise<void>,
-): Promise<void> {
-  mocks.runMigration.mockResolvedValue(result);
-  await clearSavedDataFromMenu({
-    ask: async () => true,
-    confirmMessage: "confirm",
-    title: "title",
-    clear: () =>
-      clearSavedDataAfterConfirmation({
-        blockedMessage: (decks) => `blocked: ${decks.join(", ")}`,
-        clear,
-      }),
-  });
-}
+test("the menu reload, clear-saved-data and open-logs actions call the Settings implementation", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => root.render(<RootLayout />));
+  try {
+    expect(mocks.lastCallbacks).not.toBeNull();
+    expect(mocks.lastCallbacks!.reload).toBe(reloadApp);
 
-test("the production clear path refuses after a failed migration", async () => {
-  const clear = vi.fn();
-  const outcomes = [
-    {
-      key: "deck-failed-0",
-      identity: { file: "failed", game: 0 },
-      status: "failed",
-    },
-  ];
+    const { tauri } = await import("@/platform/tauri");
+    await act(async () => {
+      await mocks.lastCallbacks!.openLogs();
+    });
+    expect(tauri.openAppLog).toHaveBeenCalledOnce();
 
-  await expect(
-    clearThroughProductionPath(
-      {
-        outcomes,
-        inventory: { decks: [], anomalies: [] },
-        scanTrusted: true,
-        inventoryTrusted: true,
-      },
-      clear,
-    ),
-  ).rejects.toThrow("failed (0)");
-  expect(mocks.retireMigratedKeys).toHaveBeenCalledExactlyOnceWith(outcomes);
-  expect(clear).not.toHaveBeenCalled();
-});
-
-test("the production clear path refuses when inventory reports a damaged deck", async () => {
-  const clear = vi.fn();
-
-  await expect(
-    clearThroughProductionPath(
-      {
-        outcomes: [],
-        inventory: {
-          decks: [],
-          anomalies: [{ kind: "OrphanShard", leaf: "orphan", fileId: "damaged", game: 2 }],
-        },
-        scanTrusted: true,
-        inventoryTrusted: true,
-      },
-      clear,
-    ),
-  ).rejects.toThrow("damaged (2)");
-  expect(clear).not.toHaveBeenCalled();
-});
-
-test("the production clear path does not name a repaired native deck", async () => {
-  const clear = vi.fn();
-  const outcomes = [
-    {
-      key: "deck-repaired-0",
-      identity: { file: "repaired", game: 0 },
-      status: "migrated",
-    },
-  ];
-
-  await clearThroughProductionPath(
-    {
-      outcomes,
-      inventory: {
-        decks: [{ fileId: "repaired", game: 0 }],
-        anomalies: [],
-      },
-      scanTrusted: true,
-      inventoryTrusted: true,
-    },
-    clear,
-  );
-
-  expect(clear).toHaveBeenCalledOnce();
-  expect(mocks.retireMigratedKeys).toHaveBeenCalledExactlyOnceWith(outcomes);
-});
-
-test("the production clear path waits for migration and runs a fresh pass before clearing", async () => {
-  const migration = deferred<void>();
-  const clear = vi.fn();
-  mocks.ensureMigration.mockReturnValueOnce(migration.promise);
-  mocks.runMigration.mockResolvedValueOnce({
-    outcomes: [],
-    inventory: { decks: [], anomalies: [] },
-    scanTrusted: true,
-    inventoryTrusted: true,
-  });
-
-  const clearing = clearSavedDataFromMenu({
-    ask: async () => true,
-    confirmMessage: "confirm",
-    title: "title",
-    clear: () =>
-      clearSavedDataAfterConfirmation({
-        blockedMessage: (decks) => `blocked: ${decks.join(", ")}`,
-        clear,
-      }),
-  });
-  await Promise.resolve();
-  expect(clear).not.toHaveBeenCalled();
-  expect(mocks.runMigration).not.toHaveBeenCalled();
-
-  migration.resolve();
-  await clearing;
-  expect(mocks.runMigration).toHaveBeenCalledOnce();
-  expect(clear).toHaveBeenCalledOnce();
-});
-
-test("the production clear path waits for path owners before migrating and retiring", async () => {
-  const initialization = deferred<void>();
-  const clear = vi.fn();
-  const outcomes = [
-    {
-      key: "deck-migrated-0",
-      identity: { file: "migrated", game: 0 },
-      status: "migrated",
-    },
-  ];
-  mocks.initializePathOwners.mockReturnValueOnce(initialization.promise);
-  mocks.runMigration.mockResolvedValueOnce({
-    outcomes,
-    inventory: { decks: [], anomalies: [] },
-    scanTrusted: true,
-    inventoryTrusted: true,
-  });
-
-  const clearing = clearSavedDataAfterConfirmation({
-    blockedMessage: (decks) => `blocked: ${decks.join(", ")}`,
-    clear,
-  });
-  expect(mocks.initializePathOwners).toHaveBeenCalledOnce();
-  expect(mocks.ensureMigration).not.toHaveBeenCalled();
-  expect(mocks.runMigration).not.toHaveBeenCalled();
-  expect(mocks.retireMigratedKeys).not.toHaveBeenCalled();
-  expect(clear).not.toHaveBeenCalled();
-
-  initialization.resolve();
-  await clearing;
-
-  expect(mocks.runMigration).toHaveBeenCalledOnce();
-  expect(mocks.retireMigratedKeys).toHaveBeenCalledExactlyOnceWith(outcomes);
-  expect(clear).toHaveBeenCalledOnce();
-});
-
-test("the production clear path still refuses failed migration when path owners reject", async () => {
-  const clear = vi.fn();
-  mocks.initializePathOwners.mockRejectedValueOnce(new Error("path owners failed"));
-
-  await expect(
-    clearThroughProductionPath(
-      {
-        outcomes: [
-          {
-            key: "deck-migrated-0",
-            identity: { file: "migrated", game: 0 },
-            status: "migrated",
-          },
-          {
-            key: "deck-failed-0",
-            identity: { file: "failed", game: 0 },
-            status: "failed",
-          },
-        ],
-        inventory: { decks: [], anomalies: [] },
-        scanTrusted: true,
-        inventoryTrusted: true,
-      },
-      clear,
-    ),
-  ).rejects.toThrow("blocked: failed (0)");
-
-  expect(mocks.ensureMigration).toHaveBeenCalledOnce();
-  expect(mocks.runMigration).toHaveBeenCalledOnce();
-  expect(mocks.retireMigratedKeys).not.toHaveBeenCalled();
-  expect(clear).not.toHaveBeenCalled();
-});
-
-test("the production clear path clears clean migration without retirement when path owners reject", async () => {
-  const clear = vi.fn();
-  mocks.initializePathOwners.mockRejectedValueOnce(new Error("path owners failed"));
-
-  await clearThroughProductionPath(
-    {
-      outcomes: [
-        {
-          key: "deck-migrated-0",
-          identity: { file: "migrated", game: 0 },
-          status: "migrated",
-        },
-      ],
-      inventory: { decks: [], anomalies: [] },
-      scanTrusted: true,
-      inventoryTrusted: true,
-    },
-    clear,
-  );
-
-  expect(mocks.ensureMigration).toHaveBeenCalledOnce();
-  expect(mocks.runMigration).toHaveBeenCalledOnce();
-  expect(mocks.retireMigratedKeys).not.toHaveBeenCalled();
-  expect(clear).toHaveBeenCalledOnce();
+    await act(async () => {
+      await mocks.lastCallbacks!.clearSavedData();
+    });
+    expect(mocks.ask).toHaveBeenCalledExactlyOnceWith("Menu.Help.ClearSavedData.Confirm", {
+      title: "Menu.Help.ClearSavedData.Title",
+    });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
 });
 
 test("the root poll follows current file tabs, listens for focus, and stops its resources", async () => {
@@ -477,14 +274,6 @@ test("the Help-menu feedback action opens the dialog", async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
 
 test("the root binds no Save hotkey; Ctrl+S belongs to the board alone", async () => {
   const host = document.createElement("div");

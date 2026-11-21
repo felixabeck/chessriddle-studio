@@ -1,10 +1,23 @@
 import { tauri } from "@/platform/tauri";
-import { Card, Group, ScrollArea, Stack, Table, Tabs, Text, TextInput, Title } from "@mantine/core";
+import {
+  Button,
+  Card,
+  Group,
+  ScrollArea,
+  Stack,
+  Table,
+  Tabs,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useHotkeys } from "@mantine/hooks";
 import {
   BookOpen,
   Palette,
   ChessKnight,
+  Wrench,
   Folder,
   Keyboard,
   Mouse,
@@ -59,8 +72,10 @@ import { keybindLabel, keyMapAtom } from "@/state/keybinds";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
 import { PIECE_SCALE_MAX, PIECE_SCALE_MIN, PIECE_SCALE_STEP } from "@/state/pieceScale";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
 import DraftNumberInput from "../common/DraftNumberInput";
 import { IconAction } from "../common/IconAction";
+import { clearSavedData, openAppLogs, reloadApp } from "./advancedActions";
 import BoardSelect from "./BoardSelect";
 import KeybindInput from "./KeybindInput";
 import { DrawingKeybinds } from "./DrawingKeybinds";
@@ -91,9 +106,42 @@ const SETTING_CATEGORIES = [
   "keybinds",
   "directories",
   "repertoire",
+  "advanced",
 ] as const;
 
 type SettingCategory = (typeof SETTING_CATEGORIES)[number];
+
+function AdvancedActionButton({
+  label,
+  action,
+  successMessage,
+}: {
+  label: string;
+  action: () => void | Promise<unknown>;
+  successMessage?: string;
+}) {
+  const { t } = useTranslation();
+  const { pending, run } = useSingleFlight();
+  return (
+    <Button
+      variant="default"
+      disabled={pending}
+      aria-busy={pending || undefined}
+      onClick={() =>
+        void run(async () => {
+          try {
+            await action();
+            if (successMessage) notifications.show({ message: successMessage });
+          } catch (error) {
+            notifyUnlessCancelled(t("Common.Error"), error);
+          }
+        })
+      }
+    >
+      {label}
+    </Button>
+  );
+}
 
 interface SettingItem {
   id: string;
@@ -636,6 +684,41 @@ export default function Page() {
           />
         ),
       },
+      {
+        id: "reload",
+        category: "advanced",
+        title: t("Menu.View.Reload"),
+        description: t("Settings.Advanced.Reload.Desc"),
+        keywords: ["reload", "refresh"],
+        render: () => <AdvancedActionButton label={t("Menu.View.Reload")} action={reloadApp} />,
+      },
+      {
+        id: "clear-saved-data",
+        category: "advanced",
+        title: t("Menu.Help.ClearSavedData"),
+        description: t("Settings.Advanced.ClearSavedData.Desc"),
+        keywords: ["clear", "data", "reset", "storage"],
+        render: () => (
+          <AdvancedActionButton
+            label={t("Menu.Help.ClearSavedData")}
+            action={() => clearSavedData({ t })}
+          />
+        ),
+      },
+      {
+        id: "open-logs",
+        category: "advanced",
+        title: t("Menu.Help.OpenLogs"),
+        description: t("Settings.Advanced.OpenLogs.Desc"),
+        keywords: ["logs", "log", "diagnostic"],
+        render: () => (
+          <AdvancedActionButton
+            label={t("Menu.Help.OpenLogs")}
+            action={openAppLogs}
+            successMessage={t("Menu.Help.OpenLogs")}
+          />
+        ),
+      },
     ],
     [
       t,
@@ -707,6 +790,11 @@ export default function Page() {
         title: t("Settings.Repertoire"),
         description: t("Settings.Repertoire.Desc"),
         icon: <BookOpen size="1rem" />,
+      },
+      advanced: {
+        title: t("Settings.Advanced"),
+        description: t("Settings.Advanced.Desc"),
+        icon: <Wrench size="1rem" />,
       },
     }),
     [t],

@@ -49,6 +49,24 @@ vi.mock("./SoundSelect", () => ({ default: () => null }));
 vi.mock("./VolumeSlider", () => ({ default: () => null }));
 vi.mock("./ThemeButton", () => ({ default: () => null }));
 vi.mock("./SettingsSwitch", () => ({ default: () => null }));
+const actionMocks = vi.hoisted(() => ({
+  reloadApp: vi.fn(),
+  clearSavedData: vi.fn(),
+  openAppLogs: vi.fn(),
+  notifyUnlessCancelled: vi.fn(),
+  notificationsShow: vi.fn(),
+}));
+vi.mock("./advancedActions", () => ({
+  reloadApp: (...args: unknown[]) => actionMocks.reloadApp(...args),
+  clearSavedData: (...args: unknown[]) => actionMocks.clearSavedData(...args),
+  openAppLogs: (...args: unknown[]) => actionMocks.openAppLogs(...args),
+}));
+vi.mock("@/components/files/notifyError", () => ({
+  notifyUnlessCancelled: (...args: unknown[]) => actionMocks.notifyUnlessCancelled(...args),
+}));
+vi.mock("@mantine/notifications", () => ({
+  notifications: { show: (...args: unknown[]) => actionMocks.notificationsShow(...args) },
+}));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
 installResizeObserverStub();
@@ -67,6 +85,11 @@ afterEach(async () => {
   host?.remove();
   localStorage.clear();
   translation.t = translation.identity;
+  actionMocks.reloadApp.mockReset();
+  actionMocks.clearSavedData.mockReset();
+  actionMocks.openAppLogs.mockReset();
+  actionMocks.notifyUnlessCancelled.mockReset();
+  actionMocks.notificationsShow.mockReset();
   root = undefined;
   if (originalScroll) Object.defineProperty(Element.prototype, "scrollIntoView", originalScroll);
   else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
@@ -221,3 +244,134 @@ test.each(["{", '"invalid"', "null", "101", "-1", "1.5"])(
     cleanups.forEach((cleanup) => cleanup());
   },
 );
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function openAdvanced(host: HTMLElement) {
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === "Settings.Advanced",
+  )!;
+  await act(async () => tab.click());
+  return tab;
+}
+
+function actionButton(host: HTMLElement, label: string) {
+  return [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent === label,
+  )!;
+}
+
+async function searchSettings(host: HTMLElement, query: string) {
+  const search = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, query);
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+test("Advanced is the eighth and last settings category", async () => {
+  const { host } = await renderSettingsPage();
+  const tabs = [...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
+  expect(tabs).toHaveLength(8);
+  expect(tabs.at(-1)).toBe("Settings.Advanced");
+});
+
+test("Reload reloads and is disabled while pending", async () => {
+  const pending = deferred<void>();
+  actionMocks.reloadApp.mockImplementation(() => pending.promise);
+  const { host } = await renderSettingsPage();
+  await openAdvanced(host);
+  const button = actionButton(host, "Menu.View.Reload");
+  await act(async () => button.click());
+  expect(actionMocks.reloadApp).toHaveBeenCalledOnce();
+  expect(button.disabled).toBe(true);
+  await act(async () => pending.resolve());
+  expect(button.disabled).toBe(false);
+});
+
+test("Clear saved data asks through the shared action and is disabled while pending", async () => {
+  const pending = deferred<void>();
+  actionMocks.clearSavedData.mockImplementation(() => pending.promise);
+  const { host } = await renderSettingsPage();
+  await openAdvanced(host);
+  const button = actionButton(host, "Menu.Help.ClearSavedData");
+  await act(async () => button.click());
+  expect(actionMocks.clearSavedData).toHaveBeenCalledOnce();
+  expect(button.disabled).toBe(true);
+  await act(async () => pending.resolve());
+  expect(button.disabled).toBe(false);
+});
+
+test("Clear saved data shows the error when the shared action refuses", async () => {
+  const error = new Error("blocked: failed (0)");
+  actionMocks.clearSavedData.mockRejectedValueOnce(error);
+  const { host } = await renderSettingsPage();
+  await openAdvanced(host);
+  await act(async () => actionButton(host, "Menu.Help.ClearSavedData").click());
+  expect(actionMocks.notifyUnlessCancelled).toHaveBeenCalledExactlyOnceWith("Common.Error", error);
+  expect(actionMocks.notificationsShow).not.toHaveBeenCalled();
+});
+
+test("Open logs opens the log, shows its message, and is disabled while pending", async () => {
+  const pending = deferred<void>();
+  actionMocks.openAppLogs.mockImplementation(() => pending.promise);
+  const { host } = await renderSettingsPage();
+  await openAdvanced(host);
+  const button = actionButton(host, "Menu.Help.OpenLogs");
+  await act(async () => button.click());
+  expect(actionMocks.openAppLogs).toHaveBeenCalledOnce();
+  expect(button.disabled).toBe(true);
+  expect(actionMocks.notificationsShow).not.toHaveBeenCalled();
+  await act(async () => pending.resolve());
+  expect(button.disabled).toBe(false);
+  expect(actionMocks.notificationsShow).toHaveBeenCalledExactlyOnceWith({
+    message: "Menu.Help.OpenLogs",
+  });
+});
+
+test("Open logs shows the error when opening fails", async () => {
+  const error = new Error("log missing");
+  actionMocks.openAppLogs.mockRejectedValueOnce(error);
+  const { host } = await renderSettingsPage();
+  await openAdvanced(host);
+  await act(async () => actionButton(host, "Menu.Help.OpenLogs").click());
+  expect(actionMocks.notifyUnlessCancelled).toHaveBeenCalledExactlyOnceWith("Common.Error", error);
+  expect(actionMocks.notificationsShow).not.toHaveBeenCalled();
+});
+
+test("a second click cannot start an Advanced action while it is pending", async () => {
+  const pending = deferred<void>();
+  actionMocks.reloadApp.mockImplementation(() => pending.promise);
+  const { host } = await renderSettingsPage();
+  await openAdvanced(host);
+  const button = actionButton(host, "Menu.View.Reload");
+  await act(async () => button.click());
+  await act(async () => button.click());
+  expect(actionMocks.reloadApp).toHaveBeenCalledOnce();
+  await act(async () => pending.resolve());
+});
+
+test("settings search finds the three Advanced rows", async () => {
+  const { host } = await renderSettingsPage();
+  await searchSettings(host, "advanced");
+  expect(host.textContent).toContain("Menu.View.Reload");
+  expect(host.textContent).toContain("Menu.Help.ClearSavedData");
+  expect(host.textContent).toContain("Menu.Help.OpenLogs");
+  await searchSettings(host, "reload");
+  expect(host.textContent).toContain("Menu.View.Reload");
+  expect(host.textContent).not.toContain("Menu.Help.OpenLogs");
+  await searchSettings(host, "logs");
+  expect(host.textContent).toContain("Menu.Help.OpenLogs");
+  expect(host.textContent).not.toContain("Menu.View.Reload");
+  await searchSettings(host, "clear");
+  expect(host.textContent).toContain("Menu.Help.ClearSavedData");
+  expect(host.textContent).not.toContain("Menu.View.Reload");
+});

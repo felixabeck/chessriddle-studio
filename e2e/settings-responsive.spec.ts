@@ -11,6 +11,9 @@ test("settings-responsive: preserves keyboard focus at narrow 200% font scale", 
 
     await expect(page.getByRole("heading", { name: /settings/i })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Anarchy", exact: true })).toHaveCount(0);
+    const categoryTabs = page.locator("[role='tablist'] [role='tab']");
+    await expect(categoryTabs).toHaveCount(8);
+    await expect(categoryTabs.last()).toHaveText("Advanced");
     // The Board tab is open first, so it has to be there to be measured.
     await expect(page.getByRole("tabpanel", { name: /board/i })).toBeVisible();
     await assertNoHorizontalOverflow();

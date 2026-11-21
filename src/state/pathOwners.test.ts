@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import "./atoms";
 // Warms the transform at collection for the dynamic import in the incomplete-startup-scan test (f-20261101-01).
-import "../routes/__root";
+import "../components/settings/advancedActions";
 import { deserializeStorageValue, serializeStorageValue } from "./store/debouncedStorage";
 import {
     EXPANDED_DIRECTORIES_STORAGE_KEY,
@@ -25,8 +25,6 @@ vi.mock("@/platform/tauri", () => ({
     },
 }));
 vi.mock("./persistError", () => ({ reportPersistError: persistError.report }));
-vi.mock("@/components/TopBar", () => ({ default: () => null }));
-vi.mock("@/state/keybinds", () => ({ keyMapAtom: {} }));
 
 import {
     collectOriginalPathOwners,
@@ -697,7 +695,8 @@ test("refuses clearing without retiring migrated keys after an incomplete startu
     vi.resetModules();
     const practice = await import("./practiceStorage");
     const owners = await import("./pathOwners");
-    const { clearSavedDataAfterConfirmation } = await import("../routes/__root");
+    const { clearSavedDataAfterConfirmation } =
+        await import("../components/settings/advancedActions");
     const legacy = JSON.stringify({ positions: [], logs: [] });
     localStorage.setItem("deck-migrated-0", legacy);
     localStorage.setItem("deck-failed-1", legacy);
