@@ -183,6 +183,7 @@
         "src/components/common/GenericCard.tsx",
         "src/components/common/InlineInput.tsx",
         "src/components/common/IconAction.tsx",
+        "src/components/common/CatalogDownloadCard.tsx",
         "src/components/common/LocalImage.tsx",
         "src/components/common/ProgressButton.tsx",
         "src/components/common/ToggleButtonGroup.tsx",
