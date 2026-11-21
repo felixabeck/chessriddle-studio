@@ -678,13 +678,11 @@ test("files-preview: a move key takes focus off the clicked row, Enter before it
     await expect(second).toBeFocused();
     const firstMove = page.getByRole("button", { name: "d4", exact: true });
     await expect(firstMove).toBeVisible();
-    const moveBackground = () =>
-        firstMove.evaluate((cell) => cell.style.getPropertyValue("--light-bg"));
-    expect(await moveBackground()).toBe("transparent");
+    await expect(firstMove).not.toHaveAttribute("aria-current", "true");
 
     await page.keyboard.press("ArrowRight");
 
-    await expect.poll(moveBackground).not.toBe("transparent");
+    await expect(firstMove).toHaveAttribute("aria-current", "true");
     await expect(second).not.toBeFocused();
     expect(await second.evaluate((row) => row.matches(":focus-visible"))).toBe(false);
 

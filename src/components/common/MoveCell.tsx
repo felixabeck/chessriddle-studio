@@ -62,26 +62,33 @@ function MoveCell(props: MoveCellProps) {
 
   const color = ANNOTATION_INFO[visualAnnotation]?.color || "gray";
   const theme = useMantineTheme();
-  const hoverOpacity = props.isCurrentVariation ? 0.25 : 0.1;
-  let baseLight = theme.colors.gray[8];
-  let hoverLight = rgba(baseLight, hoverOpacity);
-  let baseDark = theme.colors.gray[1];
-  let hoverDark = rgba(baseDark, hoverOpacity);
-  let darkBg = "transparent";
-  let lightBg = "transparent";
+  const isAnnotated = color !== "gray";
+  const annotationColor = theme.colors[color][6];
+  const unannotatedColor = (fallback: string) =>
+    `var(--notation-unannotated-move-color, ${fallback})`;
 
-  if (color !== "gray") {
-    baseLight = theme.colors[color][6];
-    hoverLight = rgba(baseLight, hoverOpacity);
-    baseDark = theme.colors[color][6];
-    hoverDark = rgba(baseDark, hoverOpacity);
+  // An unannotated move takes the warm palette (DESIGN.md): the interactive hover on hover and
+  // the gold current-move fill when current, never Mantine's neutral gray. Fills are the same
+  // in both schemes; only the text colour differs.
+  let lightColor = unannotatedColor(theme.colors.gray[8]);
+  let darkColor = unannotatedColor(theme.colors.gray[1]);
+  let background = "transparent";
+  let hover = "var(--cf-interactive-hover)";
+
+  if (isAnnotated) {
+    lightColor = annotationColor;
+    darkColor = annotationColor;
+    hover = rgba(annotationColor, 0.1);
   }
 
   if (props.isCurrentVariation) {
-    darkBg = rgba(theme.colors[color][6], 0.2);
-    lightBg = rgba(theme.colors[color][6], 0.2);
-    hoverLight = rgba(lightBg, 0.25);
-    hoverDark = rgba(darkBg, 0.25);
+    if (isAnnotated) {
+      background = rgba(annotationColor, 0.2);
+      hover = rgba(background, 0.25);
+    } else {
+      background = "var(--move-current-fill)";
+      hover = "var(--move-current-hover)";
+    }
   }
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
@@ -97,14 +104,10 @@ function MoveCell(props: MoveCellProps) {
       data-notation-analysis={props.analysis ? "true" : undefined}
       aria-current={props.isCurrentVariation ? "true" : undefined}
       style={{
-        "--light-color":
-          color === "gray" ? `var(--notation-unannotated-move-color, ${baseLight})` : baseLight,
-        "--light-hover-color": hoverLight,
-        "--dark-color":
-          color === "gray" ? `var(--notation-unannotated-move-color, ${baseDark})` : baseDark,
-        "--dark-hover-color": hoverDark,
-        "--dark-bg": darkBg,
-        "--light-bg": lightBg,
+        "--light-color": lightColor,
+        "--dark-color": darkColor,
+        "--move-bg": background,
+        "--move-hover": hover,
       }}
       onClick={handleClick}
       onContextMenu={props.onContextMenu}

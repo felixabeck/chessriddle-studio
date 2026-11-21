@@ -135,3 +135,26 @@ test.each([false, true])(
     expect(onClick).toHaveBeenCalledOnce();
   },
 );
+
+test.each([
+  [false, "transparent", "var(--cf-interactive-hover)"],
+  [true, "var(--move-current-fill)", "var(--move-current-hover)"],
+])(
+  "an unannotated move takes the warm palette, never the neutral gray (current: %s)",
+  async (current, fill, hover) => {
+    await act(async () =>
+      root.render(
+        <MoveCell
+          annotations={[]}
+          isStart={false}
+          isCurrentVariation={current}
+          move="c6"
+          onClick={onClick}
+          onContextMenu={() => {}}
+        />,
+      ),
+    );
+    expect(cell().style.getPropertyValue("--move-bg")).toBe(fill);
+    expect(cell().style.getPropertyValue("--move-hover")).toBe(hover);
+  },
+);

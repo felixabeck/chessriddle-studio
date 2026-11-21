@@ -1,9 +1,13 @@
 /* Variable defaults keep main-line and engine-line text unchanged; only .variationBlock sets them. */
 .cell {
+  /* Gold fill of the current move, shared by the notation's current move and an unannotated
+     previewed engine-line move. MoveCell.tsx never sets these inline, so they hold. */
+  --move-current-fill: color-mix(in srgb, var(--cf-primary) 10%, transparent);
+  --move-current-hover: color-mix(in srgb, var(--cf-primary) 20%, transparent);
   appearance: none;
   border: 0;
   margin: 0;
-  background: transparent;
+  background-color: var(--move-bg);
   color: inherit;
   font: inherit;
   line-height: inherit;
@@ -30,29 +34,23 @@
 
 [data-mantine-color-scheme="light"] .cell {
   color: var(--light-color);
-  background-color: var(--light-bg);
 }
 
 [data-mantine-color-scheme="dark"] .cell {
   color: var(--dark-color);
-  background-color: var(--dark-bg);
 }
 
-[data-mantine-color-scheme="light"] .cell:hover {
-  background-color: var(--light-hover-color);
-}
-
-[data-mantine-color-scheme="dark"] .cell:hover {
-  background-color: var(--dark-hover-color);
+.cell:hover {
+  background-color: var(--move-hover);
 }
 
 [data-notation-current="true"] .cell {
-  background: color-mix(in srgb, var(--cf-primary) 10%, transparent);
+  background: var(--move-current-fill);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cf-primary) 20%, transparent);
 }
 
 [data-notation-current="true"] .cell:hover {
-  background: color-mix(in srgb, var(--cf-primary) 20%, transparent);
+  background: var(--move-current-hover);
 }
 
 .cellFullWidth {
