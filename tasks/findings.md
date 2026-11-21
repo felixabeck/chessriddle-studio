@@ -28233,7 +28233,7 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 ### The notation-diagram table snapshot still fails intermittently under the full parallel e2e run
 
-* **ID:** f-20261121-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261121-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** behaviour
 * **Where:** `e2e/notation-diagram.spec.ts:26` (`toHaveScreenshot("notation-diagram-table.png")` of `#bottomRight`)
 * **Defect:** After f-20261120-13 added `waitForScrollAreaScrollbarsHidden`, the table-view snapshot still differed once (1,884 px, ratio 0.01) in a full `pnpm test:e2e:container` run with 6 workers, on the navigation-row build worktree (base `f62caa2e5` plus the uncommitted phase 3 tree), immediately after the baseline had been re-recorded clean by `pnpm test:e2e:update`. The same spec passed 10 of 10 with `--repeat-each=5` alone, and the next full run passed 479 of 479. The diff artefact was overwritten by the rerun, so which strip differed is not recorded. Related: f-20261120-13 (same spec, scrollbar-fade cause).
@@ -28243,6 +28243,8 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Proof:** Three consecutive full `pnpm test:e2e:container` runs without that snapshot failing.
 * **Spotted outside diff:** yes (full e2e run of the navigation-row build, 2026-11-21)
 * **Found by:** Claude Code (Opus 5.5), navigation-row build, 2026-11-21
+* **Entry revalidation 2026-11-21 (drain session 45356662-2894-4731-95ce-16ce94654ab5): build → lens (`review-tests`).** The open question was diagnostic and is now answered by measurement, so no design question remains for a plan. Five full `pnpm test:e2e:container` runs on `ab51723dc` (479 of 479 each) and 120 stressed runs of the spec (`--repeat-each=60 --workers=12` under 16 busy-loop processes) all passed. A probe that sampled `.mantine-ScrollArea-scrollbar[data-state="visible"]` every ~30 ms after the "Show diagrams" click read `0:1 37:2 … 756:2 784:1 … 920:0`. The notation's hover scrollbar element unmounts and remounts while Mantine's `ScrollAreaScrollbarAuto` re-measures overflow (debounced 10 ms). Meanwhile `ScrollAreaScrollbarHover` keeps its pointer-leave state visible for `scrollHideDelay` (1000 ms). A DOM-absence wait can therefore pass inside such a gap, and the thumb returns before the capture. A 7 px × ~240 px thumb matches the recorded 1,884 px. The repo already has the deterministic remedy: `e2e/scrollbar-free-screenshot.css` passed as `stylePath` (`7a6999024`). The fix routes every snapshot that used the wait through it and deletes the wait helper.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"0509ef09ed328f3cfaec0a71554cd43447551c8666ce82062db5b40ee0a6d6c5","header_sha256":"442d5287a9af3eac5cab22e3b1789078c59d25a72b3af6c18def1c1e00f45d5c","header_status":"open","input_sha256":"a8c488153c760e47790fed7674f018fe3fe01b306bfeaae01c32765eb7cf4580","kind":"mutation-receipt","operation":"ddc223c61c85fb0992cecea7cd9484a20b2ed1082861221dccfb0587aa211c2b","options":{"headers":{"Entry":"lens"},"section":null},"request_id_sha256":null,"results":["f-20261121-03"],"target":"f-20261121-03","v":1} -->
 
 ---
 
