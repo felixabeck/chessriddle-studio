@@ -81,7 +81,9 @@
 }
 
 .pinned:hover {
-  background: var(--cf-interactive-hover);
+  background: var(--cf-bar-hover);
+  /* The dimmed label falls below 4.5:1 on the darker hover fill. */
+  color: var(--cf-foreground);
 }
 
 .pinned:focus-visible {
@@ -169,7 +171,7 @@
 }
 
 .pageTabClose:hover {
-  background: var(--cf-interactive-hover);
+  background: var(--cf-bar-hover);
 }
 
 .tabs {
@@ -236,7 +238,7 @@
 }
 
 .stripAction:hover {
-  background: var(--cf-interactive-hover);
+  background: var(--cf-bar-hover);
   color: var(--cf-foreground);
 }
 
@@ -267,7 +269,7 @@
 }
 
 .feedback:hover {
-  background: var(--cf-interactive-hover);
+  background: var(--cf-bar-hover);
 }
 
 .feedback:focus-visible {
@@ -290,6 +292,8 @@
 
 .windowButton,
 .closeWindow {
+  /* IconAction reads its hover fill from this variable; .closeWindow overrides it below. */
+  --cf-action-hover: var(--cf-bar-hover);
   box-sizing: border-box;
   height: 2.625rem;
   min-height: 2.625rem;

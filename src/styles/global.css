@@ -103,6 +103,16 @@ cg-board square.oc.move-dest:hover {
   /* Gold hover tint for menu items, options and the application-menu button. A selected
      item stays distinct through its ring and gold text, not through a stronger fill. */
   --cf-primary-hover: color-mix(in srgb, var(--cf-primary) 12%, transparent);
+  /* Table rows span the whole width, so their hover takes a lighter gold. mantine-datatable
+     reads one variable per scheme; --cf-primary already follows the active scheme. A
+     selected row (unlayered class) keeps its own fill over this layered hover. */
+  /* Opaque over the table body: OpeningsTable's sticky totals row must hide the rows below. */
+  --cf-primary-row-hover: color-mix(in srgb, var(--cf-primary) 5%, var(--mantine-color-body));
+  /* Hover fill for controls on the navigation row's surface-inset bar. interactive-hover is
+     nearly the bar colour itself (3 RGB levels apart in light), so this warm beige reads. */
+  --cf-bar-hover: color-mix(in srgb, var(--cf-border-strong) 60%, transparent);
+  --mantine-datatable-highlight-on-hover-color-light: var(--cf-primary-row-hover);
+  --mantine-datatable-highlight-on-hover-color-dark: var(--cf-primary-row-hover);
 }
 
 /* Mantine focus treatments beat this rule by specificity before @layer mantine.
@@ -123,6 +133,12 @@ cg-board square.oc.move-dest:hover {
 ) {
   outline: var(--cf-focus-ring-width) solid var(--cf-ring);
   outline-offset: var(--cf-focus-ring-offset);
+}
+
+/* mantine-datatable hard-codes sortable header hover to Mantine's cool gray-0 (dark-6 in
+   dark) with no variable hook; this unlayered rule gives it the table row tint instead. */
+.mantine-datatable-header-cell-sortable:hover:not(:has(button:hover)) {
+  background: var(--cf-primary-row-hover);
 }
 
 html,

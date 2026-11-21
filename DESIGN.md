@@ -73,10 +73,11 @@ and cards lg, and switches, segments and badges use full.
 | Button `subtle`, `transparent` | Ghost text and a visible hover surface |
 | Button `danger` colour | Destructive feedback or action |
 | Tabs | Tinted active pill in default, outline and pills variants |
-| Window tabs (navigation row only) | Browser tabs on a `--cf-surface-inset` bar; the current item takes `--cf-background` and merges into the page through a gap in the bar's bottom border; other items are flat and take `--cf-interactive-hover` on hover |
+| Window tabs (navigation row only) | Browser tabs on a `--cf-surface-inset` bar; the current item takes `--cf-background` and merges into the page through a gap in the bar's bottom border; other items are flat and take `--cf-bar-hover` (warm beige) on hover, as do the other controls on the bar |
 | SegmentedControl | Inset pill shell, card indicator and gold ring |
 | Inputs and select triggers | Inset or interactive fill, primary focus border and ring |
 | Combobox, Menu, Popover | Card surface, quiet gold border, rounded selected options; hovered items and the application-menu button take the `--cf-primary-hover` gold tint, never a gray |
+| Data tables | Hovered rows and sortable headers take the lighter, opaque `--cf-primary-row-hover` gold tint; a selected row keeps its own fill |
 | Checkbox, Switch | Gold checked state, square checkbox and card switch thumb |
 | Badge | Primary, muted or semantic tinted pill with inset ring |
 | Slider, RangeSlider, Progress | Primary or explicit semantic fill |

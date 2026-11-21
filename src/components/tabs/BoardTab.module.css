@@ -26,7 +26,9 @@
 }
 
 .tab:hover {
-  background: var(--cf-interactive-hover);
+  background: var(--cf-bar-hover);
+  /* The dimmed label falls below 4.5:1 on the darker hover fill. */
+  color: var(--cf-foreground);
 }
 
 .tab:focus-visible {
@@ -80,7 +82,7 @@
 }
 
 .close:hover {
-  background: var(--cf-interactive-hover);
+  background: var(--cf-bar-hover);
 }
 
 .overflowing:not(.selected) .close {
