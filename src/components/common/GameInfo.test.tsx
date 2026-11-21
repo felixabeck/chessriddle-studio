@@ -18,7 +18,10 @@ import { TreeStateContext } from "./TreeStateContext";
 dayjs.extend(customParseFormat);
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("../databases/FideInfo", () => ({ default: () => null }));
+const fideInfo = vi.hoisted(() =>
+  vi.fn((_props: { opened: boolean; setOpened: (opened: boolean) => void; name: string }) => null),
+);
+vi.mock("../databases/FideInfo", () => ({ default: fideInfo }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -421,15 +424,38 @@ test.each([
   const input = () => host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
   for (const [typed, stored, shown] of [
     ["2400", 2400, "2400"],
+    ["", undefined, ""],
     ["gameinfo.unrated", 0, "GameInfo.Unrated"],
     ["-", 0, "GameInfo.Unrated"],
     ["abc", undefined, ""],
-    ["", undefined, ""],
   ] as const) {
     await act(async () => setNativeInputValue(input(), typed));
     expect(store.getState().headers[field]).toBe(stored);
     expect(input().value).toBe(shown);
   }
+});
+
+test("each colour button opens only that player's FIDE card and closing clears it", async () => {
+  await act(async () =>
+    store.getState().setHeaders({ ...store.getState().headers, white: "W", black: "B" }),
+  );
+  await act(async () => root.render(<Editor />));
+  const dialogs = () =>
+    fideInfo.mock.calls.slice(-2).map(([props]) => ({ name: props.name, opened: props.opened }));
+  const button = (label: string) =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent === label)!;
+  for (const [label, opened] of [
+    ["Fen.White", [true, false]],
+    ["Fen.Black", [false, true]],
+  ] as const) {
+    await act(async () => button(label).click());
+    expect(dialogs()).toEqual([
+      { name: "W", opened: opened[0] },
+      { name: "B", opened: opened[1] },
+    ]);
+  }
+  await act(async () => fideInfo.mock.calls.at(-1)?.[0].setOpened(false));
+  expect(dialogs().map((d) => d.opened)).toEqual([false, false]);
 });
 
 function resultField() {

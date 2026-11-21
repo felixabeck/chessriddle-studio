@@ -1,7 +1,5 @@
-import type { Color } from "chessops";
+import { COLORS, type Color } from "chessops";
 import FideInfo from "./FideInfo";
-
-const COLORS: readonly Color[] = ["white", "black"];
 
 /**
  * The FIDE cards for a game's two players. At most one is open, so the caller keeps a single

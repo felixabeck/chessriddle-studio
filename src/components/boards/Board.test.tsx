@@ -86,7 +86,9 @@ const boardBar = vi.hoisted(() =>
   )),
 );
 vi.mock("./BoardBar", () => ({ BoardBar: boardBar }));
-vi.mock("./Clock", () => ({ default: () => null }));
+vi.mock("./Clock", () => ({
+  default: ({ color }: { color: string }) => <span data-clock={color} />,
+}));
 vi.mock("./EvalBar", () => ({ default: () => null }));
 vi.mock("./useEvalBarScore", () => ({
   useEvalBarScore: ({ score }: { score: unknown }) => (score ? { score, engineName: null } : null),
@@ -361,7 +363,32 @@ test("player bars remain clickable and open FideInfo for that player", async () 
     { name: "White Player", opened: true },
     { name: "Black Player", opened: false },
   ]);
+  await act(async () => bars[0].onNameClick?.());
+  expect(
+    fideInfo.mock.calls.slice(-2).map(([props]) => ({ name: props.name, opened: props.opened })),
+  ).toEqual([
+    { name: "White Player", opened: false },
+    { name: "Black Player", opened: true },
+  ]);
+  await act(async () => fideInfo.mock.calls.at(-1)?.[0].setOpened(false));
+  expect(fideInfo.mock.calls.slice(-2).map(([props]) => props.opened)).toEqual([false, false]);
 });
+
+test.each(["white", "black"] as const)(
+  "with %s orientation the bottom clock is that side's and the top clock the other's",
+  async (orientation) => {
+    tree.getState().setHeaders({
+      ...tree.getState().headers,
+      orientation,
+      time_control: "300+0",
+    });
+    await render();
+    const clock = (placement: string) =>
+      host.querySelector(`[data-bar="${placement}"] [data-clock]`)?.getAttribute("data-clock");
+    expect(clock("below")).toBe(orientation);
+    expect(clock("above")).toBe(orientation === "white" ? "black" : "white");
+  },
+);
 
 test("a flipped board puts white on the top bar and its name opens white's FideInfo", async () => {
   tree.getState().setHeaders({

@@ -556,8 +556,9 @@ function Board({
               // The board is square, so its width is capped by the height left for it. Terms in order:
               // top bar (2.25rem) and its bottom padding (sm); tab strip (2.5rem) and its spacing
               // (sm); the player bars and their gutters; the eval bar beside the board (1.563rem,
-              // i.e. its 25px); md spacing and a 0.2rem fudge, both empirical and unexplained
-              // since upstream `3eff3087f`; the focus-ring extent; the height reserved below the board.
+              // i.e. its 25px); md spacing and a 0.2rem fudge, both empirical upstream constants
+              // (`git log -S` finds their origin); the focus-ring extent; the height reserved below
+              // the board.
               `var(--board-max-width, calc(100vh - 2.25rem - var(--mantine-spacing-sm) - 2.5rem - var(--mantine-spacing-sm) - ${barsHeight} + 1.563rem + var(--mantine-spacing-md) - 0.2rem + ${FOCUS_RING_EXTENT} - var(--board-below-height, 0px)))`,
           }}
         >
