@@ -28217,3 +28217,20 @@ Handled 2026-11-21 in a45adc11d (lens tier, review-tests lens at push).
 
 Addendum 2026-11-21 (push review): review-root-cause noted that per-test entrance waits leave the same hazard for every other test that clicks inside a freshly opened modal. Superseded in c42aaaf1e: the shared e2e page fixture now gives `.mantine-Modal-content` a zero transition duration, so modals appear in place. The per-site waits and the `expectEntranceSettled` rename were reverted. The root-permission test still asserts that the boundary command reached native code, now before Escape. Probe: a press and release split by 1.2 s right after the Add Engine and Upgrade modals open fails 6/6 on the base harness and passes 6/6 with the fixture change. 4998bdda5 updated two comments that relied on the transition.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"047e776220b66889a0dffaa93239ccffe9ed4d78c7b23e0351d0caa601f45150","input_sha256":"fd1ba5317ad6f29c602fa8b5fbf8eabedc635ab243c47a53471c44f9b552401f","kind":"mutation-receipt","operation":"5c03bf4ba525206e6aa8d1a807e6aab81466ef23dbc2cb5df87c941009457628","options":{"section":null},"request_id_sha256":null,"results":["f-20261121-02"],"target":"f-20261121-02","v":1} -->
+
+---
+
+## 2026-11-21 — filed through the inbox spool
+
+### The notation-diagram table snapshot still fails intermittently under the full parallel e2e run
+
+* **ID:** f-20261121-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Where:** `e2e/notation-diagram.spec.ts:26` (`toHaveScreenshot("notation-diagram-table.png")` of `#bottomRight`)
+* **Defect:** After f-20261120-13 added `waitForScrollAreaScrollbarsHidden`, the table-view snapshot still differed once (1,884 px, ratio 0.01) in a full `pnpm test:e2e:container` run with 6 workers, on the navigation-row build worktree (base `f62caa2e5` plus the uncommitted phase 3 tree), immediately after the baseline had been re-recorded clean by `pnpm test:e2e:update`. The same spec passed 10 of 10 with `--repeat-each=5` alone, and the next full run passed 479 of 479. The diff artefact was overwritten by the rerun, so which strip differed is not recorded. Related: f-20261120-13 (same spec, scrollbar-fade cause).
+* **Failure scenario:** A push whose CI e2e job hits the race goes red for no product reason, and `pnpm ci:remote:check` then refuses later master pushes until a rerun.
+* **Open question:** Is it the ScrollArea scrollbar again (the wait is satisfied before a later scroll), or another settle race under load?
+* **Fix:** Reproduce with the full container suite repeated, keep the diff artefact, and fix the wait to match the observed cause.
+* **Proof:** Three consecutive full `pnpm test:e2e:container` runs without that snapshot failing.
+* **Spotted outside diff:** yes (full e2e run of the navigation-row build, 2026-11-21)
+* **Found by:** Claude Code (Opus 5.5), navigation-row build, 2026-11-21
