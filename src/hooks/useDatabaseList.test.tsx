@@ -462,7 +462,7 @@ async function publishHarness(reader: boolean) {
       </SWRConfig>,
     );
   });
-  return { cache, publish: () => publishDatabaseList(mutate) };
+  return { cache, publish: () => publishDatabaseList(mutate), mutate: () => mutate };
 }
 
 test("publishDatabaseList writes the listing while no reader is mounted", async () => {
@@ -516,4 +516,67 @@ test("a failed publication is thrown, writes nothing, and leaves mounted readers
   // The publication's read and the reader's own, which shows the failure.
   expect(getDatabases).toHaveBeenCalledTimes(3);
   expect(container.textContent).toBe("failed");
+});
+
+test("a publication overtaken by another mutation reads again and settles with its own listing in the cache", async () => {
+  const first = deferred<DatabaseList>();
+  const second = deferred<DatabaseList>();
+  const other = deferred<DatabaseList>();
+  vi.mocked(getDatabases).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+  const { cache, publish, mutate } = await publishHarness(false);
+
+  let settled = false;
+  const publication = publish().then((listing) => {
+    settled = true;
+    return listing;
+  });
+  await act(async () => {});
+  expect(getDatabases).toHaveBeenCalledOnce();
+  // Someone else writes the key while the read is pending: SWR will drop the read's result.
+  const overtaking = mutate()(DATABASE_LIST_KEY, other.promise, { revalidate: false });
+
+  await act(async () => first.resolve(list("first")));
+  expect(settled).toBe(false);
+  expect(cache.get(DATABASE_LIST_KEY)?.data).toBeUndefined();
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+
+  await act(async () => second.resolve(list("second")));
+  await expect(publication).resolves.toEqual(list("second"));
+  expect(cache.get(DATABASE_LIST_KEY)?.data).toEqual(list("second"));
+
+  await act(async () => other.resolve(list("stale")));
+  await overtaking;
+  expect(cache.get(DATABASE_LIST_KEY)?.data).toEqual(list("second"));
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+});
+
+test("publications run one after another, and a failed one does not hold the next", async () => {
+  let rejectFirst!: (reason: unknown) => void;
+  const first = new Promise<DatabaseList>((_done, fail) => {
+    rejectFirst = fail;
+  });
+  const second = deferred<DatabaseList>();
+  const failure = new Error("first publication failed");
+  vi.mocked(getDatabases).mockReturnValueOnce(first).mockReturnValueOnce(second.promise);
+  const { cache, publish } = await publishHarness(false);
+
+  const one = publish();
+  const two = publish();
+  // Observed from the start, so the rejection is never unhandled.
+  const outcome = one.then(
+    () => "published",
+    (cause: unknown) => cause,
+  );
+  await act(async () => {});
+  // The second read would otherwise make SWR drop the first one's result.
+  expect(getDatabases).toHaveBeenCalledOnce();
+
+  await act(async () => rejectFirst(failure));
+  expect(await outcome).toBe(failure);
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+  expect(cache.get(DATABASE_LIST_KEY)?.data).toBeUndefined();
+
+  await act(async () => second.resolve(list("second")));
+  await expect(two).resolves.toEqual(list("second"));
+  expect(cache.get(DATABASE_LIST_KEY)?.data).toEqual(list("second"));
 });

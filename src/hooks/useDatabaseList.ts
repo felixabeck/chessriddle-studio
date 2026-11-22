@@ -2,7 +2,7 @@ import useSWR, { type ScopedMutator, type SWRConfiguration } from "swr";
 import { useEffect, useState } from "react";
 import { listingFailure } from "@/components/files/listingFailure";
 import { type NativeRequestOwner, useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { getDatabases } from "@/utils/db";
+import { type DatabaseList, getDatabases } from "@/utils/db";
 import { getDefaultStore } from "jotai";
 import {
     fileWorkspaceAtom,
@@ -38,20 +38,47 @@ export function fetchDatabaseList(owner: NativeRequestOwner) {
     return owner.run((signal) => readDatabaseList(signal));
 }
 
-/**
- * Reads the listing and publishes it, for work that outlives the components that read it: the
- * cache is written whether or not a reader is mounted. SWR drops every revalidation started
- * before this read ended and every earlier publication still pending, so once this settles the
- * cache holds no listing older than this call. A failed read publishes nothing and is thrown,
- * after mounted readers were asked to read for themselves and show their own failure.
- */
-export async function publishDatabaseList(mutate: ScopedMutator) {
+/** The latest publication of each cache. The next one starts only once it has settled. */
+const publications = new WeakMap<ScopedMutator, Promise<unknown>>();
+
+async function publishOnce(mutate: ScopedMutator) {
     try {
-        return await mutate(DATABASE_LIST_KEY, readDatabaseList(), { revalidate: false });
+        for (;;) {
+            let written = false;
+            const listing = await mutate(DATABASE_LIST_KEY, readDatabaseList(), {
+                revalidate: false,
+                populateCache: (result: DatabaseList) => {
+                    written = true;
+                    return result;
+                },
+            });
+            if (written) return listing;
+            // SWR dropped the result because another mutation of the key began during the read.
+            // That one may still be pending, or fail, so the listing is read again; each further
+            // read answers one more mutation that someone else began meanwhile.
+        }
     } catch (cause) {
         void mutate(DATABASE_LIST_KEY);
         throw cause;
     }
+}
+
+/**
+ * Reads the listing and publishes it, for work that outlives the components that read it: the
+ * cache is written whether or not a reader is mounted. It settles only once its own listing is
+ * in the cache, and SWR drops every revalidation started before that read ended, so the cache
+ * then holds no listing older than this call. Publications of one cache run one after another.
+ * A failed read publishes nothing and is thrown, after mounted readers were asked to read for
+ * themselves and show their own failure.
+ */
+export function publishDatabaseList(mutate: ScopedMutator) {
+    const previous = publications.get(mutate) ?? Promise.resolve();
+    const publication = previous.then(() => publishOnce(mutate));
+    publications.set(
+        mutate,
+        publication.catch(() => undefined),
+    );
+    return publication;
 }
 
 export async function refreshDatabaseList(owner: NativeRequestOwner, mutate: ScopedMutator) {
