@@ -8,7 +8,7 @@ import type {
     OpponentImportOutcome,
     OpponentImportRequest,
 } from "@/bindings";
-import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
+import { publishDatabaseList } from "@/hooks/useDatabaseList";
 import {
     errorUnlessCancelled,
     normalizeError,
@@ -123,6 +123,20 @@ async function deleteAll(deps: OpponentFlowDeps, databases: readonly DatabaseDes
     return remaining;
 }
 
+/**
+ * Publishes the database listing after this flow changed the database folder, so the listing is
+ * right even while nothing that reads it is mounted. A failed read is logged and holds nothing.
+ */
+function refreshListing(deps: OpponentFlowDeps): Promise<void> {
+    return publishDatabaseList(deps.mutateCache).then(
+        () => undefined,
+        (cause) =>
+            warnSafely(
+                `The database list could not be refreshed after an opponent's online games changed: ${safeFailureContext(cause).message}`,
+            ),
+    );
+}
+
 /** `cleanup.leftovers` is counted as the run goes, so it is known however the run ends. */
 async function importLink(
     deps: OpponentFlowDeps,
@@ -163,6 +177,11 @@ async function importLink(
         };
     }
     if (outcome.database === null) return { kind: "noGames" };
+    // The download is over and its ticket is spent: what follows cannot be cancelled.
+    setInFlight(store, linkId, null);
+    // The link names the new database only once the listing has it, so no reader ever sees a link
+    // whose games the listing lacks. A listing that cannot be read does not undo the download.
+    await refreshListing(deps);
     // The link switches first; the previous database goes only once the new one is in place.
     store.set(opponentLinksAtom, (links) => withOpponentDatabase(links, linkId, filename));
     const previous = databases.find((entry) => entry.filename === link.database);
@@ -177,8 +196,7 @@ async function importLink(
 /**
  * Downloads the link's online games into a fresh database. A second start for the same link
  * joins the running one. The previous database and the link stay as they were unless the run
- * imported games. The run ends, and leaves its in-flight state, only after the database listing
- * has been refreshed.
+ * imported games.
  */
 export function runOpponentImport(
     deps: OpponentFlowDeps,
@@ -197,12 +215,11 @@ export function runOpponentImport(
                     : { kind: "failed", error },
         )
         .then((outcome): OpponentImportResult => ({ ...outcome, leftovers: cleanup.leftovers }))
-        .finally(async () => {
-            // The link already names the new database. The run stays in flight until the listing
-            // has been read again, so nothing shows the moment in which the listing lacks it.
-            await Promise.resolve(deps.mutateCache(DATABASE_LIST_KEY)).catch(() => undefined);
+        .finally(() => {
             running.delete(linkId);
             setInFlight(deps.store, linkId, undefined);
+            // Whatever the ending, the run may have deleted databases the listing still names.
+            void refreshListing(deps);
         });
     running.set(linkId, run);
     return run;
@@ -244,6 +261,6 @@ async function deleteLinkDatabases(deps: OpponentFlowDeps, linkId: string): Prom
             databases.filter((entry) => entry !== current),
         );
     } finally {
-        void deps.mutateCache(DATABASE_LIST_KEY);
+        void refreshListing(deps);
     }
 }

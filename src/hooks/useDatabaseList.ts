@@ -16,23 +16,42 @@ export const DATABASE_LIST_TRANSIENT_REFRESH_INTERVAL_MS = 3000;
 
 let latestReferenceListing: object | undefined;
 
+/** One read of the listing. Only the read started last reconciles the reference collection. */
+async function readDatabaseList(signal?: AbortSignal) {
+    const listing = {};
+    latestReferenceListing = listing;
+    const store = getDefaultStore();
+    const workspace = store.get(fileWorkspaceAtom);
+    const reference = store.get(referenceDbAtom);
+    const result = await getDatabases({ signal });
+    if (!signal?.aborted && latestReferenceListing === listing && result.collections) {
+        store.set(reconcileReferenceCollectionAtom, {
+            workspace,
+            reference,
+            collections: result.collections,
+        });
+    }
+    return result;
+}
+
 export function fetchDatabaseList(owner: NativeRequestOwner) {
-    return owner.run(async (signal) => {
-        const listing = {};
-        latestReferenceListing = listing;
-        const store = getDefaultStore();
-        const workspace = store.get(fileWorkspaceAtom);
-        const reference = store.get(referenceDbAtom);
-        const result = await getDatabases({ signal });
-        if (!signal.aborted && latestReferenceListing === listing && result.collections) {
-            store.set(reconcileReferenceCollectionAtom, {
-                workspace,
-                reference,
-                collections: result.collections,
-            });
-        }
-        return result;
-    });
+    return owner.run((signal) => readDatabaseList(signal));
+}
+
+/**
+ * Reads the listing and publishes it, for work that outlives the components that read it: the
+ * cache is written whether or not a reader is mounted. SWR drops every revalidation started
+ * before this read ended and every earlier publication still pending, so once this settles the
+ * cache holds no listing older than this call. A failed read publishes nothing and is thrown,
+ * after mounted readers were asked to read for themselves and show their own failure.
+ */
+export async function publishDatabaseList(mutate: ScopedMutator) {
+    try {
+        return await mutate(DATABASE_LIST_KEY, readDatabaseList(), { revalidate: false });
+    } catch (cause) {
+        void mutate(DATABASE_LIST_KEY);
+        throw cause;
+    }
 }
 
 export async function refreshDatabaseList(owner: NativeRequestOwner, mutate: ScopedMutator) {

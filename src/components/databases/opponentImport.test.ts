@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     deleteDatabase: vi.fn(),
     cancelDownload: vi.fn(),
     forgetDeletedDatabase: vi.fn(),
+    publishDatabaseList: vi.fn(),
     warn: vi.fn(),
 }));
 
@@ -38,11 +39,14 @@ vi.mock("@/platform/errors", async (original) => ({
     ...(await original<typeof import("@/platform/errors")>()),
     warnSafely: mocks.warn,
 }));
+vi.mock("@/hooks/useDatabaseList", async (original) => ({
+    ...(await original<typeof import("@/hooks/useDatabaseList")>()),
+    publishDatabaseList: mocks.publishDatabaseList,
+}));
 vi.mock("./forgetDeletedDatabase", () => ({
     forgetDeletedDatabase: mocks.forgetDeletedDatabase,
 }));
 
-import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
 import { opponentImportsAtom, opponentLinksAtom, sessionsAtom } from "@/state/atoms";
 import { defaultOpponentFilter, type OpponentLink } from "@/state/opponentLinks";
 import {
@@ -78,7 +82,7 @@ function imported(games: number, merged = true): OpponentImportOutcome {
 
 function setup(link: Partial<OpponentLink> = {}) {
     const store = createStore();
-    const mutateCache = vi.fn().mockResolvedValue(undefined);
+    const mutateCache = vi.fn();
     store.set(opponentLinksAtom, [
         {
             id: ID,
@@ -105,6 +109,7 @@ beforeEach(() => {
     mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [], unread: [] });
     mocks.deleteDatabase.mockResolvedValue(null);
     mocks.cancelDownload.mockResolvedValue(true);
+    mocks.publishDatabaseList.mockResolvedValue(undefined);
 });
 
 describe("importOpponentGames", () => {
@@ -173,6 +178,9 @@ describe("runOpponentImport", () => {
             order.push(`delete:${database.id.id}:${currentLink(store)?.database}`);
             return null;
         });
+        mocks.publishDatabaseList.mockImplementation(async () => {
+            order.push(`publish:${currentLink(store)?.database}`);
+        });
         mocks.importOpponentGames.mockImplementation(async () => {
             order.push("import");
             return {
@@ -199,17 +207,21 @@ describe("runOpponentImport", () => {
             timeControls: ["blitz", "rapid", "classical", "correspondence"],
             lichessHandle: null,
         });
+        // The listing is published with the new database in place before the link names it, and
+        // once more after the previous database is gone.
         expect(order).toEqual([
             `delete:${LEFTOVER}:${OLD}`,
             "import",
+            `publish:${OLD}`,
             `delete:${OLD}:${request.filename}`,
+            `publish:${request.filename}`,
         ]);
         expect(currentLink(store)?.database).toBe(request.filename);
         expect(mocks.forgetDeletedDatabase.mock.calls.map(([database]) => database.id.id)).toEqual([
             LEFTOVER,
             OLD,
         ]);
-        expect(mutateCache).toHaveBeenCalledWith(DATABASE_LIST_KEY);
+        expect(mocks.publishDatabaseList.mock.calls).toEqual([[mutateCache], [mutateCache]]);
     });
 
     test.each([
@@ -234,6 +246,8 @@ describe("runOpponentImport", () => {
 
             expect(currentLink(store)?.database).toBe(OLD);
             expect(mocks.deleteDatabase).not.toHaveBeenCalled();
+            // Only the refresh every ending gets; nothing waits for a listing here.
+            expect(mocks.publishDatabaseList).toHaveBeenCalledExactlyOnceWith(deps.mutateCache);
         },
     );
 
@@ -401,13 +415,13 @@ describe("runOpponentImport", () => {
         expect(store.get(opponentImportsAtom).has(ID)).toBe(false);
     });
 
-    test("the run stays in flight until the listing has been read again, and a failed refresh does not hold it", async () => {
-        const { store, deps, mutateCache } = setup();
+    test("the link names the new database only once the listing has been published", async () => {
+        const { store, deps } = setup();
         mocks.importOpponentGames.mockResolvedValue(imported(2));
-        let refreshed: () => void = () => {};
-        mutateCache.mockReturnValueOnce(
+        let published: () => void = () => {};
+        mocks.publishDatabaseList.mockReturnValueOnce(
             new Promise<void>((resolve) => {
-                refreshed = resolve;
+                published = resolve;
             }),
         );
         let ended = false;
@@ -415,23 +429,50 @@ describe("runOpponentImport", () => {
             ended = true;
             return result;
         });
-        await vi.waitFor(() => expect(mutateCache).toHaveBeenCalledWith(DATABASE_LIST_KEY));
+        await vi.waitFor(() => expect(mocks.publishDatabaseList).toHaveBeenCalledOnce());
         await Promise.resolve();
 
-        // The link names the new database already; the strip must still read as downloading.
-        expect(currentLink(store)?.database).toBeDefined();
-        expect(store.get(opponentImportsAtom).has(ID)).toBe(true);
+        // The download is over: the run is still in flight, but its spent ticket is gone, so
+        // nothing offers a cancel that could not work. The link waits for the listing.
+        expect(currentLink(store)?.database).toBeUndefined();
+        expect(store.get(opponentImportsAtom).get(ID)).toBeNull();
+        await cancelOpponentImport(store, ID);
+        expect(mocks.cancelDownload).not.toHaveBeenCalled();
+        await expect(removeOpponentGames(deps, ID)).rejects.toThrow("opponent import is running");
         expect(ended).toBe(false);
 
-        refreshed();
+        published();
         await expect(run).resolves.toMatchObject({ kind: "imported", games: 2 });
+        const filename = (mocks.importOpponentGames.mock.calls[0][0] as OpponentImportRequest)
+            .filename;
+        expect(currentLink(store)?.database).toBe(filename);
         expect(store.get(opponentImportsAtom).has(ID)).toBe(false);
+        // The run has left the registry: its games can be removed again.
+        await expect(removeOpponentGames(deps, ID)).resolves.toBe(0);
+    });
 
-        mutateCache.mockRejectedValueOnce(new Error("listing failed"));
+    test("a listing that cannot be read does not undo the download or hold the run", async () => {
+        const { store, deps } = setup();
+        mocks.importOpponentGames.mockResolvedValue(imported(2));
+        mocks.publishDatabaseList.mockRejectedValue(new Error("listing failed"));
+
         await expect(runOpponentImport(deps, ID, "title")).resolves.toMatchObject({
             kind: "imported",
+            games: 2,
         });
+
+        const filename = (mocks.importOpponentGames.mock.calls[0][0] as OpponentImportRequest)
+            .filename;
+        expect(currentLink(store)?.database).toBe(filename);
         expect(store.get(opponentImportsAtom).has(ID)).toBe(false);
+        // Both refreshes failed, the one before the link switched and the one at the end.
+        await vi.waitFor(() => expect(mocks.warn).toHaveBeenCalledTimes(2));
+        for (const [message] of mocks.warn.mock.calls) {
+            expect(message).toBe(
+                "The database list could not be refreshed after an opponent's online games changed: listing failed",
+            );
+        }
+        await expect(removeOpponentGames(deps, ID)).resolves.toBe(0);
     });
 
     test("an unknown link fails without asking for anything", async () => {
@@ -486,7 +527,22 @@ describe("removing online games and unlinking", () => {
             filter: defaultOpponentFilter(),
         });
         expect(mocks.forgetDeletedDatabase).toHaveBeenCalledTimes(2);
-        expect(mutateCache).toHaveBeenCalledWith(DATABASE_LIST_KEY);
+        expect(mocks.publishDatabaseList).toHaveBeenCalledExactlyOnceWith(mutateCache);
+    });
+
+    test("a listing that cannot be read after a removal is logged and fails nothing", async () => {
+        const { store, deps } = setup({ database: OLD });
+        mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [listed(OLD)], unread: [] });
+        mocks.publishDatabaseList.mockRejectedValue(new Error("listing failed"));
+
+        await expect(removeOpponentGames(deps, ID)).resolves.toBe(0);
+
+        expect(currentLink(store)?.database).toBeUndefined();
+        await vi.waitFor(() =>
+            expect(mocks.warn).toHaveBeenCalledExactlyOnceWith(
+                "The database list could not be refreshed after an opponent's online games changed: listing failed",
+            ),
+        );
     });
 
     test("a failed deletion keeps the link as it was, for removal and for unlinking", async () => {

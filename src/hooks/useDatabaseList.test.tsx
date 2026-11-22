@@ -9,6 +9,7 @@ import {
   DATABASE_LIST_KEY,
   DATABASE_LIST_MAX_RETRIES,
   fetchDatabaseList,
+  publishDatabaseList,
   refreshDatabaseList,
   revalidateDatabaseList,
   useDatabaseList,
@@ -437,4 +438,82 @@ test("refreshDatabaseList propagates a rejected owned read", async () => {
   await act(async () => {
     await expect(refresh(refreshDatabaseList)).rejects.toBe(failure);
   });
+});
+
+async function publishHarness(reader: boolean) {
+  const cache = new Map();
+  let mutate!: ScopedMutator;
+  function Publisher() {
+    mutate = useSWRConfig().mutate;
+    return reader ? <Consumer /> : null;
+  }
+  await act(async () => {
+    root.render(
+      <SWRConfig
+        value={{
+          provider: () => cache,
+          dedupingInterval: 0,
+          shouldRetryOnError: false,
+          revalidateOnFocus: false,
+          revalidateOnReconnect: false,
+        }}
+      >
+        <Publisher />
+      </SWRConfig>,
+    );
+  });
+  return { cache, publish: () => publishDatabaseList(mutate) };
+}
+
+test("publishDatabaseList writes the listing while no reader is mounted", async () => {
+  const fresh = list("fresh");
+  vi.mocked(getDatabases).mockResolvedValueOnce(fresh);
+  const { cache, publish } = await publishHarness(false);
+
+  await act(async () => {
+    await expect(publish()).resolves.toEqual(fresh);
+  });
+
+  expect(cache.get(DATABASE_LIST_KEY)?.data).toEqual(fresh);
+  expect(getDatabases).toHaveBeenCalledOnce();
+});
+
+test("a reader's read that began before a publication never replaces it, and no further read follows", async () => {
+  const old = deferred<DatabaseList>();
+  const published = deferred<DatabaseList>();
+  const fresh = list("fresh");
+  vi.mocked(getDatabases).mockReturnValueOnce(old.promise).mockReturnValueOnce(published.promise);
+  const { cache, publish } = await publishHarness(true);
+  expect(getDatabases).toHaveBeenCalledOnce();
+
+  let publication!: Promise<unknown>;
+  await act(async () => {
+    publication = publish();
+    await Promise.resolve();
+  });
+  await act(async () => published.resolve(fresh));
+  await expect(publication).resolves.toEqual(fresh);
+  expect(container.textContent).toBe("loaded");
+
+  await act(async () => old.resolve(list("stale")));
+  await advance(60_000);
+  expect(cache.get(DATABASE_LIST_KEY)?.data).toEqual(fresh);
+  expect(getDatabases).toHaveBeenCalledTimes(2);
+});
+
+test("a failed publication is thrown, writes nothing, and leaves mounted readers to read for themselves", async () => {
+  const failure = new Error("published listing failed");
+  const initial = list("initial");
+  vi.mocked(getDatabases).mockResolvedValueOnce(initial).mockRejectedValue(failure);
+  const { cache, publish } = await publishHarness(true);
+  expect(container.textContent).toBe("loaded");
+
+  await act(async () => {
+    await expect(publish()).rejects.toBe(failure);
+  });
+
+  expect(cache.get(DATABASE_LIST_KEY)?.data).toEqual(initial);
+  // The publication's read and the reader's own, which shows the failure.
+  expect(getDatabases).toHaveBeenCalledTimes(3);
+  expect(container.textContent).toBe("failed");
 });
