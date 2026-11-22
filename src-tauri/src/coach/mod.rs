@@ -56,7 +56,7 @@ use self::{
     http::HttpClients,
     lines::TurnPosition,
     models::{ModelList, MAX_MODEL_LIST_BYTES},
-    responses::{Responses, ToolLayout},
+    responses::{PlanProvider, Responses},
     stats::{DatabaseStatistics, Statistics},
     tools::{ToolActivity, ToolSource},
     turn::{TurnEnd, TurnRequest, TurnSink},
@@ -93,9 +93,6 @@ pub(crate) const RELEASE_AVAILABLE: bool = false;
 fn available_for(identifier: &str) -> bool {
     RELEASE_AVAILABLE || identifier.ends_with(".dev")
 }
-
-/// The namespace the tools are declared in where a provider wants them grouped.
-const TOOL_NAMESPACE: &str = "chess";
 
 pub(crate) struct Coach {
     available: bool,
@@ -498,7 +495,7 @@ impl Coach {
                         accounts: self.accounts.clone(),
                         handle,
                     },
-                    ToolLayout::Namespace(TOOL_NAMESPACE),
+                    PlanProvider::ChatGpt,
                 )))
             }
             Secret::Grok(secret) => {
@@ -512,7 +509,7 @@ impl Coach {
                         accounts: self.accounts.clone(),
                         handle,
                     },
-                    ToolLayout::Flat,
+                    PlanProvider::Grok,
                 )))
             }
         }
@@ -523,6 +520,7 @@ impl Coach {
     async fn plan_models(
         &self,
         handle: CoachConnectionHandle,
+        provider: PlanProvider,
         http: &reqwest::Client,
         url: String,
     ) -> Result<ModelList, CoachError> {
@@ -539,7 +537,8 @@ impl Coach {
                         .await?;
                 }
                 _ => {
-                    let (error, message) = responses::classify_plan_refusal(status, &body, false);
+                    let (error, message) =
+                        responses::classify_plan_refusal(provider, status, &body, false);
                     log::warn!(
                         "coach: the plan model list was refused with HTTP {status}: {}",
                         http::diagnostic(&message, None)
@@ -611,11 +610,15 @@ impl Coach {
             Secret::Api { address, key } => (address, key),
             Secret::ChatGpt(_) => {
                 let (http, url) = (self.chatgpt.http(), self.chatgpt.api("models"));
-                return self.plan_models(handle, http, url).await;
+                return self
+                    .plan_models(handle, PlanProvider::ChatGpt, http, url)
+                    .await;
             }
             Secret::Grok(_) => {
                 let (http, url) = (self.grok.http(), self.grok.api("models"));
-                return self.plan_models(handle, http, url).await;
+                return self
+                    .plan_models(handle, PlanProvider::Grok, http, url)
+                    .await;
             }
         };
         // The class is derived from the stored text on every use, never taken from the caller.

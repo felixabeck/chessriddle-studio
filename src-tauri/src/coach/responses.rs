@@ -6,7 +6,8 @@
 //! by the results of the calls. A round counts as complete only when the provider says
 //! `response.completed`.
 //!
-//! How tools are declared is decided in one place, [`ToolLayout`], because providers differ in it.
+//! Where the providers of this format differ (how tools are declared, what a refusal means) is
+//! decided by [`PlanProvider`].
 
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
@@ -35,34 +36,42 @@ const ENCRYPTED_REASONING: &str = "reasoning.encrypted_content";
 /// The line some providers end the stream with, after the events.
 const DONE: &str = "[DONE]";
 
-/// How a provider wants function tools declared.
-#[derive(Clone, Copy)]
-pub(crate) enum ToolLayout {
-    /// Grouped in one namespace of this name.
-    Namespace(&'static str),
-    /// Each tool on its own, at the top level.
-    Flat,
+/// The namespace the tools are declared in where a provider wants them grouped.
+const TOOL_NAMESPACE: &str = "chess";
+
+/// The sign-in providers that speak this format.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PlanProvider {
+    /// Tools grouped in one namespace; a refusal names what it is about by its code.
+    ChatGpt,
+    /// Each tool on its own, at the top level; every 403 is about the subscription.
+    Grok,
 }
 
 pub(crate) struct Responses<B> {
     client: reqwest::Client,
     url: String,
     tokens: B,
-    layout: ToolLayout,
+    provider: PlanProvider,
 }
 
 impl<B: BearerSource> Responses<B> {
-    pub(crate) fn new(client: reqwest::Client, url: String, tokens: B, layout: ToolLayout) -> Self {
+    pub(crate) fn new(
+        client: reqwest::Client,
+        url: String,
+        tokens: B,
+        provider: PlanProvider,
+    ) -> Self {
         Self {
             client,
             url,
             tokens,
-            layout,
+            provider,
         }
     }
 }
 
-fn tools(request: &RoundRequest<'_>, layout: ToolLayout) -> Vec<Value> {
+fn tools(request: &RoundRequest<'_>, provider: PlanProvider) -> Vec<Value> {
     let mut functions: Vec<Value> = request
         .tools
         .iter()
@@ -75,24 +84,21 @@ fn tools(request: &RoundRequest<'_>, layout: ToolLayout) -> Vec<Value> {
             })
         })
         .collect();
-    match layout {
-        ToolLayout::Namespace(_) => {
+    match provider {
+        PlanProvider::ChatGpt => {
             // The schemas have optional arguments, which the strict mode there does not allow.
             for function in &mut functions {
                 function["strict"] = false.into();
             }
+            vec![json!({
+                "type": "namespace",
+                "name": TOOL_NAMESPACE,
+                "description": "Read-only chess tools: the engine and the reference database.",
+                "tools": functions,
+            })]
         }
         // The flat declaration is sent exactly as its provider documents it.
-        ToolLayout::Flat => {}
-    }
-    match layout {
-        ToolLayout::Namespace(name) => vec![json!({
-            "type": "namespace",
-            "name": name,
-            "description": "Read-only chess tools: the engine and the reference database.",
-            "tools": functions,
-        })],
-        ToolLayout::Flat => functions,
+        PlanProvider::Grok => functions,
     }
 }
 
@@ -120,7 +126,7 @@ fn resendable(items: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-fn request_body(request: &RoundRequest<'_>, layout: ToolLayout, with_reasoning: bool) -> Value {
+fn request_body(request: &RoundRequest<'_>, provider: PlanProvider, with_reasoning: bool) -> Value {
     let mut input = Vec::new();
     for message in request.messages {
         match message {
@@ -162,7 +168,7 @@ fn request_body(request: &RoundRequest<'_>, layout: ToolLayout, with_reasoning: 
     body.insert("store".into(), false.into());
     body.insert("stream".into(), true.into());
     if !request.tools.is_empty() {
-        body.insert("tools".into(), tools(request, layout).into());
+        body.insert("tools".into(), tools(request, provider).into());
     }
     if with_reasoning {
         body.insert("include".into(), json!([ENCRYPTED_REASONING]));
@@ -194,6 +200,7 @@ fn classify_code(code: &str) -> Option<CoachError> {
 
 /// A refused request of a signed-in connection. `param` is the request field the provider named.
 pub(crate) fn classify_plan_refusal(
+    provider: PlanProvider,
     status: u16,
     body: &[u8],
     effort_sent: bool,
@@ -205,8 +212,11 @@ pub(crate) fn classify_plan_refusal(
         // The token itself was accepted as fresh a moment ago: this is no "sign in again".
         401 => CoachError::ProviderFailure,
         // Signed in, but this account, plan or region may not use the plan from other apps.
-        403 if code.is_empty() => CoachError::SubscriptionNotEligible,
-        // A 403 with another code is about how this app asks, not about the account.
+        403 if code.is_empty() || provider == PlanProvider::Grok => {
+            CoachError::SubscriptionNotEligible
+        }
+        // On the ChatGPT route a 403 with another code is about how this app asks, not about
+        // the account.
         403 => CoachError::ProviderFailure,
         429 | 503 => CoachError::RateLimited,
         400 if param.starts_with("reasoning") && effort_sent => CoachError::EffortRejected,
@@ -440,7 +450,7 @@ impl<B: BearerSource> ModelBackend for Responses<B> {
     ) -> Result<Round, RoundFailure> {
         let mut with_reasoning = true;
         let response = loop {
-            let body = request_body(&request, self.layout, with_reasoning);
+            let body = request_body(&request, self.provider, with_reasoning);
             let response = self
                 .send(&body, cancellation)
                 .await
@@ -459,8 +469,12 @@ impl<B: BearerSource> ModelBackend for Responses<B> {
                 with_reasoning = false;
                 continue;
             }
-            let (error, message) =
-                classify_plan_refusal(status.as_u16(), &refusal, request.effort.is_some());
+            let (error, message) = classify_plan_refusal(
+                self.provider,
+                status.as_u16(),
+                &refusal,
+                request.effort.is_some(),
+            );
             log::warn!(
                 "coach: responses refused with HTTP {}: {}",
                 status.as_u16(),
@@ -619,7 +633,7 @@ mod tests {
             reqwest::Client::builder().no_proxy().build().unwrap(),
             server.url("/v1/responses"),
             tokens,
-            ToolLayout::Namespace("chess"),
+            PlanProvider::ChatGpt,
         )
     }
 
@@ -638,7 +652,7 @@ mod tests {
             reqwest::Client::builder().no_proxy().build().unwrap(),
             server.url("/v1/responses"),
             Arc::<Tokens>::default(),
-            ToolLayout::Flat,
+            PlanProvider::Grok,
         );
         let (result, _) = ask(&flat, &question(), None).await;
         assert_eq!(result.unwrap().text, "Castle.");
@@ -654,6 +668,18 @@ mod tests {
         );
         assert_eq!(body["store"], false);
         assert!(body.get("reasoning").is_none());
+
+        // Whatever a 403 names, on this route it is about the subscription.
+        for body in [
+            json!({ "code": "permission_denied", "error": "no access" }),
+            json!({ "error": { "code": "forbidden", "message": "no access" } }),
+        ] {
+            assert_eq!(
+                classify_plan_refusal(PlanProvider::Grok, 403, body.to_string().as_bytes(), false)
+                    .0,
+                CoachError::SubscriptionNotEligible
+            );
+        }
 
         let (result, _) = ask(&flat, &question(), None).await;
         let Err(failure) = result else {
