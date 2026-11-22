@@ -27730,7 +27730,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### `state/atoms.ts` is a 1,680-line, 156-export module that also hosts tab lifecycle, recent-file, conversion-job and best-move logic
 
-* **ID:** f-20261119-17 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-17 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `d79fa979e`
 * **Where:** `src/state/atoms.ts`. It is imported by 184 files under `src/`, and it was touched by 47 commits in the last 31 days. Its `//` section banners (`Tabs` `:151`, `Directories` `:339`, `Settings` `:501`, `Recent Files` `:681`, `Database` `:764`, `Game Settings` `:1046`, `Puzzles` `:1100`, `CP / WDL` `:1146`, `Per tab settings` `:1152`, `Game` `:1320`, `Practice` `:1338`) already describe the domains. Besides atoms, it carries behaviour that is not atom declaration:
@@ -27755,6 +27755,13 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * `git log --since=2026-10-19 --format=%h origin/master -- src/state/atoms.ts | wc -l` gives 47.
   * The line ranges above are at `d79fa979e`.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+* **Handled (2026-11-22, drain fe4cac75):** `src/state/atoms.ts` is now a 20-line re-export barrel over fifteen domain modules in `src/state/atoms/`: `rendererState` (document init, `documentPreferences`), `tabFamilies` (tab-scoped family registry, `disposeTabAtoms`), `tabs` (workspace, tab lifecycle), `directories`, `engineOwners` (engine-owner atom factory, `enginesAtom`), `preferences`, `recentFiles`, `database`, `conversion` (`runDatabaseConversion`), `game`, `puzzles`, `boardPanels` (per-tab view state, `PINNED_PLACEMENTS`), `explorer`, `analysis` (engine families, best-move arrows, pinned engine bar) and `practice`. The misleading `Per tab settings` and `CP / WDL` banners are replaced by one doc comment per module. Code moved byte-for-byte (line-multiset check); the barrel's export set is identical and keeps the four shared factories private; no import cycle; `documentPreferences` hydration order unchanged. No importer changed.
+  * `createDocumentStorageAtoms` now creates an atom declared after `initialize()` at once; before, it stayed undefined and threw `Atom is undefined or null` on read, which a domain module evaluated after `initializeRendererState` would have hit. New test in `src/state/utils.test.ts`, observed red without the guard.
+  * The barrel is declared `statementFree` in `coverage-areas.json` and the baseline scope (areas untouched).
+  * Commits: `6c95939f4`, `4264cf172`. Proof: tsc clean, full vitest 392 files / 9646 tests green, `pnpm checks:pre-review` green.
+  * Review (agy, sensitive): correctness, root-cause, persisted-state, minimalism, code-quality, tests. review-tests blocker (blank coverage record) fixed and closed in round 2; code-quality nit fixed. Skipped: persisted-state's unguarded `removeItem` in `initializeRendererState` (pre-existing, rule 4d: no observed failure; Tauri's webview does not restrict storage).
+  * Rejected: moving importers to the domain modules in this step (the finding's first step keeps all 184 importers on the barrel); naming the tab module `workspace.ts` (collides in meaning with `src/state/workspace.ts`).
+<!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"11c42f6c3f45dae6e1f965f7df1d6d6e9c75835f236fb80dcea4a515af5c04e4","header_sha256":"4ca98aadd8803f0e1f9b33f6b352f43eccceea0ef326885cb72e4fa369a7817a","header_status":"handled","input_sha256":"5b54e1ae00ae958da2ef5b725c7dee6d6aaf006d71db03163c72a0523018ba5a","kind":"mutation-receipt","operation":"933927a3ef483a98d6d9f512dd445fe74a6a83995fb8c01c8bd3ff8dc7a67cd8","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-17"],"target":"f-20261119-17","v":1} -->
 
 ---
 
