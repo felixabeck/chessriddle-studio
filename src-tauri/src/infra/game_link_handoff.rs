@@ -362,10 +362,7 @@ fn deliver(
             Ok(Some(endpoint)) => {
                 let address = SocketAddr::from((Ipv4Addr::LOCALHOST, endpoint.port));
                 let remaining = deadline.saturating_duration_since(Instant::now());
-                let limit = remaining
-                    .min(timing.connect_timeout)
-                    .max(Duration::from_millis(1));
-                match TcpStream::connect_timeout(&address, limit) {
+                match TcpStream::connect_timeout(&address, connect_limit(remaining, timing)) {
                     Ok(stream) => {
                         return exchange(stream, &endpoint.token, link, timing.io_timeout)
                     }
@@ -380,6 +377,14 @@ fn deliver(
         }
         std::thread::sleep(timing.retry_pause);
     }
+}
+
+/// One connect never outlasts the delivery deadline, and never the connect timeout. Never zero,
+/// which `connect_timeout` rejects.
+fn connect_limit(remaining: Duration, timing: DeliveryTiming) -> Duration {
+    remaining
+        .min(timing.connect_timeout)
+        .max(Duration::from_millis(1))
 }
 
 /// From the first written byte the outcome is final: the owner may already have enqueued the
@@ -501,6 +506,71 @@ mod tests {
         let mut stream = fixture.connect();
         stream.write_all(bytes).unwrap();
         read_to_close(stream)
+    }
+
+    /// The owner's answer line, without waiting for the owner to close.
+    fn read_answer(stream: &TcpStream) -> String {
+        let mut line = String::new();
+        BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        line
+    }
+
+    #[test]
+    fn a_connect_is_limited_by_its_own_timeout_and_by_the_remaining_deadline() {
+        assert!(FAST.connect_timeout < FAST.io_timeout);
+        assert_eq!(connect_limit(FAST.deadline, FAST), FAST.connect_timeout);
+        assert_eq!(
+            connect_limit(Duration::from_millis(40), FAST),
+            Duration::from_millis(40)
+        );
+        assert_eq!(
+            connect_limit(Duration::ZERO, FAST),
+            Duration::from_millis(1)
+        );
+        // Several attempts fit the deadline even where a closed port answers only by timeout.
+        assert!(DELIVERY_CONNECT_TIMEOUT + RETRY_PAUSE <= DELIVERY_DEADLINE / 4);
+    }
+
+    #[test]
+    fn the_owner_reads_the_peer_out_after_its_answer() {
+        // A close with unread bytes resets the connection, and a reset can destroy the answer
+        // before the peer has read it. So the connection stays readable after the answer.
+        let fixture = owner(Intake::Queued, Duration::from_secs(30));
+        let mut stream = fixture.connect();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream
+            .write_all(&vec![b'x'; MAX_REQUEST_BYTES + 10])
+            .unwrap();
+        assert_eq!(read_answer(&stream), "refused\n");
+
+        for _ in 0..8 {
+            std::thread::sleep(Duration::from_millis(25));
+            stream
+                .write_all(&[b'x'; 1024])
+                .expect("the owner still reads what the peer sends");
+        }
+        assert!(fixture.received().is_empty());
+    }
+
+    #[test]
+    fn the_owner_stops_reading_a_peer_that_keeps_sending() {
+        // The connection deadline is far away: only the byte bound can end this.
+        let fixture = owner(Intake::Queued, Duration::from_secs(60));
+        let mut stream = fixture.connect();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream.write_all(b"not the token\n").unwrap();
+        assert_eq!(read_answer(&stream), "refused\n");
+
+        let chunk = [b'x'; 4096];
+        let closed =
+            (0..64 * MAX_DRAINED_BYTES / chunk.len()).any(|_| stream.write_all(&chunk).is_err());
+        assert!(closed, "the owner read megabytes from a refused peer");
     }
 
     #[test]

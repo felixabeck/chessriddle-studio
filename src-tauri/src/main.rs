@@ -5903,6 +5903,22 @@ mod game_link_intake_tests {
         tauri::async_runtime::block_on(unguarded.shutdown());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_listener_that_cannot_start_leaves_the_application_without_handoff() {
+        let root = tempfile::tempdir().unwrap();
+        // A directory in the endpoint's place: the owner cannot publish.
+        std::fs::create_dir(root.path().join(ENDPOINT_FILE)).unwrap();
+        let (app, _) = app();
+
+        let handoff =
+            GameLinkHandoff::start(app.handle(), &AppDataDir::for_test(root.path()), true);
+
+        assert!(handoff.0.is_none());
+        tauri::async_runtime::block_on(handoff.shutdown());
+        assert!(root.path().join(ENDPOINT_FILE).is_dir());
+    }
+
     #[test]
     fn application_exit_stops_the_handoff_before_the_backend_shuts_down() {
         let source = include_str!("main.rs");
