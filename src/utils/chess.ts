@@ -913,7 +913,8 @@ export function getGameStats(root: TreeNode): GameStats {
                 annotation: marked,
                 before: parentScore,
                 after: score,
-                // A report line is never the mainline continuation, even after a promotion.
+                // A promoted report line keeps its marker at children[0]: it is the played move,
+                // so the better move is a report line beside it.
                 betterMove: parent.children.slice(1).find((child) => child.reportLine)?.san ?? null,
             });
         }

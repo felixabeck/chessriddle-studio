@@ -155,10 +155,12 @@ vi.mock("@mantine/core", () => ({
     data,
     value,
     onChange,
+    error,
   }: {
     data: (string | { value: string; label: string })[];
     value?: string;
     onChange?: (value: string) => void;
+    error?: React.ReactNode;
   }) => {
     const options = data.map((option) =>
       typeof option === "string" ? { value: option, label: option } : option,
@@ -167,13 +169,16 @@ vi.mock("@mantine/core", () => ({
       options.unshift({ value, label: value });
     }
     return (
-      <select value={value} onChange={(event) => onChange?.(event.currentTarget.value)}>
-        {options.map((item) => (
-          <option key={item.value} value={item.value}>
-            {item.label}
-          </option>
-        ))}
-      </select>
+      <>
+        <select value={value} onChange={(event) => onChange?.(event.currentTarget.value)}>
+          {options.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        {error ? <span role="alert">{error}</span> : null}
+      </>
     );
   },
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -1317,4 +1322,18 @@ test("Analyze is disabled without a local engine and while the engine list loads
 
   await act(async () => atomStore.set(enginesAtom, mocks.engines));
   expect(host.querySelector("button")!.disabled).toBe(false);
+});
+
+test("a submit with an engine that is not installed says so instead of doing nothing", async () => {
+  // While the engine list loads, the stored engine stays selected but is not yet installed.
+  atomStore.set(
+    enginesAtom as unknown as PrimitiveAtom<typeof mocks.engines | undefined>,
+    undefined,
+  );
+  await renderReportModal();
+  await act(async () => {
+    host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true }));
+  });
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Board.Analysis.EngineRequired");
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
 });

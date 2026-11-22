@@ -1499,15 +1499,15 @@ function applyReport(state: TreeStoreState, result: GameAnalysis, request: Repor
     if (reportRootFingerprint(state.root.fen, getMainLine(state.root)) !== request.fingerprint)
         return false;
     const { positions, novelty } = result;
-    let mainline = Array.from(treeIteratorMainLine(state.root));
+    const mainline = Array.from(treeIteratorMainLine(state.root));
     if (positions.length !== mainline.length) return false;
     const marks = judgeReport(
         positions,
         mainline.map(({ node }) => node),
     );
 
+    // Only children past index 0 go, so the main line and its paths stay valid.
     removeReportLines(state, mainline);
-    mainline = Array.from(treeIteratorMainLine(state.root));
 
     let drawWritten = false;
     mainline.forEach(({ node }, index) => {

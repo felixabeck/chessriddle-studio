@@ -1098,7 +1098,7 @@ test("game stats list the marked mainline moves as key moments in game order", (
 test("a promoted report line is the played move, not the key moment's better move", () => {
     const root = defaultTree().root;
     root.score = cpScore(20);
-    // An earlier report's line for 1.e4, promoted to the main line, then marked by a new report.
+    // An earlier report's line 1.d4, promoted to the main line, then marked by a new report.
     const promoted = addMainlineMove(root, "d4");
     promoted.reportLine = true;
     promoted.score = cpScore(-500);
