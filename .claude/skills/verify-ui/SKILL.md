@@ -69,7 +69,10 @@ now does (proof 2 below).
    (`src-tauri/src/main.rs`) always opens a native picker and takes no path
    argument, so that picker route cannot be driven. A catalog install through the
    fallback button can be driven with `pnpm verify:app --fallback-engine-install`,
-   which performs a real download and registers the engine.
+   which performs a real download and registers the engine. `pnpm verify:app --game-report`
+   does that install, plays a short game on an Analysis Board and runs a real game report
+   with it; Import Game cannot be driven on a fresh profile because it needs a library folder
+   from the native picker.
 
    Prerequisites, both one-off and named in the failure message if missing:
    `sudo apt install webkit2gtk-driver` (must match the installed
@@ -134,7 +137,7 @@ What remains Felix's is now only **native GTK chrome** — menus, file dialogs, 
 WebDriver sees the page, not the GTK widgets around it, and `issue_engine_binary` always opens a
 native picker, so that picker route cannot be driven. A catalog install through the fallback
 button can be driven with `pnpm verify:app --fallback-engine-install`, which performs a real
-download and registers the engine.
+download and registers the engine. `--game-report` adds a real game report on top of that install.
 
 
 ## Other-agent UI verification

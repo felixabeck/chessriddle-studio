@@ -258,6 +258,8 @@ const screenshotIndex = process.argv.indexOf("--screenshot");
 const screenshotPath = screenshotIndex === -1 ? undefined : process.argv[screenshotIndex + 1];
 const progressContractOnly = process.argv.includes("--progress-contract");
 const fallbackEngineInstallOnly = process.argv.includes("--fallback-engine-install");
+// Installs the catalog engine like --fallback-engine-install, then runs a real game report.
+const gameReportOnly = process.argv.includes("--game-report");
 const expectClearRejection = process.argv.includes("--expect-clear-rejection");
 const applicationIndex = process.argv.indexOf("--application");
 const progressGenerationIndex = process.argv.indexOf("--expect-progress-generation");
@@ -7306,7 +7308,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
 // FE1, FE2, FE3 and FE9 are argued, not staged: breaking them needs a build that does not start,
 // a browser without navigator.webdriver, or a pre-seeded profile or failed screenshot write,
 // which this mode cannot produce without changing the verifier.
-async function verifyFallbackEngineInstall(session) {
+async function verifyFallbackEngineInstall(session, { screenshot = true } = {}) {
   const startup = await assertion(
     "FE1 fallback install renderer starts on the unseeded profile",
     () => waitFor("fallback install renderer startup", () => session.execute(closeControlProbe)),
@@ -7398,9 +7400,166 @@ async function verifyFallbackEngineInstall(session) {
       );
     },
   );
-  if (screenshotPath) {
+  if (screenshotPath && screenshot) {
     await assertion("FE9 fallback engine install screenshot is written", async () => {
       await writeFile(screenshotPath, Buffer.from(await session.screenshot(), "base64"));
+    });
+  }
+}
+
+/** 1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6?? 4.Qxf7#: a short game whose 3...Nf6 any engine marks `??`. */
+const GAME_REPORT_MOVES = ["e2e4", "e7e5", "d1h5", "b8c6", "f1c4", "g8f6", "h5f7"];
+const GAME_REPORT_TIMEOUT_MS = 180_000;
+
+/** Plays one UCI move on the white-oriented board by clicking its two squares. */
+async function clickBoardMove(session, uci, ply) {
+  const rect = await session.execute(`
+    const box = document.querySelector('cg-board').getBoundingClientRect();
+    return { left: box.left, top: box.top, width: box.width, height: box.height };
+  `);
+  const centre = (square) => ({
+    x: Math.round(rect.left + ((square.charCodeAt(0) - 97 + 0.5) * rect.width) / 8),
+    y: Math.round(rect.top + ((8 - Number(square[1]) + 0.5) * rect.height) / 8),
+  });
+  for (const square of [uci.slice(0, 2), uci.slice(2, 4)]) {
+    const { x, y } = centre(square);
+    await clickAt(session, x, y);
+  }
+  await waitFor(`move ${ply} (${uci}) in the active tree`, async () => {
+    const snapshot = await readActiveTabTree(session);
+    let node = snapshot.tree?.root;
+    let depth = 0;
+    while (node?.children?.[0]) {
+      node = node.children[0];
+      depth += 1;
+    }
+    return depth === ply;
+  });
+}
+
+// GR checks run after FE1-FE8 installed Stockfish through the real catalog download. Each check
+// names the one it depends on, so a failure reports where the flow stopped.
+async function verifyGameReport(session) {
+  const inDialog = (text) =>
+    `[...document.querySelectorAll('[role="dialog"] button')].find(node => !node.disabled && node.textContent.trim() === ${JSON.stringify(text)})`;
+  const played = await assertion(
+    "GR1 the short game is played on a real Analysis Board",
+    async () => {
+      // A fresh profile opens on a New Tab; its Analysis Board card opens an empty board.
+      await goToBoards(session);
+      await clickButton(session, "Analysis Board");
+      await waitFor("the empty analysis board", () =>
+        session.execute("return !!document.querySelector('cg-board')"),
+      );
+      for (const [index, uci] of GAME_REPORT_MOVES.entries())
+        await clickBoardMove(session, uci, index + 1);
+    },
+  );
+  const started = await assertion(
+    "GR2 the Report tab runs a report with the installed engine",
+    async () => {
+      if (!played) throw new Error("GR1 game was not played");
+      // The default 800x648 window clips the Report tab below its first card.
+      await session.call("POST", "/window/rect", { width: 1400, height: 1000 });
+      for (const name of ["Analysis", "Report"]) {
+        const tab = await reachableStableCoordinates(
+          session,
+          `the ${name} tab`,
+          `[...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent.trim() === ${JSON.stringify(name)})`,
+        );
+        await clickAt(session, tab.x, tab.y);
+      }
+      await clickButton(session, "Generate report");
+      await waitFor("the dialog's engine selection", () =>
+        session.execute(
+          `return [...document.querySelectorAll('[role="dialog"] input')].some(input => input.value.startsWith('Stockfish'))`,
+        ),
+      );
+      // Mantine fades the modal in; a screenshot taken before the fade ends shows no dialog.
+      await waitFor("the fully shown dialog", () =>
+        session.execute(`
+          const content = document.querySelector('[role="dialog"]');
+          let node = content;
+          while (node && node !== document.body) {
+            if (Number(getComputedStyle(node).opacity) < 1) return false;
+            node = node.parentElement;
+          }
+          return !!content;
+        `),
+      );
+      if (screenshotPath) {
+        const dialogPath = screenshotPath.replace(/(\.png)?$/, "-dialog.png");
+        await writeFile(dialogPath, Buffer.from(await session.screenshot(), "base64"));
+        console.log(`  .. game report dialog screenshot: ${dialogPath}`);
+      }
+      const analyze = await reachableStableCoordinates(session, "Analyze", inDialog("Analyze"));
+      await clickAt(session, analyze.x, analyze.y);
+    },
+  );
+  const finished = await assertion("GR3 the finished report shows its provenance", async () => {
+    if (!started) throw new Error("GR2 report did not start");
+    const provenance = await waitFor(
+      "the report provenance line",
+      () =>
+        session.execute(
+          `return document.querySelector('[data-testid="report-provenance"]')?.textContent ?? false`,
+        ),
+      { timeoutMs: GAME_REPORT_TIMEOUT_MS, everyMs: 500 },
+    );
+    if (!/^Analyzed by Stockfish.*, 0\.5 s per position, on /.test(provenance))
+      throw new Error(`unexpected provenance: ${provenance}`);
+    console.log(`  .. provenance: ${provenance}`);
+  });
+  await assertion("GR4 both sides get an accuracy card", async () => {
+    if (!finished) throw new Error("GR3 report did not finish");
+    const cards = await session.execute(
+      `return [...document.querySelectorAll('[data-testid="report-accuracy"]')].map(card => card.innerText.replace(/\\s+/g, ' '))`,
+    );
+    if (cards.length !== 2 || !cards.every((card) => /\d+\.\d%/.test(card)))
+      throw new Error(`accuracy cards: ${JSON.stringify(cards)}`);
+    console.log(`  .. accuracy: ${JSON.stringify(cards)}`);
+  });
+  await assertion("GR5 the report marks 3...Nf6 a blunder in the key moments", async () => {
+    if (!finished) throw new Error("GR3 report did not finish");
+    const moments = await session.execute(
+      `return [...document.querySelectorAll('[data-testid="report-key-moment"]')].map(row => row.innerText.replace(/\\s+/g, ' '))`,
+    );
+    if (!moments.some((row) => row.includes("Nf6??")))
+      throw new Error(`key moments: ${JSON.stringify(moments)}`);
+    console.log(`  .. key moments: ${JSON.stringify(moments)}`);
+  });
+  if (screenshotPath) {
+    await assertion("GR6 game report screenshot is written", async () => {
+      if (!finished) throw new Error("GR3 report did not finish");
+      // The pointer still rests where Analyze was, over the chart; its tooltip would cover the card.
+      await session.call("POST", "/actions", {
+        actions: [
+          {
+            type: "pointer",
+            id: "mouse",
+            parameters: { pointerType: "mouse" },
+            actions: [{ type: "pointerMove", duration: 0, x: 1, y: 990, origin: "viewport" }],
+          },
+        ],
+      });
+      await writeFile(screenshotPath, Buffer.from(await session.screenshot(), "base64"));
+      console.log(`  .. game report screenshot: ${screenshotPath}`);
+      // The Report tab scrolls inside its own viewport, not the document.
+      await session.execute(`
+        const moment = document.querySelector('[data-testid="report-key-moment"]');
+        let viewport = moment.parentElement;
+        while (viewport && viewport.scrollHeight <= viewport.clientHeight) viewport = viewport.parentElement;
+        if (viewport) viewport.scrollTop += moment.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 40;
+      `);
+      await waitFor("the key moment scrolled into view", () =>
+        session.execute(`
+          const box = document.querySelector('[data-testid="report-key-moment"]').getBoundingClientRect();
+          return box.top >= 0 && box.bottom <= innerHeight;
+        `),
+      );
+      const momentsPath = screenshotPath.replace(/(\.png)?$/, "-key-moments.png");
+      await writeFile(momentsPath, Buffer.from(await session.screenshot(), "base64"));
+      console.log(`  .. game report key moments screenshot: ${momentsPath}`);
     });
   }
 }
@@ -7412,8 +7571,12 @@ async function main() {
   });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, handleSignal);
   try {
-    if (progressContractOnly && fallbackEngineInstallOnly) {
-      throw new Error("--fallback-engine-install and --progress-contract are mutually exclusive");
+    if (
+      [progressContractOnly, fallbackEngineInstallOnly, gameReportOnly].filter(Boolean).length > 1
+    ) {
+      throw new Error(
+        "--fallback-engine-install, --game-report and --progress-contract are mutually exclusive",
+      );
     }
     if (!isAbsolute(progressApplication) || !existsSync(progressApplication)) {
       throw new Error("progress application must name an existing absolute binary path");
@@ -7452,10 +7615,11 @@ async function main() {
       } finally {
         await progressSession.quit();
       }
-    } else if (fallbackEngineInstallOnly) {
+    } else if (fallbackEngineInstallOnly || gameReportOnly) {
       const fallbackSession = await Session.open(APP_BINARY);
       try {
-        await verifyFallbackEngineInstall(fallbackSession);
+        await verifyFallbackEngineInstall(fallbackSession, { screenshot: !gameReportOnly });
+        if (gameReportOnly) await verifyGameReport(fallbackSession);
       } finally {
         await fallbackSession.quit();
       }
