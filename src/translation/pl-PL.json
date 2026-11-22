@@ -1056,7 +1056,6 @@
     "Home.Accounts.AllWebsites": "Wszystkie strony internetowe",
     "Home.Accounts.Authenticated": "Uwierzytelniono",
     "Home.Accounts.AuthenticationFailed": "Uwierzytelnianie nie powiodło się",
-    "Home.Accounts.AuthenticationRequired": "Wymagane jest zalogowane konto Lichess.",
     "Home.Accounts.DownloadDurabilityUncertain": "Partie zostały pobrane, ale nie udało się w pełni potwierdzić zapisu. Nie próbuj ponownie.",
     "Home.Accounts.DownloadGames": "Pobierz partie",
     "Home.Accounts.Empty.Description": "Połącz konto Lichess lub Chess.com, aby analizować swoje partie i śledzić postępy.",

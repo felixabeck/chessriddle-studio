@@ -1316,13 +1316,10 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                 None => (None, None),
             };
             let coverage_holds = if let Some(url) = coverage_url {
-                let token = bearer_token.ok_or_else(|| {
-                    Error::OAuthFailure("authenticated Lichess account unavailable".into())
-                })?;
                 Some(
                     crate::lichess::read_coverage(
                         url,
-                        token,
+                        bearer_token,
                         state.http_transport.as_ref(),
                         &cancellation,
                         None,
@@ -1691,7 +1688,7 @@ pub async fn download_lichess_games(
 ) -> Result<crate::infra::path_authority::ArtifactPublication, Error> {
     download_publication_result(
         download_lichess_games_runtime(
-            handle,
+            Some(handle),
             destination,
             filename,
             player,
@@ -1734,9 +1731,12 @@ pub(crate) fn require_game_export_destination(
     Ok(())
 }
 
+/// Lichess game export runtime. When an opaque credential handle is supplied, it is resolved in
+/// the native credential store (and a missing token fails rather than falling back); without a
+/// handle, the export and coverage probe run anonymously.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
-    handle: crate::credentials::LichessAccountHandle,
+    handle: Option<crate::credentials::LichessAccountHandle>,
     destination: crate::infra::path_authority::PathRef,
     filename: String,
     player: String,
@@ -1761,11 +1761,18 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         MAX_ACTIVE_DOWNLOADS,
     )?;
     require_game_export_destination(state, &destination)?;
-    let token = state
-        .credentials
-        .token_async(handle)
-        .await?
-        .ok_or_else(|| Error::OAuthFailure("authenticated Lichess account unavailable".into()))?;
+    let token = match handle {
+        Some(handle) => Some(
+            state
+                .credentials
+                .token_async(handle)
+                .await?
+                .ok_or_else(|| {
+                    Error::OAuthFailure("authenticated Lichess account unavailable".into())
+                })?,
+        ),
+        None => None,
+    };
     let cancellation = lease.token();
     let (url, lichess_export, probed_holds, coverage_floor_ms) = match scope {
         crate::chesscom::ExportScope::Complete => {
@@ -1784,7 +1791,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
                 lichess_coverage_url(&base, since_ms, Some(crate::lichess::LICHESS_CHUNK_GAMES));
             let probe = crate::lichess::read_coverage(
                 probe_url,
-                &token,
+                token.as_deref(),
                 state.http_transport.as_ref(),
                 &cancellation,
                 Some(crate::lichess::LICHESS_CHUNK_GAMES),
@@ -1822,7 +1829,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         filename,
         app,
         state,
-        Some(&token),
+        token.as_deref(),
         None,
         job_id.clone(),
         lease,
@@ -4055,7 +4062,7 @@ mod tests {
 
         let job_id = state.operations.prepare_download("test").unwrap();
         let error = download_lichess_games_runtime(
-            crate::credentials::LichessAccountHandle::new(),
+            Some(crate::credentials::LichessAccountHandle::new()),
             destination,
             "games.pgn".into(),
             "player".into(),
@@ -5451,7 +5458,7 @@ mod tests {
         transport.responses.lock().unwrap()[1] = Ok(coverage_response(&format!("{line}\n")));
         let job = state.operations.prepare_download("fixture-window").unwrap();
         let downloaded = download_lichess_games_runtime(
-            account.handle,
+            Some(account.handle),
             fixture.download_destination(),
             "coverage.pgn".into(),
             "player".into(),
@@ -5556,7 +5563,7 @@ mod tests {
             transport.responses.lock().unwrap()[1] = Ok(failure);
             let job = state.operations.prepare_download("fixture-window").unwrap();
             let error = download_lichess_games_runtime(
-                account.handle,
+                Some(account.handle),
                 fixture.download_destination(),
                 "failed.pgn".into(),
                 "player".into(),
@@ -5663,7 +5670,7 @@ mod tests {
         RECORD_DOWNLOAD_FAILURE.arm(key, Error::Conflict("receipt recording failed".into()));
 
         let result = download_lichess_games_runtime(
-            account.handle,
+            Some(account.handle),
             fixture.download_destination(),
             "receipt-failure.pgn".into(),
             player.into(),
@@ -5742,7 +5749,7 @@ mod tests {
             );
             let job = state.operations.prepare_download("fixture-window").unwrap();
             let publication = download_lichess_games_runtime(
-                account.handle,
+                Some(account.handle),
                 fixture.download_destination(),
                 "downloaded.pgn".into(),
                 "player".into(),
@@ -5862,7 +5869,7 @@ mod tests {
         *transport.responses.lock().unwrap() = vec![Ok(coverage), Ok(export)];
         let job = state.operations.prepare_download("fixture-window").unwrap();
         let downloaded = download_lichess_games_runtime(
-            account.handle,
+            Some(account.handle),
             fixture.download_destination(),
             filename.into(),
             "player".into(),
@@ -5928,6 +5935,12 @@ mod tests {
         );
         let requests = transport.requests_seen.lock().unwrap();
         assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            assert_eq!(
+                request.1.get(reqwest::header::AUTHORIZATION).unwrap(),
+                "Bearer disposable-fixture-token"
+            );
+        }
         assert_eq!(
             requests[0].1.get(reqwest::header::ACCEPT).unwrap(),
             "application/x-ndjson"
@@ -5947,6 +5960,110 @@ mod tests {
             Some(since.as_str())
         );
         assert!(!export_query.contains_key("max"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_resumable_anonymous_download_publishes_without_authorization_header() {
+        use crate::db::linked_collections::tests::Fixture;
+        let fixture = Fixture::new();
+        let coverage = format!(
+            "{}\n",
+            crate::lichess::coverage_object("Blitz001", true, 100)
+        );
+        let transport = Arc::new(MockTransport {
+            responses: Mutex::new(vec![
+                Ok(coverage_response(&coverage)),
+                Ok(export_pgn_response()),
+            ]),
+            requests_seen: Mutex::new(vec![]),
+        });
+        let credentials = Arc::new(crate::credentials::CredentialManager::new(Arc::new(
+            crate::credentials::MemoryCredentialStore::default(),
+        )));
+        credentials
+            .initialize(&crate::infra::path_authority::AppDataDir::for_test(
+                &fixture.directory.path().join("credentials-app"),
+            ))
+            .unwrap();
+        let state = AppState {
+            credentials,
+            http_transport: transport.clone(),
+            ..fixture.state.clone()
+        };
+        let app = test_progress_app();
+        let job = state.operations.prepare_download("fixture-window").unwrap();
+        let downloaded = download_lichess_games_runtime(
+            None,
+            fixture.download_destination(),
+            "anonymous.pgn".into(),
+            "player".into(),
+            None,
+            job,
+            "fixture-window",
+            app.handle(),
+            &state,
+            crate::chesscom::ExportScope::Resumable,
+        )
+        .await
+        .unwrap();
+        assert!(downloaded.receipt_error.is_none());
+        assert!(published_lichess_pgn(&fixture, "anonymous.pgn")
+            .contains("https://lichess.org/Blitz001"));
+        let requests = transport.requests_seen.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            assert!(
+                !request.1.contains_key(reqwest::header::AUTHORIZATION),
+                "anonymous Lichess request unexpectedly sent Authorization header: {:?}",
+                request.1
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_runtime_missing_stored_token_fails_with_oauth_failure_and_zero_requests() {
+        use crate::db::linked_collections::tests::Fixture;
+        let fixture = Fixture::new();
+        let transport = Arc::new(MockTransport {
+            responses: Mutex::new(vec![
+                Ok(coverage_response("")),
+                Ok(export_pgn_response()),
+            ]),
+            requests_seen: Mutex::new(vec![]),
+        });
+        let credentials = Arc::new(crate::credentials::CredentialManager::new(Arc::new(
+            crate::credentials::MemoryCredentialStore::default(),
+        )));
+        credentials
+            .initialize(&crate::infra::path_authority::AppDataDir::for_test(
+                &fixture.directory.path().join("credentials-app"),
+            ))
+            .unwrap();
+        let state = AppState {
+            credentials,
+            http_transport: transport.clone(),
+            ..fixture.state.clone()
+        };
+        let app = test_progress_app();
+        let job = state.operations.prepare_download("fixture-window").unwrap();
+        let error = download_lichess_games_runtime(
+            Some(crate::credentials::LichessAccountHandle::new()),
+            fixture.download_destination(),
+            "missing-token.pgn".into(),
+            "player".into(),
+            None,
+            job,
+            "fixture-window",
+            app.handle(),
+            &state,
+            crate::chesscom::ExportScope::Resumable,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, Error::OAuthFailure(_)));
+        assert!(transport.requests_seen.lock().unwrap().is_empty());
     }
 
     #[cfg(unix)]
@@ -11050,7 +11167,7 @@ mod tests {
         };
         let job = state.operations.prepare_download("test").unwrap();
         let result = download_lichess_games_runtime(
-            account.handle,
+            Some(account.handle),
             destination,
             "lichess.pgn".into(),
             "player".into(),

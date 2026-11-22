@@ -254,7 +254,7 @@ pub(crate) fn coverage_until_ms(
 
 pub(crate) async fn read_coverage(
     url: Url,
-    token: &str,
+    token: Option<&str>,
     transport: &dyn crate::infra::net::DownloadTransport,
     cancellation: &tokio_util::sync::CancellationToken,
     max_games: Option<usize>,
@@ -266,8 +266,7 @@ pub(crate) async fn read_coverage(
         reqwest::header::HeaderValue::from_static("application/x-ndjson"),
     );
     let mut response =
-        crate::fs::request_download_response(url, headers, transport, Some(token), cancellation)
-            .await?;
+        crate::fs::request_download_response(url, headers, transport, token, cancellation).await?;
     let mut probe = CoverageProbe {
         holds: Vec::new(),
         last_created_at_ms: None,
@@ -981,7 +980,7 @@ mod tests {
 
         let holds = read_coverage(
             Url::parse("https://lichess.org/api/games/user/player")?,
-            "fixture-token",
+            Some("fixture-token"),
             &ChunkedCoverageTransport,
             &tokio_util::sync::CancellationToken::new(),
             None,
@@ -1123,7 +1122,7 @@ mod tests {
     async fn probe_body(body: Vec<u8>, max_games: usize) -> Result<CoverageProbe, Error> {
         read_coverage(
             Url::parse("https://lichess.org/api/games/user/player").unwrap(),
-            "fixture-token",
+            Some("fixture-token"),
             &ProbeTransport::new(body),
             &tokio_util::sync::CancellationToken::new(),
             Some(max_games),
@@ -1211,7 +1210,7 @@ mod tests {
         };
         let error = read_coverage(
             Url::parse("https://lichess.org/api/games/user/player").unwrap(),
-            "fixture-token",
+            Some("fixture-token"),
             &transport,
             &tokio_util::sync::CancellationToken::new(),
             Some(LICHESS_CHUNK_GAMES),
@@ -1230,7 +1229,7 @@ mod tests {
         };
         let error = read_coverage(
             Url::parse("https://lichess.org/api/games/user/player").unwrap(),
-            "fixture-token",
+            Some("fixture-token"),
             &transport,
             &tokio_util::sync::CancellationToken::new(),
             Some(LICHESS_CHUNK_GAMES),
@@ -1253,7 +1252,7 @@ mod tests {
         let full_len = chunk.len() as u64 + 20;
         let probe = read_coverage(
             Url::parse("https://lichess.org/api/games/user/player").unwrap(),
-            "fixture-token",
+            Some("fixture-token"),
             &ProbeTransport::chunks(vec![chunk], Some(full_len)),
             &tokio_util::sync::CancellationToken::new(),
             Some(LICHESS_CHUNK_GAMES),

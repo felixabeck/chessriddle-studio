@@ -1011,7 +1011,6 @@
     "Home.Accounts.AllWebsites": "所有網站",
     "Home.Accounts.Authenticated": "已认证",
     "Home.Accounts.AuthenticationFailed": "驗證失敗",
-    "Home.Accounts.AuthenticationRequired": "需要已登入的 Lichess 帳號。",
     "Home.Accounts.DownloadDurabilityUncertain": "對局已下載，但無法完全確認儲存。請勿重試。",
     "Home.Accounts.DownloadGames": "下载对局",
     "Home.Accounts.Empty.Description": "关联 Lichess 或 Chess.com 账户，以分析对局并跟踪进度！",

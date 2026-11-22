@@ -1026,7 +1026,6 @@
     "Home.Accounts.AllWebsites": "All websites",
     "Home.Accounts.Authenticated": "Authenticated",
     "Home.Accounts.AuthenticationFailed": "Authentication failed",
-    "Home.Accounts.AuthenticationRequired": "An authenticated Lichess account is required.",
     "Home.Accounts.DownloadDurabilityUncertain": "The games were downloaded, but the save could not be fully confirmed. Do not retry.",
     "Home.Accounts.DownloadGames": "Download games",
     "Home.Accounts.Empty.Description": "Connect your Lichess or Chess.com account to analyze your games and track your progress.",

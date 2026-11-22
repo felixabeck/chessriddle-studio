@@ -1026,7 +1026,6 @@
     "Home.Accounts.AllWebsites": "Alle nettsteder",
     "Home.Accounts.Authenticated": "Autentisert",
     "Home.Accounts.AuthenticationFailed": "Autentisering mislyktes",
-    "Home.Accounts.AuthenticationRequired": "En pålogget Lichess-konto kreves.",
     "Home.Accounts.DownloadDurabilityUncertain": "Partiene ble lastet ned, men lagringen kunne ikke bekreftes fullt ut. Ikke prøv på nytt.",
     "Home.Accounts.DownloadGames": "Last ned partier",
     "Home.Accounts.Empty.Description": "Koble til Lichess- eller Chess.com-kontoen din for å analysere partiene dine og følge framdriften.",

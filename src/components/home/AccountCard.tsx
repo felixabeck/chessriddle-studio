@@ -301,12 +301,7 @@ export function AccountCard({
               variant="subtle"
               color="gray"
               pending={pending}
-              disabled={
-                pending ||
-                !!associationIssue ||
-                associationPending ||
-                (type === "lichess" && !accountHandle)
-              }
+              disabled={pending || !!associationIssue || associationPending}
               onClick={async () => {
                 if (associationIssue || associationPending) return;
                 if (store.get(accountCompletionsAtom).get(accountKey)?.outcome.state === "running")
@@ -339,8 +334,6 @@ export function AccountCard({
                       ? Number(preparation.collection.fetchSinceMs)
                       : null
                     : null;
-                  if (type === "lichess" && !accountHandle && !preparation?.pendingBatch)
-                    throw new Error(t("Home.Accounts.AuthenticationRequired"));
                   const target = preparation?.collection
                     ? { kind: "linked" as const, collection: preparation.collection.id }
                     : {

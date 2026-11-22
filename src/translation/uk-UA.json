@@ -1056,7 +1056,6 @@
     "Home.Accounts.AllWebsites": "Усі сайти",
     "Home.Accounts.Authenticated": "Автентифіковано",
     "Home.Accounts.AuthenticationFailed": "Помилка автентифікації",
-    "Home.Accounts.AuthenticationRequired": "Потрібно увійти в обліковий запис Lichess.",
     "Home.Accounts.DownloadDurabilityUncertain": "Партії завантажено, але збереження не вдалося повністю підтвердити. Не повторюйте спробу.",
     "Home.Accounts.DownloadGames": "Завантажити ігри",
     "Home.Accounts.Empty.Description": "Підключіть обліковий запис Lichess або Chess.com, щоб аналізувати свої ігри та відстежувати прогрес.",

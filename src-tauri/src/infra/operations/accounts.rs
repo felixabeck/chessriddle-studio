@@ -338,11 +338,8 @@ async fn download_account<R: tauri::Runtime>(
 ) -> Result<RuntimeDownload, Error> {
     let filename = format!("{}_{}.pgn", request.account, request.provider);
     let downloaded = if request.provider == "lichess" {
-        let handle = request.account_handle.ok_or_else(|| {
-            Error::OAuthFailure("authenticated Lichess account unavailable".into())
-        })?;
         crate::fs::download_lichess_games_runtime(
-            handle,
+            request.account_handle,
             request.destination,
             filename,
             request.account.clone(),

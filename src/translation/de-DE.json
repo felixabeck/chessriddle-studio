@@ -1026,7 +1026,6 @@
     "Home.Accounts.AllWebsites": "Alle Webseiten",
     "Home.Accounts.Authenticated": "Angemeldet",
     "Home.Accounts.AuthenticationFailed": "Authentifizierung fehlgeschlagen",
-    "Home.Accounts.AuthenticationRequired": "Ein angemeldetes Lichess-Konto ist erforderlich.",
     "Home.Accounts.DownloadDurabilityUncertain": "Die Partien wurden heruntergeladen, aber das Speichern konnte nicht vollständig bestätigt werden. Nicht erneut versuchen.",
     "Home.Accounts.DownloadGames": "Partien laden",
     "Home.Accounts.Empty.Description": "Verbinde dein Lichess- oder Chess.com-Konto, um deine Partien zu analysieren und deinen Fortschritt zu verfolgen.",

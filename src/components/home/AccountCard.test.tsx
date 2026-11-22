@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { beforeEach, expect, test, vi } from "vitest";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import { accountCompletionsAtom, accountDownloadsInFlightAtom } from "@/state/atoms";
+import {
+  accountCompletionsAtom,
+  accountDownloadsInFlightAtom,
+  downloadDestinationAtom,
+} from "@/state/atoms";
 import type { AccountCompletion } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   getDatabaseWorkspace: vi.fn(),
   createWorkspaceDatabase: vi.fn(),
   listWorkspaceDatabases: vi.fn(),
+  downloadDestinationIsKnown: vi.fn(async () => false),
+  issueDownloadDestination: vi.fn(),
+  importAccountGames: vi.fn(),
   getDatabases: vi.fn(),
   progress: vi.fn(),
   notifyListenerError: vi.fn(),
@@ -515,5 +522,75 @@ test("two mounted AccountCards for the same accountKey never show attempt 1's 10
     host.remove();
     store.set(accountDownloadsInFlightAtom, new Map());
     store.set(accountCompletionsAtom, new Map());
+  }
+});
+
+test("Lichess card without accountHandle enables download and sends accountHandle: null", async () => {
+  const rootHandle = { id: { id: "db-root" }, kind: "databaseRoot" as const };
+  const dbHandle = { id: { id: "db-handle" }, kind: "database" as const };
+  const destination = { id: "download-dest" };
+  mocks.getDatabaseWorkspace.mockResolvedValue({
+    root: rootHandle,
+    displayName: "Databases",
+  });
+  mocks.listWorkspaceDatabases.mockResolvedValue({
+    entries: [{ handle: dbHandle, filename: "Felix_lichess.db3", availability: "available" }],
+    unread: [],
+  });
+  mocks.issueDownloadDestination.mockResolvedValue(destination);
+  mocks.importAccountGames.mockResolvedValue(
+    accountCompletionFixture({
+      request: {
+        provider: "lichess",
+        account: "Felix",
+        accountHandle: null,
+        destination,
+        pendingBatch: null,
+        sinceMs: null,
+        target: {
+          kind: "unlinked",
+          database: dbHandle,
+          title: "Felix Lichess",
+        },
+      },
+      outcome: { state: "succeeded", result: { collectionNotice: false } },
+    }),
+  );
+
+  const store = getDefaultStore();
+  store.set(downloadDestinationAtom, null);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await renderAccount(root, new Map(), null, 0, undefined);
+    const button = host.querySelector<HTMLButtonElement>(
+      'button[aria-label="Home.Accounts.DownloadGames"]',
+    )!;
+    expect(button.disabled).toBe(false);
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(mocks.importAccountGames).toHaveBeenCalledExactlyOnceWith({
+      provider: "lichess",
+      account: "Felix",
+      accountHandle: null,
+      destination,
+      pendingBatch: null,
+      sinceMs: null,
+      target: {
+        kind: "unlinked",
+        database: dbHandle,
+        title: "Felix Lichess",
+      },
+    });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountCompletionsAtom, new Map());
+    store.set(downloadDestinationAtom, null);
   }
 });

@@ -1041,7 +1041,6 @@
     "Home.Accounts.AllWebsites": "Todos los sitios web",
     "Home.Accounts.Authenticated": "Autenticada",
     "Home.Accounts.AuthenticationFailed": "Error de autenticación",
-    "Home.Accounts.AuthenticationRequired": "Se requiere una cuenta de Lichess autenticada.",
     "Home.Accounts.DownloadDurabilityUncertain": "Las partidas se descargaron, pero no se pudo confirmar por completo el guardado. No vuelva a intentarlo.",
     "Home.Accounts.DownloadGames": "Descargar partidas",
     "Home.Accounts.Empty.Description": "Conecta tu cuenta de Lichess o Chess.com para analizar partidas y seguir tu progreso.",
