@@ -70,17 +70,9 @@ impl Default for ExportLimits {
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PublicChessComRequest {
-    Account {
-        player: String,
-    },
-    /// The player's public profile: name, title, country and account status.
-    Profile {
-        player: String,
-    },
-    Game {
-        game_type: String,
-        game_id: String,
-    },
+    Account { player: String },
+    Profile { player: String },
+    Game { game_type: String, game_id: String },
 }
 
 #[derive(Deserialize)]
@@ -97,12 +89,17 @@ struct ArchiveGames {
 struct ArchiveGame {
     pgn: Option<String>,
     rules: Option<String>,
+    // Read only by the filtered export of an opponent's games.
+    time_class: Option<String>,
+    rated: Option<bool>,
+    /// Seconds since the Unix epoch.
+    end_time: Option<i64>,
 }
 
 // Keep only rule sets the importer models.
 const ACCOUNT_ARCHIVE_RULES: &[&str] = &["chess", "chess960"];
 
-fn valid_player(player: &str) -> bool {
+pub(crate) fn valid_player(player: &str) -> bool {
     !player.is_empty()
         && player.len() <= 50
         && player
@@ -209,6 +206,131 @@ async fn fetch_bounded(
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
+}
+
+/// The player's monthly archives from `first_month` on, oldest first, one per month. With
+/// `max_listed`, an index listing more archives than that is refused before any is validated.
+async fn requested_archives(
+    state: &AppState,
+    lower_player: &str,
+    first_month: Option<(i32, u32)>,
+    max_listed: Option<usize>,
+    cancellation: &CancellationToken,
+) -> Result<Vec<(reqwest::Url, i32, u32)>, Error> {
+    let index_bytes = fetch_bounded(
+        state,
+        player_url(lower_player, &["games", "archives"])?,
+        MAX_INDEX_BYTES,
+        cancellation,
+    )
+    .await?;
+    let index: ArchiveIndex = serde_json::from_slice(&index_bytes)
+        .map_err(|_| Error::InvalidInput("Chess.com returned an invalid archive index".into()))?;
+    if max_listed.is_some_and(|max| index.archives.len() > max) {
+        return Err(Error::ResourceLimit("too many Chess.com archives".into()));
+    }
+    let mut archives = index
+        .archives
+        .iter()
+        .map(|archive| validate_archive_url(archive, lower_player))
+        .collect::<Result<Vec<_>, _>>()?;
+    archives.sort_by_key(|(_, year, month)| (*year, *month));
+    archives.dedup_by_key(|(_, year, month)| (*year, *month));
+    if let Some(first_month) = first_month {
+        archives.retain(|(_, year, month)| (*year, *month) >= first_month);
+    }
+    Ok(archives)
+}
+
+/// Exports `player`'s rated standard games of the given time classes that ended at or after
+/// `since_ms` into an anonymous temporary file, oldest month first. A player without a matching
+/// game yields an empty file. Nothing is published anywhere.
+pub(crate) async fn export_filtered_games_to_file(
+    state: &AppState,
+    player: &str,
+    since_ms: Option<i64>,
+    time_classes: Vec<&'static str>,
+    cancellation: &CancellationToken,
+) -> Result<std::fs::File, Error> {
+    if !valid_player(player) {
+        return Err(Error::InvalidInput("invalid Chess.com player name".into()));
+    }
+    let lower_player = player.to_ascii_lowercase();
+    let first_month = first_archive_month(since_ms)?;
+    let deadline = tokio::time::Instant::now() + EXPORT_TIMEOUT;
+    let export = async {
+        let archives = requested_archives(
+            state,
+            &lower_player,
+            first_month,
+            Some(MAX_ARCHIVES),
+            cancellation,
+        )
+        .await?;
+        let mut staged = crate::infra::blocking::BLOCKING_GATEWAY
+            .spawn_cancellable(cancellation.clone(), |_| Ok(tempfile::tempfile()?))
+            .await?;
+        let mut total_pgn_bytes = 0usize;
+        for (archive, _, _) in archives {
+            let bytes = fetch_bounded(state, archive, MAX_ARCHIVE_BYTES, cancellation).await?;
+            let time_classes = time_classes.clone();
+            let budget = MAX_PGN_BYTES - total_pgn_bytes;
+            let (file, written) = crate::infra::blocking::BLOCKING_GATEWAY
+                .spawn_cancellable(cancellation.clone(), move |token| {
+                    let games: ArchiveGames = serde_json::from_slice(&bytes).map_err(|_| {
+                        Error::InvalidInput("Chess.com returned an invalid game archive".into())
+                    })?;
+                    let mut written = 0usize;
+                    for game in games.games {
+                        if token.is_cancelled() {
+                            return Err(Error::Cancellation);
+                        }
+                        let Some(pgn) = opponent_game_pgn(game, since_ms, &time_classes) else {
+                            continue;
+                        };
+                        written = written.saturating_add(pgn.len()).saturating_add(1);
+                        if written > budget {
+                            return Err(Error::ResourceLimit(
+                                "Chess.com PGN export is too large".into(),
+                            ));
+                        }
+                        staged.write_all(pgn.as_bytes())?;
+                        staged.write_all(b"\n")?;
+                    }
+                    staged.flush()?;
+                    Ok((staged, written))
+                })
+                .await?;
+            staged = file;
+            total_pgn_bytes += written;
+        }
+        Ok::<_, Error>(staged)
+    };
+    tokio::time::timeout_at(deadline, export)
+        .await
+        .map_err(|_| export_deadline_error())?
+}
+
+/// The game's PGN when the filtered export keeps it: rated, standard rules, one of the wanted
+/// time classes, not ended before `since_ms`, and carrying a PGN at all.
+fn opponent_game_pgn(
+    game: ArchiveGame,
+    since_ms: Option<i64>,
+    time_classes: &[&'static str],
+) -> Option<String> {
+    let standard = game.rules.as_deref().is_none_or(|rules| rules == "chess");
+    let wanted_class = game
+        .time_class
+        .as_deref()
+        .is_some_and(|class| time_classes.contains(&class));
+    let recent = match (since_ms, game.end_time) {
+        (Some(since_ms), Some(end_time)) => end_time.saturating_mul(1000) >= since_ms,
+        _ => true,
+    };
+    if game.rated != Some(true) || !standard || !wanted_class || !recent {
+        return None;
+    }
+    game.pgn.filter(|pgn| !pgn.trim().is_empty())
 }
 
 fn first_archive_month(since_ms: Option<i64>) -> Result<Option<(i32, u32)>, Error> {
@@ -394,29 +516,14 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
     let result = async {
         let deadline = tokio::time::Instant::now() + limits.timeout;
         let archives = tokio::time::timeout_at(deadline, async {
-            let index_bytes = fetch_bounded(
+            let archives = requested_archives(
                 &state,
-                player_url(&lower_player, &["games", "archives"])?,
-                MAX_INDEX_BYTES,
+                &lower_player,
+                first_month,
+                (scope == ExportScope::Complete).then_some(limits.archives),
                 &cancellation,
             )
             .await?;
-            let index: ArchiveIndex = serde_json::from_slice(&index_bytes).map_err(|_| {
-                Error::InvalidInput("Chess.com returned an invalid archive index".into())
-            })?;
-            if scope == ExportScope::Complete && index.archives.len() > limits.archives {
-                return Err(Error::ResourceLimit("too many Chess.com archives".into()));
-            }
-            let mut archives = index
-                .archives
-                .iter()
-                .map(|archive| validate_archive_url(archive, &lower_player))
-                .collect::<Result<Vec<_>, _>>()?;
-            archives.sort_by_key(|(_, year, month)| (*year, *month));
-            archives.dedup_by_key(|(_, year, month)| (*year, *month));
-            if let Some(first_month) = first_month {
-                archives.retain(|(_, year, month)| (*year, *month) >= first_month);
-            }
             if archives.is_empty() {
                 return Err(Error::InvalidInput(
                     "Chess.com returned no requested archives".into(),

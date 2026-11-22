@@ -895,6 +895,14 @@ async acknowledgeAccountCompletion(id: string) : Promise<Result<null, ErrorPaylo
     else return { status: "error", error: e  as any };
 }
 },
+async importOpponentGames(request: OpponentImportRequest, ticket: string) : Promise<Result<OpponentImportOutcome, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_opponent_games", { request, ticket }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async appendCollectionGames(collection: string, source: FileWorkspaceHandle) : Promise<Result<AppendOutcome, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("append_collection_games", { collection, source }) };
@@ -1704,6 +1712,16 @@ export type OpeningBookConfig = { book: OpeningBookHandle; maxPly?: bigint }
 export type OpeningBookHandle = { id: PathRef; kind: OpeningBookHandleKind }
 export type OpeningBookHandleKind = "openingBook"
 export type OpeningStatsData = { time_control: string; is_player_white: boolean; opening: string; won: number; drawn: number; lost: number }
+export type OpponentAccount = { provider: OpponentProvider; username: string }
+export type OpponentAccountGames = { account: OpponentAccount; games: number }
+export type OpponentImportOutcome = { kind: "imported"; database: DatabaseHandle | null; accounts: OpponentAccountGames[]; merged: boolean } | { kind: "accountFailed"; account: OpponentAccount; error: ErrorPayload }
+export type OpponentImportRequest = { root: DatabaseRootHandle; filename: string; title: string; accounts: OpponentAccount[]; sinceUnixSeconds: number | null; timeControls: OpponentTimeControl[]; lichessHandle: LichessAccountHandle | null }
+export type OpponentProvider = "lichess" | "chesscom"
+/**
+ * One category covers what both sites call that pace; a site without a matching class is not
+ * asked for it.
+ */
+export type OpponentTimeControl = "bullet" | "blitz" | "rapid" | "classical" | "correspondence"
 export type OutOpening = { name: string; fen: string; chess960: boolean }
 export type Outcome = "1-0" | "0-1" | "1/2-1/2" | "*"
 export type PathAvailability = "available" | "unavailable"
@@ -1775,11 +1793,7 @@ export type PracticeStoreAnomalyKind = "OrphanShard" | "DamagedDeck" | "Identity
 export type ProgressEvent = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; cleared: boolean; failure?: ErrorPayload | null }
 export type ProgressItem = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; failure?: ErrorPayload | null }
 export type ProgressState = "running" | "succeeded" | "failed" | "cancelled"
-export type PublicChessComRequest = { kind: "account"; player: string } | 
-/**
- * The player's public profile: name, title, country and account status.
- */
-{ kind: "profile"; player: string } | { kind: "game"; game_type: string; game_id: string }
+export type PublicChessComRequest = { kind: "account"; player: string } | { kind: "profile"; player: string } | { kind: "game"; game_type: string; game_id: string }
 export type PublicLichessRequest = { kind: "account"; username: string } | { kind: "cloud_eval"; fen: string; multi_pv: number } | { kind: "game"; game_id: string } | { kind: "tablebase"; fen: string } | { kind: "fide"; query: string }
 export type Puzzle = { id: number; fen: string; moves: string; rating: number; rating_deviation: number; popularity: number; nb_plays: number }
 export type PuzzleDatabaseInfo = { title: string; description: string; puzzleCount: number; storageSize: bigint; path: PathRef }

@@ -429,13 +429,59 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
     progress_id: String,
     cancellation: &CancellationToken,
 ) -> Result<(), Error> {
+    convert_sources_blocking(
+        authority,
+        repository,
+        search_cache,
+        files.into_iter().map(ImportSource::Workspace).collect(),
+        database,
+        account,
+        app,
+        title,
+        description,
+        progress_id,
+        cancellation,
+        |_| Ok(()),
+    )
+    .map(|_| ())
+}
+
+/// Where an import reads one PGN from.
+pub(crate) enum ImportSource {
+    /// A workspace file, resolved and opened through the path authority.
+    Workspace(FileWorkspaceHandle),
+    /// An open file the caller owns, read from its current position as plain PGN. `name` labels
+    /// it in progress and diagnostics.
+    Staged { name: String, file: std::fs::File },
+}
+
+/// Imports every source into `database` in one transaction. `after_import` runs inside that
+/// transaction once all games are in, so a failure there rolls the import back with it. Returns
+/// the games imported per source and `after_import`'s value, or `None` without sources.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn convert_sources_blocking<R: tauri::Runtime, T>(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    repository: &DatabaseRepository,
+    search_cache: &SearchCache,
+    files: Vec<ImportSource>,
+    database: DatabaseHandle,
+    account: Option<AccountImportContext>,
+    app: tauri::AppHandle<R>,
+    title: String,
+    description: Option<String>,
+    progress_id: String,
+    cancellation: &CancellationToken,
+    after_import: impl FnOnce(&mut SqliteConnection) -> Result<T, Error>,
+) -> Result<Option<(Vec<usize>, T)>, Error> {
     #[cfg(test)]
     database_command_checkpoint("convert_pgn", &database);
     let target = resolve_database(authority, &database, PathOperation::DatabaseCreate)?;
 
     if files.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
+    let mut per_source = vec![0usize; files.len()];
+    let mut after_value = None;
 
     let description = description.unwrap_or_default();
     let start = Instant::now();
@@ -446,7 +492,9 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
         repository.ensure_schema_if_initialized(&target, cancellation)?;
         if let Some(collections) = authority.collections()? {
             for source in &files {
-                collections.guard_conversion_source(authority, source, cancellation)?;
+                if let ImportSource::Workspace(source) = source {
+                    collections.guard_conversion_source(authority, source, cancellation)?;
+                }
             }
         }
         let mut database_connection =
@@ -461,26 +509,36 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
                     .map(|account| AccountImporter::new(db, account, cancellation))
                     .transpose()?;
 
-                for file_handle in files {
+                for (source_index, source) in files.into_iter().enumerate() {
                     let mut context = ImportFileContext {
-                        capability_id: Some(file_handle.path_ref().id.clone()),
+                        capability_id: match &source {
+                            ImportSource::Workspace(handle) => Some(handle.path_ref().id.clone()),
+                            ImportSource::Staged { .. } => None,
+                        },
                         ..Default::default()
                     };
                     context.run(|context| {
                         cancellation_check(cancellation)?;
-                        let file = authority.with_mut(|authority| {
-                            context.display_name =
-                                Some(authority.display_name(file_handle.path_ref())?);
-                            let resolved = authority.resolve(
-                                file_handle.path_ref(),
-                                PathOperation::ReadPgn,
-                                &[],
-                            )?;
-                            resolved.into_read_file()
-                        })??;
+                        let uncompressed: Box<dyn std::io::Read + Send> = match source {
+                            ImportSource::Workspace(file_handle) => {
+                                let file = authority.with_mut(|authority| {
+                                    context.display_name =
+                                        Some(authority.display_name(file_handle.path_ref())?);
+                                    let resolved = authority.resolve(
+                                        file_handle.path_ref(),
+                                        PathOperation::ReadPgn,
+                                        &[],
+                                    )?;
+                                    resolved.into_read_file()
+                                })??;
+                                decompressing_reader(context.display_name.as_deref(), file)?
+                            }
+                            ImportSource::Staged { name, file } => {
+                                context.display_name = Some(name);
+                                Box::new(file)
+                            }
+                        };
                         let current_file_name = context.display_name.clone();
-                        let uncompressed =
-                            decompressing_reader(current_file_name.as_deref(), file)?;
 
                         let identity = account_import
                             .as_ref()
@@ -511,6 +569,7 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
                                     .emit(&app);
                                 }
                                 imported_games += 1;
+                                per_source[source_index] += 1;
                                 Ok(())
                             },
                         )
@@ -524,6 +583,7 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
                 if database_was_created {
                     create_required_indexes(db)?;
                 }
+                after_value = Some(after_import(db)?);
                 refresh_derived_database_data(db)?;
                 #[cfg(test)]
                 CONVERSION_BEFORE_REVISION.run(&progress_id);
@@ -547,7 +607,7 @@ pub(crate) fn convert_pgn_blocking<R: tauri::Runtime>(
         source_file_name: None,
     }
     .emit(&app);
-    Ok(())
+    Ok(after_value.map(|value| (per_source, value)))
 }
 
 pub(super) fn decompressing_reader<R: std::io::Read + Send + 'static>(

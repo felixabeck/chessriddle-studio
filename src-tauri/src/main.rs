@@ -1595,6 +1595,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             infra::operations::accounts::import_account_games,
             infra::operations::accounts::pending_account_completions,
             infra::operations::accounts::acknowledge_account_completion,
+            infra::operations::opponents::import_opponent_games,
             db::linked_collections::batch::append_collection_games,
             db::linked_collections::edit_linked_collection,
             db::linked_collections::linked_collections_supported,

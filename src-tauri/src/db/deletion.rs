@@ -31,7 +31,7 @@ pub(super) const ABSENT_PRIMARY_INDEX_REVISION: u64 = u64::MAX;
 pub(super) const ABSENT_PRIMARY_INDEX_DATABASE_LENGTH: u64 = u64::MAX;
 pub(super) const ABSENT_PRIMARY_INDEX_DATABASE_MODIFIED_NANOS: u128 = u128::MAX;
 
-pub(super) fn delete_database_blocking(
+pub(crate) fn delete_database_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     repository: &DatabaseRepository,
     search_cache: &SearchCache,

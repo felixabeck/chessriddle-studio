@@ -2166,6 +2166,44 @@ fn merge_players_blocking(
     )
 }
 
+/// Merges every player whose name equals one of `names` (compared as exact-name search compares
+/// them) into the one with the lowest id. Players who met each other stay separate. Returns
+/// whether the names ended as at most one player.
+pub(crate) fn merge_players_named(
+    db: &mut SqliteConnection,
+    names: &[String],
+) -> Result<bool, Error> {
+    let wanted: std::collections::HashSet<String> = names
+        .iter()
+        .map(|name| name_identity::normalize_name(name))
+        .collect();
+    let mut matching: Vec<i32> = players::table
+        .select((players::id, players::name))
+        .load::<(i32, Option<String>)>(db)?
+        .into_iter()
+        .filter(|(id, name)| {
+            *id != 0
+                && name
+                    .as_deref()
+                    .is_some_and(|name| wanted.contains(&name_identity::normalize_name(name)))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    matching.sort_unstable();
+    let Some((target, others)) = matching.split_first() else {
+        return Ok(true);
+    };
+    let mut merged = true;
+    for source in others {
+        match merge_players_transaction(db, *source, *target) {
+            Ok(()) => {}
+            Err(Error::NotDistinctPlayers) => merged = false,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(merged)
+}
+
 fn merge_players_transaction(
     db: &mut SqliteConnection,
     source_player: i32,

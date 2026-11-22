@@ -1560,6 +1560,21 @@ fn lichess_games_url(
     since_ms: Option<i64>,
     until_ms: Option<i64>,
 ) -> Result<(reqwest::Url, String), Error> {
+    lichess_export_url(
+        player,
+        since_ms,
+        until_ms,
+        crate::lichess::ACCOUNT_EXPORT_PERFS,
+    )
+}
+
+/// The rated-games export of `player` restricted to `perfs`, oldest game first.
+fn lichess_export_url(
+    player: &str,
+    since_ms: Option<i64>,
+    until_ms: Option<i64>,
+    perfs: &[&str],
+) -> Result<(reqwest::Url, String), Error> {
     let player = crate::lichess::lichess_user_segment(player)?.to_owned();
     if since_ms.is_some_and(|since_ms| since_ms < 0)
         || until_ms.is_some_and(|until_ms| until_ms < 0)
@@ -1572,10 +1587,12 @@ fn lichess_games_url(
         .map_err(|_| Error::OAuthFailure("invalid Lichess endpoint".into()))?;
     url.path_segments_mut()
         .map_err(|_| Error::OAuthFailure("invalid Lichess endpoint".into()))?
+        // The base ends in a slash; without this the username would follow an empty segment.
+        .pop_if_empty()
         .push(&player);
     {
         let mut query = url.query_pairs_mut();
-        query.append_pair("perfType", &crate::lichess::ACCOUNT_EXPORT_PERFS.join(","));
+        query.append_pair("perfType", &perfs.join(","));
         query.append_pair("rated", "true");
         query.append_pair("sort", "dateAsc");
         if let Some(since_ms) = since_ms {
@@ -1586,6 +1603,50 @@ fn lichess_games_url(
         }
     }
     Ok((url, player))
+}
+
+/// Streams the rated games of `player` in `perfs` since `since_ms` into an anonymous temporary
+/// file and returns it. With a token the request is authenticated, without one it is anonymous;
+/// no other request is made and nothing is published to a destination.
+pub(crate) async fn export_lichess_games_to_file(
+    state: &AppState,
+    player: &str,
+    since_ms: Option<i64>,
+    perfs: &[&str],
+    token: Option<&str>,
+    cancellation: &CancellationToken,
+) -> Result<std::fs::File, Error> {
+    if perfs.is_empty()
+        || !perfs
+            .iter()
+            .all(|perf| crate::lichess::ACCOUNT_EXPORT_PERFS.contains(perf))
+    {
+        return Err(Error::InvalidInput(
+            "invalid Lichess export time controls".into(),
+        ));
+    }
+    let (url, _) = lichess_export_url(player, since_ms, None, perfs)?;
+    let mut file = crate::infra::blocking::BLOCKING_GATEWAY
+        .spawn_cancellable(cancellation.clone(), |_| Ok(tempfile::tempfile()?))
+        .await?;
+    download_payload_network(
+        OpClass::Lichess,
+        url,
+        &mut file,
+        state.http_transport.as_ref(),
+        token,
+        None,
+        cancellation.clone(),
+        None,
+        |_| Ok(()),
+    )
+    .await?;
+    crate::infra::blocking::BLOCKING_GATEWAY
+        .spawn_cancellable(cancellation.clone(), move |_| {
+            accept_plain_download_payload(&mut file)?;
+            Ok(file)
+        })
+        .await
 }
 
 fn lichess_coverage_url(

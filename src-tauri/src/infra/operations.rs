@@ -12,6 +12,7 @@ use futures_util::FutureExt;
 
 pub(crate) mod accounts;
 pub mod completions;
+pub(crate) mod opponents;
 
 use self::completions::{
     CompletionOutcome, EngineCompletion, EngineCompletionEntry, EngineInstallIntent,
