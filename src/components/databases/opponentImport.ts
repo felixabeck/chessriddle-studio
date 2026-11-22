@@ -177,7 +177,8 @@ async function importLink(
 /**
  * Downloads the link's online games into a fresh database. A second start for the same link
  * joins the running one. The previous database and the link stay as they were unless the run
- * imported games.
+ * imported games. The run ends, and leaves its in-flight state, only after the database listing
+ * has been refreshed.
  */
 export function runOpponentImport(
     deps: OpponentFlowDeps,
@@ -196,10 +197,12 @@ export function runOpponentImport(
                     : { kind: "failed", error },
         )
         .then((outcome): OpponentImportResult => ({ ...outcome, leftovers: cleanup.leftovers }))
-        .finally(() => {
+        .finally(async () => {
+            // The link already names the new database. The run stays in flight until the listing
+            // has been read again, so nothing shows the moment in which the listing lacks it.
+            await Promise.resolve(deps.mutateCache(DATABASE_LIST_KEY)).catch(() => undefined);
             running.delete(linkId);
             setInFlight(deps.store, linkId, undefined);
-            void deps.mutateCache(DATABASE_LIST_KEY);
         });
     running.set(linkId, run);
     return run;

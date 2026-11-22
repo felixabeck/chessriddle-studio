@@ -401,6 +401,39 @@ describe("runOpponentImport", () => {
         expect(store.get(opponentImportsAtom).has(ID)).toBe(false);
     });
 
+    test("the run stays in flight until the listing has been read again, and a failed refresh does not hold it", async () => {
+        const { store, deps, mutateCache } = setup();
+        mocks.importOpponentGames.mockResolvedValue(imported(2));
+        let refreshed: () => void = () => {};
+        mutateCache.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                refreshed = resolve;
+            }),
+        );
+        let ended = false;
+        const run = runOpponentImport(deps, ID, "title").then((result) => {
+            ended = true;
+            return result;
+        });
+        await vi.waitFor(() => expect(mutateCache).toHaveBeenCalledWith(DATABASE_LIST_KEY));
+        await Promise.resolve();
+
+        // The link names the new database already; the strip must still read as downloading.
+        expect(currentLink(store)?.database).toBeDefined();
+        expect(store.get(opponentImportsAtom).has(ID)).toBe(true);
+        expect(ended).toBe(false);
+
+        refreshed();
+        await expect(run).resolves.toMatchObject({ kind: "imported", games: 2 });
+        expect(store.get(opponentImportsAtom).has(ID)).toBe(false);
+
+        mutateCache.mockRejectedValueOnce(new Error("listing failed"));
+        await expect(runOpponentImport(deps, ID, "title")).resolves.toMatchObject({
+            kind: "imported",
+        });
+        expect(store.get(opponentImportsAtom).has(ID)).toBe(false);
+    });
+
     test("an unknown link fails without asking for anything", async () => {
         const { deps } = setup();
 
