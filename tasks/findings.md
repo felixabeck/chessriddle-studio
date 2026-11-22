@@ -28415,3 +28415,19 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Fix:** keep the annotation hue (DESIGN.md: NAG colours keep their meaning) but pick a text shade per scheme that reaches 4.5:1 on the card and on `surface-inset` variation blocks, for example shade 8–9 in light and 4–5 in dark, and assert the contrast in an e2e check with `contrastRatio` from `e2e/fixtures.ts`. Then drop the notation exclusion in `e2e/game-report.spec.ts`'s accessibility check.
 * **Proof:** axe output of `pnpm test:e2e:container` for `game-report.spec.ts` on 2026-11-22 (`color-contrast: … _moveText_…`, ratios above).
 * **Found by:** Claude Code, game-report build run, 2026-11-22.
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### An AppImage run without desktop integration never receives chessriddle-studio:// game links
+
+* **ID:** f-20261122-05 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** while planning the game-link scheme registration (build run studio-link-extension, 2026-11-22, plan review round 1, issue P-05)
+* **Where:** `src-tauri/tauri.conf.json` (`plugins.deep-link.desktop.schemes`), `src-tauri/linux/desktop-entry.template`, `src-tauri/src/infra/game_link.rs`. The scheme reaches a Linux desktop only through a desktop entry with `MimeType=x-scheme-handler/chessriddle-studio;` and `Exec=… %u`.
+* **Defect:** the `deb` and `rpm` packages install such an entry, and `scripts/install-local.sh` writes one. A downloaded AppImage that the user only marks executable and starts has no desktop entry at all, so the desktop knows no handler for `chessriddle-studio://`. The AppImage is the Linux format the updater serves.
+* **Failure scenario:** on Linux, download the AppImage from the release page, `chmod +x` it, start it, install the browser extension, and click "Analyze in ChessRiddle Studio" on a finished Lichess game. The browser reports no application for the link (or nothing happens); the game is not opened. With AppImageLauncher or another integration tool the packaged entry is installed and the link works.
+* **Fix:** let a running AppImage (`APPIMAGE` set) register a handler entry for itself, the way `tauri-plugin-deep-link`'s `register_all` does, with the cases that plugin leaves open decided first.
+* **Open question:** how does self-registration coexist with another installed copy and with a deleted AppImage? Writing `~/.local/share/applications/<name>-handler.desktop` and calling `xdg-mime default` takes the default handler away from a `deb`, `rpm` or `install-local` copy on the same machine, and the entry stays behind, pointing at a missing file, when the AppImage is moved or deleted. Options: register only when no handler is registered yet; register without `xdg-mime default`; remove the entry on a later start from another location; or document desktop integration as the requirement instead.
+* **Found by:** Claude Code, 2026-11-22, build run studio-link-extension (decision d-20261122-13 records the deferral).
