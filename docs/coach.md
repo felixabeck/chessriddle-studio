@@ -47,6 +47,8 @@ Not sent: other tabs, files, database contents beyond the move statistics of the
 
 The ChatGPT sign-in sends OpenAI a random id for this installation (stored beside the Coach's credential registry) and the app's name. The first-use notice in the panel tells the user which data goes to the chosen provider before the first question is sent.
 
+Every request of the Coach carries the app's shared user agent: the app's name and version and the publisher's contact address (`STUDIO_USER_AGENT` in `src-tauri/src/infra/net.rs`). It says nothing about the user.
+
 Provider error texts stay in the native log, shortened and without the connection's key. The renderer gets one of the codes in `src-tauri/src/coach/error.rs`.
 
 ## A turn
