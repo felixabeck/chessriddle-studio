@@ -73,7 +73,7 @@ function MoveCell(props: MoveCellProps) {
   let lightColor = unannotatedColor(theme.colors.gray[8]);
   let darkColor = unannotatedColor(theme.colors.gray[1]);
   let background = "transparent";
-  let hover = "var(--cf-interactive-hover)";
+  let hover = "var(--notation-move-hover, var(--cf-interactive-hover))";
 
   if (isAnnotated) {
     lightColor = annotationColor;

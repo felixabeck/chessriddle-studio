@@ -137,7 +137,7 @@ test.each([false, true])(
 );
 
 test.each([
-  [[], false, "transparent", "var(--cf-interactive-hover)"],
+  [[], false, "transparent", "var(--notation-move-hover, var(--cf-interactive-hover))"],
   [[], true, "var(--move-current-fill)", "var(--move-current-hover)"],
   [["!"], false, "transparent", "rgba(#099, 0.1)"],
   [["!"], true, "rgba(#099, 0.2)", "rgba(rgba(#099, 0.2), 0.25)"],

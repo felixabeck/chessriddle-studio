@@ -199,7 +199,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     test(`notation-hover: a plain move hovers in the warm interactive tint, the current move in gold, ${colorScheme}`, async ({
         page,
         mockScenario,
-    }) => {
+    }, testInfo) => {
         await page.emulateMedia({ colorScheme });
         await page.addInitScript(
             (colorScheme) => localStorage.setItem("mantine-color-scheme", colorScheme),
@@ -220,6 +220,13 @@ for (const colorScheme of ["light", "dark"] as const) {
         await move("Bc4").hover();
         const plain = await moveBackground(move("Bc4"), "var(--cf-interactive-hover)");
         expect(plain.actual).toBe(plain.expected);
+        // A variation sits on surface-inset, where the main line's hover would vanish.
+        await move("c5").hover();
+        const variation = await moveBackground(move("c5"), "var(--cf-bar-hover)");
+        expect(variation.actual).toBe(variation.expected);
+        await notation.screenshot({
+            path: testInfo.outputPath(`notation-hover-variation-${colorScheme}.png`),
+        });
 
         await move("e5!").hover();
         const current = await moveBackground(move("e5!"), CURRENT_MOVE_HOVER);

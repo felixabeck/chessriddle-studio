@@ -50,6 +50,9 @@
   --notation-scale: 0.9;
   --notation-move-font-weight: 400;
   --notation-unannotated-move-color: var(--mantine-color-dimmed);
+  /* interactive-hover is 2 lightness points from surface-inset, so a hovered move would vanish
+     here; the navigation row's warm beige reads on an inset surface (DESIGN.md). */
+  --notation-move-hover: var(--cf-bar-hover);
   --notation-variation-indent: 12px;
   --notation-variation-depth: 1;
   background-color: var(--cf-surface-inset);

@@ -79,7 +79,7 @@ and cards lg, and switches, segments and badges use full.
 | Inputs and select triggers | Inset or interactive fill, primary focus border and ring |
 | Combobox, Menu, Popover | Card surface, quiet gold border, rounded selected options; hovered items and the application-menu button take the `--cf-primary-hover` gold tint, never a gray |
 | Data tables | Hovered rows and sortable headers take the lighter, opaque `--cf-primary-row-hover` gold tint; a selected row keeps its own fill |
-| Notation moves | A plain move takes `--cf-interactive-hover` (warm beige) on hover; the current move takes a gold fill and quiet gold ring, and a previewed engine-line move the same gold fill; annotated moves keep their annotation colour |
+| Notation moves | A plain move takes `--cf-interactive-hover` (warm beige) on hover, and `--cf-bar-hover` inside a variation's `--cf-surface-inset` block; the current move takes a gold fill and quiet gold ring, and a previewed engine-line move the same gold fill; annotated moves keep their annotation colour |
 | Checkbox, Switch | Gold checked state, square checkbox and card switch thumb |
 | Badge | Primary, muted or semantic tinted pill with inset ring |
 | Slider, RangeSlider, Progress | Primary or explicit semantic fill |
