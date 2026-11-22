@@ -167,7 +167,7 @@ test("with the hover preview off, a hovered engine-line move takes the warm hove
     await move.hover();
     await expect(page.getByTestId("engine-line-preview")).toHaveCount(0);
     await expect(move).not.toHaveAttribute("aria-current", "true");
-    const hovered = await moveBackground(move, "var(--cf-bar-hover)");
+    const hovered = await moveBackground(move, "var(--cf-move-hover)");
     expect(hovered.actual).toBe(hovered.expected);
 });
 

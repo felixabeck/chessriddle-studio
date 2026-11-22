@@ -230,11 +230,11 @@ for (const colorScheme of ["light", "dark"] as const) {
         expect(resting.actual).toBe(resting.expected);
 
         await move("Bc4").hover();
-        const plain = await moveBackground(move("Bc4"), "var(--cf-bar-hover)");
+        const plain = await moveBackground(move("Bc4"), "var(--cf-move-hover)");
         expect(plain.actual).toBe(plain.expected);
         // A variation sits on surface-inset, where an opaque card hover would vanish.
         await move("c5").hover();
-        const variation = await moveBackground(move("c5"), "var(--cf-bar-hover)");
+        const variation = await moveBackground(move("c5"), "var(--cf-move-hover)");
         expect(variation.actual).toBe(variation.expected);
         await notation.screenshot({
             path: testInfo.outputPath(`notation-hover-variation-${colorScheme}.png`),
