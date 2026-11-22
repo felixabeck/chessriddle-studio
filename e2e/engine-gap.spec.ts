@@ -14,6 +14,7 @@ import {
     goToSettings,
     scrollbarFreeScreenshot,
     moveBackground,
+    CURRENT_MOVE_FILL,
     CURRENT_MOVE_HOVER,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
@@ -196,7 +197,7 @@ test("notation-focus: arrow keys after a pointer click leave no focus ring on th
 });
 
 for (const colorScheme of ["light", "dark"] as const) {
-    test(`notation-hover: a plain move hovers in the warm interactive tint, the current move in gold, ${colorScheme}`, async ({
+    test(`notation-hover: plain moves hover in warm beige, annotated ones in their colour, the current move in gold, ${colorScheme}`, async ({
         page,
         mockScenario,
     }, testInfo) => {
@@ -214,13 +215,28 @@ for (const colorScheme of ["light", "dark"] as const) {
             colorScheme,
         );
         const move = (name: string) => notation.getByRole("button", { name, exact: true });
+        await move("e4").click();
+        await expect(move("e4")).toHaveAttribute("aria-current", "true");
+
+        // A non-current annotated move hovers in its own annotation tint.
+        await move("e5!").hover();
+        const ownHover = await move("e5!").evaluate((cell) =>
+            cell.style.getPropertyValue("--move-hover"),
+        );
+        expect(ownHover).toMatch(/^rgba\(/);
+        const annotated = await moveBackground(move("e5!"), ownHover);
+        expect(annotated.actual).toBe(annotated.expected);
+
         await move("e5!").click();
         await expect(move("e5!")).toHaveAttribute("aria-current", "true");
+        await page.mouse.move(0, 0);
+        const resting = await moveBackground(move("e5!"), CURRENT_MOVE_FILL);
+        expect(resting.actual).toBe(resting.expected);
 
         await move("Bc4").hover();
-        const plain = await moveBackground(move("Bc4"), "var(--cf-interactive-hover)");
+        const plain = await moveBackground(move("Bc4"), "var(--cf-bar-hover)");
         expect(plain.actual).toBe(plain.expected);
-        // A variation sits on surface-inset, where the main line's hover would vanish.
+        // A variation sits on surface-inset, where an opaque card hover would vanish.
         await move("c5").hover();
         const variation = await moveBackground(move("c5"), "var(--cf-bar-hover)");
         expect(variation.actual).toBe(variation.expected);

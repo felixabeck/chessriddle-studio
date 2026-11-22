@@ -67,13 +67,14 @@ function MoveCell(props: MoveCellProps) {
   const unannotatedColor = (fallback: string) =>
     `var(--notation-unannotated-move-color, ${fallback})`;
 
-  // An unannotated move takes the warm palette (DESIGN.md): the interactive hover on hover and
-  // the gold current-move fill when current, never Mantine's neutral gray. Fills are the same
-  // in both schemes; only the text colour differs.
+  // An unannotated move takes the warm palette (DESIGN.md), never Mantine's neutral gray: the
+  // translucent bar hover, which reads on the card and on the surface-inset variation blocks
+  // and engine lines alike, and the gold current-move fill when current. Fills are the same in
+  // both schemes; only the text colour differs.
   let lightColor = unannotatedColor(theme.colors.gray[8]);
   let darkColor = unannotatedColor(theme.colors.gray[1]);
   let background = "transparent";
-  let hover = "var(--notation-move-hover, var(--cf-interactive-hover))";
+  let hover = "var(--cf-bar-hover)";
 
   if (isAnnotated) {
     lightColor = annotationColor;

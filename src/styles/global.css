@@ -108,6 +108,10 @@ cg-board square.oc.move-dest:hover {
      selected row (unlayered class) keeps its own fill over this layered hover. */
   /* Opaque over the table body: OpeningsTable's sticky totals row must hide the rows below. */
   --cf-primary-row-hover: color-mix(in srgb, var(--cf-primary) 5%, var(--mantine-color-body));
+  /* Hover fill for notation and engine-line moves. Translucent, so it reads on the card and on
+     surface-inset alike (interactive-hover is 2 lightness points from surface-inset), and stays
+     quieter than the gold current move. */
+  --cf-move-hover: color-mix(in srgb, var(--cf-border-strong) 60%, transparent);
   --mantine-datatable-highlight-on-hover-color-light: var(--cf-primary-row-hover);
   --mantine-datatable-highlight-on-hover-color-dark: var(--cf-primary-row-hover);
 }
