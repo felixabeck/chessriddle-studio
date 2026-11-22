@@ -1,0 +1,451 @@
+import { Button, Checkbox, Group, NativeSelect, Paper, Progress, Stack, Text } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { useAtom, useAtomValue, useStore } from "jotai";
+import { Plus, SlidersHorizontal, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useSWRConfig } from "swr";
+import useSWRImmutable from "swr/immutable";
+import type { DatabaseHandle, OpponentAccount, OpponentTimeControl } from "@/bindings";
+import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { useDatabaseList } from "@/hooks/useDatabaseList";
+import { useProgress } from "@/hooks/useProgress";
+import { failureUnlessCancelled } from "@/platform/errors";
+import { opponentImportsAtom, opponentLinksAtom } from "@/state/atoms";
+import {
+  findOpponentLink,
+  MAX_OPPONENT_ACCOUNTS,
+  OPPONENT_PERIODS,
+  OPPONENT_TIME_CONTROLS,
+  type OpponentLink,
+  type OpponentPeriod,
+  opponentProviderName,
+  withOpponentAccount,
+  withOpponentFilter,
+  withoutOpponentAccount,
+} from "@/state/opponentLinks";
+import ConfirmModal from "../common/ConfirmModal";
+import { IconAction } from "../common/IconAction";
+import { SiteLogo } from "../home/SiteLogo";
+import AddOpponentAccount from "./AddOpponentAccount";
+import {
+  cancelOpponentImport,
+  type OpponentImportResult,
+  removeOpponentGames,
+  runOpponentImport,
+  unlinkOpponent,
+} from "./opponentImport";
+import { opponentPlayerIds } from "./opponentLookup";
+
+/** What the database listing says about the link's downloaded games. */
+export type OpponentGames =
+  | { kind: "none" }
+  | { kind: "games"; count: number; file: DatabaseHandle }
+  | { kind: "unreadable" }
+  | { kind: "pending" }
+  | { kind: "failed" };
+
+/** Derives the state of a link's online games from the listing; the link itself is never rewritten. */
+export function opponentGames(
+  link: OpponentLink | undefined,
+  listing: ReturnType<typeof useDatabaseList>["data"],
+  listingError: unknown,
+): OpponentGames {
+  if (!link?.database) return { kind: "none" };
+  if (!listing)
+    return failureUnlessCancelled(listingError) ? { kind: "failed" } : { kind: "pending" };
+  const entry = listing.databases.find((database) => database.filename === link.database);
+  if (!entry) return { kind: "none" };
+  return entry.type === "success"
+    ? { kind: "games", count: entry.game_count, file: entry.file }
+    : { kind: "unreadable" };
+}
+
+function ImportProgress({ ticket, label }: { ticket: string; label: string }) {
+  const progress = useProgress(ticket).progress;
+  // A Lichess export has no known length, so the bar only moves between accounts.
+  return <Progress value={progress} size="sm" mt="xs" aria-label={label} animated />;
+}
+
+/**
+ * The online accounts of the player shown on a database player card: which accounts are linked,
+ * how many online games are downloaded, and the actions on them.
+ */
+function OpponentAccounts({ playerName }: { playerName: string }) {
+  const { t } = useTranslation();
+  const store = useStore();
+  const { mutate: mutateCache } = useSWRConfig();
+  const deps = useMemo(() => ({ store, mutateCache }), [store, mutateCache]);
+  const [links, setLinks] = useAtom(opponentLinksAtom);
+  const imports = useAtomValue(opponentImportsAtom);
+  const { data: listing, error: listingError } = useDatabaseList();
+  const [expanded, setExpanded] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [confirming, setConfirming] = useState<"games" | "unlink" | null>(null);
+
+  const link = findOpponentLink(links, playerName);
+  const games = opponentGames(link, listing, listingError);
+  const inFlight = link !== undefined && imports.has(link.id);
+  const ticket = link ? (imports.get(link.id) ?? null) : null;
+  const gamesFile = games.kind === "games" ? games.file : null;
+  const usernames = link?.accounts.map((account) => account.username).join("\n") ?? "";
+  // Usernames that met each other stay separate players; the board then shows the first one.
+  const { data: playerIds } = useSWRImmutable(
+    gamesFile && link ? (["opponent-players", gamesFile, usernames] as const) : null,
+    ([, file]) => opponentPlayerIds(file, link!.accounts),
+  );
+
+  function linkAccount(account: OpponentAccount) {
+    setLinks((current) => withOpponentAccount(current, playerName, account, crypto.randomUUID()));
+    setExpanded(true);
+  }
+
+  function report(result: OpponentImportResult) {
+    if (result.kind === "cancelled") return;
+    if (result.kind === "failed") {
+      notifyUnlessCancelled(t("Common.Error"), result.error);
+      return;
+    }
+    if (result.kind === "imported") {
+      notifications.show({
+        color: "success",
+        message: t("Databases.Opponent.Downloaded", {
+          defaultValue: "Downloaded {{count}} online games.",
+          count: result.games,
+        }),
+      });
+      if (result.leftovers > 0) reportLeftover();
+      return;
+    }
+    if (result.kind === "noGames") {
+      notifications.show({
+        color: "warning",
+        message: t("Databases.Opponent.NoMatch", {
+          defaultValue: "No game matches the period and time controls.",
+        }),
+      });
+      return;
+    }
+    const site = opponentProviderName(result.account.provider);
+    const { username } = result.account;
+    notifications.show({
+      color: "danger",
+      title: t("Common.Error"),
+      message:
+        result.reason === "notFound"
+          ? t("Databases.Opponent.Failure.NotFound", {
+              defaultValue: "{{site}} has no account named {{username}}.",
+              site,
+              username,
+            })
+          : result.reason === "rateLimited"
+            ? t("Databases.Opponent.Failure.RateLimited", {
+                defaultValue: "{{site}} is limiting requests. Try again in a minute.",
+                site,
+              })
+            : result.reason === "signIn"
+              ? t("Databases.Opponent.Failure.SignIn", {
+                  defaultValue:
+                    "Lichess rejected your sign-in. Sign in again on the Accounts page.",
+                })
+              : t("Databases.Opponent.Failure.Other", {
+                  defaultValue: "The games of {{username}} on {{site}} could not be downloaded.",
+                  site,
+                  username,
+                }),
+    });
+  }
+
+  function reportLeftover() {
+    notifications.show({
+      color: "warning",
+      message: t("Databases.Opponent.LeftOver", {
+        defaultValue:
+          "An older copy of the online games could not be deleted. You can delete it in the Library.",
+      }),
+    });
+  }
+
+  if (!link) {
+    return (
+      <Group justify="space-between" wrap="wrap" gap="xs" mt="xs" data-opponent-accounts>
+        <Text size="sm" c="dimmed">
+          {t("Databases.Opponent.Title", { defaultValue: "Online accounts" })}
+        </Text>
+        <Button
+          size="xs"
+          variant="light"
+          leftSection={<Plus size="1rem" />}
+          onClick={() => setAdding(true)}
+        >
+          {t("Databases.Opponent.Add", { defaultValue: "Add online account" })}
+        </Button>
+        <AddOpponentAccount
+          opened={adding}
+          onClose={() => setAdding(false)}
+          linked={[]}
+          onLink={linkAccount}
+        />
+      </Group>
+    );
+  }
+
+  const downloading = t("Databases.Opponent.Downloading", {
+    defaultValue: "Downloading online games",
+  });
+  const status =
+    games.kind === "games"
+      ? t("Databases.Opponent.Games", {
+          defaultValue: "{{count}} online games",
+          count: games.count,
+        })
+      : games.kind === "unreadable"
+        ? t("Databases.Opponent.Unreadable", { defaultValue: "The online games cannot be read" })
+        : games.kind === "failed"
+          ? t("Databases.Opponent.ListFailed", {
+              defaultValue: "The databases could not be listed",
+            })
+          : games.kind === "pending"
+            ? t("Common.Loading")
+            : t("Databases.Opponent.NoGames", { defaultValue: "No games downloaded" });
+  const problem = games.kind === "unreadable" || games.kind === "failed";
+
+  return (
+    <Paper variant="inset" p="xs" mt="xs" data-opponent-accounts>
+      <Group justify="space-between" wrap="wrap" gap="xs" align="flex-start">
+        <Group gap="xs" miw={0} wrap="wrap">
+          {link.accounts.map((account) => (
+            <Group
+              key={`${account.provider}:${account.username.toLowerCase()}`}
+              gap={4}
+              wrap="nowrap"
+              miw={0}
+            >
+              <SiteLogo site={account.provider} size={18} />
+              <Text size="sm" fw={500} className="wrap-anywhere">
+                {account.username}
+              </Text>
+              {expanded && (
+                <IconAction
+                  label={t("Databases.Opponent.RemoveAccount", {
+                    defaultValue: "Remove {{username}}",
+                    username: account.username,
+                  })}
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  disabled={inFlight}
+                  onClick={() =>
+                    link.accounts.length === 1
+                      ? setConfirming("unlink")
+                      : setLinks((current) => withoutOpponentAccount(current, link.id, account))
+                  }
+                >
+                  <X size="0.9rem" />
+                </IconAction>
+              )}
+            </Group>
+          ))}
+          <Text
+            size="sm"
+            c={problem ? "danger" : "dimmed"}
+            role={problem ? "alert" : "status"}
+            data-opponent-status
+          >
+            {inFlight ? downloading : status}
+          </Text>
+        </Group>
+        <Group gap={4} wrap="nowrap">
+          {inFlight ? (
+            <Button
+              size="xs"
+              variant="default"
+              disabled={ticket === null}
+              onClick={() =>
+                void cancelOpponentImport(store, link.id).catch((error) =>
+                  notifyUnlessCancelled(t("Common.Error"), error),
+                )
+              }
+            >
+              {t("Common.Cancel")}
+            </Button>
+          ) : (
+            <Button
+              size="xs"
+              variant={games.kind === "games" ? "light" : "filled"}
+              onClick={() =>
+                void runOpponentImport(
+                  deps,
+                  link.id,
+                  t("Databases.Opponent.DatabaseTitle", {
+                    defaultValue: "{{name}} (online)",
+                    name: link.playerName,
+                  }),
+                ).then(report)
+              }
+            >
+              {games.kind === "games"
+                ? t("Databases.Opponent.Update", { defaultValue: "Update games" })
+                : t("Databases.Opponent.Download", { defaultValue: "Download games" })}
+            </Button>
+          )}
+          <IconAction
+            label={t("Databases.Opponent.Manage", { defaultValue: "Manage online accounts" })}
+            variant="subtle"
+            color="gray"
+            pressed={expanded}
+            onClick={() => setExpanded((open) => !open)}
+          >
+            <SlidersHorizontal size="1rem" />
+          </IconAction>
+        </Group>
+      </Group>
+      {inFlight && ticket !== null && <ImportProgress ticket={ticket} label={downloading} />}
+      {playerIds !== undefined && playerIds.length > 1 && (
+        <Text size="xs" c="dimmed" mt={4} className="wrap-anywhere" data-opponent-separate>
+          {t("Databases.Opponent.Separate", {
+            defaultValue:
+              "The linked usernames played each other, so they stay separate players. The board shows the games of {{username}}.",
+            username: link.accounts[0].username,
+          })}
+        </Text>
+      )}
+      {expanded && (
+        <Stack gap="xs" mt="xs" data-opponent-details>
+          {link.accounts.length < MAX_OPPONENT_ACCOUNTS && (
+            <Group>
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<Plus size="1rem" />}
+                onClick={() => setAdding(true)}
+              >
+                {t("Databases.Opponent.Add", { defaultValue: "Add online account" })}
+              </Button>
+            </Group>
+          )}
+          <Group gap="md" align="flex-start" wrap="wrap">
+            <NativeSelect
+              size="xs"
+              label={t("Databases.OpeningTree.Since", { defaultValue: "Since" })}
+              disabled={inFlight}
+              value={String(link.filter.years ?? "all")}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                const years = (value === "all" ? null : Number(value)) as OpponentPeriod;
+                setLinks((current) =>
+                  withOpponentFilter(current, link.id, { ...link.filter, years }),
+                );
+              }}
+              data={OPPONENT_PERIODS.map((years) => ({
+                value: String(years ?? "all"),
+                label:
+                  years === 1
+                    ? t("Databases.OpeningTree.OneYear", { defaultValue: "1 year" })
+                    : years === 3
+                      ? t("Databases.Opponent.ThreeYears", { defaultValue: "3 years" })
+                      : years === 5
+                        ? t("Databases.OpeningTree.FiveYears", { defaultValue: "5 years" })
+                        : t("Databases.OpeningTree.AllGames", { defaultValue: "All games" }),
+              }))}
+            />
+            <Checkbox.Group
+              label={t("Databases.Opponent.TimeControls", { defaultValue: "Time controls" })}
+              value={link.filter.timeControls}
+              onChange={(value) =>
+                setLinks((current) =>
+                  withOpponentFilter(current, link.id, {
+                    ...link.filter,
+                    timeControls: value as OpponentTimeControl[],
+                  }),
+                )
+              }
+            >
+              <Group gap="sm" mt={4} wrap="wrap">
+                {OPPONENT_TIME_CONTROLS.map((control) => (
+                  <Checkbox
+                    key={control}
+                    size="xs"
+                    value={control}
+                    disabled={inFlight}
+                    label={
+                      control === "bullet"
+                        ? t("TimeControl.Bullet")
+                        : control === "blitz"
+                          ? t("TimeControl.Blitz")
+                          : control === "rapid"
+                            ? t("TimeControl.Rapid")
+                            : control === "classical"
+                              ? t("TimeControl.Classical")
+                              : t("TimeControl.Correspondence")
+                    }
+                  />
+                ))}
+              </Group>
+            </Checkbox.Group>
+          </Group>
+          <Text size="xs" c="dimmed">
+            {t("Databases.Opponent.FilterHint", {
+              defaultValue: "Both apply to the next download.",
+            })}
+          </Text>
+          <Group gap="xs">
+            <Button
+              size="xs"
+              variant="subtle"
+              color="danger"
+              disabled={inFlight || games.kind === "none" || games.kind === "pending"}
+              onClick={() => setConfirming("games")}
+            >
+              {t("Databases.Opponent.RemoveGames", { defaultValue: "Remove online games" })}
+            </Button>
+            <Button
+              size="xs"
+              variant="subtle"
+              color="danger"
+              disabled={inFlight}
+              onClick={() => setConfirming("unlink")}
+            >
+              {t("Databases.Opponent.Unlink", { defaultValue: "Unlink accounts" })}
+            </Button>
+          </Group>
+        </Stack>
+      )}
+      <AddOpponentAccount
+        opened={adding}
+        onClose={() => setAdding(false)}
+        linked={link.accounts}
+        onLink={linkAccount}
+      />
+      <ConfirmModal
+        title={t("Databases.Opponent.RemoveGames", { defaultValue: "Remove online games" })}
+        description={t("Databases.Opponent.RemoveGames.Confirm", {
+          defaultValue:
+            "The downloaded online games of {{name}} are deleted. The linked accounts stay.",
+          name: link.playerName,
+        })}
+        confirmLabel={t("Databases.Opponent.RemoveGames", { defaultValue: "Remove online games" })}
+        opened={confirming === "games"}
+        onClose={() => setConfirming(null)}
+        onConfirm={async () => {
+          if ((await removeOpponentGames(deps, link.id)) > 0) reportLeftover();
+        }}
+      />
+      <ConfirmModal
+        title={t("Databases.Opponent.Unlink", { defaultValue: "Unlink accounts" })}
+        description={t("Databases.Opponent.Unlink.Confirm", {
+          defaultValue: "The linked accounts of {{name}} and their downloaded games are removed.",
+          name: link.playerName,
+        })}
+        confirmLabel={t("Databases.Opponent.Unlink", { defaultValue: "Unlink accounts" })}
+        opened={confirming === "unlink"}
+        onClose={() => setConfirming(null)}
+        onConfirm={async () => {
+          if ((await unlinkOpponent(deps, link.id)) > 0) reportLeftover();
+        }}
+      />
+    </Paper>
+  );
+}
+
+export default OpponentAccounts;

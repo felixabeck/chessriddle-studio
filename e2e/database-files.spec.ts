@@ -3974,3 +3974,196 @@ test("database-files: the panels sit beside the notation below a database strip 
     await expect.poll(geometry).toEqual(widened);
     expect(await page.evaluate(() => localStorage.getItem("panels-beside-notation"))).toBe("true");
 });
+
+const opponentLinkId = "11111111-1111-4111-8111-111111111111";
+const opponentDatabase = `opponent-${opponentLinkId}-0a1b2c3d.db3`;
+
+/** Opens the fixture player's card in the Players tab and returns the pane holding it. */
+async function openFirstWhiteCard(page: Page) {
+    await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+    await page.getByRole("tab", { name: "Players", exact: true }).click();
+    const players = page.getByRole("tabpanel", { name: "Players", exact: true });
+    await players
+        .locator('[data-database-pane="table"] tbody tr')
+        .filter({ hasText: "First White" })
+        .click();
+    return players.locator('[data-database-pane="preview"]');
+}
+
+for (const surface of [
+    { width: 1440, scale: "100", scheme: "light" },
+    { width: 320, scale: "200", scheme: "dark" },
+] as const) {
+    test(`database-files: an opponent's online account is looked up, confirmed and linked at ${surface.width}px`, async ({
+        page,
+        mockScenario,
+        assertNoHorizontalOverflow,
+    }) => {
+        await page.addInitScript(({ scale, scheme }) => {
+            localStorage.setItem("font-size", scale);
+            localStorage.setItem("mantine-color-scheme", scheme);
+        }, surface);
+        await page.emulateMedia({ colorScheme: surface.scheme });
+        await page.setViewportSize({ width: surface.width, height: 1000 });
+        await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+        await mockScenario({
+            commands: {
+                ...databaseLayoutCommands,
+                get_public_lichess_json: {
+                    result: JSON.stringify({
+                        id: "firstwhite",
+                        username: "FirstWhite",
+                        title: "IM",
+                        profile: { realName: "First White", flag: "DE" },
+                        count: { rated: 4321 },
+                    }),
+                },
+            },
+        });
+        const preview = await openFirstWhiteCard(page);
+        const strip = preview.locator("[data-opponent-accounts]");
+        await expect(strip).toContainText("Online accounts");
+        // Below the split breakpoint the card keeps a minimum width inside its scrolling pane.
+        await assertNothingClipped(strip, { mode: "reachable" });
+
+        await strip.getByRole("button", { name: "Add online account", exact: true }).click();
+        const dialog = page.getByRole("dialog", { name: "Add online account", exact: true });
+        await dialog.getByRole("textbox", { name: "Username" }).fill("firstwhite");
+        await dialog.getByRole("button", { name: "Look up", exact: true }).click();
+        const profile = dialog.locator("[data-opponent-profile]");
+        await expect(profile).toContainText("FirstWhite");
+        await expect(profile).toContainText("IM");
+        await expect(profile).toContainText("First White, DE");
+        await expect(profile).toContainText("4321 rated games");
+        const lookups = await page.evaluate(() =>
+            window.__E2E_TAURI__
+                .invocations()
+                .filter(({ command }) => command === "get_public_lichess_json")
+                .map(({ args }) => args),
+        );
+        expect(lookups).toEqual([{ request: { kind: "account", username: "firstwhite" } }]);
+        await assertNothingClipped(dialog);
+        await assertNoHorizontalOverflow();
+        await waitForFontsSettled(page);
+        await profile.scrollIntoViewIfNeeded();
+        await expect(page).toHaveScreenshot(`opponent-account-confirm-${surface.width}.png`);
+
+        await dialog.getByRole("button", { name: "Link account", exact: true }).click();
+        await expect(dialog).toBeHidden();
+        await expect(strip).toContainText("FirstWhite");
+        await expect(strip.locator("[data-opponent-status]")).toHaveText("No games downloaded");
+        // A new link opens on its settings: the last three years, every time control but bullet.
+        await expect(strip.locator("[data-opponent-details]")).toBeVisible();
+        await expect(strip.getByRole("combobox", { name: "Since" })).toHaveValue("3");
+        await expect(strip.getByRole("checkbox", { name: "Bullet" })).not.toBeChecked();
+        for (const control of ["Blitz", "Rapid", "Classical", "Correspondence"]) {
+            await expect(strip.getByRole("checkbox", { name: control })).toBeChecked();
+        }
+        const stored = await page.evaluate(() =>
+            JSON.parse(localStorage.getItem("opponent-links") ?? "[]"),
+        );
+        expect(stored).toMatchObject([
+            {
+                playerName: "First White",
+                accounts: [{ provider: "lichess", username: "FirstWhite" }],
+                filter: {
+                    years: 3,
+                    timeControls: ["blitz", "rapid", "classical", "correspondence"],
+                },
+            },
+        ]);
+        await assertNothingClipped(strip, { mode: "reachable" });
+        await assertNoHorizontalOverflow();
+        await page.mouse.move(0, 0);
+        await strip.evaluate((node) => node.scrollIntoView({ block: "start", inline: "start" }));
+        await expect(page).toHaveScreenshot(`opponent-accounts-linked-${surface.width}.png`);
+    });
+}
+
+test("database-files: an opponent's downloaded online games show their count beside the accounts", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [
+        "opponent-links",
+        JSON.stringify([
+            {
+                id: opponentLinkId,
+                playerName: "First White",
+                accounts: [
+                    { provider: "lichess", username: "FirstWhite" },
+                    { provider: "chesscom", username: "first_white" },
+                ],
+                filter: { years: 5, timeControls: ["blitz", "rapid"] },
+                database: opponentDatabase,
+            },
+        ]),
+    ] as const);
+    await page.addInitScript(() => localStorage.setItem("font-size", "100"));
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+    await mockScenario({
+        commands: {
+            ...databaseLayoutCommands,
+            list_workspace_databases: {
+                result: {
+                    entries: [
+                        {
+                            handle: { id: { id: gameOpeningFixture.databaseId }, kind: "database" },
+                            filename: "opening.db3",
+                            availability: "available",
+                        },
+                        {
+                            handle: { id: { id: "opponent-online-db" }, kind: "database" },
+                            filename: opponentDatabase,
+                            availability: "available",
+                        },
+                    ],
+                    unread: [],
+                },
+            },
+            get_db_info: {
+                ...databaseLayoutCommands.get_db_info,
+                databaseInfo: {
+                    "opponent-online-db": {
+                        status: "ready",
+                        filename: opponentDatabase,
+                        title: "First White (online)",
+                        description: "",
+                        game_count: 1234,
+                        player_count: 400,
+                        event_count: 3,
+                        storage_size: "8192",
+                        indexed: true,
+                    },
+                },
+            },
+        },
+    });
+    const preview = await openFirstWhiteCard(page);
+    const strip = preview.locator("[data-opponent-accounts]");
+    await expect(strip.locator("[data-opponent-status]")).toHaveText("1234 online games");
+    await expect(strip).toContainText("FirstWhite");
+    await expect(strip).toContainText("first_white");
+    await expect(strip.getByRole("button", { name: "Update games", exact: true })).toBeVisible();
+    await expect(strip.locator("[data-opponent-details]")).toHaveCount(0);
+    // Both usernames resolve to one player of the opponent's database, so nothing is noted.
+    await expect(strip.locator("[data-opponent-separate]")).toHaveCount(0);
+
+    await strip.getByRole("button", { name: "Manage online accounts", exact: true }).click();
+    await expect(strip.getByRole("combobox", { name: "Since" })).toHaveValue("5");
+    await expect(strip.getByRole("button", { name: "Remove online games" })).toBeEnabled();
+    await strip.getByRole("button", { name: "Remove online games", exact: true }).click();
+    const confirmation = page.getByRole("dialog", { name: "Remove online games", exact: true });
+    await expect(confirmation).toContainText(
+        "The downloaded online games of First White are deleted. The linked accounts stay.",
+    );
+    await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(confirmation).toBeHidden();
+    await assertNothingClipped(strip, { mode: "reachable" });
+    await assertNoHorizontalOverflow();
+    await waitForFontsSettled(page);
+    await page.mouse.move(0, 0);
+    await expect(page).toHaveScreenshot("opponent-accounts-downloaded.png");
+});

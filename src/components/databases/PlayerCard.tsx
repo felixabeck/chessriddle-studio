@@ -7,6 +7,7 @@ import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import { useDatabaseContentRevision } from "@/state/linkedCollections";
 import PersonalPlayerCard from "../home/PersonalCard";
+import OpponentAccounts from "./OpponentAccounts";
 
 function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) {
   const { t } = useTranslation();
@@ -54,6 +55,7 @@ function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) 
           name={player.name!}
           info={info}
           isDatabase
+          notice={<OpponentAccounts playerName={player.name!} />}
           databasePlayer={{ player, file }}
         />
       )}

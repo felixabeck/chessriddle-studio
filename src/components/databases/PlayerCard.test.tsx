@@ -36,10 +36,13 @@ vi.mock("@/state/linkedCollections", async (importOriginal) => {
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("../home/PersonalCard", () => ({
-  default: (props: unknown) => {
+  default: (props: { notice?: React.ReactNode }) => {
     mocks.personalCard(props);
-    return <div>player-card</div>;
+    return <div>player-card{props.notice}</div>;
   },
+}));
+vi.mock("./OpponentAccounts", () => ({
+  default: ({ playerName }: { playerName: string }) => <div>online accounts of {playerName}</div>,
 }));
 vi.mock("@mantine/core", () => ({
   Center: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -105,8 +108,11 @@ test("the database caller passes its own player and database to the shared perso
     name: player.name,
     info,
     isDatabase: true,
+    notice: expect.anything(),
     databasePlayer: { player, file },
   });
+  // The player's online accounts sit on the card, looked up by the player's name.
+  expect(container.textContent).toContain("online accounts of Magnus");
 });
 
 test("a linked collection generation change refetches game info and a pending lookup does not fetch", async () => {
