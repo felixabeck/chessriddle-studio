@@ -4805,10 +4805,17 @@ mod blocking_offload_scans {
             assert!(dispatch.contains(&call), "{wrapper}");
         }
 
+        // The PGN command and the opponent import share one conversion core: the command's
+        // blocking function hands its sources to it, and the core emits the progress frames.
         let convert = body_at_indent(db, &blocking_fn_signature(db, "convert_pgn"));
         assert!(
-            convert.contains("ConvertProgress"),
-            "convert_pgn_blocking must emit ConvertProgress: {convert}"
+            convert.contains("convert_sources_blocking("),
+            "convert_pgn_blocking must run the shared conversion core: {convert}"
+        );
+        let convert_core = body_at_indent(db, &blocking_fn_signature(db, "convert_sources"));
+        assert!(
+            convert_core.contains("ConvertProgress"),
+            "convert_sources_blocking must emit ConvertProgress: {convert_core}"
         );
         let convert_wrapper = command_dispatch_body(db, "convert_pgn");
         let convert_dispatch = gateway_closure(convert_wrapper, "convert_pgn");
