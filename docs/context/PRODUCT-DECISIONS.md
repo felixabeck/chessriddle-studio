@@ -319,3 +319,30 @@ finding ids and date.
   need to be that wide and the annotate is more compact and better visualized on the
   right side next to the moves."
 - **Date:** 2026-11-22.
+
+## 2026-11-22 — Game report: marks option, backward analysis, saved-only numbers, Lichess-style accuracy, key moments
+
+- **Question:** The game-report plan (`tasks/plans/2026-11-22-game-report-improvements.md`)
+  presented five changes to what the user sees beyond repairing defects, each with a
+  recommendation.
+- **Choice:** All five as recommended.
+  - **P1:** A "Mark moves" option, on by default. When on, a report replaces the existing
+    `??`, `?`, `?!`, `!`, `!!`, `!?` on the main line (one undo brings them back); when off,
+    a report writes evaluations only.
+  - **P2:** The "Reversed analysis" option is removed; a report always analyses from the
+    last move backwards.
+  - **P3:** Accuracy and ACPL ignore the live engine and use saved evaluations only.
+  - **P4:** Game accuracy per side is the mean of a volatility-weighted mean and the
+    harmonic mean, as on Lichess.
+  - **P5:** A "Key moments" list on the Report tab shows the marked mainline moves.
+- **Reasons (the plan's, confirmed by Felix):** P1: a re-run must not leave the previous
+  report's marks behind, and a user with hand-made marks needs a way to keep them. P2:
+  backwards is the better technique (the engine's hash carries over from later positions)
+  and the option means nothing to a club player. P3: today the numbers drift while
+  browsing with the engine on. P4: one disastrous move in an otherwise clean game no
+  longer halves the number, and users compare with Lichess. P5: today the only way to see
+  the mistakes is to click the count buttons one move at a time.
+- **How Felix decided:** by sending the handover prompt with the decision line "P1 yes,
+  P2 yes, P3 yes, P4 yes, P5 yes".
+- **Findings:** none; the plan is the record. Related known limit: `f-20261122-03`.
+- **Date:** 2026-11-22.
