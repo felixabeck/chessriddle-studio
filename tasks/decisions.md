@@ -13751,3 +13751,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** No traced defect names them; the plan's defects are the guard, mate handling and the inputs. Reversal path: change the constants in the R1 function and the per-move formula in `getGameStats`.
 * **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"57e6ce732c7b44c79bd062d5b2f934f52f340a2b8a8e5c2b2a1fce0c5efb2545","input_sha256":"134299c3b16a6f83fd6718874df50f496d27e3ae7982f9bede7595c32f483bce","kind":"mutation-receipt","operation":"9cac40e3d81d25e19647fd629f65d1b35e7221be758972f69cad209fbdf2b2c2","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-10"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-11 — Does prepare_analysis supersede a running report in the same tab natively?
+
+* **Question:** A second report submit in one tab starts a second engine. Should the native side cancel the tab's earlier report when a new one is prepared?
+* **Governs:** -
+* **Chosen:** No native supersession. The renderer refuses the shortcut and a submit while the tab runs a report, and the existing preparation guard supersedes a second submit before the reservation returns (plan R4).
+* **Rejected:** Cancelling the tab's earlier analysis tickets and engines inside `prepare_analysis`.
+* **Reason:** The only everyday path to a second run is the shortcut or a second submit, which the renderer closes; tab close and webview teardown already cancel natively. Plan review round 1 showed the native variant needs ticket-scoped engine cancellation, a new outcome for a superseded reservation and care around the registry mutex. Reversal path: cancel the tab's earlier analysis tickets and their `analysis`-keyed engines inside `prepare_analysis`.
+* **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"b8386086e3de8df82f2a66ac58ef534c5a37fd4d60c473565906a0826cfdc29d","input_sha256":"b79b80ab8df71a7126cff8af4b27a98114fc555fc09bc5d60a3ac0c10ff4ea64","kind":"mutation-receipt","operation":"9f175c824ff14cbd2967b0851b97e04a4e70f63c8e55aad9cb5fff949a5ebb7a","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-11"],"target":"decisions-ledger","v":1} -->
