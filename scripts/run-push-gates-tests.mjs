@@ -28,7 +28,13 @@ import {
   runPushGates,
   selectPreReviewLanes,
 } from "./run-push-gates.mjs";
-import { VITEST_MINIMUM_BUDGET_BYTES, workerCount } from "./gate-parallelism.mjs";
+import {
+  CONSERVATIVE_CGROUP_LIMIT_BYTES,
+  UNSIZED_PROCESS_RESERVE_BYTES,
+  VITEST_MINIMUM_BUDGET_BYTES,
+  vitestMaxWorkers,
+  workerCount,
+} from "./gate-parallelism.mjs";
 import { E2E_CONTAINER_MEMORY_BYTES } from "./run-e2e-container.mjs";
 import { startNodeCli } from "./mutation-runner-test-harness.mjs";
 import { superviseChild } from "./child-supervisor.mjs";
@@ -1834,6 +1840,38 @@ test("frontend self-sizing lane environment and P1 schedule anchor (PG-17, PG-58
         assert.equal(mutation.env.GATE_CPU_SHARE, concurrent ? "0.5" : "1");
       }
     },
+  );
+});
+
+test("conservative 7 GiB fallback keeps frontend-coverage runnable beside the e2e reservation", async (t) => {
+  const fallbackBudgetBytes = CONSERVATIVE_CGROUP_LIMIT_BYTES - UNSIZED_PROCESS_RESERVE_BYTES;
+  assert.ok(
+    fallbackBudgetBytes - E2E_CONTAINER_MEMORY_BYTES >= VITEST_MINIMUM_BUDGET_BYTES,
+    `7 GiB fallback minus e2e reservation must stay at or above ${VITEST_MINIMUM_BUDGET_BYTES}`,
+  );
+  const cwd = await temporarySchedulerRoot(t);
+  const events = [];
+  const env = { ...process.env, GATE_MEMORY_BYTES: String(fallbackBudgetBytes) };
+  delete env.STRYKER_MEMORY_BYTES;
+  const result = await runPushGates(["--frontend"], {
+    cwd,
+    env,
+    getGateBudgetBytes: () => fallbackBudgetBytes,
+    availableParallelism: () => 20,
+    spawnProcess: makeMockSpawner({ events }),
+  });
+  assert.equal(result.exitCode, 0);
+  const coverage = events.find(
+    (event) => event.type === "start" && event.command === "pnpm gate:ensure frontend-coverage",
+  );
+  assert.ok(coverage, "missing frontend-coverage start event");
+  const workers = vitestMaxWorkers({
+    env: { ...coverage.env, VITEST: "true" },
+    availableParallelism: () => 20,
+  });
+  assert.ok(
+    Number.isInteger(workers) && workers > 0,
+    `expected positive integer workers, got ${workers}`,
   );
 });
 

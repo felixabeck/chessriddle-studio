@@ -203,8 +203,8 @@ test("only the first separator is pnpm's; a later one is the caller's own", () =
 });
 
 test("a supported Docker launch uses the recorded limit, a unique name, and every existing flag", async (t) => {
-  assert.equal(E2E_CONTAINER_MEMORY, "4g");
-  assert.equal(E2E_CONTAINER_MEMORY_BYTES, 4 * 1024 ** 3);
+  assert.equal(E2E_CONTAINER_MEMORY, "5g");
+  assert.equal(E2E_CONTAINER_MEMORY_BYTES, 5 * 1024 ** 3);
   const harness = await makeHarness(t);
   const result = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [launcherPath, "--project=async-errors"], {
@@ -228,7 +228,7 @@ test("a supported Docker launch uses the recorded limit, a unique name, and ever
   assert.deepEqual(events[0].args, ["info", "--format", "{{.MemoryLimit}}"]);
   const argv = events[1].args;
   assert.ok(argv.includes("--rm"));
-  assert.equal(argv[argv.indexOf("--memory") + 1], "4g");
+  assert.equal(argv[argv.indexOf("--memory") + 1], "5g");
   assert.equal(argv[argv.indexOf("--memory") + 1], E2E_CONTAINER_MEMORY);
   const name = argv[argv.indexOf("--name") + 1];
   assert.match(name, /^chessfable-e2e-\d+-[0-9a-f-]{36}$/u);

@@ -69,8 +69,10 @@ insufficient-budget refusal, without omitting proof. Replace the exclusive admis
 costs only after comparable cold measurements support the replacement with identical proof and
 containment, and delete this operative prose with the replaced mechanism.
 
-The e2e container runs with a 4 GiB limit reserved from frontend coverage and from frontend
-mutation only when mutation shares its concurrent schedule. The schedule and its constants are
+The e2e container runs with a 5 GiB limit reserved from frontend coverage and from frontend
+mutation only when mutation shares its concurrent schedule. It was sized 2026-11-22 at 1.2x the
+measured anon + kernel peak, capped at 5 GiB so the 7 GiB fallback keeps frontend coverage
+runnable (f-20261122-01, d-20261122-05). The schedule and its constants are
 `d-20260930-03`, `d-20261002-01` (placement), and `d-20261002-03` (reserve). This Rust admission
 replaces only the concurrent Rust and Rust-related frontend-share clauses of `d-20260930-04`.
 

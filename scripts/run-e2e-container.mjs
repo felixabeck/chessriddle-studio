@@ -37,10 +37,16 @@ export const DOCKER_REMOVE_TIMEOUT_MS = 10_000;
 // after cancellation so it can report before the scheduler escalates the e2e lane.
 export const DOCKER_INFO_TIMEOUT_MS = 10_000;
 
-// The container peaked at 2.3 GiB on 2026-09-30 (gate-performance measurements); 4 GiB
-// gives about 1.7x headroom and is reserved from overlapping gate lanes.
-export const E2E_CONTAINER_MEMORY = "4g";
-export const E2E_CONTAINER_MEMORY_BYTES = 4 * 1024 ** 3;
+// The former 4 GiB limit (sized from a 2.3 GiB peak on 2026-09-30, quantity unrecorded)
+// OOM-killed Chromium renderers (`f-20261122-01`). Three full 490-case runs at `workers: 6` on
+// 2026-11-22 measured max cgroup `anon + kernel` (not `memory.peak`, which includes page cache,
+// d-20261002-03) of 4317294592, 4300824576 and 4240818176 bytes (~4.02, 4.01, 3.95 GiB);
+// 1.2 x 4317294592 = 5180753510 bytes (~4.83 GiB), rounded up to 5 GiB, reserved from
+// overlapping gate lanes. The 5 GiB ceiling keeps the conservative 7 GiB usable fallback minus
+// this limit at or above VITEST_MINIMUM_BUDGET_BYTES (1.75 GiB, L <= 5.25 GiB) and keeps the
+// laptop's coverage lane at its CPU-bound 10 workers (L <= 5.8 GiB).
+export const E2E_CONTAINER_MEMORY = "5g";
+export const E2E_CONTAINER_MEMORY_BYTES = 5 * 1024 ** 3;
 
 /**
  * The arguments handed to `playwright test` for this script's own argv tail.
