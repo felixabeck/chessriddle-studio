@@ -705,6 +705,23 @@ test.each([
   },
 );
 
+test("Prepare opens the board on one column without a warning when the online lookup is cancelled", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers.mockRejectedValue({
+    tag: "backend-error",
+    category: "cancellation",
+    message: "Cancellation",
+  });
+  await render();
+  await click(button("Prepare on board"));
+
+  expect(mocks.navigate).toHaveBeenCalledOnce();
+  const tab = store.get(tabsAtom).at(-1)!;
+  expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toEqual(file);
+  expect(store.get(pinnedExplorerComparisonFamily(tab.value))).toBeNull();
+  expect(mocks.showNotification).not.toHaveBeenCalled();
+});
+
 test.each(["unreadable", "absent", "none"] as const)(
   "Prepare asks for no online player and warns of nothing while the online games are %s",
   async (listed) => {

@@ -72,11 +72,26 @@ export type OpeningTreeSource = {
 type SourceQuery = { source: OpeningTreeSource; options: LocalOptions };
 type SourceResult = { source: OpeningTreeSource; result: LocalExplorerResult };
 type OpeningTreeVariant = "database" | "account";
-/** Which player of the online games database the linked usernames name. */
+/**
+ * Which player of the online games database the linked usernames name. `unavailable` covers both
+ * a lookup that found no player and one that failed: the card says the same about either.
+ */
 type OnlinePlayerLookup =
   | { kind: "pending" }
   | { kind: "found"; player: number }
-  | { kind: "missing" };
+  | { kind: "unavailable" };
+
+/** Folds the lookup's SWR answer into its state; a cancelled run is still pending, not failed. */
+function onlinePlayerLookup(
+  players: readonly { id: number }[] | undefined,
+  error: unknown,
+): OnlinePlayerLookup {
+  if (players?.[0] !== undefined) return { kind: "found", player: players[0].id };
+  if (players !== undefined) return { kind: "unavailable" };
+  // SWR keeps a superseded run's cancellation as the key's error until the next run settles.
+  if (failureUnlessCancelled(error)) return { kind: "unavailable" };
+  return { kind: "pending" };
+}
 /** The player's downloaded online games: their database, the usernames and the player they name. */
 type OnlineGames = {
   file: DatabaseHandle;
@@ -103,13 +118,7 @@ export default function PlayerOpeningTree({
       ? games.file
       : null;
   const { data: onlinePlayers, error: onlineError } = useOpponentPlayers(link, onlineFile);
-  // A cancelled run is not a failure: SWR keeps it as the key's error until the next run settles.
-  const lookup: OnlinePlayerLookup =
-    onlinePlayers?.[0] !== undefined
-      ? { kind: "found", player: onlinePlayers[0].id }
-      : onlinePlayers !== undefined || failureUnlessCancelled(onlineError)
-        ? { kind: "missing" }
-        : { kind: "pending" };
+  const lookup = onlinePlayerLookup(onlinePlayers, onlineError);
   return (
     <OpeningTree
       key={key}
@@ -310,10 +319,17 @@ function OpeningTree({
       let onlinePlayer: number | undefined;
       if (pinned && online) {
         // The card's answer is used when it is there; a click before it arrives asks once more.
+        let cancelled = false;
         onlinePlayer =
           (online.lookup.kind === "found" ? online.lookup.player : undefined) ??
-          (await opponentPlayers(online.file, online.accounts).catch(() => []))[0]?.id;
-        if (onlinePlayer === undefined) {
+          (
+            await opponentPlayers(online.file, online.accounts).catch((cause) => {
+              cancelled = !failureUnlessCancelled(cause);
+              return [];
+            })
+          )[0]?.id;
+        // A cancelled lookup was stopped on purpose; only a real miss is worth a warning.
+        if (onlinePlayer === undefined && !cancelled) {
           notifications.show({
             color: "warning",
             message: t("Databases.Opponent.BoardWithoutOnline", {
