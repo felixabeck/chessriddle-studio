@@ -480,7 +480,7 @@ async prepareEngineSearch(id: string, engine: EngineHandle, tab: string) : Promi
     else return { status: "error", error: e  as any };
 }
 },
-async analyzeGame(id: string, tab: string, engine: EngineHandle, engineId: string, goMode: GoMode, options: AnalysisOptions, uciOptions: EngineOption[]) : Promise<Result<MoveAnalysis[], ErrorPayload>> {
+async analyzeGame(id: string, tab: string, engine: EngineHandle, engineId: string, goMode: GoMode, options: AnalysisOptions, uciOptions: EngineOption[]) : Promise<Result<GameAnalysis, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("analyze_game", { id, tab, engine, engineId, goMode, options, uciOptions }) };
 } catch (e) {
@@ -1478,7 +1478,7 @@ export type AccountImportResult = { collectionNotice: boolean }
 export type AccountImportTarget = { kind: "linked"; collection: string } | { kind: "unlinked"; database: DatabaseHandle; title: string }
 export type AccountProfile = { handle: ChessRiddleAccountHandle; username: string | null; plan: Plan; tactic_rating: number | null }
 export type AccountStatus = { status: "disconnected" } | { status: "reconnectNeeded" } | { status: "statusUnreadable"; error: AccountError } | { status: "connected"; account: AccountProfile; durability_uncertain: boolean }
-export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: DatabaseHandle | null; reversed: boolean }
+export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: DatabaseHandle | null }
 export type AppendOutcome = { appended: number; committed: boolean; indexReady: boolean; durabilityConfirmed: boolean }
 /**
  * A release-key signed artifact digest. The signature binds URL and hash.
@@ -1630,6 +1630,7 @@ export type FileWorkspaceDescriptor = { handle: FileWorkspaceHandle; displayName
  */
 export type FileWorkspaceHandle = { id: PathRef; kind: FileWorkspaceHandleKind }
 export type FileWorkspaceHandleKind = "fileWorkspace"
+export type GameAnalysis = { positions: ReportPosition[]; novelty: NoveltyOutcome }
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"
 export type GameInterruptionReason = "engineFailure" | "engineTaskFailed"
@@ -1665,8 +1666,12 @@ export type LichessRevocationOutcome = "revoked" | "already_invalid" | "unreacha
 export type LinkedGameIdentity = { locator: LinkedGameLocator; signature: GameSignature }
 export type LinkedGameLocator = { collection: string; generation: string; ordinal: number; stamp: string }
 export type MigrationChoice = "pgn" | "database" | "decline"
-export type MoveAnalysis = { best: BestMoves[]; novelty: boolean; is_sacrifice: boolean }
 export type NormalizedGame = { orientation?: BoardOrientation; stamp?: string | null; linked?: LinkedGameLocator | null; id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
+/**
+ * The novelty phase's outcome. `position` is the 0-based index into
+ * [`GameAnalysis::positions`] of the first position absent from the reference database, never 0.
+ */
+export type NoveltyOutcome = { kind: "notRequested" } | { kind: "found"; position: number } | { kind: "notFound" } | { kind: "unavailable" }
 export type OpenedLinkedGame = { locator: LinkedGameLocator; file: FileWorkspaceHandle; name: string; ordinal: number; game: StampedGame; purpose: WorkspaceFileType; numGames: number }
 export type OpeningBookConfig = { book: OpeningBookHandle; maxPly?: bigint }
 /**
@@ -1762,6 +1767,17 @@ export type PuzzleRootHandleKind = "puzzleRoot"
 export type QueryOptions<SortT> = { skipCount: boolean; page?: number | null; pageSize?: number | null; sort: SortT; direction: SortDirection }
 export type QueryResponse<T> = { data: T; count: number | null }
 export type RemoteHttpRejection = { status: number; authorizationSent: boolean }
+/**
+ * One mainline position of a report: entry `i` of [`GameAnalysis::positions`] is the position
+ * after `i` mainline moves. `best` is White-relative; a terminal position is never searched and
+ * has empty `best`. `is_sacrifice` describes the move that reached the position.
+ */
+export type ReportPosition = { best: BestMoves[]; terminal: ReportTerminal | null; isSacrifice: boolean }
+/**
+ * Why a report position has no legal continuation worth searching, decided by the native chess
+ * library. Stalemate and insufficient material are both draws.
+ */
+export type ReportTerminal = "checkmate" | "draw"
 export type RootFailure = "changed" | "missing" | "unusable" | "permission" | "too-large"
 export type SampleOrder = "elo" | "date"
 export type Score = { value: ScoreValue; 

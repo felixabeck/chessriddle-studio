@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createStore, Provider, type PrimitiveAtom } from "jotai";
 import { enginesAtom, referenceDbAtom } from "@/state/atoms";
 
-import ReportModal from "./ReportModal";
+import ReportModal, { legacyReportEntries } from "./ReportModal";
 import {
   closeTreeStore,
   createTreeStore,
@@ -13,7 +13,7 @@ import {
 } from "@/state/store/tree";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { startFileRevisionPoll } from "@/state/fileFreshness";
-import type { MoveAnalysis } from "@/bindings";
+import type { GameAnalysis } from "@/bindings";
 import { parseUci } from "chessops";
 import { createNode, defaultTree } from "@/utils/treeReducer";
 
@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
     },
   ],
   notifyUnlessCancelled: vi.fn(),
+  notificationsShow: vi.fn(),
   reportPersistError: vi.fn(),
 }));
 
@@ -56,6 +57,9 @@ vi.mock("@/platform/tauri", () => ({
     startProgress: mocks.startProgress,
     collectionForDatabase: mocks.collection,
   },
+}));
+vi.mock("@mantine/notifications", () => ({
+  notifications: { show: mocks.notificationsShow },
 }));
 vi.mock("@/components/files/notifyError", () => ({
   notifyUnlessCancelled: mocks.notifyUnlessCancelled,
@@ -154,7 +158,7 @@ beforeEach(() => {
   mocks.collection.mockResolvedValue(null);
   mocks.prepareAnalysis.mockResolvedValue("report_tab-id_operation-uuid");
   mocks.cancelAnalysis.mockResolvedValue(undefined);
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
   sessionStorage.removeItem("tab-id");
   tree = createTreeStore("tab-id");
   analysisPublished = vi.spyOn(tree.getState(), "addAnalysis");
@@ -274,50 +278,52 @@ function collectionFocus() {
   return { focus: () => focus(), stop };
 }
 
-const completedAnalysis: MoveAnalysis[] = [
-  {
-    best: [
-      {
-        nodes: 1n,
-        depth: 1,
-        score: { value: { type: "cp", value: 123 }, wdl: null },
-        uciMoves: ["e2e4"],
-        sanMoves: ["e4"],
-        multipv: 1,
-        nps: 1n,
-      },
-    ],
-    // Index 0 is the start position, which is never the novelty.
-    novelty: false,
-    is_sacrifice: false,
-  },
-];
+const emptyAnalysis: GameAnalysis = { positions: [], novelty: { kind: "notRequested" } };
+
+const e4Line = {
+  nodes: 1n,
+  depth: 1,
+  score: { value: { type: "cp" as const, value: 123 }, wdl: null },
+  uciMoves: ["e2e4"],
+  sanMoves: ["e4"],
+  multipv: 1,
+  nps: 1n,
+};
+
+const completedAnalysis: GameAnalysis = {
+  // Index 0 is the start position, which is never the novelty.
+  positions: [{ best: [e4Line], terminal: null, isSacrifice: false }],
+  novelty: { kind: "notRequested" },
+};
 
 // The report of a game with one move whose position is absent from the reference.
-const noveltyAnalysis: MoveAnalysis[] = [
-  completedAnalysis[0],
-  {
-    best: [
-      {
-        nodes: 1n,
-        depth: 1,
-        score: { value: { type: "cp", value: -40 }, wdl: null },
-        uciMoves: ["e7e5"],
-        sanMoves: ["e5"],
-        multipv: 1,
-        nps: 1n,
-      },
-    ],
-    novelty: true,
-    is_sacrifice: false,
-  },
-];
+const noveltyAnalysis: GameAnalysis = {
+  positions: [
+    completedAnalysis.positions[0],
+    {
+      best: [
+        {
+          nodes: 1n,
+          depth: 1,
+          score: { value: { type: "cp", value: -40 }, wdl: null },
+          uciMoves: ["e7e5"],
+          sanMoves: ["e5"],
+          multipv: 1,
+          nps: 1n,
+        },
+      ],
+      terminal: null,
+      isSacrifice: true,
+    },
+  ],
+  novelty: { kind: "found", position: 1 },
+};
 
 async function startUnmountedLinkedReport() {
   selectReference({ id: { id: "reference-A" }, kind: "database" });
   const collection = linkedReference();
   mocks.collection.mockResolvedValue(collection);
-  const completion = deferred<MoveAnalysis[]>();
+  const completion = deferred<GameAnalysis>();
   mocks.analyzeGame.mockReturnValueOnce(completion.promise);
   await renderReportModal();
   await act(async () => host.querySelector("button")!.click());
@@ -393,10 +399,10 @@ test("unchanged linked reference publishes analysis and novelty after panel unmo
   const reads = mocks.collection.mock.calls.length;
   await act(async () => completion.resolve(noveltyAnalysis));
   expect(mocks.collection).toHaveBeenCalledTimes(reads + 1);
-  expect(analysisPublished).toHaveBeenCalledExactlyOnceWith(noveltyAnalysis, {
+  expect(analysisPublished).toHaveBeenCalledExactlyOnceWith(legacyReportEntries(noveltyAnalysis), {
     showVariations: true,
   });
-  expect(tree.getState().root.score).toEqual(noveltyAnalysis[0].best[0].score);
+  expect(tree.getState().root.score).toEqual(noveltyAnalysis.positions[0].best[0].score);
   expect(tree.getState().root.nags).toEqual([]);
   expect(tree.getState().root.children[0].nags).toContain(146);
   expect(tree.getState().report.inProgress).toBe(false);
@@ -467,7 +473,7 @@ test.each(
     selectReference({ id: { id: "reference-A" }, kind: "database" });
     const collection = linkedReference();
     mocks.collection.mockResolvedValue(collection);
-    const completion = deferred<MoveAnalysis[]>();
+    const completion = deferred<GameAnalysis>();
     mocks.analyzeGame.mockReturnValueOnce(completion.promise);
     await renderReportModal({
       isCurrentOperation: () => tree.getState().root === originalRoot,
@@ -584,8 +590,8 @@ test.each(["selection", "generation"])(
     if (change === "generation") mocks.collection.mockResolvedValue(collection);
     const poll = collectionFocus();
     try {
-      const old = deferred<never[]>();
-      const current = deferred<never[]>();
+      const old = deferred<GameAnalysis>();
+      const current = deferred<GameAnalysis>();
       const cancelled = deferred<void>();
       mocks.prepareAnalysis
         .mockResolvedValueOnce("old-reference")
@@ -602,7 +608,7 @@ test.each(["selection", "generation"])(
         mocks.collection.mockResolvedValue({ ...collection, generation: "second" });
         await act(async () => poll.focus());
       }
-      await act(async () => old.resolve([]));
+      await act(async () => old.resolve(emptyAnalysis));
       // A result from the previous selected reference is stale.
       expect(analysisPublished).not.toHaveBeenCalled();
       // Native completion must settle progress before cancellation acknowledgement.
@@ -614,7 +620,7 @@ test.each(["selection", "generation"])(
       });
       await act(async () => cancelled.resolve());
       expect(tree.getState().report.inProgress).toBe(true);
-      await act(async () => current.resolve([]));
+      await act(async () => current.resolve(emptyAnalysis));
       expect(analysisPublished).toHaveBeenCalledOnce();
       expect(tree.getState().report.inProgress).toBe(false);
       expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("old-reference");
@@ -631,7 +637,7 @@ test.each(["selection", "generation"])(
     const collection = linkedReference();
     if (change === "generation") mocks.collection.mockResolvedValue(collection);
     const prepared = deferred<string>();
-    const current = deferred<never[]>();
+    const current = deferred<GameAnalysis>();
     mocks.prepareAnalysis
       .mockReturnValueOnce(prepared.promise)
       .mockResolvedValueOnce("current-ticket");
@@ -669,7 +675,7 @@ test.each(["selection", "generation"])(
       expect(mocks.prepareAnalysis.mock.calls[0][1].signal.aborted).toBe(true);
       expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("obsolete-prepared");
       expect(tree.getState().report.inProgress).toBe(true);
-      await act(async () => current.resolve([]));
+      await act(async () => current.resolve(emptyAnalysis));
       expect(analysisPublished).toHaveBeenCalledOnce();
       expect(setInProgress.mock.calls.map(([value]) => value)).toEqual([true, false]);
       expect(tree.getState().report.inProgress).toBe(false);
@@ -714,7 +720,7 @@ test.each(["generation", "preservedOriginal"] as const)(
     };
     mocks.collection.mockResolvedValue(collection);
     mocks.cancelAnalysis.mockResolvedValue(undefined);
-    const analysis = deferred<never[]>();
+    const analysis = deferred<GameAnalysis>();
     mocks.analyzeGame.mockReturnValueOnce(analysis.promise);
     let focus!: () => void;
     const stop = startFileRevisionPoll({
@@ -743,7 +749,7 @@ test.each(["generation", "preservedOriginal"] as const)(
         for (let i = 0; i < 8; i++) await Promise.resolve();
       });
       expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("report_tab-id_operation-uuid");
-      await act(async () => analysis.resolve([]));
+      await act(async () => analysis.resolve(emptyAnalysis));
       expect(analysisPublished).not.toHaveBeenCalled();
       expect(setInProgress).toHaveBeenLastCalledWith(false);
       expect(tree.getState().report.inProgress).toBe(false);
@@ -754,8 +760,8 @@ test.each(["generation", "preservedOriginal"] as const)(
 );
 
 test("P2 report replacement suppresses old failures and the current typed failure shows its safe reason", async () => {
-  const old = deferred<never[]>();
-  const current = deferred<never[]>();
+  const old = deferred<GameAnalysis>();
+  const current = deferred<GameAnalysis>();
   let currentId = "old";
   mocks.prepareAnalysis.mockResolvedValueOnce("old").mockResolvedValueOnce("current");
   mocks.analyzeGame.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
@@ -790,7 +796,7 @@ test("P2 report replacement suppresses old failures and the current typed failur
 });
 
 test("P2 changed root fingerprint suppresses the report failure notification", async () => {
-  const result = deferred<never[]>();
+  const result = deferred<GameAnalysis>();
   mocks.analyzeGame.mockReturnValueOnce(result.promise);
   let rootMatches = true;
   await renderReportModal({
@@ -808,7 +814,7 @@ test("P2 changed root fingerprint suppresses the report failure notification", a
 test("P2 superseded preparation rejection does not notify against the newer report", async () => {
   const old = deferred<string>();
   mocks.prepareAnalysis.mockReturnValueOnce(old.promise).mockResolvedValueOnce("current");
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
   await renderReportModal();
   await act(async () => {
     host.querySelector("button")!.click();
@@ -822,7 +828,7 @@ test("P2 superseded preparation rejection does not notify against the newer repo
 test("P2 a retired preparation's cleanup failure cannot notify against its successor", async () => {
   const old = deferred<string>();
   mocks.prepareAnalysis.mockReturnValueOnce(old.promise).mockResolvedValueOnce("current");
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
   mocks.cancelAnalysis.mockRejectedValueOnce(new Error("obsolete cleanup failed"));
   await renderReportModal();
   await act(async () => {
@@ -836,7 +842,7 @@ test("P2 a retired preparation's cleanup failure cannot notify against its succe
 });
 
 test("completion survives modal unmount while an actual tab close rejects the late result", async () => {
-  const completion = deferred<never[]>();
+  const completion = deferred<GameAnalysis>();
   mocks.analyzeGame.mockReturnValueOnce(completion.promise);
   await renderReportModal();
   await act(async () => {
@@ -844,17 +850,17 @@ test("completion survives modal unmount while an actual tab close rejects the la
     await Promise.resolve();
     root.render(<div />);
   });
-  await act(async () => completion.resolve([]));
+  await act(async () => completion.resolve(emptyAnalysis));
   expect(analysisPublished).toHaveBeenCalledOnce();
 
-  const afterClose = deferred<never[]>();
+  const afterClose = deferred<GameAnalysis>();
   mocks.analyzeGame.mockReturnValueOnce(afterClose.promise);
   await renderReportModal();
   await act(async () => {
     host.querySelector("button")!.click();
     await Promise.resolve();
     invalidateReportOwner("tab-id");
-    afterClose.resolve([]);
+    afterClose.resolve(emptyAnalysis);
   });
   expect(analysisPublished).toHaveBeenCalledTimes(1);
 });
@@ -893,7 +899,7 @@ test("a replacement request retains cancellation while the older preparation is 
   const first = deferred<string>();
   const second = deferred<string>();
   mocks.prepareAnalysis.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
   await renderReportModal();
   await act(async () => {
     host.querySelector("button")!.click();
@@ -945,7 +951,7 @@ test("hydrates missing goMode with the default while preserving the selected eng
     "report-settings",
     JSON.stringify({ novelty: false, reversed: false, variations: true, engine: "engine-id" }),
   );
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
 
   await renderReportModal();
   await act(async () => {
@@ -965,7 +971,6 @@ test("hydrates missing goMode with the default while preserving the selected eng
   );
   expect(JSON.parse(localStorage.getItem("report-settings")!)).toEqual({
     novelty: false,
-    reversed: false,
     variations: true,
     goMode: { t: "Time", c: 500 },
     engine: "engine-id",
@@ -983,7 +988,7 @@ test("defaults an invalid goMode during hydration instead of crashing render", a
       engine: "engine-id",
     }),
   );
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
 
   await renderReportModal();
   expect(host.textContent).not.toContain("Cannot read properties");
@@ -1015,7 +1020,7 @@ test("hydrates an over-limit Time goMode to the default report go mode", async (
       engine: "engine-id",
     }),
   );
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
 
   await renderReportModal();
   await act(async () => {
@@ -1046,7 +1051,7 @@ test("keeps a stored Nodes goMode of 100_000_000", async () => {
       engine: "engine-id",
     }),
   );
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
 
   await renderReportModal();
   await act(async () => {
@@ -1073,7 +1078,7 @@ test("reports a quota-failed settings save while still starting the report", asy
     if (key === "report-settings") throw quota;
     return Reflect.apply(originalSetItem, this, [key, value]);
   });
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
 
   await renderReportModal();
   await act(async () => {
@@ -1098,21 +1103,21 @@ test("report form render count stays bounded while closed and after an edit", as
   const opened = await renderReportModal({ reportingMode: true });
   expect(opened.renders).toBeLessThan(MAX_STABLE_REPORT_RENDERS);
 
-  const reversed = host.querySelector(
-    'input[aria-label="Board.Analysis.Reversed"]',
+  const variations = host.querySelector(
+    'input[aria-label="Board.Analysis.ShowVariations"]',
   ) as HTMLInputElement;
-  await act(async () => reversed.click());
+  await act(async () => variations.click());
   expect(opened.renders).toBeLessThan(MAX_STABLE_REPORT_RENDERS);
 });
 
-test("report form keeps reversed and engine edits across renders", async () => {
+test("report form keeps checkbox and engine edits across renders", async () => {
   await renderReportModal();
-  const reversed = host.querySelector(
-    'input[aria-label="Board.Analysis.Reversed"]',
+  const variations = host.querySelector(
+    'input[aria-label="Board.Analysis.ShowVariations"]',
   ) as HTMLInputElement;
   const engineSelect = host.querySelectorAll("select")[0] as HTMLSelectElement;
 
-  await act(async () => reversed.click());
+  await act(async () => variations.click());
   await act(async () => {
     engineSelect.value = "engine-id-2";
     engineSelect.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1121,13 +1126,16 @@ test("report form keeps reversed and engine edits across renders", async () => {
     await Promise.resolve();
   });
 
-  expect(reversed.checked).toBe(false);
+  expect(variations.checked).toBe(false);
   expect(engineSelect.value).toBe("engine-id-2");
 
   await act(async () => host.querySelector("button")!.click());
   expect(mocks.analyzeGame).toHaveBeenCalledOnce();
   expect(mocks.analyzeGame.mock.calls[0][3]).toBe("engine-id-2");
-  expect(mocks.analyzeGame.mock.calls[0][5]).toEqual(expect.objectContaining({ reversed: false }));
+  expect(mocks.analyzeGame.mock.calls[0][5]).not.toHaveProperty("reversed");
+  expect(JSON.parse(localStorage.getItem("report-settings")!)).toEqual(
+    expect.objectContaining({ variations: false, engine: "engine-id-2" }),
+  );
 });
 
 test("keeps the stored engine when the engine list hydrates after mount", async () => {
@@ -1203,16 +1211,51 @@ test("falls back to the first installed engine without resetting a user-edited c
   const engineSelect = host.querySelectorAll("select")[0] as HTMLSelectElement;
   expect(engineSelect.value).toBe("engine-id");
 
-  const reversed = host.querySelector(
-    'input[aria-label="Board.Analysis.Reversed"]',
+  const variations = host.querySelector(
+    'input[aria-label="Board.Analysis.ShowVariations"]',
   ) as HTMLInputElement;
-  await act(async () => reversed.click());
-  expect(reversed.checked).toBe(false);
+  await act(async () => variations.click());
+  expect(variations.checked).toBe(false);
 
   await act(async () => {
     atomStore.set(enginesAtom, [mocks.engines[1]]);
   });
 
   expect(engineSelect.value).toBe("engine-id-2");
-  expect(reversed.checked).toBe(false);
+  expect(variations.checked).toBe(false);
+});
+
+test("the native result reaches addAnalysis with the sacrifice flag and the novelty on their entries", async () => {
+  mocks.analyzeGame.mockResolvedValue(noveltyAnalysis);
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  expect(analysisPublished).toHaveBeenCalledOnce();
+  const [entries] = analysisPublished.mock.calls[0] as [ReturnType<typeof legacyReportEntries>];
+  expect(entries).toHaveLength(2);
+  expect(entries[0]).toEqual({ best: [e4Line], novelty: false, is_sacrifice: false });
+  expect(entries[1].novelty).toBe(true);
+  expect(entries[1].is_sacrifice).toBe(true);
+  expect(entries[1].best[0].uciMoves).toEqual(["e7e5"]);
+  expect(mocks.notificationsShow).not.toHaveBeenCalled();
+});
+
+test("a terminal position reaches addAnalysis as an entry without lines", () => {
+  const entries = legacyReportEntries({
+    positions: [
+      completedAnalysis.positions[0],
+      { best: [], terminal: "checkmate", isSacrifice: false },
+    ],
+    novelty: { kind: "notFound" },
+  });
+  expect(entries[1]).toEqual({ best: [], novelty: false, is_sacrifice: false });
+});
+
+test("an unavailable novelty applies the report and says so", async () => {
+  mocks.analyzeGame.mockResolvedValue({ ...completedAnalysis, novelty: { kind: "unavailable" } });
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  expect(analysisPublished).toHaveBeenCalledOnce();
+  expect(mocks.notificationsShow).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ message: "Board.Analysis.Report.NoveltyUnavailable" }),
+  );
 });

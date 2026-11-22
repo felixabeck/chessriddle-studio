@@ -1,11 +1,12 @@
 import { Alert, Button, Checkbox, Group, Select, Stack } from "@mantine/core";
 import { useForm } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
 import { useAtom, useAtomValue, useStore as useJotaiStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { memo, useContext, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
-import type { GoMode } from "@/bindings";
+import type { GameAnalysis, GoMode } from "@/bindings";
 import GoModeInput from "@/components/common/GoModeInput";
 import { tauri } from "@/platform/tauri";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
@@ -33,7 +34,6 @@ export function reportRootFingerprint(fen: string, moves: string[]): string {
 
 type ReportSettings = {
   novelty: boolean;
-  reversed: boolean;
   variations: boolean;
   goMode: ReportGoMode;
   engine: string;
@@ -41,7 +41,6 @@ type ReportSettings = {
 
 const defaultReportSettings: ReportSettings = {
   novelty: true,
-  reversed: true,
   variations: true,
   goMode: { t: "Time", c: 500 },
   engine: "",
@@ -49,11 +48,22 @@ const defaultReportSettings: ReportSettings = {
 
 const reportSettingsSchema: z.ZodType<ReportSettings, z.ZodTypeDef, unknown> = z.object({
   novelty: z.boolean().catch(defaultReportSettings.novelty),
-  reversed: z.boolean().catch(defaultReportSettings.reversed),
   variations: z.boolean().catch(defaultReportSettings.variations),
   goMode: boundedGoModeSchema.catch(defaultReportSettings.goMode),
   engine: z.string().catch(defaultReportSettings.engine),
 });
+
+/**
+ * The entries `addAnalysis` takes, one per mainline position. Temporary until the report is
+ * applied from the native result directly.
+ */
+export function legacyReportEntries(result: GameAnalysis) {
+  return result.positions.map((position, index) => ({
+    best: position.best,
+    novelty: result.novelty.kind === "found" && result.novelty.position === index,
+    is_sacrifice: position.isSacrifice,
+  }));
+}
 
 const reportSettingsAtom = atomWithStorage(
   "report-settings",
@@ -288,7 +298,6 @@ function ReportModal({
           annotateNovelties: form.values.novelty,
           fen: initialFen,
           referenceDb: currency.collection?.database ?? referenceDb,
-          reversed: form.values.reversed,
           moves,
         },
         engineSettings,
@@ -297,9 +306,14 @@ function ReportModal({
         // The immutable root fingerprint prevents a late completion from
         // applying to an edited/switched game even when a tab id is reused.
         if ((await completionOwnersCurrent()) && synchronousOwnersCurrent()) {
-          addAnalysis(analysis, {
+          addAnalysis(legacyReportEntries(analysis), {
             showVariations: variations,
           });
+          if (analysis.novelty.kind === "unavailable")
+            notifications.show({
+              color: "warning",
+              message: t("Board.Analysis.Report.NoveltyUnavailable"),
+            });
         }
       })
       .catch(async (error) => {
@@ -357,12 +371,6 @@ function ReportModal({
             setGoMode={(next) => {
               if (isReportGoMode(next)) form.setFieldValue("goMode", next);
             }}
-          />
-
-          <Checkbox
-            label={t("Board.Analysis.Reversed")}
-            description={t("Board.Analysis.Reversed.Desc")}
-            {...form.getInputProps("reversed", { type: "checkbox" })}
           />
 
           <Checkbox

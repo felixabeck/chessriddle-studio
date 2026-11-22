@@ -13,6 +13,7 @@ import {
 } from "@/state/store/tree";
 import { getMainLine } from "@/utils/chess";
 import ReportPanel from "./ReportPanel";
+import type { GameAnalysis } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
   t: vi.fn((key: string, _options?: Record<string, unknown>) => key),
@@ -49,7 +50,6 @@ const mocks = vi.hoisted(() => ({
   },
   reportSettings: {
     novelty: false,
-    reversed: false,
     variations: true,
     goMode: { t: "Time" as const, c: 500 },
     engine: "engine-id",
@@ -299,23 +299,26 @@ test.each(["replacement", "root"])(
   },
 );
 
-const completedAnalysis = [
-  {
-    best: [
-      {
-        nodes: 1n,
-        depth: 1,
-        score: { value: { type: "cp" as const, value: 123 }, wdl: null },
-        uciMoves: ["e2e4"],
-        sanMoves: ["e4"],
-        multipv: 1,
-        nps: 1n,
-      },
-    ],
-    novelty: false,
-    is_sacrifice: false,
-  },
-];
+const completedAnalysis: GameAnalysis = {
+  positions: [
+    {
+      best: [
+        {
+          nodes: 1n,
+          depth: 1,
+          score: { value: { type: "cp" as const, value: 123 }, wdl: null },
+          uciMoves: ["e2e4"],
+          sanMoves: ["e4"],
+          multipv: 1,
+          nps: 1n,
+        },
+      ],
+      terminal: null,
+      isSacrifice: false,
+    },
+  ],
+  novelty: { kind: "notRequested" },
+};
 
 let host: HTMLDivElement;
 let root: Root;
@@ -352,7 +355,7 @@ beforeEach(() => {
   mocks.progressButtonProps = null;
   mocks.reportModalProps = null;
   mocks.getProgress.mockResolvedValue(null);
-  mocks.analyzeGame.mockResolvedValue([]);
+  mocks.analyzeGame.mockResolvedValue({ positions: [], novelty: { kind: "notRequested" } });
   vi.stubGlobal("crypto", { randomUUID: () => "operation-uuid" });
   store = createTreeStore();
   host = document.createElement("div");
@@ -723,7 +726,7 @@ test("report completion waits for a pending close that rejects, then settles the
     await Promise.resolve();
     await Promise.resolve();
   });
-  expect(store.getState().root.score).toEqual(completedAnalysis[0].best[0].score);
+  expect(store.getState().root.score).toEqual(completedAnalysis.positions[0].best[0].score);
   expect(store.getState().report.inProgress).toBe(false);
 });
 

@@ -951,11 +951,42 @@ fn complete_interactive_search(
     }
 }
 
+/// Why a report position has no legal continuation worth searching, decided by the native chess
+/// library. Stalemate and insufficient material are both draws.
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ReportTerminal {
+    Checkmate,
+    Draw,
+}
+
+/// One mainline position of a report: entry `i` of [`GameAnalysis::positions`] is the position
+/// after `i` mainline moves. `best` is White-relative; a terminal position is never searched and
+/// has empty `best`. `is_sacrifice` describes the move that reached the position.
 #[derive(Serialize, Debug, Default, Type)]
-pub struct MoveAnalysis {
+#[serde(rename_all = "camelCase")]
+pub struct ReportPosition {
     best: Vec<BestMoves>,
-    novelty: bool,
+    terminal: Option<ReportTerminal>,
     is_sacrifice: bool,
+}
+
+/// The novelty phase's outcome. `position` is the 0-based index into
+/// [`GameAnalysis::positions`] of the first position absent from the reference database, never 0.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum NoveltyOutcome {
+    NotRequested,
+    Found { position: u32 },
+    NotFound,
+    Unavailable,
+}
+
+#[derive(Serialize, Debug, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GameAnalysis {
+    positions: Vec<ReportPosition>,
+    novelty: NoveltyOutcome,
 }
 
 #[derive(Deserialize, Debug, Default, Type)]
@@ -965,7 +996,6 @@ pub struct AnalysisOptions {
     pub moves: Vec<String>,
     pub annotate_novelties: bool,
     pub reference_db: Option<DatabaseHandle>,
-    pub reversed: bool,
 }
 
 const REPORT_MULTIPV: u16 = 2;
@@ -1061,7 +1091,7 @@ pub async fn analyze_game(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
-) -> Result<Vec<MoveAnalysis>, Error> {
+) -> Result<GameAnalysis, Error> {
     let label = format!("analyze_game {id}");
     let operation = state
         .operations
@@ -1202,58 +1232,81 @@ fn observe_dequeued_search_line(line: &str) {
     });
 }
 
+/// One replayed mainline position: the position itself, the moves that reach it from the root,
+/// and whether the game is over there.
+#[derive(Debug)]
+struct ReplayedPosition {
+    position: Chess,
+    fen: Fen,
+    moves: Vec<String>,
+    terminal: Option<ReportTerminal>,
+}
+
+fn report_terminal(position: &Chess) -> Option<ReportTerminal> {
+    if position.is_checkmate() {
+        Some(ReportTerminal::Checkmate)
+    } else if position.is_game_over() {
+        // No legal move without check is stalemate; otherwise neither side can mate.
+        Some(ReportTerminal::Draw)
+    } else {
+        None
+    }
+}
+
+/// Replays the mainline. The result has `moves.len() + 1` entries in game order; entry 0 is the
+/// root.
 fn collect_report_positions(
     fen: Fen,
     moves: &[String],
-    reversed: bool,
     cancellation: &CancellationToken,
-) -> Result<Vec<(Fen, Vec<String>, bool)>, Error> {
+) -> Result<Vec<ReplayedPosition>, Error> {
     ensure_analysis_not_cancelled(cancellation)?;
     let (mut chess, _) = crate::engine::engine_setup_to_chess(fen.as_setup().clone())?;
-    let mut fens: Vec<(Fen, Vec<String>, bool)> = vec![(fen, vec![], false)];
+    let mut positions = vec![ReplayedPosition {
+        terminal: report_terminal(&chess),
+        position: chess.clone(),
+        fen,
+        moves: Vec::new(),
+    }];
 
     for (i, m) in moves.iter().enumerate() {
         ensure_analysis_not_cancelled(cancellation)?;
         let uci = UciMove::from_ascii(m.as_bytes())?;
         let played = uci.to_move(&chess)?;
-        let previous_pos = chess.clone();
         chess.play_unchecked(&played);
-        let current_pos = chess.clone();
-        if !chess.is_game_over() {
-            let prev_eval = naive_eval(&previous_pos);
-            let cur_eval = -naive_eval(&current_pos);
-            #[cfg(test)]
-            ANALYSIS_REPLAY_PLY_HOOK.with(|slot| {
-                if let Some(hook) = slot.borrow_mut().as_mut() {
-                    hook(i);
-                }
-            });
-            ensure_analysis_not_cancelled(cancellation)?;
-            fens.push((
-                Fen::from_position(current_pos, EnPassantMode::Legal),
-                moves.iter().take(i + 1).cloned().collect(),
-                prev_eval > cur_eval + 100,
-            ));
-        }
+        #[cfg(test)]
+        ANALYSIS_REPLAY_PLY_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().as_mut() {
+                hook(i);
+            }
+        });
+        ensure_analysis_not_cancelled(cancellation)?;
+        positions.push(ReplayedPosition {
+            terminal: report_terminal(&chess),
+            position: chess.clone(),
+            fen: Fen::from_position(chess.clone(), EnPassantMode::Legal),
+            moves: moves[..=i].to_vec(),
+        });
     }
-
-    if reversed {
-        fens.reverse();
-    }
-    Ok(fens)
+    Ok(positions)
 }
 
+/// Searches one report position. The two-line collector decides publishable sets exactly as the
+/// interactive path does; when the search ends without one, the deepest exact first line the
+/// engine reported during this search is the result. The fallback is local to this call, so no
+/// line leaks from one position into the next.
 async fn analyze_position_with_owner(
     proc: &mut EngineProcess,
     supervised: &crate::engine::SupervisedEngine,
     cancellation: &CancellationToken,
     go_mode: &GoMode,
     moves: &[String],
-) -> Result<MoveAnalysis, Error> {
+) -> Result<Vec<BestMoves>, Error> {
     ensure_analysis_owner_active(supervised, cancellation)?;
     proc.go(go_mode).await?;
 
-    let mut current_analysis = MoveAnalysis::default();
+    let mut published: Vec<BestMoves> = Vec::new();
+    let mut deepest_first_line: Option<BestMoves> = None;
     loop {
         let line = proc.next_line_cancellable(&supervised.cancelled).await?;
         let Some(line) = line else {
@@ -1264,6 +1317,14 @@ async fn analyze_position_with_owner(
         match parse_one(&line) {
             UciMessage::Info(attrs) => match parse_uci_attrs(attrs, &proc.options.fen, moves) {
                 Ok(best_moves) => {
+                    if best_moves.multipv == 1
+                        && !score_is_bound(&best_moves.score)
+                        && deepest_first_line
+                            .as_ref()
+                            .is_none_or(|deepest| best_moves.depth >= deepest.depth)
+                    {
+                        deepest_first_line = Some(best_moves.clone());
+                    }
                     if let Some(set) = ingest_info_line(
                         &mut proc.best_moves,
                         proc.last_depth,
@@ -1271,7 +1332,7 @@ async fn analyze_position_with_owner(
                         best_moves,
                     ) {
                         if set.publishable {
-                            current_analysis.best = set.lines;
+                            published = set.lines;
                             proc.last_depth = set.depth;
                         }
                     }
@@ -1287,7 +1348,11 @@ async fn analyze_position_with_owner(
         }
     }
     ensure_analysis_owner_active(supervised, cancellation)?;
-    Ok(current_analysis)
+    if published.is_empty() {
+        Ok(deepest_first_line.into_iter().collect())
+    } else {
+        Ok(published)
+    }
 }
 
 async fn finish_analysis_failure<R: tauri::Runtime>(
@@ -1330,15 +1395,48 @@ async fn analyze_game_core<R: tauri::Runtime>(
     state: AppState,
     app: tauri::AppHandle<R>,
     cancellation: CancellationToken,
-) -> Result<Vec<MoveAnalysis>, Error> {
+) -> Result<GameAnalysis, Error> {
     ensure_analysis_not_cancelled(&cancellation)?;
+    // A report searches every position to the same bound; an open-ended or clock-based limit
+    // has none. Refused before any progress entry, admission or spawn exists.
+    if matches!(go_mode, GoMode::Infinite | GoMode::PlayersTime(_)) {
+        return Err(Error::InvalidInput(
+            "a report needs a depth, time or node limit".into(),
+        ));
+    }
+    if options.annotate_novelties && options.reference_db.is_none() {
+        return Err(Error::MissingReferenceDatabase);
+    }
     let executable_ref = engine.id.clone();
     let analysis_key = EngineKey::new("analysis".into(), id.clone())?;
-    let mut analysis: Vec<MoveAnalysis> = Vec::new();
 
     let fen = Fen::from_ascii(options.fen.as_bytes())?;
-    let mut fens = collect_report_positions(fen, &options.moves, options.reversed, &cancellation)?;
+    let replay = collect_report_positions(fen, &options.moves, &cancellation)?;
+    let sacrifices = report_sacrifices(
+        replay
+            .iter()
+            .map(|entry| (entry.position.clone(), entry.terminal.is_some()))
+            .collect(),
+        cancellation.clone(),
+        |_| {},
+    )
+    .await?;
     ensure_analysis_not_cancelled(&cancellation)?;
+    let mut positions: Vec<ReportPosition> = replay
+        .iter()
+        .zip(sacrifices)
+        .map(|(entry, is_sacrifice)| ReportPosition {
+            best: Vec::new(),
+            terminal: entry.terminal,
+            is_sacrifice,
+        })
+        .collect();
+    // The last position first and the root last, so the engine's hash carries what it learned
+    // from later positions into earlier ones. Terminal positions are never searched.
+    let search_order: Vec<usize> = (0..replay.len())
+        .rev()
+        .filter(|&index| replay[index].terminal.is_none())
+        .collect();
     let progress_lease = begin_progress(&state.progress_state, &app, id.clone())?;
     // Admission is deliberately before any descriptor resolution. A canceled report must not
     // acquire the authority lock or create a launch leaf.
@@ -1430,7 +1528,8 @@ async fn analyze_game_core<R: tauri::Runtime>(
         }};
     }
 
-    for (i, (_, moves, _)) in fens.iter().enumerate() {
+    for (step, &index) in search_order.iter().enumerate() {
+        let moves = &replay[index].moves;
         if let Err(cancelled) = ensure_analysis_owner_active(&supervised, &cancellation) {
             fail_analysis_progress!(Some(guard), cancelled);
         }
@@ -1439,7 +1538,7 @@ async fn analyze_game_core<R: tauri::Runtime>(
             &state.progress_state,
             &app,
             &progress_lease,
-            (i as f32 / fens.len() as f32) * 100.0,
+            (step as f32 / search_order.len() as f32) * 100.0,
             ProgressState::Running,
         ) {
             fail_analysis_progress!(Some(guard), error);
@@ -1477,60 +1576,60 @@ async fn analyze_game_core<R: tauri::Runtime>(
         match analyze_position_with_owner(&mut proc, &supervised, &cancellation, &go_mode, moves)
             .await
         {
-            Ok(current_analysis) => analysis.push(current_analysis),
+            Ok(best) => positions[index].best = best,
             Err(error) => fail_analysis_progress!(Some(guard), error),
         }
-    }
-
-    if options.reversed {
-        analysis.reverse();
-        fens.reverse();
     }
 
     if let Err(error) = guard.terminate_now().await {
         fail_analysis_progress!(None, error);
     }
 
-    let present = if options.annotate_novelties {
-        let Some(reference) = options.reference_db.clone() else {
-            fail_analysis_progress!(None, Error::MissingReferenceDatabase);
-        };
-        let queries = novelty_queries(&fens);
-        let authority = state.pgn_path_authority.clone();
-        let repository = std::sync::Arc::clone(&state.database_repository);
-        let search_cache = std::sync::Arc::clone(&state.search_cache);
-        let permit = match tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => Err(Error::AnalysisCancelled),
-            permit = state.new_request.clone().acquire_owned() => permit.map_err(|_| Error::Conflict("position search permit unavailable".into())),
-        } {
-            Ok(permit) => permit,
-            Err(error) => fail_analysis_progress!(None, error),
-        };
-        match BLOCKING_GATEWAY
-            .spawn_cancellable(cancellation.clone(), move |worker_cancellation| {
-                novelty_lookup_blocking(
-                    &authority,
-                    &repository,
-                    &search_cache,
-                    permit,
-                    reference,
-                    queries,
-                    worker_cancellation,
-                )
-            })
-            .await
-        {
-            Ok(present) => present,
-            Err(error) => fail_analysis_progress!(None, error),
+    // After the engine pass, a novelty problem costs the novelty mark only. Cancellation still
+    // cancels the report.
+    let novelty = match options.reference_db.clone() {
+        Some(reference) if options.annotate_novelties => {
+            let queries = novelty_queries(&replay);
+            let authority = state.pgn_path_authority.clone();
+            let repository = std::sync::Arc::clone(&state.database_repository);
+            let search_cache = std::sync::Arc::clone(&state.search_cache);
+            let lookup = async {
+                let permit = tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => Err(Error::AnalysisCancelled),
+                    permit = state.new_request.clone().acquire_owned() => permit.map_err(|_| Error::Conflict("position search permit unavailable".into())),
+                }?;
+                BLOCKING_GATEWAY
+                    .spawn_cancellable(cancellation.clone(), move |worker_cancellation| {
+                        novelty_lookup_blocking(
+                            &authority,
+                            &repository,
+                            &search_cache,
+                            permit,
+                            reference,
+                            queries,
+                            worker_cancellation,
+                        )
+                    })
+                    .await
+            }
+            .await;
+            match lookup {
+                Ok(present) => novelty_outcome(&present),
+                Err(error) => match novelty_failure(error, cancellation.is_cancelled()) {
+                    Ok(error) => {
+                        log::warn!(
+                            "report novelty unavailable id={id} label=analyze_game: {}",
+                            error.diagnostic()
+                        );
+                        NoveltyOutcome::Unavailable
+                    }
+                    Err(cancelled) => fail_analysis_progress!(None, cancelled),
+                },
+            }
         }
-    } else {
-        Vec::new()
+        _ => NoveltyOutcome::NotRequested,
     };
-    for (i, analysis) in analysis.iter_mut().enumerate() {
-        analysis.is_sacrifice = fens[i].2;
-    }
-    mark_first_novelty(&mut analysis, &present);
     if let Err(cancelled) = ensure_analysis_not_cancelled(&cancellation) {
         fail_analysis_progress!(None, cancelled);
     }
@@ -1541,33 +1640,46 @@ async fn analyze_game_core<R: tauri::Runtime>(
         100.0,
         ProgressState::Succeeded,
     )?;
-    Ok(analysis)
+    Ok(GameAnalysis { positions, novelty })
+}
+
+/// Sorts a failed novelty phase: `Err` carries the cancellation that cancels the report, `Ok`
+/// the failure that only makes the novelty unavailable. Either native cancellation variant, or
+/// any failure while the operation's token is cancelled, is a cancellation.
+fn novelty_failure(error: Error, token_cancelled: bool) -> Result<Error, Error> {
+    match error {
+        Error::Cancellation | Error::AnalysisCancelled => Err(error),
+        _ if token_cancelled => Err(Error::AnalysisCancelled),
+        error => Ok(error),
+    }
 }
 
 /// One exact-position query per position reached by a move, in game order.
 /// The start position is not a move, so it is never queried and never the
-/// novelty; [`mark_first_novelty`] maps the resulting flags back.
-fn novelty_queries(fens: &[(Fen, Vec<String>, bool)]) -> Vec<GameQuery> {
-    fens.iter()
+/// novelty; [`novelty_outcome`] maps the resulting flags back.
+fn novelty_queries(positions: &[ReplayedPosition]) -> Vec<GameQuery> {
+    positions
+        .iter()
         .skip(1)
-        .map(|(fen, _, _)| {
+        .map(|entry| {
             GameQuery::new().position(PositionQueryJs {
-                fen: fen.to_string(),
+                fen: entry.fen.to_string(),
                 type_: "exact".to_string(),
             })
         })
         .collect()
 }
 
-/// Marks the move that first reaches a position absent from the reference
-/// database. `present` covers the positions after each move, so its index `k`
-/// is report index `k + 1`; report index 0 is the start position, which a game
-/// from a custom FEN may not share with any reference game.
-fn mark_first_novelty(analysis: &mut [MoveAnalysis], present: &[bool]) {
-    if let Some(first_absent) = present.iter().position(|found| !found) {
-        if let Some(entry) = analysis.get_mut(first_absent + 1) {
-            entry.novelty = true;
-        }
+/// The position that first leaves the reference database. `present` covers the positions after
+/// each move, so its index `k` is position `k + 1`; position 0 is the start position, which a
+/// game from a custom FEN may not share with any reference game.
+fn novelty_outcome(present: &[bool]) -> NoveltyOutcome {
+    match present.iter().position(|found| !found) {
+        Some(first_absent) => match u32::try_from(first_absent + 1) {
+            Ok(position) => NoveltyOutcome::Found { position },
+            Err(_) => NoveltyOutcome::Unavailable,
+        },
+        None => NoveltyOutcome::NotFound,
     }
 }
 
@@ -1646,61 +1758,162 @@ fn piece_value(role: Role) -> i32 {
     }
 }
 
-fn qsearch(position: &Chess, mut alpha: i32, beta: i32) -> i32 {
-    if position.is_checkmate() || position.is_stalemate() {
-        return count_material(position);
-    }
-    let stand_pat = count_material(position);
+/// A move is a sacrifice when the mover's material, after the opponent's best capture sequence,
+/// ends at least this far below the mover's material before the move.
+const SACRIFICE_THRESHOLD: i32 = 200;
+/// Nodes one move's capture search may visit. A search that runs out gives "no sacrifice".
+const SACRIFICE_NODE_BUDGET: u32 = 20_000;
+/// The capture search checks the operation's cancellation every this many nodes.
+const SACRIFICE_CANCELLATION_INTERVAL: u32 = 256;
 
-    if stand_pat >= beta {
-        return beta;
-    }
-    if alpha < stand_pat {
-        alpha = stand_pat;
-    }
-    let legal_moves = position.legal_moves();
-    let mut captures: Vec<_> = legal_moves
-        .iter()
-        .filter_map(|mv| mv.capture().map(|captured| (mv, captured)))
-        .collect();
-
-    captures.sort_by(|a, b| {
-        let a_value = piece_value(a.1);
-        let b_value = piece_value(b.1);
-        b_value.cmp(&a_value)
+/// The side to move's material minus the opponent's, without terminal scoring.
+fn material_balance(position: &Chess) -> i32 {
+    let material: ByColor<i32> = position.board().material().map(|p| {
+        p.pawn as i32 * PAWN_VALUE
+            + p.knight as i32 * KNIGHT_VALUE
+            + p.bishop as i32 * BISHOP_VALUE
+            + p.rook as i32 * ROOK_VALUE
+            + p.queen as i32 * QUEEN_VALUE
     });
-
-    for (capture, _) in captures {
-        let mut new_position = position.clone();
-        new_position.play_unchecked(capture);
-        let score = -qsearch(&new_position, -beta, -alpha);
-        if score >= beta {
-            return beta;
-        }
-        if score > alpha {
-            alpha = score;
-        }
+    if position.turn() == Color::White {
+        material.white - material.black
+    } else {
+        material.black - material.white
     }
-
-    alpha
 }
 
-fn naive_eval(pos: &Chess) -> i32 {
-    // The heuristic is from the side to move.  A terminal position has no
-    // legal move to maximise over: checkmate is a bounded mate score and any
-    // draw (including stalemate) is exactly zero, never the i32::MIN sentinel.
-    if pos.is_checkmate() || pos.is_stalemate() {
-        return count_material(pos);
+enum CaptureSearchStop {
+    Budget,
+    Cancelled,
+}
+
+struct CaptureSearch<'a> {
+    nodes_left: u32,
+    cancellation: &'a CancellationToken,
+}
+
+impl CaptureSearch<'_> {
+    fn visit(&mut self) -> Result<(), CaptureSearchStop> {
+        if self.nodes_left == 0 {
+            return Err(CaptureSearchStop::Budget);
+        }
+        self.nodes_left -= 1;
+        if self.nodes_left % SACRIFICE_CANCELLATION_INTERVAL == 0
+            && self.cancellation.is_cancelled()
+        {
+            return Err(CaptureSearchStop::Cancelled);
+        }
+        Ok(())
     }
-    pos.legal_moves()
-        .iter()
-        .map(|mv| {
-            let mut new_position = pos.clone();
-            new_position.play_unchecked(mv);
-            -qsearch(&new_position, i32::MIN, i32::MAX)
+
+    /// Captures-only search with stand-pat, scored for the side to move.
+    fn qsearch(
+        &mut self,
+        position: &Chess,
+        mut alpha: i32,
+        beta: i32,
+    ) -> Result<i32, CaptureSearchStop> {
+        self.visit()?;
+        if position.is_checkmate() || position.is_stalemate() {
+            return Ok(count_material(position));
+        }
+        let stand_pat = count_material(position);
+        if stand_pat >= beta {
+            return Ok(beta);
+        }
+        if alpha < stand_pat {
+            alpha = stand_pat;
+        }
+        let legal_moves = position.legal_moves();
+        let mut captures: Vec<_> = legal_moves
+            .iter()
+            .filter_map(|mv| mv.capture().map(|captured| (mv, captured)))
+            .collect();
+        captures.sort_by(|a, b| piece_value(b.1).cmp(&piece_value(a.1)));
+
+        for (capture, _) in captures {
+            let mut new_position = position.clone();
+            new_position.play_unchecked(capture);
+            let score = -self.qsearch(&new_position, -beta, -alpha)?;
+            if score >= beta {
+                return Ok(beta);
+            }
+            if score > alpha {
+                alpha = score;
+            }
+        }
+        Ok(alpha)
+    }
+}
+
+/// Whether the move from `before` to `after` gives up material: the mover's balance in `before`
+/// against the mover's balance after the opponent's best capture sequence from `after`. A
+/// terminal `after` or an exhausted budget is no sacrifice; cancellation is an error.
+fn is_sacrifice(
+    before: &Chess,
+    after: &Chess,
+    after_is_terminal: bool,
+    cancellation: &CancellationToken,
+) -> Result<bool, Error> {
+    if after_is_terminal {
+        return Ok(false);
+    }
+    let mut search = CaptureSearch {
+        nodes_left: SACRIFICE_NODE_BUDGET,
+        cancellation,
+    };
+    match search.qsearch(after, -MATE_SCORE - 1, MATE_SCORE + 1) {
+        Ok(opponent_view) => {
+            let mover_after = -opponent_view;
+            Ok(material_balance(before) - mover_after >= SACRIFICE_THRESHOLD)
+        }
+        Err(CaptureSearchStop::Budget) => Ok(false),
+        Err(CaptureSearchStop::Cancelled) => Err(Error::AnalysisCancelled),
+    }
+}
+
+/// Sacrifice flags for each replayed position (`(position, terminal)`, root first); entry `i`
+/// describes the move that reached position `i`, and the root's entry is false. Runs on a
+/// blocking worker; `on_ply` observes each move before its search.
+fn sacrifice_flags_blocking(
+    positions: &[(Chess, bool)],
+    cancellation: &CancellationToken,
+    on_ply: &mut dyn FnMut(usize),
+) -> Result<Vec<bool>, Error> {
+    let mut flags = Vec::with_capacity(positions.len());
+    flags.push(false);
+    for (ply, pair) in positions.windows(2).enumerate() {
+        on_ply(ply);
+        ensure_analysis_not_cancelled(cancellation)?;
+        let (before, _) = &pair[0];
+        let (after, after_is_terminal) = &pair[1];
+        flags.push(is_sacrifice(
+            before,
+            after,
+            *after_is_terminal,
+            cancellation,
+        )?);
+    }
+    Ok(flags)
+}
+
+/// Computes the sacrifice flags off the Tokio workers. A cancellation observed anywhere in the
+/// computation cancels the report with the analysis-cancelled error.
+async fn report_sacrifices(
+    positions: Vec<(Chess, bool)>,
+    cancellation: CancellationToken,
+    mut on_ply: impl FnMut(usize) + Send + 'static,
+) -> Result<Vec<bool>, Error> {
+    let result = BLOCKING_GATEWAY
+        .spawn_cancellable(cancellation.clone(), move |worker_cancellation| {
+            sacrifice_flags_blocking(&positions, worker_cancellation, &mut on_ply)
         })
-        .max()
-        .unwrap_or_else(|| count_material(pos))
+        .await;
+    match result {
+        Err(Error::Cancellation) => Err(Error::AnalysisCancelled),
+        Err(_) if cancellation.is_cancelled() => Err(Error::AnalysisCancelled),
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -1925,20 +2138,20 @@ mod tests {
             .into_iter()
             .map(str::to_string)
             .collect::<Vec<_>>();
-        let live = collect_report_positions(start_fen(), &moves, false, &CancellationToken::new())
-            .unwrap();
+        let live =
+            collect_report_positions(start_fen(), &moves, &CancellationToken::new()).unwrap();
         assert_eq!(live.len(), 4);
 
         let cancelled = CancellationToken::new();
         cancelled.cancel();
         assert!(matches!(
-            collect_report_positions(start_fen(), &moves, false, &cancelled),
+            collect_report_positions(start_fen(), &moves, &cancelled),
             Err(Error::AnalysisCancelled)
         ));
 
         let during = CancellationToken::new();
         let cancel_at_last_ply = during.clone();
-        // Cancel after the last ply's naive_eval so a check that only runs at
+        // Cancel after the last ply is replayed so a check that only runs at
         // the next iteration cannot save the test.
         ANALYSIS_REPLAY_PLY_HOOK.with(|slot| {
             assert!(slot
@@ -1949,7 +2162,7 @@ mod tests {
                 })))
                 .is_none());
         });
-        let error = collect_report_positions(start_fen(), &moves, false, &during).unwrap_err();
+        let error = collect_report_positions(start_fen(), &moves, &during).unwrap_err();
         ANALYSIS_REPLAY_PLY_HOOK.with(|slot| {
             slot.replace(None);
         });
@@ -1978,7 +2191,6 @@ mod tests {
                 moves: vec!["e2e4".into(), "e7e5".into()],
                 annotate_novelties: false,
                 reference_db: None,
-                reversed: false,
             },
             Vec::new(),
             state.clone(),
@@ -2025,7 +2237,6 @@ mod tests {
                     .collect(),
                 annotate_novelties: false,
                 reference_db: None,
-                reversed: false,
             },
             Vec::new(),
             state.clone(),
@@ -2043,6 +2254,110 @@ mod tests {
             .engine_supervisor
             .get_exact(&EngineKey::new("analysis".into(), id.into()).unwrap())
             .is_none());
+    }
+
+    /// Runs one report search from the start position against an engine that emits `lines` in
+    /// order.
+    async fn scripted_report_search(lines: &[&str]) -> Vec<BestMoves> {
+        let (actor, _writes) = EngineActor::recording_test_actor(lines);
+        let supervisor = Arc::new(crate::engine::EngineSupervisor::default());
+        let key = EngineKey::new("analysis".into(), "scripted-report".into()).unwrap();
+        let supervised = supervisor
+            .replace_handle(
+                key,
+                actor.clone(),
+                "engine".into(),
+                crate::infra::path_authority::PathRef {
+                    id: "engine-path".into(),
+                },
+            )
+            .await
+            .unwrap();
+        let mut process = EngineProcess {
+            base: actor.clone(),
+            last_depth: 0,
+            best_moves: Vec::new(),
+            last_best_moves: Vec::new(),
+            last_progress: 0.0,
+            options: EngineOptions {
+                fen: start_fen().to_string(),
+                moves: Vec::new(),
+                extra_options: Vec::new(),
+            },
+            resource_leases: Vec::new(),
+            go_mode: GoMode::Depth(1),
+            running: false,
+            request_id: None,
+            real_multipv: REPORT_MULTIPV,
+            start: Instant::now(),
+        };
+        let best = analyze_position_with_owner(
+            &mut process,
+            &supervised,
+            &CancellationToken::new(),
+            &GoMode::Depth(1),
+            &[],
+        )
+        .await
+        .unwrap();
+        actor.terminate().await.unwrap();
+        best
+    }
+
+    fn line_summary(lines: &[BestMoves]) -> Vec<(u32, String)> {
+        lines
+            .iter()
+            .map(|line| (line.depth, line.uci_moves[0].clone()))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn report_search_without_multipv_keeps_the_deepest_exact_first_line() {
+        let best = scripted_report_search(&[
+            "info depth 1 multipv 1 score cp 10 pv e2e4",
+            "info depth 2 multipv 1 score cp 20 pv d2d4",
+            "info depth 3 multipv 1 score cp 30 pv g1f3",
+            "info depth 9 multipv 1 score cp 90 lowerbound pv c2c4",
+            "bestmove g1f3",
+        ])
+        .await;
+        assert_eq!(line_summary(&best), [(3, "g1f3".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn report_search_with_a_mixed_depth_pair_keeps_the_deepest_exact_first_line() {
+        let best = scripted_report_search(&[
+            "info depth 5 multipv 1 score cp 10 pv e2e4",
+            "info depth 4 multipv 2 score cp 5 pv d2d4",
+            "bestmove e2e4",
+        ])
+        .await;
+        assert_eq!(line_summary(&best), [(5, "e2e4".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn report_search_publishes_a_complete_two_line_set() {
+        let best = scripted_report_search(&[
+            "info depth 2 multipv 1 score cp 10 pv e2e4",
+            "info depth 2 multipv 2 score cp 5 pv d2d4",
+            "info depth 3 multipv 1 score cp 12 pv c2c4",
+            "bestmove e2e4",
+        ])
+        .await;
+        assert_eq!(
+            line_summary(&best),
+            [(2, "e2e4".to_string()), (2, "d2d4".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn report_search_without_an_exact_line_has_no_evaluation() {
+        let best = scripted_report_search(&[
+            "info depth 3 multipv 1 score cp 30 upperbound pv e2e4",
+            "bestmove e2e4",
+        ])
+        .await;
+        assert!(best.is_empty());
     }
 
     #[tokio::test]
@@ -2372,22 +2687,8 @@ done
         let resource_path = directory.path().join("weights.nnue");
         std::fs::write(&resource_path, b"resource-bytes").unwrap();
 
-        #[cfg(target_os = "macos")]
-        let mut authority = crate::infra::path_authority::PathAuthority::open_with_launch_root(
-            directory.path().join("registry.json"),
-            Vec::new(),
-            crate::infra::path_authority::EngineLaunchRoot::for_test(directory.path()).unwrap(),
-        )
-        .unwrap();
-        #[cfg(not(target_os = "macos"))]
-        let mut authority = crate::infra::path_authority::PathAuthority::open(
-            directory.path().join("registry.json"),
-            Vec::new(),
-        )
-        .unwrap();
-        let engine = authority
-            .register_engine_file(&script, "resource-flow-engine")
-            .unwrap();
+        let (mut authority, engine) =
+            fixture_engine_authority(&directory, &script, "resource-flow-engine");
         let grant = authority
             .grant_dialog(
                 &resource_path,
@@ -2408,6 +2709,434 @@ done
             .install(authority)
             .unwrap();
         (directory, app, engine, resource)
+    }
+
+    #[cfg(unix)]
+    fn fixture_engine_authority(
+        directory: &tempfile::TempDir,
+        script: &std::path::Path,
+        label: &str,
+    ) -> (crate::infra::path_authority::PathAuthority, EngineHandle) {
+        #[cfg(target_os = "macos")]
+        let mut authority = crate::infra::path_authority::PathAuthority::open_with_launch_root(
+            directory.path().join("registry.json"),
+            Vec::new(),
+            crate::infra::path_authority::EngineLaunchRoot::for_test(directory.path()).unwrap(),
+        )
+        .unwrap();
+        #[cfg(not(target_os = "macos"))]
+        let mut authority = crate::infra::path_authority::PathAuthority::open(
+            directory.path().join("registry.json"),
+            Vec::new(),
+        )
+        .unwrap();
+        let engine = authority.register_engine_file(script, label).unwrap();
+        (authority, engine)
+    }
+
+    /// A UCI engine that answers each position from `responses` (`"<moves>|<info line>"`, the
+    /// moves joined by spaces, empty for the root) and records every searched position as
+    /// `searched=<moves>` in `capture.log`.
+    #[cfg(unix)]
+    fn report_script_fixture(
+        responses: &[(&str, &str)],
+    ) -> (
+        tempfile::TempDir,
+        tauri::AppHandle<tauri::test::MockRuntime>,
+        EngineHandle,
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        let mut map = String::new();
+        for (moves, info) in responses {
+            map.push_str(&format!("{moves}|{info}\n"));
+        }
+        std::fs::write(directory.path().join("responses"), map).unwrap();
+        let script = directory.path().join("report-order-engine.sh");
+        crate::infra::test_executable::publish_test_executable(
+            &script,
+            r#"#!/bin/sh
+capture="$PWD/capture.log"
+key=
+while IFS= read -r line; do
+    case "$line" in
+        uci)
+            echo uciok
+            ;;
+        isready)
+            echo readyok
+            ;;
+        position*)
+            case "$line" in
+                *" moves "*) key=${line#* moves } ;;
+                *) key= ;;
+            esac
+            ;;
+        go*)
+            printf 'searched=%s\n' "$key" >> "$capture"
+            awk -F'|' -v k="$key" '$1 == k { print $2 }' "$PWD/responses"
+            echo "bestmove a1a1"
+            ;;
+        quit)
+            printf 'wire=quit\n' >> "$capture"
+            exit 0
+            ;;
+    esac
+done
+"#,
+            0o700,
+        )
+        .unwrap();
+        let (authority, engine) =
+            fixture_engine_authority(&directory, &script, "report-order-engine");
+        let app = engine_test_app();
+        app.state::<AppState>()
+            .pgn_path_authority
+            .install(authority)
+            .unwrap();
+        (directory, app, engine)
+    }
+
+    #[cfg(unix)]
+    fn searched_positions(directory: &tempfile::TempDir) -> Vec<String> {
+        std::fs::read_to_string(directory.path().join("capture.log"))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| line.strip_prefix("searched="))
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[cfg(unix)]
+    fn report_options(moves: &[&str]) -> AnalysisOptions {
+        AnalysisOptions {
+            fen: start_fen().to_string(),
+            moves: moves.iter().map(|m| m.to_string()).collect(),
+            annotate_novelties: false,
+            reference_db: None,
+        }
+    }
+
+    #[cfg(unix)]
+    async fn run_scripted_report(
+        app: &tauri::AppHandle<tauri::test::MockRuntime>,
+        engine: EngineHandle,
+        id: &str,
+        go_mode: GoMode,
+        options: AnalysisOptions,
+        cancellation: CancellationToken,
+    ) -> Result<GameAnalysis, Error> {
+        let state = app.state::<AppState>().inner().clone();
+        analyze_game_core(
+            id.into(),
+            engine,
+            format!("{id}-engine"),
+            go_mode,
+            options,
+            Vec::new(),
+            state,
+            app.clone(),
+            cancellation,
+        )
+        .await
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn report_searches_the_last_position_first_and_returns_game_order() {
+        // Fool's mate: four moves, the final position is checkmate and never searched.
+        let (directory, app, engine) = report_script_fixture(&[
+            ("", "info depth 1 multipv 1 score cp 20 pv e2e4"),
+            ("", "info depth 1 multipv 2 score cp 10 pv d2d4"),
+            ("f2f3", "info depth 1 multipv 1 score cp 0 pv e7e5"),
+            ("f2f3 e7e5", "info depth 1 multipv 1 score cp -60 pv d2d4"),
+            (
+                "f2f3 e7e5 g2g4",
+                "info depth 1 multipv 1 score mate 1 pv d8h4",
+            ),
+        ]);
+        let result = run_scripted_report(
+            &app,
+            engine,
+            "report-order",
+            GoMode::Depth(1),
+            report_options(&["f2f3", "e7e5", "g2g4", "d8h4"]),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            searched_positions(&directory),
+            ["f2f3 e7e5 g2g4", "f2f3 e7e5", "f2f3", ""],
+            "backward pass, terminal position skipped"
+        );
+        assert_eq!(result.positions.len(), 5);
+        assert_eq!(result.novelty, NoveltyOutcome::NotRequested);
+        let first_moves: Vec<Option<&str>> = result
+            .positions
+            .iter()
+            .map(|entry| entry.best.first().map(|line| line.uci_moves[0].as_str()))
+            .collect();
+        assert_eq!(
+            first_moves,
+            [Some("e2e4"), Some("e7e5"), Some("d2d4"), Some("d8h4"), None]
+        );
+        assert_eq!(result.positions[0].best.len(), 2);
+        // Black to move after 1.f3: the engine's +0 stays 0, a mate for Black is White-relative.
+        assert!(matches!(
+            result.positions[3].best[0].score.value,
+            ScoreValue::Mate(-1)
+        ));
+        let terminals: Vec<Option<ReportTerminal>> = result
+            .positions
+            .iter()
+            .map(|entry| entry.terminal)
+            .collect();
+        assert_eq!(
+            terminals,
+            [None, None, None, None, Some(ReportTerminal::Checkmate)]
+        );
+        assert!(result.positions.iter().all(|entry| !entry.is_sacrifice));
+        let progress = app
+            .state::<AppState>()
+            .progress_state
+            .get("report-order")
+            .unwrap()
+            .unwrap();
+        assert_eq!(progress.state, ProgressState::Succeeded);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn report_search_fallback_never_leaks_into_the_next_position() {
+        // Searched first: the position after 1.e4 gets an exact line. Searched second: the root
+        // gets none, so its evaluation stays empty.
+        let (directory, app, engine) =
+            report_script_fixture(&[("e2e4", "info depth 4 multipv 1 score cp 30 pv e7e5")]);
+        let result = run_scripted_report(
+            &app,
+            engine,
+            "report-no-leak",
+            GoMode::Depth(1),
+            report_options(&["e2e4"]),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(searched_positions(&directory), ["e2e4", ""]);
+        assert_eq!(
+            line_summary(&result.positions[1].best),
+            [(4, "e7e5".to_string())]
+        );
+        assert!(result.positions[0].best.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn report_aligns_sacrifice_flags_with_their_positions() {
+        // 1.e4 d5 2.Qh5 Nf6 3.Qxf7+: the queen takes a defended pawn on move five.
+        let (directory, app, engine) = report_script_fixture(&[]);
+        let result = run_scripted_report(
+            &app,
+            engine,
+            "report-sacrifice",
+            GoMode::Depth(1),
+            report_options(&["e2e4", "d7d5", "d1h5", "g8f6", "h5f7"]),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let flags: Vec<bool> = result
+            .positions
+            .iter()
+            .map(|entry| entry.is_sacrifice)
+            .collect();
+        assert_eq!(flags, [false, false, false, false, false, true]);
+        assert_eq!(searched_positions(&directory).len(), 6);
+        assert!(result.positions.iter().all(|entry| entry.best.is_empty()));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn report_never_searches_stalemate_or_bare_kings() {
+        let stalemate_root = "7k/8/7K/5Q2/8/8/8/8 w - - 0 1";
+        let (directory, app, engine) = report_script_fixture(&[]);
+        let mut options = report_options(&["f5f7"]);
+        options.fen = stalemate_root.into();
+        let result = run_scripted_report(
+            &app,
+            engine.clone(),
+            "report-stalemate",
+            GoMode::Depth(1),
+            options,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.positions.len(), 2);
+        assert_eq!(result.positions[1].terminal, Some(ReportTerminal::Draw));
+        assert_eq!(searched_positions(&directory), [""]);
+
+        let (directory, app, engine) = report_script_fixture(&[]);
+        let mut options = report_options(&["d3d2", "d5e4"]);
+        options.fen = "8/8/8/3k4/8/3K4/3q4/8 w - - 0 1".into();
+        let result = run_scripted_report(
+            &app,
+            engine,
+            "report-bare-kings",
+            GoMode::Depth(1),
+            options,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.positions.len(), 3);
+        assert_eq!(result.positions[1].terminal, Some(ReportTerminal::Draw));
+        assert_eq!(result.positions[2].terminal, Some(ReportTerminal::Draw));
+        assert_eq!(searched_positions(&directory), [""]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn report_refuses_unbounded_limits_before_progress_or_admission() {
+        for (index, go_mode) in [
+            GoMode::Infinite,
+            GoMode::PlayersTime(crate::engine::PlayersTime {
+                white: 1000,
+                black: 1000,
+                winc: 0,
+                binc: 0,
+            }),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (directory, app, engine) = report_script_fixture(&[]);
+            let id = format!("report-unbounded-{index}");
+            let result = run_scripted_report(
+                &app,
+                engine,
+                &id,
+                go_mode,
+                report_options(&["e2e4"]),
+                CancellationToken::new(),
+            )
+            .await;
+            assert!(matches!(result, Err(Error::InvalidInput(_))), "{result:?}");
+            let state = app.state::<AppState>();
+            assert!(state.progress_state.get(&id).unwrap().is_none());
+            assert!(state
+                .engine_supervisor
+                .get_exact(&EngineKey::new("analysis".into(), id.clone()).unwrap())
+                .is_none());
+            assert!(!directory.path().join("capture.log").exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn report_novelty_failures_after_the_pass_keep_the_engine_results() {
+        let reference = DatabaseHandle {
+            id: crate::infra::path_authority::PathRef {
+                id: "no-such-reference".into(),
+            },
+            kind: crate::infra::path_authority::DatabaseHandleKind::Database,
+        };
+        // A reference that does not resolve: the lookup itself fails.
+        let (_directory, app, engine) =
+            report_script_fixture(&[("", "info depth 1 multipv 1 score cp 20 pv e2e4")]);
+        let mut options = report_options(&["e2e4"]);
+        options.annotate_novelties = true;
+        options.reference_db = Some(reference.clone());
+        let result = run_scripted_report(
+            &app,
+            engine,
+            "report-novelty-lookup",
+            GoMode::Depth(1),
+            options,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.novelty, NoveltyOutcome::Unavailable);
+        assert_eq!(result.positions[0].best.len(), 1);
+
+        // The position-search permit cannot be acquired.
+        let (_directory, app, engine) =
+            report_script_fixture(&[("", "info depth 1 multipv 1 score cp 20 pv e2e4")]);
+        app.state::<AppState>().new_request.close();
+        let mut options = report_options(&["e2e4"]);
+        options.annotate_novelties = true;
+        options.reference_db = Some(reference);
+        let result = run_scripted_report(
+            &app,
+            engine,
+            "report-novelty-permit",
+            GoMode::Depth(1),
+            options,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.novelty, NoveltyOutcome::Unavailable);
+        assert_eq!(result.positions[0].best.len(), 1);
+        let progress = app
+            .state::<AppState>()
+            .progress_state
+            .get("report-novelty-permit")
+            .unwrap()
+            .unwrap();
+        assert_eq!(progress.state, ProgressState::Succeeded);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn report_cancelled_while_waiting_for_the_novelty_permit_is_cancelled() {
+        let (directory, app, engine) = report_script_fixture(&[]);
+        let state = app.state::<AppState>().inner().clone();
+        let held = state
+            .new_request
+            .clone()
+            .acquire_many_owned(2)
+            .await
+            .unwrap();
+        let cancellation = CancellationToken::new();
+        let mut options = report_options(&["e2e4"]);
+        options.annotate_novelties = true;
+        options.reference_db = Some(DatabaseHandle {
+            id: crate::infra::path_authority::PathRef {
+                id: "held-reference".into(),
+            },
+            kind: crate::infra::path_authority::DatabaseHandleKind::Database,
+        });
+        let core = tokio::spawn({
+            let app = app.clone();
+            let cancellation = cancellation.clone();
+            async move {
+                run_scripted_report(
+                    &app,
+                    engine,
+                    "report-novelty-cancel",
+                    GoMode::Depth(1),
+                    options,
+                    cancellation,
+                )
+                .await
+            }
+        });
+        wait_for_fixture_capture(&directory, "wire=quit").await;
+        cancellation.cancel();
+        let result = core.await.unwrap();
+        drop(held);
+        assert!(
+            matches!(result, Err(Error::AnalysisCancelled)),
+            "{result:?}"
+        );
+        let progress = state
+            .progress_state
+            .get("report-novelty-cancel")
+            .unwrap()
+            .unwrap();
+        assert_eq!(progress.state, ProgressState::Cancelled);
     }
 
     #[cfg(unix)]
@@ -2522,7 +3251,6 @@ done
                         moves: Vec::new(),
                         annotate_novelties: false,
                         reference_db: None,
-                        reversed: false,
                     },
                     Vec::new(),
                     state,
@@ -3578,7 +4306,6 @@ done
                     moves: Vec::new(),
                     annotate_novelties: false,
                     reference_db: None,
-                    reversed: false,
                 },
                 vec![option],
                 state,
@@ -3591,8 +4318,8 @@ done
         let (logs, result) =
             collect_barriered_resource_logs(&_directory, &supervisor, &key, core).await;
         let result = result.unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].best.len(), 2);
+        assert_eq!(result.positions.len(), 1);
+        assert_eq!(result.positions[0].best.len(), 2);
         assert_safe_resource_logs(&logs);
         assert!(supervisor.get_exact(&key).is_none());
         assert_resource_wire_capture(&_directory, "resource-bytes");
@@ -3600,48 +4327,37 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn report_core_missing_reference_after_termination_preserves_primary_error() {
+    async fn report_core_missing_reference_fails_before_admission() {
         let (directory, app, engine, _) = resource_engine_fixture();
         let id = "report-missing-reference";
         let state = app.state::<AppState>().inner().clone();
-        let supervisor = state.engine_supervisor.clone();
-        let state_for_core = state.clone();
-        let core = tokio::spawn(async move {
-            analyze_game_core(
-                id.into(),
-                engine,
-                "report-missing-reference-engine".into(),
-                GoMode::Depth(1),
-                AnalysisOptions {
-                    fen: start_fen().to_string(),
-                    moves: Vec::new(),
-                    annotate_novelties: true,
-                    reference_db: None,
-                    reversed: false,
-                },
-                Vec::new(),
-                state_for_core,
-                app,
-                CancellationToken::new(),
-            )
-            .await
-        });
-        let key = EngineKey::new("analysis".into(), id.into()).unwrap();
-        let (_, result) =
-            collect_barriered_resource_logs(&directory, &supervisor, &key, core).await;
+        let result = analyze_game_core(
+            id.into(),
+            engine,
+            "report-missing-reference-engine".into(),
+            GoMode::Depth(1),
+            AnalysisOptions {
+                fen: start_fen().to_string(),
+                moves: Vec::new(),
+                annotate_novelties: true,
+                reference_db: None,
+            },
+            Vec::new(),
+            state.clone(),
+            app,
+            CancellationToken::new(),
+        )
+        .await;
         assert!(
             matches!(result, Err(Error::MissingReferenceDatabase)),
-            "post-termination failure must preserve the primary error: {result:?}"
+            "{result:?}"
         );
-        let progress = state.progress_state.get(id).unwrap().unwrap();
-        assert_eq!(progress.state, ProgressState::Failed);
-        assert!(progress.finished);
-        assert!(supervisor.get_exact(&key).is_none());
-        let capture = std::fs::read_to_string(directory.path().join("capture.log")).unwrap();
-        assert_eq!(
-            capture.lines().filter(|line| *line == "wire=quit").count(),
-            1
-        );
+        assert!(state.progress_state.get(id).unwrap().is_none());
+        assert!(state
+            .engine_supervisor
+            .get_exact(&EngineKey::new("analysis".into(), id.into()).unwrap())
+            .is_none());
+        assert!(!directory.path().join("capture.log").exists());
     }
 
     #[cfg(unix)]
@@ -3671,7 +4387,6 @@ done
                 moves: Vec::new(),
                 annotate_novelties: false,
                 reference_db: None,
-                reversed: false,
             },
             vec![EngineOption::Resource {
                 name: "EvalFile".into(),
@@ -4527,7 +5242,6 @@ done
                 moves: Vec::new(),
                 annotate_novelties: false,
                 reference_db: None,
-                reversed: false,
             },
             Vec::new(),
             state,
@@ -4596,7 +5310,6 @@ done
                 moves: Vec::new(),
                 annotate_novelties: false,
                 reference_db: None,
-                reversed: false,
             },
             vec![EngineOption::Resource {
                 name: "EvalFile".into(),
@@ -4637,7 +5350,6 @@ done
                 moves: Vec::new(),
                 annotate_novelties: false,
                 reference_db: None,
-                reversed: false,
             },
             vec![EngineOption::Resource {
                 name: "EvalFile".into(),
@@ -4855,7 +5567,6 @@ done
                     moves: vec!["e2e4".into()],
                     annotate_novelties: false,
                     reference_db: None,
-                    reversed: false,
                 },
                 vec![
                     EngineOption::String {
@@ -5240,11 +5951,10 @@ done
         let stale: Fen = "4k3/8/8/8/8/8/4P3/4K3 w KQkq - 0 1".parse().unwrap();
         let moves = ["e2e4".to_string()];
         let fens =
-            collect_report_positions(stale.clone(), &moves, false, &CancellationToken::new())
-                .unwrap();
+            collect_report_positions(stale.clone(), &moves, &CancellationToken::new()).unwrap();
         assert_eq!(fens.len(), 2);
-        assert_eq!(fens[0].0, stale);
-        assert_eq!(fens[1].0.to_string(), "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1");
+        assert_eq!(fens[0].fen, stale);
+        assert_eq!(fens[1].fen.to_string(), "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1");
     }
 
     #[test]
@@ -5252,8 +5962,7 @@ done
         let custom: Fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1".parse().unwrap();
         let moves = ["e2e4".to_string(), "e8d7".to_string()];
         let fens =
-            collect_report_positions(custom.clone(), &moves, false, &CancellationToken::new())
-                .unwrap();
+            collect_report_positions(custom.clone(), &moves, &CancellationToken::new()).unwrap();
         assert_eq!(fens.len(), 3);
         let queried: Vec<String> = novelty_queries(&fens)
             .into_iter()
@@ -5261,15 +5970,9 @@ done
             .collect();
         assert_eq!(
             queried,
-            [fens[1].0.to_string(), fens[2].0.to_string()],
+            [fens[1].fen.to_string(), fens[2].fen.to_string()],
             "the start position {custom} must not be queried"
         );
-    }
-
-    fn novelty_flags(present: &[bool], len: usize) -> Vec<bool> {
-        let mut analysis: Vec<MoveAnalysis> = (0..len).map(|_| MoveAnalysis::default()).collect();
-        mark_first_novelty(&mut analysis, present);
-        analysis.iter().map(|entry| entry.novelty).collect()
     }
 
     #[test]
@@ -5277,17 +5980,44 @@ done
         // A custom start absent from the reference database: the lookup covers
         // the positions after each move, so the first move is the novelty.
         assert_eq!(
-            novelty_flags(&[false], 5),
-            [false, true, false, false, false]
+            novelty_outcome(&[false]),
+            NoveltyOutcome::Found { position: 1 }
         );
         // Standard start present, third move leaves the reference games.
         assert_eq!(
-            novelty_flags(&[true, true, false], 5),
-            [false, false, false, true, false]
+            novelty_outcome(&[true, true, false]),
+            NoveltyOutcome::Found { position: 3 }
         );
-        // Every position present, or novelties not requested.
-        assert_eq!(novelty_flags(&[true, true, true, true], 5), [false; 5]);
-        assert_eq!(novelty_flags(&[], 5), [false; 5]);
+        // Every position present, or a game without moves.
+        assert_eq!(
+            novelty_outcome(&[true, true, true, true]),
+            NoveltyOutcome::NotFound
+        );
+        assert_eq!(novelty_outcome(&[]), NoveltyOutcome::NotFound);
+    }
+
+    #[test]
+    fn novelty_failures_cancel_only_for_cancellation() {
+        assert!(matches!(
+            novelty_failure(Error::Cancellation, false),
+            Err(Error::Cancellation)
+        ));
+        assert!(matches!(
+            novelty_failure(Error::AnalysisCancelled, false),
+            Err(Error::AnalysisCancelled)
+        ));
+        assert!(matches!(
+            novelty_failure(Error::StaleGame, true),
+            Err(Error::AnalysisCancelled)
+        ));
+        assert!(matches!(
+            novelty_failure(Error::StaleGame, false),
+            Ok(Error::StaleGame)
+        ));
+        assert!(matches!(
+            novelty_failure(Error::MissingReferenceDatabase, false),
+            Ok(Error::MissingReferenceDatabase)
+        ));
     }
 
     fn parsed_black_info(line: &str) -> BestMoves {
@@ -5398,9 +6128,9 @@ done
         )
         .await;
         actor.terminate().await.unwrap();
-        let analysis = result.unwrap();
-        assert_eq!(analysis.best.len(), 1);
-        let best = &analysis.best[0];
+        let best = result.unwrap();
+        assert_eq!(best.len(), 1);
+        let best = &best[0];
         assert_eq!(best.uci_moves, ["d2d4"]);
         assert_eq!(best.san_moves, ["d4"]);
         assert_eq!(best.score.value, ScoreValue::Cp(34));
@@ -5606,67 +6336,188 @@ done
         }
     }
 
-    #[test]
-    fn eval_start_pos() {
-        assert_eq!(naive_eval(&Chess::default()), 0);
+    fn sacrifice(before: &str, uci: &str) -> bool {
+        let before = pos(before);
+        let mv = UciMove::from_ascii(uci.as_bytes())
+            .unwrap()
+            .to_move(&before)
+            .unwrap();
+        let mut after = before.clone();
+        after.play_unchecked(&mv);
+        let terminal = report_terminal(&after).is_some();
+        is_sacrifice(&before, &after, terminal, &CancellationToken::new()).unwrap()
     }
 
     #[test]
-    fn eval_scandi() {
-        let position = pos("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
-        assert_eq!(naive_eval(&position), 0);
+    fn declining_a_free_knight_is_no_sacrifice() {
+        // White ignores the knight on e5 that Qxe5 would win.
+        assert!(!sacrifice(
+            "rnbqkb1r/pppp1ppp/8/4n3/8/8/PPPPQPPP/RNB1KBNR w KQkq - 0 1",
+            "b1c3"
+        ));
     }
 
     #[test]
-    fn eval_hanging_pawn() {
-        let position = pos("r1bqkbnr/ppp1pppp/2n5/1B1p4/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3");
-        assert_eq!(naive_eval(&position), 100);
+    fn missing_a_mate_in_one_is_no_sacrifice() {
+        // Qd8 mates; a quiet king move instead gives nothing away.
+        assert!(!sacrifice("6k1/5ppp/8/8/8/8/5PPP/3Q2K1 w - - 0 1", "g1f1"));
     }
 
     #[test]
-    fn eval_complex_center() {
-        let position = pos("r1bqkbnr/ppp2ppp/2n5/1B1pp3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4");
-        assert_eq!(naive_eval(&position), 100);
+    fn an_underpromotion_is_no_sacrifice() {
+        assert!(!sacrifice("8/4P1k1/8/8/8/8/8/4K3 w - - 0 1", "e7e8n"));
     }
 
     #[test]
-    fn eval_in_check() {
-        let position = pos("r1bqkbnr/ppp2ppp/2B5/3pp3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 0 4");
-        assert_eq!(naive_eval(&position), -100);
+    fn a_king_move_while_the_opponent_promotes_anyway_is_no_sacrifice() {
+        assert!(!sacrifice("8/8/8/8/8/k7/6p1/K7 w - - 0 1", "a1b1"));
     }
 
     #[test]
-    fn eval_rook_stack() {
-        let position = pos("rnrq4/8/8/1R6/1R6/1R5K/1Q6/7k w - - 0 1");
-        assert_eq!(naive_eval(&position), MATE_SCORE);
+    fn bishop_takes_h7_check_is_a_sacrifice() {
+        assert!(sacrifice(
+            "r1bq1rk1/pppn1ppp/4pn2/3p4/1bPP4/2NBPN2/PP3PPP/R1BQK2R w KQ - 0 1",
+            "d3h7"
+        ));
     }
 
     #[test]
-    fn eval_rook_stack2() {
-        let position = pos("rnrq4/8/8/1R6/1Q6/1R5K/1R6/7k w - - 0 1");
-        assert_eq!(naive_eval(&position), MATE_SCORE);
+    fn an_exchange_sacrifice_is_a_sacrifice() {
+        // Rxc6, bxc6: a rook for a knight.
+        assert!(sacrifice(
+            "r1bqkb1r/p1pp1ppp/1pn2n2/4p3/4P3/2R5/PPPP1PPP/1NBQKBNR w Kkq - 0 1",
+            "c3c6"
+        ));
     }
 
     #[test]
-    fn eval_opera_game1() {
-        let position = pos("4kb1r/p2rqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2K4R w k - 0 14");
-        // White evaluates ahead
-        assert_eq!(naive_eval(&position), -100);
+    fn a_queen_trade_is_no_sacrifice() {
+        assert!(!sacrifice(
+            "rnbqkbnr/ppp2ppp/8/4p3/4P3/8/PPP2PPP/RNBQKBNR w KQkq - 0 1",
+            "d1d8"
+        ));
     }
 
     #[test]
-    fn eval_opera_game2() {
-        let position = pos("4kb1r/p2rqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR4 b k - 1 14");
-        // Black's position is worse
-        assert_eq!(naive_eval(&position), 0);
+    fn a_terminal_position_is_no_sacrifice() {
+        // The mating move leaves a queen en prise to nothing: terminal gives false.
+        assert!(!sacrifice("6k1/5ppp/8/8/8/8/5PPP/3Q2K1 w - - 0 1", "d1d8"));
     }
 
     #[test]
-    fn eval_terminal_positions_have_documented_scores() {
-        let mate = pos("7k/6Q1/7K/8/8/8/8/8 b - - 0 1");
-        let stalemate = pos("7k/5Q2/7K/8/8/8/8/8 b - - 0 1");
-        assert_eq!(naive_eval(&mate), -MATE_SCORE);
-        assert_eq!(naive_eval(&stalemate), 0);
+    fn a_capture_search_that_exhausts_its_budget_is_no_sacrifice() {
+        // Twelve queens attacking each other: the capture tree is far larger than the budget.
+        let before = pos("5rrk/6pp/8/1qqqqqq1/1QQQQQQ1/8/PP6/KRR5 w - - 0 1");
+        let mut search = CaptureSearch {
+            nodes_left: SACRIFICE_NODE_BUDGET,
+            cancellation: &CancellationToken::new(),
+        };
+        assert!(matches!(
+            search.qsearch(&before, -MATE_SCORE - 1, MATE_SCORE + 1),
+            Err(CaptureSearchStop::Budget)
+        ));
+        let mv = before.legal_moves()[0].clone();
+        let mut after = before.clone();
+        after.play_unchecked(&mv);
+        let started = Instant::now();
+        assert!(!is_sacrifice(&before, &after, false, &CancellationToken::new()).unwrap());
+        assert!(started.elapsed() < Duration::from_secs(30));
+    }
+
+    #[test]
+    fn report_positions_mark_checkmate_stalemate_and_bare_kings() {
+        let moves = |list: &[&str]| list.iter().map(|m| m.to_string()).collect::<Vec<_>>();
+        let token = CancellationToken::new();
+        let mate = collect_report_positions(
+            start_fen(),
+            &moves(&["f2f3", "e7e5", "g2g4", "d8h4"]),
+            &token,
+        )
+        .unwrap();
+        assert_eq!(mate.len(), 5);
+        assert!(mate[..4].iter().all(|entry| entry.terminal.is_none()));
+        assert_eq!(mate[4].terminal, Some(ReportTerminal::Checkmate));
+
+        let stalemate_root: Fen = "7k/8/7K/5Q2/8/8/8/8 w - - 0 1".parse().unwrap();
+        let stalemate =
+            collect_report_positions(stalemate_root, &moves(&["f5f7"]), &token).unwrap();
+        assert_eq!(stalemate.len(), 2);
+        assert_eq!(stalemate[1].terminal, Some(ReportTerminal::Draw));
+
+        let bare_root: Fen = "8/8/8/3k4/8/3K4/3q4/8 w - - 0 1".parse().unwrap();
+        let bare = collect_report_positions(bare_root, &moves(&["d3d2", "d5e4"]), &token).unwrap();
+        assert_eq!(bare.len(), 3);
+        assert_eq!(bare[0].terminal, None);
+        assert_eq!(bare[1].terminal, Some(ReportTerminal::Draw));
+        assert_eq!(bare[2].terminal, Some(ReportTerminal::Draw));
+    }
+
+    #[test]
+    fn sacrifice_flags_stop_at_the_ply_where_cancellation_arrives() {
+        let token = CancellationToken::new();
+        let replay = collect_report_positions(
+            start_fen(),
+            &["e2e4", "e7e5", "g1f3"].map(str::to_string),
+            &token,
+        )
+        .unwrap();
+        let positions: Vec<(Chess, bool)> = replay
+            .iter()
+            .map(|entry| (entry.position.clone(), entry.terminal.is_some()))
+            .collect();
+        assert_eq!(
+            sacrifice_flags_blocking(&positions, &token, &mut |_| {}).unwrap(),
+            [false; 4]
+        );
+        let cancel_at = token.clone();
+        assert!(matches!(
+            sacrifice_flags_blocking(&positions, &token, &mut |ply| {
+                if ply == 1 {
+                    cancel_at.cancel();
+                }
+            }),
+            Err(Error::AnalysisCancelled)
+        ));
+    }
+
+    #[test]
+    fn a_cancelled_capture_search_is_an_error_not_a_false_flag() {
+        let before = pos("5rrk/6pp/8/1qqqqqq1/1QQQQQQ1/8/PP6/KRR5 w - - 0 1");
+        let mv = before.legal_moves()[0].clone();
+        let mut after = before.clone();
+        after.play_unchecked(&mv);
+        let token = CancellationToken::new();
+        token.cancel();
+        assert!(matches!(
+            is_sacrifice(&before, &after, false, &token),
+            Err(Error::AnalysisCancelled)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_cancellation_during_the_sacrifice_computation_cancels_the_report() {
+        let token = CancellationToken::new();
+        let replay = collect_report_positions(
+            start_fen(),
+            &["e2e4", "e7e5", "g1f3"].map(str::to_string),
+            &token,
+        )
+        .unwrap();
+        let positions: Vec<(Chess, bool)> = replay
+            .iter()
+            .map(|entry| (entry.position.clone(), entry.terminal.is_some()))
+            .collect();
+        let cancel_at = token.clone();
+        let result = report_sacrifices(positions, token, move |ply| {
+            if ply == 1 {
+                cancel_at.cancel();
+            }
+        })
+        .await;
+        assert!(
+            matches!(result, Err(Error::AnalysisCancelled)),
+            "{result:?}"
+        );
     }
 }
 
