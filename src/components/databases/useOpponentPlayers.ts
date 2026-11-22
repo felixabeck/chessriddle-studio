@@ -10,7 +10,9 @@ import { opponentPlayers } from "./opponentLookup";
  * a failure, and when there are no games.
  */
 export function useOpponentPlayers(link: OpponentLink | undefined, file: DatabaseHandle | null) {
-    // Read here, not in the fetcher: the compiled hook evaluates what its closures read.
+    // Read here, not inside the fetcher: the React Compiler memoizes the fetcher on the property
+    // reads it contains and evaluates them during render, so `link!.accounts` in the fetcher threw
+    // whenever the player had no link.
     const accounts = link?.accounts ?? [];
     const usernames = accounts.map((account) => account.username).join("\n");
     return useSWRImmutable(

@@ -16,7 +16,13 @@ import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { ChevronLeft, RotateCcw } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { DatabaseHandle, NormalizedGame, OpponentAccount, Player } from "@/bindings";
+import type {
+  DatabaseHandle,
+  NormalizedGame,
+  OpponentAccount,
+  Player,
+  PositionStats,
+} from "@/bindings";
 import { Chessground } from "@/chessground/Chessground";
 import { IconAction } from "@/components/common/IconAction";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
@@ -29,6 +35,7 @@ import {
   useLocalExplorer,
 } from "@/components/panels/database/useLocalExplorer";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
+import { failureUnlessCancelled } from "@/platform/errors";
 import {
   dbTabFamily,
   dbTypeFamily,
@@ -65,16 +72,16 @@ export type OpeningTreeSource = {
 type SourceQuery = { source: OpeningTreeSource; options: LocalOptions };
 type SourceResult = { source: OpeningTreeSource; result: LocalExplorerResult };
 type OpeningTreeVariant = "database" | "account";
-/**
- * The player's downloaded online games: their database, the usernames that name the player, and
- * the player those usernames resolved to (`undefined` while unknown; `resolving` says whether it
- * is still being looked up).
- */
+/** Which player of the online games database the linked usernames name. */
+type OnlinePlayerLookup =
+  | { kind: "pending" }
+  | { kind: "found"; player: number }
+  | { kind: "missing" };
+/** The player's downloaded online games: their database, the usernames and the player they name. */
 type OnlineGames = {
   file: DatabaseHandle;
   accounts: readonly OpponentAccount[];
-  player: number | undefined;
-  resolving: boolean;
+  lookup: OnlinePlayerLookup;
 };
 type CombinedResults = ReturnType<typeof combineSourceResults>;
 
@@ -90,11 +97,19 @@ export default function PlayerOpeningTree({
   const link = findOpponentLink(useAtomValue(opponentLinksAtom), player.name);
   const { data: listing, error: listingError } = useDatabaseList();
   const games = opponentGames(link, listing, listingError);
+  // Online games kept in the card's own database are not a second source of it.
   const onlineFile =
     link && games.kind === "games" && databaseHandleKey(games.file) !== databaseHandleKey(file)
       ? games.file
       : null;
   const { data: onlinePlayers, error: onlineError } = useOpponentPlayers(link, onlineFile);
+  // A cancelled run is not a failure: SWR keeps it as the key's error until the next run settles.
+  const lookup: OnlinePlayerLookup =
+    onlinePlayers?.[0] !== undefined
+      ? { kind: "found", player: onlinePlayers[0].id }
+      : onlinePlayers !== undefined || failureUnlessCancelled(onlineError)
+        ? { kind: "missing" }
+        : { kind: "pending" };
   return (
     <OpeningTree
       key={key}
@@ -106,14 +121,7 @@ export default function PlayerOpeningTree({
       tabName={player.name ?? ""}
       sources={[{ key, label: "", file, player: player.id }]}
       online={
-        link && onlineFile
-          ? {
-              file: onlineFile,
-              accounts: link.accounts,
-              player: onlinePlayers?.[0]?.id,
-              resolving: onlinePlayers === undefined && onlineError === undefined,
-            }
-          : undefined
+        link && onlineFile ? { file: onlineFile, accounts: link.accounts, lookup } : undefined
       }
     />
   );
@@ -250,12 +258,12 @@ function OpeningTree({
   const queries = sources.map(queryFor);
   // The online games are searched for their own player, with the same colour, period and position.
   const onlineSource: OpeningTreeSource | undefined =
-    online && online.player !== undefined
+    online?.lookup.kind === "found"
       ? {
-          key: `online:${databaseHandleKey(online.file)}:${online.player}`,
+          key: `online:${databaseHandleKey(online.file)}:${online.lookup.player}`,
           label: "",
           file: online.file,
-          player: online.player,
+          player: online.lookup.player,
         }
       : undefined;
   const searched = onlineSource ? [...queries, queryFor(onlineSource)] : queries;
@@ -303,7 +311,7 @@ function OpeningTree({
       if (pinned && online) {
         // The card's answer is used when it is there; a click before it arrives asks once more.
         onlinePlayer =
-          online.player ??
+          (online.lookup.kind === "found" ? online.lookup.player : undefined) ??
           (await opponentPlayers(online.file, online.accounts).catch(() => []))[0]?.id;
         if (onlinePlayer === undefined) {
           notifications.show({
@@ -464,7 +472,7 @@ function OpeningTree({
                 ? combineSourceResults(
                     results.filter(({ source }) => source.key === onlineSource.key),
                   )
-                : online.resolving
+                : online.lookup.kind === "pending"
                   ? { ...EMPTY_RESULTS, loading: true }
                   : {
                       ...EMPTY_RESULTS,
@@ -572,6 +580,11 @@ const EMPTY_RESULTS: CombinedResults = {
   games: [],
 };
 
+/** How many games reached the position: every continuation, including games that ended there. */
+function positionTotal(openings: readonly PositionStats[]) {
+  return openings.reduce((sum, row) => sum + row.white + row.draw + row.black + row.unknown, 0);
+}
+
 /** One group of the player's games: over the board, or online. `title` is set when both show. */
 type OpeningSection = { key: string; title?: string; combined: CombinedResults };
 
@@ -597,10 +610,7 @@ function MovesPanel({
 }) {
   const { t } = useTranslation();
   const { openings, loading, progressId, failures, failed } = combined;
-  const total = openings.reduce(
-    (sum, row) => sum + row.white + row.draw + row.black + row.unknown,
-    0,
-  );
+  const total = positionTotal(openings);
   return (
     <div className={classes.inset} data-opening-section={key}>
       <SectionTitle title={title} />
@@ -757,10 +767,7 @@ function GamesPanel({
   const { t } = useTranslation();
   const { openings, games, loading, failed } = combined;
   if (loading || failed || games.length === 0) return null;
-  const total = openings.reduce(
-    (sum, row) => sum + row.white + row.draw + row.black + row.unknown,
-    0,
-  );
+  const total = positionTotal(openings);
   return (
     <Stack gap="xs" data-opening-games-section={key}>
       <SectionTitle title={title} />

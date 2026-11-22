@@ -656,6 +656,30 @@ test("Prepare pins the player's downloaded online games as the board's second co
   await vi.waitFor(() => expect(container.textContent).toContain("selected_online as White"));
   expect(container.textContent).toContain("Selected player as White");
   expect(container.textContent).not.toContain("Player ·");
+
+  // Collapsed, as the board opens by default, each caption names its player on its own line.
+  await click(button("Hide database settings"));
+  expect(
+    [...container.querySelectorAll("[data-explorer-source-detail]")].map((d) => d.textContent),
+  ).toEqual(["Selected player as White", "selected_online as White"]);
+});
+
+test("Prepare clicked while the card still looks up the online player asks once more and pins it", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers
+    .mockReturnValueOnce(new Promise(() => {}))
+    .mockResolvedValue([{ id: 5, name: "selected_online" }]);
+  await render();
+  expect(section("online").querySelector("[data-opening-skeleton]")).toBeTruthy();
+  await click(button("Prepare on board"));
+
+  expect(mocks.onlinePlayers).toHaveBeenCalledTimes(2);
+  expect(mocks.showNotification).not.toHaveBeenCalled();
+  const tab = store.get(tabsAtom).at(-1)!;
+  expect(store.get(pinnedExplorerComparisonFamily(tab.value))).toEqual({
+    database: online,
+    player: 5,
+  });
 });
 
 test.each([
@@ -811,6 +835,22 @@ test.each([
     expect(section("primary").querySelector("[data-opening-moves]")).toBeTruthy();
   },
 );
+
+test("a cancelled online lookup waits instead of reporting unreadable games", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers.mockRejectedValue({
+    tag: "backend-error",
+    category: "cancellation",
+    message: "Cancellation",
+  });
+  await render();
+  await vi.waitFor(() =>
+    expect(section("primary").querySelector("[data-opening-moves]")).toBeTruthy(),
+  );
+  await act(async () => {});
+  expect(section("online").querySelector("[data-opening-skeleton]")).toBeTruthy();
+  expect(section("online").textContent).not.toContain("could not be read");
+});
 
 test("the online section waits while its player is looked up", async () => {
   linkOnlineGames("readable");
