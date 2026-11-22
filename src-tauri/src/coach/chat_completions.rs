@@ -1,5 +1,7 @@
 //! The Chat Completions wire format, as OpenAI-compatible services and local runners speak it.
 
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use serde_json::{json, Map, Value};
 use tokio_util::sync::CancellationToken;
@@ -225,8 +227,10 @@ impl Accumulator {
         Ok(())
     }
 
-    /// The round, if the provider said it is complete.
-    fn finish(self) -> Result<Round, RoundFailure> {
+    /// The round, if the provider said it is complete. A call the provider gave no id gets one
+    /// that no call of the turn carries yet (`taken` holds those of the earlier rounds), so that
+    /// every tool result names exactly one call.
+    fn finish(self, taken: &HashSet<&str>) -> Result<Round, RoundFailure> {
         let fail = |error, text| Err(RoundFailure { error, text });
         match self.finish_reason.as_deref() {
             Some("stop" | "tool_calls" | "function_call") => {}
@@ -235,13 +239,29 @@ impl Accumulator {
             // A stream that ends without saying why is not a complete answer.
             _ => return fail(CoachError::ProviderFailure, self.text),
         }
+        let mut used: HashSet<String> = taken
+            .iter()
+            .map(|id| (*id).to_owned())
+            .chain(self.calls.iter().filter_map(|call| call.id.clone()))
+            .collect();
+        let mut number = taken.len();
         let mut tool_calls = Vec::with_capacity(self.calls.len());
-        for (index, call) in self.calls.into_iter().enumerate() {
+        for call in self.calls {
             if call.name.is_empty() {
                 return fail(CoachError::ProviderFailure, self.text);
             }
+            let id = match call.id {
+                Some(id) => id,
+                None => loop {
+                    let candidate = format!("call_{number}");
+                    number += 1;
+                    if used.insert(candidate.clone()) {
+                        break candidate;
+                    }
+                },
+            };
             tool_calls.push(ToolCall {
-                id: call.id.unwrap_or_else(|| format!("call_{index}")),
+                id,
                 name: call.name,
                 arguments: call.arguments,
                 extra_content: call.extra_content,
@@ -268,6 +288,15 @@ impl ModelBackend for ChatCompletions {
         cancellation: &CancellationToken,
     ) -> Result<Round, RoundFailure> {
         let url = self.address.endpoint("chat/completions");
+        let taken: HashSet<&str> = request
+            .messages
+            .iter()
+            .flat_map(|message| match message {
+                Message::Assistant { tool_calls, .. } => tool_calls.as_slice(),
+                _ => &[],
+            })
+            .map(|call| call.id.as_str())
+            .collect();
         let mut builder = self.client.post(url.clone()).json(&request_body(&request));
         if let Some(key) = self.key.as_deref().filter(|_| self.address.owns(&url)) {
             builder = builder.bearer_auth(key);
@@ -322,7 +351,7 @@ impl ModelBackend for ChatCompletions {
                 });
             }
         }
-        round.finish()
+        round.finish(&taken)
     }
 }
 
@@ -617,7 +646,10 @@ mod tests {
                 content: "{\"lines\":[]}".into(),
             });
         }
-        run(&backend, &messages, None, &tools()).await.0.unwrap();
+        // The next round's call comes without an id again: its id is not one the turn has used.
+        let next = run(&backend, &messages, None, &tools()).await.0.unwrap();
+        assert_eq!(next.tool_calls[0].id, "call_2");
+        assert_eq!(next.tool_calls[1].id, "second");
         let seen = seen.lock().unwrap();
         let calls = &seen[1].1["messages"][2]["tool_calls"];
         // The first call carries what it came with, byte for byte; the second gets no field.

@@ -654,17 +654,24 @@ impl Coach {
         let address = Address::parse(&address).map_err(|_| CoachError::NeedsRepair)?;
         let url = address.endpoint("models");
         let mut request = self.http.for_address(&address).get(url.clone());
-        if let Some(key) = key.filter(|_| address.owns(&url)) {
+        if let Some(key) = key.as_deref().filter(|_| address.owns(&url)) {
             request = request.bearer_auth(key);
         }
         let (status, body) = http::send_bounded(request, MAX_MODEL_LIST_BYTES).await?;
-        match status {
-            200 => models::parse_model_list(&body),
-            _ if http::key_refused(status, &http::error_text(&body)) => {
-                Err(CoachError::KeyRejected)
-            }
-            429 => Err(CoachError::RateLimited),
-            _ => Err(CoachError::ProviderFailure),
+        if status == 200 {
+            return models::parse_model_list(&body);
+        }
+        let message = http::error_text(&body);
+        log::warn!(
+            "coach: the model list was refused with HTTP {status}: {}",
+            http::diagnostic(&message, key.as_deref())
+        );
+        if http::key_refused(status, &message) {
+            Err(CoachError::KeyRejected)
+        } else if status == 429 {
+            Err(CoachError::RateLimited)
+        } else {
+            Err(CoachError::ProviderFailure)
         }
     }
 }

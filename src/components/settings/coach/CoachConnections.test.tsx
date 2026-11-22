@@ -7,6 +7,7 @@ import type { ConnectionSummary } from "@/bindings";
 import { CoachCommandError } from "@/platform/coach";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
+import { stubScrollIntoView } from "@/tests/scrollIntoView";
 import { CoachConnections } from "./CoachConnections";
 
 const mocks = vi.hoisted(() => ({
@@ -227,10 +228,9 @@ test("adding sends label, address and key once, then re-reads the native list", 
   expect(document.body.textContent).not.toContain("sk-test");
 });
 
-/** Opens the service list and picks one. The test DOM has no scrollIntoView; Mantine calls it. */
+/** Opens the service list and picks one. */
 async function chooseService(name: string) {
-  const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
-  Element.prototype.scrollIntoView = () => {};
+  const restore = stubScrollIntoView();
   try {
     await click(field("Settings.Coach.Form.Service"));
     const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
@@ -238,8 +238,7 @@ async function chooseService(name: string) {
     )!;
     await click(option);
   } finally {
-    if (original) Object.defineProperty(Element.prototype, "scrollIntoView", original);
-    else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    restore();
   }
 }
 
