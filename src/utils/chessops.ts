@@ -16,10 +16,27 @@ import {
     squareFile,
     squareRank,
 } from "chessops";
+import { normalizeMove } from "chessops/chess";
 import { chessgroundMove } from "chessops/compat";
 import { type FenError, InvalidFen, makeFen, parseFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import type { TFunction } from "i18next";
+
+/**
+ * Whether two moves are the same move in `position`. Both are normalised first, so a Chess960
+ * king-to-rook castle equals the engine's castle written as a king move.
+ */
+export function isSameMove(position: Chess, a: Move, b: Move): boolean {
+    const left = normalizeMove(position, a);
+    const right = normalizeMove(position, b);
+    return (
+        isNormal(left) &&
+        isNormal(right) &&
+        left.from === right.from &&
+        left.to === right.to &&
+        left.promotion === right.promotion
+    );
+}
 
 export function positionFromFen(fen: string): [Chess, null] | [null, FenError | PositionError] {
     const [setup, error] = parseFen(fen).unwrap(

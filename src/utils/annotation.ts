@@ -220,8 +220,9 @@ export const ANNOTATION_INFO: Record<Annotation, AnnotationInfo> = {
     "⊗": { name: "Miss", translationKey: "Miss", color: "red", nag: 9 },
 };
 
-export function isBasicAnnotation(
-    annotation: string,
-): annotation is "!" | "!!" | "?" | "??" | "!?" | "?!" {
+/** The six move-quality marks a game report derives and counts. */
+export type BasicAnnotation = "!" | "!!" | "?" | "??" | "!?" | "?!";
+
+export function isBasicAnnotation(annotation: string): annotation is BasicAnnotation {
     return ["!", "!!", "?", "??", "!?", "?!"].includes(annotation);
 }

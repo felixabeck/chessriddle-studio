@@ -7,17 +7,29 @@ import { isPawns } from "chessops/pgn";
 import { makeSan } from "chessops/san";
 import { match } from "ts-pattern";
 import type { Outcome, Score, Token } from "@/bindings";
-import { isBasicAnnotation, isNagCode, nagGlyph, sortedNags } from "./annotation";
+import {
+    type BasicAnnotation,
+    isBasicAnnotation,
+    isNagCode,
+    nagGlyph,
+    sortedNags,
+} from "./annotation";
 import { parseSanOrUci, positionFromFen } from "./chessops";
 import { makePgnDrawings, PGN_COMMENT_COMMAND, toDrawShape } from "./drawings";
 import { harmonicMean, isPrefix, mean } from "./misc";
 import { DIAGRAM_MARKER, splitPgnComment } from "./pgnComment";
-import { formatScore, getAccuracy, getCPLoss, INITIAL_SCORE } from "./score";
+import {
+    formatScore,
+    getAccuracy,
+    getCPLoss,
+    getWinChance,
+    INITIAL_SCORE,
+    normalizeScore,
+} from "./score";
 import {
     createNode,
     applyGameEndLoadDefault,
     defaultTree,
-    displayedScore,
     GAME_END_COMMAND,
     GAME_END_PROSE,
     getEffectiveGameEnd,
@@ -775,80 +787,148 @@ type ColorMap<T> = {
     [key in Color]: T;
 };
 
-export function getGameStats(root: TreeNode) {
-    const whiteAnnotations = {
-        "??": 0,
-        "?": 0,
-        "?!": 0,
-        "!!": 0,
-        "!": 0,
-        "!?": 0,
-    };
+export type AnnotationCounts = Record<BasicAnnotation, number>;
 
-    const blackAnnotations = {
-        "??": 0,
-        "?": 0,
-        "?!": 0,
-        "!!": 0,
-        "!": 0,
-        "!?": 0,
-    };
+export type SideStats = {
+    /** Game accuracy (0–100), or null when the side has no scored move. */
+    accuracy: number | null;
+    /** Average centipawn loss, or null when the side has no scored move. */
+    acpl: number | null;
+    annotations: AnnotationCounts;
+};
 
-    if (root.children.length === 0) {
-        return {
-            whiteCPL: 0,
-            blackCPL: 0,
-            whiteAccuracy: 0,
-            blackAccuracy: 0,
-            whiteAnnotations,
-            blackAnnotations,
-        };
+/** A mainline move carrying one of the six move-quality marks. */
+export type KeyMoment = {
+    /** Mainline path of the move's node. */
+    path: number[];
+    halfMoves: number;
+    san: string;
+    annotation: BasicAnnotation;
+    /** Saved evaluations (White-relative) before and after the move. */
+    before: Score | null;
+    after: Score | null;
+};
+
+export type GameStats = ColorMap<SideStats> & { keyMoments: KeyMoment[] };
+
+function emptyCounts(): AnnotationCounts {
+    return { "??": 0, "?": 0, "?!": 0, "!!": 0, "!": 0, "!?": 0 };
+}
+
+/** Volatility weights of the moves of a game: bounds and window size (Lichess's method). */
+const MIN_VOLATILITY_WEIGHT = 0.5;
+const MAX_VOLATILITY_WEIGHT = 12;
+const MIN_VOLATILITY_WINDOW = 2;
+const MAX_VOLATILITY_WINDOW = 8;
+
+function populationStandardDeviation(values: number[]): number {
+    const average = mean(values);
+    return Math.sqrt(mean(values.map((value) => (value - average) ** 2)));
+}
+
+/**
+ * The weight of each move (index `k − 1` for the move reaching position `k`): the population
+ * standard deviation of the White-relative win chances of the `s` positions ending at `k`, the
+ * first `s − 2` moves using the first `s` positions. A window with an unscored position gets the
+ * minimum weight.
+ */
+function volatilityWeights(winChances: (number | null)[]): number[] {
+    const moves = winChances.length - 1;
+    const size = Math.min(
+        MAX_VOLATILITY_WINDOW,
+        Math.max(MIN_VOLATILITY_WINDOW, Math.floor(moves / 10)),
+    );
+    const weights: number[] = [];
+    for (let k = 1; k <= moves; k++) {
+        const end = Math.max(k, size - 1);
+        const window = winChances.slice(end - size + 1, end + 1);
+        weights.push(
+            window.some((value) => value === null)
+                ? MIN_VOLATILITY_WEIGHT
+                : Math.min(
+                      MAX_VOLATILITY_WEIGHT,
+                      Math.max(
+                          MIN_VOLATILITY_WEIGHT,
+                          populationStandardDeviation(window as number[]),
+                      ),
+                  ),
+        );
     }
+    return weights;
+}
 
-    let parentScore: Score | null =
-        displayedScore(root) ?? (root.fen === INITIAL_FEN ? INITIAL_SCORE : null);
-    const cplosses: ColorMap<number[]> = {
-        white: [],
-        black: [],
-    };
-    const accuracies: ColorMap<number[]> = {
-        white: [],
-        black: [],
-    };
+/**
+ * Everything the Report tab shows, from one walk over the mainline: per-side accuracy and ACPL,
+ * the per-side counts of the six move-quality marks, and the key moments. It reads the saved
+ * evaluation (`node.score`), never the live engine; a standard start position without one counts
+ * as +0.15.
+ */
+export function getGameStats(root: TreeNode): GameStats {
+    const annotations: ColorMap<AnnotationCounts> = { white: emptyCounts(), black: emptyCounts() };
+    const cplosses: ColorMap<number[]> = { white: [], black: [] };
+    const accuracies: ColorMap<{ accuracy: number; move: number }[]> = { white: [], black: [] };
+    const keyMoments: KeyMoment[] = [];
+
+    const rootScore = root.score ?? (root.fen === INITIAL_FEN ? INITIAL_SCORE : null);
+    const winChances: (number | null)[] = [
+        rootScore ? getWinChance(normalizeScore(rootScore.value, "white")) : null,
+    ];
+    let parentScore = rootScore;
     let node = root;
+    const path: number[] = [];
     while (node.children.length > 0) {
         node = node.children[0];
+        path.push(0);
+        const color: Color = node.halfMoves % 2 === 1 ? "white" : "black";
+        const score = node.score;
         for (const code of node.nags) {
             const annotation = nagGlyph(code);
             if (annotation && isBasicAnnotation(annotation)) {
-                if (node.halfMoves % 2 === 1) {
-                    whiteAnnotations[annotation]++;
-                } else {
-                    blackAnnotations[annotation]++;
-                }
+                annotations[color][annotation]++;
             }
         }
-        const color = node.halfMoves % 2 === 1 ? "white" : "black";
-        const score = displayedScore(node);
+        const marked = node.nags
+            .map((code) => nagGlyph(code))
+            .find((annotation) => annotation !== undefined && isBasicAnnotation(annotation));
+        if (marked && isBasicAnnotation(marked)) {
+            keyMoments.push({
+                path: [...path],
+                halfMoves: node.halfMoves,
+                san: node.san ?? "",
+                annotation: marked,
+                before: parentScore,
+                after: score,
+            });
+        }
         if (parentScore && score) {
             cplosses[color].push(getCPLoss(parentScore.value, score.value, color));
-            accuracies[color].push(getAccuracy(parentScore.value, score.value, color));
+            accuracies[color].push({
+                accuracy: getAccuracy(parentScore.value, score.value, color),
+                move: winChances.length - 1,
+            });
         }
+        winChances.push(score ? getWinChance(normalizeScore(score.value, "white")) : null);
         parentScore = score;
     }
-    const whiteCPL = mean(cplosses.white);
-    const blackCPL = mean(cplosses.black);
-    const whiteAccuracy = harmonicMean(accuracies.white);
-    const blackAccuracy = harmonicMean(accuracies.black);
 
-    return {
-        whiteCPL,
-        blackCPL,
-        whiteAccuracy,
-        blackAccuracy,
-        whiteAnnotations,
-        blackAnnotations,
+    const weights = volatilityWeights(winChances);
+    const side = (color: Color): SideStats => {
+        const scored = accuracies[color];
+        if (scored.length === 0) {
+            return { accuracy: null, acpl: null, annotations: annotations[color] };
+        }
+        const harmonic = harmonicMean(scored.map((entry) => entry.accuracy));
+        const totalWeight = scored.reduce((sum, entry) => sum + weights[entry.move], 0);
+        const weighted =
+            scored.reduce((sum, entry) => sum + entry.accuracy * weights[entry.move], 0) /
+            totalWeight;
+        return {
+            accuracy: (harmonic + weighted) / 2,
+            acpl: mean(cplosses[color]),
+            annotations: annotations[color],
+        };
     };
+    return { white: side("white"), black: side("black"), keyMoments };
 }
 
 export type PiecesCount = {

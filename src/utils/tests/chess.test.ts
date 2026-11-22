@@ -904,10 +904,9 @@ test("game stats count every basic NAG including duplicates", () => {
         parent = addMainlineMove(parent, "move");
         parent.nags = nags;
     }
-    expect(getGameStats(root)).toMatchObject({
-        whiteAnnotations: { "!": 2, "?!": 1, "?": 0, "??": 0, "!!": 0, "!?": 0 },
-        blackAnnotations: { "!": 0, "?!": 0, "?": 1, "??": 0, "!!": 0, "!?": 0 },
-    });
+    const stats = getGameStats(root);
+    expect(stats.white.annotations).toEqual({ "!": 2, "?!": 1, "?": 0, "??": 0, "!!": 0, "!?": 0 });
+    expect(stats.black.annotations).toEqual({ "!": 0, "?!": 0, "?": 1, "??": 0, "!!": 0, "!?": 0 });
 });
 
 function cpScore(value: number) {
@@ -927,21 +926,21 @@ test("game stats charge each side against its parent's score", () => {
     ply4.score = cpScore(30);
 
     const stats = getGameStats(root);
-    expect(stats.whiteCPL).toBe(165);
-    expect(stats.blackCPL).toBe(167.5);
-    expect(stats.whiteAccuracy).toBeCloseTo(44.34485, 5);
-    expect(stats.blackAccuracy).toBeCloseTo(44.24158, 5);
+    expect(stats.white.acpl).toBe(165);
+    expect(stats.black.acpl).toBe(167.5);
 });
 
-test("game stats use a live engine score ahead of the saved one", () => {
+test("game stats read the saved evaluation, never the live engine score", () => {
     const root = defaultTree().root;
     root.score = cpScore(20);
     const ply1 = addMainlineMove(root, "e4");
     ply1.score = cpScore(25);
-    expect(getGameStats(root).whiteCPL).toBe(0);
+    expect(getGameStats(root).white.acpl).toBe(0);
 
     ply1.engineScore = cpScore(-300);
-    expect(getGameStats(root).whiteCPL).toBe(320);
+    root.engineScore = cpScore(900);
+    expect(getGameStats(root).white.acpl).toBe(0);
+    expect(getGameStats(root).white.accuracy).toBe(100);
 });
 
 test("game stats skip a ply whose parent is unscored and do not span it", () => {
@@ -956,10 +955,11 @@ test("game stats skip a ply whose parent is unscored and do not span it", () => 
     ply4.score = cpScore(30);
 
     const stats = getGameStats(root);
-    expect(stats.whiteCPL).toBe(0);
-    expect(stats.blackCPL).toBe(5);
-    expect(stats.whiteAccuracy).toBe(100);
-    expect(stats.blackAccuracy).toBeCloseTo(98.95824, 5);
+    expect(stats.white.acpl).toBe(0);
+    expect(stats.black.acpl).toBe(5);
+    expect(stats.white.accuracy).toBe(100);
+    // One scored move: the harmonic and the weighted mean are the same value.
+    expect(stats.black.accuracy).toBeCloseTo(98.95824, 5);
 });
 
 test("game stats do not invent a baseline for an unscored set-up root", () => {
@@ -973,13 +973,13 @@ test("game stats do not invent a baseline for an unscored set-up root", () => {
     }
 
     const unscoredRoot = getGameStats(root);
-    expect(unscoredRoot.whiteCPL).toBe(0);
-    expect(unscoredRoot.blackCPL).toBe(0);
+    expect(unscoredRoot.white.acpl).toBe(0);
+    expect(unscoredRoot.black.acpl).toBe(0);
 
     root.score = cpScore(-300);
     const scoredRoot = getGameStats(root);
-    expect(scoredRoot.whiteCPL).toBe(0);
-    expect(scoredRoot.blackCPL).toBe(0);
+    expect(scoredRoot.white.acpl).toBe(0);
+    expect(scoredRoot.black.acpl).toBe(0);
 });
 
 test("game stats still charge ply 1 of a standard start against INITIAL_SCORE", () => {
@@ -990,10 +990,86 @@ test("game stats still charge ply 1 of a standard start against INITIAL_SCORE", 
     ply2.score = cpScore(-300);
 
     const stats = getGameStats(root);
-    expect(stats.whiteCPL).toBe(315);
-    expect(stats.blackCPL).toBe(0);
-    expect(stats.whiteAccuracy).toBeCloseTo(30.38523, 5);
-    expect(stats.blackAccuracy).toBe(100);
+    expect(stats.white.acpl).toBe(315);
+    expect(stats.black.acpl).toBe(0);
+    expect(stats.white.accuracy).toBeCloseTo(30.38523, 5);
+    expect(stats.black.accuracy).toBe(100);
+});
+
+test("game stats of a one-move game leave the side without a move empty", () => {
+    const root = defaultTree().root;
+    const ply1 = addMainlineMove(root, "e4");
+    ply1.score = cpScore(20);
+    const stats = getGameStats(root);
+    expect(stats.white.accuracy).not.toBeNull();
+    expect(stats.white.acpl).toBe(0);
+    expect(stats.black).toEqual({
+        accuracy: null,
+        acpl: null,
+        annotations: { "??": 0, "?": 0, "?!": 0, "!!": 0, "!": 0, "!?": 0 },
+    });
+    expect(getGameStats(defaultTree().root).white.accuracy).toBeNull();
+});
+
+test("game accuracy is the mean of the harmonic and the volatility-weighted mean", () => {
+    // Six moves (s = clamp(floor(6 / 10), 2, 8) = 2), White-relative scores after each move:
+    // root 0, 0, +4.00, +4.00, +4.00, −1.00, −1.00. White plays moves 1, 3 and 5.
+    const root = defaultTree().root;
+    root.score = cpScore(0);
+    let node = root;
+    for (const value of [0, 400, 400, 400, -100, -100]) {
+        node = addMainlineMove(node, "move");
+        node.score = cpScore(value);
+    }
+    // Per-move accuracy (existing formula): move 1 0→0 is 100, move 3 +4→+4 is 100, move 5
+    // +4→−1 is 103.1668·e^(−0.04354·(81.2207−40.8288)) − 2.1669 = 15.5602.
+    // Weights, s = 2: the standard deviation of the win chances of positions k−1 and k, i.e.
+    // half their difference, clamped to [0.5, 12]: move 1 0 → 0.5, move 3 0 → 0.5, move 5
+    // (81.2207 − 40.8288) / 2 = 20.20 → 12.
+    // Harmonic: 3 / (1/100 + 1/100 + 1/15.5602) = 35.6014.
+    // Weighted: (100·0.5 + 100·0.5 + 15.5602·12) / 13 = 22.0556.
+    // Game accuracy: (35.6014 + 22.0556) / 2 = 28.8285.
+    const stats = getGameStats(root);
+    expect(stats.white.accuracy).toBeCloseTo(28.8285, 3);
+    expect(Math.abs((stats.white.accuracy ?? 0) - 35.6014)).toBeGreaterThan(5);
+});
+
+test("game stats list the marked mainline moves as key moments in game order", () => {
+    const root = defaultTree().root;
+    root.score = cpScore(20);
+    const ply1 = addMainlineMove(root, "e4");
+    ply1.score = cpScore(15);
+    const ply2 = addMainlineMove(ply1, "f6");
+    ply2.score = cpScore(120);
+    ply2.nags = [6];
+    const ply3 = addMainlineMove(ply2, "d4");
+    ply3.score = cpScore(110);
+    const ply4 = addMainlineMove(ply3, "g5");
+    ply4.score = cpScore(900);
+    ply4.nags = [4, 146];
+    // A variation's marks are not key moments.
+    const side = addMainlineMove(ply3, "e5");
+    side.nags = [4];
+
+    expect(getGameStats(root).keyMoments).toEqual([
+        {
+            path: [0, 0],
+            halfMoves: 2,
+            san: "f6",
+            annotation: "?!",
+            before: cpScore(15),
+            after: cpScore(120),
+        },
+        {
+            path: [0, 0, 0, 0],
+            halfMoves: 4,
+            san: "g5",
+            annotation: "??",
+            before: cpScore(110),
+            after: cpScore(900),
+        },
+    ]);
+    expect(getGameStats(defaultTree().root).keyMoments).toEqual([]);
 });
 
 function addMainlineMove(parent: TreeNode, san: string): TreeNode {
@@ -1326,10 +1402,10 @@ test.each(SKIPPED_OPENING_VARIATIONS)(
     async (entry) => {
         const { root } = await parseSkippedOpeningVariation(entry);
         const stats = getGameStats(root);
-        expect(stats[`${entry.firstColour}Annotations`]["!"]).toBe(1);
-        expect(stats[`${entry.replyColour}Annotations`]["?"]).toBe(1);
-        expect(stats[`${entry.replyColour}Annotations`]["!"]).toBe(0);
-        expect(stats[`${entry.firstColour}Annotations`]["?"]).toBe(0);
+        expect(stats[entry.firstColour].annotations["!"]).toBe(1);
+        expect(stats[entry.replyColour].annotations["?"]).toBe(1);
+        expect(stats[entry.replyColour].annotations["!"]).toBe(0);
+        expect(stats[entry.firstColour].annotations["?"]).toBe(0);
     },
 );
 

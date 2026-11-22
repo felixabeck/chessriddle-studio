@@ -1,8 +1,10 @@
 import { minMax } from "@tiptap/react";
-import type { Color } from "chessops";
+import { type Color, parseUci } from "chessops";
 import { match } from "ts-pattern";
-import type { BestMoves, Score, ScoreValue } from "@/bindings";
-import type { Annotation } from "./annotation";
+import type { BestMoves, ReportPosition, Score, ScoreValue } from "@/bindings";
+import type { Annotation, BasicAnnotation } from "./annotation";
+import { isSameMove, positionFromFen } from "./chessops";
+import type { TreeNode } from "./treeReducer";
 
 export const INITIAL_SCORE: Score = {
     value: {
@@ -148,4 +150,119 @@ export function getAnnotation(
         }
     }
     return "";
+}
+
+/** Win-chance drops (mover's view, 0–100) above which a move is `??`, `?` and `?!`. */
+const BLUNDER_DROP = 20;
+const MISTAKE_DROP = 10;
+const INACCURACY_DROP = 5;
+/** Centipawn bands (mover's view) of the mate-created and mate-lost rules. */
+const MATE_RULE_INACCURACY_CP = 999;
+const MATE_RULE_MISTAKE_CP = 700;
+/** How far the first line must beat the second for a first choice to be good (`!`, `!!`). */
+const ONLY_MOVE_GAP = 10;
+/** How far the first line must beat the evaluation two plies back for `!`. */
+const PUNISHES_ERROR_GAP = 5;
+/** The after-evaluation (mover's view) a sacrifice must stay above for `!?`. */
+const INTERESTING_SACRIFICE_FLOOR_CP = -200;
+
+const DRAW_SCORE: ScoreValue = { type: "cp", value: 0 };
+
+/** A White-relative score in the mover's view: positive is good for the mover. */
+function moverValue(score: ScoreValue, color: Color): number {
+    return color === "white" ? score.value : -score.value;
+}
+
+function isMate(score: ScoreValue): boolean {
+    return score.type !== "cp";
+}
+
+function winChanceFor(score: ScoreValue, color: Color): number {
+    return getWinChance(normalizeScore(score, color));
+}
+
+function mistakeMark(before: ScoreValue, after: ScoreValue, color: Color): BasicAnnotation | null {
+    const beforeView = moverValue(before, color);
+    const afterView = moverValue(after, color);
+    const afterMatedAgainst = isMate(after) && afterView < 0;
+    if (!isMate(before) && afterMatedAgainst) {
+        // Mate created: the move walks into a forced mate.
+        if (beforeView < -MATE_RULE_INACCURACY_CP) return "?!";
+        if (beforeView < -MATE_RULE_MISTAKE_CP) return "?";
+        return "??";
+    }
+    if (isMate(before) && beforeView > 0 && (!isMate(after) || afterMatedAgainst)) {
+        // Mate lost: a forced mate for the mover is gone. A mate against the mover is below
+        // every band.
+        if (!afterMatedAgainst && afterView > MATE_RULE_INACCURACY_CP) return "?!";
+        if (!afterMatedAgainst && afterView > MATE_RULE_MISTAKE_CP) return "?";
+        return "??";
+    }
+    const drop = winChanceFor(before, color) - winChanceFor(after, color);
+    if (drop > BLUNDER_DROP) return "??";
+    if (drop > MISTAKE_DROP) return "?";
+    if (drop > INACCURACY_DROP) return "?!";
+    return null;
+}
+
+/** Whether the move that reached `node` is the first line's first move in `parent`'s position. */
+function playedFirstChoice(
+    parent: Pick<TreeNode, "fen">,
+    node: Pick<TreeNode, "move">,
+    best: BestMoves,
+): boolean {
+    const engineMove = best.uciMoves[0] ? parseUci(best.uciMoves[0]) : undefined;
+    if (!node.move || !engineMove) return false;
+    const [position] = positionFromFen(parent.fen);
+    return !!position && isSameMove(position, node.move, engineMove);
+}
+
+/**
+ * Judges every mainline move of a finished report. `positions` are the native report's entries
+ * (root first, White-relative) and `nodes` the mainline nodes they describe, root first. Entry
+ * `i` of the result is the mark for the move that reached position `i`; entry 0 is always null.
+ * The mover comes from each node's `halfMoves`, which is anchored to the root FEN.
+ */
+export function judgeReport(
+    positions: readonly ReportPosition[],
+    nodes: readonly Pick<TreeNode, "fen" | "move" | "halfMoves">[],
+): (BasicAnnotation | null)[] {
+    const length = Math.min(positions.length, nodes.length);
+    const marks: (BasicAnnotation | null)[] = new Array(length).fill(null);
+    for (let i = 1; i < length; i++) {
+        const before = positions[i - 1];
+        const after = positions[i];
+        if (before.best.length === 0) continue;
+        if (after.best.length === 0 && after.terminal === null) continue;
+        if (after.terminal === "checkmate") continue;
+        const afterScore = after.terminal === "draw" ? DRAW_SCORE : after.best[0].score.value;
+        const color: Color = nodes[i].halfMoves % 2 === 1 ? "white" : "black";
+        const firstChoice = playedFirstChoice(nodes[i - 1], nodes[i], before.best[0]);
+        const mistake = firstChoice
+            ? null
+            : mistakeMark(before.best[0].score.value, afterScore, color);
+        if (mistake) {
+            marks[i] = mistake;
+            continue;
+        }
+        if (before.best.length < 2) continue;
+        const firstLine = winChanceFor(before.best[0].score.value, color);
+        const secondLine = winChanceFor(before.best[1].score.value, color);
+        if (firstChoice && firstLine - secondLine > ONLY_MOVE_GAP) {
+            if (after.isSacrifice) {
+                marks[i] = "!!";
+            } else {
+                const twoBack = i >= 2 ? positions[i - 2].best[0]?.score.value : undefined;
+                if (twoBack && firstLine - winChanceFor(twoBack, color) > PUNISHES_ERROR_GAP) {
+                    marks[i] = "!";
+                }
+            }
+        } else if (
+            after.isSacrifice &&
+            normalizeScore(afterScore, color) > INTERESTING_SACRIFICE_FLOOR_CP
+        ) {
+            marks[i] = "!?";
+        }
+    }
+    return marks;
 }

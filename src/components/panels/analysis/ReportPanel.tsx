@@ -12,8 +12,8 @@ import ProgressButton from "@/components/common/ProgressButton";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useProgress } from "@/hooks/useProgress";
 import { reportModalOpenFamily } from "@/state/atoms";
-import { ANNOTATION_INFO, isBasicAnnotation } from "@/utils/annotation";
-import { getGameStats, getMainLine } from "@/utils/chess";
+import { ANNOTATION_INFO, type BasicAnnotation, isBasicAnnotation } from "@/utils/annotation";
+import { type AnnotationCounts, getGameStats, getMainLine } from "@/utils/chess";
 import classes from "./AnalysisPanel.module.css";
 import ReportModal, { reportRootFingerprint } from "./ReportModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -144,17 +144,17 @@ function ReportPanel() {
           setInProgress={setInProgress}
         />
 
-        {stats.whiteAccuracy > 0 && stats.blackAccuracy > 0 && (
+        {(stats.white.accuracy !== null || stats.black.accuracy !== null) && (
           <Group grow>
             <AccuracyCard
               color={t("Common.WHITE")}
-              accuracy={stats.whiteAccuracy}
-              cpl={stats.whiteCPL}
+              accuracy={stats.white.accuracy}
+              cpl={stats.white.acpl}
             />
             <AccuracyCard
               color={t("Common.BLACK")}
-              accuracy={stats.blackAccuracy}
-              cpl={stats.blackCPL}
+              accuracy={stats.black.accuracy}
+              cpl={stats.black.acpl}
             />
           </Group>
         )}
@@ -163,16 +163,19 @@ function ReportPanel() {
           <EvalChart isAnalysing={inProgress} startAnalysis={openReportingMode} />
         </Paper>
 
-        <GameStats {...stats} />
+        <GameStats
+          whiteAnnotations={stats.white.annotations}
+          blackAnnotations={stats.black.annotations}
+        />
       </Stack>
     </ScrollArea>
   );
 }
 
-type Stats = ReturnType<typeof getGameStats>;
+type AnnotationStats = { whiteAnnotations: AnnotationCounts; blackAnnotations: AnnotationCounts };
 
 const GameStats = memo(
-  function GameStats({ whiteAnnotations, blackAnnotations }: Stats) {
+  function GameStats({ whiteAnnotations, blackAnnotations }: AnnotationStats) {
     const { t } = useTranslation();
 
     const store = useContext(TreeStateContext)!;
@@ -230,8 +233,6 @@ const GameStats = memo(
   },
 );
 
-type BasicAnnotation = "??" | "?" | "?!" | "!!" | "!" | "!?";
-
 function AnnotationCount({
   annotation,
   side,
@@ -274,7 +275,18 @@ function AnnotationCount({
   );
 }
 
-function AccuracyCard({ color, cpl, accuracy }: { color: string; cpl: number; accuracy: number }) {
+/** Shown for a side without a scored move. */
+const NO_VALUE = "–";
+
+function AccuracyCard({
+  color,
+  cpl,
+  accuracy,
+}: {
+  color: string;
+  cpl: number | null;
+  accuracy: number | null;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -282,11 +294,11 @@ function AccuracyCard({ color, cpl, accuracy }: { color: string; cpl: number; ac
       <Group justify="space-between">
         <Stack gap={0} align="start">
           <Text c="dimmed">{color}</Text>
-          <Text fz="sm">{cpl.toFixed(1)} ACPL</Text>
+          <Text fz="sm">{cpl === null ? NO_VALUE : cpl.toFixed(1)} ACPL</Text>
         </Stack>
         <Stack gap={0} align="center">
           <Text fz="xl" lh="normal">
-            {accuracy.toFixed(1)}%
+            {accuracy === null ? NO_VALUE : `${accuracy.toFixed(1)}%`}
           </Text>
           <Text fz="sm" c="dimmed" lh="normal">
             {t("Board.Analysis.Accuracy")}
