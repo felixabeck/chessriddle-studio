@@ -13761,3 +13761,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The only everyday path to a second run is the shortcut or a second submit, which the renderer closes; tab close and webview teardown already cancel natively. Plan review round 1 showed the native variant needs ticket-scoped engine cancellation, a new outcome for a superseded reservation and care around the registry mutex. Reversal path: cancel the tab's earlier analysis tickets and their `analysis`-keyed engines inside `prepare_analysis`.
 * **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"b8386086e3de8df82f2a66ac58ef534c5a37fd4d60c473565906a0826cfdc29d","input_sha256":"b79b80ab8df71a7126cff8af4b27a98114fc555fc09bc5d60a3ac0c10ff4ea64","kind":"mutation-receipt","operation":"9f175c824ff14cbd2967b0851b97e04a4e70f63c8e55aad9cb5fff949a5ebb7a","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-11"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-12 — Does the reference database block or cancel a game report?
+
+* **Question:** The report dialog blocked Analyze while the reference index loaded, cancelled a running report when the reference changed (even with novelty off), and silently dropped a result when the currency check threw. What should a doubtful reference do?
+* **Governs:** -
+* **Chosen:** The reference never blocks or cancels a run. With novelty requested, a changed or unconfirmable reference at completion applies the result with the novelty outcome treated as unavailable (plan R4).
+* **Rejected:** Keeping the cancel-on-change effect and the silent drop.
+* **Reason:** The plan's T15 shows the cancel and silent drop discard a whole engine pass for one optional mark, the same defect N5 repairs natively. Reversal path: restore the cancel-on-change effect for runs that asked for novelty.
+* **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"fa13c410b9dd315e76daab986463759e4325caf0fa70fae2e381129790ac1958","input_sha256":"fef030353055e97aeba5ed3642f86d74df161f605b45b6cb41d4e6f04a3219b7","kind":"mutation-receipt","operation":"24bc7935334960ff986cbb28ef0216e5728abaf8e3a8b4dc6d2d02bbc562559c","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-12"],"target":"decisions-ledger","v":1} -->
