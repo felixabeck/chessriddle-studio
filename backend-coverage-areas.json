@@ -10,6 +10,10 @@
       },
       "exclude": [
         {
+          "pattern": "src-tauri/src/coach/error.rs",
+          "reason": "One enum declaration with derives only; no executable statements exist to instrument."
+        },
+        {
           "pattern": "src-tauri/src/engine/mod.rs",
           "reason": "Module declarations only; no executable statements exist to instrument."
         },

@@ -7,6 +7,7 @@
         "root": "src-tauri/src",
         "include": ["src-tauri/src/**/*.rs"],
         "exclude": [
+          "src-tauri/src/coach/error.rs",
           "src-tauri/src/db/schema.rs",
           "src-tauri/src/engine/mod.rs",
           "src-tauri/src/infra/mod.rs"
