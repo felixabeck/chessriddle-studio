@@ -203,8 +203,26 @@ export default function NavigationRow({
     return () => window.clearTimeout(id);
   }, [menuOpened]);
 
+  // True once an element other than the body has held focus, including one already focused when
+  // the row mounted. Until then a focused body is the startup state, not focus that a closed tab
+  // dropped.
+  const focusSeen = useRef(false);
   useEffect(() => {
-    if (document.activeElement !== document.body || !activeTab) return;
+    if (document.activeElement && document.activeElement !== document.body) {
+      focusSeen.current = true;
+      return;
+    }
+    const markFocusSeen = () => {
+      focusSeen.current = true;
+    };
+    document.addEventListener("focusin", markFocusSeen, { once: true });
+    return () => document.removeEventListener("focusin", markFocusSeen);
+  }, []);
+
+  // When closing a tab drops focus to the body, focus moves to the newly active tab. At startup
+  // it stays put: focusing the tab from code then draws the keyboard focus ring at every launch.
+  useEffect(() => {
+    if (!focusSeen.current || document.activeElement !== document.body || !activeTab) return;
     tabListRef.current?.querySelector<HTMLButtonElement>('[role="tab"][tabindex="0"]')?.focus();
   }, [activeTab, tabs.length]);
 

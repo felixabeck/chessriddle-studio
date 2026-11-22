@@ -531,6 +531,60 @@ test("a pointer-opened menu focuses its container, a keyboard-opened one its fir
   expect(document.activeElement?.textContent).toContain("Menu.File.NewTab");
 });
 
+test("the row leaves focus alone until something has held focus", async () => {
+  await renderRow({ path: "/" });
+  // Focusing the active tab from code at launch draws the keyboard focus ring on it.
+  expect(document.activeElement).toBe(document.body);
+  await act(async () => {
+    store.set(activeTabAtom, "next");
+  });
+  expect(document.activeElement).toBe(document.body);
+});
+
+test("focus dropped to the body moves to the newly active tab", async () => {
+  await renderRow({ path: "/" });
+  const first = tabs()[0]!;
+  first.focus();
+  // A closed tab takes its focused button with it and leaves the body focused.
+  first.blur();
+  expect(document.activeElement).toBe(document.body);
+  await act(async () => {
+    store.set(activeTabAtom, "next");
+  });
+  expect(document.activeElement).toBe(tabs()[1]);
+});
+
+test("focus dropped to the body after the row mounts with focus elsewhere moves to the tab", async () => {
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  outside.focus();
+  try {
+    await renderRow({ path: "/" });
+    outside.blur();
+    await act(async () => {
+      store.set(activeTabAtom, "next");
+    });
+    expect(document.activeElement).toBe(tabs()[1]);
+  } finally {
+    outside.remove();
+  }
+});
+
+test("an active-tab change leaves focus held outside the body alone", async () => {
+  await renderRow({ path: "/" });
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  try {
+    outside.focus();
+    await act(async () => {
+      store.set(activeTabAtom, "next");
+    });
+    expect(document.activeElement).toBe(outside);
+  } finally {
+    outside.remove();
+  }
+});
+
 test("arrow keys activate tabs on `/` and only move focus away from `/`", async () => {
   const router = await renderRow({ path: "/" });
   const first = tabs()[0]!;
