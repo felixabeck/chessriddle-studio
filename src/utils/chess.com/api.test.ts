@@ -40,6 +40,7 @@ import {
     downloadChessCom,
     fetchChessComGamePgn,
     getChessComAccount,
+    getChessComProfile,
     getChesscomGame,
 } from "./api";
 
@@ -249,6 +250,74 @@ describe("getChesscomGame", () => {
             expect(mocks.getPublicChessComJson).not.toHaveBeenCalled();
         },
     );
+});
+
+describe("getChessComProfile", () => {
+    test("returns the profile fields the confirmation shows", async () => {
+        mocks.getPublicChessComJson.mockResolvedValue(
+            JSON.stringify({
+                username: "magnuscarlsen",
+                name: "Magnus Carlsen",
+                title: "GM",
+                country: "https://api.chess.com/pub/country/NO",
+                status: "premium",
+                followers: 1,
+            }),
+        );
+
+        await expect(getChessComProfile("MagnusCarlsen")).resolves.toEqual({
+            username: "magnuscarlsen",
+            name: "Magnus Carlsen",
+            title: "GM",
+            countryCode: "NO",
+            closed: false,
+        });
+        expect(mocks.getPublicChessComJson).toHaveBeenCalledExactlyOnceWith({
+            kind: "profile",
+            player: "MagnusCarlsen",
+        });
+    });
+
+    test.each(["closed", "closed:fair_play_violations"])(
+        "marks status %s as closed",
+        async (status) => {
+            mocks.getPublicChessComJson.mockResolvedValue(
+                JSON.stringify({ username: "gone", status }),
+            );
+
+            await expect(getChessComProfile("gone")).resolves.toEqual({
+                username: "gone",
+                closed: true,
+            });
+        },
+    );
+
+    test("leaves out a country that is not an API country URL", async () => {
+        mocks.getPublicChessComJson.mockResolvedValue(
+            JSON.stringify({ username: "player", country: "Norway" }),
+        );
+
+        await expect(getChessComProfile("player")).resolves.toEqual({
+            username: "player",
+            closed: false,
+        });
+    });
+
+    test("rejects a response without a username", async () => {
+        mocks.getPublicChessComJson.mockResolvedValue(JSON.stringify({ name: "Nobody" }));
+
+        await expect(getChessComProfile("player")).rejects.toThrow(
+            i18n.t("ChessCom.InvalidResponse", { value: "player" }),
+        );
+        expect(mocks.logError).toHaveBeenCalledTimes(1);
+    });
+
+    test("passes a lookup failure on unchanged", async () => {
+        const failure = new Error("not found");
+        mocks.getPublicChessComJson.mockRejectedValue(failure);
+
+        await expect(getChessComProfile("player")).rejects.toBe(failure);
+    });
 });
 
 describe("getChessComAccount", () => {

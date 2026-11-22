@@ -1775,7 +1775,11 @@ export type PracticeStoreAnomalyKind = "OrphanShard" | "DamagedDeck" | "Identity
 export type ProgressEvent = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; cleared: boolean; failure?: ErrorPayload | null }
 export type ProgressItem = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; failure?: ErrorPayload | null }
 export type ProgressState = "running" | "succeeded" | "failed" | "cancelled"
-export type PublicChessComRequest = { kind: "account"; player: string } | { kind: "game"; game_type: string; game_id: string }
+export type PublicChessComRequest = { kind: "account"; player: string } | 
+/**
+ * The player's public profile: name, title, country and account status.
+ */
+{ kind: "profile"; player: string } | { kind: "game"; game_type: string; game_id: string }
 export type PublicLichessRequest = { kind: "account"; username: string } | { kind: "cloud_eval"; fen: string; multi_pv: number } | { kind: "game"; game_id: string } | { kind: "tablebase"; fen: string } | { kind: "fide"; query: string }
 export type Puzzle = { id: number; fen: string; moves: string; rating: number; rating_deviation: number; popularity: number; nb_plays: number }
 export type PuzzleDatabaseInfo = { title: string; description: string; puzzleCount: number; storageSize: bigint; path: PathRef }

@@ -1655,6 +1655,24 @@ pub(crate) fn download_publication_result(
     })
 }
 
+/// A game export writes one PGN file, so its destination may allow `DownloadFile` and nothing
+/// else. Database and puzzle roots allow that operation too, beside their own, and must never
+/// receive an export under a name of the caller's choosing.
+pub(crate) fn require_game_export_destination(
+    state: &AppState,
+    destination: &crate::infra::path_authority::PathRef,
+) -> Result<(), Error> {
+    let operations = state
+        .pgn_path_authority
+        .with_mut(|authority| authority.download_operations(destination))??;
+    if OpClass::from_operations(&operations)? != OpClass::Lichess {
+        return Err(Error::InvalidInput(
+            "game export requires a download-only destination".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
     handle: crate::credentials::LichessAccountHandle,
@@ -1681,14 +1699,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         true,
         MAX_ACTIVE_DOWNLOADS,
     )?;
-    let operations = state
-        .pgn_path_authority
-        .with_mut(|authority| authority.download_operations(&destination))??;
-    if OpClass::from_operations(&operations)? != OpClass::Lichess {
-        return Err(Error::InvalidInput(
-            "Lichess download requires a Lichess destination".into(),
-        ));
-    }
+    require_game_export_destination(state, &destination)?;
     let token = state
         .credentials
         .token_async(handle)

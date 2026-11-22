@@ -49,6 +49,44 @@ export async function getChessComAccount(player: string): Promise<ChessComStats 
   return stats.data;
 }
 
+const ChessComProfileSchema = z.object({
+  username: z.string().min(1).max(50),
+  name: z.string().max(200).optional(),
+  title: z.string().max(10).optional(),
+  // Chess.com names the country by its API URL, ending in the ISO code.
+  country: z.string().max(200).optional(),
+  status: z.string().max(100).optional(),
+});
+
+export type ChessComProfile = {
+  username: string;
+  name?: string;
+  title?: string;
+  /** ISO 3166-1 alpha-2 code, when the profile names a country in the expected form. */
+  countryCode?: string;
+  /** Closed accounts keep their public game archives. */
+  closed: boolean;
+};
+
+/** Rejects on a lookup failure (the native error) and on a response of an unexpected shape. */
+export async function getChessComProfile(player: string): Promise<ChessComProfile> {
+  const response = await tauri.getPublicChessComJson({ kind: "profile", player });
+  const profile = ChessComProfileSchema.safeParse(JSON.parse(response));
+  if (!profile.success) {
+    error(`Invalid response for Chess.com profile: ${profile.error}`);
+    throw new Error(t("ChessCom.InvalidResponse", { value: player }));
+  }
+  const { username, name, title, country, status } = profile.data;
+  const countryCode = country?.match(/\/country\/([A-Z]{2})$/)?.[1];
+  return {
+    username,
+    ...(name ? { name } : {}),
+    ...(title ? { title } : {}),
+    ...(countryCode ? { countryCode } : {}),
+    closed: status?.startsWith("closed") ?? false,
+  };
+}
+
 export async function downloadChessCom(
   destination: PathRef,
   player: string,

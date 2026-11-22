@@ -70,8 +70,17 @@ impl Default for ExportLimits {
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PublicChessComRequest {
-    Account { player: String },
-    Game { game_type: String, game_id: String },
+    Account {
+        player: String,
+    },
+    /// The player's public profile: name, title, country and account status.
+    Profile {
+        player: String,
+    },
+    Game {
+        game_type: String,
+        game_id: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -216,14 +225,10 @@ fn first_archive_month(since_ms: Option<i64>) -> Result<Option<(i32, u32)>, Erro
     Ok(Some((date.year(), date.month())))
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn get_public_chess_com_json(
-    request: PublicChessComRequest,
-    state: tauri::State<'_, AppState>,
-) -> Result<String, Error> {
-    let url = match request {
-        PublicChessComRequest::Account { player } => player_url(&player, &["stats"])?,
+fn public_chess_com_url(request: PublicChessComRequest) -> Result<reqwest::Url, Error> {
+    match request {
+        PublicChessComRequest::Account { player } => player_url(&player, &["stats"]),
+        PublicChessComRequest::Profile { player } => player_url(&player, &[]),
         PublicChessComRequest::Game { game_type, game_id } => {
             if !matches!(game_type.as_str(), "live" | "daily")
                 || game_id.is_empty()
@@ -237,9 +242,18 @@ pub async fn get_public_chess_com_json(
             url.path_segments_mut()
                 .map_err(|_| Error::InvalidInput("invalid Chess.com endpoint".into()))?
                 .extend(["callback", &game_type, "game", &game_id]);
-            url
+            Ok(url)
         }
-    };
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_public_chess_com_json(
+    request: PublicChessComRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, Error> {
+    let url = public_chess_com_url(request)?;
     let bytes = fetch_bounded(
         state.inner(),
         url,
@@ -306,6 +320,7 @@ pub(crate) async fn download_chess_com_games_runtime<R: tauri::Runtime>(
         true,
         crate::fs::MAX_ACTIVE_DOWNLOADS,
     )?;
+    crate::fs::require_game_export_destination(&state, &destination)?;
     let lower_player = player.to_ascii_lowercase();
     let first_month = first_archive_month(since_ms)?;
     let cancellation = lease.token();
@@ -894,6 +909,86 @@ mod tests {
         (dir, state, destination, download_root, app)
     }
 
+    /// Database and puzzle roots also allow `DownloadFile`; an export must refuse them before it
+    /// asks Chess.com for anything, or it could replace a database under a chosen file name.
+    #[tokio::test]
+    async fn chesscom_export_refuses_a_destination_that_is_not_download_only() {
+        use crate::infra::path_authority::PathOperation;
+        struct NoRequestTransport(std::sync::atomic::AtomicUsize);
+        #[async_trait]
+        impl DownloadTransport for NoRequestTransport {
+            async fn request(&self, _: &str, _: HeaderMap) -> Result<DownloadResponse, Error> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(Error::Cancellation)
+            }
+        }
+        for (label, operations) in [
+            (
+                "databases",
+                vec![
+                    PathOperation::DatabaseRead,
+                    PathOperation::DatabaseMutate,
+                    PathOperation::DatabaseCreate,
+                    PathOperation::DatabaseExport,
+                    PathOperation::DownloadFile,
+                ],
+            ),
+            (
+                "puzzles",
+                vec![
+                    PathOperation::PuzzleRead,
+                    PathOperation::PuzzleDelete,
+                    PathOperation::DownloadFile,
+                ],
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let app_root = crate::infra::path_authority::AppOwnedRoot::canonical_for_test(
+                label,
+                &dir.path().join(label),
+                operations,
+            );
+            let root = app_root.path.clone();
+            let destination = app_root.id.clone();
+            let authority = crate::infra::path_authority::PathAuthority::open(
+                dir.path().join("path-authority.json"),
+                vec![app_root],
+            )
+            .unwrap();
+            let transport = Arc::new(NoRequestTransport(std::sync::atomic::AtomicUsize::new(0)));
+            let state = AppState {
+                http_transport: transport.clone(),
+                ..Default::default()
+            };
+            state.pgn_path_authority.install(authority).unwrap();
+            let app = tauri::test::mock_app();
+            let job = state.operations.prepare_download("test").unwrap();
+            let result = download_chess_com_games_runtime(
+                destination,
+                "games.db3".into(),
+                "felix".into(),
+                None,
+                job,
+                app.handle().clone(),
+                "test",
+                state.clone(),
+                ExportScope::Complete,
+                true,
+            )
+            .await;
+            assert!(
+                matches!(&result, Err(Error::InvalidInput(message)) if message.contains("download-only")),
+                "{label}: export into a non-download root must be refused"
+            );
+            assert_eq!(
+                transport.0.load(std::sync::atomic::Ordering::SeqCst),
+                0,
+                "{label}: no request may be sent"
+            );
+            assert!(!root.join("games.db3").exists());
+        }
+    }
+
     #[tokio::test]
     async fn chesscom_failed_export_has_no_payload() {
         struct FailureTransport(bool);
@@ -1390,6 +1485,46 @@ mod tests {
             player_url("GGalile0", &["stats"]).unwrap().as_str(),
             "https://api.chess.com/pub/player/ggalile0/stats"
         );
+    }
+
+    #[test]
+    fn public_requests_map_to_their_fixed_endpoints() {
+        let url = |request| public_chess_com_url(request).map(|url| url.to_string());
+        assert_eq!(
+            url(PublicChessComRequest::Profile {
+                player: "GGalile0".into()
+            })
+            .unwrap(),
+            "https://api.chess.com/pub/player/ggalile0"
+        );
+        assert_eq!(
+            url(PublicChessComRequest::Account {
+                player: "GGalile0".into()
+            })
+            .unwrap(),
+            "https://api.chess.com/pub/player/ggalile0/stats"
+        );
+        assert_eq!(
+            url(PublicChessComRequest::Game {
+                game_type: "live".into(),
+                game_id: "101679677427".into()
+            })
+            .unwrap(),
+            "https://www.chess.com/callback/live/game/101679677427"
+        );
+        assert!(matches!(
+            url(PublicChessComRequest::Profile {
+                player: "a/b".into()
+            }),
+            Err(Error::InvalidInput(_))
+        ));
+        assert!(matches!(
+            url(PublicChessComRequest::Game {
+                game_type: "live".into(),
+                game_id: "1/../2".into()
+            }),
+            Err(Error::InvalidInput(_))
+        ));
     }
 
     #[test]
