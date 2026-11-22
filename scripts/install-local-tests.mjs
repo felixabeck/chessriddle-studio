@@ -358,11 +358,12 @@ test("a failing desktop database refresh warns and keeps the committed install",
 
 test("a missing update-desktop-database warns and keeps the committed install", async (t) => {
   const f = await fixture(t, { schemes: [LINK_SCHEME] });
-  // A PATH that holds every host tool except the refresh command.
+  // A PATH that holds every host tool except the refresh command. It is built from the whole
+  // PATH, first directory first: on a CI runner `node` lives outside /usr/bin.
   const tools = join(f.base, "tools");
   await mkdir(tools);
-  for (const directory of ["/usr/bin", "/bin"]) {
-    for (const name of await readdir(directory)) {
+  for (const directory of process.env.PATH.split(":").filter(Boolean)) {
+    for (const name of await readdir(directory).catch(() => [])) {
       if (name === "update-desktop-database") continue;
       await symlink(join(directory, name), join(tools, name)).catch((error) => {
         if (error.code !== "EEXIST") throw error;
