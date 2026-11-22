@@ -28458,7 +28458,7 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 ### The release workflow's Linux scheme check dies without a message: rpm2cpio exits 1 on the bundler's rpm
 
-* **ID:** f-20261122-08 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261122-08 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45031059660
 * **Where:** `.github/workflows/release.yml`, step "Verify the game-link scheme registration (Linux only)" (added by the build run studio-link-extension).
@@ -28466,3 +28466,5 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Failure scenario:** release rehearsal (workflow_dispatch) 45031059660 on a55aab030: job `release (ubuntu-24.04)` fails in that step right after its apt install, no error line. Both macOS legs and the Windows leg succeeded, their scheme checks included. A tag push would have failed its Linux leg the same way after building, so no Linux assets and no `latest.json` entry for Linux.
 * **Fix:** extract with `bsdtar` from `libarchive-tools`, whose exit status is honest for this package.
 * **Found by:** Claude Code (Fable 5.2), 2026-11-22, release rehearsal of the build run studio-link-extension.
+* **Handled 2026-11-22** (Claude Code, Fable 5.2, build run studio-link-extension): commit "fix(release): extract the rpm with bsdtar in the Linux scheme check". Proof: in an ubuntu:24.04 container `rpm2cpio` exited 1 and `bsdtar` exited 0 on the same locally built rpm; the step's `run:` script, extracted verbatim from the workflow and run with `bash --noprofile --norc -e -o pipefail` against locally built deb, rpm and AppImage packages, exited 0 and printed `Exec=chessriddle-studio %u` and `MimeType=x-scheme-handler/chessriddle-studio` for each; `pnpm workflows:check` OK; closure review by review-correctness and review-platform-semantics (agy) approved. Not re-dispatched: the next rehearsal or tag push runs the corrected step on the real runner.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"e0d35f9f118ae2bf13675760087eeb7ff61f0a20a84fb08a426f7d3adbf9caa5","header_sha256":"4cdf951905cd893d11465e709fb492f7fc637831b22c3c115936732429dd55f3","header_status":"handled","input_sha256":"c8d669a27c76729c0056531cf89485d7846de060a864360890cba875a175c1e5","kind":"mutation-receipt","operation":"03e0f9f3b1d36c6c970d284329a22ffe986f918ea53c79f67ce92e9290c70c03","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-08"],"target":"f-20261122-08","v":1} -->
