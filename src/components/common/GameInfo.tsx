@@ -213,7 +213,6 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
               c="dimmed"
               tt="uppercase"
               fw="bold"
-              ta="right"
               onClick={() => setFideColor("black")}
               className={cx(classes.colorHover, classes.colorLabel, classes.blackLabel)}
             >

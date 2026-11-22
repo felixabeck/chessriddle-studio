@@ -25,6 +25,7 @@ import {
     goToBoards,
     libraryLink,
     goToLibrary,
+    waitForFontsSettled,
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
@@ -2813,6 +2814,50 @@ test("database-files: real double-click on database card outer padding opens the
     await expect(
         page.getByRole("heading", { name: gameOpeningFixture.databaseTitle, exact: true }),
     ).toBeVisible();
+});
+
+// The preview's game info once kept a 36rem minimum inside a horizontal scroller, so a narrower
+// preview hid BLACK, the Black player and Elo and part of the date (f-20261121-06). Every field must
+// sit inside the preview card's width at each of the header's three layout steps. Also runs in
+// WebKit.
+test("database-files: game info fields stay inside the preview at every layout step", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({ commands: gameOpeningCommands });
+    await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+    for (const surface of [
+        { width: 1440, scale: "100", columns: 3 },
+        { width: 1400, scale: "200", columns: 2 },
+        { width: 320, scale: "200", columns: 1 },
+    ] as const) {
+        await page.evaluate((scale) => localStorage.setItem("font-size", scale), surface.scale);
+        await page.setViewportSize({ width: surface.width, height: 900 });
+        await gotoPreservingStorage(page, `/databases/${gameOpeningFixture.databaseId}`);
+        await page.locator("tbody tr").filter({ hasText: "Second White" }).click();
+        const fields = page.locator("[data-game-info-fields]");
+        await expect(fields.getByRole("textbox", { name: "Black", exact: true })).toHaveValue(
+            "Second Black",
+        );
+        await waitForFontsSettled(page);
+        const layout = await fields.evaluate((grid) => {
+            const card = grid.closest(".mantine-Paper-root")!.getBoundingClientRect();
+            const outside = [...grid.querySelectorAll("input, button")]
+                .filter((field) => field.getBoundingClientRect().width > 0)
+                .flatMap((field) => {
+                    const box = field.getBoundingClientRect();
+                    // Horizontal only: the card scrolls vertically by design.
+                    const inside = box.left >= card.left - 1 && box.right <= card.right + 1;
+                    const name =
+                        field.getAttribute("aria-label") ?? field.textContent ?? field.tagName;
+                    return inside ? [] : [`${name} [${box.left}, ${box.right}]`];
+                });
+            const columns = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+            return { outside, columns };
+        });
+        expect(layout.outside, `${surface.width}px / ${surface.scale}%`).toEqual([]);
+        expect(layout.columns, `${surface.width}px / ${surface.scale}%`).toBe(surface.columns);
+    }
 });
 
 for (const gesture of ["button", "double-click", "Enter"] as const) {

@@ -31,6 +31,8 @@
   color: inherit;
   font: inherit;
   text-align: center;
+  /* An editable field grows with its text; past its column it scrolls inside the field. */
+  max-width: 100%;
 }
 
 .textInput {
@@ -131,6 +133,7 @@
 .blackLabel {
   grid-area: black-label;
   justify-self: end;
+  text-align: right;
 }
 
 .event {
@@ -138,10 +141,6 @@
   flex: 1;
   min-width: 0;
   align-self: center;
-  /* An editable Event grows with its text; past the column it scrolls inside the field. */
-  > input {
-    max-width: 100%;
-  }
 }
 
 .white {
@@ -172,7 +171,6 @@
 .input:focus-visible,
 .textInput:focus-visible,
 .resultInput:focus-visible,
-.eloInput:focus-visible,
 .roundInput:focus-visible,
 .colorHover:focus-visible {
   outline: 3px solid var(--mantine-primary-color-filled);
@@ -187,44 +185,6 @@
   cursor: default;
   background-color: transparent;
   user-select: none;
-}
-
-.nameInput {
-  padding: 0;
-  font-weight: 500;
-  line-height: 0;
-  height: auto;
-}
-
-.nameInput:disabled {
-  cursor: default;
-  background-color: transparent;
-}
-
-[data-mantine-color-scheme] .nameInput:disabled {
-  color: var(--cf-foreground);
-}
-
-.eloInput {
-  appearance: none;
-  border: 0;
-  margin: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  height: auto;
-  opacity: 75%;
-  padding: 0;
-  line-height: 0;
-}
-
-.eloInput:disabled {
-  cursor: default;
-  background-color: transparent;
-}
-
-[data-mantine-color-scheme] .eloInput:disabled {
-  color: var(--cf-foreground);
 }
 
 .right {
