@@ -27763,6 +27763,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
   * Rejected: moving importers to the domain modules in this step (the finding's first step keeps all 184 importers on the barrel); naming the tab module `workspace.ts` (collides in meaning with `src/state/workspace.ts`).
 <!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"11c42f6c3f45dae6e1f965f7df1d6d6e9c75835f236fb80dcea4a515af5c04e4","header_sha256":"4ca98aadd8803f0e1f9b33f6b352f43eccceea0ef326885cb72e4fa369a7817a","header_status":"handled","input_sha256":"5b54e1ae00ae958da2ef5b725c7dee6d6aaf006d71db03163c72a0523018ba5a","kind":"mutation-receipt","operation":"933927a3ef483a98d6d9f512dd445fe74a6a83995fb8c01c8bd3ff8dc7a67cd8","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-17"],"target":"f-20261119-17","v":1} -->
 
+* **Commit correction (2026-11-22):** after rebasing onto `72705692c` the commits are `d017fb050` (split, formerly `6c95939f4`) and `7dee48c52` (coverage declaration, formerly `4264cf172`). `72705692c` changed the explorer strip-height schema in the old `atoms.ts`; its hunk was ported into `src/state/atoms/explorer.ts` and the line-multiset check against the new upstream `atoms.ts` is again exact.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"233760dad9ac30c011ed0196881efc186e44dcec5d1b343299a59c10f853cb3d","input_sha256":"117dd3e381cccbb9f43fab34b7d0852717f33c5164b23ae7023ebe5588e2d3a6","kind":"mutation-receipt","operation":"bcb20f331e273e3f832c3455bbedb4a8c532e9fd6050b690eabc6a75846ca3da","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-17"],"target":"f-20261119-17","v":1} -->
+
 ---
 
 ## 2026-11-19 — filed through the inbox spool
