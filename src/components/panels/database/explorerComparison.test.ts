@@ -28,7 +28,15 @@ const shown = {
     pinned: false,
     primary: handle("mega"),
     stored: handle("corr"),
+    pinnedComparison: null as DatabaseHandle | null,
     databases: [readable("mega"), readable("corr", "Correspondence")],
+};
+/** A tab pinned to the primary with its own second database; the app-wide choice is another one. */
+const pinnedPair = {
+    ...shown,
+    pinned: true,
+    pinnedComparison: handle("online") as DatabaseHandle | null,
+    databases: [...shown.databases, readable("online", "Online games")],
 };
 
 test("a readable stored database beside another primary is the second source", () => {
@@ -80,4 +88,47 @@ test.each<[string, Partial<typeof shown>]>([
 ])("an unreadable stored database stays silent for %s", (_name, change) => {
     const databases = [unreadable("mega"), unreadable("corr")];
     expect(comparisonState({ ...shown, databases, ...change })).toEqual({ kind: "none" });
+});
+
+test("a pinned tab compares against its own second database, not the app-wide choice", () => {
+    expect(comparisonState(pinnedPair)).toEqual({
+        kind: "source",
+        database: handle("online"),
+        title: "Online games",
+    });
+    expect(comparisonState({ ...pinnedPair, stored: null })).toEqual({
+        kind: "source",
+        database: handle("online"),
+        title: "Online games",
+    });
+});
+
+test("a pinned tab's listed but unreadable second database is reported as unreadable", () => {
+    expect(
+        comparisonState({
+            ...pinnedPair,
+            databases: [...shown.databases, unreadable("online")],
+        }),
+    ).toEqual({ kind: "unreadable", name: "online.db3" });
+});
+
+test.each<[string, Partial<typeof pinnedPair>]>([
+    ["a second database missing from the list", { databases: shown.databases }],
+    ["a second database equal to the pinned one", { pinnedComparison: handle("mega") }],
+    ["no second database of its own", { pinnedComparison: null }],
+    ["a Lichess source", { local: false }],
+    ["a pending or failed list", { databases: undefined }],
+])("a pinned tab with %s shows no comparison", (_name, change) => {
+    expect(comparisonState({ ...pinnedPair, ...change })).toEqual({ kind: "none" });
+});
+
+test("an unpinned tab ignores a pinned second database", () => {
+    expect(comparisonState({ ...pinnedPair, pinned: false })).toEqual({
+        kind: "source",
+        database: handle("corr"),
+        title: "Correspondence",
+    });
+    expect(comparisonState({ ...pinnedPair, pinned: false, stored: null })).toEqual({
+        kind: "none",
+    });
 });

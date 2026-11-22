@@ -19,10 +19,13 @@ function LocalFiltersForm({
   database,
   filters,
   setFilters,
+  fixedPlayer = false,
 }: {
   database: DatabaseHandle | null;
   filters: ExplorerFilters;
   setFilters: (update: (current: ExplorerFilters) => ExplorerFilters) => void;
+  /** The source's player is given and cannot be chosen here, so the form offers no player input. */
+  fixedPlayer?: boolean;
 }) {
   const { t } = useTranslation();
   const databaseKey = database ? databaseHandleKey(database) : undefined;
@@ -31,23 +34,28 @@ function LocalFiltersForm({
   return (
     <Stack>
       <SimpleGrid cols={2}>
-        <FilterField label={t("Board.Database.Local.Player")}>
-          {database && (
-            <PlayerSearchInput
-              key={databaseKey}
-              label={t("Common.Search")}
-              value={filters.player ?? undefined}
-              file={database}
-              setValue={(v) => setFilters((q) => ({ ...q, player: v ?? null }))}
-              withinPortal={false}
-            />
-          )}
-        </FilterField>
-        <PlaysAsControl
-          value={filters.color}
-          onChange={(color) => setFilters((q) => ({ ...q, color }))}
-          hasPlayer={filters.player !== null}
-        />
+        {!fixedPlayer && (
+          <FilterField label={t("Board.Database.Local.Player")}>
+            {database && (
+              <PlayerSearchInput
+                key={databaseKey}
+                label={t("Common.Search")}
+                value={filters.player ?? undefined}
+                file={database}
+                setValue={(v) => setFilters((q) => ({ ...q, player: v ?? null }))}
+                withinPortal={false}
+              />
+            )}
+          </FilterField>
+        )}
+        {/* Without the player cell the control takes the row, so From and To stay side by side. */}
+        <div style={fixedPlayer ? { gridColumn: "1 / -1" } : undefined}>
+          <PlaysAsControl
+            value={filters.color}
+            onChange={(color) => setFilters((q) => ({ ...q, color }))}
+            hasPlayer={filters.player !== null}
+          />
+        </div>
 
         <FilterField label={t("Common.From")}>
           <DateInput

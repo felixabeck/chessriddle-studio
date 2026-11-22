@@ -603,6 +603,7 @@
     "Databases.OpeningTree.Wins": "Перамогі",
     "Databases.Opponent.Add": "Дадаць анлайн-акаўнт",
     "Databases.Opponent.AlreadyLinked": "Гэты акаўнт ужо прывязаны.",
+    "Databases.Opponent.BoardWithoutOnline": "Не ўдалося дадаць анлайн-партыі на дошку.",
     "Databases.Opponent.ClosedChessCom": "Гэты акаўнт закрыты. Яго партыі па-ранейшаму даступныя.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (анлайн)",
     "Databases.Opponent.Download": "Спампаваць партыі",

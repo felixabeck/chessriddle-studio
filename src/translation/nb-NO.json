@@ -587,6 +587,7 @@
     "Databases.OpeningTree.Wins": "Seire",
     "Databases.Opponent.Add": "Legg til nettkonto",
     "Databases.Opponent.AlreadyLinked": "Denne kontoen er allerede koblet til.",
+    "Databases.Opponent.BoardWithoutOnline": "Nettpartiene kunne ikke legges til på brettet.",
     "Databases.Opponent.ClosedChessCom": "Denne kontoen er stengt. Partiene er fortsatt tilgjengelige.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (på nett)",
     "Databases.Opponent.Download": "Last ned partier",

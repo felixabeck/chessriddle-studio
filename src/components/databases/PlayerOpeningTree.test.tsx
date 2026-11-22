@@ -18,6 +18,8 @@ import {
   dbTabFamily,
   dbTypeFamily,
   localOptionsFamily,
+  opponentLinksAtom,
+  pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
   referenceDbAtom,
   tabFamily,
@@ -45,7 +47,16 @@ const mocks = vi.hoisted(() => ({
   openGame: vi.fn(),
   getPlayer: vi.fn(),
   unavailable: new Set<string>(),
+  /** Databases listed beside the two fixtures, as the listing reports them. */
+  listedToo: [] as unknown[],
+  onlinePlayerIds: vi.fn(),
+  showNotification: vi.fn(),
 }));
+vi.mock("./opponentLookup", () => ({ opponentPlayerIds: mocks.onlinePlayerIds }));
+vi.mock("@mantine/notifications", async (original) => {
+  const actual = await original<typeof import("@mantine/notifications")>();
+  return { ...actual, notifications: { ...actual.notifications, show: mocks.showNotification } };
+});
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate, Link: () => null }));
 vi.mock("@/components/files/notifyError", async (original) => ({
   ...(await original<typeof import("@/components/files/notifyError")>()),
@@ -83,12 +94,15 @@ vi.mock("@/hooks/useDatabaseList", () => ({
   DATABASE_LIST_KEY: "databases",
   useDatabaseList: () => ({
     data: {
-      databases: [file, reference].map((handle) => ({
-        type: "success",
-        file: handle,
-        title: handle.id.id,
-        filename: "test.db3",
-      })),
+      databases: [
+        ...[file, reference].map((handle) => ({
+          type: "success",
+          file: handle,
+          title: handle.id.id,
+          filename: "test.db3",
+        })),
+        ...mocks.listedToo,
+      ],
     },
   }),
 }));
@@ -167,6 +181,8 @@ beforeEach(async () => {
   mocks.openGame.mockResolvedValue("opened-game");
   mocks.getPlayer.mockReset().mockResolvedValue(player);
   mocks.unavailable.clear();
+  mocks.listedToo = [];
+  mocks.onlinePlayerIds.mockReset().mockResolvedValue([]);
   const i18n = await catalogueI18n("en-US");
   translate = (key, options) => i18n.t(key, options);
   localStorage.clear();
@@ -555,6 +571,129 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
   }
   expect(store.get(referenceDbAtom)).toEqual(reference);
   expect(JSON.parse(localStorage.getItem("reference-database")!)).toEqual(reference);
+});
+
+const online: DatabaseHandle = { kind: "database", id: { id: "online-games" } };
+const onlineFilename = "opponent-11111111-1111-4111-8111-111111111111-0a1b2c3d.db3";
+const onlineAccounts = [
+  { provider: "lichess", username: "SelectedOnline" },
+  { provider: "chesscom", username: "selected_online" },
+] as const;
+
+/** Links the fixture player to online accounts; `listed` says how the listing reports the games. */
+function linkOnlineGames(listed: "readable" | "unreadable" | "absent" | "none") {
+  store.set(opponentLinksAtom, [
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      playerName: player.name!,
+      accounts: [...onlineAccounts],
+      filter: { years: 3, timeControls: ["blitz", "rapid"] },
+      ...(listed === "none" ? {} : { database: onlineFilename }),
+    },
+  ]);
+  if (listed === "readable") {
+    mocks.listedToo = [
+      {
+        type: "success",
+        file: online,
+        title: "Selected player (online)",
+        filename: onlineFilename,
+      },
+    ];
+  } else if (listed === "unreadable") {
+    mocks.listedToo = [{ type: "error", file: online, filename: onlineFilename, error: "broken" }];
+  }
+}
+
+test("Prepare pins the player's downloaded online games as the board's second column", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayerIds.mockResolvedValue([5, 9]);
+  await render();
+  await click(button("Prepare on board"));
+
+  expect(mocks.onlinePlayerIds).toHaveBeenCalledExactlyOnceWith(online, [...onlineAccounts]);
+  expect(mocks.navigate).toHaveBeenCalledOnce();
+  expect(mocks.showNotification).not.toHaveBeenCalled();
+  const tab = store.get(tabsAtom).at(-1)!;
+  expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toEqual(file);
+  // Usernames that stayed separate players: the board follows the first one.
+  expect(store.get(pinnedExplorerComparisonFamily(tab.value))).toEqual({
+    database: online,
+    player: 5,
+  });
+  expect(store.get(localOptionsFamily(tab.value))).toMatchObject({
+    player: 42,
+    player_database: databaseHandleKey(file),
+  });
+
+  // The real board panel then searches both databases, each for its own player.
+  treeStore = createTreeStore(tab.value);
+  mocks.searchPosition.mockClear();
+  cache = new Map();
+  await render(player, file, tab.value);
+  await vi.waitFor(() =>
+    expect(mocks.searchPosition).toHaveBeenCalledWith(
+      online,
+      expect.objectContaining({ player1: 5 }),
+      `${tab.value}:comparison`,
+      { signal: expect.any(AbortSignal) },
+    ),
+  );
+  expect(mocks.searchPosition).toHaveBeenCalledWith(
+    file,
+    expect.objectContaining({ player1: 42 }),
+    tab.value,
+    { signal: expect.any(AbortSignal) },
+  );
+  expect(container.querySelectorAll("[data-explorer-source]")).toHaveLength(2);
+});
+
+test.each([
+  ["finds no player", () => mocks.onlinePlayerIds.mockResolvedValue([])],
+  ["fails", () => mocks.onlinePlayerIds.mockRejectedValue(new Error("database is locked"))],
+])(
+  "Prepare opens the board on one column with a warning when the online lookup %s",
+  async (_name, arrange) => {
+    linkOnlineGames("readable");
+    arrange();
+    await render();
+    await click(button("Prepare on board"));
+
+    expect(mocks.navigate).toHaveBeenCalledOnce();
+    const tab = store.get(tabsAtom).at(-1)!;
+    expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toEqual(file);
+    expect(store.get(pinnedExplorerComparisonFamily(tab.value))).toBeNull();
+    expect(mocks.showNotification).toHaveBeenCalledExactlyOnceWith({
+      color: "warning",
+      message: "The online games could not be added to the board.",
+    });
+    expect(mocks.notify).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["unreadable", "absent", "none"] as const)(
+  "Prepare asks for no online player and warns of nothing while the online games are %s",
+  async (listed) => {
+    linkOnlineGames(listed);
+    await render();
+    await click(button("Prepare on board"));
+
+    expect(mocks.onlinePlayerIds).not.toHaveBeenCalled();
+    expect(mocks.showNotification).not.toHaveBeenCalled();
+    const tab = store.get(tabsAtom).at(-1)!;
+    expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toEqual(file);
+    expect(store.get(pinnedExplorerComparisonFamily(tab.value))).toBeNull();
+  },
+);
+
+test("the online games of the very database on the card are not its own second column", async () => {
+  linkOnlineGames("none");
+  store.set(opponentLinksAtom, (links) => [{ ...links[0], database: "test.db3" }]);
+  await render();
+  await click(button("Prepare on board"));
+
+  expect(mocks.onlinePlayerIds).not.toHaveBeenCalled();
+  expect(store.get(pinnedExplorerComparisonFamily(store.get(tabsAtom).at(-1)!.value))).toBeNull();
 });
 
 test.each(["rejection", "refusal"])(

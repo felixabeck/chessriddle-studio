@@ -587,6 +587,7 @@
     "Databases.OpeningTree.Wins": "Siege",
     "Databases.Opponent.Add": "Online-Konto hinzufügen",
     "Databases.Opponent.AlreadyLinked": "Dieses Konto ist bereits verknüpft.",
+    "Databases.Opponent.BoardWithoutOnline": "Die Online-Partien konnten nicht zum Brett hinzugefügt werden.",
     "Databases.Opponent.ClosedChessCom": "Dieses Konto ist geschlossen. Seine Partien sind weiterhin verfügbar.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (Online-Partien)",
     "Databases.Opponent.Download": "Partien laden",

@@ -579,6 +579,7 @@
     "Databases.OpeningTree.Wins": "胜",
     "Databases.Opponent.Add": "添加在线账户",
     "Databases.Opponent.AlreadyLinked": "此账户已关联。",
+    "Databases.Opponent.BoardWithoutOnline": "无法将在线对局添加到棋盘。",
     "Databases.Opponent.ClosedChessCom": "此账户已关闭，其对局仍可获取。",
     "Databases.Opponent.DatabaseTitle": "{{name}}（在线）",
     "Databases.Opponent.Download": "下载对局",

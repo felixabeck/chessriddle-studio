@@ -603,6 +603,7 @@
     "Databases.OpeningTree.Wins": "Wygrane",
     "Databases.Opponent.Add": "Dodaj konto online",
     "Databases.Opponent.AlreadyLinked": "To konto jest już połączone.",
+    "Databases.Opponent.BoardWithoutOnline": "Nie udało się dodać partii online do szachownicy.",
     "Databases.Opponent.ClosedChessCom": "To konto jest zamknięte. Jego partie są nadal dostępne.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (partie online)",
     "Databases.Opponent.Download": "Pobierz partie",

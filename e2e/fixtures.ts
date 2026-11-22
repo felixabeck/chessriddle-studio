@@ -26,8 +26,11 @@ type MockCommand = {
     pgnTokens?: Record<string, unknown[]>;
     /** Current database rows retain orientation writes and the returned CAS stamp. */
     databaseGames?: NormalizedGame[];
-    /** `get_db_info` replies by database handle id, for a listing of more than one database. */
-    databaseInfo?: Record<string, unknown>;
+    /**
+     * Replies by the id of the database handle a command is asked of (its `file` argument), for
+     * scenarios with more than one database. A database without an entry gets the usual reply.
+     */
+    byDatabase?: Record<string, unknown>;
     delay?: number;
     error?: string | ErrorPayload;
     result?: unknown;
@@ -1505,9 +1508,11 @@ const tauriBootstrap = () => {
                 return response.lastGames;
             }
         }
-        if (command === "get_db_info" && response.databaseInfo) {
-            const info = response.databaseInfo[(args.file as { id: { id: string } }).id.id];
-            if (info) return info;
+        if (response.byDatabase) {
+            const database = (args.file as { id?: { id?: string } } | undefined)?.id?.id;
+            if (database !== undefined && database in response.byDatabase) {
+                return response.byDatabase[database];
+            }
         }
         if (command === "get_db_game" && response.databaseGames) {
             const game = response.databaseGames.find((row) => row.id === args.gameId);

@@ -8,14 +8,15 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useNavigate } from "@tanstack/react-router";
 import type { Color } from "chessops";
 import dayjs from "dayjs";
-import { useSetAtom, useStore } from "jotai";
+import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { ChevronLeft, RotateCcw } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { DatabaseHandle, NormalizedGame, Player } from "@/bindings";
+import type { DatabaseHandle, NormalizedGame, OpponentAccount, Player } from "@/bindings";
 import { Chessground } from "@/chessground/Chessground";
 import { IconAction } from "@/components/common/IconAction";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
@@ -27,19 +28,25 @@ import {
   mergeLocalOpenings,
   useLocalExplorer,
 } from "@/components/panels/database/useLocalExplorer";
+import { useDatabaseList } from "@/hooks/useDatabaseList";
 import {
   dbTabFamily,
   dbTypeFamily,
   localOptionsFamily,
+  opponentLinksAtom,
+  pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
   tabFamily,
   tabsAtom,
 } from "@/state/atoms";
+import { findOpponentLink } from "@/state/opponentLinks";
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
 import { databaseGameHeaders } from "@/utils/databaseGameTree";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { createTab, runTabCreation } from "@/utils/tabs";
 import GamePreview from "./GamePreview";
+import { opponentGames } from "./OpponentAccounts";
+import { opponentPlayerIds } from "./opponentLookup";
 import PlayerOpeningRecency from "./PlayerOpeningRecency";
 import { playerOpeningLine } from "./playerOpeningLine";
 import classes from "./PlayerOpeningTree.module.css";
@@ -57,6 +64,8 @@ export type OpeningTreeSource = {
 type SourceQuery = { source: OpeningTreeSource; options: LocalOptions };
 type SourceResult = { source: OpeningTreeSource; result: LocalExplorerResult };
 type OpeningTreeVariant = "database" | "account";
+/** The player's downloaded online games: their database and the usernames that name the player. */
+type OnlineGames = { file: DatabaseHandle; accounts: readonly OpponentAccount[] };
 
 export default function PlayerOpeningTree({
   player,
@@ -67,6 +76,9 @@ export default function PlayerOpeningTree({
 }) {
   const { t } = useTranslation();
   const key = `${databaseHandleKey(file)}:${player.id}`;
+  const link = findOpponentLink(useAtomValue(opponentLinksAtom), player.name);
+  const { data: listing, error: listingError } = useDatabaseList();
+  const games = opponentGames(link, listing, listingError);
   return (
     <OpeningTree
       key={key}
@@ -77,6 +89,11 @@ export default function PlayerOpeningTree({
       }
       tabName={player.name ?? ""}
       sources={[{ key, label: "", file, player: player.id }]}
+      online={
+        link && games.kind === "games" && databaseHandleKey(games.file) !== databaseHandleKey(file)
+          ? { file: games.file, accounts: link.accounts }
+          : undefined
+      }
     />
   );
 }
@@ -177,11 +194,14 @@ function OpeningTree({
   name,
   tabName,
   sources,
+  online,
 }: {
   variant: OpeningTreeVariant;
   name: string;
   tabName: string;
   sources: OpeningTreeSource[];
+  /** Shown as a second column on the board that "Prepare on board" opens. */
+  online?: OnlineGames;
 }) {
   const { t } = useTranslation();
   const [color, setColor] = useState<Color>("white");
@@ -242,6 +262,22 @@ function OpeningTree({
     const pinned = queries.length === 1 ? queries[0] : undefined;
     setPreparing(true);
     try {
+      // The online games join as a second column once their player is known; without that the
+      // board still opens, on the first database alone.
+      let onlinePlayer: number | undefined;
+      if (pinned && online) {
+        onlinePlayer = (
+          await opponentPlayerIds(online.file, online.accounts).catch(() => [] as number[])
+        )[0];
+        if (onlinePlayer === undefined) {
+          notifications.show({
+            color: "warning",
+            message: t("Databases.Opponent.BoardWithoutOnline", {
+              defaultValue: "The online games could not be added to the board.",
+            }),
+          });
+        }
+      }
       await runTabCreation({
         create: () =>
           createTab({
@@ -255,6 +291,12 @@ function OpeningTree({
             const { time_controls: _searchOnly, ...options } = pinned.options;
             atoms.set(localOptionsFamily(id), options);
             atoms.set(pinnedExplorerDatabaseFamily(id), pinned.source.file);
+            if (online && onlinePlayer !== undefined) {
+              atoms.set(pinnedExplorerComparisonFamily(id), {
+                database: online.file,
+                player: onlinePlayer,
+              });
+            }
             atoms.set(dbTypeFamily(id), "local");
             atoms.set(dbTabFamily(id), "stats");
             atoms.set(tabFamily(id), "database");

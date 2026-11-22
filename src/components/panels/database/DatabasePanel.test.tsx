@@ -23,6 +23,7 @@ import {
   lichessOptionsAtom,
   localOptionsFamily,
   masterOptionsAtom,
+  pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
   referenceDbAtom,
 } from "@/state/atoms";
@@ -1706,6 +1707,168 @@ describe("DatabasePanel", () => {
       expect(compareButton()).toBeUndefined();
       expect(container.textContent).not.toContain("Board.Database.ComparisonUnreadable");
       expect(store.get(comparisonDbAtom)).toEqual(corr);
+    });
+
+    describe("a pinned tab with a second database of its own", () => {
+      /** Pinned to the reference with player 42; the app-wide comparison is the third database. */
+      async function mountPinnedPair(list: ManagedDatabaseInfo[] = [readable, corrInfo, third]) {
+        mocks.getDatabases.mockResolvedValue(databaseList(list));
+        mocks.searchPosition.mockImplementation(
+          async (file: DatabaseHandle) => answers[databaseHandleKey(file)] ?? [[], []],
+        );
+        localStorage.setItem("comparison-database", JSON.stringify(third.file));
+        const mounted = await mountLocal(reference, 42);
+        await act(async () =>
+          mounted.store.set(pinnedExplorerComparisonFamily(tabId), { database: corr, player: 7 }),
+        );
+        await act(async () => {});
+        return mounted;
+      }
+      const sourceFilters = async (index: number) => {
+        const button = sources()[index].querySelector<HTMLButtonElement>(
+          "button[aria-haspopup='dialog']",
+        )!;
+        await act(async () => button.click());
+        return vi.waitFor(() => {
+          const found = document.querySelector<HTMLElement>("[data-explorer-filters]");
+          expect(found).not.toBeNull();
+          return found!;
+        });
+      };
+      const expectGlobalChoiceUntouched = (store: ReturnType<typeof createJotaiStore>) => {
+        expect(store.get(comparisonDbAtom)).toEqual(third.file);
+        expect(JSON.parse(localStorage.getItem("comparison-database")!)).toEqual(third.file);
+      };
+
+      test("the second column searches its database for its own player with the tab's filters", async () => {
+        const { store } = await mountPinnedPair();
+        await vi.waitFor(() => expect(sources()).toHaveLength(2));
+
+        await vi.waitFor(() => expect(searchesOf(corr)).not.toHaveLength(0));
+        const [, query, progress] = searchesOf(corr).at(-1)!;
+        expect(query).toMatchObject({
+          player1: 7,
+          wantedResult: "draw",
+          range1: [1800, 2400],
+          excludeFastEvents: true,
+        });
+        expect(progress).toBe(`${tabId}:comparison`);
+        expect(searchesOf(reference).at(-1)![1].player1).toBe(42);
+        // The app-wide comparison is another database: it is neither searched nor changed.
+        expect(searchesOf(third.file)).toHaveLength(0);
+        expectGlobalChoiceUntouched(store);
+        // The tab's own options keep the primary's player.
+        expect(store.get(localOptionsFamily(tabId))).toMatchObject({
+          player: 42,
+          player_database: databaseHandleKey(reference),
+        });
+      });
+
+      test("the second column is named by its database and offers no other one", async () => {
+        await mountPinnedPair();
+        await vi.waitFor(() => expect(sources()).toHaveLength(2));
+
+        expect(sources()[0].querySelector(".mantine-Select-input")).not.toBeNull();
+        expect(sources()[1].querySelector(".mantine-Select-input")).toBeNull();
+        expect(sources()[1].textContent).toContain("Correspondence");
+        expect(compareButton()).toBeUndefined();
+      });
+
+      test("its remove button clears the tab's second database and nothing app-wide", async () => {
+        const { store } = await mountPinnedPair();
+        await vi.waitFor(() => expect(sources()).toHaveLength(2));
+        const remove = sources()[1].querySelector<HTMLButtonElement>(
+          'button[aria-label="Board.Database.RemoveComparison"]',
+        )!;
+        await act(async () => remove.click());
+
+        expect(store.get(pinnedExplorerComparisonFamily(tabId))).toBeNull();
+        expectGlobalChoiceUntouched(store);
+        expect(sources()).toHaveLength(1);
+        expect(store.get(pinnedExplorerDatabaseFamily(tabId))).toEqual(reference);
+      });
+
+      test("the second column's filters have no player input, the first column's keep theirs", async () => {
+        await mountPinnedPair();
+        await vi.waitFor(() => expect(sources()).toHaveLength(2));
+
+        const second = await sourceFilters(1);
+        expect(second.querySelector(".mantine-Autocomplete-input")).toBeNull();
+        expect(second.querySelector('input[type="radio"]')).not.toBeNull();
+        await act(async () =>
+          sources()[1].querySelector<HTMLButtonElement>("button[aria-haspopup='dialog']")!.click(),
+        );
+        await vi.waitFor(() =>
+          expect(document.querySelector("[data-explorer-filters]")).toBeNull(),
+        );
+        const first = await sourceFilters(0);
+        expect(first.querySelector(".mantine-Autocomplete-input")).not.toBeNull();
+      });
+
+      test("a colour chosen in the second column reaches both searches and keeps the first column's player", async () => {
+        const { store } = await mountPinnedPair();
+        await vi.waitFor(() => expect(sources()).toHaveLength(2));
+        const filters = await sourceFilters(1);
+        const black = Array.from(
+          filters.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+        ).find((radio) => radio.value === "black")!;
+        expect(black.disabled).toBe(false);
+        mocks.searchPosition.mockClear();
+        await act(async () => black.click());
+
+        expect(store.get(localOptionsFamily(tabId))).toMatchObject({
+          color: "black",
+          player: 42,
+          player_database: databaseHandleKey(reference),
+        });
+        await vi.waitFor(() => expect(searchesOf(corr).at(-1)?.[1]).toMatchObject({ player2: 7 }));
+        expect(searchesOf(corr).at(-1)![1].player1 ?? null).toBeNull();
+        await vi.waitFor(() =>
+          expect(searchesOf(reference).at(-1)?.[1]).toMatchObject({ player2: 42 }),
+        );
+        expect(store.get(pinnedExplorerComparisonFamily(tabId))).toEqual({
+          database: corr,
+          player: 7,
+        });
+      });
+
+      test("an unreadable second database is named, and removing it clears the tab's choice only", async () => {
+        const { store } = await mountPinnedPair([readable, { ...unreadable, file: corr }]);
+        const alert = await vi.waitFor(() => {
+          const found = Array.from(container.querySelectorAll<HTMLElement>('[role="alert"]')).find(
+            (item) => item.textContent?.startsWith("Board.Database.ComparisonUnreadable"),
+          );
+          expect(found).toBeDefined();
+          return found!;
+        });
+        expect(sources()).toHaveLength(1);
+        expect(searchesOf(corr)).toHaveLength(0);
+        await act(async () =>
+          alert
+            .querySelector<HTMLButtonElement>(
+              'button[aria-label="Board.Database.RemoveComparison"]',
+            )!
+            .click(),
+        );
+
+        expect(store.get(pinnedExplorerComparisonFamily(tabId))).toBeNull();
+        expectGlobalChoiceUntouched(store);
+        expect(container.textContent).not.toContain("Board.Database.ComparisonUnreadable");
+      });
+
+      test("a second database that is no longer listed shows one column and no warning", async () => {
+        const { store } = await mountPinnedPair([readable, third]);
+        await vi.waitFor(() => expect(searchesOf(reference)).not.toHaveLength(0));
+
+        expect(sources()).toHaveLength(1);
+        expect(searchesOf(corr)).toHaveLength(0);
+        expect(searchesOf(third.file)).toHaveLength(0);
+        expect(container.textContent).not.toContain("Board.Database.ComparisonUnreadable");
+        expect(store.get(pinnedExplorerComparisonFamily(tabId))).toEqual({
+          database: corr,
+          player: 7,
+        });
+      });
     });
 
     test("without a primary database no comparison is searched or shown", async () => {

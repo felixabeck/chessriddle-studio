@@ -579,6 +579,7 @@
     "Databases.OpeningTree.Wins": "승리",
     "Databases.Opponent.Add": "온라인 계정 추가",
     "Databases.Opponent.AlreadyLinked": "이 계정은 이미 연결되어 있습니다.",
+    "Databases.Opponent.BoardWithoutOnline": "온라인 대국을 보드에 추가할 수 없습니다.",
     "Databases.Opponent.ClosedChessCom": "이 계정은 폐쇄되었습니다. 대국은 계속 이용할 수 있습니다.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (온라인)",
     "Databases.Opponent.Download": "대국 다운로드",

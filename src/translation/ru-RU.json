@@ -603,6 +603,7 @@
     "Databases.OpeningTree.Wins": "Победы",
     "Databases.Opponent.Add": "Добавить онлайн-аккаунт",
     "Databases.Opponent.AlreadyLinked": "Этот аккаунт уже привязан.",
+    "Databases.Opponent.BoardWithoutOnline": "Не удалось добавить онлайн-партии на доску.",
     "Databases.Opponent.ClosedChessCom": "Этот аккаунт закрыт. Его партии по-прежнему доступны.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (онлайн)",
     "Databases.Opponent.Download": "Скачать партии",

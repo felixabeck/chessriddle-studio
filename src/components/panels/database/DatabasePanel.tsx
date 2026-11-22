@@ -4,12 +4,14 @@ import {
   Alert,
   Box,
   Button,
+  Flex,
   Group,
   Menu,
   SegmentedControl,
   Select,
   Stack,
   Tabs,
+  Text,
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
@@ -37,6 +39,7 @@ import {
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
   localOptionsFamily,
+  pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
   lichessOptionsAtom,
   masterOptionsAtom,
@@ -152,6 +155,9 @@ export async function fetchOpening(
     .exhaustive();
 }
 
+/** The height of the sources' size "sm" select, so a titled source lines up with a selectable one. */
+const SOURCE_SELECT_HEIGHT = 36;
+
 /** Follows a linked collection that publishes a new database in place of `selected`. */
 function useCollectionDatabase(
   selected: DatabaseHandle | null,
@@ -189,6 +195,11 @@ function DatabasePanel() {
   );
   const currency = useCollectionDatabase(selectedDatabase, replacePrimary);
   const [storedComparison, setStoredComparison] = useAtom(comparisonDbAtom);
+  // A pinned tab's second column is the tab's own; the app-wide choice is not its concern.
+  const [pinnedComparison, setPinnedComparison] = useAtom(
+    useTabAtom(pinnedExplorerComparisonFamily),
+  );
+  const removeComparison = () => (pinned ? setPinnedComparison(null) : setStoredComparison(null));
   const sessions = useAtomValue(sessionsAtom);
   const [debouncedFen] = useDebouncedValue(fen, 50);
   const lichessOptions = useAtomValue(lichessOptionsAtom);
@@ -239,13 +250,16 @@ function DatabasePanel() {
     pinned,
     primary: effectiveReferenceDatabase,
     stored: storedComparison,
+    pinnedComparison: pinnedComparison?.database ?? null,
     databases: databasesFailure ? undefined : databases?.databases,
   });
   const comparisonDatabase = comparison.kind === "source" ? comparison.database : null;
+  // The pinned second column searches for its own player and shares the tab's other filters.
+  const comparisonPlayer = pinned ? (pinnedComparison?.player ?? null) : null;
   // The stored choice is followed, not the shown one: a database its collection already replaced
   // is no longer in the list, and only its collection still knows the successor.
   useCollectionDatabase(db === "local" && !pinned ? storedComparison : null, replaceStored);
-  const comparisonFilters = useExplorerFilters(comparisonDatabase);
+  const comparisonFilters = useExplorerFilters(comparisonDatabase, comparisonPlayer);
   const dbType: DBType = match(db)
     .with("local", (v) => ({
       type: v,
@@ -345,6 +359,9 @@ function DatabasePanel() {
     database: DatabaseHandle | null;
     choose: (value: string | null) => void;
     name?: string;
+    /** A source that cannot be exchanged shows this title instead of the select. */
+    fixedTitle?: string;
+    fixedPlayer?: boolean;
     binding: Pick<ReturnType<typeof useExplorerFilters>, "filters" | "setFilters">;
     explorer: Pick<ReturnType<typeof useLocalExplorer>, "loading" | "progressId">;
     action?: ReactNode;
@@ -352,17 +369,25 @@ function DatabasePanel() {
     <ExplorerSourceHeader
       key={source.key}
       select={
-        <Select
-          data={source.choices}
-          value={source.database ? databaseHandleKey(source.database) : null}
-          onChange={source.choose}
-          placeholder={source.name ? undefined : t("Board.Database.SelectReference")}
-          aria-label={source.name}
-          size="sm"
-          flex={1}
-          miw={0}
-          allowDeselect={false}
-        />
+        source.fixedTitle !== undefined ? (
+          <Flex align="center" flex={1} miw={0} h={SOURCE_SELECT_HEIGHT}>
+            <Text fz="sm" fw={600} truncate title={source.fixedTitle}>
+              {source.fixedTitle}
+            </Text>
+          </Flex>
+        ) : (
+          <Select
+            data={source.choices}
+            value={source.database ? databaseHandleKey(source.database) : null}
+            onChange={source.choose}
+            placeholder={source.name ? undefined : t("Board.Database.SelectReference")}
+            aria-label={source.name}
+            size="sm"
+            flex={1}
+            miw={0}
+            allowDeselect={false}
+          />
+        )
       }
       filterLabel={localFilterSummary(source.binding.filters, t)}
       filterDisabled={!source.database}
@@ -371,6 +396,7 @@ function DatabasePanel() {
           database={source.database}
           filters={source.binding.filters}
           setFilters={source.binding.setFilters}
+          fixedPlayer={source.fixedPlayer}
         />
       }
       action={source.action}
@@ -416,6 +442,7 @@ function DatabasePanel() {
       database: comparison.database,
       choose: chooseComparison,
       name: t("Board.Database.CompareWith"),
+      ...(pinned ? { fixedTitle: comparison.title, fixedPlayer: comparisonPlayer !== null } : {}),
       binding: comparisonFilters,
       explorer: comparisonExplorer,
       action: (
@@ -423,7 +450,7 @@ function DatabasePanel() {
           label={t("Board.Database.RemoveComparison")}
           variant="subtle"
           size="sm"
-          onClick={() => setStoredComparison(null)}
+          onClick={removeComparison}
         >
           <X size="0.875rem" />
         </IconAction>
@@ -661,7 +688,7 @@ function DatabasePanel() {
           style={{ flexShrink: 0 }}
           withCloseButton
           closeButtonLabel={t("Board.Database.RemoveComparison")}
-          onClose={() => setStoredComparison(null)}
+          onClose={removeComparison}
         >
           {t("Board.Database.ComparisonUnreadable", { database: comparison.name })}
         </Alert>

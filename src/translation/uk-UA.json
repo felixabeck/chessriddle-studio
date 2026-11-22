@@ -603,6 +603,7 @@
     "Databases.OpeningTree.Wins": "Перемоги",
     "Databases.Opponent.Add": "Додати онлайн-обліковий запис",
     "Databases.Opponent.AlreadyLinked": "Цей обліковий запис уже прив’язано.",
+    "Databases.Opponent.BoardWithoutOnline": "Не вдалося додати онлайн-партії на дошку.",
     "Databases.Opponent.ClosedChessCom": "Цей обліковий запис закрито. Його партії досі доступні.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (онлайн)",
     "Databases.Opponent.Download": "Завантажити партії",

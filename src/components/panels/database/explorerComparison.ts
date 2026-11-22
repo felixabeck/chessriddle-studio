@@ -7,25 +7,30 @@ export type ComparisonState =
     | { kind: "unreadable"; name: string };
 
 /**
- * What a panel shows of the stored comparison database. Only an unpinned local explorer with a
- * primary database compares, and only against another database of the current list. `databases`
- * is `undefined` while the list is pending or failed.
+ * What a panel shows as its second database. Only a local explorer with a primary database
+ * compares, and only against another database of the current list. A tab pinned to a database
+ * compares against its own `pinnedComparison` and never against the app-wide `stored` choice;
+ * every other tab compares against `stored`. `databases` is `undefined` while the list is pending
+ * or failed.
  */
 export function comparisonState({
     local,
     pinned,
     primary,
     stored,
+    pinnedComparison,
     databases,
 }: {
     local: boolean;
     pinned: boolean;
     primary: DatabaseHandle | null;
     stored: DatabaseHandle | null;
+    pinnedComparison: DatabaseHandle | null;
     databases: readonly ManagedDatabaseInfo[] | undefined;
 }): ComparisonState {
-    if (!local || pinned || !primary || !stored || !databases) return { kind: "none" };
-    const key = databaseHandleKey(stored);
+    const candidate = pinned ? pinnedComparison : stored;
+    if (!local || !primary || !candidate || !databases) return { kind: "none" };
+    const key = databaseHandleKey(candidate);
     if (key === databaseHandleKey(primary)) return { kind: "none" };
     const entry = databases.find((database) => databaseHandleKey(database.file) === key);
     if (!entry) return { kind: "none" };

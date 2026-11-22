@@ -51,8 +51,15 @@ function localSourceOptions(
 /**
  * Binds a local source's filters to where they live: the database's saved filters, or the tab's
  * own options while the tab is pinned to a database.
+ *
+ * `fixedPlayer` is the player of a pinned tab's second column. That column shares every other
+ * filter with the tab, searches `database` for its own player, and never changes the tab's
+ * player.
  */
-export function useExplorerFilters(database: DatabaseHandle | null): {
+export function useExplorerFilters(
+    database: DatabaseHandle | null,
+    fixedPlayer: number | null = null,
+): {
     filters: ExplorerFilters;
     setFilters: (update: (current: ExplorerFilters) => ExplorerFilters) => void;
     /** The options to search `database` with in this tab. */
@@ -64,6 +71,26 @@ export function useExplorerFilters(database: DatabaseHandle | null): {
     const saveFilters = useSetAtom(setExplorerFiltersAtom);
     const key = database ? databaseHandleKey(database) : null;
 
+    if (pinned && fixedPlayer !== null) {
+        const shared = (options: LocalOptions): ExplorerFilters => ({
+            ...tabFilters(options, database),
+            player: fixedPlayer,
+        });
+        return {
+            filters: shared(tabOptions),
+            setFilters: (update) =>
+                setTabOptions((current) => {
+                    const { player: _fixed, ...rest } = update(shared(current));
+                    return { ...current, ...rest };
+                }),
+            options: {
+                ...tabOptions,
+                path: database,
+                player: fixedPlayer,
+                player_database: key ?? undefined,
+            },
+        };
+    }
     if (pinned) {
         return {
             filters: tabFilters(tabOptions, database),

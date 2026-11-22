@@ -595,6 +595,7 @@
     "Databases.OpeningTree.Wins": "Victorias",
     "Databases.Opponent.Add": "Añadir cuenta en línea",
     "Databases.Opponent.AlreadyLinked": "Esta cuenta ya está vinculada.",
+    "Databases.Opponent.BoardWithoutOnline": "No se pudieron añadir las partidas en línea al tablero.",
     "Databases.Opponent.ClosedChessCom": "Esta cuenta está cerrada. Sus partidas siguen disponibles.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (en línea)",
     "Databases.Opponent.Download": "Descargar partidas",

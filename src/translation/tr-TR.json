@@ -587,6 +587,7 @@
     "Databases.OpeningTree.Wins": "Galibiyetler",
     "Databases.Opponent.Add": "Çevrimiçi hesap ekle",
     "Databases.Opponent.AlreadyLinked": "Bu hesap zaten bağlı.",
+    "Databases.Opponent.BoardWithoutOnline": "Çevrimiçi oyunlar tahtaya eklenemedi.",
     "Databases.Opponent.ClosedChessCom": "Bu hesap kapatılmış. Oyunları hâlâ kullanılabilir.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (çevrimiçi)",
     "Databases.Opponent.Download": "Oyunları indir",

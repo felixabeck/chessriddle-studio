@@ -3978,6 +3978,53 @@ test("database-files: the panels sit beside the notation below a database strip 
 const opponentLinkId = "11111111-1111-4111-8111-111111111111";
 const opponentDatabase = `opponent-${opponentLinkId}-0a1b2c3d.db3`;
 
+/** The fixture database and, beside it, the downloaded online games of its player "First White". */
+const opponentDatabaseCommands: NonNullable<MockScenario["commands"]> = {
+    list_workspace_databases: {
+        result: {
+            entries: [
+                {
+                    handle: { id: { id: gameOpeningFixture.databaseId }, kind: "database" },
+                    filename: "opening.db3",
+                    availability: "available",
+                },
+                {
+                    handle: { id: { id: "opponent-online-db" }, kind: "database" },
+                    filename: opponentDatabase,
+                    availability: "available",
+                },
+            ],
+            unread: [],
+        },
+    },
+    get_db_info: {
+        ...databaseLayoutCommands.get_db_info,
+        byDatabase: {
+            "opponent-online-db": {
+                status: "ready",
+                filename: opponentDatabase,
+                title: "First White (online)",
+                description: "",
+                game_count: 1234,
+                player_count: 400,
+                event_count: 3,
+                storage_size: "8192",
+                indexed: true,
+            },
+        },
+    },
+};
+const opponentLink = {
+    id: opponentLinkId,
+    playerName: "First White",
+    accounts: [
+        { provider: "lichess", username: "FirstWhite" },
+        { provider: "chesscom", username: "first_white" },
+    ],
+    filter: { years: 5, timeControls: ["blitz", "rapid"] },
+    database: opponentDatabase,
+};
+
 /** Opens the fixture player's card in the Players tab and returns the pane holding it. */
 async function openFirstWhiteCard(page: Page) {
     await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
@@ -4087,18 +4134,7 @@ test("database-files: an opponent's downloaded online games show their count bes
 }) => {
     await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [
         "opponent-links",
-        JSON.stringify([
-            {
-                id: opponentLinkId,
-                playerName: "First White",
-                accounts: [
-                    { provider: "lichess", username: "FirstWhite" },
-                    { provider: "chesscom", username: "first_white" },
-                ],
-                filter: { years: 5, timeControls: ["blitz", "rapid"] },
-                database: opponentDatabase,
-            },
-        ]),
+        JSON.stringify([opponentLink]),
     ] as const);
     await page.addInitScript(() => localStorage.setItem("font-size", "100"));
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -4106,39 +4142,7 @@ test("database-files: an opponent's downloaded online games show their count bes
     await mockScenario({
         commands: {
             ...databaseLayoutCommands,
-            list_workspace_databases: {
-                result: {
-                    entries: [
-                        {
-                            handle: { id: { id: gameOpeningFixture.databaseId }, kind: "database" },
-                            filename: "opening.db3",
-                            availability: "available",
-                        },
-                        {
-                            handle: { id: { id: "opponent-online-db" }, kind: "database" },
-                            filename: opponentDatabase,
-                            availability: "available",
-                        },
-                    ],
-                    unread: [],
-                },
-            },
-            get_db_info: {
-                ...databaseLayoutCommands.get_db_info,
-                databaseInfo: {
-                    "opponent-online-db": {
-                        status: "ready",
-                        filename: opponentDatabase,
-                        title: "First White (online)",
-                        description: "",
-                        game_count: 1234,
-                        player_count: 400,
-                        event_count: 3,
-                        storage_size: "8192",
-                        indexed: true,
-                    },
-                },
-            },
+            ...opponentDatabaseCommands,
         },
     });
     const preview = await openFirstWhiteCard(page);
@@ -4166,4 +4170,116 @@ test("database-files: an opponent's downloaded online games show their count bes
     await waitForFontsSettled(page);
     await page.mouse.move(0, 0);
     await expect(page).toHaveScreenshot("opponent-accounts-downloaded.png");
+});
+
+test("database-files: Prepare on board shows a linked opponent's over-the-board and online games side by side", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    await page.addInitScript(
+        ([key, value]) => {
+            localStorage.setItem("font-size", "100");
+            // The explorer opens on its controls, where each column names its database.
+            localStorage.setItem("explorer-header-collapsed", "false");
+            localStorage.setItem(key, value);
+        },
+        ["opponent-links", JSON.stringify([opponentLink])] as const,
+    );
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+    const row = (move: string, white: number, draw: number, black: number) => ({
+        move,
+        white,
+        draw,
+        black,
+        unknown: 0,
+        last_played: null,
+        year_counts: [],
+    });
+    const [game] = gameOpeningFixture.games;
+    await mockScenario({
+        commands: {
+            ...databaseLayoutCommands,
+            ...opponentDatabaseCommands,
+            get_progress: { result: null },
+            get_player: { result: { id: 1, name: "First White", elo: 1500, game_count: 12 } },
+            search_position: {
+                result: [[row("e4", 5, 2, 1), row("d4", 2, 1, 1)], [game]],
+                byDatabase: {
+                    "opponent-online-db": [
+                        [row("e4", 310, 40, 250), row("b3", 120, 10, 95), row("d4", 4, 0, 5)],
+                        [{ ...game, id: 900, black: "online_rival", event: "Rated Blitz game" }],
+                    ],
+                },
+            },
+        },
+    });
+    const preview = await openFirstWhiteCard(page);
+    await preview.getByRole("tab", { name: "Openings", exact: true }).click();
+    const tree = preview.locator("[data-player-opening-tree]");
+    // The card's own tree stays over-the-board only.
+    await expect(tree.locator("[data-opening-moves]")).toContainText("e4");
+    await expect(tree.locator("[data-opening-moves]")).not.toContainText("b3");
+    await tree.getByRole("button", { name: "Prepare on board", exact: true }).click();
+    await expect(page).toHaveURL("/");
+
+    const sources = page.locator("[data-explorer-source]");
+    await expect(sources).toHaveCount(2);
+    // The first column can be exchanged; the online games are fixed to this board.
+    await expect(sources.nth(0).getByRole("textbox")).toHaveValue(gameOpeningFixture.databaseTitle);
+    await expect(sources.nth(1)).toContainText("First White (online)");
+    await expect(sources.nth(1).getByRole("textbox")).toHaveCount(0);
+    await expect(
+        sources.nth(1).getByRole("button", { name: "Remove comparison database", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("cell", { name: "b3", exact: true })).toBeVisible();
+    // Each database is searched for its own player.
+    const searches = await page.evaluate(() =>
+        window.__E2E_TAURI__
+            .invocations()
+            .filter(({ command }) => command === "search_position")
+            .map(({ args }) => {
+                const { file, query } = args as {
+                    file: { id: { id: string } };
+                    query: { player1?: number };
+                };
+                return `${file.id.id}:${query.player1}`;
+            }),
+    );
+    expect(searches).toContain(`${gameOpeningFixture.databaseId}:1`);
+    expect(searches).toContain("opponent-online-db:1");
+    const lookups = await page.evaluate(() =>
+        window.__E2E_TAURI__
+            .invocations()
+            .filter(
+                ({ command, args }) =>
+                    command === "get_players" &&
+                    (args as { file: { id: { id: string } } }).file.id.id === "opponent-online-db",
+            )
+            .map(({ args }) => (args as { query: { name?: string } }).query.name),
+    );
+    expect(lookups.slice(-2)).toEqual(["FirstWhite", "first_white"]);
+
+    await sources
+        .nth(1)
+        .getByRole("button", { name: /^Filters:/ })
+        .click();
+    const filters = page.locator("[data-explorer-filters]");
+    await expect(filters.getByRole("radio", { name: "White", exact: true })).toBeChecked();
+    await expect(filters.getByRole("textbox", { name: "Search" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(filters).toHaveCount(0);
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+    // Both headers end on one line: the titled column is as tall as the selectable one.
+    const bottoms = await sources.evaluateAll((cells) =>
+        cells.map((cell) => Math.round(cell.getBoundingClientRect().bottom)),
+    );
+    expect(bottoms[1]).toBe(bottoms[0]);
+    await assertNoHorizontalOverflow();
+    await waitForFontsSettled(page);
+    // The filter button keeps the focus the closed popover returned to it.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.mouse.move(0, 0);
+    await expect(page).toHaveScreenshot("opponent-board-columns.png");
 });

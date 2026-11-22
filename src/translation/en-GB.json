@@ -587,6 +587,7 @@
     "Databases.OpeningTree.Wins": "Wins",
     "Databases.Opponent.Add": "Add online account",
     "Databases.Opponent.AlreadyLinked": "This account is already linked.",
+    "Databases.Opponent.BoardWithoutOnline": "The online games could not be added to the board.",
     "Databases.Opponent.ClosedChessCom": "This account is closed. Its games are still available.",
     "Databases.Opponent.DatabaseTitle": "{{name}} (online)",
     "Databases.Opponent.Download": "Download games",

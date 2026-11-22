@@ -30,6 +30,17 @@ export const pinnedExplorerDatabaseFamily = tabAtomFamily((_tab: string) =>
     atom<DatabaseHandle | null>(null),
 );
 
+/** A second database with its own player, shown beside a tab's pinned database. */
+export type PinnedExplorerComparison = { database: DatabaseHandle; player: number };
+
+/**
+ * The second column of a tab pinned to a database. It lives and ends with the pin: it is the
+ * tab's own, never stored, and apart from the app-wide `comparisonDbAtom`.
+ */
+export const pinnedExplorerComparisonFamily = tabAtomFamily((_tab: string) =>
+    atom<PinnedExplorerComparison | null>(null),
+);
+
 export type ExplorerSourceRole = "primary" | "comparison";
 
 /** Whose sample games the Games view lists while two local sources are shown. */
