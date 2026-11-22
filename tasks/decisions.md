@@ -13741,3 +13741,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Its cost on a large reference database has not been measured; nothing changes without a measurement (universal rule 12b). Reversal path: batch the queries in `novelty_lookup_blocking` after a measurement shows the need.
 * **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"8506e63411e89da74acc0442d5a3817f5c38f04ba5e997dfe421eb1c2546ce59","input_sha256":"3a3534b81a579a2578451e0a8a98b9544bf2dfa78b69581e4e10872f2bc7ae9f","kind":"mutation-receipt","operation":"dc047783a0bc675b9e438839079f3c9d29510ec8f44678c72ff7148342ae603b","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-09"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-10 — Do the report's mistake thresholds and per-move accuracy formula change?
+
+* **Question:** While the report's judgement rules are rewritten, should the 5 / 10 / 20 win-chance thresholds or the per-move accuracy formula change too?
+* **Governs:** -
+* **Chosen:** Both stay unchanged.
+* **Rejected:** Retuning thresholds or the per-move formula.
+* **Reason:** No traced defect names them; the plan's defects are the guard, mate handling and the inputs. Reversal path: change the constants in the R1 function and the per-move formula in `getGameStats`.
+* **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"57e6ce732c7b44c79bd062d5b2f934f52f340a2b8a8e5c2b2a1fce0c5efb2545","input_sha256":"134299c3b16a6f83fd6718874df50f496d27e3ae7982f9bede7595c32f483bce","kind":"mutation-receipt","operation":"9cac40e3d81d25e19647fd629f65d1b35e7221be758972f69cad209fbdf2b2c2","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-10"],"target":"decisions-ledger","v":1} -->
