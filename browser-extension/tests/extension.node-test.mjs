@@ -246,6 +246,8 @@ test("completed Lichess analysis gets a link without host classes and the public
   window.eval(content);
   const button = getButton(window);
   assert.equal(button.className, "crs-analyze crs-analyze--lichess");
+  assert.equal(button.firstChild, button.querySelector("img.crs-analyze__mark"));
+  assert.equal(button.textContent, "Analyze in ChessRiddle Studio");
   assert.equal(new URL(button.href).searchParams.get("url"), lichess);
   assert.ok(button.closest(".analyse__underboard"));
 });
@@ -353,19 +355,89 @@ test("a mark the page cannot load leaves the plain label", (t) => {
   assert.equal(button.textContent, "Analyze in ChessRiddle Studio");
 });
 
-test("every state rule that sets the button's text colour or fill sets both", () => {
-  const rules = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map(([, selector, body]) => ({ selector: selector.trim(), body }))
-    .filter(({ selector }) => /crs-analyze--(chess|lichess)/.test(selector));
-  const hover = rules.filter(({ selector }) => selector.includes(":hover"));
-  assert.ok(hover.some(({ selector }) => selector.includes("--chess")));
-  assert.ok(hover.some(({ selector }) => selector.includes("--lichess")));
-  for (const { selector, body } of rules) {
-    const color = /(^|[;\s])color:/.test(body);
-    const fill = /(^|[;\s])background:/.test(body);
-    assert.equal(color, fill, selector);
-  }
-  for (const { selector, body } of hover) assert.match(body, /(^|[;\s])color:/, selector);
+// The sheet's rules as { selectors, declarations }; the sheet nests nothing but one media rule.
+const rules = [...styles.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(
+  ([, selectors, body]) => ({
+    selectors: selectors.split(",").map((selector) => selector.trim()),
+    declarations: new Map(
+      body
+        .split(";")
+        .map((declaration) => declaration.split(/:(.*)/s).map((part) => part.trim()))
+        .filter(([property]) => property),
+    ),
+  }),
+);
+const link = 'a.crs-analyze[data-chessriddle-studio="analyze"]';
+
+test("one rule paints the link's text and fill together, in every state", () => {
+  const painting = rules.filter(({ declarations }) =>
+    ["color", "background", "background-color"].some((property) => declarations.has(property)),
+  );
+  // The mark's own reset is the only other rule that names a fill.
+  const [paint, ...others] = painting.filter(
+    ({ selectors }) => !selectors.every((selector) => selector.endsWith("img.crs-analyze__mark")),
+  );
+  assert.deepEqual(others, []);
+  assert.deepEqual(
+    paint.selectors,
+    ["", ":visited", ":hover", ":focus", ":active"].map((state) => link + state),
+  );
+  assert.equal(paint.declarations.get("color"), "var(--crs-text)");
+  assert.equal(paint.declarations.get("background"), "var(--crs-fill)");
+});
+
+test("the label keeps its contrast in both Chess.com themes, at rest and on hover", () => {
+  const chess = 'a.crs-analyze--chess[data-chessriddle-studio="analyze"]';
+  // What the cascade gives each state: later and more specific rules win, as written in the sheet.
+  const values = (...selectors) => {
+    const merged = new Map();
+    for (const selector of selectors) {
+      const rule = rules.find((candidate) => candidate.selectors.includes(selector));
+      assert.ok(rule, selector);
+      for (const [property, value] of rule.declarations) merged.set(property, value);
+    }
+    return merged;
+  };
+  const luminance = (hex) => {
+    assert.match(hex, /^#[0-9a-f]{6}$/);
+    const [red, green, blue] = [1, 3, 5]
+      .map((index) => Number.parseInt(hex.slice(index, index + 2), 16) / 255)
+      .map((channel) =>
+        channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+      );
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const contrast = (state) => {
+    const [high, low] = [state.get("--crs-text"), state.get("--crs-fill")]
+      .map(luminance)
+      .sort((a, b) => b - a);
+    return (high + 0.05) / (low + 0.05);
+  };
+  const dark = values(chess);
+  const darkHover = values(chess, `${chess}:hover`);
+  const light = values(chess, `html.light-mode ${chess}`);
+  const lightHover = values(
+    chess,
+    `${chess}:hover`,
+    `html.light-mode ${chess}`,
+    `html.light-mode ${chess}:hover`,
+  );
+  for (const [name, state] of Object.entries({ dark, darkHover, light, lightHover }))
+    assert.ok(contrast(state) >= 7, `${name}: ${contrast(state)}`);
+  // The two themes are opposite surfaces, not one palette under two names.
+  assert.ok(luminance(dark.get("--crs-fill")) < 0.1);
+  assert.ok(luminance(light.get("--crs-fill")) > 0.8);
+  assert.ok(luminance(lightHover.get("--crs-fill")) > 0.8);
+});
+
+test("Lichess takes text and fill from the theme, with a readable fallback pair", () => {
+  const lichess = 'a.crs-analyze--lichess[data-chessriddle-studio="analyze"]';
+  const rest = rules.find(({ selectors }) => selectors.includes(lichess)).declarations;
+  assert.equal(rest.get("--crs-text"), "var(--c-font, #4d4d4d)");
+  assert.equal(rest.get("--crs-fill"), "var(--c-bg-box, #e8e6e2)");
+  const hover = rules.find(({ selectors }) => selectors.includes(`${lichess}:hover`)).declarations;
+  assert.equal(hover.get("--crs-text"), "var(--c-font-clear, var(--c-font, #4d4d4d))");
+  assert.equal(hover.has("--crs-fill"), false);
 });
 
 test("manifest limits site access and uses no privileged APIs or remote code", async () => {

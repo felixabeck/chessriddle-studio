@@ -1,11 +1,9 @@
 /* Scoped styles only: never change the host's controls or layout globally. */
 a.crs-analyze[data-chessriddle-studio="analyze"] {
-  /* The app's gold: bright on dark surfaces, deep on light ones, and one
-     middle tone that keeps 3:1 against both where the theme is unknown. */
-  --crs-gold: #c9a54e;
-  --crs-gold-deep: #6c5a0f;
+  /* The app's gold hover shadow, and a gold that keeps 3:1 against light and
+     dark surfaces alike, for the places where the host's theme is unknown. */
+  --crs-glow: 0 4px 12px rgba(201, 165, 78, 0.25);
   --crs-gold-mid: #a07d24;
-  --crs-gold-glow: 0 4px 12px rgba(201, 165, 78, 0.25);
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -16,6 +14,7 @@ a.crs-analyze[data-chessriddle-studio="analyze"] {
   min-height: 40px;
   margin: 8px 0;
   padding: 9px 12px;
+  border: 1px solid;
   border-radius: 5px;
   font: inherit;
   font-size: 14px;
@@ -23,12 +22,28 @@ a.crs-analyze[data-chessriddle-studio="analyze"] {
   line-height: 1.3;
   text-align: center;
   text-decoration: none;
+  text-transform: none;
   white-space: normal;
   cursor: pointer;
   transition:
     border-color 0.12s ease,
     box-shadow 0.12s ease,
     background-color 0.12s ease;
+}
+
+/* The one rule that paints the link, in every state: text colour and fill
+   always come from this sheet together, and the variants below only choose
+   the values. With a host button class on the link, Chess.com's hover rule
+   set its own text colour over this sheet's fill. */
+a.crs-analyze[data-chessriddle-studio="analyze"],
+a.crs-analyze[data-chessriddle-studio="analyze"]:visited,
+a.crs-analyze[data-chessriddle-studio="analyze"]:hover,
+a.crs-analyze[data-chessriddle-studio="analyze"]:focus,
+a.crs-analyze[data-chessriddle-studio="analyze"]:active {
+  color: var(--crs-text);
+  background: var(--crs-fill);
+  border-color: var(--crs-edge);
+  box-shadow: var(--crs-shadow);
 }
 
 a.crs-analyze[data-chessriddle-studio="analyze"] > img.crs-analyze__mark {
@@ -45,59 +60,48 @@ a.crs-analyze[data-chessriddle-studio="analyze"] > img.crs-analyze__mark {
   box-shadow: none;
 }
 
-/* Chess.com: every state names its text and its fill together, so a rule of
-   the page can never put its hover colour on our background. */
-a.crs-analyze--chess[data-chessriddle-studio="analyze"],
-a.crs-analyze--chess[data-chessriddle-studio="analyze"]:visited,
-a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover,
-a.crs-analyze--chess[data-chessriddle-studio="analyze"]:focus,
-a.crs-analyze--chess[data-chessriddle-studio="analyze"]:active {
-  color: #f4efe4;
-  background: #33302c;
-  border: 1px solid rgba(201, 165, 78, 0.45);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+/* Chess.com, dark theme; also what a theme this sheet does not know gets. */
+a.crs-analyze--chess[data-chessriddle-studio="analyze"] {
+  --crs-text: #f4efe4;
+  --crs-fill: #33302c;
+  --crs-edge: rgba(201, 165, 78, 0.45);
+  --crs-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
 }
 
 a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover,
 a.crs-analyze--chess[data-chessriddle-studio="analyze"]:active {
-  color: #fff;
-  background: #3b3732;
-  border-color: var(--crs-gold);
-  box-shadow: var(--crs-gold-glow);
+  --crs-text: #ffffff;
+  --crs-fill: #3b3732;
+  --crs-edge: #c9a54e;
+  --crs-shadow: var(--crs-glow);
 }
 
-html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"],
-html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:visited,
-html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover,
-html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:focus,
-html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:active {
-  color: #312e2b;
-  background: #faf6ec;
-  border: 1px solid rgba(108, 90, 15, 0.4);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"] {
+  --crs-text: #312e2b;
+  --crs-fill: #faf6ec;
+  --crs-edge: rgba(108, 90, 15, 0.4);
 }
 
 html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover,
 html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:active {
-  color: #1f1d1b;
-  background: #fffcf4;
-  border-color: var(--crs-gold-deep);
-  box-shadow: var(--crs-gold-glow);
+  --crs-text: #1f1d1b;
+  --crs-fill: #fffcf4;
+  --crs-edge: #6c5a0f;
 }
 
+/* Lichess: its theme variables, so the link follows every Lichess theme. */
 a.crs-analyze--lichess[data-chessriddle-studio="analyze"] {
-  color: var(--c-font, #4d4d4d);
-  background: var(--c-bg-box, #e8e6e2);
-  border: 1px solid var(--c-border, #999);
-  text-transform: none;
-  box-shadow: 0 2px 3px #0002;
+  --crs-text: var(--c-font, #4d4d4d);
+  --crs-fill: var(--c-bg-box, #e8e6e2);
+  --crs-edge: var(--c-border, #999999);
+  --crs-shadow: 0 2px 3px rgba(0, 0, 0, 0.13);
 }
 
-a.crs-analyze--lichess[data-chessriddle-studio="analyze"]:hover {
-  color: var(--c-font-clear, var(--c-font, #4d4d4d));
-  background: var(--c-bg-box, #e8e6e2);
-  border-color: var(--crs-gold-mid);
-  box-shadow: var(--crs-gold-glow);
+a.crs-analyze--lichess[data-chessriddle-studio="analyze"]:hover,
+a.crs-analyze--lichess[data-chessriddle-studio="analyze"]:active {
+  --crs-text: var(--c-font-clear, var(--c-font, #4d4d4d));
+  --crs-edge: var(--crs-gold-mid);
+  --crs-shadow: var(--crs-glow);
 }
 
 a.crs-analyze[data-chessriddle-studio="analyze"]:focus-visible {
