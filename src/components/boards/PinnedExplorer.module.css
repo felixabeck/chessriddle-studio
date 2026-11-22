@@ -1,5 +1,6 @@
 /* The pinned explorer: as tall as its content or as its dragged height, its table scrolling
-   inside. The inline style caps or sets the height against the pane. */
+   inside. The inline style sets the dragged height in pixels, or caps the content height at a
+   share of the window; either way it leaves the neighbour its least room in the pane. */
 .strip {
   position: relative;
   display: flex;

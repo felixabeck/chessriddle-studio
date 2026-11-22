@@ -177,27 +177,32 @@ test("the strip renders once, in the stored place, and only while pinned", async
   expect(host.querySelectorAll('[data-testid="database-panel"]')).toHaveLength(0);
 });
 
-test("without a stored height the strip follows its content, up to half its pane", async () => {
+test("without a stored height the strip follows its content, up to a share of the window", async () => {
   await renderPanes();
   await pin("tabs");
   expect(strip().style.height).toBe("");
-  expect(strip().style.maxHeight).toBe(`${PANE_PX * AUTO_MAX_SHARE}px`);
+  const cap = `${window.innerHeight * AUTO_MAX_SHARE}px`;
+  expect(strip().style.maxHeight).toBe(cap);
+  // Moving the pane divider leaves the cap alone.
+  paneHeight = 800;
+  await resize();
+  expect(strip().style.maxHeight).toBe(cap);
 });
 
 test.each([
-  [0.5, PANE_PX * 0.5],
-  [0.95, MAX_PX],
-  [0.05, STRIP_MIN_PX],
-])("a stored share of %s sizes the strip to %spx of its pane", async (share, px) => {
+  [300, 300],
+  [900, MAX_PX],
+  [50, STRIP_MIN_PX],
+])("a stored height of %spx sizes the strip to %spx", async (stored, px) => {
   await renderPanes();
-  await pin("notation", { notation: share });
+  await pin("notation", { notation: stored });
   expect(strip().style.height).toBe(`${px}px`);
   // It still yields, down to its minimum, when the neighbour needs its least room.
   expect(strip().style.flexShrink).toBe("1");
   expect(strip().style.minHeight).toBe(`${STRIP_MIN_PX}px`);
 });
 
-test("the divider below a strip above its neighbour grows it when dragged down, and stores the share once at the end", async () => {
+test("the divider below a strip above its neighbour grows it when dragged down, and stores the height once at the end", async () => {
   await renderPanes();
   await pin("tabs");
   expect(handle().getAttribute("data-edge")).toBe("end");
@@ -209,16 +214,16 @@ test("the divider below a strip above its neighbour grows it when dragged down, 
   expect(setItem.mock.calls.filter(([stored]) => stored === HEIGHTS_KEY)).toEqual([]);
 
   await pointer("pointerup", 150);
-  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: 250 / PANE_PX });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: 250 });
   expect(strip().style.height).toBe("250px");
   // A late lost-capture after the release changes nothing.
   await pointer("lostpointercapture", 400);
-  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: 250 / PANE_PX });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: 250 });
 });
 
 test("the divider above a strip below its neighbour grows it when dragged up, clamped to the pane", async () => {
   await renderPanes();
-  await pin("belowNotation", { tabs: 0.3 });
+  await pin("belowNotation", { tabs: 180 });
   expect(handle().getAttribute("data-edge")).toBe("start");
 
   await pointer("pointerdown", 300);
@@ -229,8 +234,8 @@ test("the divider above a strip below its neighbour grows it when dragged up, cl
   // A cancelled drag keeps the height it reached.
   await pointer("pointercancel", -500);
   expect(store.get(explorerStripHeightsAtom)).toEqual({
-    tabs: 0.3,
-    belowNotation: MAX_PX / PANE_PX,
+    tabs: 180,
+    belowNotation: MAX_PX,
   });
 });
 
@@ -240,7 +245,7 @@ test("a lost pointer capture ends the drag and stores its height", async () => {
   await pointer("pointerdown", 300);
   await pointer("lostpointercapture", 350);
   // Below the board the divider is the upper edge: 50px down leaves 150px.
-  expect(store.get(explorerStripHeightsAtom)).toEqual({ board: 150 / PANE_PX });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ board: 150 });
 });
 
 test.each([
@@ -252,23 +257,23 @@ test.each([
   await renderPanes();
   await pin(placement);
   await key(arrow);
-  expect(store.get(explorerStripHeightsAtom)).toEqual({ [placement]: px / PANE_PX });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ [placement]: px });
   expect(strip().style.height).toBe(`${px}px`);
 });
 
 test("a double-click returns only this place to its content height", async () => {
   await renderPanes();
-  await pin("notation", { notation: 0.5, board: 0.4 });
+  await pin("notation", { notation: 300, board: 240 });
   await act(async () => {
     handle().dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   });
-  expect(store.get(explorerStripHeightsAtom)).toEqual({ board: 0.4 });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ board: 240 });
   expect(strip().style.height).toBe("");
 });
 
 test("the divider reports the strip's share of its pane", async () => {
   await renderPanes();
-  await pin("tabs", { tabs: 0.5 });
+  await pin("tabs", { tabs: 300 });
   expect(handle().getAttribute("aria-valuemin")).toBe(
     String(Math.round((STRIP_MIN_PX / PANE_PX) * 100)),
   );
@@ -277,34 +282,33 @@ test("the divider reports the strip's share of its pane", async () => {
   expect(handle().getAttribute("aria-label")).toBe("Board.Database.Resize");
 });
 
-test("below the board in the stacked layout the share is taken of the window", async () => {
+test("below the board in the stacked layout the strip fits the window instead of its pane", async () => {
   await renderPanes({ stacked: true });
-  await pin("board", { board: 0.5 });
-  expect(strip().style.height).toBe(
-    `${Math.max(STRIP_MIN_PX, Math.min(window.innerHeight - NEIGHBOUR_MIN_PX, window.innerHeight * 0.5))}px`,
-  );
+  await pin("board", { board: 5000 });
+  expect(strip().style.height).toBe(`${window.innerHeight - NEIGHBOUR_MIN_PX}px`);
   // The right-hand panes keep their own fixed height there.
-  await pin("tabs", { tabs: 0.5 });
-  expect(strip().style.height).toBe(`${PANE_PX * 0.5}px`);
+  await pin("tabs", { tabs: 5000 });
+  expect(strip().style.height).toBe(`${MAX_PX}px`);
 });
 
 test("stored heights hydrate per place, dropping only the unreadable ones", async () => {
   localStorage.setItem(
     HEIGHTS_KEY,
-    JSON.stringify({ tabs: 0.5, notation: "half", board: 7, belowNotation: 1, other: 1 }),
+    JSON.stringify({ tabs: 300, notation: "half", board: 7, belowNotation: null, other: 1 }),
   );
   const fresh = createStore();
   // Stored values load when the atom is first used.
   const unsubscribe = fresh.sub(explorerStripHeightsAtom, () => {});
-  expect(fresh.get(explorerStripHeightsAtom)).toEqual({ tabs: 0.5, belowNotation: 1 });
+  expect(fresh.get(explorerStripHeightsAtom)).toEqual({ tabs: 300, board: 7 });
   unsubscribe();
 });
 
-test.each([0, -0.5])("a stored share of %s is dropped", async (share) => {
-  localStorage.setItem(HEIGHTS_KEY, JSON.stringify({ tabs: share, board: 0.4 }));
+// 0.4 and 1 are shares of the pane, as heights were stored before they were kept in pixels.
+test.each([0, -0.5, 0.4, 1])("a stored height of %s is dropped", async (stored) => {
+  localStorage.setItem(HEIGHTS_KEY, JSON.stringify({ tabs: stored, board: 240 }));
   const fresh = createStore();
   const unsubscribe = fresh.sub(explorerStripHeightsAtom, () => {});
-  expect(fresh.get(explorerStripHeightsAtom)).toEqual({ board: 0.4 });
+  expect(fresh.get(explorerStripHeightsAtom)).toEqual({ board: 240 });
   unsubscribe();
 });
 
@@ -326,7 +330,7 @@ test("above the notation the divider is the strip's lower edge too", async () =>
   expect(handle().getAttribute("data-edge")).toBe("end");
   await pointer("pointerdown", 100);
   await pointer("pointerup", 140);
-  expect(store.get(explorerStripHeightsAtom)).toEqual({ notation: 240 / PANE_PX });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ notation: 240 });
 });
 
 test("a press without movement keeps the content height", async () => {
@@ -351,7 +355,7 @@ test("only a primary press starts a drag, and only that pointer moves and ends i
   await pointer("pointerup", 400, { pointerId: 2 });
   expect(store.get(explorerStripHeightsAtom)).toEqual({});
   await pointer("pointerup", 130, { pointerId: 1 });
-  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: 230 / PANE_PX });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: 230 });
 });
 
 test("a drag stops at the strip's minimum", async () => {
@@ -361,42 +365,51 @@ test("a drag stops at the strip's minimum", async () => {
   await pointer("pointermove", -300);
   expect(strip().style.height).toBe(`${STRIP_MIN_PX}px`);
   await pointer("pointerup", -300);
-  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: STRIP_MIN_PX / PANE_PX });
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: STRIP_MIN_PX });
 });
 
-test("a resized pane resizes a dragged strip to the same share", async () => {
+test("a resized pane keeps a dragged strip's height until the neighbour needs the room", async () => {
   await renderPanes();
-  await pin("tabs", { tabs: 0.5 });
+  await pin("tabs", { tabs: 300 });
   expect(strip().style.height).toBe("300px");
   paneHeight = 800;
   await resize();
-  expect(strip().style.height).toBe("400px");
+  expect(strip().style.height).toBe("300px");
+  // Shrunk below the strip plus the neighbour's least room, the strip gives way...
+  paneHeight = 400;
+  await resize();
+  expect(strip().style.height).toBe(`${400 - NEIGHBOUR_MIN_PX}px`);
+  // ...and grows back to its dragged height when the pane does.
+  paneHeight = PANE_PX;
+  await resize();
+  expect(strip().style.height).toBe("300px");
+  expect(store.get(explorerStripHeightsAtom)).toEqual({ tabs: 300 });
 });
 
 test("a pinned engine bar in the same pane counts against the strip's largest height", async () => {
   await renderPanes({ engineIn: "tabs" });
-  await pin("tabs", { tabs: 1 });
+  await pin("tabs", { tabs: PANE_PX });
   expect(strip().style.height).toBe(`${PANE_PX - ENGINE_PX - NEIGHBOUR_MIN_PX}px`);
 });
 
 test("switching between the stacked and the pane layout measures below the board against the right height", async () => {
   await renderPanes();
-  await pin("board", { board: 0.5 });
-  expect(strip().style.height).toBe(`${PANE_PX * 0.5}px`);
+  await pin("board", { board: 5000 });
+  expect(strip().style.height).toBe(`${MAX_PX}px`);
   const layout = host.querySelector('[data-testid="layout"]')!;
   layout.setAttribute("data-board-layout", "stacked");
   await act(async () => window.dispatchEvent(new Event("resize")));
-  expect(strip().style.height).toBe(`${window.innerHeight * 0.5}px`);
+  expect(strip().style.height).toBe(`${window.innerHeight - NEIGHBOUR_MIN_PX}px`);
   layout.setAttribute("data-board-layout", "mosaic");
   await act(async () => window.dispatchEvent(new Event("resize")));
-  expect(strip().style.height).toBe(`${PANE_PX * 0.5}px`);
+  expect(strip().style.height).toBe(`${MAX_PX}px`);
 });
 
 test.each(["tabs", "board"] as const)(
   "an engine bar pinned into %s after the strip is counted as soon as it mounts",
   async (placement) => {
     await renderPanes();
-    await pin(placement, { [placement]: 1 });
+    await pin(placement, { [placement]: PANE_PX });
     expect(strip().style.height).toBe(`${MAX_PX}px`);
     await renderPanes({ engineIn: placement });
     expect(strip().style.height).toBe(`${PANE_PX - ENGINE_PX - NEIGHBOUR_MIN_PX}px`);
@@ -416,7 +429,7 @@ test("an engine bar that grows in the strip's pane shrinks the strip's largest h
   await renderPanes({ engineIn: "tabs" });
   const pane = host.querySelector<HTMLElement>('[data-pane="tabs"]')!;
   pane.style.rowGap = `${GAP_PX}px`;
-  await pin("tabs", { tabs: 1 });
+  await pin("tabs", { tabs: PANE_PX });
   await resize(stripRect, pane);
   expect(strip().style.height).toBe(`${PANE_PX - ENGINE_PX - GAP_PX - NEIGHBOUR_MIN_PX}px`);
   // More engine lines: only the bar reports a new size.
@@ -429,14 +442,14 @@ test("the automatic cap also leaves room for an engine bar in the same pane", as
   enginePx = 300;
   await renderPanes({ engineIn: "tabs" });
   await pin("tabs");
-  // Half the pane would be 300px; the bar and the tabs' 160px leave 140px.
+  // A quarter of jsdom's 768px window would be 192px; the bar and the tabs' 160px leave 140px.
   expect(strip().style.maxHeight).toBe(`${PANE_PX - 300 - NEIGHBOUR_MIN_PX}px`);
 });
 
 test("in a pane too short for both minimums the strip keeps its own", async () => {
   paneHeight = 200;
   await renderPanes();
-  await pin("tabs", { tabs: 1 });
+  await pin("tabs", { tabs: PANE_PX });
   expect(strip().style.height).toBe(`${STRIP_MIN_PX}px`);
   expect(strip().style.minHeight).toBe(`${STRIP_MIN_PX}px`);
 });

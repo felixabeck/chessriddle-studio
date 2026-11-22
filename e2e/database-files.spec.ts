@@ -3572,18 +3572,19 @@ test("database-files: the board explorer compares two databases side by side", a
             .locator(".mantine-ScrollArea-viewport")
             .first()
             .evaluate((viewport) => viewport.scrollHeight > viewport.clientHeight + 1);
-    // Without a dragged height the strip is as tall as its rows, up to half the pane; here the
-    // rows need more, so its table scrolls.
+    // Without a dragged height the strip is as tall as its rows, up to 25% of the window; here
+    // the rows need more, so its table scrolls.
+    const autoCap = page.viewportSize()!.height * 0.25;
     await expect.poll(tableScrolls).toBe(true);
-    expect((await rect(strip)).height).toBeLessThanOrEqual((await rect(pane)).height / 2 + 1);
-    expect((await rect(strip)).height).toBeGreaterThan((await rect(pane)).height / 2 - 2);
+    expect((await rect(strip)).height).toBeLessThanOrEqual(autoCap + 1);
+    expect((await rect(strip)).height).toBeGreaterThan(autoCap - 2);
     expect(await bottom(strip)).toBeLessThanOrEqual((await rect(panelTabs)).y);
     await expect(note).toBeInViewport();
     const contentHeight = (await rect(strip)).height;
 
     // Dragging the divider below the strip up shrinks it, and the height is kept per place.
-    const drag = async (dy: number) => {
-        const box = await rect(handle);
+    const drag = async (dy: number, divider = handle) => {
+        const box = await rect(divider);
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + dy, { steps: 4 });
@@ -3624,6 +3625,17 @@ test("database-files: the board explorer compares two databases side by side", a
     await expect(pane).toHaveScreenshot("explorer-pinned-strip.png", {
         stylePath: scrollbarFreeScreenshot,
     });
+    // Moving the pane divider below the tabs resizes only the tabs: the strip keeps the height
+    // it was dragged to.
+    const keptHeight = (await rect(strip)).height;
+    const paneBefore = (await rect(pane)).height;
+    for (const dy of [120, -120]) {
+        await drag(dy, paneDivider);
+        await expect
+            .poll(async () => (await rect(pane)).height)
+            .toBeCloseTo(paneBefore + (dy > 0 ? dy : 0), -1);
+        expect((await rect(strip)).height).toBeCloseTo(keptHeight, 0);
+    }
     // The keyboard moves the same divider; a double-click returns to the content height.
     await handle.focus();
     const dragged = (await rect(strip)).height;
@@ -3649,11 +3661,11 @@ test("database-files: the board explorer compares two databases side by side", a
     await handle.dblclick();
     await page.mouse.move(0, 0);
     // With room for every row the automatic height is the rows' height: nothing scrolls and the
-    // strip stays under half the pane.
+    // strip stays under its cap.
     const viewport = page.viewportSize()!;
     await page.setViewportSize({ width: viewport.width, height: 1600 });
     await expect.poll(tableScrolls).toBe(false);
-    expect((await rect(strip)).height).toBeLessThan((await rect(pane)).height / 2 - 2);
+    expect((await rect(strip)).height).toBeLessThan(1600 * 0.25 - 2);
     await expect(strip.locator("tbody tr").last()).toBeInViewport({ ratio: 1 });
     await page.setViewportSize(viewport);
 
@@ -3686,12 +3698,13 @@ test("database-files: the board explorer compares two databases side by side", a
         stylePath: scrollbarFreeScreenshot,
     });
 
-    // Below the board the board gives up the strip's room.
+    // Below the board the board gives up the strip's room, beyond the room already free below
+    // the square board.
     const board = page.locator("#left [data-board-surface]");
     const boardBefore = (await rect(board)).height;
     await pinMenu("Database position", "Below the board");
     await expect(page.locator("#left").getByTestId("pinned-explorer")).toHaveCount(1);
-    await expect.poll(async () => (await rect(board)).height).toBeLessThan(boardBefore - 50);
+    await expect.poll(async () => (await rect(board)).height).toBeLessThan(boardBefore - 10);
     expect((await rect(strip)).y).toBeGreaterThanOrEqual((await bottom(board)) - 0.5);
     expect(await bottom(strip)).toBeLessThanOrEqual((await bottom(page.locator("#left"))) + 0.5);
 

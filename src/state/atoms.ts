@@ -1323,22 +1323,26 @@ export const explorerPlacementAtom = atomWithStorage<PinnedPlacement>(
     createZodStorage(z.enum(PINNED_PLACEMENTS), localStorage),
 );
 
-/** A dragged explorer strip's height as a share of its pane; anything else is dropped. */
-const stripFraction = z.number().gt(0).max(1).optional().catch(undefined);
+/**
+ * A dragged explorer strip's height in pixels; anything else is dropped. Heights were once stored
+ * as a share of the pane (at most 1), so a value of 1 or less is such a share and is dropped too.
+ */
+const stripPixels = z.number().finite().gt(1).optional().catch(undefined);
 
 /**
- * The pinned explorer strip's dragged height per place, as a share of the pane it sits in. A place
- * without a share sizes the strip to its content; an unreadable share is dropped on its own.
+ * The pinned explorer strip's dragged height per place, in pixels, so resizing the pane around it
+ * leaves it alone. A place without a height sizes the strip to its content; an unreadable height
+ * is dropped on its own.
  */
 export const explorerStripHeightsAtom = atomWithStorage<Partial<Record<PinnedPlacement, number>>>(
     "detached-explorer-heights",
     {},
     createZodStorage(
         z.object({
-            tabs: stripFraction,
-            notation: stripFraction,
-            belowNotation: stripFraction,
-            board: stripFraction,
+            tabs: stripPixels,
+            notation: stripPixels,
+            belowNotation: stripPixels,
+            board: stripPixels,
         }),
         localStorage,
     ),

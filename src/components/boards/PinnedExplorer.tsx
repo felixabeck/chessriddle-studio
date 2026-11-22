@@ -25,8 +25,11 @@ import classes from "./PinnedExplorer.module.css";
 export const STRIP_MIN_PX = 120;
 /** What the strip always leaves its pane for the neighbour it shares the pane with. */
 export const NEIGHBOUR_MIN_PX = 160;
-/** Without a dragged height the strip follows its rows up to this share of the pane. */
-export const AUTO_MAX_SHARE = 0.5;
+/**
+ * Without a dragged height the strip follows its rows up to this share of the window. It is taken
+ * of the window, not the pane, so moving the pane divider does not resize the strip.
+ */
+export const AUTO_MAX_SHARE = 0.25;
 /** How far one arrow key press moves the divider. */
 const KEY_STEP_PX = 24;
 
@@ -42,15 +45,16 @@ export default function PinnedExplorer({ placement }: { placement: PinnedPlaceme
 }
 
 /**
- * The room the strip measures against. `reference` is the height its share is taken of: the pane
- * it sits in, marked `data-pinned-pane`, or the window below the board in the stacked layout,
- * where that pane grows with its content. `reserved` is what pinned engine bars in the same pane
- * take, so the neighbour keeps its room beside both. Measured again whenever the pane, an engine
+ * The room the strip measures against. `reference` is the height it must fit in: the pane it sits
+ * in, marked `data-pinned-pane`, or the window below the board in the stacked layout, where that
+ * pane grows with its content. `reserved` is what pinned engine bars in the same pane take, so the
+ * neighbour keeps its room beside both. `viewport` is the window height the automatic cap is a
+ * share of. Measured again whenever the pane, an engine
  * bar or the window changes size (a layout switch moves the pane without remounting the strip),
  * and whenever an engine bar mounts or unmounts beside the strip.
  */
 function usePaneRoom(strip: RefObject<HTMLDivElement | null>) {
-  const [room, setRoom] = useState({ reference: 0, reserved: 0 });
+  const [room, setRoom] = useState({ reference: 0, reserved: 0, viewport: 0 });
   useEffect(() => {
     const element = strip.current;
     const pane = element?.closest<HTMLElement>("[data-pinned-pane]");
@@ -74,9 +78,12 @@ function usePaneRoom(strip: RefObject<HTMLDivElement | null>) {
           (sum, bar) => sum + bar.getBoundingClientRect().height + gap,
           0,
         ),
+        viewport: window.innerHeight,
       };
       setRoom((previous) =>
-        previous.reference === next.reference && previous.reserved === next.reserved
+        previous.reference === next.reference &&
+        previous.reserved === next.reserved &&
+        previous.viewport === next.viewport
           ? previous
           : next,
       );
@@ -106,23 +113,23 @@ function ExplorerStrip({ placement }: { placement: PinnedPlacement }) {
   const { t } = useTranslation();
   const [heights, setHeights] = useAtom(explorerStripHeightsAtom);
   const { ref: strip, height: measuredHeight } = useElementSize<HTMLDivElement>();
-  const { reference, reserved } = usePaneRoom(strip);
+  const { reference, reserved, viewport } = usePaneRoom(strip);
   // Above its neighbour the strip's lower edge is the divider; below it, the upper edge.
   const edge = placement === "tabs" || placement === "notation" ? "end" : "start";
   const max = Math.max(STRIP_MIN_PX, reference - reserved - NEIGHBOUR_MIN_PX);
   const clamp = (px: number) => Math.min(max, Math.max(STRIP_MIN_PX, px));
-  const share = heights[placement];
+  // A dragged height stays in pixels: only the pane's least room for the neighbour shrinks it.
+  const storedHeight = heights[placement];
   /** The dragged height while a drag runs, so storage is written once at its end. */
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   const drag = useRef<{ pointer: number; startY: number; startHeight: number } | null>(null);
   const height =
-    dragHeight ?? (share !== undefined && reference > 0 ? clamp(share * reference) : undefined);
-  const autoMax = clamp(reference * AUTO_MAX_SHARE);
+    dragHeight ?? (storedHeight !== undefined && reference > 0 ? clamp(storedHeight) : undefined);
+  const autoMax = clamp(viewport * AUTO_MAX_SHARE);
 
   const store = (px: number) => {
     if (reference <= 0) return;
-    const next = Math.min(1, clamp(px) / reference);
-    setHeights((previous) => ({ ...previous, [placement]: next }));
+    setHeights((previous) => ({ ...previous, [placement]: clamp(px) }));
   };
   const reset = () => {
     setHeights((previous) => {
