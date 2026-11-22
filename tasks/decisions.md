@@ -13701,3 +13701,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Saved evaluations are edits: they mark the game edited and feed autosave (Felix's decision A on f-20261115-24), so partial writes would rewrite the user's file during a run, and a transient preview layer is machinery without an observed need. Reversal path: add a registered per-position event and a view-only preview layer.
 * **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"2079e3b7a0f4b90c09b8f2bce026cc0e4e66ab06ce870f2b33e3777949e54a83","input_sha256":"314681b1f80dd076a94e81b2e07890f3d464d1c7075b909a89b67066eb355a41","kind":"mutation-receipt","operation":"2a103075f2ac77f31e7562be6bd0c5936a79627e16563c63539c5278601d5554","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-25"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-06 — Which rules mark a report move as a mistake when the engine played it or a mate appears?
+
+* **Question:** The report marked the engine's own first choice `?!` when two independent searches disagreed, and flattened mate scores so missed or walked-into mates got no mark. Which rules replace that?
+* **Governs:** -
+* **Chosen:** A first-choice guard (no mistake mark when the played move equals `before.best[0]`, compared through `normalizeMove`) and two mate rules: mate created and mate lost, each with `?!` / `?` / `??` bands at 999 and 700 centipawns, before the unchanged win-chance thresholds (plan R1).
+* **Rejected:** Keeping `getAnnotation`'s win-chance drop alone.
+* **Reason:** Probes in the plan's T11 show the old rules mark the engine's own best move and miss mate transitions. The mate bands follow Lichess's published advice rules. Reversal path: delete the two mate rules or the guard in the R1 judgement function.
+* **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"35f071c6ec55f0e64bfe8ec28bd774e8e4f1812071e0976c2002262c4b50060a","input_sha256":"dbc00300a1151c7fb6bcfcc0d5b7a8a33159abf6236248ec3b22cbe824b451d8","kind":"mutation-receipt","operation":"d38c7accfbf8fbb583fd17a5048e8620ac0f4b81e007c9b9a97e7b6983a7d7ee","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-06"],"target":"decisions-ledger","v":1} -->
