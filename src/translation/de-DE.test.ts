@@ -26,6 +26,8 @@ test("de-DE catalogue never says Spiel or Position for a chess game or position"
     // Forms of the verb spielen, plus Spielstärke/Spielphase/Spielsteuerung compounds.
     const legitimateSpielUses: Record<string, string> = {
         "Board.Action.PlayFromHere": "Spiele von hier",
+        "Board.Analysis.Report.NeedsMoves":
+            "Ein Bericht braucht Züge. Spiele oder lade zuerst eine Partie.",
         "Board.Database.Local.PlaysAs": "Spielt mit",
         "Board.Practice.Alternative": "Der Zug gehört zu deinem Repertoire. Spiele den Hauptzug.",
         "Board.Practice.MarkStart":
