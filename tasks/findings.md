@@ -28399,3 +28399,19 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Fix:** to be designed; see the open question.
 * **Proof:** plan audit, T8 (`chess.rs:1579-1608` at `0b2978623`).
 * **Found by:** Claude Code (planning session), filed by the build run of the game-report plan, 2026-11-22.
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### Annotated notation moves fail text contrast in the light scheme (?! at 1.86:1, ?? at 3.28:1)
+
+* **ID:** f-20261122-06 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** axe check of the new `e2e/game-report.spec.ts` populated Report tab (game-report build, 2026-11-22), branch `build/game-report-20261122`
+* **Where:** `src/components/common/MoveCell.tsx` sets an annotated move's text colour to `theme.colors[color][6]` in both schemes (light and dark alike), from the NAG colours in `src/utils/annotation.ts` (`?!` yellow, `??` red, and the other basic marks).
+* **Defect:** in the light scheme the move text of an annotated move sits on the white card at Mantine shade 6: axe measured `?!` yellow `#fab005` on `#ffffff` at 1.86:1 and `??` red `#fa5252` at 3.28:1, below the 4.5:1 WCAG AA minimum for 14.4px text. Every report with a mark therefore puts unreadable moves into the notation.
+* **Failure scenario:** open a game, mark a move `?!` (or run a game report that marks one), light scheme: the move text is pale yellow on white; axe `color-contrast` fails on `._moveText_*`.
+* **Fix:** keep the annotation hue (DESIGN.md: NAG colours keep their meaning) but pick a text shade per scheme that reaches 4.5:1 on the card and on `surface-inset` variation blocks, for example shade 8–9 in light and 4–5 in dark, and assert the contrast in an e2e check with `contrastRatio` from `e2e/fixtures.ts`. Then drop the notation exclusion in `e2e/game-report.spec.ts`'s accessibility check.
+* **Proof:** axe output of `pnpm test:e2e:container` for `game-report.spec.ts` on 2026-11-22 (`color-contrast: … _moveText_…`, ratios above).
+* **Found by:** Claude Code, game-report build run, 2026-11-22.
