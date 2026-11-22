@@ -77,6 +77,28 @@ test("document storage atoms retain Jotai mount rereads, subscriptions, function
     expect(unsubscribe).toHaveBeenCalledTimes(2);
 });
 
+test("a document storage atom declared after initialization still reads its stored value", () => {
+    const storage = (value: number) => ({
+        getItem: vi.fn(() => value),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+    });
+    // Like `initializeRendererState`, the document initializer runs once.
+    let initialized = false;
+    const document = createDocumentStorageAtoms(() => {
+        if (initialized) return;
+        document.initialize();
+        initialized = true;
+    });
+    const early = document.atomWithStorage("early", 1, storage(2));
+    const store = createStore();
+    expect(store.get(early)).toBe(2);
+    const late = document.atomWithStorage("late", 3, storage(4));
+    expect(store.get(late)).toBe(4);
+    store.set(late, 5);
+    expect(store.get(late)).toBe(5);
+});
+
 describe("validated storage diagnostics", () => {
     test("returns the default and reports when malformed JSON repair fails", () => {
         const quota = new DOMException("full", "QuotaExceededError");

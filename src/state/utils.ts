@@ -38,15 +38,20 @@ export function initializeBeforeUse<Value, Args extends unknown[], Result>(
 /** One declaration-ordered initial snapshot, shared by every store in this document. */
 export function createDocumentStorageAtoms(initializeDocument: () => void) {
     const initializers: (() => void)[] = [];
+    let initialized = false;
     return {
         initialize() {
             for (const initialize of initializers) initialize();
+            initialized = true;
         },
         atomWithStorage<Value>(key: string, initialValue: Value, storage: SyncStorage<Value>) {
             let stored: ReturnType<typeof atomWithStorage<Value>> | undefined;
-            initializers.push(() => {
+            const create = () => {
                 stored ??= atomWithStorage(key, initialValue, storage, { getOnInit: true });
-            });
+            };
+            initializers.push(create);
+            // A module of `state/atoms/` evaluated after the snapshot hydrates its own atoms at once.
+            if (initialized) create();
             // The document initializer establishes every initial value before any store reads.
             return initializeBeforeUse(
                 atom(
