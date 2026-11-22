@@ -47,6 +47,7 @@ import { createTab, runTabCreation } from "@/utils/tabs";
 import GamePreview from "./GamePreview";
 import { opponentGames } from "./OpponentAccounts";
 import { opponentPlayers } from "./opponentLookup";
+import { useOpponentPlayers } from "./useOpponentPlayers";
 import PlayerOpeningRecency from "./PlayerOpeningRecency";
 import { playerOpeningLine } from "./playerOpeningLine";
 import classes from "./PlayerOpeningTree.module.css";
@@ -64,8 +65,18 @@ export type OpeningTreeSource = {
 type SourceQuery = { source: OpeningTreeSource; options: LocalOptions };
 type SourceResult = { source: OpeningTreeSource; result: LocalExplorerResult };
 type OpeningTreeVariant = "database" | "account";
-/** The player's downloaded online games: their database and the usernames that name the player. */
-type OnlineGames = { file: DatabaseHandle; accounts: readonly OpponentAccount[] };
+/**
+ * The player's downloaded online games: their database, the usernames that name the player, and
+ * the player those usernames resolved to (`undefined` while unknown; `resolving` says whether it
+ * is still being looked up).
+ */
+type OnlineGames = {
+  file: DatabaseHandle;
+  accounts: readonly OpponentAccount[];
+  player: number | undefined;
+  resolving: boolean;
+};
+type CombinedResults = ReturnType<typeof combineSourceResults>;
 
 export default function PlayerOpeningTree({
   player,
@@ -79,6 +90,11 @@ export default function PlayerOpeningTree({
   const link = findOpponentLink(useAtomValue(opponentLinksAtom), player.name);
   const { data: listing, error: listingError } = useDatabaseList();
   const games = opponentGames(link, listing, listingError);
+  const onlineFile =
+    link && games.kind === "games" && databaseHandleKey(games.file) !== databaseHandleKey(file)
+      ? games.file
+      : null;
+  const { data: onlinePlayers, error: onlineError } = useOpponentPlayers(link, onlineFile);
   return (
     <OpeningTree
       key={key}
@@ -90,8 +106,13 @@ export default function PlayerOpeningTree({
       tabName={player.name ?? ""}
       sources={[{ key, label: "", file, player: player.id }]}
       online={
-        link && games.kind === "games" && databaseHandleKey(games.file) !== databaseHandleKey(file)
-          ? { file: games.file, accounts: link.accounts }
+        link && onlineFile
+          ? {
+              file: onlineFile,
+              accounts: link.accounts,
+              player: onlinePlayers?.[0]?.id,
+              resolving: onlinePlayers === undefined && onlineError === undefined,
+            }
           : undefined
       }
     />
@@ -200,7 +221,7 @@ function OpeningTree({
   name: string;
   tabName: string;
   sources: OpeningTreeSource[];
-  /** Shown as a second column on the board that "Prepare on board" opens. */
+  /** Shown as a second section here and as a second column on the board "Prepare on board" opens. */
   online?: OnlineGames;
 }) {
   const { t } = useTranslation();
@@ -212,7 +233,7 @@ function OpeningTree({
     defaultValue: "{{name}} plays:",
     name,
   });
-  const queries: SourceQuery[] = sources.map((source) => ({
+  const queryFor = (source: OpeningTreeSource): SourceQuery => ({
     source,
     options: {
       path: source.file,
@@ -225,9 +246,23 @@ function OpeningTree({
       ...(since.startDate ? { start_date: since.startDate } : {}),
       ...(source.timeControls ? { time_controls: source.timeControls } : {}),
     },
-  }));
+  });
+  const queries = sources.map(queryFor);
+  // The online games are searched for their own player, with the same colour, period and position.
+  const onlineSource: OpeningTreeSource | undefined =
+    online && online.player !== undefined
+      ? {
+          key: `online:${databaseHandleKey(online.file)}:${online.player}`,
+          label: "",
+          file: online.file,
+          player: online.player,
+        }
+      : undefined;
+  const searched = onlineSource ? [...queries, queryFor(onlineSource)] : queries;
   // A selection belongs to the sources and filters it was made under.
-  const scope = JSON.stringify(sources.map(({ key, timeControls }) => [key, timeControls]));
+  const scope = JSON.stringify(
+    searched.map(({ source: { key, timeControls } }) => [key, timeControls]),
+  );
   const [selected, setSelected] = useState<{
     source: OpeningTreeSource;
     game: NormalizedGame;
@@ -266,7 +301,10 @@ function OpeningTree({
       // board still opens, on the first database alone.
       let onlinePlayer: number | undefined;
       if (pinned && online) {
-        onlinePlayer = (await opponentPlayers(online.file, online.accounts).catch(() => []))[0]?.id;
+        // The card's answer is used when it is there; a click before it arrives asks once more.
+        onlinePlayer =
+          online.player ??
+          (await opponentPlayers(online.file, online.accounts).catch(() => []))[0]?.id;
         if (onlinePlayer === undefined) {
           notifications.show({
             color: "warning",
@@ -404,17 +442,49 @@ function OpeningTree({
                 name,
               })}
       </Text>
-      <ExplorerSources queries={queries}>
+      <ExplorerSources queries={searched}>
         {(results) => {
-          const { openings, games, loading, progressId, failures, failed } =
-            combineSourceResults(results);
-          const total = openings.reduce(
-            (sum, row) => sum + row.white + row.draw + row.black + row.unknown,
-            0,
+          const primary = combineSourceResults(
+            results.filter(({ source }) => source.key !== onlineSource?.key),
           );
+          const sections: OpeningSection[] = [
+            {
+              key: "primary",
+              title: online
+                ? t("Databases.OpeningTree.OverTheBoard", { defaultValue: "Over the board" })
+                : undefined,
+              combined: primary,
+            },
+          ];
+          if (online) {
+            sections.push({
+              key: "online",
+              title: t("Databases.OpeningTree.Online", { defaultValue: "Online" }),
+              combined: onlineSource
+                ? combineSourceResults(
+                    results.filter(({ source }) => source.key === onlineSource.key),
+                  )
+                : online.resolving
+                  ? { ...EMPTY_RESULTS, loading: true }
+                  : {
+                      ...EMPTY_RESULTS,
+                      failed: true,
+                      failures: [
+                        {
+                          label: "",
+                          error: t("Databases.OpeningTree.OnlineUnavailable", {
+                            defaultValue: "The online games could not be read.",
+                          }),
+                        },
+                      ],
+                    },
+            });
+          }
+          const isSelected = (source: OpeningTreeSource, game: NormalizedGame) =>
+            selected?.source.key === source.key && selected.game.id === game.id;
           return (
             <>
-              {!loading && !failed && failures.length > 0 && (
+              {!primary.loading && !primary.failed && primary.failures.length > 0 && (
                 <Alert
                   color="warning"
                   title={t("Databases.OpeningTree.PartialSources", {
@@ -422,7 +492,7 @@ function OpeningTree({
                   })}
                   data-opening-partial
                 >
-                  {failures.map((failure) => (
+                  {primary.failures.map((failure) => (
                     <Text key={failureText(failure)} size="sm" className="wrap-anywhere">
                       {failureText(failure)}
                     </Text>
@@ -439,241 +509,307 @@ function OpeningTree({
                     drawable={{ enabled: false }}
                   />
                 </div>
-                <div className={classes.inset}>
-                  {loading && (
-                    <>
-                      <DatabaseLoader
-                        isLoading
-                        tab={progressId}
-                        label={t("Databases.OpeningTree.Searching", {
-                          defaultValue: "Searching {{name}}'s games…",
-                          name,
-                        })}
-                      />
-                      <Stack gap="xs" mt="sm" aria-hidden="true" data-opening-skeleton>
-                        {Array.from({ length: 5 }, (_, index) => (
-                          <Skeleton key={index} height="1.5rem" />
-                        ))}
-                      </Stack>
-                    </>
-                  )}
-                  {!loading && failed ? (
-                    <div role="alert">
-                      {failures.map((failure) => (
-                        <Text key={failureText(failure)} c="danger" className="wrap-anywhere">
-                          {failureText(failure)}
-                        </Text>
-                      ))}
-                    </div>
-                  ) : (
-                    !loading && (
-                      <>
-                        <Text size="sm" mb="xs">
-                          {t("Databases.OpeningTree.Total", {
-                            defaultValue: "{{count}} games in this position",
-                            count: total,
-                          })}
-                        </Text>
-                        {total === 0 ? (
-                          <Text c="dimmed" size="sm">
-                            {t("Databases.OpeningTree.Empty", {
-                              defaultValue: "No games in this position",
-                            })}
-                          </Text>
-                        ) : (
-                          <table
-                            className={`${classes.table} ${classes.movesTable}`}
-                            data-opening-moves
-                          >
-                            <thead>
-                              <tr>
-                                <th>{t("Databases.OpeningTree.Move", { defaultValue: "Move" })}</th>
-                                <th className={classes.number}>{t("Common.Games")}</th>
-                                <th className={classes.number}>
-                                  {t("Databases.OpeningTree.Score", { defaultValue: "Score" })}
-                                </th>
-                                <th>{t("Databases.OpeningTree.WDL", { defaultValue: "W/D/L" })}</th>
-                                <th className={classes.recencyColumn}>
-                                  {t("Databases.OpeningTree.LastPlayed", {
-                                    defaultValue: "Last played",
-                                  })}
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {openings.map((row) => {
-                                const won = color === "white" ? row.white : row.black;
-                                const lost = color === "white" ? row.black : row.white;
-                                const scored = won + row.draw + lost;
-                                const terminal = row.move === "*";
-                                return (
-                                  <tr
-                                    key={row.move}
-                                    className={terminal ? classes.terminal : classes.row}
-                                    tabIndex={terminal ? undefined : 0}
-                                    onClick={terminal ? undefined : () => advance(row.move)}
-                                    onKeyDown={
-                                      terminal
-                                        ? undefined
-                                        : (event) => {
-                                            if (event.key === "Enter") advance(row.move);
-                                          }
-                                    }
-                                  >
-                                    <td
-                                      style={{
-                                        fontFamily: terminal
-                                          ? undefined
-                                          : "var(--mantine-font-family-monospace)",
-                                      }}
-                                    >
-                                      <span
-                                        className={classes.compactColumnLabel}
-                                        data-opening-column-label
-                                      >
-                                        {t("Databases.OpeningTree.Move", { defaultValue: "Move" })}
-                                      </span>
-                                      {terminal
-                                        ? t("Databases.OpeningTree.Ended", {
-                                            defaultValue: "Game ended here",
-                                          })
-                                        : row.move}
-                                    </td>
-                                    <td className={classes.number}>
-                                      <span
-                                        className={classes.compactColumnLabel}
-                                        data-opening-column-label
-                                      >
-                                        {t("Common.Games")}
-                                      </span>
-                                      {scored + row.unknown}
-                                    </td>
-                                    <td className={classes.number}>
-                                      <span
-                                        className={classes.compactColumnLabel}
-                                        data-opening-column-label
-                                      >
-                                        {t("Databases.OpeningTree.Score", {
-                                          defaultValue: "Score",
-                                        })}
-                                      </span>
-                                      {scored
-                                        ? `${(((won + row.draw / 2) / scored) * 100).toFixed(1)}%`
-                                        : "–"}
-                                    </td>
-                                    <td className={classes.results}>
-                                      <span
-                                        className={classes.compactColumnLabel}
-                                        data-opening-column-label
-                                      >
-                                        {t("Databases.OpeningTree.WDL", { defaultValue: "W/D/L" })}
-                                      </span>
-                                      <ResultsChart
-                                        won={won}
-                                        draw={row.draw}
-                                        lost={lost}
-                                        size="1.125rem"
-                                        playerPerspective
-                                        labelThreshold={0.2}
-                                      />
-                                    </td>
-                                    <td className={classes.recencyColumn}>
-                                      <PlayerOpeningRecency row={row} />
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        )}
-                      </>
-                    )
-                  )}
-                </div>
+                <Stack gap="sm" miw={0}>
+                  {sections.map((section) => (
+                    <MovesPanel
+                      key={section.key}
+                      section={section}
+                      name={name}
+                      color={color}
+                      onMove={advance}
+                    />
+                  ))}
+                </Stack>
               </div>
-              {!loading && !failed && games.length > 0 && (
-                <>
-                  {total > games.length && (
-                    <Text size="xs" c="dimmed">
-                      {t("Databases.OpeningTree.Truncated", {
-                        defaultValue: "Showing the most recent {{shown}} of {{total}}",
-                        shown: games.length,
-                        total,
-                      })}
-                    </Text>
-                  )}
-                  <div className={`${classes.inset} ${classes.games}`}>
-                    <table className={classes.table} data-opening-games>
-                      <thead>
-                        <tr>
-                          <th>{t("Common.Date")}</th>
-                          <th>
-                            {t("Databases.OpeningTree.Opponent", { defaultValue: "Opponent" })}
-                          </th>
-                          <th>{t("Board.Database.Local.Result")}</th>
-                          <th>{t("Databases.Game.Event")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {games.map(({ source, game }) => (
-                          <tr
-                            key={`${source.key}:${game.id}`}
-                            className={classes.row}
-                            tabIndex={0}
-                            aria-selected={
-                              selected?.source.key === source.key && selected.game.id === game.id
-                            }
-                            onClick={() => setSelected({ source, game })}
-                            onDoubleClick={() => void gameOpen.activate({ source, game })}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") setSelected({ source, game });
-                            }}
-                          >
-                            <td>{game.date || "–"}</td>
-                            <td>
-                              {color === "white" ? game.black : game.white}
-                              <Text size="xs" c="dimmed">
-                                {formatOpponentRating(
-                                  color === "white" ? game.black_elo : game.white_elo,
-                                )}
-                              </Text>
-                            </td>
-                            <td>{game.result}</td>
-                            <td>{game.event}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              {sections.map((section) => (
+                <GamesPanel
+                  key={section.key}
+                  section={section}
+                  color={color}
+                  isSelected={isSelected}
+                  onSelect={(source, game) => setSelected({ source, game })}
+                  onOpen={(source, game) => void gameOpen.activate({ source, game })}
+                />
+              ))}
+              {selected && (
+                <div data-opening-preview>
+                  <Group justify="end">
+                    <Button
+                      size="xs"
+                      variant="default"
+                      loading={gameOpen.pending}
+                      aria-busy={gameOpen.pending}
+                      onClick={() => void gameOpen.activate(selected)}
+                      data-opening-open
+                    >
+                      {t("Databases.OpeningTree.Open", { defaultValue: "Open on board" })}
+                    </Button>
+                  </Group>
+                  <div className={classes.preview}>
+                    <GamePreview
+                      pgn={selected.game.moves}
+                      headers={databaseGameHeaders(selected.game)}
+                      fitHeight
+                    />
                   </div>
-                  {selected && (
-                    <div data-opening-preview>
-                      <Group justify="end">
-                        <Button
-                          size="xs"
-                          variant="default"
-                          loading={gameOpen.pending}
-                          aria-busy={gameOpen.pending}
-                          onClick={() => void gameOpen.activate(selected)}
-                          data-opening-open
-                        >
-                          {t("Databases.OpeningTree.Open", { defaultValue: "Open on board" })}
-                        </Button>
-                      </Group>
-                      <div className={classes.preview}>
-                        <GamePreview
-                          pgn={selected.game.moves}
-                          headers={databaseGameHeaders(selected.game)}
-                          fitHeight
-                        />
-                      </div>
-                    </div>
-                  )}
-                </>
+                </div>
               )}
             </>
           );
         }}
       </ExplorerSources>
+    </Stack>
+  );
+}
+
+/** Nothing found and nothing pending: the base of a section that has no search of its own. */
+const EMPTY_RESULTS: CombinedResults = {
+  loading: false,
+  progressId: "",
+  failures: [],
+  failed: false,
+  openings: [],
+  games: [],
+};
+
+/** One group of the player's games: over the board, or online. `title` is set when both show. */
+type OpeningSection = { key: string; title?: string; combined: CombinedResults };
+
+function SectionTitle({ title }: { title?: string }) {
+  return title ? (
+    <Text size="sm" fw={600} mb="xs" data-opening-section-title>
+      {title}
+    </Text>
+  ) : null;
+}
+
+/** The moves a section's games continue with from the shown position. */
+function MovesPanel({
+  section: { key, title, combined },
+  name,
+  color,
+  onMove,
+}: {
+  section: OpeningSection;
+  name: string;
+  color: Color;
+  onMove: (san: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { openings, loading, progressId, failures, failed } = combined;
+  const total = openings.reduce(
+    (sum, row) => sum + row.white + row.draw + row.black + row.unknown,
+    0,
+  );
+  return (
+    <div className={classes.inset} data-opening-section={key}>
+      <SectionTitle title={title} />
+      {loading && (
+        <>
+          <DatabaseLoader
+            isLoading
+            tab={progressId}
+            label={t("Databases.OpeningTree.Searching", {
+              defaultValue: "Searching {{name}}'s games…",
+              name,
+            })}
+          />
+          <Stack gap="xs" mt="sm" aria-hidden="true" data-opening-skeleton>
+            {Array.from({ length: 5 }, (_, index) => (
+              <Skeleton key={index} height="1.5rem" />
+            ))}
+          </Stack>
+        </>
+      )}
+      {!loading && failed ? (
+        <div role="alert">
+          {failures.map((failure) => (
+            <Text key={failureText(failure)} c="danger" className="wrap-anywhere">
+              {failureText(failure)}
+            </Text>
+          ))}
+        </div>
+      ) : (
+        !loading && (
+          <>
+            <Text size="sm" mb="xs">
+              {t("Databases.OpeningTree.Total", {
+                defaultValue: "{{count}} games in this position",
+                count: total,
+              })}
+            </Text>
+            {total === 0 ? (
+              <Text c="dimmed" size="sm">
+                {t("Databases.OpeningTree.Empty", {
+                  defaultValue: "No games in this position",
+                })}
+              </Text>
+            ) : (
+              <table className={`${classes.table} ${classes.movesTable}`} data-opening-moves>
+                <thead>
+                  <tr>
+                    <th>{t("Databases.OpeningTree.Move", { defaultValue: "Move" })}</th>
+                    <th className={classes.number}>{t("Common.Games")}</th>
+                    <th className={classes.number}>
+                      {t("Databases.OpeningTree.Score", { defaultValue: "Score" })}
+                    </th>
+                    <th>{t("Databases.OpeningTree.WDL", { defaultValue: "W/D/L" })}</th>
+                    <th className={classes.recencyColumn}>
+                      {t("Databases.OpeningTree.LastPlayed", {
+                        defaultValue: "Last played",
+                      })}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {openings.map((row) => {
+                    const won = color === "white" ? row.white : row.black;
+                    const lost = color === "white" ? row.black : row.white;
+                    const scored = won + row.draw + lost;
+                    const terminal = row.move === "*";
+                    return (
+                      <tr
+                        key={row.move}
+                        className={terminal ? classes.terminal : classes.row}
+                        tabIndex={terminal ? undefined : 0}
+                        onClick={terminal ? undefined : () => onMove(row.move)}
+                        onKeyDown={
+                          terminal
+                            ? undefined
+                            : (event) => {
+                                if (event.key === "Enter") onMove(row.move);
+                              }
+                        }
+                      >
+                        <td
+                          style={{
+                            fontFamily: terminal
+                              ? undefined
+                              : "var(--mantine-font-family-monospace)",
+                          }}
+                        >
+                          <span className={classes.compactColumnLabel} data-opening-column-label>
+                            {t("Databases.OpeningTree.Move", { defaultValue: "Move" })}
+                          </span>
+                          {terminal
+                            ? t("Databases.OpeningTree.Ended", {
+                                defaultValue: "Game ended here",
+                              })
+                            : row.move}
+                        </td>
+                        <td className={classes.number}>
+                          <span className={classes.compactColumnLabel} data-opening-column-label>
+                            {t("Common.Games")}
+                          </span>
+                          {scored + row.unknown}
+                        </td>
+                        <td className={classes.number}>
+                          <span className={classes.compactColumnLabel} data-opening-column-label>
+                            {t("Databases.OpeningTree.Score", {
+                              defaultValue: "Score",
+                            })}
+                          </span>
+                          {scored ? `${(((won + row.draw / 2) / scored) * 100).toFixed(1)}%` : "–"}
+                        </td>
+                        <td className={classes.results}>
+                          <span className={classes.compactColumnLabel} data-opening-column-label>
+                            {t("Databases.OpeningTree.WDL", { defaultValue: "W/D/L" })}
+                          </span>
+                          <ResultsChart
+                            won={won}
+                            draw={row.draw}
+                            lost={lost}
+                            size="1.125rem"
+                            playerPerspective
+                            labelThreshold={0.2}
+                          />
+                        </td>
+                        <td className={classes.recencyColumn}>
+                          <PlayerOpeningRecency row={row} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </>
+        )
+      )}
+    </div>
+  );
+}
+
+/** A section's most recent games in the shown position; a click previews, a double click opens. */
+function GamesPanel({
+  section: { key, title, combined },
+  color,
+  isSelected,
+  onSelect,
+  onOpen,
+}: {
+  section: OpeningSection;
+  color: Color;
+  isSelected: (source: OpeningTreeSource, game: NormalizedGame) => boolean;
+  onSelect: (source: OpeningTreeSource, game: NormalizedGame) => void;
+  onOpen: (source: OpeningTreeSource, game: NormalizedGame) => void;
+}) {
+  const { t } = useTranslation();
+  const { openings, games, loading, failed } = combined;
+  if (loading || failed || games.length === 0) return null;
+  const total = openings.reduce(
+    (sum, row) => sum + row.white + row.draw + row.black + row.unknown,
+    0,
+  );
+  return (
+    <Stack gap="xs" data-opening-games-section={key}>
+      <SectionTitle title={title} />
+      {total > games.length && (
+        <Text size="xs" c="dimmed">
+          {t("Databases.OpeningTree.Truncated", {
+            defaultValue: "Showing the most recent {{shown}} of {{total}}",
+            shown: games.length,
+            total,
+          })}
+        </Text>
+      )}
+      <div className={`${classes.inset} ${classes.games}`}>
+        <table className={classes.table} data-opening-games>
+          <thead>
+            <tr>
+              <th>{t("Common.Date")}</th>
+              <th>{t("Databases.OpeningTree.Opponent", { defaultValue: "Opponent" })}</th>
+              <th>{t("Board.Database.Local.Result")}</th>
+              <th>{t("Databases.Game.Event")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {games.map(({ source, game }) => (
+              <tr
+                key={`${source.key}:${game.id}`}
+                className={classes.row}
+                tabIndex={0}
+                aria-selected={isSelected(source, game)}
+                onClick={() => onSelect(source, game)}
+                onDoubleClick={() => onOpen(source, game)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") onSelect(source, game);
+                }}
+              >
+                <td>{game.date || "–"}</td>
+                <td>
+                  {color === "white" ? game.black : game.white}
+                  <Text size="xs" c="dimmed">
+                    {formatOpponentRating(color === "white" ? game.black_elo : game.white_elo)}
+                  </Text>
+                </td>
+                <td>{game.result}</td>
+                <td>{game.event}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Stack>
   );
 }

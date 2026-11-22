@@ -5,18 +5,12 @@ import { Plus, Settings, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
-import useSWRImmutable from "swr/immutable";
 import { CheckboxRow } from "@/components/common/CheckboxRow";
 import type { DatabaseHandle, OpponentAccount, OpponentTimeControl } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { useProgress } from "@/hooks/useProgress";
-import {
-  errorUnlessCancelled,
-  failureUnlessCancelled,
-  safeFailureContext,
-  warnSafely,
-} from "@/platform/errors";
+import { failureUnlessCancelled } from "@/platform/errors";
 import { opponentImportsAtom, opponentLinksAtom } from "@/state/atoms";
 import {
   findOpponentLink,
@@ -42,7 +36,7 @@ import {
   runOpponentImport,
   unlinkOpponent,
 } from "./opponentImport";
-import { opponentPlayers } from "./opponentLookup";
+import { useOpponentPlayers } from "./useOpponentPlayers";
 
 /** What the database listing says about the link's downloaded games. */
 export type OpponentGames =
@@ -98,22 +92,8 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
   const inFlight = link !== undefined && imports.has(link.id);
   const ticket = link ? (imports.get(link.id) ?? null) : null;
   const gamesFile = games.kind === "games" ? games.file : null;
-  const usernames = link?.accounts.map((account) => account.username).join("\n") ?? "";
   // Usernames that met each other stay separate players; the board then follows the first one.
-  const { data: players } = useSWRImmutable(
-    gamesFile && link ? (["opponent-players", gamesFile, usernames] as const) : null,
-    ([, file]) => opponentPlayers(file, link!.accounts),
-    {
-      // The note is all that depends on this answer; "Prepare on board" reports the same failure.
-      onError: (cause) => {
-        if (errorUnlessCancelled(cause)) {
-          warnSafely(
-            `The players of an opponent's online games could not be read: ${safeFailureContext(cause).message}`,
-          );
-        }
-      },
-    },
-  );
+  const { data: players } = useOpponentPlayers(link, gamesFile);
 
   function linkAccount(account: OpponentAccount) {
     setLinks((current) => withOpponentAccount(current, playerName, account, crypto.randomUUID()));

@@ -6,11 +6,25 @@ import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/ex
 
 const displayDate = (pgnDate: string) => pgnDate.replaceAll(".", "-");
 
-/** The active filters of a local source as one short line, or the "No filter" text. */
-export function localFilterSummary(filters: ExplorerFilters, t: TFunction): string {
+/**
+ * The active filters of a local source as one short line, or the "No filter" text. A player filter
+ * names the player and the colour searched; `playerName` is absent while the name is unknown.
+ */
+export function localFilterSummary(
+    filters: ExplorerFilters,
+    t: TFunction,
+    playerName?: string,
+): string {
     const active = normalizeExplorerFilters(filters);
     const parts: string[] = [];
-    if (active.player !== null) parts.push(t("Board.Database.Local.Player"));
+    if (active.player !== null) {
+        parts.push(
+            t("Board.Database.FilterSummary.PlayerAs", {
+                name: playerName || t("Board.Database.Local.Player"),
+                color: active.color === "white" ? t("Fen.White") : t("Fen.Black"),
+            }),
+        );
+    }
     if (active.elo) {
         parts.push(`${t("Board.Database.Local.Elo")} ${active.elo[0]}–${active.elo[1]}`);
     }

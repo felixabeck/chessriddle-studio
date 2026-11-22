@@ -611,6 +611,9 @@ test("Prepare pins the player's downloaded online games as the board's second co
     { id: 5, name: "selected_online" },
     { id: 9, name: "SelectedOnline" },
   ]);
+  mocks.getPlayer.mockImplementation(async (database: DatabaseHandle, id: number) =>
+    database === online ? { id, name: "selected_online", elo: null, game_count: 1 } : player,
+  );
   await render();
   await click(button("Prepare on board"));
 
@@ -649,6 +652,10 @@ test("Prepare pins the player's downloaded online games as the board's second co
     { signal: expect.any(AbortSignal) },
   );
   expect(container.querySelectorAll("[data-explorer-source]")).toHaveLength(2);
+  // Each header names the player its column is filtered to, with the colour searched.
+  await vi.waitFor(() => expect(container.textContent).toContain("selected_online as White"));
+  expect(container.textContent).toContain("Selected player as White");
+  expect(container.textContent).not.toContain("Player ·");
 });
 
 test.each([
@@ -698,6 +705,139 @@ test("the online games of the very database on the card are not its own second c
   expect(mocks.onlinePlayers).not.toHaveBeenCalled();
   expect(store.get(pinnedExplorerComparisonFamily(store.get(tabsAtom).at(-1)!.value))).toBeNull();
 });
+
+const onlineGame: NormalizedGame = {
+  ...first,
+  id: 77,
+  white: "selected_online",
+  white_id: 5,
+  black: "Online opponent",
+  event: "Rated blitz game",
+  date: "2026.10.30",
+};
+const onlineRows: PositionStats[] = [
+  { move: "e4", white: 20, draw: 5, black: 10, unknown: 0, last_played: null, year_counts: [] },
+  { move: "c4", white: 4, draw: 0, black: 1, unknown: 0, last_played: null, year_counts: [] },
+];
+/** The online database answers with its own moves and games; every other database as before. */
+function answerOnline() {
+  const offline = mocks.searchPosition.getMockImplementation()!;
+  mocks.searchPosition.mockImplementation(
+    async (path: DatabaseHandle, query: PositionSearchQuery, ...rest: unknown[]) =>
+      path === online ? [onlineRows, [onlineGame]] : offline(path, query, ...rest),
+  );
+}
+function section(key: "primary" | "online") {
+  return container.querySelector(`[data-opening-section="${key}"]`)!;
+}
+function onlineSearches() {
+  return mocks.searchPosition.mock.calls.filter(([path]) => path === online).map(([, q]) => q);
+}
+
+test("the card shows the online games beside the over-the-board games, for the same colour and position", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers.mockResolvedValue([{ id: 5, name: "selected_online" }]);
+  answerOnline();
+  await render();
+  await vi.waitFor(() =>
+    expect(section("online").querySelector("[data-opening-moves]")).toBeTruthy(),
+  );
+
+  expect(
+    [...container.querySelectorAll("[data-opening-section-title]")].map((t) => t.textContent),
+  ).toEqual(["Over the board", "Online", "Over the board", "Online"]);
+  expect(section("primary").textContent).toContain("9 games in this position");
+  expect(section("online").textContent).toContain("40 games in this position");
+  expect(section("online").textContent).toContain("c4");
+  expect(section("primary").textContent).not.toContain("c4");
+  // The online player is searched with the card's colour and position.
+  expect(onlineSearches().at(-1)).toMatchObject({
+    player1: 5,
+    player2: undefined,
+    position: expect.objectContaining({ fen: INITIAL_FEN }),
+  });
+  expect(mocks.onlinePlayers).toHaveBeenCalledExactlyOnceWith(online, [...onlineAccounts]);
+
+  // A move in the online table moves both tables to the new position.
+  const onlineE4 = [...section("online").querySelectorAll<HTMLTableRowElement>("tbody tr")].find(
+    (item) => item.cells[0].lastChild?.textContent === "e4",
+  )!;
+  await click(onlineE4);
+  await vi.waitFor(() =>
+    expect(onlineSearches().at(-1)).toMatchObject({
+      position: expect.objectContaining({ fen: e4Fen }),
+    }),
+  );
+  expect(container.querySelector("[data-opening-board]")?.getAttribute("data-fen")).toBe(e4Fen);
+  expect(
+    mocks.searchPosition.mock.calls.some(([path, q]) => path === file && q.position?.fen === e4Fen),
+  ).toBe(true);
+
+  // The other colour searches the online player as Black as well.
+  await black();
+  await vi.waitFor(() => expect(onlineSearches().at(-1)).toMatchObject({ player2: 5 }));
+});
+
+test("an online game previews and opens from its own database", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers.mockResolvedValue([{ id: 5, name: "selected_online" }]);
+  answerOnline();
+  await render();
+  const onlineGames = () =>
+    container.querySelector('[data-opening-games-section="online"] [data-opening-games]');
+  await vi.waitFor(() => expect(onlineGames()?.textContent).toContain("Online opponent"));
+
+  await click(onlineGames()!.querySelector("tbody tr")!);
+  expect(container.querySelector("[data-opening-preview]")).toBeTruthy();
+  await click(container.querySelector("[data-opening-open]")!);
+  expect(mocks.openGame).toHaveBeenCalledWith(
+    expect.objectContaining({ game: onlineGame, database: online, targetFens: [INITIAL_FEN] }),
+  );
+});
+
+test.each([
+  ["finds no player", () => mocks.onlinePlayers.mockResolvedValue([])],
+  ["fails", () => mocks.onlinePlayers.mockRejectedValue(new Error("database is locked"))],
+])(
+  "the online section says the games could not be read when the lookup %s",
+  async (_name, arrange) => {
+    linkOnlineGames("readable");
+    arrange();
+    await render();
+    await vi.waitFor(() =>
+      expect(section("online").textContent).toContain("The online games could not be read."),
+    );
+    expect(onlineSearches()).toEqual([]);
+    expect(section("primary").querySelector("[data-opening-moves]")).toBeTruthy();
+  },
+);
+
+test("the online section waits while its player is looked up", async () => {
+  linkOnlineGames("readable");
+  let resolve!: (players: { id: number; name: string }[]) => void;
+  mocks.onlinePlayers.mockReturnValue(new Promise((done) => (resolve = done)));
+  answerOnline();
+  await render();
+  await vi.waitFor(() =>
+    expect(section("primary").querySelector("[data-opening-moves]")).toBeTruthy(),
+  );
+  expect(section("online").querySelector("[data-opening-skeleton]")).toBeTruthy();
+  expect(onlineSearches()).toEqual([]);
+
+  await act(async () => resolve([{ id: 5, name: "selected_online" }]));
+  await vi.waitFor(() => expect(section("online").textContent).toContain("c4"));
+});
+
+test.each(["unreadable", "absent", "none"] as const)(
+  "without readable online games the card keeps its single untitled section (%s)",
+  async (listed) => {
+    linkOnlineGames(listed);
+    await render();
+    await vi.waitFor(() => expect(container.querySelector("[data-opening-moves]")).toBeTruthy());
+    expect(container.querySelector('[data-opening-section="online"]')).toBeNull();
+    expect(container.querySelector("[data-opening-section-title]")).toBeNull();
+  },
+);
 
 test.each(["rejection", "refusal"])(
   "Prepare %s applies no presets and does not navigate",

@@ -24,7 +24,11 @@ test.each<[string, Partial<ExplorerFilters>]>([
 test.each<[Partial<ExplorerFilters>, string]>([
     [{ elo: [1900, 2500] }, "Board.Database.Local.Elo 1900–2500"],
     [{ elo: [0, 2000] }, "Board.Database.Local.Elo 0–2000"],
-    [{ player: 7 }, "Board.Database.Local.Player"],
+    [{ player: 7 }, "Board.Database.FilterSummary.PlayerAs Board.Database.Local.Player Fen.White"],
+    [
+        { player: 7, color: "black" },
+        "Board.Database.FilterSummary.PlayerAs Board.Database.Local.Player Fen.Black",
+    ],
     [{ start_date: "2020.01.31" }, "Board.Database.FilterSummary.Since 2020-01-31"],
     [{ end_date: "2024.12.01" }, "Board.Database.FilterSummary.Until 2024-12-01"],
     [{ start_date: "2020.01.31", end_date: "2024.12.01" }, "2020-01-31 – 2024-12-01"],
@@ -47,12 +51,31 @@ test("several active filters are joined in a fixed order", () => {
         }),
     ).toBe(
         [
-            "Board.Database.Local.Player",
+            "Board.Database.FilterSummary.PlayerAs Board.Database.Local.Player Fen.White",
             "Board.Database.Local.Elo 1900–2500",
             "Board.Database.FilterSummary.Until 2024-12-01",
             "Board.Analysis.Tablebase.Draw",
             "Board.Database.FilterSummary.NoFastEvents",
         ].join(" · "),
+    );
+});
+
+test.each<["white" | "black", string]>([
+    ["white", "Fen.White"],
+    ["black", "Fen.Black"],
+])("a known player is named with the colour searched (%s)", (color, colorKey) => {
+    expect(
+        localFilterSummary(
+            { ...defaultExplorerFilters(), player: 7, color },
+            t,
+            "Bergmann, Thomas",
+        ),
+    ).toBe(`Board.Database.FilterSummary.PlayerAs Bergmann, Thomas ${colorKey}`);
+});
+
+test("a name without a player filter names nobody", () => {
+    expect(localFilterSummary(defaultExplorerFilters(), t, "Bergmann, Thomas")).toBe(
+        "Board.Database.NoFilter",
     );
 });
 
@@ -112,6 +135,15 @@ describe("explorer header catalogues", () => {
             );
             expect(text).not.toContain("Board.");
             expect(text.split(" · ")).toHaveLength(5);
+            // The player is named with the colour in every language.
+            const named = localFilterSummary(
+                { ...defaultExplorerFilters(), player: 7, color: "black" },
+                instance.t,
+                "NAME",
+            );
+            expect(named).toContain("NAME");
+            expect(named).toContain(translation["Fen.Black"]);
+            expect(named).not.toContain("{{");
         },
     );
 });

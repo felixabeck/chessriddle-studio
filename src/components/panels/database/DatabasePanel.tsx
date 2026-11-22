@@ -77,6 +77,7 @@ import { failureUnlessCancelled } from "@/platform/errors";
 import MasterOptionsPanel from "./options/MastersOptionsPanel";
 import PositionSearchControl from "./PositionSearchControl";
 import { useExplorerFilters } from "./useExplorerFilters";
+import { usePlayerName } from "./usePlayerName";
 import { fetchLocalOpening, useLocalExplorer } from "./useLocalExplorer";
 
 export type { LocalOptions } from "@/utils/db";
@@ -260,6 +261,9 @@ function DatabasePanel() {
   // is no longer in the list, and only its collection still knows the successor.
   useCollectionDatabase(db === "local" && !pinned ? storedComparison : null, replaceStored);
   const comparisonFilters = useExplorerFilters(comparisonDatabase, comparisonPlayer);
+  // A player filter is named in each header, so a board says whose games it shows.
+  const primaryPlayerName = usePlayerName(effectiveReferenceDatabase, localFilters.player);
+  const comparisonPlayerName = usePlayerName(comparisonDatabase, comparisonFilters.filters.player);
   const dbType: DBType = match(db)
     .with("local", (v) => ({
       type: v,
@@ -363,6 +367,7 @@ function DatabasePanel() {
     fixedTitle?: string;
     fixedPlayer?: boolean;
     binding: Pick<ReturnType<typeof useExplorerFilters>, "filters" | "setFilters">;
+    playerName: string | undefined;
     explorer: Pick<ReturnType<typeof useLocalExplorer>, "loading" | "progressId">;
     action?: ReactNode;
   }) => (
@@ -389,7 +394,7 @@ function DatabasePanel() {
           />
         )
       }
-      filterLabel={localFilterSummary(source.binding.filters, t)}
+      filterLabel={localFilterSummary(source.binding.filters, t, source.playerName)}
       filterDisabled={!source.database}
       filters={
         <LocalFiltersForm
@@ -414,6 +419,7 @@ function DatabasePanel() {
         database: effectiveReferenceDatabase,
         choose: chooseDatabase,
         binding: { filters: localFilters, setFilters: setLocalFilters },
+        playerName: primaryPlayerName,
         explorer: localExplorer,
       }),
     )
@@ -444,6 +450,7 @@ function DatabasePanel() {
       name: t("Board.Database.CompareWith"),
       ...(pinned ? { fixedTitle: comparison.title, fixedPlayer: comparisonPlayer !== null } : {}),
       binding: comparisonFilters,
+      playerName: comparisonPlayerName,
       explorer: comparisonExplorer,
       action: (
         <IconAction
@@ -474,13 +481,16 @@ function DatabasePanel() {
     key: string;
     name: string;
     filters: ExplorerFilters;
+    playerName: string | undefined;
     explorer: Pick<ReturnType<typeof useLocalExplorer>, "loading" | "progressId">;
   }) => (
     <ExplorerSourceCaption
       key={source.key}
       name={source.name}
       detail={[
-        isDefaultExplorerFilters(source.filters) ? null : localFilterSummary(source.filters, t),
+        isDefaultExplorerFilters(source.filters)
+          ? null
+          : localFilterSummary(source.filters, t, source.playerName),
         partialPosition,
       ]
         .filter((part) => part !== null)
@@ -504,6 +514,7 @@ function DatabasePanel() {
         key: db,
         name: primaryTitle,
         filters: localFilters,
+        playerName: primaryPlayerName,
         explorer: localExplorer,
       }),
       comparison.kind === "source" &&
@@ -511,6 +522,7 @@ function DatabasePanel() {
           key: "comparison",
           name: comparison.title,
           filters: comparisonFilters.filters,
+          playerName: comparisonPlayerName,
           explorer: comparisonExplorer,
         }),
     ])
