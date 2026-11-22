@@ -2847,10 +2847,21 @@ for (const { scale, surfaces } of [
             await expect(fields.getByRole("textbox", { name: "Black", exact: true })).toHaveValue(
                 "Second Black",
             );
+            const columns = () =>
+                fields.evaluate(
+                    (grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length,
+                );
+            // After a resize the compact switch follows a ResizeObserver and a React commit, so
+            // measure only once the grid has reached this surface's layout step.
+            if (surface !== surfaces[0]) {
+                await expect
+                    .poll(columns, { message: `${surface.width}px / ${scale}%` })
+                    .toBe(surface.columns);
+            }
             await waitForFontsSettled(page);
-            const layout = await fields.evaluate((grid) => {
+            const outside = await fields.evaluate((grid) => {
                 const card = grid.closest(".mantine-Paper-root")!.getBoundingClientRect();
-                const outside = [...grid.querySelectorAll("input, button, span, a, p")]
+                return [...grid.querySelectorAll("input, button, span, a, p")]
                     .filter((field) => field.getBoundingClientRect().width > 0)
                     .flatMap((field) => {
                         const box = field.getBoundingClientRect();
@@ -2860,11 +2871,9 @@ for (const { scale, surfaces } of [
                             field.getAttribute("aria-label") ?? field.textContent ?? field.tagName;
                         return inside ? [] : [`${name} [${box.left}, ${box.right}]`];
                     });
-                const columns = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
-                return { outside, columns };
             });
-            expect(layout.outside, `${surface.width}px / ${scale}%`).toEqual([]);
-            expect(layout.columns, `${surface.width}px / ${scale}%`).toBe(surface.columns);
+            expect(outside, `${surface.width}px / ${scale}%`).toEqual([]);
+            expect(await columns(), `${surface.width}px / ${scale}%`).toBe(surface.columns);
         }
     });
 }
