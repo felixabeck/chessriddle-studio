@@ -83,3 +83,34 @@ test("a node the caller does not accept is passed over, on the remembered path a
     expect(continued?.position).toEqual([1, 0, 0, 0, 0]);
     expect(continued?.node.children[0].san).toBe("Bc5");
 });
+
+test("the remembered path wins over an earlier node with the same position", () => {
+    const store = game();
+    // The same position at the end of two lines; the remembered path is the later one.
+    store.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6", "Nc3"] });
+    store.getState().goToMove([]);
+    store.getState().makeMoves({ payload: ["Nc3", "e5", "Nf3", "Nc6", "e4"] });
+    const { root } = store.getState();
+    const remembered = [1, 0, 0, 0, 0];
+    const node = getNodeAtPath(root, remembered);
+    const state = getBoardState(node.fen);
+    expect(getBoardState(getNodeAtPath(root, [0, 0, 0, 0, 0]).fen)).toBe(state);
+
+    const found = locateBoardState(root, remembered, state);
+    expect(found?.position).toEqual(remembered);
+    expect(found?.node).toBe(node);
+    // The answer is a path of its own, not the caller's array.
+    expect(found?.position).not.toBe(remembered);
+});
+
+test("a path that runs past the end of its line is not returned, even where the line ends on the position", () => {
+    const store = game();
+    store.getState().makeMoves({ payload: ["e4", "e5"] });
+    const { root } = store.getState();
+    const end = getNodeAtPath(root, [0, 0]);
+    expect(end.children).toHaveLength(0);
+    // `[0, 0, 7]` no longer resolves; walking it stops on the node the search finds at `[0, 0]`.
+    const found = locateBoardState(root, [0, 0, 7], getBoardState(end.fen));
+    expect(found?.position).toEqual([0, 0]);
+    expect(found?.node).toBe(end);
+});
