@@ -84,14 +84,15 @@ export function ExplorerSourceCaption({
 }) {
   return (
     <Stack gap={0} miw={0} data-explorer-source>
-      <Text fz="sm" fw={600} truncate>
+      <Text fz="sm" fw={600} truncate title={name}>
         {name}
-        {detail && (
-          <Text span fw={400} c="dimmed">
-            {` · ${detail}`}
-          </Text>
-        )}
       </Text>
+      {/* Its own line, so a long database name never hides whose games the column shows. */}
+      {detail && (
+        <Text fz="xs" c="dimmed" truncate title={detail} data-explorer-source-detail>
+          {detail}
+        </Text>
+      )}
       {loader}
     </Stack>
   );

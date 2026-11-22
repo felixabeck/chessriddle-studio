@@ -1290,10 +1290,12 @@ describe("DatabasePanel", () => {
       expect(headerControls()).toHaveLength(0);
       expect(compareButton()).toBeUndefined();
       // The saved reference carries filters, the comparison none.
-      expect(sources()[0].textContent).toBe(
-        "Saved reference · Board.Database.Local.Elo 1800–2400 · Board.Analysis.Tablebase.Draw · Board.Database.FilterSummary.NoFastEvents",
+      expect(sources()[0].firstElementChild?.textContent).toBe("Saved reference");
+      expect(sources()[0].querySelector("[data-explorer-source-detail]")?.textContent).toBe(
+        "Board.Database.Local.Elo 1800–2400 · Board.Analysis.Tablebase.Draw · Board.Database.FilterSummary.NoFastEvents",
       );
       expect(sources()[1].textContent).toBe("Correspondence");
+      expect(sources()[1].querySelector("[data-explorer-source-detail]")).toBeNull();
       // The view is a plain region: no tab panel names a tab that is not shown.
       expect(container.querySelector('[role="tabpanel"]')).toBeNull();
       expect(
@@ -1375,15 +1377,19 @@ describe("DatabasePanel", () => {
       await act(async () => {
         await store.set(lichessOptionsAtom, { ...DEFAULT_LICHESS_OPTIONS, speeds: ["blitz"] });
       });
-      expect(sources()[0].textContent).toBe("Board.Database.LichessAll · Board.Database.Filters");
+      expect(sources()[0].firstElementChild?.textContent).toBe("Board.Database.LichessAll");
+      expect(sources()[0].querySelector("[data-explorer-source-detail]")?.textContent).toBe(
+        "Board.Database.Filters",
+      );
 
       await act(async () => store.set(dbTypeFamily(tabId), "lch_master"));
       await vi.waitFor(() => expect(sources()[0].textContent).toBe("Board.Database.LichessMaster"));
       await act(async () => {
         await store.set(masterOptionsAtom, { since: new Date("2020-01-01T00:00:00Z") });
       });
-      expect(sources()[0].textContent).toBe(
-        "Board.Database.LichessMaster · Board.Database.Filters",
+      expect(sources()[0].firstElementChild?.textContent).toBe("Board.Database.LichessMaster");
+      expect(sources()[0].querySelector("[data-explorer-source-detail]")?.textContent).toBe(
+        "Board.Database.Filters",
       );
       // A cleared date leaves its key behind; that is no filter.
       await act(async () => {
