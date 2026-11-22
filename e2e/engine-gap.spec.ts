@@ -218,14 +218,10 @@ for (const colorScheme of ["light", "dark"] as const) {
         await move("e4").click();
         await expect(move("e4")).toHaveAttribute("aria-current", "true");
 
-        // A non-current annotated move hovers in its own annotation tint.
+        // A non-current annotated move hovers in its own annotation tint: "!" is Mantine's
+        // teal-6 (#12b886) at 0.1.
         await move("e5!").hover();
-        const ownHover = await move("e5!").evaluate((cell) =>
-            cell.style.getPropertyValue("--move-hover"),
-        );
-        expect(ownHover).toMatch(/^rgba\(/);
-        const annotated = await moveBackground(move("e5!"), ownHover);
-        expect(annotated.actual).toBe(annotated.expected);
+        await expect(move("e5!")).toHaveCSS("background-color", "rgba(18, 184, 134, 0.1)");
 
         await move("e5!").click();
         await expect(move("e5!")).toHaveAttribute("aria-current", "true");

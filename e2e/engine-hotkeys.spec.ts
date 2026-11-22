@@ -151,6 +151,26 @@ test("X toggles the Crosshair state and Shift+C navigates to the previous branch
     await expect(threat).toHaveAttribute("aria-pressed", "false");
 });
 
+test("with the hover preview off, a hovered engine-line move takes the warm hover on its inset row", async ({
+    page,
+    emitTauriEvent,
+}) => {
+    await page.addInitScript(() =>
+        localStorage.setItem("preview-board-on-hover", JSON.stringify(false)),
+    );
+    const { panel, request } = await setup(page);
+    await emitTauriEvent({
+        event: "best-moves-payload",
+        payload: bestMovesPayload(await request([]), ["d4", "d5"], ["d2d4", "d7d5"], 20),
+    });
+    const move = panel.getByRole("button", { name: "d5", exact: true });
+    await move.hover();
+    await expect(page.getByTestId("engine-line-preview")).toHaveCount(0);
+    await expect(move).not.toHaveAttribute("aria-current", "true");
+    const hovered = await moveBackground(move, "var(--cf-bar-hover)");
+    expect(hovered.actual).toBe(hovered.expected);
+});
+
 test("move keys step an open engine-line preview board in place and leave the game alone", async ({
     page,
     emitTauriEvent,

@@ -82,14 +82,10 @@ function MoveCell(props: MoveCellProps) {
     hover = rgba(annotationColor, 0.1);
   }
 
+  // Every current move is gold, annotated or not, as [data-notation-current] .cell draws it.
   if (props.isCurrentVariation) {
-    if (isAnnotated) {
-      background = rgba(annotationColor, 0.2);
-      hover = rgba(background, 0.25);
-    } else {
-      background = "var(--move-current-fill)";
-      hover = "var(--move-current-hover)";
-    }
+    background = "var(--move-current-fill)";
+    hover = "var(--move-current-hover)";
   }
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {

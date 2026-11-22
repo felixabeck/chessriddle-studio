@@ -140,7 +140,7 @@ test.each([
   [[], false, "transparent", "var(--cf-bar-hover)"],
   [[], true, "var(--move-current-fill)", "var(--move-current-hover)"],
   [["!"], false, "transparent", "rgba(#099, 0.1)"],
-  [["!"], true, "rgba(#099, 0.2)", "rgba(rgba(#099, 0.2), 0.25)"],
+  [["!"], true, "var(--move-current-fill)", "var(--move-current-hover)"],
 ] as const)(
   "an unannotated move takes the warm palette and an annotated one its colour (%j, current: %s)",
   async (annotations, current, fill, hover) => {
