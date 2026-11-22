@@ -28451,3 +28451,18 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Found by:** Claude Code (Fable 5.2), 2026-11-22, post-push CI wait of the build run studio-link-extension.
 * **Handled 2026-11-22** (Claude Code, Fable 5.2, build run studio-link-extension): commit "fix(install): build the installer test's reduced PATH from the whole PATH" builds the test's PATH from every directory of `process.env.PATH`. Proof: `pnpm install:local:test` 35 pass; the single test also passes with an additional first PATH directory; contract gate green on the repair commit; closure review by review-correctness and review-tests (agy) approved, no sibling test builds a reduced PATH. The CI runner is the remaining proof: the `frontend` job of the `Test` run on the commit that carries this closure.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3e41c817efbcc68bd38f7881b9bd77868adc5b53a5d38c6858d8c872a3026659","header_sha256":"4e6571ce7afd91a0ac6fe817d811e54f9311651eb3d553ca6c3b4a920eb15212","header_status":"handled","input_sha256":"e616b99e3632a36be27972605d3ff66a057e12948e6b88c5a0ae74b293513916","kind":"mutation-receipt","operation":"e47c9e1df736d1f7e10a201369c22eb906f7f9effa627565e4195f111df1d1b2","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-07"],"target":"f-20261122-07","v":1} -->
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### The release workflow's Linux scheme check dies without a message: rpm2cpio exits 1 on the bundler's rpm
+
+* **ID:** f-20261122-08 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45031059660
+* **Where:** `.github/workflows/release.yml`, step "Verify the game-link scheme registration (Linux only)" (added by the build run studio-link-extension).
+* **Defect:** the step extracts the rpm with `rpm2cpio "$1" | (cd "$work/rpm" && cpio -idm --quiet)` under `bash -e -o pipefail`. `rpm2cpio` 4.18.2 on Ubuntu 24.04 exits 1 with empty stderr on the rpm the Tauri bundler writes, although its cpio stream is complete. The step ends there, before any assertion.
+* **Failure scenario:** release rehearsal (workflow_dispatch) 45031059660 on a55aab030: job `release (ubuntu-24.04)` fails in that step right after its apt install, no error line. Both macOS legs and the Windows leg succeeded, their scheme checks included. A tag push would have failed its Linux leg the same way after building, so no Linux assets and no `latest.json` entry for Linux.
+* **Fix:** extract with `bsdtar` from `libarchive-tools`, whose exit status is honest for this package.
+* **Found by:** Claude Code (Fable 5.2), 2026-11-22, release rehearsal of the build run studio-link-extension.
