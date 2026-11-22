@@ -324,11 +324,12 @@ function OpeningTree({
           (online.lookup.kind === "found" ? online.lookup.player : undefined) ??
           (
             await opponentPlayers(online.file, online.accounts).catch((cause) => {
-              cancelled = !failureUnlessCancelled(cause);
+              if (failureUnlessCancelled(cause)) return [];
+              cancelled = true;
               return [];
             })
           )[0]?.id;
-        // A cancelled lookup was stopped on purpose; only a real miss is worth a warning.
+        // A cancelled lookup was stopped on purpose; no player and a failed lookup both warn.
         if (onlinePlayer === undefined && !cancelled) {
           notifications.show({
             color: "warning",
