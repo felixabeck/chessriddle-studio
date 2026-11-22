@@ -1344,6 +1344,7 @@
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud her çalışma alanına kendi adresini verir. Kendi adresinizi Model Studio konsolundan kopyalayın.",
     "Settings.Coach.Form.EditTitle": "Bağlantıyı düzenle",
     "Settings.Coach.Form.Key": "API anahtarı",
+    "Settings.Coach.Form.Key.Gemini": "Google AI Studio'da bir anahtar oluşturun (aistudio.google.com/apikey). Google AI Pro veya Ultra aboneliği anahtar içermez.",
     "Settings.Coach.Form.Key.Keep": "Kayıtlı anahtarı korumak için boş bırakın.",
     "Settings.Coach.Form.Key.Optional": "Çoğu yerel program anahtar gerektirmez.",
     "Settings.Coach.Form.Key.Show": "Anahtarı göster veya gizle",

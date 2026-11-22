@@ -1378,6 +1378,7 @@
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud дае кожнай працоўнай прасторы ўласны адрас. Скапіюйце свой з кансолі Model Studio.",
     "Settings.Coach.Form.EditTitle": "Змяніць падключэнне",
     "Settings.Coach.Form.Key": "Ключ API",
+    "Settings.Coach.Form.Key.Gemini": "Стварыце ключ у Google AI Studio (aistudio.google.com/apikey). Падпіска Google AI Pro або Ultra яго не ўключае.",
     "Settings.Coach.Form.Key.Keep": "Пакіньце поле пустым, каб пакінуць захаваны ключ.",
     "Settings.Coach.Form.Key.Optional": "Большасці лакальных праграм ключ не патрэбны.",
     "Settings.Coach.Form.Key.Show": "Паказаць або схаваць ключ",

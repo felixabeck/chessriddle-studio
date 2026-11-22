@@ -1344,6 +1344,7 @@
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud gir hvert arbeidsområde sin egen adresse. Kopier din fra konsollen i Model Studio.",
     "Settings.Coach.Form.EditTitle": "Rediger tilkobling",
     "Settings.Coach.Form.Key": "API-nøkkel",
+    "Settings.Coach.Form.Key.Gemini": "Opprett en nøkkel i Google AI Studio (aistudio.google.com/apikey). Et abonnement på Google AI Pro eller Ultra inkluderer ingen.",
     "Settings.Coach.Form.Key.Keep": "La stå tom for å beholde den lagrede nøkkelen.",
     "Settings.Coach.Form.Key.Optional": "De fleste lokale programmer trenger ingen nøkkel.",
     "Settings.Coach.Form.Key.Show": "Vis eller skjul nøkkelen",

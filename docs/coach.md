@@ -23,9 +23,15 @@ A connection is one way to reach a model. Its secret lives in the system keyring
 | --- | --- | --- | --- |
 | ChatGPT sign-in | "Continue with ChatGPT": OpenAI's documented sign-in for locally run apps, in the system browser | Responses API | `auth.openai.com`, `api.openai.com` |
 | Grok sign-in | "Sign in with Grok": the device-code flow of xAI's command-line client. Unofficial, labelled so, and it may stop working | Responses API | `auth.x.ai`, `api.x.ai` |
-| API key or local model | An address and an optional key. Presets for OpenAI, DeepSeek, Qwen, OpenRouter, Ollama, LM Studio | Chat Completions | The address the user entered |
+| API key or local model | An address and an optional key. Presets for OpenAI, Google Gemini, DeepSeek, Qwen, OpenRouter, Ollama, LM Studio | Chat Completions | The address the user entered |
 
 There is at most one ChatGPT and one Grok connection. A new sign-in takes the place of the existing one. To switch to another ChatGPT account, remove the connection first and sign in again: the provider issues a client id per installation and account, and a sign-in that returns a different one is refused.
+
+Google has no sign-in for other apps: a Google AI Pro or Ultra subscription cannot be used here, and signing in as Google's own command-line tools is against Google's terms and has cost users their access (`d-20261122-32`). Gemini is reached with an API key from Google AI Studio through Google's OpenAI-compatible address, which the "Google Gemini" preset fills in. Three things differ from other services and are handled in the Chat Completions backend for every provider alike:
+
+- A tool call can come with provider data (`extra_content`; Gemini puts the signature of its reasoning there) that has to go back unchanged with that call in the next round of the turn. It is kept with the call for the turn and never read.
+- A tool call can come without an index and with an empty id; it then gets an id of its own so that its result can name it.
+- A wrong or missing key is answered with HTTP 400 and words, not with 401.
 
 An API address is `https` to a public host, or `http` to this machine or a private-range address. A key is only ever attached to a request at the stored scheme, host and port, below the stored path.
 
@@ -72,3 +78,5 @@ The unit tests run every sign-in and both wire formats against loopback doubles.
 For Grok, step 4 is also the check that xAI's stream uses the event names the Responses backend reads (`response.output_text.delta`, `response.output_item.done`, `response.completed`). xAI does not document them.
 
 A local Ollama or LM Studio proves the local address class the same way without an account.
+
+For Google Gemini, create a key at `aistudio.google.com/apikey`, add the connection with the preset, and run steps 3 and 4. An answer that names engine lines proves the second round of a turn, which Gemini refuses when the provider data of a tool call did not come back.

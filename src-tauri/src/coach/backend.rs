@@ -13,6 +13,8 @@ pub(crate) const MAX_ROUND_TEXT_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_TOOL_ARGUMENT_BYTES: usize = 64 * 1024;
 /// Tool calls kept from one round; a provider that streams more has its round ended.
 pub(crate) const MAX_STREAMED_TOOL_CALLS: usize = 16;
+/// The largest provider document that travels back with one tool call (256 KiB).
+pub(crate) const MAX_TOOL_CALL_EXTRA_BYTES: usize = 256 * 1024;
 
 /// A read-only tool as it is described to the model.
 pub(crate) struct ToolSpec {
@@ -28,6 +30,10 @@ pub(crate) struct ToolCall {
     pub name: String,
     /// The arguments as the model wrote them: untrusted text that should be a JSON object.
     pub arguments: String,
+    /// What the provider attached to this call and wants back unchanged with it for the rest of
+    /// the turn. Gemini puts the signature of its reasoning here and refuses the next round of a
+    /// turn without it. It is never read, only returned to the provider it came from.
+    pub extra_content: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -83,7 +83,9 @@ export function CoachConnectionModal({
     ? t("Settings.Coach.Form.Key.Keep")
     : preset.local
       ? t("Settings.Coach.Form.Key.Optional")
-      : undefined;
+      : draft.preset === "gemini"
+        ? t("Settings.Coach.Form.Key.Gemini")
+        : undefined;
 
   return (
     <AppModal

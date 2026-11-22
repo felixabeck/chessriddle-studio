@@ -9,6 +9,7 @@ use super::{
     backend::{
         Message, ModelBackend, Round, RoundFailure, RoundRequest, TextSink, ToolCall,
         MAX_ROUND_TEXT_BYTES, MAX_STREAMED_TOOL_CALLS, MAX_TOOL_ARGUMENT_BYTES,
+        MAX_TOOL_CALL_EXTRA_BYTES,
     },
     error::CoachError,
     http::{classify_refusal, diagnostic, error_text, MAX_ERROR_BODY_BYTES},
@@ -63,11 +64,16 @@ fn request_body(request: &RoundRequest<'_>) -> Value {
                     let calls: Vec<Value> = tool_calls
                         .iter()
                         .map(|call| {
-                            json!({
+                            let mut sent = json!({
                                 "id": call.id,
                                 "type": "function",
                                 "function": { "name": call.name, "arguments": call.arguments },
-                            })
+                            });
+                            // Returned exactly as it came, and only to a call that came with one.
+                            if let Some(extra) = &call.extra_content {
+                                sent["extra_content"] = extra.clone();
+                            }
+                            sent
                         })
                         .collect();
                     object.insert("tool_calls".into(), calls.into());
@@ -112,6 +118,7 @@ struct PendingCall {
     id: Option<String>,
     name: String,
     arguments: String,
+    extra_content: Option<Value>,
 }
 
 /// Collects the deltas of one streamed round.
@@ -184,8 +191,19 @@ impl Accumulator {
             self.calls.push(PendingCall::default());
         }
         let call = &mut self.calls[index];
-        if let Some(id) = delta.get("id").and_then(Value::as_str) {
+        // An empty id names nothing: the call then gets an id of its own, like one without any.
+        if let Some(id) = delta
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+        {
             call.id = Some(id.to_owned());
+        }
+        if let Some(extra) = delta.get("extra_content").filter(|extra| extra.is_object()) {
+            if extra.to_string().len() > MAX_TOOL_CALL_EXTRA_BYTES {
+                return Err(CoachError::LimitExceeded);
+            }
+            call.extra_content = Some(extra.clone());
         }
         if let Some(function) = delta.get("function") {
             if let Some(name) = function.get("name").and_then(Value::as_str) {
@@ -226,6 +244,7 @@ impl Accumulator {
                 id: call.id.unwrap_or_else(|| format!("call_{index}")),
                 name: call.name,
                 arguments: call.arguments,
+                extra_content: call.extra_content,
             });
         }
         let mut extra = Map::new();
@@ -495,12 +514,14 @@ mod tests {
                 ToolCall {
                     id: "call_a".into(),
                     name: "analyse".into(),
-                    arguments: "{\"line\":\"Nf3\"}".into()
+                    arguments: "{\"line\":\"Nf3\"}".into(),
+                    extra_content: None,
                 },
                 ToolCall {
                     id: "call_b".into(),
                     name: "analyse".into(),
-                    arguments: "{}".into()
+                    arguments: "{}".into(),
+                    extra_content: None,
                 },
             ]
         );
@@ -547,6 +568,95 @@ mod tests {
             sent[3],
             json!({ "role": "tool", "tool_call_id": "c1", "content": "{\"lines\":[]}" })
         );
+    }
+
+    /// Gemini's shape: whole calls without an index, the reasoning signature attached to the
+    /// first call of a step only, and sometimes an empty id.
+    #[tokio::test]
+    async fn what_a_provider_attaches_to_a_tool_call_goes_back_with_that_call() {
+        let signature = json!({ "google": { "thought_signature": "c2lnbmF0dXJl" } });
+        let (server, seen) = provider(vec![
+            event(
+                json!({ "choices": [{ "index": 0, "delta": { "role": "assistant", "tool_calls": [
+                { "id": "", "type": "function", "extra_content": signature,
+                  "function": { "name": "analyse", "arguments": "{\"line\":\"e4\"}" } }
+            ] } }] }),
+            ),
+            event(json!({ "choices": [{ "index": 0, "delta": { "tool_calls": [
+                { "id": "second", "type": "function",
+                  "function": { "name": "analyse", "arguments": "{\"line\":\"d4\"}" } }
+            ] } }] })),
+            finish("tool_calls"),
+        ]);
+        let backend = backend(&server, None);
+        let round = run(&backend, &user(), None, &tools()).await.0.unwrap();
+        assert_eq!(
+            round.tool_calls,
+            [
+                ToolCall {
+                    // The empty id was replaced, so the tool result can name its call.
+                    id: "call_0".into(),
+                    name: "analyse".into(),
+                    arguments: "{\"line\":\"e4\"}".into(),
+                    extra_content: Some(signature.clone()),
+                },
+                ToolCall {
+                    id: "second".into(),
+                    name: "analyse".into(),
+                    arguments: "{\"line\":\"d4\"}".into(),
+                    extra_content: None,
+                },
+            ]
+        );
+
+        let mut messages = user();
+        messages.push(round.into_message());
+        for call_id in ["call_0", "second"] {
+            messages.push(Message::ToolResult {
+                call_id: call_id.into(),
+                content: "{\"lines\":[]}".into(),
+            });
+        }
+        run(&backend, &messages, None, &tools()).await.0.unwrap();
+        let seen = seen.lock().unwrap();
+        let calls = &seen[1].1["messages"][2]["tool_calls"];
+        // The first call carries what it came with, byte for byte; the second gets no field.
+        assert_eq!(calls[0]["id"], "call_0");
+        assert_eq!(calls[0]["extra_content"], signature);
+        assert_eq!(
+            calls[1],
+            json!({
+                "id": "second",
+                "type": "function",
+                "function": { "name": "analyse", "arguments": "{\"line\":\"d4\"}" },
+            })
+        );
+        assert_eq!(seen[1].1["messages"][3]["tool_call_id"], "call_0");
+    }
+
+    #[tokio::test]
+    async fn an_attachment_that_is_no_object_is_dropped_and_an_oversized_one_ends_the_round() {
+        let with = |extra: Value| {
+            event(json!({ "choices": [{ "index": 0, "delta": { "tool_calls": [
+                { "index": 0, "id": "c", "extra_content": extra,
+                  "function": { "name": "analyse", "arguments": "{}" } }
+            ] } }] }))
+        };
+        let (server, _) = provider(vec![with(json!("text")), finish("tool_calls")]);
+        let round = run(&backend(&server, None), &user(), None, &tools())
+            .await
+            .0
+            .unwrap();
+        assert_eq!(round.tool_calls[0].extra_content, None);
+
+        let big =
+            json!({ "google": { "thought_signature": "s".repeat(MAX_TOOL_CALL_EXTRA_BYTES) } });
+        let (server, _) = provider(vec![with(big), finish("tool_calls")]);
+        let error = run(&backend(&server, None), &user(), None, &tools())
+            .await
+            .0
+            .unwrap_err();
+        assert_eq!(error.error, CoachError::LimitExceeded);
     }
 
     #[tokio::test]
@@ -631,6 +741,19 @@ mod tests {
             (
                 StatusCode::FORBIDDEN,
                 message("no access"),
+                None,
+                CoachError::KeyRejected,
+            ),
+            // Gemini answers a wrong or missing key with 400, and wraps the error in a list.
+            (
+                StatusCode::BAD_REQUEST,
+                json!([{ "error": { "code": 400, "message": "Please pass a valid API key", "status": "INVALID_ARGUMENT" } }]),
+                None,
+                CoachError::KeyRejected,
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                json!([{ "error": { "code": 400, "message": "Missing or invalid Authorization header.", "status": "INVALID_ARGUMENT" } }]),
                 None,
                 CoachError::KeyRejected,
             ),

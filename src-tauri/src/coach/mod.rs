@@ -660,7 +660,9 @@ impl Coach {
         let (status, body) = http::send_bounded(request, MAX_MODEL_LIST_BYTES).await?;
         match status {
             200 => models::parse_model_list(&body),
-            401 | 403 => Err(CoachError::KeyRejected),
+            _ if http::key_refused(status, &http::error_text(&body)) => {
+                Err(CoachError::KeyRejected)
+            }
             429 => Err(CoachError::RateLimited),
             _ => Err(CoachError::ProviderFailure),
         }
@@ -1551,6 +1553,20 @@ mod tests {
                     get(|| async { StatusCode::UNAUTHORIZED }),
                 )
                 .route("/forbidden/models", get(|| async { StatusCode::FORBIDDEN }))
+                // Gemini's answer to a wrong key, as observed: 400 with the reason in words.
+                .route(
+                    "/wrongkey/models",
+                    get(|| async {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            r#"{"error":{"code":400,"message":"Please pass a valid API key","status":"INVALID_ARGUMENT"}}"#,
+                        )
+                    }),
+                )
+                .route(
+                    "/badrequest/models",
+                    get(|| async { (StatusCode::BAD_REQUEST, r#"{"error":{"message":"bad"}}"#) }),
+                )
                 .route(
                     "/limited/models",
                     get(|| async { StatusCode::TOO_MANY_REQUESTS }),
@@ -1569,6 +1585,8 @@ mod tests {
         for (path, expected) in [
             ("/rejected", CoachError::KeyRejected),
             ("/forbidden", CoachError::KeyRejected),
+            ("/wrongkey", CoachError::KeyRejected),
+            ("/badrequest", CoachError::ProviderFailure),
             ("/limited", CoachError::RateLimited),
             ("/broken", CoachError::ProviderFailure),
             ("/missing", CoachError::ProviderFailure),

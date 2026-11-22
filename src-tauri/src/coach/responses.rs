@@ -398,6 +398,7 @@ impl Accumulator {
                 id: id.to_owned(),
                 name: name.to_owned(),
                 arguments: arguments.to_owned(),
+                extra_content: None,
             });
         }
         let mut extra = Map::new();
@@ -820,6 +821,7 @@ mod tests {
                 id: "call_1".into(),
                 name: "analyse".into(),
                 arguments: "{\"line\":\"Nf3\"}".into(),
+                extra_content: None,
             }]
         );
 

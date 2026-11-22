@@ -308,6 +308,7 @@ pub(crate) mod tests {
             id: "c".into(),
             name: name.into(),
             arguments: arguments.into(),
+            extra_content: None,
         }
     }
 

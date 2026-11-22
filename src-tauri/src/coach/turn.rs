@@ -347,6 +347,7 @@ pub(crate) mod tests {
                     id: format!("call_{index}"),
                     name: tools::ANALYSE.into(),
                     arguments: (*arguments).into(),
+                    extra_content: None,
                 })
                 .collect(),
             ..Round::default()
@@ -381,6 +382,7 @@ pub(crate) mod tests {
                     id: format!("call_{index}"),
                     name: (*name).into(),
                     arguments: (*arguments).into(),
+                    extra_content: None,
                 })
                 .collect(),
             ..Round::default()

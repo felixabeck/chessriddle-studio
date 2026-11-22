@@ -1327,6 +1327,7 @@
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud 為每個工作區提供獨立的位址。請從 Model Studio 主控台複製您的位址。",
     "Settings.Coach.Form.EditTitle": "編輯連線",
     "Settings.Coach.Form.Key": "API 金鑰",
+    "Settings.Coach.Form.Key.Gemini": "請在 Google AI Studio (aistudio.google.com/apikey) 中建立金鑰。Google AI Pro 或 Ultra 訂閱不包含金鑰。",
     "Settings.Coach.Form.Key.Keep": "留空則保留已儲存的金鑰。",
     "Settings.Coach.Form.Key.Optional": "大多數本機程式不需要金鑰。",
     "Settings.Coach.Form.Key.Show": "顯示或隱藏金鑰",

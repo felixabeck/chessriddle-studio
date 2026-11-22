@@ -70,6 +70,11 @@ pub(crate) fn error_text(body: &[u8]) -> String {
     let Ok(value) = serde_json::from_slice::<Value>(body) else {
         return String::from_utf8_lossy(body).into_owned();
     };
+    // Gemini wraps the error object of a chat request in a list.
+    let value = match value {
+        Value::Array(mut items) if items.len() == 1 => items.remove(0),
+        other => other,
+    };
     match value.get("error") {
         Some(Value::String(message)) => message.clone(),
         Some(error) => error
@@ -91,12 +96,23 @@ pub(crate) fn diagnostic(text: &str, secret: Option<&str>) -> String {
     text.chars().take(MAX_DIAGNOSTIC_CHARS).collect()
 }
 
+/// Whether a refusal is about the connection's key. Most providers answer 401 or 403; Gemini
+/// answers 400 and says so in words ("Please pass a valid API key", "Missing or invalid
+/// Authorization header.").
+pub(crate) fn key_refused(status: u16, message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    matches!(status, 401 | 403)
+        || (status == 400 && (message.contains("api key") || message.contains("authorization")))
+}
+
 /// Tells apart the refusals a user can act on. Providers share no error codes for these, so the
 /// status and the provider's wording decide; anything unclear is a plain provider failure.
 pub(crate) fn classify_refusal(status: u16, message: &str, effort_sent: bool) -> CoachError {
+    if key_refused(status, message) {
+        return CoachError::KeyRejected;
+    }
     let message = message.to_ascii_lowercase();
     match status {
-        401 | 403 => CoachError::KeyRejected,
         429 => CoachError::RateLimited,
         400 | 404 | 422 => {
             if message.contains("tool") && message.contains("support") {
@@ -161,6 +177,41 @@ mod tests {
         let xai = |host: &str| host == "x.ai" || host.ends_with(".x.ai");
         assert!(browser_link("https://accounts.x.ai/device?code=1", xai).is_some());
         assert!(browser_link("https://notx.ai/device", xai).is_none());
+    }
+
+    #[test]
+    fn an_error_text_is_read_from_every_shape_providers_use() {
+        for (body, expected) in [
+            (r#"{"error":{"message":"No such model"}}"#, "No such model"),
+            (r#"{"error":"plain words"}"#, "plain words"),
+            (
+                r#"[{"error":{"code":400,"message":"Please pass a valid API key","status":"INVALID_ARGUMENT"}}]"#,
+                "Please pass a valid API key",
+            ),
+            ("not json at all", "not json at all"),
+        ] {
+            assert_eq!(error_text(body.as_bytes()), expected, "{body}");
+        }
+        // Anything else is kept whole, so the log still shows what came.
+        assert_eq!(error_text(br#"{"detail":"x"}"#), r#"{"detail":"x"}"#);
+        assert_eq!(error_text(b"[1,2]"), "[1,2]");
+    }
+
+    #[test]
+    fn a_key_refusal_is_told_by_status_or_by_the_providers_words() {
+        assert!(key_refused(401, ""));
+        assert!(key_refused(403, "no access"));
+        assert!(key_refused(400, "Please pass a valid API key"));
+        assert!(key_refused(
+            400,
+            "API key not valid. Please pass a valid API key."
+        ));
+        assert!(key_refused(400, "Missing or invalid Authorization header."));
+        assert!(!key_refused(400, "The model `gone` does not exist"));
+        // The words alone do not make another status a key refusal.
+        assert!(!key_refused(404, "api key"));
+        assert!(!key_refused(500, "api key"));
+        assert!(!key_refused(429, "authorization"));
     }
 
     #[test]

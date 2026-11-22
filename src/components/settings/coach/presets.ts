@@ -5,6 +5,7 @@
  */
 export type CoachPresetId =
     | "openai"
+    | "gemini"
     | "deepseek"
     | "qwen"
     | "openrouter"
@@ -23,6 +24,12 @@ export type CoachPreset = {
 
 export const COACH_PRESETS: readonly CoachPreset[] = [
     { id: "openai", name: "OpenAI", address: "https://api.openai.com/v1", local: false },
+    {
+        id: "gemini",
+        name: "Google Gemini",
+        address: "https://generativelanguage.googleapis.com/v1beta/openai",
+        local: false,
+    },
     { id: "deepseek", name: "DeepSeek", address: "https://api.deepseek.com", local: false },
     {
         id: "qwen",

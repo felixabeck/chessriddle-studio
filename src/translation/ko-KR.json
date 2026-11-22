@@ -1327,6 +1327,7 @@
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud는 워크스페이스마다 고유한 주소를 제공합니다. Model Studio 콘솔에서 내 주소를 복사하세요.",
     "Settings.Coach.Form.EditTitle": "연결 수정",
     "Settings.Coach.Form.Key": "API 키",
+    "Settings.Coach.Form.Key.Gemini": "Google AI Studio(aistudio.google.com/apikey)에서 키를 만드세요. Google AI Pro 또는 Ultra 구독에는 키가 포함되지 않습니다.",
     "Settings.Coach.Form.Key.Keep": "저장된 키를 유지하려면 비워 두세요.",
     "Settings.Coach.Form.Key.Optional": "대부분의 로컬 프로그램은 키가 필요하지 않습니다.",
     "Settings.Coach.Form.Key.Show": "키 표시 또는 숨기기",

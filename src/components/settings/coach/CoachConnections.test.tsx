@@ -227,6 +227,41 @@ test("adding sends label, address and key once, then re-reads the native list", 
   expect(document.body.textContent).not.toContain("sk-test");
 });
 
+/** Opens the service list and picks one. The test DOM has no scrollIntoView; Mantine calls it. */
+async function chooseService(name: string) {
+  const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  Element.prototype.scrollIntoView = () => {};
+  try {
+    await click(field("Settings.Coach.Form.Service"));
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (node) => node.textContent === name,
+    )!;
+    await click(option);
+  } finally {
+    if (original) Object.defineProperty(Element.prototype, "scrollIntoView", original);
+    else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  }
+}
+
+test("choosing Google Gemini prefills its address and says where its key comes from", async () => {
+  await render();
+  await click(button(host, "Settings.Coach.Connections.Add"));
+  expect(dialog()!.textContent).not.toContain("Settings.Coach.Form.Key.Gemini");
+
+  await chooseService("Google Gemini");
+  expect(field("Common.Name").value).toBe("Google Gemini");
+  expect(field("Settings.Coach.Form.Address").value).toBe(
+    "https://generativelanguage.googleapis.com/v1beta/openai",
+  );
+  // A subscription holder looks for a sign-in: the form says that a key is what is needed.
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Key.Gemini");
+
+  // The note belongs to that service only.
+  await chooseService("DeepSeek");
+  expect(field("Settings.Coach.Form.Address").value).toBe("https://api.deepseek.com");
+  expect(dialog()!.textContent).not.toContain("Settings.Coach.Form.Key.Gemini");
+});
+
 test("editing addresses the connection by handle and leaves an untouched key out", async () => {
   await render();
   await click(button(row("Hosted"), "Settings.Coach.Form.EditTitle"));
