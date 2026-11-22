@@ -19,7 +19,7 @@ vi.mock("@/platform/native", () => ({
 }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
-const { coachTurnFamily } = await import("./atoms");
+const { closingTabsAtom, coachTurnFamily } = await import("./atoms");
 const {
     activeCoachTurnCount,
     applyCoachTurnEvent,
@@ -233,6 +233,36 @@ test("a tab closed while its turn is reserved gives the reservation back and sta
     expect(mocks.coachTurn).not.toHaveBeenCalled();
     expect(activeCoachTurnCount()).toBe(0);
     expect(Array.from(coachTurnFamily.getParams())).not.toContain(tab);
+});
+
+test("a tab that has begun to close gets no turn, although its store is still there", async () => {
+    // Closing marks the tab, ends its engines natively, and only then retires the store. A turn
+    // reserved in between would start an engine that the close has already swept past.
+    const closing = (atoms: ReturnType<typeof createStore>, tab: string) =>
+        atoms.set(closingTabsAtom, (previous: Set<string>) => new Set(previous).add(tab));
+
+    const atoms = createStore();
+    const first = openTab();
+    const reading = deferred<{ text: string | null; partial: boolean }>();
+    mocks.repertoireContext.mockReturnValueOnce(reading.promise);
+    const whileReading = sendCoachMessage(atoms, request(first.tab, first.tree));
+    closing(atoms, first.tab);
+    reading.resolve({ text: null, partial: false });
+    await whileReading;
+    expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+    expect(mocks.coachTurn).not.toHaveBeenCalled();
+
+    const second = openTab();
+    const reservation = deferred<string>();
+    mocks.prepareAnalysis.mockReturnValueOnce(reservation.promise);
+    const whileReserving = sendCoachMessage(atoms, request(second.tab, second.tree));
+    await settle();
+    closing(atoms, second.tab);
+    reservation.resolve("ticket-closing");
+    await whileReserving;
+    expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("ticket-closing");
+    expect(mocks.coachTurn).not.toHaveBeenCalled();
+    expect(activeCoachTurnCount()).toBe(0);
 });
 
 test("another game opened while the repertoire is read ends the turn before it is reserved", async () => {

@@ -142,17 +142,14 @@ function fitted(message: CoachMessage): CoachMessage {
         return message.text.length <= MAX_TEXT_LENGTH ? message : shortened(message, TEXT_ROOM);
     }
     if (message.segments.length > MAX_SEGMENTS) return shortened(message, TEXT_ROOM);
-    if (
-        message.segments.every(
-            (segment) => segment.type !== "text" || segment.text.length <= MAX_TEXT_LENGTH,
-        )
-    ) {
-        return message;
-    }
+    const tooLong = (segment: Segment) =>
+        segment.type === "text" && segment.text.length > MAX_TEXT_LENGTH;
+    if (!message.segments.some(tooLong)) return message;
     return {
         ...message,
+        // Only a text that is too long is cut; the others stay as they are.
         segments: message.segments.map((segment) =>
-            segment.type === "text"
+            segment.type === "text" && tooLong(segment)
                 ? { ...segment, text: cutText(segment.text, TEXT_ROOM) }
                 : segment,
         ),
@@ -170,7 +167,8 @@ export function boundCoachSession(session: CoachSession): CoachSession {
     while (messages.length > 1 && !fits()) messages = messages.slice(1);
     if (messages.length === 1 && !fits()) {
         const newest = messages[0];
-        let length = Math.floor(messageText(newest).length / 2);
+        // The message becomes one text, which has a length bound of its own.
+        let length = Math.min(TEXT_ROOM, Math.floor(messageText(newest).length / 2));
         for (;;) {
             messages = [shortened(newest, length)];
             if (fits() || length === 0) break;

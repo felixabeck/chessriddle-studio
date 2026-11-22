@@ -200,3 +200,54 @@ test("a question from the deepest position a tab can hold is stored", async () =
     };
     expect(coachSessionSchema.safeParse(session([question("1"), deep])).success).toBe(true);
 });
+
+test("a large answer in several parts is cut to one text that still fits a stored text", () => {
+    // Too large as a whole, although each part is within a text's bound; half of it would fit
+    // the size bound and is still longer than one stored text may be.
+    const reply: CoachMessage = {
+        id: "a1",
+        role: "coach",
+        segments: [
+            { type: "text", text: "a".repeat(50_000) },
+            { type: "line", san: ["e4"], uci: ["e2e4"] },
+            { type: "text", text: "b".repeat(50_000) },
+            { type: "line", san: ["d4"], uci: ["d2d4"] },
+            { type: "text", text: noise(60_000) },
+        ],
+        state: "completed",
+        fen: FEN,
+        path: [],
+    };
+    expect(coachSessionBytes(session([reply]))).toBeGreaterThan(MAX_COACH_SESSION_BYTES);
+    const bounded = boundCoachSession(session([reply]));
+    expect(coachSessionSchema.safeParse(bounded).success).toBe(true);
+    const kept = bounded.messages[0];
+    expect(kept.role === "coach" && kept.segments).toHaveLength(1);
+    const text =
+        kept.role === "coach" && kept.segments[0].type === "text" ? kept.segments[0].text : "";
+    expect(text.length).toBe(64 * 1024);
+    expect(text.endsWith(COACH_TRUNCATION_MARK)).toBe(true);
+});
+
+test("only the text that is too long is cut; one at the bound stays whole", () => {
+    const atBound = "c".repeat(64 * 1024);
+    const reply: CoachMessage = {
+        id: "a1",
+        role: "coach",
+        segments: [
+            { type: "text", text: atBound },
+            { type: "line", san: ["e4"], uci: ["e2e4"] },
+            { type: "text", text: "d".repeat(64 * 1024 + 1) },
+        ],
+        state: "completed",
+        fen: FEN,
+        path: [],
+    };
+    const kept = boundCoachSession(session([reply])).messages[0];
+    const segments = kept.role === "coach" ? kept.segments : [];
+    expect(segments[0]).toEqual({ type: "text", text: atBound });
+    expect(segments[2].type === "text" && segments[2].text.endsWith(COACH_TRUNCATION_MARK)).toBe(
+        true,
+    );
+    expect(segments[2].type === "text" && segments[2].text.length).toBe(64 * 1024);
+});

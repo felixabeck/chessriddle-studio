@@ -7,7 +7,7 @@ import { tauri } from "@/platform/tauri";
 import { getVariationLine } from "@/utils/chess";
 import { coachGameContext } from "@/utils/coachContext";
 import type { LocalEngine } from "@/utils/engines";
-import { coachTurnFamily } from "./atoms";
+import { closingTabsAtom, coachTurnFamily } from "./atoms";
 import {
     type CoachAnswerMessage,
     type CoachRunningTurn,
@@ -158,9 +158,12 @@ export async function sendCoachMessage(atoms: Atoms, request: CoachSendRequest):
         publish(atoms, active, (turn) => turn && { ...turn, stopping: true, orphaned: true });
         requestStop(active);
     });
-    // Closing the tab retires its store without a store update, so the subscription above does
-    // not see it: after every wait, a turn whose tab, game or conversation is gone is not started.
-    const abandoned = () => active.stopRequested || !active.isOwner();
+    // A tab that closes first ends its engines and only then retires its store, without a store
+    // update: the subscription above sees neither. So after every wait a turn is not started when
+    // its tab has begun to close or its game or conversation is gone. A turn reserved after the
+    // close ended the tab's engines would otherwise run with nobody left to stop it.
+    const abandoned = () =>
+        active.stopRequested || atoms.get(closingTabsAtom).has(tab) || !active.isOwner();
     // What the repertoire files play here is read now, for the position the question is about.
     const repertoire = await repertoireContext(active.fen);
     if (abandoned()) {
