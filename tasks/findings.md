@@ -28434,3 +28434,18 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Fix:** let a running AppImage (`APPIMAGE` set) register a handler entry for itself, the way `tauri-plugin-deep-link`'s `register_all` does, with the cases that plugin leaves open decided first.
 * **Open question:** how does self-registration coexist with another installed copy and with a deleted AppImage? Writing `~/.local/share/applications/<name>-handler.desktop` and calling `xdg-mime default` takes the default handler away from a `deb`, `rpm` or `install-local` copy on the same machine, and the entry stays behind, pointing at a missing file, when the AppImage is moved or deleted. Options: register only when no handler is registered yet; register without `xdg-mime default`; remove the entry on a later start from another location; or document desktop integration as the requirement instead.
 * **Found by:** Claude Code, 2026-11-22, build run studio-link-extension (decision d-20261122-13 records the deferral).
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### The installer test for a missing update-desktop-database fails on the CI runner: its reduced PATH has no node
+
+* **ID:** f-20261122-07 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45025626873
+* **Where:** `scripts/install-local-tests.mjs`, test `a missing update-desktop-database warns and keeps the committed install` (added by the build run studio-link-extension, commit "build(links): register the chessriddle-studio:// scheme in every package").
+* **Defect:** the test assembles a PATH from `/usr/bin` and `/bin` without `update-desktop-database`, to prove the installer only warns when that tool is missing. On the CI runner `node` lives in neither directory, so `scripts/install-local.sh` itself cannot run there.
+* **Failure scenario:** `Test` run 45025626873 on 714d2cc0f, job `frontend`, step "Run the contract gate": `install-local.sh: line 37: node: command not found`, `invalid product identity in tauri.conf.json`, assertion `1 !== 0`. Every other job of the run succeeded. Locally the test passes because `node` is `/usr/bin/node`. While this is red, `pnpm ci:remote:check` refuses every push from every checkout.
+* **Fix:** build the reduced PATH from every directory of the caller's PATH, first directory first, leaving out only the refresh command.
+* **Found by:** Claude Code (Fable 5.2), 2026-11-22, post-push CI wait of the build run studio-link-extension.
