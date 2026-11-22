@@ -13721,3 +13721,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The probe table in the plan's T3 (six wrong flags, one unbounded call over 60 s). Reversal path: restore the old comparison in one function.
 * **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"9bd0cd91313099f783d66a66b495f56004713962ecfc96c05ee9acb25f54d655","input_sha256":"9231b4354ad643488fda84d98344f89b4c2e4db58330d034ccb73fd623d95433","kind":"mutation-receipt","operation":"ad59452e74be3e2950ae5b6346fbd6ed85d9a99ca292056716aa45d183cece3c","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-08 — Are report marks tracked per origin or replaced on every run?
+
+* **Question:** A re-run left the previous report's NAGs in place. Should the report track which marks it wrote, or replace the six move-quality marks on the main line?
+* **Governs:** -
+* **Chosen:** Replace the six move-quality marks on every mainline move when the run asks for marks (plan R3, Felix's P1 gives the off switch).
+* **Rejected:** An ownership marker per NAG.
+* **Reason:** A marker is lost when the game is saved and reopened, so stale marks would survive exactly there; the "mark moves" option gives a user with hand-made marks a way to keep them. Reversal path: add a per-NAG origin field and remove only report-owned marks.
+* **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"fb84fb577a14ccd59c5e02fd5446bf3b3a66db752ce6b7940b7eae3093235c9a","input_sha256":"70541f3f45d890930201adb55866ca24363e201211ff67e7287c0ea6fe833cce","kind":"mutation-receipt","operation":"50ca8ad81441f175a4ded78c772659e072bf87fe83132630304b80db7f666e41","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-08"],"target":"decisions-ledger","v":1} -->
