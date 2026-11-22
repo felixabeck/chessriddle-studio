@@ -344,5 +344,5 @@ finding ids and date.
   the mistakes is to click the count buttons one move at a time.
 - **How Felix decided:** by sending the handover prompt with the decision line "P1 yes,
   P2 yes, P3 yes, P4 yes, P5 yes".
-- **Findings:** none; the plan is the record. Related known limit: `f-20261122-03`.
+- **Findings:** none; the plan is the record. Related known limit: `f-20261122-04`.
 - **Date:** 2026-11-22.
