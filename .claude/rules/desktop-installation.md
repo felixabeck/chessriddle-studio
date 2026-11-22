@@ -3,6 +3,7 @@ paths:
   - "scripts/install-local*"
   - "src-tauri/tauri.conf.json"
   - "src-tauri/icons/**"
+  - "src-tauri/linux/**"
   - ".claude/skills/push/**"
 ---
 
@@ -36,3 +37,22 @@ retirement covers only regular files it could have written itself: a **symlinked
 whoever installed it and is left alone, and the installer never touches Plasma's pinned-launcher
 list. A rename therefore still leaves a pin naming the old id, which has to be repointed by hand or
 through `panel-launcher-sync` in `~/Projekte/tuxedo-config`.
+
+## Game-link scheme
+
+`chessriddle-studio://` links (from `browser-extension/`) reach the app only through a registered
+scheme, and the one source of the scheme name is `plugins.deep-link.desktop.schemes` in
+`src-tauri/tauri.conf.json`. No plugin crate reads it: the bundler does (macOS `Info.plist`, NSIS
+registry keys, the Linux `MimeType`), and `scripts/install-local.sh` does for its one entry
+(`d-20261122-13`).
+
+* **A Linux desktop entry needs `%u` on its `Exec` line.** Without a field code the launcher
+  starts the app with no argument at all (measured 2026-11-22 with `gio launch`). The bundler's
+  own template has none, so `deb` and `rpm` use `src-tauri/linux/desktop-entry.template`, and the
+  AppImage is built from the `deb` template.
+* The installer refreshes the applications directory's desktop database (best effort) and writes
+  nothing else: it sets no default handler and never touches `mimeapps.list`.
+* Each leg of `.github/workflows/release.yml` asserts the registration on its built artefact. A
+  manual dispatch is the rehearsal for a change here.
+* An AppImage that is run without desktop integration has no entry and therefore no handler; it
+  does not register itself.

@@ -12,6 +12,10 @@
 # Wayland app id from argv[0] and Plasma matches a window to a launcher by that id. The entry is
 # therefore named after the binary, not after productName. Tauri resolves resources from
 # lib/ChessRiddle Studio (PackageInfo.name is productName verbatim, including the space).
+#
+# The entry also registers the URL schemes of tauri.conf.json (plugins.deep-link.desktop.schemes)
+# and passes the opened link as the single argument (%u): a desktop entry without a field code
+# is started without it.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,12 +40,17 @@ mapfile -t identity < <(node -e '
   const product = c.productName;
   if (typeof binary !== "string" || !/^[A-Za-z0-9_-]+$/.test(binary)) process.exit(2);
   if (typeof product !== "string" || !/^[A-Za-z0-9_-]+( [A-Za-z0-9_-]+)*$/.test(product)) process.exit(2);
+  const schemes = c.plugins?.["deep-link"]?.desktop?.schemes ?? [];
+  if (!Array.isArray(schemes)) process.exit(2);
+  if (schemes.some((s) => typeof s !== "string" || !/^[a-z][a-z0-9+.-]*$/.test(s))) process.exit(2);
   console.log(binary);
   console.log(product);
+  console.log(schemes.map((s) => `x-scheme-handler/${s};`).join(""));
 ' "$REPO/src-tauri/tauri.conf.json")
-[ "${#identity[@]}" -eq 2 ] || { echo "invalid product identity in tauri.conf.json" >&2; exit 1; }
+[ "${#identity[@]}" -eq 3 ] || { echo "invalid product identity in tauri.conf.json" >&2; exit 1; }
 binary="${identity[0]}"
 product_name="${identity[1]}"
+scheme_mime_types="${identity[2]}"
 DESKTOP="$APPLICATIONS_DIR/$binary.desktop"
 
 tree_dirty=0
@@ -254,6 +263,8 @@ staging=""
 desktop_root="${ROOT//\\/\\\\}"
 desktop_root="${desktop_root//\"/\\\"}"
 desktop_icon_root="${desktop_root// /\\s}"
+desktop_exec_field=""
+[ -z "$scheme_mime_types" ] || desktop_exec_field=" %u"
 cat > "$desktop_tmp" <<EOF
 [Desktop Entry]
 Type=Application
@@ -262,13 +273,14 @@ GenericName=Chess analysis and database
 GenericName[de]=Schachanalyse und Datenbank
 Comment=Analyse games, search databases, play against engines
 Comment[de]=Partien analysieren, Datenbanken durchsuchen, gegen Engines spielen
-Exec="$desktop_root/current/bin/$binary"
+Exec="$desktop_root/current/bin/$binary"$desktop_exec_field
 Icon=$desktop_icon_root/current/icon.png
 Terminal=false
 StartupNotify=true
 StartupWMClass=$binary
 Categories=Game;BoardGame;
 EOF
+[ -z "$scheme_mime_types" ] || printf 'MimeType=%s\n' "$scheme_mime_types" >> "$desktop_tmp"
 chmod 644 "$desktop_tmp"
 
 ln -s "$target" "$current_tmp"
@@ -305,6 +317,13 @@ for stale in "$APPLICATIONS_DIR"/*.desktop; do
     echo "could not retire superseded desktop entry $stale; the application menu may list $product_name twice" >&2
   fi
 done
+
+# The entry's MimeType reaches desktops that resolve handlers through mimeinfo.cache only after
+# this refresh. Best-effort like the retirement above: the install is committed, and the tool may
+# be missing. Nothing outside the applications directory is written; no default handler is set.
+if [ -n "$scheme_mime_types" ] && ! update-desktop-database "$APPLICATIONS_DIR" 2> /dev/null; then
+  echo "could not refresh the desktop database in $APPLICATIONS_DIR (update-desktop-database missing or failing); links to $product_name may not open it until the desktop rebuilds its cache" >&2
+fi
 
 is_marked_managed_release() {
   local candidate="$1" header invocation extra

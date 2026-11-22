@@ -28,7 +28,7 @@ function git(root, ...args) {
 
 async function fixture(
   t,
-  { productName = "ChessRiddle Studio", binaryName = "chessriddle-studio" } = {},
+  { productName = "ChessRiddle Studio", binaryName = "chessriddle-studio", schemes } = {},
 ) {
   const base = await mkdtemp(join(tmpdir(), "chessfable-install-"));
   const childRuns = [];
@@ -56,7 +56,11 @@ async function fixture(
   await chmod(join(repo, "scripts/install-local.sh"), 0o755);
   await writeFile(
     join(repo, "src-tauri/tauri.conf.json"),
-    JSON.stringify({ mainBinaryName: binaryName, productName }),
+    JSON.stringify({
+      mainBinaryName: binaryName,
+      productName,
+      ...(schemes === undefined ? {} : { plugins: { "deep-link": { desktop: { schemes } } } }),
+    }),
   );
   await writeFile(join(repo, "src-tauri/target/release", binaryName), "#!/bin/sh\nexit 0\n");
   await chmod(join(repo, "src-tauri/target/release", binaryName), 0o755);
@@ -130,6 +134,15 @@ exec /usr/bin/rm "$@"
     join(bin, "flock"),
     '#!/bin/sh\nif [ -n "$INSTALL_FLOCK_SEEN" ]; then /usr/bin/touch "$INSTALL_FLOCK_SEEN"; fi\nexec /usr/bin/flock "$@"\n',
   );
+  // Records each refresh and stands in for the host tool, so no test touches the real cache.
+  await writeFile(
+    join(bin, "update-desktop-database"),
+    `#!/bin/sh
+printf '%s\\n' "$@" >> "${join(base, "desktop-database-calls")}"
+if [ "$INSTALL_FAILURE" = desktop-database ]; then echo "forced desktop database failure" >&2; exit 76; fi
+`,
+  );
+  await chmod(join(bin, "update-desktop-database"), 0o755);
   await chmod(join(bin, "cp"), 0o755);
   await chmod(join(bin, "mv"), 0o755);
   await chmod(join(bin, "rm"), 0o755);
@@ -148,15 +161,26 @@ async function seedPointers(install) {
   return { a, b };
 }
 
-function run({ repo, install, data, bin }, failure, extraArgs = ["--no-build", "--force"]) {
+/** No run may read or write the invoking user's own desktop configuration. */
+function isolatedHome(base) {
+  return { HOME: join(base, "home"), XDG_CONFIG_HOME: join(base, "config") };
+}
+
+function run(
+  { base, repo, install, data, bin },
+  failure,
+  extraArgs = ["--no-build", "--force"],
+  path = `${bin}:${process.env.PATH}`,
+) {
   return spawnSync("bash", [join(repo, "scripts/install-local.sh"), ...extraArgs], {
     cwd: repo,
     encoding: "utf8",
     env: {
       ...process.env,
+      ...isolatedHome(base),
       CHESSFABLE_INSTALL_DIR: install,
       XDG_DATA_HOME: data,
-      PATH: `${bin}:${process.env.PATH}`,
+      PATH: path,
       INSTALL_FAILURE: failure ?? "",
     },
   });
@@ -168,6 +192,7 @@ function spawnRun(_t, { repo, install, data, bin, base, childRuns }, options = {
     detached: true,
     env: {
       ...process.env,
+      ...isolatedHome(base),
       CHESSFABLE_INSTALL_DIR: install,
       XDG_DATA_HOME: data,
       PATH: `${bin}:${process.env.PATH}`,
@@ -273,6 +298,93 @@ async function unmarkedRelease(install, name, commitCharacter) {
   );
   return release;
 }
+
+const LINK_SCHEME = "chessriddle-studio";
+
+async function desktopDatabaseCalls(f) {
+  try {
+    return (await readFile(join(f.base, "desktop-database-calls"), "utf8")).trimEnd().split("\n");
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+test("the desktop entry registers the configured link scheme and receives the link", async (t) => {
+  const f = await fixture(t, { schemes: [LINK_SCHEME] });
+  const result = run(f);
+  assert.equal(result.status, 0, result.stderr);
+  const desktop = await readFile(join(f.data, "applications/chessriddle-studio.desktop"), "utf8");
+  // Without the field code a launcher starts the app with no argument at all.
+  assert.match(desktop, /^Exec=".*\/current\/bin\/chessriddle-studio" %u$/mu);
+  assert.match(desktop, /^MimeType=x-scheme-handler\/chessriddle-studio;$/mu);
+  assert.deepEqual(await desktopDatabaseCalls(f), [join(f.data, "applications")]);
+  assert.doesNotMatch(result.stderr, /desktop database/u);
+  // Nothing was written to the user's configuration: no default handler is set.
+  await assert.rejects(lstat(join(f.base, "config")), { code: "ENOENT" });
+  await assert.rejects(lstat(join(f.base, "home")), { code: "ENOENT" });
+});
+
+test("several schemes share one MimeType line", async (t) => {
+  const f = await fixture(t, { schemes: [LINK_SCHEME, "second-scheme"] });
+  assert.equal(run(f).status, 0);
+  const desktop = await readFile(join(f.data, "applications/chessriddle-studio.desktop"), "utf8");
+  assert.match(
+    desktop,
+    /^MimeType=x-scheme-handler\/chessriddle-studio;x-scheme-handler\/second-scheme;$/mu,
+  );
+});
+
+test("an entry without a configured scheme keeps its plain Exec line and refreshes nothing", async (t) => {
+  const f = await fixture(t);
+  assert.equal(run(f).status, 0);
+  const desktop = await readFile(join(f.data, "applications/chessriddle-studio.desktop"), "utf8");
+  assert.match(desktop, /^Exec=".*\/current\/bin\/chessriddle-studio"$/mu);
+  assert.doesNotMatch(desktop, /MimeType|%u/u);
+  assert.deepEqual(await desktopDatabaseCalls(f), []);
+});
+
+test("a failing desktop database refresh warns and keeps the committed install", async (t) => {
+  const f = await fixture(t, { schemes: [LINK_SCHEME] });
+  const result = run(f, "desktop-database");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /could not refresh the desktop database in .*applications/u);
+  assert.equal((await lstat(join(f.install, "current"))).isSymbolicLink(), true);
+  assert.match(
+    await readFile(join(f.data, "applications/chessriddle-studio.desktop"), "utf8"),
+    /^MimeType=x-scheme-handler\/chessriddle-studio;$/mu,
+  );
+});
+
+test("a missing update-desktop-database warns and keeps the committed install", async (t) => {
+  const f = await fixture(t, { schemes: [LINK_SCHEME] });
+  // A PATH that holds every host tool except the refresh command.
+  const tools = join(f.base, "tools");
+  await mkdir(tools);
+  for (const directory of ["/usr/bin", "/bin"]) {
+    for (const name of await readdir(directory)) {
+      if (name === "update-desktop-database") continue;
+      await symlink(join(directory, name), join(tools, name)).catch((error) => {
+        if (error.code !== "EEXIST") throw error;
+      });
+    }
+  }
+  await rm(join(f.bin, "update-desktop-database"));
+  const result = run(f, undefined, undefined, `${f.bin}:${tools}`);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /update-desktop-database missing or failing/u);
+  assert.equal((await lstat(join(f.install, "current"))).isSymbolicLink(), true);
+});
+
+test("a malformed scheme list refuses the install before anything is written", async (t) => {
+  for (const schemes of [["Bad Scheme"], "chessriddle-studio", [42]]) {
+    const f = await fixture(t, { schemes });
+    const result = run(f);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /invalid product identity in tauri\.conf\.json/u);
+    await assert.rejects(lstat(join(f.install, "current")), { code: "ENOENT" });
+  }
+});
 
 test("installs the derived binary, resources, desktop entry and pointers", async (t) => {
   const f = await fixture(t);

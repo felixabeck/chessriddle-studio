@@ -246,6 +246,73 @@ jobs:
           }
           if ($failed) { exit 1 }
 
+      # A game link clicked in the browser reaches the app only if the installed package
+      # registers the chessriddle-studio scheme (tauri.conf.json plugins.deep-link, read by the
+      # bundler) and passes the link on. Each leg proves that on its own artefact, so a bundler or
+      # template change that drops the registration never leaves the draft.
+      - name: Verify the game-link scheme registration (macOS only)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -- "src-tauri/target/${{ matrix.target }}/release/bundle"/macos/*.app
+          plist="$1/Contents/Info.plist"
+          [ -f "$plist" ] || { echo "::error::no Info.plist in the .app bundle for ${{ matrix.target }}"; exit 1; }
+          url_types=$(plutil -extract CFBundleURLTypes json -o - "$plist") || { echo "::error::Info.plist declares no URL types"; exit 1; }
+          echo "$url_types"
+          echo "$url_types" | jq -e 'any(.[]; (.CFBundleURLSchemes // []) | index("chessriddle-studio") != null)' > /dev/null \
+            || { echo "::error::Info.plist does not register the chessriddle-studio scheme"; exit 1; }
+
+      # A desktop entry without a field code is started without the link (measured with
+      # `gio launch`, 2026-11-22), so each Linux package must carry %u beside the MimeType.
+      - name: Verify the game-link scheme registration (Linux only)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bundle=src-tauri/target/release/bundle
+          work="$RUNNER_TEMP/scheme-check"
+          mkdir -p "$work/deb" "$work/rpm" "$work/appimage"
+          sudo apt-get install -y rpm2cpio cpio
+          one() { [ "$#" -eq 1 ] && [ -f "$1" ] || { echo "::error::expected exactly one $label package, found: $*"; exit 1; }; }
+          label=deb; set -- "$bundle"/deb/*.deb; one "$@"
+          dpkg-deb -x "$1" "$work/deb"
+          label=rpm; set -- "$bundle"/rpm/*.rpm; one "$@"
+          rpm2cpio "$1" | (cd "$work/rpm" && cpio -idm --quiet)
+          label=AppImage; set -- "$bundle"/appimage/*.AppImage; one "$@"
+          chmod +x "$1"
+          appimage=$(realpath "$1")
+          (cd "$work/appimage" && "$appimage" --appimage-extract > /dev/null)
+          failed=0
+          for label in deb rpm appimage; do
+            # The AppImage also links its entry at the top level; the packaged file is the one read.
+            entries=$(find "$work/$label" -path '*/usr/share/applications/*.desktop' -type f)
+            [ -n "$entries" ] && [ "$(printf '%s\n' "$entries" | wc -l)" -eq 1 ] \
+              || { echo "::error::expected exactly one desktop entry in the $label package, found: $entries"; failed=1; continue; }
+            echo "== $label: $entries"; cat "$entries"
+            grep -Eq '^MimeType=(.*;)?x-scheme-handler/chessriddle-studio(;|$)' "$entries" \
+              || { echo "::error::the $label desktop entry does not register the chessriddle-studio scheme"; failed=1; }
+            grep -Eq '^Exec=.* %u$' "$entries" \
+              || { echo "::error::the $label desktop entry does not pass the link (%u) to the app"; failed=1; }
+          done
+          exit "$failed"
+
+      # The installer writes the scheme into the registry, not into a file, so it is installed
+      # (per user, silently) and the keys are read back.
+      - name: Verify the game-link scheme registration (Windows only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem -ErrorAction SilentlyContinue src-tauri/target/release/bundle/nsis/*.exe)
+          if ($installers.Count -ne 1) { Write-Error "expected one NSIS installer, found $($installers.Count)"; exit 1 }
+          $install = Start-Process -FilePath $installers[0].FullName -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { Write-Error "the silent install failed (exit $($install.ExitCode))"; exit 1 }
+          $key = 'HKCU:\Software\Classes\chessriddle-studio'
+          if (-not (Test-Path $key)) { Write-Host "::error::the installer did not register the chessriddle-studio scheme"; exit 1 }
+          $protocol = (Get-Item $key).GetValue('URL Protocol', $null)
+          $command = (Get-Item "$key\shell\open\command" -ErrorAction SilentlyContinue)?.GetValue('')
+          Write-Host "URL Protocol: '$protocol' | open command: $command"
+          if ($null -eq $protocol) { Write-Host "::error::the chessriddle-studio key is not marked as a URL protocol"; exit 1 }
+          if ($command -notmatch 'chessriddle-studio\.exe" "%1"$') { Write-Host "::error::the open command does not pass the link (`"%1`") to the app"; exit 1 }
+
       - name: Log out of Certum SimplySign (Windows only)
         if: always() && steps.certum.outcome != 'skipped'
         uses: jay0lee/certum-cloud-code-sign/teardown@a3324503499c49090869856eeeecfe95fb613d87 # v1
