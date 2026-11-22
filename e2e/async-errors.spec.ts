@@ -1501,9 +1501,11 @@ test("async-errors: verifies German navigation and a delayed native rejection at
     await expect(page.getByRole("heading", { name: "Bibliothek" })).toBeVisible();
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
-    // The pointer rests on the compact Library link; its tooltip opens after a 400 ms delay, so wait for it
-    // to mount before assertAccessible settles transitions, or axe samples it mid-fade.
-    await expect(page.getByRole("tooltip", { name: "Bibliothek" })).toBeVisible();
+    // The pointer rests on the compact Library link; wait until its tooltip has faded in fully
+    // (opacity 1), because Mantine mounts it at opacity 0 one frame before the fade starts.
+    const libraryTooltip = page.getByRole("tooltip", { name: "Bibliothek" });
+    await expect(libraryTooltip).toBeVisible();
+    await expect(libraryTooltip).toHaveCSS("opacity", "1");
     await assertAccessible();
     await capture("async-errors");
     await expect(page).toHaveScreenshot("async-errors.png", { fullPage: true });
