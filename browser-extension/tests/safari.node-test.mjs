@@ -29,7 +29,7 @@ test(
   },
 );
 
-test("the extension is signed as a sandboxed application extension", () => {
+test("the committed entitlements are the application sandbox and read access to chosen files", () => {
   assert.match(entitlements, /^<\?xml version="1\.0" encoding="UTF-8"\?>\n<!DOCTYPE plist /);
   const keys = [...entitlements.matchAll(/<key>([^<]+)<\/key>\s*<(true|false)\/>/g)].map(
     ([, key, value]) => [key, value],
@@ -88,7 +88,7 @@ test("only the observation of Safari may fail without failing the leg, and it ca
   const steps = releaseSteps();
   const step = (name) => steps.find((candidate) => candidate.name === name);
   assert.equal(step(observe)["continue-on-error"], "true");
-  // The step's own limit, not the job's two hours.
+  // The step's own limit of a few minutes; the job's two hours are not a step key.
   assert.match(step(observe)["timeout-minutes"] ?? "", /^[1-9]$/);
   for (const { name, ...keys } of steps)
     if (name !== observe) assert.equal(keys["continue-on-error"], undefined, name);

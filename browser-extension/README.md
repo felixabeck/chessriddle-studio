@@ -74,8 +74,8 @@ application, so it ships inside ChessRiddle Studio itself, as
 with the release's Developer ID and covered by the application's notarization (d-20261122-33).
 There is no App Store listing and no second download.
 
-- **Build:** `scripts/build-safari-appex.sh <output directory> <version>` runs on macOS with a
-  full Xcode only (it refuses elsewhere). It builds the Chrome package, runs Apple's packaging
+- **Build:** `APPLE_SIGNING_IDENTITY=<identity> scripts/build-safari-appex.sh <output directory>
+  <version>` runs on macOS with a full Xcode only (it refuses elsewhere). It builds the Chrome package, runs Apple's packaging
   tool, compiles the generated project's extension target for both architectures, signs the bundle
   with `safari/extension.entitlements` (application sandbox) and checks its own result. Nothing
   generated is committed.
@@ -89,8 +89,8 @@ There is no App Store listing and no second download.
   "Analyze in ChessRiddle Studio" and allow it on chess.com and lichess.org.
 
 **Not observed:** nobody in the project has a Mac. Packaging, signing, embedding, notarization and
-registration are proven on GitHub's macOS runners; that the button appears and works in Safari is
-not. Apple documents this way of distribution, but developers have reported that Safari blocked
+registration are checked by the release legs on GitHub's macOS runners; that the button appears
+and works in Safari is checked nowhere. Apple documents this way of distribution, but developers have reported that Safari blocked
 Developer ID-signed web extensions (Apple developer forum threads 667859 and 695373). The
 release's last Safari step opens the application and Safari on the runner and prints
 `SAFARI: BLOCK OBSERVED`, `SAFARI: no block observed` or `SAFARI: observation unavailable`; it

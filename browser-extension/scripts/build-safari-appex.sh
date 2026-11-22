@@ -102,7 +102,8 @@ for architecture in arm64 x86_64; do
   esac
 done
 
-# Safari loads what the manifest names, at the manifest's relative paths.
+# The manifest, and the files its content-script and web-accessible entries name, at the
+# manifest's relative paths: what Safari needs to show the button.
 for file in manifest.json src/core.js src/content.js src/content.css icons/48.png; do
   cmp "$web/$file" "$appex/Contents/Resources/$file" ||
     fail "$file in the bundle is not the built extension's file"

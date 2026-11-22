@@ -181,9 +181,13 @@ jobs:
             if [ -e "$keychain" ]; then security delete-keychain "$keychain" || status=1; fi
             return "$status"
           }
+          # A cancelled or timed-out step leaves through the trap; the ordinary path cleans up
+          # itself, so that a failed cleanup fails the step.
+          trap 'cleanup > /dev/null 2>&1 || true' EXIT
           result=0
           build || result=$?
           cleanup || { echo "::error::the temporary signing keychain or the certificate file could not be removed"; result=1; }
+          trap - EXIT
           [ "$result" -eq 0 ] || exit "$result"
           # Tauri merges src-tauri/tauri.macos.conf.json on macOS.
           APPEX="$output/ChessRiddle Studio Extension.appex" node --input-type=module -e '
@@ -396,30 +400,37 @@ jobs:
           field() { /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2> /dev/null; }
           team() { codesign -dv "$1" 2>&1 | sed -n 's/^TeamIdentifier=//p'; }
           verify() {
-            host=$1
-            count=$(find "$host/Contents/PlugIns" -maxdepth 1 -name '*.appex' 2> /dev/null | wc -l | tr -d ' ')
-            [ "$count" = 1 ] || fail "expected one .appex in $host/Contents/PlugIns, found $count"
-            appex=$(find "$host/Contents/PlugIns" -maxdepth 1 -name '*.appex')
+            application=$1
+            count=$(find "$application/Contents/PlugIns" -maxdepth 1 -name '*.appex' 2> /dev/null | wc -l | tr -d ' ')
+            [ "$count" = 1 ] || fail "expected one .appex in $application/Contents/PlugIns, found $count"
+            appex=$(find "$application/Contents/PlugIns" -maxdepth 1 -name '*.appex')
             codesign --verify --strict --verbose=2 "$appex" || fail "the signature of $appex does not verify"
             entitlements="$RUNNER_TEMP/safari-extension-entitlements.plist"
             codesign -d --entitlements - --xml "$appex" > "$entitlements" 2> /dev/null || fail "$appex carries no readable entitlements"
             [ "$(field "$entitlements" com.apple.security.app-sandbox)" = true ] || fail "$appex is not sandboxed"
-            codesign -dv "$appex" 2>&1 | grep -q 'flags=.*runtime' || fail "$appex lacks the hardened runtime"
-            host_team=$(team "$host")
-            case "$host_team" in ''|'not set') fail "$host has no team identifier" ;; esac
-            [ "$(team "$appex")" = "$host_team" ] || fail "$appex is not signed by the application's team"
+            # Read in full first: a reader that stops at its match would end codesign with a broken
+            # pipe, which pipefail reports as a failure.
+            signature=$(codesign -dv "$appex" 2>&1) || fail "the signature of $appex cannot be read"
+            case "$signature" in
+              *flags=*runtime*) ;;
+              *) fail "$appex lacks the hardened runtime" ;;
+            esac
+            application_team=$(team "$application")
+            case "$application_team" in ''|'not set') fail "$application has no team identifier" ;; esac
+            [ "$(team "$appex")" = "$application_team" ] || fail "$appex is not signed by the application's team"
             [ "$(field "$appex/Contents/Info.plist" CFBundleIdentifier)" = "$identifier" ] || fail "$appex is not $identifier"
-            host_version=$(field "$host/Contents/Info.plist" CFBundleShortVersionString)
-            [ -n "$host_version" ] || fail "$host has no version"
-            [ "$(field "$appex/Contents/Info.plist" CFBundleShortVersionString)" = "$host_version" ] || fail "$appex does not carry the application's version $host_version"
-            echo "verified $appex ($identifier $host_version, team $host_team)"
+            application_version=$(field "$application/Contents/Info.plist" CFBundleShortVersionString)
+            [ -n "$application_version" ] || fail "$application has no version"
+            [ "$(field "$appex/Contents/Info.plist" CFBundleShortVersionString)" = "$application_version" ] || fail "$appex does not carry the application's version $application_version"
+            echo "verified $appex ($identifier $application_version, team $application_team)"
           }
           verify "$app"
           # Registering the application first mirrors what opening it does for a user; the listing
           # below is what decides.
           /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" \
             || echo "note: lsregister did not register the application"
-          pluginkit -a "$appex"
+          set -- "$app"/Contents/PlugIns/*.appex
+          pluginkit -a "$1"
           listed=""
           for _ in 1 2 3 4 5; do
             listed=$(pluginkit -m -A -v -p com.apple.Safari.web-extension 2>&1 || true)
@@ -459,18 +470,20 @@ jobs:
           }
           started=$(date '+%Y-%m-%d %H:%M:%S')
           # Opening the application once is what registers its extension for a user.
-          open -g "$app" || echo "note: the application did not open"
+          open -g "$app" || finish "observation unavailable: the application did not open"
           sleep 15
           open -g -a Safari || finish "observation unavailable: Safari did not open"
           sleep 40
           pluginkit -m -A -v -p com.apple.Safari.web-extension || true
           lines=$(log show --start "$started" --info --style compact --predicate \
-            'eventMessage CONTAINS "com.chessriddle.studio" OR (process == "Safari" AND eventMessage CONTAINS[c] "extension")' 2>&1) \
+            'eventMessage CONTAINS "com.chessriddle.studio" OR eventMessage CONTAINS[c] "code signing dictionary" OR (process == "Safari" AND eventMessage CONTAINS[c] "extension")' 2>&1) \
             || finish "observation unavailable: the unified log could not be read"
           printf '%s\n' "$lines" | tail -n 150
           matched=$(printf '%s\n' "$lines" | grep -c -e "$identifier" -e 'Safari' || true)
           [ "$matched" -gt 0 ] || finish "observation unavailable: the log holds no line about Safari or the extension"
-          if printf '%s\n' "$lines" | grep "$identifier" | grep -q -i -e 'block' -e 'code signing dictionary failed'; then
+          # The two symptoms of the forum reports. This is the only web extension on the runner, so
+          # a failed code signing dictionary counts even on a line that does not name it.
+          if printf '%s\n' "$lines" | grep -i -e "block.*$identifier" -e "$identifier.*block" -e 'code signing dictionary failed' > /dev/null; then
             echo "::warning::Safari reports that it blocks $identifier"
             finish "BLOCK OBSERVED"
           fi
