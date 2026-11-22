@@ -346,3 +346,58 @@ finding ids and date.
   P2 yes, P3 yes, P4 yes, P5 yes".
 - **Findings:** none; the plan is the record. Related known limit: `f-20261122-04`.
 - **Date:** 2026-11-22.
+
+## 2026-11-22 — An opponent's online accounts are linked on the database player
+
+- **Question:** When preparing against an opponent found in a reference database, can their
+  Lichess and Chess.com games be added, where do those accounts live, and how are the online
+  games shown next to the over-the-board games?
+- **Choice:**
+  - The accounts are linked on the database player's card, not on the Accounts page. An
+    account is added by site and username; the site's answer (spelling, title, real name,
+    country, rated games) is shown for confirmation before it is linked. Neither site offers
+    a search by real name, so the username has to be known.
+  - Period and time controls are chosen before the download. Default: the last three years,
+    every time control except bullet. Only rated standard chess is downloaded.
+  - The Lichess download needs no login of the opponent: it uses the user's own Lichess login
+    when there is one and runs anonymously otherwise.
+  - Lichess and Chess.com games of one opponent are kept together as that opponent's online
+    games, apart from the over-the-board games.
+  - No merged opening tree. "Prepare on board" opens the board with two columns: the
+    database the player was found in, and the online games. Both follow the moves on the
+    board; colour, dates, result, Elo and the fast-events switch are shared.
+  - Removing the online games keeps the usernames on the player. A separate "Unlink
+    accounts" forgets them. The link is stored by the player's name, so it survives a
+    replaced reference database.
+  - Suggestions for titled players' handles and a search by name are left out for now.
+  - Requests to Lichess and Chess.com carry a contact address, the one published on the
+    ChessRiddle site.
+- **Felix's reasons:**
+  - Where the accounts live: "the accounts page, I consider it more for my own accounts and
+    for my analysis. And the other players that I look forward to prepare against, I just
+    need them once in combination with their saved games in the database. And then I don't
+    need them any longer because I just play them once."
+  - Two columns instead of a merged tree: "it would even be interesting to see them all side
+    by side. For example, like I currently … show two databases … So separate for over the
+    board and for online. Because that would always give a clear distinction. And I could
+    just … click through the moves and there's no need in merging". This replaced his
+    earlier wish for a filter "to turn the only over-the-board or only online games".
+  - One online column for both sites: "I think it's sensible to merge the Chess.com and the
+    Leechess online games because as you say they are both online games … and separate them
+    from the over the board games."
+  - Period and time controls: "choosing period and time control is also sensible."
+  - Titled players: "let's leave title players out for now."
+  - Contact address: "of course, I can include my contact address to the chest.com.
+    reqests" and "My business address is the same as my private address, so just take it
+    from the chess riddle page."
+- **Agent proposals Felix confirmed, not his wording:** removing the games keeps the
+  username and unlinking is separate ("Yes, point three as well"); the default filter, the
+  confirmation by profile, the download without the opponent's login and rated standard
+  chess only (confirmed with "as you recommend" on the summary).
+- **Not confirmed item by item:** the opponent's online games are an ordinary database and
+  appear in the Library while they exist. The opening tree on the card itself stays
+  over-the-board only; the two columns are the board's. An account that cannot be found
+  stops the whole download instead of being skipped, so a mistyped username is noticed.
+- **Finding filed on the way:** f-20261122-03 (a Lichess account added without login on the
+  Accounts page can never download its games).
+- **Date:** 2026-11-22.
