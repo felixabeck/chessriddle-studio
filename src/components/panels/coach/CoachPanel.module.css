@@ -21,6 +21,11 @@
   min-width: 6rem;
 }
 
+/* Whose plan pays for the answers: a line of its own under the selectors. */
+.plan {
+  flex: 1 0 100%;
+}
+
 .transcript {
   flex: 1 1 auto;
   min-height: 0;

@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   coachSaveApiConnection: vi.fn(),
   coachRemoveConnection: vi.fn(),
   coachModels: vi.fn(),
+  coachSignInChatgpt: vi.fn(),
+  coachCancelSignIn: vi.fn(),
+  coachOpenUsage: vi.fn(),
 }));
 vi.mock("@/platform/tauri", () => ({ tauri: mocks }));
 vi.mock("@/platform/native", () => ({ warn: vi.fn(), error: vi.fn() }));
@@ -36,6 +39,7 @@ const ollama: ConnectionSummary = {
   label: "Ollama",
   address: "http://localhost:11434/v1",
   hasKey: false,
+  account: null,
   status: "ready",
 };
 const hosted: ConnectionSummary = {
@@ -44,6 +48,7 @@ const hosted: ConnectionSummary = {
   label: "Hosted",
   address: "https://api.example.com/v1",
   hasKey: true,
+  account: null,
   status: "ready",
 };
 const broken: ConnectionSummary = {
@@ -52,14 +57,38 @@ const broken: ConnectionSummary = {
   label: "Broken",
   address: null,
   hasKey: false,
+  account: null,
   status: "needsRepair",
 };
+
+const chatGpt: ConnectionSummary = {
+  handle: "handle-chatgpt",
+  kind: "chatGpt",
+  label: "ChatGPT",
+  address: null,
+  hasKey: false,
+  account: "player@example.com",
+  status: "ready",
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (cause: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 let host: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
+  mocks.coachCancelSignIn.mockResolvedValue(null);
+  mocks.coachOpenUsage.mockResolvedValue(null);
   mocks.coachConnections.mockResolvedValue([ollama, hosted, broken]);
   host = document.createElement("div");
   document.body.append(host);
@@ -217,6 +246,136 @@ test("removing asks first, removes by handle and re-reads the native list", asyn
   expect(dialog()).toBeNull();
   expect(row("Ollama")).toBeNull();
   expect(row("Hosted")).not.toBeNull();
+});
+
+test("removing a sign-in the provider did not confirm says so and points to the provider", async () => {
+  mocks.coachConnections.mockResolvedValue([chatGpt]);
+  await render();
+  await click(button(row("ChatGPT"), "Settings.Coach.Connection.Remove"));
+  mocks.coachRemoveConnection.mockResolvedValue({
+    durabilityUncertain: false,
+    revocationPending: true,
+  });
+  mocks.coachConnections.mockResolvedValue([]);
+  await click(button(dialog()!, "Common.Remove"));
+  const notice = [...host.querySelectorAll<HTMLElement>('[role="status"]')].find((node) =>
+    node.textContent?.includes("Settings.Coach.Connection.RevocationPending:ChatGPT"),
+  )!;
+  expect(notice).toBeDefined();
+  await click(button(notice, "Coach.Plan.ManageUsage"));
+  expect(mocks.coachOpenUsage).toHaveBeenCalledOnce();
+});
+
+test("a confirmed removal shows no sign-out notice", async () => {
+  mocks.coachConnections.mockResolvedValue([chatGpt]);
+  await render();
+  await click(button(row("ChatGPT"), "Settings.Coach.Connection.Remove"));
+  mocks.coachRemoveConnection.mockResolvedValue({
+    durabilityUncertain: false,
+    revocationPending: false,
+  });
+  await click(button(dialog()!, "Common.Remove"));
+  expect(host.textContent).not.toContain("Settings.Coach.Connection.RevocationPending");
+});
+
+test("a ChatGPT connection shows its account, has nothing to edit and leaves no second sign-in", async () => {
+  mocks.coachConnections.mockResolvedValue([chatGpt, ollama]);
+  await render();
+  expect(row("ChatGPT").textContent).toContain("player@example.com");
+  expect(button(row("ChatGPT"), "Settings.Coach.Form.EditTitle")).toBeUndefined();
+  expect(button(row("Ollama"), "Settings.Coach.Form.EditTitle")).toBeDefined();
+  await click(button(row("ChatGPT"), "Coach.Plan.ManageUsage"));
+  expect(mocks.coachOpenUsage).toHaveBeenCalledOnce();
+  // One ChatGPT connection: while it works there is no button for another sign-in.
+  expect(button(host, "Settings.Coach.SignIn.ChatGpt")).toBeUndefined();
+  expect(button(host, "Settings.Coach.Connections.Add")).toBeDefined();
+});
+
+test("a sign-in that has ended is marked, cannot be checked and can be renewed", async () => {
+  mocks.coachConnections.mockResolvedValue([{ ...chatGpt, account: null, status: "signInAgain" }]);
+  await render();
+  expect(row("ChatGPT").textContent).toContain("Settings.Coach.Connection.SignInAgain");
+  expect(row("ChatGPT").textContent).toContain("Coach.Error.SignInAgain");
+  expect(button(row("ChatGPT"), "Settings.Coach.Connection.Check").disabled).toBe(true);
+  expect(button(row("ChatGPT"), "Coach.Plan.ManageUsage")).toBeUndefined();
+  expect(button(host, "Settings.Coach.SignIn.ChatGpt")).toBeDefined();
+});
+
+test("Continue with ChatGPT waits for the browser, then lists the connection and shows the plan notice once", async () => {
+  mocks.coachConnections.mockResolvedValue([]);
+  const first = deferred<unknown>();
+  mocks.coachSignInChatgpt.mockReturnValue(first.promise);
+  await render();
+  await click(button(host, "Settings.Coach.SignIn.ChatGpt"));
+  expect(mocks.coachSignInChatgpt).toHaveBeenCalledOnce();
+  const attempt = mocks.coachSignInChatgpt.mock.calls[0][0] as string;
+  expect(attempt).toMatch(/^[0-9a-f-]{36}$/);
+  expect(host.textContent).toContain("Settings.Coach.SignIn.Waiting");
+  // A second click while the browser is open starts nothing.
+  await click(button(host, "Settings.Coach.SignIn.ChatGpt"));
+  expect(mocks.coachSignInChatgpt).toHaveBeenCalledOnce();
+
+  mocks.coachConnections.mockResolvedValue([chatGpt]);
+  await act(async () => first.resolve({ connection: chatGpt, durabilityUncertain: false }));
+  expect(host.textContent).not.toContain("Settings.Coach.SignIn.Waiting");
+  expect(row("ChatGPT")).not.toBeNull();
+  expect(dialog()!.textContent).toContain("Coach.Plan.Notice.Title");
+  expect(dialog()!.textContent).toContain("Coach.Plan.Notice.Body");
+  await click(button(dialog()!, "Coach.Plan.Notice.Accept"));
+  expect(dialog()).toBeNull();
+
+  // The session ended later: signing in again shows no notice a second time.
+  mocks.coachConnections.mockResolvedValue([{ ...chatGpt, status: "signInAgain" }]);
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  mocks.coachSignInChatgpt.mockResolvedValue({ connection: chatGpt, durabilityUncertain: true });
+  mocks.coachConnections.mockResolvedValue([chatGpt]);
+  await click(button(host, "Settings.Coach.SignIn.ChatGpt"));
+  expect(dialog()).toBeNull();
+  expect(row("ChatGPT").textContent).not.toContain("Settings.Coach.Connection.SignInAgain");
+  // The save's durability notice is the same one an address connection shows.
+  expect(host.textContent).toContain("Common.DurabilityUncertain");
+});
+
+test("a sign-in can be cancelled by its id, and only a real failure leaves a message", async () => {
+  mocks.coachConnections.mockResolvedValue([]);
+  const running = deferred<unknown>();
+  mocks.coachSignInChatgpt.mockReturnValue(running.promise);
+  await render();
+  await click(button(host, "Settings.Coach.SignIn.ChatGpt"));
+  const attempt = mocks.coachSignInChatgpt.mock.calls[0][0] as string;
+  const waiting = [...host.querySelectorAll<HTMLElement>('[role="status"]')].find((node) =>
+    node.textContent?.includes("Settings.Coach.SignIn.Waiting"),
+  )!;
+  await click(button(waiting, "Common.Cancel"));
+  expect(mocks.coachCancelSignIn).toHaveBeenCalledExactlyOnceWith(attempt);
+  // The native side ends the attempt; its command answers "cancelled".
+  await act(async () => running.reject(new CoachCommandError("cancelled")));
+  expect(host.textContent).not.toContain("Settings.Coach.SignIn.Waiting");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(mocks.coachConnections).toHaveBeenCalledTimes(1);
+
+  mocks.coachSignInChatgpt.mockRejectedValue(new CoachCommandError("subscriptionNotEligible"));
+  await click(button(host, "Settings.Coach.SignIn.ChatGpt"));
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+    "Coach.Error.SubscriptionNotEligible",
+  );
+  expect(dialog()).toBeNull();
+});
+
+test("leaving the page cancels a sign-in that still waits and ignores its late answer", async () => {
+  mocks.coachConnections.mockResolvedValue([]);
+  const running = deferred<unknown>();
+  mocks.coachSignInChatgpt.mockReturnValue(running.promise);
+  await render();
+  await click(button(host, "Settings.Coach.SignIn.ChatGpt"));
+  const attempt = mocks.coachSignInChatgpt.mock.calls[0][0] as string;
+  await act(async () => root.unmount());
+  expect(mocks.coachCancelSignIn).toHaveBeenCalledExactlyOnceWith(attempt);
+  await act(async () => running.resolve({ connection: chatGpt, durabilityUncertain: false }));
+  expect(mocks.coachConnections).toHaveBeenCalledTimes(1);
+  root = createRoot(host);
 });
 
 test("a failed removal still re-reads the native list and keeps the dialog's error", async () => {

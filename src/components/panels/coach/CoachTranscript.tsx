@@ -1,9 +1,10 @@
-import { Group, Loader, Text } from "@mantine/core";
+import { Button, Group, Loader, Text } from "@mantine/core";
 import { memo, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useCoachErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
+import { openCoachUsage } from "@/state/coach";
 import type { CoachAnswerMessage, CoachMessage, CoachRunningTurn } from "@/state/coachSession";
 import { CoachLine } from "./CoachLine";
 import { resolveCoachInsertPath } from "./coachInsert";
@@ -52,6 +53,14 @@ const Answer = memo(function Answer({ message }: { message: CoachAnswerMessage }
         <Text size="sm" c="danger" className={classes.status} role="alert">
           {errors[message.error]}
         </Text>
+      )}
+      {/* At the plan's limit the way on is the provider's usage page. */}
+      {message.error === "usageLimitReached" && (
+        <div className={classes.status}>
+          <Button size="xs" onClick={openCoachUsage}>
+            {t("Coach.Plan.ManageUsage")}
+          </Button>
+        </div>
       )}
       {message.state === "cancelled" && (
         <Text size="sm" c="dimmed" className={classes.status}>

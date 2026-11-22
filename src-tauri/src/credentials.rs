@@ -40,6 +40,8 @@ const REGISTRY_VERSION: u8 = 2;
 /// Windows Credential Manager limits a credential blob to 2560 bytes of UTF-16. A secret that
 /// must be storable on every platform stays within this many UTF-16 units.
 pub(crate) const MAX_KEYRING_SECRET_UTF16_UNITS: usize = 1280;
+/// The most a note beside a registry may hold; anything longer is not one of ours.
+const MAX_NOTE_BYTES: u64 = 256;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CredentialProvider {
@@ -264,6 +266,28 @@ impl<H: ProviderHandle> ProviderCredentials<H> {
     }
 
     /// Rewrites an active account's secret under its handle and keeps its name.
+    /// A stable identifier of this installation for the provider's sign-ins: the stored one, or a
+    /// new random one that is stored before it is returned. It is not a credential.
+    pub(crate) async fn installation_id(
+        self: &Arc<Self>,
+        filename: &'static str,
+    ) -> Result<uuid::Uuid, Error> {
+        self.blocking(move |manager| {
+            let stored = manager
+                .read_note(filename)?
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .and_then(|text| uuid::Uuid::parse_str(text.trim()).ok());
+            if let Some(id) = stored {
+                return Ok(id);
+            }
+            // Absent or unreadable as an id: a new one replaces it.
+            let id = uuid::Uuid::new_v4();
+            manager.write_note(filename, id.to_string().as_bytes())?;
+            Ok(id)
+        })
+        .await
+    }
+
     pub(crate) async fn replace(self: &Arc<Self>, handle: H, token: String) -> Result<(), Error> {
         self.blocking(move |manager| {
             manager
@@ -1129,6 +1153,40 @@ impl CredentialManager {
         Ok(())
     }
 
+    /// A small document that is no credential but belongs with this provider's registry: it is
+    /// read from the credentials directory under the registry's owner-only rule. `None` when it
+    /// does not exist.
+    fn read_note(&self, filename: &str) -> Result<Option<Vec<u8>>, Error> {
+        let binding = credential_lock(&self.registry_dir)?.clone();
+        let Some(binding) = binding else {
+            return Ok(None);
+        };
+        let Some(file) = open_named_private_registry(&binding.directory, filename)
+            .map_err(credential_failure)?
+        else {
+            return Ok(None);
+        };
+        let mut bytes = Vec::new();
+        file.take(MAX_NOTE_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|source| Error::CredentialFailure(source.to_string()))?;
+        Ok(Some(bytes))
+    }
+
+    /// Writes such a document through the registry's atomic replacement.
+    fn write_note(&self, filename: &str, bytes: &[u8]) -> Result<(), Error> {
+        let binding = credential_lock(&self.registry_dir)?.clone();
+        let Some(binding) = binding else {
+            return Err(Error::CredentialFailure(
+                "credential directory is not initialized".into(),
+            ));
+        };
+        self.persistence
+            .write(&binding.directory, filename, bytes)
+            .map(|_| ())
+            .map_err(|_| Error::CredentialFailure("credential note update failed".into()))
+    }
+
     fn persist_locked(&self, registry: &RegistryFile) -> Result<RegistryCommit, Error> {
         let binding = credential_lock(&self.registry_dir)?.clone();
         let Some(binding) = binding else {
@@ -1343,6 +1401,51 @@ mod tests {
             Err(Error::CredentialRecoveryRequired)
         ));
         assert_eq!(credentials.list().await.unwrap().len(), 16);
+    }
+
+    #[tokio::test]
+    async fn an_installation_id_is_created_once_stored_beside_the_registry_and_read_again() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = AppDataDir::for_test(temp.path());
+        let credentials = Arc::new(CoachCredentials::with_store(Arc::new(
+            MemoryCredentialStore::default(),
+        )));
+        credentials.initialize(&root).unwrap();
+        let note = temp.path().join("credentials").join("host-id");
+        assert!(!note.exists());
+
+        let first = credentials.installation_id("host-id").await.unwrap();
+        assert_eq!(fs::read_to_string(&note).unwrap(), first.to_string());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&note).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        assert_eq!(credentials.installation_id("host-id").await.unwrap(), first);
+
+        // Another run of the application reads the same id.
+        let restarted = Arc::new(CoachCredentials::with_store(Arc::new(
+            MemoryCredentialStore::default(),
+        )));
+        restarted.initialize(&root).unwrap();
+        assert_eq!(restarted.installation_id("host-id").await.unwrap(), first);
+
+        // A note that is not an id, or far too long to be one, is replaced by a new id.
+        for damaged in ["not an id".to_owned(), "f".repeat(4096)] {
+            fs::write(&note, damaged).unwrap();
+            let replaced = credentials.installation_id("host-id").await.unwrap();
+            assert_ne!(replaced, first);
+            assert_eq!(fs::read_to_string(&note).unwrap(), replaced.to_string());
+        }
+
+        // Before the credentials directory is known there is nowhere to keep an id.
+        let unbound = Arc::new(CoachCredentials::with_store(Arc::new(
+            MemoryCredentialStore::default(),
+        )));
+        assert!(unbound.installation_id("host-id").await.is_err());
     }
 
     #[tokio::test]

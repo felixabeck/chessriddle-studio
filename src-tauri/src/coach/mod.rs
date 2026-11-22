@@ -3,10 +3,13 @@
 //! The native side owns the connections, their secrets and all provider traffic. The renderer
 //! sees connection summaries and model lists, never a key or a token.
 
+pub(crate) mod accounts;
 pub(crate) mod address;
 pub(crate) mod answer;
+pub(crate) mod attempts;
 pub(crate) mod backend;
 pub(crate) mod chat_completions;
+pub(crate) mod chatgpt;
 pub(crate) mod connections;
 pub(crate) mod engine;
 pub(crate) mod error;
@@ -14,6 +17,7 @@ pub(crate) mod http;
 pub(crate) mod lines;
 pub(crate) mod models;
 pub(crate) mod prompt;
+pub(crate) mod responses;
 pub(crate) mod sse;
 pub(crate) mod stats;
 #[cfg(test)]
@@ -29,14 +33,18 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use tauri_plugin_opener::OpenerExt;
 use tauri_specta::Event;
 use tokio_util::sync::CancellationToken;
 
 use self::{
+    accounts::{Accounts, ConnectionBearer},
     address::Address,
     answer::Segment,
+    attempts::{SignInAttempts, SignInKind},
     backend::{Message, ModelBackend},
     chat_completions::ChatCompletions,
+    chatgpt::{BrowserOpener, ChatGpt},
     connections::{
         ApiConnectionInput, ConnectionRemoved, ConnectionSaved, ConnectionSummary, Connections,
         Secret,
@@ -46,6 +54,7 @@ use self::{
     http::HttpClients,
     lines::TurnPosition,
     models::{ModelList, MAX_MODEL_LIST_BYTES},
+    responses::{Responses, ToolLayout},
     stats::{DatabaseStatistics, Statistics},
     tools::{ToolActivity, ToolSource},
     turn::{TurnEnd, TurnRequest, TurnSink},
@@ -83,11 +92,19 @@ fn available_for(identifier: &str) -> bool {
     RELEASE_AVAILABLE || identifier.ends_with(".dev")
 }
 
+/// The namespace the tools are declared in where a provider wants them grouped.
+const TOOL_NAMESPACE: &str = "chess";
+
 pub(crate) struct Coach {
     available: bool,
     connections: Connections,
+    credentials: Arc<CoachCredentials>,
     http: HttpClients,
     turns: Arc<TurnSlots>,
+    chatgpt: Arc<ChatGpt>,
+    /// The tokens of the signed-in connections.
+    accounts: Accounts,
+    sign_ins: Arc<SignInAttempts>,
 }
 
 /// The turns that run now, by window and tab: one per tab, [`MAX_TURNS`] overall.
@@ -418,24 +435,143 @@ async fn drive_turn<R: tauri::Runtime>(
 
 impl Coach {
     fn new(available: bool, credentials: Arc<CoachCredentials>) -> Result<Self, CoachError> {
-        Ok(Self {
+        let http = HttpClients::new()?;
+        let chatgpt = ChatGpt::new(http.public().clone());
+        Ok(Self::with_chatgpt(available, credentials, http, chatgpt))
+    }
+
+    /// The Coach around a given ChatGPT sign-in, which tests point at a provider double.
+    fn with_chatgpt(
+        available: bool,
+        credentials: Arc<CoachCredentials>,
+        http: HttpClients,
+        chatgpt: ChatGpt,
+    ) -> Self {
+        let connections = Connections::new(credentials.clone());
+        let chatgpt = Arc::new(chatgpt);
+        Self {
             available,
-            connections: Connections::new(credentials),
-            http: HttpClients::new()?,
+            accounts: Accounts::start(connections.clone(), chatgpt.clone()),
+            connections,
+            credentials,
+            http,
             turns: Arc::default(),
-        })
+            chatgpt,
+            sign_ins: Arc::default(),
+        }
     }
 
     /// The model backend of a connection, from what is stored for it now.
-    async fn backend(&self, handle: CoachConnectionHandle) -> Result<ChatCompletions, CoachError> {
-        let Secret::Api { address, key } = self.connections.secret(handle).await?;
-        let address = Address::parse(&address).map_err(|_| CoachError::NeedsRepair)?;
-        let client = self.http.for_address(&address).clone();
-        Ok(ChatCompletions::new(client, address, key))
+    async fn backend(
+        &self,
+        handle: CoachConnectionHandle,
+    ) -> Result<Box<dyn ModelBackend>, CoachError> {
+        match self.connections.secret(handle.clone()).await? {
+            Secret::Api { address, key } => {
+                let address = Address::parse(&address).map_err(|_| CoachError::NeedsRepair)?;
+                let client = self.http.for_address(&address).clone();
+                Ok(Box::new(ChatCompletions::new(client, address, key)))
+            }
+            Secret::ChatGpt(secret) => {
+                if secret.refresh_token.is_none() {
+                    return Err(CoachError::SignInAgain);
+                }
+                Ok(Box::new(Responses::new(
+                    self.chatgpt.http().clone(),
+                    self.chatgpt.api("responses"),
+                    ConnectionBearer {
+                        accounts: self.accounts.clone(),
+                        handle,
+                    },
+                    ToolLayout::Namespace(TOOL_NAMESPACE),
+                )))
+            }
+        }
+    }
+
+    /// The models of a ChatGPT sign-in. A token refused before the answer was read is replaced
+    /// once.
+    async fn plan_models(&self, handle: CoachConnectionHandle) -> Result<ModelList, CoachError> {
+        let mut bearer = self.accounts.bearer(handle.clone()).await?;
+        for retry in [false, true] {
+            let request = self
+                .chatgpt
+                .http()
+                .get(self.chatgpt.api("models"))
+                .bearer_auth(&bearer.token);
+            let (status, body) = http::send_bounded(request, MAX_MODEL_LIST_BYTES).await?;
+            match status {
+                200 => return models::parse_plan_models(&body),
+                401 if !retry => {
+                    bearer = self
+                        .accounts
+                        .rejected(handle.clone(), bearer.generation)
+                        .await?;
+                }
+                _ => {
+                    let (error, message) = responses::classify_plan_refusal(status, &body, false);
+                    log::warn!(
+                        "coach: the plan model list was refused with HTTP {status}: {}",
+                        http::diagnostic(&message, None)
+                    );
+                    return Err(error);
+                }
+            }
+        }
+        Err(CoachError::ProviderFailure)
+    }
+
+    /// Removes a connection: here first, durably; then, for a sign-in, the provider is asked once
+    /// to withdraw it. The token used for that is already gone from this computer.
+    async fn remove(&self, handle: CoachConnectionHandle) -> Result<ConnectionRemoved, CoachError> {
+        let signed_in = match self.connections.secret(handle.clone()).await {
+            Ok(Secret::ChatGpt(secret)) => Some(secret),
+            _ => None,
+        };
+        let mut removed = self.connections.remove(handle.clone()).await?;
+        if let Some(secret) = signed_in {
+            if let Err(error) = self.accounts.forget(handle).await {
+                log::warn!("coach: the removed sign-in's tokens were not dropped: {error:?}");
+            }
+            if let Some(refresh) = secret.refresh_token {
+                removed.revocation_pending =
+                    !self.chatgpt.revoke(&secret.client_id, &refresh).await;
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Runs a ChatGPT sign-in as the one attempt of its kind and hands its tokens to their owner.
+    async fn sign_in_chatgpt(
+        &self,
+        attempt: &str,
+        window: &str,
+        opener: BrowserOpener,
+    ) -> Result<ConnectionSaved, CoachError> {
+        self.sign_ins
+            .run(
+                SignInKind::ChatGpt,
+                attempt,
+                window,
+                |cancellation| async move {
+                    let (saved, client_id, tokens) = self
+                        .chatgpt
+                        .sign_in(&self.connections, &self.credentials, &cancellation, &opener)
+                        .await?;
+                    self.accounts
+                        .signed_in(saved.connection.handle.clone(), client_id, tokens)
+                        .await?;
+                    Ok(saved)
+                },
+            )
+            .await
     }
 
     async fn models(&self, handle: CoachConnectionHandle) -> Result<ModelList, CoachError> {
-        let Secret::Api { address, key } = self.connections.secret(handle).await?;
+        let (address, key) = match self.connections.secret(handle.clone()).await? {
+            Secret::Api { address, key } => (address, key),
+            Secret::ChatGpt(_) => return self.plan_models(handle).await,
+        };
         // The class is derived from the stored text on every use, never taken from the caller.
         let address = Address::parse(&address).map_err(|_| CoachError::NeedsRepair)?;
         let url = address.endpoint("models");
@@ -509,7 +645,76 @@ pub(crate) async fn coach_remove_connection(
     handle: CoachConnectionHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<ConnectionRemoved, CoachError> {
-    coach(&state)?.connections.remove(handle).await
+    coach(&state)?.remove(handle).await
+}
+
+fn browser_opener(app: tauri::AppHandle) -> BrowserOpener {
+    Arc::new(move |url: &str| {
+        app.opener()
+            .open_url(url, None::<&str>)
+            .map_err(|_| "the system browser could not be opened".into())
+    })
+}
+
+/// Signs in with ChatGPT in the system browser and returns the connection once the user is back.
+/// `attempt` is the caller's own id for this sign-in, the one `coach_cancel_sign_in` takes.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn coach_sign_in_chatgpt(
+    attempt: String,
+    state: tauri::State<'_, crate::AppState>,
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<ConnectionSaved, CoachError> {
+    start_chatgpt_sign_in(&attempt, &state, window.label(), browser_opener(app)).await
+}
+
+async fn start_chatgpt_sign_in(
+    attempt: &str,
+    state: &crate::AppState,
+    window: &str,
+    opener: BrowserOpener,
+) -> Result<ConnectionSaved, CoachError> {
+    coach(state)?.sign_in_chatgpt(attempt, window, opener).await
+}
+
+/// Ends the sign-in with this id, if it still runs. Its own command then ends as `cancelled`.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn coach_cancel_sign_in(
+    attempt: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<(), CoachError> {
+    coach(&state)?.sign_ins.cancel(&attempt);
+    Ok(())
+}
+
+/// Opens the page where the user manages what their ChatGPT plan is used for.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn coach_open_usage(
+    state: tauri::State<'_, crate::AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), CoachError> {
+    open_usage(&state, &browser_opener(app))
+}
+
+fn open_usage(state: &crate::AppState, opener: &BrowserOpener) -> Result<(), CoachError> {
+    coach(state)?.chatgpt.open_usage(opener)
+}
+
+/// Ends the sign-ins a window started: it was destroyed, or its document was replaced.
+pub(crate) fn cancel_window_sign_ins(state: &crate::AppState, window: &str) {
+    if let Some(coach) = state.coach.get() {
+        coach.sign_ins.cancel_window(window);
+    }
+}
+
+/// Ends every sign-in and waits until each is over. Called at exit, inside its budget.
+pub(crate) async fn shutdown_sign_ins(state: &crate::AppState) {
+    if let Some(coach) = state.coach.get() {
+        coach.sign_ins.shutdown().await;
+    }
 }
 
 #[tauri::command]
@@ -594,7 +799,7 @@ async fn start_turn<R: tauri::Runtime>(
             &app,
             &tab,
             &id,
-            &backend,
+            backend.as_ref(),
             &mut analyst,
             statistics
                 .as_mut()
@@ -700,7 +905,292 @@ mod tests {
                 coach_models(handle(), app.state()).await.unwrap_err(),
                 CoachError::Unavailable
             );
+            // No browser is opened and no listener started for a Coach that is off.
+            let no_browser: BrowserOpener = Arc::new(|_| panic!("the Coach is off"));
+            let state = app.state::<crate::AppState>();
+            assert_eq!(
+                start_chatgpt_sign_in("attempt", &state, "main", no_browser.clone())
+                    .await
+                    .unwrap_err(),
+                CoachError::Unavailable
+            );
+            assert_eq!(
+                coach_cancel_sign_in("attempt".into(), app.state())
+                    .await
+                    .unwrap_err(),
+                CoachError::Unavailable
+            );
+            assert_eq!(
+                open_usage(&state, &no_browser).unwrap_err(),
+                CoachError::Unavailable
+            );
+            // The lifecycle hooks have nothing to end and do not mind.
+            cancel_window_sign_ins(&state, "main");
+            shutdown_sign_ins(&state).await;
         }
+    }
+
+    /// A Coach whose ChatGPT sign-in talks to the provider double.
+    fn signed_in_coach(
+        provider: &crate::coach::chatgpt::tests::Provider,
+    ) -> (
+        crate::AppState,
+        Arc<MemoryCredentialStore>,
+        tempfile::TempDir,
+    ) {
+        let store = Arc::new(MemoryCredentialStore::default());
+        let (credentials, directory) = CoachCredentials::for_test(store.clone());
+        let coach = Coach::with_chatgpt(
+            true,
+            Arc::new(credentials),
+            HttpClients::new().unwrap(),
+            provider.chatgpt(Duration::from_secs(30)),
+        );
+        let state = crate::AppState::default();
+        assert!(state.coach.set(coach).is_ok());
+        (state, store, directory)
+    }
+
+    fn the_coach(state: &crate::AppState) -> &Coach {
+        coach(state).unwrap()
+    }
+
+    fn api_calls(provider: &crate::coach::chatgpt::tests::Provider) -> Vec<(&'static str, String)> {
+        provider.api_calls.lock().unwrap().clone()
+    }
+
+    #[tokio::test]
+    async fn a_chatgpt_connection_lists_its_models_and_answers_with_the_tokens_of_its_sign_in() {
+        let provider = crate::coach::chatgpt::tests::Provider::start();
+        let (state, _store, _directory) = signed_in_coach(&provider);
+        let saved = start_chatgpt_sign_in(
+            "attempt-1",
+            &state,
+            "main",
+            provider.approving_browser(1, "oaiapp_issued"),
+        )
+        .await
+        .unwrap();
+        let handle = saved.connection.handle.clone();
+        let coach = the_coach(&state);
+        assert!(coach.sign_ins.is_idle());
+        assert_eq!(
+            coach.connections.list().await.unwrap(),
+            std::slice::from_ref(&saved.connection)
+        );
+
+        // The model list: the provider's listed models, asked with the sign-in's own token.
+        let list = coach.models(handle.clone()).await.unwrap();
+        assert_eq!(list.models.len(), 1);
+        assert_eq!(
+            (list.models[0].id.as_str(), list.models[0].name.as_str()),
+            ("gpt-plan", "GPT Plan")
+        );
+        // A round goes to the Responses endpoint with the same token.
+        let backend = coach.backend(handle.clone()).await.unwrap();
+        let round = backend
+            .round(
+                backend::RoundRequest {
+                    model: "gpt-plan",
+                    effort: None,
+                    system: "",
+                    messages: &[Message::User("Plan?".into())],
+                    tools: &tools::specs(false),
+                },
+                &mut |_| {},
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(round.text, "Ok.");
+        assert_eq!(
+            api_calls(&provider),
+            [
+                ("models", "Bearer access-1".to_owned()),
+                ("responses", "Bearer access-1".to_owned())
+            ]
+        );
+        // Nothing was exchanged after the sign-in itself.
+        assert_eq!(provider.forms.lock().unwrap().len(), 1);
+
+        // A token the API refuses is replaced once, and the rotation is stored.
+        provider.refused.lock().unwrap().push("access-1".into());
+        provider.answer(
+            StatusCode::OK,
+            crate::coach::chatgpt::tests::tokens(2, None, ""),
+        );
+        assert_eq!(coach.models(handle.clone()).await.unwrap().models.len(), 1);
+        assert_eq!(
+            api_calls(&provider)[2..],
+            [
+                ("models", "Bearer access-1".to_owned()),
+                ("models", "Bearer access-2".to_owned())
+            ]
+        );
+        let (_, secret) = coach.connections.chatgpt().await.unwrap().unwrap();
+        assert_eq!(secret.refresh_token.as_deref(), Some("refresh-2"));
+
+        // Once the provider has ended the session there is no backend to ask, only a new sign-in.
+        coach
+            .connections
+            .set_refresh_token(handle.clone(), None)
+            .await
+            .unwrap();
+        assert_eq!(
+            coach.backend(handle).await.err(),
+            Some(CoachError::SignInAgain)
+        );
+    }
+
+    #[tokio::test]
+    async fn removing_a_sign_in_deletes_it_here_first_and_says_whether_the_provider_confirmed() {
+        for (revoke_status, pending) in [
+            (StatusCode::OK, false),
+            (StatusCode::INTERNAL_SERVER_ERROR, true),
+        ] {
+            let provider = crate::coach::chatgpt::tests::Provider::start();
+            let (state, store, _directory) = signed_in_coach(&provider);
+            let saved = start_chatgpt_sign_in(
+                "attempt-1",
+                &state,
+                "main",
+                provider.approving_browser(1, "oaiapp_issued"),
+            )
+            .await
+            .unwrap();
+            let handle = saved.connection.handle;
+            *provider.revoke_status.lock().unwrap() = revoke_status;
+            let coach = the_coach(&state);
+            let removed = coach.remove(handle.clone()).await.unwrap();
+            assert_eq!(removed.revocation_pending, pending);
+            // Gone here whatever the provider said, with its keyring entry.
+            assert!(coach.connections.list().await.unwrap().is_empty());
+            assert!(crate::credentials::CredentialStore::get(
+                store.as_ref(),
+                &format!("coach-connection:{}", handle.0)
+            )
+            .unwrap()
+            .is_none());
+            // The provider was asked once, with the token that is no longer stored anywhere.
+            let revocations = provider.revocations.lock().unwrap().clone();
+            assert_eq!(revocations.len(), 1);
+            assert_eq!(revocations[0]["token"], "refresh-1");
+            assert_eq!(revocations[0]["client_id"], "oaiapp_issued");
+            // The token owner dropped the session with it.
+            assert_eq!(
+                coach.accounts.bearer(handle.clone()).await.err(),
+                Some(CoachError::NotFound)
+            );
+            assert_eq!(coach.remove(handle).await.err(), Some(CoachError::NotFound));
+        }
+    }
+
+    #[tokio::test]
+    async fn an_api_connection_is_removed_without_asking_any_provider() {
+        let provider = crate::coach::chatgpt::tests::Provider::start();
+        let (state, _store, _directory) = signed_in_coach(&provider);
+        let coach = the_coach(&state);
+        let handle = local_connection(coach, "http://localhost:11434/v1", Some("sk-local")).await;
+        let removed = coach.remove(handle).await.unwrap();
+        assert!(!removed.revocation_pending);
+        assert!(provider.revocations.lock().unwrap().is_empty());
+    }
+
+    /// Starts a sign-in whose user never comes back from the browser; resolves once the browser
+    /// was opened.
+    async fn waiting_sign_in(
+        state: &crate::AppState,
+        attempt: &'static str,
+        window: &'static str,
+    ) -> (
+        tokio::task::JoinHandle<Result<ConnectionSaved, CoachError>>,
+        String,
+    ) {
+        let (opened, redirect) = tokio::sync::oneshot::channel();
+        let opened = Mutex::new(Some(opened));
+        let opener: BrowserOpener = Arc::new(move |url: &str| {
+            let url = url::Url::parse(url).unwrap();
+            let redirect = url
+                .query_pairs()
+                .find(|(name, _)| name == "redirect_uri")
+                .map(|(_, value)| value.into_owned())
+                .unwrap();
+            if let Some(opened) = opened.lock().unwrap().take() {
+                let _ = opened.send(redirect);
+            }
+            Ok(())
+        });
+        let state = state.clone();
+        let running =
+            tokio::spawn(
+                async move { start_chatgpt_sign_in(attempt, &state, window, opener).await },
+            );
+        (running, redirect.await.expect("the browser is opened"))
+    }
+
+    async fn ended(
+        running: tokio::task::JoinHandle<Result<ConnectionSaved, CoachError>>,
+    ) -> Option<CoachError> {
+        tokio::time::timeout(Duration::from_secs(5), running)
+            .await
+            .expect("the sign-in ends")
+            .unwrap()
+            .err()
+    }
+
+    async fn listener_is_closed(redirect: &str) -> bool {
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        http.get(redirect).send().await.is_err()
+    }
+
+    #[tokio::test]
+    async fn every_way_a_sign_in_can_be_ended_closes_its_listener_and_leaves_no_connection() {
+        let provider = crate::coach::chatgpt::tests::Provider::start();
+        let (state, _store, _directory) = signed_in_coach(&provider);
+        let app = tauri::test::mock_app();
+        app.manage(state.clone());
+
+        // The user's cancel, by the attempt's id; another id ends nothing.
+        let (running, redirect) = waiting_sign_in(&state, "by-id", "main").await;
+        coach_cancel_sign_in("another".into(), app.state())
+            .await
+            .unwrap();
+        assert!(!the_coach(&state).sign_ins.is_idle());
+        coach_cancel_sign_in("by-id".into(), app.state())
+            .await
+            .unwrap();
+        assert_eq!(ended(running).await, Some(CoachError::Cancelled));
+        assert!(listener_is_closed(&redirect).await);
+
+        // The end of its window, or of that window's document; another window ends nothing.
+        let (running, redirect) = waiting_sign_in(&state, "by-window", "main").await;
+        cancel_window_sign_ins(&state, "report");
+        assert!(!the_coach(&state).sign_ins.is_idle());
+        cancel_window_sign_ins(&state, "main");
+        assert_eq!(ended(running).await, Some(CoachError::Cancelled));
+        assert!(listener_is_closed(&redirect).await);
+
+        // A new attempt ends the one before it, then runs itself.
+        let (first, first_redirect) = waiting_sign_in(&state, "first", "main").await;
+        let (second, second_redirect) = waiting_sign_in(&state, "second", "main").await;
+        assert_eq!(ended(first).await, Some(CoachError::Cancelled));
+        assert!(listener_is_closed(&first_redirect).await);
+
+        // The application's exit ends what still runs and returns when it is over.
+        tokio::time::timeout(Duration::from_secs(5), shutdown_sign_ins(&state))
+            .await
+            .expect("shutdown does not wait for a browser");
+        assert!(the_coach(&state).sign_ins.is_idle());
+        assert_eq!(ended(second).await, Some(CoachError::Cancelled));
+        assert!(listener_is_closed(&second_redirect).await);
+
+        assert!(the_coach(&state)
+            .connections
+            .list()
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(provider.forms.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

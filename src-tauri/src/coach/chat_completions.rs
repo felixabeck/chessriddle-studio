@@ -11,14 +11,11 @@ use super::{
         MAX_ROUND_TEXT_BYTES, MAX_STREAMED_TOOL_CALLS, MAX_TOOL_ARGUMENT_BYTES,
     },
     error::CoachError,
+    http::{classify_refusal, diagnostic, error_text, MAX_ERROR_BODY_BYTES},
     sse::SseStream,
 };
 use crate::infra::net::read_bounded_body;
 
-/// What is read of an error response to tell the failures apart.
-const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
-/// How much of a provider's error text reaches the native log.
-const MAX_DIAGNOSTIC_CHARS: usize = 512;
 const DONE: &str = "[DONE]";
 
 pub(crate) struct ChatCompletions {
@@ -36,14 +33,9 @@ impl ChatCompletions {
         }
     }
 
-    /// The provider's own words about a failure, for the native log only: cut short, and with the
-    /// connection's key removed in case the provider echoed it.
+    /// The provider's own words about a failure, for the native log only.
     fn diagnostic(&self, text: &str) -> String {
-        let text = match &self.key {
-            Some(key) => text.replace(key.as_str(), "[key]"),
-            None => text.to_owned(),
-        };
-        text.chars().take(MAX_DIAGNOSTIC_CHARS).collect()
+        diagnostic(text, self.key.as_deref())
     }
 }
 
@@ -113,47 +105,6 @@ fn request_body(request: &RoundRequest<'_>) -> Value {
         body.insert("reasoning_effort".into(), effort.into());
     }
     Value::Object(body)
-}
-
-/// The human-readable part of an error body, in the shapes providers use.
-fn error_text(body: &[u8]) -> String {
-    let Ok(value) = serde_json::from_slice::<Value>(body) else {
-        return String::from_utf8_lossy(body).into_owned();
-    };
-    match value.get("error") {
-        Some(Value::String(message)) => message.clone(),
-        Some(error) => error
-            .get("message")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .unwrap_or_else(|| error.to_string()),
-        None => value.to_string(),
-    }
-}
-
-/// Tells apart the refusals a user can act on. Providers share no error codes for these, so the
-/// status and the provider's wording decide; anything unclear is a plain provider failure.
-fn classify_refusal(status: u16, message: &str, effort_sent: bool) -> CoachError {
-    let message = message.to_ascii_lowercase();
-    match status {
-        401 | 403 => CoachError::KeyRejected,
-        429 => CoachError::RateLimited,
-        400 | 404 | 422 => {
-            if message.contains("tool") && message.contains("support") {
-                CoachError::NoFunctionCalling
-            } else if effort_sent && message.contains("effort") {
-                CoachError::EffortRejected
-            } else if status == 404
-                || (message.contains("model")
-                    && (message.contains("not found") || message.contains("not exist")))
-            {
-                CoachError::ModelUnavailable
-            } else {
-                CoachError::ProviderFailure
-            }
-        }
-        _ => CoachError::ProviderFailure,
-    }
 }
 
 #[derive(Default)]
@@ -821,7 +772,7 @@ mod tests {
     }
 
     #[test]
-    fn a_diagnostic_never_carries_the_key_and_is_cut_short() {
+    fn a_diagnostic_of_this_backend_never_carries_its_key() {
         let backend = ChatCompletions::new(
             reqwest::Client::new(),
             Address::parse("http://localhost:1/v1").unwrap(),
@@ -831,6 +782,6 @@ mod tests {
         let diagnostic = backend.diagnostic(&text);
         assert!(!diagnostic.contains("sk-secret"));
         assert!(diagnostic.contains("[key]"));
-        assert_eq!(diagnostic.chars().count(), MAX_DIAGNOSTIC_CHARS);
+        assert!(diagnostic.chars().count() < text.chars().count());
     }
 }

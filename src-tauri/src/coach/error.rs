@@ -46,4 +46,12 @@ pub(crate) enum CoachError {
     /// A bound of the turn was exceeded: rounds, text size, argument size or the deadline.
     LimitExceeded,
     Cancelled,
+    /// The provider ended the sign-in of this connection: the user has to sign in again.
+    SignInAgain,
+    /// A sign-in was not completed: it was declined, ran out of time, or its answer did not fit.
+    SignInFailed,
+    /// The account's subscription does not include use from this app.
+    SubscriptionNotEligible,
+    /// The subscription's usage limit is reached.
+    UsageLimitReached,
 }

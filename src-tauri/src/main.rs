@@ -661,6 +661,7 @@ fn cancel_destroyed_window_operations(state: &AppState, label: &str) {
         &state.engine_supervisor,
         label,
     );
+    coach::cancel_window_sign_ins(state, label);
 }
 
 fn cancel_destroyed_window_operations_in_registry(
@@ -701,6 +702,8 @@ async fn release_previous_document_operations(
     if aborted > 0 {
         log::info!("reloaded webview {label} aborted {aborted} live game session(s)");
     }
+    // A sign-in the replaced document started has nobody left to answer to.
+    coach::cancel_window_sign_ins(&state, label);
     released
 }
 
@@ -1510,6 +1513,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             coach::coach_remove_connection,
             coach::coach_models,
             coach::coach_turn,
+            coach::coach_sign_in_chatgpt,
+            coach::coach_cancel_sign_in,
+            coach::coach_open_usage,
             close_splashscreen,
             verify_signed_bytes,
             prepare_native_read,
@@ -2020,6 +2026,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app_handle.try_state::<SoundServerLifecycle>().as_deref(),
                                 &state.operations,
                                 async {
+                                    // A sign-in that still waits for its browser ends here,
+                                    // with its listener, before the process does.
+                                    coach::shutdown_sign_ins(&state).await;
                                     shutdown_engine_attachments(app_handle.clone())
                                         .await
                                         .map_err(|error| error.diagnostic())

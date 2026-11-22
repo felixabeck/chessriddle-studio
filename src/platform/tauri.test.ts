@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
     coachSaveApiConnection: vi.fn(),
     coachRemoveConnection: vi.fn(),
     coachModels: vi.fn(),
+    coachSignInChatgpt: vi.fn(),
+    coachCancelSignIn: vi.fn(),
+    coachOpenUsage: vi.fn(),
     closeSplashscreen: vi.fn(),
     releasePreviousDocumentOperations: vi.fn(),
     startGame: vi.fn(),
@@ -193,6 +196,9 @@ test.each([
     "coachSaveApiConnection",
     "coachRemoveConnection",
     "coachModels",
+    "coachSignInChatgpt",
+    "coachCancelSignIn",
+    "coachOpenUsage",
 ] as const)("%s uses the closed Coach boundary", async (command) => {
     const { tauri } = await import("./tauri");
     const invoke = async () => {
@@ -210,11 +216,26 @@ test.each([
                 return tauri.coachRemoveConnection("handle");
             case "coachModels":
                 return tauri.coachModels("handle");
+            case "coachSignInChatgpt":
+                return tauri.coachSignInChatgpt("attempt");
+            case "coachCancelSignIn":
+                return tauri.coachCancelSignIn("attempt");
+            case "coachOpenUsage":
+                return tauri.coachOpenUsage();
         }
     };
     mocks[command].mockResolvedValue({ status: "ok", data: "reply" });
     await expect(invoke()).resolves.toBe("reply");
-    for (const code of ["unavailable", "keyRejected", "invalidAddressScheme", "storage"]) {
+    for (const code of [
+        "unavailable",
+        "keyRejected",
+        "invalidAddressScheme",
+        "storage",
+        "signInAgain",
+        "signInFailed",
+        "subscriptionNotEligible",
+        "usageLimitReached",
+    ]) {
         mocks[command].mockResolvedValue({ status: "error", error: code });
         await expect(invoke()).rejects.toMatchObject({ name: "CoachCommandError", code });
     }
@@ -287,6 +308,9 @@ vi.mock("@/bindings/generated", () => ({
         coachSaveApiConnection: mocks.coachSaveApiConnection,
         coachRemoveConnection: mocks.coachRemoveConnection,
         coachModels: mocks.coachModels,
+        coachSignInChatgpt: mocks.coachSignInChatgpt,
+        coachCancelSignIn: mocks.coachCancelSignIn,
+        coachOpenUsage: mocks.coachOpenUsage,
         closeSplashscreen: mocks.closeSplashscreen,
         releasePreviousDocumentOperations: mocks.releasePreviousDocumentOperations,
         startGame: mocks.startGame,

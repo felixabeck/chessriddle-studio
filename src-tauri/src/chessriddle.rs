@@ -7,16 +7,19 @@ use crate::{
     },
     credentials::{ChessRiddleAccountHandle, ChessRiddleAccountMetadata, ChessRiddleCredentials},
     error::Error,
-    infra::{blocking::BLOCKING_GATEWAY, path_authority::AppDataDir},
+    infra::{
+        blocking::BLOCKING_GATEWAY,
+        path_authority::AppDataDir,
+        token_session::{
+            Bearer, BearerError, IssuedTokens, RefreshError, TokenAuthority, TokenSession,
+        },
+    },
     oauth_pkce::{self, AttemptRegistry, OAuthProvider},
 };
 use oauth2::TokenResponse;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -33,7 +36,6 @@ const MAX_ACCESS_TOKEN_BYTES: usize = 4096;
 const MAX_EXPIRES_IN_SECONDS: u64 = 3600;
 const OWNER_QUEUE_CAPACITY: usize = 8;
 const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(180);
-const REFRESH_MARGIN: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 struct Endpoints {
@@ -223,6 +225,14 @@ struct Tokens {
 }
 
 impl Tokens {
+    fn issued(self) -> IssuedTokens {
+        IssuedTokens {
+            access: self.access_token,
+            refresh: self.refresh_token,
+            expires_in: Duration::from_secs(self.expires_in),
+        }
+    }
+
     fn valid(&self) -> bool {
         !self.access_token.is_empty()
             && self.access_token.len() <= MAX_ACCESS_TOKEN_BYTES
@@ -235,22 +245,78 @@ impl Tokens {
 }
 
 struct Session {
+    /// `None` until the first keyring write of a new sign-in has succeeded.
     account: Option<ChessRiddleAccountMetadata>,
-    refresh: String,
-    access: Option<(String, Instant)>,
-    dirty: bool,
+    tokens: TokenSession,
     durability_uncertain: bool,
 }
 
-impl Session {
-    fn rotated(&mut self, tokens: Tokens) {
-        self.refresh = tokens.refresh_token;
-        self.access = Some((
-            tokens.access_token,
-            Instant::now() + Duration::from_secs(tokens.expires_in),
-        ));
-        self.dirty = true;
+/// What the shared token session needs from this account: the token endpoint and the keyring
+/// entry.
+struct Keeper<'a> {
+    credentials: &'a Arc<ChessRiddleCredentials>,
+    http: &'a reqwest::Client,
+    endpoints: &'a Endpoints,
+    account: &'a mut Option<ChessRiddleAccountMetadata>,
+    durability_uncertain: &'a mut bool,
+}
+
+#[async_trait::async_trait]
+impl TokenAuthority for Keeper<'_> {
+    type Error = AccountError;
+
+    async fn refresh(&mut self, refresh: &str) -> Result<IssuedTokens, RefreshError<AccountError>> {
+        match request_refresh(self.http, self.endpoints, refresh).await {
+            Ok(tokens) => Ok(tokens.issued()),
+            Err(AccountError::InvalidGrant) => Err(RefreshError::Terminal),
+            Err(error) => Err(RefreshError::Other(error)),
+        }
     }
+
+    async fn persist(&mut self, refresh: &str) -> Result<(), AccountError> {
+        match self.account.as_ref() {
+            Some(account) => self
+                .credentials
+                .replace(account.handle.clone(), refresh.to_owned())
+                .await
+                .map_err(|_| AccountError::Storage)?,
+            None => {
+                let (account, uncertain) = self
+                    .credentials
+                    .store("ChessRiddle".into(), refresh.to_owned())
+                    .await
+                    .map_err(|_| AccountError::Storage)?;
+                *self.account = Some(account);
+                *self.durability_uncertain = uncertain;
+            }
+        }
+        Ok(())
+    }
+
+    async fn forget(&mut self) -> Result<(), AccountError> {
+        if let Some(account) = self.account.as_ref() {
+            self.credentials
+                .remove(account.handle.clone())
+                .await
+                .map_err(|_| AccountError::Storage)?;
+        }
+        Ok(())
+    }
+}
+
+async fn request_refresh(
+    http: &reqwest::Client,
+    endpoints: &Endpoints,
+    refresh: &str,
+) -> Result<Tokens, AccountError> {
+    let response = http
+        .post(endpoints.api("/desktop-auth/token"))
+        .form(&[("grant_type", "refresh_token"), ("refresh_token", refresh)])
+        .send()
+        .await
+        .map_err(|_| AccountError::Network)?;
+    let (status, body) = response_bytes(response).await?;
+    token_response(status, &body)
 }
 
 #[derive(Deserialize)]
@@ -407,9 +473,7 @@ impl Worker {
             if let Some(refresh) = refresh {
                 self.session = Some(Session {
                     account: Some(account),
-                    refresh,
-                    access: None,
-                    dirty: false,
+                    tokens: TokenSession::restored(refresh),
                     durability_uncertain: false,
                 });
             } else {
@@ -420,80 +484,60 @@ impl Worker {
         Ok(())
     }
 
+    /// The session's token keeper, borrowed from the worker's own parts.
+    fn keeper<'a>(
+        credentials: &'a Arc<ChessRiddleCredentials>,
+        http: &'a reqwest::Client,
+        endpoints: &'a Endpoints,
+        session: &'a mut Session,
+    ) -> (&'a mut TokenSession, Keeper<'a>) {
+        let Session {
+            account,
+            tokens,
+            durability_uncertain,
+        } = session;
+        (
+            tokens,
+            Keeper {
+                credentials,
+                http,
+                endpoints,
+                account,
+                durability_uncertain,
+            },
+        )
+    }
+
+    /// Stores the refresh token of a sign-in or rotation whose keyring write is still owed.
     async fn persist(&mut self) -> Result<(), AccountError> {
         let Some(session) = self.session.as_mut() else {
             return Ok(());
         };
-        if !session.dirty {
-            return Ok(());
-        }
-        match &session.account {
-            Some(account) => self
-                .credentials
-                .replace(account.handle.clone(), session.refresh.clone())
-                .await
-                .map_err(|_| AccountError::Storage)?,
-            None => {
-                let (account, uncertain) = self
-                    .credentials
-                    .store("ChessRiddle".into(), session.refresh.clone())
-                    .await
-                    .map_err(|_| AccountError::Storage)?;
-                session.account = Some(account);
-                session.durability_uncertain = uncertain;
-            }
-        }
-        session.dirty = false;
-        Ok(())
+        let (tokens, mut keeper) =
+            Self::keeper(&self.credentials, &self.http, &self.endpoints, session);
+        tokens.persist(&mut keeper).await
     }
 
-    async fn request_refresh(&self, refresh: &str) -> Result<Tokens, AccountError> {
-        let response = self
-            .http
-            .post(self.endpoints.api("/desktop-auth/token"))
-            .form(&[("grant_type", "refresh_token"), ("refresh_token", refresh)])
-            .send()
-            .await
-            .map_err(|_| AccountError::Network)?;
-        let (status, body) = response_bytes(response).await?;
-        token_response(status, &body)
-    }
-
-    async fn refresh(&mut self) -> Result<(), AccountError> {
-        self.persist().await?;
-        let Some(session) = self.session.as_ref() else {
-            return Ok(());
+    /// A usable access token of the connected account. A refresh the server answers with
+    /// `invalid_grant` removes the account here and asks for a new connection.
+    async fn bearer(&mut self) -> Result<Bearer, AccountError> {
+        let Some(session) = self.session.as_mut() else {
+            return Err(if self.reconnect_needed {
+                AccountError::InvalidGrant
+            } else {
+                AccountError::NotConnected
+            });
         };
-        if session
-            .access
-            .as_ref()
-            .is_some_and(|(_, expiry)| *expiry > Instant::now() + REFRESH_MARGIN)
-        {
-            return Ok(());
-        }
-        match self.request_refresh(&session.refresh).await {
-            Ok(tokens) => {
-                if let Some(session) = self.session.as_mut() {
-                    session.rotated(tokens);
-                }
-                self.persist().await
-            }
-            Err(AccountError::InvalidGrant) => {
-                if let Some(account) = self
-                    .session
-                    .as_ref()
-                    .and_then(|session| session.account.as_ref())
-                {
-                    self.credentials
-                        .remove(account.handle.clone())
-                        .await
-                        .map_err(|_| AccountError::Storage)?;
-                }
+        let (tokens, mut keeper) =
+            Self::keeper(&self.credentials, &self.http, &self.endpoints, session);
+        match tokens.bearer(&mut keeper).await {
+            Ok(bearer) => Ok(bearer),
+            Err(BearerError::Ended) => {
                 self.session = None;
                 self.reconnect_needed = true;
                 Err(AccountError::InvalidGrant)
             }
-            Err(error) => Err(error),
+            Err(BearerError::Failed(error)) => Err(error),
         }
     }
 
@@ -511,21 +555,10 @@ impl Worker {
         http: reqwest::Client,
         build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     ) -> Result<(u16, Vec<u8>), AccountError> {
-        self.refresh().await?;
+        let mut bearer = self.bearer().await?;
         for retry in [false, true] {
-            let Some(session) = self.session.as_ref() else {
-                return Err(if self.reconnect_needed {
-                    AccountError::InvalidGrant
-                } else {
-                    AccountError::NotConnected
-                });
-            };
-            let (access, _) = session
-                .access
-                .as_ref()
-                .ok_or(AccountError::Authentication)?;
             let response = build(&http)
-                .bearer_auth(access)
+                .bearer_auth(&bearer.token)
                 .send()
                 .await
                 .map_err(|_| AccountError::Network)?;
@@ -533,9 +566,9 @@ impl Worker {
             if status == 401 && !retry {
                 // A website revoke is terminal only when refresh confirms invalid_grant.
                 if let Some(session) = self.session.as_mut() {
-                    session.access = None;
+                    session.tokens.rejected(bearer.generation);
                 }
-                self.refresh().await?;
+                bearer = self.bearer().await?;
                 continue;
             }
             return Ok((status, body));
@@ -770,15 +803,11 @@ impl Worker {
         .await
         .map_err(|_| cause.into_inner().unwrap_or(AccountError::Authentication))?;
         let tokens = received.ok_or(AccountError::Authentication)?;
-        let mut session = Session {
+        self.session = Some(Session {
             account: None,
-            refresh: String::new(),
-            access: None,
-            dirty: false,
+            tokens: TokenSession::signed_in(tokens.issued()),
             durability_uncertain: false,
-        };
-        session.rotated(tokens);
-        self.session = Some(session);
+        });
         self.reconnect_needed = false;
         self.persist().await?;
         self.status().await
@@ -820,9 +849,10 @@ impl Worker {
     }
 
     async fn revoke_session(&self, session: Session) -> bool {
-        let access = match session.access {
-            Some((access, expiry)) if expiry > Instant::now() => access,
-            _ => match self.request_refresh(&session.refresh).await {
+        let left = session.tokens.into_revocable();
+        let access = match left.access {
+            Some(access) => access,
+            None => match request_refresh(&self.http, &self.endpoints, &left.refresh).await {
                 Ok(tokens) => tokens.access_token,
                 Err(AccountError::InvalidGrant) => return true,
                 Err(_) => return false,
@@ -1060,6 +1090,7 @@ mod tests {
         routing::{get, post},
         Json, Router,
     };
+    use std::time::Instant;
     use std::{
         collections::HashMap,
         sync::{
@@ -2538,8 +2569,7 @@ mod tests {
             worker.status().await.unwrap(),
             AccountStatus::Connected { .. }
         ));
-        let session = worker.session.as_mut().unwrap();
-        session.access.as_mut().unwrap().1 = Instant::now() - Duration::from_secs(1);
+        worker.session.as_mut().unwrap().tokens.expire_access();
         let writes = store.writes.load(Ordering::SeqCst);
         fixture
             .state

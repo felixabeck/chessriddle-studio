@@ -115,9 +115,117 @@ pub(crate) fn parse_model_list(body: &[u8]) -> Result<ModelList, CoachError> {
     Ok(ModelList { models, truncated })
 }
 
+/// A model of a signed-in ChatGPT account.
+#[derive(Deserialize)]
+struct PlanModel {
+    slug: String,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    visibility: Option<String>,
+}
+
+/// Reduces the model list of a ChatGPT sign-in: the models the provider lists for choosing, in
+/// its order, by their slug. The provider reports no effort levels there. A body in the common
+/// list shape is read as that instead.
+pub(crate) fn parse_plan_models(body: &[u8]) -> Result<ModelList, CoachError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(body).map_err(|_| CoachError::ProviderFailure)?;
+    let Some(listed) = value.get("models").and_then(serde_json::Value::as_array) else {
+        return parse_model_list(body);
+    };
+    let mut models: Vec<ModelInfo> = listed
+        .iter()
+        .filter_map(|entry| serde_json::from_value::<PlanModel>(entry.clone()).ok())
+        .filter(|model| {
+            model
+                .visibility
+                .as_deref()
+                .is_none_or(|shown| shown == "list")
+        })
+        .filter_map(|model| {
+            let id = bounded(&model.slug, MAX_MODEL_ID_CHARS)?;
+            let name = model
+                .display_name
+                .as_deref()
+                .and_then(|name| bounded(name, MAX_MODEL_ID_CHARS))
+                .unwrap_or_else(|| id.clone());
+            Some(ModelInfo {
+                id,
+                name,
+                effort_levels: Vec::new(),
+                default_effort: None,
+                supports_tools: None,
+            })
+        })
+        .collect();
+    let truncated = models.len() > MAX_MODELS;
+    models.truncate(MAX_MODELS);
+    Ok(ModelList { models, truncated })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_plan_model_list_keeps_the_listed_models_in_the_providers_order() {
+        let body = serde_json::json!({
+            "models": [
+                { "slug": "gpt-big", "display_name": "GPT Big", "visibility": "list" },
+                { "slug": "gpt-hidden", "display_name": "Hidden", "visibility": "hide" },
+                { "slug": "gpt-small", "visibility": "list" },
+                { "slug": "  ", "visibility": "list" },
+                { "display_name": "No slug" },
+                { "slug": "gpt-plain" },
+            ]
+        });
+        let list = parse_plan_models(body.to_string().as_bytes()).unwrap();
+        assert!(!list.truncated);
+        let shown: Vec<(&str, &str)> = list
+            .models
+            .iter()
+            .map(|model| (model.id.as_str(), model.name.as_str()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("gpt-big", "GPT Big"),
+                ("gpt-small", "gpt-small"),
+                ("gpt-plain", "gpt-plain")
+            ]
+        );
+        assert!(list
+            .models
+            .iter()
+            .all(|model| model.effort_levels.is_empty()));
+
+        // The common list shape is read as well; anything else is a failure, never an empty list.
+        let common = serde_json::json!({ "data": [{ "id": "gpt-x" }] });
+        assert_eq!(
+            parse_plan_models(common.to_string().as_bytes())
+                .unwrap()
+                .models[0]
+                .id,
+            "gpt-x"
+        );
+        assert_eq!(
+            parse_plan_models(b"{\"ok\":true}"),
+            Err(CoachError::ProviderFailure)
+        );
+        assert_eq!(
+            parse_plan_models(b"<html>"),
+            Err(CoachError::ProviderFailure)
+        );
+
+        let many: Vec<_> = (0..MAX_MODELS + 3)
+            .map(|index| serde_json::json!({ "slug": format!("m{index}") }))
+            .collect();
+        let list = parse_plan_models(serde_json::json!({ "models": many }).to_string().as_bytes())
+            .unwrap();
+        assert_eq!(list.models.len(), MAX_MODELS);
+        assert!(list.truncated);
+    }
 
     #[test]
     fn reduces_the_common_list_shapes() {

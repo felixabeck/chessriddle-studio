@@ -30,6 +30,10 @@ export function useCoachErrorMessages(): Record<CoachError, string> {
             contentFiltered: t("Coach.Error.ContentFiltered"),
             limitExceeded: t("Coach.Error.LimitExceeded"),
             cancelled: t("Coach.Error.Cancelled"),
+            signInAgain: t("Coach.Error.SignInAgain"),
+            signInFailed: t("Coach.Error.SignInFailed"),
+            subscriptionNotEligible: t("Coach.Error.SubscriptionNotEligible"),
+            usageLimitReached: t("Coach.Error.UsageLimitReached"),
         }),
         [t],
     );

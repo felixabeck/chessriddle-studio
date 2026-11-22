@@ -3,6 +3,7 @@ import { atomWithStorage, loadable } from "jotai/utils";
 import { z } from "zod";
 import type { CoachError, ConnectionSummary, ModelInfo } from "@/bindings";
 import { coachErrorCode } from "@/platform/coach";
+import { warn } from "@/platform/native";
 import { tauri } from "@/platform/tauri";
 import type { Engine, LocalEngine } from "@/utils/engines";
 import { createZodStorage } from "./utils";
@@ -100,6 +101,23 @@ export const coachNoticeAcceptedAtom = atomWithStorage<string[]>(
     "coach-notice-accepted",
     [],
     createZodStorage(z.array(z.string().max(64)).max(MAX_NOTICE_CONNECTIONS), localStorage),
+);
+
+/** Opens the provider's page where the usage of a ChatGPT plan is managed, in the system browser. */
+export function openCoachUsage() {
+    tauri.coachOpenUsage().catch((cause: unknown) => {
+        void warn(`The usage page could not be opened: ${String(cause)}`);
+    });
+}
+
+/**
+ * Whether the user has seen, once, that a ChatGPT sign-in means requests use their ChatGPT plan.
+ * The provider asks for that notice at the first sign-in and not again.
+ */
+export const coachPlanNoticeSeenAtom = atomWithStorage<boolean>(
+    "coach-plan-notice-seen",
+    false,
+    createZodStorage(z.boolean(), localStorage),
 );
 
 export function withCoachNoticeAccepted(accepted: readonly string[], connection: string) {

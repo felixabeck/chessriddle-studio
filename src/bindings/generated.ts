@@ -157,6 +157,40 @@ async coachTurn(id: string, tab: string, turn: TurnInput) : Promise<Result<TurnU
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Signs in with ChatGPT in the system browser and returns the connection once the user is back.
+ * `attempt` is the caller's own id for this sign-in, the one `coach_cancel_sign_in` takes.
+ */
+async coachSignInChatgpt(attempt: string) : Promise<Result<ConnectionSaved, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_sign_in_chatgpt", { attempt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Ends the sign-in with this id, if it still runs. Its own command then ends as `cancelled`.
+ */
+async coachCancelSignIn(attempt: string) : Promise<Result<null, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_cancel_sign_in", { attempt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Opens the page where the user manages what their ChatGPT plan is used for.
+ */
+async coachOpenUsage() : Promise<Result<null, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_open_usage") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async closeSplashscreen() : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
@@ -1661,7 +1695,23 @@ export type CoachError =
 /**
  * A bound of the turn was exceeded: rounds, text size, argument size or the deadline.
  */
-"limitExceeded" | "cancelled"
+"limitExceeded" | "cancelled" | 
+/**
+ * The provider ended the sign-in of this connection: the user has to sign in again.
+ */
+"signInAgain" | 
+/**
+ * A sign-in was not completed: it was declined, ran out of time, or its answer did not fit.
+ */
+"signInFailed" | 
+/**
+ * The account's subscription does not include use from this app.
+ */
+"subscriptionNotEligible" | 
+/**
+ * The subscription's usage limit is reached.
+ */
+"usageLimitReached"
 /**
  * Broadcast to every window; the receiver keeps only the turn it is waiting for.
  */
@@ -1690,18 +1740,30 @@ export type CompletionChanged = { id: string }
  * Shared outcome shape, also usable by the account workflow without another mailbox contract.
  */
 export type CompletionOutcome<T> = { state: "running" } | { state: "succeeded"; result: T } | { state: "failed"; result: ErrorPayload }
-export type ConnectionKind = "api"
-export type ConnectionRemoved = { durabilityUncertain: boolean }
+export type ConnectionKind = "api" | "chatGpt"
+export type ConnectionRemoved = { durabilityUncertain: boolean; 
+/**
+ * The connection is gone here, but its sign-in could not be withdrawn at the provider.
+ */
+revocationPending: boolean }
 export type ConnectionSaved = { connection: ConnectionSummary; durabilityUncertain: boolean }
 export type ConnectionStatus = "ready" | 
 /**
  * The stored secret is missing or cannot be read; the connection can be re-entered or removed.
  */
-"needsRepair"
+"needsRepair" | 
+/**
+ * The provider ended the sign-in; signing in again restores the connection.
+ */
+"signInAgain"
 /**
  * Everything the renderer may know about a connection. No key or token is part of it.
  */
-export type ConnectionSummary = { handle: CoachConnectionHandle; kind: ConnectionKind; label: string; address: string | null; hasKey: boolean; status: ConnectionStatus }
+export type ConnectionSummary = { handle: CoachConnectionHandle; kind: ConnectionKind; label: string; address: string | null; hasKey: boolean; 
+/**
+ * The signed-in account, for a sign-in connection whose provider told its email.
+ */
+account: string | null; status: ConnectionStatus }
 /**
  * Import progress for a PGN-to-database conversion. A conversion has no total
  * to divide by until it finishes, so this reports the counters the UI shows

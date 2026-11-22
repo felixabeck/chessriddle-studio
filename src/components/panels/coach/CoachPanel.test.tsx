@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   prepareAnalysis: vi.fn(),
   coachTurn: vi.fn(),
   cancelAnalysis: vi.fn(),
+  coachOpenUsage: vi.fn(),
   navigate: vi.fn(),
   engines: [] as unknown[],
   refreshRepertoireIndex: vi.fn(),
@@ -70,6 +71,7 @@ const connection: ConnectionSummary = {
   label: "Ollama",
   address: "http://localhost:11434/v1",
   hasKey: false,
+  account: null,
   status: "ready",
 };
 const engine = {
@@ -117,6 +119,7 @@ beforeEach(() => {
   });
   mocks.prepareAnalysis.mockResolvedValue("ticket-1");
   mocks.cancelAnalysis.mockResolvedValue(undefined);
+  mocks.coachOpenUsage.mockResolvedValue(null);
   mocks.refreshRepertoireIndex.mockResolvedValue(undefined);
   mocks.repertoireContext.mockResolvedValue({ text: null, partial: false });
   mocks.currency = { key: null, collection: null, pending: false };
@@ -284,6 +287,45 @@ test("the panel keeps the repertoire index current and asks with the reference d
   await ask("And then?");
   await act(async () => {});
   expect(mocks.coachTurn.mock.calls[2][2].referenceDb).toBeUndefined();
+});
+
+test("a ChatGPT connection says whose plan is used and where its usage is managed", async () => {
+  await render();
+  // An address connection uses no plan and shows no such line.
+  expect(host.textContent).not.toContain("Coach.Plan.Using");
+  await act(async () => root.unmount());
+  root = createRoot(host);
+
+  mocks.coachConnections.mockResolvedValue([
+    { ...connection, kind: "chatGpt", label: "ChatGPT", address: null, account: "p@example.com" },
+  ]);
+  atoms = createStore();
+  await render();
+  expect(host.textContent).toContain("Coach.Plan.Using");
+  await act(async () => button("Coach.Plan.ManageUsage", host).click());
+  expect(mocks.coachOpenUsage).toHaveBeenCalledOnce();
+});
+
+test("at the plan's limit the answer leads to the usage page, and an ended sign-in re-reads the connections", async () => {
+  mocks.coachTurn.mockResolvedValue({ type: "failed", error: "usageLimitReached", text: "" });
+  await render();
+  await ask("Plan?");
+  await act(async () => {});
+  const limited = host.querySelector<HTMLElement>('[data-testid="coach-answer"]')!;
+  expect(limited.textContent).toContain("Coach.Error.UsageLimitReached");
+  await act(async () => button("Coach.Plan.ManageUsage", limited).click());
+  expect(mocks.coachOpenUsage).toHaveBeenCalledOnce();
+
+  const reads = mocks.coachConnections.mock.calls.length;
+  mocks.prepareAnalysis.mockResolvedValue("ticket-2");
+  mocks.coachTurn.mockResolvedValue({ type: "failed", error: "signInAgain", text: "" });
+  await ask("And now?");
+  await act(async () => {});
+  const answers = host.querySelectorAll<HTMLElement>('[data-testid="coach-answer"]');
+  expect(answers[1].textContent).toContain("Coach.Error.SignInAgain");
+  // Only the limit offers the usage page.
+  expect(button("Coach.Plan.ManageUsage", answers[1])).toBeUndefined();
+  expect(mocks.coachConnections.mock.calls.length).toBe(reads + 1);
 });
 
 test("a failed model list shows its error at the model selector", async () => {

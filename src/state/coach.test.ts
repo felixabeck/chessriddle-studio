@@ -7,17 +7,21 @@ import type { Engine } from "@/utils/engines";
 const mocks = vi.hoisted(() => ({
     coachAvailable: vi.fn(),
     coachConnections: vi.fn(),
+    coachOpenUsage: vi.fn(),
+    warn: vi.fn(() => Promise.resolve()),
 }));
 vi.mock("@/platform/tauri", () => ({ tauri: mocks }));
-vi.mock("@/platform/native", () => ({ warn: vi.fn(), error: vi.fn() }));
+vi.mock("@/platform/native", () => ({ warn: mocks.warn, error: vi.fn() }));
 
 const {
     coachConnectionsAtom,
     coachEnabledAtom,
     coachEngines,
+    coachPlanNoticeSeenAtom,
     defaultCoachEffort,
     effectiveCoachEngine,
     effectiveCoachSelection,
+    openCoachUsage,
 } = await import("./coach");
 
 function connection(handle: string): ConnectionSummary {
@@ -27,6 +31,7 @@ function connection(handle: string): ConnectionSummary {
         label: handle,
         address: "http://localhost:11434/v1",
         hasKey: false,
+        account: null,
         status: "ready",
     };
 }
@@ -174,4 +179,34 @@ test("the Coach engine is the picked loaded local engine, else the first one, el
     expect(effectiveCoachEngine(engines, null)?.id).toBe("one");
     expect(effectiveCoachEngine([remote], "one")).toBeNull();
     expect(effectiveCoachEngine(undefined, "one")).toBeNull();
+});
+
+test("the usage page is opened natively, and a failure to open it is only logged", async () => {
+    mocks.coachOpenUsage.mockResolvedValue(null);
+    openCoachUsage();
+    await Promise.resolve();
+    expect(mocks.coachOpenUsage).toHaveBeenCalledOnce();
+    expect(mocks.warn).not.toHaveBeenCalled();
+
+    mocks.coachOpenUsage.mockRejectedValue(new CoachCommandError("signInFailed"));
+    openCoachUsage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.warn).toHaveBeenCalledOnce();
+});
+
+test("the plan notice is unseen until it is marked, and a stored value of another shape is not trusted", () => {
+    localStorage.clear();
+    // The stored value is read when the atom is mounted, as it is by the component that uses it.
+    const mounted = () => {
+        const atoms = createStore();
+        atoms.sub(coachPlanNoticeSeenAtom, () => undefined);
+        return atoms;
+    };
+    const atoms = mounted();
+    expect(atoms.get(coachPlanNoticeSeenAtom)).toBe(false);
+    atoms.set(coachPlanNoticeSeenAtom, true);
+    expect(localStorage.getItem("coach-plan-notice-seen")).toBe("true");
+    expect(mounted().get(coachPlanNoticeSeenAtom)).toBe(true);
+    localStorage.setItem("coach-plan-notice-seen", JSON.stringify("yes"));
+    expect(mounted().get(coachPlanNoticeSeenAtom)).toBe(false);
 });

@@ -25,6 +25,7 @@ use tokio::{
     sync::{oneshot, Mutex},
     task::JoinHandle,
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::error::Error;
 
@@ -113,8 +114,15 @@ struct AuthTransaction {
     callback_tx: Option<oneshot::Sender<CallbackSignal>>,
 }
 
+/// What an accepted callback carries: the code, and the client id a provider that registers
+/// clients during the sign-in returns with it.
+pub(crate) struct CodeGrant {
+    pub code: AuthorizationCode,
+    pub client_id: Option<String>,
+}
+
 pub(crate) enum CallbackSignal {
-    Code(AuthorizationCode),
+    Code(CodeGrant),
     Rejected,
 }
 
@@ -150,7 +158,17 @@ impl AttemptRegistry {
         active.remove(&generation);
     }
 
+    #[cfg(test)]
     pub(crate) async fn accept_callback(&self, query: CallbackQuery) -> CallbackResult {
+        self.accept_callback_from(query, None).await
+    }
+
+    /// Accepts a callback that may name the client id the provider issued for this attempt.
+    pub(crate) async fn accept_callback_from(
+        &self,
+        query: CallbackQuery,
+        client_id: Option<String>,
+    ) -> CallbackResult {
         let (callback_tx, signal) = {
             let mut active = self.active.lock().await;
             let Some(state) = query.state.as_ref() else {
@@ -173,7 +191,9 @@ impl AttemptRegistry {
                 warn!("OAuth provider callback rejected authentication");
             }
             let signal = match query.code {
-                Some(code) if query.error.is_none() => CallbackSignal::Code(code),
+                Some(code) if query.error.is_none() => {
+                    CallbackSignal::Code(CodeGrant { code, client_id })
+                }
                 _ => CallbackSignal::Rejected,
             };
             (callback_tx, signal)
@@ -212,21 +232,52 @@ pub struct ListenerHandle {
     pub(crate) task_completed: bool,
 }
 
+/// Where an attempt's callback listener is reached on the loopback address.
+pub(crate) struct ListenerSpec {
+    /// The one path that is served.
+    pub path: &'static str,
+    /// Ports to try in this order; `0` is a port of the system's choosing. A port that cannot be
+    /// bound, for whatever reason, falls through to the next.
+    pub ports: &'static [u16],
+}
+
+const DEFAULT_LISTENER: ListenerSpec = ListenerSpec {
+    path: "/callback",
+    ports: &[0],
+};
+
 pub(crate) fn start_listener_and_server(
     lifecycle: Arc<AttemptRegistry>,
 ) -> Result<ListenerHandle, Error> {
-    let listener = TcpListener::bind("127.0.0.1:0").map_err(|source| {
-        error!("OAuth callback listener bind failed: {source}");
+    start_listener_on(lifecycle, &DEFAULT_LISTENER)
+}
+
+pub(crate) fn start_listener_on(
+    lifecycle: Arc<AttemptRegistry>,
+    spec: &ListenerSpec,
+) -> Result<ListenerHandle, Error> {
+    let mut bound = None;
+    for port in spec.ports {
+        match TcpListener::bind(("127.0.0.1", *port)) {
+            Ok(listener) => {
+                bound = Some(listener);
+                break;
+            }
+            Err(source) => warn!("OAuth callback listener bind on port {port} failed: {source}"),
+        }
+    }
+    let listener = bound.ok_or_else(|| {
+        error!("OAuth callback listener bind failed");
         Error::OAuthFailure(OAUTH_FAILURE.into())
     })?;
     let addr = listener.local_addr().map_err(|source| {
         error!("OAuth callback listener address lookup failed: {source}");
         Error::OAuthFailure(OAUTH_FAILURE.into())
     })?;
-    let redirect_url = format!("http://{addr}/callback");
+    let redirect_url = format!("http://{addr}{}", spec.path);
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let router = Router::new()
-        .route("/callback", get(authorize))
+        .route(spec.path, get(authorize))
         .layer(Extension(lifecycle));
     let server = crate::infra::runtime::with_reactor(|| axum::Server::from_tcp(listener))
         .map_err(|source| {
@@ -320,6 +371,36 @@ where
     C: FnOnce(BasicClient, AuthorizationCode, PkceCodeVerifier) -> F,
     F: Future<Output = Result<(), Error>>,
 {
+    authenticate_cancellable(
+        provider,
+        lifecycle,
+        timeout_duration,
+        &CancellationToken::new(),
+        start_listener,
+        open_browser,
+        |client, grant: CodeGrant, verifier| on_code(client, grant.code, verifier),
+    )
+    .await
+}
+
+/// [`authenticate`] for an attempt that can also be ended from outside, and whose code handler
+/// is given everything the callback carried. Cancellation ends the attempt like its timeout
+/// does: the listener is closed and the transaction cleared before this returns.
+pub(crate) async fn authenticate_cancellable<O, L, C, F>(
+    provider: OAuthProvider<'_>,
+    lifecycle: Arc<AttemptRegistry>,
+    timeout_duration: Duration,
+    cancellation: &CancellationToken,
+    start_listener: L,
+    open_browser: O,
+    on_grant: C,
+) -> Result<(), Error>
+where
+    O: FnOnce(&str) -> Result<(), String>,
+    L: FnOnce() -> Result<ListenerHandle, Error>,
+    C: FnOnce(BasicClient, CodeGrant, PkceCodeVerifier) -> F,
+    F: Future<Output = Result<(), Error>>,
+{
     let csrf_token = CsrfToken::new_random();
     let deadline = tokio::time::Instant::now() + timeout_duration;
     let (generation, callback_rx) = lifecycle.begin(csrf_token.clone()).await?;
@@ -332,7 +413,7 @@ where
         }
     };
 
-    let result = match tokio::time::timeout(
+    let attempt = tokio::time::timeout(
         deadline.saturating_duration_since(tokio::time::Instant::now()),
         authenticate_after_listener(
             provider,
@@ -340,16 +421,22 @@ where
             callback_rx,
             &mut listener,
             open_browser,
-            on_code,
+            on_grant,
         ),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => {
-            warn!("OAuth authentication timed out");
+    );
+    let result = tokio::select! {
+        biased;
+        () = cancellation.cancelled() => {
+            warn!("OAuth authentication was cancelled");
             Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
         }
+        result = attempt => match result {
+            Ok(result) => result,
+            Err(_) => {
+                warn!("OAuth authentication timed out");
+                Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
+            }
+        },
     };
     shutdown_listener(
         &mut listener,
@@ -366,11 +453,11 @@ async fn authenticate_after_listener<O, C, F>(
     callback_rx: oneshot::Receiver<CallbackSignal>,
     listener: &mut ListenerHandle,
     open_browser: O,
-    on_code: C,
+    on_grant: C,
 ) -> Result<(), Error>
 where
     O: FnOnce(&str) -> Result<(), String>,
-    C: FnOnce(BasicClient, AuthorizationCode, PkceCodeVerifier) -> F,
+    C: FnOnce(BasicClient, CodeGrant, PkceCodeVerifier) -> F,
     F: Future<Output = Result<(), Error>>,
 {
     let client = match oauth_client(&listener.redirect_url, &provider) {
@@ -407,7 +494,7 @@ where
             Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
         }
         callback_result = &mut callback_rx => match callback_result {
-            Ok(CallbackSignal::Code(code)) => on_code(client, code, pkce_verifier).await,
+            Ok(CallbackSignal::Code(grant)) => on_grant(client, grant, pkce_verifier).await,
             Ok(CallbackSignal::Rejected) => {
                 warn!("OAuth provider rejected or cancelled authentication");
                 Err(Error::OAuthFailure(OAUTH_FAILURE.into()))
@@ -474,11 +561,22 @@ pub(crate) struct CallbackQuery {
     pub error: Option<String>,
 }
 
+/// The part of a callback only a provider with dynamic client registration sends.
+#[derive(Deserialize)]
+struct IssuedClient {
+    client_id: Option<String>,
+}
+
 async fn authorize(
     Extension(lifecycle): Extension<Arc<AttemptRegistry>>,
     Query(query): Query<CallbackQuery>,
+    Query(issued): Query<IssuedClient>,
 ) -> impl IntoResponse {
-    callback_page(lifecycle.accept_callback(query).await)
+    callback_page(
+        lifecycle
+            .accept_callback_from(query, issued.client_id)
+            .await,
+    )
 }
 
 pub(crate) fn callback_page(result: CallbackResult) -> Html<&'static str> {
@@ -661,6 +759,175 @@ mod tests {
         }
         first.stop().await;
         second.stop().await;
+    }
+
+    /// The code and the client id a handler was given.
+    type Granted = Option<(String, Option<String>)>;
+
+    /// One attempt on a listener of its own, with the browser's part played by the test.
+    struct Driven {
+        registry: Arc<AttemptRegistry>,
+        cancellation: CancellationToken,
+        opened: tokio::sync::mpsc::UnboundedReceiver<url::Url>,
+        attempt: JoinHandle<(Result<(), Error>, Granted)>,
+    }
+
+    fn drive(spec: &'static ListenerSpec) -> Driven {
+        let registry = Arc::new(AttemptRegistry::default());
+        let cancellation = CancellationToken::new();
+        let (opener, opened) = tokio::sync::mpsc::unbounded_channel();
+        let attempt = tokio::spawn({
+            let registry = registry.clone();
+            let cancellation = cancellation.clone();
+            async move {
+                let mut granted = None;
+                let granted_ref = &mut granted;
+                let listener_registry = registry.clone();
+                let result = authenticate_cancellable(
+                    OAuthProvider {
+                        authorization_url: "https://provider.invalid/authorize",
+                        token_url: "https://provider.invalid/token",
+                        client_id: "registration",
+                        scopes: &[],
+                        extra_params: &[],
+                    },
+                    registry,
+                    Duration::from_secs(5),
+                    &cancellation,
+                    move || start_listener_on(listener_registry, spec),
+                    move |url| {
+                        opener.send(url::Url::parse(url).unwrap()).unwrap();
+                        Ok(())
+                    },
+                    |_client, grant: CodeGrant, _verifier| async move {
+                        *granted_ref = Some((grant.code.secret().clone(), grant.client_id));
+                        Ok(())
+                    },
+                )
+                .await;
+                (result, granted)
+            }
+        });
+        Driven {
+            registry,
+            cancellation,
+            opened,
+            attempt,
+        }
+    }
+
+    fn redirect_of(authorization: &url::Url) -> (url::Url, String) {
+        let query: HashMap<String, String> = authorization.query_pairs().into_owned().collect();
+        (
+            url::Url::parse(&query["redirect_uri"]).unwrap(),
+            query["state"].clone(),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_listener_serves_its_own_path_and_falls_through_ports_that_are_taken() {
+        // The first candidate is taken by somebody else; the listener must move on.
+        static TAKEN: std::sync::OnceLock<(TcpListener, [u16; 2])> = std::sync::OnceLock::new();
+        static SPEC: std::sync::OnceLock<ListenerSpec> = std::sync::OnceLock::new();
+        let (_held, ports) = TAKEN.get_or_init(|| {
+            let held = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = held.local_addr().unwrap().port();
+            (held, [port, 0])
+        });
+        let ports: &'static [u16] = ports;
+        let spec = SPEC.get_or_init(|| ListenerSpec {
+            path: "/auth/callback",
+            ports,
+        });
+        let mut driven = drive(spec);
+        let authorization = driven.opened.recv().await.unwrap();
+        let (redirect, state) = redirect_of(&authorization);
+        assert_eq!(redirect.host_str(), Some("127.0.0.1"));
+        assert_eq!(redirect.path(), "/auth/callback");
+        assert_ne!(redirect.port(), Some(ports[0]));
+
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        // The default path is not served by this listener.
+        let mut other = redirect.clone();
+        other.set_path("/callback");
+        let missed = http
+            .get(other)
+            .query(&[("state", state.as_str()), ("code", "wrong-door")])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(missed.status().as_u16(), 404);
+
+        let accepted = http
+            .get(redirect.clone())
+            .query(&[
+                ("state", state.as_str()),
+                ("code", "the-code"),
+                ("client_id", "issued-client"),
+            ])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            accepted.text().await.unwrap(),
+            "Authentication successful! You can close this window."
+        );
+        let (result, granted) = driven.attempt.await.unwrap();
+        assert!(result.is_ok());
+        // The handler is given the code and the client id the provider returned with it.
+        assert_eq!(
+            granted,
+            Some(("the-code".into(), Some("issued-client".into())))
+        );
+        assert!(driven.registry.is_idle().await);
+        // The listener is gone once the attempt is over.
+        assert!(http.get(redirect).send().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn cancellation_ends_an_attempt_closes_its_listener_and_clears_its_transaction() {
+        static SPEC: ListenerSpec = ListenerSpec {
+            path: "/auth/callback",
+            ports: &[0],
+        };
+        let mut driven = drive(&SPEC);
+        let authorization = driven.opened.recv().await.unwrap();
+        let (redirect, state) = redirect_of(&authorization);
+        driven.cancellation.cancel();
+        let (result, granted) = tokio::time::timeout(Duration::from_secs(3), driven.attempt)
+            .await
+            .expect("a cancelled attempt ends at once")
+            .unwrap();
+        assert!(matches!(result, Err(Error::OAuthFailure(_))));
+        assert_eq!(granted, None);
+        assert!(driven.registry.is_idle().await);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        let late = http
+            .get(redirect)
+            .query(&[("state", state.as_str()), ("code", "late")])
+            .send()
+            .await;
+        assert!(
+            late.is_err(),
+            "the listener of a cancelled attempt is closed"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_callback_without_a_client_id_grants_the_code_alone() {
+        let mut driven = drive(&DEFAULT_LISTENER);
+        let authorization = driven.opened.recv().await.unwrap();
+        let (redirect, state) = redirect_of(&authorization);
+        assert_eq!(redirect.path(), "/callback");
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        http.get(redirect)
+            .query(&[("state", state.as_str()), ("code", "plain")])
+            .send()
+            .await
+            .unwrap();
+        let (result, granted) = driven.attempt.await.unwrap();
+        assert!(result.is_ok());
+        assert_eq!(granted, Some(("plain".into(), None)));
     }
 
     #[tokio::test]

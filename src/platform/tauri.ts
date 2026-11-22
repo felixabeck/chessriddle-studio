@@ -49,6 +49,9 @@ const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error
     ["coachRemoveConnection", CoachCommandError],
     ["coachModels", CoachCommandError],
     ["coachTurn", CoachCommandError],
+    ["coachSignInChatgpt", CoachCommandError],
+    ["coachCancelSignIn", CoachCommandError],
+    ["coachOpenUsage", CoachCommandError],
 ]);
 
 type GameCounterFields = Pick<GameState, "session" | "revision">;

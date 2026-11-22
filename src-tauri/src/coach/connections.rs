@@ -1,8 +1,9 @@
 //! Coach connections: what the user connected, stored natively.
 //!
-//! A connection's secret is one JSON document in the OS keyring that holds the connection kind,
-//! its address and its key together, so a key can never be paired with another address by a later
-//! edit. The journaled credential registry holds only the handle and the display label.
+//! A connection's secret is one JSON document in the OS keyring that holds the connection kind
+//! and everything that belongs to it together: an address with its key, so that a key can never be
+//! paired with another address by a later edit, or a sign-in's client id with its refresh token.
+//! The journaled credential registry holds only the handle and the display label.
 
 use std::sync::Arc;
 
@@ -13,6 +14,8 @@ use super::{address::Address, error::CoachError};
 use crate::credentials::{CoachConnectionHandle, CoachCredentials, MAX_KEYRING_SECRET_UTF16_UNITS};
 
 pub(crate) const MAX_CONNECTIONS: usize = 16;
+/// The label of the one ChatGPT connection. The account is shown beside it.
+const CHATGPT_LABEL: &str = "ChatGPT";
 const MAX_LABEL_CHARS: usize = 64;
 const MAX_KEY_BYTES: usize = 512;
 
@@ -25,6 +28,25 @@ pub(crate) enum Secret {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
+    /// A sign-in with ChatGPT.
+    ChatGpt(ChatGptSecret),
+}
+
+/// What a ChatGPT sign-in leaves on this computer. No `Debug`: it carries the refresh token.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChatGptSecret {
+    /// The client id the provider issued to this installation at its first sign-in.
+    pub client_id: String,
+    /// Absent once the provider has ended the session: the user has to sign in again, and the
+    /// connection keeps its place and its client id until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    /// The account's stable identity at the provider.
+    pub subject: String,
+    /// For display only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 impl Secret {
@@ -45,6 +67,7 @@ impl Secret {
 #[serde(rename_all = "camelCase")]
 pub(crate) enum ConnectionKind {
     Api,
+    ChatGpt,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
@@ -53,6 +76,8 @@ pub(crate) enum ConnectionStatus {
     Ready,
     /// The stored secret is missing or cannot be read; the connection can be re-entered or removed.
     NeedsRepair,
+    /// The provider ended the sign-in; signing in again restores the connection.
+    SignInAgain,
 }
 
 /// Everything the renderer may know about a connection. No key or token is part of it.
@@ -64,6 +89,8 @@ pub(crate) struct ConnectionSummary {
     pub label: String,
     pub address: Option<String>,
     pub has_key: bool,
+    /// The signed-in account, for a sign-in connection whose provider told its email.
+    pub account: Option<String>,
     pub status: ConnectionStatus,
 }
 
@@ -92,6 +119,8 @@ pub(crate) struct ConnectionSaved {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ConnectionRemoved {
     pub durability_uncertain: bool,
+    /// The connection is gone here, but its sign-in could not be withdrawn at the provider.
+    pub revocation_pending: bool,
 }
 
 fn valid_label(label: &str) -> Result<String, CoachError> {
@@ -128,19 +157,36 @@ fn summary(
             label,
             address: Some(address.clone()),
             has_key: key.is_some(),
+            account: None,
             status: ConnectionStatus::Ready,
         },
+        Some(Secret::ChatGpt(secret)) => ConnectionSummary {
+            handle,
+            kind: ConnectionKind::ChatGpt,
+            label,
+            address: None,
+            has_key: false,
+            account: secret.email.clone(),
+            status: if secret.refresh_token.is_some() {
+                ConnectionStatus::Ready
+            } else {
+                ConnectionStatus::SignInAgain
+            },
+        },
+        // What kind an unreadable connection was is not known any more.
         None => ConnectionSummary {
             handle,
             kind: ConnectionKind::Api,
             label,
             address: None,
             has_key: false,
+            account: None,
             status: ConnectionStatus::NeedsRepair,
         },
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Connections {
     credentials: Arc<CoachCredentials>,
 }
@@ -229,6 +275,8 @@ impl Connections {
             Some(handle) => {
                 let key = match (entered_key, self.secret(handle.clone()).await) {
                     (_, Err(CoachError::NotFound)) => return Err(CoachError::NotFound),
+                    // A sign-in is not turned into an address by an edit.
+                    (_, Ok(Secret::ChatGpt(_))) => return Err(CoachError::InvalidInput),
                     (Some(key), _) => Some(key),
                     // An unreadable connection is re-entered: nothing is carried over.
                     (None, Err(_)) => None,
@@ -277,7 +325,86 @@ impl Connections {
             .ok_or(CoachError::NotFound)?;
         Ok(ConnectionRemoved {
             durability_uncertain: removed.durability_uncertain,
+            revocation_pending: false,
         })
+    }
+
+    /// The ChatGPT connection, if there is one: at most one exists.
+    pub(crate) async fn chatgpt(
+        &self,
+    ) -> Result<Option<(CoachConnectionHandle, ChatGptSecret)>, CoachError> {
+        let accounts = self
+            .credentials
+            .list()
+            .await
+            .map_err(|_| CoachError::Storage)?;
+        for account in accounts {
+            if let Some(Secret::ChatGpt(secret)) =
+                self.readable_secret(account.handle.clone()).await
+            {
+                return Ok(Some((account.handle, secret)));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Stores a completed ChatGPT sign-in: in the place of the existing ChatGPT connection, which
+    /// keeps its handle, or as a new connection.
+    pub(crate) async fn save_chatgpt(
+        &self,
+        secret: ChatGptSecret,
+    ) -> Result<ConnectionSaved, CoachError> {
+        let existing = self.chatgpt().await?.map(|(handle, _)| handle);
+        let secret = Secret::ChatGpt(secret);
+        let encoded = secret.encode()?;
+        let (handle, durability_uncertain) = match existing {
+            Some(handle) => {
+                let uncertain = self
+                    .credentials
+                    .update(handle.clone(), CHATGPT_LABEL.into(), encoded)
+                    .await
+                    .map_err(|_| CoachError::Storage)?;
+                (handle, uncertain)
+            }
+            None => {
+                let count = self
+                    .credentials
+                    .list()
+                    .await
+                    .map_err(|_| CoachError::Storage)?
+                    .len();
+                if count >= MAX_CONNECTIONS {
+                    return Err(CoachError::TooManyConnections);
+                }
+                let (account, uncertain) = self
+                    .credentials
+                    .store(CHATGPT_LABEL.into(), encoded)
+                    .await
+                    .map_err(|_| CoachError::Storage)?;
+                (account.handle, uncertain)
+            }
+        };
+        Ok(ConnectionSaved {
+            connection: summary(handle, CHATGPT_LABEL.into(), Some(&secret)),
+            durability_uncertain,
+        })
+    }
+
+    /// Replaces the refresh token of a sign-in connection after a rotation, or takes it away
+    /// (`None`) after the provider ended the session. Everything else in its secret stays.
+    pub(crate) async fn set_refresh_token(
+        &self,
+        handle: CoachConnectionHandle,
+        refresh_token: Option<String>,
+    ) -> Result<(), CoachError> {
+        let Secret::ChatGpt(mut secret) = self.secret(handle.clone()).await? else {
+            return Err(CoachError::InvalidInput);
+        };
+        secret.refresh_token = refresh_token;
+        self.credentials
+            .replace(handle, Secret::ChatGpt(secret).encode()?)
+            .await
+            .map_err(|_| CoachError::Storage)
     }
 }
 
@@ -590,6 +717,182 @@ mod tests {
             .unwrap();
         assert_eq!(repaired.connection.status, ConnectionStatus::Ready);
         assert!(!repaired.connection.has_key);
+    }
+
+    fn signed_in(refresh: Option<&str>) -> ChatGptSecret {
+        ChatGptSecret {
+            client_id: "oaiapp_issued".into(),
+            refresh_token: refresh.map(str::to_owned),
+            subject: "user-123".into(),
+            email: Some("player@example.com".into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn there_is_one_chatgpt_connection_and_a_new_sign_in_takes_its_place() {
+        let (connections, store, _directory) = connections();
+        assert!(connections.chatgpt().await.unwrap().is_none());
+        let first = connections
+            .save_chatgpt(signed_in(Some("refresh-1")))
+            .await
+            .unwrap();
+        assert_eq!(
+            first.connection,
+            ConnectionSummary {
+                handle: first.connection.handle.clone(),
+                kind: ConnectionKind::ChatGpt,
+                label: "ChatGPT".into(),
+                address: None,
+                has_key: false,
+                account: Some("player@example.com".into()),
+                status: ConnectionStatus::Ready,
+            }
+        );
+        assert_eq!(
+            stored_secret(&store, &first.connection.handle),
+            serde_json::json!({
+                "kind": "chatGpt",
+                "clientId": "oaiapp_issued",
+                "refreshToken": "refresh-1",
+                "subject": "user-123",
+                "email": "player@example.com",
+            })
+        );
+
+        let mut other_account = signed_in(Some("refresh-2"));
+        other_account.email = None;
+        let second = connections.save_chatgpt(other_account).await.unwrap();
+        assert_eq!(second.connection.handle, first.connection.handle);
+        assert_eq!(second.connection.account, None);
+        assert_eq!(connections.list().await.unwrap().len(), 1);
+        let (handle, secret) = connections.chatgpt().await.unwrap().unwrap();
+        assert_eq!(handle, first.connection.handle);
+        assert_eq!(secret.refresh_token.as_deref(), Some("refresh-2"));
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_without_its_refresh_token_asks_to_sign_in_again_and_keeps_its_place() {
+        let (connections, store, _directory) = connections();
+        let handle = connections
+            .save_chatgpt(signed_in(Some("refresh-1")))
+            .await
+            .unwrap()
+            .connection
+            .handle;
+        connections
+            .set_refresh_token(handle.clone(), Some("refresh-2".into()))
+            .await
+            .unwrap();
+        assert_eq!(stored_secret(&store, &handle)["refreshToken"], "refresh-2");
+        assert_eq!(
+            connections.list().await.unwrap()[0].status,
+            ConnectionStatus::Ready
+        );
+
+        connections
+            .set_refresh_token(handle.clone(), None)
+            .await
+            .unwrap();
+        let listed = connections.list().await.unwrap();
+        assert_eq!(listed[0].status, ConnectionStatus::SignInAgain);
+        assert_eq!(listed[0].kind, ConnectionKind::ChatGpt);
+        assert_eq!(listed[0].label, "ChatGPT");
+        // The issued client id and the account stay for the next sign-in.
+        assert_eq!(
+            stored_secret(&store, &handle),
+            serde_json::json!({
+                "kind": "chatGpt",
+                "clientId": "oaiapp_issued",
+                "subject": "user-123",
+                "email": "player@example.com",
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_and_an_address_are_never_turned_into_each_other() {
+        let (connections, store, _directory) = connections();
+        let signed = connections
+            .save_chatgpt(signed_in(Some("refresh-1")))
+            .await
+            .unwrap()
+            .connection
+            .handle;
+        // An address edit that names the sign-in's handle is refused and changes nothing.
+        assert_eq!(
+            connections
+                .save_api(api(
+                    Some(&signed),
+                    "Mine",
+                    "https://api.example.com/v1",
+                    Some("sk-test")
+                ))
+                .await
+                .unwrap_err(),
+            CoachError::InvalidInput
+        );
+        assert_eq!(stored_secret(&store, &signed)["kind"], "chatGpt");
+
+        let address = connections
+            .save_api(api(None, "Local", "http://localhost:11434/v1", None))
+            .await
+            .unwrap()
+            .connection
+            .handle;
+        assert_eq!(
+            connections
+                .set_refresh_token(address.clone(), Some("refresh".into()))
+                .await
+                .unwrap_err(),
+            CoachError::InvalidInput
+        );
+        assert_eq!(stored_secret(&store, &address)["kind"], "api");
+        // A new sign-in still finds the sign-in, not the address.
+        assert_eq!(connections.chatgpt().await.unwrap().unwrap().0, signed);
+        assert_eq!(
+            connections
+                .set_refresh_token(
+                    CoachConnectionHandle(uuid::Uuid::new_v4().to_string()),
+                    None
+                )
+                .await
+                .unwrap_err(),
+            CoachError::NotFound
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_counts_towards_the_bound_and_a_secret_too_long_for_the_keyring_is_refused() {
+        let (connections, _store, _directory) = connections();
+        for index in 0..MAX_CONNECTIONS {
+            connections
+                .save_api(api(
+                    None,
+                    &format!("Local {index}"),
+                    "http://localhost:1/v1",
+                    None,
+                ))
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            connections
+                .save_chatgpt(signed_in(Some("refresh-1")))
+                .await
+                .unwrap_err(),
+            CoachError::TooManyConnections
+        );
+
+        let (connections, _store, _directory) = self::connections();
+        let long = "r".repeat(MAX_KEYRING_SECRET_UTF16_UNITS);
+        assert_eq!(
+            connections
+                .save_chatgpt(signed_in(Some(&long)))
+                .await
+                .unwrap_err(),
+            CoachError::Storage
+        );
+        assert!(connections.list().await.unwrap().is_empty());
     }
 
     #[tokio::test]

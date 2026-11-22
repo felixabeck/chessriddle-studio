@@ -1,4 +1,4 @@
-import { Button, Group, ScrollArea, Select, Stack, Text, Textarea } from "@mantine/core";
+import { Anchor, Button, Group, ScrollArea, Select, Stack, Text, Textarea } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { MessageSquarePlus } from "lucide-react";
@@ -20,6 +20,7 @@ import {
   coachSelectionAtom,
   effectiveCoachEngine,
   effectiveCoachSelection,
+  openCoachUsage,
   withCoachNoticeAccepted,
 } from "@/state/coach";
 import { sendCoachMessage, startNewCoachConversation, stopCoachTurn } from "@/state/coachTurns";
@@ -43,7 +44,7 @@ function CoachPanel() {
   const session = useStore(tree, (state) => state.coachSession);
   const running = useAtomValue(useTabAtom(coachTurnFamily));
 
-  const connectionsState = useAtomValue(coachConnectionsAtom);
+  const [connectionsState, reloadConnections] = useAtom(coachConnectionsAtom);
   const [modelsState, loadModels] = useAtom(coachModelsAtom);
   const [selection, setSelection] = useAtom(coachSelectionAtom);
   const engines = useAtomValue(enginesAtom);
@@ -82,6 +83,12 @@ function CoachPanel() {
   const viewport = useRef<HTMLDivElement>(null);
   const messages = session?.messages ?? [];
   const shownTurn = running && !running.orphaned ? running : null;
+  // An answer that ended because the sign-in is over: the connection list says so from now on.
+  const last = messages.at(-1);
+  const signInEnded = last?.role === "coach" && last.error === "signInAgain" ? last.id : null;
+  useEffect(() => {
+    if (signInEnded) void reloadConnections();
+  }, [signInEnded, reloadConnections]);
   // New content keeps the end of the conversation in view.
   useEffect(() => {
     viewport.current?.scrollTo({ top: viewport.current.scrollHeight });
@@ -210,6 +217,16 @@ function CoachPanel() {
         >
           <MessageSquarePlus size="1rem" />
         </IconAction>
+        {chosen.connection?.kind === "chatGpt" && (
+          <Group className={classes.plan} gap="xs">
+            <Text size="xs" c="dimmed">
+              {t("Coach.Plan.Using")}
+            </Text>
+            <Anchor component="button" type="button" size="xs" onClick={openCoachUsage}>
+              {t("Coach.Plan.ManageUsage")}
+            </Anchor>
+          </Group>
+        )}
       </Group>
       <ScrollArea className={classes.transcript} viewportRef={viewport}>
         {messages.length === 0 && !shownTurn ? (

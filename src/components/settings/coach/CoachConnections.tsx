@@ -7,11 +7,13 @@ import type { CoachError, ConnectionSummary, ModelList } from "@/bindings";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { coachErrorCode } from "@/platform/coach";
 import { tauri } from "@/platform/tauri";
-import { coachConnectionsAtom } from "@/state/coach";
+import { coachConnectionsAtom, coachPlanNoticeSeenAtom, openCoachUsage } from "@/state/coach";
+import AppModal from "../../common/AppModal";
 import ConfirmModal, { durabilityUncertainMessage } from "../../common/ConfirmModal";
 import { IconAction } from "../../common/IconAction";
 import classes from "../SettingsPage.module.css";
 import { CoachConnectionModal } from "./CoachConnectionModal";
+import { useChatGptSignIn } from "./useChatGptSignIn";
 import { useCoachErrorMessages } from "./useCoachErrorMessages";
 
 type CheckResult = { models: ModelList } | { error: CoachError };
@@ -30,6 +32,8 @@ function ConnectionRow({
   const { pending, run, isMounted } = useSingleFlight();
   const [checked, setChecked] = useState<CheckResult | null>(null);
   const needsRepair = connection.status === "needsRepair";
+  const signInAgain = connection.status === "signInAgain";
+  const signedIn = connection.kind === "chatGpt";
 
   const check = () =>
     run(async () => {
@@ -57,9 +61,18 @@ function ConnectionRow({
           {needsRepair && (
             <Badge color="danger">{t("Settings.Coach.Connection.NeedsRepair")}</Badge>
           )}
+          {signInAgain && (
+            <Badge color="warning">{t("Settings.Coach.Connection.SignInAgain")}</Badge>
+          )}
         </Group>
         <Text size="xs" c="dimmed" className="wrap-anywhere">
-          {needsRepair ? t("Coach.Error.NeedsRepair") : connection.address}
+          {needsRepair
+            ? t("Coach.Error.NeedsRepair")
+            : signInAgain
+              ? t("Coach.Error.SignInAgain")
+              : signedIn
+                ? (connection.account ?? t("Coach.Plan.Using"))
+                : connection.address}
         </Text>
         <div role="status" aria-live="polite">
           {checked && "models" in checked && (
@@ -79,18 +92,26 @@ function ConnectionRow({
         </div>
       </div>
       <Group gap="xs" wrap="nowrap">
+        {signedIn && !signInAgain && (
+          <Button variant="subtle" size="xs" onClick={openCoachUsage}>
+            {t("Coach.Plan.ManageUsage")}
+          </Button>
+        )}
         <Button
           variant="default"
           size="xs"
-          disabled={needsRepair}
+          disabled={needsRepair || signInAgain}
           loading={pending}
           onClick={() => void check()}
         >
           {t("Settings.Coach.Connection.Check")}
         </Button>
-        <IconAction label={t("Settings.Coach.Form.EditTitle")} variant="default" onClick={onEdit}>
-          <Pencil size="1rem" />
-        </IconAction>
+        {/* A sign-in has nothing to edit: it is renewed by signing in again. */}
+        {!signedIn && (
+          <IconAction label={t("Settings.Coach.Form.EditTitle")} variant="default" onClick={onEdit}>
+            <Pencil size="1rem" />
+          </IconAction>
+        )}
         <IconAction
           label={t("Settings.Coach.Connection.Remove")}
           variant="default"
@@ -115,11 +136,25 @@ export function CoachConnections() {
   const [state, reload] = useAtom(coachConnectionsAtom);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [durabilityUncertain, setDurabilityUncertain] = useState(false);
+  /** The label of a removed sign-in whose provider did not confirm the sign-out. */
+  const [unconfirmedSignOut, setUnconfirmedSignOut] = useState<string | null>(null);
+  const [planNoticeSeen, setPlanNoticeSeen] = useAtom(coachPlanNoticeSeenAtom);
+  const [planNotice, setPlanNotice] = useState(false);
 
   const settled = (uncertain: boolean) => {
     setDurabilityUncertain(uncertain);
     void reload();
   };
+  const signIn = useChatGptSignIn((saved) => {
+    settled(saved.durabilityUncertain);
+    // The provider asks for this notice at the first sign-in, and only then.
+    if (!planNoticeSeen) setPlanNotice(true);
+  });
+  const connections = state.status === "ready" ? state.connections : [];
+  // One ChatGPT connection: the button stays for a first sign-in and for signing in again.
+  const chatGptReady = connections.some(
+    (connection) => connection.kind === "chatGpt" && connection.status === "ready",
+  );
 
   return (
     <Stack gap={0} mb="lg">
@@ -159,7 +194,43 @@ export function CoachConnections() {
           {durabilityUncertainMessage(t)}
         </Alert>
       )}
+      {unconfirmedSignOut !== null && (
+        <Alert color="warning" px="xs" mt="sm" role="status">
+          <Group justify="space-between" gap="sm">
+            <Text size="sm">
+              {t("Settings.Coach.Connection.RevocationPending", { label: unconfirmedSignOut })}
+            </Text>
+            <Button variant="default" size="xs" onClick={openCoachUsage}>
+              {t("Coach.Plan.ManageUsage")}
+            </Button>
+          </Group>
+        </Alert>
+      )}
+      {signIn.state.status === "waiting" && (
+        <Alert px="xs" mt="sm" role="status">
+          <Group justify="space-between" gap="sm">
+            <Text size="sm">{t("Settings.Coach.SignIn.Waiting")}</Text>
+            <Button variant="default" size="xs" onClick={signIn.cancel}>
+              {t("Common.Cancel")}
+            </Button>
+          </Group>
+        </Alert>
+      )}
+      {signIn.state.status === "failed" && (
+        <Alert color="danger" px="xs" mt="sm" role="alert">
+          {messages[signIn.state.error]}
+        </Alert>
+      )}
       <Group mt="md">
+        {!chatGptReady && (
+          <Button
+            disabled={state.status !== "ready"}
+            loading={signIn.state.status === "waiting"}
+            onClick={() => void signIn.start()}
+          >
+            {t("Settings.Coach.SignIn.ChatGpt")}
+          </Button>
+        )}
         <Button
           variant="default"
           disabled={state.status !== "ready"}
@@ -168,6 +239,33 @@ export function CoachConnections() {
           {t("Settings.Coach.Connections.Add")}
         </Button>
       </Group>
+      {planNotice && (
+        <AppModal
+          opened
+          onClose={() => {
+            setPlanNotice(false);
+            setPlanNoticeSeen(true);
+          }}
+          title={t("Coach.Plan.Notice.Title")}
+        >
+          <Stack>
+            <Text>{t("Coach.Plan.Notice.Body")}</Text>
+            <Group justify="space-between">
+              <Button variant="default" onClick={openCoachUsage}>
+                {t("Coach.Plan.ManageUsage")}
+              </Button>
+              <Button
+                onClick={() => {
+                  setPlanNotice(false);
+                  setPlanNoticeSeen(true);
+                }}
+              >
+                {t("Coach.Plan.Notice.Accept")}
+              </Button>
+            </Group>
+          </Stack>
+        </AppModal>
+      )}
       {(dialog?.kind === "add" || dialog?.kind === "edit") && (
         <CoachConnectionModal
           connection={dialog.kind === "edit" ? dialog.connection : null}
@@ -189,6 +287,7 @@ export function CoachConnections() {
           if (dialog?.kind !== "remove") return;
           try {
             const removed = await tauri.coachRemoveConnection(dialog.connection.handle);
+            setUnconfirmedSignOut(removed.revocationPending ? dialog.connection.label : null);
             settled(removed.durabilityUncertain);
           } catch (cause) {
             // The native list decides what is left, whatever the removal reported.
