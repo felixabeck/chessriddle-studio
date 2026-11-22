@@ -169,7 +169,7 @@ test("game report: a run fills the Report tab from the native result", async ({
     await expect(keyMoments).toHaveScreenshot("report-key-moments.png", {
         stylePath: scrollbarFreeScreenshot,
     });
-    // Annotated notation moves fail colour contrast in the light scheme; a filed finding tracks it.
+    // Annotated notation moves fail colour contrast in the light scheme: f-20261122-06.
     await assertAccessible({ exclude: ['[class*="_moveText_"]'] });
 
     // A key moment goes to its move.
