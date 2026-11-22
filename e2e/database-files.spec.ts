@@ -2820,45 +2820,54 @@ test("database-files: real double-click on database card outer padding opens the
 // preview hid BLACK, the Black player and Elo and part of the date (f-20261121-06). Every field must
 // sit inside the preview card's width at each of the header's three layout steps. Also runs in
 // WebKit.
-test("database-files: game info fields stay inside the preview at every layout step", async ({
-    page,
-    mockScenario,
-}) => {
-    await mockScenario({ commands: gameOpeningCommands });
-    await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
-    for (const surface of [
-        { width: 1440, scale: "100", columns: 3 },
-        { width: 1400, scale: "200", columns: 2 },
-        { width: 320, scale: "200", columns: 1 },
-    ] as const) {
-        await page.evaluate((scale) => localStorage.setItem("font-size", scale), surface.scale);
-        await page.setViewportSize({ width: surface.width, height: 900 });
-        await gotoPreservingStorage(page, `/databases/${gameOpeningFixture.databaseId}`);
+// One load per font scale and only viewport changes after it: a reload under WebKit can cancel the
+// logo request still in flight, which the page fixture reports as a failure.
+for (const { scale, surfaces } of [
+    { scale: "100", surfaces: [{ width: 1440, columns: 3 }] },
+    {
+        scale: "200",
+        surfaces: [
+            { width: 1400, columns: 2 },
+            { width: 320, columns: 1 },
+        ],
+    },
+] as const) {
+    test(`database-files: game info fields stay inside the preview at every layout step, ${scale}%`, async ({
+        page,
+        mockScenario,
+    }) => {
+        await page.addInitScript((value) => localStorage.setItem("font-size", value), scale);
+        await page.setViewportSize({ width: surfaces[0].width, height: 900 });
+        await mockScenario({ commands: gameOpeningCommands });
+        await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
         await page.locator("tbody tr").filter({ hasText: "Second White" }).click();
-        const fields = page.locator("[data-game-info-fields]");
-        await expect(fields.getByRole("textbox", { name: "Black", exact: true })).toHaveValue(
-            "Second Black",
-        );
-        await waitForFontsSettled(page);
-        const layout = await fields.evaluate((grid) => {
-            const card = grid.closest(".mantine-Paper-root")!.getBoundingClientRect();
-            const outside = [...grid.querySelectorAll("input, button, span, a, p")]
-                .filter((field) => field.getBoundingClientRect().width > 0)
-                .flatMap((field) => {
-                    const box = field.getBoundingClientRect();
-                    // Horizontal only: the card scrolls vertically by design.
-                    const inside = box.left >= card.left - 1 && box.right <= card.right + 1;
-                    const name =
-                        field.getAttribute("aria-label") ?? field.textContent ?? field.tagName;
-                    return inside ? [] : [`${name} [${box.left}, ${box.right}]`];
-                });
-            const columns = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
-            return { outside, columns };
-        });
-        expect(layout.outside, `${surface.width}px / ${surface.scale}%`).toEqual([]);
-        expect(layout.columns, `${surface.width}px / ${surface.scale}%`).toBe(surface.columns);
-    }
-});
+        for (const surface of surfaces) {
+            await page.setViewportSize({ width: surface.width, height: 900 });
+            const fields = page.locator("[data-game-info-fields]");
+            await expect(fields.getByRole("textbox", { name: "Black", exact: true })).toHaveValue(
+                "Second Black",
+            );
+            await waitForFontsSettled(page);
+            const layout = await fields.evaluate((grid) => {
+                const card = grid.closest(".mantine-Paper-root")!.getBoundingClientRect();
+                const outside = [...grid.querySelectorAll("input, button, span, a, p")]
+                    .filter((field) => field.getBoundingClientRect().width > 0)
+                    .flatMap((field) => {
+                        const box = field.getBoundingClientRect();
+                        // Horizontal only: the card scrolls vertically by design.
+                        const inside = box.left >= card.left - 1 && box.right <= card.right + 1;
+                        const name =
+                            field.getAttribute("aria-label") ?? field.textContent ?? field.tagName;
+                        return inside ? [] : [`${name} [${box.left}, ${box.right}]`];
+                    });
+                const columns = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+                return { outside, columns };
+            });
+            expect(layout.outside, `${surface.width}px / ${scale}%`).toEqual([]);
+            expect(layout.columns, `${surface.width}px / ${scale}%`).toBe(surface.columns);
+        }
+    });
+}
 
 for (const gesture of ["button", "double-click", "Enter"] as const) {
     test(`database-files: visible database opener and explicit game ${gesture}`, async ({
