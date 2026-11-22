@@ -4,6 +4,13 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      # Staging for d-20261122-33: the Safari steps run only in a rehearsal that sets this, so a
+      # tag release is unchanged until such a rehearsal is green. Removed with that proof.
+      safari_extension:
+        description: Build, embed and verify the Safari extension in the macOS legs
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -130,6 +137,60 @@ jobs:
           key_path="$RUNNER_TEMP/AuthKey.p8"
           printf '%s\n' "$APPLE_API_KEY_P8" > "$key_path"
           echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      # The Safari version of the browser extension ships inside the application bundle
+      # (d-20261122-33). It is built and signed here, before the Rust build, so a packaging failure
+      # ends the leg within minutes. The certificate goes into a keychain of its own that is gone
+      # again before the bundler imports the same identity: two keychains holding one identity make
+      # `codesign -s` ambiguous. The bundler copies `bundle.macOS.files` without signing them and
+      # signs the application without --deep, so the bundle keeps this signature and its sandbox
+      # entitlement. A failed build or a failed cleanup fails the step; the configuration that
+      # embeds the bundle is written only after both succeeded.
+      - name: Build and embed the Safari extension (macOS only)
+        if: runner.os == 'macOS' && inputs.safari_extension
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          version=$(awk -F'"' '/^version = /{ print $2; exit }' src-tauri/Cargo.toml)
+          [ -n "$version" ] || { echo "::error::no version in src-tauri/Cargo.toml"; exit 1; }
+          output="$RUNNER_TEMP/safari-extension"
+          keychain="$RUNNER_TEMP/safari-signing.keychain-db"
+          certificate="$RUNNER_TEMP/safari-signing.p12"
+          password=$(openssl rand -hex 24)
+          previous=()
+          while IFS= read -r line; do previous+=("$line"); done \
+            < <(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//')
+          [ "${#previous[@]}" -gt 0 ] || { echo "::error::the runner has no user keychain search list"; exit 1; }
+          build() {
+            security create-keychain -p "$password" "$keychain" &&
+              security set-keychain-settings "$keychain" &&
+              security unlock-keychain -p "$password" "$keychain" &&
+              printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate" &&
+              security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign > /dev/null &&
+              security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null &&
+              security list-keychains -d user -s "$keychain" "${previous[@]}" &&
+              bash browser-extension/scripts/build-safari-appex.sh "$output" "$version"
+          }
+          cleanup() {
+            status=0
+            rm -f "$certificate" || status=1
+            security list-keychains -d user -s "${previous[@]}" || status=1
+            if [ -e "$keychain" ]; then security delete-keychain "$keychain" || status=1; fi
+            return "$status"
+          }
+          result=0
+          build || result=$?
+          cleanup || { echo "::error::the temporary signing keychain or the certificate file could not be removed"; result=1; }
+          [ "$result" -eq 0 ] || exit "$result"
+          # Tauri merges src-tauri/tauri.macos.conf.json on macOS.
+          APPEX="$output/ChessRiddle Studio Extension.appex" node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            const files = { "PlugIns/ChessRiddle Studio Extension.appex": process.env.APPEX };
+            writeFileSync("src-tauri/tauri.macos.conf.json", JSON.stringify({ bundle: { macOS: { files } } }));
+          '
 
       # Windows signing uses the Certum "Open Source Code Signing in the Cloud" certificate. Its key
       # never leaves Certum: SimplySign Desktop, logged in with the account's TOTP, exposes it as a
@@ -314,6 +375,106 @@ jobs:
           Write-Host "URL Protocol: '$protocol' | open command: $command"
           if ($null -eq $protocol) { Write-Host "::error::the chessriddle-studio key is not marked as a URL protocol"; exit 1 }
           if ($command -notmatch 'chessriddle-studio\.exe" "%1"$') { Write-Host "::error::the open command does not pass the link (`"%1`") to the app"; exit 1 }
+
+      # The leg fails unless the application and the application inside the disk image carry
+      # exactly one Safari extension that is signed, sandboxed, hardened, of the application's team
+      # and version, and that the system accepts as a Safari web extension. The deep verification,
+      # the stapler and Gatekeeper above already cover the nested bundle.
+      - name: Verify the embedded Safari extension (macOS only)
+        if: runner.os == 'macOS' && inputs.safari_extension
+        shell: bash
+        run: |
+          identifier=com.chessriddle.studio.Extension
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          set -- "$bundle"/macos/*.app
+          app=$1
+          [ -d "$app" ] || { echo "::error::no .app bundle for ${{ matrix.target }}"; exit 1; }
+          set -- "$bundle"/dmg/*.dmg
+          dmg=$1
+          [ -f "$dmg" ] || { echo "::error::no .dmg for ${{ matrix.target }}"; exit 1; }
+          fail() { echo "::error::$*"; exit 1; }
+          field() { /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2> /dev/null; }
+          team() { codesign -dv "$1" 2>&1 | sed -n 's/^TeamIdentifier=//p'; }
+          verify() {
+            host=$1
+            count=$(find "$host/Contents/PlugIns" -maxdepth 1 -name '*.appex' 2> /dev/null | wc -l | tr -d ' ')
+            [ "$count" = 1 ] || fail "expected one .appex in $host/Contents/PlugIns, found $count"
+            appex=$(find "$host/Contents/PlugIns" -maxdepth 1 -name '*.appex')
+            codesign --verify --strict --verbose=2 "$appex" || fail "the signature of $appex does not verify"
+            entitlements="$RUNNER_TEMP/safari-extension-entitlements.plist"
+            codesign -d --entitlements - --xml "$appex" > "$entitlements" 2> /dev/null || fail "$appex carries no readable entitlements"
+            [ "$(field "$entitlements" com.apple.security.app-sandbox)" = true ] || fail "$appex is not sandboxed"
+            codesign -dv "$appex" 2>&1 | grep -q 'flags=.*runtime' || fail "$appex lacks the hardened runtime"
+            host_team=$(team "$host")
+            case "$host_team" in ''|'not set') fail "$host has no team identifier" ;; esac
+            [ "$(team "$appex")" = "$host_team" ] || fail "$appex is not signed by the application's team"
+            [ "$(field "$appex/Contents/Info.plist" CFBundleIdentifier)" = "$identifier" ] || fail "$appex is not $identifier"
+            host_version=$(field "$host/Contents/Info.plist" CFBundleShortVersionString)
+            [ -n "$host_version" ] || fail "$host has no version"
+            [ "$(field "$appex/Contents/Info.plist" CFBundleShortVersionString)" = "$host_version" ] || fail "$appex does not carry the application's version $host_version"
+            echo "verified $appex ($identifier $host_version, team $host_team)"
+          }
+          verify "$app"
+          # Registering the application first mirrors what opening it does for a user; the listing
+          # below is what decides.
+          /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" \
+            || echo "note: lsregister did not register the application"
+          pluginkit -a "$appex"
+          listed=""
+          for _ in 1 2 3 4 5; do
+            listed=$(pluginkit -m -A -v -p com.apple.Safari.web-extension 2>&1 || true)
+            case "$listed" in *"$identifier"*) break ;; esac
+            sleep 2
+          done
+          echo "$listed"
+          case "$listed" in *"$identifier"*) ;; *) fail "the system does not list $identifier as a Safari web extension" ;; esac
+          mount="$RUNNER_TEMP/safari-extension-dmg"
+          mkdir -p "$mount"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg" > /dev/null
+          set -- "$mount"/*.app
+          verify "$1"
+          hdiutil detach "$mount" > /dev/null
+
+      # Nobody in the project has a Mac, and Safari has blocked Developer ID-signed web extensions
+      # before (Apple developer forum threads 667859 and 695373), against Apple's documentation. This
+      # step opens the application and Safari on the runner and reads Safari's log for such a block.
+      # It never fails or stalls a release: a Studio release must not depend on Safari policy. It
+      # ends with one line, "SAFARI: BLOCK OBSERVED", "SAFARI: no block observed" (not proof that
+      # Safari loads the extension) or "SAFARI: observation unavailable: <reason>"; a run without
+      # such a line (a timeout) counts as unavailable.
+      - name: Observe the Safari verdict on the extension (macOS only, informational)
+        if: runner.os == 'macOS' && inputs.safari_extension
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          identifier=com.chessriddle.studio.Extension
+          set -- "src-tauri/target/${{ matrix.target }}/release/bundle"/macos/*.app
+          app=$1
+          finish() {
+            pkill -x Safari || true
+            pkill -x chessriddle-studio || true
+            echo "SAFARI: $1"
+            exit 0
+          }
+          started=$(date '+%Y-%m-%d %H:%M:%S')
+          # Opening the application once is what registers its extension for a user.
+          open -g "$app" || echo "note: the application did not open"
+          sleep 15
+          open -g -a Safari || finish "observation unavailable: Safari did not open"
+          sleep 40
+          pluginkit -m -A -v -p com.apple.Safari.web-extension || true
+          lines=$(log show --start "$started" --info --style compact --predicate \
+            'eventMessage CONTAINS "com.chessriddle.studio" OR (process == "Safari" AND eventMessage CONTAINS[c] "extension")' 2>&1) \
+            || finish "observation unavailable: the unified log could not be read"
+          printf '%s\n' "$lines" | tail -n 150
+          matched=$(printf '%s\n' "$lines" | grep -c -e "$identifier" -e 'Safari' || true)
+          [ "$matched" -gt 0 ] || finish "observation unavailable: the log holds no line about Safari or the extension"
+          if printf '%s\n' "$lines" | grep "$identifier" | grep -q -i -e 'block' -e 'code signing dictionary failed'; then
+            echo "::warning::Safari reports that it blocks $identifier"
+            finish "BLOCK OBSERVED"
+          fi
+          finish "no block observed"
 
       - name: Log out of Certum SimplySign (Windows only)
         if: always() && steps.certum.outcome != 'skipped'

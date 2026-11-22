@@ -66,6 +66,37 @@ external-protocol prompt. If no app launches, check that ChessRiddle Studio is
 installed; browsers do not reliably expose whether an external application was
 launched.
 
+## Safari
+
+Safari takes the same files as Chrome. A Safari web extension only exists inside a signed macOS
+application, so it ships inside ChessRiddle Studio itself, as
+`Contents/PlugIns/ChessRiddle Studio Extension.appex` (`com.chessriddle.studio.Extension`), signed
+with the release's Developer ID and covered by the application's notarization (d-20261122-33).
+There is no App Store listing and no second download.
+
+- **Build:** `scripts/build-safari-appex.sh <output directory> <version>` runs on macOS with a
+  full Xcode only (it refuses elsewhere). It builds the Chrome package, runs Apple's packaging
+  tool, compiles the generated project's extension target for both architectures, signs the bundle
+  with `safari/extension.entitlements` (application sandbox) and checks its own result. Nothing
+  generated is committed.
+- **Release:** the macOS legs of `.github/workflows/release.yml` build the bundle before the Rust
+  build, embed it through `bundle.macOS.files`, and fail unless the application and the
+  application inside the disk image carry exactly one signed, sandboxed, hardened extension of the
+  application's team and version that the system lists as a Safari web extension. These steps are
+  staged: they run only in a manual dispatch with `safari_extension` set, until such a rehearsal
+  is green.
+- **For a user:** open ChessRiddle Studio once, then in Safari choose Settings, Extensions, enable
+  "Analyze in ChessRiddle Studio" and allow it on chess.com and lichess.org.
+
+**Not observed:** nobody in the project has a Mac. Packaging, signing, embedding, notarization and
+registration are proven on GitHub's macOS runners; that the button appears and works in Safari is
+not. Apple documents this way of distribution, but developers have reported that Safari blocked
+Developer ID-signed web extensions (Apple developer forum threads 667859 and 695373). The
+release's last Safari step opens the application and Safari on the runner and prints
+`SAFARI: BLOCK OBSERVED`, `SAFARI: no block observed` or `SAFARI: observation unavailable`; it
+never fails a release. If Safari blocks the extension on users' Macs, the fallback is an App Store
+container application built from the same files.
+
 ## The link contract
 
 The link is exactly:
