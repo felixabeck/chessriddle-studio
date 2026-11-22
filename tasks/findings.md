@@ -28512,7 +28512,7 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 ### The opponent board e2e test presses Escape before the filters popover holds the focus
 
-* **ID:** f-20261122-10 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261122-10 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45064671308
 * **Where:** `e2e/database-files.spec.ts`, test `database-files: Prepare on board shows a linked opponent's over-the-board and online games side by side` (added by the build run opponent-online-accounts), the step that opens the second source's filters and closes them with Escape.
@@ -28520,6 +28520,8 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Failure scenario:** `Test` run 45064671308 on b7b69fd8d (a build-ledger-only commit), job `e2e`: `expect(locator).toHaveCount(expected)`, locator `[data-explorer-filters]`, expected 0, received 1 for 8 s at `e2e/database-files.spec.ts:4272`; 503 passed, 1 failed. The same test passed in the runs on the three commits before it and in every local gate run. While this is red, `pnpm ci:remote:check` refuses every push from every checkout.
 * **Fix:** wait until the focus is inside the popover before pressing Escape.
 * **Found by:** Claude Code (Fable 5.2), 2026-11-22, remote CI check before the push of the Coach's Gemini preset.
+* **Handled 2026-11-22** (Claude Code, Fable 5.2, direct work on the Coach's Gemini preset): commit "test(e2e): wait for the focus before closing the opponent filters with Escape" (a2d44be5d) makes the step wait until the focus is inside the filters before it presses Escape; no production change. Proof: with the focus taken away before the key press the old step fails in the container with the runner's message (`[data-explorer-filters]`, expected 0, received 1); the repaired test passed 15 of 15 container runs. Closure review by review-tests and review-root-cause (agy): approved after the product behaviour behind it (a popover ignores Escape while the focus is on its trigger) was filed as f-20261122-11 for a build of its own. The CI runner is the remaining proof: the `e2e` job of the `Test` run on the commit that carries this closure.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"21bdc88133b78dc648a747048fca0a5d9a06cebd06cc79a1cf06d74303eaba98","header_sha256":"ec75d4d71f980c1b029621c9a6ac5057af49ef59229e559e6260f2ea02a8f0cb","header_status":"handled","input_sha256":"bd54f7980689edbfe72cabb5200847b1c386768ac99facc1033447aa263177bd","kind":"mutation-receipt","operation":"65e459179df6145acc88cc7732162ae23df6739604b05ec55a416c3374f582b1","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-10"],"target":"f-20261122-10","v":1} -->
 
 ---
 
