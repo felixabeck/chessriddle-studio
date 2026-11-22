@@ -27775,7 +27775,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### `utils/tabs.ts` holds both tab identity/creation and the whole save pipeline in 1,657 lines
 
-* **ID:** f-20261119-18 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-18 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t67u) at origin/master `d79fa979e`
 * **Where:** `src/utils/tabs.ts`, which 61 files import. The first ~780 lines are tab identity and creation: origin predicates `:49-95`, `rebindFileTabsAfterStructureChange` `:109`, `useTabActions` `:167`, add-game admission `:190-443`, `commitNewTab` / `replaceNewTab` / `replaceFileGame` `:444-634`, `runTabCreation` / `createTab` `:635-779`. The remaining ~880 lines (`:780-1657`) are the save and store pipeline: `SaveResult`, `serializeStoreTree`, origin equality, save flights, store-target resolution and caching, `withStoreFlight`, `runStoreAttempt`, `storeIntoPgnFile`, `insertIntoDatabase`, `admitStoredGame`, `appendStoreGame`, `saveToFile` / `saveToFileNow`. Outside the module, the save half has six production consumers (`useAutoSave`, `quitSave`, `SaveToTargetModal`, `ConfirmChangesModal`, `FileFreshnessGate`, `BoardAnalysis`).
@@ -27784,6 +27784,11 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** move `:780-1657` (from `SaveResult` through `saveToFileNow`) into `src/utils/tabSave.ts`, together with `sameOrigin` / `sameFileGameOrigin` if only the save half and the predicates need them, and re-export from `tabs.ts` for the first step so importers do not change. That alone gives f-20261111-87 its natural cut: `files.ts` → `tabs.ts` (creation) stays, `tabSave.ts` → `files.ts` no longer closes a cycle. Mechanical move, no behaviour change. `tabs.test.ts` and the save tests are the guard.
 * **Proof:** `wc -l src/utils/tabs.ts` gives 1657. The export list (`rg -n "^export " src/utils/tabs.ts`) splits at `SaveResult` `:780`. `rg -l "(saveToFile|saveToDatabase|saveToLibraryFile|appendStoreGame|serializeStoreTree)\b" src -g '!*test*'` lists the six consumers above. The import of `./files` is at the module head.
 * **Found by:** Grok Bot, refactoring review (t67u), origin/master `d79fa979e`.
+* **Closed 2026-11-22 (drain, pickup re-check, rejected under rule 4d):** no code change.
+  * The defect the split was meant to cut is gone. f-20261111-87 (commits `79008214d`, `baca07a70`, `0eeaa7792`, 2026-11-20) moved `openFile` to `src/utils/openFile.ts`. At HEAD `4223d843c`, `src/utils/files.ts` has no value import from `./tabs`; its only tabs edge is `import type { SetTabs }`. `tabs.ts` → `files.ts` therefore no longer closes a runtime cycle, and nothing imports `openFile.ts` back into `tabs.ts`.
+  * What remains is module size (1,681 lines) and review surface. The cited save-path fixes f-20261115-15 and f-20261115-16 are both handled, so the failure scenario was never observed. With no product, production or blocked-work impact, a pure code move fails rule 4d.
+  * Rejected: doing the mechanical move anyway. It churns 61 importers' module graph and the frontend coverage/mutation area mapping without an observed cost. It can be refiled if a save-path change actually runs into the shared file.
+<!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"5529fe2b33a561bdbe40d1b35be83c629e9a63d82e27838f3026b0dbd741e6fe","header_sha256":"91bbc8ae99c2e3b5966045d7b8157965d48f5eeec3f3754cb4e0f7b174e56ff6","header_status":"handled","input_sha256":"c433d6c3c1c04bde665240ca8cad0ff3044e5845ca7a185253174c06eba0e957","kind":"mutation-receipt","operation":"e6205070e0fc20c510a63d1834d87e1a6d71df1b440f74a3a019b6728391b41e","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-18"],"target":"f-20261119-18","v":1} -->
 
 ---
 
