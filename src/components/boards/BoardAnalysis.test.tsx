@@ -1073,6 +1073,25 @@ describe("BoardAnalysis", () => {
           expect(element.style.overflowY).toBe("hidden");
         }
       }
+      // Without moves the shortcut only shows the Report tab.
+      await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
+      const emptyEvent = await shortcut(keys.GENERATE_REPORT.keys);
+      expect(emptyEvent.defaultPrevented).toBe(true);
+      expect(jotaiStore.get(tabFamily(tabId))).toBe("analysis");
+      expect(jotaiStore.get(analysisTabFamily(tabId))).toBe("report");
+      expect(jotaiStore.get(reportModalOpenFamily(tabId))).toBe(false);
+      // With moves it opens the dialog, unless the tab already runs a report.
+      await act(async () => treeStore.getState().makeMoves({ payload: ["e4"] }));
+      await act(async () => {
+        treeStore.getState().setReportOperationId("running-report");
+        treeStore.getState().setReportInProgress(true);
+      });
+      await shortcut(keys.GENERATE_REPORT.keys);
+      expect(jotaiStore.get(reportModalOpenFamily(tabId))).toBe(false);
+      await act(async () => {
+        treeStore.getState().setReportOperationId(null);
+        treeStore.getState().setReportInProgress(false);
+      });
       const reportEvent = await shortcut(keys.GENERATE_REPORT.keys);
       expect(reportEvent.defaultPrevented).toBe(true);
       expect(jotaiStore.get(tabFamily(tabId))).toBe("analysis");

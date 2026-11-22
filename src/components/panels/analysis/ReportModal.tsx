@@ -14,7 +14,13 @@ import AppModal from "../../common/AppModal";
 import { enginesAtom, referenceDbAtom } from "@/state/atoms";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { createZodStorage } from "@/state/utils";
-import { captureReportOwner, isReportOwnerCurrent, waitForReportOwner } from "@/state/store/tree";
+import {
+  captureReportOwner,
+  isReportOwnerCurrent,
+  type ReportRequest,
+  waitForReportOwner,
+} from "@/state/store/tree";
+import { getMainLine, reportRootFingerprint } from "@/utils/chess";
 import { boundedGoModeSchema, type LocalEngine } from "@/utils/engines";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
@@ -28,12 +34,9 @@ function isReportGoMode(mode: GoMode): mode is ReportGoMode {
   return mode.t === "Depth" || mode.t === "Time" || mode.t === "Nodes";
 }
 
-export function reportRootFingerprint(fen: string, moves: string[]): string {
-  return `${fen}\u0000${moves.join("\u0000")}`;
-}
-
 type ReportSettings = {
   novelty: boolean;
+  marks: boolean;
   variations: boolean;
   goMode: ReportGoMode;
   engine: string;
@@ -41,6 +44,7 @@ type ReportSettings = {
 
 const defaultReportSettings: ReportSettings = {
   novelty: true,
+  marks: true,
   variations: true,
   goMode: { t: "Time", c: 500 },
   engine: "",
@@ -48,21 +52,30 @@ const defaultReportSettings: ReportSettings = {
 
 const reportSettingsSchema: z.ZodType<ReportSettings, z.ZodTypeDef, unknown> = z.object({
   novelty: z.boolean().catch(defaultReportSettings.novelty),
+  marks: z.boolean().catch(defaultReportSettings.marks),
   variations: z.boolean().catch(defaultReportSettings.variations),
   goMode: boundedGoModeSchema.catch(defaultReportSettings.goMode),
   engine: z.string().catch(defaultReportSettings.engine),
 });
 
-/**
- * The entries `addAnalysis` takes, one per mainline position. Temporary until the report is
- * applied from the native result directly.
- */
-export function legacyReportEntries(result: GameAnalysis) {
-  return result.positions.map((position, index) => ({
-    best: position.best,
-    novelty: result.novelty.kind === "found" && result.novelty.position === index,
-    is_sacrifice: position.isSacrifice,
-  }));
+/** One notice for a report that finished with gaps, or none. */
+function notifyReportGaps(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  result: GameAnalysis,
+) {
+  const missing = result.positions.filter(
+    (position) => position.best.length === 0 && position.terminal === null,
+  ).length;
+  const parts = [
+    missing > 0 ? t("Board.Analysis.Report.MissingEvaluations", { positions: missing }) : null,
+    result.novelty.kind === "unavailable" ? t("Board.Analysis.Report.NoveltyUnavailable") : null,
+  ].filter((part): part is string => part !== null);
+  if (parts.length === 0) return;
+  notifications.show({
+    color: "warning",
+    title: t("Board.Analysis.Report.Incomplete"),
+    message: parts.join(" "),
+  });
 }
 
 const reportSettingsAtom = atomWithStorage(
@@ -79,7 +92,6 @@ function ReportModal({
   closeReportingMode,
   setInProgress,
   registerOperation,
-  isCurrentOperation,
 }: {
   tab: string;
   initialFen: string;
@@ -88,7 +100,6 @@ function ReportModal({
   closeReportingMode: () => void;
   setInProgress: (value: boolean) => void;
   registerOperation: (id: string) => void;
-  isCurrentOperation: (id: string, fingerprint: string) => boolean;
 }) {
   const { t } = useTranslation();
 
@@ -101,65 +112,21 @@ function ReportModal({
       !!currency.error ||
       (!!currency.collection &&
         (currency.collection.status !== "ready" || !currency.collection.database)));
-  const activeReferenceOperation = useRef<{
-    id: string;
-    owner: object;
-    cancelling: boolean;
-  } | null>(null);
-  const currentReferenceIdentity = JSON.stringify([
-    referenceDb ? capabilityKey(referenceDb) : null,
-    currency.pending,
-    !!currency.error,
-    currency.collection?.id,
-    currency.collection?.status,
-    currency.collection?.generation,
-    currency.collection?.database ? capabilityKey(currency.collection.database) : null,
-  ]);
-  const referenceIdentity = useRef(currentReferenceIdentity);
-  referenceIdentity.current = currentReferenceIdentity;
   const engines = useAtomValue(enginesAtom);
   const localEngines = useMemo(
     () => (engines ?? []).filter((e): e is LocalEngine => e.type === "local"),
     [engines],
   );
   const store = useContext(TreeStateContext)!;
-  const addAnalysis = useStore(store, (s) => s.addAnalysis);
+  const inProgress = useStore(store, (s) => s.report.inProgress);
   const prepareGeneration = useRef(0);
   const pendingPreparation = useRef<AbortController | null>(null);
-  const referenceCallbacks = useRef({ t, setInProgress });
-  referenceCallbacks.current = { t, setInProgress };
+  const referenceCallbacks = useRef({ t });
+  referenceCallbacks.current = { t };
   useEffect(() => {
     if (currency.error)
       notifyUnlessCancelled(referenceCallbacks.current.t("Common.Error"), currency.error);
   }, [currency.error]);
-  useEffect(() => {
-    pendingPreparation.current?.abort();
-    prepareGeneration.current += 1;
-    const operation = activeReferenceOperation.current;
-    if (!operation || operation.cancelling) return;
-    operation.cancelling = true;
-    const { t, setInProgress } = referenceCallbacks.current;
-    void tauri
-      .cancelAnalysis(operation.id)
-      .catch((error) => {
-        if (
-          isReportOwnerCurrent(tab, operation.owner) &&
-          store.getState().report.operationId === operation.id
-        )
-          notifyUnlessCancelled(t("Common.Error"), error);
-      })
-      .finally(async () => {
-        if (
-          activeReferenceOperation.current === operation &&
-          (await waitForReportOwner(tab, operation.owner)) &&
-          isReportOwnerCurrent(tab, operation.owner) &&
-          store.getState().report.operationId === operation.id
-        ) {
-          activeReferenceOperation.current = null;
-          setInProgress(false);
-        }
-      });
-  }, [currentReferenceIdentity, store, tab]);
   const currentRootFingerprint = useRef("");
   currentRootFingerprint.current = reportRootFingerprint(initialFen, moves);
 
@@ -200,8 +167,8 @@ function ReportModal({
   }, [engines, localEngines, reportSettings]);
 
   async function analyze() {
-    if (referenceUnavailable) return;
-    const capturedReferenceIdentity = referenceIdentity.current;
+    // A tab runs one report at a time; the dialog cannot start a second one.
+    if (store.getState().report.inProgress) return;
     pendingPreparation.current?.abort();
     const preparation = new AbortController();
     pendingPreparation.current = preparation;
@@ -209,128 +176,142 @@ function ReportModal({
     const ownerEpoch = captureReportOwner(tab);
     setReportSettings(form.values);
     const rootFingerprint = reportRootFingerprint(initialFen, moves);
-    const variations = form.values.variations;
-    const engine = localEngines.find((e) => e.id === form.values.engine);
+    const settings = form.values;
+    const engine = localEngines.find((e) => e.id === settings.engine);
     if (!engine) return;
+    const preparationCurrent = () =>
+      generation === prepareGeneration.current &&
+      isReportOwnerCurrent(tab, ownerEpoch) &&
+      currentRootFingerprint.current === rootFingerprint;
     let operationId: string;
     try {
       operationId = await tauri.prepareAnalysis(tab, { signal: preparation.signal });
     } catch (error) {
-      if (
-        generation === prepareGeneration.current &&
-        referenceIdentity.current === capturedReferenceIdentity &&
-        isReportOwnerCurrent(tab, ownerEpoch) &&
-        currentRootFingerprint.current === rootFingerprint
-      )
+      if (preparationCurrent())
         notifyUnlessCancelled(t("Common.Error"), reportEngineFailure(t, error));
       return;
     } finally {
       if (pendingPreparation.current === preparation) pendingPreparation.current = null;
     }
-    if (
-      generation !== prepareGeneration.current ||
-      referenceIdentity.current !== capturedReferenceIdentity ||
-      !isReportOwnerCurrent(tab, ownerEpoch) ||
-      currentRootFingerprint.current !== rootFingerprint
-    ) {
+    if (!preparationCurrent()) {
+      // A later submission or a changed game superseded this one before it was claimed.
       try {
         await tauri.cancelAnalysis(operationId);
       } catch (error) {
-        if (
-          generation === prepareGeneration.current &&
-          referenceIdentity.current === capturedReferenceIdentity &&
-          isReportOwnerCurrent(tab, ownerEpoch) &&
-          currentRootFingerprint.current === rootFingerprint
-        )
+        if (preparationCurrent())
           notifyUnlessCancelled(t("Common.Error"), reportEngineFailure(t, error));
       }
       return;
     }
     registerOperation(operationId);
-    activeReferenceOperation.current = { id: operationId, owner: ownerEpoch, cancelling: false };
     setInProgress(true);
     closeReportingMode();
     const engineSettings = normalizeEngineOptions(engine?.settings ?? []);
 
-    // The panel may unmount while native analysis continues. Its Jotai store
-    // still owns selection, and native metadata owns linked index currency.
+    const operationCurrent = () =>
+      isReportOwnerCurrent(tab, ownerEpoch) && store.getState().report.operationId === operationId;
+    const gameUnchanged = () => {
+      const { root } = store.getState();
+      return reportRootFingerprint(root.fen, getMainLine(root)) === rootFingerprint;
+    };
+
+    // An edit to the root or the mainline cancels the run at once, also while the panel is
+    // unmounted: this subscription belongs to the run, not to the component.
+    let gameChanged = false;
+    const unsubscribe = store.subscribe((state, previous) => {
+      if (gameChanged || state.root === previous.root || gameUnchanged()) return;
+      if (!operationCurrent()) return;
+      gameChanged = true;
+      // Outside the store's own write: a cancel failure cannot break the edit that caused it.
+      Promise.resolve()
+        .then(() => tauri.cancelAnalysis(operationId))
+        .catch((error) => {
+          if (operationCurrent())
+            notifyUnlessCancelled(t("Common.Error"), reportEngineFailure(t, error));
+        });
+    });
+
+    // The reference only decides whether a novelty outcome can be trusted. It never blocks or
+    // cancels the run, and a failing check never gates feedback.
     const referenceKey = referenceDb ? capabilityKey(referenceDb) : null;
     const capturedCollection = currency.collection;
-    const synchronousOwnersCurrent = () => {
+    const referenceStillCurrent = async () => {
       const selected = atomStore.get(referenceDbAtom);
-      return (
-        isReportOwnerCurrent(tab, ownerEpoch) &&
-        isCurrentOperation(operationId, rootFingerprint) &&
-        (selected ? capabilityKey(selected) : null) === referenceKey
-      );
-    };
-    const completionOwnersCurrent = async () => {
-      if (!(await waitForReportOwner(tab, ownerEpoch)) || !synchronousOwnersCurrent()) return false;
+      if ((selected ? capabilityKey(selected) : null) !== referenceKey) return false;
       if (!referenceDb) return true;
       try {
         const current = await tauri.collectionForDatabase(referenceDb);
-        return (
-          synchronousOwnersCurrent() &&
-          (capturedCollection
-            ? !!current &&
+        const reselected = atomStore.get(referenceDbAtom);
+        if ((reselected ? capabilityKey(reselected) : null) !== referenceKey) return false;
+        return capturedCollection
+          ? !!current &&
               current.id === capturedCollection.id &&
               current.status === "ready" &&
               current.generation === capturedCollection.generation &&
               !!current.database &&
               !!capturedCollection.database &&
               capabilityKey(current.database) === capabilityKey(capturedCollection.database)
-            : current === null)
-        );
+          : current === null;
       } catch {
-        // Unverified reference metadata cannot authorize analysis or error feedback.
         return false;
       }
     };
+    const request: ReportRequest = {
+      operationId,
+      fingerprint: rootFingerprint,
+      engine: engine.name,
+      goMode: settings.goMode,
+      marks: settings.marks,
+      lines: settings.variations,
+      createdAt: Date.now(),
+    };
 
-    tauri
-      .analyzeGame(
+    try {
+      const result = await tauri.analyzeGame(
         operationId,
         tab,
         engine.handle,
         engine.id,
-        form.values.goMode,
+        settings.goMode,
         {
-          annotateNovelties: form.values.novelty,
+          annotateNovelties: settings.novelty,
           fen: initialFen,
           referenceDb: currency.collection?.database ?? referenceDb,
           moves,
         },
         engineSettings,
-      )
-      .then(async (analysis) => {
-        // The immutable root fingerprint prevents a late completion from
-        // applying to an edited/switched game even when a tab id is reused.
-        if ((await completionOwnersCurrent()) && synchronousOwnersCurrent()) {
-          addAnalysis(legacyReportEntries(analysis), {
-            showVariations: variations,
+      );
+      if (!(await waitForReportOwner(tab, ownerEpoch)) || !operationCurrent()) return;
+      const noveltyKnown = result.novelty.kind === "found" || result.novelty.kind === "notFound";
+      const trusted =
+        noveltyKnown && !(await referenceStillCurrent())
+          ? { ...result, novelty: { kind: "unavailable" as const } }
+          : result;
+      if (!operationCurrent()) return;
+      if (!gameUnchanged()) {
+        gameChanged = true;
+        return;
+      }
+      if (store.getState().applyReport(trusted, { ...request, createdAt: Date.now() }))
+        notifyReportGaps(t, trusted);
+    } catch (error) {
+      if (!(await waitForReportOwner(tab, ownerEpoch)) || !operationCurrent()) return;
+      if (gameChanged || !gameUnchanged()) {
+        gameChanged = true;
+        return;
+      }
+      notifyUnlessCancelled(t("Common.Error"), reportEngineFailure(t, error));
+    } finally {
+      unsubscribe();
+      if ((await waitForReportOwner(tab, ownerEpoch)) && operationCurrent()) {
+        setInProgress(false);
+        if (gameChanged)
+          notifications.show({
+            color: "warning",
+            message: t("Board.Analysis.Report.GameChanged"),
           });
-          if (analysis.novelty.kind === "unavailable")
-            notifications.show({
-              color: "warning",
-              message: t("Board.Analysis.Report.NoveltyUnavailable"),
-            });
-        }
-      })
-      .catch(async (error) => {
-        if ((await completionOwnersCurrent()) && synchronousOwnersCurrent()) {
-          notifyUnlessCancelled(t("Common.Error"), reportEngineFailure(t, error));
-        }
-      })
-      .finally(async () => {
-        if (
-          (await waitForReportOwner(tab, ownerEpoch)) &&
-          isReportOwnerCurrent(tab, ownerEpoch) &&
-          store.getState().report.operationId === operationId
-        )
-          setInProgress(false);
-        if (activeReferenceOperation.current?.id === operationId)
-          activeReferenceOperation.current = null;
-      });
+      }
+    }
   }
 
   return (
@@ -386,7 +367,7 @@ function ReportModal({
           />
 
           <Group justify="right">
-            <Button type="submit" disabled={referenceUnavailable}>
+            <Button type="submit" disabled={inProgress}>
               {t("Board.Analysis.Analyze")}
             </Button>
           </Group>

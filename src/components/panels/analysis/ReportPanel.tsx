@@ -13,9 +13,14 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useProgress } from "@/hooks/useProgress";
 import { reportModalOpenFamily } from "@/state/atoms";
 import { ANNOTATION_INFO, type BasicAnnotation, isBasicAnnotation } from "@/utils/annotation";
-import { type AnnotationCounts, getGameStats, getMainLine } from "@/utils/chess";
+import {
+  type AnnotationCounts,
+  getGameStats,
+  getMainLine,
+  reportRootFingerprint,
+} from "@/utils/chess";
 import classes from "./AnalysisPanel.module.css";
-import ReportModal, { reportRootFingerprint } from "./ReportModal";
+import ReportModal from "./ReportModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { reportEngineFailure } from "./useDisplayedEngineLines";
 
@@ -123,7 +128,6 @@ function ReportPanel() {
         closeReportingMode={closeReportingMode}
         setInProgress={setInProgress}
         registerOperation={setReportOperationId}
-        isCurrentOperation={isCurrentOperation}
       />
       <Stack mb="lg" gap="0.4rem" mr="xs">
         <ProgressButton

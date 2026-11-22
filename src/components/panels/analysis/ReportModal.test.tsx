@@ -4,7 +4,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createStore, Provider, type PrimitiveAtom } from "jotai";
 import { enginesAtom, referenceDbAtom } from "@/state/atoms";
 
-import ReportModal, { legacyReportEntries } from "./ReportModal";
+import ReportModal from "./ReportModal";
+import { getMainLine } from "@/utils/chess";
 import {
   closeTreeStore,
   createTreeStore,
@@ -16,6 +17,18 @@ import { startFileRevisionPoll } from "@/state/fileFreshness";
 import type { GameAnalysis } from "@/bindings";
 import { parseUci } from "chessops";
 import { createNode, defaultTree } from "@/utils/treeReducer";
+
+const E4_FEN = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+
+/** A game of one move, 1.e4, from the standard start. */
+function e4Tree() {
+  const game = defaultTree();
+  game.root.children.push(
+    createNode({ fen: E4_FEN, move: parseUci("e2e4")!, san: "e4", halfMoves: 1 }),
+  );
+  // The cursor is on the last move, so a move played in a test extends the mainline.
+  return { ...game, position: [0] };
+}
 
 const mocks = vi.hoisted(() => ({
   analyzeGame: vi.fn(),
@@ -76,6 +89,9 @@ vi.mock("@/state/atoms", async () => {
   return {
     enginesAtom: atom<typeof mocks.engines | undefined>(mocks.engines),
     referenceDbAtom: atom(null),
+    // A move played in a test reaches the move sound.
+    soundCollectionAtom: atom("standard"),
+    soundVolumeAtom: atom(0),
   };
 });
 vi.mock("@mantine/core", () => ({
@@ -161,7 +177,8 @@ beforeEach(() => {
   mocks.analyzeGame.mockResolvedValue(emptyAnalysis);
   sessionStorage.removeItem("tab-id");
   tree = createTreeStore("tab-id");
-  analysisPublished = vi.spyOn(tree.getState(), "addAnalysis");
+  tree.getState().setState(e4Tree());
+  analysisPublished = vi.spyOn(tree.getState(), "applyReport");
   setInProgress = vi.fn(tree.getState().setReportInProgress);
   localStorage.removeItem("report-settings");
   localStorage.setItem(
@@ -206,10 +223,8 @@ function countReportRenders() {
 }
 
 async function renderReportModal({
-  isCurrentOperation = (_id: string, _fingerprint: string) => true,
   reportingMode = true,
 }: {
-  isCurrentOperation?: (id: string, fingerprint: string) => boolean;
   reportingMode?: boolean;
 } = {}) {
   const renders = countReportRenders();
@@ -220,15 +235,12 @@ async function renderReportModal({
           <TreeStateContext.Provider value={tree}>
             <ReportModal
               tab="tab-id"
-              initialFen="start-fen"
-              moves={["e2e4"]}
+              initialFen={tree.getState().root.fen}
+              moves={getMainLine(tree.getState().root)}
               reportingMode={reportingMode}
               closeReportingMode={vi.fn()}
               setInProgress={setInProgress}
               registerOperation={tree.getState().setReportOperationId}
-              isCurrentOperation={(id, fingerprint) =>
-                tree.getState().report.operationId === id && isCurrentOperation(id, fingerprint)
-              }
             />
           </TreeStateContext.Provider>
         </Provider>
@@ -290,9 +302,22 @@ const e4Line = {
   nps: 1n,
 };
 
+const e5Line = {
+  nodes: 1n,
+  depth: 1,
+  score: { value: { type: "cp" as const, value: 20 }, wdl: null },
+  uciMoves: ["e7e5"],
+  sanMoves: ["e5"],
+  multipv: 1,
+  nps: 1n,
+};
+
 const completedAnalysis: GameAnalysis = {
   // Index 0 is the start position, which is never the novelty.
-  positions: [{ best: [e4Line], terminal: null, isSacrifice: false }],
+  positions: [
+    { best: [e4Line], terminal: null, isSacrifice: false },
+    { best: [e5Line], terminal: null, isSacrifice: false },
+  ],
   novelty: { kind: "notRequested" },
 };
 
@@ -366,47 +391,64 @@ test("switching report go mode resets Depth to 20 and Time to 500 without mutati
   expect(previousGoMode).toEqual({ t: "Time", c: 500 });
 });
 
-test.each(["success", "failure"])(
-  "unmounted report %s reads the live Jotai selection and settles only its matching progress",
-  async (outcome) => {
-    const { completion } = await startUnmountedLinkedReport();
-    selectReference({ id: { id: "reference-B" }, kind: "database" });
-    await act(async () => {
-      if (outcome === "success") completion.resolve(completedAnalysis);
-      else completion.reject(new Error("obsolete A failure"));
-    });
-    expect(analysisPublished).not.toHaveBeenCalled();
-    expect(tree.getState().root.score).toBeNull();
-    expect(tree.getState().root.nags).toEqual([]);
-    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
-    expect(tree.getState().report.inProgress).toBe(false);
-    expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
-  },
-);
-
-test("unchanged linked reference publishes analysis and novelty after panel unmount", async () => {
-  const e4 = defaultTree();
-  e4.root.children.push(
-    createNode({
-      fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-      move: parseUci("e2e4")!,
-      san: "e4",
-      halfMoves: 1,
+function storeSettings(settings: Record<string, unknown>) {
+  localStorage.setItem(
+    "report-settings",
+    JSON.stringify({
+      novelty: false,
+      variations: true,
+      goMode: { t: "Time", c: 500 },
+      engine: "engine-id",
+      ...settings,
     }),
   );
-  tree.getState().setState(e4);
+}
+
+test("a reference change during a run without novelty neither cancels it nor drops its result", async () => {
+  const { completion } = await startUnmountedLinkedReport();
+  selectReference({ id: { id: "reference-B" }, kind: "database" });
+  await act(async () => completion.resolve(completedAnalysis));
+  expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
+  expect(analysisPublished).toHaveBeenCalledOnce();
+  expect(tree.getState().root.score).toEqual(e4Line.score);
+  expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+  expect(tree.getState().report.inProgress).toBe(false);
+});
+
+test("a reference change during a run without novelty keeps its failure visible", async () => {
+  const { completion } = await startUnmountedLinkedReport();
+  selectReference({ id: { id: "reference-B" }, kind: "database" });
+  const failure = new Error("current failure");
+  await act(async () => completion.reject(failure));
+  expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
+  expect(analysisPublished).not.toHaveBeenCalled();
+  expect(mocks.notifyUnlessCancelled).toHaveBeenCalledExactlyOnceWith("Common.Error", failure);
+  expect(tree.getState().report.inProgress).toBe(false);
+});
+
+test("an unchanged linked reference publishes the analysis and the novelty after panel unmount", async () => {
+  storeSettings({ novelty: true });
   const { completion } = await startUnmountedLinkedReport();
   const reads = mocks.collection.mock.calls.length;
   await act(async () => completion.resolve(noveltyAnalysis));
   expect(mocks.collection).toHaveBeenCalledTimes(reads + 1);
-  expect(analysisPublished).toHaveBeenCalledExactlyOnceWith(legacyReportEntries(noveltyAnalysis), {
-    showVariations: true,
-  });
+  expect(analysisPublished).toHaveBeenCalledExactlyOnceWith(
+    noveltyAnalysis,
+    expect.objectContaining({
+      operationId: "report_tab-id_operation-uuid",
+      engine: "Stockfish",
+      goMode: { t: "Time", c: 500 },
+      marks: true,
+      lines: true,
+    }),
+  );
   expect(tree.getState().root.score).toEqual(noveltyAnalysis.positions[0].best[0].score);
   expect(tree.getState().root.nags).toEqual([]);
   expect(tree.getState().root.children[0].nags).toContain(146);
+  expect(tree.getState().report.summary).toMatchObject({ engine: "Stockfish", novelty: "found" });
   expect(tree.getState().report.inProgress).toBe(false);
   expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
+  expect(mocks.notificationsShow).not.toHaveBeenCalled();
 });
 
 test("current report failure after unmount still reports its first error", async () => {
@@ -417,21 +459,13 @@ test("current report failure after unmount still reports its first error", async
   expect(tree.getState().report.inProgress).toBe(false);
 });
 
-test.each(
-  [
-    "generation",
-    "unavailable",
-    "missing",
-    "database",
-    "identity",
-    "standalone",
-    "rejected",
-  ].flatMap((change) => ["success", "failure"].map((outcome) => ({ change, outcome }))),
-)(
-  "unmounted report $outcome validates native reference $change before publishing or notifying",
-  async ({ change, outcome }) => {
+test.each(["selection", "generation", "unavailable", "identity", "standalone", "rejected"])(
+  "with novelty on, a reference %s change applies the result with the novelty unavailable",
+  async (change) => {
+    storeSettings({ novelty: true });
     const { completion, collection } = await startUnmountedLinkedReport();
-    if (change === "rejected")
+    if (change === "selection") selectReference({ id: { id: "reference-B" }, kind: "database" });
+    else if (change === "rejected")
       mocks.collection.mockRejectedValue(new Error("metadata unavailable"));
     else
       mocks.collection.mockResolvedValue(
@@ -441,73 +475,59 @@ test.each(
               ...collection,
               ...(change === "generation" ? { generation: "second" } : {}),
               ...(change === "unavailable" ? { status: "unavailable" as const } : {}),
-              ...(change === "missing" ? { status: "missing" as const, database: null } : {}),
               ...(change === "identity" ? { id: "replacement-collection" } : {}),
-              ...(change === "database"
-                ? { database: { id: { id: "replacement-database" }, kind: "database" as const } }
-                : {}),
             },
       );
-    await act(async () => {
-      if (outcome === "success") completion.resolve(completedAnalysis);
-      else completion.reject(new Error("obsolete native analysis failure"));
-    });
-    expect(analysisPublished).not.toHaveBeenCalled();
-    expect(tree.getState().root.score).toBeNull();
-    expect(tree.getState().root.nags).toEqual([]);
-    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+    await act(async () => completion.resolve(noveltyAnalysis));
+    expect(analysisPublished).toHaveBeenCalledExactlyOnceWith(
+      { ...noveltyAnalysis, novelty: { kind: "unavailable" } },
+      expect.anything(),
+    );
+    expect(tree.getState().root.score).toEqual(noveltyAnalysis.positions[0].best[0].score);
+    expect(tree.getState().root.children[0].nags).not.toContain(146);
+    expect(mocks.notificationsShow).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ message: "Board.Analysis.Report.NoveltyUnavailable" }),
+    );
+    expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
     expect(tree.getState().report.inProgress).toBe(false);
   },
 );
 
-test.each(
-  ["selection", "operation", "tab", "root"].flatMap((change) =>
-    ["during", "after"].flatMap((timing) =>
-      ["success", "failure"].map((outcome) => ({ change, timing, outcome })),
-    ),
-  ),
-)(
-  "report $outcome with a live $change change $timing awaited reference validation refuses publication and preserves successors",
-  async ({ change, timing, outcome }) => {
-    const originalRoot = tree.getState().root;
-    selectReference({ id: { id: "reference-A" }, kind: "database" });
-    const collection = linkedReference();
-    mocks.collection.mockResolvedValue(collection);
-    const completion = deferred<GameAnalysis>();
-    mocks.analyzeGame.mockReturnValueOnce(completion.promise);
-    await renderReportModal({
-      isCurrentOperation: () => tree.getState().root === originalRoot,
-    });
-    await act(async () => host.querySelector("button")!.click());
-    await act(async () => root.render(<div>Database panel</div>));
+test("a native failure is notified even when the reference check fails", async () => {
+  storeSettings({ novelty: true });
+  const { completion } = await startUnmountedLinkedReport();
+  mocks.collection.mockRejectedValue(new Error("metadata unavailable"));
+  const failure = new Error("engine failed");
+  await act(async () => completion.reject(failure));
+  expect(mocks.notifyUnlessCancelled).toHaveBeenCalledExactlyOnceWith("Common.Error", failure);
+});
+
+test.each(["operation", "tab", "root"])(
+  "a %s change while the reference check is pending refuses publication",
+  async (change) => {
+    storeSettings({ novelty: true });
+    const { completion, collection } = await startUnmountedLinkedReport();
     const validation = deferred<import("@/bindings").CollectionDescriptor | null>();
     mocks.collection.mockReturnValueOnce(validation.promise);
-    const reads = mocks.collection.mock.calls.length;
-    await act(async () => {
-      if (outcome === "success") completion.resolve(completedAnalysis);
-      else completion.reject(new Error("obsolete report failure"));
-    });
-    expect(mocks.collection).toHaveBeenCalledTimes(reads + 1);
+    await act(async () => completion.resolve(noveltyAnalysis));
     expect(tree.getState().report.inProgress).toBe(true);
-    const changeOwner = () =>
-      act(() => {
-        if (change === "selection")
-          selectReference({ id: { id: "reference-B" }, kind: "database" });
-        if (change === "operation") tree.getState().setReportOperationId("successor-report");
-        if (change === "tab") closeTreeStore("tab-id");
-        if (change === "root") tree.getState().setFen("8/8/8/8/8/8/8/K6k w - - 0 1");
-      });
-    if (timing === "during") changeOwner();
-    else void validation.promise.then(changeOwner);
+    act(() => {
+      if (change === "operation") tree.getState().setReportOperationId("successor-report");
+      if (change === "tab") closeTreeStore("tab-id");
+      if (change === "root") tree.getState().appendMove({ payload: parseUci("e7e5")! });
+    });
     await act(async () => validation.resolve(collection));
     expect(analysisPublished).not.toHaveBeenCalled();
     expect(tree.getState().root.score).toBeNull();
-    expect(tree.getState().root.nags).toEqual([]);
     expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
-    expect(tree.getState().report).toMatchObject({
-      operationId: change === "operation" ? "successor-report" : "report_tab-id_operation-uuid",
-      inProgress: change === "operation" || change === "tab",
-    });
+    expect(tree.getState().report.operationId).toBe(
+      change === "operation" ? "successor-report" : "report_tab-id_operation-uuid",
+    );
+    // Only a changed game is reported, and its run is over; a successor keeps its flag.
+    expect(mocks.notificationsShow.mock.calls.map(([notice]) => notice.message)).toEqual(
+      change === "root" ? ["Board.Analysis.Report.GameChanged"] : [],
+    );
+    expect(tree.getState().report.inProgress).toBe(change !== "root");
   },
 );
 
@@ -525,10 +545,10 @@ test("report currency consumer notifies once per outage with fresh native errors
     await act(async () => poll.focus());
     expect(sequence).toBe(3);
     expect(mocks.notifyUnlessCancelled).toHaveBeenCalledTimes(1);
-    expect(host.querySelector("button")!.disabled).toBe(true);
+    // The reference never blocks Analyze.
+    expect(host.querySelector("button")!.disabled).toBe(false);
     mocks.collection.mockResolvedValue(linkedReference());
     await act(async () => poll.focus());
-    expect(host.querySelector("button")!.disabled).toBe(false);
     mocks.collection.mockImplementation(async () => {
       throw new Error(`second outage ${++sequence}`);
     });
@@ -544,20 +564,19 @@ test("report currency consumer notifies once per outage with fresh native errors
 });
 
 test.each(["selection", "generation", "status"])(
-  "a reference %s change aborts held preparation and cancels its reservation before native dispatch",
+  "a reference %s change during preparation neither aborts it nor cancels the run",
   async (change) => {
     selectReference({ id: { id: "reference-first" }, kind: "database" });
     const collection = linkedReference();
     if (change !== "selection") mocks.collection.mockResolvedValue(collection);
     const prepared = deferred<string>();
     mocks.prepareAnalysis.mockReturnValueOnce(prepared.promise);
+    mocks.analyzeGame.mockReturnValueOnce(deferred<GameAnalysis>().promise);
     const poll = collectionFocus();
     try {
       await renderReportModal();
       await act(async () => host.querySelector("button")!.click());
-      expect(mocks.prepareAnalysis).toHaveBeenCalledOnce();
       const signal = mocks.prepareAnalysis.mock.calls[0][1].signal as AbortSignal;
-      expect(signal.aborted).toBe(false);
       if (change === "selection") {
         selectReference({ id: { id: "reference-second" }, kind: "database" });
         await renderReportModal();
@@ -568,213 +587,82 @@ test.each(["selection", "generation", "status"])(
         });
         await act(async () => poll.focus());
       }
-      await act(async () => prepared.resolve("obsolete-prepared"));
-      // Obsolete preparation must never dispatch native analysis.
-      expect(mocks.analyzeGame).not.toHaveBeenCalled();
-      // Reference changes must abort the pending preparation.
-      expect(signal.aborted).toBe(true);
-      expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("obsolete-prepared");
-      expect(tree.getState().report.inProgress).toBe(false);
-      expect(analysisPublished).not.toHaveBeenCalled();
-    } finally {
-      poll.stop();
-    }
-  },
-);
-
-test.each(["selection", "generation"])(
-  "an old reference %s cancellation cannot clear a newer report and stale completion still settles progress",
-  async (change) => {
-    selectReference({ id: { id: "reference-first" }, kind: "database" });
-    const collection = linkedReference();
-    if (change === "generation") mocks.collection.mockResolvedValue(collection);
-    const poll = collectionFocus();
-    try {
-      const old = deferred<GameAnalysis>();
-      const current = deferred<GameAnalysis>();
-      const cancelled = deferred<void>();
-      mocks.prepareAnalysis
-        .mockResolvedValueOnce("old-reference")
-        .mockResolvedValueOnce("new-reference");
-      mocks.analyzeGame.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
-      mocks.cancelAnalysis.mockReturnValueOnce(cancelled.promise);
-      await renderReportModal();
-      await act(async () => host.querySelector("button")!.click());
-      expect(tree.getState().report.inProgress).toBe(true);
-      if (change === "selection") {
-        selectReference({ id: { id: "reference-second" }, kind: "database" });
-        await renderReportModal();
-      } else {
-        mocks.collection.mockResolvedValue({ ...collection, generation: "second" });
-        await act(async () => poll.focus());
-      }
-      await act(async () => old.resolve(emptyAnalysis));
-      // A result from the previous selected reference is stale.
-      expect(analysisPublished).not.toHaveBeenCalled();
-      // Native completion must settle progress before cancellation acknowledgement.
-      expect(tree.getState().report.inProgress).toBe(false);
-      await act(async () => host.querySelector("button")!.click());
+      await act(async () => prepared.resolve("prepared-ticket"));
+      expect(signal.aborted).toBe(false);
+      expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
+      expect(mocks.analyzeGame).toHaveBeenCalledOnce();
+      expect(mocks.analyzeGame.mock.calls[0][0]).toBe("prepared-ticket");
       expect(tree.getState().report).toMatchObject({
         inProgress: true,
-        operationId: "new-reference",
+        operationId: "prepared-ticket",
       });
-      await act(async () => cancelled.resolve());
-      expect(tree.getState().report.inProgress).toBe(true);
-      await act(async () => current.resolve(emptyAnalysis));
-      expect(analysisPublished).toHaveBeenCalledOnce();
-      expect(tree.getState().report.inProgress).toBe(false);
-      expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("old-reference");
     } finally {
       poll.stop();
     }
   },
 );
 
-test.each(["selection", "generation"])(
-  "a reference %s change preserves the successor while obsolete preparation is still held",
-  async (change) => {
-    selectReference({ id: { id: "reference-first" }, kind: "database" });
-    const collection = linkedReference();
-    if (change === "generation") mocks.collection.mockResolvedValue(collection);
-    const prepared = deferred<string>();
-    const current = deferred<GameAnalysis>();
-    mocks.prepareAnalysis
-      .mockReturnValueOnce(prepared.promise)
-      .mockResolvedValueOnce("current-ticket");
-    mocks.analyzeGame.mockReturnValueOnce(current.promise);
-    const poll = collectionFocus();
-    try {
-      await renderReportModal();
-      await act(async () => host.querySelector("button")!.click());
-      if (change === "selection") {
-        selectReference({ id: { id: "reference-second" }, kind: "database" });
-        await renderReportModal();
-      } else {
-        mocks.collection.mockResolvedValue({ ...collection, generation: "second" });
-        await act(async () => poll.focus());
-      }
-      await act(async () => host.querySelector("button")!.click());
-      expect(tree.getState().report).toMatchObject({
-        inProgress: true,
-        operationId: "current-ticket",
-      });
-      await act(async () => prepared.resolve("obsolete-prepared"));
-      expect(mocks.analyzeGame).toHaveBeenCalledExactlyOnceWith(
-        "current-ticket",
-        "tab-id",
-        mocks.engines[0].handle,
-        "engine-id",
-        { t: "Time", c: 500 },
-        expect.objectContaining({
-          referenceDb: atomStore.get(referenceDbAtom),
-          fen: "start-fen",
-          moves: ["e2e4"],
-        }),
-        [],
-      );
-      expect(mocks.prepareAnalysis.mock.calls[0][1].signal.aborted).toBe(true);
-      expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("obsolete-prepared");
-      expect(tree.getState().report.inProgress).toBe(true);
-      await act(async () => current.resolve(emptyAnalysis));
-      expect(analysisPublished).toHaveBeenCalledOnce();
-      expect(setInProgress.mock.calls.map(([value]) => value)).toEqual([true, false]);
-      expect(tree.getState().report.inProgress).toBe(false);
-    } finally {
-      poll.stop();
-    }
-  },
-);
-
-test("Analyze withholds preparation until reference currency is known and shows an unavailable check failure", async () => {
+test("Analyze does not wait for reference currency and a failing check is still shown", async () => {
   selectReference({ id: { id: "reference" }, kind: "database" });
   const check = deferred<import("@/bindings").CollectionDescriptor | null>();
   mocks.collection.mockReturnValueOnce(check.promise);
   await renderReportModal();
-  // Analyze must wait for a current reference.
-  expect(host.querySelector("button")!.disabled).toBe(true);
+  expect(host.querySelector("button")!.disabled).toBe(false);
   await act(async () => check.reject(new Error("reference currency failed")));
   expect(host.textContent).toContain("Collections.Unavailable");
-  expect(host.querySelector("button")!.disabled).toBe(true);
-  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(host.querySelector("button")!.disabled).toBe(false);
   expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith(
     "Common.Error",
     expect.objectContaining({ message: "reference currency failed" }),
   );
+  await act(async () => host.querySelector("button")!.click());
+  expect(mocks.prepareAnalysis).toHaveBeenCalledOnce();
 });
 
 test.each(["generation", "preservedOriginal"] as const)(
-  "a linked reference %s change cancels the active report and rejects its late analysis",
+  "a linked reference %s change during a run without novelty never cancels it",
   async (change) => {
     selectReference({ id: { id: "linked-reference" }, kind: "database" });
-    const collection: import("@/bindings").CollectionDescriptor = {
-      id: "22222222-2222-4222-8222-222222222222",
-      name: "Reference",
-      file: { id: { id: "source" }, kind: "fileWorkspace" },
-      database: atomStore.get(referenceDbAtom),
-      status: "ready",
-      generation: "first",
-      omitted: 0,
-      account: null,
-      retiredDatabase: null,
-      fetchSinceMs: null,
-    };
+    const collection = linkedReference();
     mocks.collection.mockResolvedValue(collection);
-    mocks.cancelAnalysis.mockResolvedValue(undefined);
     const analysis = deferred<GameAnalysis>();
     mocks.analyzeGame.mockReturnValueOnce(analysis.promise);
-    let focus!: () => void;
-    const stop = startFileRevisionPoll({
-      getTabs: () => [],
-      fileRevision: vi.fn(),
-      subscribeFocus: (callback) => {
-        focus = callback;
-        return () => undefined;
-      },
-    });
+    const poll = collectionFocus();
     try {
       await renderReportModal();
-      await act(async () => {
-        host.querySelector("button")!.click();
-        for (let i = 0; i < 8; i++) await Promise.resolve();
-      });
+      await act(async () => host.querySelector("button")!.click());
       expect(mocks.analyzeGame).toHaveBeenCalledOnce();
-      expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
       mocks.collection.mockResolvedValue(
         change === "generation"
           ? { ...collection, generation: "second" }
           : { ...collection, status: "preservedOriginal", database: null },
       );
-      await act(async () => {
-        focus();
-        for (let i = 0; i < 8; i++) await Promise.resolve();
-      });
-      expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("report_tab-id_operation-uuid");
-      await act(async () => analysis.resolve(emptyAnalysis));
-      expect(analysisPublished).not.toHaveBeenCalled();
-      expect(setInProgress).toHaveBeenLastCalledWith(false);
+      await act(async () => poll.focus());
+      expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
+      await act(async () => analysis.resolve(completedAnalysis));
+      expect(analysisPublished).toHaveBeenCalledOnce();
+      expect(tree.getState().root.score).toEqual(e4Line.score);
       expect(tree.getState().report.inProgress).toBe(false);
     } finally {
-      stop();
+      poll.stop();
     }
   },
 );
 
-test("P2 report replacement suppresses old failures and the current typed failure shows its safe reason", async () => {
+test("a report the user cancelled stays silent and a later run shows its own failure", async () => {
   const old = deferred<GameAnalysis>();
   const current = deferred<GameAnalysis>();
-  let currentId = "old";
   mocks.prepareAnalysis.mockResolvedValueOnce("old").mockResolvedValueOnce("current");
   mocks.analyzeGame.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
-  await renderReportModal({ isCurrentOperation: (id) => id === currentId });
-  await act(async () => {
-    host.querySelector("button")!.click();
-    await Promise.resolve();
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  // The panel's Cancel clears the operation and the run flag.
+  act(() => {
+    tree.getState().setReportOperationId(null);
+    tree.getState().setReportInProgress(false);
   });
-  currentId = "current";
-  await act(async () => {
-    host.querySelector("button")!.click();
-    await Promise.resolve();
-  });
+  await act(async () => host.querySelector("button")!.click());
+  expect(tree.getState().report.operationId).toBe("current");
   const failure = {
     tag: "engine-failure",
     category: "engine-failure",
@@ -788,6 +676,7 @@ test("P2 report replacement suppresses old failures and the current typed failur
   };
   await act(async () => old.reject(failure));
   expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+  expect(mocks.notificationsShow).not.toHaveBeenCalled();
   await act(async () => current.reject(failure));
   expect(mocks.notifyUnlessCancelled).toHaveBeenCalledExactlyOnceWith(
     "Common.Error",
@@ -795,20 +684,99 @@ test("P2 report replacement suppresses old failures and the current typed failur
   );
 });
 
-test("P2 changed root fingerprint suppresses the report failure notification", async () => {
-  const result = deferred<GameAnalysis>();
-  mocks.analyzeGame.mockReturnValueOnce(result.promise);
-  let rootMatches = true;
-  await renderReportModal({
-    isCurrentOperation: (_id, fingerprint) => rootMatches && fingerprint === "start-fen\u0000e2e4",
-  });
+test("a submit while the tab runs a report is refused", async () => {
+  const running = deferred<GameAnalysis>();
+  mocks.analyzeGame.mockReturnValueOnce(running.promise);
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  expect(tree.getState().report.inProgress).toBe(true);
+  expect(host.querySelector("button")!.disabled).toBe(true);
+  // The disabled button aside, a submit (shortcut, stale handler) starts nothing.
   await act(async () => {
-    host.querySelector("button")!.click();
-    await Promise.resolve();
+    host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true }));
   });
-  rootMatches = false;
-  await act(async () => result.reject(new Error("obsolete root")));
+  expect(mocks.prepareAnalysis).toHaveBeenCalledOnce();
+  expect(mocks.analyzeGame).toHaveBeenCalledOnce();
+});
+
+test("a rejected reservation leaves no run flag and the dialog usable", async () => {
+  mocks.prepareAnalysis.mockRejectedValueOnce(new Error("no reservation"));
+  mocks.analyzeGame.mockReturnValueOnce(deferred<GameAnalysis>().promise);
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  expect(tree.getState().report).toMatchObject({ inProgress: false, operationId: null });
+  expect(setInProgress).not.toHaveBeenCalled();
+  expect(mocks.notifyUnlessCancelled).toHaveBeenCalledOnce();
+  expect(host.querySelector("button")!.disabled).toBe(false);
+  await act(async () => host.querySelector("button")!.click());
+  expect(mocks.prepareAnalysis).toHaveBeenCalledTimes(2);
+  expect(mocks.analyzeGame).toHaveBeenCalledOnce();
+  expect(tree.getState().report.inProgress).toBe(true);
+});
+
+test("an edit to the mainline cancels the run at once, also with the panel unmounted", async () => {
+  const completion = deferred<GameAnalysis>();
+  mocks.analyzeGame.mockReturnValueOnce(completion.promise);
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  await act(async () => root.render(<div>Database panel</div>));
+  expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
+  await act(async () => tree.getState().appendMove({ payload: parseUci("e7e5")! }));
+  expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("report_tab-id_operation-uuid");
+  // The cancelled native run rejects; the user learns why once, without an error.
+  await act(async () => completion.reject({ tag: "cancelled", message: "Cancellation" }));
+  expect(analysisPublished).not.toHaveBeenCalled();
   expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+  expect(mocks.notificationsShow).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ message: "Board.Analysis.Report.GameChanged" }),
+  );
+  expect(tree.getState().report.inProgress).toBe(false);
+});
+
+test("a result that finishes after an edit is dropped with one notice", async () => {
+  const completion = deferred<GameAnalysis>();
+  const cancelled = deferred<void>();
+  mocks.analyzeGame.mockReturnValueOnce(completion.promise);
+  mocks.cancelAnalysis.mockReturnValueOnce(cancelled.promise);
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  act(() => tree.getState().appendMove({ payload: parseUci("e7e5")! }));
+  // The finished result arrives before the cancellation takes effect.
+  await act(async () => completion.resolve(completedAnalysis));
+  await act(async () => cancelled.resolve());
+  expect(analysisPublished).not.toHaveBeenCalled();
+  expect(tree.getState().root.score).toBeNull();
+  expect(mocks.notificationsShow).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ message: "Board.Analysis.Report.GameChanged" }),
+  );
+});
+
+test("one notice names the positions without evaluation and the unavailable novelty", async () => {
+  mocks.analyzeGame.mockResolvedValue({
+    positions: [completedAnalysis.positions[0], { best: [], terminal: null, isSacrifice: false }],
+    novelty: { kind: "unavailable" },
+  });
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  expect(analysisPublished).toHaveBeenCalledOnce();
+  expect(mocks.notificationsShow).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      title: "Board.Analysis.Report.Incomplete",
+      message: "Board.Analysis.Report.MissingEvaluations Board.Analysis.Report.NoveltyUnavailable",
+    }),
+  );
+  expect(tree.getState().report.summary?.missingEvaluations).toBe(1);
+});
+
+test("a complete report shows no notice and a terminal position counts as evaluated", async () => {
+  mocks.analyzeGame.mockResolvedValue({
+    positions: [completedAnalysis.positions[0], { best: [], terminal: "draw", isSacrifice: false }],
+    novelty: { kind: "notRequested" },
+  });
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  expect(analysisPublished).toHaveBeenCalledOnce();
+  expect(mocks.notificationsShow).not.toHaveBeenCalled();
 });
 
 test("P2 superseded preparation rejection does not notify against the newer report", async () => {
@@ -939,7 +907,7 @@ test("passes the immutable engine id and catches analysis rejection", async () =
     { id: { id: "engine-handle" }, kind: "engine" },
     "engine-id",
     { t: "Time", c: 500 },
-    expect.objectContaining({ fen: "start-fen", moves: ["e2e4"] }),
+    expect.objectContaining({ fen: defaultTree().root.fen, moves: ["e2e4"] }),
     [],
   );
   expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", failure);
@@ -971,6 +939,7 @@ test("hydrates missing goMode with the default while preserving the selected eng
   );
   expect(JSON.parse(localStorage.getItem("report-settings")!)).toEqual({
     novelty: false,
+    marks: true,
     variations: true,
     goMode: { t: "Time", c: 500 },
     engine: "engine-id",
@@ -1223,39 +1192,4 @@ test("falls back to the first installed engine without resetting a user-edited c
 
   expect(engineSelect.value).toBe("engine-id-2");
   expect(variations.checked).toBe(false);
-});
-
-test("the native result reaches addAnalysis with the sacrifice flag and the novelty on their entries", async () => {
-  mocks.analyzeGame.mockResolvedValue(noveltyAnalysis);
-  await renderReportModal();
-  await act(async () => host.querySelector("button")!.click());
-  expect(analysisPublished).toHaveBeenCalledOnce();
-  const [entries] = analysisPublished.mock.calls[0] as [ReturnType<typeof legacyReportEntries>];
-  expect(entries).toHaveLength(2);
-  expect(entries[0]).toEqual({ best: [e4Line], novelty: false, is_sacrifice: false });
-  expect(entries[1].novelty).toBe(true);
-  expect(entries[1].is_sacrifice).toBe(true);
-  expect(entries[1].best[0].uciMoves).toEqual(["e7e5"]);
-  expect(mocks.notificationsShow).not.toHaveBeenCalled();
-});
-
-test("a terminal position reaches addAnalysis as an entry without lines", () => {
-  const entries = legacyReportEntries({
-    positions: [
-      completedAnalysis.positions[0],
-      { best: [], terminal: "checkmate", isSacrifice: false },
-    ],
-    novelty: { kind: "notFound" },
-  });
-  expect(entries[1]).toEqual({ best: [], novelty: false, is_sacrifice: false });
-});
-
-test("an unavailable novelty applies the report and says so", async () => {
-  mocks.analyzeGame.mockResolvedValue({ ...completedAnalysis, novelty: { kind: "unavailable" } });
-  await renderReportModal();
-  await act(async () => host.querySelector("button")!.click());
-  expect(analysisPublished).toHaveBeenCalledOnce();
-  expect(mocks.notificationsShow).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ message: "Board.Analysis.Report.NoveltyUnavailable" }),
-  );
 });

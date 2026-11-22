@@ -1,6 +1,7 @@
 import { parseUci } from "chessops";
 import { afterEach, expect, test } from "vitest";
-import type { BestMoves } from "@/bindings";
+import type { GameAnalysis } from "@/bindings";
+import { getMainLine, reportRootFingerprint } from "@/utils/chess";
 import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
 import { closeTreeStore, createTreeStore, retargetTreeStore, retryTreeStoreStorage } from "./tree";
 import { deserializeStorageValue, serializeStorageValue } from "./debouncedStorage";
@@ -63,19 +64,41 @@ test("each tab's store keeps its own history", () => {
     expect(second.getState().history.past).toHaveLength(0);
 });
 
-const reportScore = [
-    {
-        best: [
-            {
-                score: { value: { type: "cp", value: 30 }, wdl: null },
-                depth: 20,
-                uciMoves: ["e2e4"],
-            } as unknown as BestMoves,
-        ],
-        novelty: false,
-        is_sacrifice: false,
-    },
-];
+const noLine = { best: [], terminal: null, isSacrifice: false };
+const reportResult: GameAnalysis = {
+    positions: [
+        {
+            best: [
+                {
+                    score: { value: { type: "cp", value: 30 }, wdl: null },
+                    depth: 20,
+                    uciMoves: ["e2e4"],
+                } as unknown as GameAnalysis["positions"][number]["best"][number],
+            ],
+            terminal: null,
+            isSacrifice: false,
+        },
+        noLine,
+        noLine,
+        noLine,
+    ],
+    novelty: { kind: "notRequested" },
+};
+
+/** Applies `reportResult` as the store's current report operation. */
+function applyReport(store: ReturnType<typeof storeWithMoves>, createdAt = 1) {
+    store.getState().setReportOperationId("report-operation");
+    const { root } = store.getState();
+    return store.getState().applyReport(reportResult, {
+        operationId: "report-operation",
+        fingerprint: reportRootFingerprint(root.fen, getMainLine(root)),
+        engine: "Stockfish",
+        goMode: { t: "Depth", c: 12 },
+        marks: true,
+        lines: true,
+        createdAt,
+    });
+}
 
 test.each([
     [
@@ -85,10 +108,7 @@ test.each([
     ],
     ["setStart", (s: ReturnType<typeof storeWithMoves>) => s.getState().setStart([0, 0])],
     ["setGameEnd", (s: ReturnType<typeof storeWithMoves>) => s.getState().setGameEnd([0, 0, 0])],
-    [
-        "addAnalysis",
-        (s: ReturnType<typeof storeWithMoves>) => s.getState().addAnalysis(reportScore),
-    ],
+    ["applyReport", (s: ReturnType<typeof storeWithMoves>) => applyReport(s)],
 ] as const)("%s is one undoable step", (_name, edit) => {
     const store = storeWithMoves();
     const { root, headers } = store.getState();
@@ -330,4 +350,30 @@ test("the history never reaches tab storage", () => {
     )!;
     expect(payload.state).not.toHaveProperty("history");
     expect(store.getState().history.past).toHaveLength(2);
+});
+
+test("undo and redo of a report restore its summary with the tree and leave the run flags alone", () => {
+    const store = storeWithMoves();
+    applyReport(store, 1);
+    const first = store.getState().report.summary;
+    expect(first?.createdAt).toBe(1);
+    applyReport(store, 2);
+    expect(store.getState().report.summary?.createdAt).toBe(2);
+
+    // A run in progress while the user steps through history keeps its flags.
+    store.getState().setReportOperationId("running");
+    store.getState().setReportInProgress(true);
+    store.getState().undo();
+    expect(store.getState().report).toEqual({
+        inProgress: true,
+        operationId: "running",
+        summary: first,
+    });
+    store.getState().undo();
+    expect(store.getState().report.summary).toBeNull();
+    expect(store.getState().root.score).toBeNull();
+    store.getState().redo();
+    expect(store.getState().report.summary).toEqual(first);
+    expect(store.getState().report.inProgress).toBe(true);
+    expect(store.getState().report.operationId).toBe("running");
 });

@@ -2,13 +2,12 @@ import { parseUci } from "chessops";
 import { makeFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
 import { expect, test } from "vitest";
-import type { BestMoves, ReportPosition } from "@/bindings";
+import type { ReportPosition } from "@/bindings";
 import { positionFromFen } from "../chessops";
 import { createNode, defaultTree, type TreeNode } from "../treeReducer";
 import {
     formatScore,
     getAccuracy,
-    getAnnotation,
     getCPLoss,
     getWinChance,
     judgeReport,
@@ -61,65 +60,6 @@ test("should calculate the accuracy correctly", () => {
 test("should calculate the cp loss correctly", () => {
     expect(getCPLoss({ type: "cp", value: 0 }, { type: "cp", value: 50 }, "black")).toBe(50);
     expect(getCPLoss({ type: "mate", value: -1 }, { type: "cp", value: 0 }, "black")).toBe(1000);
-});
-
-// The mistake annotations are a comparison against the previous evaluation, so
-// every case that expects one supplies it explicitly.
-const ZERO = { type: "cp" as const, value: 0 };
-
-test("should annotate as ??", () => {
-    expect(getAnnotation(null, ZERO, { type: "cp", value: -500 }, "white", [])).toBe("??");
-    expect(getAnnotation(null, ZERO, { type: "cp", value: 500 }, "black", [])).toBe("??");
-});
-
-test("should annotate as ?", () => {
-    expect(getAnnotation(null, ZERO, { type: "cp", value: -200 }, "white", [])).toBe("?");
-    expect(getAnnotation(null, ZERO, { type: "cp", value: 200 }, "black", [])).toBe("?");
-});
-
-test("should annotate as ?!", () => {
-    expect(getAnnotation(null, ZERO, { type: "cp", value: -100 }, "white", [])).toBe("?!");
-    expect(getAnnotation(null, ZERO, { type: "cp", value: 100 }, "black", [])).toBe("?!");
-});
-
-test("should not annotate", () => {
-    expect(getAnnotation(null, ZERO, { type: "cp", value: -50 }, "white", [])).toBe("");
-    expect(getAnnotation(null, ZERO, { type: "cp", value: 50 }, "black", [])).toBe("");
-});
-
-test("derives no mistake annotation without the previous evaluation", () => {
-    // A null previous score means "not available" — an unannotated ply, not a
-    // blunder measured against an invented 0.00 baseline.
-    expect(getAnnotation(null, null, { type: "cp", value: -500 }, "white", [])).toBe("");
-    expect(getAnnotation(null, null, { type: "cp", value: 500 }, "black", [])).toBe("");
-    expect(getAnnotation(null, null, { type: "mate", value: -1 }, "white", [])).toBe("");
-});
-
-test("derives no ! without the previous-previous evaluation", () => {
-    const only = (value: number, san: string): BestMoves => ({
-        depth: 1,
-        multipv: 1,
-        nodes: 1n,
-        score: { value: { type: "cp", value }, wdl: null },
-        nps: 1000n,
-        sanMoves: [san],
-        uciMoves: ["e2e4"],
-    });
-    // Only move: the best line is far better than the second, and it was played.
-    const prevMoves = [only(300, "e4"), only(-300, "d4")];
-
-    expect(
-        getAnnotation(ZERO, ZERO, { type: "cp", value: 300 }, "white", prevMoves, false, "e4"),
-    ).toBe("!");
-    // "!" claims the move improved on the position before it. Without that
-    // evaluation there is nothing to have improved on.
-    expect(
-        getAnnotation(null, ZERO, { type: "cp", value: 300 }, "white", prevMoves, false, "e4"),
-    ).toBe("");
-    // "!!" rests on the sacrifice alone and survives the missing evaluation.
-    expect(
-        getAnnotation(null, ZERO, { type: "cp", value: 300 }, "white", prevMoves, true, "e4"),
-    ).toBe("!!");
 });
 
 test("positionAssessment uses the 0.3 / 1 / 2 pawn boundaries from White's view", () => {

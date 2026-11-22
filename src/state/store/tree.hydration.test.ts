@@ -467,3 +467,29 @@ test("rehydration repairs stale paths before deriving the whole-tree board map",
     expect(map[getBoardState(d4.fen)]?.map(({ path }) => path)).toEqual([[1]]);
     expect(Object.values(map).flat()).toHaveLength(4);
 });
+
+test("rehydration clears the report run flags and keeps a parsed summary", () => {
+    const summary = {
+        engine: "Stockfish 17",
+        goMode: { t: "Time" as const, c: 500 },
+        createdAt: 1_700_000_000_000,
+        missingEvaluations: 0,
+        novelty: "notRequested" as const,
+        fingerprint: "fingerprint",
+    };
+    const saved = {
+        ...defaultTree(),
+        report: { inProgress: true, operationId: "report_tab_stale", summary },
+    };
+    const id = crypto.randomUUID();
+    ids.push(id);
+    sessionStorage.setItem(
+        id,
+        serializeStorageValue({ version: TREE_STORAGE_VERSION, state: saved }),
+    );
+    expect(createTreeStore(id).getState().report).toEqual({
+        inProgress: false,
+        operationId: null,
+        summary,
+    });
+});

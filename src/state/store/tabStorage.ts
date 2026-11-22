@@ -8,8 +8,10 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import {
     getResolvedPathLength,
     MAX_GAME_END_TERMINATION_LENGTH,
+    type ReportSummary,
     type TreeState,
 } from "@/utils/treeReducer";
+import { boundedGoModeSchema } from "@/utils/engines";
 import { z } from "zod";
 import { linkedGameLocatorSchema } from "@/utils/pathCapabilities";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
@@ -116,6 +118,15 @@ function createLegacyAnnotationsSchema() {
         .max(MAX_NODE_NAGS);
 }
 
+const reportSummarySchema = z.object({
+    engine: z.string().max(PGN_TEXT_MAX),
+    goMode: boundedGoModeSchema,
+    createdAt: z.number().finite(),
+    missingEvaluations: z.number().int().nonnegative(),
+    novelty: z.enum(["notRequested", "found", "notFound", "unavailable"]),
+    fingerprint: z.string().max(PGN_TEXT_MAX),
+});
+
 function createPersistedTreeSchema() {
     const boundedText = z.string().max(PGN_TEXT_MAX);
     const pathSchema = z.array(z.number().int().nonnegative()).max(MAX_TREE_DEPTH);
@@ -198,6 +209,8 @@ function createPersistedTreeSchema() {
             .object({ termination: z.string().max(MAX_GAME_END_TERMINATION_LENGTH).optional() })
             .optional(),
         diagram: z.literal(true).optional(),
+        // A wrong-typed marker is dropped, never a reason to refuse the node or the tree.
+        reportLine: z.literal(true).optional().catch(undefined),
     });
 
     return {
@@ -217,6 +230,7 @@ function createPersistedTreeSchema() {
             report: z.object({
                 inProgress: z.boolean(),
                 operationId: z.string().nullable().optional(),
+                summary: reportSummarySchema.nullable().optional(),
             }),
             practicePath: pathSchema.nullable().optional(),
             puzzleSession: puzzleSessionSchema.optional(),
@@ -254,15 +268,22 @@ export function isBoundedTreeForStorage(value: unknown): boolean {
     return inspectTreeBounds(value) === "ok";
 }
 
-function migrateReport(report: unknown): { inProgress: boolean; operationId: string | null } {
+function migrateReport(report: unknown): {
+    inProgress: boolean;
+    operationId: string | null;
+    summary?: ReportSummary;
+} {
     if (!isRecord(report)) {
         return { inProgress: false, operationId: null };
     }
-    return {
+    const migrated = {
         inProgress: typeof report.inProgress === "boolean" ? report.inProgress : false,
         // Coerce a wrong-typed id to null: Zod would otherwise reject the whole tree.
         operationId: typeof report.operationId === "string" ? report.operationId : null,
     };
+    // A malformed or absent summary is "no summary", never a reason to refuse the tree.
+    const summary = reportSummarySchema.safeParse(report.summary);
+    return summary.success ? { ...migrated, summary: summary.data } : migrated;
 }
 
 /**

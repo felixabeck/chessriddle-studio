@@ -1,7 +1,8 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Move } from "chessops";
 import { INITIAL_FEN, makeCastlingFen, parseFen } from "chessops/fen";
-import type { Outcome, Score } from "@/bindings";
+import type { NoveltyOutcome, Outcome, Score } from "@/bindings";
+import type { BoundedGoMode } from "@/utils/engines";
 import type { PuzzleSession } from "@/state/puzzleSession";
 import { dropInvalidEpSquare, positionFromFen } from "@/utils/chessops";
 
@@ -51,6 +52,11 @@ export interface TreeNode {
     gameEnd?: { termination?: string };
     /** The notation shows a small board of this position (ChessBase's `[#]` comment marker). */
     diagram?: true;
+    /**
+     * First node of a better line a game report added. Session and tab storage only: never
+     * written to PGN, so a saved and reopened line is an ordinary variation.
+     */
+    reportLine?: true;
 }
 
 export type ListNode = {
@@ -395,9 +401,23 @@ export function getMemoizedBoardStateMap(root: TreeNode, startPath: number[] = [
     return map;
 }
 
+/** What produced the report currently written on the tree, and which game it describes. */
+export interface ReportSummary {
+    engine: string;
+    goMode: BoundedGoMode;
+    /** Milliseconds since the epoch. */
+    createdAt: number;
+    /** Positions the engine could not evaluate (neither evaluated nor terminal). */
+    missingEvaluations: number;
+    novelty: NoveltyOutcome["kind"];
+    /** `reportRootFingerprint` of the root FEN and mainline the report describes. */
+    fingerprint: string;
+}
+
 export interface ReportState {
     inProgress: boolean;
     operationId: string | null;
+    summary?: ReportSummary | null;
 }
 
 export function getBoardState(fen: string): string {

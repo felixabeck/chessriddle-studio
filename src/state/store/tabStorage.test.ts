@@ -3190,3 +3190,72 @@ test.each([
         expect(sessionStorage.getItem("legacy-diagram")).toBe(stored);
     },
 );
+
+const storedSummary = {
+    engine: "Stockfish 17",
+    goMode: { t: "Depth" as const, c: 18 },
+    createdAt: 1_700_000_000_000,
+    missingEvaluations: 2,
+    novelty: "found" as const,
+    fingerprint: "start\u0000e2e4",
+};
+
+test("a report summary and a report-line marker survive a seed/read round trip", () => {
+    const tree = treeWith((state) => {
+        state.report = { inProgress: false, operationId: null, summary: storedSummary };
+        const line = createNode({
+            fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+            move: parseUci("d2d4")!,
+            san: "d4",
+            halfMoves: 1,
+        });
+        line.reportLine = true;
+        state.root.children.push(line);
+    });
+    storage.seed("report-summary", tree);
+    const read = storage.read("report-summary")?.state;
+    expect(read).toMatchObject({ report: { summary: storedSummary } });
+    expect((read as typeof tree).root.children[0].reportLine).toBe(true);
+});
+
+test("a malformed report summary hydrates as no summary without losing the tree", () => {
+    const tree = structuredClone(defaultTree()) as unknown as Record<string, unknown>;
+    (tree.root as { comment: string }).comment = "keep me";
+    tree.report = {
+        inProgress: false,
+        operationId: null,
+        summary: { ...storedSummary, goMode: { t: "Infinite" }, missingEvaluations: -1 },
+    };
+    sessionStorage.setItem("malformed-summary", JSON.stringify(tree));
+    const read = storage.read("malformed-summary")?.state as ReturnType<typeof defaultTree>;
+    expect(read.report).toEqual({ inProgress: false, operationId: null });
+    expect(read.root.comment).toBe("keep me");
+});
+
+test("a wrong-typed report-line marker is dropped without losing the node or the tree", () => {
+    const tree = structuredClone(defaultTree()) as unknown as {
+        root: Record<string, unknown> & { children: Record<string, unknown>[] };
+    };
+    const line = createNode({
+        fen: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+        move: parseUci("d2d4")!,
+        san: "d4",
+        halfMoves: 1,
+    }) as unknown as Record<string, unknown>;
+    line.reportLine = "yes";
+    tree.root.children.push(line);
+    sessionStorage.setItem("wrong-marker", JSON.stringify(tree));
+    const read = storage.read("wrong-marker")?.state as ReturnType<typeof defaultTree>;
+    expect(read.root.children).toHaveLength(1);
+    expect(read.root.children[0].san).toBe("d4");
+    expect(read.root.children[0].reportLine).toBeUndefined();
+});
+
+test("a stored report without a summary hydrates as no summary", () => {
+    const tree = structuredClone(defaultTree()) as unknown as Record<string, unknown>;
+    tree.report = { inProgress: false, operationId: "older" };
+    sessionStorage.setItem("summary-less-report", JSON.stringify(tree));
+    expect(
+        (storage.read("summary-less-report")!.state as ReturnType<typeof defaultTree>).report,
+    ).toEqual({ inProgress: false, operationId: "older" });
+});

@@ -1,8 +1,10 @@
 import { parseUci } from "chessops";
 import { parseSan } from "chessops/san";
+import { produce } from "immer";
 import { beforeEach, expect, test } from "vitest";
-import { createTreeStore } from "@/state/store/tree";
-import { getPGN } from "../chess";
+import type { GameAnalysis, ReportPosition } from "@/bindings";
+import { createTreeStore, type ReportRequest } from "@/state/store/tree";
+import { getGameStats, getMainLine, getPGN, reportRootFingerprint } from "../chess";
 import { positionFromFen } from "../chessops";
 import {
     defaultTree,
@@ -546,27 +548,56 @@ test("setEngineScore leaves the source evaluation and the serialized PGN unchang
     expect(before).not.toContain("+0.05");
 });
 
-test("addAnalysis replaces the shown live score with the report's evaluation", () => {
+type Position = ReportPosition;
+const cpLine = (value: number, uci: string, depth = 1): Position["best"][number] => ({
+    depth,
+    multipv: 1,
+    nodes: 1n,
+    score: { value: { type: "cp", value }, wdl: null },
+    nps: 1000n,
+    sanMoves: [uci],
+    uciMoves: [uci],
+});
+/** A report position with one line per `[score, uci]` pair. */
+const at = (...lines: [number, string][]): Position => ({
+    best: lines.map(([value, uci], index) => ({ ...cpLine(value, uci), multipv: index + 1 })),
+    terminal: null,
+    isSacrifice: false,
+});
+// A ply whose UCI output was bound-only publishes no line at all.
+const noLines: Position = { best: [], terminal: null, isSacrifice: false };
+const drawn: Position = { best: [], terminal: "draw", isSacrifice: false };
+const NOT_REQUESTED = { kind: "notRequested" } as const;
+const REPORT_OPERATION = "report-operation";
+
+/** Applies a report as the tab's current operation, on the game as it stands. */
+function runReport(
+    positions: Position[],
+    novelty: GameAnalysis["novelty"] = NOT_REQUESTED,
+    request: Partial<ReportRequest> = {},
+) {
+    const state = store.getState();
+    state.setReportOperationId(request.operationId ?? REPORT_OPERATION);
+    const { root } = store.getState();
+    return store.getState().applyReport(
+        { positions, novelty },
+        {
+            operationId: REPORT_OPERATION,
+            fingerprint: reportRootFingerprint(root.fen, getMainLine(root)),
+            engine: "Stockfish 17",
+            goMode: { t: "Time", c: 500 },
+            marks: true,
+            lines: true,
+            createdAt: 1_700_000_000_000,
+            ...request,
+        },
+    );
+}
+
+test("applyReport replaces the shown live score with the report's evaluation", () => {
     store.getState().setState({ ...treeE4D5(), position: [0] });
     store.getState().setEngineScore({ value: { type: "cp" as const, value: 5 }, wdl: null });
-    store.getState().addAnalysis([
-        { best: [], novelty: false, is_sacrifice: false },
-        {
-            best: [
-                {
-                    depth: 20,
-                    multipv: 1,
-                    nodes: 1n,
-                    score: { value: { type: "cp", value: 40 }, wdl: null },
-                    nps: 1000n,
-                    sanMoves: ["d5"],
-                    uciMoves: ["d7d5"],
-                },
-            ],
-            novelty: false,
-            is_sacrifice: false,
-        },
-    ]);
+    expect(runReport([noLines, at([40, "d7d5"]), noLines])).toBe(true);
 
     const node = getNewState().root.children[0];
     expect(node.engineScore).toBeUndefined();
@@ -574,70 +605,28 @@ test("addAnalysis replaces the shown live score with the report's evaluation", (
     expect(getNewState().dirty).toBe(true);
 });
 
-test("should handle addAnalysis", () => {
+test("applyReport writes every evaluation with its depth and records the summary", () => {
     store.getState().setState({ ...treeE4D5(), position: [0] });
-    store.getState().addAnalysis([
-        {
-            best: [
-                {
-                    depth: 1,
-                    multipv: 1,
-                    nodes: 1n,
-                    score: {
-                        value: {
-                            type: "cp",
-                            value: 10,
-                        },
-                        wdl: null,
-                    },
-                    nps: 1000n,
-                    sanMoves: ["e4"],
-                    uciMoves: ["e2e4"],
-                },
-            ],
-            novelty: false,
-            is_sacrifice: false,
-        },
-        {
-            best: [
-                {
-                    depth: 1,
-                    multipv: 1,
-                    nodes: 1n,
-                    score: {
-                        value: {
-                            type: "cp",
-                            value: 20,
-                        },
-                        wdl: null,
-                    },
-                    nps: 1000n,
-                    sanMoves: ["d5"],
-                    uciMoves: ["d7d5"],
-                },
-            ],
-            novelty: false,
-            is_sacrifice: false,
-        },
-    ]);
+    runReport([at([10, "e2e4"]), at([20, "d7d5"]), at([15, "g1f3"])]);
 
     const expectedRoot: TreeNode = {
         ...treeE4D5().root,
         children: [
             {
                 ...treeE4D5().root.children[0],
-                score: {
-                    value: { type: "cp" as const, value: 20 },
-                    wdl: null,
-                },
+                score: { value: { type: "cp" as const, value: 20 }, wdl: null },
                 // The engine depth travels with its score, so a save writes `[%eval x,depth]`.
                 depth: 1,
+                children: [
+                    {
+                        ...treeE4D5().root.children[0].children[0],
+                        score: { value: { type: "cp" as const, value: 15 }, wdl: null },
+                        depth: 1,
+                    },
+                ],
             },
         ],
-        score: {
-            value: { type: "cp" as const, value: 10 },
-            wdl: null,
-        },
+        score: { value: { type: "cp" as const, value: 10 }, wdl: null },
         depth: 1,
     };
     expect(getNewState()).toStrictEqual({
@@ -647,68 +636,93 @@ test("should handle addAnalysis", () => {
         root: expectedRoot,
         boardStateMap: expectedMap(expectedRoot),
     });
+    const { root, report } = store.getState();
+    expect(report.summary).toEqual({
+        engine: "Stockfish 17",
+        goMode: { t: "Time", c: 500 },
+        createdAt: 1_700_000_000_000,
+        missingEvaluations: 0,
+        novelty: "notRequested",
+        fingerprint: reportRootFingerprint(root.fen, getMainLine(root)),
+    });
 });
-const line = (value: number, san: string, uci: string) => ({
-    best: [
+
+test("applyReport refuses a result of an older operation on the unchanged game", () => {
+    store.getState().setState(treeE4D5());
+    const before = store.getState().root;
+    store.getState().setReportOperationId("newer-operation");
+    const applied = store.getState().applyReport(
+        { positions: [at([0, "e2e4"]), at([-400, "d7d5"]), noLines], novelty: NOT_REQUESTED },
         {
-            depth: 1,
-            multipv: 1,
-            nodes: 1n,
-            score: { value: { type: "cp" as const, value }, wdl: null },
-            nps: 1000n,
-            sanMoves: [san],
-            uciMoves: [uci],
+            operationId: "older-operation",
+            fingerprint: reportRootFingerprint(before.fen, getMainLine(before)),
+            engine: "Stockfish 17",
+            goMode: { t: "Time", c: 500 },
+            marks: true,
+            lines: true,
+            createdAt: 1,
         },
-    ],
-    novelty: false,
-    is_sacrifice: false,
+    );
+    expect(applied).toBe(false);
+    expect(store.getState().root).toBe(before);
+    expect(store.getState().report.summary ?? null).toBeNull();
+    expect(store.getState().dirty).toBe(false);
 });
-// A ply whose UCI output was bound-only publishes no MultiPV set at all.
-const noLines = { best: [], novelty: false, is_sacrifice: false };
+
+test("applyReport refuses a result for another game", () => {
+    store.getState().setState(treeE4D5());
+    const before = store.getState().root;
+    expect(
+        runReport([noLines, noLines, noLines], NOT_REQUESTED, {
+            fingerprint: reportRootFingerprint(before.fen, ["e2e4"]),
+        }),
+    ).toBe(false);
+    expect(store.getState().root).toBe(before);
+});
 
 const castlingFen = "r3k2r/ppp2ppp/8/8/8/8/PPP2PPP/R3K2R w KQkq - 0 1";
 
-test("addAnalysis does not duplicate an existing SAN castling child", () => {
-    store.getState().setFen(castlingFen);
-    store.getState().makeMove({ payload: "O-O" });
-    expect(store.getState().root.children[0].move).toEqual(parseUci("e1h1"));
-
-    store.getState().addAnalysis([line(0, "O-O", "e1g1"), line(-400, "a6", "a7a6")], {
-        showVariations: true,
-    });
-
-    const parent = store.getState().root;
-    expect(parent.children[0].nags).toContain(4);
-    expect(parent.children.filter((child) => child.san === "O-O")).toHaveLength(1);
-    expect(parent.children).toHaveLength(1);
-});
-
-test("addAnalysis does not duplicate an existing raw UCI castling child", () => {
-    store.getState().setFen(castlingFen);
-    store.getState().makeMove({ payload: parseUci("e1g1")! });
-    expect(store.getState().root.children[0].move).toEqual(parseUci("e1g1"));
-
-    store.getState().addAnalysis([line(0, "O-O", "e1g1"), line(-400, "a6", "a7a6")], {
-        showVariations: true,
-    });
-
-    const parent = store.getState().root;
-    expect(parent.children[0].nags).toContain(4);
-    expect(parent.children.filter((child) => child.san === "O-O")).toHaveLength(1);
-    expect(parent.children).toHaveLength(1);
-    expect(parent.children[0].move).toEqual(parseUci("e1g1"));
-});
-
-test("addAnalysis stores SAN-normalized castling moves throughout a generated PV", () => {
+/** 1.a3 with a castle already in the tree as a variation (`castle` as the tree spells it). */
+function castleBesideA3(castle: string | ReturnType<typeof parseUci>) {
     store.getState().setFen(castlingFen);
     store.getState().makeMove({ payload: "a3" });
-    const best = line(0, "O-O", "e1g1");
-    best.best[0].sanMoves.push("O-O");
+    store.getState().goToStart();
+    store.getState().makeMove({ payload: castle! });
+    store.getState().goToStart();
+}
+
+test("applyReport does not duplicate an existing SAN castling child", () => {
+    castleBesideA3("O-O");
+    expect(store.getState().root.children[1].move).toEqual(parseUci("e1h1"));
+
+    runReport([at([0, "e1g1"]), at([-400, "a7a6"])]);
+
+    const parent = store.getState().root;
+    expect(parent.children[0].nags).toContain(4);
+    expect(parent.children.filter((child) => child.san === "O-O")).toHaveLength(1);
+    expect(parent.children).toHaveLength(2);
+});
+
+test("applyReport does not duplicate an existing raw UCI castling child", () => {
+    castleBesideA3(parseUci("e1g1"));
+    expect(store.getState().root.children[1].move).toEqual(parseUci("e1g1"));
+
+    runReport([at([0, "e1g1"]), at([-400, "a7a6"])]);
+
+    const parent = store.getState().root;
+    expect(parent.children[0].nags).toContain(4);
+    expect(parent.children.filter((child) => child.san === "O-O")).toHaveLength(1);
+    expect(parent.children).toHaveLength(2);
+    expect(parent.children[1].move).toEqual(parseUci("e1g1"));
+});
+
+test("applyReport stores SAN-normalized castling moves throughout a generated line", () => {
+    store.getState().setFen(castlingFen);
+    store.getState().makeMove({ payload: "a3" });
+    const best = at([0, "e1g1"]);
     best.best[0].uciMoves.push("e8g8");
 
-    store.getState().addAnalysis([best, line(-400, "a6", "a7a6")], {
-        showVariations: true,
-    });
+    runReport([best, at([-400, "a7a6"])]);
 
     const parent = store.getState().root;
     expect(parent.children[0].nags).toContain(4);
@@ -718,33 +732,46 @@ test("addAnalysis stores SAN-normalized castling moves throughout a generated PV
     expect(variation.san).toBe("O-O");
     expect(variation.move).toEqual(parseSan(parentPos!, "O-O"));
     expect(variation.move).toEqual(parseUci("e1h1"));
+    expect(variation.reportLine).toBe(true);
+    expect(variation.score).toEqual({ value: { type: "cp", value: 0 }, wdl: null });
     expect(variation.children).toHaveLength(1);
     const [variationPos] = positionFromFen(variation.fen);
     expect(variation.children[0].san).toBe("O-O");
     expect(variation.children[0].move).toEqual(parseSan(variationPos!, "O-O"));
     expect(variation.children[0].move).toEqual(parseUci("e8h8"));
+    expect(variation.children[0].reportLine).toBeUndefined();
+});
+
+test("applyReport ends a better line at its first illegal move", () => {
+    store.getState().setState(treeE4D5());
+    const best = at([0, "d2d4"]);
+    best.best[0].uciMoves.push("d7d5", "e1e8", "c2c4");
+    runReport([best, at([-400, "e7e5"]), noLines]);
+    const variation = store.getState().root.children[1];
+    expect(variation.san).toBe("d4");
+    expect(variation.children.map((child) => child.san)).toEqual(["d5"]);
+    expect(variation.children[0].children).toEqual([]);
 });
 
 test.each([
     { score: -70, code: 6 },
     { score: -140, code: 2 },
     { score: -400, code: 4 },
-])("analysis report appends $code once without changing stored NAGs", ({ score, code }) => {
+])("a report writes mark $code once and keeps the marks of other groups", ({ score, code }) => {
     const tree = treeE4D5();
     tree.root.children[0].nags = [8, 8, 220];
     store.getState().setState(tree);
-    const analysis = [line(0, "e4", "e2e4"), { ...line(score, "d5", "d7d5"), novelty: true }];
-    store.getState().addAnalysis(analysis);
+    const positions = [at([0, "d2d4"]), at([score, "d7d5"]), noLines];
+    const novelty = { kind: "found", position: 1 } as const;
+    runReport(positions, novelty);
     expect(store.getState().root.children[0].nags).toEqual([8, 8, 220, code, 146]);
-    store.getState().addAnalysis(analysis);
+    runReport(positions, novelty);
     expect(store.getState().root.children[0].nags).toEqual([8, 8, 220, code, 146]);
 });
 
-test("analysis report never puts the novelty glyph on the root", () => {
+test("a report never puts the novelty glyph on the root", () => {
     store.getState().setState(treeE4D5());
-    store
-        .getState()
-        .addAnalysis([{ ...line(0, "e4", "e2e4"), novelty: true }, line(0, "d5", "d7d5")]);
+    runReport([at([0, "e2e4"]), at([0, "d7d5"]), noLines], { kind: "found", position: 0 });
     expect(store.getState().root.nags).not.toContain(146);
 });
 
@@ -752,49 +779,146 @@ test.each([
     { nags: [1], expected: [4] },
     { nags: [2], expected: [4] },
     { nags: [1, 220], expected: [220, 4] },
-])("analysis report replaces basic NAGs of the same group with a blunder", ({ nags, expected }) => {
+])("a report replaces the move-quality marks with a blunder", ({ nags, expected }) => {
     const tree = treeE4D5();
     tree.root.children[0].nags = nags;
     store.getState().setState(tree);
-    store.getState().addAnalysis([line(0, "e4", "e2e4"), line(-400, "d5", "d7d5")]);
+    runReport([at([0, "d2d4"]), at([-400, "d7d5"]), noLines]);
     expect(store.getState().root.children[0].nags).toEqual(expected);
 });
 
-test("addAnalysis annotates a ply whose predecessor has no lines without inventing a score", () => {
+test("a report without marks leaves every mark alone", () => {
+    const tree = treeE4D5();
+    tree.root.children[0].nags = [1, 220];
+    store.getState().setState(tree);
+    runReport([at([0, "d2d4"]), at([-400, "d7d5"]), noLines], NOT_REQUESTED, { marks: false });
+    expect(store.getState().root.children[0].nags).toEqual([1, 220]);
+    expect(store.getState().root.children[0].score?.value).toEqual({ type: "cp", value: -400 });
+});
+
+test("a report judges a ply whose predecessor has no lines without inventing a score", () => {
     store.getState().setState({ ...treeE4D5(), position: [0] });
-    store.getState().addAnalysis([line(10, "e4", "e2e4"), noLines, line(900, "d5", "d7d5")]);
+    runReport([at([10, "e2e4"]), noLines, at([900, "g1f3"])]);
 
     const state = getNewState();
-    expect(state.root.score).toStrictEqual({
-        value: { type: "cp", value: 10 },
-        wdl: null,
-    });
+    expect(state.root.score).toStrictEqual({ value: { type: "cp", value: 10 }, wdl: null });
     expect(state.root.children[0].score).toBeNull();
     expect(state.root.children[0].children[0].score).toStrictEqual({
         value: { type: "cp", value: 900 },
         wdl: null,
     });
-    // +900 measured against an invented 0.00 baseline for the missing ply would
-    // read as a blunder by Black. With no predecessor evaluation, no mistake
-    // annotation is derivable at all.
     expect(state.root.children[0].children[0].nags).toStrictEqual([]);
+    expect(store.getState().report.summary?.missingEvaluations).toBe(1);
 });
 
-test("addAnalysis tolerates a previous-previous ply with no lines", () => {
-    store.getState().setState({ ...treeE4D5(), position: [0] });
-    store.getState().addAnalysis([noLines, line(10, "e4", "e2e4"), line(20, "d5", "d7d5")]);
+test("a re-run replaces marks, the novelty, report lines and stale scores", () => {
+    store.getState().setState(treeE4D5());
+    runReport([at([0, "d2d4"]), at([-400, "e7e5"]), at([-380, "g1f3"])], {
+        kind: "found",
+        position: 1,
+    });
+    let root = store.getState().root;
+    expect(root.children[0].nags).toEqual([4, 146]);
+    expect(root.children.map((child) => child.san)).toEqual(["e4", "d4"]);
+    expect(root.children[0].children[0].score?.value).toEqual({ type: "cp", value: -380 });
 
-    const state = getNewState();
-    expect(state.root.score).toBeNull();
-    expect(state.root.children[0].score).toStrictEqual({
-        value: { type: "cp", value: 10 },
-        wdl: null,
-    });
-    expect(state.root.children[0].children[0].score).toStrictEqual({
-        value: { type: "cp", value: 20 },
-        wdl: null,
-    });
-    expect(state.root.children[0].children[0].nags).toStrictEqual([]);
+    // The second run finds 1.e4 fine, cannot evaluate the last position and puts the novelty on
+    // 1...d5.
+    runReport([at([20, "e2e4"]), at([25, "d7d5"]), noLines], { kind: "found", position: 2 });
+    root = store.getState().root;
+    expect(root.children[0].nags).toEqual([]);
+    expect(root.children[0].children[0].nags).toEqual([146]);
+    expect(root.children.map((child) => child.san)).toEqual(["e4"]);
+    expect(root.children[0].score?.value).toEqual({ type: "cp", value: 25 });
+    expect(root.children[0].children[0].score).toBeNull();
+    expect(root.children[0].children[0].depth).toBeNull();
+});
+
+test("an unavailable novelty leaves the N mark alone; a not-found novelty removes it", () => {
+    const tree = treeE4D5();
+    tree.root.children[0].nags = [146];
+    store.getState().setState(tree);
+    runReport([at([0, "e2e4"]), at([0, "d7d5"]), noLines], { kind: "unavailable" });
+    expect(store.getState().root.children[0].nags).toEqual([146]);
+    runReport([at([0, "e2e4"]), at([0, "d7d5"]), noLines], { kind: "notFound" });
+    expect(store.getState().root.children[0].nags).toEqual([]);
+});
+
+/** Mainline from `fen` through the given SAN moves. */
+function playFrom(fen: string, moves: string[]) {
+    store.getState().setFen(fen);
+    for (const move of moves) store.getState().makeMove({ payload: move });
+}
+
+test("a stalemate result saves 0.00, judges the last move and counts it", () => {
+    playFrom("7k/8/7K/5Q2/8/8/8/8 w - - 0 1", ["Qf7"]);
+    runReport([at([500, "f5f6"]), drawn]);
+    const { root } = store.getState();
+    expect(root.children[0].score).toEqual({ value: { type: "cp", value: 0 }, wdl: null });
+    expect(root.children[0].nags).toEqual([4]);
+    expect(getGameStats(root).white.acpl).toBeGreaterThan(0);
+});
+
+test("a bare-kings result saves 0.00 once and moves played on after it stay unscored", () => {
+    playFrom("8/8/8/4k3/8/3p4/8/2N1K3 w - - 0 1", ["Nxd3", "Ke4", "Ke2"]);
+    const stale = { value: { type: "cp" as const, value: 300 }, wdl: null };
+    store.setState(
+        produce((state: ReturnType<typeof store.getState>) => {
+            state.root.children[0].children[0].score = stale;
+        }),
+    );
+    runReport([at([500, "e1e2"]), drawn, drawn, drawn]);
+    const { root } = store.getState();
+    const nxd3 = root.children[0];
+    expect(nxd3.score).toEqual({ value: { type: "cp", value: 0 }, wdl: null });
+    expect(nxd3.nags).toEqual([4]);
+    expect(nxd3.children[0].score).toBeNull();
+    expect(nxd3.children[0].children[0].score).toBeNull();
+    const stats = getGameStats(root);
+    // Only the move into bare kings is scored: White's one move, nothing for Black.
+    expect(stats.black.acpl).toBeNull();
+    expect(stats.white.acpl).toBe(500);
+});
+
+/** 1.e4 (1.d4 report line) (1.c4) d5, with the report line from an earlier run. */
+function treeWithReportLine() {
+    store.getState().setState(treeE4D5());
+    runReport([at([0, "d2d4"]), at([-400, "e7e5"]), noLines]);
+    store.getState().goToStart();
+    store.getState().makeMove({ payload: "c4" });
+    const { root } = store.getState();
+    expect(root.children.map((child) => child.san)).toEqual(["e4", "d4", "c4"]);
+    expect(root.children[1].reportLine).toBe(true);
+}
+
+test.each([
+    { name: "on the line", target: [1], expected: [] },
+    { name: "on a later sibling", target: [2], expected: [1] },
+])(
+    "removing a report line rebases the cursor, start and practice path $name",
+    ({ target, expected }) => {
+        treeWithReportLine();
+        store.getState().goToMove(target);
+        store.getState().setStart(target);
+        store.getState().setPracticePath(target);
+        runReport([at([20, "e2e4"]), at([25, "d7d5"]), noLines]);
+        const state = store.getState();
+        expect(state.root.children.map((child) => child.san)).toEqual(["e4", "c4"]);
+        expect(state.position).toEqual(expected);
+        expect(state.practicePath).toEqual(expected);
+        expect(state.headers.start).toEqual(expected.length ? expected : undefined);
+    },
+);
+
+test("a report line the user promoted into the main line is never removed", () => {
+    store.getState().setState(treeE4D5());
+    runReport([at([0, "d2d4"]), at([-400, "e7e5"]), noLines]);
+    store.getState().promoteVariation([1]);
+    const promoted = store.getState().root.children[0];
+    expect(promoted.san).toBe("d4");
+    expect(promoted.reportLine).toBe(true);
+    runReport([at([0, "d2d4"]), at([0, "d7d5"])]);
+    expect(store.getState().root.children[0]).toMatchObject({ san: "d4", reportLine: true });
 });
 
 test("should handle promoteVariation", () => {

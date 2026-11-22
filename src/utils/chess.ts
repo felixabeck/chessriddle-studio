@@ -165,6 +165,11 @@ export function getLastMainlinePosition(root: TreeNode): number[] {
     return position;
 }
 
+/** The identity of a game for a report: its root FEN and mainline moves. */
+export function reportRootFingerprint(fen: string, moves: string[]): string {
+    return `${fen}\u0000${moves.join("\u0000")}`;
+}
+
 export function getMainLine(root: TreeNode): string[] {
     return getVariationLine(root, getLastMainlinePosition(root));
 }

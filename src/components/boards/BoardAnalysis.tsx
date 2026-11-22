@@ -293,7 +293,9 @@ function BoardAnalysis() {
         (e) => {
           setCurrentTabSelected("analysis");
           setAnalysisTab("report");
-          setReportModalOpen(true);
+          // Without moves, or while this tab runs a report, the shortcut only shows the tab.
+          const { root, report } = store.getState();
+          if (root.children.length > 0 && !report.inProgress) setReportModalOpen(true);
           e.preventDefault();
         },
       ],

@@ -100,58 +100,6 @@ export function getCPLoss(prev: ScoreValue, next: ScoreValue, color: Color): num
     return Math.max(0, prevCP - nextCP);
 }
 
-export function getAnnotation(
-    prevprev: ScoreValue | null,
-    prev: ScoreValue | null,
-    next: ScoreValue,
-    color: Color,
-    prevMoves: BestMoves[],
-    is_sacrifice?: boolean,
-    move?: string,
-): Annotation {
-    // A null score means the evaluation is not available, not that it was 0.00.
-    // Coercing it to 0.00 invented a mistake annotation for a ply whose
-    // predecessor published no lines: from a won position, the next evaluation
-    // read as a huge loss against the invented baseline (f-20260831-21).
-    // With no predecessor evaluation the comparison is against `next` itself, so
-    // the difference is zero and no mistake annotation is derived.
-    const { prevCP, nextCP } = normalizeScores(prev ?? next, next, color);
-    const winChanceDiff = getWinChance(prevCP) - getWinChance(nextCP);
-
-    if (winChanceDiff > 20) {
-        return "??";
-    }
-    if (winChanceDiff > 10) {
-        return "?";
-    }
-    if (winChanceDiff > 5) {
-        return "?!";
-    }
-
-    if (prevMoves.length > 1) {
-        const scores = normalizeScores(prevMoves[0].score.value, prevMoves[1].score.value, color);
-        if (
-            getWinChance(scores.prevCP) - getWinChance(scores.nextCP) > 10 &&
-            move === prevMoves[0].sanMoves[0]
-        ) {
-            if (is_sacrifice) {
-                return "!!";
-            }
-            if (prevprev !== null) {
-                const scores = normalizeScores(prevprev, prevMoves[0].score.value, color);
-                // Without the previous-previous evaluation there is nothing to
-                // show the move improved on, so "!" is not derivable.
-                if (getWinChance(scores.nextCP) - getWinChance(scores.prevCP) > 5) {
-                    return "!";
-                }
-            }
-        } else if (is_sacrifice && nextCP > -200) {
-            return "!?";
-        }
-    }
-    return "";
-}
-
 /** Win-chance drops (mover's view, 0–100) above which a move is `??`, `?` and `?!`. */
 const BLUNDER_DROP = 20;
 const MISTAKE_DROP = 10;

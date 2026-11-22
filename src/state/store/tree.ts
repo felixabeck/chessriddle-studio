@@ -1,13 +1,13 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { notifications } from "@mantine/notifications";
-import { isNormal, type Move, parseUci } from "chessops";
+import { type Move, parseUci } from "chessops";
 import { normalizeMove } from "chessops/chess";
 import { makeFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
 import { type Draft, freeze, produce } from "immer";
 import { createStore, type StateCreator, type StoreApi } from "zustand";
 import { persist, type PersistStorage } from "zustand/middleware";
-import type { BestMoves, Outcome, Score } from "@/bindings";
+import type { GameAnalysis, Outcome, Score } from "@/bindings";
 import i18n from "@/i18n";
 import { writeClipboardText } from "@/utils/clipboard";
 import { persistStorageWriteError } from "../storageWriteError";
@@ -20,12 +20,13 @@ import {
 import { boundPuzzleSession } from "@/state/puzzleSession";
 import { reportPersistError } from "@/state/persistError";
 import { ANNOTATION_INFO, type Annotation, nagGlyph } from "@/utils/annotation";
-import { getPGN } from "@/utils/chess";
-import { positionFromFen } from "@/utils/chessops";
+import { getMainLine, getPGN, reportRootFingerprint } from "@/utils/chess";
+import { isSameMove, positionFromFen } from "@/utils/chessops";
 import { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
 export { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
 import { isPrefix } from "@/utils/misc";
-import { getAnnotation } from "@/utils/score";
+import type { BoundedGoMode } from "@/utils/engines";
+import { judgeReport } from "@/utils/score";
 import { playSound } from "@/utils/sound";
 import { removeFileFreshness } from "@/state/fileFreshness";
 import {
@@ -153,14 +154,12 @@ export interface TreeStoreState extends TreeState {
 
     setFen: (fen: string) => void;
 
-    addAnalysis: (
-        analysis: {
-            best: BestMoves[];
-            novelty: boolean;
-            is_sacrifice: boolean;
-        }[],
-        options?: { showVariations: boolean },
-    ) => void;
+    /**
+     * Writes a finished report onto the tree as one undoable edit, replacing the previous report.
+     * Refused (returns false) unless `request` names the tab's current report operation and the
+     * game it was started on.
+     */
+    applyReport: (result: GameAnalysis, request: ReportRequest) => boolean;
 
     setReportInProgress: (value: boolean) => void;
     setReportOperationId: (value: string | null) => void;
@@ -437,7 +436,7 @@ type TreeMarkupActions = Pick<
     | "setResult"
     | "setShapes"
     | "setEngineScore"
-    | "addAnalysis"
+    | "applyReport"
     | "setReportInProgress"
     | "setReportOperationId"
     | "clearShapes"
@@ -884,13 +883,16 @@ function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
                     if (node) node.engineScore = score;
                 }),
             ),
-        addAnalysis: (analysis, options) =>
+        applyReport: (result, request) => {
+            let applied = false;
             set(
-                produce((state) => {
-                    state.dirty = true;
-                    addAnalysis(state, analysis, options);
+                produce((state: Draft<TreeStoreState>) => {
+                    applied = applyReport(state, result, request);
+                    if (applied) state.dirty = true;
                 }),
-            ),
+            );
+            return applied;
+        },
 
         setReportInProgress: (value: boolean) => {
             set(
@@ -943,7 +945,7 @@ const UNDOABLE_EDITS = [
     "setHeaders",
     "setResult",
     "setShapes",
-    "addAnalysis",
+    "applyReport",
     "clearShapes",
 ] as const;
 
@@ -1039,6 +1041,8 @@ function applyHistoryStep(
         headers: orientation === undefined ? headers : { ...headers, orientation },
         position: step.restore.position,
         documentId: step.restore.documentId,
+        // The summary belongs to the tree it describes; the run flags belong to the live run.
+        report: { ...state.report, summary: step.restore.reportSummary },
         dirty: true,
         history: step.history,
     };
@@ -1426,136 +1430,167 @@ function replaceInGroup(nags: readonly number[], annotation: Annotation): number
     return next;
 }
 
-function addAnalysis(
-    state: TreeState,
-    analysis: {
-        best: BestMoves[];
-        novelty: boolean;
-        is_sacrifice: boolean;
-    }[],
-    options?: { showVariations: boolean },
-) {
-    let cur = state.root;
-    let i = 0;
-    let parent: TreeNode | undefined;
+/** What a report run asked for, and which operation and game it belongs to. */
+export type ReportRequest = {
+    operationId: string;
+    /** `reportRootFingerprint` of the root FEN and mainline the run was started on. */
+    fingerprint: string;
+    engine: string;
+    goMode: BoundedGoMode;
+    /** Replace the move-quality marks on the main line (P1). */
+    marks: boolean;
+    /** Add the engine's better line after a mistake. */
+    lines: boolean;
+    createdAt: number;
+};
 
-    while (cur !== undefined && i < analysis.length) {
-        const [pos] = positionFromFen(cur.fen);
-        if (pos && !pos.isEnd() && analysis[i].best.length > 0) {
-            cur.score = analysis[i].best[0].score;
-            cur.depth = analysis[i].best[0].depth;
-            // The report's evaluation is the one to show; an earlier live reading may be shallower.
-            delete cur.engineScore;
-            let prevScore = null;
-            let prevprevScore = null;
-            let prevMoves: BestMoves[] = [];
-            if (i > 0 && analysis[i - 1].best.length > 0) {
-                prevScore = analysis[i - 1].best[0].score;
-                prevMoves = analysis[i - 1].best;
-            }
-            if (i > 1 && analysis[i - 2].best.length > 0) {
-                prevprevScore = analysis[i - 2].best[0].score;
-            }
-            const curScore = analysis[i].best[0].score;
-            const color = cur.halfMoves % 2 === 1 ? "white" : "black";
-            const annotation = getAnnotation(
-                prevprevScore?.value || null,
-                prevScore?.value || null,
-                curScore.value,
-                color,
-                prevMoves,
-                analysis[i].is_sacrifice,
-                cur.san || "",
-            );
-            if (annotation) {
-                const code = ANNOTATION_INFO[annotation].nag;
-                if (!cur.nags.includes(code)) {
-                    cur.nags = replaceInGroup(cur.nags, annotation);
-                }
+const REPORT_MARK_CODES = new Set(
+    (["??", "?", "?!", "!", "!!", "!?"] as const).map((mark) => ANNOTATION_INFO[mark].nag),
+);
 
-                if (
-                    options?.showVariations &&
-                    (annotation === "??" || annotation === "?" || annotation === "?!") &&
-                    parent &&
-                    i > 0 &&
-                    analysis[i - 1].best.length > 0
-                ) {
-                    const bestMoveUci = analysis[i - 1].best[0].uciMoves[0];
-                    const [parentPos] = positionFromFen(parent.fen);
-                    if (parentPos) {
-                        const parsedBestMove = parseUci(bestMoveUci);
-                        if (parsedBestMove) {
-                            const bestMove = normalizeMove(parentPos, parsedBestMove);
-                            const existingChild = parent.children.find((c) => {
-                                if (!c.move) return false;
-                                const childMove = normalizeMove(parentPos, c.move);
-                                return (
-                                    isNormal(childMove) &&
-                                    isNormal(bestMove) &&
-                                    childMove.from === bestMove.from &&
-                                    childMove.to === bestMove.to &&
-                                    childMove.promotion === bestMove.promotion
-                                );
-                            });
-
-                            if (!existingChild) {
-                                const san = makeSan(parentPos, bestMove);
-                                parentPos.play(bestMove);
-                                const newFen = makeFen(parentPos.toSetup());
-                                const variationNode = createNode({
-                                    fen: newFen,
-                                    move: bestMove,
-                                    san,
-                                    halfMoves: parent.halfMoves + 1,
-                                });
-
-                                let currentVarNode = variationNode;
-                                const currentVarPos = parentPos;
-
-                                const pv = analysis[i - 1].best[0].uciMoves;
-                                if (pv.length > 1) {
-                                    for (
-                                        let j = 1;
-                                        j <
-                                        Math.min(pv.length, MAX_GENERATED_ANALYSIS_VARIATION_PLIES);
-                                        j++
-                                    ) {
-                                        const nextMoveUci = pv[j];
-                                        const parsedNextMove = parseUci(nextMoveUci);
-                                        if (parsedNextMove) {
-                                            const nextMove = normalizeMove(
-                                                currentVarPos,
-                                                parsedNextMove,
-                                            );
-                                            const nextSan = makeSan(currentVarPos, nextMove);
-                                            currentVarPos.play(nextMove);
-                                            const nextFen = makeFen(currentVarPos.toSetup());
-                                            const nextNode = createNode({
-                                                fen: nextFen,
-                                                move: nextMove,
-                                                san: nextSan,
-                                                halfMoves: currentVarNode.halfMoves + 1,
-                                            });
-                                            currentVarNode.children.push(nextNode);
-                                            currentVarNode = nextNode;
-                                        }
-                                    }
-                                }
-
-                                parent.children.push(variationNode);
-                            }
-                        }
-                    }
-                }
-            }
-            const noveltyCode = ANNOTATION_INFO.N.nag;
-            // The root is the start position, not a move: it never carries N.
-            if (i > 0 && analysis[i].novelty && !cur.nags.includes(noveltyCode)) {
-                cur.nags.push(noveltyCode);
-            }
-        }
-        parent = cur;
-        cur = cur.children[0];
-        i++;
+/** Mainline nodes with their paths, root first. */
+function mainlineWithPaths(root: TreeNode): { node: TreeNode; path: number[] }[] {
+    const entries = [{ node: root, path: [] as number[] }];
+    let node = root;
+    while (node.children.length > 0) {
+        node = node.children[0];
+        entries.push({ node, path: [...entries[entries.length - 1].path, 0] });
     }
+    return entries;
+}
+
+/**
+ * Removes every report line hanging off a mainline node: a child with the report-line marker
+ * that is not its parent's mainline continuation. Tracked paths are rebased like `deleteMove`.
+ */
+function removeReportLines(state: TreeStoreState, mainline: { node: TreeNode; path: number[] }[]) {
+    for (const { node, path } of mainline) {
+        for (let index = node.children.length - 1; index > 0; index--) {
+            if (node.children[index].reportLine !== true) continue;
+            node.children.splice(index, 1);
+            const deleted = [...path, index];
+            rebaseTrackedPaths(state, (target) => rebasePathAfterDelete(target, deleted), {
+                position: path,
+                start: undefined,
+                practicePath: path,
+            });
+        }
+    }
+}
+
+/** The engine's line from `parent`, as tree nodes, up to the first move that is not legal. */
+function reportLineNodes(
+    parent: TreeNode,
+    line: GameAnalysis["positions"][number]["best"][number],
+) {
+    const [position] = positionFromFen(parent.fen);
+    if (!position) return null;
+    let first: TreeNode | null = null;
+    let last: TreeNode | null = null;
+    let halfMoves = parent.halfMoves;
+    for (const uci of line.uciMoves.slice(0, MAX_GENERATED_ANALYSIS_VARIATION_PLIES)) {
+        const parsed = parseUci(uci);
+        if (!parsed) break;
+        const move = normalizeMove(position, parsed);
+        if (!position.isLegal(move)) break;
+        const san = makeSan(position, move);
+        position.play(move);
+        halfMoves += 1;
+        const node = createNode({ fen: makeFen(position.toSetup()), move, san, halfMoves });
+        if (last) last.children.push(node);
+        else first = node;
+        last = node;
+    }
+    if (!first) return null;
+    first.score = line.score;
+    first.depth = line.depth;
+    first.reportLine = true;
+    return first;
+}
+
+function applyReport(state: TreeStoreState, result: GameAnalysis, request: ReportRequest): boolean {
+    if (state.report.operationId !== request.operationId) return false;
+    if (reportRootFingerprint(state.root.fen, getMainLine(state.root)) !== request.fingerprint)
+        return false;
+    const { positions, novelty } = result;
+    let mainline = mainlineWithPaths(state.root);
+    if (positions.length !== mainline.length) return false;
+    const marks = judgeReport(
+        positions,
+        mainline.map(({ node }) => node),
+    );
+
+    removeReportLines(state, mainline);
+    mainline = mainlineWithPaths(state.root);
+
+    let drawWritten = false;
+    mainline.forEach(({ node }, index) => {
+        const position = positions[index];
+        if (position.best.length > 0) {
+            node.score = position.best[0].score;
+            node.depth = position.best[0].depth;
+            delete node.engineScore;
+        } else if (position.terminal === "draw" && !drawWritten) {
+            // Bare kings included: the renderer's chess library may still see legal moves there.
+            node.score = { value: { type: "cp", value: 0 }, wdl: null };
+            node.depth = null;
+            delete node.engineScore;
+            drawWritten = true;
+        } else {
+            node.score = null;
+            node.depth = null;
+        }
+    });
+
+    if (request.marks) {
+        mainline.forEach(({ node }, index) => {
+            if (index === 0) return;
+            const kept = node.nags.filter((code) => !REPORT_MARK_CODES.has(code));
+            const mark = marks[index];
+            node.nags = mark ? [...kept, ANNOTATION_INFO[mark].nag] : kept;
+        });
+    }
+
+    if (novelty.kind === "found" || novelty.kind === "notFound") {
+        const noveltyCode = ANNOTATION_INFO.N.nag;
+        for (const { node } of mainline) {
+            if (node.nags.includes(noveltyCode))
+                node.nags = node.nags.filter((code) => code !== noveltyCode);
+        }
+        // The root is the start position, not a move: it never carries N.
+        if (novelty.kind === "found" && novelty.position > 0) {
+            const node = mainline[novelty.position]?.node;
+            if (node) node.nags = [...node.nags, noveltyCode];
+        }
+    }
+
+    if (request.lines) {
+        mainline.forEach((_, index) => {
+            const mark = marks[index];
+            if (index === 0 || (mark !== "?!" && mark !== "?" && mark !== "??")) return;
+            const parent = mainline[index - 1].node;
+            const line = positions[index - 1].best[0];
+            const [parentPosition] = positionFromFen(parent.fen);
+            const engineMove = line?.uciMoves[0] ? parseUci(line.uciMoves[0]) : undefined;
+            if (!parentPosition || !engineMove) return;
+            const exists = parent.children.some(
+                (child) => child.move && isSameMove(parentPosition, child.move, engineMove),
+            );
+            if (exists) return;
+            const first = reportLineNodes(parent, line);
+            if (first) parent.children.push(first);
+        });
+    }
+
+    state.report.summary = {
+        engine: request.engine,
+        goMode: request.goMode,
+        createdAt: request.createdAt,
+        missingEvaluations: positions.filter(
+            (position) => position.best.length === 0 && position.terminal === null,
+        ).length,
+        novelty: novelty.kind,
+        fingerprint: request.fingerprint,
+    };
+    return true;
 }

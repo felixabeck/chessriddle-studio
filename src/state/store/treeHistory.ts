@@ -1,4 +1,4 @@
-import type { GameHeaders, TreeNode } from "@/utils/treeReducer";
+import type { GameHeaders, ReportState, ReportSummary, TreeNode } from "@/utils/treeReducer";
 
 /** The editable document at one point in time. Immer shares unchanged subtrees between snapshots. */
 export type TreeSnapshot = {
@@ -6,7 +6,12 @@ export type TreeSnapshot = {
     headers: GameHeaders;
     position: number[];
     documentId: number;
+    /** The report summary that describes `root`; the run flags are never part of a snapshot. */
+    reportSummary: ReportSummary | null;
 };
+
+/** The store state a snapshot is taken from. */
+type SnapshotSource = Omit<TreeSnapshot, "reportSummary"> & { report: ReportState };
 
 /**
  * Undo/redo for one tab's game. Session-only: never persisted, and replaced with an empty history
@@ -24,12 +29,13 @@ export const TREE_HISTORY_LIMIT = 100;
 
 export const EMPTY_TREE_HISTORY: TreeHistory = { past: [], future: [], mergeKey: null };
 
-function treeSnapshot(state: TreeSnapshot): TreeSnapshot {
+function treeSnapshot(state: SnapshotSource): TreeSnapshot {
     return {
         root: state.root,
         headers: state.headers,
         position: state.position,
         documentId: state.documentId,
+        reportSummary: state.report.summary ?? null,
     };
 }
 
@@ -49,19 +55,22 @@ export function editedHeaderFields(a: GameHeaders, b: GameHeaders): string[] {
 }
 
 /**
- * Whether an action edited the document: a new tree (Immer copies it on any node change) or an
- * edited header field. Cursor position, document identity and board orientation do not count.
+ * Whether an action edited the document: a new tree (Immer copies it on any node change), a new
+ * report summary, or an edited header field. Cursor position, document identity and board
+ * orientation do not count.
  */
-export function documentChanged(before: TreeSnapshot, after: TreeSnapshot): boolean {
+export function documentChanged(before: SnapshotSource, after: SnapshotSource): boolean {
     return (
-        before.root !== after.root || editedHeaderFields(before.headers, after.headers).length > 0
+        before.root !== after.root ||
+        (before.report.summary ?? null) !== (after.report.summary ?? null) ||
+        editedHeaderFields(before.headers, after.headers).length > 0
     );
 }
 
 /** The history after an edit that turned `before` into the current document. */
 export function recordEdit(
     history: TreeHistory,
-    before: TreeSnapshot,
+    before: SnapshotSource,
     mergeKey: string | null,
 ): TreeHistory {
     if (mergeKey !== null && mergeKey === history.mergeKey && history.future.length === 0) {
@@ -81,7 +90,7 @@ export function recordEdit(
  */
 export function stepHistory(
     history: TreeHistory,
-    current: TreeSnapshot,
+    current: SnapshotSource,
     direction: "undo" | "redo",
 ): { restore: TreeSnapshot; history: TreeHistory } | null {
     const source = direction === "undo" ? history.past : history.future;

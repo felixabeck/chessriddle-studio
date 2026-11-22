@@ -11,7 +11,6 @@ import {
   restoreReportOwner,
   type TreeStore,
 } from "@/state/store/tree";
-import { getMainLine } from "@/utils/chess";
 import ReportPanel from "./ReportPanel";
 import type { GameAnalysis } from "@/bindings";
 
@@ -46,7 +45,6 @@ const mocks = vi.hoisted(() => ({
   },
   reportModalProps: null as null | {
     registerOperation: (id: string) => void;
-    isCurrentOperation: (id: string, fingerprint: string) => boolean;
   },
   reportSettings: {
     novelty: false,
@@ -126,10 +124,7 @@ vi.mock("./ReportModal", async (importOriginal) => {
   const Actual = actual.default;
   return {
     ...actual,
-    default: (props: {
-      registerOperation: (id: string) => void;
-      isCurrentOperation: (id: string, fingerprint: string) => boolean;
-    }) => {
+    default: (props: { registerOperation: (id: string) => void }) => {
       mocks.reportModalProps = props;
       return <Actual {...(props as any)} />;
     },
@@ -198,11 +193,6 @@ function finishedItem(id: string): ProgressItem {
   return { id, generation: 2n, progress: 100, finished: true, state: "succeeded" };
 }
 
-function fingerprintOf(store: TreeStore) {
-  const root = store.getState().root;
-  return `${root.fen}\u0000${getMainLine(root).join("\u0000")}`;
-}
-
 function deferred<T>() {
   let resolve: (value: T) => void = () => undefined;
   let reject: (cause: unknown) => void = () => undefined;
@@ -249,15 +239,12 @@ test("P2 a late cancel failure cannot notify against its successor", async () =>
 });
 
 test.each(["replacement", "root"])(
-  "P2 the actual report owner rejects old analysis failures after %s",
+  "with the actual owner, a %s during a run starts nothing new and stays correct",
   async (change) => {
     mocks.reportingMode = true;
-    const old = deferred<never[]>();
-    const current = deferred<never[]>();
-    mocks.prepareAnalysis
-      .mockResolvedValueOnce("old-report")
-      .mockResolvedValueOnce("current-report");
-    mocks.analyzeGame.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const old = deferred<GameAnalysis>();
+    mocks.prepareAnalysis.mockResolvedValueOnce("old-report");
+    mocks.analyzeGame.mockReturnValueOnce(old.promise);
     await renderPanel();
     await act(async () => {
       host.querySelector<HTMLButtonElement>("button[type='submit']")!.click();
@@ -271,8 +258,11 @@ test.each(["replacement", "root"])(
       else store.getState().setFen("8/8/8/8/8/8/8/K6k w - - 0 1");
       await Promise.resolve();
     });
-    expect(mocks.analyzeGame.mock.calls.map(([id]) => id)).toEqual(
-      change === "replacement" ? ["old-report", "current-report"] : ["old-report"],
+    // A second submit is refused; a changed game cancels the run at once.
+    expect(mocks.prepareAnalysis).toHaveBeenCalledOnce();
+    expect(mocks.analyzeGame.mock.calls.map(([id]) => id)).toEqual(["old-report"]);
+    expect(mocks.cancelAnalysis.mock.calls.map(([id]) => id)).toEqual(
+      change === "root" ? ["old-report"] : [],
     );
     const failure = {
       tag: "engine-failure",
@@ -286,15 +276,10 @@ test.each(["replacement", "root"])(
       },
     };
     await act(async () => old.reject(failure));
-    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
-    expect(store.getState().report.operationId).toBe(
-      change === "replacement" ? "current-report" : "old-report",
-    );
-    expect(store.getState().report.inProgress).toBe(change === "replacement");
-    if (change === "replacement") await act(async () => current.reject(failure));
     expect(mocks.notifyUnlessCancelled.mock.calls.map(([_title, cause]) => cause.message)).toEqual(
       change === "replacement" ? ["Safe report reason"] : [],
     );
+    expect(store.getState().report.operationId).toBe("old-report");
     expect(store.getState().report.inProgress).toBe(false);
   },
 );
@@ -557,26 +542,6 @@ test("a late cancel acknowledgement cannot clear a replacement report", async ()
   });
   expect(store.getState().report.operationId).toBe("report-B");
   expect(store.getState().report.inProgress).toBe(true);
-});
-
-test("isCurrentOperation reads the live store, not a render snapshot", async () => {
-  await renderPanel();
-  const isCurrent = mocks.reportModalProps!.isCurrentOperation;
-  const fingerprint = fingerprintOf(store);
-
-  await act(async () => {
-    mocks.reportModalProps!.registerOperation("report_tab-1_uuid");
-  });
-
-  expect(isCurrent("report_tab-1_uuid", fingerprint)).toBe(true);
-  expect(isCurrent("report_other", fingerprint)).toBe(false);
-  expect(isCurrent("report_tab-1_uuid", "different-fingerprint")).toBe(false);
-
-  await act(async () => root.unmount());
-  root = createRoot(host);
-  await renderPanel();
-  store.getState().setFen("8/8/8/8/8/8/8/K6k w - - 0 1");
-  expect(isCurrent("report_tab-1_uuid", fingerprint)).toBe(false);
 });
 
 test("a finished progress item clears inProgress while leaving the operation id", async () => {
