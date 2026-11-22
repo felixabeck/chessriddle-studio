@@ -19,6 +19,12 @@
       "all_frames": false
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/48.png"],
+      "matches": ["https://www.chess.com/*", "https://chess.com/*", "https://lichess.org/*"]
+    }
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "studio-link@chessriddle.com",

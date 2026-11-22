@@ -1,15 +1,21 @@
 /* Scoped styles only: never change the host's controls or layout globally. */
 a.crs-analyze[data-chessriddle-studio="analyze"] {
+  /* The app's gold: bright on dark surfaces, deep on light ones, and one
+     middle tone that keeps 3:1 against both where the theme is unknown. */
+  --crs-gold: #c9a54e;
+  --crs-gold-deep: #6c5a0f;
+  --crs-gold-mid: #a07d24;
+  --crs-gold-glow: 0 4px 12px rgba(201, 165, 78, 0.25);
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: 1 1 100%;
-  gap: 0.45em;
+  gap: 8px;
   width: 100%;
   min-height: 40px;
   margin: 8px 0;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border-radius: 5px;
   font: inherit;
   font-size: 14px;
@@ -19,17 +25,64 @@ a.crs-analyze[data-chessriddle-studio="analyze"] {
   text-decoration: none;
   white-space: normal;
   cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease,
+    background-color 0.12s ease;
 }
 
-a.crs-analyze--chess[data-chessriddle-studio="analyze"] {
+a.crs-analyze[data-chessriddle-studio="analyze"] > img.crs-analyze__mark {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Chess.com: every state names its text and its fill together, so a rule of
+   the page can never put its hover colour on our background. */
+a.crs-analyze--chess[data-chessriddle-studio="analyze"],
+a.crs-analyze--chess[data-chessriddle-studio="analyze"]:visited,
+a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover,
+a.crs-analyze--chess[data-chessriddle-studio="analyze"]:focus,
+a.crs-analyze--chess[data-chessriddle-studio="analyze"]:active {
+  color: #f4efe4;
+  background: #33302c;
+  border: 1px solid rgba(201, 165, 78, 0.45);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+
+a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover,
+a.crs-analyze--chess[data-chessriddle-studio="analyze"]:active {
   color: #fff;
-  background: #454341;
-  border: 1px solid #77736f;
-  box-shadow: 0 2px 0 #262522;
+  background: #3b3732;
+  border-color: var(--crs-gold);
+  box-shadow: var(--crs-gold-glow);
 }
 
-a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover {
-  background: #575450;
+html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"],
+html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:visited,
+html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover,
+html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:focus,
+html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:active {
+  color: #312e2b;
+  background: #faf6ec;
+  border: 1px solid rgba(108, 90, 15, 0.4);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+
+html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover,
+html.light-mode a.crs-analyze--chess[data-chessriddle-studio="analyze"]:active {
+  color: #1f1d1b;
+  background: #fffcf4;
+  border-color: var(--crs-gold-deep);
+  box-shadow: var(--crs-gold-glow);
 }
 
 a.crs-analyze--lichess[data-chessriddle-studio="analyze"] {
@@ -41,12 +94,14 @@ a.crs-analyze--lichess[data-chessriddle-studio="analyze"] {
 }
 
 a.crs-analyze--lichess[data-chessriddle-studio="analyze"]:hover {
-  color: var(--c-primary, #286fa8);
-  filter: brightness(1.08);
+  color: var(--c-font-clear, var(--c-font, #4d4d4d));
+  background: var(--c-bg-box, #e8e6e2);
+  border-color: var(--crs-gold-mid);
+  box-shadow: var(--crs-gold-glow);
 }
 
 a.crs-analyze[data-chessriddle-studio="analyze"]:focus-visible {
-  outline: 3px solid #81b64c;
+  outline: 3px solid var(--crs-gold-mid);
   outline-offset: 3px;
 }
 

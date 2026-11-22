@@ -4,6 +4,9 @@
   if (globalThis[key]) return;
   const { getContext, deepLink } = globalThis.ChessRiddleStudioExtension;
   const label = "Analyze in ChessRiddle Studio";
+  // Resolved once at start: after an extension update the old script keeps
+  // running in the page, and the runtime then refuses every further call.
+  const markUrl = chrome.runtime.getURL("icons/48.png");
   let button = null;
   let timer = null;
   let interval = null;
@@ -25,7 +28,15 @@
     if (!button) {
       button = document.createElement("a");
       button.dataset.chessriddleStudio = "analyze";
-      button.textContent = label;
+      const mark = document.createElement("img");
+      mark.className = "crs-analyze__mark";
+      mark.alt = "";
+      mark.draggable = false;
+      // The label alone is a complete button, so an image the page cannot
+      // load leaves no broken-image placeholder behind.
+      mark.addEventListener("error", () => mark.remove());
+      mark.src = markUrl;
+      button.append(mark, label);
       button.title = "Open this game in the ChessRiddle Studio desktop app (installation required)";
       button.setAttribute("aria-label", label);
       // A real link preserves keyboard access and the browser's user gesture
@@ -44,10 +55,9 @@
       button.addEventListener("click", activate);
       button.addEventListener("auxclick", activate);
     }
-    const className =
-      context.site === "lichess"
-        ? "crs-analyze crs-analyze--lichess button button-metal"
-        : "crs-analyze crs-analyze--chess cc-button-component cc-button-secondary";
+    // No class of the host: its button classes bring state rules (hover text
+    // colour, hover fill) that this extension cannot keep in step with.
+    const className = `crs-analyze crs-analyze--${context.site === "lichess" ? "lichess" : "chess"}`;
     if (button.className !== className) button.className = className;
     const href = deepLink(context.gameUrl);
     if (button.getAttribute("href") !== href) button.setAttribute("href", href);

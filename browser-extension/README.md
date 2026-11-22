@@ -56,9 +56,12 @@ Ongoing games and ongoing Lichess analysis pages get no button. The extension
 never opens the desktop app by itself.
 
 Each site adapter uses several ordered control selectors and puts the link inside
-the first visible match. Lichess uses its metal button styling and theme
-variables; Chess.com uses its button classes with scoped secondary-button
-styling. The ordinary anchor supports keyboard focus, Enter, and the browser's
+the first visible match. The link carries no class of the host: a host button
+class brings state rules along (on Chess.com's light theme the hover text colour
+made the label unreadable). On Lichess it takes the theme variables, on Chess.com
+its own colours for the dark and the light theme (`html.light-mode`), and on both
+the Studio mark and a gold border on hover. The mark is `icons/48.png`, the one
+file the manifest lets the two sites load. The ordinary anchor supports keyboard focus, Enter, and the browser's
 external-protocol prompt. If no app launches, check that ChessRiddle Studio is
 installed; browsers do not reliably expose whether an external application was
 launched.
@@ -121,5 +124,7 @@ Lichess answers headless browsers with a challenge page; use a visible browser.
    app. Check an ongoing game as well.
 4. With ChessRiddle Studio closed and already running, activate the button and
    accept the browser prompt. Verify the imported players, result and moves.
-5. Run `npx web-ext lint --source-dir browser-extension/dist/firefox` and inspect
+5. Hover the button in each site's light and dark theme. The label must stay
+   readable and the Studio mark must show.
+6. Run `npx web-ext lint --source-dir browser-extension/dist/firefox` and inspect
    Chrome's extension error panel.

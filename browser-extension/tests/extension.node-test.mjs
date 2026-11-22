@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 
 const core = await readFile(new URL("../src/core.js", import.meta.url), "utf8");
 const content = await readFile(new URL("../src/content.js", import.meta.url), "utf8");
+const styles = await readFile(new URL("../src/content.css", import.meta.url), "utf8");
 const dom = new JSDOM("", { runScripts: "outside-only" });
 dom.window.eval(core);
 const { canonicalGameUrl, deepLink } = dom.window.ChessRiddleStudioExtension;
@@ -93,6 +94,7 @@ const lichessAnalysis =
 function setup(t, url, html) {
   const instance = new JSDOM(html, { url, runScripts: "outside-only", pretendToBeVisual: true });
   t.after(() => instance.window.close());
+  instance.window.chrome = { runtime: { getURL: (path) => `chrome-extension://test/${path}` } };
   instance.window.eval(core);
   return instance.window;
 }
@@ -113,14 +115,20 @@ test("a direct Chess.com game route alone does not prove completion", async (t) 
   assert.ok(getButton(window));
 });
 
-test("historical Chess.com page gets one accessible native-style link", (t) => {
+test("historical Chess.com page gets one accessible link with the Studio mark", (t) => {
   const window = setup(t, chess.replace("/game/", "/analysis/game/"), chessAnalysis);
   window.eval(content);
   const button = getButton(window);
   assert.equal(button.textContent, "Analyze in ChessRiddle Studio");
   assert.equal(button.getAttribute("aria-label"), button.textContent);
   assert.equal(new URL(button.href).searchParams.get("url"), chess);
-  assert.ok(button.classList.contains("cc-button-component"));
+  // A class of the host would bring its state rules along: on Chess.com's light theme the
+  // secondary button's hover text colour made the label unreadable on this button's fill.
+  assert.equal(button.className, "crs-analyze crs-analyze--chess");
+  const mark = button.querySelector("img.crs-analyze__mark");
+  assert.equal(mark.getAttribute("src"), "chrome-extension://test/icons/48.png");
+  assert.equal(mark.alt, "");
+  assert.equal(button.firstChild, mark);
   assert.ok(button.closest(".analysis-controls-component"));
   window.eval(content);
   assert.equal(window.document.querySelectorAll(".crs-analyze").length, 1);
@@ -233,11 +241,11 @@ test("today's analysis page carries the link in the block under the move list", 
   assert.equal(button.previousElementSibling.className, "game-controls-secondary-component");
 });
 
-test("completed Lichess analysis uses native button classes and public game ID", (t) => {
+test("completed Lichess analysis gets a link without host classes and the public game ID", (t) => {
   const window = setup(t, `${lichess}SeCr/black`, lichessAnalysis);
   window.eval(content);
   const button = getButton(window);
-  assert.ok(button.classList.contains("button-metal"));
+  assert.equal(button.className, "crs-analyze crs-analyze--lichess");
   assert.equal(new URL(button.href).searchParams.get("url"), lichess);
   assert.ok(button.closest(".analyse__underboard"));
 });
@@ -336,6 +344,30 @@ test("bfcache pagehide tears down and pageshow restores the controller", (t) => 
   assert.equal(window.document.querySelectorAll(".crs-analyze").length, 1);
 });
 
+test("a mark the page cannot load leaves the plain label", (t) => {
+  const window = setup(t, chess.replace("/game/", "/analysis/game/"), chessAnalysis);
+  window.eval(content);
+  const button = getButton(window);
+  button.querySelector("img").dispatchEvent(new window.Event("error"));
+  assert.equal(button.querySelector("img"), null);
+  assert.equal(button.textContent, "Analyze in ChessRiddle Studio");
+});
+
+test("every state rule that sets the button's text colour or fill sets both", () => {
+  const rules = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selector, body]) => ({ selector: selector.trim(), body }))
+    .filter(({ selector }) => /crs-analyze--(chess|lichess)/.test(selector));
+  const hover = rules.filter(({ selector }) => selector.includes(":hover"));
+  assert.ok(hover.some(({ selector }) => selector.includes("--chess")));
+  assert.ok(hover.some(({ selector }) => selector.includes("--lichess")));
+  for (const { selector, body } of rules) {
+    const color = /(^|[;\s])color:/.test(body);
+    const fill = /(^|[;\s])background:/.test(body);
+    assert.equal(color, fill, selector);
+  }
+  for (const { selector, body } of hover) assert.match(body, /(^|[;\s])color:/, selector);
+});
+
 test("manifest limits site access and uses no privileged APIs or remote code", async () => {
   const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
   assert.equal(manifest.manifest_version, 3);
@@ -346,10 +378,16 @@ test("manifest limits site access and uses no privileged APIs or remote code", a
     "https://chess.com/*",
     "https://lichess.org/*",
   ]);
+  // Only the mark the button shows is readable by a page, and only by the two sites.
+  assert.deepEqual(manifest.web_accessible_resources, [
+    { resources: ["icons/48.png"], matches: manifest.content_scripts[0].matches },
+  ]);
+  assert.ok(content.includes('chrome.runtime.getURL("icons/48.png")'));
   for (const path of [
     ...manifest.content_scripts[0].js,
     ...manifest.content_scripts[0].css,
     ...Object.values(manifest.icons),
+    ...manifest.web_accessible_resources[0].resources,
   ]) {
     assert.ok((await readFile(new URL(`../${path}`, import.meta.url))).length > 0, path);
   }
