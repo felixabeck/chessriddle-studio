@@ -685,6 +685,25 @@ impl CredentialManager {
             .await
     }
 
+    /// Resolves an optional Lichess credential handle for a download or export.
+    /// Without a handle the caller runs anonymously (`Ok(None)`); a handle whose stored token is
+    /// missing fails with `Error::OAuthFailure` and is never retried anonymously.
+    pub(crate) async fn optional_lichess_token_async(
+        self: &Arc<Self>,
+        handle: Option<LichessAccountHandle>,
+    ) -> Result<Option<String>, Error> {
+        match handle {
+            Some(handle) => self
+                .token_async(handle)
+                .await?
+                .ok_or_else(|| {
+                    Error::OAuthFailure("authenticated Lichess account unavailable".into())
+                })
+                .map(Some),
+            None => Ok(None),
+        }
+    }
+
     pub(crate) fn store_lichess_token(
         &self,
         username: String,
@@ -3047,6 +3066,40 @@ mod tests {
             Err(Error::CredentialRecoveryRequired)
         ));
         assert_eq!(store.calls.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn optional_lichess_token_async_resolves_anonymous_stored_and_missing_handles() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(CredentialManager::new(Arc::new(
+            MemoryCredentialStore::default(),
+        )));
+        manager
+            .initialize(&AppDataDir::for_test(temp.path()))
+            .unwrap();
+
+        assert_eq!(
+            manager.optional_lichess_token_async(None).await.unwrap(),
+            None
+        );
+
+        let stored = manager
+            .store_lichess_token("player".into(), "disposable-token".into())
+            .unwrap()
+            .account;
+        assert_eq!(
+            manager
+                .optional_lichess_token_async(Some(stored.handle))
+                .await
+                .unwrap(),
+            Some("disposable-token".into())
+        );
+
+        let missing = manager
+            .optional_lichess_token_async(Some(LichessAccountHandle::new()))
+            .await
+            .unwrap_err();
+        assert!(matches!(missing, Error::OAuthFailure(_)));
     }
 
     #[test]

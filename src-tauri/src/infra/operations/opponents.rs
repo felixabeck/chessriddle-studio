@@ -333,18 +333,10 @@ async fn export_account(
             if perfs.is_empty() {
                 return Ok(None);
             }
-            let token = match lichess_handle {
-                Some(handle) => Some(
-                    state
-                        .credentials
-                        .token_async(handle.clone())
-                        .await?
-                        .ok_or_else(|| {
-                            Error::OAuthFailure("authenticated Lichess account unavailable".into())
-                        })?,
-                ),
-                None => None,
-            };
+            let token = state
+                .credentials
+                .optional_lichess_token_async(lichess_handle.cloned())
+                .await?;
             crate::fs::export_lichess_games_to_file(
                 state,
                 &account.username,

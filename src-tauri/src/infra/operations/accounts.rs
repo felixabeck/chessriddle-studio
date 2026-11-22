@@ -762,4 +762,49 @@ mod tests {
             );
         }
     }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn download_account_lichess_anonymous_succeeds_without_authorization_header() {
+        use crate::db::linked_collections::tests::Fixture;
+        use crate::fs::tests::{coverage_response, export_pgn_response, lichess_runtime_state};
+
+        let fixture = Fixture::new();
+        let coverage = format!(
+            "{}\n",
+            crate::lichess::coverage_object("Blitz001", true, 100)
+        );
+        let (state, app, _, transport) = lichess_runtime_state(
+            &fixture,
+            vec![Ok(coverage_response(&coverage)), Ok(export_pgn_response())],
+            false,
+        );
+        let owner = "account-window".to_string();
+        let ticket = state.operations.prepare_download(&owner).unwrap();
+        let request = AccountImportRequest {
+            provider: "lichess".into(),
+            account: "player".into(),
+            account_handle: None,
+            destination: fixture.download_destination(),
+            pending_batch: None,
+            since_ms: None,
+            target: AccountImportTarget::Linked {
+                collection: Uuid::new_v4().to_string(),
+            },
+        };
+
+        let downloaded = download_account(request, ticket, owner, app.handle().clone(), state)
+            .await
+            .unwrap();
+        assert!(downloaded.receipt_error.is_none());
+        let requests = transport.requests_seen.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            assert!(
+                !request.1.contains_key(reqwest::header::AUTHORIZATION),
+                "anonymous Lichess account download unexpectedly sent Authorization header: {:?}",
+                request.1
+            );
+        }
+    }
 }
