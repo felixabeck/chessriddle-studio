@@ -36,6 +36,10 @@
         {
           "path": "src/state/persistError.ts",
           "reason": "One-line re-export; no runtime statements."
+        },
+        {
+          "path": "src/state/atoms.ts",
+          "reason": "Re-export barrel over src/state/atoms/*; no runtime statements."
         }
       ]
     }

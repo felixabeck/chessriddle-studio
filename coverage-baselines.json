@@ -19,6 +19,7 @@
         "statementFree": [
           "src/bindings/index.ts",
           "src/platform/native.ts",
+          "src/state/atoms.ts",
           "src/state/persistError.ts"
         ]
       }

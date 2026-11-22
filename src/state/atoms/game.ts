@@ -4,11 +4,14 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { z } from "zod";
 import type { GameResult, OpeningBookHandle } from "@/bindings";
-import type { OpponentSettings } from "@/state/opponentSettings";
 import { pathRefSchema } from "../../utils/pathCapabilities";
 import { createPreferenceStorage, createZodStorage, initializeBeforeUse } from "../utils";
 import { openingBookMaxPlySchema } from "../preferenceSchemas";
-import { defaultPlayerSettings, opponentSettingsSchema } from "@/state/opponentSettings";
+import {
+    defaultPlayerSettings,
+    opponentSettingsSchema,
+    type OpponentSettings,
+} from "../opponentSettings";
 import { createEngineOwnerAtom } from "./engineOwners";
 import { initializeRendererState } from "./rendererState";
 import { tabAtomFamily } from "./tabFamilies";
