@@ -28359,3 +28359,21 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 * **Reproduced on master (2026-11-22 09:45, drain session fe4cac75):** a full `pnpm test:e2e:container` on a detached `origin/master` `f11612e9b`, at host load ~2.5 with 20 GB available, failed 3 tests (`database-files: mixed Library files/filter/layout/selection` at 1920px 100% and 200% light, `… unavailable recovery/keyboard` at 1920px 100% light) with 487 passed, alongside 8 kernel `Memory cgroup out of memory` kills of `chrome-headless` in the container's memcg. The failure is in master itself, not in any unpushed branch, and five consecutive gate runs of this drain branch failed the same way. Every push whose e2e gate runs the full suite is blocked until this is fixed.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"77c3595a906decdc0c54577947aa13cb62bcd2ec302b934ac9f1651ac91925fe","input_sha256":"c349670da0c128efe6de75f1894f7ac337774b1fe48c5016851819d0b4893c47","kind":"mutation-receipt","operation":"13a47dd62374df8164c833f052e252cc595ba14e6d1a30838ed446df7d47b950","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-01"],"target":"f-20261122-01","v":1} -->
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### The async-errors 200% font-scale test fails axe color-contrast on a tooltip caught mid fade-in
+
+* **ID:** f-20261122-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** 7048a718-d61c-4b1c-966a-32cba1a5d732
+* **Impact class:** tooling
+* **Spotted outside diff:** final `pnpm gates:push -- --frontend` of drain session fe4cac75 (f-20261119-17, an export-preserving split of `src/state/atoms.ts`), run `artifacts/gates/20261122T070640015Z-2760115/e2e.log`, 2026-11-22.
+* **Where:** `e2e/async-errors.spec.ts:1457` (`async-errors: verifies German navigation and a delayed native rejection at 200% font scale`), its axe audit.
+* **Defect:** axe reported `color-contrast` (serious) on `div#_r_g_[role=tooltip]` (Mantine tooltip, inline `transition-property` style): foreground `#403e3b` on `#151211`, ratio 1.74 against 3:1, at 24px. The colours are the tooltip's text partway through its opacity transition, so the audit ran while a tooltip was fading in. A settled tooltip does not show this colour.
+* **Failure scenario:** whenever the audit wins the race against the tooltip transition, the e2e gate is red for every push on every machine. Rerunning `--project=engine-gap --project=async-errors` alone on the same tree passed 79/79 (`/tmp/claude-split/e2e-subset.log`, ephemeral).
+* **Fix:** have the test wait for the tooltip's transition to finish (or move the pointer off the trigger and wait for no `[role=tooltip]`) before the axe call; alternatively run the audits with transitions disabled through the existing e2e reduced-motion setup, if the fixture has one. Confirm the cause from the failure screenshot first.
+* **Proof:** the run log above, lines ~795-885 (`Error: color-contrast: #_r_g_`), screenshot `artifacts/frontend-audit/test-results/async-errors-async-errors--4cc6d-rejection-at-200-font-scale-async-errors/test-failed-1.png`.
+* **Related:** f-20261120-11 (open; same test, a full-page snapshot race of 887 pixels on hosted CI). No shared Root is claimed: that one is a snapshot diff, this one an axe audit during a transition. The same run's two `Target crashed` failures in `engine-gap` are f-20261122-01.
+* **Found by:** Claude Code, drain session fe4cac75 (f-20261119-17).
