@@ -407,6 +407,18 @@ describe("downloading", () => {
     expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith(store, ID);
   });
 
+  test("a cancel request that fails is reported with the database folder's guidance", async () => {
+    const failure = new Error("the database folder is gone");
+    mocks.cancel.mockRejectedValue(failure);
+    store.set(opponentImportsAtom, new Map([[ID, "ticket-1"]]));
+    await render();
+    await click("Cancel");
+
+    await vi.waitFor(() =>
+      expect(mocks.notifyError).toHaveBeenCalledExactlyOnceWith("Error", failure, "database"),
+    );
+  });
+
   test("before the import has its ticket there is nothing to cancel yet", async () => {
     store.set(opponentImportsAtom, new Map([[ID, null]]));
     await render();
@@ -485,6 +497,21 @@ describe("downloaded games", () => {
     expect(mocks.warn.mock.calls[0][0]).not.toContain("/home/someone");
     expect(document.body.querySelector("[data-opponent-separate]")).toBeNull();
     expect(status().textContent).toBe("10 online games");
+  });
+
+  test("a player lookup that was cancelled is no failure and is not logged", async () => {
+    mocks.listing = listed("success", 10);
+    mocks.players.mockRejectedValue({
+      tag: "backend-error",
+      category: "cancellation",
+      message: "Cancellation",
+    } satisfies ErrorPayload);
+    await render();
+
+    await vi.waitFor(() => expect(mocks.players).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(mocks.warn).not.toHaveBeenCalled();
+    expect(document.body.querySelector("[data-opponent-separate]")).toBeNull();
   });
 
   test("one merged player needs no note", async () => {
