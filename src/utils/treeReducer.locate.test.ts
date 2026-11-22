@@ -1,7 +1,15 @@
 import { expect, test } from "vitest";
 import { createTreeStore } from "@/state/store/tree";
-import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
-import { resolveCoachInsertPath } from "./coachInsert";
+import { defaultTree, getBoardState, getNodeAtPath, locateBoardState } from "@/utils/treeReducer";
+
+/** Where a line that starts from `fen` can go in the tree now, as the Coach's insert asks it. */
+function resolveCoachInsertPath(
+    root: Parameters<typeof locateBoardState>[0],
+    path: readonly number[],
+    fen: string,
+) {
+    return locateBoardState(root, path, getBoardState(fen))?.position ?? null;
+}
 
 function game(fen?: string) {
     const store = createTreeStore();
@@ -53,4 +61,25 @@ test("a game that starts with Black to move resolves like any other", () => {
     const { root } = store.getState();
     expect(resolveCoachInsertPath(root, [], start)).toEqual([]);
     expect(resolveCoachInsertPath(root, [0, 0], getNodeAtPath(root, [0, 0]).fen)).toEqual([0, 0]);
+});
+
+test("a node the caller does not accept is passed over, on the remembered path and in the search", () => {
+    const store = game();
+    // The same position twice: once as the end of a line, once with a move after it.
+    store.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6", "Nc3"] });
+    store.getState().goToMove([]);
+    store.getState().makeMoves({ payload: ["Nc3", "e5", "Nf3", "Nc6", "e4", "Bc5"] });
+    const { root } = store.getState();
+    const leaf = getNodeAtPath(root, [0, 0, 0, 0, 0]);
+    expect(leaf.children).toHaveLength(0);
+    const state = getBoardState(leaf.fen);
+    expect(locateBoardState(root, [0, 0, 0, 0, 0], state)?.position).toEqual([0, 0, 0, 0, 0]);
+    const continued = locateBoardState(
+        root,
+        [0, 0, 0, 0, 0],
+        state,
+        (node) => node.children.length > 0,
+    );
+    expect(continued?.position).toEqual([1, 0, 0, 0, 0]);
+    expect(continued?.node.children[0].san).toBe("Bc5");
 });

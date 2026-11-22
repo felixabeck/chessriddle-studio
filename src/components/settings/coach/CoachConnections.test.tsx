@@ -504,3 +504,27 @@ test("an unconfirmed Grok sign-out names Grok and offers no ChatGPT page", async
   expect(notice).toBeDefined();
   expect(button(notice, "Coach.Plan.ManageUsage")).toBeUndefined();
 });
+
+test("a connection whose keyring entry could not be read is not called broken, and can be read again", async () => {
+  mocks.coachConnections.mockResolvedValue([
+    { ...chatGpt, kind: "api", account: null, status: "storageUnavailable" },
+    ollama,
+  ]);
+  await render();
+  const unread = row("ChatGPT");
+  expect(unread.textContent).toContain("Coach.Error.Storage");
+  expect(unread.textContent).not.toContain("Settings.Coach.Connection.NeedsRepair");
+  expect(unread.textContent).not.toContain("Coach.Error.NeedsRepair");
+  // Nothing is known about it but its name: no check, no edit, no usage page. It can be removed.
+  expect(button(unread, "Settings.Coach.Connection.Check")).toBeUndefined();
+  expect(button(unread, "Settings.Coach.Form.EditTitle")).toBeUndefined();
+  expect(button(unread, "Coach.Plan.ManageUsage")).toBeUndefined();
+  expect(button(unread, "Settings.Coach.Connection.Remove")).toBeDefined();
+  expect(button(row("Ollama"), "Settings.Coach.Connection.Check")).toBeDefined();
+
+  // Reading again shows it as it is.
+  mocks.coachConnections.mockResolvedValue([chatGpt, ollama]);
+  await click(button(unread, "Common.Retry"));
+  expect(row("ChatGPT").textContent).toContain("player@example.com");
+  expect(button(row("ChatGPT"), "Common.Retry")).toBeUndefined();
+});

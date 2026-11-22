@@ -7,6 +7,7 @@ import type { Engine } from "@/utils/engines";
 const mocks = vi.hoisted(() => ({
     coachAvailable: vi.fn(),
     coachConnections: vi.fn(),
+    coachModels: vi.fn(),
     coachOpenUsage: vi.fn(),
     warn: vi.fn(() => Promise.resolve()),
 }));
@@ -17,6 +18,7 @@ const {
     coachConnectionsAtom,
     coachEnabledAtom,
     coachEngines,
+    coachModelsAtom,
     coachPlanNoticeSeenAtom,
     defaultCoachEffort,
     effectiveCoachEngine,
@@ -100,6 +102,47 @@ test("mounting reads the native connections and only the newest read is accepted
         connections: [connection("new")],
     });
     unsubscribe();
+});
+
+test("only the newest model list request is accepted, also for the same connection", async () => {
+    const atoms = createStore();
+    const first = deferred<{ models: ModelInfo[]; truncated: boolean }>();
+    const second = deferred<{ models: ModelInfo[]; truncated: boolean }>();
+    const other = deferred<{ models: ModelInfo[]; truncated: boolean }>();
+    mocks.coachModels
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(other.promise)
+        .mockReturnValueOnce(second.promise);
+    // The connection is asked, another one is looked at, then the first is asked again.
+    const stale = atoms.set(coachModelsAtom, "a");
+    const between = atoms.set(coachModelsAtom, "b");
+    const newest = atoms.set(coachModelsAtom, "a");
+    expect(atoms.get(coachModelsAtom)).toEqual({ connection: "a", status: "loading" });
+
+    // The first request answers while the newest one for the same connection is still open.
+    first.reject(new CoachCommandError("keyRejected"));
+    await stale;
+    expect(atoms.get(coachModelsAtom)).toEqual({ connection: "a", status: "loading" });
+    other.resolve({ models: [model("b-model")], truncated: false });
+    await between;
+    expect(atoms.get(coachModelsAtom)).toEqual({ connection: "a", status: "loading" });
+
+    second.resolve({ models: [model("fresh")], truncated: false });
+    await newest;
+    expect(atoms.get(coachModelsAtom)).toMatchObject({
+        connection: "a",
+        status: "ready",
+        models: [model("fresh")],
+    });
+
+    // Asking for no connection drops what a request that is still open would bring.
+    const late = deferred<{ models: ModelInfo[]; truncated: boolean }>();
+    mocks.coachModels.mockReturnValueOnce(late.promise);
+    const open = atoms.set(coachModelsAtom, "a");
+    await atoms.set(coachModelsAtom, null);
+    late.resolve({ models: [model("late")], truncated: false });
+    await open;
+    expect(atoms.get(coachModelsAtom)).toEqual({ connection: null, status: "idle" });
 });
 
 test("a failed connection read carries the native error code", async () => {

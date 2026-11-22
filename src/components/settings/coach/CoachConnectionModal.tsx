@@ -9,6 +9,11 @@ import AppModal from "../../common/AppModal";
 import { COACH_PRESETS, coachPreset, type CoachPresetId } from "./presets";
 import { useCoachErrorMessages } from "./useCoachErrorMessages";
 
+/** The native bounds of a connection's fields (`connections.rs` and `address.rs` in the Coach). */
+const MAX_LABEL_CHARS = 64;
+const MAX_ADDRESS_CHARS = 512;
+const MAX_KEY_CHARS = 512;
+
 type Draft = { preset: CoachPresetId; label: string; address: string; key: string };
 
 function initialDraft(connection: ConnectionSummary | null): Draft {
@@ -110,7 +115,7 @@ export function CoachConnectionModal({
           <TextInput
             label={t("Common.Name")}
             value={draft.label}
-            maxLength={64}
+            maxLength={MAX_LABEL_CHARS}
             required
             disabled={pending}
             onChange={(event) => {
@@ -126,7 +131,7 @@ export function CoachConnectionModal({
                 : t("Settings.Coach.Form.Address.Desc")
             }
             value={draft.address}
-            maxLength={512}
+            maxLength={MAX_ADDRESS_CHARS}
             required
             spellCheck={false}
             autoCapitalize="off"
@@ -141,7 +146,7 @@ export function CoachConnectionModal({
             label={t("Settings.Coach.Form.Key")}
             description={keyDescription}
             value={draft.key}
-            maxLength={512}
+            maxLength={MAX_KEY_CHARS}
             autoComplete="off"
             visibilityToggleButtonProps={{ "aria-label": t("Settings.Coach.Form.Key.Show") }}
             disabled={pending}

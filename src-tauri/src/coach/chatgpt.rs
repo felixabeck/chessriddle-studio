@@ -165,10 +165,7 @@ struct Identity {
 }
 
 fn plain(text: &str) -> Option<String> {
-    (!text.is_empty()
-        && text.chars().count() <= MAX_IDENTITY_CHARS
-        && !text.chars().any(char::is_control))
-    .then(|| text.to_owned())
+    super::plain(text, MAX_IDENTITY_CHARS).then(|| text.to_owned())
 }
 
 /// Checks the ID token by its claims: issuer, audience, expiry and the nonce of this attempt. It

@@ -2638,7 +2638,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn resource_engine_fixture() -> (
+    pub(super) fn resource_engine_fixture() -> (
         tempfile::TempDir,
         tauri::AppHandle<tauri::test::MockRuntime>,
         EngineHandle,
@@ -6819,4 +6819,19 @@ pub(crate) async fn get_engine_config_core(
     .await?;
     guard.terminate_now().await?;
     Ok(config)
+}
+
+/// A scripted engine process with the application state it runs under, for tests of what other
+/// modules build on [`AnalysisSession`]. It answers `go` with two lines (`e2e4` at +0.12, `d2d4`
+/// at +0.08) and plays `bestmove` once a file named `release` exists in the returned directory;
+/// every line it is sent is appended to `capture.log` there as `wire=<line>`, and each start of
+/// the process as `pid=<pid>`.
+#[cfg(all(test, unix))]
+pub(crate) fn scripted_analysis_engine() -> (
+    tempfile::TempDir,
+    tauri::AppHandle<tauri::test::MockRuntime>,
+    EngineHandle,
+) {
+    let (directory, app, engine, _) = tests::resource_engine_fixture();
+    (directory, app, engine)
 }

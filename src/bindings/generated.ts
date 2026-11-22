@@ -1780,7 +1780,12 @@ export type ConnectionStatus = "ready" |
 /**
  * The provider ended the sign-in; signing in again restores the connection.
  */
-"signInAgain"
+"signInAgain" | 
+/**
+ * The keyring could not be asked just now, so nothing but the name is known. The
+ * connection itself may be fine.
+ */
+"storageUnavailable"
 /**
  * Everything the renderer may know about a connection. No key or token is part of it.
  */

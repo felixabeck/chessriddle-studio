@@ -1,7 +1,42 @@
-//! A loopback HTTP server for Coach tests: the provider double.
+//! Doubles for Coach tests: a loopback HTTP server that plays the provider, and a keyring that
+//! can be made to fail.
+
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::Router;
 use tokio::sync::oneshot;
+
+use crate::{
+    credentials::{CredentialStore, MemoryCredentialStore},
+    error::Error,
+};
+
+/// A keyring whose reads can be made to fail, as when the secret service does not answer, and
+/// whose next write can be made to fail once.
+#[derive(Default)]
+pub(crate) struct FaultyStore {
+    inner: MemoryCredentialStore,
+    pub silent: AtomicBool,
+    pub fail_next_write: AtomicBool,
+}
+
+impl CredentialStore for FaultyStore {
+    fn set(&self, key: &str, secret: &str) -> Result<(), Error> {
+        if self.fail_next_write.swap(false, Ordering::SeqCst) {
+            return Err(Error::CredentialRecoveryRequired);
+        }
+        self.inner.set(key, secret)
+    }
+    fn get(&self, key: &str) -> Result<Option<String>, Error> {
+        if self.silent.load(Ordering::SeqCst) {
+            return Err(Error::CredentialRecoveryRequired);
+        }
+        self.inner.get(key)
+    }
+    fn delete(&self, key: &str) -> Result<(), Error> {
+        self.inner.delete(key)
+    }
+}
 
 pub(crate) struct TestServer {
     origin: String,

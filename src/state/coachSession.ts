@@ -18,7 +18,8 @@ const MAX_SEGMENTS = 400;
 const MAX_LINE_PLIES = 40;
 const MAX_MOVE_LENGTH = 12;
 const MAX_FEN_LENGTH = 256;
-const MAX_PATH_LENGTH = 2000;
+/** A path is as long as a tab's tree is deep at most (`MAX_TREE_DEPTH` in `store/tabStorage.ts`). */
+export const MAX_COACH_PATH_LENGTH = 2048;
 /** Appended to a message that had to be cut to fit the conversation's bound. */
 export const COACH_TRUNCATION_MARK = " […]";
 
@@ -49,7 +50,7 @@ const coachMessageSchema = z.object({
     failedLines: z.number().int().nonnegative().optional(),
     /** The position the question was asked about: its FEN and its path in the tree then. */
     fen: z.string().min(1).max(MAX_FEN_LENGTH),
-    path: z.array(z.number().int().nonnegative()).max(MAX_PATH_LENGTH),
+    path: z.array(z.number().int().nonnegative()).max(MAX_COACH_PATH_LENGTH),
 });
 
 const messageSchema = z.discriminatedUnion("role", [userMessageSchema, coachMessageSchema]);
@@ -127,12 +128,44 @@ function shortened(message: CoachMessage, length: number): CoachMessage {
         : { ...message, segments: [{ type: "text", text }] };
 }
 
+/** The longest text that still fits the schema with the truncation mark appended. */
+const TEXT_ROOM = MAX_TEXT_LENGTH - COACH_TRUNCATION_MARK.length;
+
 /**
- * The conversation within its bounds: the oldest messages go first, and a newest message that is
- * too large on its own is kept cut short, with a mark.
+ * One message inside the schema's own bounds. The native side allows a longer answer than a
+ * stored text may be, so an overlong text is cut, with a mark, instead of the whole exchange
+ * being refused by the store. An answer with more parts than the schema takes keeps its words
+ * and loses its lines.
+ */
+function fitted(message: CoachMessage): CoachMessage {
+    if (message.role === "user") {
+        return message.text.length <= MAX_TEXT_LENGTH ? message : shortened(message, TEXT_ROOM);
+    }
+    if (message.segments.length > MAX_SEGMENTS) return shortened(message, TEXT_ROOM);
+    if (
+        message.segments.every(
+            (segment) => segment.type !== "text" || segment.text.length <= MAX_TEXT_LENGTH,
+        )
+    ) {
+        return message;
+    }
+    return {
+        ...message,
+        segments: message.segments.map((segment) =>
+            segment.type === "text"
+                ? { ...segment, text: cutText(segment.text, TEXT_ROOM) }
+                : segment,
+        ),
+    };
+}
+
+/**
+ * The conversation within its bounds: every message inside the schema's bounds, the oldest
+ * messages go first, and a newest message that is too large on its own is kept cut short, with a
+ * mark.
  */
 export function boundCoachSession(session: CoachSession): CoachSession {
-    let messages = session.messages.slice(-MAX_COACH_MESSAGES);
+    let messages = session.messages.slice(-MAX_COACH_MESSAGES).map(fitted);
     const fits = () => coachSessionBytes({ ...session, messages }) <= MAX_COACH_SESSION_BYTES;
     while (messages.length > 1 && !fits()) messages = messages.slice(1);
     if (messages.length === 1 && !fits()) {

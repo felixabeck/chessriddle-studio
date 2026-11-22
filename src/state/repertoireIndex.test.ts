@@ -3,6 +3,7 @@ import type { FileWorkspaceHandle, Token, WorkspaceEntry } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
     listFileWorkspace: vi.fn(),
+    fileRevision: vi.fn(),
     readGame: vi.fn(),
     lexPgn: vi.fn(),
 }));
@@ -15,7 +16,7 @@ vi.mock("@/platform/native", () => ({
 
 const {
     MAX_COACH_REPERTOIRE_BYTES,
-    MAX_REPERTOIRE_FILES,
+    REPERTOIRE_BOUNDS,
     refreshRepertoireIndex,
     repertoireContext,
     resetRepertoireIndexForTests,
@@ -27,13 +28,9 @@ const workspace = {
 } as unknown as FileWorkspaceHandle;
 const AFTER_E4_E5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
 const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-function file(
-    name: string,
-    type: "repertoire" | "game",
-    gameCount: number,
-    lastModified = 1n,
-): WorkspaceEntry {
+function file(name: string, type: "repertoire" | "game", gameCount: number | null): WorkspaceEntry {
     return {
         handle: { id: { id: name }, kind: "file" } as unknown as FileWorkspaceHandle,
         kind: "file",
@@ -42,7 +39,8 @@ function file(
         metadata: { type, tags: [] },
         readError: null,
         gameCount,
-        lastModified,
+        // The listing's whole-second time never changes here: the index must not depend on it.
+        lastModified: 1n,
     };
 }
 
@@ -74,6 +72,8 @@ function lex(pgn: string): Token[] {
 
 /** The games of each file by name; `readGame` serves them by index. */
 let games: Record<string, string[]> = {};
+/** The native revision of each file by name; a file without one has "r1". */
+let revisions: Record<string, string> = {};
 
 function serve(entries: WorkspaceEntry[]) {
     mocks.listFileWorkspace.mockResolvedValue({ entries, unread: [] });
@@ -96,6 +96,10 @@ beforeEach(() => {
         return { pgn, stamp: "stamp", revision: "revision", present: true };
     });
     mocks.lexPgn.mockImplementation(async (pgn: string) => lex(pgn));
+    revisions = {};
+    mocks.fileRevision.mockImplementation(
+        async (handle: { id: { id: string } }) => revisions[handle.id.id] ?? "r1",
+    );
 });
 
 test("repertoire files anywhere in the workspace are indexed; other files are not read", async () => {
@@ -147,11 +151,23 @@ test("a file is read again only when its revision changed", async () => {
     await refreshRepertoireIndex(workspace);
     expect(mocks.readGame).not.toHaveBeenCalled();
 
+    // An edit in the same second with the same number of games: only the native revision tells.
     games.Vienna = ["1. e4 e5 2. Nc3 Nc6 *"];
-    serve([file("Open games", "repertoire", 2), file("Vienna", "repertoire", 1, 2n)]);
+    revisions.Vienna = "r2";
     await refreshRepertoireIndex(workspace);
     expect(mocks.readGame.mock.calls.map(([handle]) => handle.id.id)).toEqual(["Vienna"]);
     expect((await repertoireContext(AFTER_E4_E5)).text).toContain("2. Nc3 Nc6");
+
+    // A file whose revision cannot be told is read again every time.
+    mocks.readGame.mockClear();
+    mocks.fileRevision.mockImplementation(async (handle: { id: { id: string } }) => {
+        if (handle.id.id === "Vienna") throw new Error("no revision");
+        return "r1";
+    });
+    await refreshRepertoireIndex(workspace);
+    await refreshRepertoireIndex(workspace);
+    expect(mocks.readGame.mock.calls.map(([handle]) => handle.id.id)).toEqual(["Vienna", "Vienna"]);
+    expect((await repertoireContext(AFTER_E4_E5)).partial).toBe(false);
 
     // A file that left the workspace leaves the index.
     serve([file("Open games", "repertoire", 2)]);
@@ -170,7 +186,7 @@ test("an unreadable game is skipped and the answer says the repertoire was partl
 
 test("more repertoire files than the bound, or a failed listing, leave the index partial", async () => {
     serve(
-        Array.from({ length: MAX_REPERTOIRE_FILES + 1 }, (_, index) =>
+        Array.from({ length: REPERTOIRE_BOUNDS.files + 1 }, (_, index) =>
             file(`Empty ${index}`, "repertoire", 0),
         ),
     );
@@ -266,4 +282,115 @@ test("more than three games with the position are named as partly told", async (
     const context = await repertoireContext(AFTER_E4_E5);
     expect(context.text!.match(/Repertoire file/g)).toHaveLength(3);
     expect(context.partial).toBe(true);
+});
+
+test("the end of one line does not hide the same position where another line goes on", async () => {
+    // After 4. Nc3 the main line ends; the side line reaches the same position by 3. Nc3 and
+    // 4. Bc4 and plays on.
+    games.Italian = ["1. e4 e5 2. Nf3 Nc6 3. Bc4 (3. Nc3 Nf6 4. Bc4 Bc5 5. d3) 3... Nf6 4. Nc3 *"];
+    // Three games that only end in the position must not use up the places of one that goes on.
+    games.Ends = [
+        "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. Nc3 *",
+        "1. e4 e5 2. Nf3 Nc6 3. Nc3 Nf6 4. Bc4 *",
+        "1. e4 e5 2. Nc3 Nc6 3. Nf3 Nf6 4. Bc4 *",
+        "1. Nf3 Nc6 2. e4 e5 3. Bc4 Nf6 4. Nc3 Bb4 *",
+    ];
+    serve([file("Ends", "repertoire", 4), file("Italian", "repertoire", 1)]);
+    await refreshRepertoireIndex(workspace);
+    const context = await repertoireContext(
+        "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R b KQkq - 5 4",
+    );
+    expect(context.text).toContain('Repertoire file "Ends", game 4:\n4... Bb4');
+    expect(context.text).toContain('Repertoire file "Italian", game 1:\n4... Bc5 5. d3');
+    expect(context.text!.match(/Repertoire file/g)).toHaveLength(2);
+    expect(context.partial).toBe(false);
+});
+
+test("a file the listing could not read or count is unread, not empty", async () => {
+    for (const unreadable of [
+        { ...file("Locked", "repertoire", null), readError: "permission" as const },
+        file("Uncounted", "repertoire", null),
+    ]) {
+        resetRepertoireIndexForTests();
+        serve([unreadable, file("Vienna", "repertoire", 1)]);
+        await refreshRepertoireIndex(workspace);
+        const context = await repertoireContext(AFTER_E4_E5);
+        expect(context.text).toContain("Vienna");
+        expect(context.partial).toBe(true);
+        // It stays unread: the next refresh looks again instead of trusting an empty index.
+        mocks.fileRevision.mockClear();
+        await refreshRepertoireIndex(workspace);
+        expect((await repertoireContext("8/8/8/8/8/8/8/K6k w - - 0 1")).partial).toBe(true);
+    }
+});
+
+test("a game that is gone or left out when the question is asked makes the answer partial", async () => {
+    serve([file("Vienna", "repertoire", 1)]);
+    await refreshRepertoireIndex(workspace);
+    for (const reread of [
+        { pgn: "", present: false },
+        { pgn: "", present: true, omission: "tooLarge" },
+    ]) {
+        mocks.readGame.mockResolvedValueOnce({ stamp: "stamp", revision: "revision", ...reread });
+        expect(await repertoireContext(AFTER_E4_E5)).toEqual({ text: null, partial: true });
+    }
+    // A game that was shortened to end in the position has nothing to tell, and that is all.
+    mocks.readGame.mockResolvedValueOnce({
+        pgn: "1. e4 e5 *",
+        stamp: "stamp",
+        revision: "revision",
+        present: true,
+    });
+    expect(await repertoireContext(AFTER_E4_E5)).toEqual({ text: null, partial: false });
+});
+
+test("each bound of the index stops the reading and leaves it partial", async () => {
+    const all = { files: 50, games: 100, bytes: 1_000_000, entries: 10_000 };
+    const twoFiles = [file("Open games", "repertoire", 2), file("Vienna", "repertoire", 1)];
+
+    // Games: the first file uses the budget up, the second is not read.
+    serve(twoFiles);
+    await refreshRepertoireIndex(workspace, { ...all, games: 2 });
+    expect(mocks.readGame).toHaveBeenCalledTimes(2);
+    let context = await repertoireContext(AFTER_E4_E5);
+    expect(context.text).toContain("Open games");
+    expect(context.text).not.toContain("Vienna");
+    expect(context.partial).toBe(true);
+
+    // Bytes: a game larger than what is left is not parsed; smaller ones after it still are.
+    resetRepertoireIndexForTests();
+    mocks.lexPgn.mockClear();
+    const first = new TextEncoder().encode(games["Open games"][0]).length;
+    await refreshRepertoireIndex(workspace, { ...all, bytes: first - 1 });
+    expect(mocks.lexPgn).toHaveBeenCalledTimes(2);
+    context = await repertoireContext(AFTER_E4_E5);
+    expect(context.text).not.toContain("Open games");
+    expect(context.text).toContain("Vienna");
+    expect(context.partial).toBe(true);
+
+    // Entries: positions are indexed until the budget is spent.
+    resetRepertoireIndexForTests();
+    await refreshRepertoireIndex(workspace, { ...all, entries: 1 });
+    expect((await repertoireContext(AFTER_E4_E5)).text).toBeNull();
+    // The one entry is the start position of the first game.
+    expect((await repertoireContext(START)).text).toContain("Open games");
+    expect((await repertoireContext(START)).partial).toBe(true);
+
+    // With room for everything nothing is partial.
+    resetRepertoireIndexForTests();
+    await refreshRepertoireIndex(workspace, all);
+    expect((await repertoireContext(AFTER_E4_E5)).partial).toBe(false);
+});
+
+test("a game the native side marks as left out is not indexed", async () => {
+    serve([file("Vienna", "repertoire", 1)]);
+    mocks.readGame.mockResolvedValueOnce({
+        pgn: games.Vienna[0],
+        stamp: "stamp",
+        revision: "revision",
+        present: true,
+        omission: "tooLarge",
+    });
+    await refreshRepertoireIndex(workspace);
+    expect(await repertoireContext(AFTER_E4_E5)).toEqual({ text: null, partial: true });
 });

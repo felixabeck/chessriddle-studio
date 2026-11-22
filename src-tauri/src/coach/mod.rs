@@ -39,7 +39,7 @@ use tauri_specta::Event;
 use tokio_util::sync::CancellationToken;
 
 use self::{
-    accounts::{Accounts, ConnectionBearer, SignInProvider},
+    accounts::{Accounts, ConnectionBearer, HeldSignIn, SignInProvider},
     address::Address,
     answer::Segment,
     attempts::{SignInAttempts, SignInKind},
@@ -204,7 +204,9 @@ struct TurnParts {
     reference_db: Option<DatabaseHandle>,
 }
 
-fn plain(text: &str, max_chars: usize) -> bool {
+/// Whether `text` is a short plain value: not empty, at most `max_chars` characters, and without
+/// control characters. The one check for every label, id and name that crosses into the Coach.
+pub(crate) fn plain(text: &str, max_chars: usize) -> bool {
     !text.is_empty() && text.chars().count() <= max_chars && !text.chars().any(char::is_control)
 }
 
@@ -377,6 +379,9 @@ impl<R: tauri::Runtime> TurnSink for EventSink<'_, R> {
 
 /// Runs an admitted turn to its end and reports it: progress while it runs, then exactly one
 /// terminal event. The terminal update is also returned, for the command's own reply.
+// One caller. The arguments are the turn's separately owned parts (where it reports, the model,
+// the engine, the database, the input, its lifetime); a struct for them would be built and taken
+// apart once.
 #[allow(clippy::too_many_arguments)]
 async fn drive_turn<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -541,7 +546,7 @@ impl Coach {
                         responses::classify_plan_refusal(provider, status, &body, false);
                     log::warn!(
                         "coach: the plan model list was refused with HTTP {status}: {}",
-                        http::diagnostic(&message, None)
+                        http::diagnostic(&message, Some(&bearer.token))
                     );
                     return Err(error);
                 }
@@ -550,27 +555,51 @@ impl Coach {
         Err(CoachError::ProviderFailure)
     }
 
-    /// Removes a connection: here first, durably; then, for a sign-in, the provider is asked once
-    /// to withdraw it. The token used for that is already gone from this computer.
+    /// Removes a connection: here first, durably, with whatever the token owner holds for it;
+    /// then, for a sign-in, the provider is asked once to withdraw it. The token used for that
+    /// is already gone from this computer.
+    ///
+    /// The removal does not depend on the keyring being readable. What is withdrawn is the token
+    /// in memory if there is one (a rotation may not have reached the keyring), otherwise the
+    /// stored one. With neither, and a keyring that could not be read, a sign-in may be left at
+    /// the provider, and the result says so.
     async fn remove(&self, handle: CoachConnectionHandle) -> Result<ConnectionRemoved, CoachError> {
-        let secret = self.connections.secret(handle.clone()).await.ok();
+        let stored = self.connections.secret(handle.clone()).await;
         let mut removed = self.connections.remove(handle.clone()).await?;
-        if matches!(secret, Some(Secret::ChatGpt(_) | Secret::Grok(_))) {
-            if let Err(error) = self.accounts.forget(handle).await {
-                log::warn!("coach: the removed sign-in's tokens were not dropped: {error:?}");
+        let held = match self.accounts.forget(handle).await {
+            Ok(held) => held,
+            Err(error) => {
+                log::warn!("coach: the removed connection's tokens were not dropped: {error:?}");
+                None
             }
-        }
-        // A sign-in the provider already ended has no token left to withdraw.
-        removed.revocation_pending = match secret {
-            Some(Secret::ChatGpt(secret)) => match secret.refresh_token {
-                Some(refresh) => !self.chatgpt.revoke(&secret.client_id, &refresh).await,
-                None => false,
-            },
-            Some(Secret::Grok(secret)) => match secret.refresh_token {
-                Some(refresh) => !self.grok.revoke(&refresh).await,
-                None => false,
-            },
-            Some(Secret::Api { .. }) | None => false,
+        };
+        let unread = matches!(stored, Err(CoachError::Storage));
+        let sign_in = held.or_else(|| match stored.ok()? {
+            Secret::ChatGpt(secret) => Some(HeldSignIn {
+                provider: SignInProvider::ChatGpt {
+                    client_id: secret.client_id,
+                },
+                // A sign-in the provider already ended has no token left to withdraw.
+                refresh: secret.refresh_token?,
+            }),
+            Secret::Grok(secret) => Some(HeldSignIn {
+                provider: SignInProvider::Grok {
+                    token_endpoint: secret.token_endpoint,
+                },
+                refresh: secret.refresh_token?,
+            }),
+            Secret::Api { .. } => None,
+        });
+        removed.revocation_pending = match sign_in {
+            Some(HeldSignIn {
+                provider: SignInProvider::ChatGpt { client_id },
+                refresh,
+            }) => !self.chatgpt.revoke(&client_id, &refresh).await,
+            Some(HeldSignIn {
+                provider: SignInProvider::Grok { .. },
+                refresh,
+            }) => !self.grok.revoke(&refresh).await,
+            None => unread,
         };
         Ok(removed)
     }
@@ -766,14 +795,7 @@ pub(crate) async fn coach_finish_grok_sign_in(
     attempt: String,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<ConnectionSaved, CoachError> {
-    finish_grok_sign_in(&attempt, &state).await
-}
-
-async fn finish_grok_sign_in(
-    attempt: &str,
-    state: &crate::AppState,
-) -> Result<ConnectionSaved, CoachError> {
-    coach(state)?.grok_sign_in.finish(attempt).await
+    coach(&state)?.grok_sign_in.finish(&attempt).await
 }
 
 /// Ends the sign-in with this id, if it still runs. Its own command then ends as `cancelled`.
@@ -1045,10 +1067,10 @@ mod tests {
         provider: &crate::coach::chatgpt::tests::Provider,
     ) -> (
         crate::AppState,
-        Arc<MemoryCredentialStore>,
+        Arc<test_server::FaultyStore>,
         tempfile::TempDir,
     ) {
-        let store = Arc::new(MemoryCredentialStore::default());
+        let store = Arc::new(test_server::FaultyStore::default());
         let (credentials, directory) = CoachCredentials::for_test(store.clone());
         let coach = Coach::with_providers(
             true,
@@ -1299,6 +1321,67 @@ mod tests {
             );
             assert_eq!(coach.remove(handle).await.err(), Some(CoachError::NotFound));
         }
+    }
+
+    #[tokio::test]
+    async fn a_removal_does_not_depend_on_a_readable_keyring() {
+        use std::sync::atomic::Ordering;
+        let provider = crate::coach::chatgpt::tests::Provider::start();
+        let (state, store, _directory) = signed_in_coach(&provider);
+        let coach = the_coach(&state);
+
+        // A sign-in whose tokens the owner holds: removed while the keyring does not answer.
+        let saved = start_chatgpt_sign_in(
+            "attempt-1",
+            &state,
+            "main",
+            provider.approving_browser(1, "oaiapp_issued"),
+        )
+        .await
+        .unwrap();
+        let handle = saved.connection.handle;
+        // The provider rotated since, and the new token never reached the keyring.
+        provider.refused.lock().unwrap().push("access-1".into());
+        provider.answer(
+            StatusCode::OK,
+            crate::coach::chatgpt::tests::tokens(2, None, ""),
+        );
+        store.fail_next_write.store(true, Ordering::SeqCst);
+        assert_eq!(
+            coach.models(handle.clone()).await.err(),
+            Some(CoachError::Storage)
+        );
+        store.silent.store(true, Ordering::SeqCst);
+        let removed = coach.remove(handle.clone()).await.unwrap();
+        // Withdrawn with the token in memory, the newest one; the stored one is spent.
+        assert!(!removed.revocation_pending);
+        let revocations = provider.revocations.lock().unwrap().clone();
+        assert_eq!(revocations.len(), 1);
+        assert_eq!(revocations[0]["token"], "refresh-2");
+        assert_eq!(revocations[0]["client_id"], "oaiapp_issued");
+        store.silent.store(false, Ordering::SeqCst);
+        // Nothing of the sign-in is left in memory.
+        assert!(coach
+            .accounts
+            .forget(handle.clone())
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            coach.accounts.bearer(handle).await.err(),
+            Some(CoachError::NotFound)
+        );
+        assert!(coach.connections.list().await.unwrap().is_empty());
+
+        // A connection of which nothing could be read and nothing is held: it is removed, and
+        // the result does not claim that there was nothing to withdraw at a provider.
+        let unknown = local_connection(coach, "http://localhost:11434/v1", None).await;
+        store.silent.store(true, Ordering::SeqCst);
+        let removed = coach.remove(unknown).await.unwrap();
+        assert!(removed.revocation_pending);
+        assert_eq!(provider.revocations.lock().unwrap().len(), 1);
+        store.silent.store(false, Ordering::SeqCst);
+        assert!(coach.connections.list().await.unwrap().is_empty());
     }
 
     #[tokio::test]

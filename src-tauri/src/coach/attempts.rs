@@ -27,9 +27,7 @@ pub(crate) enum SignInKind {
 
 /// Whether `id` can name an attempt: short, and without control characters.
 pub(crate) fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.chars().count() <= MAX_ATTEMPT_ID_CHARS
-        && !id.chars().any(char::is_control)
+    super::plain(id, MAX_ATTEMPT_ID_CHARS)
 }
 
 struct Attempt {

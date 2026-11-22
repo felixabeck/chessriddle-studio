@@ -59,8 +59,7 @@ struct WireModel {
 
 fn bounded(text: &str, max_chars: usize) -> Option<String> {
     let text = text.trim();
-    (!text.is_empty() && text.chars().count() <= max_chars && !text.chars().any(char::is_control))
-        .then(|| text.to_owned())
+    super::plain(text, max_chars).then(|| text.to_owned())
 }
 
 fn reduce(model: WireModel) -> Option<ModelInfo> {

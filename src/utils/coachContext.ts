@@ -45,10 +45,3 @@ export function coachGameContext(
     const bare = write(line, false, false);
     return fits(bare) ? bare : "";
 }
-
-/** Plies played before `fen`, from its side to move and move number: what move numbers count from. */
-export function halfMovesOfFen(fen: string): number {
-    const fields = fen.split(/[\s_]+/);
-    const fullMoves = Math.max(1, Number.parseInt(fields[5] ?? "1", 10) || 1);
-    return (fullMoves - 1) * 2 + (fields[1] === "b" ? 1 : 0);
-}

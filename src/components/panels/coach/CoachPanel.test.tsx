@@ -421,6 +421,67 @@ test("a Coach line only previews; the insert button is the one way into the game
   expect(state.currentNode().san).toBe("Nc6");
 });
 
+test("a pinned line preview stays through hovering and leaves by its own ways only", async () => {
+  // The hover preference is off: a click still pins, because a Coach line has no other way to
+  // show its position.
+  const { previewBoardOnHoverAtom } = await import("@/state/atoms");
+  atoms.set(previewBoardOnHoverAtom, false);
+  mocks.coachTurn.mockResolvedValue(answer);
+  await render();
+  await ask("What is the plan?");
+  await act(async () => {});
+  const line = host.querySelector<HTMLElement>('[data-testid="coach-line"]')!;
+  const moveNamed = (pattern: RegExp) =>
+    [...line.querySelectorAll<HTMLElement>("*")]
+      .filter((node) => pattern.test(node.textContent ?? ""))
+      .at(-1)!;
+  const preview = () => document.querySelector<HTMLElement>('[data-testid="engine-line-preview"]');
+  const hover = (node: HTMLElement) =>
+    act(async () => node.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+
+  // Hovering alone shows nothing while the preference is off.
+  await hover(moveNamed(/^.c6$/u));
+  expect(preview()).toBeNull();
+
+  await act(async () => moveNamed(/^.c6$/u).click());
+  const pinnedBoard = preview()!.innerHTML;
+  expect(pinnedBoard).not.toBe("");
+  // Another move under the pointer does not replace the pinned position, and leaving the line
+  // does not close it.
+  await hover(moveNamed(/^.f3$/u));
+  expect(preview()!.innerHTML).toBe(pinnedBoard);
+  await act(async () => line.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
+  expect(preview()).not.toBeNull();
+  // A pointer press on the line itself keeps it; one anywhere else dismisses it.
+  await act(async () => line.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  expect(preview()).not.toBeNull();
+  await act(async () => document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  expect(preview()).toBeNull();
+
+  // Clicking another move pins that one; clicking the pinned move again unpins it.
+  await act(async () => moveNamed(/^.c6$/u).click());
+  await act(async () => moveNamed(/^.f3$/u).click());
+  expect(preview()).not.toBeNull();
+  expect(preview()!.innerHTML).not.toBe(pinnedBoard);
+  await act(async () => moveNamed(/^.f3$/u).click());
+  expect(preview()).toBeNull();
+  // None of it touched the game.
+  expect(tree.getState().position).toEqual([0, 0]);
+});
+
+test("connections that only the keyring hides are not reported as no connection", async () => {
+  mocks.coachConnections.mockResolvedValue([{ ...connection, status: "storageUnavailable" }]);
+  await render();
+  expect(host.textContent).toContain("Coach.Error.Storage");
+  expect(host.textContent).not.toContain("Coach.NoConnection");
+  expect(host.querySelector("textarea")).toBeNull();
+  // Reading again brings the connection back.
+  mocks.coachConnections.mockResolvedValue([connection]);
+  await act(async () => button("Common.Retry").click());
+  expect(host.textContent).not.toContain("Coach.Error.Storage");
+  expect(host.querySelector("textarea")).not.toBeNull();
+});
+
 test("a line whose position left the game cannot be inserted, and a new conversation clears", async () => {
   mocks.coachTurn.mockResolvedValue(answer);
   await render();

@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     coachSaveApiConnection: vi.fn(),
     coachRemoveConnection: vi.fn(),
     coachModels: vi.fn(),
+    coachTurn: vi.fn(),
     coachSignInChatgpt: vi.fn(),
     coachBeginGrokSignIn: vi.fn(),
     coachFinishGrokSignIn: vi.fn(),
@@ -198,6 +199,7 @@ test.each([
     "coachSaveApiConnection",
     "coachRemoveConnection",
     "coachModels",
+    "coachTurn",
     "coachSignInChatgpt",
     "coachBeginGrokSignIn",
     "coachFinishGrokSignIn",
@@ -220,6 +222,8 @@ test.each([
                 return tauri.coachRemoveConnection("handle");
             case "coachModels":
                 return tauri.coachModels("handle");
+            case "coachTurn":
+                return tauri.coachTurn("ticket", "tab", {} as never);
             case "coachSignInChatgpt":
                 return tauri.coachSignInChatgpt("attempt");
             case "coachBeginGrokSignIn":
@@ -316,6 +320,7 @@ vi.mock("@/bindings/generated", () => ({
         coachSaveApiConnection: mocks.coachSaveApiConnection,
         coachRemoveConnection: mocks.coachRemoveConnection,
         coachModels: mocks.coachModels,
+        coachTurn: mocks.coachTurn,
         coachSignInChatgpt: mocks.coachSignInChatgpt,
         coachBeginGrokSignIn: mocks.coachBeginGrokSignIn,
         coachFinishGrokSignIn: mocks.coachFinishGrokSignIn,

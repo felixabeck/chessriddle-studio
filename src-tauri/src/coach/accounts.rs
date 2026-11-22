@@ -37,9 +37,24 @@ enum Action {
     Forget(CoachConnectionHandle),
 }
 
+/// What the worker answers with.
+enum Reply {
+    Bearer(Bearer),
+    Done,
+    /// What a forgotten connection still held, if anything.
+    Forgotten(Option<HeldSignIn>),
+}
+
 struct Request {
     action: Action,
-    reply: oneshot::Sender<Result<Option<Bearer>, CoachError>>,
+    reply: oneshot::Sender<Result<Reply, CoachError>>,
+}
+
+/// The sign-in a removed connection still held in memory: its provider and its newest refresh
+/// token, which a rotation may not have brought to the keyring yet. No `Debug`: it is a token.
+pub(crate) struct HeldSignIn {
+    pub provider: SignInProvider,
+    pub refresh: String,
 }
 
 /// Where a signed-in connection's refresh token is exchanged, with what that provider needs
@@ -154,14 +169,14 @@ impl Worker {
         }
     }
 
-    async fn execute(&mut self, action: Action) -> Result<Option<Bearer>, CoachError> {
+    async fn execute(&mut self, action: Action) -> Result<Reply, CoachError> {
         match action {
-            Action::Bearer(handle) => self.bearer(handle).await.map(Some),
+            Action::Bearer(handle) => self.bearer(handle).await.map(Reply::Bearer),
             Action::Rejected(handle, generation) => {
                 if let Some(signed) = self.sessions.get_mut(&handle.0) {
                     signed.tokens.rejected(generation);
                 }
-                self.bearer(handle).await.map(Some)
+                self.bearer(handle).await.map(Reply::Bearer)
             }
             Action::SignedIn(handle, provider, tokens) => {
                 self.sessions.insert(
@@ -171,12 +186,14 @@ impl Worker {
                         tokens: TokenSession::stored_sign_in(tokens),
                     },
                 );
-                Ok(None)
+                Ok(Reply::Done)
             }
-            Action::Forget(handle) => {
-                self.sessions.remove(&handle.0);
-                Ok(None)
-            }
+            Action::Forget(handle) => Ok(Reply::Forgotten(self.sessions.remove(&handle.0).map(
+                |signed| HeldSignIn {
+                    provider: signed.provider,
+                    refresh: signed.tokens.into_revocable().refresh,
+                },
+            ))),
         }
     }
 }
@@ -207,33 +224,32 @@ impl Accounts {
         Self { sender }
     }
 
-    async fn request(&self, action: Action) -> Result<Option<Bearer>, CoachError> {
+    /// A request for an access token. A worker that answers with anything else has no token.
+    async fn request(&self, action: Action) -> Result<Bearer, CoachError> {
         let (reply, receiver) = oneshot::channel();
         self.sender
             .try_send(Request { action, reply })
             .map_err(|_| CoachError::Busy)?;
-        receiver.await.map_err(|_| CoachError::Unavailable)?
+        match receiver.await.map_err(|_| CoachError::Unavailable)?? {
+            Reply::Bearer(bearer) => Ok(bearer),
+            Reply::Done | Reply::Forgotten(_) => Err(CoachError::SignInAgain),
+        }
     }
 
     /// A message the worker must not miss: it waits for a place in the queue instead of being
     /// refused. A session the worker went on holding after a new sign-in or a removal would
     /// spend a refresh token that is no longer the connection's.
-    async fn tell(&self, action: Action) -> Result<(), CoachError> {
+    async fn tell(&self, action: Action) -> Result<Reply, CoachError> {
         let (reply, receiver) = oneshot::channel();
         self.sender
             .send(Request { action, reply })
             .await
             .map_err(|_| CoachError::Unavailable)?;
-        receiver
-            .await
-            .map_err(|_| CoachError::Unavailable)?
-            .map(|_| ())
+        receiver.await.map_err(|_| CoachError::Unavailable)?
     }
 
     pub(crate) async fn bearer(&self, handle: CoachConnectionHandle) -> Result<Bearer, CoachError> {
-        self.request(Action::Bearer(handle))
-            .await?
-            .ok_or(CoachError::SignInAgain)
+        self.request(Action::Bearer(handle)).await
     }
 
     /// A request with the token of `generation` was refused as unauthorized before any of its
@@ -243,9 +259,7 @@ impl Accounts {
         handle: CoachConnectionHandle,
         generation: u64,
     ) -> Result<Bearer, CoachError> {
-        self.request(Action::Rejected(handle, generation))
-            .await?
-            .ok_or(CoachError::SignInAgain)
+        self.request(Action::Rejected(handle, generation)).await
     }
 
     pub(crate) async fn signed_in(
@@ -254,11 +268,21 @@ impl Accounts {
         provider: SignInProvider,
         tokens: IssuedTokens,
     ) -> Result<(), CoachError> {
-        self.tell(Action::SignedIn(handle, provider, tokens)).await
+        self.tell(Action::SignedIn(handle, provider, tokens))
+            .await
+            .map(|_| ())
     }
 
-    pub(crate) async fn forget(&self, handle: CoachConnectionHandle) -> Result<(), CoachError> {
-        self.tell(Action::Forget(handle)).await
+    /// Drops what is held for a connection and hands it back: the caller withdraws the sign-in
+    /// with it. `None` for a connection the worker held nothing for.
+    pub(crate) async fn forget(
+        &self,
+        handle: CoachConnectionHandle,
+    ) -> Result<Option<HeldSignIn>, CoachError> {
+        match self.tell(Action::Forget(handle)).await? {
+            Reply::Forgotten(held) => Ok(held),
+            Reply::Bearer(_) | Reply::Done => Ok(None),
+        }
     }
 }
 
@@ -296,50 +320,25 @@ mod tests {
             chatgpt::tests::{tokens, Provider},
             connections::{ApiConnectionInput, ChatGptSecret, ConnectionStatus, GrokSecret},
             grok::tests::grok,
+            test_server::FaultyStore,
         },
-        credentials::{CoachCredentials, CredentialStore, MemoryCredentialStore},
-        error::Error,
+        credentials::{CoachCredentials, CredentialStore},
     };
     use axum::http::StatusCode;
-    use std::{
-        sync::atomic::{AtomicBool, Ordering},
-        time::Duration,
-    };
-
-    /// A keyring whose next write can be made to fail.
-    #[derive(Default)]
-    struct FlakyStore {
-        inner: MemoryCredentialStore,
-        fail_next_write: AtomicBool,
-    }
-
-    impl CredentialStore for FlakyStore {
-        fn set(&self, key: &str, secret: &str) -> Result<(), Error> {
-            if self.fail_next_write.swap(false, Ordering::SeqCst) {
-                return Err(Error::CredentialRecoveryRequired);
-            }
-            self.inner.set(key, secret)
-        }
-        fn get(&self, key: &str) -> Result<Option<String>, Error> {
-            self.inner.get(key)
-        }
-        fn delete(&self, key: &str) -> Result<(), Error> {
-            self.inner.delete(key)
-        }
-    }
+    use std::{sync::atomic::Ordering, time::Duration};
 
     struct Fixture {
         provider: Provider,
         accounts: Accounts,
         connections: Connections,
-        store: Arc<FlakyStore>,
+        store: Arc<FaultyStore>,
         handle: CoachConnectionHandle,
         _directory: tempfile::TempDir,
     }
 
     async fn fixture() -> Fixture {
         let provider = Provider::start();
-        let store = Arc::new(FlakyStore::default());
+        let store = Arc::new(FaultyStore::default());
         let (credentials, directory) = CoachCredentials::for_test(store.clone());
         let connections = Connections::new(Arc::new(credentials));
         let saved = connections
@@ -583,6 +582,46 @@ mod tests {
         let (kept, secret) = fixture.connections.grok().await.unwrap().unwrap();
         assert_eq!(kept, handle);
         assert_eq!(secret.refresh_token, None);
+    }
+
+    #[tokio::test]
+    async fn forgetting_hands_back_the_newest_token_also_one_the_keyring_never_got() {
+        let fixture = fixture().await;
+        // Nothing held yet: nothing to hand back.
+        assert!(fixture
+            .accounts
+            .forget(fixture.handle.clone())
+            .await
+            .unwrap()
+            .is_none());
+
+        // A rotation whose write to the keyring fails stays in memory only.
+        rotation(&fixture.provider, 1);
+        fixture.store.fail_next_write.store(true, Ordering::SeqCst);
+        assert_eq!(
+            fixture.accounts.bearer(fixture.handle.clone()).await.err(),
+            Some(CoachError::Storage)
+        );
+        assert_eq!(stored_refresh(&fixture).as_deref(), Some("refresh-0"));
+        let held = fixture
+            .accounts
+            .forget(fixture.handle.clone())
+            .await
+            .unwrap()
+            .expect("the session was held");
+        // The token to withdraw is the one the provider issued last, not the spent stored one.
+        assert_eq!(held.refresh, "refresh-1");
+        assert!(matches!(
+            held.provider,
+            SignInProvider::ChatGpt { ref client_id } if client_id == "oaiapp_issued"
+        ));
+        // Handed back once; the worker holds nothing any more.
+        assert!(fixture
+            .accounts
+            .forget(fixture.handle.clone())
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]

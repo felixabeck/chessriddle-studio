@@ -215,6 +215,35 @@ test("a changed Coach conversation rewrites the record of a dirty tab and writes
     );
 });
 
+test("a conversation that changes while a write is in flight is written before the tab counts as confirmed", async () => {
+    const fake = fakeNative();
+    const mirror = mirrorWith(fake.native);
+    const tab = analysisTab();
+    const store = treeStore();
+    openTab(tab, store);
+    mirror.start();
+    const answered = {
+        coachSession: { version: 1, id: "c", messages: [{ id: "q", role: "user", text: "Plan?" }] },
+    };
+
+    fake.hold();
+    edit(store, "dirty");
+    await vi.advanceTimersByTimeAsync(0);
+    // The answer arrives while the game's own write is still on its way to disk.
+    store.setState(answered as never);
+    fake.release();
+    await vi.advanceTimersByTimeAsync(0);
+    // What is on disk now is from before the answer: quitting must still wait.
+    expect(decodeUnsavedGame(fake.records.get(tab.value)!).tree.coachSession).toBeUndefined();
+    expect(mirror.isConfirmed(tab.value)).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(UNSAVED_GAME_WRITE_DELAY_MS);
+    expect(decodeUnsavedGame(fake.records.get(tab.value)!).tree.coachSession).toEqual(
+        answered.coachSession,
+    );
+    expect(mirror.isConfirmed(tab.value)).toBe(true);
+});
+
 test("a remove issued while a write is in flight leaves no record", async () => {
     const fake = fakeNative();
     const mirror = mirrorWith(fake.native);

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { defaultTree } from "@/utils/treeReducer";
 import { createTreeStore } from "@/state/store/tree";
-import { coachGameContext, halfMovesOfFen, MAX_COACH_GAME_BYTES } from "./coachContext";
+import { coachGameContext, MAX_COACH_GAME_BYTES } from "./coachContext";
 
 function game(moves: string[]) {
     const store = createTreeStore();
@@ -52,12 +52,4 @@ test("comments go before the line does, and a line that cannot fit is left out",
     store.getState().setHeaders({ ...state.headers, event: "z".repeat(MAX_COACH_GAME_BYTES) });
     state = store.getState();
     expect(coachGameContext(state.root, state.headers, state.position)).toBe("");
-});
-
-test("move numbers count from the position's own side to move and move number", () => {
-    expect(halfMovesOfFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")).toBe(0);
-    expect(halfMovesOfFen("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2")).toBe(3);
-    expect(halfMovesOfFen("8/8/8/8/8/8/8/K6k w - - 12 40")).toBe(78);
-    // A FEN without counters still gives a usable anchor.
-    expect(halfMovesOfFen("8/8/8/8/8/8/8/K6k b - -")).toBe(1);
 });

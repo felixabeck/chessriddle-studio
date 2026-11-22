@@ -201,6 +201,55 @@ test("a stop while the repertoire is still being read ends the turn before anyth
     expect(messages[1]).toMatchObject({ role: "coach", state: "cancelled" });
 });
 
+test("a tab closed while the repertoire is read gets no reservation and no turn", async () => {
+    const atoms = createStore();
+    const { tab, tree } = openTab();
+    const reading = deferred<{ text: string | null; partial: boolean }>();
+    mocks.repertoireContext.mockReturnValue(reading.promise);
+    const sent = sendCoachMessage(atoms, request(tab, tree));
+    // Closing retires the store without a store update: nothing tells the turn but its own check.
+    closeTreeStore(tab);
+    coachTurnFamily.remove(tab);
+    reading.resolve({ text: null, partial: false });
+    await sent;
+    expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+    expect(mocks.coachTurn).not.toHaveBeenCalled();
+    expect(activeCoachTurnCount()).toBe(0);
+    expect(Array.from(coachTurnFamily.getParams())).not.toContain(tab);
+});
+
+test("a tab closed while its turn is reserved gives the reservation back and starts no engine", async () => {
+    const atoms = createStore();
+    const { tab, tree } = openTab();
+    const reservation = deferred<string>();
+    mocks.prepareAnalysis.mockReturnValue(reservation.promise);
+    const sent = sendCoachMessage(atoms, request(tab, tree));
+    await settle();
+    closeTreeStore(tab);
+    coachTurnFamily.remove(tab);
+    reservation.resolve("ticket-closed");
+    await sent;
+    expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("ticket-closed");
+    expect(mocks.coachTurn).not.toHaveBeenCalled();
+    expect(activeCoachTurnCount()).toBe(0);
+    expect(Array.from(coachTurnFamily.getParams())).not.toContain(tab);
+});
+
+test("another game opened while the repertoire is read ends the turn before it is reserved", async () => {
+    const atoms = createStore();
+    const { tab, tree } = openTab();
+    const reading = deferred<{ text: string | null; partial: boolean }>();
+    mocks.repertoireContext.mockReturnValue(reading.promise);
+    const sent = sendCoachMessage(atoms, request(tab, tree));
+    tree.getState().setState(defaultTree());
+    reading.resolve({ text: null, partial: false });
+    await sent;
+    expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+    expect(mocks.coachTurn).not.toHaveBeenCalled();
+    // The question belonged to the game that is gone: it is not written into the new one.
+    expect(tree.getState().coachSession).toBeUndefined();
+});
+
 test("the command's reply alone ends the turn, and the next turn sends the history", async () => {
     const atoms = createStore();
     const { tab, tree } = openTab();
@@ -297,6 +346,9 @@ test("a stop before the reservation arrives ends the turn without starting it", 
     const reservation = deferred<string>();
     mocks.prepareAnalysis.mockReturnValue(reservation.promise);
     const sent = sendCoachMessage(atoms, request(tab, tree));
+    // The repertoire is read; the reservation is on its way.
+    await settle();
+    expect(mocks.prepareAnalysis).toHaveBeenCalledOnce();
     stopCoachTurn(atoms, tab);
     expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
     reservation.resolve("ticket-9");

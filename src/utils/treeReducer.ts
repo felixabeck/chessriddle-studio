@@ -206,6 +206,29 @@ export function rootHalfMoves(fen: string): number {
     );
 }
 
+/**
+ * Where a position (a `getBoardState` key) is in the tree now. The tree may have changed since
+ * `path` was remembered, so the path is used only if it still resolves completely and still leads
+ * to that position; otherwise the first node with the position is taken. `accept` narrows which
+ * nodes count. `null` when the tree has none.
+ */
+export function locateBoardState(
+    root: TreeNode,
+    path: readonly number[],
+    boardState: string,
+    accept: (node: TreeNode) => boolean = () => true,
+): { node: TreeNode; position: number[] } | null {
+    const matches = (node: TreeNode) => getBoardState(node.fen) === boardState && accept(node);
+    if (getResolvedPathLength(root, path) === path.length) {
+        const node = getNodeAtPath(root, [...path]);
+        if (matches(node)) return { node, position: [...path] };
+    }
+    for (const item of treeIterator(root)) {
+        if (matches(item.node)) return { node: item.node, position: item.position };
+    }
+    return null;
+}
+
 export function normalizeTreeHalfMoves(root: TreeNode): void {
     const initial = rootHalfMoves(root.fen);
     for (const { node, position } of treeIterator(root)) {

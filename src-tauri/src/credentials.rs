@@ -72,7 +72,7 @@ impl CredentialProvider {
         match self {
             Self::Lichess => None,
             Self::ChessRiddle => Some(1),
-            Self::Coach => Some(16),
+            Self::Coach => Some(crate::coach::connections::MAX_CONNECTIONS),
         }
     }
 
@@ -265,7 +265,6 @@ impl<H: ProviderHandle> ProviderCredentials<H> {
         .await
     }
 
-    /// Rewrites an active account's secret under its handle and keeps its name.
     /// A stable identifier of this installation for the provider's sign-ins: the stored one, or a
     /// new random one that is stored before it is returned. It is not a credential.
     pub(crate) async fn installation_id(
@@ -288,6 +287,7 @@ impl<H: ProviderHandle> ProviderCredentials<H> {
         .await
     }
 
+    /// Rewrites an active account's secret under its handle and keeps its name.
     pub(crate) async fn replace(self: &Arc<Self>, handle: H, token: String) -> Result<(), Error> {
         self.blocking(move |manager| {
             manager

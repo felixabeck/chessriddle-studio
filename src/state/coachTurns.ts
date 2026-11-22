@@ -158,8 +158,16 @@ export async function sendCoachMessage(atoms: Atoms, request: CoachSendRequest):
         publish(atoms, active, (turn) => turn && { ...turn, stopping: true, orphaned: true });
         requestStop(active);
     });
+    // Closing the tab retires its store without a store update, so the subscription above does
+    // not see it: after every wait, a turn whose tab, game or conversation is gone is not started.
+    const abandoned = () => active.stopRequested || !active.isOwner();
     // What the repertoire files play here is read now, for the position the question is about.
     const repertoire = await repertoireContext(active.fen);
+    if (abandoned()) {
+        // Nothing is reserved yet, so there is nothing to cancel.
+        finish(atoms, active, { type: "cancelled", text: "" });
+        return;
+    }
     const input: TurnInput = {
         connection: request.connection,
         model: request.model,
@@ -184,7 +192,8 @@ export async function sendCoachMessage(atoms: Atoms, request: CoachSendRequest):
         return;
     }
     active.turn = ticket;
-    if (active.stopRequested) {
+    if (abandoned()) {
+        // The reservation exists now: it is given back, and no engine is started for it.
         requestStop(active);
         finish(atoms, active, { type: "cancelled", text: "" });
         return;

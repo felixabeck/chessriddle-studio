@@ -64,14 +64,18 @@ export type CoachModelsState =
     | { connection: string; status: "failed"; error: CoachError };
 
 const modelsStateAtom = atom<CoachModelsState>({ connection: null, status: "idle" });
+const modelsRequestAtom = atom(0);
 
 /**
  * The model list of one connection, as the provider reports it now. Writing a connection handle
- * loads its list (again); only the answer for the connection asked last is accepted.
+ * loads its list (again); only the answer to the newest request is accepted, also when an older
+ * request for the same connection answers later.
  */
 export const coachModelsAtom = atom(
     (get) => get(modelsStateAtom),
     async (get, set, connection: string | null) => {
+        const request = get(modelsRequestAtom) + 1;
+        set(modelsRequestAtom, request);
         if (connection === null) {
             set(modelsStateAtom, { connection: null, status: "idle" });
             return;
@@ -84,14 +88,18 @@ export const coachModelsAtom = atom(
         } catch (cause) {
             next = { connection, status: "failed", error: coachErrorCode(cause) };
         }
-        const current = get(modelsStateAtom);
-        if (current.connection === connection && current.status === "loading") {
-            set(modelsStateAtom, next);
-        }
+        if (get(modelsRequestAtom) === request) set(modelsStateAtom, next);
     },
 );
 
 const MAX_NOTICE_CONNECTIONS = 64;
+/** A connection handle is a UUID; the bound leaves room and keeps stored state small. */
+const MAX_HANDLE_CHARS = 64;
+/** The native bounds of a model id and an effort level. */
+const MAX_MODEL_CHARS = 200;
+const MAX_EFFORT_CHARS = 32;
+/** An engine's immutable id. */
+const MAX_ENGINE_ID_CHARS = 128;
 
 /**
  * The connections for which the user accepted the first-use notice (what is sent to whom). Kept
@@ -100,7 +108,10 @@ const MAX_NOTICE_CONNECTIONS = 64;
 export const coachNoticeAcceptedAtom = atomWithStorage<string[]>(
     "coach-notice-accepted",
     [],
-    createZodStorage(z.array(z.string().max(64)).max(MAX_NOTICE_CONNECTIONS), localStorage),
+    createZodStorage(
+        z.array(z.string().max(MAX_HANDLE_CHARS)).max(MAX_NOTICE_CONNECTIONS),
+        localStorage,
+    ),
 );
 
 /** Opens the provider's page where the usage of a ChatGPT plan is managed, in the system browser. */
@@ -128,9 +139,9 @@ export function withCoachNoticeAccepted(accepted: readonly string[], connection:
 
 /** `null` effort means "provider default": no effort level is sent. */
 const selectionSchema = z.object({
-    connection: z.string().max(64).nullable(),
-    model: z.string().max(200).nullable(),
-    effort: z.string().max(32).nullable(),
+    connection: z.string().max(MAX_HANDLE_CHARS).nullable(),
+    model: z.string().max(MAX_MODEL_CHARS).nullable(),
+    effort: z.string().max(MAX_EFFORT_CHARS).nullable(),
 });
 
 export type CoachSelection = z.output<typeof selectionSchema>;
@@ -198,7 +209,7 @@ export function effectiveCoachSelection(
 export const coachEngineAtom = atomWithStorage<string | null>(
     "coach-engine",
     null,
-    createZodStorage(z.string().max(128).nullable(), localStorage),
+    createZodStorage(z.string().max(MAX_ENGINE_ID_CHARS).nullable(), localStorage),
 );
 
 function usable(engine: Engine): engine is LocalEngine {

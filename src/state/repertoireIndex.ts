@@ -5,8 +5,7 @@ import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import {
     defaultTree,
     getBoardState,
-    getNodeAtPath,
-    getResolvedPathLength,
+    locateBoardState,
     treeIterator,
     type TreeNode,
 } from "@/utils/treeReducer";
@@ -15,16 +14,21 @@ import {
  * Where each position occurs in the user's repertoire files.
  *
  * The index holds no game trees: per repertoire file it maps a position (`getBoardState`) to the
- * games and paths where it occurs. It is built one game at a time through the ordinary file
+ * games and paths where it occurs with a move after it; where a line ends there is nothing to
+ * tell. It is built one game at a time through the ordinary file
  * commands and the ordinary PGN parser, and a file is read again only when the native side
  * reports another revision for it. Everything is bounded; whenever a bound is hit or a game cannot
  * be read, the index says that it is only partial.
  */
 
-export const MAX_REPERTOIRE_FILES = 50;
-export const MAX_REPERTOIRE_GAMES = 2000;
-export const MAX_REPERTOIRE_BYTES = 32 * 1024 * 1024;
-export const MAX_REPERTOIRE_ENTRIES = 300_000;
+/** How much of the repertoire files one index holds. */
+export type RepertoireBounds = { files: number; games: number; bytes: number; entries: number };
+export const REPERTOIRE_BOUNDS: RepertoireBounds = {
+    files: 50,
+    games: 2000,
+    bytes: 32 * 1024 * 1024,
+    entries: 300_000,
+};
 /** The bound the native side enforces on the repertoire text of a turn. */
 export const MAX_COACH_REPERTOIRE_BYTES = 8 * 1024;
 /** Repertoire games that are read again for one question. */
@@ -38,8 +42,11 @@ type Occurrence = { game: number; path: number[] };
 type IndexedFile = {
     handle: FileWorkspaceHandle;
     name: string;
-    /** What the listing said about the file when it was read: a change means "read again". */
-    revision: string;
+    /**
+     * The file's native revision when it was read: a change means "read again". `null` when the
+     * revision could not be told; such a file is read again at every refresh.
+     */
+    revision: string | null;
     positions: Map<string, Occurrence[]>;
     games: number;
     bytes: number;
@@ -71,26 +78,36 @@ function repertoireFiles(entries: readonly WorkspaceEntry[]): WorkspaceEntry[] {
     return found;
 }
 
-function revisionOf(entry: WorkspaceEntry): string {
-    return `${entry.lastModified}:${entry.gameCount ?? "?"}`;
+/**
+ * The native revision of a repertoire file. It follows the file's size and its timestamps below
+ * a second, so an edit right after another one is not mistaken for no change.
+ */
+async function revisionOf(entry: WorkspaceEntry): Promise<string | null> {
+    try {
+        return await tauri.fileRevision(entry.handle);
+    } catch {
+        return null;
+    }
 }
 
 type Budget = { games: number; bytes: number; entries: number };
 
 async function indexFile(
     entry: WorkspaceEntry,
+    revision: string | null,
     budget: Budget,
     isCurrent: () => boolean,
 ): Promise<IndexedFile> {
     const file: IndexedFile = {
         handle: entry.handle,
         name: entry.name,
-        revision: revisionOf(entry),
+        revision,
         positions: new Map(),
         games: 0,
         bytes: 0,
         entries: 0,
-        partial: false,
+        // A file the listing could not read or count is not an empty repertoire.
+        partial: entry.gameCount === null || entry.readError !== null,
     };
     const count = entry.gameCount ?? 0;
     for (let game = 0; game < count; game++) {
@@ -112,6 +129,9 @@ async function indexFile(
             file.bytes += bytes;
             const tree = await parsePGN(pgn);
             for (const { node, position } of treeIterator(tree.root)) {
+                // The end of a line plays nothing; indexed, it would hide the same position
+                // where another line of the game goes on.
+                if (node.children.length === 0) continue;
                 if (budget.entries === 0) {
                     file.partial = true;
                     break;
@@ -131,36 +151,38 @@ async function indexFile(
     return file;
 }
 
-async function refresh(target: IndexState, workspace: FileWorkspaceHandle): Promise<void> {
+async function refresh(
+    target: IndexState,
+    workspace: FileWorkspaceHandle,
+    bounds: RepertoireBounds,
+): Promise<void> {
     const listing = await tauri.listFileWorkspace(workspace);
     if (state !== target) return;
     const listed = repertoireFiles(listing.entries);
-    const entries = listed.slice(0, MAX_REPERTOIRE_FILES);
+    const entries = listed.slice(0, bounds.files);
     let partial = listed.length > entries.length || listing.unread.length > 0;
     const next = new Map<string, IndexedFile>();
-    const budget: Budget = {
-        games: MAX_REPERTOIRE_GAMES,
-        bytes: MAX_REPERTOIRE_BYTES,
-        entries: MAX_REPERTOIRE_ENTRIES,
-    };
-    const stale: WorkspaceEntry[] = [];
+    const budget: Budget = { games: bounds.games, bytes: bounds.bytes, entries: bounds.entries };
+    const stale: { entry: WorkspaceEntry; revision: string | null }[] = [];
     for (const entry of entries) {
+        const revision = await revisionOf(entry);
+        if (state !== target) return;
         const known = target.files.get(fileWorkspaceKey(entry.handle));
         // A file indexed in full under the same revision is kept; its share of the budget stays
         // spent.
-        if (known && known.revision === revisionOf(entry) && !known.partial) {
+        if (known && revision !== null && known.revision === revision && !known.partial) {
             next.set(fileWorkspaceKey(entry.handle), known);
             budget.games -= known.games;
             budget.bytes -= known.bytes;
             budget.entries -= known.entries;
         } else {
-            stale.push(entry);
+            stale.push({ entry, revision });
         }
     }
     budget.games = Math.max(0, budget.games);
     budget.entries = Math.max(0, budget.entries);
-    for (const entry of stale) {
-        const file = await indexFile(entry, budget, () => state === target);
+    for (const { entry, revision } of stale) {
+        const file = await indexFile(entry, revision, budget, () => state === target);
         if (state !== target) return;
         next.set(fileWorkspaceKey(entry.handle), file);
         // Published file by file, so a question asked during the build uses what is there.
@@ -174,9 +196,13 @@ async function refresh(target: IndexState, workspace: FileWorkspaceHandle): Prom
 /**
  * Brings the index up to date with the workspace's repertoire files. Calls for the same workspace
  * share the refresh that runs; another workspace starts a new index and the old one is dropped.
- * The promise never rejects: a failed refresh leaves the index partial.
+ * The promise never rejects: a failed refresh leaves the index partial. `bounds` is what the index
+ * may hold; tests pass small ones.
  */
-export function refreshRepertoireIndex(workspace: FileWorkspaceHandle | null): Promise<void> {
+export function refreshRepertoireIndex(
+    workspace: FileWorkspaceHandle | null,
+    bounds: RepertoireBounds = REPERTOIRE_BOUNDS,
+): Promise<void> {
     if (workspace === null) {
         state = null;
         return Promise.resolve();
@@ -186,7 +212,7 @@ export function refreshRepertoireIndex(workspace: FileWorkspaceHandle | null): P
         state = { workspace: key, files: new Map(), partial: true, refreshing: null };
     }
     const target = state;
-    target.refreshing ??= refresh(target, workspace)
+    target.refreshing ??= refresh(target, workspace, bounds)
         .catch(() => {
             target.partial = true;
         })
@@ -204,18 +230,6 @@ function cut(text: string, bytes: number): string {
     while (end > 0 && encoder.encode(text.slice(0, end)).length > room) end = Math.floor(end * 0.9);
     const boundary = text.lastIndexOf(" ", end);
     return `${text.slice(0, boundary > 0 ? boundary : end)}${ELLIPSIS}`;
-}
-
-/** The node of `root` with this position: the remembered path if it still leads there, else a search. */
-function findPosition(root: TreeNode, path: readonly number[], position: string): TreeNode | null {
-    if (getResolvedPathLength(root, path) === path.length) {
-        const node = getNodeAtPath(root, [...path]);
-        if (getBoardState(node.fen) === position) return node;
-    }
-    for (const item of treeIterator(root)) {
-        if (getBoardState(item.node.fen) === position) return item.node;
-    }
-    return null;
 }
 
 /**
@@ -280,11 +294,23 @@ export async function repertoireContext(fen: string): Promise<RepertoireContext>
             break;
         }
         try {
-            const { pgn } = await tauri.readGame(file.handle, occurrence.game);
+            const { pgn, present, omission } = await tauri.readGame(file.handle, occurrence.game);
+            // The game is gone or was left out since it was indexed: not "the repertoire plays
+            // nothing here".
+            if (!present || omission) {
+                partial = true;
+                continue;
+            }
             const tree = await parsePGN(pgn);
-            const node = findPosition(tree.root, occurrence.path, position);
-            if (!node || node.children.length === 0) continue;
-            const continuation = continuationText(node);
+            // The game may have changed since it was indexed: the position where it goes on.
+            const found = locateBoardState(
+                tree.root,
+                occurrence.path,
+                position,
+                (node) => node.children.length > 0,
+            );
+            if (!found) continue;
+            const continuation = continuationText(found.node);
             const entry = `Repertoire file "${file.name}", game ${occurrence.game + 1}:\n${continuation}`;
             const shown = cut(entry, budget);
             if (shown !== entry) partial = true;

@@ -2,7 +2,7 @@ import { ListPlus } from "lucide-react";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { IconAction } from "@/components/common/IconAction";
-import { halfMovesOfFen } from "@/utils/coachContext";
+import { rootHalfMoves } from "@/utils/treeReducer";
 import { EngineLinePreviewMoves, useEngineLinePreview } from "../analysis/EngineLinePreview";
 import classes from "./CoachPanel.module.css";
 
@@ -39,7 +39,7 @@ export function CoachLine({
     <span ref={ref} className={classes.line} data-testid="coach-line" onMouseLeave={preview.close}>
       <EngineLinePreviewMoves
         preview={preview}
-        halfMoves={halfMovesOfFen(fen)}
+        halfMoves={rootHalfMoves(fen)}
         threat={false}
         inert={false}
       />

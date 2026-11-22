@@ -9,6 +9,7 @@ import {
     coachSessionBytes,
     coachSessionSchema,
     MAX_COACH_MESSAGES,
+    MAX_COACH_PATH_LENGTH,
     MAX_COACH_SESSION_BYTES,
     readStoredCoachSession,
 } from "./coachSession";
@@ -139,4 +140,63 @@ test("the model is told completed exchanges only, with lines back in their brack
         { role: "coach", text: "answer 4 [[e4 e5]]" },
     ]);
     expect(coachHistory(undefined)).toEqual([]);
+});
+
+test("a message beyond the schema's own bounds is fitted, not refused with its exchange", () => {
+    // Plain repeated text compresses far below the size bound and is still too long for a text.
+    const long = "The plan is simple. ".repeat(5_000);
+    expect(long.length).toBeGreaterThan(64 * 1024);
+    const reply: CoachMessage = {
+        id: "a1",
+        role: "coach",
+        segments: [
+            { type: "text", text: long },
+            { type: "line", san: ["e4", "e5"], uci: ["e2e4", "e7e5"] },
+            { type: "text", text: " is the main line." },
+        ],
+        state: "completed",
+        fen: FEN,
+        path: [0, 1],
+    };
+    const raw = session([question("1", long), reply]);
+    expect(coachSessionSchema.safeParse(raw).success).toBe(false);
+
+    const bounded = boundCoachSession(raw);
+    expect(coachSessionSchema.safeParse(bounded).success).toBe(true);
+    const [asked, answered] = bounded.messages;
+    expect(asked.role === "user" && asked.text.endsWith(COACH_TRUNCATION_MARK)).toBe(true);
+    // Only the overlong text is cut: the checked line and the rest of the answer stay.
+    expect(answered.role === "coach" && answered.segments).toEqual([
+        { type: "text", text: expect.stringMatching(/^The plan is simple\. .* \[…\]$/s) },
+        { type: "line", san: ["e4", "e5"], uci: ["e2e4", "e7e5"] },
+        { type: "text", text: " is the main line." },
+    ]);
+
+    // More parts than a stored answer takes: its words are kept as one text.
+    const parts = Array.from({ length: 401 }, (_, index) => ({
+        type: "text" as const,
+        text: `${index} `,
+    }));
+    const many = boundCoachSession(session([{ ...reply, segments: parts }]));
+    expect(coachSessionSchema.safeParse(many).success).toBe(true);
+    const kept = many.messages[0];
+    expect(kept.role === "coach" && kept.segments).toHaveLength(1);
+    expect(kept.role === "coach" && kept.segments[0]).toMatchObject({
+        type: "text",
+        text: expect.stringMatching(/^0 1 2 .*400 $/s),
+    });
+});
+
+test("a question from the deepest position a tab can hold is stored", async () => {
+    const { MAX_TREE_DEPTH } = await import("./store/tabStorage");
+    expect(MAX_COACH_PATH_LENGTH).toBe(MAX_TREE_DEPTH);
+    const deep: CoachMessage = {
+        id: "a1",
+        role: "coach",
+        segments: [{ type: "text", text: "Resign." }],
+        state: "completed",
+        fen: FEN,
+        path: Array.from({ length: MAX_TREE_DEPTH }, () => 0),
+    };
+    expect(coachSessionSchema.safeParse(session([question("1"), deep])).success).toBe(true);
 });

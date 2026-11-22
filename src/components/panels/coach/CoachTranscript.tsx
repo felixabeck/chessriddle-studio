@@ -6,8 +6,8 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useCoachErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
 import { openCoachUsage } from "@/state/coach";
 import type { CoachAnswerMessage, CoachMessage, CoachRunningTurn } from "@/state/coachSession";
+import { getBoardState, locateBoardState } from "@/utils/treeReducer";
 import { CoachLine } from "./CoachLine";
-import { resolveCoachInsertPath } from "./coachInsert";
 import { CoachText } from "./CoachText";
 import classes from "./CoachPanel.module.css";
 
@@ -17,15 +17,16 @@ const Answer = memo(function Answer({ message }: { message: CoachAnswerMessage }
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (state) => state.root);
   const orientation = useStore(store, (state) => state.headers.orientation) ?? "white";
-  // Where the answer's lines can go now; the game may have changed since the question.
+  // Where the answer's lines can go now: they start from the position the question was asked
+  // about, and the game may have changed since. Without that position there is nowhere to insert.
   const target = useMemo(
-    () => resolveCoachInsertPath(root, message.path, message.fen),
+    () => locateBoardState(root, message.path, getBoardState(message.fen))?.position ?? null,
     [root, message.path, message.fen],
   );
   const insert = (san: string[]) => {
     const state = store.getState();
     // Resolved again at the click: the path must index the tree as it is now.
-    const path = resolveCoachInsertPath(state.root, message.path, message.fen);
+    const path = locateBoardState(state.root, message.path, getBoardState(message.fen))?.position;
     if (!path) return;
     state.goToMove(path);
     state.makeMoves({ payload: san });

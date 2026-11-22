@@ -22,10 +22,13 @@ function ConnectionRow({
   connection,
   onEdit,
   onRemove,
+  onRetry,
 }: {
   connection: ConnectionSummary;
   onEdit: () => void;
   onRemove: () => void;
+  /** Reads the list again: for a connection whose keyring entry could not be read just now. */
+  onRetry: () => void;
 }) {
   const { t } = useTranslation();
   const messages = useCoachErrorMessages();
@@ -33,6 +36,9 @@ function ConnectionRow({
   const [checked, setChecked] = useState<CheckResult | null>(null);
   const needsRepair = connection.status === "needsRepair";
   const signInAgain = connection.status === "signInAgain";
+  // The keyring did not answer: nothing but the name is known, and nothing is wrong with the
+  // connection as far as anyone can tell.
+  const unreachable = connection.status === "storageUnavailable";
   const signedIn = connection.kind !== "api";
   const grok = connection.kind === "grok";
 
@@ -70,13 +76,15 @@ function ConnectionRow({
         <Text size="xs" c="dimmed" className="wrap-anywhere">
           {needsRepair
             ? t("Coach.Error.NeedsRepair")
-            : signInAgain
-              ? t("Coach.Error.SignInAgain")
-              : grok
-                ? (connection.account ?? t("Settings.Coach.Grok.Note"))
-                : signedIn
-                  ? (connection.account ?? t("Coach.Plan.Using"))
-                  : connection.address}
+            : unreachable
+              ? t("Coach.Error.Storage")
+              : signInAgain
+                ? t("Coach.Error.SignInAgain")
+                : grok
+                  ? (connection.account ?? t("Settings.Coach.Grok.Note"))
+                  : signedIn
+                    ? (connection.account ?? t("Coach.Plan.Using"))
+                    : connection.address}
         </Text>
         <div role="status" aria-live="polite">
           {checked && "models" in checked && (
@@ -101,17 +109,24 @@ function ConnectionRow({
             {t("Coach.Plan.ManageUsage")}
           </Button>
         )}
-        <Button
-          variant="default"
-          size="xs"
-          disabled={needsRepair || signInAgain}
-          loading={pending}
-          onClick={() => void check()}
-        >
-          {t("Settings.Coach.Connection.Check")}
-        </Button>
-        {/* A sign-in has nothing to edit: it is renewed by signing in again. */}
-        {!signedIn && (
+        {unreachable ? (
+          <Button variant="default" size="xs" onClick={onRetry}>
+            {t("Common.Retry")}
+          </Button>
+        ) : (
+          <Button
+            variant="default"
+            size="xs"
+            disabled={needsRepair || signInAgain}
+            loading={pending}
+            onClick={() => void check()}
+          >
+            {t("Settings.Coach.Connection.Check")}
+          </Button>
+        )}
+        {/* A sign-in has nothing to edit: it is renewed by signing in again. What kind an
+            unread connection is, is not known, so it is not offered for editing either. */}
+        {!signedIn && !unreachable && (
           <IconAction label={t("Settings.Coach.Form.EditTitle")} variant="default" onClick={onEdit}>
             <Pencil size="1rem" />
           </IconAction>
@@ -195,6 +210,7 @@ export function CoachConnections() {
               connection={connection}
               onEdit={() => setDialog({ kind: "edit", connection })}
               onRemove={() => setDialog({ kind: "remove", connection })}
+              onRetry={() => void reload()}
             />
           ))}
         </div>

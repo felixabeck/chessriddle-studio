@@ -36,7 +36,7 @@ const MAX_TREE_NODES = 100_000;
 // (538 plies). The ceiling is the recursive PGN writer and native JSON serialization
 // (measured: Chromium getPGN overflows between 4,096 and 5,000 plies), not this file,
 // whose walks are iterative.
-const MAX_TREE_DEPTH = 2_048;
+export const MAX_TREE_DEPTH = 2_048;
 const MAX_TREE_MOVES = MAX_TREE_DEPTH / 2;
 const MAX_NODE_NAGS = 1_024;
 const MAX_SHAPE_BRUSH_LENGTH = 64;

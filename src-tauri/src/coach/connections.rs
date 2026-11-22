@@ -107,6 +107,9 @@ pub(crate) enum ConnectionStatus {
     NeedsRepair,
     /// The provider ended the sign-in; signing in again restores the connection.
     SignInAgain,
+    /// The keyring could not be asked just now, so nothing but the name is known. The
+    /// connection itself may be fine.
+    StorageUnavailable,
 }
 
 /// Everything the renderer may know about a connection. No key or token is part of it.
@@ -154,10 +157,7 @@ pub(crate) struct ConnectionRemoved {
 
 fn valid_label(label: &str) -> Result<String, CoachError> {
     let label = label.trim();
-    if label.is_empty()
-        || label.chars().count() > MAX_LABEL_CHARS
-        || label.chars().any(char::is_control)
-    {
+    if !super::plain(label, MAX_LABEL_CHARS) {
         return Err(CoachError::InvalidInput);
     }
     Ok(label.to_owned())
@@ -196,13 +196,27 @@ fn signed_in_summary(
     }
 }
 
-fn summary(
+/// A connection of which only the name is known. Its kind is not known either; it is listed as
+/// an address, which grants nothing.
+fn unread_summary(
     handle: CoachConnectionHandle,
     label: String,
-    secret: Option<&Secret>,
+    status: ConnectionStatus,
 ) -> ConnectionSummary {
+    ConnectionSummary {
+        handle,
+        kind: ConnectionKind::Api,
+        label,
+        address: None,
+        has_key: false,
+        account: None,
+        status,
+    }
+}
+
+fn summary(handle: CoachConnectionHandle, label: String, secret: &Secret) -> ConnectionSummary {
     match secret {
-        Some(Secret::Api { address, key }) => ConnectionSummary {
+        Secret::Api { address, key } => ConnectionSummary {
             handle,
             kind: ConnectionKind::Api,
             label,
@@ -211,30 +225,20 @@ fn summary(
             account: None,
             status: ConnectionStatus::Ready,
         },
-        Some(Secret::ChatGpt(secret)) => signed_in_summary(
+        Secret::ChatGpt(secret) => signed_in_summary(
             handle,
             ConnectionKind::ChatGpt,
             label,
             &secret.email,
             &secret.refresh_token,
         ),
-        Some(Secret::Grok(secret)) => signed_in_summary(
+        Secret::Grok(secret) => signed_in_summary(
             handle,
             ConnectionKind::Grok,
             label,
             &secret.email,
             &secret.refresh_token,
         ),
-        // What kind an unreadable connection was is not known any more.
-        None => ConnectionSummary {
-            handle,
-            kind: ConnectionKind::Api,
-            label,
-            address: None,
-            has_key: false,
-            account: None,
-            status: ConnectionStatus::NeedsRepair,
-        },
     }
 }
 
@@ -290,14 +294,14 @@ impl Connections {
             .map_err(|_| CoachError::Storage)?;
         let mut connections = Vec::with_capacity(accounts.len());
         for account in accounts {
-            // In the list a keyring that could not be asked makes this one connection unreadable
-            // for now; it must not hide the others.
-            let secret = self
-                .stored_secret(account.handle.clone())
-                .await
-                .ok()
-                .flatten();
-            connections.push(summary(account.handle, account.username, secret.as_ref()));
+            // One connection that cannot be read must not hide the others: it is listed by its
+            // name, and the status says whether its secret is broken or only out of reach.
+            let (handle, label) = (account.handle, account.username);
+            connections.push(match self.stored_secret(handle.clone()).await {
+                Ok(Some(secret)) => summary(handle, label, &secret),
+                Ok(None) => unread_summary(handle, label, ConnectionStatus::NeedsRepair),
+                Err(_) => unread_summary(handle, label, ConnectionStatus::StorageUnavailable),
+            });
         }
         connections.sort_by(|left, right| {
             left.label
@@ -335,7 +339,7 @@ impl Connections {
                     .await
                     .map_err(|_| CoachError::Storage)?;
                 Ok(ConnectionSaved {
-                    connection: summary(account.handle, account.username, Some(&secret)),
+                    connection: summary(account.handle, account.username, &secret),
                     durability_uncertain,
                 })
             }
@@ -377,7 +381,7 @@ impl Connections {
                     .await
                     .map_err(|_| CoachError::Storage)?;
                 Ok(ConnectionSaved {
-                    connection: summary(handle, label, Some(&secret)),
+                    connection: summary(handle, label, &secret),
                     durability_uncertain,
                 })
             }
@@ -483,7 +487,7 @@ impl Connections {
             }
         };
         Ok(ConnectionSaved {
-            connection: summary(handle, label.to_owned(), Some(&secret)),
+            connection: summary(handle, label.to_owned(), &secret),
             durability_uncertain,
         })
     }
@@ -836,31 +840,9 @@ mod tests {
         assert!(!repaired.connection.has_key);
     }
 
-    /// A keyring whose reads can be made to fail, as when the secret service does not answer.
-    #[derive(Default)]
-    struct SilentStore {
-        inner: MemoryCredentialStore,
-        silent: std::sync::atomic::AtomicBool,
-    }
-
-    impl CredentialStore for SilentStore {
-        fn set(&self, key: &str, secret: &str) -> Result<(), crate::error::Error> {
-            self.inner.set(key, secret)
-        }
-        fn get(&self, key: &str) -> Result<Option<String>, crate::error::Error> {
-            if self.silent.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err(crate::error::Error::CredentialRecoveryRequired);
-            }
-            self.inner.get(key)
-        }
-        fn delete(&self, key: &str) -> Result<(), crate::error::Error> {
-            self.inner.delete(key)
-        }
-    }
-
     #[tokio::test]
     async fn a_keyring_that_does_not_answer_is_a_storage_error_and_changes_nothing() {
-        let store = Arc::new(SilentStore::default());
+        let store = Arc::new(crate::coach::test_server::FaultyStore::default());
         let (credentials, _directory) = CoachCredentials::for_test(store.clone());
         let connections = Connections::new(Arc::new(credentials));
         let hosted = connections
@@ -914,8 +896,25 @@ mod tests {
                 .err(),
             Some(CoachError::Storage)
         );
-        // The list still names every connection.
-        assert_eq!(connections.list().await.unwrap().len(), 2);
+        // The list still names every connection, and says that the keyring is out of reach
+        // instead of calling them broken.
+        let unreachable = connections.list().await.unwrap();
+        assert_eq!(unreachable.len(), 2);
+        for connection in &unreachable {
+            assert_eq!(connection.status, ConnectionStatus::StorageUnavailable);
+            assert_eq!(
+                (connection.address.as_deref(), connection.has_key),
+                (None, false)
+            );
+            assert_eq!(connection.account, None);
+        }
+        assert_eq!(
+            unreachable
+                .iter()
+                .map(|connection| connection.label.as_str())
+                .collect::<Vec<_>>(),
+            ["ChatGPT", "Hosted"]
+        );
 
         silent(false);
         let listed = connections.list().await.unwrap();

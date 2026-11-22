@@ -413,11 +413,13 @@ impl Accumulator {
 impl<B: BearerSource> Responses<B> {
     /// Sends one request and returns its answer once it is one to read: a request refused as
     /// unauthorized before anything of its answer was read is repeated once with a newer token.
+    /// The token the answer belongs to is returned with it, so that nothing the provider says
+    /// about the request reaches the log with that token in it.
     async fn send(
         &self,
         body: &Value,
         cancellation: &CancellationToken,
-    ) -> Result<reqwest::Response, CoachError> {
+    ) -> Result<(reqwest::Response, String), CoachError> {
         let mut bearer = self.tokens.bearer().await?;
         for retry in [false, true] {
             let request = self
@@ -434,7 +436,7 @@ impl<B: BearerSource> Responses<B> {
                 bearer = self.tokens.rejected(bearer.generation).await?;
                 continue;
             }
-            return Ok(response);
+            return Ok((response, bearer.token));
         }
         Err(CoachError::ProviderFailure)
     }
@@ -449,15 +451,15 @@ impl<B: BearerSource> ModelBackend for Responses<B> {
         cancellation: &CancellationToken,
     ) -> Result<Round, RoundFailure> {
         let mut with_reasoning = true;
-        let response = loop {
+        let (response, token) = loop {
             let body = request_body(&request, self.provider, with_reasoning);
-            let response = self
+            let (response, token) = self
                 .send(&body, cancellation)
                 .await
                 .map_err(RoundFailure::new)?;
             let status = response.status();
             if status.is_success() {
-                break response;
+                break (response, token);
             }
             let refusal = tokio::select! {
                 biased;
@@ -478,7 +480,7 @@ impl<B: BearerSource> ModelBackend for Responses<B> {
             log::warn!(
                 "coach: responses refused with HTTP {}: {}",
                 status.as_u16(),
-                diagnostic(&message, None)
+                diagnostic(&message, Some(&token))
             );
             return Err(RoundFailure::new(error));
         };
@@ -502,7 +504,7 @@ impl<B: BearerSource> ModelBackend for Responses<B> {
                 if let Some(message) = message {
                     log::warn!(
                         "coach: responses stream failed: {}",
-                        diagnostic(&message, None)
+                        diagnostic(&message, Some(&token))
                     );
                 }
                 return Err(RoundFailure {

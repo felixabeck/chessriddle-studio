@@ -102,6 +102,22 @@ function CoachPanel() {
       </Text>
     );
   }
+  if (
+    connections.length === 0 &&
+    connectionsState.connections.some((connection) => connection.status === "storageUnavailable")
+  ) {
+    // There are connections, but the keyring did not answer: that is not "no connection".
+    return (
+      <Stack className={classes.empty} align="flex-start" gap="sm">
+        <Text c="danger" role="alert">
+          {errors.storage}
+        </Text>
+        <Button variant="default" onClick={() => void reloadConnections()}>
+          {t("Common.Retry")}
+        </Button>
+      </Stack>
+    );
+  }
   if (connections.length === 0) {
     return (
       <Stack className={classes.empty} align="flex-start" gap="sm">

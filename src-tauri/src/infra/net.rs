@@ -295,6 +295,48 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::str::FromStr;
 
+    #[tokio::test]
+    async fn a_bounded_body_is_refused_beyond_its_bound_announced_or_not() {
+        use axum::{body::StreamBody, extract::Path, routing::get, Router};
+
+        let router = Router::new()
+            // Sent in one piece: the size is announced.
+            .route(
+                "/sized/:bytes",
+                get(|Path(bytes): Path<usize>| async move { "x".repeat(bytes) }),
+            )
+            // Sent in pieces of 100 bytes without an announced size.
+            .route(
+                "/chunked/:chunks",
+                get(|Path(chunks): Path<usize>| async move {
+                    StreamBody::new(futures_util::stream::iter(
+                        (0..chunks).map(|_| Ok::<_, std::convert::Infallible>("x".repeat(100))),
+                    ))
+                }),
+            );
+        let server = crate::coach::test_server::serve(router);
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+        for (path, announced, max_bytes, fits) in [
+            ("/sized/1000", true, 1000, true),
+            ("/sized/1000", true, 999, false),
+            ("/chunked/10", false, 1000, true),
+            ("/chunked/10", false, 999, false),
+            ("/chunked/11", false, 1000, false),
+            // A bound below the first piece is a bound all the same.
+            ("/chunked/1", false, 99, false),
+        ] {
+            let response = http.get(server.url(path)).send().await.unwrap();
+            assert_eq!(response.content_length().is_some(), announced, "{path}");
+            let body = read_bounded_body(response, max_bytes).await;
+            match (fits, body) {
+                (true, Ok(body)) => assert_eq!(body.len(), 1000, "{path}"),
+                (false, Err(BoundedBodyError::TooLarge)) => {}
+                (_, Ok(body)) => panic!("{path} within {max_bytes}: read {} bytes", body.len()),
+                (_, Err(_)) => panic!("{path} within {max_bytes}: refused or failed"),
+            }
+        }
+    }
+
     #[test]
     fn test_is_public_ip() {
         assert!(!is_public_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));

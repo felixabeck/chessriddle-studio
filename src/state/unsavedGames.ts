@@ -89,7 +89,14 @@ export function decodeUnsavedGame(document: string): DecodedUnsavedGame {
 // ---------------------------------------------------------------------------------------------
 // Mirror
 
-type Snapshot = { root: unknown; headers: unknown; name: string; type: string };
+/** Everything of a tab that its recovery copy carries, by identity. */
+type Snapshot = {
+    root: unknown;
+    headers: unknown;
+    coachSession: unknown;
+    name: string;
+    type: string;
+};
 type WriteStatus = "confirmed" | "pending" | "failed";
 
 type Entry = {
@@ -153,6 +160,7 @@ function sameSnapshot(left: Snapshot | null, right: Snapshot): boolean {
         !!left &&
         left.root === right.root &&
         left.headers === right.headers &&
+        left.coachSession === right.coachSession &&
         left.name === right.name &&
         left.type === right.type
     );
@@ -342,6 +350,7 @@ export class UnsavedGameMirror {
         return {
             root: state.root,
             headers: state.headers,
+            coachSession: state.coachSession,
             name: entry.tab.name,
             type: entry.tab.type,
         };

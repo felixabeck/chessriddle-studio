@@ -2660,6 +2660,16 @@ mod native_window_operation_wiring_tests {
         );
         let destroy = body_at_indent(source, "fn cancel_destroyed_window_operations(");
         assert!(destroy.contains("&state.engine_supervisor"), "{destroy}");
+        // A sign-in waits for a person in a browser: the window's end and the end of its
+        // document both end the ones it started.
+        assert!(
+            destroy.contains("coach::cancel_window_sign_ins(state, label);"),
+            "{destroy}"
+        );
+        assert!(
+            command.contains("coach::cancel_window_sign_ins(&state, label);"),
+            "{command}"
+        );
         let cancel = body_at_indent(include_str!("chess.rs"), "pub async fn cancel_analysis(");
         assert!(
             cancel.contains("cancel_analysis_engine(&state.engine_supervisor, &id)"),
@@ -4135,6 +4145,13 @@ mod blocking_offload_scans {
         ] {
             assert!(cleanup.contains(argument), "missing {argument}: {cleanup}");
         }
+        // Sign-ins that still wait for their browser end inside the shutdown budget, before the
+        // engine attachments.
+        let sign_ins = cleanup
+            .find("coach::shutdown_sign_ins(&state).await;")
+            .unwrap_or_else(|| panic!("sign-ins are not ended at exit: {cleanup}"));
+        let attachments = cleanup.find("shutdown_engine_attachments").unwrap();
+        assert!(sign_ins < attachments, "{cleanup}");
         assert!(dispatch.contains("app_handle.exit(0)"), "{dispatch}");
     }
 

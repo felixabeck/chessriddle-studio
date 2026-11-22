@@ -206,13 +206,18 @@ impl Grok {
         format!("{}/{path}", self.api)
     }
 
-    /// `value` if the provider may name it, as it was written.
+    /// `value` if the provider may name it, as the URL parser read it: what was checked is what
+    /// is used, not the text it was parsed from.
     fn own_address(&self, value: &str, what: &str) -> Result<String, CoachError> {
-        if value.len() <= MAX_ADDRESS_BYTES && (self.own)(value).is_some() {
-            Ok(value.to_owned())
-        } else {
-            log::error!("coach: Grok named {what} that is not its own; it was not used");
-            Err(CoachError::ProviderFailure)
+        let checked = (value.len() <= MAX_ADDRESS_BYTES)
+            .then(|| (self.own)(value))
+            .flatten();
+        match checked {
+            Some(url) => Ok(url.into()),
+            None => {
+                log::error!("coach: Grok named {what} that is not its own; it was not used");
+                Err(CoachError::ProviderFailure)
+            }
         }
     }
 
