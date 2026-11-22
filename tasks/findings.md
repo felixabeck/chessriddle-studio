@@ -28322,3 +28322,21 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 * **CI run:** 44986736179 — **2026-11-22 follow-up:** the hosted e2e job on `029aa3e2a` failed only in the WebKit project, on this finding's new containment test: `Browser failures: Failed local request: http://127.0.0.1:4173/logo.png`. The test reloaded the page between font scales. WebKit cancelled the in-flight logo request, and `localRequestFailure` exempts only Chromium's `net::ERR_ABORTED` image aborts. Repaired in `c8875366a` (one load per font scale, only viewport changes after it) and `645626309` (wait for the resized layout step before measuring). Green 20/20 with `--repeat-each=5` in `database-files` and `game-info-webkit`, still red on the pre-fix layout, and the final `gates:push --frontend` is green at `645626309`.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d33c2e47e8acab040a5472dbb6d808d03aea14bf55a94e659c0581cb08e77462","input_sha256":"002caf1ec5c1722fd20988b828a1962fdf7be111ad74aad35ca7574af9f2b6fc","kind":"mutation-receipt","operation":"0693b457f18a5dc6c6e6ade0ffdde37b76b2fb1cec186baf4c27c51b9589535a","options":{"section":null},"request_id_sha256":null,"results":["f-20261121-06"],"target":"f-20261121-06","v":1} -->
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### Full container e2e runs crash a random Chromium target under parallel load
+
+* **ID:** f-20261122-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Filed from:** a0fec6da-1854-4557-8047-421facf7fb27
+* **Spotted outside diff:** while re-recording snapshots for f-20261121-06 (GameInfo container layout), 2026-11-22, branch `drain/drain-20261102`.
+* **Where:** `pnpm test:e2e:update` / `pnpm test:e2e:container` full runs (`scripts/run-e2e-container.mjs`, `playwright.config.ts` `workers: 6`, `fullyParallel: true`).
+* **Defect:** three consecutive full container runs each failed one to three tests with Chromium `Target crashed`, a different test each time: run 1 `database-files: mixed Library files/filter/layout/selection at 1440px 100% dark` and `... unavailable recovery/keyboard ...` (`locator.scrollIntoViewIfNeeded: Target crashed`); run 2 the same two (`page.evaluate: Target crashed` from axe at `e2e/fixtures.ts:1800`); run 3 `engine-gap: two engine cards and signed evaluations in light` (`locator.click: Target crashed`). Every crashed test passed when rerun alone (`--project=database-files`, `--project=engine-gap`). The host had 21 GB available and 20 cores during the runs.
+* **Failure scenario:** any push whose e2e gate runs the full suite can go red on a renderer crash unrelated to the diff, costing a rerun or misattributing the failure to the change.
+* **Open question:** which resource kills the Chromium page under the six-worker container run, and which bound (container shm, worker count, spec scheduling) removes it without slowing the suite?
+* **Fix:** find what kills the page under parallel load (container `/dev/shm` size, Chromium memory under 6 workers, a specific heavy spec running concurrently). Read the crash from the container log or trace before changing worker counts.
+* **Proof:** the three run logs were `/tmp/f0621/e2e-update.log`, `/tmp/f0621/e2e-update2.log` and `/tmp/f0621/e2e-update3.log` (ephemeral). Search them for `Target crashed`.
+* **Found by:** Claude Code, 2026-11-22.
