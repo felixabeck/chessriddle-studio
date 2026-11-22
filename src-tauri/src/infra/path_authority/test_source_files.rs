@@ -24,6 +24,10 @@ pub(crate) const PRODUCTION_FILES: &[(&str, &str)] = &[
         include_str!("engine_attachments.rs"),
     ),
     (
+        "infra/path_authority/handoff_endpoint.rs",
+        include_str!("handoff_endpoint.rs"),
+    ),
+    (
         "infra/path_authority/listing.rs",
         include_str!("listing.rs"),
     ),

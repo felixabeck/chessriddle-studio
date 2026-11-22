@@ -6875,8 +6875,8 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   );
 
   // Direct launches inherit precisely the primary's profile and off-screen display environment.
-  const launchInstanceProbe = (env) => {
-    const child = launch(APP_BINARY, [], { env });
+  const launchInstanceProbe = (env, args = []) => {
+    const child = launch(APP_BINARY, args, { env });
     const stdout = outputBuffer();
     const stderr = outputBuffer();
     let launchError;
@@ -6892,6 +6892,15 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     return {
       child,
       stdout: () => stdout.text(),
+      waitForExit: () =>
+        waitFor(
+          "the instance probe to exit by itself",
+          () => {
+            if (launchError) throw launchError;
+            return child.exitCode !== null || child.signalCode !== null;
+          },
+          { timeoutMs: INSTANCE_PROBE_TIMEOUT_MS },
+        ),
       waitForLine: (line) =>
         waitFor(
           line,
@@ -7022,6 +7031,68 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   } finally {
     if (independent) await stopLaunchedChild(independent.child);
     if (differentProfile) await rm(differentProfile, { recursive: true, force: true });
+  }
+
+  // A game link from the browser extension. The id is syntactically valid and names no game,
+  // so the renderer's fetch ends in its error notification with or without a network.
+  const GAME_LINK = "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2F00000000";
+  const handoffExitCheck =
+    "a second process started with a game link hands it to the primary and exits by itself";
+  const handoffArrivalCheck = "the primary opens the handed-over game link";
+  let handed;
+  let handoffStep = "launch the process with a game link";
+  try {
+    handed = launchInstanceProbe(appEnvironment, [GAME_LINK]);
+    handoffStep = "wait for the link process to exit";
+    await handed.waitForExit();
+    instanceCheck(
+      handed.child.exitCode === 0 && !handed.stdout().includes("Finished rust initialization"),
+      handoffExitCheck,
+      `exit code ${handed.child.exitCode}, signal ${handed.child.signalCode}: ${handed.stdout()}`,
+    );
+    handoffStep = "wait for the primary to show the link being opened";
+    await waitFor(
+      "the primary to show the handed-over link being opened",
+      () =>
+        session.execute(
+          "const text = document.body.innerText;" +
+            "return text.includes('Opening game') || " +
+            "text.includes('Could not open the game from Lichess');",
+        ),
+      { timeoutMs: INSTANCE_PROBE_TIMEOUT_MS },
+    );
+    instanceCheck(true, handoffArrivalCheck);
+  } catch (error) {
+    instanceSetupFailure([handoffExitCheck, handoffArrivalCheck], handoffStep, error);
+  } finally {
+    if (handed) await stopLaunchedChild(handed.child);
+  }
+
+  const coldLinkCheck =
+    "a process started with a game link queues it before it finishes initializing";
+  let coldProfile;
+  let cold;
+  let coldStep = "create the cold-start profile";
+  try {
+    coldProfile = await mkdtemp(join(tmpdir(), "chessfable-link-probe-"));
+    registerTemporaryProfile(coldProfile);
+    coldStep = "wait for cold-start initialization";
+    cold = launchInstanceProbe({ ...appEnvironment, HOME: coldProfile }, [GAME_LINK]);
+    await cold.waitForLine("Finished rust initialization");
+    const output = cold.stdout();
+    const queued = output.indexOf("queued a game link from the command line");
+    instanceCheck(
+      queued !== -1 &&
+        queued < output.indexOf("Finished rust initialization") &&
+        !output.includes(GAME_LINK),
+      coldLinkCheck,
+      output,
+    );
+  } catch (error) {
+    instanceSetupFailure([coldLinkCheck], coldStep, error);
+  } finally {
+    if (cold) await stopLaunchedChild(cold.child);
+    if (coldProfile) await rm(coldProfile, { recursive: true, force: true });
   }
 
   const reloadCheck = "a real document reload cancels the previous document's retained reservation";

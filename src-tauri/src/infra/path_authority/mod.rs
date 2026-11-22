@@ -47,6 +47,7 @@ mod catalog_install;
 mod databases;
 mod dialogs;
 mod engine_attachments;
+mod handoff_endpoint;
 mod listing;
 mod registry;
 mod shared;
@@ -66,6 +67,7 @@ use engine_attachments::{
 };
 #[cfg(all(test, target_os = "macos"))]
 pub(crate) use engine_attachments::{set_engine_launch_failure, EngineLaunchFailure};
+pub(crate) use handoff_endpoint::{HandoffDirectory, HandoffEndpoint, PublishedEndpoint};
 pub(crate) use listing::CapabilityDirectory;
 #[cfg(test)]
 use listing::DirectoryListingSnapshot;

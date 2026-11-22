@@ -898,6 +898,47 @@ impl MainWindowReveal {
     }
 }
 
+/// This instance's listener for game links from second launches, when it has one: only the
+/// holder of the application data lock listens. Managed by setup, stopped on application exit.
+struct GameLinkHandoff(Option<infra::game_link_handoff::HandoffOwner>);
+
+impl GameLinkHandoff {
+    /// A failure to listen is logged and leaves the application without handoff: a second launch
+    /// then shows the "already running" dialog, as it did before handoff existed.
+    fn start<R: tauri::Runtime>(
+        app: &tauri::AppHandle<R>,
+        app_data: &crate::infra::path_authority::AppDataDir,
+        app_data_locked: bool,
+    ) -> Self {
+        if !app_data_locked {
+            return Self(None);
+        }
+        let intake = app.clone();
+        let started = app_data.handoff_directory().and_then(|directory| {
+            infra::game_link_handoff::HandoffOwner::start(
+                directory,
+                Arc::new(move |raw: &str| accept_game_link(&intake, raw)),
+            )
+        });
+        match started {
+            Ok(owner) => Self(Some(owner)),
+            Err(error) => {
+                log::warn!(
+                    "game links from a second launch are unavailable: {}",
+                    error.diagnostic()
+                );
+                Self(None)
+            }
+        }
+    }
+
+    async fn shutdown(&self) {
+        if let Some(owner) = &self.0 {
+            owner.shutdown().await;
+        }
+    }
+}
+
 /// The one intake every game-link arrival ends in: parse and enqueue, then tell the main window
 /// and ask for the user's attention. A link that arrives before the window exists or before the
 /// renderer listens is found by the renderer's drain at startup, so the event is only a wake-up.
@@ -1731,6 +1772,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 crate::infra::path_authority::InstanceAdmission::Unguarded => false,
                 crate::infra::path_authority::InstanceAdmission::HeldElsewhere => {
+                    // A launch that only carries a game link hands it to the running instance
+                    // and leaves without a dialog; every other refused launch is told why.
+                    if infra::game_link_handoff::hand_launch_link_to_owner(&app_data) {
+                        std::process::exit(0);
+                    }
                     use tauri_plugin_dialog::DialogExt;
                     app.dialog()
                         .message(
@@ -1742,6 +1788,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     return Ok(());
                 }
             };
+            app.manage(GameLinkHandoff::start(
+                app.handle(),
+                &app_data,
+                app_data_locked,
+            ));
             app.state::<AppState>()
                 .credentials
                 .initialize(&app_data)
@@ -1902,9 +1953,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // macOS delivers a clicked link to the running or starting application as an event,
             // never as an argument.
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Opened { urls } = &event {
-                for url in urls {
-                    accept_game_link(app, url.as_str());
+            {
+                if let tauri::RunEvent::Opened { urls } = &event {
+                    for url in urls {
+                        accept_game_link(app, url.as_str());
+                    }
                 }
             }
             let tauri::RunEvent::ExitRequested { api, .. } = &event else {
@@ -1930,6 +1983,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let cleanup = tauri::async_runtime::spawn({
                     let app_handle = app_handle.clone();
                     async move {
+                        // First, so a launch during shutdown starts on its own instead of
+                        // handing its link to an instance that is leaving.
+                        if let Some(handoff) = app_handle.try_state::<GameLinkHandoff>() {
+                            handoff.shutdown().await;
+                        }
                         let state = app_handle.state::<AppState>();
                         shutdown_with_catalog_authority(
                             shutdown_backend_with_attachments(
@@ -4167,6 +4225,12 @@ mod blocking_offload_scans {
             "                crate::infra::path_authority::InstanceAdmission::HeldElsewhere => {",
         );
         assert!(held.trim_end().ends_with("return Ok(());"));
+        // The refused launch tries to hand its game link over before it shows the dialog, and
+        // leaves through the same hook-skipping exit when the running instance took the link.
+        let handed = held
+            .find("if infra::game_link_handoff::hand_launch_link_to_owner(&app_data) {\n                        std::process::exit(0);\n                    }")
+            .expect("the refused launch hands its game link to the running instance");
+        assert!(handed < held.find("use tauri_plugin_dialog::DialogExt;").unwrap());
         assert!(held.contains("use tauri_plugin_dialog::DialogExt;"));
         let compact: String = held.chars().filter(|c| !c.is_whitespace()).collect();
         let compact_contains_call = |call: &str| {
@@ -4191,6 +4255,16 @@ mod blocking_offload_scans {
         assert!(!held
             .lines()
             .any(|line| line.trim_start().starts_with("log::")));
+        // Only an admitted instance listens for handed-over links, as its first act after
+        // admission and before `app_data` is given away.
+        let listening = "app.manage(GameLinkHandoff::start(\n                app.handle(),\n                &app_data,\n                app_data_locked,\n            ));";
+        assert_eq!(setup.matches("GameLinkHandoff::start(").count(), 1);
+        assert!(setup[admission..]
+            .split_once("\n            };\n")
+            .expect("the admission match ends")
+            .1
+            .trim_start()
+            .starts_with(listening));
         let returned = setup.find("return Ok(());").unwrap();
         assert!(admission < returned);
         assert!(returned < setup.find(".credentials").unwrap());
