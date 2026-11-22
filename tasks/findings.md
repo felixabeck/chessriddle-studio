@@ -28547,3 +28547,19 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Open question:** where the shared behaviour lives. One wrapper for the app's popovers that also closes on Escape from the trigger, or the same handling at each use. The wrapper must not close an outer popover when Escape was meant for something opened from inside it (the explorer filters open a date picker in a portal of its own).
 * **Fix:** decide the above, route the popovers through it, and prove it per popover: Escape right after opening closes it, and Escape inside a nested picker closes only the picker. `e2e/chessriddle-training.spec.ts` presses Enter and Escape at the freshly opened motif picker without waiting; look at it in the same change.
 * **Found by:** Claude Code (Fable 5.2), 2026-11-22, review of the repair of f-20261122-10 (review-tests and review-root-cause, agy).
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### The opponent Prepare-on-board e2e test fails in CI: Escape leaves the explorer Filters popover open
+
+* **ID:** f-20261122-12 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45064671308 (job 137338038364, head b7b69fd8d, `Test` workflow `e2e` job)
+* **Where:** `e2e/database-files.spec.ts:4175` (`database-files: Prepare on board shows a linked opponent's over-the-board and online games side by side`), assertion at `:4271-4272`: after clicking the second source's `Filters:` button and checking its radios, `page.keyboard.press("Escape")` is expected to remove `[data-explorer-filters]`; the popover belongs to the board explorer source header added in `4cc4891de` (feat(board): show an opponent's online games beside the over-the-board games).
+* **Defect:** in hosted CI the popover is still present after Escape for the whole 8 s timeout (`locator('[data-explorer-filters]')` resolved to 1 element 20 times), so the required `e2e` job on `master` is red and every push from any checkout is refused by `pnpm ci:remote:check`. The same test passed in the local e2e container on 2026-11-22 (drain session gate at 2d05dbd57, 501+ passed), so the failure is timing- or focus-dependent rather than a deterministic break.
+* **Failure scenario:** a push runs `pnpm ci:remote:check` against `master` at b7b69fd8d: `e2e: failure (run 45064671308)` refuses it. In the test, the Escape keydown reaches the page before the popover dropdown has focus or before its close handler is attached, so the dropdown never closes.
+* **Spotted outside diff:** found 2026-11-22 by the f-20261122-03 drain session's pre-push remote CI check; that session's diff (Accounts page, Lichess sync) does not touch the board explorer.
+* **Found by:** Claude Code (Opus 5.5), drain session 5b4039e1-fa52-4cba-816a-4b3fd15c9104, 2026-11-22.
+* **Filed from:** 5b4039e1-fa52-4cba-816a-4b3fd15c9104
