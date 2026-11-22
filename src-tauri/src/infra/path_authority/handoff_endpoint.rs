@@ -33,10 +33,13 @@ pub(crate) struct HandoffEndpoint {
 #[derive(Debug)]
 pub(crate) struct HandoffDirectory(File);
 
-/// The file this process published, by identity, so that only that file is removed again.
+/// The file this process published, so that only that file is removed again. The file identity
+/// alone does not name it: once a later owner has removed this file, the filesystem may hand
+/// the same identity to the file that owner creates. The token is never issued twice.
 #[derive(Debug)]
 pub(crate) struct PublishedEndpoint {
     identity: (u64, u64),
+    endpoint: HandoffEndpoint,
 }
 
 impl AppDataDir {
@@ -63,17 +66,20 @@ impl HandoffDirectory {
         let bytes = serde_json::to_vec(endpoint)
             .map_err(|_| Error::InvalidInput("the handoff endpoint cannot be encoded".into()))?;
         let (mut file, identity) = create_regular_at(&self.0, Self::leaf())?;
-        let published = PublishedEndpoint { identity };
         if let Err(error) = file.write_all(&bytes).and_then(|()| file.flush()) {
             drop(file);
+            // The half-written file is ours by identity; it has no readable token yet.
             return Err(created_leaf_error_after_cleanup(
                 error.into(),
-                self.remove(&published),
+                remove_entry_at(&self.0, Self::leaf(), identity, false),
                 "handoff endpoint",
                 Self::leaf(),
             ));
         }
-        Ok(published)
+        Ok(PublishedEndpoint {
+            identity,
+            endpoint: endpoint.clone(),
+        })
     }
 
     /// Reads the published endpoint; `None` when no file exists. A file that is too large, not
@@ -96,9 +102,18 @@ impl HandoffDirectory {
             .map_err(|_| Error::InvalidInput("the handoff endpoint file is incomplete".into()))
     }
 
-    /// Removes the endpoint file only while it is still the one this process published.
+    /// Removes the endpoint file only while it is still the one this process published: it
+    /// must carry this process's port and token, and be the same file. No file is no failure.
     pub(crate) fn remove(&self, published: &PublishedEndpoint) -> Result<(), Error> {
-        remove_entry_at(&self.0, Self::leaf(), published.identity, false)
+        match self.read()? {
+            None => Ok(()),
+            Some(current) if current == published.endpoint => {
+                remove_entry_at(&self.0, Self::leaf(), published.identity, false)
+            }
+            Some(_) => Err(Error::InvalidInput(
+                "the handoff endpoint belongs to another instance".into(),
+            )),
+        }
     }
 }
 
@@ -175,19 +190,48 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let directory = directory(root.path());
         let ours = directory.publish(&endpoint()).unwrap();
-        // Keep our file's inode alive, so the next file cannot reuse its identity.
-        let _ours_open = std::fs::File::open(root.path().join(ENDPOINT_LEAF)).unwrap();
-        // A later owner removed our stale file and published its own.
+        // A later owner removed our stale file and published its own. Nothing keeps our file's
+        // inode alive here, so the filesystem is free to give the new file the same identity.
         directory.remove_stale().unwrap();
         let theirs = HandoffEndpoint {
             port: 45_124,
             token: "cd".repeat(32),
         };
-        let published = directory.publish(&theirs).unwrap();
-        assert_ne!(published.identity, ours.identity);
+        directory.publish(&theirs).unwrap();
 
         assert!(directory.remove(&ours).is_err());
         assert_eq!(directory.read().unwrap(), Some(theirs));
+    }
+
+    #[test]
+    fn removal_is_refused_for_the_same_file_rewritten_by_another_instance() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = directory(root.path());
+        let ours = directory.publish(&endpoint()).unwrap();
+        let theirs = HandoffEndpoint {
+            port: 45_124,
+            token: "cd".repeat(32),
+        };
+        // Same file, same identity, another instance's token.
+        std::fs::write(
+            root.path().join(ENDPOINT_LEAF),
+            serde_json::to_vec(&theirs).unwrap(),
+        )
+        .unwrap();
+
+        assert!(directory.remove(&ours).is_err());
+        assert_eq!(directory.read().unwrap(), Some(theirs));
+    }
+
+    #[test]
+    fn removing_a_published_endpoint_that_is_already_gone_succeeds() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = directory(root.path());
+        let ours = directory.publish(&endpoint()).unwrap();
+        directory.remove_stale().unwrap();
+
+        directory.remove(&ours).unwrap();
+        assert_eq!(directory.read().unwrap(), None);
     }
 
     #[test]
