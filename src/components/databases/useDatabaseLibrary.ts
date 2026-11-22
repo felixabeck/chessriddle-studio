@@ -2,7 +2,7 @@ import { tauri } from "@/platform/tauri";
 import { listingFailure } from "@/components/files/listingFailure";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useStore } from "jotai";
 import {
     useCallback,
     useEffect,
@@ -23,7 +23,6 @@ import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/no
 import {
     databaseConversionStateAtom,
     databaseConversionRefreshFailedAtom,
-    forgetExplorerDatabaseAtom,
     referenceDbAtom,
     runDatabaseConversion,
 } from "@/state/atoms";
@@ -38,6 +37,7 @@ import {
     refreshAfterDatabaseConversion,
 } from "./databaseMutation";
 import { databaseLoadFailureMessage } from "./databaseLoadFailure";
+import { forgetDeletedDatabase } from "./forgetDeletedDatabase";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { standaloneDatabases } from "@/components/library/libraryData";
 import { openDatabaseTable } from "@/components/library/openDatabaseTable";
@@ -86,7 +86,7 @@ export function useDatabaseLibrary(
 
     const [open, setOpen] = useState(false);
     const [referenceDatabase, setReferenceDatabase] = useAtom(referenceDbAtom);
-    const forgetExplorerDatabase = useSetAtom(forgetExplorerDatabaseAtom);
+    const store = useStore();
     const [conversionState, setConversionState] = useAtom(databaseConversionStateAtom);
     const [importRefreshFailed, setImportRefreshFailed] = useAtom(
         databaseConversionRefreshFailedAtom,
@@ -129,29 +129,7 @@ export function useDatabaseLibrary(
                     active: activeDatabaseViewStore.getState().database,
                 }).selected,
         );
-        if (sameDatabaseHandle(referenceDatabase, deleted)) {
-            setReferenceDatabase(null);
-            void tauri.clearGames();
-        }
-        forgetExplorerDatabase(deleted);
-        if (sameDatabaseHandle(activeDatabaseViewStore.getState().database?.file, deleted)) {
-            activeDatabaseViewStore.getState().clearDatabase();
-        }
-        // Clear every result-set cache bound to this exact opaque handle. A later
-        // revalidation must never resurrect data belonging to the deleted database.
-        void mutateCache(
-            (key) =>
-                Array.isArray(key) &&
-                key.length > 1 &&
-                typeof key[1] === "object" &&
-                key[1] !== null &&
-                "id" in key[1] &&
-                "kind" in key[1] &&
-                key[1].kind === "database" &&
-                sameDatabaseHandle(key[1] as DatabaseHandle, deleted),
-            undefined,
-            { revalidate: false },
-        );
+        forgetDeletedDatabase(deleted, store, mutateCache);
         void revalidateDatabases();
     }
 

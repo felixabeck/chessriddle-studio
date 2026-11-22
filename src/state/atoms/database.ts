@@ -18,6 +18,7 @@ import {
     withExplorerFilters,
     withoutExplorerFilters,
 } from "../explorerFilters";
+import { type OpponentLink, opponentLinksSchema } from "../opponentLinks";
 import {
     fileWorkspaceHandleSchema,
     databaseHandleSchema,
@@ -130,6 +131,20 @@ export const explorerDatabaseFiltersAtom = documentPreferences.atomWithStorage<
     [],
     createZodStorage(explorerFilterEntriesSchema, localStorage),
 );
+
+/**
+ * The online accounts linked to database players, least recently changed first. A link names its
+ * player and its database file by value; both are matched against what a database lists whenever
+ * they are read, so nothing here keeps a path capability alive.
+ */
+export const opponentLinksAtom = documentPreferences.atomWithStorage<OpponentLink[]>(
+    "opponent-links",
+    [],
+    createZodStorage(opponentLinksSchema, localStorage),
+);
+
+/** Running downloads of online games by link id, each with its ticket once the import has one. */
+export const opponentImportsAtom = atom<ReadonlyMap<string, string | null>>(new Map());
 
 /**
  * The app-wide second database of the board explorer, shown beside the reference. What a panel

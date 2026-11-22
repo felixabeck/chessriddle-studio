@@ -1,5 +1,41 @@
-import type { OpponentImportOutcome, OpponentImportRequest } from "@/bindings";
+import type { createStore } from "jotai";
+import type { ScopedMutator } from "swr";
+import type {
+    DatabaseDescriptor,
+    DatabaseHandle,
+    ErrorPayload,
+    OpponentAccount,
+    OpponentImportOutcome,
+    OpponentImportRequest,
+} from "@/bindings";
+import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
+import { errorUnlessCancelled, normalizeError } from "@/platform/errors";
 import { tauri, withDownloadTicket } from "@/platform/tauri";
+import { opponentImportsAtom, opponentLinksAtom, sessionsAtom } from "@/state/atoms";
+import {
+    opponentDatabaseFilename,
+    opponentDatabasePrefix,
+    opponentSinceUnixSeconds,
+    withOpponentDatabase,
+    withoutOpponentLink,
+} from "@/state/opponentLinks";
+import { deleteDatabaseAndInvalidate } from "./databaseMutation";
+import { forgetDeletedDatabase } from "./forgetDeletedDatabase";
+
+type Store = ReturnType<typeof createStore>;
+
+/** What the flow needs from the place that starts it; both outlive the starting component. */
+export type OpponentFlowDeps = { store: Store; mutateCache: ScopedMutator };
+
+export type OpponentAccountFailure = "notFound" | "rateLimited" | "signIn" | "other";
+
+export type OpponentImportResult =
+    /** `leftovers` counts databases of earlier runs that could not be deleted. */
+    | { kind: "imported"; games: number; merged: boolean; leftovers: number }
+    | { kind: "noGames" }
+    | { kind: "accountFailed"; account: OpponentAccount; reason: OpponentAccountFailure }
+    | { kind: "cancelled" }
+    | { kind: "failed"; error: unknown };
 
 /**
  * Runs the native import of an opponent's online games. `onTicket` receives the id the import
@@ -13,4 +49,184 @@ export function importOpponentGames(
         onTicket(ticket);
         return tauri.importOpponentGames(request, ticket);
     });
+}
+
+/** Which message an account's export failure gets. */
+export function opponentAccountFailure(error: ErrorPayload): OpponentAccountFailure {
+    const rejection = error.remoteHttpRejection;
+    if (rejection?.status === 404) return "notFound";
+    if (rejection?.status === 429) return "rateLimited";
+    // Any other status answered a request with a token too, so the flag alone proves nothing.
+    if (rejection?.authorizationSent && (rejection.status === 401 || rejection.status === 403)) {
+        return "signIn";
+    }
+    return !rejection && error.category === "authentication" ? "signIn" : "other";
+}
+
+const running = new Map<string, Promise<OpponentImportResult>>();
+
+function setInFlight(store: Store, linkId: string, ticket: string | null | undefined): void {
+    const next = new Map(store.get(opponentImportsAtom));
+    if (ticket === undefined) next.delete(linkId);
+    else next.set(linkId, ticket);
+    store.set(opponentImportsAtom, next);
+}
+
+/** The link's database files as the database folder lists them now. */
+async function listLinkDatabases(linkId: string) {
+    const { root } = await tauri.getDatabaseWorkspace();
+    const listing = await tauri.listWorkspaceDatabases(root);
+    const prefix = opponentDatabasePrefix(linkId);
+    return {
+        root,
+        databases: listing.entries.filter((entry) => entry.filename.startsWith(prefix)),
+    };
+}
+
+/** True once the database is gone, including a deletion that reported its error afterwards. */
+async function deleteOpponentDatabase(deps: OpponentFlowDeps, handle: DatabaseHandle) {
+    try {
+        await deleteDatabaseAndInvalidate(handle, tauri.deleteDatabase, (deleted) =>
+            forgetDeletedDatabase(deleted, deps.store, deps.mutateCache),
+        );
+        return true;
+    } catch (cause) {
+        return normalizeError(cause).category === "applied-despite-error";
+    }
+}
+
+/** Deletes each database and returns how many are still there. */
+async function deleteAll(deps: OpponentFlowDeps, databases: readonly DatabaseDescriptor[]) {
+    let remaining = 0;
+    for (const database of databases) {
+        if (!(await deleteOpponentDatabase(deps, database.handle))) remaining += 1;
+    }
+    return remaining;
+}
+
+async function importLink(
+    deps: OpponentFlowDeps,
+    linkId: string,
+    title: string,
+): Promise<OpponentImportResult> {
+    const { store } = deps;
+    const link = store.get(opponentLinksAtom).find((other) => other.id === linkId);
+    if (!link) return { kind: "failed", error: new Error("unknown opponent link") };
+    const { root, databases } = await listLinkDatabases(linkId);
+    // Files of an interrupted earlier run. One that cannot be deleted does not stop this run.
+    let leftovers = await deleteAll(
+        deps,
+        databases.filter((entry) => entry.filename !== link.database),
+    );
+    const nonce = crypto.randomUUID().slice(0, 8);
+    const filename = opponentDatabaseFilename(linkId, nonce);
+    const outcome = await importOpponentGames(
+        {
+            root,
+            filename,
+            title,
+            accounts: link.accounts,
+            sinceUnixSeconds: opponentSinceUnixSeconds(link.filter, new Date()),
+            timeControls: link.filter.timeControls,
+            lichessHandle:
+                store.get(sessionsAtom).find((session) => session.lichess?.handle)?.lichess
+                    ?.handle ?? null,
+        },
+        (ticket) => setInFlight(store, linkId, ticket),
+    );
+    if (outcome.kind === "accountFailed") {
+        return {
+            kind: "accountFailed",
+            account: outcome.account,
+            reason: opponentAccountFailure(outcome.error),
+        };
+    }
+    if (outcome.database === null) return { kind: "noGames" };
+    // The link switches first; the previous database goes only once the new one is in place.
+    store.set(opponentLinksAtom, (links) => withOpponentDatabase(links, linkId, filename));
+    const previous = databases.find((entry) => entry.filename === link.database);
+    if (previous && !(await deleteOpponentDatabase(deps, previous.handle))) leftovers += 1;
+    return {
+        kind: "imported",
+        games: outcome.accounts.reduce((sum, account) => sum + account.games, 0),
+        merged: outcome.merged,
+        leftovers,
+    };
+}
+
+/**
+ * Downloads the link's online games into a fresh database. A second start for the same link
+ * joins the running one. The previous database and the link stay as they were unless the run
+ * imported games.
+ */
+export function runOpponentImport(
+    deps: OpponentFlowDeps,
+    linkId: string,
+    title: string,
+): Promise<OpponentImportResult> {
+    const joined = running.get(linkId);
+    if (joined) return joined;
+    setInFlight(deps.store, linkId, null);
+    const run = importLink(deps, linkId, title)
+        .catch(
+            (error): OpponentImportResult =>
+                errorUnlessCancelled(error) === null
+                    ? { kind: "cancelled" }
+                    : { kind: "failed", error },
+        )
+        .finally(() => {
+            running.delete(linkId);
+            setInFlight(deps.store, linkId, undefined);
+            void deps.mutateCache(DATABASE_LIST_KEY);
+        });
+    running.set(linkId, run);
+    return run;
+}
+
+/** Asks the running import of the link to stop; its own result reports the cancellation. */
+export async function cancelOpponentImport(store: Store, linkId: string): Promise<void> {
+    const ticket = store.get(opponentImportsAtom).get(linkId);
+    if (ticket) await tauri.cancelDownload(ticket);
+}
+
+/**
+ * Deletes the link's online games and keeps its accounts. Throws, leaving the link as it was,
+ * when the database it points at could not be deleted. Returns how many files of interrupted
+ * runs could not be deleted; those keep neither the games nor the link.
+ */
+export async function removeOpponentGames(deps: OpponentFlowDeps, linkId: string): Promise<number> {
+    const leftovers = await deleteLinkDatabases(deps, linkId);
+    deps.store.set(opponentLinksAtom, (links) => withOpponentDatabase(links, linkId, undefined));
+    return leftovers;
+}
+
+/** Deletes the link's online games and then the link. Throws and returns as above. */
+export async function unlinkOpponent(deps: OpponentFlowDeps, linkId: string): Promise<number> {
+    const leftovers = await deleteLinkDatabases(deps, linkId);
+    deps.store.set(opponentLinksAtom, (links) => withoutOpponentLink(links, linkId));
+    return leftovers;
+}
+
+async function deleteLinkDatabases(deps: OpponentFlowDeps, linkId: string): Promise<number> {
+    if (running.has(linkId)) throw new Error("opponent import is running");
+    const link = deps.store.get(opponentLinksAtom).find((other) => other.id === linkId);
+    try {
+        const { databases } = await listLinkDatabases(linkId);
+        const current = databases.find((entry) => entry.filename === link?.database);
+        if (current) {
+            try {
+                await deleteDatabaseAndInvalidate(current.handle, tauri.deleteDatabase, (deleted) =>
+                    forgetDeletedDatabase(deleted, deps.store, deps.mutateCache),
+                );
+            } catch (cause) {
+                if (normalizeError(cause).category !== "applied-despite-error") throw cause;
+            }
+        }
+        return await deleteAll(
+            deps,
+            databases.filter((entry) => entry !== current),
+        );
+    } finally {
+        void deps.mutateCache(DATABASE_LIST_KEY);
+    }
 }
