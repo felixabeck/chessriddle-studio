@@ -22,6 +22,14 @@ const MAX_ATTEMPT_ID_CHARS: usize = 64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SignInKind {
     ChatGpt,
+    Grok,
+}
+
+/// Whether `id` can name an attempt: short, and without control characters.
+pub(crate) fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.chars().count() <= MAX_ATTEMPT_ID_CHARS
+        && !id.chars().any(char::is_control)
 }
 
 struct Attempt {
@@ -74,10 +82,7 @@ impl SignInAttempts {
         F: FnOnce(CancellationToken) -> Fut,
         Fut: Future<Output = Result<T, CoachError>>,
     {
-        if id.is_empty()
-            || id.chars().count() > MAX_ATTEMPT_ID_CHARS
-            || id.chars().any(char::is_control)
-        {
+        if !valid_id(id) {
             return Err(CoachError::InvalidInput);
         }
         let cancellation = CancellationToken::new();
@@ -270,6 +275,22 @@ mod tests {
         assert_eq!(within(running).await.unwrap(), Err(CoachError::Cancelled));
         // With nothing running it returns at once.
         within(attempts.shutdown()).await;
+    }
+
+    #[tokio::test]
+    async fn sign_ins_of_different_kinds_run_side_by_side() {
+        let attempts = Arc::new(SignInAttempts::default());
+        let (started, mut starts) = tokio::sync::mpsc::unbounded_channel();
+        let chatgpt = tokio::spawn(waiting(attempts.clone(), "chatgpt", "main", started));
+        assert_eq!(starts.recv().await, Some("chatgpt"));
+        let grok = attempts
+            .run(SignInKind::Grok, "grok", "main", |_| async { Ok(()) })
+            .await;
+        assert_eq!(grok, Ok(()));
+        // The other kind's attempt was not ended by it.
+        assert!(!attempts.is_idle());
+        attempts.cancel("chatgpt");
+        assert_eq!(within(chatgpt).await.unwrap(), Err(CoachError::Cancelled));
     }
 
     #[tokio::test]

@@ -50,6 +50,16 @@
   line-height: 1;
 }
 
+/* A code the user types elsewhere: large, evenly spaced and selectable. */
+.signInCode {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xl);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-align: center;
+  user-select: all;
+}
+
 .searchRow {
   flex: 0 0 auto;
 }

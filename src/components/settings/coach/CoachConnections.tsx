@@ -1,9 +1,9 @@
-import { Alert, Badge, Button, Group, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Button, Group, Loader, Stack, Text } from "@mantine/core";
 import { useAtom } from "jotai";
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { CoachError, ConnectionSummary, ModelList } from "@/bindings";
+import type { CoachError, ConnectionKind, ConnectionSummary, ModelList } from "@/bindings";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { coachErrorCode } from "@/platform/coach";
 import { tauri } from "@/platform/tauri";
@@ -13,7 +13,7 @@ import ConfirmModal, { durabilityUncertainMessage } from "../../common/ConfirmMo
 import { IconAction } from "../../common/IconAction";
 import classes from "../SettingsPage.module.css";
 import { CoachConnectionModal } from "./CoachConnectionModal";
-import { useChatGptSignIn } from "./useChatGptSignIn";
+import { useChatGptSignIn, useGrokSignIn } from "./useSignIn";
 import { useCoachErrorMessages } from "./useCoachErrorMessages";
 
 type CheckResult = { models: ModelList } | { error: CoachError };
@@ -33,7 +33,8 @@ function ConnectionRow({
   const [checked, setChecked] = useState<CheckResult | null>(null);
   const needsRepair = connection.status === "needsRepair";
   const signInAgain = connection.status === "signInAgain";
-  const signedIn = connection.kind === "chatGpt";
+  const signedIn = connection.kind !== "api";
+  const grok = connection.kind === "grok";
 
   const check = () =>
     run(async () => {
@@ -64,15 +65,18 @@ function ConnectionRow({
           {signInAgain && (
             <Badge color="warning">{t("Settings.Coach.Connection.SignInAgain")}</Badge>
           )}
+          {grok && <Badge color="gray">{t("Settings.Coach.Grok.Unofficial")}</Badge>}
         </Group>
         <Text size="xs" c="dimmed" className="wrap-anywhere">
           {needsRepair
             ? t("Coach.Error.NeedsRepair")
             : signInAgain
               ? t("Coach.Error.SignInAgain")
-              : signedIn
-                ? (connection.account ?? t("Coach.Plan.Using"))
-                : connection.address}
+              : grok
+                ? (connection.account ?? t("Settings.Coach.Grok.Note"))
+                : signedIn
+                  ? (connection.account ?? t("Coach.Plan.Using"))
+                  : connection.address}
         </Text>
         <div role="status" aria-live="polite">
           {checked && "models" in checked && (
@@ -92,7 +96,7 @@ function ConnectionRow({
         </div>
       </div>
       <Group gap="xs" wrap="nowrap">
-        {signedIn && !signInAgain && (
+        {connection.kind === "chatGpt" && !signInAgain && (
           <Button variant="subtle" size="xs" onClick={openCoachUsage}>
             {t("Coach.Plan.ManageUsage")}
           </Button>
@@ -136,8 +140,11 @@ export function CoachConnections() {
   const [state, reload] = useAtom(coachConnectionsAtom);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [durabilityUncertain, setDurabilityUncertain] = useState(false);
-  /** The label of a removed sign-in whose provider did not confirm the sign-out. */
-  const [unconfirmedSignOut, setUnconfirmedSignOut] = useState<string | null>(null);
+  /** A removed sign-in whose provider did not confirm the sign-out. */
+  const [unconfirmedSignOut, setUnconfirmedSignOut] = useState<{
+    label: string;
+    kind: ConnectionKind;
+  } | null>(null);
   const [planNoticeSeen, setPlanNoticeSeen] = useAtom(coachPlanNoticeSeenAtom);
   const [planNotice, setPlanNotice] = useState(false);
 
@@ -150,11 +157,14 @@ export function CoachConnections() {
     // The provider asks for this notice at the first sign-in, and only then.
     if (!planNoticeSeen) setPlanNotice(true);
   });
+  const grokSignIn = useGrokSignIn((saved) => settled(saved.durabilityUncertain));
   const connections = state.status === "ready" ? state.connections : [];
-  // One ChatGPT connection: the button stays for a first sign-in and for signing in again.
-  const chatGptReady = connections.some(
-    (connection) => connection.kind === "chatGpt" && connection.status === "ready",
-  );
+  // One connection per sign-in: its button stays for a first sign-in and for signing in again.
+  const signedInWith = (kind: ConnectionKind) =>
+    connections.some((connection) => connection.kind === kind && connection.status === "ready");
+  const chatGptReady = signedInWith("chatGpt");
+  const grokReady = signedInWith("grok");
+  const grokCode = grokSignIn.state.status === "waiting" ? grokSignIn.state.shown : null;
 
   return (
     <Stack gap={0} mb="lg">
@@ -198,11 +208,15 @@ export function CoachConnections() {
         <Alert color="warning" px="xs" mt="sm" role="status">
           <Group justify="space-between" gap="sm">
             <Text size="sm">
-              {t("Settings.Coach.Connection.RevocationPending", { label: unconfirmedSignOut })}
+              {t("Settings.Coach.Connection.RevocationPending", {
+                label: unconfirmedSignOut.label,
+              })}
             </Text>
-            <Button variant="default" size="xs" onClick={openCoachUsage}>
-              {t("Coach.Plan.ManageUsage")}
-            </Button>
+            {unconfirmedSignOut.kind === "chatGpt" && (
+              <Button variant="default" size="xs" onClick={openCoachUsage}>
+                {t("Coach.Plan.ManageUsage")}
+              </Button>
+            )}
           </Group>
         </Alert>
       )}
@@ -221,6 +235,11 @@ export function CoachConnections() {
           {messages[signIn.state.error]}
         </Alert>
       )}
+      {grokSignIn.state.status === "failed" && (
+        <Alert color="danger" px="xs" mt="sm" role="alert">
+          {messages[grokSignIn.state.error]}
+        </Alert>
+      )}
       <Group mt="md">
         {!chatGptReady && (
           <Button
@@ -229,6 +248,16 @@ export function CoachConnections() {
             onClick={() => void signIn.start()}
           >
             {t("Settings.Coach.SignIn.ChatGpt")}
+          </Button>
+        )}
+        {!grokReady && (
+          <Button
+            variant="default"
+            disabled={state.status !== "ready"}
+            loading={grokSignIn.state.status === "waiting"}
+            onClick={() => void grokSignIn.start()}
+          >
+            {t("Settings.Coach.SignIn.Grok")}
           </Button>
         )}
         <Button
@@ -266,6 +295,36 @@ export function CoachConnections() {
           </Stack>
         </AppModal>
       )}
+      {grokCode && (
+        // Closing the dialog ends the sign-in: nothing is waited for behind the user's back.
+        <AppModal opened onClose={grokSignIn.cancel} title={t("Settings.Coach.SignIn.Grok")}>
+          <Stack>
+            <Text>{t("Settings.Coach.Grok.Code.Enter")}</Text>
+            <Text
+              className={classes.signInCode}
+              role="group"
+              aria-label={t("Settings.Coach.Grok.Code.Label")}
+            >
+              {grokCode.userCode}
+            </Text>
+            <Text size="sm" className="wrap-anywhere">
+              {t("Settings.Coach.Grok.Code.Page", { address: grokCode.verificationUrl })}
+            </Text>
+            <Group gap="xs" role="status">
+              <Loader size="xs" />
+              <Text size="sm">{t("Settings.Coach.Grok.Code.Waiting")}</Text>
+            </Group>
+            <Text size="xs" c="dimmed">
+              {t("Settings.Coach.Grok.Note")}
+            </Text>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={grokSignIn.cancel}>
+                {t("Common.Cancel")}
+              </Button>
+            </Group>
+          </Stack>
+        </AppModal>
+      )}
       {(dialog?.kind === "add" || dialog?.kind === "edit") && (
         <CoachConnectionModal
           connection={dialog.kind === "edit" ? dialog.connection : null}
@@ -287,7 +346,8 @@ export function CoachConnections() {
           if (dialog?.kind !== "remove") return;
           try {
             const removed = await tauri.coachRemoveConnection(dialog.connection.handle);
-            setUnconfirmedSignOut(removed.revocationPending ? dialog.connection.label : null);
+            const { label, kind } = dialog.connection;
+            setUnconfirmedSignOut(removed.revocationPending ? { label, kind } : null);
             settled(removed.durabilityUncertain);
           } catch (cause) {
             // The native list decides what is left, whatever the removal reported.

@@ -50,6 +50,8 @@ const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error
     ["coachModels", CoachCommandError],
     ["coachTurn", CoachCommandError],
     ["coachSignInChatgpt", CoachCommandError],
+    ["coachBeginGrokSignIn", CoachCommandError],
+    ["coachFinishGrokSignIn", CoachCommandError],
     ["coachCancelSignIn", CoachCommandError],
     ["coachOpenUsage", CoachCommandError],
 ]);

@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
     coachRemoveConnection: vi.fn(),
     coachModels: vi.fn(),
     coachSignInChatgpt: vi.fn(),
+    coachBeginGrokSignIn: vi.fn(),
+    coachFinishGrokSignIn: vi.fn(),
     coachCancelSignIn: vi.fn(),
     coachOpenUsage: vi.fn(),
     closeSplashscreen: vi.fn(),
@@ -197,6 +199,8 @@ test.each([
     "coachRemoveConnection",
     "coachModels",
     "coachSignInChatgpt",
+    "coachBeginGrokSignIn",
+    "coachFinishGrokSignIn",
     "coachCancelSignIn",
     "coachOpenUsage",
 ] as const)("%s uses the closed Coach boundary", async (command) => {
@@ -218,6 +222,10 @@ test.each([
                 return tauri.coachModels("handle");
             case "coachSignInChatgpt":
                 return tauri.coachSignInChatgpt("attempt");
+            case "coachBeginGrokSignIn":
+                return tauri.coachBeginGrokSignIn("attempt");
+            case "coachFinishGrokSignIn":
+                return tauri.coachFinishGrokSignIn("attempt");
             case "coachCancelSignIn":
                 return tauri.coachCancelSignIn("attempt");
             case "coachOpenUsage":
@@ -309,6 +317,8 @@ vi.mock("@/bindings/generated", () => ({
         coachRemoveConnection: mocks.coachRemoveConnection,
         coachModels: mocks.coachModels,
         coachSignInChatgpt: mocks.coachSignInChatgpt,
+        coachBeginGrokSignIn: mocks.coachBeginGrokSignIn,
+        coachFinishGrokSignIn: mocks.coachFinishGrokSignIn,
         coachCancelSignIn: mocks.coachCancelSignIn,
         coachOpenUsage: mocks.coachOpenUsage,
         closeSplashscreen: mocks.closeSplashscreen,

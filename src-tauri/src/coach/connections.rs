@@ -14,8 +14,10 @@ use super::{address::Address, error::CoachError};
 use crate::credentials::{CoachConnectionHandle, CoachCredentials, MAX_KEYRING_SECRET_UTF16_UNITS};
 
 pub(crate) const MAX_CONNECTIONS: usize = 16;
-/// The label of the one ChatGPT connection. The account is shown beside it.
+/// The labels of the sign-in connections, of which there is one each. The account is shown
+/// beside the label.
 const CHATGPT_LABEL: &str = "ChatGPT";
+const GROK_LABEL: &str = "Grok";
 const MAX_LABEL_CHARS: usize = 64;
 const MAX_KEY_BYTES: usize = 512;
 
@@ -30,6 +32,23 @@ pub(crate) enum Secret {
     },
     /// A sign-in with ChatGPT.
     ChatGpt(ChatGptSecret),
+    /// A sign-in with Grok.
+    Grok(GrokSecret),
+}
+
+/// What a Grok sign-in leaves on this computer. No `Debug`: it carries the refresh token.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrokSecret {
+    /// The token endpoint the provider named at the sign-in. It is checked again before every
+    /// use: a stored address is not trusted for what it was.
+    pub token_endpoint: String,
+    /// Absent once the provider has ended the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    /// For display only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 /// What a ChatGPT sign-in leaves on this computer. No `Debug`: it carries the refresh token.
@@ -50,6 +69,15 @@ pub(crate) struct ChatGptSecret {
 }
 
 impl Secret {
+    /// The refresh token of a sign-in; `None` for an address, and for a sign-in that has ended.
+    fn refresh_token_mut(&mut self) -> Option<&mut Option<String>> {
+        match self {
+            Self::Api { .. } => None,
+            Self::ChatGpt(secret) => Some(&mut secret.refresh_token),
+            Self::Grok(secret) => Some(&mut secret.refresh_token),
+        }
+    }
+
     fn encode(&self) -> Result<String, CoachError> {
         let encoded = serde_json::to_string(self).map_err(|_| CoachError::Storage)?;
         if encoded.encode_utf16().count() > MAX_KEYRING_SECRET_UTF16_UNITS {
@@ -68,6 +96,7 @@ impl Secret {
 pub(crate) enum ConnectionKind {
     Api,
     ChatGpt,
+    Grok,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
@@ -145,6 +174,28 @@ fn valid_key(key: Option<&str>) -> Result<Option<String>, CoachError> {
     Ok(Some(key.to_owned()))
 }
 
+fn signed_in_summary(
+    handle: CoachConnectionHandle,
+    kind: ConnectionKind,
+    label: String,
+    email: &Option<String>,
+    refresh_token: &Option<String>,
+) -> ConnectionSummary {
+    ConnectionSummary {
+        handle,
+        kind,
+        label,
+        address: None,
+        has_key: false,
+        account: email.clone(),
+        status: if refresh_token.is_some() {
+            ConnectionStatus::Ready
+        } else {
+            ConnectionStatus::SignInAgain
+        },
+    }
+}
+
 fn summary(
     handle: CoachConnectionHandle,
     label: String,
@@ -160,19 +211,20 @@ fn summary(
             account: None,
             status: ConnectionStatus::Ready,
         },
-        Some(Secret::ChatGpt(secret)) => ConnectionSummary {
+        Some(Secret::ChatGpt(secret)) => signed_in_summary(
             handle,
-            kind: ConnectionKind::ChatGpt,
+            ConnectionKind::ChatGpt,
             label,
-            address: None,
-            has_key: false,
-            account: secret.email.clone(),
-            status: if secret.refresh_token.is_some() {
-                ConnectionStatus::Ready
-            } else {
-                ConnectionStatus::SignInAgain
-            },
-        },
+            &secret.email,
+            &secret.refresh_token,
+        ),
+        Some(Secret::Grok(secret)) => signed_in_summary(
+            handle,
+            ConnectionKind::Grok,
+            label,
+            &secret.email,
+            &secret.refresh_token,
+        ),
         // What kind an unreadable connection was is not known any more.
         None => ConnectionSummary {
             handle,
@@ -276,7 +328,9 @@ impl Connections {
                 let key = match (entered_key, self.secret(handle.clone()).await) {
                     (_, Err(CoachError::NotFound)) => return Err(CoachError::NotFound),
                     // A sign-in is not turned into an address by an edit.
-                    (_, Ok(Secret::ChatGpt(_))) => return Err(CoachError::InvalidInput),
+                    (_, Ok(Secret::ChatGpt(_) | Secret::Grok(_))) => {
+                        return Err(CoachError::InvalidInput)
+                    }
                     (Some(key), _) => Some(key),
                     // An unreadable connection is re-entered: nothing is carried over.
                     (None, Err(_)) => None,
@@ -329,39 +383,64 @@ impl Connections {
         })
     }
 
-    /// The ChatGPT connection, if there is one: at most one exists.
-    pub(crate) async fn chatgpt(
+    /// The first connection whose readable secret `pick` accepts, with what it returned.
+    async fn find<T>(
         &self,
-    ) -> Result<Option<(CoachConnectionHandle, ChatGptSecret)>, CoachError> {
+        pick: impl Fn(Secret) -> Option<T>,
+    ) -> Result<Option<(CoachConnectionHandle, T)>, CoachError> {
         let accounts = self
             .credentials
             .list()
             .await
             .map_err(|_| CoachError::Storage)?;
         for account in accounts {
-            if let Some(Secret::ChatGpt(secret)) =
-                self.readable_secret(account.handle.clone()).await
-            {
-                return Ok(Some((account.handle, secret)));
+            let found = self
+                .readable_secret(account.handle.clone())
+                .await
+                .and_then(&pick);
+            if let Some(found) = found {
+                return Ok(Some((account.handle, found)));
             }
         }
         Ok(None)
     }
 
-    /// Stores a completed ChatGPT sign-in: in the place of the existing ChatGPT connection, which
-    /// keeps its handle, or as a new connection.
-    pub(crate) async fn save_chatgpt(
+    /// The ChatGPT connection, if there is one: at most one exists.
+    pub(crate) async fn chatgpt(
         &self,
-        secret: ChatGptSecret,
+    ) -> Result<Option<(CoachConnectionHandle, ChatGptSecret)>, CoachError> {
+        self.find(|secret| match secret {
+            Secret::ChatGpt(secret) => Some(secret),
+            _ => None,
+        })
+        .await
+    }
+
+    /// The Grok connection, if there is one: at most one exists.
+    pub(crate) async fn grok(
+        &self,
+    ) -> Result<Option<(CoachConnectionHandle, GrokSecret)>, CoachError> {
+        self.find(|secret| match secret {
+            Secret::Grok(secret) => Some(secret),
+            _ => None,
+        })
+        .await
+    }
+
+    /// Stores a completed sign-in: in the place of the existing connection of its kind, which
+    /// keeps its handle, or as a new connection.
+    async fn save_sign_in(
+        &self,
+        existing: Option<CoachConnectionHandle>,
+        label: &str,
+        secret: Secret,
     ) -> Result<ConnectionSaved, CoachError> {
-        let existing = self.chatgpt().await?.map(|(handle, _)| handle);
-        let secret = Secret::ChatGpt(secret);
         let encoded = secret.encode()?;
         let (handle, durability_uncertain) = match existing {
             Some(handle) => {
                 let uncertain = self
                     .credentials
-                    .update(handle.clone(), CHATGPT_LABEL.into(), encoded)
+                    .update(handle.clone(), label.to_owned(), encoded)
                     .await
                     .map_err(|_| CoachError::Storage)?;
                 (handle, uncertain)
@@ -378,16 +457,34 @@ impl Connections {
                 }
                 let (account, uncertain) = self
                     .credentials
-                    .store(CHATGPT_LABEL.into(), encoded)
+                    .store(label.to_owned(), encoded)
                     .await
                     .map_err(|_| CoachError::Storage)?;
                 (account.handle, uncertain)
             }
         };
         Ok(ConnectionSaved {
-            connection: summary(handle, CHATGPT_LABEL.into(), Some(&secret)),
+            connection: summary(handle, label.to_owned(), Some(&secret)),
             durability_uncertain,
         })
+    }
+
+    pub(crate) async fn save_chatgpt(
+        &self,
+        secret: ChatGptSecret,
+    ) -> Result<ConnectionSaved, CoachError> {
+        let existing = self.chatgpt().await?.map(|(handle, _)| handle);
+        self.save_sign_in(existing, CHATGPT_LABEL, Secret::ChatGpt(secret))
+            .await
+    }
+
+    pub(crate) async fn save_grok(
+        &self,
+        secret: GrokSecret,
+    ) -> Result<ConnectionSaved, CoachError> {
+        let existing = self.grok().await?.map(|(handle, _)| handle);
+        self.save_sign_in(existing, GROK_LABEL, Secret::Grok(secret))
+            .await
     }
 
     /// Replaces the refresh token of a sign-in connection after a rotation, or takes it away
@@ -397,12 +494,13 @@ impl Connections {
         handle: CoachConnectionHandle,
         refresh_token: Option<String>,
     ) -> Result<(), CoachError> {
-        let Secret::ChatGpt(mut secret) = self.secret(handle.clone()).await? else {
+        let mut secret = self.secret(handle.clone()).await?;
+        let Some(stored) = secret.refresh_token_mut() else {
             return Err(CoachError::InvalidInput);
         };
-        secret.refresh_token = refresh_token;
+        *stored = refresh_token;
         self.credentials
-            .replace(handle, Secret::ChatGpt(secret).encode()?)
+            .replace(handle, secret.encode()?)
             .await
             .map_err(|_| CoachError::Storage)
     }
@@ -806,6 +904,85 @@ mod tests {
                 "subject": "user-123",
                 "email": "player@example.com",
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_grok_sign_in_is_a_connection_of_its_own_beside_chatgpt() {
+        let (connections, store, _directory) = connections();
+        let grok = |refresh: Option<&str>| GrokSecret {
+            token_endpoint: "https://auth.x.ai/oauth2/token".into(),
+            refresh_token: refresh.map(str::to_owned),
+            email: None,
+        };
+        let chatgpt = connections
+            .save_chatgpt(signed_in(Some("refresh-1")))
+            .await
+            .unwrap()
+            .connection
+            .handle;
+        let first = connections.save_grok(grok(Some("grok-1"))).await.unwrap();
+        assert_ne!(first.connection.handle, chatgpt);
+        assert_eq!(first.connection.kind, ConnectionKind::Grok);
+        assert_eq!(first.connection.label, "Grok");
+        assert_eq!(first.connection.account, None);
+        assert_eq!(
+            stored_secret(&store, &first.connection.handle),
+            serde_json::json!({
+                "kind": "grok",
+                "tokenEndpoint": "https://auth.x.ai/oauth2/token",
+                "refreshToken": "grok-1",
+            })
+        );
+        // Each kind finds its own connection, and a new sign-in takes its own place.
+        assert_eq!(connections.chatgpt().await.unwrap().unwrap().0, chatgpt);
+        let again = connections.save_grok(grok(Some("grok-2"))).await.unwrap();
+        assert_eq!(again.connection.handle, first.connection.handle);
+        assert_eq!(connections.list().await.unwrap().len(), 2);
+
+        // A rotation and the end of the session change only the refresh token.
+        let handle = first.connection.handle;
+        connections
+            .set_refresh_token(handle.clone(), Some("grok-3".into()))
+            .await
+            .unwrap();
+        assert_eq!(
+            connections
+                .grok()
+                .await
+                .unwrap()
+                .unwrap()
+                .1
+                .refresh_token
+                .as_deref(),
+            Some("grok-3")
+        );
+        connections
+            .set_refresh_token(handle.clone(), None)
+            .await
+            .unwrap();
+        let listed = connections.list().await.unwrap();
+        let listed_grok = listed.iter().find(|entry| entry.handle == handle).unwrap();
+        assert_eq!(listed_grok.status, ConnectionStatus::SignInAgain);
+        assert_eq!(
+            stored_secret(&store, &handle),
+            serde_json::json!({
+                "kind": "grok",
+                "tokenEndpoint": "https://auth.x.ai/oauth2/token",
+            })
+        );
+        // An address edit that names it is refused.
+        assert_eq!(
+            connections
+                .save_api(api(
+                    Some(&handle),
+                    "Mine",
+                    "https://api.example.com/v1",
+                    None
+                ))
+                .await
+                .unwrap_err(),
+            CoachError::InvalidInput
         );
     }
 

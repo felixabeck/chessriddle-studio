@@ -1514,6 +1514,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             coach::coach_models,
             coach::coach_turn,
             coach::coach_sign_in_chatgpt,
+            coach::coach_begin_grok_sign_in,
+            coach::coach_finish_grok_sign_in,
             coach::coach_cancel_sign_in,
             coach::coach_open_usage,
             close_splashscreen,

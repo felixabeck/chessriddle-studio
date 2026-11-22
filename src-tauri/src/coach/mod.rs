@@ -13,6 +13,7 @@ pub(crate) mod chatgpt;
 pub(crate) mod connections;
 pub(crate) mod engine;
 pub(crate) mod error;
+pub(crate) mod grok;
 pub(crate) mod http;
 pub(crate) mod lines;
 pub(crate) mod models;
@@ -38,7 +39,7 @@ use tauri_specta::Event;
 use tokio_util::sync::CancellationToken;
 
 use self::{
-    accounts::{Accounts, ConnectionBearer},
+    accounts::{Accounts, ConnectionBearer, SignInProvider},
     address::Address,
     answer::Segment,
     attempts::{SignInAttempts, SignInKind},
@@ -51,6 +52,7 @@ use self::{
     },
     engine::{Analyst, EngineAnalyst},
     error::CoachError,
+    grok::{Grok, GrokCode, PendingSignIn},
     http::HttpClients,
     lines::TurnPosition,
     models::{ModelList, MAX_MODEL_LIST_BYTES},
@@ -102,9 +104,12 @@ pub(crate) struct Coach {
     http: HttpClients,
     turns: Arc<TurnSlots>,
     chatgpt: Arc<ChatGpt>,
+    grok: Arc<Grok>,
     /// The tokens of the signed-in connections.
     accounts: Accounts,
     sign_ins: Arc<SignInAttempts>,
+    /// The Grok sign-in whose result has not been fetched yet.
+    grok_sign_in: Arc<PendingSignIn>,
 }
 
 /// The turns that run now, by window and tab: one per tab, [`MAX_TURNS`] overall.
@@ -437,27 +442,37 @@ impl Coach {
     fn new(available: bool, credentials: Arc<CoachCredentials>) -> Result<Self, CoachError> {
         let http = HttpClients::new()?;
         let chatgpt = ChatGpt::new(http.public().clone());
-        Ok(Self::with_chatgpt(available, credentials, http, chatgpt))
+        let grok = Grok::new(http.public().clone());
+        Ok(Self::with_providers(
+            available,
+            credentials,
+            http,
+            chatgpt,
+            grok,
+        ))
     }
 
-    /// The Coach around a given ChatGPT sign-in, which tests point at a provider double.
-    fn with_chatgpt(
+    /// The Coach around given sign-in providers, which tests point at provider doubles.
+    fn with_providers(
         available: bool,
         credentials: Arc<CoachCredentials>,
         http: HttpClients,
         chatgpt: ChatGpt,
+        grok: Grok,
     ) -> Self {
         let connections = Connections::new(credentials.clone());
-        let chatgpt = Arc::new(chatgpt);
+        let (chatgpt, grok) = (Arc::new(chatgpt), Arc::new(grok));
         Self {
             available,
-            accounts: Accounts::start(connections.clone(), chatgpt.clone()),
+            accounts: Accounts::start(connections.clone(), chatgpt.clone(), grok.clone()),
             connections,
             credentials,
             http,
             turns: Arc::default(),
             chatgpt,
+            grok,
             sign_ins: Arc::default(),
+            grok_sign_in: Arc::default(),
         }
     }
 
@@ -486,19 +501,34 @@ impl Coach {
                     ToolLayout::Namespace(TOOL_NAMESPACE),
                 )))
             }
+            Secret::Grok(secret) => {
+                if secret.refresh_token.is_none() {
+                    return Err(CoachError::SignInAgain);
+                }
+                Ok(Box::new(Responses::new(
+                    self.grok.http().clone(),
+                    self.grok.api("responses"),
+                    ConnectionBearer {
+                        accounts: self.accounts.clone(),
+                        handle,
+                    },
+                    ToolLayout::Flat,
+                )))
+            }
         }
     }
 
-    /// The models of a ChatGPT sign-in. A token refused before the answer was read is replaced
-    /// once.
-    async fn plan_models(&self, handle: CoachConnectionHandle) -> Result<ModelList, CoachError> {
+    /// The models of a sign-in, from its provider's model list at `url`. A token refused before
+    /// the answer was read is replaced once.
+    async fn plan_models(
+        &self,
+        handle: CoachConnectionHandle,
+        http: &reqwest::Client,
+        url: String,
+    ) -> Result<ModelList, CoachError> {
         let mut bearer = self.accounts.bearer(handle.clone()).await?;
         for retry in [false, true] {
-            let request = self
-                .chatgpt
-                .http()
-                .get(self.chatgpt.api("models"))
-                .bearer_auth(&bearer.token);
+            let request = http.get(&url).bearer_auth(&bearer.token);
             let (status, body) = http::send_bounded(request, MAX_MODEL_LIST_BYTES).await?;
             match status {
                 200 => return models::parse_plan_models(&body),
@@ -524,20 +554,25 @@ impl Coach {
     /// Removes a connection: here first, durably; then, for a sign-in, the provider is asked once
     /// to withdraw it. The token used for that is already gone from this computer.
     async fn remove(&self, handle: CoachConnectionHandle) -> Result<ConnectionRemoved, CoachError> {
-        let signed_in = match self.connections.secret(handle.clone()).await {
-            Ok(Secret::ChatGpt(secret)) => Some(secret),
-            _ => None,
-        };
+        let secret = self.connections.secret(handle.clone()).await.ok();
         let mut removed = self.connections.remove(handle.clone()).await?;
-        if let Some(secret) = signed_in {
+        if matches!(secret, Some(Secret::ChatGpt(_) | Secret::Grok(_))) {
             if let Err(error) = self.accounts.forget(handle).await {
                 log::warn!("coach: the removed sign-in's tokens were not dropped: {error:?}");
             }
-            if let Some(refresh) = secret.refresh_token {
-                removed.revocation_pending =
-                    !self.chatgpt.revoke(&secret.client_id, &refresh).await;
-            }
         }
+        // A sign-in the provider already ended has no token left to withdraw.
+        removed.revocation_pending = match secret {
+            Some(Secret::ChatGpt(secret)) => match secret.refresh_token {
+                Some(refresh) => !self.chatgpt.revoke(&secret.client_id, &refresh).await,
+                None => false,
+            },
+            Some(Secret::Grok(secret)) => match secret.refresh_token {
+                Some(refresh) => !self.grok.revoke(&refresh).await,
+                None => false,
+            },
+            Some(Secret::Api { .. }) | None => false,
+        };
         Ok(removed)
     }
 
@@ -559,7 +594,11 @@ impl Coach {
                         .sign_in(&self.connections, &self.credentials, &cancellation, &opener)
                         .await?;
                     self.accounts
-                        .signed_in(saved.connection.handle.clone(), client_id, tokens)
+                        .signed_in(
+                            saved.connection.handle.clone(),
+                            SignInProvider::ChatGpt { client_id },
+                            tokens,
+                        )
                         .await?;
                     Ok(saved)
                 },
@@ -570,7 +609,14 @@ impl Coach {
     async fn models(&self, handle: CoachConnectionHandle) -> Result<ModelList, CoachError> {
         let (address, key) = match self.connections.secret(handle.clone()).await? {
             Secret::Api { address, key } => (address, key),
-            Secret::ChatGpt(_) => return self.plan_models(handle).await,
+            Secret::ChatGpt(_) => {
+                let (http, url) = (self.chatgpt.http(), self.chatgpt.api("models"));
+                return self.plan_models(handle, http, url).await;
+            }
+            Secret::Grok(_) => {
+                let (http, url) = (self.grok.http(), self.grok.api("models"));
+                return self.plan_models(handle, http, url).await;
+            }
         };
         // The class is derived from the stored text on every use, never taken from the caller.
         let address = Address::parse(&address).map_err(|_| CoachError::NeedsRepair)?;
@@ -676,6 +722,55 @@ async fn start_chatgpt_sign_in(
     opener: BrowserOpener,
 ) -> Result<ConnectionSaved, CoachError> {
     coach(state)?.sign_in_chatgpt(attempt, window, opener).await
+}
+
+/// Starts a sign-in with Grok and returns the code the user enters at the provider. The page for
+/// it is opened in the system browser. `attempt` is the caller's own id for this sign-in: the one
+/// `coach_finish_grok_sign_in` waits with and `coach_cancel_sign_in` takes.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn coach_begin_grok_sign_in(
+    attempt: String,
+    state: tauri::State<'_, crate::AppState>,
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<GrokCode, CoachError> {
+    begin_grok_sign_in(attempt, &state, window.label(), browser_opener(app)).await
+}
+
+async fn begin_grok_sign_in(
+    attempt: String,
+    state: &crate::AppState,
+    window: &str,
+    opener: BrowserOpener,
+) -> Result<GrokCode, CoachError> {
+    let coach = coach(state)?;
+    let sign_in = grok::SignIn {
+        grok: coach.grok.clone(),
+        connections: coach.connections.clone(),
+        accounts: coach.accounts.clone(),
+        attempts: coach.sign_ins.clone(),
+        pending: coach.grok_sign_in.clone(),
+    };
+    sign_in.begin(attempt, window.to_owned(), opener).await
+}
+
+/// Waits until the Grok sign-in with this id is over and returns its connection. A sign-in that
+/// is unknown, was replaced by a newer one, or whose result was already fetched is `cancelled`.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn coach_finish_grok_sign_in(
+    attempt: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<ConnectionSaved, CoachError> {
+    finish_grok_sign_in(&attempt, &state).await
+}
+
+async fn finish_grok_sign_in(
+    attempt: &str,
+    state: &crate::AppState,
+) -> Result<ConnectionSaved, CoachError> {
+    coach(state)?.grok_sign_in.finish(attempt).await
 }
 
 /// Ends the sign-in with this id, if it still runs. Its own command then ends as `cancelled`.
@@ -915,6 +1010,18 @@ mod tests {
                 CoachError::Unavailable
             );
             assert_eq!(
+                begin_grok_sign_in("attempt".into(), &state, "main", no_browser.clone())
+                    .await
+                    .unwrap_err(),
+                CoachError::Unavailable
+            );
+            assert_eq!(
+                coach_finish_grok_sign_in("attempt".into(), app.state())
+                    .await
+                    .unwrap_err(),
+                CoachError::Unavailable
+            );
+            assert_eq!(
                 coach_cancel_sign_in("attempt".into(), app.state())
                     .await
                     .unwrap_err(),
@@ -930,7 +1037,7 @@ mod tests {
         }
     }
 
-    /// A Coach whose ChatGPT sign-in talks to the provider double.
+    /// A Coach whose sign-ins talk to the provider double.
     fn signed_in_coach(
         provider: &crate::coach::chatgpt::tests::Provider,
     ) -> (
@@ -940,11 +1047,12 @@ mod tests {
     ) {
         let store = Arc::new(MemoryCredentialStore::default());
         let (credentials, directory) = CoachCredentials::for_test(store.clone());
-        let coach = Coach::with_chatgpt(
+        let coach = Coach::with_providers(
             true,
             Arc::new(credentials),
             HttpClients::new().unwrap(),
             provider.chatgpt(Duration::from_secs(30)),
+            crate::coach::grok::tests::grok(&provider.server),
         );
         let state = crate::AppState::default();
         assert!(state.coach.set(coach).is_ok());
@@ -1039,6 +1147,111 @@ mod tests {
         assert_eq!(
             coach.backend(handle).await.err(),
             Some(CoachError::SignInAgain)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_grok_sign_in_runs_through_its_two_commands_and_answers_with_its_tokens() {
+        let provider = crate::coach::chatgpt::tests::Provider::start();
+        let (state, store, _directory) = signed_in_coach(&provider);
+        let app = tauri::test::mock_app();
+        app.manage(state.clone());
+        let opened = Arc::new(Mutex::new(Vec::<String>::new()));
+        let opener: BrowserOpener = Arc::new({
+            let opened = opened.clone();
+            move |url: &str| {
+                opened.lock().unwrap().push(url.to_owned());
+                Ok(())
+            }
+        });
+
+        // The user never approves: the cancel command ends the wait, and nothing is stored.
+        provider.answer(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "authorization_pending" }),
+        );
+        let code = begin_grok_sign_in("grok-1".into(), &state, "main", opener.clone())
+            .await
+            .unwrap();
+        assert_eq!(code.user_code, "WXYZ-9876");
+        assert_eq!(code.verification_url, provider.server.url("/activate"));
+        assert_eq!(*opened.lock().unwrap(), [provider.server.url("/activate")]);
+        coach_cancel_sign_in("grok-1".into(), app.state())
+            .await
+            .unwrap();
+        assert_eq!(
+            coach_finish_grok_sign_in("grok-1".into(), app.state())
+                .await
+                .unwrap_err(),
+            CoachError::Cancelled
+        );
+        let coach = the_coach(&state);
+        assert!(coach.connections.list().await.unwrap().is_empty());
+
+        // The user approves: the second command returns the connection.
+        provider.answer(
+            StatusCode::OK,
+            crate::coach::chatgpt::tests::tokens(1, None, ""),
+        );
+        begin_grok_sign_in("grok-2".into(), &state, "main", opener)
+            .await
+            .unwrap();
+        let saved = coach_finish_grok_sign_in("grok-2".into(), app.state())
+            .await
+            .unwrap();
+        assert_eq!(saved.connection.kind, connections::ConnectionKind::Grok);
+        assert_eq!(saved.connection.label, "Grok");
+        let handle = saved.connection.handle.clone();
+        assert_eq!(
+            coach.connections.list().await.unwrap(),
+            std::slice::from_ref(&saved.connection)
+        );
+
+        // Its models and its rounds are asked with the token of the sign-in.
+        provider.api_calls.lock().unwrap().clear();
+        let exchanges = provider.forms.lock().unwrap().len();
+        assert_eq!(coach.models(handle.clone()).await.unwrap().models.len(), 1);
+        let backend = coach.backend(handle.clone()).await.unwrap();
+        let round = backend
+            .round(
+                backend::RoundRequest {
+                    model: "grok-plan",
+                    effort: None,
+                    system: "",
+                    messages: &[Message::User("Plan?".into())],
+                    tools: &tools::specs(false),
+                },
+                &mut |_| {},
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(round.text, "Ok.");
+        assert_eq!(
+            api_calls(&provider),
+            [
+                ("models", "Bearer access-1".to_owned()),
+                ("responses", "Bearer access-1".to_owned())
+            ]
+        );
+        assert_eq!(provider.forms.lock().unwrap().len(), exchanges);
+
+        // Removal: gone here first, then withdrawn at the endpoint the provider names.
+        let removed = coach.remove(handle.clone()).await.unwrap();
+        assert!(!removed.revocation_pending);
+        assert!(crate::credentials::CredentialStore::get(
+            store.as_ref(),
+            &format!("coach-connection:{}", handle.0)
+        )
+        .unwrap()
+        .is_none());
+        let revocations = provider.revocations.lock().unwrap().clone();
+        assert_eq!(revocations.len(), 1);
+        assert_eq!(revocations[0]["token"], "refresh-1");
+        assert_eq!(revocations[0]["client_id"], grok::CLIENT_ID);
+        assert_eq!(
+            coach.accounts.bearer(handle).await.err(),
+            Some(CoachError::NotFound)
         );
     }
 

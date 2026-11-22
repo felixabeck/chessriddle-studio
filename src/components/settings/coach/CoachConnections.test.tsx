@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   coachRemoveConnection: vi.fn(),
   coachModels: vi.fn(),
   coachSignInChatgpt: vi.fn(),
+  coachBeginGrokSignIn: vi.fn(),
+  coachFinishGrokSignIn: vi.fn(),
   coachCancelSignIn: vi.fn(),
   coachOpenUsage: vi.fn(),
 }));
@@ -23,8 +25,8 @@ vi.mock("@/platform/native", () => ({ warn: vi.fn(), error: vi.fn() }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
-      options && ("total" in options || "label" in options)
-        ? `${key}:${String(options.total ?? options.label)}`
+      options && ("total" in options || "label" in options || "address" in options)
+        ? `${key}:${String(options.total ?? options.label ?? options.address)}`
         : key,
   }),
 }));
@@ -69,6 +71,21 @@ const chatGpt: ConnectionSummary = {
   hasKey: false,
   account: "player@example.com",
   status: "ready",
+};
+
+const grok: ConnectionSummary = {
+  handle: "handle-grok",
+  kind: "grok",
+  label: "Grok",
+  address: null,
+  hasKey: false,
+  account: null,
+  status: "ready",
+};
+const grokCode = {
+  userCode: "ABCD-1234",
+  verificationUrl: "https://accounts.x.ai/device",
+  expiresInSeconds: 600,
 };
 
 function deferred<T>() {
@@ -385,4 +402,105 @@ test("a failed removal still re-reads the native list and keeps the dialog's err
   await click(button(dialog()!, "Common.Remove"));
   expect(dialog()!.querySelector('[role="alert"]')).not.toBeNull();
   expect(mocks.coachConnections).toHaveBeenCalledTimes(2);
+});
+
+test("a Grok sign-in shows the code, waits for the approval and lists the connection", async () => {
+  mocks.coachConnections.mockResolvedValue([]);
+  await render();
+  const begun = deferred<typeof grokCode>();
+  const finished = deferred<{ connection: ConnectionSummary; durabilityUncertain: boolean }>();
+  mocks.coachBeginGrokSignIn.mockReturnValue(begun.promise);
+  mocks.coachFinishGrokSignIn.mockReturnValue(finished.promise);
+  await click(button(host, "Settings.Coach.SignIn.Grok"));
+  // While the code is asked for there is nothing to show yet, and no second sign-in starts.
+  expect(dialog()).toBeNull();
+  await click(button(host, "Settings.Coach.SignIn.Grok"));
+  expect(mocks.coachBeginGrokSignIn).toHaveBeenCalledOnce();
+  const attempt = mocks.coachBeginGrokSignIn.mock.calls[0][0] as string;
+
+  await act(async () => begun.resolve(grokCode));
+  expect(dialog()!.textContent).toContain("ABCD-1234");
+  expect(dialog()!.textContent).toContain(
+    "Settings.Coach.Grok.Code.Page:https://accounts.x.ai/device",
+  );
+  // The connection is named for what it is before the user approves anything.
+  expect(dialog()!.textContent).toContain("Settings.Coach.Grok.Note");
+  expect(mocks.coachFinishGrokSignIn).toHaveBeenCalledExactlyOnceWith(attempt);
+
+  mocks.coachConnections.mockResolvedValue([grok]);
+  await act(async () => finished.resolve({ connection: grok, durabilityUncertain: false }));
+  expect(dialog()).toBeNull();
+  expect(row("Grok").textContent).toContain("Settings.Coach.Grok.Unofficial");
+  expect(row("Grok").textContent).toContain("Settings.Coach.Grok.Note");
+  // A sign-in: nothing to edit, no usage page of another provider, no second sign-in.
+  expect(button(row("Grok"), "Settings.Coach.Form.EditTitle")).toBeUndefined();
+  expect(button(row("Grok"), "Coach.Plan.ManageUsage")).toBeUndefined();
+  expect(button(host, "Settings.Coach.SignIn.Grok")).toBeUndefined();
+  expect(button(host, "Settings.Coach.SignIn.ChatGpt")).toBeDefined();
+  // The plan notice belongs to ChatGPT alone.
+  expect(host.ownerDocument.body.textContent).not.toContain("Coach.Plan.Notice.Title");
+  expect(mocks.coachCancelSignIn).not.toHaveBeenCalled();
+});
+
+test("cancelling the Grok code dialog ends the sign-in without a message", async () => {
+  mocks.coachConnections.mockResolvedValue([]);
+  await render();
+  const finished = deferred<never>();
+  mocks.coachBeginGrokSignIn.mockResolvedValue(grokCode);
+  mocks.coachFinishGrokSignIn.mockReturnValue(finished.promise);
+  await click(button(host, "Settings.Coach.SignIn.Grok"));
+  const attempt = mocks.coachBeginGrokSignIn.mock.calls[0][0] as string;
+  await click(button(dialog()!, "Common.Cancel"));
+  expect(mocks.coachCancelSignIn).toHaveBeenCalledExactlyOnceWith(attempt);
+  // The native side answers the cancel; only then is the dialog gone.
+  await act(async () => finished.reject(new CoachCommandError("cancelled")));
+  expect(dialog()).toBeNull();
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(button(host, "Settings.Coach.SignIn.Grok")).toBeDefined();
+});
+
+test("a Grok sign-in that fails says why, whether before or after the code", async () => {
+  mocks.coachConnections.mockResolvedValue([]);
+  await render();
+  mocks.coachBeginGrokSignIn.mockRejectedValue(new CoachCommandError("providerFailure"));
+  await click(button(host, "Settings.Coach.SignIn.Grok"));
+  expect(host.querySelector('[role="alert"]')!.textContent).toContain(
+    "Coach.Error.ProviderFailure",
+  );
+  expect(mocks.coachFinishGrokSignIn).not.toHaveBeenCalled();
+
+  mocks.coachBeginGrokSignIn.mockResolvedValue(grokCode);
+  mocks.coachFinishGrokSignIn.mockRejectedValue(new CoachCommandError("signInFailed"));
+  await click(button(host, "Settings.Coach.SignIn.Grok"));
+  expect(dialog()).toBeNull();
+  expect(host.querySelector('[role="alert"]')!.textContent).toContain("Coach.Error.SignInFailed");
+});
+
+test("leaving the settings while a Grok code is shown cancels its sign-in", async () => {
+  mocks.coachConnections.mockResolvedValue([]);
+  await render();
+  mocks.coachBeginGrokSignIn.mockResolvedValue(grokCode);
+  mocks.coachFinishGrokSignIn.mockReturnValue(new Promise(() => {}));
+  await click(button(host, "Settings.Coach.SignIn.Grok"));
+  const attempt = mocks.coachBeginGrokSignIn.mock.calls[0][0] as string;
+  await act(async () => root.render(<div />));
+  expect(mocks.coachCancelSignIn).toHaveBeenCalledExactlyOnceWith(attempt);
+});
+
+test("an unconfirmed Grok sign-out names Grok and offers no ChatGPT page", async () => {
+  mocks.coachConnections.mockResolvedValue([{ ...grok, account: "player@example.com" }]);
+  await render();
+  expect(row("Grok").textContent).toContain("player@example.com");
+  await click(button(row("Grok"), "Settings.Coach.Connection.Remove"));
+  mocks.coachRemoveConnection.mockResolvedValue({
+    durabilityUncertain: false,
+    revocationPending: true,
+  });
+  mocks.coachConnections.mockResolvedValue([]);
+  await click(button(dialog()!, "Common.Remove"));
+  const notice = [...host.querySelectorAll<HTMLElement>('[role="status"]')].find((node) =>
+    node.textContent?.includes("Settings.Coach.Connection.RevocationPending:Grok"),
+  )!;
+  expect(notice).toBeDefined();
+  expect(button(notice, "Coach.Plan.ManageUsage")).toBeUndefined();
 });

@@ -32,12 +32,16 @@ const MAX_OUTPUT_ITEMS: usize = 64;
 const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 /// Asks for reasoning in a form that can be sent back without the provider storing anything.
 const ENCRYPTED_REASONING: &str = "reasoning.encrypted_content";
+/// The line some providers end the stream with, after the events.
+const DONE: &str = "[DONE]";
 
 /// How a provider wants function tools declared.
 #[derive(Clone, Copy)]
 pub(crate) enum ToolLayout {
     /// Grouped in one namespace of this name.
     Namespace(&'static str),
+    /// Each tool on its own, at the top level.
+    Flat,
 }
 
 pub(crate) struct Responses<B> {
@@ -59,7 +63,7 @@ impl<B: BearerSource> Responses<B> {
 }
 
 fn tools(request: &RoundRequest<'_>, layout: ToolLayout) -> Vec<Value> {
-    let functions: Vec<Value> = request
+    let mut functions: Vec<Value> = request
         .tools
         .iter()
         .map(|tool| {
@@ -68,11 +72,19 @@ fn tools(request: &RoundRequest<'_>, layout: ToolLayout) -> Vec<Value> {
                 "name": tool.name,
                 "description": tool.description,
                 "parameters": tool.parameters,
-                // The schemas have optional arguments, which the strict mode does not allow.
-                "strict": false,
             })
         })
         .collect();
+    match layout {
+        ToolLayout::Namespace(_) => {
+            // The schemas have optional arguments, which the strict mode there does not allow.
+            for function in &mut functions {
+                function["strict"] = false.into();
+            }
+        }
+        // The flat declaration is sent exactly as its provider documents it.
+        ToolLayout::Flat => {}
+    }
     match layout {
         ToolLayout::Namespace(name) => vec![json!({
             "type": "namespace",
@@ -80,6 +92,7 @@ fn tools(request: &RoundRequest<'_>, layout: ToolLayout) -> Vec<Value> {
             "description": "Read-only chess tools: the engine and the reference database.",
             "tools": functions,
         })],
+        ToolLayout::Flat => functions,
     }
 }
 
@@ -468,6 +481,9 @@ impl<B: BearerSource> ModelBackend for Responses<B> {
                     })
                 }
             };
+            if data.trim() == DONE {
+                break;
+            }
             if let Err((error, message)) = round.accept(&data, on_text) {
                 if let Some(message) = message {
                     log::warn!(
@@ -605,6 +621,46 @@ mod tests {
             tokens,
             ToolLayout::Namespace("chess"),
         )
+    }
+
+    #[tokio::test]
+    async fn the_flat_layout_declares_each_tool_on_its_own_and_reads_past_the_end_marker() {
+        let (server, seen) = provider(vec![
+            Answer::Stream(vec![
+                text_delta("Castle."),
+                completed(),
+                "data: [DONE]\n\n".into(),
+            ]),
+            // The marker alone does not make an answer complete.
+            Answer::Stream(vec![text_delta("Half an"), "data: [DONE]\n\n".into()]),
+        ]);
+        let flat = Responses::new(
+            reqwest::Client::builder().no_proxy().build().unwrap(),
+            server.url("/v1/responses"),
+            Arc::<Tokens>::default(),
+            ToolLayout::Flat,
+        );
+        let (result, _) = ask(&flat, &question(), None).await;
+        assert_eq!(result.unwrap().text, "Castle.");
+        let (_, body) = seen.lock().unwrap()[0].clone();
+        assert_eq!(
+            body["tools"],
+            json!([{
+                "type": "function",
+                "name": "analyse",
+                "description": "Run the engine.",
+                "parameters": { "type": "object", "properties": { "line": { "type": "string" } } },
+            }])
+        );
+        assert_eq!(body["store"], false);
+        assert!(body.get("reasoning").is_none());
+
+        let (result, _) = ask(&flat, &question(), None).await;
+        let Err(failure) = result else {
+            panic!("an answer without its completion is no answer");
+        };
+        assert_eq!(failure.error, CoachError::ProviderFailure);
+        assert_eq!(failure.text, "Half an");
     }
 
     fn tool() -> ToolSpec {

@@ -170,6 +170,31 @@ async coachSignInChatgpt(attempt: string) : Promise<Result<ConnectionSaved, Coac
 }
 },
 /**
+ * Starts a sign-in with Grok and returns the code the user enters at the provider. The page for
+ * it is opened in the system browser. `attempt` is the caller's own id for this sign-in: the one
+ * `coach_finish_grok_sign_in` waits with and `coach_cancel_sign_in` takes.
+ */
+async coachBeginGrokSignIn(attempt: string) : Promise<Result<GrokCode, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_begin_grok_sign_in", { attempt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Waits until the Grok sign-in with this id is over and returns its connection. A sign-in that
+ * is unknown, was replaced by a newer one, or whose result was already fetched is `cancelled`.
+ */
+async coachFinishGrokSignIn(attempt: string) : Promise<Result<ConnectionSaved, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_finish_grok_sign_in", { attempt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Ends the sign-in with this id, if it still runs. Its own command then ends as `cancelled`.
  */
 async coachCancelSignIn(attempt: string) : Promise<Result<null, CoachError>> {
@@ -1740,7 +1765,7 @@ export type CompletionChanged = { id: string }
  * Shared outcome shape, also usable by the account workflow without another mailbox contract.
  */
 export type CompletionOutcome<T> = { state: "running" } | { state: "succeeded"; result: T } | { state: "failed"; result: ErrorPayload }
-export type ConnectionKind = "api" | "chatGpt"
+export type ConnectionKind = "api" | "chatGpt" | "grok"
 export type ConnectionRemoved = { durabilityUncertain: boolean; 
 /**
  * The connection is gone here, but its sign-in could not be withdrawn at the provider.
@@ -1907,6 +1932,14 @@ export type GameSort = "id" | "date" | "newest" | "whiteElo" | "blackElo" | "ply
 export type GameState = { gameId: string; session: bigint; revision: bigint; status: GameStatus; initialFen: string; moves: GameMove[]; currentFen: string; ply: number; turn: string; whiteTime: bigint | null; blackTime: bigint | null; whitePlayer: string; blackPlayer: string }
 export type GameStatus = "playing" | { finished: { result: GameResult } }
 export type GoMode = { t: "PlayersTime"; c: PlayersTime } | { t: "Depth"; c: number } | { t: "Time"; c: number } | { t: "Nodes"; c: number } | { t: "Infinite" }
+/**
+ * What the user needs to finish a Grok sign-in in the browser.
+ */
+export type GrokCode = { userCode: string; 
+/**
+ * The provider's page where the code is entered.
+ */
+verificationUrl: string; expiresInSeconds: number }
 export type HistoryMessage = { role: HistoryRole; text: string }
 export type HistoryRole = "user" | "coach"
 export type InsertedDbGame = { id: number; stamp: string }

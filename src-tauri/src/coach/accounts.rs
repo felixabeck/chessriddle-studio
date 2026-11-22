@@ -14,6 +14,7 @@ use super::{
     chatgpt::ChatGpt,
     connections::{Connections, Secret},
     error::CoachError,
+    grok::Grok,
 };
 use crate::{
     credentials::CoachConnectionHandle,
@@ -31,7 +32,7 @@ enum Action {
     /// The token of this generation was refused as unauthorized: a newer one.
     Rejected(CoachConnectionHandle, u64),
     /// A sign-in just stored this connection; these are the tokens that came with it.
-    SignedIn(CoachConnectionHandle, String, IssuedTokens),
+    SignedIn(CoachConnectionHandle, SignInProvider, IssuedTokens),
     /// The connection was removed or changed behind the worker's back: forget what is held.
     Forget(CoachConnectionHandle),
 }
@@ -41,18 +42,28 @@ struct Request {
     reply: oneshot::Sender<Result<Option<Bearer>, CoachError>>,
 }
 
+/// Where a signed-in connection's refresh token is exchanged, with what that provider needs
+/// named beside the token.
+pub(crate) enum SignInProvider {
+    /// The client id the provider issued to this installation.
+    ChatGpt { client_id: String },
+    /// The token endpoint the provider named at the sign-in.
+    Grok { token_endpoint: String },
+}
+
 /// A signed-in connection as the worker holds it.
 struct Signed {
-    client_id: String,
+    provider: SignInProvider,
     tokens: TokenSession,
 }
 
 /// The provider and the keyring entry behind one signed-in connection.
 struct Keeper<'a> {
     chatgpt: &'a ChatGpt,
+    grok: &'a Grok,
     connections: &'a Connections,
     handle: &'a CoachConnectionHandle,
-    client_id: &'a str,
+    provider: &'a SignInProvider,
 }
 
 #[async_trait]
@@ -60,7 +71,12 @@ impl TokenAuthority for Keeper<'_> {
     type Error = CoachError;
 
     async fn refresh(&mut self, refresh: &str) -> Result<IssuedTokens, RefreshError<CoachError>> {
-        self.chatgpt.refresh(self.client_id, refresh).await
+        match self.provider {
+            SignInProvider::ChatGpt { client_id } => self.chatgpt.refresh(client_id, refresh).await,
+            SignInProvider::Grok { token_endpoint } => {
+                self.grok.refresh(token_endpoint, refresh).await
+            }
+        }
     }
 
     async fn persist(&mut self, refresh: &str) -> Result<(), CoachError> {
@@ -81,6 +97,7 @@ impl TokenAuthority for Keeper<'_> {
 struct Worker {
     connections: Connections,
     chatgpt: Arc<ChatGpt>,
+    grok: Arc<Grok>,
     /// By handle. An entry exists from the first use after a start, or from a sign-in.
     sessions: HashMap<String, Signed>,
 }
@@ -88,15 +105,26 @@ struct Worker {
 impl Worker {
     async fn bearer(&mut self, handle: CoachConnectionHandle) -> Result<Bearer, CoachError> {
         if !self.sessions.contains_key(&handle.0) {
-            let secret = match self.connections.secret(handle.clone()).await? {
-                Secret::ChatGpt(secret) => secret,
+            let (provider, refresh) = match self.connections.secret(handle.clone()).await? {
+                Secret::ChatGpt(secret) => (
+                    SignInProvider::ChatGpt {
+                        client_id: secret.client_id,
+                    },
+                    secret.refresh_token,
+                ),
+                Secret::Grok(secret) => (
+                    SignInProvider::Grok {
+                        token_endpoint: secret.token_endpoint,
+                    },
+                    secret.refresh_token,
+                ),
                 Secret::Api { .. } => return Err(CoachError::InvalidInput),
             };
-            let refresh = secret.refresh_token.ok_or(CoachError::SignInAgain)?;
+            let refresh = refresh.ok_or(CoachError::SignInAgain)?;
             self.sessions.insert(
                 handle.0.clone(),
                 Signed {
-                    client_id: secret.client_id,
+                    provider,
                     tokens: TokenSession::restored(refresh),
                 },
             );
@@ -106,9 +134,10 @@ impl Worker {
         };
         let mut keeper = Keeper {
             chatgpt: &self.chatgpt,
+            grok: &self.grok,
             connections: &self.connections,
             handle: &handle,
-            client_id: &signed.client_id,
+            provider: &signed.provider,
         };
         match signed.tokens.bearer(&mut keeper).await {
             Ok(bearer) => Ok(bearer),
@@ -134,11 +163,11 @@ impl Worker {
                 }
                 self.bearer(handle).await.map(Some)
             }
-            Action::SignedIn(handle, client_id, tokens) => {
+            Action::SignedIn(handle, provider, tokens) => {
                 self.sessions.insert(
                     handle.0,
                     Signed {
-                        client_id,
+                        provider,
                         tokens: TokenSession::stored_sign_in(tokens),
                     },
                 );
@@ -159,7 +188,7 @@ pub(crate) struct Accounts {
 }
 
 impl Accounts {
-    pub(crate) fn start(connections: Connections, chatgpt: Arc<ChatGpt>) -> Self {
+    pub(crate) fn start(connections: Connections, chatgpt: Arc<ChatGpt>, grok: Arc<Grok>) -> Self {
         let (sender, mut receiver) = mpsc::channel::<Request>(QUEUE_CAPACITY);
         // The worker takes every accepted request to its end even if the caller is gone. Dropping
         // the last sender drains the queue, then drops every token.
@@ -167,6 +196,7 @@ impl Accounts {
             let mut worker = Worker {
                 connections,
                 chatgpt,
+                grok,
                 sessions: HashMap::new(),
             };
             while let Some(request) = receiver.recv().await {
@@ -221,10 +251,10 @@ impl Accounts {
     pub(crate) async fn signed_in(
         &self,
         handle: CoachConnectionHandle,
-        client_id: String,
+        provider: SignInProvider,
         tokens: IssuedTokens,
     ) -> Result<(), CoachError> {
-        self.tell(Action::SignedIn(handle, client_id, tokens)).await
+        self.tell(Action::SignedIn(handle, provider, tokens)).await
     }
 
     pub(crate) async fn forget(&self, handle: CoachConnectionHandle) -> Result<(), CoachError> {
@@ -264,7 +294,8 @@ mod tests {
     use crate::{
         coach::{
             chatgpt::tests::{tokens, Provider},
-            connections::{ApiConnectionInput, ChatGptSecret, ConnectionStatus},
+            connections::{ApiConnectionInput, ChatGptSecret, ConnectionStatus, GrokSecret},
+            grok::tests::grok,
         },
         credentials::{CoachCredentials, CredentialStore, MemoryCredentialStore},
         error::Error,
@@ -323,6 +354,7 @@ mod tests {
         let accounts = Accounts::start(
             connections.clone(),
             Arc::new(provider.chatgpt(Duration::from_secs(1))),
+            Arc::new(grok(&provider.server)),
         );
         Fixture {
             provider,
@@ -475,7 +507,9 @@ mod tests {
             .accounts
             .signed_in(
                 fixture.handle.clone(),
-                "oaiapp_issued".into(),
+                SignInProvider::ChatGpt {
+                    client_id: "oaiapp_issued".into(),
+                },
                 IssuedTokens {
                     access: "signed-in-access".into(),
                     refresh: "refresh-0".into(),
@@ -493,6 +527,62 @@ mod tests {
         // Neither the provider nor the keyring was touched: the sign-in stored its own result.
         assert_eq!(refreshes(&fixture), 0);
         assert_eq!(stored_refresh(&fixture).as_deref(), Some("refresh-0"));
+    }
+
+    #[tokio::test]
+    async fn a_grok_sign_in_is_refreshed_at_its_own_token_endpoint() {
+        let fixture = fixture().await;
+        let saved = fixture
+            .connections
+            .save_grok(GrokSecret {
+                token_endpoint: fixture.provider.server.url("/token"),
+                refresh_token: Some("grok-refresh-0".into()),
+                email: None,
+            })
+            .await
+            .unwrap();
+        let handle = saved.connection.handle;
+        // The provider rotates; an answer without a new refresh token keeps the one in use.
+        fixture.provider.answer(
+            StatusCode::OK,
+            serde_json::json!({ "access_token": "grok-access-1", "expires_in": 3600 }),
+        );
+        let bearer = fixture.accounts.bearer(handle.clone()).await.unwrap();
+        assert_eq!(bearer.token, "grok-access-1");
+        let form = fixture.provider.forms.lock().unwrap()[0].clone();
+        assert_eq!(form["grant_type"], "refresh_token");
+        assert_eq!(form["refresh_token"], "grok-refresh-0");
+        assert_eq!(form["client_id"], crate::coach::grok::CLIENT_ID);
+        assert!(!form.contains_key("resource"));
+        let (_, secret) = fixture.connections.grok().await.unwrap().unwrap();
+        assert_eq!(secret.refresh_token.as_deref(), Some("grok-refresh-0"));
+
+        // A plan that may not be used from other apps is not a reason to sign in again.
+        fixture
+            .provider
+            .answer(StatusCode::FORBIDDEN, serde_json::Value::Null);
+        assert_eq!(
+            fixture
+                .accounts
+                .rejected(handle.clone(), bearer.generation)
+                .await
+                .err(),
+            Some(CoachError::SubscriptionNotEligible)
+        );
+        let (_, secret) = fixture.connections.grok().await.unwrap().unwrap();
+        assert!(secret.refresh_token.is_some());
+
+        // A refused refresh token ends the session; the connection keeps its place.
+        fixture
+            .provider
+            .answer(StatusCode::BAD_REQUEST, serde_json::Value::Null);
+        assert_eq!(
+            fixture.accounts.bearer(handle.clone()).await.err(),
+            Some(CoachError::SignInAgain)
+        );
+        let (kept, secret) = fixture.connections.grok().await.unwrap().unwrap();
+        assert_eq!(kept, handle);
+        assert_eq!(secret.refresh_token, None);
     }
 
     #[tokio::test]

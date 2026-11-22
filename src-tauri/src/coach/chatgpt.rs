@@ -144,7 +144,7 @@ enum TokenFailure {
 }
 
 /// The error code of an OAuth error body, if it is one of the plain words these codes are.
-fn error_code(body: &[u8]) -> Option<String> {
+pub(crate) fn error_code(body: &[u8]) -> Option<String> {
     let value: Value = serde_json::from_slice(body).ok()?;
     let code = match value.get("error")? {
         Value::String(code) => code.as_str(),
@@ -181,18 +181,7 @@ fn identity(
     nonce: &str,
     now: u64,
 ) -> Option<Identity> {
-    if id_token.len() > MAX_TOKEN_BYTES {
-        return None;
-    }
-    let mut parts = id_token.split('.');
-    let (_header, payload, _signature) = (parts.next()?, parts.next()?, parts.next()?);
-    if parts.next().is_some() {
-        return None;
-    }
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(payload.trim_end_matches('='))
-        .ok()?;
-    let claims: Value = serde_json::from_slice(&bytes).ok()?;
+    let claims = id_token_claims(id_token)?;
     let for_this_client = match claims.get("aud")? {
         Value::String(audience) => audience == client_id,
         Value::Array(audiences) => audiences.iter().any(|audience| audience == client_id),
@@ -207,12 +196,33 @@ fn identity(
     }
     Some(Identity {
         subject: plain(claims.get("sub")?.as_str()?)?,
-        email: claims
-            .get("email")
-            .and_then(Value::as_str)
-            .filter(|email| email.contains('@'))
-            .and_then(plain),
+        email: display_email(&claims),
     })
+}
+
+/// What the middle part of an ID token says. Nothing about it is verified here.
+pub(crate) fn id_token_claims(id_token: &str) -> Option<Value> {
+    if id_token.len() > MAX_TOKEN_BYTES {
+        return None;
+    }
+    let mut parts = id_token.split('.');
+    let (_header, payload, _signature) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some() {
+        return None;
+    }
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// The account's email among the claims, if it is one that can be shown.
+pub(crate) fn display_email(claims: &Value) -> Option<String> {
+    claims
+        .get("email")
+        .and_then(Value::as_str)
+        .filter(|email| email.contains('@'))
+        .and_then(plain)
 }
 
 /// A client id as the provider issues them: a short plain word that is not the registration door.
@@ -512,7 +522,9 @@ pub(crate) mod tests {
     }
 
     /// The provider double: a token and a revocation endpoint that record their forms, and the
-    /// two API endpoints, which record the path and the authorization of every call.
+    /// two API endpoints, which record the path and the authorization of every call. For the
+    /// device-code sign-in it also serves a discovery document that names these endpoints, and a
+    /// device endpoint.
     pub(crate) struct Provider {
         pub server: TestServer,
         pub forms: Forms,
@@ -539,6 +551,15 @@ pub(crate) mod tests {
         let token = authorization.trim_start_matches("Bearer ").to_owned();
         calls.lock().unwrap().push((path, authorization));
         !refused.lock().unwrap().contains(&token)
+    }
+
+    /// The double's own address, as the caller reached it.
+    fn own_origin(headers: &HeaderMap) -> String {
+        let host = headers
+            .get(axum::http::header::HOST)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        format!("http://{host}")
     }
 
     impl Provider {
@@ -582,6 +603,30 @@ pub(crate) mod tests {
                             );
                             ([(CONTENT_TYPE, "text/event-stream")], stream).into_response()
                         }
+                    }),
+                )
+                .route(
+                    "/.well-known/openid-configuration",
+                    get(|headers: HeaderMap| async move {
+                        let origin = own_origin(&headers);
+                        Json(serde_json::json!({
+                            "device_authorization_endpoint": format!("{origin}/device"),
+                            "token_endpoint": format!("{origin}/token"),
+                            "revocation_endpoint": format!("{origin}/revoke"),
+                        }))
+                    }),
+                )
+                .route(
+                    "/device",
+                    post(|headers: HeaderMap| async move {
+                        let origin = own_origin(&headers);
+                        Json(serde_json::json!({
+                            "device_code": "the-device-code",
+                            "user_code": "WXYZ-9876",
+                            "verification_uri": format!("{origin}/activate"),
+                            "expires_in": 600,
+                            "interval": 1,
+                        }))
                     }),
                 )
                 .route(
