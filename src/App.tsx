@@ -2,16 +2,7 @@ import { localStorageColorSchemeManager, MantineProvider } from "@mantine/core";
 import { Notifications, notifications } from "@mantine/notifications";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import i18n from "@/i18n";
-import {
-  ask,
-  check,
-  getMatches,
-  info,
-  platform,
-  relaunch,
-  type Update,
-  warn,
-} from "@/platform/native";
+import { ask, check, info, platform, relaunch, type Update, warn } from "@/platform/native";
 import { warnSafely } from "@/platform/errors";
 import { getDefaultStore, useAtomValue } from "jotai";
 import { ContextMenuProvider } from "mantine-contextmenu";
@@ -239,19 +230,9 @@ export function useAppStartup() {
 
       info("React app started successfully");
 
-      const store = getDefaultStore();
-      try {
-        const matches = await getMatches();
-        if (matches.args.file.occurrences > 0) {
-          info(`Opening file from command line: ${matches.args.file.value}`);
-          // CLI paths are intentionally not forwarded into the renderer. Use the native
-          // capability picker so the backend can issue an opaque handle instead.
-        }
-      } catch (e) {
-        warn(`Failed to parse CLI args: ${e}`);
-      }
-
-      await preloadReferenceDb(store, signal);
+      // Command-line arguments never reach the renderer: a game link the process was started
+      // with is parsed natively and taken by `useIncomingGameLinks`.
+      await preloadReferenceDb(getDefaultStore(), signal);
     };
 
     void startupSequence()

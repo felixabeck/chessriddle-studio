@@ -3,7 +3,6 @@ export { getTauriVersion, getVersion } from "@tauri-apps/api/app";
 export { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 export { getCurrentWebviewWindow, type WebviewWindow } from "@tauri-apps/api/webviewWindow";
 export { getCurrentWindow } from "@tauri-apps/api/window";
-export { getMatches } from "@tauri-apps/plugin-cli";
 export { ask } from "@tauri-apps/plugin-dialog";
 export { error, info, warn } from "@tauri-apps/plugin-log";
 export {

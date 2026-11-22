@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   pickPgnFile: vi.fn(),
   requestBoardCommand: vi.fn(),
   ask: vi.fn(),
+  useIncomingGameLinks: vi.fn(),
 }));
 vi.mock("@/components/boards/boardCommands", () => ({
   requestBoardCommand: mocks.requestBoardCommand,
@@ -86,6 +87,9 @@ vi.mock("@/components/tabs/NavigationRow", () => ({
 }));
 vi.mock("@/components/WindowResizeHandles", () => ({ WindowResizeHandles: () => null }));
 vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
+vi.mock("@/components/tabs/useIncomingGameLinks", () => ({
+  useIncomingGameLinks: mocks.useIncomingGameLinks,
+}));
 vi.mock("@/components/tabs/TabCommands", () => ({
   TabCommandsProvider: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="tab-commands-owner">{children}</div>
@@ -221,6 +225,22 @@ test("the root poll follows current file tabs, listens for focus, and stops its 
   await vi.advanceTimersByTimeAsync(2_000);
   expect(mocks.fileRevision).toHaveBeenCalledOnce();
   vi.useRealTimers();
+});
+
+test("the root shell is the one owner of incoming game links", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root: Root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  mocks.useIncomingGameLinks.mockClear();
+  await act(async () => {
+    root.render(<RootLayout />);
+  });
+  // Mounted below the router and the tab owner, on every render of the shell.
+  expect(mocks.useIncomingGameLinks).toHaveBeenCalled();
+  expect(host.querySelector("[data-testid='tab-commands-owner']")).not.toBeNull();
+  await act(async () => root.unmount());
+  host.remove();
 });
 
 test("the row feedback button opens the same dialog", async () => {

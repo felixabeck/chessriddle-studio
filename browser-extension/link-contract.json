@@ -1,0 +1,93 @@
+{
+  "comment": "The link contract between the browser extension and ChessRiddle Studio. The extension's tests prove it emits exactly `link` for `source` and nothing for `notLinked`; the native parser's tests (src-tauri/src/infra/game_link.rs) prove it accepts every `link` as `game` and refuses every entry of `refused`.",
+  "accepted": [
+    {
+      "source": "https://lichess.org/abcdefgh",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+      "game": { "site": "lichess", "game_id": "abcdefgh" }
+    },
+    {
+      "source": "https://lichess.org/Ab3dE6gH/black",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2FAb3dE6gH",
+      "game": { "site": "lichess", "game_id": "Ab3dE6gH" }
+    },
+    {
+      "source": "https://lichess.org/abcdefgh1234",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+      "game": { "site": "lichess", "game_id": "abcdefgh" }
+    },
+    {
+      "source": "https://www.chess.com/game/live/123456789",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F123456789",
+      "game": { "site": "chess-com", "game_type": "live", "game_id": "123456789" }
+    },
+    {
+      "source": "https://www.chess.com/game/daily/42",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Fdaily%2F42",
+      "game": { "site": "chess-com", "game_type": "daily", "game_id": "42" }
+    },
+    {
+      "source": "https://chess.com/analysis/game/live/987654321/analysis",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F987654321",
+      "game": { "site": "chess-com", "game_type": "live", "game_id": "987654321" }
+    },
+    {
+      "source": "https://www.chess.com/game/live/12345678901234567890",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F12345678901234567890",
+      "game": { "site": "chess-com", "game_type": "live", "game_id": "12345678901234567890" }
+    }
+  ],
+  "notLinked": [
+    "https://www.chess.com/game/live/123456789012345678901",
+    "https://www.chess.com/game/live/0123",
+    "https://www.chess.com/events/2026-some-event/01/Player_A-Player_B",
+    "https://lichess.org/study/abcdefgh",
+    "https://lichess.org/training/abcde",
+    "http://lichess.org/abcdefgh",
+    "https://lichess.org.example.test/abcdefgh"
+  ],
+  "refused": [
+    "",
+    "chessriddle-studio://import",
+    "chessriddle-studio://import?url=",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefg",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefghi",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh1234",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh%2Fwhite",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh%2F",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabc-efgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh%3Fx%3D1",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh%23frag",
+    "chessriddle-studio://import?url=http%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%3A443%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Fuser%40lichess.org%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%40evil.example%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org.evil.example%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2FLICHESS.ORG%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Fevil.example%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Fchess.com%2Fgame%2Flive%2F123",
+    "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2F123",
+    "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Fblitz%2F123",
+    "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F0123",
+    "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F0",
+    "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F123456789012345678901",
+    "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F12a",
+    "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F123%2Fanalysis",
+    "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh&url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh&report=1",
+    "chessriddle-studio://import?link=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh#frag",
+    "chessriddle-studio://import/game?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle-studio://open?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle-studio://IMPORT?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle-studio://user@import?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle-studio://import:8080?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle-studio:import?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "chessriddle://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "encroissant://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh",
+    "https://lichess.org/abcdefgh",
+    "--help",
+    "/home/user/game.pgn"
+  ]
+}

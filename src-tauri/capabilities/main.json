@@ -30,7 +30,6 @@
         "os:allow-os-type",
         "os:allow-platform",
         "os:allow-version",
-        "cli:allow-cli-matches",
         "process:allow-exit",
         "process:allow-restart",
         "updater:allow-check",

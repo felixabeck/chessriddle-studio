@@ -4,6 +4,7 @@
 pub mod blocking;
 pub mod cancellable_lock;
 pub mod fs;
+pub(crate) mod game_link;
 pub(crate) mod inode_ownership;
 pub(crate) mod keyed_locks;
 pub mod net;

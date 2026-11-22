@@ -567,6 +567,8 @@ pub struct AppState {
     puzzle_cache: Arc<tokio::sync::Mutex<crate::puzzle::PuzzleCache>>,
     pub http_transport: Arc<dyn crate::infra::net::DownloadTransport>,
     pub(crate) json_http_client: Arc<reqwest::Client>,
+    /// Game links accepted from the operating system that the renderer has not taken yet.
+    pub(crate) game_links: Arc<infra::game_link::PendingGameLinks>,
 }
 
 impl AppState {
@@ -605,6 +607,7 @@ impl AppState {
             puzzle_cache: Arc::new(tokio::sync::Mutex::new(crate::puzzle::PuzzleCache::new())),
             http_transport,
             json_http_client,
+            game_links: Arc::default(),
         })
     }
 }
@@ -890,10 +893,41 @@ impl MainWindowReveal {
         self.revealed.store(false, Ordering::SeqCst);
     }
 
-    #[cfg(test)]
     fn is_revealed(&self) -> bool {
         self.revealed.load(Ordering::SeqCst)
     }
+}
+
+/// The one intake every game-link arrival ends in: parse and enqueue, then tell the main window
+/// and ask for the user's attention. A link that arrives before the window exists or before the
+/// renderer listens is found by the renderer's drain at startup, so the event is only a wake-up.
+fn accept_game_link<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    raw: &str,
+) -> infra::game_link::Intake {
+    use tauri_specta::Event as _;
+    let Some(state) = app.try_state::<AppState>() else {
+        log::warn!("dropped a game link: the application state is not managed yet");
+        return infra::game_link::Intake::Refused;
+    };
+    let intake = state.game_links.offer(raw);
+    if intake != infra::game_link::Intake::Queued {
+        return intake;
+    }
+    if let Err(error) = (infra::game_link::GameLinkPending {}).emit_to(app, "main") {
+        log::warn!("could not announce a waiting game link to the main window: {error}");
+    }
+    // Never reveal the window ahead of the renderer's startup reveal; once it has been revealed,
+    // bring it back to the user. Both requests are best effort (a compositor may refuse focus).
+    let revealed = app
+        .try_state::<MainWindowReveal>()
+        .is_some_and(|reveal| reveal.is_revealed());
+    if let Some(window) = revealed.then(|| app.get_webview_window("main")).flatten() {
+        if let Err(error) = window.unminimize().and_then(|()| window.set_focus()) {
+            log::warn!("could not bring the main window forward for a game link: {error}");
+        }
+    }
+    intake
 }
 
 /// The renderer's reveal: show the main window, then record the reveal for the fallback.
@@ -1580,7 +1614,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_sound_server_port,
             download_chess_com_games,
             get_public_chess_com_json,
-            submit_feedback
+            submit_feedback,
+            infra::game_link::take_pending_game_links
         ))
         .events(tauri_specta::collect_events!(
             chessbase::ChessBaseSelected,
@@ -1591,7 +1626,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             infra::operations::completions::CompletionChanged,
             GameMoveEvent,
             ClockUpdateEvent,
-            GameOverEvent
+            GameOverEvent,
+            infra::game_link::GameLinkPending
         ));
 
     #[cfg(debug_assertions)]
@@ -1815,8 +1851,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // WebKitGTK only follows a desktop light/dark switch through GtkSettings.
             system_appearance::follow_desktop_color_scheme();
 
-            #[cfg(desktop)]
-            app.handle().plugin(tauri_plugin_cli::init())?;
+            // A link this launch was started with waits in the queue until the renderer's
+            // startup drain. The log line never contains the link.
+            if let Some(link) = infra::game_link::launch_link(std::env::args_os()) {
+                if accept_game_link(app.handle(), &link) == infra::game_link::Intake::Queued {
+                    log::info!("queued a game link from the command line");
+                }
+            }
 
             app.manage(MainWindowReveal::default());
             let main_window = app
@@ -1857,6 +1898,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } = &event
             {
                 cancel_destroyed_window_operations(&app.state::<AppState>(), label);
+            }
+            // macOS delivers a clicked link to the running or starting application as an event,
+            // never as an argument.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                for url in urls {
+                    accept_game_link(app, url.as_str());
+                }
             }
             let tauri::RunEvent::ExitRequested { api, .. } = &event else {
                 return;
@@ -4156,24 +4205,34 @@ mod blocking_offload_scans {
     }
 
     #[test]
-    fn main_window_is_created_from_config_after_cli_registration() {
+    fn main_window_is_created_from_config_after_the_launch_link_is_queued() {
         let setup = body_at_indent(include_str!("main.rs"), ".setup(move |app| {");
         let setup = setup.split("\n        })").next().unwrap();
-        let cli = setup
-            .find("app.handle().plugin(tauri_plugin_cli::init())?;")
+        // The command-line plugin handed the first argument to the renderer; it must not return.
+        assert!(!include_str!("main.rs").contains(concat!("tauri_plugin_", "cli")));
+        let queued = setup
+            .find("if let Some(link) = infra::game_link::launch_link(std::env::args_os()) {")
             .unwrap();
+        assert_eq!(
+            setup
+                .matches("accept_game_link(app.handle(), &link)")
+                .count(),
+            1
+        );
+        // The link is queued only by a process that passed instance admission.
+        assert!(setup.find("return Ok(());").unwrap() < queued);
         let config = setup.find("let main_window = app").unwrap();
         let window = setup
             .find("tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;")
             .unwrap();
-        assert!(cli < config && config < window);
+        assert!(queued < config && config < window);
         assert!(setup[config..window].contains(".windows\n                .first()\n                .ok_or(\"main window configuration is missing\")?;"));
         // The reveal state exists before the window does, so the renderer's `close_splashscreen`
         // can always record its reveal.
         let reveal_state = setup
             .find("app.manage(MainWindowReveal::default());")
             .unwrap();
-        assert!(cli < reveal_state && reveal_state < config);
+        assert!(queued < reveal_state && reveal_state < config);
         assert_eq!(setup.matches("MainWindowReveal").count(), 1);
         // The reveal fallback is armed only after the window exists, and before setup reports
         // success; nothing else may slip in between.

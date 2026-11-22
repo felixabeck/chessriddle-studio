@@ -40,7 +40,6 @@ export const NATIVE_EXPORT_ALLOWLIST = Object.freeze(
     ["@tauri-apps/api/webviewWindow", "getCurrentWebviewWindow", "getCurrentWebviewWindow"],
     ["@tauri-apps/api/webviewWindow", "WebviewWindow", "WebviewWindow"],
     ["@tauri-apps/api/window", "getCurrentWindow", "getCurrentWindow"],
-    ["@tauri-apps/plugin-cli", "getMatches", "getMatches"],
     ["@tauri-apps/plugin-dialog", "ask", "ask"],
     ["@tauri-apps/plugin-log", "error", "error"],
     ["@tauri-apps/plugin-log", "info", "info"],

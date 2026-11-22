@@ -16,6 +16,7 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { WindowResizeHandles } from "@/components/WindowResizeHandles";
 import NavigationRow from "@/components/tabs/NavigationRow";
 import { TabCommandsProvider, useTabCommands } from "@/components/tabs/TabCommands";
+import { useIncomingGameLinks } from "@/components/tabs/useIncomingGameLinks";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
 import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
@@ -110,6 +111,7 @@ function RootShell() {
   const navigate = useNavigate();
   const jotaiStore = useJotaiStore();
   const { newTab } = useTabCommands();
+  useIncomingGameLinks();
 
   const [, setTabs] = useAtom(tabsAtom);
   const unsavedGames = getUnsavedGameMirror(() => ({

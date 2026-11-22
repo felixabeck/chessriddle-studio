@@ -51,15 +51,6 @@
       "endpoints": [
         "https://github.com/felixabeck/chessriddle-studio/releases/latest/download/latest.json"
       ]
-    },
-    "cli": {
-      "args": [
-        {
-          "name": "file",
-          "index": 1,
-          "takesValue": true
-        }
-      ]
     }
   },
   "app": {

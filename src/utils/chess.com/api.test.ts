@@ -35,7 +35,13 @@ vi.mock("@/platform/tauri", async () => {
     };
 });
 
-import { downloadChessCom, getChessComAccount, getChesscomGame } from "./api";
+import {
+    ChessComGameResponseError,
+    downloadChessCom,
+    fetchChessComGamePgn,
+    getChessComAccount,
+    getChesscomGame,
+} from "./api";
 
 const destination: PathRef = { id: "destination" };
 const publication: ArtifactPublication = {
@@ -59,6 +65,54 @@ beforeEach(() => {
                 throw error;
             }
         });
+});
+
+describe("fetchChessComGamePgn", () => {
+    test("returns the PGN the dialog entry point returns, from the typed game identity", async () => {
+        mocks.getPublicChessComJson.mockResolvedValue(JSON.stringify(chess960Fixture));
+        const viaCore = await fetchChessComGamePgn("live", "101679677427");
+        const viaDialog = await getChesscomGame("https://www.chess.com/game/live/101679677427");
+
+        expect(viaCore).toBe(viaDialog);
+        expect(mocks.getPublicChessComJson).toHaveBeenNthCalledWith(1, {
+            kind: "game",
+            game_type: "live",
+            game_id: "101679677427",
+        });
+        expect(mocks.showNotification).not.toHaveBeenCalled();
+        expect(mocks.logError).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ["an unexpected response shape", { nothing: true }, "Invalid response for Chess.com game"],
+        [
+            "an invalid starting position",
+            { game: { moveList: "", pgnHeaders: { SetUp: "1", FEN: "not a fen" } } },
+            "Invalid starting position for Chess.com game",
+        ],
+        [
+            "an illegal move",
+            { game: { moveList: "a4", pgnHeaders: {} } },
+            "Illegal move in Chess.com game: a4",
+        ],
+    ])("rejects %s with a response error and stays silent", async (_name, body, message) => {
+        mocks.getPublicChessComJson.mockResolvedValue(JSON.stringify(body));
+
+        const failure = await fetchChessComGamePgn("daily", "42").catch((cause: unknown) => cause);
+
+        expect(failure).toBeInstanceOf(ChessComGameResponseError);
+        expect((failure as Error).message).toContain(message);
+        expect(mocks.showNotification).not.toHaveBeenCalled();
+        expect(mocks.logError).not.toHaveBeenCalled();
+    });
+
+    test("passes a transport failure through unchanged", async () => {
+        const failure = { category: "network", message: "offline" };
+        mocks.getPublicChessComJson.mockRejectedValue(failure);
+
+        await expect(fetchChessComGamePgn("live", "1")).rejects.toBe(failure);
+        expect(mocks.showNotification).not.toHaveBeenCalled();
+    });
 });
 
 describe("getChesscomGame", () => {

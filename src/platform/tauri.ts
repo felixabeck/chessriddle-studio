@@ -578,6 +578,8 @@ export const tauriSubscriptions = {
     databaseContentFailure: (
         callback: Parameters<typeof events.databaseContentFailure.listen>[0],
     ) => events.databaseContentFailure.listen(callback),
+    gameLinkPending: (callback: Parameters<typeof events.gameLinkPending.listen>[0]) =>
+        events.gameLinkPending.listen(callback),
     gameMove: eventSubscription(
         (callback) => events.gameMoveEvent.listen(callback),
         normalizeGameMoveEvent,

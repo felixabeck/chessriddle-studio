@@ -77,6 +77,57 @@ const chessComGameSchema = z.object({
   }),
 });
 
+/** A chess.com game response that cannot be turned into a game. `message` is the log line. */
+export class ChessComGameResponseError extends Error {}
+
+/**
+ * Fetches one chess.com game and converts it to PGN. No notification, no log: a transport
+ * failure rejects with the native error, an unusable response with `ChessComGameResponseError`,
+ * and each caller presents the failure itself.
+ */
+export async function fetchChessComGamePgn(gameType: string, gameId: string): Promise<string> {
+  const response = await tauri.getPublicChessComJson({
+    kind: "game",
+    game_type: gameType,
+    game_id: gameId,
+  });
+
+  const gameData = chessComGameSchema.safeParse(JSON.parse(response));
+  if (!gameData.success) {
+    throw new ChessComGameResponseError(`Invalid response for Chess.com game: ${gameData.error}`);
+  }
+
+  const moveList = gameData.data.game.moveList;
+  const pgnHeaders = gameData.data.game.pgnHeaders;
+  const headers = new Map(Object.entries(pgnHeaders).map(([k, v]) => [k, v.toString()]));
+  const start = startingPosition(headers);
+  if (start.isErr) {
+    throw new ChessComGameResponseError(
+      `Invalid starting position for Chess.com game: ${start.error}`,
+    );
+  }
+  const game = defaultGame<PgnNodeData>(() => headers);
+  const chess = start.value;
+
+  let lastNode = game.moves;
+  for (const move of moveList.match(/.{1,2}/g) ?? []) {
+    const m = decodeTCN(move);
+    if (!chess.isLegal(m)) {
+      throw new ChessComGameResponseError(`Illegal move in Chess.com game: ${move}`);
+    }
+    lastNode.children.push(
+      new ChildNode({
+        san: makeSan(chess, m),
+      }),
+    );
+    chess.play(m);
+    lastNode = lastNode.children[0];
+  }
+
+  return makePgn(game);
+}
+
+/** The import dialog's entry point: a pasted URL in, a PGN or a shown notification out. */
 export async function getChesscomGame(gameURL: string) {
   const regex = /.*\/game\/(?:(live|daily)\/)?(\d+)/;
   const match = gameURL.match(regex);
@@ -103,61 +154,19 @@ export async function getChesscomGame(gameURL: string) {
     return null;
   }
 
-  const gameType = match[1] || "live";
-  const gameId = match[2];
-
-  const response = await tauri.getPublicChessComJson({
-    kind: "game",
-    game_type: gameType,
-    game_id: gameId,
-  });
-
-  const apiData = JSON.parse(response);
-  const showInvalidResponse = () => {
+  try {
+    return await fetchChessComGamePgn(match[1] || "live", match[2]);
+  } catch (cause) {
+    if (!(cause instanceof ChessComGameResponseError)) throw cause;
+    error(cause.message);
     notifications.show({
       title: t("ChessCom.FetchGameFailed"),
       message: t("ChessCom.InvalidResponse", { value: gameURL }),
       color: "danger",
       icon: <X />,
     });
-  };
-  const gameData = chessComGameSchema.safeParse(apiData);
-  if (!gameData.success) {
-    error(`Invalid response for Chess.com game: ${gameData.error}`);
-    showInvalidResponse();
     return null;
   }
-
-  const moveList = gameData.data.game.moveList;
-  const pgnHeaders = gameData.data.game.pgnHeaders;
-  const headers = new Map(Object.entries(pgnHeaders).map(([k, v]) => [k, v.toString()]));
-  const start = startingPosition(headers);
-  if (start.isErr) {
-    error(`Invalid starting position for Chess.com game: ${start.error}`);
-    showInvalidResponse();
-    return null;
-  }
-  const game = defaultGame<PgnNodeData>(() => headers);
-  const chess = start.value;
-
-  let lastNode = game.moves;
-  for (const move of moveList.match(/.{1,2}/g) ?? []) {
-    const m = decodeTCN(move);
-    if (!chess.isLegal(m)) {
-      error(`Illegal move in Chess.com game: ${move}`);
-      showInvalidResponse();
-      return null;
-    }
-    lastNode.children.push(
-      new ChildNode({
-        san: makeSan(chess, m),
-      }),
-    );
-    chess.play(m);
-    lastNode = lastNode.children[0];
-  }
-
-  return makePgn(game);
 }
 
 export function getStats(stats: ChessComStats) {

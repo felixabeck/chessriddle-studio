@@ -30,7 +30,6 @@ const mocks = vi.hoisted(() => {
     ),
     closeSplashscreen: vi.fn(),
     getDefaultStore: vi.fn(),
-    getMatches: vi.fn(),
     info: vi.fn(),
     preloadReferenceDb: vi.fn(),
     reconcileStartupPathOwners: vi.fn(),
@@ -52,7 +51,6 @@ vi.mock("@/platform/native", () => ({
   ask: mocks.ask,
   attachConsole: mocks.attachConsole,
   check: mocks.check,
-  getMatches: mocks.getMatches,
   info: mocks.info,
   platform: mocks.platform,
   relaunch: mocks.relaunch,
@@ -154,14 +152,6 @@ function Probe() {
   return null;
 }
 
-/** The CLI match shape for a launch without a file argument, which is every case but one. */
-const noCliFileArgs = { args: { file: { occurrences: 0, value: "" } } };
-
-/** Wires the native call a startup must get past before the branch under test. */
-function mockLaunchWithoutCliFile() {
-  mocks.getMatches.mockResolvedValue(noCliFileArgs);
-}
-
 /** An available update whose download and install can be driven by the test. */
 function mockUpdate({
   download = () => Promise.resolve(),
@@ -193,7 +183,6 @@ beforeEach(() => {
   mocks.attachConsole.mockReset();
   mocks.closeSplashscreen.mockReset();
   mocks.getDefaultStore.mockReset();
-  mocks.getMatches.mockReset();
   mocks.info.mockReset();
   mocks.reconcileStartupPathOwners.mockReset().mockResolvedValue(null);
   mocks.reconcileEngineAttachments.mockReset().mockResolvedValue(null);
@@ -275,8 +264,6 @@ describe("useAppStartup", () => {
 
   test("reports reconciliation failure and still tears down the splash", async () => {
     mocks.reconcileStartupPathOwners.mockRejectedValue(new Error("registry unavailable"));
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<Probe />));
 
     expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining("registry unavailable"));
@@ -287,8 +274,6 @@ describe("useAppStartup", () => {
     mocks.reconcileEngineAttachments.mockRejectedValue(
       new Error("attachment registry unavailable"),
     );
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<Probe />));
 
     expect(mocks.warn).toHaveBeenCalledWith(
@@ -297,25 +282,9 @@ describe("useAppStartup", () => {
     expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
   });
 
-  test("logs the CLI file argument", async () => {
-    mocks.getMatches.mockResolvedValue({
-      args: { file: { occurrences: 1, value: "/games/opening.pgn" } },
-    });
-
-    await act(async () => root.render(<Probe />));
-
-    expect(mocks.info).toHaveBeenCalledWith("Opening file from command line: /games/opening.pgn");
-    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
-  });
-
   test("leaves optional startup work untouched when nothing is configured", async () => {
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<Probe />));
 
-    expect(mocks.info).not.toHaveBeenCalledWith(
-      expect.stringContaining("Opening file from command line"),
-    );
     expect(mocks.preloadReferenceDb).not.toHaveBeenCalled();
     expect(mocks.info).not.toHaveBeenCalledWith(
       expect.stringContaining("Preloading reference database"),
@@ -325,8 +294,6 @@ describe("useAppStartup", () => {
 
   test("preloads the configured reference database", async () => {
     storeValues.referenceDb = "reference.db3";
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<Probe />));
 
     expect(mocks.preloadReferenceDb).toHaveBeenCalledWith(
@@ -339,7 +306,6 @@ describe("useAppStartup", () => {
 
   test("reports a reference database preload failure without failing startup", async () => {
     storeValues.referenceDb = "reference.db3";
-    mockLaunchWithoutCliFile();
     mocks.preloadReferenceDb.mockRejectedValue(new Error("database missing"));
 
     await act(async () => root.render(<Probe />));
@@ -352,8 +318,6 @@ describe("useAppStartup", () => {
 
   test("stays silent when the reference preload rejects because startup was cancelled", async () => {
     storeValues.referenceDb = "reference.db3";
-    mockLaunchWithoutCliFile();
-
     let rejectPreload: (error: Error) => void = () => undefined;
     mocks.preloadReferenceDb.mockImplementation(
       () =>
@@ -380,27 +344,6 @@ describe("useAppStartup", () => {
   test("skips the reference preload when startup was cancelled before it began", async () => {
     storeValues.referenceDb = "reference.db3";
 
-    let resolveMatches: (matches: {
-      args: { file: { occurrences: number; value: string } };
-    }) => void = () => undefined;
-    mocks.getMatches.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveMatches = resolve;
-        }),
-    );
-
-    await act(async () => root.render(<Probe />));
-    await act(async () => root.unmount());
-    await act(async () => {
-      resolveMatches(noCliFileArgs);
-    });
-
-    expect(mocks.preloadReferenceDb).not.toHaveBeenCalled();
-    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
-  });
-
-  test("stops before CLI handling when startup is cancelled during reconciliation", async () => {
     let resolveOwners: () => void = () => {};
     mocks.reconcileStartupPathOwners.mockImplementation(
       () =>
@@ -413,24 +356,13 @@ describe("useAppStartup", () => {
     await act(async () => root.unmount());
     await act(async () => resolveOwners());
 
-    expect(mocks.getMatches).not.toHaveBeenCalled();
-    expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
-  });
-
-  test("reports unreadable CLI arguments and still finishes startup", async () => {
-    mocks.getMatches.mockRejectedValue(new Error("argv unavailable"));
-
-    await act(async () => root.render(<Probe />));
-
-    expect(mocks.warn).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to parse CLI args: Error: argv unavailable"),
-    );
+    expect(mocks.info).not.toHaveBeenCalledWith("React app started successfully");
+    expect(mocks.preloadReferenceDb).not.toHaveBeenCalled();
     expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
   });
 
   test("reveals the window before the reference database preload settles", async () => {
     storeValues.referenceDb = "reference.db3";
-    mockLaunchWithoutCliFile();
     let resolvePreload: () => void = () => undefined;
     mocks.preloadReferenceDb.mockImplementation(
       () =>
@@ -456,7 +388,6 @@ describe("useAppStartup", () => {
 
   test("starts no further startup step when unmounted while the reveal is pending", async () => {
     storeValues.referenceDb = "reference.db3";
-    mockLaunchWithoutCliFile();
     let resolveReveal: () => void = () => undefined;
     mocks.closeSplashscreen.mockImplementation(
       () =>
@@ -472,14 +403,12 @@ describe("useAppStartup", () => {
 
     expect(mocks.reconcileStartupPathOwners).not.toHaveBeenCalled();
     expect(mocks.info).not.toHaveBeenCalledWith("React app started successfully");
-    expect(mocks.getMatches).not.toHaveBeenCalled();
     expect(mocks.preloadReferenceDb).not.toHaveBeenCalled();
     expect(mocks.check).not.toHaveBeenCalled();
   });
 
   test("reports a refused window reveal and still runs the rest of startup", async () => {
     storeValues.referenceDb = "reference.db3";
-    mockLaunchWithoutCliFile();
     mocks.closeSplashscreen.mockRejectedValue(new Error("splash window gone"));
     // Degraded IPC: the native logger rejects as well, so the diagnostic must reach the console.
     mocks.warn.mockRejectedValue(new Error("log channel closed"));
@@ -502,14 +431,11 @@ describe("useAppStartup", () => {
     );
     expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
     expect(mocks.reconcileStartupPathOwners).toHaveBeenCalledOnce();
-    expect(mocks.getMatches).toHaveBeenCalledOnce();
     expect(mocks.preloadReferenceDb).toHaveBeenCalledOnce();
     expect(mocks.check).toHaveBeenCalledOnce();
   });
 
   test("does not subscribe the renderer to native log records", async () => {
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<Probe />));
 
     expect(mocks.attachConsole).not.toHaveBeenCalled();
@@ -523,8 +449,6 @@ describe("startup update check", () => {
   });
 
   test("shows no dialog when no update is available", async () => {
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<Probe />));
 
     expect(mocks.check).toHaveBeenCalledOnce();
@@ -534,7 +458,6 @@ describe("startup update check", () => {
 
   test("closes the splash before a hanging check reaches its timeout, then warns", async () => {
     vi.useFakeTimers();
-    mockLaunchWithoutCliFile();
     mocks.check.mockReturnValue(new Promise(() => undefined));
 
     await act(async () => root.render(<Probe />));
@@ -551,7 +474,6 @@ describe("startup update check", () => {
 
   test("closes an update delivered after unmount before timeout without prompting", async () => {
     vi.useFakeTimers();
-    mockLaunchWithoutCliFile();
     const update = mockUpdate();
     let resolveCheck: (value: typeof update) => void = () => undefined;
     mocks.check.mockReturnValue(
@@ -580,7 +502,6 @@ describe("startup update check", () => {
     "closes an update delivered after timeout without prompting (unmounted: %s)",
     async (unmount) => {
       vi.useFakeTimers();
-      mockLaunchWithoutCliFile();
       const update = mockUpdate();
       let resolveCheck: (value: typeof update) => void = () => undefined;
       mocks.check.mockReturnValue(
@@ -607,7 +528,6 @@ describe("startup update check", () => {
 
   test("handles a check rejection delivered after timeout", async () => {
     vi.useFakeTimers();
-    mockLaunchWithoutCliFile();
     let rejectCheck: (error: Error) => void = () => undefined;
     mocks.check.mockReturnValue(
       new Promise((_resolve, reject) => {
@@ -625,7 +545,6 @@ describe("startup update check", () => {
   });
 
   test("warns and continues when the check fails", async () => {
-    mockLaunchWithoutCliFile();
     mocks.check.mockRejectedValue(new Error("latest.json missing"));
 
     await act(async () => root.render(<Probe />));
@@ -636,7 +555,6 @@ describe("startup update check", () => {
   });
 
   test("does not download when the user declines", async () => {
-    mockLaunchWithoutCliFile();
     const update = mockUpdate();
 
     await act(async () => root.render(<Probe />));
@@ -649,7 +567,6 @@ describe("startup update check", () => {
   });
 
   test("downloads, installs and relaunches when the user accepts", async () => {
-    mockLaunchWithoutCliFile();
     const update = mockUpdate();
     mocks.ask.mockResolvedValue(true);
 
@@ -670,7 +587,6 @@ describe("startup update check", () => {
   });
 
   test("does not relaunch when a blocking tab has unsaved work", async () => {
-    mockLaunchWithoutCliFile();
     const update = mockUpdate();
     mocks.ask.mockResolvedValue(true);
     mocks.scanBlockingTabs.mockImplementation((tabs) =>
@@ -697,7 +613,6 @@ describe("startup update check", () => {
   });
 
   test("does not relaunch when the quit gate is in progress", async () => {
-    mockLaunchWithoutCliFile();
     const update = mockUpdate();
     mocks.ask.mockResolvedValue(true);
     mocks.isQuitGateInProgress.mockReturnValue(true);
@@ -718,7 +633,6 @@ describe("startup update check", () => {
   });
 
   test("does not relaunch when scanning blocking tabs throws", async () => {
-    mockLaunchWithoutCliFile();
     const update = mockUpdate();
     mocks.ask.mockResolvedValue(true);
     mocks.scanBlockingTabs.mockImplementation(() => {
@@ -745,7 +659,6 @@ describe("startup update check", () => {
   });
 
   test("notifies the user and does not install when the download fails", async () => {
-    mockLaunchWithoutCliFile();
     const update = mockUpdate({
       download: () => Promise.reject(new Error("signature mismatch")),
     });
@@ -765,7 +678,6 @@ describe("startup update check", () => {
   });
 
   test("notifies the user and does not relaunch when the install fails", async () => {
-    mockLaunchWithoutCliFile();
     const update = mockUpdate({
       install: () => Promise.reject(new Error("installer refused")),
     });
@@ -784,7 +696,6 @@ describe("startup update check", () => {
   });
 
   test("does not relaunch when the install settles after unmount", async () => {
-    mockLaunchWithoutCliFile();
     let finishInstall: () => void = () => undefined;
     const update = mockUpdate({
       install: () =>
@@ -807,7 +718,6 @@ describe("startup update check", () => {
 
   test("on Windows postpones install when a blocking tab has unsaved work", async () => {
     mocks.platform.mockReturnValue("windows");
-    mockLaunchWithoutCliFile();
     const update = mockUpdate({ install: neverResolves });
     mocks.ask.mockResolvedValue(true);
     mocks.scanBlockingTabs.mockImplementation((tabs) =>
@@ -833,7 +743,6 @@ describe("startup update check", () => {
 
   test("on Windows postpones install when the quit gate is in progress", async () => {
     mocks.platform.mockReturnValue("windows");
-    mockLaunchWithoutCliFile();
     const update = mockUpdate({ install: neverResolves });
     mocks.ask.mockResolvedValue(true);
     mocks.isQuitGateInProgress.mockReturnValue(true);
@@ -852,7 +761,6 @@ describe("startup update check", () => {
 
   test("on Windows does not install when scanning blocking tabs throws", async () => {
     mocks.platform.mockReturnValue("windows");
-    mockLaunchWithoutCliFile();
     const update = mockUpdate({ install: neverResolves });
     mocks.ask.mockResolvedValue(true);
     mocks.scanBlockingTabs.mockImplementation(() => {
@@ -875,7 +783,6 @@ describe("startup update check", () => {
 
   test("on Windows scans for unsaved work before installing", async () => {
     mocks.platform.mockReturnValue("windows");
-    mockLaunchWithoutCliFile();
     const update = mockUpdate({ install: neverResolves });
     mocks.ask.mockResolvedValue(true);
 
@@ -907,7 +814,6 @@ describe("startup update check", () => {
 
 describe("App", () => {
   test("installs native context menu suppression and removes it on unmount", async () => {
-    mockLaunchWithoutCliFile();
     await act(async () => root.render(<App />));
     const plain = document.createElement("div");
     const input = document.createElement("input");
@@ -926,8 +832,6 @@ describe("App", () => {
   });
 
   test("applies the persisted font size and theme settings", async () => {
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<App />));
 
     expect(document.documentElement.style.fontSize).toBe("120%");
@@ -940,8 +844,6 @@ describe("App", () => {
   });
 
   test("applies the persisted piece size on the document root", async () => {
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<App />));
     expect(document.documentElement.style.getPropertyValue("--piece-size")).toBe("100%");
 
@@ -951,7 +853,6 @@ describe("App", () => {
   });
 
   test("rebuilds the theme when the mounted app's font scale changes", async () => {
-    mockLaunchWithoutCliFile();
     await act(async () => root.render(<App />));
     await act(async () => root.render(<App />));
     expect(mocks.createAppTheme).toHaveBeenCalledTimes(1);
@@ -971,8 +872,6 @@ describe("App", () => {
    * and nothing noticed (`.claude/rules/ipc-events.md`). Coverage cannot see that: a deleted hook
    * call leaves no uncovered line behind. These assertions are what does. */
   test("keeps the renderer-side subscriptions wired", async () => {
-    mockLaunchWithoutCliFile();
-
     await act(async () => root.render(<App />));
 
     expect(mocks.useConversionProgress).toHaveBeenCalled();
@@ -985,7 +884,6 @@ describe("App", () => {
   /** f-20261119-12: both app-wide notices once hand-placed themselves in the toast corner and
    * drew over each other. They share one stack, and the toast column is lifted above it. */
   test("renders both notices in one stack and lifts the toast column above it", async () => {
-    mockLaunchWithoutCliFile();
     mocks.sessionPersistenceNotice.mockImplementationOnce(() => (
       <div role="alert">persistence</div>
     ));

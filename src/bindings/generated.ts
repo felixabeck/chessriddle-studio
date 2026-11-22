@@ -1435,6 +1435,17 @@ async submitFeedback(feedbackType: FeedbackType, message: string, contactEmail: 
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Hands every waiting link to the renderer, oldest first, and forgets them.
+ */
+async takePendingGameLinks() : Promise<Result<GameLink[], ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("take_pending_game_links") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1448,6 +1459,7 @@ clockUpdateEvent: ClockUpdateEvent,
 completionChanged: CompletionChanged,
 convertProgress: ConvertProgress,
 databaseContentFailure: DatabaseContentFailure,
+gameLinkPending: GameLinkPending,
 gameMoveEvent: GameMoveEvent,
 gameOverEvent: GameOverEvent,
 progressEvent: ProgressEvent
@@ -1458,6 +1470,7 @@ clockUpdateEvent: "clock-update-event",
 completionChanged: "completion-changed",
 convertProgress: "convert-progress",
 databaseContentFailure: "database-content-failure",
+gameLinkPending: "game-link-pending",
 gameMoveEvent: "game-move-event",
 gameOverEvent: "game-over-event",
 progressEvent: "progress-event"
@@ -1495,6 +1508,7 @@ export type BestMoves = { nodes: bigint; depth: number; score: Score; uciMoves: 
 export type BestMovesPayload = { bestLines: BestMoves[]; engine: string; tab: string; fen: string; moves: string[]; progress: number; generation: string }
 export type BoardOrientation = "white" | "black"
 export type ChessBaseSelected = Record<string, never>
+export type ChessComGameType = "live" | "daily"
 /**
  * This handle has no conversion into a Lichess handle at the provider boundary.
  */
@@ -1634,6 +1648,15 @@ export type GameAnalysis = { positions: ReportPosition[]; novelty: NoveltyOutcom
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"
 export type GameInterruptionReason = "engineFailure" | "engineTaskFailed"
+/**
+ * One game on a supported site, in the vocabulary of the native fetch commands.
+ */
+export type GameLink = { site: "lichess"; game_id: string } | { site: "chess-com"; game_type: ChessComGameType; game_id: string }
+/**
+ * Signals the main window that [`take_pending_game_links`] has something to return. It carries
+ * nothing: a link that arrives before the renderer listens is found by the drain at startup.
+ */
+export type GameLinkPending = Record<string, never>
 /**
  * List filters for `get_games`. Unknown keys are rejected.
  */
