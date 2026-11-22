@@ -82,6 +82,7 @@ import { DrawingKeybinds } from "./DrawingKeybinds";
 import PercentagePreferenceSlider from "./PercentagePreferenceSlider";
 import PiecesSelect from "./PiecesSelect";
 import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
+import { panelsBesideNotationAtom } from "@/state/layoutStorage";
 import { DirectorySetting } from "./DirectorySetting";
 import { WorkspaceDirectorySetting } from "./WorkspaceDirectorySetting";
 import classes from "./SettingsPage.module.css";
@@ -402,6 +403,14 @@ export default function Page() {
             onChange={(val) => setDefaultPanelTab(val as DefaultPanelTab)}
           />
         ),
+      },
+      {
+        id: "panels-beside-notation",
+        category: "board",
+        title: t("Settings.PanelsBesideNotation"),
+        description: t("Settings.PanelsBesideNotation.Desc"),
+        keywords: ["layout", "panel", "tabs", "notation", "beside", "side", "column", "annotate"],
+        render: () => <SettingsSwitch atom={panelsBesideNotationAtom} />,
       },
       // Input settings
       {

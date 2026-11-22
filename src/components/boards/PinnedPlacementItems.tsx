@@ -1,7 +1,9 @@
 import { Box, Menu } from "@mantine/core";
 import { Check } from "lucide-react";
+import { useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { PINNED_PLACEMENTS, type PinnedPlacement } from "@/state/atoms";
+import { BoardLayoutModeContext } from "@/state/paneLayout";
 
 /**
  * The places a pinned panel can sit, as menu entries in layout order. `current` is marked; null
@@ -15,8 +17,10 @@ export function PinnedPlacementItems({
   onChoose: (placement: PinnedPlacement) => void;
 }) {
   const { t } = useTranslation();
+  // Beside the notation, the place above the tabs spans the notation too.
+  const panelsBeside = useContext(BoardLayoutModeContext) === "beside";
   const labels: Record<PinnedPlacement, string> = {
-    tabs: t("Pinned.AboveTabs"),
+    tabs: panelsBeside ? t("Pinned.AboveNotationAndTabs") : t("Pinned.AboveTabs"),
     notation: t("Pinned.AboveNotation"),
     belowNotation: t("Pinned.BelowNotation"),
     board: t("Pinned.BelowBoard"),

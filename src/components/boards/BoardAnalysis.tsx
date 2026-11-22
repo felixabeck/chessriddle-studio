@@ -65,10 +65,19 @@ import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
 import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
+import { BoardLayoutModeContext } from "@/state/paneLayout";
 
 function BoardAnalysis() {
   const { t } = useTranslation();
   const compactTabs = useScaledMaxWidth(COMPACT_PANE_TABS_WIDTH_EM);
+  // With the panels beside the notation, what is pinned above the tabs spans both.
+  const panelsBeside = useContext(BoardLayoutModeContext) === "beside";
+  const aboveTabs = (
+    <>
+      <DetachedEval placement="tabs" />
+      <PinnedExplorer placement="tabs" />
+    </>
+  );
 
   const [editingMode, toggleEditingMode] = useToggle();
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
@@ -390,10 +399,14 @@ function BoardAnalysis() {
           </div>
         </Stack>
       </Portal>
+      {panelsBeside && (
+        <Portal target="#rightTop" className={classes.spanSlot}>
+          {aboveTabs}
+        </Portal>
+      )}
       <Portal target="#topRight" className={paneClasses.root} style={{ height: "100%" }}>
         <Stack h="100%" gap="xs" className={paneClasses.root} data-pinned-pane>
-          <DetachedEval placement="tabs" />
-          <PinnedExplorer placement="tabs" />
+          {!panelsBeside && aboveTabs}
           <Paper
             withBorder
             className={paneClasses.root}

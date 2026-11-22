@@ -8,6 +8,7 @@ import {
   useAtomValue,
 } from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { type BoardLayoutMode, BoardLayoutModeContext } from "@/state/paneLayout";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import {
   activeTabAtom,
@@ -137,7 +138,10 @@ vi.mock("@mantine/core", async (importOriginal) => {
   return {
     MantineProvider: actual.MantineProvider,
     Paper: passthrough,
-    Portal: passthrough,
+    // The Portal stand-in names its destination: the beside arrangement moves panels between them.
+    Portal: ({ children, target }: { children?: ReactNode; target?: string }) => (
+      <div data-portal-target={target}>{children}</div>
+    ),
     Stack: stack,
     Tabs,
     Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
@@ -611,6 +615,56 @@ describe("BoardAnalysis", () => {
         true,
       );
       expect(strip().nextElementSibling).toBe(engine("board"));
+    } finally {
+      await act(async () => {
+        jotaiStore.set(explorerPlacementAtom, "tabs");
+        jotaiStore.set(explorerDetachedAtom, false);
+      });
+    }
+  });
+
+  test("with the panels beside the notation, what is pinned above the tabs moves to the slot across both", async () => {
+    const renderIn = (mode: BoardLayoutMode) =>
+      act(async () =>
+        root.render(
+          <JotaiProvider store={jotaiStore}>
+            <TreeStateContext.Provider value={treeStore}>
+              <BoardLayoutModeContext.Provider value={mode}>
+                <RetainedBoardHarness />
+              </BoardLayoutModeContext.Provider>
+            </TreeStateContext.Provider>
+          </JotaiProvider>,
+        ),
+      );
+    const within = (target: string, selector: string) =>
+      container.querySelectorAll(`[data-portal-target="${target}"] ${selector}`);
+    const strip = '[data-testid="pinned-explorer-strip"]';
+    const engine = '[data-engine-slot="tabs"]';
+    await act(async () => {
+      jotaiStore.set(explorerPlacementAtom, "tabs");
+      jotaiStore.set(explorerDetachedAtom, true);
+    });
+    try {
+      await renderIn("beside");
+      // The engine bar then the strip, as above the tabs, and nothing else in the slot.
+      const slot = container.querySelector('[data-portal-target="#rightTop"]')!;
+      expect([...slot.children]).toEqual([slot.querySelector(engine), slot.querySelector(strip)]);
+      expect(slot.querySelector(strip)).not.toBeNull();
+      expect(within("#topRight", strip)).toHaveLength(0);
+      expect(within("#topRight", engine)).toHaveLength(0);
+      expect(container.querySelectorAll(strip)).toHaveLength(1);
+      expect(container.querySelectorAll(engine)).toHaveLength(1);
+      // The other places stay in their own panes.
+      expect(within("#bottomRight", '[data-engine-slot="notation"]')).toHaveLength(1);
+      expect(within("#left", '[data-engine-slot="board"]')).toHaveLength(1);
+
+      for (const mode of ["mosaic", "stacked"] as const) {
+        await renderIn(mode);
+        expect(container.querySelector('[data-portal-target="#rightTop"]')).toBeNull();
+        expect(within("#topRight", strip)).toHaveLength(1);
+        expect(within("#topRight", engine)).toHaveLength(1);
+        expect(container.querySelectorAll(strip)).toHaveLength(1);
+      }
     } finally {
       await act(async () => {
         jotaiStore.set(explorerPlacementAtom, "tabs");

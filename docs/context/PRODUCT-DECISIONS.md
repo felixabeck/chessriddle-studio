@@ -297,3 +297,25 @@ finding ids and date.
   and then opens again" and approved this recommendation: the Library is now its own
   page in the navigation row, so an empty tab row has a clear place to go.
 - **Date:** 2026-11-21.
+
+## 2026-11-22 — The analysis board can show its panels beside the notation
+
+- **Question:** A user asked for Annotate next to the notation instead of above it, with
+  the Database on top across both. Should the analysis board offer that, for which
+  boards, and what happens in a narrow window?
+- **Choice:** A switch in Settings, Board: "Panels beside the notation", off by default.
+  On, the analysis board shows its tab panels (Practice, Analysis, Database, Annotate,
+  Info) to the right of the notation. What is pinned "Above the tabs" (the Database
+  strip, the engine bar) then spans the notation and the panels, and that place is named
+  "Above the notation and tabs" there. Play, puzzle and ChessRiddle training tabs keep
+  their layout. In a window too narrow for board, notation and panels the panels show
+  above the notation again; the choice is kept and returns with the room.
+- **Agent proposals Felix confirmed, not his wording** (scope, default, the narrow-window
+  fallback and the label, presented as four decisions): "Yes, I like all your decisions."
+- **Not confirmed item by item:** In this arrangement a divider stops where board,
+  notation or panels would get narrower than the 20rem the narrow-window rule already
+  uses. The arrangement has its own divider positions; the panels-above layout keeps its.
+- **Felix's reason:** "I think it makes quite a lot of sense because the notation doesn't
+  need to be that wide and the annotate is more compact and better visualized on the
+  right side next to the moves."
+- **Date:** 2026-11-22.

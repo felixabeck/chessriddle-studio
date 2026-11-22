@@ -460,3 +460,33 @@ test("keys other than ArrowUp and ArrowDown leave the divider alone", async () =
   for (const other of ["Enter", "Tab", "ArrowLeft", "Home"]) await key(other);
   expect(store.get(explorerStripHeightsAtom)).toEqual({});
 });
+
+test("an engine bar in a pane nested inside the strip's pane does not count against the strip", async () => {
+  // The right side of the beside arrangement: the strip across the top, and below it the notation
+  // column, a pane of its own with its own pinned engine bar.
+  const sized = (node: HTMLDivElement | null) => {
+    if (node)
+      Object.defineProperty(node, "clientHeight", { configurable: true, get: () => paneHeight });
+  };
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider env="test">
+          <div data-board-layout="beside">
+            <div data-pinned-pane ref={sized}>
+              <PinnedExplorer placement="tabs" />
+              <div data-pinned-pane>
+                <div data-testid="pinned-engine" />
+              </div>
+            </div>
+          </div>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  await pin("tabs");
+  // Dragged as far as it goes, the strip leaves the pane only its neighbour's minimum.
+  await pointer("pointerdown", 0);
+  await pointer("pointermove", 2 * PANE_PX);
+  expect(strip().style.height).toBe(`${MAX_PX}px`);
+});

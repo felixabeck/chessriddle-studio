@@ -61,10 +61,16 @@ function usePaneRoom(strip: RefObject<HTMLDivElement | null>) {
     if (!element || !pane) return;
     const resizes = new ResizeObserver(() => measure());
     let engineBars: HTMLElement[] = [];
-    /** Pinned engine bar slots are children of the pane or of the strip's own slot. */
+    /**
+     * Pinned engine bar slots are children of the pane or of the strip's own slot. A bar in a pane
+     * nested inside this one (the notation column inside the right side of the beside arrangement)
+     * takes that pane's room, not this one's.
+     */
     const findEngineBars = () => {
       for (const bar of engineBars) resizes.unobserve(bar);
-      engineBars = [...pane.querySelectorAll<HTMLElement>('[data-testid="pinned-engine"]')];
+      engineBars = [...pane.querySelectorAll<HTMLElement>('[data-testid="pinned-engine"]')].filter(
+        (bar) => bar.closest("[data-pinned-pane]") === pane,
+      );
       for (const bar of engineBars) resizes.observe(bar);
     };
     const measure = () => {

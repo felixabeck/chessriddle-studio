@@ -23,6 +23,7 @@ import {
     dragMosaicDivider,
     splitTextWords,
     goToBoards,
+    goToSettings,
     libraryLink,
     goToLibrary,
     waitForFontsSettled,
@@ -3418,14 +3419,19 @@ for (const scheme of ["dark", "light"] as const) {
     });
 }
 
-test("database-files: the board explorer compares two databases side by side", async ({
-    page,
-    mockScenario,
-}) => {
+/**
+ * An analysis board over two local databases that answer the start position differently.
+ * `stored` seeds further `localStorage` values before the first load.
+ */
+async function openBoardOverTwoDatabases(
+    page: Page,
+    mockScenario: MockScenario,
+    stored: Record<string, string> = {},
+) {
     const mega = { id: { id: gameOpeningFixture.databaseId }, kind: "database" };
     const corr = { id: { id: "correspondence-db" }, kind: "database" };
     await page.addInitScript(
-        ({ mega, corr }) => {
+        ({ mega, corr, stored }) => {
             localStorage.setItem("reference-database", JSON.stringify(mega));
             localStorage.setItem("comparison-database", JSON.stringify(corr));
             localStorage.setItem(
@@ -3438,8 +3444,9 @@ test("database-files: the board explorer compares two databases side by side", a
                 ]),
             );
             localStorage.setItem("font-size", "100");
+            for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
         },
-        { mega, corr },
+        { mega, corr, stored },
     );
     await page.setViewportSize({ width: 1440, height: 1000 });
     await mockScenario({
@@ -3508,6 +3515,14 @@ test("database-files: the board explorer compares two databases side by side", a
     ).toBeVisible();
     await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
+    return { mega, corr };
+}
+
+test("database-files: the board explorer compares two databases side by side", async ({
+    page,
+    mockScenario,
+}) => {
+    const { mega, corr } = await openBoardOverTwoDatabases(page, mockScenario);
     await page.getByRole("tab", { name: "Database", exact: true }).click();
 
     // Collapsed by default: one caption per database, naming its active filters, each above
@@ -3819,4 +3834,143 @@ test("database-files: the board explorer compares two databases side by side", a
     await expect(sources).toHaveCount(1);
     await expect(page.getByRole("button", { name: "Compare with a database" })).toBeVisible();
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
+
+test("database-files: the panels sit beside the notation below a database strip across both", async ({
+    page,
+    mockScenario,
+}) => {
+    await openBoardOverTwoDatabases(page, mockScenario, {
+        "detached-explorer": "true",
+        "default-panel-tab": JSON.stringify("annotate"),
+    });
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    const layout = page.locator("[data-board-layout]");
+    const board = page.locator("#left");
+    const notation = page.locator("#bottomRight");
+    const panels = page.locator("#topRight");
+    const strip = page.getByTestId("pinned-explorer-strip");
+    const rect = async (locator: Locator) => (await locator.boundingBox())!;
+    const geometry = async () => ({
+        board: await rect(board),
+        notation: await rect(notation),
+        panels: await rect(panels),
+        strip: await rect(strip),
+    });
+    const right = (box: { x: number; width: number }) => box.x + box.width;
+
+    // Off by default: the strip sits above the tabs in their pane, the notation below both.
+    await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
+    await expect(panels.getByTestId("pinned-explorer-strip")).toBeVisible();
+    await expect(strip.locator("[data-explorer-source]")).toHaveCount(2);
+    expect((await rect(notation)).y).toBeGreaterThan((await rect(panels)).y);
+    const above = await geometry();
+
+    // The choice is a switch on the Board settings page.
+    await goToSettings(page);
+    await page.getByRole("tab", { name: "Board", exact: true }).click();
+    const beside = page.getByRole("switch", { name: "Panels beside the notation", exact: true });
+    await expect(beside).not.toBeChecked();
+    await beside.check();
+    await expect(beside).toBeChecked();
+    await page
+        .locator("header [role='tablist'] [role='tab']", { hasText: "Analysis Board" })
+        .click();
+
+    // The board keeps its edge. To its right the strip spans the notation and the panels, which
+    // sit side by side below it, level and equally tall, with the gap the board has to them.
+    await expect(layout).toHaveAttribute("data-board-layout", "beside");
+    await expect(strip.locator("[data-explorer-source]")).toHaveCount(2);
+    await expect(panels.getByTestId("pinned-explorer-strip")).toHaveCount(0);
+    await expect(panels.getByRole("tab", { name: "Annotate", exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    const start = await geometry();
+    expect(start.board).toEqual(above.board);
+    const gap = start.notation.x - right(start.board);
+    expect(gap).toBeGreaterThan(0);
+    expect(start.panels.x - right(start.notation)).toBe(gap);
+    expect(start.panels.y).toBe(start.notation.y);
+    expect(start.panels.height).toBe(start.notation.height);
+    expect(start.panels.width).toBeCloseTo(start.notation.width, 0);
+    expect(start.strip.x).toBeCloseTo(start.notation.x, 0);
+    expect(right(start.strip)).toBeCloseTo(right(start.panels), 0);
+    expect(start.strip.y).toBeCloseTo(above.strip.y, 0);
+    expect(start.strip.y + start.strip.height).toBeLessThan(start.notation.y);
+    expect(start.notation.height).toBeGreaterThan(above.notation.height);
+
+    // The place the strip is pinned to is named for what it spans here.
+    await page.getByRole("button", { name: "Database position", exact: true }).click();
+    await expect(page.getByRole("menuitem")).toHaveText([
+        "Above the notation and tabs",
+        "Above the notation",
+        "Below the notation",
+        "Below the board",
+        "Unpin database",
+    ]);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await page.mouse.move(0, 0);
+    const rightSide = page.locator("[data-pinned-pane]:has(> [data-board-slot='rightTop'])");
+    // The strip's table scrolls, and whether its scrollbar thumb shows depends on timing.
+    await expect(rightSide).toHaveScreenshot("panels-beside-notation.png", {
+        stylePath: scrollbarFreeScreenshot,
+    });
+
+    // Each divider moves its own edge only, and neither touches the panels-above layout's sizes.
+    const splits = () =>
+        page.evaluate(() => JSON.parse(localStorage.getItem("board-beside-splits") ?? "{}"));
+    await dragMosaicDivider(page, {
+        root: rightSide.locator(".mosaic-root"),
+        split: rightSide.locator(".mosaic-split.-row"),
+        percentage: 40,
+        direction: "row",
+    });
+    await page.mouse.move(0, 0);
+    await expect.poll(async () => Math.abs((await splits()).notation - 40)).toBeLessThan(0.5);
+    const narrowed = await geometry();
+    expect(narrowed.board).toEqual(start.board);
+    expect(narrowed.strip).toEqual(start.strip);
+    expect(narrowed.notation.x).toBe(start.notation.x);
+    expect(narrowed.notation.width).toBeLessThan(start.notation.width - 50);
+    expect(right(narrowed.panels)).toBe(right(start.panels));
+    expect(narrowed.panels.x - right(narrowed.notation)).toBe(gap);
+
+    const outer = layout.locator(".mosaic-root").first();
+    await dragMosaicDivider(page, {
+        root: outer,
+        split: outer.locator("> .mosaic-split"),
+        percentage: 45,
+        direction: "row",
+        crossAxisRatio: 0.25,
+    });
+    await page.mouse.move(0, 0);
+    await expect.poll(async () => Math.abs((await splits()).board - 45)).toBeLessThan(0.5);
+    const widened = await geometry();
+    expect(widened.board.width).toBeLessThan(start.board.width - 50);
+    expect(widened.notation.x - right(widened.board)).toBe(gap);
+    expect(widened.strip.x).toBeCloseTo(widened.notation.x, 0);
+    expect(right(widened.strip)).toBeCloseTo(right(start.strip), 0);
+    expect(Math.abs((await splits()).notation - 40)).toBeLessThan(0.5);
+    expect(await page.evaluate(() => localStorage.getItem("windowsState"))).toBeNull();
+
+    // Both dividers come back after a reload.
+    await preserveStorageForReload(page);
+    await expect(layout).toHaveAttribute("data-board-layout", "beside");
+    await expect(strip.locator("[data-explorer-source]")).toHaveCount(2);
+    await expect.poll(geometry).toEqual(widened);
+
+    // A window too narrow for three panes shows the panels above the notation again; the choice
+    // and its dividers are kept and return with the room.
+    await page.setViewportSize({ width: 980, height: 1000 });
+    await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
+    await expect(panels.getByTestId("pinned-explorer-strip")).toBeVisible();
+    await expect.poll(async () => (await rect(notation)).y > (await rect(panels)).y).toBe(true);
+    expect((await rect(notation)).x).toBe((await rect(panels)).x);
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await expect(layout).toHaveAttribute("data-board-layout", "beside");
+    await expect(strip.locator("[data-explorer-source]")).toHaveCount(2);
+    await expect.poll(geometry).toEqual(widened);
+    expect(await page.evaluate(() => localStorage.getItem("panels-beside-notation"))).toBe("true");
 });
