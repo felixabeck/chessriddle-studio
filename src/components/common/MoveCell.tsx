@@ -63,7 +63,6 @@ function MoveCell(props: MoveCellProps) {
   const color = ANNOTATION_INFO[visualAnnotation]?.color || "gray";
   const theme = useMantineTheme();
   const isAnnotated = color !== "gray";
-  const annotationColor = theme.colors[color][6];
   const unannotatedColor = (fallback: string) =>
     `var(--notation-unannotated-move-color, ${fallback})`;
 
@@ -77,6 +76,7 @@ function MoveCell(props: MoveCellProps) {
   let hover = "var(--cf-bar-hover)";
 
   if (isAnnotated) {
+    const annotationColor = theme.colors[color][6];
     lightColor = annotationColor;
     darkColor = annotationColor;
     hover = rgba(annotationColor, 0.1);
