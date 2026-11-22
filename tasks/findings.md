@@ -28554,7 +28554,7 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 ### The opponent Prepare-on-board e2e test fails in CI: Escape leaves the explorer Filters popover open
 
-* **ID:** f-20261122-12 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261122-12 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45064671308 (job 137338038364, head b7b69fd8d, `Test` workflow `e2e` job)
 * **Where:** `e2e/database-files.spec.ts:4175` (`database-files: Prepare on board shows a linked opponent's over-the-board and online games side by side`), assertion at `:4271-4272`: after clicking the second source's `Filters:` button and checking its radios, `page.keyboard.press("Escape")` is expected to remove `[data-explorer-filters]`; the popover belongs to the board explorer source header added in `4cc4891de` (feat(board): show an opponent's online games beside the over-the-board games).
@@ -28563,3 +28563,5 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Spotted outside diff:** found 2026-11-22 by the f-20261122-03 drain session's pre-push remote CI check; that session's diff (Accounts page, Lichess sync) does not touch the board explorer.
 * **Found by:** Claude Code (Opus 5.5), drain session 5b4039e1-fa52-4cba-816a-4b3fd15c9104, 2026-11-22.
 * **Filed from:** 5b4039e1-fa52-4cba-816a-4b3fd15c9104
+* **Closed 2026-11-23 as a duplicate of f-20261122-10** (drain session 7e3cd9aa-89b3-4fc6-b64f-c974f506d332): the same CI failure (run 45064671308) was filed twice, once through each checkout's inbox. Commit a2d44be5d on master already waits until focus is inside `[data-explorer-filters]` before Escape. This session's equivalent change was dropped during the rebase. The drain's probe agrees with that diagnosis: pressing Escape right after the click left the popover open, because Mantine 8.3.14 closes it only from the dropdown's own keydown and its focus trap moves focus in on a `setTimeout`. The shared popover behaviour is tracked in f-20261122-11.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2bbe49868ab56a0a71a167c83ebfb384b08de785eb266994029499d42cbe2a3e","header_sha256":"6f26061d550e0f0e1ee8ed7ebfa264b7ed8df7c227450c4490360342e592d7be","header_status":"handled","input_sha256":"fb9e0a626b6220cd8ea99afa293bc62c4c3b9543d33b4efdf729af7db1a58d71","kind":"mutation-receipt","operation":"4a62be0eeafe515258d73ed52e9b3d55abfd3410bf4fef482a27e6afe2061337","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-12"],"target":"f-20261122-12","v":1} -->
