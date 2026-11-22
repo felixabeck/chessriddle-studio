@@ -416,7 +416,7 @@
     "Coach.Error.RateLimited": "The service is limiting requests. Try again later.",
     "Coach.Error.SignInAgain": "The sign-in for this connection has ended. Sign in again in the Coach settings.",
     "Coach.Error.SignInFailed": "The sign-in was not completed. Try again.",
-    "Coach.Error.Storage": "The connection could not be saved in this computer's keyring.",
+    "Coach.Error.Storage": "This computer's keyring could not be read or written. Try again.",
     "Coach.Error.SubscriptionNotEligible": "This account cannot use its subscription from this app.",
     "Coach.Error.TooManyConnections": "You can keep up to 16 connections. Remove one first.",
     "Coach.Error.Unavailable": "The Coach is not available in this version.",

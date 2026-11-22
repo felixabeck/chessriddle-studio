@@ -416,7 +416,7 @@
     "Coach.Error.RateLimited": "Der Dienst begrenzt die Anfragen. Versuche es später erneut.",
     "Coach.Error.SignInAgain": "Die Anmeldung für diese Verbindung besteht nicht mehr. Melde dich in den Coach-Einstellungen erneut an.",
     "Coach.Error.SignInFailed": "Die Anmeldung wurde nicht abgeschlossen. Versuche es erneut.",
-    "Coach.Error.Storage": "Die Verbindung konnte nicht im Schlüsselbund dieses Computers gespeichert werden.",
+    "Coach.Error.Storage": "Der Schlüsselbund dieses Computers konnte nicht gelesen oder beschrieben werden. Versuch es noch einmal.",
     "Coach.Error.SubscriptionNotEligible": "Dieses Konto kann sein Abo in dieser App nicht nutzen.",
     "Coach.Error.TooManyConnections": "Du kannst bis zu 16 Verbindungen behalten. Entferne zuerst eine.",
     "Coach.Error.Unavailable": "Der Coach ist in dieser Version nicht verfügbar.",

@@ -420,7 +420,7 @@
     "Coach.Error.RateLimited": "Le service limite les requêtes. Réessayez plus tard.",
     "Coach.Error.SignInAgain": "La session de cette connexion a pris fin. Reconnectez-vous dans les paramètres du Coach.",
     "Coach.Error.SignInFailed": "L’authentification n’a pas abouti. Réessayez.",
-    "Coach.Error.Storage": "La connexion n’a pas pu être enregistrée dans le trousseau de clés de cet ordinateur.",
+    "Coach.Error.Storage": "Le trousseau de clés de cet ordinateur n’a pas pu être lu ou modifié. Réessayez.",
     "Coach.Error.SubscriptionNotEligible": "Ce compte ne peut pas utiliser son abonnement depuis cette application.",
     "Coach.Error.TooManyConnections": "Vous pouvez conserver jusqu’à 16 connexions. Supprimez-en une d’abord.",
     "Coach.Error.Unavailable": "Le Coach n’est pas disponible dans cette version.",

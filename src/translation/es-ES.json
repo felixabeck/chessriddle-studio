@@ -420,7 +420,7 @@
     "Coach.Error.RateLimited": "El servicio está limitando las solicitudes. Inténtalo más tarde.",
     "Coach.Error.SignInAgain": "La sesión de esta conexión ha finalizado. Vuelve a iniciar sesión en la configuración del Coach.",
     "Coach.Error.SignInFailed": "El inicio de sesión no se completó. Inténtalo de nuevo.",
-    "Coach.Error.Storage": "No se pudo guardar la conexión en el llavero de este ordenador.",
+    "Coach.Error.Storage": "No se pudo leer o escribir el llavero de este ordenador. Inténtalo de nuevo.",
     "Coach.Error.SubscriptionNotEligible": "Esta cuenta no puede usar su suscripción desde esta aplicación.",
     "Coach.Error.TooManyConnections": "Puedes conservar hasta 16 conexiones. Elimina una primero.",
     "Coach.Error.Unavailable": "El Coach no está disponible en esta versión.",

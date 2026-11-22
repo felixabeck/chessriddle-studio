@@ -249,7 +249,8 @@ impl Connections {
     }
 
     /// The stored secret of one connection: `NotFound` when the connection does not exist,
-    /// `NeedsRepair` when its secret is missing or cannot be decoded.
+    /// `NeedsRepair` when its secret is missing or cannot be decoded, `Storage` when the keyring
+    /// could not be asked. The last one says nothing about the connection and passes.
     pub(crate) async fn secret(&self, handle: CoachConnectionHandle) -> Result<Secret, CoachError> {
         let known = self
             .credentials
@@ -261,16 +262,24 @@ impl Connections {
         if !known {
             return Err(CoachError::NotFound);
         }
-        self.readable_secret(handle)
-            .await
+        self.stored_secret(handle)
+            .await?
             .ok_or(CoachError::NeedsRepair)
     }
 
-    /// A keyring read failure and an undecodable document both make one connection unreadable;
-    /// neither may fail the others.
-    async fn readable_secret(&self, handle: CoachConnectionHandle) -> Option<Secret> {
-        let stored = self.credentials.token(handle).await.ok().flatten()?;
-        Secret::decode(&stored)
+    /// What the keyring holds for a listed connection: `None` when there is nothing, or nothing
+    /// that can be decoded. `Err` when the keyring could not be asked.
+    async fn stored_secret(
+        &self,
+        handle: CoachConnectionHandle,
+    ) -> Result<Option<Secret>, CoachError> {
+        match self.credentials.token(handle).await {
+            Ok(stored) => Ok(stored.as_deref().and_then(Secret::decode)),
+            Err(error) => {
+                log::warn!("coach: a connection's keyring entry could not be read: {error}");
+                Err(CoachError::Storage)
+            }
+        }
     }
 
     pub(crate) async fn list(&self) -> Result<Vec<ConnectionSummary>, CoachError> {
@@ -281,7 +290,13 @@ impl Connections {
             .map_err(|_| CoachError::Storage)?;
         let mut connections = Vec::with_capacity(accounts.len());
         for account in accounts {
-            let secret = self.readable_secret(account.handle.clone()).await;
+            // In the list a keyring that could not be asked makes this one connection unreadable
+            // for now; it must not hide the others.
+            let secret = self
+                .stored_secret(account.handle.clone())
+                .await
+                .ok()
+                .flatten();
             connections.push(summary(account.handle, account.username, secret.as_ref()));
         }
         connections.sort_by(|left, right| {
@@ -327,6 +342,8 @@ impl Connections {
             Some(handle) => {
                 let key = match (entered_key, self.secret(handle.clone()).await) {
                     (_, Err(CoachError::NotFound)) => return Err(CoachError::NotFound),
+                    // Without a look at what is stored, nothing is decided about its key.
+                    (_, Err(CoachError::Storage)) => return Err(CoachError::Storage),
                     // A sign-in is not turned into an address by an edit.
                     (_, Ok(Secret::ChatGpt(_) | Secret::Grok(_))) => {
                         return Err(CoachError::InvalidInput)
@@ -383,7 +400,9 @@ impl Connections {
         })
     }
 
-    /// The first connection whose readable secret `pick` accepts, with what it returned.
+    /// The first connection whose readable secret `pick` accepts, with what it returned. A keyring
+    /// that could not be asked is an error, never "there is none": a sign-in would otherwise be
+    /// stored a second time beside the one that could not be seen.
     async fn find<T>(
         &self,
         pick: impl Fn(Secret) -> Option<T>,
@@ -395,8 +414,8 @@ impl Connections {
             .map_err(|_| CoachError::Storage)?;
         for account in accounts {
             let found = self
-                .readable_secret(account.handle.clone())
-                .await
+                .stored_secret(account.handle.clone())
+                .await?
                 .and_then(&pick);
             if let Some(found) = found {
                 return Ok(Some((account.handle, found)));
@@ -815,6 +834,102 @@ mod tests {
             .unwrap();
         assert_eq!(repaired.connection.status, ConnectionStatus::Ready);
         assert!(!repaired.connection.has_key);
+    }
+
+    /// A keyring whose reads can be made to fail, as when the secret service does not answer.
+    #[derive(Default)]
+    struct SilentStore {
+        inner: MemoryCredentialStore,
+        silent: std::sync::atomic::AtomicBool,
+    }
+
+    impl CredentialStore for SilentStore {
+        fn set(&self, key: &str, secret: &str) -> Result<(), crate::error::Error> {
+            self.inner.set(key, secret)
+        }
+        fn get(&self, key: &str) -> Result<Option<String>, crate::error::Error> {
+            if self.silent.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(crate::error::Error::CredentialRecoveryRequired);
+            }
+            self.inner.get(key)
+        }
+        fn delete(&self, key: &str) -> Result<(), crate::error::Error> {
+            self.inner.delete(key)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_keyring_that_does_not_answer_is_a_storage_error_and_changes_nothing() {
+        let store = Arc::new(SilentStore::default());
+        let (credentials, _directory) = CoachCredentials::for_test(store.clone());
+        let connections = Connections::new(Arc::new(credentials));
+        let hosted = connections
+            .save_api(api(
+                None,
+                "Hosted",
+                "https://api.deepseek.com",
+                Some("sk-kept"),
+            ))
+            .await
+            .unwrap();
+        let chatgpt = connections
+            .save_chatgpt(signed_in(Some("refresh-1")))
+            .await
+            .unwrap();
+        let handle = hosted.connection.handle.clone();
+        let silent = |value| {
+            store
+                .silent
+                .store(value, std::sync::atomic::Ordering::SeqCst)
+        };
+
+        silent(true);
+        // Not "enter it again": the connection may be perfectly fine.
+        assert!(matches!(
+            connections.secret(handle.clone()).await,
+            Err(CoachError::Storage)
+        ));
+        // An edit without a key does not drop the stored key unseen.
+        assert_eq!(
+            connections
+                .save_api(api(
+                    Some(&handle),
+                    "Hosted",
+                    "https://api.deepseek.com",
+                    None
+                ))
+                .await
+                .err(),
+            Some(CoachError::Storage)
+        );
+        // A sign-in is not stored a second time beside the one that cannot be seen.
+        assert!(matches!(
+            connections.chatgpt().await,
+            Err(CoachError::Storage)
+        ));
+        assert_eq!(
+            connections
+                .save_chatgpt(signed_in(Some("refresh-2")))
+                .await
+                .err(),
+            Some(CoachError::Storage)
+        );
+        // The list still names every connection.
+        assert_eq!(connections.list().await.unwrap().len(), 2);
+
+        silent(false);
+        let listed = connections.list().await.unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed
+            .iter()
+            .all(|connection| connection.status == ConnectionStatus::Ready));
+        let Ok(Secret::Api { key, .. }) = connections.secret(handle).await else {
+            panic!("the connection is an address again");
+        };
+        assert_eq!(key.as_deref(), Some("sk-kept"));
+        let (kept, secret) = connections.chatgpt().await.unwrap().unwrap();
+        assert_eq!(kept, chatgpt.connection.handle);
+        assert_eq!(secret.refresh_token.as_deref(), Some("refresh-1"));
     }
 
     fn signed_in(refresh: Option<&str>) -> ChatGptSecret {

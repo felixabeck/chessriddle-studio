@@ -416,7 +416,7 @@
     "Coach.Error.RateLimited": "Tjenesten begrenser forespørsler. Prøv igjen senere.",
     "Coach.Error.SignInAgain": "Innloggingen for denne tilkoblingen gjelder ikke lenger. Logg inn på nytt i Coach-innstillingene.",
     "Coach.Error.SignInFailed": "Innloggingen ble ikke fullført. Prøv igjen.",
-    "Coach.Error.Storage": "Tilkoblingen kunne ikke lagres i nøkkelringen på denne datamaskinen.",
+    "Coach.Error.Storage": "Nøkkelringen på denne datamaskinen kunne ikke leses eller skrives. Prøv igjen.",
     "Coach.Error.SubscriptionNotEligible": "Denne kontoen kan ikke bruke abonnementet sitt fra denne appen.",
     "Coach.Error.TooManyConnections": "Du kan ha opptil 16 tilkoblinger. Fjern én først.",
     "Coach.Error.Unavailable": "Coach er ikke tilgjengelig i denne versjonen.",

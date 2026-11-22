@@ -424,7 +424,7 @@
     "Coach.Error.RateLimited": "Usługa ogranicza liczbę żądań. Spróbuj ponownie później.",
     "Coach.Error.SignInAgain": "Logowanie dla tego połączenia nie jest już ważne. Zaloguj się ponownie w ustawieniach Coacha.",
     "Coach.Error.SignInFailed": "Logowanie nie zostało ukończone. Spróbuj ponownie.",
-    "Coach.Error.Storage": "Nie udało się zapisać połączenia w pęku kluczy tego komputera.",
+    "Coach.Error.Storage": "Nie udało się odczytać lub zapisać pęku kluczy tego komputera. Spróbuj ponownie.",
     "Coach.Error.SubscriptionNotEligible": "To konto nie może korzystać ze swojej subskrypcji w tej aplikacji.",
     "Coach.Error.TooManyConnections": "Możesz mieć maksymalnie 16 połączeń. Najpierw usuń jedno.",
     "Coach.Error.Unavailable": "Coach nie jest dostępny w tej wersji.",

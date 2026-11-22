@@ -412,7 +412,7 @@
     "Coach.Error.RateLimited": "服務正在限制請求。請稍後重試。",
     "Coach.Error.SignInAgain": "此連線的登入已失效。請在 Coach 設定中重新登入。",
     "Coach.Error.SignInFailed": "登入未完成。請再試一次。",
-    "Coach.Error.Storage": "無法將連線儲存到這台電腦的鑰匙圈。",
+    "Coach.Error.Storage": "無法讀取或寫入這台電腦的鑰匙圈。請再試一次。",
     "Coach.Error.SubscriptionNotEligible": "此帳號無法在此應用程式中使用其訂閱。",
     "Coach.Error.TooManyConnections": "最多可保留 16 個連線。請先移除一個。",
     "Coach.Error.Unavailable": "此版本不提供 Coach。",

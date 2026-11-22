@@ -420,7 +420,7 @@
     "Coach.Error.RateLimited": "Il servizio sta limitando le richieste. Riprova più tardi.",
     "Coach.Error.SignInAgain": "La sessione di questa connessione è terminata. Accedi di nuovo nelle impostazioni del Coach.",
     "Coach.Error.SignInFailed": "L’accesso non è stato completato. Riprova.",
-    "Coach.Error.Storage": "Impossibile salvare la connessione nel portachiavi di questo computer.",
+    "Coach.Error.Storage": "Impossibile leggere o scrivere il portachiavi di questo computer. Riprova.",
     "Coach.Error.SubscriptionNotEligible": "Questo account non può usare il suo abbonamento da questa app.",
     "Coach.Error.TooManyConnections": "Puoi tenere fino a 16 connessioni. Prima rimuovine una.",
     "Coach.Error.Unavailable": "Il Coach non è disponibile in questa versione.",

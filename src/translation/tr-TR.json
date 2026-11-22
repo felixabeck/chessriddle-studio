@@ -416,7 +416,7 @@
     "Coach.Error.RateLimited": "Hizmet istekleri sınırlıyor. Daha sonra yeniden deneyin.",
     "Coach.Error.SignInAgain": "Bu bağlantının oturumu sona erdi. Coach ayarlarında yeniden oturum açın.",
     "Coach.Error.SignInFailed": "Oturum açma tamamlanmadı. Yeniden deneyin.",
-    "Coach.Error.Storage": "Bağlantı bu bilgisayarın anahtar zincirine kaydedilemedi.",
+    "Coach.Error.Storage": "Bu bilgisayarın anahtar zinciri okunamadı veya yazılamadı. Yeniden deneyin.",
     "Coach.Error.SubscriptionNotEligible": "Bu hesap, aboneliğini bu uygulamadan kullanamıyor.",
     "Coach.Error.TooManyConnections": "En fazla 16 bağlantı tutabilirsiniz. Önce birini kaldırın.",
     "Coach.Error.Unavailable": "Coach bu sürümde kullanılamıyor.",

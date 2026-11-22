@@ -420,7 +420,7 @@
     "Coach.Error.RateLimited": "O serviço está a limitar os pedidos. Tente novamente mais tarde.",
     "Coach.Error.SignInAgain": "A sessão desta ligação terminou. Inicie sessão novamente nas definições do Coach.",
     "Coach.Error.SignInFailed": "O início de sessão não foi concluído. Tente novamente.",
-    "Coach.Error.Storage": "Não foi possível guardar a ligação no porta-chaves deste computador.",
+    "Coach.Error.Storage": "Não foi possível ler ou escrever o porta-chaves deste computador. Tente novamente.",
     "Coach.Error.SubscriptionNotEligible": "Esta conta não pode utilizar a sua subscrição a partir desta aplicação.",
     "Coach.Error.TooManyConnections": "Pode manter até 16 ligações. Remova uma primeiro.",
     "Coach.Error.Unavailable": "O Coach não está disponível nesta versão.",
