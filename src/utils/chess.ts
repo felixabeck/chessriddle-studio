@@ -812,9 +812,15 @@ export type KeyMoment = {
     /** Saved evaluations (White-relative) before and after the move. */
     before: Score | null;
     after: Score | null;
+    /** The first move of the report's better line at this point, when the tree has one. */
+    betterMove: string | null;
 };
 
-export type GameStats = ColorMap<SideStats> & { keyMoments: KeyMoment[] };
+export type GameStats = ColorMap<SideStats> & {
+    keyMoments: KeyMoment[];
+    /** Mainline positions, the root included, with a saved evaluation. */
+    scoredPositions: number;
+};
 
 function emptyCounts(): AnnotationCounts {
     return { "??": 0, "?": 0, "?!": 0, "!!": 0, "!": 0, "!?": 0 };
@@ -879,9 +885,11 @@ export function getGameStats(root: TreeNode): GameStats {
         rootScore ? getWinChance(normalizeScore(rootScore.value, "white")) : null,
     ];
     let parentScore = rootScore;
+    let scoredPositions = root.score ? 1 : 0;
     let node = root;
     const path: number[] = [];
     while (node.children.length > 0) {
+        const parent = node;
         node = node.children[0];
         path.push(0);
         const color: Color = node.halfMoves % 2 === 1 ? "white" : "black";
@@ -903,6 +911,7 @@ export function getGameStats(root: TreeNode): GameStats {
                 annotation: marked,
                 before: parentScore,
                 after: score,
+                betterMove: parent.children.find((child) => child.reportLine)?.san ?? null,
             });
         }
         if (parentScore && score) {
@@ -912,6 +921,7 @@ export function getGameStats(root: TreeNode): GameStats {
                 move: winChances.length - 1,
             });
         }
+        if (score) scoredPositions++;
         winChances.push(score ? getWinChance(normalizeScore(score.value, "white")) : null);
         parentScore = score;
     }
@@ -933,7 +943,7 @@ export function getGameStats(root: TreeNode): GameStats {
             annotations: annotations[color],
         };
     };
-    return { white: side("white"), black: side("black"), keyMoments };
+    return { white: side("white"), black: side("black"), keyMoments, scoredPositions };
 }
 
 export type PiecesCount = {

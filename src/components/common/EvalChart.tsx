@@ -24,7 +24,6 @@ import { TreeStateContext } from "./TreeStateContext";
 
 interface EvalChartProps {
   isAnalysing: boolean;
-  startAnalysis: () => void;
 }
 
 type DataPoint = {
@@ -202,6 +201,7 @@ function EvalChart(props: EvalChartProps) {
       <Box pos="relative">
         <LoadingOverlay visible={props.isAnalysing === true} />
         <SegmentedControl
+          aria-label={t("Board.Analysis.Report.ChartType")}
           data={["CP", "WDL"]}
           size="xs"
           value={chartType}

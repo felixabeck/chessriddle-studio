@@ -127,7 +127,7 @@ async function renderChart() {
       <MantineProvider>
         <Provider store={atoms}>
           <TreeStateContext.Provider value={store}>
-            <EvalChart isAnalysing={false} startAnalysis={vi.fn()} />
+            <EvalChart isAnalysing={false} />
           </TreeStateContext.Provider>
         </Provider>
       </MantineProvider>,
@@ -267,4 +267,12 @@ test("the WDL tooltip shows one translated, locale-formatted line per outcome", 
     `Remis: ${percent(0.3)}`,
     `Schwarz: ${percent(0.247)}`,
   ]);
+});
+
+test("the CP/WDL control has an accessible name", async () => {
+  await renderChart();
+  const control = host.querySelector('[aria-label="Board.Analysis.Report.ChartType"]');
+  expect(control).not.toBeNull();
+  expect(control!.textContent).toContain("CP");
+  expect(control!.textContent).toContain("WDL");
 });

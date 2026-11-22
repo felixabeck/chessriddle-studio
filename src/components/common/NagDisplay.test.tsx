@@ -156,7 +156,7 @@ test.each([
 ])(
   "EvalChart renders projected labels and primary colour for NAGs $nags",
   async ({ nags, label, color }) => {
-    await render(<EvalChart isAnalysing={false} startAnalysis={vi.fn()} />, nags);
+    await render(<EvalChart isAnalysing={false} />, nags);
     const point = host.querySelector("[data-chart-color]")!;
     expect(point.getAttribute("data-chart-color")).toBe(color);
     expect(point.querySelector('[class*="tooltipTitle"]')?.textContent).toBe(label);

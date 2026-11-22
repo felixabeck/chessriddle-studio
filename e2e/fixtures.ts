@@ -1690,7 +1690,8 @@ const tauriBootstrap = () => {
 export const test = base.extend<{
     appLocale: string | undefined;
     assertNoHorizontalOverflow: () => Promise<void>;
-    assertAccessible: () => Promise<void>;
+    /** Axe over the page; `exclude` names selectors a filed finding owns, never a blanket skip. */
+    assertAccessible: (options?: { exclude?: string[] }) => Promise<void>;
     capture: (name: string) => Promise<void>;
     emitTauriEvent: (event: TauriEvent) => Promise<void>;
     mockScenario: (scenario: MockScenario) => Promise<void>;
@@ -1794,13 +1795,14 @@ export const test = base.extend<{
     },
 
     assertAccessible: async ({ page }, use) => {
-        await use(async () => {
+        await use(async (options) => {
             // Axe samples computed colours, so a running background transition is read mid-way.
             await waitForTransitionsSettled(page);
-            const results = await new AxeBuilder({ page })
+            let builder = new AxeBuilder({ page })
                 // The app owns these semantic/layout checks; no generic third-party exception is hidden.
-                .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-                .analyze();
+                .withTags(["wcag2a", "wcag2aa", "wcag21aa"]);
+            for (const selector of options?.exclude ?? []) builder = builder.exclude(selector);
+            const results = await builder.analyze();
             expect(
                 results.violations,
                 results.violations
@@ -1841,4 +1843,35 @@ declare global {
             ): boolean;
         };
     }
+}
+
+/** A native game report as `analyze_game` returns it; IPC serializes the bigint counters as numbers. */
+export type GameReportFixture = {
+    positions: {
+        best: {
+            depth: number;
+            multipv: number;
+            nodes: number;
+            nps: number;
+            score: { value: { type: "cp" | "mate"; value: number }; wdl: null };
+            sanMoves: string[];
+            uciMoves: string[];
+        }[];
+        terminal: "checkmate" | "draw" | null;
+        isSacrifice: boolean;
+    }[];
+    novelty:
+        | { kind: "notRequested" | "notFound" | "unavailable" }
+        | { kind: "found"; position: number };
+};
+
+/** The three native commands one game report needs: reservation, analysis, progress lookup. */
+export function gameReportCommands(
+    result: GameReportFixture,
+): NonNullable<MockScenario["commands"]> {
+    return {
+        prepare_analysis: { result: "report_e2e-tab_operation" },
+        analyze_game: { result },
+        get_progress: { result: null },
+    };
 }

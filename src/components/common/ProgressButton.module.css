@@ -12,7 +12,3 @@
 .label {
   z-index: 1;
 }
-
-[data-mantine-color-scheme="dark"] .label {
-  color: var(--cf-foreground);
-}

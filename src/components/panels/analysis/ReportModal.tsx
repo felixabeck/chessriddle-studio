@@ -4,7 +4,8 @@ import { notifications } from "@mantine/notifications";
 import { useAtom, useAtomValue, useStore as useJotaiStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { memo, useContext, useEffect, useMemo, useRef } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
+import { Link } from "@tanstack/react-router";
 import { useStore } from "zustand";
 import type { GameAnalysis, GoMode } from "@/bindings";
 import GoModeInput from "@/components/common/GoModeInput";
@@ -112,6 +113,8 @@ function ReportModal({
       !!currency.error ||
       (!!currency.collection &&
         (currency.collection.status !== "ready" || !currency.collection.database)));
+  // The novelty needs a reference whose index is ready; otherwise the option is off.
+  const referenceReady = !!referenceDb && !referenceUnavailable;
   const engines = useAtomValue(enginesAtom);
   const localEngines = useMemo(
     () => (engines ?? []).filter((e): e is LocalEngine => e.type === "local"),
@@ -143,7 +146,6 @@ function ReportModal({
     initialValues: reportSettings,
     validate: {
       engine: (value) => (!value ? t("Board.Analysis.EngineRequired") : undefined),
-      novelty: (value) => (value && !referenceDb ? t("Board.Analysis.RefDBRequired") : undefined),
     },
   });
 
@@ -177,6 +179,8 @@ function ReportModal({
     setReportSettings(form.values);
     const rootFingerprint = reportRootFingerprint(initialFen, moves);
     const settings = form.values;
+    // The stored preference survives an unavailable reference; the run uses the effective value.
+    const annotateNovelties = settings.novelty && referenceReady;
     const engine = localEngines.find((e) => e.id === settings.engine);
     if (!engine) return;
     const preparationCurrent = () =>
@@ -274,7 +278,7 @@ function ReportModal({
         engine.id,
         settings.goMode,
         {
-          annotateNovelties: settings.novelty,
+          annotateNovelties,
           fen: initialFen,
           referenceDb: currency.collection?.database ?? referenceDb,
           moves,
@@ -322,12 +326,14 @@ function ReportModal({
     >
       <form onSubmit={form.onSubmit(() => analyze())}>
         <Stack>
-          {referenceUnavailable && (
+          {engines != null && localEngines.length === 0 && (
             <Alert color="warning">
-              {t("Collections.Unavailable", {
-                defaultValue:
-                  "The search index is unavailable. Retry, or select the collection's source file again.",
-              })}
+              <Trans
+                i18nKey="Engines.Selection.None"
+                components={{
+                  addEngineLink: <Link to="/engines" onClick={closeReportingMode} />,
+                }}
+              />
             </Alert>
           )}
           <Select
@@ -355,9 +361,9 @@ function ReportModal({
           />
 
           <Checkbox
-            label={t("Board.Analysis.AnnotateNovelties")}
-            description={t("Board.Analysis.AnnotateNovelties.Desc")}
-            {...form.getInputProps("novelty", { type: "checkbox" })}
+            label={t("Board.Analysis.MarkMoves")}
+            description={t("Board.Analysis.MarkMoves.Desc")}
+            {...form.getInputProps("marks", { type: "checkbox" })}
           />
 
           <Checkbox
@@ -366,8 +372,32 @@ function ReportModal({
             {...form.getInputProps("variations", { type: "checkbox" })}
           />
 
+          <Checkbox
+            label={t("Board.Analysis.AnnotateNovelties")}
+            description={
+              referenceReady ? (
+                t("Board.Analysis.AnnotateNovelties.Desc")
+              ) : referenceDb ? (
+                t("Collections.Unavailable")
+              ) : (
+                <Trans
+                  i18nKey="Board.Analysis.AnnotateNovelties.NoReference"
+                  components={{
+                    libraryLink: <Link to="/library" onClick={closeReportingMode} />,
+                  }}
+                />
+              )
+            }
+            disabled={!referenceReady}
+            {...form.getInputProps("novelty", { type: "checkbox" })}
+            checked={form.values.novelty && referenceReady}
+          />
+
           <Group justify="right">
-            <Button type="submit" disabled={inProgress}>
+            <Button
+              type="submit"
+              disabled={inProgress || engines == null || localEngines.length === 0}
+            >
               {t("Board.Analysis.Analyze")}
             </Button>
           </Group>

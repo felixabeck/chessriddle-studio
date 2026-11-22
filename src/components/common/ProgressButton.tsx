@@ -9,12 +9,14 @@ import classes from "./ProgressButton.module.css";
 
 type Props = {
   id: string;
-  initInstalled: boolean;
+  /** The action is already done (an installed engine). Default false. */
+  initInstalled?: boolean;
   onClick: (id: string) => void;
   onCancel?: () => void | Promise<void | { clearedGeneration: bigint | null }>;
   leftIcon?: React.ReactNode;
   labels: {
-    completed: string;
+    /** Shown once the action completed; required unless it can never complete. */
+    completed?: string;
     action: string;
     inProgress: string;
     finalizing?: string;
@@ -31,7 +33,7 @@ type Props = {
 
 function ProgressButton({
   id,
-  initInstalled,
+  initInstalled = false,
   onClick,
   onCancel,
   leftIcon,
@@ -87,7 +89,7 @@ function ProgressButton({
 
   let label: string;
   if (completed) {
-    label = labels.completed;
+    label = labels.completed ?? labels.action;
   } else if (!showProgress) {
     label = labels.action;
   } else if (progress === 100) {

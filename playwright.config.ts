@@ -72,6 +72,22 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "dark" },
         },
         {
+            name: "game-report",
+            testMatch: /game-report\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "game-report-dark",
+            testMatch: /game-report\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "dark" },
+        },
+        {
+            // The analysis pane at its narrow width beside the board.
+            name: "game-report-narrow",
+            testMatch: /game-report\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1024, height: 800 }, colorScheme: "light" },
+        },
+        {
             name: "game-end",
             testMatch: /game-end\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },

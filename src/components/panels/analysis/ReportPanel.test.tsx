@@ -12,6 +12,7 @@ import {
   type TreeStore,
 } from "@/state/store/tree";
 import ReportPanel from "./ReportPanel";
+import { getMainLine, reportRootFingerprint } from "@/utils/chess";
 import type { GameAnalysis } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
@@ -65,7 +66,28 @@ const mocks = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: mocks.t }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: mocks.t, i18n: { language: "en-US" } }),
+  Trans: ({
+    i18nKey,
+    components,
+  }: {
+    i18nKey: string;
+    components?: Record<string, React.ReactElement>;
+  }) => (
+    <>
+      {i18nKey}
+      {Object.entries(components ?? {}).map(([name, element]) => (
+        <span key={name}>{element}</span>
+      ))}
+    </>
+  ),
+}));
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children?: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
+}));
 vi.mock("@/hooks/useProgress", () => ({
   useProgress: (id: string) => {
     mocks.progressId = id;
@@ -147,8 +169,20 @@ vi.mock("../../common/AppModal", () => ({
   default: ({ children, opened }: { children: React.ReactNode; opened: boolean }) =>
     opened ? <div>{children}</div> : null,
 }));
+type Box = { children?: React.ReactNode; "data-testid"?: string };
+type BoxTag = "div" | "span" | "table" | "thead" | "tbody" | "tr" | "th" | "td";
+// Hoisted with the module mocks that use it.
+const box = vi.hoisted(() => (Tag: BoxTag) => ({ children, "data-testid": testId }: Box) => (
+  <Tag data-testid={testId}>{children}</Tag>
+));
 vi.mock("@mantine/core", () => ({
-  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+  Alert: box("div"),
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string; size?: string }) => (
     <button {...props}>{children}</button>
   ),
   Checkbox: () => <input type="checkbox" />,
@@ -157,11 +191,18 @@ vi.mock("@mantine/core", () => ({
   }),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   NumberInput: () => <input type="number" />,
-  Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Paper: box("div"),
   ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Select: () => <select />,
-  Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  Stack: box("div"),
+  Table: Object.assign(box("table"), {
+    Thead: box("thead"),
+    Tbody: box("tbody"),
+    Tr: box("tr"),
+    Th: box("th"),
+    Td: box("td"),
+  }),
+  Text: box("span"),
   UnstyledButton: ({
     children,
     c: _c,
@@ -343,6 +384,9 @@ beforeEach(() => {
   mocks.analyzeGame.mockResolvedValue({ positions: [], novelty: { kind: "notRequested" } });
   vi.stubGlobal("crypto", { randomUUID: () => "operation-uuid" });
   store = createTreeStore();
+  // A game with one move: the Report tab offers a report only for a game with moves.
+  store.getState().makeMoves({ payload: ["e4"] });
+  store.getState().goToStart();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -359,6 +403,7 @@ afterEach(async () => {
 
 test("annotation counts are labelled buttons that jump to the move; zero counts are plain text", async () => {
   // 1. e4 e5?? 2. Nf3?? Nc6 3. Bb5?? — two White blunders, one Black blunder.
+  store.getState().reset();
   store.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6", "Bb5"], mainline: true });
   for (const path of [
     [0, 0],
@@ -396,10 +441,16 @@ test("annotation counts are labelled buttons that jump to the move; zero counts 
     ),
   ).toHaveLength(2);
   expect(
-    [...host.querySelectorAll("div")].filter(
+    [...host.querySelectorAll("td")].filter(
       (cell) => cell.childElementCount === 0 && cell.textContent === "0",
     ),
   ).toHaveLength(10);
+  // The table names its columns.
+  expect([...host.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual([
+    "Common.WHITE",
+    "Board.Analysis.Report.MoveQuality",
+    "Common.BLACK",
+  ]);
 
   await act(async () => white!.click());
   expect(store.getState().position).toEqual([0, 0, 0]);
@@ -462,6 +513,7 @@ test("cancel after remount against the same tree store cancels the registered id
 
 test("cancel after a board-tab provider remount uses the stable registered report owner", async () => {
   store = createTreeStore("tab-1");
+  store.getState().makeMoves({ payload: ["e4"] });
   const firstStore = store;
   await renderPanel();
   await act(async () => {
@@ -748,4 +800,113 @@ test("close between rollback decision and report continuation cannot republish t
 
   expect(store.getState().root.score).toBeNull();
   expect(createTreeStore("tab-1")).not.toBe(store);
+});
+
+const cp = (value: number) => ({ value: { type: "cp" as const, value }, wdl: null });
+
+test("one side without a scored move shows a dash beside the other side's card", async () => {
+  store.setState((state) => ({
+    ...state,
+    root: { ...state.root, children: [{ ...state.root.children[0], score: cp(20) }] },
+  }));
+  await renderPanel();
+  const cards = host.querySelectorAll('[data-testid="report-accuracy"]');
+  expect(cards).toHaveLength(2);
+  expect(cards[0].textContent).toContain("%");
+  expect(cards[1].textContent).toContain("–");
+  expect(cards[1].textContent).not.toContain("%");
+});
+
+test("neither side scored hides both cards and offers the report in the chart area", async () => {
+  await renderPanel();
+  expect(host.querySelectorAll('[data-testid="report-accuracy"]')).toHaveLength(0);
+  const empty = host.querySelector('[data-testid="report-not-analysed"]')!;
+  expect(empty.textContent).toContain("Board.Analysis.Report.NotAnalysed");
+  await act(async () => empty.querySelector("button")!.click());
+  expect(mocks.setReportingMode).toHaveBeenCalledWith(true);
+});
+
+test("a game without moves says that a report needs moves", async () => {
+  store
+    .getState()
+    .setState({ ...store.getState(), root: { ...store.getState().root, children: [] } });
+  await renderPanel();
+  expect(host.querySelector('[data-testid="report-needs-moves"]')?.textContent).toBe(
+    "Board.Analysis.Report.NeedsMoves",
+  );
+  expect(mocks.progressButtonProps).toBeNull();
+});
+
+const summary = {
+  engine: "Stockfish 17",
+  goMode: { t: "Depth" as const, c: 18 },
+  createdAt: Date.UTC(2026, 10, 22),
+  missingEvaluations: 2,
+  novelty: "notFound" as const,
+};
+
+test("a summary of the current game shows its provenance and the regenerate label", async () => {
+  const { root } = store.getState();
+  store.setState((state) => ({
+    report: {
+      ...state.report,
+      summary: { ...summary, fingerprint: reportRootFingerprint(root.fen, getMainLine(root)) },
+    },
+  }));
+  await renderPanel();
+  expect(host.querySelector('[data-testid="report-provenance"]')).not.toBeNull();
+  expect(mocks.t).toHaveBeenCalledWith(
+    "Board.Analysis.Report.Provenance",
+    expect.objectContaining({ engine: "Stockfish 17", limit: "Board.Analysis.Report.Limit.Depth" }),
+  );
+  expect(mocks.t).toHaveBeenCalledWith("Board.Analysis.Report.MissingEvaluations", {
+    positions: 2,
+  });
+  expect(host.querySelector('[data-testid="report-outdated"]')).toBeNull();
+  expect(mocks.progressButtonProps).toMatchObject({
+    labels: { action: "Board.Analysis.RegenerateReport" },
+  });
+});
+
+test("a summary of another game shows the changed-game hint instead", async () => {
+  store.setState((state) => ({
+    report: { ...state.report, summary: { ...summary, fingerprint: "another game" } },
+  }));
+  await renderPanel();
+  expect(host.querySelector('[data-testid="report-provenance"]')).toBeNull();
+  expect(host.querySelector('[data-testid="report-outdated"]')?.textContent).toBe(
+    "Board.Analysis.Report.Outdated",
+  );
+  expect(mocks.progressButtonProps).toMatchObject({
+    labels: { action: "Board.Analysis.GenerateReport" },
+  });
+});
+
+test("a key moment row goes to its move and names the report's better move", async () => {
+  store.getState().makeMoves({ payload: ["e5"] });
+  store.getState().goToStart();
+  store.getState().makeMoves({ payload: ["d4"] });
+  store.setState((state) => {
+    const [e4, d4] = state.root.children;
+    return {
+      root: {
+        ...state.root,
+        score: cp(20),
+        children: [
+          { ...e4, nags: [2], score: cp(-80) },
+          { ...d4, reportLine: true as const },
+        ],
+      },
+    };
+  });
+  store.getState().goToStart();
+  await renderPanel();
+  const rows = host.querySelectorAll('[data-testid="report-key-moment"]');
+  expect(rows).toHaveLength(1);
+  expect(rows[0].textContent).toContain("1. e4?");
+  expect(rows[0].textContent).toContain("+0.20 → -0.80");
+  expect(rows[0].textContent).toContain("Board.Analysis.Report.BetterMove");
+  expect(mocks.t).toHaveBeenCalledWith("Board.Analysis.Report.BetterMove", { move: "d4" });
+  await act(async () => (rows[0] as HTMLButtonElement).click());
+  expect(store.getState().position).toEqual([0]);
 });

@@ -61,7 +61,28 @@ const mocks = vi.hoisted(() => ({
   reportPersistError: vi.fn(),
 }));
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+  Trans: ({
+    i18nKey,
+    components,
+  }: {
+    i18nKey: string;
+    components?: Record<string, React.ReactElement>;
+  }) => (
+    <>
+      {i18nKey}
+      {Object.entries(components ?? {}).map(([name, element]) => (
+        <span key={name}>{element}</span>
+      ))}
+    </>
+  ),
+}));
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children?: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
+}));
 vi.mock("@/platform/tauri", () => ({
   tauri: {
     analyzeGame: mocks.analyzeGame,
@@ -103,17 +124,25 @@ vi.mock("@mantine/core", () => ({
     checked,
     onChange,
     label,
+    description,
+    disabled,
   }: {
     checked?: boolean;
     onChange?: React.ChangeEventHandler<HTMLInputElement>;
     label?: React.ReactNode;
+    description?: React.ReactNode;
+    disabled?: boolean;
   }) => (
-    <input
-      type="checkbox"
-      checked={!!checked}
-      onChange={onChange}
-      aria-label={typeof label === "string" ? label : undefined}
-    />
+    <label>
+      <input
+        type="checkbox"
+        checked={!!checked}
+        disabled={disabled}
+        onChange={onChange}
+        aria-label={typeof label === "string" ? label : undefined}
+      />
+      <span>{description}</span>
+    </label>
   ),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   NumberInput: ({ value, rightSection }: { value: number; rightSection?: React.ReactNode }) => (
@@ -1192,4 +1221,81 @@ test("falls back to the first installed engine without resetting a user-edited c
 
   expect(engineSelect.value).toBe("engine-id-2");
   expect(variations.checked).toBe(false);
+});
+
+test("an old stored settings object with reversed and without marks loads and submits", async () => {
+  localStorage.setItem(
+    "report-settings",
+    JSON.stringify({
+      novelty: false,
+      reversed: false,
+      variations: true,
+      goMode: { t: "Depth", c: 12 },
+      engine: "engine-id",
+    }),
+  );
+  mocks.analyzeGame.mockResolvedValue(completedAnalysis);
+  await renderReportModal();
+  expect(
+    (host.querySelector('input[aria-label="Board.Analysis.MarkMoves"]') as HTMLInputElement)
+      .checked,
+  ).toBe(true);
+  await act(async () => host.querySelector("button")!.click());
+  expect(mocks.analyzeGame).toHaveBeenCalledOnce();
+  expect(mocks.analyzeGame.mock.calls[0][5]).not.toHaveProperty("reversed");
+  expect(analysisPublished).toHaveBeenCalledWith(
+    completedAnalysis,
+    expect.objectContaining({ marks: true, goMode: { t: "Depth", c: 12 } }),
+  );
+  expect(JSON.parse(localStorage.getItem("report-settings")!)).not.toHaveProperty("reversed");
+});
+
+test("without a reference the novelty option is off and the stored preference is kept", async () => {
+  storeSettings({ novelty: true });
+  await renderReportModal();
+  const novelty = host.querySelector(
+    'input[aria-label="Board.Analysis.AnnotateNovelties"]',
+  ) as HTMLInputElement;
+  expect(novelty.disabled).toBe(true);
+  expect(novelty.checked).toBe(false);
+  expect(host.textContent).toContain("Board.Analysis.AnnotateNovelties.NoReference");
+  await act(async () => host.querySelector("button")!.click());
+  expect(mocks.analyzeGame.mock.calls[0][5]).toEqual(
+    expect.objectContaining({ annotateNovelties: false }),
+  );
+  expect(JSON.parse(localStorage.getItem("report-settings")!).novelty).toBe(true);
+});
+
+test("with a ready reference the stored novelty preference is used", async () => {
+  storeSettings({ novelty: true });
+  selectReference({ id: { id: "reference" }, kind: "database" });
+  await renderReportModal();
+  const novelty = host.querySelector(
+    'input[aria-label="Board.Analysis.AnnotateNovelties"]',
+  ) as HTMLInputElement;
+  expect(novelty.disabled).toBe(false);
+  expect(novelty.checked).toBe(true);
+  await act(async () => host.querySelector("button")!.click());
+  expect(mocks.analyzeGame.mock.calls[0][5]).toEqual(
+    expect.objectContaining({ annotateNovelties: true }),
+  );
+});
+
+test("Analyze is disabled without a local engine and while the engine list loads", async () => {
+  atomStore.set(enginesAtom, []);
+  await renderReportModal();
+  expect(host.textContent).toContain("Engines.Selection.None");
+  expect(host.querySelector('a[href="/engines"]')).not.toBeNull();
+  expect(host.querySelector("button")!.disabled).toBe(true);
+
+  atomStore.set(
+    enginesAtom as unknown as PrimitiveAtom<typeof mocks.engines | undefined>,
+    undefined,
+  );
+  await renderReportModal();
+  expect(host.textContent).not.toContain("Engines.Selection.None");
+  expect(host.querySelector("button")!.disabled).toBe(true);
+
+  await act(async () => atomStore.set(enginesAtom, mocks.engines));
+  expect(host.querySelector("button")!.disabled).toBe(false);
 });

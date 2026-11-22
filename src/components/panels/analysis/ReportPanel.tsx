@@ -1,6 +1,16 @@
 import { useTabAtom, useOwnerTabId } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
-import { Grid, Group, Paper, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core";
+import {
+  Button,
+  Group,
+  Paper,
+  ScrollArea,
+  Stack,
+  Table,
+  Text,
+  UnstyledButton,
+} from "@mantine/core";
+import type { TFunction } from "i18next";
 import { ScanSearch } from "lucide-react";
 import equal from "fast-deep-equal";
 import { useAtom } from "jotai";
@@ -17,8 +27,11 @@ import {
   type AnnotationCounts,
   getGameStats,
   getMainLine,
+  type KeyMoment,
   reportRootFingerprint,
 } from "@/utils/chess";
+import { formatScore } from "@/utils/score";
+import type { ReportSummary } from "@/utils/treeReducer";
 import classes from "./AnalysisPanel.module.css";
 import ReportModal from "./ReportModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -118,35 +131,65 @@ function ReportPanel() {
     setReportingMode(false);
   }, [setReportingMode]);
 
+  const summary = useStore(store, (s) => s.report.summary ?? null);
+  const goToMove = useStore(store, (s) => s.goToMove);
+  const moves = useMemo(() => getMainLine(root), [root]);
+  const summaryCurrent =
+    !!summary && summary.fingerprint === reportRootFingerprint(root.fen, moves);
+  const hasMoves = root.children.length > 0;
+
+  const modal = (
+    <ReportModal
+      tab={ownerTabId}
+      initialFen={root.fen}
+      moves={moves}
+      reportingMode={reportingMode}
+      closeReportingMode={closeReportingMode}
+      setInProgress={setInProgress}
+      registerOperation={setReportOperationId}
+    />
+  );
+
+  if (!hasMoves) {
+    return (
+      <ScrollArea offsetScrollbars>
+        {modal}
+        <Paper withBorder p="md" mr="xs" data-testid="report-needs-moves">
+          <Text c="dimmed">{t("Board.Analysis.Report.NeedsMoves")}</Text>
+        </Paper>
+      </ScrollArea>
+    );
+  }
+
   return (
     <ScrollArea offsetScrollbars>
-      <ReportModal
-        tab={ownerTabId}
-        initialFen={root.fen}
-        moves={getMainLine(root)}
-        reportingMode={reportingMode}
-        closeReportingMode={closeReportingMode}
-        setInProgress={setInProgress}
-        registerOperation={setReportOperationId}
-      />
+      {modal}
       <Stack mb="lg" gap="0.4rem" mr="xs">
         <ProgressButton
           id={progressId}
           redoable
-          disabled={root.children.length === 0}
           leftIcon={<ScanSearch size="0.875rem" />}
           onClick={openReportingMode}
           onCancel={handleCancel}
-          initInstalled={false}
           completeOnProgressSuccess={false}
           labels={{
-            action: t("Board.Analysis.GenerateReport"),
-            completed: t("Board.Analysis.ReportGenerated"),
+            action: summaryCurrent
+              ? t("Board.Analysis.RegenerateReport")
+              : t("Board.Analysis.GenerateReport"),
             inProgress: t("Board.Analysis.GeneratingReport"),
           }}
           inProgress={inProgress}
           setInProgress={setInProgress}
         />
+
+        {summary &&
+          (summaryCurrent ? (
+            <ReportProvenance summary={summary} />
+          ) : (
+            <Text fz="sm" c="dimmed" data-testid="report-outdated">
+              {t("Board.Analysis.Report.Outdated")}
+            </Text>
+          ))}
 
         {(stats.white.accuracy !== null || stats.black.accuracy !== null) && (
           <Group grow>
@@ -164,8 +207,21 @@ function ReportPanel() {
         )}
 
         <Paper withBorder p="md">
-          <EvalChart isAnalysing={inProgress} startAnalysis={openReportingMode} />
+          {stats.scoredPositions === 0 && !inProgress ? (
+            <Stack gap="xs" align="flex-start" data-testid="report-not-analysed">
+              <Text c="dimmed">{t("Board.Analysis.Report.NotAnalysed")}</Text>
+              <Button variant="default" size="xs" onClick={openReportingMode}>
+                {t("Board.Analysis.GenerateReport")}
+              </Button>
+            </Stack>
+          ) : (
+            <EvalChart isAnalysing={inProgress} />
+          )}
         </Paper>
+
+        {stats.keyMoments.length > 0 && (
+          <KeyMoments moments={stats.keyMoments} goToMove={goToMove} />
+        )}
 
         <GameStats
           whiteAnnotations={stats.white.annotations}
@@ -173,6 +229,90 @@ function ReportPanel() {
         />
       </Stack>
     </ScrollArea>
+  );
+}
+
+function formatLimit(t: TFunction, goMode: ReportSummary["goMode"]): string {
+  if (goMode.t === "Depth") return t("Board.Analysis.Report.Limit.Depth", { value: goMode.c });
+  if (goMode.t === "Time")
+    return t("Board.Analysis.Report.Limit.Time", { value: goMode.c / MS_PER_SECOND });
+  return t("Board.Analysis.Report.Limit.Nodes", { value: goMode.c.toLocaleString() });
+}
+
+const MS_PER_SECOND = 1000;
+
+/** Which engine and limit produced the report on the board, and when. */
+function ReportProvenance({ summary }: { summary: ReportSummary }) {
+  const { t, i18n } = useTranslation();
+  const date = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }).format(
+    summary.createdAt,
+  );
+  return (
+    <Text fz="sm" c="dimmed" data-testid="report-provenance">
+      {t("Board.Analysis.Report.Provenance", {
+        engine: summary.engine,
+        limit: formatLimit(t, summary.goMode),
+        date,
+      })}
+      {summary.missingEvaluations > 0 &&
+        ` ${t("Board.Analysis.Report.MissingEvaluations", { positions: summary.missingEvaluations })}`}
+    </Text>
+  );
+}
+
+/** The marked mainline moves in game order; a row goes to its move. */
+function KeyMoments({
+  moments,
+  goToMove,
+}: {
+  moments: KeyMoment[];
+  goToMove: (path: number[]) => void;
+}) {
+  const { t } = useTranslation();
+  const formatEval = (score: KeyMoment["before"]) => (score ? formatScore(score.value) : NO_VALUE);
+  return (
+    <Paper withBorder p="md">
+      <Text fw={600} mb="xs" id="report-key-moments">
+        {t("Board.Analysis.Report.KeyMoments")}
+      </Text>
+      <Stack
+        gap={2}
+        component="ul"
+        aria-labelledby="report-key-moments"
+        className={classes.keyMoments}
+      >
+        {moments.map((moment) => {
+          const number = Math.ceil(moment.halfMoves / 2);
+          const prefix = moment.halfMoves % 2 === 1 ? `${number}.` : `${number}...`;
+          return (
+            <li key={moment.path.length}>
+              <UnstyledButton
+                className={classes.keyMoment}
+                // The mark's colour is a bar, not text: NAG hues on the card miss text contrast.
+                style={{
+                  "--key-moment-color": `var(--mantine-color-${ANNOTATION_INFO[moment.annotation].color}-6)`,
+                }}
+                onClick={() => goToMove(moment.path)}
+                data-testid="report-key-moment"
+              >
+                <Text component="span" fw={600}>
+                  {prefix} {moment.san}
+                  {moment.annotation}
+                </Text>
+                <Text component="span" fz="sm" className={classes.evalChange}>
+                  {formatEval(moment.before)} → {formatEval(moment.after)}
+                </Text>
+                {moment.betterMove && (
+                  <Text component="span" fz="sm" c="dimmed" className={classes.betterMove}>
+                    {t("Board.Analysis.Report.BetterMove", { move: moment.betterMove })}
+                  </Text>
+                )}
+              </UnstyledButton>
+            </li>
+          );
+        })}
+      </Stack>
+    </Paper>
   );
 }
 
@@ -186,46 +326,51 @@ const GameStats = memo(
     const goToAnnotation = useStore(store, (s) => s.goToAnnotation);
 
     return (
-      <Paper withBorder>
-        <Grid columns={12} align="center" p="md">
-          {Object.keys(ANNOTATION_INFO)
-            .filter((a) => isBasicAnnotation(a))
-            .map((annotation) => {
-              const s = annotation as BasicAnnotation;
-              const { name, color, translationKey } = ANNOTATION_INFO[s];
-              const w = whiteAnnotations[s];
-              const b = blackAnnotations[s];
-              const annotationName = translationKey ? t(`Annotate.${translationKey}`) : name;
-              return (
-                <React.Fragment key={annotation}>
-                  <AnnotationCount
-                    annotation={s}
-                    side="white"
-                    total={w}
-                    annotationName={annotationName}
-                    goToAnnotation={goToAnnotation}
-                  />
-                  <Grid.Col
-                    span={2}
-                    style={{ textAlign: "center", fontWeight: "bold" }}
-                    c={w + b > 0 ? color : undefined}
-                  >
-                    {annotation}
-                  </Grid.Col>
-                  <Grid.Col span={4} c={w + b > 0 ? color : undefined}>
-                    {annotationName}
-                  </Grid.Col>
-                  <AnnotationCount
-                    annotation={s}
-                    side="black"
-                    total={b}
-                    annotationName={annotationName}
-                    goToAnnotation={goToAnnotation}
-                  />
-                </React.Fragment>
-              );
-            })}
-        </Grid>
+      <Paper withBorder p="xs">
+        <Table layout="fixed" verticalSpacing={4} className={classes.annotationTable}>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th ta="center">{t("Common.WHITE")}</Table.Th>
+              <Table.Th ta="center">{t("Board.Analysis.Report.MoveQuality")}</Table.Th>
+              <Table.Th ta="center">{t("Common.BLACK")}</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {Object.keys(ANNOTATION_INFO)
+              .filter((a) => isBasicAnnotation(a))
+              .map((annotation) => {
+                const s = annotation as BasicAnnotation;
+                const { name, color, translationKey } = ANNOTATION_INFO[s];
+                const w = whiteAnnotations[s];
+                const b = blackAnnotations[s];
+                const annotationName = translationKey ? t(`Annotate.${translationKey}`) : name;
+                return (
+                  <Table.Tr key={annotation}>
+                    <AnnotationCount
+                      annotation={s}
+                      side="white"
+                      total={w}
+                      annotationName={annotationName}
+                      goToAnnotation={goToAnnotation}
+                    />
+                    <Table.Th scope="row" fw="normal" c={w + b > 0 ? color : undefined}>
+                      <Text component="span" fw="bold" mr="xs">
+                        {annotation}
+                      </Text>
+                      {annotationName}
+                    </Table.Th>
+                    <AnnotationCount
+                      annotation={s}
+                      side="black"
+                      total={b}
+                      annotationName={annotationName}
+                      goToAnnotation={goToAnnotation}
+                    />
+                  </Table.Tr>
+                );
+              })}
+          </Table.Tbody>
+        </Table>
       </Paper>
     );
   },
@@ -254,15 +399,11 @@ function AnnotationCount({
   const { color } = ANNOTATION_INFO[annotation];
 
   if (total === 0) {
-    return (
-      <Grid.Col span={3} style={{ textAlign: "center" }}>
-        {total}
-      </Grid.Col>
-    );
+    return <Table.Td ta="center">{total}</Table.Td>;
   }
 
   return (
-    <Grid.Col span={3} style={{ textAlign: "center" }}>
+    <Table.Td ta="center">
       <UnstyledButton
         className={classes.label}
         c={color}
@@ -275,7 +416,7 @@ function AnnotationCount({
       >
         {total}
       </UnstyledButton>
-    </Grid.Col>
+    </Table.Td>
   );
 }
 
@@ -294,21 +435,20 @@ function AccuracyCard({
   const { t } = useTranslation();
 
   return (
-    <Paper withBorder p="xs">
-      <Group justify="space-between">
-        <Stack gap={0} align="start">
-          <Text c="dimmed">{color}</Text>
-          <Text fz="sm">{cpl === null ? NO_VALUE : cpl.toFixed(1)} ACPL</Text>
-        </Stack>
-        <Stack gap={0} align="center">
-          <Text fz="xl" lh="normal">
-            {accuracy === null ? NO_VALUE : `${accuracy.toFixed(1)}%`}
-          </Text>
-          <Text fz="sm" c="dimmed" lh="normal">
+    // One column at every width, so the two cards keep the same shape side by side.
+    <Paper withBorder p="xs" data-testid="report-accuracy">
+      <Stack gap={0} align="start">
+        <Text c="dimmed">{color}</Text>
+        <Text fz="xl" lh="normal" className={classes.figure}>
+          {accuracy === null ? NO_VALUE : `${accuracy.toFixed(1)}%`}{" "}
+          <Text component="span" fz="sm" c="dimmed">
             {t("Board.Analysis.Accuracy")}
           </Text>
-        </Stack>
-      </Group>
+        </Text>
+        <Text fz="sm" className={classes.figure}>
+          {cpl === null ? NO_VALUE : cpl.toFixed(1)} ACPL
+        </Text>
+      </Stack>
     </Paper>
   );
 }

@@ -1050,6 +1050,7 @@ test("game stats list the marked mainline moves as key moments in game order", (
     // A variation's marks are not key moments.
     const side = addMainlineMove(ply3, "e5");
     side.nags = [4];
+    side.reportLine = true;
 
     expect(getGameStats(root).keyMoments).toEqual([
         {
@@ -1059,6 +1060,7 @@ test("game stats list the marked mainline moves as key moments in game order", (
             annotation: "?!",
             before: cpScore(15),
             after: cpScore(120),
+            betterMove: null,
         },
         {
             path: [0, 0, 0, 0],
@@ -1067,9 +1069,11 @@ test("game stats list the marked mainline moves as key moments in game order", (
             annotation: "??",
             before: cpScore(110),
             after: cpScore(900),
+            betterMove: "e5",
         },
     ]);
     expect(getGameStats(defaultTree().root).keyMoments).toEqual([]);
+    expect(getGameStats(root).scoredPositions).toBe(5);
 });
 
 function addMainlineMove(parent: TreeNode, san: string): TreeNode {

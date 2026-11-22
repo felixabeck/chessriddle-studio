@@ -60,3 +60,50 @@
   border-left: 3px solid var(--cf-engine-color);
   min-width: 0;
 }
+
+/* Report tab: key moments. A row is one button; its evaluation change uses tabular figures. */
+.keyMoments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.keyMoment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--mantine-spacing-sm);
+  align-items: baseline;
+  width: 100%;
+  padding: 4px 8px;
+  border-left: 3px solid var(--key-moment-color);
+  border-radius: var(--cf-radius-sm);
+}
+
+@media (hover: hover) {
+  .keyMoment:hover {
+    background: var(--cf-primary-row-hover);
+  }
+}
+
+.keyMoment:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: 1px;
+}
+
+.figure {
+  font-variant-numeric: tabular-nums;
+}
+
+.evalChange {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.betterMove {
+  grid-column: 1 / -1;
+}
+
+.annotationTable th,
+.annotationTable td {
+  overflow-wrap: anywhere;
+}

@@ -220,7 +220,7 @@ function panels() {
                   <RepertoireInfo />
                 </section>
                 <section data-panel="inner-chart">
-                  <EvalChart isAnalysing={false} startAnalysis={() => undefined} />
+                  <EvalChart isAnalysing={false} />
                 </section>
                 {/* BoardsPage renders the board inside this gate. The probe has to be here too. */}
                 <BoardProbe />
@@ -236,7 +236,7 @@ function panels() {
                 <RepertoireInfo />
               </section>
               <section data-panel="chart">
-                <EvalChart isAnalysing={false} startAnalysis={() => undefined} />
+                <EvalChart isAnalysing={false} />
               </section>
             </TreeStateContext.Provider>
           </WorkspaceTabScope>
