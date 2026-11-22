@@ -28441,7 +28441,7 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 ### The installer test for a missing update-desktop-database fails on the CI runner: its reduced PATH has no node
 
-* **ID:** f-20261122-07 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261122-07 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45025626873
 * **Where:** `scripts/install-local-tests.mjs`, test `a missing update-desktop-database warns and keeps the committed install` (added by the build run studio-link-extension, commit "build(links): register the chessriddle-studio:// scheme in every package").
@@ -28449,3 +28449,5 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Failure scenario:** `Test` run 45025626873 on 714d2cc0f, job `frontend`, step "Run the contract gate": `install-local.sh: line 37: node: command not found`, `invalid product identity in tauri.conf.json`, assertion `1 !== 0`. Every other job of the run succeeded. Locally the test passes because `node` is `/usr/bin/node`. While this is red, `pnpm ci:remote:check` refuses every push from every checkout.
 * **Fix:** build the reduced PATH from every directory of the caller's PATH, first directory first, leaving out only the refresh command.
 * **Found by:** Claude Code (Fable 5.2), 2026-11-22, post-push CI wait of the build run studio-link-extension.
+* **Handled 2026-11-22** (Claude Code, Fable 5.2, build run studio-link-extension): commit "fix(install): build the installer test's reduced PATH from the whole PATH" builds the test's PATH from every directory of `process.env.PATH`. Proof: `pnpm install:local:test` 35 pass; the single test also passes with an additional first PATH directory; contract gate green on the repair commit; closure review by review-correctness and review-tests (agy) approved, no sibling test builds a reduced PATH. The CI runner is the remaining proof: the `frontend` job of the `Test` run on the commit that carries this closure.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3e41c817efbcc68bd38f7881b9bd77868adc5b53a5d38c6858d8c872a3026659","header_sha256":"4e6571ce7afd91a0ac6fe817d811e54f9311651eb3d553ca6c3b4a920eb15212","header_status":"handled","input_sha256":"e616b99e3632a36be27972605d3ff66a057e12948e6b88c5a0ae74b293513916","kind":"mutation-receipt","operation":"e47c9e1df736d1f7e10a201369c22eb906f7f9effa627565e4195f111df1d1b2","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-07"],"target":"f-20261122-07","v":1} -->
