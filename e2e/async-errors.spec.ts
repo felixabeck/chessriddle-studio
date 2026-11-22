@@ -1501,6 +1501,9 @@ test("async-errors: verifies German navigation and a delayed native rejection at
     await expect(page.getByRole("heading", { name: "Bibliothek" })).toBeVisible();
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
+    // The pointer rests on the compact Library link; its tooltip opens after a 400 ms delay, so wait for it
+    // to mount before assertAccessible settles transitions, or axe samples it mid-fade.
+    await expect(page.getByRole("tooltip", { name: "Bibliothek" })).toBeVisible();
     await assertAccessible();
     await capture("async-errors");
     await expect(page).toHaveScreenshot("async-errors.png", { fullPage: true });
