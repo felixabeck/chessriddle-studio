@@ -158,6 +158,7 @@
           "src/components/WindowResizeHandles.tsx",
           "src/components/common/AppModal.tsx",
           "src/components/common/CatalogDownloadCard.tsx",
+          "src/components/common/CheckboxRow.tsx",
           "src/components/common/ConfirmModal.tsx",
           "src/components/common/DraftNumberInput.tsx",
           "src/components/common/FileInput.tsx",

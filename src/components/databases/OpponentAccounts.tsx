@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
 import useSWRImmutable from "swr/immutable";
+import { CheckboxRow } from "@/components/common/CheckboxRow";
 import type { DatabaseHandle, OpponentAccount, OpponentTimeControl } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
@@ -387,11 +388,10 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
                 )
               }
             >
-              <Group gap="sm" mt={4} wrap="wrap">
+              <CheckboxRow mt={4}>
                 {OPPONENT_TIME_CONTROLS.map((control) => (
-                  <Checkbox
+                  <CheckboxRow.Item
                     key={control}
-                    size="xs"
                     value={control}
                     disabled={inFlight}
                     label={
@@ -407,7 +407,7 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
                     }
                   />
                 ))}
-              </Group>
+              </CheckboxRow>
             </Checkbox.Group>
           </Group>
           <Text size="xs" c="dimmed">

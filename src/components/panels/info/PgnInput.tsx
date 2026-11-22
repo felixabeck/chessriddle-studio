@@ -1,5 +1,5 @@
 import { useOwnerTabId, useTabAtom } from "@/state/tabScope";
-import { Box, Button, Checkbox, Group, rem, Stack, Text, Textarea } from "@mantine/core";
+import { Box, Button, rem, Stack, Text, Textarea } from "@mantine/core";
 import { Check, Copy } from "lucide-react";
 import deepEqual from "fast-deep-equal";
 import { useAtom } from "jotai";
@@ -10,6 +10,7 @@ import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { IconAction } from "@/components/common/IconAction";
+import { CheckboxRow } from "@/components/common/CheckboxRow";
 import { closingTabsAtom, pgnOptionsFamily, tabsAtom } from "@/state/atoms";
 import { getCachedTreeStore, type TreeStore } from "@/state/store/tree";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -87,32 +88,28 @@ function PgnInput() {
       <Text component="label" htmlFor="pgn-editor" fw="bold">
         {t("PgnInput.Editor", { defaultValue: "PGN editor" })}
       </Text>
-      <Group my="sm">
-        <Checkbox
+      <CheckboxRow my="sm">
+        <CheckboxRow.Item
           label={t("PgnInput.Comments")}
-          size="xs"
           checked={options.comments}
           onChange={() => setOptions({ ...options, comments: !options.comments })}
         />
-        <Checkbox
+        <CheckboxRow.Item
           label={t("PgnInput.Glyphs")}
-          size="xs"
           checked={options.glyphs}
           onChange={() => setOptions({ ...options, glyphs: !options.glyphs })}
         />
-        <Checkbox
+        <CheckboxRow.Item
           label={t("PgnInput.Variations")}
-          size="xs"
           checked={options.variations}
           onChange={() => setOptions({ ...options, variations: !options.variations })}
         />
-        <Checkbox
+        <CheckboxRow.Item
           label={t("PgnInput.ExtraMarkups")}
-          size="xs"
           checked={options.extraMarkups}
           onChange={() => setOptions({ ...options, extraMarkups: !options.extraMarkups })}
         />
-      </Group>
+      </CheckboxRow>
       {hidesContent && (
         <Text size="xs" c="dimmed">
           {t("PgnInput.FilteredReadOnly")}
