@@ -271,12 +271,14 @@ jobs:
           bundle=src-tauri/target/release/bundle
           work="$RUNNER_TEMP/scheme-check"
           mkdir -p "$work/deb" "$work/rpm" "$work/appimage"
-          sudo apt-get install -y rpm2cpio cpio
+          sudo apt-get install -y libarchive-tools
           one() { [ "$#" -eq 1 ] && [ -f "$1" ] || { echo "::error::expected exactly one $label package, found: $*"; exit 1; }; }
           label=deb; set -- "$bundle"/deb/*.deb; one "$@"
           dpkg-deb -x "$1" "$work/deb"
           label=rpm; set -- "$bundle"/rpm/*.rpm; one "$@"
-          rpm2cpio "$1" | (cd "$work/rpm" && cpio -idm --quiet)
+          # bsdtar, not rpm2cpio: rpm2cpio 4.18 exits 1 without a message on the bundler's rpm,
+          # although what it writes is complete (measured 2026-11-22, release rehearsal 45031059660).
+          bsdtar -xf "$1" -C "$work/rpm"
           label=AppImage; set -- "$bundle"/appimage/*.AppImage; one "$@"
           chmod +x "$1"
           appimage=$(realpath "$1")
