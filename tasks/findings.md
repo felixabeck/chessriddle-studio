@@ -28369,7 +28369,7 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 ### The async-errors 200% font-scale test fails axe color-contrast on a tooltip caught mid fade-in
 
-* **ID:** f-20261122-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261122-02 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 7048a718-d61c-4b1c-966a-32cba1a5d732
 * **Impact class:** tooling
 * **Spotted outside diff:** final `pnpm gates:push -- --frontend` of drain session fe4cac75 (f-20261119-17, an export-preserving split of `src/state/atoms.ts`), run `artifacts/gates/20261122T070640015Z-2760115/e2e.log`, 2026-11-22.
@@ -28380,3 +28380,5 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Proof:** the run log above, lines ~795-885 (`Error: color-contrast: #_r_g_`), screenshot `artifacts/frontend-audit/test-results/async-errors-async-errors--4cc6d-rejection-at-200-font-scale-async-errors/test-failed-1.png`.
 * **Related:** f-20261120-11 (open; same test, a full-page snapshot race of 887 pixels on hosted CI). No shared Root is claimed: that one is a snapshot diff, this one an axe audit during a transition. The same run's two `Target crashed` failures in `engine-gap` are f-20261122-01.
 * **Found by:** Claude Code, drain session fe4cac75 (f-20261119-17).
+* **Handled 2026-11-22 (drain session 3e686aef-bb92-4e13-8e98-9d8f27fa7b88, co-located with f-20261122-01):** cause confirmed. After the click on the compact Library link the pointer rests on it, and its Mantine tooltip opens after `openDelay={400}` (`src/components/tabs/NavigationRow.tsx`). `assertAccessible` settles running transitions first, so when the tooltip had not mounted yet its fade ran during the axe audit. The committed screenshot shows the settled tooltip, so the test keeps it. `ee7e3488f` waited for the tooltip to be visible. Review (correctness, tests) showed that Mantine mounts it at opacity 0 one frame before the fade starts, so `6b6cc7fa6` also waits for `opacity: 1` before the audit. Proof: `--repeat-each=20` of the test in the container passed 20/20 after each change, with the snapshot unchanged. Rejected: moving the pointer off the link, which would change the committed baseline.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"aa0a03860a4bea3b5b84b5df78ca0499f01c3264c903ff73bfaee7aa46eb0818","header_sha256":"799b328f53f75a0dd23bd4095c0d93ef1ae0a3612294c9a69180a75974bee772","header_status":"handled","input_sha256":"7727c4f24f9b4a8ea27bfbd7e13de989d34a02402232bcf46f46fc82e8a12c77","kind":"mutation-receipt","operation":"6ab8f68efd8f6cab8a8af88c0e052b2b7e6ea21fcd27dff74a49e708f2d5b6c0","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-02"],"target":"f-20261122-02","v":1} -->
