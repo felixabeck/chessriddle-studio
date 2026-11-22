@@ -5597,7 +5597,7 @@ pub(crate) mod tests {
     pub(crate) fn lichess_runtime_state(
         fixture: &crate::db::linked_collections::tests::Fixture,
         responses: Vec<Result<DownloadResponse, Error>>,
-        stored_token: bool,
+        stored_player: Option<&str>,
     ) -> (
         AppState,
         tauri::App<tauri::test::MockRuntime>,
@@ -5616,9 +5616,9 @@ pub(crate) mod tests {
                 &fixture.directory.path().join("credentials-app"),
             ))
             .unwrap();
-        let handle = stored_token.then(|| {
+        let handle = stored_player.map(|player| {
             credentials
-                .store_lichess_token("player".into(), "disposable-fixture-token".into())
+                .store_lichess_token(player.into(), "disposable-fixture-token".into())
                 .unwrap()
                 .account
                 .handle
@@ -5642,8 +5642,11 @@ pub(crate) mod tests {
         crate::credentials::LichessAccountMetadata,
         Arc<MockTransport>,
     ) {
-        let (state, app, handle, transport) =
-            lichess_runtime_state(fixture, vec![Ok(response), Ok(coverage_response(""))], true);
+        let (state, app, handle, transport) = lichess_runtime_state(
+            fixture,
+            vec![Ok(response), Ok(coverage_response(""))],
+            Some(player),
+        );
         let account = crate::credentials::LichessAccountMetadata {
             handle: handle.unwrap(),
             username: player.into(),
@@ -5998,7 +6001,7 @@ pub(crate) mod tests {
             ),
         ] {
             let fixture = Fixture::new();
-            let (state, app, _, transport) = lichess_runtime_state(&fixture, responses, false);
+            let (state, app, _, transport) = lichess_runtime_state(&fixture, responses, None);
             let job = state.operations.prepare_download("fixture-window").unwrap();
             let downloaded = download_lichess_games_runtime(
                 None,
@@ -6038,7 +6041,7 @@ pub(crate) mod tests {
         let (state, app, _, transport) = lichess_runtime_state(
             &fixture,
             vec![Ok(coverage_response("")), Ok(export_pgn_response())],
-            false,
+            None,
         );
         let job = state.operations.prepare_download("fixture-window").unwrap();
         let error = download_lichess_games_runtime(

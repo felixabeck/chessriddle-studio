@@ -777,7 +777,7 @@ mod tests {
         let (state, app, _, transport) = lichess_runtime_state(
             &fixture,
             vec![Ok(coverage_response(&coverage)), Ok(export_pgn_response())],
-            false,
+            None,
         );
         let owner = "account-window".to_string();
         let ticket = state.operations.prepare_download(&owner).unwrap();
