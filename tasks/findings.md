@@ -28382,3 +28382,20 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Found by:** Claude Code, drain session fe4cac75 (f-20261119-17).
 * **Handled 2026-11-22 (drain session 3e686aef-bb92-4e13-8e98-9d8f27fa7b88, co-located with f-20261122-01):** cause confirmed. After the click on the compact Library link the pointer rests on it, and its Mantine tooltip opens after `openDelay={400}` (`src/components/tabs/NavigationRow.tsx`). `assertAccessible` settles running transitions first, so when the tooltip had not mounted yet its fade ran during the axe audit. The committed screenshot shows the settled tooltip, so the test keeps it. `ee7e3488f` waited for the tooltip to be visible. Review (correctness, tests) showed that Mantine mounts it at opacity 0 one frame before the fade starts, so `6b6cc7fa6` also waits for `opacity: 1` before the audit. Proof: `--repeat-each=20` of the test in the container passed 20/20 after each change, with the snapshot unchanged. Rejected: moving the pointer off the link, which would change the committed baseline.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"aa0a03860a4bea3b5b84b5df78ca0499f01c3264c903ff73bfaee7aa46eb0818","header_sha256":"799b328f53f75a0dd23bd4095c0d93ef1ae0a3612294c9a69180a75974bee772","header_status":"handled","input_sha256":"7727c4f24f9b4a8ea27bfbd7e13de989d34a02402232bcf46f46fc82e8a12c77","kind":"mutation-receipt","operation":"6ab8f68efd8f6cab8a8af88c0e052b2b7e6ea21fcd27dff74a49e708f2d5b6c0","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-02"],"target":"f-20261122-02","v":1} -->
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### A game that is itself in the reference database never gets a novelty mark
+
+* **ID:** f-20261122-04 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** planning audit of the game report, plan `tasks/plans/2026-11-22-game-report-improvements.md` ("Not part of this task"), BASE `0b2978623`
+* **Where:** `src-tauri/src/chess.rs` `novelty_lookup_blocking` and `mark_first_novelty` (one index scan per ply until the first position absent from the reference database, d-20260904-02).
+* **Defect:** the novelty is defined as the first mainline position absent from the reference database. When the analysed game is itself stored in that database (a user imported their own games, or analyses a master game from the reference), every position is present, so the report never marks a novelty, even though the game's real departure from theory exists.
+* **Failure scenario:** import a PGN into the reference database, open one of its games, run "Generate report" with "mark the novelty" on: no `N` mark appears and the outcome is "not found".
+* **Open question:** how to exclude the game itself: by game identity (database id, or headers plus moves), by requiring at least two other games through a position, or by a minimum game count per position. Each choice changes what the user sees as the novelty; measure lookup cost before batching (DA5).
+* **Fix:** to be designed; see the open question.
+* **Proof:** plan audit, T8 (`chess.rs:1579-1608` at `0b2978623`).
+* **Found by:** Claude Code (planning session), filed by the build run of the game-report plan, 2026-11-22.
