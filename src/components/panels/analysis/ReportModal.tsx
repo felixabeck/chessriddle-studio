@@ -9,6 +9,7 @@ import { Link } from "@tanstack/react-router";
 import { useStore } from "zustand";
 import type { GameAnalysis, GoMode } from "@/bindings";
 import GoModeInput from "@/components/common/GoModeInput";
+import { normalizeError } from "@/platform/errors";
 import { tauri } from "@/platform/tauri";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import AppModal from "../../common/AppModal";
@@ -145,7 +146,11 @@ function ReportModal({
   const form = useForm({
     initialValues: reportSettings,
     validate: {
-      engine: (value) => (!value ? t("Board.Analysis.EngineRequired") : undefined),
+      // A stored id that is no longer installed is no choice: say so instead of a silent click.
+      engine: (value) =>
+        !value || !localEngines.some((engine) => engine.id === value)
+          ? t("Board.Analysis.EngineRequired")
+          : undefined,
     },
   });
 
@@ -304,6 +309,10 @@ function ReportModal({
         gameChanged = true;
         return;
       }
+      // Every native cancel of a report comes from a cancel the renderer asked for (Cancel, a
+      // replacement, an edit, a tab close); "Analysis cancelled" can still arrive before the
+      // Cancel acknowledgement clears the operation, and R4 shows no notice for it.
+      if (normalizeError(error).category === "cancelled") return;
       notifyUnlessCancelled(t("Common.Error"), reportEngineFailure(t, error));
     } finally {
       unsubscribe();

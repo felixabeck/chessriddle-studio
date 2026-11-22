@@ -713,6 +713,25 @@ test("a report the user cancelled stays silent and a later run shows its own fai
   );
 });
 
+test("an analysis cancel that arrives before the Cancel acknowledgement stays silent", async () => {
+  const running = deferred<GameAnalysis>();
+  mocks.analyzeGame.mockReturnValueOnce(running.promise);
+  await renderReportModal();
+  await act(async () => host.querySelector("button")!.click());
+  expect(tree.getState().report.operationId).not.toBeNull();
+  // The native side answers the run before the panel's Cancel clears the operation.
+  await act(async () =>
+    running.reject({
+      tag: "backend-error",
+      category: "cancellation",
+      message: "Analysis cancelled",
+    }),
+  );
+  expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+  expect(mocks.notificationsShow).not.toHaveBeenCalled();
+  expect(tree.getState().report.inProgress).toBe(false);
+});
+
 test("a submit while the tab runs a report is refused", async () => {
   const running = deferred<GameAnalysis>();
   mocks.analyzeGame.mockReturnValueOnce(running.promise);

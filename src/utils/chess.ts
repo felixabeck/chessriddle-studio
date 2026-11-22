@@ -831,6 +831,8 @@ const MIN_VOLATILITY_WEIGHT = 0.5;
 const MAX_VOLATILITY_WEIGHT = 12;
 const MIN_VOLATILITY_WINDOW = 2;
 const MAX_VOLATILITY_WINDOW = 8;
+/** Between the bounds, the window holds one position per this many moves. */
+const MOVES_PER_VOLATILITY_WINDOW_POSITION = 10;
 
 function populationStandardDeviation(values: number[]): number {
     const average = mean(values);
@@ -839,15 +841,16 @@ function populationStandardDeviation(values: number[]): number {
 
 /**
  * The weight of each move (index `k − 1` for the move reaching position `k`): the population
- * standard deviation of the White-relative win chances of the `s` positions ending at `k`, the
- * first `s − 2` moves using the first `s` positions. A window with an unscored position gets the
- * minimum weight.
+ * standard deviation of the White-relative win chances of the `s` positions ending at `k`; the
+ * first `s − 1` moves, whose own window would start before the root, use the first `s` positions
+ * (Lichess pads `s − 2` copies before its first sliding window). A window with an unscored
+ * position gets the minimum weight.
  */
 function volatilityWeights(winChances: (number | null)[]): number[] {
     const moves = winChances.length - 1;
     const size = Math.min(
         MAX_VOLATILITY_WINDOW,
-        Math.max(MIN_VOLATILITY_WINDOW, Math.floor(moves / 10)),
+        Math.max(MIN_VOLATILITY_WINDOW, Math.floor(moves / MOVES_PER_VOLATILITY_WINDOW_POSITION)),
     );
     const weights: number[] = [];
     for (let k = 1; k <= moves; k++) {
@@ -894,16 +897,15 @@ export function getGameStats(root: TreeNode): GameStats {
         path.push(0);
         const color: Color = node.halfMoves % 2 === 1 ? "white" : "black";
         const score = node.score;
+        let marked: BasicAnnotation | undefined;
         for (const code of node.nags) {
             const annotation = nagGlyph(code);
             if (annotation && isBasicAnnotation(annotation)) {
                 annotations[color][annotation]++;
+                marked ??= annotation;
             }
         }
-        const marked = node.nags
-            .map((code) => nagGlyph(code))
-            .find((annotation) => annotation !== undefined && isBasicAnnotation(annotation));
-        if (marked && isBasicAnnotation(marked)) {
+        if (marked) {
             keyMoments.push({
                 path: [...path],
                 halfMoves: node.halfMoves,
@@ -911,7 +913,8 @@ export function getGameStats(root: TreeNode): GameStats {
                 annotation: marked,
                 before: parentScore,
                 after: score,
-                betterMove: parent.children.find((child) => child.reportLine)?.san ?? null,
+                // A report line is never the mainline continuation, even after a promotion.
+                betterMove: parent.children.slice(1).find((child) => child.reportLine)?.san ?? null,
             });
         }
         if (parentScore && score) {

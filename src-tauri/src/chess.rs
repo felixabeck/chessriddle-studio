@@ -1685,8 +1685,8 @@ fn novelty_outcome(present: &[bool]) -> NoveltyOutcome {
 
 /// Returns a prefix of presence flags ending at the first absent position, or
 /// the full length when every position is present. Each element is "this
-/// position is PRESENT in the reference database"; the caller sets
-/// `analysis.novelty = !found`. A full-index scan per ply is the cost this
+/// position is PRESENT in the reference database"; `novelty_outcome` turns the
+/// flags into the report's novelty. A full-index scan per ply is the cost this
 /// offload exists to bound.
 pub(crate) fn novelty_lookup_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
@@ -1726,6 +1726,8 @@ const BISHOP_VALUE: i32 = 300;
 const ROOK_VALUE: i32 = 500;
 const QUEEN_VALUE: i32 = 900;
 
+/// The capture search's static score: the side to move's material balance, with a mate scored
+/// as lost and a stalemate as level.
 fn count_material(position: &Chess) -> i32 {
     if position.is_checkmate() {
         return -MATE_SCORE;
@@ -1733,18 +1735,7 @@ fn count_material(position: &Chess) -> i32 {
     if position.is_stalemate() {
         return 0;
     }
-    let material: ByColor<i32> = position.board().material().map(|p| {
-        p.pawn as i32 * PAWN_VALUE
-            + p.knight as i32 * KNIGHT_VALUE
-            + p.bishop as i32 * BISHOP_VALUE
-            + p.rook as i32 * ROOK_VALUE
-            + p.queen as i32 * QUEEN_VALUE
-    });
-    if position.turn() == Color::White {
-        material.white - material.black
-    } else {
-        material.black - material.white
-    }
+    material_balance(position)
 }
 
 fn piece_value(role: Role) -> i32 {

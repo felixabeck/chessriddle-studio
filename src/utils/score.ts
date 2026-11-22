@@ -122,7 +122,7 @@ function moverValue(score: ScoreValue, color: Color): number {
 }
 
 function isMate(score: ScoreValue): boolean {
-    return score.type !== "cp";
+    return score.type === "mate";
 }
 
 function winChanceFor(score: ScoreValue, color: Color): number {

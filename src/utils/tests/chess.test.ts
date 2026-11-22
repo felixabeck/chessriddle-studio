@@ -1034,6 +1034,25 @@ test("game accuracy is the mean of the harmonic and the volatility-weighted mean
     expect(Math.abs((stats.white.accuracy ?? 0) - 35.6014)).toBeGreaterThan(5);
 });
 
+test("the first moves of a game share its opening volatility window", () => {
+    // Thirty moves (s = clamp(floor(30 / 10), 2, 8) = 3). White-relative: root +4.00, then −1.00
+    // after every move, so only White's move 1 loses (accuracy 15.5602, as above).
+    const root = defaultTree().root;
+    root.score = cpScore(400);
+    let node = root;
+    for (let move = 0; move < 30; move++) {
+        node = addMainlineMove(node, "move");
+        node.score = cpScore(-100);
+    }
+    // Moves 1 and 2 use the first window, positions 0..2: win chances 81.2207, 40.8288,
+    // 40.8288, standard deviation 19.04 → 12. Every later window is flat → 0.5.
+    // White's 15 moves: move 1 at 15.5602 (weight 12), 14 at 100 (weight 0.5).
+    // Harmonic: 15 / (14/100 + 1/15.5602) = 73.4336.
+    // Weighted: (15.5602·12 + 100·0.5·14) / 19 = 46.6696.
+    // Game accuracy: (73.4336 + 46.6696) / 2 = 60.0516.
+    expect(getGameStats(root).white.accuracy).toBeCloseTo(60.0516, 3);
+});
+
 test("game stats list the marked mainline moves as key moments in game order", () => {
     const root = defaultTree().root;
     root.score = cpScore(20);
@@ -1074,6 +1093,23 @@ test("game stats list the marked mainline moves as key moments in game order", (
     ]);
     expect(getGameStats(defaultTree().root).keyMoments).toEqual([]);
     expect(getGameStats(root).scoredPositions).toBe(5);
+});
+
+test("a promoted report line is the played move, not the key moment's better move", () => {
+    const root = defaultTree().root;
+    root.score = cpScore(20);
+    // An earlier report's line for 1.e4, promoted to the main line, then marked by a new report.
+    const promoted = addMainlineMove(root, "d4");
+    promoted.reportLine = true;
+    promoted.score = cpScore(-500);
+    promoted.nags = [4];
+    const line = addMainlineMove(root, "Nf3");
+    line.reportLine = true;
+    const [moment] = getGameStats(root).keyMoments;
+    expect(moment).toMatchObject({ san: "d4", betterMove: "Nf3" });
+
+    root.children.pop();
+    expect(getGameStats(root).keyMoments[0].betterMove).toBeNull();
 });
 
 function addMainlineMove(parent: TreeNode, san: string): TreeNode {

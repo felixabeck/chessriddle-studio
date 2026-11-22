@@ -19,7 +19,7 @@ import {
 } from "./tabStorage";
 import { boundPuzzleSession } from "@/state/puzzleSession";
 import { reportPersistError } from "@/state/persistError";
-import { ANNOTATION_INFO, type Annotation, nagGlyph } from "@/utils/annotation";
+import { ANNOTATION_INFO, type Annotation, isBasicAnnotation, nagGlyph } from "@/utils/annotation";
 import { getMainLine, getPGN, reportRootFingerprint } from "@/utils/chess";
 import { isSameMove, positionFromFen } from "@/utils/chessops";
 import { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
@@ -35,6 +35,7 @@ import {
     countMainPly,
     type GameHeaders,
     getNodeAtPath,
+    type ListNode,
     type TreeNode,
     type TreeState,
     treeIteratorMainLine,
@@ -1444,27 +1445,12 @@ export type ReportRequest = {
     createdAt: number;
 };
 
-const REPORT_MARK_CODES = new Set(
-    (["??", "?", "?!", "!", "!!", "!?"] as const).map((mark) => ANNOTATION_INFO[mark].nag),
-);
-
-/** Mainline nodes with their paths, root first. */
-function mainlineWithPaths(root: TreeNode): { node: TreeNode; path: number[] }[] {
-    const entries = [{ node: root, path: [] as number[] }];
-    let node = root;
-    while (node.children.length > 0) {
-        node = node.children[0];
-        entries.push({ node, path: [...entries[entries.length - 1].path, 0] });
-    }
-    return entries;
-}
-
 /**
  * Removes every report line hanging off a mainline node: a child with the report-line marker
  * that is not its parent's mainline continuation. Tracked paths are rebased like `deleteMove`.
  */
-function removeReportLines(state: TreeStoreState, mainline: { node: TreeNode; path: number[] }[]) {
-    for (const { node, path } of mainline) {
+function removeReportLines(state: TreeStoreState, mainline: ListNode[]) {
+    for (const { node, position: path } of mainline) {
         for (let index = node.children.length - 1; index > 0; index--) {
             if (node.children[index].reportLine !== true) continue;
             node.children.splice(index, 1);
@@ -1513,7 +1499,7 @@ function applyReport(state: TreeStoreState, result: GameAnalysis, request: Repor
     if (reportRootFingerprint(state.root.fen, getMainLine(state.root)) !== request.fingerprint)
         return false;
     const { positions, novelty } = result;
-    let mainline = mainlineWithPaths(state.root);
+    let mainline = Array.from(treeIteratorMainLine(state.root));
     if (positions.length !== mainline.length) return false;
     const marks = judgeReport(
         positions,
@@ -1521,7 +1507,7 @@ function applyReport(state: TreeStoreState, result: GameAnalysis, request: Repor
     );
 
     removeReportLines(state, mainline);
-    mainline = mainlineWithPaths(state.root);
+    mainline = Array.from(treeIteratorMainLine(state.root));
 
     let drawWritten = false;
     mainline.forEach(({ node }, index) => {
@@ -1545,7 +1531,10 @@ function applyReport(state: TreeStoreState, result: GameAnalysis, request: Repor
     if (request.marks) {
         mainline.forEach(({ node }, index) => {
             if (index === 0) return;
-            const kept = node.nags.filter((code) => !REPORT_MARK_CODES.has(code));
+            const kept = node.nags.filter((code) => {
+                const glyph = nagGlyph(code);
+                return !glyph || !isBasicAnnotation(glyph);
+            });
             const mark = marks[index];
             node.nags = mark ? [...kept, ANNOTATION_INFO[mark].nag] : kept;
         });

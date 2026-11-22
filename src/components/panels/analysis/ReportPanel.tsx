@@ -31,6 +31,7 @@ import {
   reportRootFingerprint,
 } from "@/utils/chess";
 import { formatScore } from "@/utils/score";
+import { formatMoveNumber } from "@/utils/format";
 import type { ReportSummary } from "@/utils/treeReducer";
 import classes from "./AnalysisPanel.module.css";
 import ReportModal from "./ReportModal";
@@ -282,10 +283,8 @@ function KeyMoments({
         className={classes.keyMoments}
       >
         {moments.map((moment) => {
-          const number = Math.ceil(moment.halfMoves / 2);
-          const prefix = moment.halfMoves % 2 === 1 ? `${number}.` : `${number}...`;
           return (
-            <li key={moment.path.length}>
+            <li key={moment.halfMoves}>
               <UnstyledButton
                 className={classes.keyMoment}
                 // The mark's colour is a bar, not text: NAG hues on the card miss text contrast.
@@ -296,7 +295,7 @@ function KeyMoments({
                 data-testid="report-key-moment"
               >
                 <Text component="span" fw={600}>
-                  {prefix} {moment.san}
+                  {formatMoveNumber(moment.halfMoves)} {moment.san}
                   {moment.annotation}
                 </Text>
                 <Text component="span" fz="sm" className={classes.evalChange}>
