@@ -1,7 +1,7 @@
 import { Button, Checkbox, Group, NativeSelect, Paper, Progress, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useAtom, useAtomValue, useStore } from "jotai";
-import { Plus, SlidersHorizontal, X } from "lucide-react";
+import { Plus, Settings, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
@@ -10,10 +10,16 @@ import type { DatabaseHandle, OpponentAccount, OpponentTimeControl } from "@/bin
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { useProgress } from "@/hooks/useProgress";
-import { failureUnlessCancelled } from "@/platform/errors";
+import {
+  errorUnlessCancelled,
+  failureUnlessCancelled,
+  safeFailureContext,
+  warnSafely,
+} from "@/platform/errors";
 import { opponentImportsAtom, opponentLinksAtom } from "@/state/atoms";
 import {
   findOpponentLink,
+  isOpponentPlayerName,
   MAX_OPPONENT_ACCOUNTS,
   OPPONENT_PERIODS,
   OPPONENT_TIME_CONTROLS,
@@ -35,7 +41,7 @@ import {
   runOpponentImport,
   unlinkOpponent,
 } from "./opponentImport";
-import { opponentPlayerIds } from "./opponentLookup";
+import { opponentPlayers } from "./opponentLookup";
 
 /** What the database listing says about the link's downloaded games. */
 export type OpponentGames =
@@ -45,15 +51,18 @@ export type OpponentGames =
   | { kind: "pending" }
   | { kind: "failed" };
 
-/** Derives the state of a link's online games from the listing; the link itself is never rewritten. */
+/**
+ * Derives the state of a link's online games from the listing; the link itself is never rewritten.
+ * A listing that failed is a failure even while an earlier answer is still cached.
+ */
 export function opponentGames(
   link: OpponentLink | undefined,
   listing: ReturnType<typeof useDatabaseList>["data"],
   listingError: unknown,
 ): OpponentGames {
   if (!link?.database) return { kind: "none" };
-  if (!listing)
-    return failureUnlessCancelled(listingError) ? { kind: "failed" } : { kind: "pending" };
+  if (failureUnlessCancelled(listingError)) return { kind: "failed" };
+  if (!listing) return { kind: "pending" };
   const entry = listing.databases.find((database) => database.filename === link.database);
   if (!entry) return { kind: "none" };
   return entry.type === "success"
@@ -89,10 +98,20 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
   const ticket = link ? (imports.get(link.id) ?? null) : null;
   const gamesFile = games.kind === "games" ? games.file : null;
   const usernames = link?.accounts.map((account) => account.username).join("\n") ?? "";
-  // Usernames that met each other stay separate players; the board then shows the first one.
-  const { data: playerIds } = useSWRImmutable(
+  // Usernames that met each other stay separate players; the board then follows the first one.
+  const { data: players } = useSWRImmutable(
     gamesFile && link ? (["opponent-players", gamesFile, usernames] as const) : null,
-    ([, file]) => opponentPlayerIds(file, link!.accounts),
+    ([, file]) => opponentPlayers(file, link!.accounts),
+    {
+      // The note is all that depends on this answer; "Prepare on board" reports the same failure.
+      onError: (cause) => {
+        if (errorUnlessCancelled(cause)) {
+          warnSafely(
+            `The players of an opponent's online games could not be read: ${safeFailureContext(cause).message}`,
+          );
+        }
+      },
+    },
   );
 
   function linkAccount(account: OpponentAccount) {
@@ -101,9 +120,15 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
   }
 
   function report(result: OpponentImportResult) {
+    announce(result);
+    // A copy that could not be deleted is named whatever the run's ending.
+    if (result.leftovers > 0) reportLeftover();
+  }
+
+  function announce(result: OpponentImportResult) {
     if (result.kind === "cancelled") return;
     if (result.kind === "failed") {
-      notifyUnlessCancelled(t("Common.Error"), result.error);
+      notifyUnlessCancelled(t("Common.Error"), result.error, "database");
       return;
     }
     if (result.kind === "imported") {
@@ -114,7 +139,6 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
           count: result.games,
         }),
       });
-      if (result.leftovers > 0) reportLeftover();
       return;
     }
     if (result.kind === "noGames") {
@@ -166,6 +190,8 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
     });
   }
 
+  // A name that cannot be stored cannot carry a link, so there is nothing to offer.
+  if (!link && !isOpponentPlayerName(playerName)) return null;
   if (!link) {
     return (
       <Group justify="space-between" wrap="wrap" gap="xs" mt="xs" data-opponent-accounts>
@@ -263,7 +289,7 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
               disabled={ticket === null}
               onClick={() =>
                 void cancelOpponentImport(store, link.id).catch((error) =>
-                  notifyUnlessCancelled(t("Common.Error"), error),
+                  notifyUnlessCancelled(t("Common.Error"), error, "database"),
                 )
               }
             >
@@ -296,17 +322,17 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
             pressed={expanded}
             onClick={() => setExpanded((open) => !open)}
           >
-            <SlidersHorizontal size="1rem" />
+            <Settings size="1rem" />
           </IconAction>
         </Group>
       </Group>
       {inFlight && ticket !== null && <ImportProgress ticket={ticket} label={downloading} />}
-      {playerIds !== undefined && playerIds.length > 1 && (
+      {players !== undefined && players.length > 1 && (
         <Text size="xs" c="dimmed" mt={4} className="wrap-anywhere" data-opponent-separate>
           {t("Databases.Opponent.Separate", {
             defaultValue:
               "The linked usernames played each other, so they stay separate players. The board shows the games of {{username}}.",
-            username: link.accounts[0].username,
+            username: players[0].name,
           })}
         </Text>
       )}

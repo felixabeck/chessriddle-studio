@@ -1,6 +1,6 @@
 import type { DatabaseHandle, OpponentAccount, OpponentProvider } from "@/bindings";
 import { errorUnlessCancelled } from "@/platform/errors";
-import { getChessComAccount, getChessComProfile } from "@/utils/chess.com/api";
+import { getChessComProfile, getChessComStats } from "@/utils/chess.com/api";
 import { query_players } from "@/utils/db";
 import { getLichessAccount } from "@/utils/lichess/api";
 
@@ -73,7 +73,7 @@ async function lichessProfile(username: string): Promise<OpponentLookup> {
 async function chessComProfile(username: string): Promise<OpponentLookup> {
     const profile = await getChessComProfile(username);
     // The counts are an extra; the profile alone confirms the account.
-    const stats = await getChessComAccount(username).catch(() => null);
+    const stats = await getChessComStats(username).catch(() => null);
     const ratedGames = stats
         ? Object.values(stats).reduce(
               (sum, perf) => sum + perf.record.win + perf.record.loss + perf.record.draw,
@@ -115,27 +115,26 @@ export async function lookupOpponentAccount(
     }
 }
 
+/** A player of the opponent's database that a linked username names. */
+export type OpponentPlayer = { id: number; name: string };
+
 /**
- * The ids of every player the linked usernames name in the opponent's database, lowest first.
- * After a complete merge that is one id; usernames that met each other keep one each.
+ * Every player the linked usernames name in the opponent's database, lowest id first. After a
+ * complete merge that is one player; usernames that met each other keep one each. The first one
+ * is the player the board follows.
  */
-export async function opponentPlayerIds(
+export async function opponentPlayers(
     file: DatabaseHandle,
     accounts: readonly OpponentAccount[],
-    signal?: AbortSignal,
-): Promise<number[]> {
-    const ids = new Set<number>();
+): Promise<OpponentPlayer[]> {
+    const found = new Map<number, string>();
     for (const account of accounts) {
-        const players = await query_players(
-            file,
-            {
-                name: account.username,
-                nameMatch: "exact",
-                options: { direction: "asc", sort: "id", skipCount: true },
-            },
-            { signal },
-        );
-        for (const player of players.data) ids.add(player.id);
+        const players = await query_players(file, {
+            name: account.username,
+            nameMatch: "exact",
+            options: { direction: "asc", sort: "id", skipCount: true },
+        });
+        for (const player of players.data) found.set(player.id, player.name ?? account.username);
     }
-    return [...ids].sort((a, b) => a - b);
+    return [...found].map(([id, name]) => ({ id, name })).sort((a, b) => a.id - b.id);
 }

@@ -32,21 +32,32 @@ const ChessComStatsSchema = z.object({
 });
 export type ChessComStats = z.infer<typeof ChessComStatsSchema>;
 
-export async function getChessComAccount(player: string): Promise<ChessComStats | null> {
+/**
+ * The account's statistics, or null when the answer has an unexpected shape. That case is logged
+ * and announced to nobody: a caller for whom the statistics are optional stays quiet.
+ */
+export async function getChessComStats(player: string): Promise<ChessComStats | null> {
   const response = await tauri.getPublicChessComJson({ kind: "account", player });
-  const data = JSON.parse(response);
-  const stats = ChessComStatsSchema.safeParse(data);
+  const stats = ChessComStatsSchema.safeParse(JSON.parse(response));
   if (!stats.success) {
     error(`Invalid response for Chess.com account: ${stats.error}`);
+    return null;
+  }
+  return stats.data;
+}
+
+/** The statistics of an account the user asked for; an unreadable answer is announced. */
+export async function getChessComAccount(player: string): Promise<ChessComStats | null> {
+  const stats = await getChessComStats(player);
+  if (!stats) {
     notifications.show({
       title: t("ChessCom.FetchAccountFailed"),
       message: t("ChessCom.InvalidResponse", { value: player }),
       color: "danger",
       icon: <X />,
     });
-    return null;
   }
-  return stats.data;
+  return stats;
 }
 
 const ChessComProfileSchema = z.object({

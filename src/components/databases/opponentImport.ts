@@ -9,7 +9,12 @@ import type {
     OpponentImportRequest,
 } from "@/bindings";
 import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
-import { errorUnlessCancelled, normalizeError } from "@/platform/errors";
+import {
+    errorUnlessCancelled,
+    normalizeError,
+    safeFailureContext,
+    warnSafely,
+} from "@/platform/errors";
 import { tauri, withDownloadTicket } from "@/platform/tauri";
 import { opponentImportsAtom, opponentLinksAtom, sessionsAtom } from "@/state/atoms";
 import {
@@ -29,13 +34,18 @@ export type OpponentFlowDeps = { store: Store; mutateCache: ScopedMutator };
 
 export type OpponentAccountFailure = "notFound" | "rateLimited" | "signIn" | "other";
 
-export type OpponentImportResult =
-    /** `leftovers` counts databases of earlier runs that could not be deleted. */
-    | { kind: "imported"; games: number; merged: boolean; leftovers: number }
+type OpponentRunOutcome =
+    | { kind: "imported"; games: number; merged: boolean }
     | { kind: "noGames" }
     | { kind: "accountFailed"; account: OpponentAccount; reason: OpponentAccountFailure }
     | { kind: "cancelled" }
     | { kind: "failed"; error: unknown };
+
+/**
+ * How a run ended. Whatever the ending, `leftovers` counts the link's databases the run could
+ * not delete: files of interrupted earlier runs, and the previous games after an update.
+ */
+export type OpponentImportResult = OpponentRunOutcome & { leftovers: number };
 
 /**
  * Runs the native import of an opponent's online games. `onTicket` receives the id the import
@@ -83,38 +93,49 @@ async function listLinkDatabases(linkId: string) {
     };
 }
 
-/** True once the database is gone, including a deletion that reported its error afterwards. */
+/**
+ * Deletes the database with the cleanup the Library uses. A deletion that reported its error
+ * only afterwards has removed the database and counts as done; every other failure is thrown.
+ */
 async function deleteOpponentDatabase(deps: OpponentFlowDeps, handle: DatabaseHandle) {
     try {
         await deleteDatabaseAndInvalidate(handle, tauri.deleteDatabase, (deleted) =>
             forgetDeletedDatabase(deleted, deps.store, deps.mutateCache),
         );
-        return true;
     } catch (cause) {
-        return normalizeError(cause).category === "applied-despite-error";
+        if (normalizeError(cause).category !== "applied-despite-error") throw cause;
     }
 }
 
-/** Deletes each database and returns how many are still there. */
+/** Deletes each database and returns how many are still there; each failure is logged. */
 async function deleteAll(deps: OpponentFlowDeps, databases: readonly DatabaseDescriptor[]) {
     let remaining = 0;
     for (const database of databases) {
-        if (!(await deleteOpponentDatabase(deps, database.handle))) remaining += 1;
+        try {
+            await deleteOpponentDatabase(deps, database.handle);
+        } catch (cause) {
+            remaining += 1;
+            warnSafely(
+                `An opponent's online games could not be deleted: ${safeFailureContext(cause).message}`,
+            );
+        }
     }
     return remaining;
 }
 
+/** `cleanup.leftovers` is counted as the run goes, so it is known however the run ends. */
 async function importLink(
     deps: OpponentFlowDeps,
     linkId: string,
     title: string,
-): Promise<OpponentImportResult> {
+    cleanup: { leftovers: number },
+): Promise<OpponentRunOutcome> {
     const { store } = deps;
     const link = store.get(opponentLinksAtom).find((other) => other.id === linkId);
     if (!link) return { kind: "failed", error: new Error("unknown opponent link") };
     const { root, databases } = await listLinkDatabases(linkId);
     // Files of an interrupted earlier run. One that cannot be deleted does not stop this run.
-    let leftovers = await deleteAll(
+    cleanup.leftovers += await deleteAll(
         deps,
         databases.filter((entry) => entry.filename !== link.database),
     );
@@ -145,12 +166,11 @@ async function importLink(
     // The link switches first; the previous database goes only once the new one is in place.
     store.set(opponentLinksAtom, (links) => withOpponentDatabase(links, linkId, filename));
     const previous = databases.find((entry) => entry.filename === link.database);
-    if (previous && !(await deleteOpponentDatabase(deps, previous.handle))) leftovers += 1;
+    if (previous) cleanup.leftovers += await deleteAll(deps, [previous]);
     return {
         kind: "imported",
         games: outcome.accounts.reduce((sum, account) => sum + account.games, 0),
         merged: outcome.merged,
-        leftovers,
     };
 }
 
@@ -167,13 +187,15 @@ export function runOpponentImport(
     const joined = running.get(linkId);
     if (joined) return joined;
     setInFlight(deps.store, linkId, null);
-    const run = importLink(deps, linkId, title)
+    const cleanup = { leftovers: 0 };
+    const run = importLink(deps, linkId, title, cleanup)
         .catch(
-            (error): OpponentImportResult =>
+            (error): OpponentRunOutcome =>
                 errorUnlessCancelled(error) === null
                     ? { kind: "cancelled" }
                     : { kind: "failed", error },
         )
+        .then((outcome): OpponentImportResult => ({ ...outcome, leftovers: cleanup.leftovers }))
         .finally(() => {
             running.delete(linkId);
             setInFlight(deps.store, linkId, undefined);
@@ -213,15 +235,7 @@ async function deleteLinkDatabases(deps: OpponentFlowDeps, linkId: string): Prom
     try {
         const { databases } = await listLinkDatabases(linkId);
         const current = databases.find((entry) => entry.filename === link?.database);
-        if (current) {
-            try {
-                await deleteDatabaseAndInvalidate(current.handle, tauri.deleteDatabase, (deleted) =>
-                    forgetDeletedDatabase(deleted, deps.store, deps.mutateCache),
-                );
-            } catch (cause) {
-                if (normalizeError(cause).category !== "applied-despite-error") throw cause;
-            }
-        }
+        if (current) await deleteOpponentDatabase(deps, current.handle);
         return await deleteAll(
             deps,
             databases.filter((entry) => entry !== current),

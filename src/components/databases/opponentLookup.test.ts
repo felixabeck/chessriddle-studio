@@ -4,18 +4,18 @@ import type { DatabaseHandle, ErrorPayload } from "@/bindings";
 const mocks = vi.hoisted(() => ({
     getLichessAccount: vi.fn(),
     getChessComProfile: vi.fn(),
-    getChessComAccount: vi.fn(),
+    getChessComStats: vi.fn(),
     queryPlayers: vi.fn(),
 }));
 
 vi.mock("@/utils/lichess/api", () => ({ getLichessAccount: mocks.getLichessAccount }));
 vi.mock("@/utils/chess.com/api", () => ({
     getChessComProfile: mocks.getChessComProfile,
-    getChessComAccount: mocks.getChessComAccount,
+    getChessComStats: mocks.getChessComStats,
 }));
 vi.mock("@/utils/db", () => ({ query_players: mocks.queryPlayers }));
 
-import { isOpponentUsername, lookupOpponentAccount, opponentPlayerIds } from "./opponentLookup";
+import { isOpponentUsername, lookupOpponentAccount, opponentPlayers } from "./opponentLookup";
 
 function rejection(status: number): ErrorPayload {
     return {
@@ -133,7 +133,7 @@ describe("what a site answers is not trusted", () => {
         expect(await lookupOpponentAccount("lichess", "someone")).toEqual({ kind: "failed" });
 
         mocks.getChessComProfile.mockResolvedValue({ username: "a b", closed: false });
-        mocks.getChessComAccount.mockResolvedValue(null);
+        mocks.getChessComStats.mockResolvedValue(null);
         expect(await lookupOpponentAccount("chesscom", "someone")).toEqual({ kind: "failed" });
     });
 
@@ -167,7 +167,7 @@ describe("lookupOpponentAccount on Chess.com", () => {
             countryCode: "NO",
             closed: false,
         });
-        mocks.getChessComAccount.mockResolvedValue({
+        mocks.getChessComStats.mockResolvedValue({
             chess_blitz: perf(10, 5, 2),
             chess_rapid: perf(3, 1, 1),
         });
@@ -189,13 +189,13 @@ describe("lookupOpponentAccount on Chess.com", () => {
     test("a failed or unreadable statistics lookup still shows the profile", async () => {
         mocks.getChessComProfile.mockResolvedValue({ username: "Closed", closed: true });
 
-        mocks.getChessComAccount.mockRejectedValueOnce(rejection(500));
+        mocks.getChessComStats.mockRejectedValueOnce(rejection(500));
         expect(await lookupOpponentAccount("chesscom", "closed")).toEqual({
             kind: "found",
             profile: { provider: "chesscom", username: "Closed", closed: true },
         });
 
-        mocks.getChessComAccount.mockResolvedValueOnce(null);
+        mocks.getChessComStats.mockResolvedValueOnce(null);
         expect(await lookupOpponentAccount("chesscom", "closed")).toEqual({
             kind: "found",
             profile: { provider: "chesscom", username: "Closed", closed: true },
@@ -213,41 +213,49 @@ describe("lookupOpponentAccount on Chess.com", () => {
         mocks.getChessComProfile.mockRejectedValueOnce(new Error("invalid response"));
         expect(await lookupOpponentAccount("chesscom", "nobody")).toEqual({ kind: "failed" });
 
-        expect(mocks.getChessComAccount).not.toHaveBeenCalled();
+        expect(mocks.getChessComStats).not.toHaveBeenCalled();
     });
 });
 
-describe("opponentPlayerIds", () => {
+describe("opponentPlayers", () => {
     const file: DatabaseHandle = { id: { id: "opponent" }, kind: "database" };
 
-    test("asks for each username by exact name and returns the distinct ids, lowest first", async () => {
+    test("asks for each username by exact name and returns the distinct players, lowest id first", async () => {
         mocks.queryPlayers
-            .mockResolvedValueOnce({ data: [{ id: 9 }, { id: 4 }], count: null })
-            .mockResolvedValueOnce({ data: [{ id: 4 }], count: null })
+            .mockResolvedValueOnce({
+                data: [
+                    { id: 9, name: "DrNykterstein" },
+                    { id: 4, name: "drnykterstein" },
+                ],
+                count: null,
+            })
+            .mockResolvedValueOnce({ data: [{ id: 4, name: "drnykterstein" }], count: null })
+            .mockResolvedValueOnce({ data: [{ id: 2, name: null }], count: null })
             .mockResolvedValueOnce({ data: [], count: null });
-        const signal = new AbortController().signal;
 
-        const ids = await opponentPlayerIds(
-            file,
-            [
-                { provider: "lichess", username: "DrNykterstein" },
-                { provider: "chesscom", username: "MagnusCarlsen" },
-                { provider: "chesscom", username: "Unplayed" },
-            ],
-            signal,
-        );
+        const players = await opponentPlayers(file, [
+            { provider: "lichess", username: "DrNykterstein" },
+            { provider: "chesscom", username: "drnykterstein" },
+            { provider: "chesscom", username: "Nameless" },
+            { provider: "chesscom", username: "Unplayed" },
+        ]);
 
-        expect(ids).toEqual([4, 9]);
+        // The first one is the player the board follows; a nameless row is named by its username.
+        expect(players).toEqual([
+            { id: 2, name: "Nameless" },
+            { id: 4, name: "drnykterstein" },
+            { id: 9, name: "DrNykterstein" },
+        ]);
         expect(
             mocks.queryPlayers.mock.calls.map(([handle, query]) => [handle, query.name]),
         ).toEqual([
             [file, "DrNykterstein"],
-            [file, "MagnusCarlsen"],
+            [file, "drnykterstein"],
+            [file, "Nameless"],
             [file, "Unplayed"],
         ]);
-        for (const [, query, options] of mocks.queryPlayers.mock.calls) {
+        for (const [, query] of mocks.queryPlayers.mock.calls) {
             expect(query.nameMatch).toBe("exact");
-            expect(options).toEqual({ signal });
         }
     });
 });

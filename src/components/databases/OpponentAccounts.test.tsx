@@ -12,6 +12,13 @@ import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import type { OpponentImportResult } from "./opponentImport";
 
+/** A run's ending as the tests give it; no copy was left behind unless a test says so. */
+type Ending = OpponentImportResult extends infer Result
+  ? Result extends { leftovers: number }
+    ? Omit<Result, "leftovers"> & { leftovers?: number }
+    : never
+  : never;
+
 const mocks = vi.hoisted(() => ({
   listing: undefined as unknown,
   listingError: undefined as unknown,
@@ -20,9 +27,14 @@ const mocks = vi.hoisted(() => ({
   removeGames: vi.fn(),
   unlink: vi.fn(),
   lookup: vi.fn(),
-  playerIds: vi.fn(),
+  players: vi.fn(),
   notify: vi.fn(),
   notifyError: vi.fn(),
+  warn: vi.fn(),
+}));
+vi.mock("@/platform/errors", async (original) => ({
+  ...(await original<typeof import("@/platform/errors")>()),
+  warnSafely: mocks.warn,
 }));
 
 vi.mock("@/hooks/useDatabaseList", () => ({
@@ -39,7 +51,7 @@ vi.mock("./opponentImport", () => ({
 vi.mock("./opponentLookup", async (original) => ({
   ...(await original<typeof import("./opponentLookup")>()),
   lookupOpponentAccount: mocks.lookup,
-  opponentPlayerIds: mocks.playerIds,
+  opponentPlayers: mocks.players,
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
 vi.mock("@/components/files/notifyError", async (original) => ({
@@ -146,8 +158,8 @@ function checkbox(label: string) {
   return found;
 }
 
-async function settle(result: OpponentImportResult) {
-  mocks.run.mockResolvedValueOnce(result);
+async function settle(result: Ending) {
+  mocks.run.mockResolvedValueOnce({ leftovers: 0, ...result });
   await click("Download games");
 }
 
@@ -155,7 +167,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mocks.listing = { databases: [] };
   mocks.listingError = undefined;
-  mocks.playerIds.mockResolvedValue([1]);
+  mocks.players.mockResolvedValue([{ id: 1, name: "DrNykterstein" }]);
   mocks.removeGames.mockResolvedValue(0);
   mocks.unlink.mockResolvedValue(0);
   mocks.cancel.mockResolvedValue(undefined);
@@ -209,6 +221,16 @@ describe("opponentGames", () => {
     expect(opponentGames(withDatabase, undefined, cancelled)).toEqual({ kind: "pending" });
     expect(opponentGames(withDatabase, undefined, new Error("disk"))).toEqual({ kind: "failed" });
   });
+
+  test("a listing that failed is a failure although an earlier answer is still cached", () => {
+    const withDatabase = link({ database: DATABASE });
+    const stale = listed("success", 5) as never;
+
+    expect(opponentGames(withDatabase, stale, new Error("disk"))).toEqual({ kind: "failed" });
+    expect(opponentGames(withDatabase, { databases: [] } as never, new Error("disk"))).toEqual({
+      kind: "failed",
+    });
+  });
 });
 
 describe("a player without online accounts", () => {
@@ -253,6 +275,16 @@ describe("a player without online accounts", () => {
     expect(status().textContent).toBe("No games downloaded");
   });
 
+  test.each(["", "   ", "x".repeat(201)])(
+    "a player whose name cannot carry a link is offered nothing (%j)",
+    async (name) => {
+      await render(name);
+
+      expect(document.body.querySelector("[data-opponent-accounts]")).toBeNull();
+      expect(buttons("Add online account")).toHaveLength(0);
+    },
+  );
+
   test("a link is found by the player's name in any case", async () => {
     store.set(opponentLinksAtom, [link()]);
     await render("  CARLSEN, magnus ");
@@ -266,7 +298,7 @@ describe("downloading", () => {
 
   test("starts the import of this link under the player's name and reports the games", async () => {
     await render();
-    await settle({ kind: "imported", games: 2, merged: true, leftovers: 0 });
+    await settle({ kind: "imported", games: 2, merged: true });
 
     expect(mocks.run).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ store }),
@@ -310,7 +342,7 @@ describe("downloading", () => {
       "danger",
       "The games of MagnusCarlsen on Chess.com could not be downloaded.",
     ],
-  ] satisfies [OpponentImportResult, string, string][])(
+  ] satisfies [Ending, string, string][])(
     "a run ending in %o says so",
     async (result, color, message) => {
       await render();
@@ -331,8 +363,30 @@ describe("downloading", () => {
     const error = new Error("disk full");
     await settle({ kind: "failed", error });
     expect(mocks.notify).not.toHaveBeenCalled();
-    expect(mocks.notifyError).toHaveBeenCalledExactlyOnceWith("Error", error);
+    // The database folder's own guidance applies to a failure of this flow.
+    expect(mocks.notifyError).toHaveBeenCalledExactlyOnceWith("Error", error, "database");
   });
+
+  test.each([
+    [{ kind: "noGames" }, 2],
+    [{ kind: "accountFailed", account: lichess, reason: "notFound" }, 2],
+    [{ kind: "cancelled" }, 1],
+    [{ kind: "failed", error: new Error("disk full") }, 1],
+  ] satisfies [Ending, number][])(
+    "a copy that could not be deleted is named although the run ended in %o",
+    async (result, notices) => {
+      await render();
+      await settle({ ...result, leftovers: 1 });
+
+      const shown = mocks.notify.mock.calls.map(([notice]) => notice);
+      expect(shown).toHaveLength(notices);
+      expect(shown.at(-1)).toMatchObject({
+        color: "warning",
+        message:
+          "An older copy of the online games could not be deleted. You can delete it in the Library.",
+      });
+    },
+  );
 
   test("a running import shows its progress and can be cancelled, and nothing else can change", async () => {
     store.set(opponentImportsAtom, new Map([[ID, "ticket-1"]]));
@@ -400,26 +454,44 @@ describe("downloaded games", () => {
 
     expect(status().textContent).toBe("No games downloaded");
     expect(storedLink()?.database).toBe(DATABASE);
-    expect(mocks.playerIds).not.toHaveBeenCalled();
+    expect(mocks.players).not.toHaveBeenCalled();
   });
 
   test("usernames that stayed separate players are named, one merged player is not", async () => {
     store.set(opponentLinksAtom, [link({ database: DATABASE, accounts: [lichess, chesscom] })]);
     mocks.listing = listed("success", 10);
-    mocks.playerIds.mockResolvedValue([3, 8]);
+    // The board follows the player with the lowest id, here the second linked account.
+    mocks.players.mockResolvedValue([
+      { id: 3, name: "MagnusCarlsen" },
+      { id: 8, name: "DrNykterstein" },
+    ]);
     await render();
 
-    expect(mocks.playerIds).toHaveBeenCalledWith(file, [lichess, chesscom]);
+    expect(mocks.players).toHaveBeenCalledWith(file, [lichess, chesscom]);
     expect(document.body.querySelector("[data-opponent-separate]")?.textContent).toBe(
-      "The linked usernames played each other, so they stay separate players. The board shows the games of DrNykterstein.",
+      "The linked usernames played each other, so they stay separate players. The board shows the games of MagnusCarlsen.",
     );
+  });
+
+  test("a failed player lookup shows no note and is logged without its raw message", async () => {
+    mocks.listing = listed("success", 10);
+    mocks.players.mockRejectedValue(new Error("unable to open /home/someone/opponent.db3"));
+    await render();
+
+    await vi.waitFor(() => expect(mocks.warn).toHaveBeenCalledOnce());
+    expect(mocks.warn.mock.calls[0][0]).toMatch(
+      /^The players of an opponent's online games could not be read: /,
+    );
+    expect(mocks.warn.mock.calls[0][0]).not.toContain("/home/someone");
+    expect(document.body.querySelector("[data-opponent-separate]")).toBeNull();
+    expect(status().textContent).toBe("10 online games");
   });
 
   test("one merged player needs no note", async () => {
     mocks.listing = listed("success", 10);
     await render();
 
-    expect(mocks.playerIds).toHaveBeenCalledOnce();
+    expect(mocks.players).toHaveBeenCalledOnce();
     expect(document.body.querySelector("[data-opponent-separate]")).toBeNull();
   });
 });

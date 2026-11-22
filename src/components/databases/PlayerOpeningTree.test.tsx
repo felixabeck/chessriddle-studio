@@ -49,10 +49,10 @@ const mocks = vi.hoisted(() => ({
   unavailable: new Set<string>(),
   /** Databases listed beside the two fixtures, as the listing reports them. */
   listedToo: [] as unknown[],
-  onlinePlayerIds: vi.fn(),
+  onlinePlayers: vi.fn(),
   showNotification: vi.fn(),
 }));
-vi.mock("./opponentLookup", () => ({ opponentPlayerIds: mocks.onlinePlayerIds }));
+vi.mock("./opponentLookup", () => ({ opponentPlayers: mocks.onlinePlayers }));
 vi.mock("@mantine/notifications", async (original) => {
   const actual = await original<typeof import("@mantine/notifications")>();
   return { ...actual, notifications: { ...actual.notifications, show: mocks.showNotification } };
@@ -182,7 +182,7 @@ beforeEach(async () => {
   mocks.getPlayer.mockReset().mockResolvedValue(player);
   mocks.unavailable.clear();
   mocks.listedToo = [];
-  mocks.onlinePlayerIds.mockReset().mockResolvedValue([]);
+  mocks.onlinePlayers.mockReset().mockResolvedValue([]);
   const i18n = await catalogueI18n("en-US");
   translate = (key, options) => i18n.t(key, options);
   localStorage.clear();
@@ -607,11 +607,14 @@ function linkOnlineGames(listed: "readable" | "unreadable" | "absent" | "none") 
 
 test("Prepare pins the player's downloaded online games as the board's second column", async () => {
   linkOnlineGames("readable");
-  mocks.onlinePlayerIds.mockResolvedValue([5, 9]);
+  mocks.onlinePlayers.mockResolvedValue([
+    { id: 5, name: "selected_online" },
+    { id: 9, name: "SelectedOnline" },
+  ]);
   await render();
   await click(button("Prepare on board"));
 
-  expect(mocks.onlinePlayerIds).toHaveBeenCalledExactlyOnceWith(online, [...onlineAccounts]);
+  expect(mocks.onlinePlayers).toHaveBeenCalledExactlyOnceWith(online, [...onlineAccounts]);
   expect(mocks.navigate).toHaveBeenCalledOnce();
   expect(mocks.showNotification).not.toHaveBeenCalled();
   const tab = store.get(tabsAtom).at(-1)!;
@@ -649,8 +652,8 @@ test("Prepare pins the player's downloaded online games as the board's second co
 });
 
 test.each([
-  ["finds no player", () => mocks.onlinePlayerIds.mockResolvedValue([])],
-  ["fails", () => mocks.onlinePlayerIds.mockRejectedValue(new Error("database is locked"))],
+  ["finds no player", () => mocks.onlinePlayers.mockResolvedValue([])],
+  ["fails", () => mocks.onlinePlayers.mockRejectedValue(new Error("database is locked"))],
 ])(
   "Prepare opens the board on one column with a warning when the online lookup %s",
   async (_name, arrange) => {
@@ -678,7 +681,7 @@ test.each(["unreadable", "absent", "none"] as const)(
     await render();
     await click(button("Prepare on board"));
 
-    expect(mocks.onlinePlayerIds).not.toHaveBeenCalled();
+    expect(mocks.onlinePlayers).not.toHaveBeenCalled();
     expect(mocks.showNotification).not.toHaveBeenCalled();
     const tab = store.get(tabsAtom).at(-1)!;
     expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toEqual(file);
@@ -692,7 +695,7 @@ test("the online games of the very database on the card are not its own second c
   await render();
   await click(button("Prepare on board"));
 
-  expect(mocks.onlinePlayerIds).not.toHaveBeenCalled();
+  expect(mocks.onlinePlayers).not.toHaveBeenCalled();
   expect(store.get(pinnedExplorerComparisonFamily(store.get(tabsAtom).at(-1)!.value))).toBeNull();
 });
 

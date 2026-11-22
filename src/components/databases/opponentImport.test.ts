@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     deleteDatabase: vi.fn(),
     cancelDownload: vi.fn(),
     forgetDeletedDatabase: vi.fn(),
+    warn: vi.fn(),
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -33,12 +34,16 @@ vi.mock("@/platform/tauri", async () => {
         withDownloadTicket: mocks.withDownloadTicket,
     };
 });
+vi.mock("@/platform/errors", async (original) => ({
+    ...(await original<typeof import("@/platform/errors")>()),
+    warnSafely: mocks.warn,
+}));
 vi.mock("./forgetDeletedDatabase", () => ({
     forgetDeletedDatabase: mocks.forgetDeletedDatabase,
 }));
 
 import { DATABASE_LIST_KEY } from "@/hooks/useDatabaseList";
-import { opponentImportsAtom, opponentLinksAtom } from "@/state/atoms";
+import { opponentImportsAtom, opponentLinksAtom, sessionsAtom } from "@/state/atoms";
 import { defaultOpponentFilter, type OpponentLink } from "@/state/opponentLinks";
 import {
     cancelOpponentImport,
@@ -208,7 +213,7 @@ describe("runOpponentImport", () => {
     });
 
     test.each([
-        ["no game matched", { ...imported(0), database: null }, { kind: "noGames" }],
+        ["no game matched", { ...imported(0), database: null }, { kind: "noGames", leftovers: 0 }],
         [
             "an account failed",
             {
@@ -216,7 +221,7 @@ describe("runOpponentImport", () => {
                 account,
                 error: payload({ remoteHttpRejection: { status: 404, authorizationSent: false } }),
             },
-            { kind: "accountFailed", account, reason: "notFound" },
+            { kind: "accountFailed", account, reason: "notFound", leftovers: 0 },
         ],
     ] as const)(
         "keeps the previous database and the link when %s",
@@ -244,8 +249,12 @@ describe("runOpponentImport", () => {
         await expect(runOpponentImport(deps, ID, "title")).resolves.toEqual({
             kind: "failed",
             error: failure,
+            leftovers: 0,
         });
-        await expect(runOpponentImport(deps, ID, "title")).resolves.toEqual({ kind: "cancelled" });
+        await expect(runOpponentImport(deps, ID, "title")).resolves.toEqual({
+            kind: "cancelled",
+            leftovers: 0,
+        });
 
         expect(currentLink(store)?.database).toBe(OLD);
         expect(mocks.deleteDatabase).not.toHaveBeenCalled();
@@ -264,6 +273,108 @@ describe("runOpponentImport", () => {
             leftovers: 1,
         });
         expect(mocks.forgetDeletedDatabase).not.toHaveBeenCalled();
+        // The cause goes to the log, sanitised; the user gets the count.
+        expect(mocks.warn).toHaveBeenCalledExactlyOnceWith(
+            "An opponent's online games could not be deleted: busy",
+        );
+    });
+
+    test.each([
+        [
+            "no game matched",
+            () => mocks.importOpponentGames.mockResolvedValue({ ...imported(0), database: null }),
+            "noGames",
+        ],
+        [
+            "an account failed",
+            () =>
+                mocks.importOpponentGames.mockResolvedValue({
+                    kind: "accountFailed",
+                    account,
+                    error: payload({
+                        remoteHttpRejection: { status: 429, authorizationSent: false },
+                    }),
+                }),
+            "accountFailed",
+        ],
+        [
+            "the import failed",
+            () => mocks.importOpponentGames.mockRejectedValue(payload({ category: "database" })),
+            "failed",
+        ],
+        [
+            "the import was cancelled",
+            () =>
+                mocks.importOpponentGames.mockRejectedValue(
+                    payload({ category: "cancellation", message: "Cancellation" }),
+                ),
+            "cancelled",
+        ],
+    ] as const)(
+        "a leftover that cannot be deleted is still counted when %s",
+        async (_, arrange, kind) => {
+            const { deps } = setup();
+            mocks.listWorkspaceDatabases.mockResolvedValue({
+                entries: [listed(LEFTOVER)],
+                unread: [],
+            });
+            mocks.deleteDatabase.mockRejectedValue(payload({ category: "io", message: "busy" }));
+            arrange();
+
+            const result = await runOpponentImport(deps, ID, "title");
+
+            expect(result).toMatchObject({ kind, leftovers: 1 });
+        },
+    );
+
+    test("previous games that cannot be deleted after an update are counted, and the link points at the new ones", async () => {
+        const { store, deps } = setup({ database: OLD });
+        mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [listed(OLD)], unread: [] });
+        mocks.deleteDatabase.mockRejectedValue(payload({ category: "io", message: "busy" }));
+        mocks.importOpponentGames.mockResolvedValue(imported(5));
+
+        const result = await runOpponentImport(deps, ID, "title");
+
+        expect(result).toEqual({ kind: "imported", games: 5, merged: true, leftovers: 1 });
+        expect(mocks.deleteDatabase.mock.calls.map(([database]) => database.id.id)).toEqual([OLD]);
+        const request = mocks.importOpponentGames.mock.calls[0][0] as OpponentImportRequest;
+        expect(currentLink(store)?.database).toBe(request.filename);
+    });
+
+    test("a deletion that reported its error only afterwards is no leftover", async () => {
+        const { deps } = setup();
+        mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [listed(LEFTOVER)], unread: [] });
+        mocks.deleteDatabase.mockRejectedValue(payload({ category: "durability" }));
+        mocks.importOpponentGames.mockResolvedValue(imported(1));
+
+        await expect(runOpponentImport(deps, ID, "title")).resolves.toMatchObject({ leftovers: 0 });
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    test("the user's own Lichess login is passed on, the first one that has a handle", async () => {
+        const { store, deps } = setup();
+        const session = (username: string, handle?: string) => ({
+            player: username,
+            updatedAt: 1,
+            lichess: {
+                username,
+                ...(handle ? { handle } : {}),
+                account: { id: username, username, perfs: {} },
+            },
+        });
+        // An account added without a login has no handle and is passed over.
+        store.set(sessionsAtom, [
+            session("public"),
+            session("me", "lichess-handle-1"),
+            session("other", "lichess-handle-2"),
+        ] as never);
+        mocks.importOpponentGames.mockResolvedValue(imported(1));
+
+        await runOpponentImport(deps, ID, "title");
+
+        expect(
+            (mocks.importOpponentGames.mock.calls[0][0] as OpponentImportRequest).lichessHandle,
+        ).toBe("lichess-handle-1");
     });
 
     test("a second start joins the running import, which is in flight under its ticket", async () => {
@@ -301,6 +412,27 @@ describe("runOpponentImport", () => {
 });
 
 describe("removing online games and unlinking", () => {
+    test("neither is possible while the link's import is running", async () => {
+        const { store, deps } = setup({ database: OLD });
+        mocks.listWorkspaceDatabases.mockResolvedValue({ entries: [listed(OLD)], unread: [] });
+        let finish: (outcome: OpponentImportOutcome) => void = () => {};
+        mocks.importOpponentGames.mockReturnValue(
+            new Promise<OpponentImportOutcome>((resolve) => {
+                finish = resolve;
+            }),
+        );
+        const run = runOpponentImport(deps, ID, "title");
+        await vi.waitFor(() => expect(mocks.importOpponentGames).toHaveBeenCalledOnce());
+
+        await expect(removeOpponentGames(deps, ID)).rejects.toThrow("opponent import is running");
+        await expect(unlinkOpponent(deps, ID)).rejects.toThrow("opponent import is running");
+
+        expect(mocks.deleteDatabase).not.toHaveBeenCalled();
+        expect(currentLink(store)?.database).toBe(OLD);
+        finish({ kind: "imported", database: null, accounts: [], merged: true });
+        await run;
+    });
+
     test("removing the games deletes every file of the link and keeps its accounts", async () => {
         const { store, deps, mutateCache } = setup({ database: OLD });
         mocks.listWorkspaceDatabases.mockResolvedValue({

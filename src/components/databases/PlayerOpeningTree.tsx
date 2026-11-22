@@ -46,7 +46,7 @@ import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { createTab, runTabCreation } from "@/utils/tabs";
 import GamePreview from "./GamePreview";
 import { opponentGames } from "./OpponentAccounts";
-import { opponentPlayerIds } from "./opponentLookup";
+import { opponentPlayers } from "./opponentLookup";
 import PlayerOpeningRecency from "./PlayerOpeningRecency";
 import { playerOpeningLine } from "./playerOpeningLine";
 import classes from "./PlayerOpeningTree.module.css";
@@ -266,9 +266,7 @@ function OpeningTree({
       // board still opens, on the first database alone.
       let onlinePlayer: number | undefined;
       if (pinned && online) {
-        onlinePlayer = (
-          await opponentPlayerIds(online.file, online.accounts).catch(() => [] as number[])
-        )[0];
+        onlinePlayer = (await opponentPlayers(online.file, online.accounts).catch(() => []))[0]?.id;
         if (onlinePlayer === undefined) {
           notifications.show({
             color: "warning",

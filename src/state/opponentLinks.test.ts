@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
     defaultOpponentFilter,
     findOpponentLink,
+    isOpponentPlayerName,
     MAX_OPPONENT_ACCOUNTS,
     MAX_OPPONENT_LINKS,
     type OpponentLink,
@@ -212,6 +213,22 @@ describe("link changes", () => {
                 ID,
             ),
         ).toEqual(full);
+    });
+
+    test("a player name that would not read back from storage gets no link", () => {
+        const account = { provider: "lichess", username: "someone" } as const;
+
+        for (const name of ["", "   ", "x".repeat(201)]) {
+            expect(isOpponentPlayerName(name)).toBe(false);
+            expect(withOpponentAccount([link()], name, account, OTHER_ID)).toEqual([link()]);
+        }
+        expect(isOpponentPlayerName(null)).toBe(false);
+        expect(isOpponentPlayerName(undefined)).toBe(false);
+
+        const longest = "x".repeat(200);
+        expect(isOpponentPlayerName(` ${longest} `)).toBe(true);
+        const stored = withOpponentAccount([], ` ${longest} `, account, ID);
+        expect(opponentLinksSchema.parse(stored)).toEqual(stored);
     });
 
     test("removing an account keeps the others, and the last account stays", () => {

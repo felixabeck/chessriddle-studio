@@ -41,6 +41,7 @@ import {
     fetchChessComGamePgn,
     getChessComAccount,
     getChessComProfile,
+    getChessComStats,
     getChesscomGame,
 } from "./api";
 
@@ -317,6 +318,32 @@ describe("getChessComProfile", () => {
         mocks.getPublicChessComJson.mockRejectedValue(failure);
 
         await expect(getChessComProfile("player")).rejects.toBe(failure);
+    });
+});
+
+describe("getChessComStats", () => {
+    test("returns the statistics, and logs an unreadable answer without announcing it", async () => {
+        const stats = {
+            chess_blitz: { last: { rating: 1500, date: 1 }, record: { win: 3, loss: 2, draw: 1 } },
+        };
+        mocks.getPublicChessComJson.mockResolvedValueOnce(JSON.stringify(stats));
+        await expect(getChessComStats("player")).resolves.toEqual(stats);
+
+        mocks.getPublicChessComJson.mockResolvedValueOnce(
+            JSON.stringify({ chess_blitz: { last: "none" } }),
+        );
+        await expect(getChessComStats("player")).resolves.toBeNull();
+
+        expect(mocks.logError).toHaveBeenCalledTimes(1);
+        expect(mocks.showNotification).not.toHaveBeenCalled();
+    });
+
+    test("passes a failed request on", async () => {
+        const failure = new Error("offline");
+        mocks.getPublicChessComJson.mockRejectedValue(failure);
+
+        await expect(getChessComStats("player")).rejects.toBe(failure);
+        expect(mocks.showNotification).not.toHaveBeenCalled();
     });
 });
 

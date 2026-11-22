@@ -539,12 +539,14 @@ mod tests {
     }
 
     struct Fixture {
-        dir: tempfile::TempDir,
         state: AppState,
         root: DatabaseRootHandle,
         root_path: PathBuf,
         app: tauri::App<tauri::test::MockRuntime>,
         transport: Arc<RoutedTransport>,
+        // Dropped last: the state above holds open database connections inside this directory,
+        // and Windows refuses to remove a directory with an open file in it.
+        dir: tempfile::TempDir,
     }
 
     impl Fixture {
@@ -993,6 +995,19 @@ mod tests {
             assert_eq!(games, [0, 0], "case {case}");
             assert!(fixture.database_files().is_empty(), "case {case}");
         }
+    }
+
+    #[tokio::test]
+    async fn an_export_without_a_readable_game_reports_zero_and_removes_its_database() {
+        // Not empty, so a database is created for it; it holds no game, so the database goes again.
+        let fixture = Fixture::new(|_| (200, b"\n\n% no game here\n\n".to_vec()));
+        let request = fixture.request(&[(Lichess, "Opp")], &[Blitz]);
+
+        let (database, games, _) = imported(fixture.run(request).await.unwrap());
+
+        assert!(database.is_none());
+        assert_eq!(games, [0]);
+        assert!(fixture.database_files().is_empty());
     }
 
     #[tokio::test]

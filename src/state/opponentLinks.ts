@@ -142,6 +142,12 @@ export function findOpponentLink(
         : links.find((link) => normalizeOpponentName(link.playerName) === name);
 }
 
+/** Whether a link can be kept under this player name; what is stored must read back. */
+export function isOpponentPlayerName(playerName: string | null | undefined): playerName is string {
+    const name = playerName?.trim() ?? "";
+    return name !== "" && name.length <= MAX_PLAYER_NAME_LENGTH;
+}
+
 /** Replaces the link with this id and makes it the most recently changed one. */
 function withLink(links: readonly OpponentLink[], link: OpponentLink): OpponentLink[] {
     return [...links.filter((other) => other.id !== link.id), link].slice(-MAX_OPPONENT_LINKS);
@@ -149,7 +155,8 @@ function withLink(links: readonly OpponentLink[], link: OpponentLink): OpponentL
 
 /**
  * Adds an account to the player's link, creating the link under `newId` when the player has none.
- * An account the link already has, and one beyond the bound, change nothing.
+ * An account the link already has, one beyond the bound, and a player name that cannot be stored
+ * change nothing.
  */
 export function withOpponentAccount(
     links: readonly OpponentLink[],
@@ -157,6 +164,7 @@ export function withOpponentAccount(
     account: OpponentAccount,
     newId: string,
 ): OpponentLink[] {
+    if (!isOpponentPlayerName(playerName)) return [...links];
     const existing = findOpponentLink(links, playerName);
     if (!existing) {
         return withLink(links, {
