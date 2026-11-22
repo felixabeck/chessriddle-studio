@@ -44,11 +44,11 @@ in `manifest.json` only.
 
 | Interface                                                                | Availability                                                                                  |
 | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Chess.com `/game/live/ID`, `/game/daily/ID`, `/analysis/game/TYPE/ID`    | Historical game/analysis controls                                                             |
+| Chess.com `/game/live/ID`, `/game/daily/ID`, `/analysis/game/TYPE/ID` (also with a trailing `/analysis`) | Historical game/analysis controls |
 | Chess.com `/live/game/ID`, `/play/online/game/ID`, `/play/daily/game/ID` | After visible game completion                                                                 |
 | Chess.com `/play/online`, `/play/daily`, `/live`                         | After completion, using `gameId` in the URL or an unambiguous game link in the end-of-game UI |
 | Chess.com `/analysis?gameId=ID`                                          | Historical game controls; `gameType=daily` preserves daily games                              |
-| Lichess `/GAMEID`, `/GAMEID/white`, `/GAMEID/black`, player links        | After a rendered terminal result, including historical analysis pages                         |
+| Lichess `/game/GAMEID` and the older `/GAMEID`, with `/white` or `/black`, player links | After a rendered terminal result, including historical analysis pages                         |
 
 Lichess studies, puzzles, broadcasts, arbitrary FEN analysis, Chess.com events,
 and games without a discoverable supported ID are intentionally excluded.
@@ -107,7 +107,10 @@ No analytics, storage, cookies, remote code or network requests. See
 
 The tests model the selector structures in the adapters with jsdom; they are not
 live-site tests, and site markup changes independently of this repository.
-Unknown markup fails closed: no button.
+Unknown markup fails closed: no button. Both sites had changed between upstream's
+version and 2026-11-22 (Lichess moved games to `/game/GAMEID`, Chess.com renamed
+its end-of-game and review controls), so check the live pages before a release.
+Lichess answers headless browsers with a challenge page; use a visible browser.
 
 1. Finish a Chess.com live game, including a draw; test after dismissing the
    result modal, and test a rematch. Confirm no stale link remains during play.

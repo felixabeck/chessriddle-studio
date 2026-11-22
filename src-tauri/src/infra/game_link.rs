@@ -17,13 +17,13 @@ use crate::error::Error;
 use crate::AppState;
 
 /// The URL scheme this application registers (`tauri.conf.json`, `scripts/install-local.sh`).
-pub(crate) const SCHEME: &str = "chessriddle-studio";
+const SCHEME: &str = "chessriddle-studio";
 
 /// A longer string is refused before it is parsed.
 const MAX_LINK_BYTES: usize = 512;
 
 /// How many accepted links may wait for the renderer. A further link is dropped.
-pub(crate) const MAX_PENDING_LINKS: usize = 16;
+const MAX_PENDING_LINKS: usize = 16;
 
 const LICHESS_PREFIX: &str = "https://lichess.org/";
 const LICHESS_ID_LENGTH: usize = 8;
@@ -57,7 +57,7 @@ pub(crate) struct GameLinkPending {}
 
 /// Parses a complete link. Everything that is not exactly one of the two canonical game URLs
 /// inside the one accepted outer form is refused.
-pub(crate) fn parse(raw: &str) -> Option<GameLink> {
+fn parse(raw: &str) -> Option<GameLink> {
     if raw.len() > MAX_LINK_BYTES {
         return None;
     }
@@ -240,16 +240,16 @@ mod tests {
 
     #[test]
     fn a_link_longer_than_the_bound_is_refused_before_parsing() {
-        let padded = format!("{LICHESS_LINK}{}", "&".repeat(MAX_LINK_BYTES));
-        assert!(padded.len() > MAX_LINK_BYTES);
-        assert_eq!(parse(&padded), None);
-        // The bound, not the padding, is what refuses: the same shape within it has one pair.
+        // URL parsing removes tabs, so tab padding changes nothing but the length: the same
+        // link is accepted at the bound and refused one byte over it.
         let at_bound = format!(
-            "chessriddle-studio://import?url={}",
-            "x".repeat(MAX_LINK_BYTES - "chessriddle-studio://import?url=".len())
+            "{LICHESS_LINK}{}",
+            "\t".repeat(MAX_LINK_BYTES - LICHESS_LINK.len())
         );
         assert_eq!(at_bound.len(), MAX_LINK_BYTES);
-        assert_eq!(parse(&at_bound), None);
+        assert!(parse(LICHESS_LINK).is_some());
+        assert_eq!(parse(&at_bound), parse(LICHESS_LINK));
+        assert_eq!(parse(&format!("{at_bound}\t")), None);
     }
 
     #[test]

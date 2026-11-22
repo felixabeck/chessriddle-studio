@@ -958,17 +958,24 @@ fn accept_game_link<R: tauri::Runtime>(
     if let Err(error) = (infra::game_link::GameLinkPending {}).emit_to(app, "main") {
         log::warn!("could not announce a waiting game link to the main window: {error}");
     }
-    // Never reveal the window ahead of the renderer's startup reveal; once it has been revealed,
-    // bring it back to the user. Both requests are best effort (a compositor may refuse focus).
-    let revealed = app
-        .try_state::<MainWindowReveal>()
-        .is_some_and(|reveal| reveal.is_revealed());
-    if let Some(window) = revealed.then(|| app.get_webview_window("main")).flatten() {
+    // Both requests are best effort (a compositor may refuse focus).
+    if let Some(window) = revealed_main_window(app) {
         if let Err(error) = window.unminimize().and_then(|()| window.set_focus()) {
             log::warn!("could not bring the main window forward for a game link: {error}");
         }
     }
     intake
+}
+
+/// The main window once the renderer's startup reveal has happened. Before that a game link
+/// must not bring the window forward: that would show it ahead of the reveal.
+fn revealed_main_window<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Option<tauri::WebviewWindow<R>> {
+    app.try_state::<MainWindowReveal>()
+        .is_some_and(|reveal| reveal.is_revealed())
+        .then(|| app.get_webview_window("main"))
+        .flatten()
 }
 
 /// The renderer's reveal: show the main window, then record the reveal for the fallback.
@@ -5760,5 +5767,151 @@ mod authority_unavailable_command_tests {
                 .unwrap()
                 .is_empty());
         }
+    }
+}
+
+#[cfg(test)]
+mod game_link_intake_tests {
+    use super::{
+        accept_game_link, revealed_main_window, AppState, GameLinkHandoff, MainWindowReveal,
+    };
+    use crate::infra::blocking::source_scan::body_at_indent;
+    use crate::infra::game_link::{GameLinkPending, Intake};
+    use crate::infra::path_authority::AppDataDir;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use tauri::{Listener as _, Manager as _};
+    use tauri_specta::Event as _;
+
+    const LINK: &str = "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2Fabcdefgh";
+    const ENDPOINT_FILE: &str = "link-handoff.json";
+
+    /// A mock application with the managed state and the "main" window of the real one, and a
+    /// counter of the wake events it has announced.
+    fn app() -> (tauri::App<tauri::test::MockRuntime>, Arc<AtomicUsize>) {
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(GameLinkPending))
+            .mount_events(&app);
+        app.manage(AppState::default());
+        app.manage(MainWindowReveal::default());
+        tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("create labeled main window");
+        let announced = Arc::new(AtomicUsize::new(0));
+        let counter = announced.clone();
+        app.listen_any(GameLinkPending::NAME, move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        });
+        (app, announced)
+    }
+
+    /// What the renderer's drain would be handed now; it empties the queue.
+    fn waiting(
+        app: &tauri::App<tauri::test::MockRuntime>,
+    ) -> Vec<crate::infra::game_link::GameLink> {
+        tauri::async_runtime::block_on(crate::infra::game_link::take_pending_game_links(
+            app.state::<AppState>(),
+        ))
+        .expect("the drain command is infallible")
+    }
+
+    #[test]
+    fn an_accepted_link_is_queued_and_announced_once() {
+        let (app, announced) = app();
+
+        assert_eq!(accept_game_link(app.handle(), LINK), Intake::Queued);
+
+        assert_eq!(announced.load(Ordering::SeqCst), 1);
+        assert_eq!(waiting(&app).len(), 1);
+    }
+
+    #[test]
+    fn a_refused_link_is_neither_queued_nor_announced() {
+        let (app, announced) = app();
+
+        assert_eq!(
+            accept_game_link(
+                app.handle(),
+                "chessriddle-studio://import?url=https%3A%2F%2Fexample.com"
+            ),
+            Intake::Refused
+        );
+
+        assert_eq!(announced.load(Ordering::SeqCst), 0);
+        assert!(waiting(&app).is_empty());
+    }
+
+    #[test]
+    fn a_link_beyond_the_queue_bound_is_not_announced() {
+        let (app, announced) = app();
+        let mut queued = 0;
+        while accept_game_link(app.handle(), LINK) == Intake::Queued {
+            queued += 1;
+            assert!(queued <= 1024, "the queue has no bound");
+        }
+
+        assert_eq!(accept_game_link(app.handle(), LINK), Intake::Full);
+        assert_eq!(announced.load(Ordering::SeqCst), queued);
+        assert_eq!(waiting(&app).len(), queued);
+    }
+
+    #[test]
+    fn a_link_without_managed_state_is_refused() {
+        let app = tauri::test::mock_app();
+        assert_eq!(accept_game_link(app.handle(), LINK), Intake::Refused);
+    }
+
+    #[test]
+    fn the_window_is_brought_forward_only_after_the_startup_reveal() {
+        let (app, _) = app();
+        assert!(revealed_main_window(app.handle()).is_none());
+
+        app.state::<MainWindowReveal>().record();
+
+        assert_eq!(
+            revealed_main_window(app.handle()).map(|window| window.label().to_owned()),
+            Some("main".to_owned())
+        );
+        // The intake goes through that one decision and nothing else.
+        let intake = body_at_indent(
+            include_str!("main.rs"),
+            "fn accept_game_link<R: tauri::Runtime>(",
+        );
+        assert!(intake.contains("if let Some(window) = revealed_main_window(app) {"));
+        assert_eq!(intake.matches("get_webview_window").count(), 0);
+        assert_eq!(intake.matches("set_focus").count(), 1);
+    }
+
+    #[test]
+    fn only_the_holder_of_the_application_data_lock_listens() {
+        let root = tempfile::tempdir().unwrap();
+        let app_data = AppDataDir::for_test(root.path());
+        let (app, _) = app();
+
+        let unguarded = GameLinkHandoff::start(app.handle(), &app_data, false);
+        assert!(unguarded.0.is_none());
+        assert!(!root.path().join(ENDPOINT_FILE).exists());
+
+        let owner = GameLinkHandoff::start(app.handle(), &app_data, true);
+        assert!(owner.0.is_some());
+        assert!(root.path().join(ENDPOINT_FILE).exists());
+
+        tauri::async_runtime::block_on(owner.shutdown());
+        assert!(!root.path().join(ENDPOINT_FILE).exists());
+        // Without a listener there is nothing to stop.
+        tauri::async_runtime::block_on(unguarded.shutdown());
+    }
+
+    #[test]
+    fn application_exit_stops_the_handoff_before_the_backend_shuts_down() {
+        let source = include_str!("main.rs");
+        let exit = &source[source
+            .find("tauri::RunEvent::ExitRequested")
+            .expect("the exit handler")..];
+        let stopped = exit
+            .find("if let Some(handoff) = app_handle.try_state::<GameLinkHandoff>() {\n                            handoff.shutdown().await;\n                        }")
+            .expect("the exit cleanup stops the game-link handoff");
+        assert!(stopped < exit.find("shutdown_with_catalog_authority(").unwrap());
     }
 }

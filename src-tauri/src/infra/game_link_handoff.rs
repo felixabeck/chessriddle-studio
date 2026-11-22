@@ -39,11 +39,20 @@ const CONNECTION_DEADLINE: Duration = Duration::from_secs(2);
 /// How long a second launch keeps trying before it shows the dialog.
 const DELIVERY_DEADLINE: Duration = Duration::from_secs(3);
 
-/// The pause before the endpoint is read again (the owner may still be starting).
+/// The pause before a delivery reads the endpoint again (the owner may still be starting), and
+/// before the owner accepts again after a failed accept.
 const RETRY_PAUSE: Duration = Duration::from_millis(250);
 
-/// The limit on each connect, send and receive of a delivery.
+/// The limit on each connect of a delivery. A listening owner on loopback accepts at once. A
+/// closed port answers at once on Unix, but Windows retries for about two seconds before it
+/// reports the refusal, which would spend the whole delivery deadline on one attempt.
+const DELIVERY_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// The limit on each send and receive of a delivery.
 const DELIVERY_IO_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How much the owner reads and discards after its answer before it closes regardless.
+const MAX_DRAINED_BYTES: usize = 64 * 1024;
 
 /// How long shutdown waits for the listener task before it removes the endpoint regardless.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(2);
@@ -66,6 +75,12 @@ impl Answer {
             Self::Refused => "refused\n",
             Self::Full => "full\n",
         }
+    }
+
+    fn from_wire(line: &str) -> Option<Self> {
+        [Self::Accepted, Self::Refused, Self::Full]
+            .into_iter()
+            .find(|answer| answer.wire() == line)
     }
 }
 
@@ -272,12 +287,23 @@ async fn answer_request(
         request.extend_from_slice(&chunk[..read]);
     };
     stream.write_all(answer.wire().as_bytes()).await?;
-    stream.shutdown().await
+    stream.shutdown().await?;
+    // Read the peer out before closing. Closing a socket that still holds unread bytes resets
+    // the connection, and a reset that overtakes the answer makes Windows discard it unread.
+    // The caller's connection deadline and the byte bound end this for a peer that keeps sending.
+    let mut drained = 0;
+    while drained < MAX_DRAINED_BYTES {
+        match stream.read(&mut chunk).await {
+            Ok(0) | Err(_) => break,
+            Ok(read) => drained += read,
+        }
+    }
+    Ok(())
 }
 
 /// What a second launch achieved with its link.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Delivery {
+enum Delivery {
     /// The running instance enqueued the link.
     Accepted,
     /// Not delivered; the text is the log's failure category and never contains link or token.
@@ -288,6 +314,7 @@ pub(crate) enum Delivery {
 struct DeliveryTiming {
     deadline: Duration,
     retry_pause: Duration,
+    connect_timeout: Duration,
     io_timeout: Duration,
 }
 
@@ -295,6 +322,7 @@ impl DeliveryTiming {
     const PRODUCTION: Self = Self {
         deadline: DELIVERY_DEADLINE,
         retry_pause: RETRY_PAUSE,
+        connect_timeout: DELIVERY_CONNECT_TIMEOUT,
         io_timeout: DELIVERY_IO_TIMEOUT,
     };
 }
@@ -335,7 +363,7 @@ fn deliver(
                 let address = SocketAddr::from((Ipv4Addr::LOCALHOST, endpoint.port));
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 let limit = remaining
-                    .min(timing.io_timeout)
+                    .min(timing.connect_timeout)
                     .max(Duration::from_millis(1));
                 match TcpStream::connect_timeout(&address, limit) {
                     Ok(stream) => {
@@ -372,11 +400,11 @@ fn exchange(mut stream: TcpStream, token: &str, link: &str, io_timeout: Duration
     {
         return Delivery::Failed("the running instance did not answer");
     }
-    match answer.as_str() {
-        "accepted\n" => Delivery::Accepted,
-        "refused\n" => Delivery::Failed("the running instance refused the link"),
-        "full\n" => Delivery::Failed("the running instance has too many links waiting"),
-        _ => Delivery::Failed("the running instance did not answer"),
+    match Answer::from_wire(&answer) {
+        Some(Answer::Accepted) => Delivery::Accepted,
+        Some(Answer::Refused) => Delivery::Failed("the running instance refused the link"),
+        Some(Answer::Full) => Delivery::Failed("the running instance has too many links waiting"),
+        None => Delivery::Failed("the running instance did not answer"),
     }
 }
 
@@ -390,6 +418,7 @@ mod tests {
     const FAST: DeliveryTiming = DeliveryTiming {
         deadline: Duration::from_millis(600),
         retry_pause: Duration::from_millis(20),
+        connect_timeout: Duration::from_millis(100),
         io_timeout: Duration::from_millis(300),
     };
 
