@@ -28488,3 +28488,18 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Open question:** either the resumable sync learns to run without a token (its coverage requests in `src-tauri/src/lichess.rs` `read_coverage` are sent with a bearer token today; whether the cursor rules of d-20261103-06/-08/-10/-12 hold for anonymous requests is undetermined), or the dialog stops offering a handle-less Lichess account and says that login is required for downloads. The second changes what the user is offered and may be Felix's call.
 * **Spotted outside diff:** found on 2026-11-22 while tracing the account download path for the opponent-online-accounts build (plan `tasks/plans/2026-11-22-opponent-online-accounts.md`), which leaves the Accounts page and the resumable sync untouched and makes only the one-shot export commands token-optional.
 * **Found by:** Claude Code (Fable 5.2), interactive session 92099b07-33d6-47aa-8d79-062b3cd2c1c6, 2026-11-22.
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### The Grok sign-in command test reads the opened page before the sign-in has opened it
+
+* **ID:** f-20261122-09 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45058500233
+* **Where:** `src-tauri/src/coach/mod.rs`, test `coach::tests::a_grok_sign_in_runs_through_its_two_commands_and_answers_with_its_tokens` (added by the build run coach-chat, commit "feat(coach): sign in with Grok through its device-code flow").
+* **Defect:** `SignIn::begin` in `src-tauri/src/coach/grok.rs` hands the code to its caller and opens the browser after it, inside a spawned task. The test read its list of opened pages as soon as `begin_grok_sign_in` had returned, without waiting for the task to reach the opener.
+* **Failure scenario:** `Test` run 45058500233 on 26e48c362, job `rust`, step "Run Rust tests with coverage": `assertion left == right failed, left: [], right: ["http://127.0.0.1:42627/activate"]` at `src/coach/mod.rs:1203`; 3734 passed, 1 failed. Locally the test passed in every run, the full gates included. While this is red, `pnpm ci:remote:check` refuses every push from every checkout.
+* **Fix:** let the test's opener report through a channel and wait for the page with a bound, instead of reading shared state at once. The production order stays: the code must not wait for the browser.
+* **Found by:** Claude Code (Fable 5.2), 2026-11-22, post-push CI wait of the build run coach-chat.
