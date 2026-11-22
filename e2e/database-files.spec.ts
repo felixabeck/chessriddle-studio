@@ -3912,7 +3912,7 @@ test("database-files: the panels sit beside the notation below a database strip 
     await page.keyboard.press("Escape");
     await expect(page.getByRole("menu")).toHaveCount(0);
     await page.mouse.move(0, 0);
-    const rightSide = page.locator("[data-pinned-pane]:has(> [data-board-slot='rightTop'])");
+    const rightSide = page.locator("[data-pinned-pane]:has(> [data-board-slot='rightSpan'])");
     // The strip's table scrolls, and whether its scrollbar thumb shows depends on timing.
     await expect(rightSide).toHaveScreenshot("panels-beside-notation.png", {
         stylePath: scrollbarFreeScreenshot,

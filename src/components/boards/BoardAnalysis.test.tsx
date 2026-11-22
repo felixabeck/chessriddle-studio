@@ -647,7 +647,7 @@ describe("BoardAnalysis", () => {
     try {
       await renderIn("beside");
       // The engine bar then the strip, as above the tabs, and nothing else in the slot.
-      const slot = container.querySelector('[data-portal-target="#rightTop"]')!;
+      const slot = container.querySelector('[data-portal-target="#rightSpan"]')!;
       expect([...slot.children]).toEqual([slot.querySelector(engine), slot.querySelector(strip)]);
       expect(slot.querySelector(strip)).not.toBeNull();
       expect(within("#topRight", strip)).toHaveLength(0);
@@ -660,7 +660,7 @@ describe("BoardAnalysis", () => {
 
       for (const mode of ["mosaic", "stacked"] as const) {
         await renderIn(mode);
-        expect(container.querySelector('[data-portal-target="#rightTop"]')).toBeNull();
+        expect(container.querySelector('[data-portal-target="#rightSpan"]')).toBeNull();
         expect(within("#topRight", strip)).toHaveLength(1);
         expect(within("#topRight", engine)).toHaveLength(1);
         expect(container.querySelectorAll(strip)).toHaveLength(1);

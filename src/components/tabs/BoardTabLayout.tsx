@@ -21,17 +21,18 @@ import {
 import classes from "./BoardsPage.module.css";
 
 /**
- * A portal destination. Beside the three tiles, `rightTop` is the slot across the notation and the
- * panels in the beside arrangement; it holds what is pinned above both.
+ * A portal destination. The three tiles keep the names of where the panels-above layout puts them:
+ * `left` is the board, `topRight` the panels, `bottomRight` the notation. `rightSpan` is the slot
+ * across the notation and the panels in the beside arrangement; it holds what is pinned above both.
  */
-type TargetId = ViewId | "rightTop";
+type TargetId = ViewId | "rightSpan";
 /** The two tiles of the outer split in the beside arrangement. */
 type BesideTile = "left" | "right";
-/** The two tiles of the split inside the right side in the beside arrangement. */
+/** The split inside the right side in the beside arrangement: the notation, then the panels. */
 type RightTile = "bottomRight" | "topRight";
 
 const viewIds: ViewId[] = ["left", "topRight", "bottomRight"];
-const targetIds: TargetId[] = [...viewIds, "rightTop"];
+const targetIds: TargetId[] = [...viewIds, "rightSpan"];
 const resize = { minimumPaneSizePercentage: 0 };
 const windowsStateAtom = atomWithStorage(
   "windowsState",
@@ -98,14 +99,14 @@ export default function BoardTabLayout({
   besideCapable?: boolean;
 }) {
   const [windowsState, setWindowsState] = useAtom(windowsStateAtom);
-  const panelsBeside = useAtomValue(panelsBesideNotationAtom);
+  const wantsPanelsBeside = useAtomValue(panelsBesideNotationAtom);
   const [besideSplits, setBesideSplits] = useAtom(besideSplitsAtom);
   const { ref, width } = useElementWidth();
   const rootFont = useRootFontPx();
   // The stored choice is kept while the window is too narrow for it; the layout only falls back.
   const mode: BoardLayoutMode = needsTwoPaneStack(width, rootFont)
     ? "stacked"
-    : besideCapable && panelsBeside && fitsThreePanes(width, rootFont)
+    : besideCapable && wantsPanelsBeside && fitsThreePanes(width, rootFont)
       ? "beside"
       : "mosaic";
   // React owns the hosts, while this mount owns the portal destinations.
@@ -116,7 +117,7 @@ export default function BoardTabLayout({
         targetIds.map((id) => {
           const element = document.createElement("div");
           element.id = id;
-          element.className = id === "rightTop" ? classes.spanTarget : classes.portalTarget;
+          element.className = id === "rightSpan" ? classes.spanTarget : classes.portalTarget;
           return [id, element];
         }),
       ) as Record<TargetId, HTMLDivElement>,
@@ -154,7 +155,7 @@ export default function BoardTabLayout({
               ) : (
                 // One pane for what is pinned across the top: it measures against the whole side.
                 <div className={classes.besideRegion} data-pinned-pane>
-                  <TargetHost target={targets.rightTop} className={classes.spanHost} />
+                  <TargetHost target={targets.rightSpan} className={classes.spanHost} />
                   <div className={classes.besideSplit}>
                     <MosaicWithoutDragDropContext<RightTile>
                       renderTile={(tile) => <TargetHost target={targets[tile]} direct />}

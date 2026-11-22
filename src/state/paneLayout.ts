@@ -37,16 +37,21 @@ export function besideSplitPositions(
     wanted: { board?: number; notation?: number },
 ) {
     const floor = PANE_FLOOR_REM * rootFont;
+    // The least room each pane's share must hold: its floor and one divider side per divider it
+    // touches. The board and the panels touch one divider, the notation between them both.
+    const boardRoom = floor + DIVIDER_SIDE_PX;
+    const notationRoom = floor + 2 * DIVIDER_SIDE_PX;
+    const panelsRoom = floor + DIVIDER_SIDE_PX;
     const board = clampPercentage(
         wanted.board ?? 50,
-        ((floor + DIVIDER_SIDE_PX) / width) * 100,
-        100 - ((2 * floor + 3 * DIVIDER_SIDE_PX) / width) * 100,
+        (boardRoom / width) * 100,
+        100 - ((notationRoom + panelsRoom) / width) * 100,
     );
     const rightSide = width * (1 - board / 100);
     const notation = clampPercentage(
         wanted.notation ?? 50,
-        ((floor + 2 * DIVIDER_SIDE_PX) / rightSide) * 100,
-        100 - ((floor + DIVIDER_SIDE_PX) / rightSide) * 100,
+        (notationRoom / rightSide) * 100,
+        100 - (panelsRoom / rightSide) * 100,
     );
     return { board, notation };
 }

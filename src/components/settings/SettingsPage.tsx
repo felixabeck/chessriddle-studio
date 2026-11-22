@@ -69,6 +69,7 @@ import {
   puzzleWorkspaceGenerationAtom,
 } from "@/state/atoms";
 import { keybindLabel, keyMapAtom } from "@/state/keybinds";
+import { panelsBesideNotationAtom } from "@/state/layoutStorage";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
 import { PIECE_SCALE_MAX, PIECE_SCALE_MIN, PIECE_SCALE_STEP } from "@/state/pieceScale";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -82,7 +83,6 @@ import { DrawingKeybinds } from "./DrawingKeybinds";
 import PercentagePreferenceSlider from "./PercentagePreferenceSlider";
 import PiecesSelect from "./PiecesSelect";
 import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
-import { panelsBesideNotationAtom } from "@/state/layoutStorage";
 import { DirectorySetting } from "./DirectorySetting";
 import { WorkspaceDirectorySetting } from "./WorkspaceDirectorySetting";
 import classes from "./SettingsPage.module.css";

@@ -301,7 +301,13 @@ vi.mock("./NewTabHome", () => ({
 }));
 vi.mock("react-mosaic-component", () => ({ Mosaic: () => null }));
 vi.mock("./BoardTabLayout", () => ({
-  default: ({ children }: { children: ReactNode }) => children,
+  // The stand-in records whether the page lets this tab show its panels beside the notation.
+  default: ({ children, besideCapable }: { children: ReactNode; besideCapable?: boolean }) => (
+    <>
+      <span hidden data-beside-capable={String(besideCapable === true)} />
+      {children}
+    </>
+  ),
 }));
 vi.mock("../common/TreeStateContext", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../common/TreeStateContext")>();
@@ -1460,6 +1466,20 @@ const recoveryRoutes = [
   { type: "analysis", child: "board-analysis-child" },
   { type: "puzzles", child: "puzzles-child" },
 ] as const;
+
+test.each(recoveryRoutes)(
+  "only an analysis board may show its panels beside the notation: $type",
+  async ({ type, child }) => {
+    store.set(tabsAtom, [{ ...fixtures.tabs[0]!, type }]);
+    await renderPage();
+    expect(container.querySelector(`[data-testid="${child}"]`)).not.toBeNull();
+    expect(
+      [...container.querySelectorAll("[data-beside-capable]")].map((layout) =>
+        layout.getAttribute("data-beside-capable"),
+      ),
+    ).toEqual([String(type === "analysis")]);
+  },
+);
 
 test("BoardsPage routes provider, recovery and close through the physical generation", async () => {
   const treeKey = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";

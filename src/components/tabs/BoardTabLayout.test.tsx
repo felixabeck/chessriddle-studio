@@ -65,7 +65,7 @@ function StatefulConsumer() {
   }, []);
   return (
     <>
-      {(["left", "topRight", "bottomRight", "rightTop"] as const).map((id) => (
+      {(["left", "topRight", "bottomRight", "rightSpan"] as const).map((id) => (
         <Portal key={id} target={`#${id}`}>
           <button onClick={() => setCount(count + 1)}>
             {id}:{count}
@@ -244,15 +244,15 @@ test("an analysis board that wants its panels beside the notation gets the notat
     { direction: "row", first: "left", second: "right", splitPercentage: 60 },
     { direction: "row", first: "bottomRight", second: "topRight", splitPercentage: 50 },
   ]);
-  for (const id of [...ids, "rightTop"]) {
+  for (const id of [...ids, "rightSpan"]) {
     const target = document.getElementById(id)!;
     expect(target.isConnected).toBe(true);
     expect(target.closest("[hidden]")).toBeNull();
     expect(target.textContent).toBe(`${id}:0`);
   }
   // One pane holds the slot across the top and, after it, the notation then the panels.
-  const pane = document.getElementById("rightTop")!.closest("[data-pinned-pane]")!;
-  expect(pane.firstElementChild?.getAttribute("data-board-slot")).toBe("rightTop");
+  const pane = document.getElementById("rightSpan")!.closest("[data-pinned-pane]")!;
+  expect(pane.firstElementChild?.getAttribute("data-board-slot")).toBe("rightSpan");
   const below = pane.lastElementChild!;
   expect(below).not.toBe(pane.firstElementChild);
   expect([...below.querySelectorAll("#bottomRight, #topRight")].map((tile) => tile.id)).toEqual([
@@ -277,7 +277,7 @@ test.each([
     expect(layoutMode()).toBe(mode);
     expect(container.querySelector('[data-testid="mode"]')?.textContent).toBe(mode);
     // Outside the beside arrangement the slot across the top is kept, out of sight.
-    const slot = document.getElementById("rightTop")!;
+    const slot = document.getElementById("rightSpan")!;
     expect(slot.isConnected).toBe(true);
     expect(!!slot.closest("[hidden]")).toBe(mode !== "beside");
     expect(localStorage.getItem(BESIDE_KEY)).toBe("true");
@@ -316,7 +316,7 @@ test("an unreadable beside choice shows the panels above the notation", async ()
 test("portal state and target identity survive every switch into and out of the beside arrangement", async () => {
   localStorage.setItem(BESIDE_KEY, "true");
   await renderAt(2000, true);
-  const all = [...ids, "rightTop"];
+  const all = [...ids, "rightSpan"];
   const targets = all.map((id) => document.getElementById(id)!);
   // The four portals share one consumer's count.
   await act(async () => targets[0].querySelector("button")!.click());

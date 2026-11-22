@@ -399,8 +399,9 @@ function BoardAnalysis() {
           </div>
         </Stack>
       </Portal>
+      {/* `#rightSpan` is the slot across the notation and the panels, `#topRight` the panels. */}
       {panelsBeside && (
-        <Portal target="#rightTop" className={classes.spanSlot}>
+        <Portal target="#rightSpan" className={classes.spanSlot}>
           {aboveTabs}
         </Portal>
       )}
