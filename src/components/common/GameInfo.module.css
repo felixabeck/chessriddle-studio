@@ -41,6 +41,132 @@
   background: transparent;
   color: inherit;
   font: inherit;
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+/* The full header sizes itself to its own box, not the viewport: the database preview pane can be
+   as narrow as its 20rem floor, and the app font scales up to 200%. */
+.root {
+  container-type: inline-size;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas:
+    "header header header"
+    "white centre black"
+    "white-elo result black-elo";
+}
+
+/* At full width the colour labels and the event share one row, the event taking what the labels
+   leave. Narrower, the row dissolves and its parts take their own grid areas. */
+.header {
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-md);
+  min-width: 0;
+}
+
+/* Below this width a third cannot hold the date, so each player keeps half the width and the event
+   details move below the players. */
+@container (max-width: 20rem) {
+  .header {
+    display: contents;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "white-label black-label"
+      "white black"
+      "white-elo black-elo"
+      "event event"
+      "centre centre"
+      "result result";
+  }
+}
+
+/* Below this width half cannot hold a colour label, so every field takes the full width. */
+@container (max-width: 12rem) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "white-label"
+      "white"
+      "white-elo"
+      "black-label"
+      "black"
+      "black-elo"
+      "event"
+      "centre"
+      "result";
+  }
+
+  .grid > .right,
+  .grid .blackLabel {
+    text-align: start;
+    justify-self: start;
+  }
+}
+
+.colorLabel {
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+  justify-self: start;
+}
+
+.whiteLabel {
+  grid-area: white-label;
+}
+
+.blackLabel {
+  grid-area: black-label;
+  justify-self: end;
+}
+
+.event {
+  grid-area: event;
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+  /* An editable Event grows with its text; past the column it scrolls inside the field. */
+  > input {
+    max-width: 100%;
+  }
+}
+
+.white {
+  grid-area: white;
+}
+
+.black {
+  grid-area: black;
+}
+
+.whiteElo {
+  grid-area: white-elo;
+}
+
+.blackElo {
+  grid-area: black-elo;
+}
+
+.centre {
+  grid-area: centre;
+  min-width: 0;
+}
+
+.result {
+  grid-area: result;
 }
 
 .input:focus-visible,

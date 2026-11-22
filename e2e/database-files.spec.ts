@@ -2294,7 +2294,7 @@ test("database-files: bounded drag and keyboard steps share a preference across 
         const metadata = (await gamesPanel
             .locator(".mantine-Paper-root:has([data-preview-arrangement])")
             .first()
-            .locator(".mantine-SimpleGrid-root")
+            .locator("[data-game-info-fields]")
             .boundingBox())!;
         expect(frame.y).toBeGreaterThan(metadata.y + metadata.height);
         expect(square.y + square.height).toBeLessThanOrEqual(frame.y + frame.height + 1);

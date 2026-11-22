@@ -62,11 +62,7 @@
 
 .gameMetadata {
   position: relative;
-  overflow-x: auto;
   flex: none;
-  > * {
-    min-width: 36rem;
-  }
   :global(.mantine-DateInput-root) {
     width: 6.5rem;
   }

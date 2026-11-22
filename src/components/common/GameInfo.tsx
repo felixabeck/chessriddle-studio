@@ -8,7 +8,6 @@ import {
   OptionsDropdown,
   type OptionsFilter,
   Select,
-  SimpleGrid,
   Text,
   useCombobox,
 } from "@mantine/core";
@@ -78,9 +77,6 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
   const event = headers.event === "?" ? "" : headers.event;
   const site = headers.site === "?" ? "" : headers.site;
   const round = headers.round === "?" ? "" : (headers.round ?? "");
-  // The editable full layout always shows Round, so its Event/Round cluster wraps
-  // (without the dash separator) instead of pushing BLACK out of view.
-  const editableHeader = !simplified && !disabled;
   const sitePlatform = sitePlatformLabel(headers.site);
   // Keep raw White text so spaces survive typing, using the normalized Event fallback only
   // when White is empty.
@@ -89,112 +85,37 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
     : (lineTitleOf(headers).name ?? "");
 
   return (
-    <Box px="md" pt="md">
+    <Box px="md" pt="md" className={classes.root}>
       <FidePlayerDialogs
         openColor={fideColor}
         setOpenColor={setFideColor}
         names={{ white: headers.white, black: headers.black }}
       />
 
-      <Group w="100%" wrap="nowrap">
-        {!simplified && (
-          <Text
-            component="button"
-            type="button"
-            c="dimmed"
-            tt="uppercase"
-            fw="bold"
-            className={classes.colorHover}
-            onClick={() => setFideColor("white")}
-          >
-            {t("Fen.White")}
-          </Text>
-        )}
-        <Group
-          wrap={editableHeader ? "wrap" : "nowrap"}
-          justify={simplified ? "start" : "center"}
-          w="100%"
-          style={
-            editableHeader
-              ? { minWidth: 0, rowGap: 0, columnGap: "var(--mantine-spacing-xs)" }
-              : undefined
-          }
-        >
-          {simplified ? (
-            <>
-              <InlineInput
-                disabled={disabled}
-                value={lineName}
-                aria-label={t("GameInfo.LineName")}
-                placeholder={t("GameInfo.EnterLineName")}
-                className={classes.input}
-                onChange={(e) => setHeaders({ ...headers, white: e.target.value })}
-              />
-              <Text component="span" c="dimmed" size="sm" style={{ minWidth: 0 }}>
-                <InlineInput
-                  disabled={disabled}
-                  value={headers.black.trim() === "?" ? "" : headers.black}
-                  aria-label={t("GameInfo.Idea")}
-                  placeholder={t("GameInfo.EnterIdea")}
-                  className={classes.input}
-                  onChange={(e) => setHeaders({ ...headers, black: e.target.value })}
-                />
-              </Text>
-            </>
-          ) : (
+      {simplified && (
+        <Group w="100%" wrap="nowrap">
+          <Group wrap="nowrap" justify="start" w="100%">
             <InlineInput
               disabled={disabled}
-              value={event}
-              aria-label={t("Databases.Game.Event")}
-              placeholder={t("GameInfo.UnknownEvent")}
+              value={lineName}
+              aria-label={t("GameInfo.LineName")}
+              placeholder={t("GameInfo.EnterLineName")}
               className={classes.input}
-              onChange={(e) => {
-                setHeaders({
-                  ...headers,
-                  event: e.target.value,
-                });
-              }}
+              onChange={(e) => setHeaders({ ...headers, white: e.target.value })}
             />
-          )}
-          {!simplified && (!disabled || round !== "") && (
-            <>
-              {!editableHeader && "-"}
-              <Group gap={0} wrap="nowrap">
-                <Text c="dimmed" size="sm" mr="xs">
-                  {t("GameInfo.Round")}
-                </Text>
-                <input
-                  className={classes.roundInput}
-                  placeholder="?"
-                  aria-label={t("GameInfo.Round")}
-                  value={round}
-                  onChange={(e) =>
-                    setHeaders({
-                      ...headers,
-                      round: e.currentTarget.value,
-                    })
-                  }
-                  disabled={disabled}
-                />
-              </Group>
-            </>
-          )}
+            <Text component="span" c="dimmed" size="sm" style={{ minWidth: 0 }}>
+              <InlineInput
+                disabled={disabled}
+                value={headers.black.trim() === "?" ? "" : headers.black}
+                aria-label={t("GameInfo.Idea")}
+                placeholder={t("GameInfo.EnterIdea")}
+                className={classes.input}
+                onChange={(e) => setHeaders({ ...headers, black: e.target.value })}
+              />
+            </Text>
+          </Group>
         </Group>
-        {!simplified && (
-          <Text
-            component="button"
-            type="button"
-            c="dimmed"
-            tt="uppercase"
-            fw="bold"
-            ta="right"
-            onClick={() => setFideColor("black")}
-            className={classes.colorHover}
-          >
-            {t("Fen.Black")}
-          </Text>
-        )}
-      </Group>
+      )}
       {simplified && (
         <Group gap={4}>
           <Text size="sm">{t("GameInfo.OpeningFor")}</Text>
@@ -232,9 +153,75 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
         </Group>
       )}
       {!simplified && (
-        <SimpleGrid cols={3} spacing={0}>
+        <div className={classes.grid} data-game-info-fields>
+          <div className={classes.header}>
+            <Text
+              component="button"
+              type="button"
+              c="dimmed"
+              tt="uppercase"
+              fw="bold"
+              className={cx(classes.colorHover, classes.colorLabel, classes.whiteLabel)}
+              onClick={() => setFideColor("white")}
+            >
+              {t("Fen.White")}
+            </Text>
+            {/* Event and Round wrap onto two lines instead of pushing BLACK out of view. */}
+            <Group
+              justify="center"
+              className={classes.event}
+              style={{ rowGap: 0, columnGap: "var(--mantine-spacing-xs)" }}
+            >
+              <InlineInput
+                disabled={disabled}
+                value={event}
+                aria-label={t("Databases.Game.Event")}
+                placeholder={t("GameInfo.UnknownEvent")}
+                className={classes.input}
+                style={disabled ? { width: "auto" } : undefined}
+                onChange={(e) => {
+                  setHeaders({
+                    ...headers,
+                    event: e.target.value,
+                  });
+                }}
+              />
+              {(!disabled || round !== "") && (
+                <Group gap={0} wrap="nowrap">
+                  <Text c="dimmed" size="sm" mr="xs">
+                    {t("GameInfo.Round")}
+                  </Text>
+                  <input
+                    className={classes.roundInput}
+                    placeholder="?"
+                    aria-label={t("GameInfo.Round")}
+                    value={round}
+                    onChange={(e) =>
+                      setHeaders({
+                        ...headers,
+                        round: e.currentTarget.value,
+                      })
+                    }
+                    disabled={disabled}
+                  />
+                </Group>
+              )}
+            </Group>
+            <Text
+              component="button"
+              type="button"
+              c="dimmed"
+              tt="uppercase"
+              fw="bold"
+              ta="right"
+              onClick={() => setFideColor("black")}
+              className={cx(classes.colorHover, classes.colorLabel, classes.blackLabel)}
+            >
+              {t("Fen.Black")}
+            </Text>
+          </div>
           <input
-            className={classes.textInput}
+            className={cx(classes.textInput, classes.white)}
             placeholder="?"
             aria-label={t("Fen.White")}
             value={headers.white}
@@ -246,7 +233,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             }
             disabled={disabled}
           />
-          <Group justify="center">
+          <Group justify="center" className={classes.centre}>
             {sitePlatform !== null ? (
               <a href={headers.site} target="_blank" rel="noreferrer">
                 <Text p="sm" w={90}>
@@ -287,7 +274,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             />
           </Group>
           <input
-            className={cx(classes.textInput, classes.right)}
+            className={cx(classes.textInput, classes.right, classes.black)}
             placeholder="?"
             aria-label={t("Fen.Black")}
             value={headers.black}
@@ -300,7 +287,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             disabled={disabled}
           />
           <input
-            className={classes.textInput}
+            className={cx(classes.textInput, classes.whiteElo)}
             aria-label={t("GameInfo.WhiteElo")}
             placeholder={t("GameInfo.UnknownElo")}
             value={eloInputValue(headers.white_elo)}
@@ -309,7 +296,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             }
             disabled={disabled}
           />
-          <Box>
+          <Box className={classes.result}>
             <label className={classes.visuallyHidden} htmlFor="game-result">
               {t("GameInfo.Result")}
             </label>
@@ -328,7 +315,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             )}
           </Box>
           <input
-            className={cx(classes.textInput, classes.right)}
+            className={cx(classes.textInput, classes.right, classes.blackElo)}
             aria-label={t("GameInfo.BlackElo")}
             placeholder={t("GameInfo.UnknownElo")}
             value={eloInputValue(headers.black_elo)}
@@ -337,7 +324,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             }
             disabled={disabled}
           />
-        </SimpleGrid>
+        </div>
       )}
     </Box>
   );
