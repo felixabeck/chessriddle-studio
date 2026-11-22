@@ -3893,6 +3893,57 @@ mod blocking_offload_scans {
         );
         assert!(!core.contains("format!(\"chesscom_"), "{core}");
 
+        // The opponent import claims under its ticket, which is also its progress id.
+        let opponents = include_str!("infra/operations/opponents.rs");
+        let opponent_command =
+            body_at_indent(opponents, "pub(crate) async fn import_opponent_games(");
+        assert_eq!(
+            opponent_command.matches("window.label()").count(),
+            1,
+            "{opponent_command}"
+        );
+        assert_eq!(
+            opponent_command.matches("claim_download(").count(),
+            0,
+            "{opponent_command}"
+        );
+        let opponent_runtime = body_at_indent(opponents, "async fn import_opponent_games_runtime<");
+        assert_eq!(
+            opponent_runtime.matches("claim_download(").count(),
+            1,
+            "{opponent_runtime}"
+        );
+        let compact: String = opponent_runtime
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        assert!(
+            compact.contains(
+                "claim_download(&ticket,owner,\"import_opponent_games\",&ticket,&admission_key,true,"
+            ),
+            "{opponent_runtime}"
+        );
+        assert!(
+            opponent_runtime.find("let admission_key =").unwrap()
+                < opponent_runtime.find("claim_download(").unwrap(),
+            "{opponent_runtime}"
+        );
+        assert!(
+            opponent_runtime
+                .contains("begin_progress(&state.progress_state, &app, ticket.clone())"),
+            "{opponent_runtime}"
+        );
+        assert!(
+            opponent_runtime.contains("run_native_operation(lease,"),
+            "import_opponent_games_runtime must run under its claimed lease: {opponent_runtime}"
+        );
+        // Its conversion is blocking work and runs on the gateway, never on the command future.
+        assert_body_offloads(
+            body_at_indent(opponents, "async fn import_core<"),
+            "import_core",
+            "import_staged_blocking",
+        );
+
         for (signature, call) in [
             (
                 "pub async fn cancel_download(",
@@ -5087,6 +5138,10 @@ mod blocking_offload_scans {
             ("db", DB_SOURCES),
             ("db/search.rs", include_str!("db/search.rs")),
             ("chess.rs", include_str!("chess.rs")),
+            (
+                "infra/operations/opponents.rs",
+                include_str!("infra/operations/opponents.rs"),
+            ),
         ] {
             let mut search_from = 0;
             while let Some(rel) = next_blocking_offset(source, search_from) {
