@@ -13711,3 +13711,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Probes in the plan's T11 show the old rules mark the engine's own best move and miss mate transitions. The mate bands follow Lichess's published advice rules. Reversal path: delete the two mate rules or the guard in the R1 judgement function.
 * **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"35f071c6ec55f0e64bfe8ec28bd774e8e4f1812071e0976c2002262c4b50060a","input_sha256":"dbc00300a1151c7fb6bcfcc0d5b7a8a33159abf6236248ec3b22cbe824b451d8","kind":"mutation-receipt","operation":"d38c7accfbf8fbb583fd17a5048e8620ac0f4b81e007c9b9a97e7b6983a7d7ee","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-06"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-07 — What does the report's sacrifice flag measure?
+
+* **Question:** The sacrifice flag compared the best material line before and after the move, so declining a free piece, missing a mate or an underpromotion counted as a sacrifice. What is it measured against?
+* **Governs:** -
+* **Chosen:** The mover's own static material balance before the move against the balance after the opponent's best capture sequence; true when the loss is at least 200 centipawns. The search runs through the blocking gateway, observes cancellation, and has a fixed node budget; an exhausted budget gives false (plan N3).
+* **Rejected:** Keeping `prev_eval > cur_eval + 100` over the unbounded `naive_eval`.
+* **Reason:** The probe table in the plan's T3 (six wrong flags, one unbounded call over 60 s). Reversal path: restore the old comparison in one function.
+* **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"9bd0cd91313099f783d66a66b495f56004713962ecfc96c05ee9acb25f54d655","input_sha256":"9231b4354ad643488fda84d98344f89b4c2e4db58330d034ccb73fd623d95433","kind":"mutation-receipt","operation":"ad59452e74be3e2950ae5b6346fbd6ed85d9a99ca292056716aa45d183cece3c","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-07"],"target":"decisions-ledger","v":1} -->
