@@ -2842,7 +2842,7 @@ test("database-files: game info fields stay inside the preview at every layout s
         await waitForFontsSettled(page);
         const layout = await fields.evaluate((grid) => {
             const card = grid.closest(".mantine-Paper-root")!.getBoundingClientRect();
-            const outside = [...grid.querySelectorAll("input, button")]
+            const outside = [...grid.querySelectorAll("input, button, span, a, p")]
                 .filter((field) => field.getBoundingClientRect().width > 0)
                 .flatMap((field) => {
                     const box = field.getBoundingClientRect();

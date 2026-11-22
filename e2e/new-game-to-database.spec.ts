@@ -249,6 +249,13 @@ test("the Info date field shows a full date and the placeholder without clipping
     await waitForFontsSettled(page);
     expect(await fits()).toBe(true);
     await assertNothingClipped(centre);
+
+    // An editable Site grows with its text, but never past the centre column.
+    const site = page.getByLabel("Site", { exact: true });
+    await site.fill("Saint Louis Chess Club, Missouri, United States of America");
+    const [siteBox, centreBox] = await Promise.all([site.boundingBox(), centre.boundingBox()]);
+    expect(siteBox!.x + siteBox!.width).toBeLessThanOrEqual(centreBox!.x + centreBox!.width + 1);
+    expect(siteBox!.x).toBeGreaterThanOrEqual(centreBox!.x - 1);
 });
 
 test("linked collection New game appends to its PGN without inserting into the index", async ({
