@@ -1325,7 +1325,7 @@ test("Analyze is disabled without a local engine and while the engine list loads
 });
 
 test("a submit with an engine that is not installed says so instead of doing nothing", async () => {
-  // While the engine list loads, the stored engine stays selected but is not yet installed.
+  // While the engine list loads, the stored engine stays selected and no local engine is known.
   atomStore.set(
     enginesAtom as unknown as PrimitiveAtom<typeof mocks.engines | undefined>,
     undefined,

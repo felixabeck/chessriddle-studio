@@ -1506,7 +1506,7 @@ function applyReport(state: TreeStoreState, result: GameAnalysis, request: Repor
         mainline.map(({ node }) => node),
     );
 
-    // Only children past index 0 go, so the main line and its paths stay valid.
+    // Index 0 is never removed, so the main line and its paths stay valid.
     removeReportLines(state, mainline);
 
     let drawWritten = false;
