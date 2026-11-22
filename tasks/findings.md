@@ -28520,3 +28520,18 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Failure scenario:** `Test` run 45064671308 on b7b69fd8d (a build-ledger-only commit), job `e2e`: `expect(locator).toHaveCount(expected)`, locator `[data-explorer-filters]`, expected 0, received 1 for 8 s at `e2e/database-files.spec.ts:4272`; 503 passed, 1 failed. The same test passed in the runs on the three commits before it and in every local gate run. While this is red, `pnpm ci:remote:check` refuses every push from every checkout.
 * **Fix:** wait until the focus is inside the popover before pressing Escape.
 * **Found by:** Claude Code (Fable 5.2), 2026-11-22, remote CI check before the push of the Coach's Gemini preset.
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### A popover ignores Escape while the focus is on its trigger; the engine selection popover never takes the focus
+
+* **ID:** f-20261122-11 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** ux
+* **Where:** every Mantine `Popover` of the renderer. Read so far: `src/components/panels/analysis/AnalysisPanel.tsx` (engine selection, no `trapFocus`), `src/components/panels/database/ExplorerSourceHeader.tsx` (explorer filters, `trapFocus`), `src/components/chessriddle/TrainingSettings.tsx` (motif picker, `trapFocus returnFocus`).
+* **Defect:** Mantine closes a popover on Escape only from a key event inside its dropdown (`PopoverDropdown.mjs`, `onKeyDownCapture`); nothing listens on the trigger or the document. Probe on 2026-11-22 (a `Popover` in the test DOM, with and without `trapFocus`): after opening, Escape dispatched on the trigger leaves it open, Escape dispatched inside closes it. With `trapFocus` the focus reaches the dropdown from a timer after it opens; without it the focus stays on the trigger.
+* **Failure scenario:** on the analysis board, open the engine selection with its button (mouse or keyboard) and press Escape: the popover stays open, because the focus is still on the button; it closes only after a click outside or after the focus was moved into it. For the explorer filters and the motif picker the same holds for the moment between opening and the focus arriving; that moment was long enough on a CI runner to fail an e2e test once (f-20261122-10, CI run 45064671308, repaired in the test).
+* **Open question:** where the shared behaviour lives. One wrapper for the app's popovers that also closes on Escape from the trigger, or the same handling at each use. The wrapper must not close an outer popover when Escape was meant for something opened from inside it (the explorer filters open a date picker in a portal of its own).
+* **Fix:** decide the above, route the popovers through it, and prove it per popover: Escape right after opening closes it, and Escape inside a nested picker closes only the picker. `e2e/chessriddle-training.spec.ts` presses Enter and Escape at the freshly opened motif picker without waiting; look at it in the same change.
+* **Found by:** Claude Code (Fable 5.2), 2026-11-22, review of the repair of f-20261122-10 (review-tests and review-root-cause, agy).
