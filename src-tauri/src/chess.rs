@@ -1,10 +1,10 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use derivative::Derivative;
@@ -1002,45 +1002,175 @@ const REPORT_MULTIPV: u16 = 2;
 
 fn restore_inherited_resource_provenance(
     option: &mut ResolvedEngineOption,
-    inherited_values: &HashMap<String, String>,
-    inherited_resource_values: &HashMap<String, Vec<String>>,
+    inherited_resources: &HashMap<String, (String, Vec<String>)>,
 ) {
-    let Some(value) = inherited_values.get(&option.name) else {
+    let Some((value, resource_values)) = inherited_resources.get(&option.name) else {
         return;
     };
     option.value = value.clone();
-    // The initial lease owns the child access, but the individual values remain
-    // provenance for delayed transcript echoes. Freshly resolving the same
-    // handle may produce different descriptor numbers.
-    if let Some(resource_values) = inherited_resource_values.get(&option.name) {
-        option.resource_values = resource_values.clone();
-    }
+    option.resource_values = resource_values.clone();
     option.resources.clear();
 }
 
-fn prepare_report_options(
-    uci_options: &[EngineOption],
-    inherited_values: &HashMap<String, String>,
-) -> (Vec<EngineOption>, HashMap<String, String>) {
-    let mut report_options = crate::engine::effective_engine_options(uci_options);
-    let report_multipv = REPORT_MULTIPV.to_string();
-    if let Some(option) = report_options
-        .iter_mut()
-        .find(|option| option.name() == "MultiPV")
-    {
-        *option = EngineOption::String {
-            name: "MultiPV".into(),
-            value: report_multipv.clone(),
-        };
+/// The configured options with `MultiPV` forced to `lines`, whatever the engine's own setting is.
+fn analysis_options_with_lines(uci_options: &[EngineOption], lines: u16) -> Vec<EngineOption> {
+    let mut options = crate::engine::effective_engine_options(uci_options);
+    let multipv = EngineOption::String {
+        name: "MultiPV".into(),
+        value: lines.to_string(),
+    };
+    if let Some(option) = options.iter_mut().find(|option| option.name() == "MultiPV") {
+        *option = multipv;
     } else {
-        report_options.push(EngineOption::String {
-            name: "MultiPV".into(),
-            value: report_multipv.clone(),
-        });
+        options.push(multipv);
     }
-    let mut report_inherited_values = inherited_values.clone();
-    report_inherited_values.insert("MultiPV".into(), report_multipv);
-    (report_options, report_inherited_values)
+    options
+}
+
+/// Grace after a timed search's own limit before the session stops waiting for `bestmove`.
+const TIMED_SEARCH_GRACE: Duration = Duration::from_secs(3);
+
+/// A timed search ends itself, so a wall-clock bound is its time plus a grace. The other modes keep
+/// the actor's own per-line deadlines.
+fn analysis_search_deadline(go_mode: &GoMode, grace: Duration) -> Option<Duration> {
+    match go_mode {
+        GoMode::Time(milliseconds) => Some(Duration::from_millis(u64::from(*milliseconds)) + grace),
+        GoMode::PlayersTime(_) | GoMode::Depth(_) | GoMode::Nodes(_) | GoMode::Infinite => None,
+    }
+}
+
+/// One private engine process for a sequence of single-position searches. The game report and the
+/// Coach share it: `start` admits, resolves and spawns under the caller's key, `analyze` runs one
+/// bounded search, and the owner ends it with `terminate` (or hands the guard to its own cleanup
+/// through `into_guard`). Dropping it without either leaves the guard's detached cleanup.
+pub(crate) struct AnalysisSession {
+    proc: EngineProcess,
+    supervised: SupervisedEngine,
+    guard: RegistrationGuard,
+    authority: crate::infra::path_authority::SharedPathAuthority,
+    cancellation: CancellationToken,
+    uci_options: Vec<EngineOption>,
+    /// Spawn-time values of the resource options: the initial lease owns the child access, but the
+    /// individual values remain provenance for delayed transcript echoes. Freshly resolving the
+    /// same handle may produce different descriptor numbers.
+    inherited_resources: HashMap<String, (String, Vec<String>)>,
+    timed_search_grace: Duration,
+}
+
+impl AnalysisSession {
+    pub(crate) async fn start(
+        state: &AppState,
+        key: EngineKey,
+        engine: EngineHandle,
+        engine_id: String,
+        uci_options: Vec<EngineOption>,
+        cancellation: CancellationToken,
+    ) -> Result<Self, Error> {
+        let executable_ref = engine.id.clone();
+        // Admission is deliberately before any descriptor resolution. A canceled analysis must not
+        // acquire the authority lock or create a launch leaf.
+        let admission = state
+            .engine_supervisor
+            .admit_for_operation(key.clone(), engine_id, executable_ref, cancellation.clone())
+            .await?;
+        let (executable, initial_resolved) = resolve_launch(
+            state.pgn_path_authority.clone(),
+            engine,
+            PathOperation::EngineExecute,
+            &uci_options,
+            &admission,
+        )
+        .await?;
+        let resource_options: HashSet<String> =
+            crate::engine::effective_engine_options(&uci_options)
+                .iter()
+                .filter(|option| matches!(option, EngineOption::Resource { .. }))
+                .map(|option| option.name().to_owned())
+                .collect();
+        let inherited_resources = initial_resolved
+            .into_iter()
+            .filter(|option| resource_options.contains(&option.name))
+            .map(|option| (option.name, (option.value, option.resource_values)))
+            .collect();
+        let (proc, supervised, guard) =
+            EngineProcess::new(state.engine_supervisor.clone(), key, executable, admission).await?;
+        Ok(Self {
+            proc,
+            supervised,
+            guard,
+            authority: state.pgn_path_authority.clone(),
+            cancellation,
+            uci_options,
+            inherited_resources,
+            timed_search_grace: TIMED_SEARCH_GRACE,
+        })
+    }
+
+    /// Whether the owner cancelled the operation or the supervisor cancelled this engine.
+    pub(crate) fn ensure_active(&self) -> Result<(), Error> {
+        ensure_analysis_owner_active(&self.supervised, &self.cancellation)
+    }
+
+    /// One search of the position after `moves` from `fen` with `lines` principal variations.
+    pub(crate) async fn analyze(
+        &mut self,
+        fen: &str,
+        moves: &[String],
+        lines: u16,
+        go_mode: &GoMode,
+    ) -> Result<Vec<BestMoves>, Error> {
+        let configured_options = EngineOptions {
+            fen: fen.to_owned(),
+            moves: moves.to_vec(),
+            extra_options: analysis_options_with_lines(&self.uci_options, lines),
+        };
+        let mut resolved = resolve_option_leases(
+            self.authority.clone(),
+            &configured_options.extra_options,
+            self.cancellation.clone(),
+        )
+        .await?;
+        for option in &mut resolved {
+            restore_inherited_resource_provenance(option, &self.inherited_resources);
+        }
+        self.proc
+            .set_options(
+                configured_options,
+                resolved,
+                Some(self.cancellation.clone()),
+            )
+            .await?;
+
+        let search = analyze_position_with_owner(
+            &mut self.proc,
+            &self.supervised,
+            &self.cancellation,
+            go_mode,
+            moves,
+        );
+        let Some(deadline) = analysis_search_deadline(go_mode, self.timed_search_grace) else {
+            return search.await;
+        };
+        match tokio::time::timeout(deadline, search).await {
+            Ok(result) => result,
+            Err(_) => {
+                let overdue = Error::EngineTimeout("engine search did not finish in time".into());
+                let stopped = match self.proc.request_id {
+                    Some(request) => self.proc.base.stop_request(request).await,
+                    None => Ok(()),
+                };
+                Err(Error::with_cleanup(overdue, stopped))
+            }
+        }
+    }
+
+    pub(crate) async fn terminate(self) -> Result<(), Error> {
+        self.guard.terminate_now().await
+    }
+
+    fn into_guard(self) -> RegistrationGuard {
+        self.guard
+    }
 }
 
 #[tauri::command]
@@ -1407,7 +1537,6 @@ async fn analyze_game_core<R: tauri::Runtime>(
     if options.annotate_novelties && options.reference_db.is_none() {
         return Err(Error::MissingReferenceDatabase);
     }
-    let executable_ref = engine.id.clone();
     let analysis_key = EngineKey::new("analysis".into(), id.clone())?;
 
     let fen = Fen::from_ascii(options.fen.as_bytes())?;
@@ -1438,71 +1567,17 @@ async fn analyze_game_core<R: tauri::Runtime>(
         .filter(|&index| replay[index].terminal.is_none())
         .collect();
     let progress_lease = begin_progress(&state.progress_state, &app, id.clone())?;
-    // Admission is deliberately before any descriptor resolution. A canceled report must not
-    // acquire the authority lock or create a launch leaf.
-    let admission = match state
-        .engine_supervisor
-        .admit_for_operation(
-            analysis_key.clone(),
-            engine_id.clone(),
-            executable_ref.clone(),
-            cancellation.clone(),
-        )
-        .await
-    {
-        Ok(admission) => admission,
-        Err(error) => {
-            return Err(finish_analysis_failure(
-                None,
-                &state.progress_state,
-                &app,
-                &progress_lease,
-                error,
-            )
-            .await);
-        }
-    };
-    let (executable, initial_resolved) = match resolve_launch(
-        state.pgn_path_authority.clone(),
-        engine,
-        PathOperation::EngineExecute,
-        &uci_options,
-        &admission,
-    )
-    .await
-    {
-        Ok(launch) => launch,
-        Err(error) => {
-            return Err(finish_analysis_failure(
-                None,
-                &state.progress_state,
-                &app,
-                &progress_lease,
-                error,
-            )
-            .await);
-        }
-    };
-    let inherited_values: HashMap<String, String> = initial_resolved
-        .iter()
-        .map(|option| (option.name.clone(), option.value.clone()))
-        .collect();
-    let inherited_resource_values: HashMap<String, Vec<String>> = initial_resolved
-        .iter()
-        .map(|option| (option.name.clone(), option.resource_values.clone()))
-        .collect();
-    let (report_options, inherited_values) =
-        prepare_report_options(&uci_options, &inherited_values);
-
-    let (mut proc, supervised, guard) = match EngineProcess::new(
-        state.engine_supervisor.clone(),
+    let mut session = match AnalysisSession::start(
+        &state,
         analysis_key.clone(),
-        executable,
-        admission,
+        engine,
+        engine_id.clone(),
+        uci_options,
+        cancellation.clone(),
     )
     .await
     {
-        Ok(process) => process,
+        Ok(session) => session,
         Err(error) => {
             return Err(finish_analysis_failure(
                 None,
@@ -1530,8 +1605,8 @@ async fn analyze_game_core<R: tauri::Runtime>(
 
     for (step, &index) in search_order.iter().enumerate() {
         let moves = &replay[index].moves;
-        if let Err(cancelled) = ensure_analysis_owner_active(&supervised, &cancellation) {
-            fail_analysis_progress!(Some(guard), cancelled);
+        if let Err(cancelled) = session.ensure_active() {
+            fail_analysis_progress!(Some(session.into_guard()), cancelled);
         }
 
         if let Err(error) = update_progress_with_state(
@@ -1541,47 +1616,19 @@ async fn analyze_game_core<R: tauri::Runtime>(
             (step as f32 / search_order.len() as f32) * 100.0,
             ProgressState::Running,
         ) {
-            fail_analysis_progress!(Some(guard), error);
+            fail_analysis_progress!(Some(session.into_guard()), error);
         }
 
-        let configured_options = EngineOptions {
-            fen: options.fen.clone(),
-            moves: moves.clone(),
-            extra_options: report_options.clone(),
-        };
-        let mut resolved = match resolve_option_leases(
-            state.pgn_path_authority.clone(),
-            &configured_options.extra_options,
-            cancellation.clone(),
-        )
-        .await
-        {
-            Ok(resolved) => resolved,
-            Err(error) => fail_analysis_progress!(Some(guard), error),
-        };
-        for option in &mut resolved {
-            restore_inherited_resource_provenance(
-                option,
-                &inherited_values,
-                &inherited_resource_values,
-            );
-        }
-        if let Err(error) = proc
-            .set_options(configured_options, resolved, Some(cancellation.clone()))
-            .await
-        {
-            fail_analysis_progress!(Some(guard), error);
-        }
-
-        match analyze_position_with_owner(&mut proc, &supervised, &cancellation, &go_mode, moves)
+        match session
+            .analyze(&options.fen, moves, REPORT_MULTIPV, &go_mode)
             .await
         {
             Ok(best) => positions[index].best = best,
-            Err(error) => fail_analysis_progress!(Some(guard), error),
+            Err(error) => fail_analysis_progress!(Some(session.into_guard()), error),
         }
     }
 
-    if let Err(error) = guard.terminate_now().await {
+    if let Err(error) = session.terminate().await {
         fail_analysis_progress!(None, error);
     }
 
@@ -4236,15 +4283,158 @@ done
     #[test]
     fn report_option_prep_collapses_and_forces_multipv_on_both_sides() {
         let originals = vec![string_option("MultiPV", "2"), string_option("MultiPV", "4")];
-        let inherited = HashMap::from([("MultiPV".into(), "4".into())]);
 
-        let (extras, inherited) = prepare_report_options(&originals, &inherited);
+        let extras = analysis_options_with_lines(&originals, REPORT_MULTIPV);
 
         assert_eq!(
             extras,
             vec![string_option("MultiPV", &REPORT_MULTIPV.to_string())]
         );
-        assert_eq!(inherited.get("MultiPV"), Some(&REPORT_MULTIPV.to_string()));
+    }
+
+    #[test]
+    fn analysis_options_add_the_line_count_when_the_engine_sets_none() {
+        let originals = vec![string_option("Hash", "64")];
+
+        assert_eq!(
+            analysis_options_with_lines(&originals, 3),
+            vec![string_option("Hash", "64"), string_option("MultiPV", "3")]
+        );
+    }
+
+    #[test]
+    fn only_a_timed_search_gets_a_wall_clock_deadline() {
+        assert_eq!(
+            analysis_search_deadline(&GoMode::Time(1_500), TIMED_SEARCH_GRACE),
+            Some(Duration::from_millis(1_500) + TIMED_SEARCH_GRACE)
+        );
+        for mode in [GoMode::Depth(20), GoMode::Nodes(1_000), GoMode::Infinite] {
+            assert_eq!(analysis_search_deadline(&mode, TIMED_SEARCH_GRACE), None);
+        }
+    }
+
+    #[cfg(unix)]
+    fn fixture_capture(directory: &tempfile::TempDir) -> String {
+        std::fs::read_to_string(directory.path().join("capture.log")).unwrap_or_default()
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn analysis_session_sends_each_calls_line_count_and_mirrors_it() {
+        let (directory, app, engine, _) = resource_engine_fixture();
+        std::fs::write(directory.path().join("release"), b"").unwrap();
+        let state = app.state::<AppState>().inner().clone();
+        let key = EngineKey::new("analysis".into(), "session-lines".into()).unwrap();
+        let mut session = AnalysisSession::start(
+            &state,
+            key,
+            engine,
+            "session-lines-engine".into(),
+            vec![string_option("MultiPV", "2")],
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        for lines in [3_u16, 5, 3] {
+            session
+                .analyze(&start_fen().to_string(), &[], lines, &GoMode::Depth(1))
+                .await
+                .unwrap();
+            let mirrored = session
+                .proc
+                .options
+                .extra_options
+                .iter()
+                .rev()
+                .find(|option| option.name() == "MultiPV")
+                .cloned();
+            assert_eq!(mirrored, Some(string_option("MultiPV", &lines.to_string())));
+        }
+        session.terminate().await.unwrap();
+
+        let sent: Vec<String> = fixture_capture(&directory)
+            .lines()
+            .filter_map(|line| line.strip_prefix("option=setoption name MultiPV value "))
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(sent, ["3", "5", "3"]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn analysis_session_stops_a_timed_search_that_outlives_its_deadline() {
+        let (directory, app, engine, _) = resource_engine_fixture();
+        let state = app.state::<AppState>().inner().clone();
+        let key = EngineKey::new("analysis".into(), "session-deadline".into()).unwrap();
+        let mut session = AnalysisSession::start(
+            &state,
+            key,
+            engine,
+            "session-deadline-engine".into(),
+            Vec::new(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let grace = Duration::from_millis(200);
+        session.timed_search_grace = grace;
+        // The fixture answers `go` only once `release` exists, so `bestmove` arrives after the
+        // deadline and the session's `stop` can then complete at the protocol boundary.
+        let release = directory.path().join("release");
+        let directory_for_release = directory.path().to_owned();
+        let releaser = tokio::spawn(async move {
+            loop {
+                let capture = std::fs::read_to_string(directory_for_release.join("capture.log"))
+                    .unwrap_or_default();
+                if capture.contains("go-ready") {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            tokio::time::sleep(grace + Duration::from_millis(250)).await;
+            std::fs::write(release, b"").unwrap();
+        });
+
+        let error = session
+            .analyze(&start_fen().to_string(), &[], 1, &GoMode::Time(20))
+            .await
+            .unwrap_err();
+        releaser.await.unwrap();
+
+        assert!(matches!(error, Error::EngineTimeout(_)), "{error:?}");
+        wait_for_fixture_capture(&directory, "wire=stop").await;
+        session.terminate().await.unwrap();
+    }
+
+    #[test]
+    fn provenance_is_restored_for_inherited_resource_options_only() {
+        let inherited = HashMap::from([(
+            "EvalFile".to_owned(),
+            (
+                "/proc/self/fd/7".to_owned(),
+                vec!["/proc/self/fd/7".to_owned()],
+            ),
+        )]);
+        let mut resource = ResolvedEngineOption {
+            name: "EvalFile".into(),
+            value: String::new(),
+            resources: Vec::new(),
+            resource_values: Vec::new(),
+        };
+        let mut lines = ResolvedEngineOption {
+            name: "MultiPV".into(),
+            value: "5".into(),
+            resources: Vec::new(),
+            resource_values: Vec::new(),
+        };
+
+        restore_inherited_resource_provenance(&mut resource, &inherited);
+        restore_inherited_resource_provenance(&mut lines, &inherited);
+
+        assert_eq!(resource.value, "/proc/self/fd/7");
+        assert_eq!(resource.resource_values, vec!["/proc/self/fd/7".to_owned()]);
+        assert_eq!(lines.value, "5");
     }
 
     #[cfg(unix)]
@@ -6315,8 +6505,10 @@ done
                 "process_interactive_search_output(",
             ),
             ("pub async fn analyze_game(", "analyze_game_core("),
+            ("async fn analyze_game_core<", "AnalysisSession::start("),
+            ("async fn analyze_game_core<", ".analyze("),
             (
-                "async fn analyze_game_core<",
+                "pub(crate) async fn analyze(",
                 "analyze_position_with_owner(",
             ),
             ("async fn analyze_position_with_owner(", "ingest_info_line("),

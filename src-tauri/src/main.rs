@@ -5093,16 +5093,28 @@ mod blocking_offload_scans {
             position_loop.contains("ingest_info_line("),
             "{position_loop}"
         );
+        // The report's positions run through the shared analysis session, whose `analyze` owns the
+        // production UCI position loop and whose `terminate` goes through the registration guard.
+        let session_search = body_at_indent(chess, "pub(crate) async fn analyze(");
+        assert!(
+            session_search.contains("analyze_position_with_owner("),
+            "{session_search}"
+        );
+        let session_terminate = body_at_indent(chess, "pub(crate) async fn terminate(self)");
+        assert!(
+            session_terminate.contains("terminate_now()"),
+            "{session_terminate}"
+        );
         let last_position = body
-            .rmatch_indices("analyze_position_with_owner(")
+            .rmatch_indices(".analyze(")
             .next()
             .map(|(index, _)| index)
-            .expect("analyze_game must call its production UCI position loop");
+            .expect("analyze_game must search its positions through the analysis session");
         let first_novelty = body
             .find("novelty_lookup_blocking")
             .expect("analyze_game must call novelty_lookup_blocking");
         let terminate_between = body
-            .match_indices("terminate_now()")
+            .match_indices("session.terminate()")
             .any(|(index, _)| index > last_position && index < first_novelty);
         assert!(
             terminate_between,
