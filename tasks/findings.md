@@ -28505,3 +28505,18 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Found by:** Claude Code (Fable 5.2), 2026-11-22, post-push CI wait of the build run coach-chat.
 * **Handled 2026-11-22** (Claude Code, Fable 5.2, build run coach-chat): commit "test(coach): wait for the sign-in page instead of expecting it to be open" (75db35abc) lets the test's opener send the page through a channel and waits up to ten seconds for it; no production change. Proof: with a 300 ms delay staged before the opener call, the old test fails with the runner's message (`left: []`) and the new one passes; the 156 Coach tests pass; `pnpm gates:push -- --rust` green on the repair commit (rust-test, rust-coverage, rust-lint, contract). Closure review by review-tests and review-root-cause (agy) approved without findings: the mechanism is confirmed, the production order stays, and no other test under `src-tauri/src/coach/` reads a spawned task's side effect without waiting for it. The CI runner is the remaining proof: the `rust` job of the `Test` run on the commit that carries this closure.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"f4ae5311f8b62bb4fb2ad6867b59fd979c142691cd70cdf26e17bd46d17f3c7b","header_sha256":"6bf8256cecedcf59fcd9b85366c23fd5f568c42da037ee4bfe66e7f6bc47fd18","header_status":"handled","input_sha256":"8913ef42ed7150dee9199f543a4e4e02de97f32e8bd8db6c1acae17d7a5ee7d0","kind":"mutation-receipt","operation":"0d7a1f3b58d7754b676c99aae03c986a4a7c86e1285121dc38abf66d19c24148","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-09"],"target":"f-20261122-09","v":1} -->
+
+---
+
+## 2026-11-22 — filed through the inbox spool
+
+### The opponent board e2e test presses Escape before the filters popover holds the focus
+
+* **ID:** f-20261122-10 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45064671308
+* **Where:** `e2e/database-files.spec.ts`, test `database-files: Prepare on board shows a linked opponent's over-the-board and online games side by side` (added by the build run opponent-online-accounts), the step that opens the second source's filters and closes them with Escape.
+* **Defect:** the filters are a Mantine `Popover` with `trapFocus` (`src/components/panels/database/ExplorerSourceHeader.tsx`). Its dropdown closes on Escape only from a key event inside it (`PopoverDropdown.mjs`, `onKeyDownCapture`), and the focus trap moves the focus into it from a timer (`use-focus-trap.mjs`, `setTimeout`). The test presses Escape right after two assertions on the popover's content, which do not wait for the focus.
+* **Failure scenario:** `Test` run 45064671308 on b7b69fd8d (a build-ledger-only commit), job `e2e`: `expect(locator).toHaveCount(expected)`, locator `[data-explorer-filters]`, expected 0, received 1 for 8 s at `e2e/database-files.spec.ts:4272`; 503 passed, 1 failed. The same test passed in the runs on the three commits before it and in every local gate run. While this is red, `pnpm ci:remote:check` refuses every push from every checkout.
+* **Fix:** wait until the focus is inside the popover before pressing Escape.
+* **Found by:** Claude Code (Fable 5.2), 2026-11-22, remote CI check before the push of the Coach's Gemini preset.
