@@ -5,15 +5,16 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { GameLink } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { error as logError, warn } from "@/platform/native";
+import { warnSafely } from "@/platform/errors";
+import { error as logError } from "@/platform/native";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
 import { useTauriListener } from "@/platform/useTauriListener";
 import { tabsAtom } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
-import { ChessComGameResponseError } from "@/utils/chess.com/api";
+import { ChessComGameResponseError, fetchChessComGamePgn } from "@/utils/chess.com/api";
+import { getLichessGame } from "@/utils/lichess/api";
 import { createTab, type SetTabs } from "@/utils/tabs";
 import { getGameName } from "@/utils/treeReducer";
-import { fetchGameLinkPgn, gameLinkSite, gameLinkUrl } from "./gameLink";
 
 /**
  * Serialises drains: `request()` starts one, and a request that arrives while one is running
@@ -52,7 +53,7 @@ type OpenContext = {
 /** Opens one linked game in a new analysis tab. Nothing else is started for it. */
 async function openGameLink(link: GameLink, context: OpenContext, signal: AbortSignal) {
     const { setTabs, showBoard, t } = context;
-    const site = gameLinkSite(link);
+    const site = link.site === "lichess" ? "Lichess" : "Chess.com";
     const notificationId = `game-link:${crypto.randomUUID()}`;
     notifications.show({
         id: notificationId,
@@ -63,7 +64,11 @@ async function openGameLink(link: GameLink, context: OpenContext, signal: AbortS
         message: t("GameLink.OpeningMessage", { site }),
     });
     try {
-        const tree = await parsePGN(await fetchGameLinkPgn(link));
+        const pgn =
+            link.site === "lichess"
+                ? await getLichessGame(link.game_id)
+                : await fetchChessComGamePgn(link.game_type, link.game_id);
+        const tree = await parsePGN(pgn);
         if (signal.aborted) return;
         const id = await createTab({
             tab: { name: getGameName(tree.headers), type: "analysis" },
@@ -77,12 +82,14 @@ async function openGameLink(link: GameLink, context: OpenContext, signal: AbortS
     } catch (cause) {
         if (signal.aborted) return;
         const title = t("GameLink.Failed", { site });
-        if (cause instanceof ChessComGameResponseError) {
+        if (cause instanceof ChessComGameResponseError && link.site === "chess-com") {
             void logError(cause.message);
             notifications.show({
                 color: "danger",
                 title,
-                message: t("ChessCom.InvalidResponse", { value: gameLinkUrl(link) }),
+                message: t("ChessCom.InvalidResponse", {
+                    value: `https://www.chess.com/game/${link.game_type}/${link.game_id}`,
+                }),
             });
         } else {
             notifyUnlessCancelled(title, cause);
@@ -94,8 +101,10 @@ async function openGameLink(link: GameLink, context: OpenContext, signal: AbortS
 
 /**
  * Opens the games the operating system hands to the app (`chessriddle-studio://` links from the
- * browser extension). The links wait natively; this takes them once at mount and again on every
- * wake event, and opens them one after another. Mounted once, below the router.
+ * browser extension). The links wait natively; this takes them at mount, again once the wake
+ * listener is registered, and on every wake event, and opens them one after another. A wake
+ * event sent before the listener existed is lost, so the drain after registration is what finds
+ * a link that arrived in between. Mounted once, below the router.
  */
 export function useIncomingGameLinks() {
     const setTabs = useSetAtom(tabsAtom);
@@ -113,7 +122,7 @@ export function useIncomingGameLinks() {
                 links = await tauri.takePendingGameLinks();
             } catch (cause) {
                 // The links stay queued natively; the next wake event takes them.
-                if (!signal.aborted) void warn(`Failed to take the waiting game links: ${cause}`);
+                if (!signal.aborted) warnSafely(`Failed to take the waiting game links: ${cause}`);
                 return;
             }
             for (const link of links) {
@@ -126,6 +135,8 @@ export function useIncomingGameLinks() {
     }, []);
 
     useTauriListener(tauriSubscriptions.gameLinkPending, () => request.current(), {
-        onError: (cause) => void warn(`Game link listener failed: ${cause.message}`),
+        onError: (cause) => warnSafely(`Game link listener failed: ${cause.message}`),
+        // Also without a listener: the links that wait now are still worth opening.
+        onSettled: () => void request.current(),
     });
 }

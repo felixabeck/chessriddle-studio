@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => {
     takePendingGameLinks: vi.fn(),
     subscribe: vi.fn(),
     unlisten: vi.fn(),
-    warn: vi.fn(),
     logError: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
@@ -23,6 +22,7 @@ const mocks = vi.hoisted(() => {
     fetchChessComGamePgn: vi.fn(),
     getLichessGame: vi.fn(),
     notifyUnlessCancelled: vi.fn(),
+    warnSafely: vi.fn(),
   };
 });
 
@@ -39,7 +39,11 @@ vi.mock("@/platform/tauri", () => ({
   ),
   tauriSubscriptions: { gameLinkPending: mocks.subscribe },
 }));
-vi.mock("@/platform/native", () => ({ warn: mocks.warn, error: mocks.logError }));
+vi.mock("@/platform/native", () => ({ error: mocks.logError }));
+vi.mock("@/platform/errors", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/platform/errors")>()),
+  warnSafely: mocks.warnSafely,
+}));
 vi.mock("@mantine/notifications", () => ({
   notifications: { show: mocks.show, hide: mocks.hide },
 }));
@@ -157,9 +161,39 @@ describe("useIncomingGameLinks", () => {
   test("does nothing visible when no link is waiting", async () => {
     await act(async () => root.render(<Probe />));
 
-    expect(mocks.takePendingGameLinks).toHaveBeenCalledOnce();
+    // Once at mount, once after the wake listener is registered.
+    expect(mocks.takePendingGameLinks).toHaveBeenCalledTimes(2);
     expect(mocks.show).not.toHaveBeenCalled();
     expect(mocks.createTab).not.toHaveBeenCalled();
+  });
+
+  test("opens a link that arrived before the wake listener was registered", async () => {
+    // Its wake event went to nobody: only the drain after registration can find it.
+    const registration = deferred<() => void>();
+    mocks.subscribe.mockReturnValue(registration.promise);
+    await act(async () => root.render(<Probe />));
+    expect(mocks.takePendingGameLinks).toHaveBeenCalledOnce();
+    expect(mocks.createTab).not.toHaveBeenCalled();
+
+    mocks.takePendingGameLinks.mockResolvedValueOnce([lichess]);
+    await act(async () => registration.resolve(mocks.unlisten));
+
+    expect(mocks.takePendingGameLinks).toHaveBeenCalledTimes(2);
+    expect(mocks.createTab).toHaveBeenCalledOnce();
+  });
+
+  test("still takes the waiting links when the wake listener cannot be registered", async () => {
+    const registration = deferred<() => void>();
+    mocks.subscribe.mockReturnValue(registration.promise);
+    await act(async () => root.render(<Probe />));
+
+    mocks.takePendingGameLinks.mockResolvedValueOnce([lichess]);
+    await act(async () => registration.reject(new Error("no event system")));
+
+    expect(mocks.createTab).toHaveBeenCalledOnce();
+    expect(mocks.warnSafely).toHaveBeenCalledExactlyOnceWith(
+      "Game link listener failed: no event system",
+    );
   });
 
   test("drains again on a wake event", async () => {
@@ -168,7 +202,7 @@ describe("useIncomingGameLinks", () => {
 
     await act(async () => wake());
 
-    expect(mocks.takePendingGameLinks).toHaveBeenCalledTimes(2);
+    expect(mocks.takePendingGameLinks).toHaveBeenCalledTimes(3);
     expect(mocks.fetchChessComGamePgn).toHaveBeenCalledExactlyOnceWith("live", "123");
     expect(mocks.createTab).toHaveBeenCalledOnce();
   });
@@ -265,7 +299,7 @@ describe("useIncomingGameLinks", () => {
 
     await act(async () => root.render(<Probe />));
 
-    expect(mocks.warn).toHaveBeenCalledExactlyOnceWith(
+    expect(mocks.warnSafely).toHaveBeenCalledExactlyOnceWith(
       "Failed to take the waiting game links: Error: ipc closed",
     );
     expect(mocks.show).not.toHaveBeenCalled();
@@ -281,7 +315,9 @@ describe("useIncomingGameLinks", () => {
 
     await act(async () => failListener(new Error("listener gone")));
 
-    expect(mocks.warn).toHaveBeenCalledExactlyOnceWith("Game link listener failed: listener gone");
+    expect(mocks.warnSafely).toHaveBeenCalledExactlyOnceWith(
+      "Game link listener failed: listener gone",
+    );
   });
 
   test("unmount aborts: a fetch that settles later opens nothing and its notification is cleared", async () => {
