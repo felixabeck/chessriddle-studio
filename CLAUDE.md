@@ -16,6 +16,7 @@ project's name.
 | `src/platform/` | The renderer's only sanctioned door to Tauri (`tauri.ts`, `native.ts`, `errors.ts`) |
 | `src/state/` | Jotai atoms + per-tab zustand tree stores with `sessionStorage` persistence |
 | `e2e/` | Playwright specs with committed snapshots |
+| `browser-extension/` | Chrome and Firefox extension that opens a finished Lichess or Chess.com game in Studio; `link-contract.json` is the link grammar it shares with `src-tauri/src/infra/game_link.rs` |
 | `scripts/` | Repo-local gate checkers (`check-bindings.mjs`, `check-tauri-command-boundary.mjs`, `check-ui-boundaries.mjs`, coverage and bundle reporters) |
 | `docs/` | `coverage.md`, `bundle-budgets.md`, `localization.md`, `signed-download-manifests.md`, `context/RULE-HISTORY.md` (on-demand history), `context/PRODUCT-DECISIONS.md` (product-decision precedent) |
 | `tasks/` | `findings.md` (deferred-findings ledger), `decisions.md`; driven by `scripts/findings.py` |

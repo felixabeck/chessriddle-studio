@@ -1,9 +1,9 @@
 (() => {
   "use strict";
-  const key = "__enCroissantContentScript";
+  const key = "__chessRiddleStudioContentScript";
   if (globalThis[key]) return;
-  const { getContext, deepLink } = globalThis.EnCroissantExtension;
-  const label = "Analyze in En Croissant";
+  const { getContext, deepLink } = globalThis.ChessRiddleStudioExtension;
+  const label = "Analyze in ChessRiddle Studio";
   let button = null;
   let timer = null;
   let interval = null;
@@ -24,9 +24,9 @@
     }
     if (!button) {
       button = document.createElement("a");
-      button.dataset.enCroissant = "analyze";
+      button.dataset.chessriddleStudio = "analyze";
       button.textContent = label;
-      button.title = "Open this game in the En Croissant desktop app (installation required)";
+      button.title = "Open this game in the ChessRiddle Studio desktop app (installation required)";
       button.setAttribute("aria-label", label);
       // A real link preserves keyboard access and the browser's user gesture
       // for external-protocol prompts. Revalidate synchronously on activation
@@ -46,8 +46,8 @@
     }
     const className =
       context.site === "lichess"
-        ? "ec-analyze ec-analyze--lichess button button-metal"
-        : "ec-analyze ec-analyze--chess cc-button-component cc-button-secondary";
+        ? "crs-analyze crs-analyze--lichess button button-metal"
+        : "crs-analyze crs-analyze--chess cc-button-component cc-button-secondary";
     if (button.className !== className) button.className = className;
     const href = deepLink(context.gameUrl);
     if (button.getAttribute("href") !== href) button.setAttribute("href", href);

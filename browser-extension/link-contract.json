@@ -17,6 +17,16 @@
       "game": { "site": "lichess", "game_id": "abcdefgh" }
     },
     {
+      "source": "https://lichess.org/game/Ab3dE6gH",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2FAb3dE6gH",
+      "game": { "site": "lichess", "game_id": "Ab3dE6gH" }
+    },
+    {
+      "source": "https://lichess.org/game/Ab3dE6gH/black",
+      "link": "chessriddle-studio://import?url=https%3A%2F%2Flichess.org%2FAb3dE6gH",
+      "game": { "site": "lichess", "game_id": "Ab3dE6gH" }
+    },
+    {
       "source": "https://www.chess.com/game/live/123456789",
       "link": "chessriddle-studio://import?url=https%3A%2F%2Fwww.chess.com%2Fgame%2Flive%2F123456789",
       "game": { "site": "chess-com", "game_type": "live", "game_id": "123456789" }

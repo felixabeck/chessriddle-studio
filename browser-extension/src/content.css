@@ -1,5 +1,5 @@
 /* Scoped styles only: never change the host's controls or layout globally. */
-a.ec-analyze[data-en-croissant="analyze"] {
+a.crs-analyze[data-chessriddle-studio="analyze"] {
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -21,18 +21,18 @@ a.ec-analyze[data-en-croissant="analyze"] {
   cursor: pointer;
 }
 
-a.ec-analyze--chess[data-en-croissant="analyze"] {
+a.crs-analyze--chess[data-chessriddle-studio="analyze"] {
   color: #fff;
   background: #454341;
   border: 1px solid #77736f;
   box-shadow: 0 2px 0 #262522;
 }
 
-a.ec-analyze--chess[data-en-croissant="analyze"]:hover {
+a.crs-analyze--chess[data-chessriddle-studio="analyze"]:hover {
   background: #575450;
 }
 
-a.ec-analyze--lichess[data-en-croissant="analyze"] {
+a.crs-analyze--lichess[data-chessriddle-studio="analyze"] {
   color: var(--c-font, #4d4d4d);
   background: var(--c-bg-box, #e8e6e2);
   border: 1px solid var(--c-border, #999);
@@ -40,18 +40,18 @@ a.ec-analyze--lichess[data-en-croissant="analyze"] {
   box-shadow: 0 2px 3px #0002;
 }
 
-a.ec-analyze--lichess[data-en-croissant="analyze"]:hover {
+a.crs-analyze--lichess[data-chessriddle-studio="analyze"]:hover {
   color: var(--c-primary, #286fa8);
   filter: brightness(1.08);
 }
 
-a.ec-analyze[data-en-croissant="analyze"]:focus-visible {
+a.crs-analyze[data-chessriddle-studio="analyze"]:focus-visible {
   outline: 3px solid #81b64c;
   outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  a.ec-analyze[data-en-croissant="analyze"] {
+  a.crs-analyze[data-chessriddle-studio="analyze"] {
     transition: none;
   }
 }

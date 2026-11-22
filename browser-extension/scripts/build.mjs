@@ -1,13 +1,14 @@
+// Builds the Chrome and Firefox packages. Usage: node scripts/build.mjs [--out <directory>]
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { zipSync } from "fflate";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
-const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-if (manifest.version !== pkg.version) throw new Error("Manifest/package versions must match");
-const dist = join(root, "dist");
+const outFlag = process.argv.indexOf("--out");
+const dist = outFlag === -1 ? join(root, "dist") : resolve(process.argv[outFlag + 1] ?? "");
+if (outFlag !== -1 && !process.argv[outFlag + 1]) throw new Error("--out needs a directory");
 await rm(dist, { recursive: true, force: true });
 
 async function zipEntries(directory, prefix = "") {
@@ -36,7 +37,7 @@ for (const browser of ["chrome", "firefox"]) {
   for (const path of ["src", "icons"])
     await cp(join(root, path), join(target, path), { recursive: true });
   await cp(join(root, "..", "LICENSE"), join(target, "LICENSE"));
-  const archive = join(dist, `en-croissant-${browser}-${manifest.version}.zip`);
+  const archive = join(dist, `chessriddle-studio-${browser}-${manifest.version}.zip`);
   await writeFile(archive, zipSync(await zipEntries(target), { level: 9 }));
   console.log(`Built ${archive}`);
 }
