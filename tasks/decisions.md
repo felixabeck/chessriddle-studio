@@ -13691,3 +13691,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The kernel's OOM dumps show anonymous memory at the 4 GiB limit at every crash, and the limit was sized on 2026-09-30 for a suite less than half today's size. Reversal path: re-measure and change the two constants in `scripts/run-e2e-container.mjs`, the literals in `scripts/run-e2e-launchers-tests.mjs`, the invariant test in `scripts/run-push-gates-tests.mjs` and the prose in `.claude/rules/gate-tooling.md`.
 * **Decided by:** Claude Code (Opus 5.5), drain session 3e686aef-bb92-4e13-8e98-9d8f27fa7b88, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"fd6f132ef221b571a9ce2f8ddea9314b25cbcaeb4a1fba77475b1574f6f7fe75","input_sha256":"f6e6c5c913d68a36be8aff0a198c17cfe0bf21b1041d5a5eac41eabdb2ab4e76","kind":"mutation-receipt","operation":"fcc08a15c27d18d67d9bc688b9cababd443239c3f060830cc025874b09a91a31","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-05"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-25 — Does the game report stream per-position results or stay all-or-nothing?
+
+* **Question:** Should "Generate report" stream per-position results while it runs, or keep the engine pass all-or-nothing with cancel discarding the run?
+* **Governs:** -
+* **Chosen:** The engine pass stays all-or-nothing and cancel discards (DA1 of the plan). No partial or live-filling results.
+* **Rejected:** Streaming per-position results into the tree during the run.
+* **Reason:** Saved evaluations are edits: they mark the game edited and feed autosave (Felix's decision A on f-20261115-24), so partial writes would rewrite the user's file during a run, and a transient preview layer is machinery without an observed need. Reversal path: add a registered per-position event and a view-only preview layer.
+* **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"2079e3b7a0f4b90c09b8f2bce026cc0e4e66ab06ce870f2b33e3777949e54a83","input_sha256":"314681b1f80dd076a94e81b2e07890f3d464d1c7075b909a89b67066eb355a41","kind":"mutation-receipt","operation":"2a103075f2ac77f31e7562be6bd0c5936a79627e16563c63539c5278601d5554","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-25"],"target":"decisions-ledger","v":1} -->
