@@ -4268,6 +4268,11 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
     const filters = page.locator("[data-explorer-filters]");
     await expect(filters.getByRole("radio", { name: "White", exact: true })).toBeChecked();
     await expect(filters.getByRole("textbox", { name: "Search" })).toHaveCount(0);
+    // Escape closes the filters only from inside them, and the focus arrives there a moment
+    // after they open.
+    await expect
+        .poll(() => filters.evaluate((panel) => panel.contains(document.activeElement)))
+        .toBe(true);
     await page.keyboard.press("Escape");
     await expect(filters).toHaveCount(0);
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
