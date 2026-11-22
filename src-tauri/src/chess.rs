@@ -1798,7 +1798,9 @@ impl CaptureSearch<'_> {
             return Err(CaptureSearchStop::Budget);
         }
         self.nodes_left -= 1;
-        if self.nodes_left % SACRIFICE_CANCELLATION_INTERVAL == 0
+        if self
+            .nodes_left
+            .is_multiple_of(SACRIFICE_CANCELLATION_INTERVAL)
             && self.cancellation.is_cancelled()
         {
             return Err(CaptureSearchStop::Cancelled);
@@ -1829,7 +1831,7 @@ impl CaptureSearch<'_> {
             .iter()
             .filter_map(|mv| mv.capture().map(|captured| (mv, captured)))
             .collect();
-        captures.sort_by(|a, b| piece_value(b.1).cmp(&piece_value(a.1)));
+        captures.sort_by_key(|capture| std::cmp::Reverse(piece_value(capture.1)));
 
         for (capture, _) in captures {
             let mut new_position = position.clone();
@@ -6421,7 +6423,7 @@ done
         after.play_unchecked(&mv);
         let started = Instant::now();
         assert!(!is_sacrifice(&before, &after, false, &CancellationToken::new()).unwrap());
-        assert!(started.elapsed() < Duration::from_secs(30));
+        assert!(started.elapsed() < std::time::Duration::from_secs(30));
     }
 
     #[test]
