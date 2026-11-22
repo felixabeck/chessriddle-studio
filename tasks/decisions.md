@@ -13731,3 +13731,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** A marker is lost when the game is saved and reopened, so stale marks would survive exactly there; the "mark moves" option gives a user with hand-made marks a way to keep them. Reversal path: add a per-NAG origin field and remove only report-owned marks.
 * **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"fb84fb577a14ccd59c5e02fd5446bf3b3a66db752ce6b7940b7eae3093235c9a","input_sha256":"70541f3f45d890930201adb55866ca24363e201211ff67e7287c0ea6fe833cce","kind":"mutation-receipt","operation":"50ca8ad81441f175a4ded78c772659e072bf87fe83132630304b80db7f666e41","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-08"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-09 — Is the report's novelty lookup batched?
+
+* **Question:** The novelty lookup runs one full index scan per ply until the first absent position. Should the game report batch it?
+* **Governs:** -
+* **Chosen:** Keep one scan per ply (d-20260904-02) unchanged.
+* **Rejected:** Batching the lookup into one scan.
+* **Reason:** Its cost on a large reference database has not been measured; nothing changes without a measurement (universal rule 12b). Reversal path: batch the queries in `novelty_lookup_blocking` after a measurement shows the need.
+* **Decided by:** Claude Code (Opus 5.5), planning session of the game-report plan (tasks/plans/2026-11-22-game-report-improvements.md), recorded by its build run, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"8506e63411e89da74acc0442d5a3817f5c38f04ba5e997dfe421eb1c2546ce59","input_sha256":"3a3534b81a579a2578451e0a8a98b9544bf2dfa78b69581e4e10872f2bc7ae9f","kind":"mutation-receipt","operation":"dc047783a0bc675b9e438839079f3c9d29510ec8f44678c72ff7148342ae603b","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-09"],"target":"decisions-ledger","v":1} -->
