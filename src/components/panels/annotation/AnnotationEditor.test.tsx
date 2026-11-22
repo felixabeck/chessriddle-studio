@@ -1430,3 +1430,136 @@ test("the Diagram control marks and unmarks the current position, the start posi
   expect(store.getState().root.children[0].diagram).toBeUndefined();
   expect(store.getState().root.diagram).toBe(true);
 });
+
+function slotControl() {
+  return host.querySelector<HTMLElement>('[aria-label="Board.Annotate.CommentPosition"]');
+}
+
+type SlotLabel = "Board.Annotate.BeforeMove" | "Board.Annotate.AfterMove";
+
+function slotInput(label: SlotLabel) {
+  return [...slotControl()!.querySelectorAll<HTMLInputElement>("input")].find(
+    (candidate) => host.querySelector(`label[for="${candidate.id}"]`)?.textContent === label,
+  )!;
+}
+
+/** The radio of the slot the editor writes is the checked one. */
+function expectCheckedSlot(label: SlotLabel) {
+  expect(slotInput(label).checked).toBe(true);
+  const other: SlotLabel =
+    label === "Board.Annotate.BeforeMove"
+      ? "Board.Annotate.AfterMove"
+      : "Board.Annotate.BeforeMove";
+  expect(slotInput(other).checked).toBe(false);
+}
+
+async function chooseSlot(label: SlotLabel) {
+  await act(async () => slotInput(label).click());
+  expectCheckedSlot(label);
+}
+
+async function typeAtEnd(text: string) {
+  for (const character of text) {
+    await act(async () => {
+      const end = editor().state.doc.content.size - 1;
+      editor().view.dispatch(editor().state.tr.insert(end, editor().schema.text(character, [])));
+    });
+  }
+}
+
+/** 1. e4 e5 (1... c5) — the editor sits on 1... c5, the first move of a variation. */
+async function mountOnVariationStart(startingComment?: string) {
+  await mount("");
+  await act(async () => {
+    store.getState().makeMoves({ payload: ["e4", "e5"] });
+    store.getState().goToMove([0]);
+    store.getState().makeMove({ payload: "c5" });
+  });
+  expect(store.getState().position).toEqual([0, 1]);
+  if (startingComment !== undefined) {
+    await act(async () => {
+      store.setState((state) => {
+        const root = structuredClone(state.root);
+        root.children[0].children[1].startingComment = startingComment;
+        return { root };
+      });
+    });
+  }
+}
+
+test("the before/after switch appears on a variation's first move, not on main continuations", async () => {
+  await mountOnVariationStart();
+  expect(slotControl()).not.toBeNull();
+  expectCheckedSlot("Board.Annotate.AfterMove");
+  await act(async () => store.getState().goToMove([0, 0]));
+  expect(slotControl()).toBeNull();
+  await act(async () => store.getState().goToMove([0]));
+  expect(slotControl()).toBeNull();
+  await act(async () => store.getState().goToStart());
+  expect(slotControl()).toBeNull();
+});
+
+test("the before slot writes the comment in front of the variation's first move", async () => {
+  await mountOnVariationStart();
+  await chooseSlot("Board.Annotate.BeforeMove");
+  expect(editor().getText()).toBe("");
+  // One character at a time: a typed trailing space must survive until the next word.
+  await typeAtEnd("Also good:");
+  await typeAtEnd(" c5");
+  const node = store.getState().currentNode();
+  // The editor's Markdown dialect, exactly as the after comment would store it.
+  expect(node.startingComment).toBe("Also good\\: c5");
+  expect(node.comment).toBe("");
+  expect(editor().getText()).toBe("Also good: c5");
+  expect(writeComment).not.toHaveBeenCalled();
+  expect(store.getState().dirty).toBe(true);
+
+  await chooseSlot("Board.Annotate.AfterMove");
+  expect(editor().getText()).toBe("");
+  await typeAtEnd("Sicilian");
+  expect(store.getState().currentNode().comment).toBe("Sicilian");
+  expect(store.getState().currentNode().startingComment).toBe("Also good\\: c5");
+});
+
+test("editing the before comment keeps its embedded commands and clearing it removes it", async () => {
+  await mountOnVariationStart("[%cal Ge2e4] [%emt 0:00:05] old");
+  await chooseSlot("Board.Annotate.BeforeMove");
+  expect(editor().getText()).toBe("old");
+  await typeAtEnd("!");
+  expect(store.getState().currentNode().startingComment).toBe("[%cal Ge2e4] [%emt 0:00:05] old!");
+
+  await act(async () => editor().commands.clearContent(true));
+  expect(store.getState().currentNode().startingComment).toBe("[%cal Ge2e4] [%emt 0:00:05]");
+
+  await mountOnVariationStart("only prose");
+  await chooseSlot("Board.Annotate.BeforeMove");
+  await act(async () => editor().commands.clearContent(true));
+  expect(store.getState().currentNode()).not.toHaveProperty("startingComment");
+});
+
+test("the after slot is the default and a Before choice never writes on a mainline move", async () => {
+  await mountOnVariationStart();
+  await typeAtEnd("x");
+  expect(store.getState().currentNode().comment).toBe("x");
+  expect(store.getState().currentNode()).not.toHaveProperty("startingComment");
+
+  await chooseSlot("Board.Annotate.BeforeMove");
+  await act(async () => store.getState().goToMove([0, 0]));
+  expect(slotControl()).toBeNull();
+  await typeAtEnd("y");
+  expect(store.getState().currentNode().comment).toBe("y");
+  expect(store.getState().currentNode()).not.toHaveProperty("startingComment");
+});
+
+test("a promoted variation keeps its before comment editable until it is cleared", async () => {
+  await mountOnVariationStart("Sicilian");
+  await act(async () => store.getState().promoteVariation([0, 1]));
+  await act(async () => store.getState().goToMove([0, 0]));
+  expect(store.getState().currentNode().san).toBe("c5");
+  await chooseSlot("Board.Annotate.BeforeMove");
+  expect(editor().getText()).toBe("Sicilian");
+  await act(async () => editor().commands.clearContent(true));
+  expect(store.getState().currentNode()).not.toHaveProperty("startingComment");
+  // Cleared, the move is an ordinary main continuation again with no slot in front of it.
+  expect(slotControl()).toBeNull();
+});

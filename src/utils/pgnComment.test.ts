@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { extractDiagramMarker, splitPgnComment } from "./pgnComment";
+import { extractDiagramMarker, replacePgnCommentText, splitPgnComment } from "./pgnComment";
 
 test.each([
     ["[#]", ""],
@@ -27,4 +27,21 @@ test("splitPgnComment reports the marker apart from prose, commands and drawings
         shapes: [{ color: "green" }],
     });
     expect(splitPgnComment("Plan").diagram).toBe(false);
+});
+
+test.each([
+    { comment: "", text: "new", expected: "new" },
+    { comment: "old", text: "new", expected: "new" },
+    {
+        comment: "[%cal Ge2e4] old [%emt 0:00:05]",
+        text: "new",
+        expected: "[%cal Ge2e4] [%emt 0:00:05] new",
+    },
+    { comment: "[#] old", text: "new", expected: "[#] new" },
+    { comment: "[%cal Ge2e4] old", text: "  ", expected: "[%cal Ge2e4]" },
+    { comment: "old", text: "", expected: "" },
+])("replacePgnCommentText($comment, $text) keeps every command", ({ comment, text, expected }) => {
+    const replaced = replacePgnCommentText(comment, text);
+    expect(replaced).toBe(expected);
+    expect(splitPgnComment(replaced).text).toBe(text.trim());
 });

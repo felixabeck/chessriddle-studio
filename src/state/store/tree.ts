@@ -29,6 +29,7 @@ import { isPrefix } from "@/utils/misc";
 import type { BoundedGoMode } from "@/utils/engines";
 import { judgeReport } from "@/utils/score";
 import { playSound } from "@/utils/sound";
+import { replacePgnCommentText } from "@/utils/pgnComment";
 import { removeFileFreshness } from "@/state/fileFreshness";
 import {
     createNode,
@@ -47,6 +48,7 @@ import {
     getEffectiveGameEnd,
     getEffectiveTermination,
     getResolvedPathLength,
+    acceptsStartingComment,
     MAX_GAME_END_TERMINATION_LENGTH,
     treeIterator,
 } from "@/utils/treeReducer";
@@ -148,6 +150,11 @@ export interface TreeStoreState extends TreeState {
 
     setAnnotation: (payload: Annotation) => void;
     setComment: (payload: string) => void;
+    /**
+     * Replaces the prose of the comment in front of the current move, keeping the commands it
+     * carries; empty prose with no commands removes it. Only where `acceptsStartingComment` holds.
+     */
+    setStartingComment: (payload: string) => void;
     /** Flips the diagram marker of the node at `path`; without a path, of the current node. */
     toggleDiagram: (path?: number[]) => void;
     setHeaders: (payload: GameHeaders) => void;
@@ -439,6 +446,7 @@ type TreeMarkupActions = Pick<
     | "setStart"
     | "setAnnotation"
     | "setComment"
+    | "setStartingComment"
     | "toggleDiagram"
     | "setGameEnd"
     | "clearGameEnd"
@@ -807,6 +815,18 @@ function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
                     }
                 }),
             ),
+        setStartingComment: (payload) =>
+            set(
+                produce((state) => {
+                    if (!acceptsStartingComment(state.root, state.position)) return;
+                    const node = getNodeAtPath(state.root, state.position);
+                    const next = replacePgnCommentText(node.startingComment ?? "", payload);
+                    if (next === (node.startingComment ?? "")) return;
+                    state.dirty = true;
+                    if (next === "") delete node.startingComment;
+                    else node.startingComment = next;
+                }),
+            ),
         toggleDiagram: (path) =>
             set(
                 produce((state) => {
@@ -949,6 +969,7 @@ const UNDOABLE_EDITS = [
     "setStart",
     "setAnnotation",
     "setComment",
+    "setStartingComment",
     "toggleDiagram",
     "setGameEnd",
     "clearGameEnd",
@@ -989,6 +1010,7 @@ function editMergeKey(
     after: TreeStoreState,
 ): string | null {
     if (name === "setComment") return `comment:${before.position.join(".")}`;
+    if (name === "setStartingComment") return `startingComment:${before.position.join(".")}`;
     if (name === "setTermination") return "termination";
     if (name === "setHeaders" && before.root === after.root) {
         return `headers:${editedHeaderFields(before.headers, after.headers).join(",")}`;

@@ -1,5 +1,5 @@
 import { RichTextEditor } from "@mantine/tiptap";
-import { Box, Text } from "@mantine/core";
+import { Box, SegmentedControl, Text } from "@mantine/core";
 import { Grid2x2 } from "lucide-react";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
@@ -29,7 +29,8 @@ import {
   flattenCommentDocument,
   normalizeCommentDocument,
 } from "@/utils/commentSerializer";
-import { getNodeAtPath } from "@/utils/treeReducer";
+import { splitPgnComment } from "@/utils/pgnComment";
+import { acceptsStartingComment, getNodeAtPath } from "@/utils/treeReducer";
 import { formatKeymap } from "@/utils/formatKeymap";
 
 const CommentEscape = Extension.create({
@@ -93,8 +94,18 @@ function AnnotationEditor() {
   const position = useStore(store, (s) => s.position);
   const documentId = useStore(store, (s) => s.documentId);
   const setComment = useStore(store, (s) => s.setComment);
+  const setStartingComment = useStore(store, (s) => s.setStartingComment);
+  const [beforeChosen, setBeforeChosen] = useState(false);
 
   const currentNode = getNodeAtPath(root, position);
+  // A move that opens a variation, or still carries a comment from one, has a slot before it.
+  const canCommentBefore = acceptsStartingComment(root, position);
+  // Which comment of the current move the editor writes: the one before it, or the one after it.
+  const writesBefore = canCommentBefore && beforeChosen;
+  // The before comment is stored verbatim; the editor shows and writes only its prose.
+  const comment = writesBefore
+    ? splitPgnComment(currentNode.startingComment ?? "").text
+    : currentNode.comment;
   const spellCheck = useAtomValue(spellCheckAtom);
   const hintId = useId();
   const editor = useEditor(
@@ -135,7 +146,7 @@ function AnnotationEditor() {
         CommentEscape,
         Placeholder.configure({ placeholder: t("Board.Annotate.WriteHere") }),
       ],
-      content: currentNode.comment || null,
+      content: comment || null,
       contentType: "markdown",
       autofocus: false,
       onCreate: ({ editor }) => {
@@ -150,7 +161,7 @@ function AnnotationEditor() {
           (source) => editor.markdown!.parse(source),
           parseNotationComment,
         ]);
-        if (result.saved) setComment(result.source);
+        if (result.saved) (writesBefore ? setStartingComment : setComment)(result.source);
         setSaveFailed(!result.saved);
       },
       editorProps: {
@@ -161,13 +172,12 @@ function AnnotationEditor() {
         },
       },
     },
-    [position.join(), documentId, i18n.language],
+    [position.join(), documentId, i18n.language, writesBefore],
   );
 
-  const nodeIdentity = `${position.join()}:${currentNode.fen}`;
+  const editedFieldIdentity = `${position.join()}:${currentNode.fen}:${writesBefore}`;
   useEffect(() => {
     if (!editor) return;
-    const comment = currentNode.comment;
     const expected = flattenCommentDocument(normalizeCommentDocument(editor.getJSON()));
     // Equivalent source spellings must not replace the document or move its caret.
     const matches = [editor.markdown!.parse(comment), parseNotationComment(comment)].every(
@@ -177,7 +187,7 @@ function AnnotationEditor() {
       editor.commands.setContent(comment, { emitUpdate: false, contentType: "markdown" });
     }
     setSaveFailed(false);
-  }, [currentNode.comment, editor, nodeIdentity]);
+  }, [comment, editor, editedFieldIdentity]);
 
   const navigate = (forward: boolean) => {
     const state = store.getState();
@@ -249,6 +259,20 @@ function AnnotationEditor() {
             </Text>
           </RichTextEditor.Control>
         </RichTextEditor.ControlsGroup>
+
+        {canCommentBefore && (
+          <SegmentedControl
+            size="xs"
+            ml="auto"
+            aria-label={t("Board.Annotate.CommentPosition")}
+            value={writesBefore ? "before" : "after"}
+            onChange={(value) => setBeforeChosen(value === "before")}
+            data={[
+              { value: "before", label: t("Board.Annotate.BeforeMove") },
+              { value: "after", label: t("Board.Annotate.AfterMove") },
+            ]}
+          />
+        )}
       </RichTextEditor.Toolbar>
 
       <div

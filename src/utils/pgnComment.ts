@@ -75,3 +75,19 @@ export function splitPgnComment(comment: string, modelGameEnd = false): SplitCom
         diagram: marker.diagram,
     };
 }
+
+/** Every embedded command and diagram marker; a match may carry one adjacent space. */
+const KEPT_COMMENT_MARKUP = new RegExp(
+    `${PGN_COMMENT_COMMAND.source}|${DIAGRAM_MARKER.replace(/[[\]]/g, "\\$&")}`,
+    "g",
+);
+
+/**
+ * Replaces the prose of a verbatim PGN comment and keeps everything else it carries: each
+ * embedded command and diagram marker stays, in its order, in front of the new prose. Reading the
+ * result with `splitPgnComment` gives back `text` (trimmed). Empty when nothing is left.
+ */
+export function replacePgnCommentText(comment: string, text: string): string {
+    const kept = (comment.match(KEPT_COMMENT_MARKUP) ?? []).map((part) => part.trim());
+    return [...kept, text.trim()].filter((part) => part !== "").join(" ");
+}

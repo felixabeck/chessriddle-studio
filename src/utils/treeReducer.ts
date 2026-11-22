@@ -385,6 +385,17 @@ export function getResolvedPathLength(root: PathWalkNode, path: readonly unknown
     return resolvedLength;
 }
 
+/**
+ * Whether the move at `path` can carry a comment in front of it. PGN keeps one comment slot
+ * between two moves of a line, so a separate "before" comment exists only where a move opens a
+ * variation: it is an alternative to its parent's main continuation. A move that already carries
+ * one (a promoted variation) stays editable so the comment can be changed or cleared.
+ */
+export function acceptsStartingComment(root: TreeNode, path: readonly number[]): boolean {
+    if (path.length === 0 || getResolvedPathLength(root, path) !== path.length) return false;
+    return path[path.length - 1] > 0 || !!getNodeAtPath(root, [...path]).startingComment;
+}
+
 export function buildTranspositionMaps(root: TreeNode, startPath: number[] = []): BoardStateMap {
     const map: BoardStateMap = {};
     const startNode = getNodeAtPath(root, startPath);

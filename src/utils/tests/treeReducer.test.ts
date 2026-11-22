@@ -4,6 +4,7 @@ import { parseSan } from "chessops/san";
 import { describe, expect, test, vi } from "vitest";
 import * as chessops from "@/utils/chessops";
 import {
+    acceptsStartingComment,
     boardStateMapBuilder,
     countMainPly,
     createNode,
@@ -706,4 +707,23 @@ describe("findMainlinePath", () => {
         expect(findMainlinePath(tree.root, [fens[0]])).toBeNull();
         expect(findMainlinePath(tree.root, [playedLine(["c4"]).fens[0]])).toBeNull();
     });
+});
+
+test("acceptsStartingComment holds on a variation's first move and on a move still carrying one", () => {
+    const root = defaultTree().root;
+    const e4 = child("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", 1);
+    const d4 = child("rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1", 1);
+    root.children.push(e4, d4);
+
+    expect(acceptsStartingComment(root, [1])).toBe(true);
+    expect(acceptsStartingComment(root, [0])).toBe(false);
+    e4.startingComment = "kept after a promotion";
+    expect(acceptsStartingComment(root, [0])).toBe(true);
+
+    // Neither the start position nor a path that leaves the tree has a move to comment on, even
+    // when the node the walk would stop at carries a starting comment.
+    root.startingComment = "never written";
+    expect(acceptsStartingComment(root, [])).toBe(false);
+    expect(acceptsStartingComment(root, [2])).toBe(false);
+    expect(acceptsStartingComment(root, [0, 3])).toBe(false);
 });

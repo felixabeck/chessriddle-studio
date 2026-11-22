@@ -1,7 +1,8 @@
 import { parseUci } from "chessops";
 import { afterEach, expect, test } from "vitest";
 import type { GameAnalysis } from "@/bindings";
-import { getMainLine, reportRootFingerprint } from "@/utils/chess";
+import { parsePgn } from "chessops/pgn";
+import { getMainLine, getPGN, reportRootFingerprint } from "@/utils/chess";
 import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
 import { closeTreeStore, createTreeStore, retargetTreeStore, retryTreeStoreStorage } from "./tree";
 import { deserializeStorageValue, serializeStorageValue } from "./debouncedStorage";
@@ -376,4 +377,38 @@ test("undo and redo of a report restore its summary with the tree and leave the 
     expect(store.getState().report.summary).toEqual(first);
     expect(store.getState().report.inProgress).toBe(true);
     expect(store.getState().report.operationId).toBe("running");
+});
+
+test("the comment before a variation's first move is guarded, one undo step, and saved to PGN", () => {
+    const store = storeWithMoves();
+    store.getState().goToMove([0]);
+    store.getState().makeMove({ payload: "c5" });
+    expect(store.getState().position).toEqual([0, 1]);
+    const before = store.getState().history.past.length;
+    for (const text of ["A", "Al", "Also"]) store.getState().setStartingComment(text);
+    expect(store.getState().currentNode().startingComment).toBe("Also");
+    expect(store.getState().history.past).toHaveLength(before + 1);
+
+    const pgn = getPGN(store.getState().root, {
+        headers: null,
+        comments: true,
+        extraMarkups: true,
+        glyphs: true,
+        variations: true,
+    });
+    expect(pgn).toContain("({Also} 1... c5");
+    const reread = parsePgn(pgn)[0].moves.children[0].children[1].data;
+    expect(reread.startingComments).toEqual(["Also"]);
+
+    store.getState().undo();
+    expect(store.getState().currentNode()).not.toHaveProperty("startingComment");
+
+    // A mainline move has no slot of its own in front of it: the action changes nothing.
+    store.getState().goToMove([0, 0]);
+    const root = store.getState().root;
+    store.getState().setStartingComment("refused");
+    expect(store.getState().root).toBe(root);
+    store.getState().goToStart();
+    store.getState().setStartingComment("refused");
+    expect(store.getState().root).toBe(root);
 });
