@@ -3218,6 +3218,21 @@ test("a report summary and a report-line marker survive a seed/read round trip",
     expect((read as typeof tree).root.children[0].reportLine).toBe(true);
 });
 
+test.each(["notRequested", "found", "notFound", "unavailable"] as const)(
+    "a stored report summary with novelty %s hydrates unchanged",
+    (novelty) => {
+        const tree = structuredClone(defaultTree()) as unknown as Record<string, unknown>;
+        tree.report = {
+            inProgress: false,
+            operationId: null,
+            summary: { ...storedSummary, novelty },
+        };
+        sessionStorage.setItem(`summary-${novelty}`, JSON.stringify(tree));
+        const read = storage.read(`summary-${novelty}`)?.state as ReturnType<typeof defaultTree>;
+        expect(read.report.summary).toEqual({ ...storedSummary, novelty });
+    },
+);
+
 test("a malformed report summary hydrates as no summary without losing the tree", () => {
     const tree = structuredClone(defaultTree()) as unknown as Record<string, unknown>;
     (tree.root as { comment: string }).comment = "keep me";
