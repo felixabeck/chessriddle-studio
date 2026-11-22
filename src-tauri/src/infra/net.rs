@@ -40,9 +40,14 @@ fn validate_resolved_addresses(
     Ok(addresses)
 }
 
-/// Chess.com refuses requests without a User-Agent; every native provider request identifies the app.
+/// Chess.com refuses requests without a User-Agent and asks clients to name a contact; every
+/// native provider request identifies the app and carries the publisher's contact address.
 /// User-Agent product tokens cannot contain spaces (RFC 9110), hence "ChessRiddleStudio" rather than the display name "ChessRiddle Studio" used in feedback.rs.
-const STUDIO_USER_AGENT: &str = concat!("ChessRiddleStudio/", env!("CARGO_PKG_VERSION"));
+const STUDIO_USER_AGENT: &str = concat!(
+    "ChessRiddleStudio/",
+    env!("CARGO_PKG_VERSION"),
+    " (contact: info@chessriddle.com)"
+);
 
 /// Shared provider client policy. Every native request, including credential-bearing OAuth and
 /// account traffic, resolves only globally routable addresses, never follows redirects, and
@@ -361,6 +366,37 @@ mod tests {
                 .lines()
                 .any(|line| line == expected),
             "{captured}"
+        );
+        // Chess.com asks API clients to name a way to reach their publisher. The comparison
+        // above holds for any constant, so the shape of the contact part is pinned here; the
+        // address itself is written in one place only.
+        let transmitted = captured
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("user-agent")
+                    .then(|| value.trim().to_owned())
+            })
+            .expect("the request carries a user agent");
+        let contact = transmitted
+            .strip_prefix(concat!(
+                "ChessRiddleStudio/",
+                env!("CARGO_PKG_VERSION"),
+                " (contact: "
+            ))
+            .and_then(|rest| rest.strip_suffix(')'))
+            .expect("the user agent is the product token followed by one contact part");
+        let (mailbox, domain) = contact
+            .split_once('@')
+            .expect("the contact is a mail address");
+        let labels: Vec<&str> = domain.split('.').collect();
+        assert!(
+            !mailbox.is_empty()
+                && labels.len() >= 2
+                && labels.iter().all(|label| !label.is_empty())
+                && !domain.contains('@')
+                && !contact.contains(|c: char| c.is_whitespace() || "(),;".contains(c)),
+            "the contact must be one mail address without spaces, brackets or separators"
         );
     }
 }
