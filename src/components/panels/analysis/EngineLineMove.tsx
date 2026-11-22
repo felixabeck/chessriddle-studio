@@ -16,7 +16,8 @@ export function engineLineMoveNumber(halfMoves: number, index: number, threat: b
 
 /**
  * One move of an engine line, with its move number, that plays the line up to it on click.
- * `moves` is the line it belongs to, so a frozen preview line plays what it shows.
+ * `moves` is the line it belongs to, so a frozen preview line plays what it shows. With `onPick`
+ * the line is preview-only: a click hands the move to the preview and never changes the game.
  */
 function EngineLineMove({
   san,
@@ -27,6 +28,7 @@ function EngineLineMove({
   inert,
   previewed = false,
   onHover,
+  onPick,
 }: {
   san: string;
   index: number;
@@ -37,6 +39,7 @@ function EngineLineMove({
   /** The move a line preview board currently shows. */
   previewed?: boolean;
   onHover: (index: number) => void;
+  onPick?: (index: number) => void;
 }) {
   const { isWhite, moveNumber } = engineLineMoveNumber(halfMoves, index, threat);
   const store = useContext(TreeStateContext)!;
@@ -54,9 +57,8 @@ function EngineLineMove({
         onContextMenu={() => undefined}
         isStart={false}
         onClick={() => {
-          if (!inert && !threat) {
-            makeMoves({ payload: moves.slice(0, index + 1) });
-          }
+          if (onPick) onPick(index);
+          else if (!inert && !threat) makeMoves({ payload: moves.slice(0, index + 1) });
         }}
       />
     </Box>

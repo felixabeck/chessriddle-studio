@@ -4,31 +4,73 @@
 //! sees connection summaries and model lists, never a key or a token.
 
 pub(crate) mod address;
+pub(crate) mod answer;
+pub(crate) mod backend;
+pub(crate) mod chat_completions;
 pub(crate) mod connections;
+pub(crate) mod engine;
 pub(crate) mod error;
 pub(crate) mod http;
+pub(crate) mod lines;
 pub(crate) mod models;
+pub(crate) mod prompt;
+pub(crate) mod sse;
 #[cfg(test)]
 pub(crate) mod test_server;
+pub(crate) mod tools;
+pub(crate) mod turn;
 
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex, PoisonError},
+    time::{Duration, Instant},
+};
 
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use tauri_specta::Event;
 use tokio_util::sync::CancellationToken;
 
 use self::{
     address::Address,
+    answer::Segment,
+    backend::{Message, ModelBackend},
+    chat_completions::ChatCompletions,
     connections::{
         ApiConnectionInput, ConnectionRemoved, ConnectionSaved, ConnectionSummary, Connections,
         Secret,
     },
+    engine::{Analyst, EngineAnalyst},
     error::CoachError,
     http::HttpClients,
+    lines::TurnPosition,
     models::{ModelList, MAX_MODEL_LIST_BYTES},
+    tools::ToolActivity,
+    turn::{TurnEnd, TurnRequest, TurnSink},
 };
 use crate::{
     credentials::{CoachConnectionHandle, CoachCredentials},
-    infra::{blocking::BLOCKING_GATEWAY, path_authority::AppDataDir},
+    engine::{EngineKey, EngineOption},
+    infra::{
+        blocking::BLOCKING_GATEWAY,
+        path_authority::{AppDataDir, EngineHandle},
+    },
 };
+
+/// Turns that may run at the same time, over all windows and tabs.
+const MAX_TURNS: usize = 4;
+/// The longest a turn may take from its first engine search to its last word.
+const TURN_DEADLINE: Duration = Duration::from_secs(300);
+/// Streamed text is passed on at most this often, so a fast stream does not flood the renderer.
+const TEXT_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
+const MAX_QUESTION_CHARS: usize = 4000;
+const MAX_HISTORY_MESSAGES: usize = 40;
+const MAX_HISTORY_BYTES: usize = 96 * 1024;
+const MAX_GAME_BYTES: usize = 24 * 1024;
+const MAX_MODEL_CHARS: usize = 200;
+const MAX_EFFORT_CHARS: usize = 32;
+const MAX_TURN_PLIES: usize = 2000;
+const MAX_TAB_CHARS: usize = 128;
 
 /// Switch for release builds. The Coach stays hidden there until Felix's "release"; `.dev` builds
 /// always have it.
@@ -42,6 +84,294 @@ pub(crate) struct Coach {
     available: bool,
     connections: Connections,
     http: HttpClients,
+    turns: Arc<TurnSlots>,
+}
+
+/// The turns that run now, by window and tab: one per tab, [`MAX_TURNS`] overall.
+#[derive(Default)]
+struct TurnSlots(Mutex<HashSet<(String, String)>>);
+
+/// One running turn's place. Dropping it frees the place on every way the turn ends.
+struct TurnSlot {
+    slots: Arc<TurnSlots>,
+    key: (String, String),
+}
+
+impl TurnSlots {
+    fn take(self: &Arc<Self>, window: &str, tab: &str) -> Result<TurnSlot, CoachError> {
+        let key = (window.to_owned(), tab.to_owned());
+        let mut running = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if running.len() >= MAX_TURNS || !running.insert(key.clone()) {
+            return Err(CoachError::Busy);
+        }
+        Ok(TurnSlot {
+            slots: Arc::clone(self),
+            key,
+        })
+    }
+}
+
+impl Drop for TurnSlot {
+    fn drop(&mut self) {
+        self.slots
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.key);
+    }
+}
+
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum HistoryRole {
+    User,
+    Coach,
+}
+
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct HistoryMessage {
+    pub role: HistoryRole,
+    pub text: String,
+}
+
+/// One user message with everything the turn needs. All of it is renderer input and is bounded
+/// here before anything is started.
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct TurnInput {
+    pub connection: CoachConnectionHandle,
+    pub model: String,
+    /// Absent sends no effort level: the provider's default applies.
+    #[specta(optional)]
+    pub effort: Option<String>,
+    /// The FEN of the game's root.
+    pub start_fen: String,
+    /// The UCI moves from the root to the position on the board.
+    pub moves: Vec<String>,
+    /// Earlier user and coach texts, oldest first.
+    pub history: Vec<HistoryMessage>,
+    pub message: String,
+    /// The game as PGN.
+    pub game: String,
+    pub engine: EngineHandle,
+    pub engine_id: String,
+    pub uci_options: Vec<EngineOption>,
+}
+
+struct TurnEngine {
+    handle: EngineHandle,
+    id: String,
+    uci_options: Vec<EngineOption>,
+}
+
+fn plain(text: &str, max_chars: usize) -> bool {
+    !text.is_empty() && text.chars().count() <= max_chars && !text.chars().any(char::is_control)
+}
+
+/// The newest history messages that fit the bounds, oldest first. Older ones are left out rather
+/// than refused: a long conversation stays usable.
+fn bounded_history(history: Vec<HistoryMessage>) -> Vec<Message> {
+    let mut kept = Vec::new();
+    let mut bytes = 0;
+    for message in history.into_iter().rev() {
+        bytes += message.text.len();
+        if kept.len() == MAX_HISTORY_MESSAGES || bytes > MAX_HISTORY_BYTES {
+            break;
+        }
+        kept.push(match message.role {
+            HistoryRole::User => Message::User(message.text),
+            HistoryRole::Coach => Message::Assistant {
+                text: message.text,
+                tool_calls: Vec::new(),
+                extra: serde_json::Map::new(),
+            },
+        });
+    }
+    kept.reverse();
+    kept
+}
+
+impl TurnInput {
+    fn into_parts(
+        self,
+    ) -> Result<(CoachConnectionHandle, TurnPosition, TurnRequest, TurnEngine), CoachError> {
+        let question = self.message.trim();
+        let effort_is_plain = self.effort.as_deref().is_none_or(|effort| {
+            !effort.is_empty()
+                && effort.len() <= MAX_EFFORT_CHARS
+                && effort
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        });
+        if question.is_empty()
+            || question.chars().count() > MAX_QUESTION_CHARS
+            || !plain(&self.model, MAX_MODEL_CHARS)
+            || !effort_is_plain
+            || self.game.len() > MAX_GAME_BYTES
+            || self.moves.len() > MAX_TURN_PLIES
+        {
+            return Err(CoachError::InvalidInput);
+        }
+        let position = TurnPosition::new(&self.start_fen, &self.moves)?;
+        let request = TurnRequest {
+            model: self.model,
+            effort: self.effort,
+            history: bounded_history(self.history),
+            question: question.to_owned(),
+            game: self.game,
+        };
+        let engine = TurnEngine {
+            handle: self.engine,
+            id: self.engine_id,
+            uci_options: self.uci_options,
+        };
+        Ok((self.connection, position, request, engine))
+    }
+}
+
+/// What a running turn tells the renderer. Every turn ends with exactly one of `Completed`,
+/// `Cancelled` and `Failed`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub(crate) enum TurnUpdate {
+    Text {
+        delta: String,
+    },
+    /// The text streamed so far is superseded by what follows.
+    Reset,
+    /// The engine is checking this line (SAN from the turn position; empty for the position).
+    Tool {
+        line: Vec<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Completed {
+        segments: Vec<Segment>,
+        /// Lines the model wrote that are not legal; they are in `segments` as plain text.
+        failed_lines: u32,
+    },
+    Cancelled {
+        text: String,
+    },
+    Failed {
+        error: CoachError,
+        text: String,
+    },
+}
+
+/// Broadcast to every window; the receiver keeps only the turn it is waiting for.
+#[derive(Clone, Debug, Serialize, Type, Event)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CoachTurnEvent {
+    pub tab: String,
+    /// The turn's id: the ticket of its analysis operation.
+    pub turn: String,
+    pub update: TurnUpdate,
+}
+
+struct EventSink<'a, R: tauri::Runtime> {
+    app: &'a tauri::AppHandle<R>,
+    tab: &'a str,
+    turn: &'a str,
+    /// The text of the running round, for a turn that ends by its deadline.
+    text: String,
+    pending: String,
+    flushed_at: Instant,
+}
+
+impl<R: tauri::Runtime> EventSink<'_, R> {
+    fn emit(&self, update: TurnUpdate) {
+        let event = CoachTurnEvent {
+            tab: self.tab.to_owned(),
+            turn: self.turn.to_owned(),
+            update,
+        };
+        if let Err(error) = event.emit(self.app) {
+            log::warn!("coach: turn event was not delivered: {error}");
+        }
+    }
+
+    fn flush(&mut self) {
+        if !self.pending.is_empty() {
+            let delta = std::mem::take(&mut self.pending);
+            self.emit(TurnUpdate::Text { delta });
+        }
+        self.flushed_at = Instant::now();
+    }
+}
+
+impl<R: tauri::Runtime> TurnSink for EventSink<'_, R> {
+    fn text(&mut self, delta: &str) {
+        self.text.push_str(delta);
+        self.pending.push_str(delta);
+        if self.flushed_at.elapsed() >= TEXT_FLUSH_INTERVAL {
+            self.flush();
+        }
+    }
+
+    fn reset(&mut self) {
+        self.text.clear();
+        self.pending.clear();
+        self.emit(TurnUpdate::Reset);
+    }
+
+    fn tool(&mut self, activity: &ToolActivity) {
+        self.flush();
+        self.emit(TurnUpdate::Tool {
+            line: activity.line.clone(),
+        });
+    }
+}
+
+/// Runs an admitted turn to its end and reports it: progress while it runs, then exactly one
+/// terminal event. The terminal update is also returned, for the command's own reply.
+#[allow(clippy::too_many_arguments)]
+async fn drive_turn<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    tab: &str,
+    turn_id: &str,
+    backend: &dyn ModelBackend,
+    analyst: &mut dyn Analyst,
+    position: &TurnPosition,
+    request: &TurnRequest,
+    cancellation: &CancellationToken,
+    deadline: Duration,
+) -> TurnUpdate {
+    let mut sink = EventSink {
+        app,
+        tab,
+        turn: turn_id,
+        text: String::new(),
+        pending: String::new(),
+        flushed_at: Instant::now(),
+    };
+    let end = tokio::time::timeout(
+        deadline,
+        turn::run_turn(backend, analyst, position, request, &mut sink, cancellation),
+    )
+    .await;
+    sink.flush();
+    let update = match end {
+        Ok(TurnEnd::Completed(answer)) => TurnUpdate::Completed {
+            failed_lines: u32::try_from(answer.failed.len()).unwrap_or(u32::MAX),
+            segments: answer.segments,
+        },
+        Ok(TurnEnd::Failed {
+            error: CoachError::Cancelled,
+            text,
+        }) => TurnUpdate::Cancelled { text },
+        Ok(TurnEnd::Failed { error, text }) => TurnUpdate::Failed { error, text },
+        Err(_) => {
+            // Past the deadline the turn is over for everything that still listens to its token.
+            cancellation.cancel();
+            TurnUpdate::Failed {
+                error: CoachError::LimitExceeded,
+                text: std::mem::take(&mut sink.text),
+            }
+        }
+    };
+    sink.emit(update.clone());
+    update
 }
 
 impl Coach {
@@ -50,7 +380,16 @@ impl Coach {
             available,
             connections: Connections::new(credentials),
             http: HttpClients::new()?,
+            turns: Arc::default(),
         })
+    }
+
+    /// The model backend of a connection, from what is stored for it now.
+    async fn backend(&self, handle: CoachConnectionHandle) -> Result<ChatCompletions, CoachError> {
+        let Secret::Api { address, key } = self.connections.secret(handle).await?;
+        let address = Address::parse(&address).map_err(|_| CoachError::NeedsRepair)?;
+        let client = self.http.for_address(&address).clone();
+        Ok(ChatCompletions::new(client, address, key))
     }
 
     async fn models(&self, handle: CoachConnectionHandle) -> Result<ModelList, CoachError> {
@@ -138,6 +477,79 @@ pub(crate) async fn coach_models(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<ModelList, CoachError> {
     coach(&state)?.models(handle).await
+}
+
+/// Runs one Coach turn. The turn is an analysis operation: `id` is the ticket the renderer
+/// reserved with `prepare_analysis` for this tab, its engine runs under the analysis key of that
+/// ticket, and `cancel_analysis`, closing the tab, a reload and quitting all end it. The command
+/// returns when the turn is over, with the same terminal update the turn's last event carried: the
+/// renderer takes whichever arrives first and ignores the other. An `Err` means the turn never
+/// started, and no event follows.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn coach_turn(
+    id: String,
+    tab: String,
+    turn: TurnInput,
+    state: tauri::State<'_, crate::AppState>,
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<TurnUpdate, CoachError> {
+    start_turn(id, tab, turn, state.inner(), app, window.label()).await
+}
+
+async fn start_turn<R: tauri::Runtime>(
+    id: String,
+    tab: String,
+    turn: TurnInput,
+    state: &crate::AppState,
+    app: tauri::AppHandle<R>,
+    window: &str,
+) -> Result<TurnUpdate, CoachError> {
+    let coach = coach(state)?;
+    if !plain(&tab, MAX_TAB_CHARS) {
+        return Err(CoachError::InvalidInput);
+    }
+    let (connection, position, request, engine) = turn.into_parts()?;
+    let slot = coach.turns.take(window, &tab)?;
+    let backend = coach.backend(connection).await?;
+    let key =
+        EngineKey::new("analysis".into(), id.clone()).map_err(|_| CoachError::InvalidInput)?;
+    let operation = state
+        .operations
+        .claim_analysis(&id, window, &tab, &format!("coach_turn {id}"))
+        .map_err(|_| CoachError::InvalidInput)?;
+    let cancellation = operation.token();
+    let state = state.clone();
+    let workflow = async move {
+        let _slot = slot;
+        let mut analyst = EngineAnalyst::new(
+            state,
+            key,
+            engine.handle,
+            engine.id,
+            engine.uci_options,
+            cancellation.clone(),
+            position.start_fen().to_owned(),
+        );
+        let end = drive_turn(
+            &app,
+            &tab,
+            &id,
+            &backend,
+            &mut analyst,
+            &position,
+            &request,
+            &cancellation,
+            TURN_DEADLINE,
+        )
+        .await;
+        analyst.finish().await;
+        Ok(end)
+    };
+    crate::infra::operations::run_native_operation(operation, "coach_turn", workflow)
+        .await
+        .map_err(|_| CoachError::ProviderFailure)
 }
 
 #[cfg(test)]
@@ -327,5 +739,431 @@ mod tests {
             coach.models(unknown).await.unwrap_err(),
             CoachError::NotFound
         );
+    }
+
+    const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    fn turn_input(connection: CoachConnectionHandle) -> TurnInput {
+        TurnInput {
+            connection,
+            model: "test-model".into(),
+            effort: None,
+            start_fen: START.into(),
+            moves: vec!["e2e4".into()],
+            history: Vec::new(),
+            message: "  What is the plan?  ".into(),
+            game: "1. e4 *".into(),
+            engine: EngineHandle {
+                id: crate::infra::path_authority::PathRef {
+                    id: "missing-engine".into(),
+                },
+                kind: crate::infra::path_authority::EngineHandleKind::Engine,
+            },
+            engine_id: "missing-engine".into(),
+            uci_options: Vec::new(),
+        }
+    }
+
+    fn some_handle() -> CoachConnectionHandle {
+        CoachConnectionHandle(uuid::Uuid::new_v4().to_string())
+    }
+
+    /// A mock app with the turn event mounted and every event of a turn collected.
+    fn turn_app() -> (
+        tauri::App<tauri::test::MockRuntime>,
+        Arc<Mutex<Vec<serde_json::Value>>>,
+    ) {
+        use tauri::Listener;
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(CoachTurnEvent))
+            .mount_events(&app);
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sink = events.clone();
+        app.listen_any(CoachTurnEvent::NAME, move |event| {
+            let event = serde_json::from_str(event.payload()).expect("the event is JSON");
+            sink.lock().unwrap().push(event);
+        });
+        (app, events)
+    }
+
+    /// The updates as the renderer receives them.
+    fn updates(events: &Mutex<Vec<serde_json::Value>>) -> Vec<serde_json::Value> {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|event| event["update"].clone())
+            .collect()
+    }
+
+    fn wire(updates: &[TurnUpdate]) -> Vec<serde_json::Value> {
+        updates
+            .iter()
+            .map(|update| serde_json::to_value(update).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn a_tab_runs_one_turn_and_four_run_overall() {
+        let slots = Arc::new(TurnSlots::default());
+        let first = slots.take("main", "tab-0").unwrap();
+        assert_eq!(slots.take("main", "tab-0").err(), Some(CoachError::Busy));
+        // The same tab id in another window is another tab.
+        let other_window = slots.take("second", "tab-0").unwrap();
+        let more: Vec<_> = (1..MAX_TURNS - 1)
+            .map(|index| slots.take("main", &format!("tab-{index}")).unwrap())
+            .collect();
+        assert_eq!(slots.take("main", "tab-9").err(), Some(CoachError::Busy));
+        drop(first);
+        // A finished turn frees its place for the tab and for the total.
+        let again = slots.take("main", "tab-0").unwrap();
+        drop((other_window, more, again));
+        assert!(slots.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn turn_input_is_bounded_before_anything_starts() {
+        let (_, position, request, engine) = turn_input(some_handle()).into_parts().unwrap();
+        assert_eq!(request.question, "What is the plan?");
+        assert_eq!(position.moves(), ["e2e4"]);
+        assert_eq!(engine.id, "missing-engine");
+
+        let refuse = |change: fn(&mut TurnInput)| {
+            let mut input = turn_input(some_handle());
+            change(&mut input);
+            assert_eq!(input.into_parts().err(), Some(CoachError::InvalidInput));
+        };
+        refuse(|input| input.message = "   ".into());
+        refuse(|input| input.message = "x".repeat(MAX_QUESTION_CHARS + 1));
+        refuse(|input| input.model = String::new());
+        refuse(|input| input.model = "m\n".into());
+        refuse(|input| input.model = "m".repeat(MAX_MODEL_CHARS + 1));
+        refuse(|input| input.effort = Some(String::new()));
+        refuse(|input| input.effort = Some("high\"}".into()));
+        refuse(|input| input.effort = Some("e".repeat(MAX_EFFORT_CHARS + 1)));
+        refuse(|input| input.game = "g".repeat(MAX_GAME_BYTES + 1));
+        refuse(|input| input.moves = vec!["e2e4".into(); MAX_TURN_PLIES + 1]);
+        refuse(|input| input.moves = vec!["e2e5".into()]);
+        refuse(|input| input.start_fen = "not a fen".into());
+
+        let mut input = turn_input(some_handle());
+        input.effort = Some("x-high_2".into());
+        assert_eq!(
+            input.into_parts().unwrap().2.effort.as_deref(),
+            Some("x-high_2")
+        );
+    }
+
+    #[test]
+    fn history_keeps_the_newest_messages_that_fit() {
+        let message = |role, text: String| HistoryMessage { role, text };
+        let many: Vec<_> = (0..MAX_HISTORY_MESSAGES + 5)
+            .map(|index| message(HistoryRole::User, format!("question {index}")))
+            .collect();
+        let kept = bounded_history(many);
+        assert_eq!(kept.len(), MAX_HISTORY_MESSAGES);
+        assert_eq!(kept[0], Message::User("question 5".into()));
+        assert_eq!(
+            kept.last(),
+            Some(&Message::User(format!(
+                "question {}",
+                MAX_HISTORY_MESSAGES + 4
+            )))
+        );
+
+        let big = "x".repeat(MAX_HISTORY_BYTES / 2);
+        let kept = bounded_history(vec![
+            message(HistoryRole::User, big.clone()),
+            message(HistoryRole::Coach, big.clone()),
+            message(HistoryRole::User, "newest".into()),
+        ]);
+        assert_eq!(kept.len(), 2, "the oldest message no longer fits");
+        assert!(matches!(&kept[0], Message::Assistant { text, .. } if *text == big));
+        assert_eq!(kept[1], Message::User("newest".into()));
+    }
+
+    #[tokio::test]
+    async fn a_turn_reports_its_progress_and_exactly_one_terminal_event() {
+        use crate::coach::{tools::tests::ScriptedAnalyst, turn::tests as doubles};
+        let (app, events) = turn_app();
+        let backend = doubles::ScriptedBackend::new(vec![
+            doubles::calls("Checking.", &[r#"{"line":"Nf6"}"#]),
+            doubles::text("Play [[Nf6]]."),
+        ]);
+        let position = TurnPosition::new(START, &["e2e4".to_owned()]).unwrap();
+        drive_turn(
+            app.handle(),
+            "tab-1",
+            "turn-1",
+            &backend,
+            &mut ScriptedAnalyst::default(),
+            &position,
+            &doubles::request(),
+            &CancellationToken::new(),
+            TURN_DEADLINE,
+        )
+        .await;
+        let seen = events.lock().unwrap().clone();
+        assert!(seen
+            .iter()
+            .all(|event| event["tab"] == "tab-1" && event["turn"] == "turn-1"));
+        assert_eq!(
+            updates(&events),
+            wire(&[
+                // Pending text is passed on before the tool activity and before the end.
+                TurnUpdate::Text {
+                    delta: "Checking.".into()
+                },
+                TurnUpdate::Tool {
+                    line: vec!["Nf6".into()]
+                },
+                TurnUpdate::Reset,
+                TurnUpdate::Text {
+                    delta: "Play [[Nf6]].".into()
+                },
+                TurnUpdate::Completed {
+                    segments: vec![
+                        Segment::Text {
+                            text: "Play ".into()
+                        },
+                        Segment::Line {
+                            san: vec!["Nf6".into()],
+                            uci: vec!["g8f6".into()]
+                        },
+                        Segment::Text { text: ".".into() },
+                    ],
+                    failed_lines: 0,
+                },
+            ])
+        );
+        // The wire names are the renderer's contract.
+        assert_eq!(seen[1]["update"]["type"], "tool");
+        assert_eq!(seen[4]["update"]["type"], "completed");
+        assert_eq!(seen[4]["update"]["failedLines"], 0);
+        assert_eq!(seen[4]["update"]["segments"][1]["type"], "line");
+    }
+
+    #[tokio::test]
+    async fn cancelled_and_failed_turns_end_with_their_own_terminal_event() {
+        use crate::coach::{
+            backend::RoundFailure, tools::tests::ScriptedAnalyst, turn::tests as doubles,
+        };
+        let position = TurnPosition::new(START, &[]).unwrap();
+        for (failure, expected) in [
+            (
+                CoachError::Cancelled,
+                TurnUpdate::Cancelled {
+                    text: "Half".into(),
+                },
+            ),
+            (
+                CoachError::RateLimited,
+                TurnUpdate::Failed {
+                    error: CoachError::RateLimited,
+                    text: "Half".into(),
+                },
+            ),
+        ] {
+            let (app, events) = turn_app();
+            let backend = doubles::ScriptedBackend::new(vec![Err(RoundFailure {
+                error: failure,
+                text: "Half".into(),
+            })]);
+            drive_turn(
+                app.handle(),
+                "tab",
+                "turn",
+                &backend,
+                &mut ScriptedAnalyst::default(),
+                &position,
+                &doubles::request(),
+                &CancellationToken::new(),
+                TURN_DEADLINE,
+            )
+            .await;
+            assert_eq!(updates(&events), wire(&[expected]));
+        }
+    }
+
+    /// A model that streams a little and then never finishes.
+    struct StalledBackend;
+
+    #[async_trait::async_trait]
+    impl ModelBackend for StalledBackend {
+        async fn round(
+            &self,
+            _request: backend::RoundRequest<'_>,
+            on_text: &mut backend::TextSink<'_>,
+            _cancellation: &CancellationToken,
+        ) -> Result<backend::Round, backend::RoundFailure> {
+            on_text("So far");
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test]
+    async fn a_turn_past_its_deadline_fails_with_the_text_so_far_and_cancels_its_token() {
+        use crate::coach::{tools::tests::ScriptedAnalyst, turn::tests as doubles};
+        let (app, events) = turn_app();
+        let cancellation = CancellationToken::new();
+        let position = TurnPosition::new(START, &[]).unwrap();
+        drive_turn(
+            app.handle(),
+            "tab",
+            "turn",
+            &StalledBackend,
+            &mut ScriptedAnalyst::default(),
+            &position,
+            &doubles::request(),
+            &cancellation,
+            Duration::from_millis(40),
+        )
+        .await;
+        assert_eq!(
+            updates(&events),
+            wire(&[
+                TurnUpdate::Text {
+                    delta: "So far".into()
+                },
+                TurnUpdate::Failed {
+                    error: CoachError::LimitExceeded,
+                    text: "So far".into()
+                },
+            ])
+        );
+        assert!(cancellation.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn a_turn_is_refused_before_it_starts_and_leaves_no_trace() {
+        let (app, events) = turn_app();
+        // Off, or not initialized: nothing is looked at.
+        for coach in [None, Some(test_coach(false))] {
+            let state = crate::AppState::default();
+            let _directory = coach.map(|(coach, directory)| {
+                assert!(state.coach.set(coach).is_ok());
+                directory
+            });
+            assert_eq!(
+                start_turn(
+                    "ticket".into(),
+                    "tab".into(),
+                    turn_input(some_handle()),
+                    &state,
+                    app.handle().clone(),
+                    "main",
+                )
+                .await,
+                Err(CoachError::Unavailable)
+            );
+        }
+
+        let (coach, _directory) = test_coach(true);
+        let connection = local_connection(&coach, "http://127.0.0.1:9/v1", None).await;
+        let state = crate::AppState::default();
+        assert!(state.coach.set(coach).is_ok());
+        let start = |ticket: &str, tab: &str, input: TurnInput| {
+            start_turn(
+                ticket.to_owned(),
+                tab.to_owned(),
+                input,
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+        };
+        assert_eq!(
+            start("ticket", "", turn_input(connection.clone())).await,
+            Err(CoachError::InvalidInput)
+        );
+        let mut empty = turn_input(connection.clone());
+        empty.message = String::new();
+        assert_eq!(
+            start("ticket", "tab", empty).await,
+            Err(CoachError::InvalidInput)
+        );
+        assert_eq!(
+            start("ticket", "tab", turn_input(some_handle())).await,
+            Err(CoachError::NotFound)
+        );
+        // A ticket that was never reserved for this tab starts nothing.
+        assert_eq!(
+            start("ticket", "tab", turn_input(connection.clone())).await,
+            Err(CoachError::InvalidInput)
+        );
+        let ticket = state
+            .operations
+            .prepare_analysis("main", "other-tab")
+            .unwrap();
+        assert_eq!(
+            start(&ticket, "tab", turn_input(connection.clone())).await,
+            Err(CoachError::InvalidInput)
+        );
+        // Every refusal gave its place back, and none of them reported a turn.
+        let held = state
+            .coach
+            .get()
+            .unwrap()
+            .turns
+            .take("main", "tab")
+            .unwrap();
+        let ticket = state.operations.prepare_analysis("main", "tab").unwrap();
+        assert_eq!(
+            start(&ticket, "tab", turn_input(connection)).await,
+            Err(CoachError::Busy)
+        );
+        drop(held);
+        assert!(events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_started_turn_without_a_working_engine_fails_through_its_event_and_frees_everything()
+    {
+        let (app, events) = turn_app();
+        let (coach, _directory) = test_coach(true);
+        let connection = local_connection(&coach, "http://127.0.0.1:9/v1", None).await;
+        let state = crate::AppState::default();
+        assert!(state.coach.set(coach).is_ok());
+        let ticket = state.operations.prepare_analysis("main", "tab").unwrap();
+
+        let started = start_turn(
+            ticket.clone(),
+            "tab".into(),
+            turn_input(connection),
+            &state,
+            app.handle().clone(),
+            "main",
+        )
+        .await;
+        // The turn started, so the command answers with the end its last event also carried.
+        let failed = TurnUpdate::Failed {
+            error: CoachError::EngineFailed,
+            text: String::new(),
+        };
+        assert_eq!(started, Ok(failed.clone()));
+        let seen = events.lock().unwrap().clone();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0]["tab"], "tab");
+        assert_eq!(seen[0]["turn"], ticket.as_str());
+        assert_eq!(updates(&events), wire(&[failed]));
+        // The place, the operation and the engine key are free again.
+        assert!(state
+            .coach
+            .get()
+            .unwrap()
+            .turns
+            .0
+            .lock()
+            .unwrap()
+            .is_empty());
+        assert!(state
+            .operations
+            .claim_analysis(&ticket, "main", "tab", "again")
+            .is_err());
+        assert!(state
+            .engine_supervisor
+            .get_exact(&EngineKey::new("analysis".into(), ticket).unwrap())
+            .is_none());
     }
 }

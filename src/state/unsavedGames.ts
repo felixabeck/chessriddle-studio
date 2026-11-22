@@ -305,7 +305,10 @@ export class UnsavedGameMirror {
                 this.retire(entry);
             } else if (
                 state.dirty &&
-                (state.root !== previous.root || state.headers !== previous.headers)
+                (state.root !== previous.root ||
+                    state.headers !== previous.headers ||
+                    // The recovery copy carries the Coach conversation of its tab.
+                    state.coachSession !== previous.coachSession)
             ) {
                 this.scheduleWrite(entry, false);
             }

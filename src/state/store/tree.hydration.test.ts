@@ -10,6 +10,7 @@ import {
 import { serializeStorageValue } from "./debouncedStorage";
 import { tabStorage, TREE_STORAGE_VERSION } from "./tabStorage";
 import { emptyPuzzleSession } from "@/state/puzzleSession";
+import type { CoachSession } from "@/state/coachSession";
 import {
     captureReportOwner,
     closeTreeStore,
@@ -492,4 +493,107 @@ test("rehydration clears the report run flags and keeps a parsed summary", () =>
         operationId: null,
         summary,
     });
+});
+
+function coachExchange(text: string): CoachSession {
+    return {
+        version: 1,
+        id: "conversation",
+        messages: [
+            { id: "q", role: "user", text },
+            {
+                id: "a",
+                role: "coach",
+                segments: [{ type: "line", san: ["Nf3"], uci: ["g1f3"] }],
+                state: "completed",
+                fen: defaultTree().root.fen,
+                path: [],
+            },
+        ],
+    };
+}
+
+test("a Coach conversation is stored with its tab, restored with it, and never dirties the game", () => {
+    const id = crypto.randomUUID();
+    ids.push(id);
+    const store = createTreeStore(id);
+    expect(
+        store.getState().transitionCoachSession(() => coachExchange("What is the plan?")),
+    ).toEqual({ success: true, persistence: "saved" });
+    expect(store.getState().dirty).toBe(false);
+    closeTreeStore(id);
+    const restored = createTreeStore(id);
+    expect(restored).not.toBe(store);
+    expect(restored.getState().coachSession).toEqual(coachExchange("What is the plan?"));
+    expect(restored.getState().dirty).toBe(false);
+});
+
+test("a stored conversation that cannot be read is dropped and the game is still opened", () => {
+    const tree = defaultTree();
+    const memory = createTreeStore(undefined, tree);
+    memory.getState().makeMoves({ payload: ["e4", "e5"] });
+    const id = crypto.randomUUID();
+    ids.push(id);
+    sessionStorage.setItem(
+        id,
+        serializeStorageValue({
+            version: TREE_STORAGE_VERSION,
+            state: {
+                ...structuredClone({ ...tree, root: memory.getState().root }),
+                coachSession: { version: 7, messages: "not a conversation" },
+            },
+        }),
+    );
+    const hydrated = createTreeStore(id).getState();
+    expect(hydrated.root.children[0].children[0].san).toBe("e5");
+    expect(hydrated.coachSession).toBeUndefined();
+});
+
+test("another game starts another conversation; an edit and an undo keep the current one", () => {
+    const store = createTreeStore();
+    store.getState().transitionCoachSession(() => coachExchange("Plan?"));
+    const owns = store.getState().captureCoachSessionOwner();
+    store.getState().makeMoves({ payload: ["e4"] });
+    store.getState().undo();
+    expect(store.getState().coachSession).toEqual(coachExchange("Plan?"));
+    expect(owns()).toBe(true);
+
+    // A new conversation in the same game is another owner.
+    store.getState().transitionCoachSession(() => ({ ...coachExchange("Plan?"), id: "second" }));
+    expect(owns()).toBe(false);
+
+    for (const replace of [
+        () => store.getState().setState(defaultTree()),
+        () => store.getState().reset(),
+    ]) {
+        store.getState().transitionCoachSession(() => coachExchange("Plan?"));
+        const ownsGame = store.getState().captureCoachSessionOwner();
+        replace();
+        expect(store.getState().coachSession).toBeUndefined();
+        expect(ownsGame()).toBe(false);
+    }
+    // A tree that brings its own conversation back, as a restored recovery copy does, keeps it.
+    store.getState().setState({ ...defaultTree(), coachSession: coachExchange("Restored") });
+    expect(store.getState().coachSession?.messages[0]).toMatchObject({ text: "Restored" });
+});
+
+test("a conversation over its bounds is stored bounded, and a refused write changes nothing", () => {
+    const id = crypto.randomUUID();
+    ids.push(id);
+    const store = createTreeStore(id);
+    const many = Array.from({ length: 70 }, (_, index) => ({
+        id: `q${index}`,
+        role: "user" as const,
+        text: `question ${index}`,
+    }));
+    store.getState().transitionCoachSession(() => ({ version: 1, id: "c", messages: many }));
+    expect(store.getState().coachSession?.messages).toHaveLength(60);
+    expect(store.getState().coachSession?.messages[0].id).toBe("q10");
+
+    const before = store.getState().coachSession;
+    const refused = store
+        .getState()
+        .transitionCoachSession(() => ({ version: 1, id: "", messages: [] }) as CoachSession);
+    expect(refused.success).toBe(false);
+    expect(store.getState().coachSession).toBe(before);
 });

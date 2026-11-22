@@ -1,6 +1,7 @@
 import { warnSafely } from "@/platform/errors";
 import { ANNOTATION_INFO, MAX_NAG } from "@/utils/annotation";
 import { reportPersistError } from "@/state/persistError";
+import { coachSessionSchema, readStoredCoachSession } from "@/state/coachSession";
 import { puzzleSessionSchema } from "@/state/puzzleSession";
 import { extractDiagramMarker, splitPgnComment } from "@/utils/pgnComment";
 import { extractPgnDrawings, toDrawShape, type PgnDrawing } from "@/utils/drawings";
@@ -234,6 +235,7 @@ function createPersistedTreeSchema() {
             }),
             practicePath: pathSchema.nullable().optional(),
             puzzleSession: puzzleSessionSchema.optional(),
+            coachSession: coachSessionSchema.optional(),
         }),
     };
 }
@@ -442,6 +444,9 @@ export function migrateTreeForStorage(value: unknown): unknown {
         appendAttempted:
             typeof value.appendAttempted === "boolean" ? value.appendAttempted : hasAppendAttempted,
         report: migrateReport(value.report),
+        // A conversation that cannot be read is dropped here, before validation, so it can
+        // never make the game it belongs to unreadable.
+        coachSession: readStoredCoachSession(value.coachSession),
     };
 }
 

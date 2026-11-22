@@ -57,6 +57,57 @@ coachConnectionsAtom.onMount = (reload) => {
     void reload();
 };
 
+export type CoachModelsState =
+    | { connection: string | null; status: "idle" | "loading" }
+    | { connection: string; status: "ready"; models: ModelInfo[]; truncated: boolean }
+    | { connection: string; status: "failed"; error: CoachError };
+
+const modelsStateAtom = atom<CoachModelsState>({ connection: null, status: "idle" });
+
+/**
+ * The model list of one connection, as the provider reports it now. Writing a connection handle
+ * loads its list (again); only the answer for the connection asked last is accepted.
+ */
+export const coachModelsAtom = atom(
+    (get) => get(modelsStateAtom),
+    async (get, set, connection: string | null) => {
+        if (connection === null) {
+            set(modelsStateAtom, { connection: null, status: "idle" });
+            return;
+        }
+        set(modelsStateAtom, { connection, status: "loading" });
+        let next: CoachModelsState;
+        try {
+            const list = await tauri.coachModels(connection);
+            next = { connection, status: "ready", models: list.models, truncated: list.truncated };
+        } catch (cause) {
+            next = { connection, status: "failed", error: coachErrorCode(cause) };
+        }
+        const current = get(modelsStateAtom);
+        if (current.connection === connection && current.status === "loading") {
+            set(modelsStateAtom, next);
+        }
+    },
+);
+
+const MAX_NOTICE_CONNECTIONS = 64;
+
+/**
+ * The connections for which the user accepted the first-use notice (what is sent to whom). Kept
+ * per connection handle, newest last; without an entry no turn is started for that connection.
+ */
+export const coachNoticeAcceptedAtom = atomWithStorage<string[]>(
+    "coach-notice-accepted",
+    [],
+    createZodStorage(z.array(z.string().max(64)).max(MAX_NOTICE_CONNECTIONS), localStorage),
+);
+
+export function withCoachNoticeAccepted(accepted: readonly string[], connection: string) {
+    return [...accepted.filter((handle) => handle !== connection), connection].slice(
+        -MAX_NOTICE_CONNECTIONS,
+    );
+}
+
 /** `null` effort means "provider default": no effort level is sent. */
 const selectionSchema = z.object({
     connection: z.string().max(64).nullable(),

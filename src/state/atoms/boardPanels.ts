@@ -23,6 +23,11 @@ export const tabFamily = tabAtomFamily((_tab: string) =>
 
 export const reportModalOpenFamily = tabAtomFamily((_tab: string) => atom(false));
 
+/** The Coach turn that runs in a tab now; driven by `src/state/coachTurns.ts`. */
+export const coachTurnFamily = tabAtomFamily((_tab: string) =>
+    atom<import("../coachSession").CoachRunningTurn | null>(null),
+);
+
 /**
  * Where a pinned panel (the engine bar, the explorer strip) sits on the analysis board: above the
  * panel tabs, above or below the move notation, or below the board. "notation" is the stored name

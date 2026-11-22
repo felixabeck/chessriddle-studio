@@ -1373,6 +1373,8 @@ const tauriBootstrap = () => {
         list_puzzle_databases: { result: [] },
         kill_engines: { result: null },
         kill_engine: { result: null },
+        // A release build: the Coach is off unless a scenario turns it on.
+        coach_available: { result: false },
         get_engine_config: { result: { name: "E2E Stockfish", options: [] } },
         stop_engine: { result: false },
         release_engine_search: { result: null },

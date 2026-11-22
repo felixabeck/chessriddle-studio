@@ -17,6 +17,7 @@ import {
     TREE_STORAGE_VERSION,
     type TabTreeStorageStatus,
 } from "./tabStorage";
+import { boundCoachSession, coachSessionSchema, type CoachSession } from "@/state/coachSession";
 import { boundPuzzleSession } from "@/state/puzzleSession";
 import { reportPersistError } from "@/state/persistError";
 import { ANNOTATION_INFO, type Annotation, isBasicAnnotation, nagGlyph } from "@/utils/annotation";
@@ -81,9 +82,16 @@ export interface TreeStoreState extends TreeState {
     /** Refresh after an operation's own transition, combine with its live-position/token guard. */
     capturePuzzleSessionOwner: () => () => boolean;
     /** Builds from the latest live frame and publishes only after durable admission. */
-    transitionPuzzleSession: (
-        update: (draft: Draft<TreeState>) => void,
-    ) => PuzzleSessionTransitionResult;
+    transitionPuzzleSession: (update: (draft: Draft<TreeState>) => void) => SessionTransitionResult;
+    /**
+     * True while the store still holds the document and the Coach conversation it held when the
+     * check was captured: another game, a reset and a new conversation each end it.
+     */
+    captureCoachSessionOwner: () => () => boolean;
+    /** Replaces the Coach conversation, bounded, with the same durable admission. */
+    transitionCoachSession: (
+        update: (session: CoachSession | undefined) => CoachSession | undefined,
+    ) => SessionTransitionResult;
     currentNode: () => TreeNode;
     getNode: (path: number[]) => TreeNode | null;
 
@@ -186,7 +194,7 @@ export interface TreeStoreState extends TreeState {
 /** The store state written to tab storage: everything except `documentId` and `history`. */
 type PersistedTreeStoreState = Omit<TreeStoreState, "documentId" | "history">;
 
-export type PuzzleSessionTransitionResult =
+export type SessionTransitionResult =
     | { success: true; persistence: "saved" | "memory" }
     | { success: false; error: Error };
 
@@ -215,6 +223,8 @@ export function getCachedTreeStore(tab: string): TreeStore | undefined {
 function treeReplacementState(tree: CompleteTreeState) {
     return {
         puzzleSession: undefined,
+        // Another game starts another conversation, unless the tree brings its own back.
+        coachSession: undefined,
         ...tree,
         documentId: newDocumentId(),
         linkedSource: tree.linkedSource ?? null,
@@ -1058,6 +1068,30 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
     let install!: StoreApi<TreeStoreState>["setState"];
     let isCurrent = () => true;
     let persistenceKey = () => treeKey;
+    /**
+     * A change to one of the tab's sessions: built from the latest live frame, written durably,
+     * and installed only after that write was admitted.
+     */
+    const admitSessionTransition = (
+        get: () => TreeStoreState,
+        update: (draft: Draft<TreeState>) => void,
+    ): SessionTransitionResult => {
+        let candidate: TreeStoreState;
+        try {
+            if (!isCurrent()) throw new Error("The tab's tree owner has retired.");
+            candidate = produce(get(), update);
+            candidate = freeze({ ...candidate, ...prepareTreeForStorage(candidate) }, true);
+            if (id) tabStorage.seed(persistenceKey()!, candidate);
+        } catch (cause) {
+            const error = persistStorageWriteError(cause);
+            reportPersistError(error);
+            return { success: false, error };
+        }
+        // Subscriber failures occur after installation. They must not be reported as a
+        // refused save or invite a retry of a transition that is already durable.
+        install(candidate);
+        return { success: true, persistence: id ? "saved" : "memory" };
+    };
     const stateCreator: StateCreator<TreeStoreState> = (set, get) => ({
         ...initialTree,
         documentId: newDocumentId(),
@@ -1071,27 +1105,31 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
             return () => isCurrent() && persistenceKey() === key && get().puzzleSession === session;
         },
 
-        transitionPuzzleSession: (update) => {
-            let candidate: TreeStoreState;
-            try {
-                if (!isCurrent()) throw new Error("The puzzle tree owner has retired.");
-                candidate = produce(get(), (draft) => {
-                    update(draft);
-                    if (draft.puzzleSession)
-                        draft.puzzleSession = boundPuzzleSession(draft.puzzleSession);
-                });
-                candidate = freeze({ ...candidate, ...prepareTreeForStorage(candidate) }, true);
-                if (id) tabStorage.seed(persistenceKey()!, candidate);
-            } catch (cause) {
-                const error = persistStorageWriteError(cause);
-                reportPersistError(error);
-                return { success: false, error };
-            }
-            // Subscriber failures occur after installation. They must not be reported as a
-            // refused save or invite a retry of a transition that is already durable.
-            install(candidate);
-            return { success: true, persistence: id ? "saved" : "memory" };
+        transitionPuzzleSession: (update) =>
+            admitSessionTransition(get, (draft) => {
+                update(draft);
+                if (draft.puzzleSession)
+                    draft.puzzleSession = boundPuzzleSession(draft.puzzleSession);
+            }),
+
+        captureCoachSessionOwner: () => {
+            const key = persistenceKey();
+            const document = get().documentId;
+            const conversation = get().coachSession?.id;
+            return () =>
+                isCurrent() &&
+                persistenceKey() === key &&
+                get().documentId === document &&
+                get().coachSession?.id === conversation;
         },
+
+        transitionCoachSession: (update) =>
+            admitSessionTransition(get, (draft) => {
+                const next = update(draft.coachSession);
+                // Strict here: reading drops a conversation that does not match the schema, so a
+                // write that would not be read back is refused instead of silently lost.
+                draft.coachSession = next && coachSessionSchema.parse(boundCoachSession(next));
+            }),
 
         practicePath: null,
         setPracticePath: (path) => set({ practicePath: path }),

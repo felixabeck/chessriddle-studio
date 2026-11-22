@@ -141,6 +141,22 @@ async coachModels(handle: CoachConnectionHandle) : Promise<Result<ModelList, Coa
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Runs one Coach turn. The turn is an analysis operation: `id` is the ticket the renderer
+ * reserved with `prepare_analysis` for this tab, its engine runs under the analysis key of that
+ * ticket, and `cancel_analysis`, closing the tab, a reload and quitting all end it. The command
+ * returns when the turn is over, with the same terminal update the turn's last event carried: the
+ * renderer takes whichever arrives first and ignores the other. An `Err` means the turn never
+ * started, and no event follows.
+ */
+async coachTurn(id: string, tab: string, turn: TurnInput) : Promise<Result<TurnUpdate, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_turn", { id, tab, turn }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async closeSplashscreen() : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
@@ -1504,6 +1520,7 @@ export const events = __makeEvents__<{
 bestMovesPayload: BestMovesPayload,
 chessBaseSelected: ChessBaseSelected,
 clockUpdateEvent: ClockUpdateEvent,
+coachTurnEvent: CoachTurnEvent,
 completionChanged: CompletionChanged,
 convertProgress: ConvertProgress,
 databaseContentFailure: DatabaseContentFailure,
@@ -1515,6 +1532,7 @@ progressEvent: ProgressEvent
 bestMovesPayload: "best-moves-payload",
 chessBaseSelected: "chess-base-selected",
 clockUpdateEvent: "clock-update-event",
+coachTurnEvent: "coach-turn-event",
 completionChanged: "completion-changed",
 convertProgress: "convert-progress",
 databaseContentFailure: "database-content-failure",
@@ -1615,7 +1633,43 @@ export type CoachError =
 /**
  * The provider refused the key.
  */
-"keyRejected" | "storage" | "network" | "rateLimited" | "providerFailure"
+"keyRejected" | "storage" | "network" | "rateLimited" | "providerFailure" | 
+/**
+ * This tab already runs a turn, or too many turns run at once.
+ */
+"busy" | 
+/**
+ * The engine could not be started, crashed, or gave no result in time.
+ */
+"engineFailed" | 
+/**
+ * The provider does not know the chosen model.
+ */
+"modelUnavailable" | 
+/**
+ * The model cannot call tools, so it cannot ground its answer in the engine.
+ */
+"noFunctionCalling" | 
+/**
+ * The provider refused the chosen effort level.
+ */
+"effortRejected" | 
+/**
+ * The provider ended the answer at its length limit.
+ */
+"answerCutOff" | "contentFiltered" | 
+/**
+ * A bound of the turn was exceeded: rounds, text size, argument size or the deadline.
+ */
+"limitExceeded" | "cancelled"
+/**
+ * Broadcast to every window; the receiver keeps only the turn it is waiting for.
+ */
+export type CoachTurnEvent = { tab: string; 
+/**
+ * The turn's id: the ticket of its analysis operation.
+ */
+turn: string; update: TurnUpdate }
 export type CollectionDescriptor = { id: string; name: string; file: FileWorkspaceHandle; database: DatabaseHandle | null; account: AccountIdentity | null; status: CollectionStatus; generation: string; omitted: number; retiredDatabase: DatabaseHandle | null; fetchSinceMs: string | null; pendingBatch?: FileWorkspaceHandle | null }
 export type CollectionEdit = { kind: "delete"; games: LinkedGameLocator[] } | { kind: "cleanup"; empty: boolean; duplicates: boolean } | { kind: "renamePlayer"; from: string; to: string }
 export type CollectionStatus = "ready" | "stale" | "missing" | "retired" | "preservedOriginal" | "unavailable" | "trashed"
@@ -1791,6 +1845,8 @@ export type GameSort = "id" | "date" | "newest" | "whiteElo" | "blackElo" | "ply
 export type GameState = { gameId: string; session: bigint; revision: bigint; status: GameStatus; initialFen: string; moves: GameMove[]; currentFen: string; ply: number; turn: string; whiteTime: bigint | null; blackTime: bigint | null; whitePlayer: string; blackPlayer: string }
 export type GameStatus = "playing" | { finished: { result: GameResult } }
 export type GoMode = { t: "PlayersTime"; c: PlayersTime } | { t: "Depth"; c: number } | { t: "Time"; c: number } | { t: "Nodes"; c: number } | { t: "Infinite" }
+export type HistoryMessage = { role: HistoryRole; text: string }
+export type HistoryRole = "user" | "coach"
 export type InsertedDbGame = { id: number; stamp: string }
 export type InstalledEngineResult = { handle: EngineHandle; config: EngineConfig; filename: string }
 export type LatestRatingData = { time_control: string; date: string; time: string | null; game_id: number; player_elo: number }
@@ -1955,6 +2011,11 @@ export type ScoreValue =
  * Mate coming up in this many moves. Negative value means the engine is getting mated.
  */
 { type: "mate"; value: number }
+export type Segment = { type: "text"; text: string } | 
+/**
+ * A line that is legal from the turn position, in the library's SAN with its engine moves.
+ */
+{ type: "line"; san: string[]; uci: string[] }
 export type Sides = "BlackWhite" | "WhiteBlack" | "Any"
 export type SiteStatsData = { site: string; player: string; daily: DailyStatsData[]; openings: OpeningStatsData[]; colors: ColorStatsData[]; latest: LatestRatingData[] }
 export type SortDirection = "asc" | "desc"
@@ -1975,6 +2036,44 @@ export type TrainingTreeNode = { move: string; children: TrainingTreeNode[] }
 export type TrainingVerdict = { isCorrect: boolean; tooShort: boolean; ratingChange: number; playerRating: number | null; puzzleRating: number; rated: boolean; ratingPending: boolean; feedbackCode: TrainingFeedbackCode; feedbackContext: TrainingFeedbackContext | null; correctVariation: string[]; incorrectMove: string | null; correctMove: string | null; incorrectMovePath: number[] | null }
 export type TrashCursor = { seconds: bigint; item: string }
 export type TrashItemId = string
+/**
+ * One user message with everything the turn needs. All of it is renderer input and is bounded
+ * here before anything is started.
+ */
+export type TurnInput = { connection: CoachConnectionHandle; model: string; 
+/**
+ * Absent sends no effort level: the provider's default applies.
+ */
+effort?: string | null; 
+/**
+ * The FEN of the game's root.
+ */
+startFen: string; 
+/**
+ * The UCI moves from the root to the position on the board.
+ */
+moves: string[]; 
+/**
+ * Earlier user and coach texts, oldest first.
+ */
+history: HistoryMessage[]; message: string; 
+/**
+ * The game as PGN.
+ */
+game: string; engine: EngineHandle; engineId: string; uciOptions: EngineOption[] }
+/**
+ * What a running turn tells the renderer. Every turn ends with exactly one of `Completed`,
+ * `Cancelled` and `Failed`.
+ */
+export type TurnUpdate = { type: "text"; delta: string } | 
+/**
+ * The text streamed so far is superseded by what follows.
+ */
+{ type: "reset" } | 
+/**
+ * The engine is checking this line (SAN from the turn position; empty for the position).
+ */
+{ type: "tool"; line: string[] } | { type: "completed"; segments: Segment[]; failedLines: number } | { type: "cancelled"; text: string } | { type: "failed"; error: CoachError; text: string }
 /**
  * Represents a UCI option definition.
  */

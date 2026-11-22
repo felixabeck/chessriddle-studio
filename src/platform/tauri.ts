@@ -48,6 +48,7 @@ const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error
     ["coachSaveApiConnection", CoachCommandError],
     ["coachRemoveConnection", CoachCommandError],
     ["coachModels", CoachCommandError],
+    ["coachTurn", CoachCommandError],
 ]);
 
 type GameCounterFields = Pick<GameState, "session" | "revision">;
@@ -582,6 +583,8 @@ export const tauriSubscriptions = {
         (callback) => events.clockUpdateEvent.listen(callback),
         normalizeClockUpdateEvent,
     ),
+    coachTurn: (callback: Parameters<typeof events.coachTurnEvent.listen>[0]) =>
+        events.coachTurnEvent.listen(callback),
     convertProgress: (callback: Parameters<typeof events.convertProgress.listen>[0]) =>
         events.convertProgress.listen(callback),
     databaseContentFailure: (

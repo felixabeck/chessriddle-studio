@@ -186,6 +186,35 @@ test("the first change that dirties a protected tab is written immediately, with
     expect(mirror.isConfirmed(tab.value)).toBe(true);
 });
 
+test("a changed Coach conversation rewrites the record of a dirty tab and writes none for a clean one", async () => {
+    const { native, records } = fakeNative();
+    const mirror = mirrorWith(native);
+    const tab = analysisTab();
+    const store = treeStore();
+    openTab(tab, store);
+    mirror.start();
+    const conversation = (text: string) => ({
+        coachSession: { version: 1, id: "c", messages: [{ id: "q", role: "user", text }] },
+    });
+
+    // A conversation alone is no unsaved change: nothing is written for a clean game.
+    store.setState(conversation("clean") as never);
+    await vi.advanceTimersByTimeAsync(UNSAVED_GAME_WRITE_DELAY_MS);
+    expect(records.has(tab.value)).toBe(false);
+
+    edit(store, "now dirty");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(decodeUnsavedGame(records.get(tab.value)!).tree.coachSession).toEqual(
+        conversation("clean").coachSession,
+    );
+    store.setState(conversation("after the answer") as never);
+    expect(mirror.isConfirmed(tab.value)).toBe(false);
+    await vi.advanceTimersByTimeAsync(UNSAVED_GAME_WRITE_DELAY_MS);
+    expect(decodeUnsavedGame(records.get(tab.value)!).tree.coachSession).toEqual(
+        conversation("after the answer").coachSession,
+    );
+});
+
 test("a remove issued while a write is in flight leaves no record", async () => {
     const fake = fakeNative();
     const mirror = mirrorWith(fake.native);

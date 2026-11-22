@@ -20,6 +20,8 @@ import { useIncomingGameLinks } from "@/components/tabs/useIncomingGameLinks";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
 import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
+import { coachEnabledAtom } from "@/state/coach";
+import { CoachTurnListener } from "@/components/panels/coach/CoachTurnListener";
 import {
   cancelQuitGate,
   quitWithoutSaving,
@@ -108,6 +110,7 @@ export function RootLayout() {
 
 function RootShell() {
   const isNative = useAtomValue(nativeBarAtom);
+  const coachEnabled = useAtomValue(coachEnabledAtom);
   const navigate = useNavigate();
   const jotaiStore = useJotaiStore();
   const { newTab } = useTabCommands();
@@ -380,6 +383,7 @@ function RootShell() {
         },
       }}
     >
+      {coachEnabled && <CoachTurnListener />}
       <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
       <ChessBaseGuide />
       <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />

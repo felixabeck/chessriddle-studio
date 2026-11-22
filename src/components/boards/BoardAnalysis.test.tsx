@@ -83,6 +83,7 @@ const mocks = vi.hoisted(() => ({
   writeDbGame: vi.fn(),
   insertDbGame: vi.fn(),
   collectionForDatabase: vi.fn(),
+  coachAvailable: vi.fn(),
   showNotification: vi.fn(),
   // A destination argument stays visible, so a label that names it can be checked.
   translate: (key: string, options?: { target?: string }) =>
@@ -159,6 +160,7 @@ vi.mock("lucide-react", () => ({
   NotebookPen: () => null,
   Crosshair: () => null,
   ScanSearch: () => null,
+  MessagesSquare: () => null,
 }));
 
 vi.mock("@/components/files/notifyError", async (importOriginal) => ({
@@ -191,6 +193,7 @@ vi.mock("@/platform/tauri", async () => {
       writeDbGame: mocks.writeDbGame,
       insertDbGame: mocks.insertDbGame,
       collectionForDatabase: mocks.collectionForDatabase,
+      coachAvailable: mocks.coachAvailable,
       reconcileEngineAttachments: vi.fn().mockResolvedValue(undefined),
     },
   };
@@ -247,6 +250,9 @@ vi.mock("../common/GameNotation", () => ({
 vi.mock("../common/MoveControls", () => ({ default: () => <span data-move-controls /> }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
 vi.mock("../panels/annotation/AnnotationPanel", () => ({ default: () => null }));
+vi.mock("../panels/coach/CoachPanel", () => ({
+  default: () => <div data-testid="coach-panel" />,
+}));
 vi.mock("../panels/database/DatabasePanel", () => ({
   default: () => <span data-testid="database-panel" />,
 }));
@@ -353,7 +359,7 @@ describe("BoardAnalysis", () => {
   let treeStore: TreeStore;
   let reset: ReturnType<typeof vi.fn>;
 
-  beforeEach(async () => {
+  beforeEach(async ({ task }) => {
     board.mockClear();
     mocks.gameNameModal = undefined;
     mocks.editingMode = false;
@@ -367,6 +373,9 @@ describe("BoardAnalysis", () => {
     );
     mocks.notifyUnlessCancelled.mockImplementation(actualNotify.notifyUnlessCancelled);
     mocks.showNotification.mockReset();
+    // The board is rendered below, and a build's Coach switch is read once: the Coach tests
+    // name the build they need.
+    mocks.coachAvailable.mockReset().mockResolvedValue(task.name.includes("(available: true)"));
     mocks.countPgnGames.mockReset().mockResolvedValue(4);
     mocks.parsePGNWithLossReport.mockReset().mockResolvedValue({ tree: defaultTree(), losses: [] });
     // Save validation reads settle. Gate reconciliation stays pending until cancellation.
@@ -522,6 +531,64 @@ describe("BoardAnalysis", () => {
     expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
     expect(panels()).toHaveLength(1);
     expect(panels()[0].closest('[role="tabpanel"]')).not.toBeNull();
+  });
+
+  async function renderCoachChoice() {
+    mocks.realTabs = true;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    await act(async () => {
+      jotaiStore.set(tabFamily(tabId), "coach");
+      root.render(
+        <MantineProvider>
+          <JotaiProvider store={jotaiStore}>
+            <TreeStateContext.Provider value={treeStore}>
+              <RetainedBoardHarness />
+            </TreeStateContext.Provider>
+          </JotaiProvider>
+        </MantineProvider>,
+      );
+    });
+    await act(async () => {});
+    const coachKeys = jotaiStore.get(keyMapAtom).COACH_TAB.keys;
+    return {
+      headings: Array.from(
+        container.querySelectorAll('[role="tab"]'),
+        (heading) => heading.textContent,
+      ),
+      selected: container.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
+      shortcut: hotkeys.mock.calls
+        .flatMap(([bindings]) => bindings)
+        .findLast(([keys]) => keys === coachKeys),
+    };
+  }
+
+  test("a build without the Coach has no Coach tab, panel or shortcut", async () => {
+    const { headings, selected, shortcut } = await renderCoachChoice();
+    expect(headings).not.toContain("Board.Tabs.Coach");
+    // A stored choice of the Coach is derived around, not rewritten.
+    expect(selected).toBe("Board.Tabs.Annotate");
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("coach");
+    expect(container.querySelector('[data-testid="coach-panel"]')).toBeNull();
+    expect(shortcut).toBeUndefined();
+  });
+
+  test("a build with the Coach shows its tab after Annotate and binds its shortcut (available: true)", async () => {
+    const { headings, selected, shortcut } = await renderCoachChoice();
+    expect(headings).toEqual([
+      "Board.Tabs.Analysis",
+      "Board.Tabs.Database",
+      "Board.Tabs.Annotate",
+      "Board.Tabs.Coach",
+      "Board.Tabs.Info",
+    ]);
+    expect(selected).toBe("Board.Tabs.Coach");
+    expect(container.querySelector('[data-testid="coach-panel"]')).not.toBeNull();
+    await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
+    await act(async () => shortcut![1](new KeyboardEvent("keydown", { cancelable: true })));
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("coach");
   });
 
   test("a board opening on a Database default shows Annotate while the explorer is pinned", async () => {

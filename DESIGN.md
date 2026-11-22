@@ -137,6 +137,8 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Rename and edit metadata | `Pencil` | `web/src/components/profile/ProfileHeader.tsx:71` |
 | Repertoire file, review and settings | `BookOpen` | `web/src/components/puzzle/OpeningSelect.tsx:432` |
 | Coach settings category and panel | `MessagesSquare` | Closest by meaning |
+| Start a new Coach conversation | `MessageSquarePlus` | Closest by meaning |
+| Insert a Coach line as a variation | `ListPlus` | Closest by meaning |
 | Upload engine portrait | `ImagePlus` | `web/src/components/feedback/FeedbackModal.tsx:396` |
 | Refresh account or engine logs | `RefreshCw` | `web/src/components/settings/AccountSettings.tsx:291` |
 | Reset keybindings or reload file | `RotateCcw` | `web/src/components/settings/SettingsSidebar.tsx:97` |

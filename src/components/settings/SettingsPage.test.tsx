@@ -306,6 +306,26 @@ test("a build without the Coach shows no Coach category, row or search result", 
   expect(host.textContent).not.toContain("Settings.Coach");
 });
 
+test("the Coach shortcut is listed only in a build with the Coach", async () => {
+  const keybindRows = async () => {
+    const { host } = await renderSettingsPage();
+    const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+      (node) => node.textContent === "Settings.Keybinds",
+    )!;
+    await act(async () => tab.click());
+    const rows = [...host.querySelectorAll("tbody tr")].map((row) => row.textContent);
+    await act(async () => root!.unmount());
+    host.remove();
+    root = undefined;
+    return rows;
+  };
+  const without = await keybindRows();
+  expect(without).not.toContain("Settings.Keybinds.Actions.COACH_TAB");
+  expect(without).toContain("Settings.Keybinds.Actions.ANNOTATE_TAB");
+  coach.enabled = true;
+  expect(await keybindRows()).toContain("Settings.Keybinds.Actions.COACH_TAB");
+});
+
 test("a build with the Coach adds its category before Advanced, with connections and the engine row", async () => {
   coach.enabled = true;
   const { host } = await renderSettingsPage();

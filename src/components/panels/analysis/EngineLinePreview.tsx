@@ -64,14 +64,19 @@ function previewPlacement(anchor: HTMLElement | null) {
 
 /**
  * `index` is the previewed move (or LINE_START). `frozen` holds the line's moves from the first
- * key step on, so an engine update cannot change the line being stepped through.
+ * key step on, so an engine update cannot change the line being stepped through. A `pinned`
+ * preview was opened by a click on a preview-only line: it stays until it is dismissed.
  */
-type PreviewState = { fen: string; index: number; frozen: string[] | null };
+type PreviewState = { fen: string; index: number; frozen: string[] | null; pinned?: boolean };
 
 /**
  * The hover preview board of one engine line searched from `fen`. Hovering a move opens the
  * board on the position after it; while it is open the next/previous move keys step through
  * the line on the preview board only. The board stays where it opened while stepping.
+ *
+ * A `previewOnly` line never plays its moves into the game: a click pins the board on that move
+ * instead, also when hover previews are switched off. A pinned board ignores hovering and stays
+ * until the same move is clicked again, Escape is pressed or something else is clicked.
  */
 export function useEngineLinePreview({
   fen,
@@ -80,6 +85,7 @@ export function useEngineLinePreview({
   orientation,
   anchor,
   inert,
+  previewOnly = false,
 }: {
   fen: string;
   /** The whole line, in SAN. */
@@ -90,6 +96,7 @@ export function useEngineLinePreview({
   /** The line the board is placed against. */
   anchor: RefObject<HTMLElement | null>;
   inert: boolean;
+  previewOnly?: boolean;
 }) {
   const enabled = useAtomValue(previewBoardOnHoverAtom);
   const moveHighlight = useAtomValue(moveHighlightAtom);
@@ -99,7 +106,8 @@ export function useEngineLinePreview({
   // A new position or a dimmed line ends the preview and its frozen line.
   useEffect(() => setState(null), [fen, inert]);
 
-  const current = state?.fen === fen && !inert && enabled ? state : null;
+  const current = state?.fen === fen && !inert && (enabled || state.pinned) ? state : null;
+  const pinned = current?.pinned === true;
   const lineMoves = current?.frozen ?? moves;
   const positions = engineLinePositions(fen, lineMoves.slice(0, visibleCount));
   const index =
@@ -111,12 +119,22 @@ export function useEngineLinePreview({
   const hover = (moveIndex: number) => {
     if (inert) return;
     setState((previous) =>
-      previous?.fen === fen && previous.frozen
-        ? { ...previous, index: moveIndex }
-        : { fen, index: moveIndex, frozen: null },
+      previous?.fen === fen && previous.pinned
+        ? previous
+        : previous?.fen === fen && previous.frozen
+          ? { ...previous, index: moveIndex }
+          : { fen, index: moveIndex, frozen: null },
     );
   };
-  const close = () => setState(null);
+  const close = () => setState((previous) => (previous?.pinned ? previous : null));
+  const pin = (moveIndex: number) => {
+    if (inert) return;
+    setState((previous) =>
+      previous?.fen === fen && previous.pinned && previous.index === moveIndex
+        ? null
+        : { fen, index: moveIndex, frozen: moves, pinned: true },
+    );
+  };
   const step = (direction: 1 | -1) =>
     setState((previous) => {
       if (previous?.fen !== fen) return previous;
@@ -130,6 +148,17 @@ export function useEngineLinePreview({
   const keyOptions = { ...backgroundHotkeyOptions, enabled: open, preventDefault: true };
   useHotkeys(keyMap.NEXT_MOVE.keys, () => step(1), keyOptions);
   useHotkeys(keyMap.PREVIOUS_MOVE.keys, () => step(-1), keyOptions);
+  useHotkeys("escape", () => setState(null), { ...keyOptions, enabled: pinned });
+  // A pinned board is dismissed by a click anywhere but on its own line.
+  useEffect(() => {
+    if (!pinned) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && anchor.current?.contains(event.target)) return;
+      setState(null);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [pinned, anchor]);
 
   // Placed once when it opens, so stepping never moves it; only a panel scroll does.
   const [placement, setPlacement] = useState<{ left: number; top: number } | null>(null);
@@ -176,6 +205,8 @@ export function useEngineLinePreview({
     previewedIndex: open ? index : null,
     hover,
     close,
+    /** Present on a preview-only line: pins the board on a move, or releases it. */
+    pin: previewOnly ? pin : undefined,
     board,
   };
 }
@@ -203,6 +234,7 @@ export function EngineLinePreviewMoves({
       inert={inert}
       previewed={preview.previewedIndex === index}
       onHover={preview.hover}
+      onPick={preview.pin}
     />
   ));
 }

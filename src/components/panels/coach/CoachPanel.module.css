@@ -1,0 +1,77 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.header {
+  flex: 0 0 auto;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-bottom: 1px solid var(--cf-border);
+}
+
+.selector {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.effort {
+  flex: 0 1 11rem;
+  min-width: 6rem;
+}
+
+.transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-sm);
+}
+
+/* A question heads its exchange like a notebook entry; the answer follows as prose. */
+.question {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-radius: var(--cf-radius-md);
+  background: var(--cf-surface-inset);
+  font-weight: 500;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answer {
+  padding-inline: var(--mantine-spacing-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  vertical-align: middle;
+  margin: 2px 0;
+  padding: 0 2px;
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-surface-inset);
+  white-space: normal;
+}
+
+.status {
+  padding-inline: var(--mantine-spacing-sm);
+}
+
+.composer {
+  flex: 0 0 auto;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm) var(--mantine-spacing-sm);
+  border-top: 1px solid var(--cf-border);
+}
+
+.empty {
+  padding: var(--mantine-spacing-lg) var(--mantine-spacing-md);
+}

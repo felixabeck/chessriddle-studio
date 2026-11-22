@@ -446,6 +446,21 @@ pub struct BestMovesPayload {
     pub generation: String,
 }
 
+impl BestMoves {
+    pub(crate) fn depth(&self) -> u32 {
+        self.depth
+    }
+
+    /// The evaluation from White's point of view.
+    pub(crate) fn score(&self) -> &Score {
+        &self.score
+    }
+
+    pub(crate) fn san_moves(&self) -> &[String] {
+        &self.san_moves
+    }
+}
+
 fn invert_score(score: Score) -> Score {
     let new_value = match score.value {
         ScoreValue::Cp(x) => ScoreValue::Cp(x.saturating_neg()),

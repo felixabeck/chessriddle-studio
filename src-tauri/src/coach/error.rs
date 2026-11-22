@@ -30,4 +30,20 @@ pub(crate) enum CoachError {
     Network,
     RateLimited,
     ProviderFailure,
+    /// This tab already runs a turn, or too many turns run at once.
+    Busy,
+    /// The engine could not be started, crashed, or gave no result in time.
+    EngineFailed,
+    /// The provider does not know the chosen model.
+    ModelUnavailable,
+    /// The model cannot call tools, so it cannot ground its answer in the engine.
+    NoFunctionCalling,
+    /// The provider refused the chosen effort level.
+    EffortRejected,
+    /// The provider ended the answer at its length limit.
+    AnswerCutOff,
+    ContentFiltered,
+    /// A bound of the turn was exceeded: rounds, text size, argument size or the deadline.
+    LimitExceeded,
+    Cancelled,
 }

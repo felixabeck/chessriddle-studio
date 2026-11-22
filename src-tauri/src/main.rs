@@ -1509,6 +1509,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             coach::coach_save_api_connection,
             coach::coach_remove_connection,
             coach::coach_models,
+            coach::coach_turn,
             close_splashscreen,
             verify_signed_bytes,
             prepare_native_read,
@@ -1684,7 +1685,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             GameMoveEvent,
             ClockUpdateEvent,
             GameOverEvent,
-            infra::game_link::GameLinkPending
+            infra::game_link::GameLinkPending,
+            coach::CoachTurnEvent
         ));
 
     #[cfg(debug_assertions)]

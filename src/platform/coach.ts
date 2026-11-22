@@ -15,7 +15,20 @@ const coachErrors: Record<CoachError, true> = {
     network: true,
     rateLimited: true,
     providerFailure: true,
+    busy: true,
+    engineFailed: true,
+    modelUnavailable: true,
+    noFunctionCalling: true,
+    effortRejected: true,
+    answerCutOff: true,
+    contentFiltered: true,
+    limitExceeded: true,
+    cancelled: true,
 };
+
+export function isCoachError(value: unknown): value is CoachError {
+    return typeof value === "string" && Object.hasOwn(coachErrors, value);
+}
 
 /** Only the Coach's closed native error vocabulary crosses this boundary. */
 export class CoachCommandError extends Error {
@@ -23,10 +36,7 @@ export class CoachCommandError extends Error {
 
     constructor(cause: unknown) {
         const value = cause instanceof Error ? cause.message : cause;
-        const code =
-            typeof value === "string" && Object.hasOwn(coachErrors, value)
-                ? (value as CoachError)
-                : "providerFailure";
+        const code = isCoachError(value) ? value : "providerFailure";
         super(code);
         this.name = "CoachCommandError";
         this.code = code;

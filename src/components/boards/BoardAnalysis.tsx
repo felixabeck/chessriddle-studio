@@ -3,7 +3,7 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { errorUnlessCancelled } from "@/platform/errors";
 import { Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { useElementSize, useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
-import { Database, Info, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
+import { Database, Info, MessagesSquare, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
 import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
@@ -28,6 +28,7 @@ import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import { withKeyboardOwnership } from "@/utils/keyboardOwnership";
 import { readEngineLines } from "../panels/analysis/useDisplayedEngineLines";
+import { coachEnabledAtom } from "@/state/coach";
 import { keyMapAtom } from "@/state/keybinds";
 import type { Annotation } from "@/utils/annotation";
 import {
@@ -52,6 +53,7 @@ import PinnedExplorer from "./PinnedExplorer";
 import { TreeStateContext } from "../common/TreeStateContext";
 import AnalysisPanel from "../panels/analysis/AnalysisPanel";
 import AnnotationPanel from "../panels/annotation/AnnotationPanel";
+import CoachPanel from "../panels/coach/CoachPanel";
 import DatabasePanel from "../panels/database/DatabasePanel";
 import InfoPanel from "../panels/info/InfoPanel";
 import PracticePanel from "../panels/practice/PracticePanel";
@@ -185,8 +187,14 @@ function BoardAnalysis() {
   // Pinned, the explorer is a strip in its chosen place and no longer one of the tabs. A tab whose stored
   // choice is the explorer shows Annotate meanwhile; the stored choice is left alone.
   const explorerDetached = useAtomValue(explorerDetachedAtom);
+  // A build without the Coach has no Coach tab, hotkey or panel; a stored choice of it shows
+  // Annotate, like the pinned explorer's.
+  const coachEnabled = useAtomValue(coachEnabledAtom);
   const shownTab =
-    explorerDetached && currentTabSelected === "database" ? "annotate" : currentTabSelected;
+    (explorerDetached && currentTabSelected === "database") ||
+    (!coachEnabled && currentTabSelected === "coach")
+      ? "annotate"
+      : currentTabSelected;
   const [, setReportModalOpen] = useAtom(useTabAtom(reportModalOpenFamily));
   const practiceTabSelected = useAtomValue(useTabAtom(practiceTabFamily));
   const isRepertoire = isRepertoireTab(currentTab);
@@ -312,6 +320,9 @@ function BoardAnalysis() {
           setCurrentTabSelected(panel);
         },
       ]),
+      ...(coachEnabled
+        ? [[keyMap.COACH_TAB.keys, () => setCurrentTabSelected("coach")] satisfies HotkeyItem]
+        : []),
       [
         keyMap.TOGGLE_ALL_ENGINES.keys,
         (e) => {
@@ -457,6 +468,9 @@ function BoardAnalysis() {
                     ? []
                     : [{ value: "database", title: t("Board.Tabs.Database"), Icon: Database }]),
                   { value: "annotate", title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
+                  ...(coachEnabled
+                    ? [{ value: "coach", title: t("Board.Tabs.Coach"), Icon: MessagesSquare }]
+                    : []),
                   { value: "info", title: t("Board.Tabs.Info"), Icon: Info },
                 ].map(({ value, title, Icon }) => (
                   <Tabs.Tab key={value} value={value} leftSection={<Icon size="1rem" />}>
@@ -480,6 +494,11 @@ function BoardAnalysis() {
               <Tabs.Panel value="annotate">
                 <AnnotationPanel />
               </Tabs.Panel>
+              {coachEnabled && (
+                <Tabs.Panel value="coach">
+                  <CoachPanel />
+                </Tabs.Panel>
+              )}
               <Tabs.Panel value="analysis">
                 <AnalysisPanel />
               </Tabs.Panel>

@@ -2,6 +2,7 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Move } from "chessops";
 import { INITIAL_FEN, makeCastlingFen, parseFen } from "chessops/fen";
 import type { NoveltyOutcome, Outcome, Score } from "@/bindings";
+import type { CoachSession } from "@/state/coachSession";
 import type { BoundedGoMode } from "@/utils/engines";
 import type { PuzzleSession } from "@/state/puzzleSession";
 import { dropInvalidEpSquare, positionFromFen } from "@/utils/chessops";
@@ -16,6 +17,8 @@ export interface TreeState {
     storeAttempts?: string[];
     report: ReportState;
     puzzleSession?: PuzzleSession;
+    /** The tab's Coach conversation. Not part of the game: never saved into a PGN. */
+    coachSession?: CoachSession;
 }
 
 type BoardStateMap = Record<string, { node: TreeNode; path: number[] }[]>;

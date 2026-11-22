@@ -164,6 +164,11 @@ const definitions = {
         name: "Go to annotate tab",
         keys: "d",
     },
+    COACH_TAB: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.COACH_TAB"),
+        name: "Go to Coach tab",
+        keys: "o",
+    },
     ANNOTATION_NEXT_MOVE: {
         labelKey: i18nKey("Settings.Keybinds.Actions.ANNOTATION_NEXT_MOVE"),
         name: "Annotation editor: next move",

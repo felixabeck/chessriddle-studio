@@ -1,0 +1,324 @@
+import { MantineProvider } from "@mantine/core";
+import { atom, createStore, Provider } from "jotai";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { ConnectionSummary, TurnUpdate } from "@/bindings";
+import { TreeStateContext } from "@/components/common/TreeStateContext";
+import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
+import { defaultTree } from "@/utils/treeReducer";
+
+const mocks = vi.hoisted(() => ({
+  coachConnections: vi.fn(),
+  coachModels: vi.fn(),
+  prepareAnalysis: vi.fn(),
+  coachTurn: vi.fn(),
+  cancelAnalysis: vi.fn(),
+  navigate: vi.fn(),
+  engines: [] as unknown[],
+}));
+vi.mock("@/platform/tauri", () => ({ tauri: mocks }));
+vi.mock("@/platform/native", () => ({
+  platform: vi.fn(() => "linux"),
+  warn: vi.fn(() => Promise.resolve()),
+  error: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      options && ("line" in options || "provider" in options)
+        ? `${key}:${String(options.line ?? options.provider)}`
+        : key,
+  }),
+}));
+vi.mock("@/chessground/Chessground", () => ({
+  Chessground: ({ fen }: { fen: string }) => <div data-preview-fen={fen} />,
+}));
+vi.mock("@/state/atoms", async (original) => ({
+  ...(await original<typeof import("@/state/atoms")>()),
+  enginesAtom: atom(() => mocks.engines),
+}));
+
+const { coachTurnFamily } = await import("@/state/atoms");
+const { coachNoticeAcceptedAtom, coachSelectionAtom } = await import("@/state/coach");
+const { applyCoachTurnEvent } = await import("@/state/coachTurns");
+const { closeTreeStore, createTreeStore } = await import("@/state/store/tree");
+const { WorkspaceTabScope } = await import("@/state/tabScope");
+const { default: CoachPanel } = await import("./CoachPanel");
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+installMatchMediaStub();
+installResizeObserverStub();
+
+const connection: ConnectionSummary = {
+  handle: "conn-1",
+  kind: "api",
+  label: "Ollama",
+  address: "http://localhost:11434/v1",
+  hasKey: false,
+  status: "ready",
+};
+const engine = {
+  type: "local",
+  id: "engine-1",
+  name: "Engine",
+  handle: { id: { id: "engine-ref" }, kind: "engine" },
+  loaded: true,
+  settings: [],
+};
+const answer: TurnUpdate = {
+  type: "completed",
+  segments: [
+    { type: "text", text: "Develop with " },
+    { type: "line", san: ["Nf3", "Nc6"], uci: ["g1f3", "b8c6"] },
+    { type: "text", text: " and **castle**." },
+  ],
+  failedLines: 0,
+};
+
+const TAB = "coach-panel-tab";
+let host: HTMLDivElement;
+let root: Root;
+let atoms: ReturnType<typeof createStore>;
+let tree: ReturnType<typeof createTreeStore>;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  localStorage.clear();
+  mocks.engines = [engine];
+  mocks.coachConnections.mockResolvedValue([connection]);
+  mocks.coachModels.mockResolvedValue({
+    models: [
+      { id: "plain", name: "Plain", effortLevels: [], defaultEffort: null, supportsTools: null },
+    ],
+    truncated: false,
+  });
+  mocks.prepareAnalysis.mockResolvedValue("ticket-1");
+  mocks.cancelAnalysis.mockResolvedValue(undefined);
+  Element.prototype.scrollTo = vi.fn();
+  atoms = createStore();
+  tree = createTreeStore(TAB);
+  tree.getState().setState(defaultTree());
+  tree.getState().makeMoves({ payload: ["e4", "e5"] });
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  host.remove();
+  closeTreeStore(TAB);
+  coachTurnFamily.remove(TAB);
+});
+
+async function render({ selected = true, accepted = true } = {}) {
+  if (selected)
+    atoms.set(coachSelectionAtom, { connection: "conn-1", model: "plain", effort: null });
+  if (accepted) atoms.set(coachNoticeAcceptedAtom, ["conn-1"]);
+  await act(async () =>
+    root.render(
+      <Provider store={atoms}>
+        <MantineProvider env="test">
+          <WorkspaceTabScope tabId={TAB}>
+            <TreeStateContext.Provider value={tree}>
+              <CoachPanel />
+            </TreeStateContext.Provider>
+          </WorkspaceTabScope>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  // The connection list and then the model list arrive.
+  await act(async () => {});
+}
+
+function button(name: string, scope: ParentNode = document) {
+  return [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent === name || node.getAttribute("aria-label") === name,
+  )!;
+}
+
+async function ask(text: string) {
+  const field = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, text);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => button("Coach.Send").click());
+}
+
+test("without a connection or an engine the panel says what is needed and where", async () => {
+  mocks.coachConnections.mockResolvedValue([{ ...connection, status: "needsRepair" }]);
+  await render();
+  expect(host.textContent).toContain("Coach.NoConnection");
+  await act(async () => button("Coach.OpenSettings").click());
+  expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/settings" });
+  expect(host.querySelector("textarea")).toBeNull();
+});
+
+test("without a local engine there is no composer, only the way to the engines", async () => {
+  mocks.engines = [{ ...engine, loaded: false }];
+  await render();
+  expect(host.textContent).toContain("Coach.NoEngine");
+  await act(async () => button("Coach.OpenEngines").click());
+  expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/engines" });
+  expect(host.querySelector("textarea")).toBeNull();
+});
+
+test("nothing is sent for a connection before its notice was accepted", async () => {
+  mocks.coachTurn.mockResolvedValue(answer);
+  await render({ accepted: false });
+  await ask("What is the plan?");
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Coach.Notice.Body:Ollama");
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+
+  await act(async () => button("Common.Cancel", dialog).click());
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(atoms.get(coachNoticeAcceptedAtom)).toEqual([]);
+
+  await act(async () => button("Coach.Send").click());
+  const again = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  await act(async () => button("Coach.Notice.Accept", again).click());
+  await act(async () => {});
+  expect(atoms.get(coachNoticeAcceptedAtom)).toEqual(["conn-1"]);
+  expect(mocks.coachTurn).toHaveBeenCalledOnce();
+  expect(mocks.coachTurn.mock.calls[0][2]).toMatchObject({
+    connection: "conn-1",
+    model: "plain",
+    message: "What is the plan?",
+  });
+
+  // The next question for the same connection goes straight out.
+  mocks.prepareAnalysis.mockResolvedValue("ticket-2");
+  await ask("And then?");
+  await act(async () => {});
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(mocks.coachTurn).toHaveBeenCalledTimes(2);
+});
+
+test("a question needs a chosen model, and a model without reported levels sends no effort", async () => {
+  await render({ selected: false });
+  atoms.set(coachSelectionAtom, { connection: "conn-1", model: null, effort: null });
+  await act(async () => {});
+  expect(mocks.coachModels).toHaveBeenLastCalledWith("conn-1");
+  await ask("Plan?");
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(button("Coach.Send").disabled).toBe(true);
+
+  await act(async () =>
+    atoms.set(coachSelectionAtom, { connection: "conn-1", model: "plain", effort: null }),
+  );
+  const effort = host.querySelector<HTMLInputElement>('input[aria-label="Coach.Effort"]')!;
+  expect(effort.value).toBe("Coach.Effort.Default");
+  mocks.coachTurn.mockResolvedValue(answer);
+  await act(async () => button("Coach.Send").click());
+  await act(async () => {});
+  expect(mocks.coachTurn.mock.calls[0][2].effort).toBeUndefined();
+});
+
+test("a failed model list shows its error at the model selector", async () => {
+  const { CoachCommandError } = await import("@/platform/coach");
+  mocks.coachModels.mockRejectedValue(new CoachCommandError("keyRejected"));
+  await render();
+  expect(host.textContent).toContain("Coach.Error.KeyRejected");
+  expect(button("Coach.Send").disabled).toBe(true);
+});
+
+test("an answer streams, can be stopped, and ends as the saved exchange", async () => {
+  const command = deferred<TurnUpdate>();
+  mocks.coachTurn.mockReturnValue(command.promise);
+  await render();
+  await ask("What is the plan?");
+  await act(async () => {});
+  expect(host.querySelector('[data-testid="coach-running"]')?.textContent).toContain(
+    "Coach.Thinking",
+  );
+  await act(async () =>
+    applyCoachTurnEvent(atoms, {
+      tab: TAB,
+      turn: "ticket-1",
+      update: { type: "tool", line: ["Nf3"] },
+    }),
+  );
+  expect(host.textContent).toContain("Coach.CheckingLine:Nf3");
+  await act(async () =>
+    applyCoachTurnEvent(atoms, {
+      tab: TAB,
+      turn: "ticket-1",
+      update: { type: "text", delta: "Develop" },
+    }),
+  );
+  expect(host.querySelector('[data-testid="coach-running"]')?.textContent).toContain("Develop");
+
+  await act(async () => button("Coach.Stop").click());
+  expect(mocks.cancelAnalysis).toHaveBeenCalledExactlyOnceWith("ticket-1");
+  expect(button("Coach.Stop").disabled).toBe(true);
+  await act(async () => command.resolve({ type: "cancelled", text: "Develop" }));
+  expect(host.querySelector('[data-testid="coach-running"]')).toBeNull();
+  expect(host.querySelector('[data-testid="coach-answer"]')?.textContent).toContain("Develop");
+  expect(host.textContent).toContain("Coach.Stopped");
+  expect(host.querySelector('[data-testid="coach-question"]')?.textContent).toBe(
+    "What is the plan?",
+  );
+});
+
+test("a Coach line only previews; the insert button is the one way into the game", async () => {
+  mocks.coachTurn.mockResolvedValue(answer);
+  await render();
+  await ask("What is the plan?");
+  await act(async () => {});
+  const shown = host.querySelector<HTMLElement>('[data-testid="coach-answer"]')!;
+  expect(shown.textContent).toContain("Develop with ");
+  expect(shown.querySelector("strong")?.textContent).toBe("castle");
+  const line = shown.querySelector<HTMLElement>('[data-testid="coach-line"]')!;
+  // Numbered from the position the question was asked about: White's second move.
+  expect(line.textContent).toContain("2.");
+
+  const before = tree.getState();
+  // The innermost element that shows the move (its piece letter may be drawn as a symbol): a
+  // click there bubbles to the move itself.
+  const move = [...line.querySelectorAll<HTMLElement>("*")]
+    .filter((node) => /^.c6$/u.test(node.textContent ?? ""))
+    .at(-1)!;
+  await act(async () => move.click());
+  expect(tree.getState().root).toBe(before.root);
+  expect(tree.getState().position).toEqual([0, 0]);
+  // The click pinned the preview on the position after the clicked move.
+  expect(document.querySelector('[data-testid="engine-line-preview"]')).not.toBeNull();
+
+  // The board has moved on since the question; the line still goes where it belongs.
+  await act(async () => tree.getState().goToMove([0]));
+  await act(async () => button("Coach.InsertLine", line).click());
+  const state = tree.getState();
+  expect(state.position).toEqual([0, 0, 0, 0]);
+  expect(state.root.children[0].children[0].children[0].san).toBe("Nf3");
+  expect(state.currentNode().san).toBe("Nc6");
+});
+
+test("a line whose position left the game cannot be inserted, and a new conversation clears", async () => {
+  mocks.coachTurn.mockResolvedValue(answer);
+  await render();
+  await ask("What is the plan?");
+  await act(async () => {});
+  await act(async () => tree.getState().deleteMove([0, 0]));
+  const line = host.querySelector<HTMLElement>('[data-testid="coach-line"]')!;
+  const insert = button("Coach.InsertUnavailable", line);
+  expect(insert.disabled).toBe(true);
+
+  await act(async () => button("Coach.NewConversation").click());
+  expect(tree.getState().coachSession).toBeUndefined();
+  expect(host.textContent).toContain("Coach.Empty");
+});

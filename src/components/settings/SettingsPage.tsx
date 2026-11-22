@@ -916,14 +916,16 @@ export default function Page() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {Object.entries(keyMap).map(([action, keybind]) => (
-            <Table.Tr key={action}>
-              <Table.Td>{keybindLabel(t, action, keybind)}</Table.Td>
-              <Table.Td>
-                <KeybindInput action={action} keybind={keybind} />
-              </Table.Td>
-            </Table.Tr>
-          ))}
+          {Object.entries(keyMap)
+            .filter(([action]) => coachEnabled || action !== "COACH_TAB")
+            .map(([action, keybind]) => (
+              <Table.Tr key={action}>
+                <Table.Td>{keybindLabel(t, action, keybind)}</Table.Td>
+                <Table.Td>
+                  <KeybindInput action={action} keybind={keybind} />
+                </Table.Td>
+              </Table.Tr>
+            ))}
         </Table.Tbody>
       </Table>
       <DrawingKeybinds titleClassName={classes.title} />
