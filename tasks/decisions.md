@@ -13859,3 +13859,40 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Of the +19,410 B, +11,610 B are the 16 catalogue chunks (53,222 B before compression, the 36 messages of `d-20261122-24`) and +7,800 B the other emitted assets: the strip, the dialog, the import flow and lookup, the link collection with its schema, the pinned second column, and the review repairs made since `d-20261122-24` was measured (among them the publication of the database listing before a link names new games). No library was added. These are whole-build measurements and do not assign bytes to individual strings or functions. Reversal path: tighten `total` against a future smaller production build.
 * **Decided by:** Claude Code (Fable 5.2), build run on Felix's order, 2026-11-22 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"f5f57eea3dc0e74edaf9e87b4e08c2ae2ef2d84d98ab4f3e8d01b78d7029de7a","input_sha256":"a870ef4c986bf89eaea4da5a6b54d06c02815b615f5bf90cf4b4244776cb5b60","kind":"mutation-receipt","operation":"15f3a83468aa9310699b509b10fc7fdb610da15490dbd6b47abe194533231930","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-29"],"target":"decisions-ledger","v":1} -->
+
+### d-20261122-18 — Coach: how does Studio sign in to ChatGPT and Grok?
+
+* **Question:** Felix ordered the Coach (AI chat about the position) with subscription sign-in "like Hermes". Hermes signs in to ChatGPT under the Codex CLI's client id against `chatgpt.com/backend-api/codex`, and to Grok under the Grok CLI's client id. Which routes does Studio use?
+* **Governs:** -
+* **Chosen:** ChatGPT uses OpenAI's documented "Sign in with ChatGPT" route for open-source and locally run apps (dynamic client registration at `auth.openai.com`, Responses API at `api.openai.com/v1`), written in Studio's own code from the documentation. The ID token is validated by its claims (issuer, audience, expiry, nonce) and not by a separate signature check, because it arrives directly from the token endpoint over TLS and only supplies the display identity (OpenID Connect Core §3.1.3.7). Grok uses the device-code flow at `auth.x.ai` with the shared Grok CLI client id, as Hermes does, and is labelled unofficial in the UI.
+* **Rejected:** Reusing the Codex CLI client id for ChatGPT: OpenAI documents a self-serve route for open-source apps and tells integrators not to call the ChatGPT backend endpoints. OpenAI's DevKit code: its licence is noncommercial and not GPL-compatible. A signature library and key-set fetch for the ID token: it would verify a value that grants nothing. Leaving Grok out: Felix ordered it ("can't i just do it like Hermes does it").
+* **Reason:** The ChatGPT route is the one OpenAI publishes for this kind of app. For Grok only a Hermes-specific official statement exists, so the connection is marked as possibly unstable. Reversal path: the ChatGPT and Grok sign-in modules under `src-tauri/src/coach/`; removing the Grok connection kind touches nothing else.
+* **Decided by:** Claude Code (Fable 5.2), build run `coach-chat` under `full auto`, 2026-11-22 · **Superseded-by:** -
+
+### d-20261122-19 — Coach: how does a turn run natively?
+
+* **Question:** One user message to the Coach needs model calls, engine analysis, database statistics and repertoire lines. Where does each run, and what owns its lifetime?
+* **Governs:** -
+* **Chosen:** A Coach turn is an analysis operation of the existing operation registry and uses the `analysis` engine key namespace, so the existing cancel paths (cancel command, tab close, window destruction, webview reload, exit) cover it. The engine is a private process per turn of the user's chosen local engine with fixed short searches (2 s baseline, 1.5 s per tool call), through one analysis session shared with the game report. Engine analysis and opening statistics are native read-only tools the model calls; repertoire lines are context the renderer supplies for the turn position. Native function calling is required. Without a usable local engine no turn is started.
+* **Rejected:** A new reservation kind and key namespace (duplicates the analysis lifecycle). Reusing the tab's interactive engine (its results and options belong to the visible analysis). A native repertoire parser (second implementation of a renderer-owned domain) or a tool answered by the renderer (a request/reply channel with its own lifecycle). An engine-less mode (the Coach's quality rests on engine evidence, Felix: "the key was to allow the model to run engine calls itself").
+* **Reason:** One lifecycle for every private analysis engine, and one owner per kind of data. Reversal path: `src-tauri/src/coach/` turn and tools modules; the shared analysis session in `src-tauri/src/chess.rs`.
+* **Decided by:** Claude Code (Fable 5.2), build run `coach-chat` under `full auto`, 2026-11-22 · **Superseded-by:** -
+
+### d-20261122-20 — Coach: how long does a conversation live, and when is an effort level sent?
+
+* **Question:** Felix confirmed "conversations kept per tab, across a restart" and an effort selector where "Studio always sends an explicit level". Tabs themselves only come back after a restart when they hold unsaved changes, and some models reject an effort parameter.
+* **Governs:** -
+* **Chosen:** A conversation is part of its tab's persisted state and lives exactly as long as the tab: it survives a reload, and a restart when the tab itself is restored. Replacing the game in the tab clears it. An effort level is sent explicitly only for models whose provider reports supported levels; otherwise the selector defaults to "Provider default" (nothing sent) and still offers Low/Medium/High.
+* **Rejected:** A separate conversation store per file (a new product surface nobody ordered). Always sending an effort level (a model that rejects the parameter would fail every question).
+* **Reason:** Both follow what the app and the providers actually do; both differ in a detail from the recommendation Felix confirmed and are reported to him. Reversal path: `src/state/coachSession.ts` (lifetime), the model list reduction under `src-tauri/src/coach/` (effort).
+* **Decided by:** Claude Code (Fable 5.2), build run `coach-chat` under `full auto`, 2026-11-22 · **Superseded-by:** -
+
+### d-20261122-21 — Coach: which addresses may an API connection use?
+
+* **Question:** The "API key or local model" connection sends the user's key from the native side to an address the user enters. The native HTTP clients so far only reach fixed public hosts.
+* **Governs:** -
+* **Chosen:** Two address classes. Public: `https` only, through the client whose resolver accepts only globally routable addresses. Local: `http` only when the host is `localhost` or a loopback or private-range IP literal, through a second client without that resolver. The key and its address are stored together in one keyring document, and a bearer credential is attached only to a URL with the stored scheme, host and port and a path below the stored path.
+* **Rejected:** Any `http` host (a key in clear text over the internet). Local hostnames other than `localhost` (they would need DNS answers the resolver policy forbids).
+* **Reason:** Local runners (Ollama, LM Studio) speak plain `http` on the machine or the home network; everything else has TLS. Reversal path: the address policy module under `src-tauri/src/coach/`.
+* **Decided by:** Claude Code (Fable 5.2), build run `coach-chat` under `full auto`, 2026-11-22 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"c71e95e4ad6769b123611c89e45c12a035ab3dff344f5260da939dec06e67d9a","input_sha256":"b1f8606a08a369355a50a3d779eb4fac707eb35161135d38cd7d7664da3ddc93","kind":"mutation-receipt","operation":"e35a203d7187b9b4531c3cbfeb2acd6e9343d11da660c169026f8cfb6973f6d8","options":{"section":null},"request_id_sha256":null,"results":["d-20261122-18","d-20261122-19","d-20261122-20","d-20261122-21"],"target":"decisions-ledger","v":1} -->
