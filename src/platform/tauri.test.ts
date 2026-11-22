@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
     chessriddleSaveTrainingSettings: vi.fn(),
     chessriddleTrainingMotifs: vi.fn(),
     chessriddleOpenWebsite: vi.fn(),
+    coachAvailable: vi.fn(),
+    coachConnections: vi.fn(),
+    coachSaveApiConnection: vi.fn(),
+    coachRemoveConnection: vi.fn(),
+    coachModels: vi.fn(),
     closeSplashscreen: vi.fn(),
     releasePreviousDocumentOperations: vi.fn(),
     startGame: vi.fn(),
@@ -182,6 +187,48 @@ test.each([
     await expect(invoke()).rejects.toMatchObject({ code: "server", message: "server" });
 });
 
+test.each([
+    "coachAvailable",
+    "coachConnections",
+    "coachSaveApiConnection",
+    "coachRemoveConnection",
+    "coachModels",
+] as const)("%s uses the closed Coach boundary", async (command) => {
+    const { tauri } = await import("./tauri");
+    const invoke = async () => {
+        switch (command) {
+            case "coachAvailable":
+                return tauri.coachAvailable();
+            case "coachConnections":
+                return tauri.coachConnections();
+            case "coachSaveApiConnection":
+                return tauri.coachSaveApiConnection({
+                    label: "Local",
+                    address: "http://localhost:1/v1",
+                });
+            case "coachRemoveConnection":
+                return tauri.coachRemoveConnection("handle");
+            case "coachModels":
+                return tauri.coachModels("handle");
+        }
+    };
+    mocks[command].mockResolvedValue({ status: "ok", data: "reply" });
+    await expect(invoke()).resolves.toBe("reply");
+    for (const code of ["unavailable", "keyRejected", "invalidAddressScheme", "storage"]) {
+        mocks[command].mockResolvedValue({ status: "error", error: code });
+        await expect(invoke()).rejects.toMatchObject({ name: "CoachCommandError", code });
+    }
+    // Anything outside the vocabulary, including a ChessRiddle code, collapses to one code.
+    mocks[command].mockResolvedValue({ status: "error", error: "invalidGrant" });
+    await expect(invoke()).rejects.toMatchObject({ code: "providerFailure" });
+    mocks[command].mockRejectedValue(new Error("sk-private-diagnostic"));
+    await expect(invoke()).rejects.toMatchObject({
+        name: "CoachCommandError",
+        code: "providerFailure",
+        message: "providerFailure",
+    });
+});
+
 test("getDbGame forwards identity as the third argument and owns its abort ticket", async () => {
     const { tauri } = await import("./tauri");
     const database = { id: { id: "db" }, kind: "database" } as const;
@@ -235,6 +282,11 @@ vi.mock("@/bindings/generated", () => ({
         chessriddleSaveTrainingSettings: mocks.chessriddleSaveTrainingSettings,
         chessriddleTrainingMotifs: mocks.chessriddleTrainingMotifs,
         chessriddleOpenWebsite: mocks.chessriddleOpenWebsite,
+        coachAvailable: mocks.coachAvailable,
+        coachConnections: mocks.coachConnections,
+        coachSaveApiConnection: mocks.coachSaveApiConnection,
+        coachRemoveConnection: mocks.coachRemoveConnection,
+        coachModels: mocks.coachModels,
         closeSplashscreen: mocks.closeSplashscreen,
         releasePreviousDocumentOperations: mocks.releasePreviousDocumentOperations,
         startGame: mocks.startGame,

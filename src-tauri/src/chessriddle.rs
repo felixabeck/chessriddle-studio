@@ -10,7 +10,6 @@ use crate::{
     infra::{blocking::BLOCKING_GATEWAY, path_authority::AppDataDir},
     oauth_pkce::{self, AttemptRegistry, OAuthProvider},
 };
-use futures_util::StreamExt;
 use oauth2::TokenResponse;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -31,8 +30,6 @@ const DEV_API_ORIGIN: Option<&str> = option_env!("CHESSRIDDLE_API_ORIGIN");
 const DEV_WEB_ORIGIN: Option<&str> = option_env!("CHESSRIDDLE_WEB_ORIGIN");
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_ACCESS_TOKEN_BYTES: usize = 4096;
-// Windows Credential Manager limits a credential blob to 2560 bytes of UTF-16.
-const MAX_REFRESH_TOKEN_UTF16_UNITS: usize = 1280;
 const MAX_EXPIRES_IN_SECONDS: u64 = 3600;
 const OWNER_QUEUE_CAPACITY: usize = 8;
 const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(180);
@@ -230,7 +227,8 @@ impl Tokens {
         !self.access_token.is_empty()
             && self.access_token.len() <= MAX_ACCESS_TOKEN_BYTES
             && !self.refresh_token.is_empty()
-            && self.refresh_token.encode_utf16().count() <= MAX_REFRESH_TOKEN_UTF16_UNITS
+            && self.refresh_token.encode_utf16().count()
+                <= crate::credentials::MAX_KEYRING_SECRET_UTF16_UNITS
             && self.token_type.eq_ignore_ascii_case("bearer")
             && (1..=MAX_EXPIRES_IN_SECONDS).contains(&self.expires_in)
     }
@@ -277,16 +275,11 @@ struct Permissions {
 
 async fn response_bytes(response: reqwest::Response) -> Result<(u16, Vec<u8>), AccountError> {
     let status = response.status().as_u16();
-    let mut stream = response.bytes_stream();
-    let mut body = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| AccountError::Network)?;
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(AccountError::Server);
-        }
-        body.extend_from_slice(&chunk);
+    match crate::infra::net::read_bounded_body(response, MAX_RESPONSE_BYTES).await {
+        Ok(body) => Ok((status, body)),
+        Err(crate::infra::net::BoundedBodyError::Transport(_)) => Err(AccountError::Network),
+        Err(crate::infra::net::BoundedBodyError::TooLarge) => Err(AccountError::Server),
     }
-    Ok((status, body))
 }
 
 fn token_response(status: u16, body: &[u8]) -> Result<Tokens, AccountError> {

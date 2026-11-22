@@ -48,6 +48,18 @@ vi.mock("./WorkspaceDirectorySetting", () => ({ WorkspaceDirectorySetting: () =>
 vi.mock("./SoundSelect", () => ({ default: () => null }));
 vi.mock("./VolumeSlider", () => ({ default: () => null }));
 vi.mock("./ThemeButton", () => ({ default: () => null }));
+const coach = vi.hoisted(() => ({ enabled: false }));
+vi.mock("@/state/coach", async (original) => {
+  const { atom } = await import("jotai");
+  return {
+    ...(await original<typeof import("@/state/coach")>()),
+    coachEnabledAtom: atom(() => coach.enabled),
+  };
+});
+vi.mock("./coach/CoachConnections", () => ({
+  CoachConnections: () => <div data-testid="coach-connections" />,
+}));
+vi.mock("./coach/CoachEngineSelect", () => ({ CoachEngineSelect: () => null }));
 vi.mock("./SettingsSwitch", () => ({ default: () => null }));
 const actionMocks = vi.hoisted(() => ({
   reloadApp: vi.fn(),
@@ -85,6 +97,7 @@ afterEach(async () => {
   host?.remove();
   localStorage.clear();
   translation.t = translation.identity;
+  coach.enabled = false;
   actionMocks.reloadApp.mockReset();
   actionMocks.clearSavedData.mockReset();
   actionMocks.openAppLogs.mockReset();
@@ -282,6 +295,32 @@ test("Advanced is the eighth and last settings category", async () => {
   const tabs = [...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
   expect(tabs).toHaveLength(8);
   expect(tabs.at(-1)).toBe("Settings.Advanced");
+});
+
+test("a build without the Coach shows no Coach category, row or search result", async () => {
+  const { host } = await renderSettingsPage();
+  expect(host.textContent).not.toContain("Settings.Coach");
+  expect(host.querySelector('[data-testid="coach-connections"]')).toBeNull();
+  await searchSettings(host, "coach");
+  expect(host.textContent).toContain("Settings.Search.NoResults");
+  expect(host.textContent).not.toContain("Settings.Coach");
+});
+
+test("a build with the Coach adds its category before Advanced, with connections and the engine row", async () => {
+  coach.enabled = true;
+  const { host } = await renderSettingsPage();
+  const tabs = [...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
+  expect(tabs).toHaveLength(9);
+  expect(tabs.slice(-2)).toEqual(["Settings.Coach", "Settings.Advanced"]);
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === "Settings.Coach",
+  )!;
+  await act(async () => tab.click());
+  const panel = host.querySelector<HTMLElement>(`#${tab.getAttribute("aria-controls")}`)!;
+  expect(panel.querySelector('[data-testid="coach-connections"]')).not.toBeNull();
+  expect(panel.textContent).toContain("Settings.Coach.Engine.Desc");
+  await searchSettings(host, "coach");
+  expect(host.textContent).toContain("Settings.Coach.Engine.Desc");
 });
 
 test("Reload reloads and is disabled while pending", async () => {

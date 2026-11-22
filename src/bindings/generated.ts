@@ -101,6 +101,46 @@ async chessriddleOpenWebsite() : Promise<Result<null, AccountError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async coachAvailable() : Promise<Result<boolean, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_available") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async coachConnections() : Promise<Result<ConnectionSummary[], CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_connections") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async coachSaveApiConnection(connection: ApiConnectionInput) : Promise<Result<ConnectionSaved, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_save_api_connection", { connection }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async coachRemoveConnection(handle: CoachConnectionHandle) : Promise<Result<ConnectionRemoved, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_remove_connection", { handle }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async coachModels(handle: CoachConnectionHandle) : Promise<Result<ModelList, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_models", { handle }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async closeSplashscreen() : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
@@ -1500,6 +1540,18 @@ export type AccountImportTarget = { kind: "linked"; collection: string } | { kin
 export type AccountProfile = { handle: ChessRiddleAccountHandle; username: string | null; plan: Plan; tactic_rating: number | null }
 export type AccountStatus = { status: "disconnected" } | { status: "reconnectNeeded" } | { status: "statusUnreadable"; error: AccountError } | { status: "connected"; account: AccountProfile; durability_uncertain: boolean }
 export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: DatabaseHandle | null }
+/**
+ * An API connection as entered in Settings. No `Debug`: it may carry a key.
+ */
+export type ApiConnectionInput = { 
+/**
+ * Absent for a new connection.
+ */
+handle?: CoachConnectionHandle | null; label: string; address: string; 
+/**
+ * Absent or empty keeps the stored key, which is only possible on the same host.
+ */
+key?: string | null }
 export type AppendOutcome = { appended: number; committed: boolean; indexReady: boolean; durabilityConfirmed: boolean }
 /**
  * A release-key signed artifact digest. The signature binds URL and hash.
@@ -1522,6 +1574,48 @@ export type ChessComGameType = "live" | "daily"
  */
 export type ChessRiddleAccountHandle = string
 export type ClockUpdateEvent = { gameId: string; session: bigint; revision: bigint; whiteTime: bigint | null; blackTime: bigint | null }
+/**
+ * Names one Coach connection. Like the ChessRiddle handle it never converts into another
+ * provider's handle.
+ */
+export type CoachConnectionHandle = string
+export type CoachError = 
+/**
+ * The Coach is switched off in this build.
+ */
+"unavailable" | 
+/**
+ * The connection does not exist (any more).
+ */
+"notFound" | 
+/**
+ * A label, key or other input is outside its bounds.
+ */
+"invalidInput" | 
+/**
+ * The address is not a URL, or too long.
+ */
+"invalidAddressFormat" | 
+/**
+ * The address carries user info, a query or a fragment.
+ */
+"invalidAddressCredentials" | 
+/**
+ * Not `https` to a public host, and not `http` to this machine or the home network.
+ */
+"invalidAddressScheme" | 
+/**
+ * The address moved to another host, so the key has to be entered again.
+ */
+"keyRequired" | "tooManyConnections" | 
+/**
+ * The stored connection cannot be read; it has to be entered again or removed.
+ */
+"needsRepair" | 
+/**
+ * The provider refused the key.
+ */
+"keyRejected" | "storage" | "network" | "rateLimited" | "providerFailure"
 export type CollectionDescriptor = { id: string; name: string; file: FileWorkspaceHandle; database: DatabaseHandle | null; account: AccountIdentity | null; status: CollectionStatus; generation: string; omitted: number; retiredDatabase: DatabaseHandle | null; fetchSinceMs: string | null; pendingBatch?: FileWorkspaceHandle | null }
 export type CollectionEdit = { kind: "delete"; games: LinkedGameLocator[] } | { kind: "cleanup"; empty: boolean; duplicates: boolean } | { kind: "renamePlayer"; from: string; to: string }
 export type CollectionStatus = "ready" | "stale" | "missing" | "retired" | "preservedOriginal" | "unavailable" | "trashed"
@@ -1542,6 +1636,18 @@ export type CompletionChanged = { id: string }
  * Shared outcome shape, also usable by the account workflow without another mailbox contract.
  */
 export type CompletionOutcome<T> = { state: "running" } | { state: "succeeded"; result: T } | { state: "failed"; result: ErrorPayload }
+export type ConnectionKind = "api"
+export type ConnectionRemoved = { durabilityUncertain: boolean }
+export type ConnectionSaved = { connection: ConnectionSummary; durabilityUncertain: boolean }
+export type ConnectionStatus = "ready" | 
+/**
+ * The stored secret is missing or cannot be read; the connection can be re-entered or removed.
+ */
+"needsRepair"
+/**
+ * Everything the renderer may know about a connection. No key or token is part of it.
+ */
+export type ConnectionSummary = { handle: CoachConnectionHandle; kind: ConnectionKind; label: string; address: string | null; hasKey: boolean; status: ConnectionStatus }
 /**
  * Import progress for a PGN-to-database conversion. A conversion has no total
  * to divide by until it finishes, so this reports the counters the UI shows
@@ -1697,6 +1803,20 @@ export type LichessRevocationOutcome = "revoked" | "already_invalid" | "unreacha
 export type LinkedGameIdentity = { locator: LinkedGameLocator; signature: GameSignature }
 export type LinkedGameLocator = { collection: string; generation: string; ordinal: number; stamp: string }
 export type MigrationChoice = "pgn" | "database" | "decline"
+export type ModelInfo = { id: string; name: string; 
+/**
+ * The effort levels the provider reports for this model; empty when it reports none.
+ */
+effortLevels: string[]; defaultEffort: string | null; 
+/**
+ * Whether the provider says the model accepts function calls; `None` when it does not say.
+ */
+supportsTools: boolean | null }
+export type ModelList = { models: ModelInfo[]; 
+/**
+ * The provider listed more than [`MAX_MODELS`] models and the rest was dropped.
+ */
+truncated: boolean }
 export type NormalizedGame = { orientation?: BoardOrientation; stamp?: string | null; linked?: LinkedGameLocator | null; id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
 /**
  * The novelty phase's outcome. `position` is the 0-based index into

@@ -46,6 +46,7 @@
           "src-tauri/src/chesscom.rs",
           "src-tauri/src/chessriddle.rs",
           "src-tauri/src/chessriddle_training.rs",
+          "src-tauri/src/coach/**",
           "src-tauri/src/credentials.rs",
           "src-tauri/src/lichess.rs",
           "src-tauri/src/oauth.rs",

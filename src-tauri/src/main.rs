@@ -10,6 +10,7 @@ mod chessbase;
 mod chesscom;
 mod chessriddle;
 mod chessriddle_training;
+mod coach;
 mod credentials;
 mod db;
 mod engine;
@@ -561,6 +562,7 @@ pub struct AppState {
     auth: Arc<AuthLifecycle>,
     credentials: Arc<crate::credentials::CredentialManager>,
     pub(crate) chessriddle: Arc<std::sync::OnceLock<crate::chessriddle::AccountOwner>>,
+    pub(crate) coach: Arc<std::sync::OnceLock<crate::coach::Coach>>,
     game_manager: Arc<GameManager>,
     progress_state: progress::ProgressStore,
     pub(crate) operations: OperationRegistry,
@@ -601,6 +603,7 @@ impl AppState {
             auth: Arc::new(AuthLifecycle::default()),
             credentials,
             chessriddle: Arc::new(std::sync::OnceLock::new()),
+            coach: Arc::new(std::sync::OnceLock::new()),
             game_manager: Arc::new(GameManager::default()),
             progress_state: Default::default(),
             operations,
@@ -1501,6 +1504,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chessriddle::chessriddle_save_training_settings,
             chessriddle::chessriddle_training_motifs,
             chessriddle::chessriddle_open_website,
+            coach::coach_available,
+            coach::coach_connections,
+            coach::coach_save_api_connection,
+            coach::coach_remove_connection,
+            coach::coach_models,
             close_splashscreen,
             verify_signed_bytes,
             prepare_native_read,
@@ -1815,6 +1823,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .chessriddle
                 .set(chessriddle)
                 .map_err(|_| "ChessRiddle token owner was already initialized")?;
+            let coach = crate::coach::initialize(app.handle())
+                .map_err(|_| "Coach connection storage could not be initialized")?;
+            app.state::<AppState>()
+                .coach
+                .set(coach)
+                .map_err(|_| "Coach was already initialized")?;
             app.state::<AppState>().pgn_repository.initialize_practice(
                 crate::infra::path_authority::ensure_app_owned_default_dir(
                     &app_data,

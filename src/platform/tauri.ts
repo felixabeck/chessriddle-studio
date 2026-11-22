@@ -21,23 +21,33 @@ import type {
 import { recordDatabaseWrite } from "./databaseWrites";
 import { normalizeError } from "./errors";
 import { ChessRiddleCommandError } from "./chessriddle";
+import { CoachCommandError } from "./coach";
 import { error as logError, getCurrentWindow } from "./native";
 import { capabilityKey } from "@/utils/pathCapabilities";
 
 const MAX_SAFE_COUNTER = BigInt(Number.MAX_SAFE_INTEGER);
-const CHESSRIDDLE_COMMANDS = new Set<PropertyKey>([
-    "chessriddleTrainingAvailable",
-    "chessriddleTrainingNext",
-    "chessriddleMistakeCount",
-    "chessriddleTrainingSubmit",
-    "chessriddleOpenUpgrade",
-    "chessriddleOpenWebsite",
-    "chessriddleTrainingSettings",
-    "chessriddleSaveTrainingSettings",
-    "chessriddleTrainingMotifs",
-    "chessriddleAccount",
-    "connectChessriddle",
-    "disconnectChessriddle",
+/**
+ * Commands whose failures cross the boundary only as their owner's closed error vocabulary. Each
+ * maps to the error class that reduces any cause to that vocabulary.
+ */
+const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error>([
+    ["chessriddleTrainingAvailable", ChessRiddleCommandError],
+    ["chessriddleTrainingNext", ChessRiddleCommandError],
+    ["chessriddleMistakeCount", ChessRiddleCommandError],
+    ["chessriddleTrainingSubmit", ChessRiddleCommandError],
+    ["chessriddleOpenUpgrade", ChessRiddleCommandError],
+    ["chessriddleOpenWebsite", ChessRiddleCommandError],
+    ["chessriddleTrainingSettings", ChessRiddleCommandError],
+    ["chessriddleSaveTrainingSettings", ChessRiddleCommandError],
+    ["chessriddleTrainingMotifs", ChessRiddleCommandError],
+    ["chessriddleAccount", ChessRiddleCommandError],
+    ["connectChessriddle", ChessRiddleCommandError],
+    ["disconnectChessriddle", ChessRiddleCommandError],
+    ["coachAvailable", CoachCommandError],
+    ["coachConnections", CoachCommandError],
+    ["coachSaveApiConnection", CoachCommandError],
+    ["coachRemoveConnection", CoachCommandError],
+    ["coachModels", CoachCommandError],
 ]);
 
 type GameCounterFields = Pick<GameState, "session" | "revision">;
@@ -491,10 +501,10 @@ export const tauri: TauriCommands = new Proxy(commands, {
                     args[sinceMsIndex] = encodeCounter(args[sinceMsIndex] as bigint, "sinceMs");
                 }
                 const result = await command(...args);
-                if (CHESSRIDDLE_COMMANDS.has(property)) {
+                const ClosedError = CLOSED_ERROR_COMMANDS.get(property);
+                if (ClosedError) {
                     if (isCommandResult(result)) {
-                        if (result.status === "error")
-                            throw new ChessRiddleCommandError(result.error);
+                        if (result.status === "error") throw new ClosedError(result.error);
                         return result.data;
                     }
                     return result;
@@ -510,10 +520,9 @@ export const tauri: TauriCommands = new Proxy(commands, {
                 }
                 return GAME_STATE_COMMANDS.has(property) ? normalizeGameState(value) : value;
             } catch (error) {
-                if (CHESSRIDDLE_COMMANDS.has(property)) {
-                    throw error instanceof ChessRiddleCommandError
-                        ? error
-                        : new ChessRiddleCommandError(error);
+                const ClosedError = CLOSED_ERROR_COMMANDS.get(property);
+                if (ClosedError) {
+                    throw error instanceof ClosedError ? error : new ClosedError(error);
                 }
                 if (error instanceof TauriCommandError) throw error;
                 throw new TauriCommandError(error);

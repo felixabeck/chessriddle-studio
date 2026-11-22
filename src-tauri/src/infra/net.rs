@@ -68,6 +68,68 @@ pub fn safe_http_client(
         .build()
 }
 
+const STREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// The longest silence a model stream may have between two reads.
+const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Process-lifetime client for long provider streams: the shared provider policy of
+/// [`safe_http_client`] without a total request timeout. The caller owns the overall deadline of a
+/// stream and sets a total timeout on every request that is not one.
+pub fn native_streaming_http_client(
+    builder: reqwest::ClientBuilder,
+) -> Result<reqwest::Client, reqwest::Error> {
+    builder
+        .dns_resolver(Arc::new(SafeResolver))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(STUDIO_USER_AGENT)
+        .connect_timeout(STREAM_CONNECT_TIMEOUT)
+        .read_timeout(STREAM_READ_TIMEOUT)
+        .build()
+}
+
+/// Process-lifetime client for a model runner on this machine or the home network. It has no
+/// [`SafeResolver`], so its caller must have established that the target is a local address, and it
+/// never goes through a proxy.
+pub fn local_streaming_http_client(
+    builder: reqwest::ClientBuilder,
+) -> Result<reqwest::Client, reqwest::Error> {
+    builder
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(STUDIO_USER_AGENT)
+        .connect_timeout(STREAM_CONNECT_TIMEOUT)
+        .read_timeout(STREAM_READ_TIMEOUT)
+        .build()
+}
+
+pub(crate) enum BoundedBodyError {
+    Transport(reqwest::Error),
+    TooLarge,
+}
+
+/// Reads a response body up to `max_bytes` and fails beyond it without buffering the excess.
+pub(crate) async fn read_bounded_body(
+    response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, BoundedBodyError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        return Err(BoundedBodyError::TooLarge);
+    }
+    let mut stream = response.bytes_stream();
+    let mut body = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(BoundedBodyError::Transport)?;
+        if body.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(BoundedBodyError::TooLarge);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 const JSON_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const JSON_READ_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const JSON_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);

@@ -136,6 +136,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Next and previous database record, return to practice position | `ArrowRight`, `ArrowLeft` | `web/src/components/puzzle/ReviewActionDock.tsx:22`, `web/src/components/entityEditor/EntityEditorHeader.tsx:113` |
 | Rename and edit metadata | `Pencil` | `web/src/components/profile/ProfileHeader.tsx:71` |
 | Repertoire file, review and settings | `BookOpen` | `web/src/components/puzzle/OpeningSelect.tsx:432` |
+| Coach settings category and panel | `MessagesSquare` | Closest by meaning |
 | Upload engine portrait | `ImagePlus` | `web/src/components/feedback/FeedbackModal.tsx:396` |
 | Refresh account or engine logs | `RefreshCw` | `web/src/components/settings/AccountSettings.tsx:291` |
 | Reset keybindings or reload file | `RotateCcw` | `web/src/components/settings/SettingsSidebar.tsx:97` |

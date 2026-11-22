@@ -48,21 +48,21 @@ pub(crate) async fn safe_oauth_http_client(
         .execute(builder.build().map_err(oauth2::reqwest::Error::Reqwest)?)
         .await
         .map_err(oauth2::reqwest::Error::Reqwest)?;
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_OAUTH_RESPONSE_BYTES as u64)
-    {
-        return Err(oauth2::reqwest::Error::Other(
-            "OAuth response exceeded the native limit".into(),
-        ));
-    }
     let status = response.status();
     let headers = response.headers().clone();
-    let body = response
-        .bytes()
-        .await
-        .map_err(oauth2::reqwest::Error::Reqwest)?;
-    oauth_response_from_reqwest(status, &headers, body)
+    let body = match crate::infra::net::read_bounded_body(response, MAX_OAUTH_RESPONSE_BYTES).await
+    {
+        Ok(body) => body,
+        Err(crate::infra::net::BoundedBodyError::Transport(error)) => {
+            return Err(oauth2::reqwest::Error::Reqwest(error));
+        }
+        Err(crate::infra::net::BoundedBodyError::TooLarge) => {
+            return Err(oauth2::reqwest::Error::Other(
+                "OAuth response exceeded the native limit".into(),
+            ));
+        }
+    };
+    oauth_response_from_reqwest(status, &headers, body.into())
 }
 
 pub(crate) fn oauth_response_from_reqwest(

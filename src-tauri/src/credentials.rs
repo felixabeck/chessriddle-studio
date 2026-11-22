@@ -37,10 +37,15 @@ const KEYRING_SERVICE_SUFFIX: &str = ".lichess";
 const REGISTRY_FILE: &str = "lichess-accounts.json";
 const REGISTRY_VERSION: u8 = 2;
 
+/// Windows Credential Manager limits a credential blob to 2560 bytes of UTF-16. A secret that
+/// must be storable on every platform stays within this many UTF-16 units.
+pub(crate) const MAX_KEYRING_SECRET_UTF16_UNITS: usize = 1280;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CredentialProvider {
     Lichess,
     ChessRiddle,
+    Coach,
 }
 
 impl CredentialProvider {
@@ -48,6 +53,7 @@ impl CredentialProvider {
         match self {
             Self::Lichess => REGISTRY_FILE,
             Self::ChessRiddle => "chessriddle-account.json",
+            Self::Coach => "coach-connections.json",
         }
     }
 
@@ -55,6 +61,33 @@ impl CredentialProvider {
         match self {
             Self::Lichess => format!("lichess-account:{}", handle.0),
             Self::ChessRiddle => format!("chessriddle-account:{}", handle.0),
+            Self::Coach => format!("coach-connection:{}", handle.0),
+        }
+    }
+
+    /// How many accounts the registry may hold, pending records included.
+    fn max_accounts(self) -> Option<usize> {
+        match self {
+            Self::Lichess => None,
+            Self::ChessRiddle => Some(1),
+            Self::Coach => Some(16),
+        }
+    }
+
+    /// Storing under a known name re-authenticates that account and keeps its handle. A Coach
+    /// connection's name is only a display label, so every store there is a new account.
+    fn reauthenticates_by_name(self) -> bool {
+        match self {
+            Self::Lichess | Self::ChessRiddle => true,
+            Self::Coach => false,
+        }
+    }
+
+    /// A durable deletion intent removes local authority even while the keyring is unreachable.
+    fn removal_survives_keyring_failure(self) -> bool {
+        match self {
+            Self::ChessRiddle | Self::Coach => true,
+            Self::Lichess => false,
         }
     }
 }
@@ -64,27 +97,69 @@ impl CredentialProvider {
 #[serde(transparent)]
 pub(crate) struct ChessRiddleAccountHandle(pub String);
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
-pub(crate) struct ChessRiddleAccountMetadata {
-    pub handle: ChessRiddleAccountHandle,
+/// Names one Coach connection. Like the ChessRiddle handle it never converts into another
+/// provider's handle.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub(crate) struct CoachConnectionHandle(pub String);
+
+/// A provider's own opaque handle type over the shared journal's record key.
+pub(crate) trait ProviderHandle: Clone + Send + 'static {
+    fn from_raw(raw: String) -> Self;
+    fn into_raw(self) -> String;
+}
+
+impl ProviderHandle for ChessRiddleAccountHandle {
+    fn from_raw(raw: String) -> Self {
+        Self(raw)
+    }
+
+    fn into_raw(self) -> String {
+        self.0
+    }
+}
+
+impl ProviderHandle for CoachConnectionHandle {
+    fn from_raw(raw: String) -> Self {
+        Self(raw)
+    }
+
+    fn into_raw(self) -> String {
+        self.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ProviderAccount<H> {
+    pub handle: H,
     pub username: String,
 }
 
-/// Only this adapter may use the shared journal's internal record representation.
-/// Its manager and Lichess-shaped records never leave the credential subsystem.
-pub(crate) struct ChessRiddleCredentials(CredentialManager);
-
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct ChessRiddleRemoval {
+pub(crate) struct ProviderRemoval {
     pub durability_uncertain: bool,
 }
 
-impl ChessRiddleCredentials {
+/// The async door to one provider's journaled credentials. Only this adapter may use the shared
+/// journal's internal record representation: its manager and Lichess-shaped records never leave
+/// the credential subsystem. Every call offloads the keyring and registry work to the blocking
+/// gateway.
+pub(crate) struct ProviderCredentials<H> {
+    manager: CredentialManager,
+    handle: std::marker::PhantomData<fn() -> H>,
+}
+
+pub(crate) type ChessRiddleAccountMetadata = ProviderAccount<ChessRiddleAccountHandle>;
+pub(crate) type ChessRiddleCredentials = ProviderCredentials<ChessRiddleAccountHandle>;
+pub(crate) type CoachCredentials = ProviderCredentials<CoachConnectionHandle>;
+
+impl ProviderCredentials<ChessRiddleAccountHandle> {
     #[cfg(test)]
     pub(crate) fn with_uncertain_store(store: Arc<dyn CredentialStore>) -> Self {
-        let mut manager = CredentialManager::with_uncertain_persistence(store);
-        manager.provider = CredentialProvider::ChessRiddle;
-        Self(manager)
+        Self::from_manager(
+            CredentialManager::with_uncertain_persistence(store),
+            CredentialProvider::ChessRiddle,
+        )
     }
 
     pub(crate) fn new(identifier: &str) -> Self {
@@ -94,41 +169,78 @@ impl ChessRiddleCredentials {
     }
 
     pub(crate) fn with_store(store: Arc<dyn CredentialStore>) -> Self {
-        let mut manager = CredentialManager::new(store);
-        manager.provider = CredentialProvider::ChessRiddle;
-        Self(manager)
+        Self::from_manager(
+            CredentialManager::new(store),
+            CredentialProvider::ChessRiddle,
+        )
+    }
+}
+
+impl ProviderCredentials<CoachConnectionHandle> {
+    pub(crate) fn new(identifier: &str) -> Self {
+        Self::with_store(Arc::new(OsCredentialStore {
+            service: format!("{identifier}.coach"),
+        }))
+    }
+
+    pub(crate) fn with_store(store: Arc<dyn CredentialStore>) -> Self {
+        Self::from_manager(CredentialManager::new(store), CredentialProvider::Coach)
+    }
+
+    /// Initialized credentials over `store` in a temporary app data directory.
+    #[cfg(test)]
+    pub(crate) fn for_test(store: Arc<dyn CredentialStore>) -> (Self, tempfile::TempDir) {
+        let directory = tempfile::tempdir().expect("temporary app data directory");
+        let credentials = Self::with_store(store);
+        credentials
+            .initialize(&AppDataDir::for_test(directory.path()))
+            .expect("coach credential registry");
+        (credentials, directory)
+    }
+}
+
+impl<H: ProviderHandle> ProviderCredentials<H> {
+    fn from_manager(mut manager: CredentialManager, provider: CredentialProvider) -> Self {
+        manager.provider = provider;
+        Self {
+            manager,
+            handle: std::marker::PhantomData,
+        }
     }
 
     pub(crate) fn initialize(&self, app_data_dir: &AppDataDir) -> Result<(), Error> {
-        self.0.initialize(app_data_dir)
+        self.manager.initialize(app_data_dir)
     }
 
-    pub(crate) async fn list(self: &Arc<Self>) -> Result<Vec<ChessRiddleAccountMetadata>, Error> {
-        let manager = self.clone();
+    async fn blocking<T, F>(self: &Arc<Self>, work: F) -> Result<T, Error>
+    where
+        T: Send + 'static,
+        F: FnOnce(&CredentialManager) -> Result<T, Error> + Send + 'static,
+    {
+        let credentials = self.clone();
         BLOCKING_GATEWAY
             .spawn_cancellable(CancellationToken::new(), move |_| {
-                Ok(manager
-                    .0
-                    .list()?
-                    .into_iter()
-                    .map(|account| ChessRiddleAccountMetadata {
-                        handle: ChessRiddleAccountHandle(account.handle.0),
-                        username: account.username,
-                    })
-                    .collect())
+                work(&credentials.manager)
             })
             .await
     }
 
-    pub(crate) async fn token(
-        self: &Arc<Self>,
-        handle: ChessRiddleAccountHandle,
-    ) -> Result<Option<String>, Error> {
-        let manager = self.clone();
-        BLOCKING_GATEWAY
-            .spawn_cancellable(CancellationToken::new(), move |_| {
-                manager.0.token(&LichessAccountHandle(handle.0))
-            })
+    pub(crate) async fn list(self: &Arc<Self>) -> Result<Vec<ProviderAccount<H>>, Error> {
+        self.blocking(|manager| {
+            Ok(manager
+                .list()?
+                .into_iter()
+                .map(|account| ProviderAccount {
+                    handle: H::from_raw(account.handle.0),
+                    username: account.username,
+                })
+                .collect())
+        })
+        .await
+    }
+
+    pub(crate) async fn token(self: &Arc<Self>, handle: H) -> Result<Option<String>, Error> {
+        self.blocking(move |manager| manager.token(&LichessAccountHandle(handle.into_raw())))
             .await
     }
 
@@ -136,63 +248,61 @@ impl ChessRiddleCredentials {
         self: &Arc<Self>,
         username: String,
         token: String,
-    ) -> Result<(ChessRiddleAccountMetadata, bool), Error> {
-        let manager = self.clone();
-        BLOCKING_GATEWAY
-            .spawn_cancellable(CancellationToken::new(), move |_| {
-                manager.0.reconcile()?;
-                let result = manager.0.store_lichess_token(username, token)?;
-                Ok((
-                    ChessRiddleAccountMetadata {
-                        handle: ChessRiddleAccountHandle(result.account.handle.0),
-                        username: result.account.username,
-                    },
-                    result.durability_uncertain,
-                ))
-            })
-            .await
+    ) -> Result<(ProviderAccount<H>, bool), Error> {
+        self.blocking(move |manager| {
+            manager.reconcile()?;
+            let result = manager.store_lichess_token(username, token)?;
+            Ok((
+                ProviderAccount {
+                    handle: H::from_raw(result.account.handle.0),
+                    username: result.account.username,
+                },
+                result.durability_uncertain,
+            ))
+        })
+        .await
     }
 
-    pub(crate) async fn replace(
+    /// Rewrites an active account's secret under its handle and keeps its name.
+    pub(crate) async fn replace(self: &Arc<Self>, handle: H, token: String) -> Result<(), Error> {
+        self.blocking(move |manager| {
+            manager
+                .update(&LichessAccountHandle(handle.into_raw()), None, &token)
+                .map(|_| ())
+        })
+        .await
+    }
+
+    /// Rewrites an active account's secret and name under its handle. Returns whether the
+    /// renamed registry was committed without a durability guarantee.
+    pub(crate) async fn update(
         self: &Arc<Self>,
-        handle: ChessRiddleAccountHandle,
+        handle: H,
+        username: String,
         token: String,
-    ) -> Result<(), Error> {
-        let manager = self.clone();
-        BLOCKING_GATEWAY
-            .spawn_cancellable(CancellationToken::new(), move |_| {
-                let mut registry = credential_lock(&manager.0.registry)?;
-                let Some(AccountRecord::Active(metadata)) =
-                    registry.accounts.get(&handle.0).cloned()
-                else {
-                    return Err(Error::CredentialRecoveryRequired);
-                };
-                manager.0.checked_keyring_write(
-                    &mut registry,
-                    &metadata,
-                    &token,
-                    CredentialWriteKind::Reauthentication,
-                )?;
-                Ok(())
-            })
-            .await
+    ) -> Result<bool, Error> {
+        self.blocking(move |manager| {
+            manager.update(
+                &LichessAccountHandle(handle.into_raw()),
+                Some(username),
+                &token,
+            )
+        })
+        .await
     }
 
     pub(crate) async fn remove(
         self: &Arc<Self>,
-        handle: ChessRiddleAccountHandle,
-    ) -> Result<Option<ChessRiddleRemoval>, Error> {
-        let manager = self.clone();
-        BLOCKING_GATEWAY
-            .spawn_cancellable(CancellationToken::new(), move |_| {
-                Ok(manager
-                    .0
-                    .remove(&LichessAccountHandle(handle.0))?
-                    .map(|result| ChessRiddleRemoval {
-                        durability_uncertain: result.durability_uncertain,
-                    }))
-            })
-            .await
+        handle: H,
+    ) -> Result<Option<ProviderRemoval>, Error> {
+        self.blocking(move |manager| {
+            Ok(manager
+                .remove(&LichessAccountHandle(handle.into_raw()))?
+                .map(|result| ProviderRemoval {
+                    durability_uncertain: result.durability_uncertain,
+                }))
+        })
+        .await
     }
 }
 
@@ -559,16 +669,21 @@ impl CredentialManager {
         let mut registry = credential_lock(&self.registry)?;
         // Re-authentication must retain the public opaque handle.  Otherwise a successful
         // refresh would orphan the old keyring entry and every persisted renderer session.
-        if let Some(existing) = registry.accounts.values().find_map(|record| match record {
-            AccountRecord::Active(metadata)
-                if metadata.username.eq_ignore_ascii_case(username.trim()) =>
-            {
-                Some(metadata.clone())
-            }
-            AccountRecord::Active(_)
-            | AccountRecord::PendingAdd(_)
-            | AccountRecord::PendingDelete(_) => None,
-        }) {
+        let existing = if self.provider.reauthenticates_by_name() {
+            registry.accounts.values().find_map(|record| match record {
+                AccountRecord::Active(metadata)
+                    if metadata.username.eq_ignore_ascii_case(username.trim()) =>
+                {
+                    Some(metadata.clone())
+                }
+                AccountRecord::Active(_)
+                | AccountRecord::PendingAdd(_)
+                | AccountRecord::PendingDelete(_) => None,
+            })
+        } else {
+            None
+        };
+        if let Some(existing) = existing {
             self.checked_keyring_write(
                 &mut registry,
                 &existing,
@@ -580,7 +695,11 @@ impl CredentialManager {
                 durability_uncertain: false,
             });
         }
-        if self.provider == CredentialProvider::ChessRiddle && !registry.accounts.is_empty() {
+        if self
+            .provider
+            .max_accounts()
+            .is_some_and(|max| registry.accounts.len() >= max)
+        {
             return Err(Error::CredentialRecoveryRequired);
         }
         let metadata = LichessAccountMetadata {
@@ -593,6 +712,47 @@ impl CredentialManager {
             account: metadata,
             durability_uncertain,
         })
+    }
+
+    /// Rewrites an active account's keyring secret under its existing handle and, when a
+    /// different `username` is given, its name in the registry. The secret is written first: a
+    /// failed rename leaves the new secret under the old name, never the reverse.
+    fn update(
+        &self,
+        handle: &LichessAccountHandle,
+        username: Option<String>,
+        token: &str,
+    ) -> Result<bool, Error> {
+        let mut registry = credential_lock(&self.registry)?;
+        let Some(AccountRecord::Active(metadata)) = registry.accounts.get(&handle.0).cloned()
+        else {
+            return Err(Error::CredentialRecoveryRequired);
+        };
+        self.checked_keyring_write(
+            &mut registry,
+            &metadata,
+            token,
+            CredentialWriteKind::Reauthentication,
+        )?;
+        let Some(username) = username.filter(|username| *username != metadata.username) else {
+            return Ok(false);
+        };
+        registry.accounts.insert(
+            handle.0.clone(),
+            AccountRecord::Active(LichessAccountMetadata {
+                handle: metadata.handle.clone(),
+                username,
+            }),
+        );
+        match self.persist_locked(&registry) {
+            Ok(commit) => Ok(commit == RegistryCommit::CommittedDurabilityUncertain),
+            Err(error) => {
+                registry
+                    .accounts
+                    .insert(handle.0.clone(), AccountRecord::Active(metadata));
+                Err(error)
+            }
+        }
     }
 
     /// Checks the registry location before writing and compensates if it changes during a write.
@@ -793,14 +953,14 @@ impl CredentialManager {
         let commit = match self.persist_locked(&registry) {
             Ok(commit) => commit,
             Err(error) => {
-                if self.provider == CredentialProvider::ChessRiddle {
+                if self.provider.removal_survives_keyring_failure() {
                     registry.accounts.insert(handle.0.clone(), record);
                 }
                 return Err(error);
             }
         };
         let mut durability_uncertain = commit == RegistryCommit::CommittedDurabilityUncertain;
-        let token = if self.provider == CredentialProvider::ChessRiddle {
+        let token = if self.provider.removal_survives_keyring_failure() {
             // A durable deletion intent removes local authority even if the keyring is offline.
             self.store
                 .get(&self.provider.key(&metadata.handle))
@@ -810,7 +970,7 @@ impl CredentialManager {
             self.store.get(&self.provider.key(&metadata.handle))?
         };
         if let Err(error) = self.store.delete(&self.provider.key(&metadata.handle)) {
-            if self.provider == CredentialProvider::ChessRiddle {
+            if self.provider.removal_survives_keyring_failure() {
                 return Ok(Some(RemovedLichessCredential {
                     token,
                     durability_uncertain,
@@ -828,7 +988,7 @@ impl CredentialManager {
                 registry
                     .accounts
                     .insert(handle.0.clone(), AccountRecord::PendingDelete(metadata));
-                if self.provider == CredentialProvider::ChessRiddle {
+                if self.provider.removal_survives_keyring_failure() {
                     return Ok(Some(RemovedLichessCredential {
                         token,
                         durability_uncertain: true,
@@ -945,7 +1105,10 @@ impl CredentialManager {
 
     fn validate_registry(&self, registry: &RegistryFile) -> Result<(), Error> {
         if registry.version != REGISTRY_VERSION
-            || (self.provider == CredentialProvider::ChessRiddle && registry.accounts.len() > 1)
+            || self
+                .provider
+                .max_accounts()
+                .is_some_and(|max| registry.accounts.len() > max)
         {
             return Err(Error::CredentialFailure(
                 "credential registry is invalid".into(),
@@ -1115,23 +1278,23 @@ mod tests {
             username: account.username.clone(),
         };
         {
-            let mut registry = credentials.0.registry.lock().unwrap();
+            let mut registry = credentials.manager.registry.lock().unwrap();
             registry.accounts.insert(
                 account.handle.0.clone(),
                 AccountRecord::PendingAdd(metadata.clone()),
             );
-            credentials.0.persist_locked(&registry).unwrap();
+            credentials.manager.persist_locked(&registry).unwrap();
         }
         let restarted = Arc::new(ChessRiddleCredentials::with_store(store.clone()));
         restarted.initialize(&root).unwrap();
         assert_eq!(restarted.list().await.unwrap(), vec![account.clone()]);
         {
-            let mut registry = restarted.0.registry.lock().unwrap();
+            let mut registry = restarted.manager.registry.lock().unwrap();
             registry.accounts.insert(
                 account.handle.0.clone(),
                 AccountRecord::PendingDelete(metadata),
             );
-            restarted.0.persist_locked(&registry).unwrap();
+            restarted.manager.persist_locked(&registry).unwrap();
         }
         let restarted = Arc::new(ChessRiddleCredentials::with_store(store.clone()));
         restarted.initialize(&root).unwrap();
@@ -1143,15 +1306,136 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn coach_connections_never_share_a_handle_by_name_and_are_bounded() {
+        let store = Arc::new(MemoryCredentialStore::default());
+        let (credentials, _directory) = CoachCredentials::for_test(store.clone());
+        let credentials = Arc::new(credentials);
+
+        let (first, _) = credentials
+            .store("Home".into(), "first".into())
+            .await
+            .unwrap();
+        let (second, _) = credentials
+            .store("home".into(), "second".into())
+            .await
+            .unwrap();
+        assert_ne!(first.handle, second.handle);
+        assert_eq!(
+            store
+                .get(&format!("coach-connection:{}", first.handle.0))
+                .unwrap()
+                .as_deref(),
+            Some("first")
+        );
+        assert_eq!(
+            credentials.token(second.handle).await.unwrap().as_deref(),
+            Some("second")
+        );
+
+        for index in 2..16 {
+            credentials
+                .store(format!("Connection {index}"), "secret".into())
+                .await
+                .unwrap();
+        }
+        assert!(matches!(
+            credentials.store("One more".into(), "secret".into()).await,
+            Err(Error::CredentialRecoveryRequired)
+        ));
+        assert_eq!(credentials.list().await.unwrap().len(), 16);
+    }
+
+    #[tokio::test]
+    async fn coach_update_rewrites_secret_and_name_under_the_same_handle() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(MemoryCredentialStore::default());
+        let credentials = Arc::new(CoachCredentials::with_store(store.clone()));
+        let root = AppDataDir::for_test(temp.path());
+        credentials.initialize(&root).unwrap();
+        let (account, _) = credentials
+            .store("Old name".into(), "old".into())
+            .await
+            .unwrap();
+
+        credentials
+            .update(account.handle.clone(), "New name".into(), "new".into())
+            .await
+            .unwrap();
+        credentials
+            .replace(account.handle.clone(), "newer".into())
+            .await
+            .unwrap();
+
+        let restarted = Arc::new(CoachCredentials::with_store(store));
+        restarted.initialize(&root).unwrap();
+        assert_eq!(
+            restarted.list().await.unwrap(),
+            vec![ProviderAccount {
+                handle: account.handle.clone(),
+                username: "New name".into(),
+            }]
+        );
+        assert_eq!(
+            restarted.token(account.handle).await.unwrap().as_deref(),
+            Some("newer")
+        );
+        let unknown = CoachConnectionHandle(LichessAccountHandle::new().0);
+        assert!(matches!(
+            restarted
+                .update(unknown, "Name".into(), "secret".into())
+                .await,
+            Err(Error::CredentialRecoveryRequired)
+        ));
+    }
+
+    #[tokio::test]
+    async fn coach_rename_failure_keeps_the_old_name_with_the_new_secret() {
+        let temp = tempfile::tempdir().unwrap();
+        let persistence = Arc::new(RecordingPersistence::default());
+        let store = Arc::new(MemoryCredentialStore::default());
+        let manager = CredentialManager::with_persistence(store.clone(), persistence.clone());
+        let credentials = Arc::new(CoachCredentials::from_manager(
+            manager,
+            CredentialProvider::Coach,
+        ));
+        credentials
+            .initialize(&AppDataDir::for_test(temp.path()))
+            .unwrap();
+        let (account, _) = credentials
+            .store("Old name".into(), "old".into())
+            .await
+            .unwrap();
+        persistence.fail_on(
+            persistence
+                .writes
+                .load(std::sync::atomic::Ordering::Relaxed)
+                + 1,
+        );
+
+        assert!(credentials
+            .update(account.handle.clone(), "New name".into(), "new".into())
+            .await
+            .is_err());
+
+        assert_eq!(credentials.list().await.unwrap(), vec![account.clone()]);
+        assert_eq!(
+            credentials.token(account.handle).await.unwrap().as_deref(),
+            Some("new")
+        );
+    }
+
+    #[tokio::test]
     async fn chessriddle_disconnect_before_journal_failure_preserves_local_authority() {
         let temp = tempfile::tempdir().unwrap();
         let persistence = Arc::new(RecordingPersistence::default());
-        let mut manager = CredentialManager::with_persistence(
+        let manager = CredentialManager::with_persistence(
             Arc::new(MemoryCredentialStore::default()),
             persistence.clone(),
         );
-        manager.provider = CredentialProvider::ChessRiddle;
-        let credentials = Arc::new(ChessRiddleCredentials(manager));
+        let credentials = Arc::new(ChessRiddleCredentials::from_manager(
+            manager,
+            CredentialProvider::ChessRiddle,
+        ));
         credentials
             .initialize(&AppDataDir::for_test(temp.path()))
             .unwrap();
@@ -1178,9 +1462,11 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let persistence = Arc::new(RecordingPersistence::default());
         let store = Arc::new(MemoryCredentialStore::default());
-        let mut manager = CredentialManager::with_persistence(store.clone(), persistence.clone());
-        manager.provider = CredentialProvider::ChessRiddle;
-        let credentials = Arc::new(ChessRiddleCredentials(manager));
+        let manager = CredentialManager::with_persistence(store.clone(), persistence.clone());
+        let credentials = Arc::new(ChessRiddleCredentials::from_manager(
+            manager,
+            CredentialProvider::ChessRiddle,
+        ));
         let root = AppDataDir::for_test(temp.path());
         credentials.initialize(&root).unwrap();
         let (account, _) = credentials
@@ -1195,7 +1481,7 @@ mod tests {
         );
         assert_eq!(
             credentials.remove(account.handle).await.unwrap(),
-            Some(ChessRiddleRemoval {
+            Some(ProviderRemoval {
                 durability_uncertain: true
             })
         );
@@ -1219,7 +1505,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             credentials.remove(account.handle).await.unwrap(),
-            Some(ChessRiddleRemoval {
+            Some(ProviderRemoval {
                 durability_uncertain: false
             })
         );

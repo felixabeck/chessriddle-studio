@@ -15,6 +15,7 @@ import { notifications } from "@mantine/notifications";
 import { useHotkeys } from "@mantine/hooks";
 import {
   BookOpen,
+  MessagesSquare,
   Palette,
   ChessKnight,
   Wrench,
@@ -26,7 +27,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { useLoaderData } from "@tanstack/react-router";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { RESET } from "jotai/utils";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -68,6 +69,7 @@ import {
   boardWoodTextureAtom,
   puzzleWorkspaceGenerationAtom,
 } from "@/state/atoms";
+import { coachEnabledAtom } from "@/state/coach";
 import { keybindLabel, keyMapAtom } from "@/state/keybinds";
 import { panelsBesideNotationAtom } from "@/state/layoutStorage";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
@@ -78,6 +80,8 @@ import DraftNumberInput from "../common/DraftNumberInput";
 import { IconAction } from "../common/IconAction";
 import { clearSavedData, openAppLogs, reloadApp } from "./advancedActions";
 import BoardSelect from "./BoardSelect";
+import { CoachConnections } from "./coach/CoachConnections";
+import { CoachEngineSelect } from "./coach/CoachEngineSelect";
 import KeybindInput from "./KeybindInput";
 import { DrawingKeybinds } from "./DrawingKeybinds";
 import PercentagePreferenceSlider from "./PercentagePreferenceSlider";
@@ -107,6 +111,7 @@ const SETTING_CATEGORIES = [
   "keybinds",
   "directories",
   "repertoire",
+  "coach",
   "advanced",
 ] as const;
 
@@ -181,8 +186,14 @@ export default function Page() {
   const [defaultPanelTab, setDefaultPanelTab] = useAtom(defaultPanelTabAtom);
   const [practiceGrading, setPracticeGrading] = useAtom(practiceGradingAtom);
   const [practiceNewPerSession, setPracticeNewPerSession] = useAtom(practiceNewPerSessionAtom);
+  // A build without the Coach shows nothing of it: no category, no rows, no search results.
+  const coachEnabled = useAtomValue(coachEnabledAtom);
+  const categories = useMemo(
+    () => SETTING_CATEGORIES.filter((category) => category !== "coach" || coachEnabled),
+    [coachEnabled],
+  );
 
-  const settings: SettingItem[] = useMemo(
+  const allSettings: SettingItem[] = useMemo(
     () => [
       // Board settings
       {
@@ -694,6 +705,14 @@ export default function Page() {
         ),
       },
       {
+        id: "coach-engine",
+        category: "coach",
+        title: t("Settings.Coach.Engine"),
+        description: t("Settings.Coach.Engine.Desc"),
+        keywords: ["coach", "ai", "engine"],
+        render: () => <CoachEngineSelect />,
+      },
+      {
         id: "reload",
         category: "advanced",
         title: t("Menu.View.Reload"),
@@ -758,6 +777,11 @@ export default function Page() {
     ],
   );
 
+  const settings = useMemo(
+    () => allSettings.filter((setting) => categories.includes(setting.category)),
+    [allSettings, categories],
+  );
+
   useHotkeys([["mod+f", () => searchInputRef.current?.focus()]]);
 
   const categoryInfo: Record<
@@ -799,6 +823,11 @@ export default function Page() {
         title: t("Settings.Repertoire"),
         description: t("Settings.Repertoire.Desc"),
         icon: <BookOpen size="1rem" />,
+      },
+      coach: {
+        title: t("Settings.Coach"),
+        description: t("Settings.Coach.Desc"),
+        icon: <MessagesSquare size="1rem" />,
       },
       advanced: {
         title: t("Settings.Advanced"),
@@ -947,7 +976,7 @@ export default function Page() {
           }}
         >
           <Tabs.List h={compactTabs ? undefined : "100%"}>
-            {SETTING_CATEGORIES.map((category) => (
+            {categories.map((category) => (
               <Tabs.Tab key={category} value={category} leftSection={categoryInfo[category].icon}>
                 {categoryInfo[category].title}
               </Tabs.Tab>
@@ -956,7 +985,7 @@ export default function Page() {
           <Stack flex={1} className={classes.settingsContent}>
             <ScrollArea className={classes.settingsScroll}>
               <Card withBorder className={`${classes.card} wrap-anywhere`} w="100%">
-                {SETTING_CATEGORIES.map((category) => {
+                {categories.map((category) => {
                   const title = (
                     <Text size="lg" fw={500} className={classes.title}>
                       {categoryInfo[category].title}
@@ -978,6 +1007,7 @@ export default function Page() {
                       <Text size="xs" c="dimmed" mt={3} mb="lg">
                         {categoryInfo[category].description}
                       </Text>
+                      {category === "coach" && <CoachConnections />}
                       {isKeybinds ? renderKeybinds() : renderCategorySettings(category)}
                     </Tabs.Panel>
                   );
