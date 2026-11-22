@@ -1181,13 +1181,10 @@ mod tests {
         let (state, store, _directory) = signed_in_coach(&provider);
         let app = tauri::test::mock_app();
         app.manage(state.clone());
-        let opened = Arc::new(Mutex::new(Vec::<String>::new()));
-        let opener: BrowserOpener = Arc::new({
-            let opened = opened.clone();
-            move |url: &str| {
-                opened.lock().unwrap().push(url.to_owned());
-                Ok(())
-            }
+        let (opening, mut opened) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let opener: BrowserOpener = Arc::new(move |url: &str| {
+            let _ = opening.send(url.to_owned());
+            Ok(())
         });
 
         // The user never approves: the cancel command ends the wait, and nothing is stored.
@@ -1200,7 +1197,12 @@ mod tests {
             .unwrap();
         assert_eq!(code.user_code, "WXYZ-9876");
         assert_eq!(code.verification_url, provider.server.url("/activate"));
-        assert_eq!(*opened.lock().unwrap(), [provider.server.url("/activate")]);
+        // The code is handed out first and the page opened after it, so a slow browser cannot
+        // hold the dialog back: the page is waited for here, not expected to be open already.
+        let page = tokio::time::timeout(Duration::from_secs(10), opened.recv())
+            .await
+            .expect("the sign-in page is opened");
+        assert_eq!(page, Some(provider.server.url("/activate")));
         coach_cancel_sign_in("grok-1".into(), app.state())
             .await
             .unwrap();
