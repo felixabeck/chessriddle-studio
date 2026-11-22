@@ -69,13 +69,19 @@ const Answer = memo(function Answer({ message }: { message: CoachAnswerMessage }
 
 function Running({ turn }: { turn: CoachRunningTurn }) {
   const { t } = useTranslation();
+  const checking = turn.checking;
+  const line = checking?.line.join(" ");
   const activity = turn.stopping
     ? t("Coach.Stopping")
-    : turn.checking === null
+    : !checking
       ? t("Coach.Thinking")
-      : turn.checking.length === 0
-        ? t("Coach.CheckingPosition")
-        : t("Coach.CheckingLine", { line: turn.checking.join(" ") });
+      : checking.source === "database"
+        ? line
+          ? t("Coach.LookingUpLine", { line })
+          : t("Coach.LookingUpPosition")
+        : line
+          ? t("Coach.CheckingLine", { line })
+          : t("Coach.CheckingPosition");
   return (
     <>
       <div className={classes.question}>{turn.question}</div>

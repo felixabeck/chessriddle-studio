@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CoachError, Segment } from "@/bindings";
+import type { CoachError, Segment, ToolSource } from "@/bindings";
 import { isCoachError } from "@/platform/coach";
 import { serializeStorageValue } from "./store/debouncedStorage";
 
@@ -92,8 +92,11 @@ export type CoachRunningTurn = {
     question: string;
     /** The text streamed in the running round. */
     text: string;
-    /** The line the engine is checking at the moment (empty: the position itself), if any. */
-    checking: string[] | null;
+    /**
+     * The line that is checked at the moment (empty: the position itself) and where: by the
+     * engine or in the reference database. `null` while nothing is looked up.
+     */
+    checking: { source: ToolSource; line: string[] } | null;
     /** A stop was requested; the turn's end has not arrived yet. */
     stopping: boolean;
     /** The game or conversation the turn belonged to is gone; it only still has to end. */

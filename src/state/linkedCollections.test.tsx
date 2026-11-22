@@ -6,6 +6,7 @@ import type { CollectionDescriptor, DatabaseHandle } from "@/bindings";
 import { recordDatabaseWrite } from "@/platform/databaseWrites";
 import { registerCollectionCheck, startFileRevisionPoll } from "./fileFreshness";
 import {
+  currentCollectionDatabase,
   isCollectionConsumer,
   useCollectionCurrencies,
   useCollectionCurrency,
@@ -723,4 +724,36 @@ test("database content revision keys on pending lookup, generation, writes, and 
   await act(async () => focus());
   await flush();
   expect(snapshot().unavailable).toBe(true);
+});
+
+test("a chosen database stands for what its collection publishes now, or for nothing while that is unknown", () => {
+  const published: DatabaseHandle = { id: { id: "published" }, kind: "database" };
+  const settled = { pending: false, collection: null };
+  // No collection: the chosen database itself. No choice: nothing.
+  expect(currentCollectionDatabase(handle, settled)).toBe(handle);
+  expect(currentCollectionDatabase(null, settled)).toBeNull();
+  // A ready collection answers with the database it publishes now.
+  expect(
+    currentCollectionDatabase(handle, {
+      pending: false,
+      collection: { ...collection, database: published },
+    }),
+  ).toBe(published);
+  // Being checked, a failed check, a collection that is not ready or has no database: nothing.
+  expect(currentCollectionDatabase(handle, { pending: true, collection: null })).toBeNull();
+  expect(
+    currentCollectionDatabase(handle, { ...settled, error: new Error("unavailable") }),
+  ).toBeNull();
+  expect(
+    currentCollectionDatabase(handle, {
+      pending: false,
+      collection: { ...collection, status: "stale" },
+    }),
+  ).toBeNull();
+  expect(
+    currentCollectionDatabase(handle, {
+      pending: false,
+      collection: { ...collection, database: null },
+    }),
+  ).toBeNull();
 });

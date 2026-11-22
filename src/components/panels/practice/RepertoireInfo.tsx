@@ -25,7 +25,7 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { TreeStatsBar } from "@/components/common/TreeStatsBar";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { coverageMinGamesAtom, referenceDbAtom } from "@/state/atoms";
-import { useCollectionCurrency } from "@/state/linkedCollections";
+import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linkedCollections";
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { formatMoveNumber, roundKeepSum } from "@/utils/format";
 import { isPrefix } from "@/utils/misc";
@@ -73,13 +73,7 @@ function RepertoireInfo() {
   const selectedReference = useAtomValue(referenceDbAtom);
   const selectedReferenceKey = selectedReference ? capabilityKey(selectedReference) : null;
   const currency = useCollectionCurrency(selectedReference);
-  const resolvedReference =
-    currency.pending ||
-    currency.error ||
-    (currency.collection &&
-      (currency.collection.status !== "ready" || !currency.collection.database))
-      ? null
-      : (currency.collection?.database ?? selectedReference);
+  const resolvedReference = currentCollectionDatabase(selectedReference, currency);
   const referenceKey = resolvedReference ? capabilityKey(resolvedReference) : null;
   // Native metadata checks decode new handle objects for the same capability. Retain the
   // admitted handle until its authority changes, so polling is not an implicit coverage Retry.

@@ -1,6 +1,6 @@
 import { createStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { CoachTurnEvent, TurnInput, TurnUpdate } from "@/bindings";
+import type { CoachTurnEvent, DatabaseHandle, TurnInput, TurnUpdate } from "@/bindings";
 import { CoachCommandError } from "@/platform/coach";
 import type { LocalEngine } from "@/utils/engines";
 import { defaultTree } from "@/utils/treeReducer";
@@ -9,8 +9,10 @@ const mocks = vi.hoisted(() => ({
     prepareAnalysis: vi.fn(),
     coachTurn: vi.fn(),
     cancelAnalysis: vi.fn(),
+    repertoireContext: vi.fn(),
 }));
 vi.mock("@/platform/tauri", () => ({ tauri: mocks }));
+vi.mock("./repertoireIndex", () => ({ repertoireContext: mocks.repertoireContext }));
 vi.mock("@/platform/native", () => ({
     warn: vi.fn(() => Promise.resolve()),
     error: vi.fn(() => Promise.resolve()),
@@ -71,7 +73,16 @@ function openTab() {
 }
 
 function request(tab: string, tree: ReturnType<typeof createTreeStore>, question = "Plan?") {
-    return { tab, tree, question, connection: "conn", model: "model", effort: null, engine };
+    return {
+        tab,
+        tree,
+        question,
+        connection: "conn",
+        model: "model",
+        effort: null,
+        engine,
+        referenceDb: null,
+    };
 }
 
 function event(tab: string, turn: string, update: TurnUpdate): CoachTurnEvent {
@@ -85,6 +96,7 @@ beforeEach(() => {
     vi.resetAllMocks();
     mocks.prepareAnalysis.mockResolvedValue("ticket-1");
     mocks.cancelAnalysis.mockResolvedValue(undefined);
+    mocks.repertoireContext.mockResolvedValue({ text: null, partial: false });
 });
 
 afterEach(() => {
@@ -119,12 +131,24 @@ test("a turn streams into the tab and its end is saved once, whoever reports it 
         uciOptions: [{ type: "string", name: "Threads", value: "4" }],
     });
     expect(input.game).toContain("1. e4 e5");
+    // No reference database and nothing in the repertoire: neither is sent.
+    expect(input).toMatchObject({ repertoirePartial: false });
+    expect(input.referenceDb).toBeUndefined();
+    expect(input.repertoire).toBeUndefined();
 
     applyCoachTurnEvent(atoms, event(tab, "ticket-1", { type: "text", delta: "Let me " }));
     applyCoachTurnEvent(atoms, event(tab, "ticket-1", { type: "text", delta: "check." }));
     expect(atoms.get(coachTurnFamily(tab))?.text).toBe("Let me check.");
-    applyCoachTurnEvent(atoms, event(tab, "ticket-1", { type: "tool", line: ["Nf3"] }));
-    expect(atoms.get(coachTurnFamily(tab))?.checking).toEqual(["Nf3"]);
+    applyCoachTurnEvent(
+        atoms,
+        event(tab, "ticket-1", { type: "tool", source: "engine", line: ["Nf3"] }),
+    );
+    expect(atoms.get(coachTurnFamily(tab))?.checking).toEqual({ source: "engine", line: ["Nf3"] });
+    applyCoachTurnEvent(
+        atoms,
+        event(tab, "ticket-1", { type: "tool", source: "database", line: [] }),
+    );
+    expect(atoms.get(coachTurnFamily(tab))?.checking).toEqual({ source: "database", line: [] });
     applyCoachTurnEvent(atoms, event(tab, "ticket-1", { type: "reset" }));
     expect(atoms.get(coachTurnFamily(tab))).toMatchObject({ text: "", checking: null });
 
@@ -145,6 +169,36 @@ test("a turn streams into the tab and its end is saved once, whoever reports it 
     expect(messages[1].role === "coach" && messages[1].fen).toBe(tree.getState().currentNode().fen);
     // The conversation is not part of the game: saving it leaves the game as clean as it was.
     expect(mocks.cancelAnalysis).not.toHaveBeenCalled();
+});
+
+test("the repertoire lines of the asked position and the reference database go with the question", async () => {
+    const atoms = createStore();
+    const { tab, tree } = openTab();
+    const referenceDb = { id: { id: "reference" }, kind: "database" } as unknown as DatabaseHandle;
+    mocks.repertoireContext.mockResolvedValue({ text: "2. Nf3 Nc6", partial: true });
+    mocks.coachTurn.mockResolvedValue(completed);
+    await sendCoachMessage(atoms, { ...request(tab, tree), referenceDb });
+    expect(mocks.repertoireContext).toHaveBeenCalledExactlyOnceWith(
+        tree.getState().currentNode().fen,
+    );
+    const input = mocks.coachTurn.mock.calls[0][2] as TurnInput;
+    expect(input).toMatchObject({ referenceDb, repertoire: "2. Nf3 Nc6", repertoirePartial: true });
+});
+
+test("a stop while the repertoire is still being read ends the turn before anything is sent", async () => {
+    const atoms = createStore();
+    const { tab, tree } = openTab();
+    const reading = deferred<{ text: string | null; partial: boolean }>();
+    mocks.repertoireContext.mockReturnValue(reading.promise);
+    const sent = sendCoachMessage(atoms, request(tab, tree));
+    stopCoachTurn(atoms, tab);
+    expect(atoms.get(coachTurnFamily(tab))).toMatchObject({ stopping: true });
+    reading.resolve({ text: "2. Nf3", partial: false });
+    await sent;
+    expect(mocks.coachTurn).not.toHaveBeenCalled();
+    expect(atoms.get(coachTurnFamily(tab))).toBeNull();
+    const messages = tree.getState().coachSession?.messages ?? [];
+    expect(messages[1]).toMatchObject({ role: "coach", state: "cancelled" });
 });
 
 test("the command's reply alone ends the turn, and the next turn sends the history", async () => {

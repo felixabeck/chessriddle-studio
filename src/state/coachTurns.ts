@@ -1,5 +1,5 @@
 import type { createStore } from "jotai";
-import type { CoachError, CoachTurnEvent, TurnUpdate } from "@/bindings";
+import type { CoachError, CoachTurnEvent, DatabaseHandle, TurnInput, TurnUpdate } from "@/bindings";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
 import { coachErrorCode } from "@/platform/coach";
 import { warn } from "@/platform/native";
@@ -14,6 +14,7 @@ import {
     coachHistory,
     newCoachSession,
 } from "./coachSession";
+import { repertoireContext } from "./repertoireIndex";
 import { getCachedTreeStore, type TreeStore } from "./store/tree";
 
 /**
@@ -53,6 +54,8 @@ export type CoachSendRequest = {
     /** `null` sends no effort: the provider's default applies. */
     effort: string | null;
     engine: LocalEngine;
+    /** The reference database for opening statistics, if one is chosen and usable now. */
+    referenceDb: DatabaseHandle | null;
 };
 
 /** Writes the tab's runtime turn, unless the tab is gone: a closed tab must not get its atom back. */
@@ -155,7 +158,9 @@ export async function sendCoachMessage(atoms: Atoms, request: CoachSendRequest):
         publish(atoms, active, (turn) => turn && { ...turn, stopping: true, orphaned: true });
         requestStop(active);
     });
-    const input = {
+    // What the repertoire files play here is read now, for the position the question is about.
+    const repertoire = await repertoireContext(active.fen);
+    const input: TurnInput = {
         connection: request.connection,
         model: request.model,
         effort: request.effort ?? undefined,
@@ -167,6 +172,9 @@ export async function sendCoachMessage(atoms: Atoms, request: CoachSendRequest):
         engine: request.engine.handle,
         engineId: request.engine.id,
         uciOptions: normalizeEngineOptions(request.engine.settings ?? []),
+        referenceDb: request.referenceDb ?? undefined,
+        repertoire: repertoire.text ?? undefined,
+        repertoirePartial: repertoire.partial,
     };
     let ticket: string;
     try {
@@ -215,7 +223,12 @@ export function applyCoachTurnEvent(atoms: Atoms, event: CoachTurnEvent) {
             publish(atoms, active, (turn) => turn && { ...turn, text: "", checking: null });
             break;
         case "tool":
-            publish(atoms, active, (turn) => turn && { ...turn, checking: update.line });
+            publish(
+                atoms,
+                active,
+                (turn) =>
+                    turn && { ...turn, checking: { source: update.source, line: update.line } },
+            );
             break;
         default:
             finish(atoms, active, update);

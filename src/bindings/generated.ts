@@ -2023,6 +2023,10 @@ export type StampedGame = { pgn: string; stamp: string; revision: string; presen
 export type StartupPathOwners = { retainedIds: PathRef[]; trustedFamilies: PathOwnerFamily[] }
 export type TimeControl = { initialTime: bigint; increment: bigint }
 export type Token = { type: "ParenOpen" } | { type: "ParenClose" } | { type: "Comment"; value: string } | { type: "Unparsed"; value: string } | { type: "San"; value: string } | { type: "Header"; value: { tag: string; value: string } } | { type: "Nag"; value: string } | { type: "Outcome"; value: string }
+/**
+ * Where a tool looks a line up.
+ */
+export type ToolSource = "engine" | "database"
 export type TournamentQuery = { options: QueryOptions<TournamentSort>; name: string | null }
 export type TournamentSort = "name" | "date" | "players" | "games" | "avgElo"
 export type TrainingFeedbackCode = "correct" | "incorrect" | "lineTooShort"
@@ -2060,7 +2064,19 @@ history: HistoryMessage[]; message: string;
 /**
  * The game as PGN.
  */
-game: string; engine: EngineHandle; engineId: string; uciOptions: EngineOption[] }
+game: string; engine: EngineHandle; engineId: string; uciOptions: EngineOption[]; 
+/**
+ * The reference database for opening statistics, if the user chose one.
+ */
+referenceDb?: DatabaseHandle | null; 
+/**
+ * What the user's repertoire files play from the position, as text.
+ */
+repertoire?: string | null; 
+/**
+ * The repertoire files were only partly read.
+ */
+repertoirePartial: boolean }
 /**
  * What a running turn tells the renderer. Every turn ends with exactly one of `Completed`,
  * `Cancelled` and `Failed`.
@@ -2071,9 +2087,10 @@ export type TurnUpdate = { type: "text"; delta: string } |
  */
 { type: "reset" } | 
 /**
- * The engine is checking this line (SAN from the turn position; empty for the position).
+ * The engine is checking this line, or the reference database is asked about it (SAN from
+ * the turn position; empty for the position).
  */
-{ type: "tool"; line: string[] } | { type: "completed"; segments: Segment[]; failedLines: number } | { type: "cancelled"; text: string } | { type: "failed"; error: CoachError; text: string }
+{ type: "tool"; source: ToolSource; line: string[] } | { type: "completed"; segments: Segment[]; failedLines: number } | { type: "cancelled"; text: string } | { type: "failed"; error: CoachError; text: string }
 /**
  * Represents a UCI option definition.
  */

@@ -15,6 +15,7 @@ pub(crate) mod lines;
 pub(crate) mod models;
 pub(crate) mod prompt;
 pub(crate) mod sse;
+pub(crate) mod stats;
 #[cfg(test)]
 pub(crate) mod test_server;
 pub(crate) mod tools;
@@ -45,7 +46,8 @@ use self::{
     http::HttpClients,
     lines::TurnPosition,
     models::{ModelList, MAX_MODEL_LIST_BYTES},
-    tools::ToolActivity,
+    stats::{DatabaseStatistics, Statistics},
+    tools::{ToolActivity, ToolSource},
     turn::{TurnEnd, TurnRequest, TurnSink},
 };
 use crate::{
@@ -53,7 +55,7 @@ use crate::{
     engine::{EngineKey, EngineOption},
     infra::{
         blocking::BLOCKING_GATEWAY,
-        path_authority::{AppDataDir, EngineHandle},
+        path_authority::{AppDataDir, DatabaseHandle, EngineHandle},
     },
 };
 
@@ -67,6 +69,7 @@ const MAX_QUESTION_CHARS: usize = 4000;
 const MAX_HISTORY_MESSAGES: usize = 40;
 const MAX_HISTORY_BYTES: usize = 96 * 1024;
 const MAX_GAME_BYTES: usize = 24 * 1024;
+const MAX_REPERTOIRE_BYTES: usize = 8 * 1024;
 const MAX_MODEL_CHARS: usize = 200;
 const MAX_EFFORT_CHARS: usize = 32;
 const MAX_TURN_PLIES: usize = 2000;
@@ -157,12 +160,29 @@ pub(crate) struct TurnInput {
     pub engine: EngineHandle,
     pub engine_id: String,
     pub uci_options: Vec<EngineOption>,
+    /// The reference database for opening statistics, if the user chose one.
+    #[specta(optional)]
+    pub reference_db: Option<DatabaseHandle>,
+    /// What the user's repertoire files play from the position, as text.
+    #[specta(optional)]
+    pub repertoire: Option<String>,
+    /// The repertoire files were only partly read.
+    pub repertoire_partial: bool,
 }
 
 struct TurnEngine {
     handle: EngineHandle,
     id: String,
     uci_options: Vec<EngineOption>,
+}
+
+/// A turn's input, bounded and taken apart.
+struct TurnParts {
+    connection: CoachConnectionHandle,
+    position: TurnPosition,
+    request: TurnRequest,
+    engine: TurnEngine,
+    reference_db: Option<DatabaseHandle>,
 }
 
 fn plain(text: &str, max_chars: usize) -> bool {
@@ -193,9 +213,7 @@ fn bounded_history(history: Vec<HistoryMessage>) -> Vec<Message> {
 }
 
 impl TurnInput {
-    fn into_parts(
-        self,
-    ) -> Result<(CoachConnectionHandle, TurnPosition, TurnRequest, TurnEngine), CoachError> {
+    fn into_parts(self) -> Result<TurnParts, CoachError> {
         let question = self.message.trim();
         let effort_is_plain = self.effort.as_deref().is_none_or(|effort| {
             !effort.is_empty()
@@ -210,6 +228,10 @@ impl TurnInput {
             || !effort_is_plain
             || self.game.len() > MAX_GAME_BYTES
             || self.moves.len() > MAX_TURN_PLIES
+            || self
+                .repertoire
+                .as_ref()
+                .is_some_and(|text| text.len() > MAX_REPERTOIRE_BYTES)
         {
             return Err(CoachError::InvalidInput);
         }
@@ -220,13 +242,21 @@ impl TurnInput {
             history: bounded_history(self.history),
             question: question.to_owned(),
             game: self.game,
+            repertoire: self.repertoire.filter(|text| !text.trim().is_empty()),
+            repertoire_partial: self.repertoire_partial,
         };
         let engine = TurnEngine {
             handle: self.engine,
             id: self.engine_id,
             uci_options: self.uci_options,
         };
-        Ok((self.connection, position, request, engine))
+        Ok(TurnParts {
+            connection: self.connection,
+            position,
+            request,
+            engine,
+            reference_db: self.reference_db,
+        })
     }
 }
 
@@ -240,8 +270,10 @@ pub(crate) enum TurnUpdate {
     },
     /// The text streamed so far is superseded by what follows.
     Reset,
-    /// The engine is checking this line (SAN from the turn position; empty for the position).
+    /// The engine is checking this line, or the reference database is asked about it (SAN from
+    /// the turn position; empty for the position).
     Tool {
+        source: ToolSource,
         line: Vec<String>,
     },
     #[serde(rename_all = "camelCase")]
@@ -318,6 +350,7 @@ impl<R: tauri::Runtime> TurnSink for EventSink<'_, R> {
     fn tool(&mut self, activity: &ToolActivity) {
         self.flush();
         self.emit(TurnUpdate::Tool {
+            source: activity.source,
             line: activity.line.clone(),
         });
     }
@@ -332,6 +365,7 @@ async fn drive_turn<R: tauri::Runtime>(
     turn_id: &str,
     backend: &dyn ModelBackend,
     analyst: &mut dyn Analyst,
+    statistics: Option<&mut (dyn Statistics + '_)>,
     position: &TurnPosition,
     request: &TurnRequest,
     cancellation: &CancellationToken,
@@ -347,7 +381,15 @@ async fn drive_turn<R: tauri::Runtime>(
     };
     let end = tokio::time::timeout(
         deadline,
-        turn::run_turn(backend, analyst, position, request, &mut sink, cancellation),
+        turn::run_turn(
+            backend,
+            analyst,
+            statistics,
+            position,
+            request,
+            &mut sink,
+            cancellation,
+        ),
     )
     .await;
     sink.flush();
@@ -510,7 +552,13 @@ async fn start_turn<R: tauri::Runtime>(
     if !plain(&tab, MAX_TAB_CHARS) {
         return Err(CoachError::InvalidInput);
     }
-    let (connection, position, request, engine) = turn.into_parts()?;
+    let TurnParts {
+        connection,
+        position,
+        request,
+        engine,
+        reference_db,
+    } = turn.into_parts()?;
     let slot = coach.turns.take(window, &tab)?;
     let backend = coach.backend(connection).await?;
     let key =
@@ -524,7 +572,7 @@ async fn start_turn<R: tauri::Runtime>(
     let workflow = async move {
         let _slot = slot;
         let mut analyst = EngineAnalyst::new(
-            state,
+            state.clone(),
             key,
             engine.handle,
             engine.id,
@@ -532,12 +580,25 @@ async fn start_turn<R: tauri::Runtime>(
             cancellation.clone(),
             position.start_fen().to_owned(),
         );
+        // The lookups report their progress under an id of the turn, which no view listens to.
+        let mut statistics = reference_db.map(|database| {
+            DatabaseStatistics::new(
+                state.clone(),
+                app.clone(),
+                format!("coach:{id}"),
+                database,
+                cancellation.clone(),
+            )
+        });
         let end = drive_turn(
             &app,
             &tab,
             &id,
             &backend,
             &mut analyst,
+            statistics
+                .as_mut()
+                .map(|statistics| statistics as &mut dyn Statistics),
             &position,
             &request,
             &cancellation,
@@ -761,6 +822,9 @@ mod tests {
             },
             engine_id: "missing-engine".into(),
             uci_options: Vec::new(),
+            reference_db: None,
+            repertoire: None,
+            repertoire_partial: false,
         }
     }
 
@@ -824,10 +888,12 @@ mod tests {
 
     #[test]
     fn turn_input_is_bounded_before_anything_starts() {
-        let (_, position, request, engine) = turn_input(some_handle()).into_parts().unwrap();
-        assert_eq!(request.question, "What is the plan?");
-        assert_eq!(position.moves(), ["e2e4"]);
-        assert_eq!(engine.id, "missing-engine");
+        let parts = turn_input(some_handle()).into_parts().unwrap();
+        assert_eq!(parts.request.question, "What is the plan?");
+        assert_eq!(parts.position.moves(), ["e2e4"]);
+        assert_eq!(parts.engine.id, "missing-engine");
+        assert!(parts.reference_db.is_none());
+        assert_eq!(parts.request.repertoire, None);
 
         let refuse = |change: fn(&mut TurnInput)| {
             let mut input = turn_input(some_handle());
@@ -846,13 +912,28 @@ mod tests {
         refuse(|input| input.moves = vec!["e2e4".into(); MAX_TURN_PLIES + 1]);
         refuse(|input| input.moves = vec!["e2e5".into()]);
         refuse(|input| input.start_fen = "not a fen".into());
+        refuse(|input| input.repertoire = Some("r".repeat(MAX_REPERTOIRE_BYTES + 1)));
 
         let mut input = turn_input(some_handle());
         input.effort = Some("x-high_2".into());
         assert_eq!(
-            input.into_parts().unwrap().2.effort.as_deref(),
+            input.into_parts().unwrap().request.effort.as_deref(),
             Some("x-high_2")
         );
+
+        // The repertoire is passed on with its partial flag; blank text is none at all.
+        let mut input = turn_input(some_handle());
+        input.repertoire = Some("r".repeat(MAX_REPERTOIRE_BYTES));
+        input.repertoire_partial = true;
+        let request = input.into_parts().unwrap().request;
+        assert_eq!(
+            request.repertoire.map(|text| text.len()),
+            Some(MAX_REPERTOIRE_BYTES)
+        );
+        assert!(request.repertoire_partial);
+        let mut input = turn_input(some_handle());
+        input.repertoire = Some(" \n".into());
+        assert_eq!(input.into_parts().unwrap().request.repertoire, None);
     }
 
     #[test]
@@ -898,6 +979,7 @@ mod tests {
             "turn-1",
             &backend,
             &mut ScriptedAnalyst::default(),
+            None,
             &position,
             &doubles::request(),
             &CancellationToken::new(),
@@ -916,6 +998,7 @@ mod tests {
                     delta: "Checking.".into()
                 },
                 TurnUpdate::Tool {
+                    source: ToolSource::Engine,
                     line: vec!["Nf6".into()]
                 },
                 TurnUpdate::Reset,
@@ -939,6 +1022,7 @@ mod tests {
         );
         // The wire names are the renderer's contract.
         assert_eq!(seen[1]["update"]["type"], "tool");
+        assert_eq!(seen[1]["update"]["source"], "engine");
         assert_eq!(seen[4]["update"]["type"], "completed");
         assert_eq!(seen[4]["update"]["failedLines"], 0);
         assert_eq!(seen[4]["update"]["segments"][1]["type"], "line");
@@ -976,6 +1060,7 @@ mod tests {
                 "turn",
                 &backend,
                 &mut ScriptedAnalyst::default(),
+                None,
                 &position,
                 &doubles::request(),
                 &CancellationToken::new(),
@@ -1014,6 +1099,7 @@ mod tests {
             "turn",
             &StalledBackend,
             &mut ScriptedAnalyst::default(),
+            None,
             &position,
             &doubles::request(),
             &cancellation,

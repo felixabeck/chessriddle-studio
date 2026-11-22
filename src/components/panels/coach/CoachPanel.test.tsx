@@ -17,8 +17,19 @@ const mocks = vi.hoisted(() => ({
   cancelAnalysis: vi.fn(),
   navigate: vi.fn(),
   engines: [] as unknown[],
+  refreshRepertoireIndex: vi.fn(),
+  repertoireContext: vi.fn(),
+  currency: { key: null, collection: null, pending: false } as Record<string, unknown>,
 }));
 vi.mock("@/platform/tauri", () => ({ tauri: mocks }));
+vi.mock("@/state/repertoireIndex", () => ({
+  refreshRepertoireIndex: mocks.refreshRepertoireIndex,
+  repertoireContext: mocks.repertoireContext,
+}));
+vi.mock("@/state/linkedCollections", async (original) => ({
+  ...(await original<typeof import("@/state/linkedCollections")>()),
+  useCollectionCurrency: () => mocks.currency,
+}));
 vi.mock("@/platform/native", () => ({
   platform: vi.fn(() => "linux"),
   warn: vi.fn(() => Promise.resolve()),
@@ -42,7 +53,7 @@ vi.mock("@/state/atoms", async (original) => ({
   enginesAtom: atom(() => mocks.engines),
 }));
 
-const { coachTurnFamily } = await import("@/state/atoms");
+const { coachTurnFamily, fileWorkspaceAtom, referenceDbAtom } = await import("@/state/atoms");
 const { coachNoticeAcceptedAtom, coachSelectionAtom } = await import("@/state/coach");
 const { applyCoachTurnEvent } = await import("@/state/coachTurns");
 const { closeTreeStore, createTreeStore } = await import("@/state/store/tree");
@@ -106,6 +117,9 @@ beforeEach(() => {
   });
   mocks.prepareAnalysis.mockResolvedValue("ticket-1");
   mocks.cancelAnalysis.mockResolvedValue(undefined);
+  mocks.refreshRepertoireIndex.mockResolvedValue(undefined);
+  mocks.repertoireContext.mockResolvedValue({ text: null, partial: false });
+  mocks.currency = { key: null, collection: null, pending: false };
   Element.prototype.scrollTo = vi.fn();
   atoms = createStore();
   tree = createTreeStore(TAB);
@@ -229,6 +243,49 @@ test("a question needs a chosen model, and a model without reported levels sends
   expect(mocks.coachTurn.mock.calls[0][2].effort).toBeUndefined();
 });
 
+test("the panel keeps the repertoire index current and asks with the reference database of now", async () => {
+  const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" };
+  const chosen = { id: { id: "chosen" }, kind: "database" };
+  const published = { id: { id: "published" }, kind: "database" };
+  atoms.set(fileWorkspaceAtom, workspace as never);
+  atoms.set(referenceDbAtom, chosen as never);
+  mocks.coachTurn.mockResolvedValue(answer);
+  mocks.repertoireContext.mockResolvedValue({ text: "2. Nf3 Nc6", partial: false });
+  await render();
+  // Opening the panel starts the index for the workspace.
+  expect(mocks.refreshRepertoireIndex).toHaveBeenLastCalledWith(workspace);
+  const refreshes = mocks.refreshRepertoireIndex.mock.calls.length;
+
+  await ask("Plan?");
+  await act(async () => {});
+  expect(mocks.coachTurn.mock.calls[0][2]).toMatchObject({
+    referenceDb: chosen,
+    repertoire: "2. Nf3 Nc6",
+    repertoirePartial: false,
+  });
+  // Each question brings the index up to date for the next one.
+  expect(mocks.refreshRepertoireIndex).toHaveBeenCalledTimes(refreshes + 1);
+  expect(mocks.refreshRepertoireIndex).toHaveBeenLastCalledWith(workspace);
+
+  // A linked collection that published a new database is asked through that one...
+  mocks.currency = {
+    key: "chosen",
+    pending: false,
+    collection: { status: "ready", database: published },
+  };
+  mocks.prepareAnalysis.mockResolvedValue("ticket-2");
+  await ask("And now?");
+  await act(async () => {});
+  expect(mocks.coachTurn.mock.calls[1][2].referenceDb).toEqual(published);
+
+  // ...and while it cannot be used, no database is sent at all.
+  mocks.currency = { key: "chosen", pending: false, collection: { status: "stale" } };
+  mocks.prepareAnalysis.mockResolvedValue("ticket-3");
+  await ask("And then?");
+  await act(async () => {});
+  expect(mocks.coachTurn.mock.calls[2][2].referenceDb).toBeUndefined();
+});
+
 test("a failed model list shows its error at the model selector", async () => {
   const { CoachCommandError } = await import("@/platform/coach");
   mocks.coachModels.mockRejectedValue(new CoachCommandError("keyRejected"));
@@ -250,10 +307,24 @@ test("an answer streams, can be stopped, and ends as the saved exchange", async 
     applyCoachTurnEvent(atoms, {
       tab: TAB,
       turn: "ticket-1",
-      update: { type: "tool", line: ["Nf3"] },
+      update: { type: "tool", source: "engine", line: ["Nf3"] },
     }),
   );
   expect(host.textContent).toContain("Coach.CheckingLine:Nf3");
+  for (const [source, line, shown] of [
+    ["engine", [], "Coach.CheckingPosition"],
+    ["database", ["Nf3"], "Coach.LookingUpLine:Nf3"],
+    ["database", [], "Coach.LookingUpPosition"],
+  ] as const) {
+    await act(async () =>
+      applyCoachTurnEvent(atoms, {
+        tab: TAB,
+        turn: "ticket-1",
+        update: { type: "tool", source, line: [...line] },
+      }),
+    );
+    expect(host.querySelector('[data-testid="coach-running"]')?.textContent).toContain(shown);
+  }
   await act(async () =>
     applyCoachTurnEvent(atoms, {
       tab: TAB,

@@ -1,16 +1,17 @@
-//! One Coach turn: the engine's baseline, the bounded model loop with its tools, and the checked
-//! answer.
+//! One Coach turn: the engine's baseline and the database's statistics, the bounded model loop
+//! with its tools, and the checked answer.
 
 use tokio_util::sync::CancellationToken;
 
 use super::{
     answer::Answer,
-    backend::{Message, ModelBackend, RoundRequest},
+    backend::{Message, ModelBackend, Round, RoundFailure, RoundRequest, ToolSpec},
     engine::Analyst,
     error::CoachError,
     lines::{terminal, TurnPosition},
-    prompt::{self, Baseline},
-    tools::{self, ToolActivity, MAX_TOOL_CALLS_PER_ROUND},
+    prompt::{self, Baseline, DatabaseEvidence, Evidence},
+    stats::{Statistics, StatsError},
+    tools::{self, ToolActivity, ToolSource, MAX_TOOL_CALLS_PER_ROUND},
 };
 
 /// Model rounds per turn, not counting the one repair round.
@@ -27,6 +28,41 @@ pub(crate) struct TurnRequest {
     pub question: String,
     /// The game on the board as PGN: untrusted text.
     pub game: String,
+    /// What the player's repertoire files play from the position: untrusted text.
+    pub repertoire: Option<String>,
+    /// The repertoire files were only partly read.
+    pub repertoire_partial: bool,
+}
+
+/// What every model round of one turn is asked with.
+struct Rounds<'a> {
+    backend: &'a dyn ModelBackend,
+    request: &'a TurnRequest,
+    /// Declared in every round, because the history refers to them.
+    tools: &'a [ToolSpec],
+    cancellation: &'a CancellationToken,
+}
+
+impl Rounds<'_> {
+    async fn ask(
+        &self,
+        messages: &[Message],
+        sink: &mut dyn TurnSink,
+    ) -> Result<Round, RoundFailure> {
+        self.backend
+            .round(
+                RoundRequest {
+                    model: &self.request.model,
+                    effort: self.request.effort.as_deref(),
+                    system: prompt::SYSTEM_PROMPT,
+                    messages,
+                    tools: self.tools,
+                },
+                &mut |delta| sink.text(delta),
+                self.cancellation,
+            )
+            .await
+    }
 }
 
 /// Where the progress of a turn goes while it runs.
@@ -51,9 +87,11 @@ fn failed(error: CoachError, text: String) -> TurnEnd {
     TurnEnd::Failed { error, text }
 }
 
+/// Runs one turn. `statistics` is the player's reference database, if one is chosen.
 pub(crate) async fn run_turn(
     backend: &dyn ModelBackend,
     analyst: &mut dyn Analyst,
+    mut statistics: Option<&mut (dyn Statistics + '_)>,
     turn: &TurnPosition,
     request: &TurnRequest,
     sink: &mut dyn TurnSink,
@@ -73,14 +111,38 @@ pub(crate) async fn run_turn(
             Err(error) => return failed(error, String::new()),
         },
     };
+    // Then the reference database: what is played from the position. A finished game has no
+    // moves to look up, and a database that does not answer now is not asked again in this turn.
+    if matches!(baseline, Baseline::Terminal(_)) {
+        statistics = None;
+    }
+    let mut database = None;
+    if let Some(source) = statistics.as_deref_mut() {
+        sink.tool(&ToolActivity {
+            source: ToolSource::Database,
+            line: Vec::new(),
+        });
+        database = Some(match source.moves(&turn.fen()).await {
+            Ok(moves) => DatabaseEvidence::Moves(moves),
+            Err(StatsError::Cancelled) => return failed(CoachError::Cancelled, String::new()),
+            Err(StatsError::Unavailable) => DatabaseEvidence::Unavailable,
+        });
+    }
+    if matches!(database, Some(DatabaseEvidence::Unavailable)) {
+        statistics = None;
+    }
+    let evidence = Evidence { baseline, database };
     let mut messages = request.history.clone();
     messages.push(Message::User(prompt::user_message(
-        turn,
-        &baseline,
-        &request.game,
-        &request.question,
+        turn, &evidence, request,
     )));
-    let tools = tools::specs();
+    let tools = tools::specs(statistics.is_some());
+    let rounds = Rounds {
+        backend,
+        request,
+        tools: &tools,
+        cancellation,
+    };
     let mut last_text = String::new();
     for round in 0..MAX_ROUNDS {
         if cancellation.is_cancelled() {
@@ -89,42 +151,26 @@ pub(crate) async fn run_turn(
         if round > 0 {
             sink.reset();
         }
-        let answered = backend
-            .round(
-                RoundRequest {
-                    model: &request.model,
-                    effort: request.effort.as_deref(),
-                    system: prompt::SYSTEM_PROMPT,
-                    messages: &messages,
-                    tools: &tools,
-                },
-                &mut |delta| sink.text(delta),
-                cancellation,
-            )
-            .await;
-        let answered = match answered {
+        let answered = match rounds.ask(&messages, sink).await {
             Ok(round) => round,
             Err(failure) => return failed(failure.error, failure.text),
         };
         if answered.tool_calls.is_empty() {
-            return finish(
-                backend,
-                turn,
-                request,
-                messages,
-                answered.text,
-                sink,
-                cancellation,
-            )
-            .await;
+            return finish(&rounds, turn, messages, answered.text, sink).await;
         }
         last_text.clone_from(&answered.text);
         let calls = answered.tool_calls.clone();
         messages.push(answered.into_message());
         for (index, call) in calls.iter().enumerate() {
             let content = if index < MAX_TOOL_CALLS_PER_ROUND {
-                let outcome =
-                    tools::execute(call, turn, analyst, &mut |activity| sink.tool(activity)).await;
+                let outcome = tools::execute(
+                    call,
+                    turn,
+                    analyst,
+                    statistics.as_deref_mut(),
+                    &mut |activity| sink.tool(activity),
+                )
+                .await;
                 match outcome {
                     Ok(content) => content,
                     Err(error) => return failed(error, last_text),
@@ -145,13 +191,11 @@ pub(crate) async fn run_turn(
 /// Checks the final text. Lines that are not legal get one repair round; whatever is still not
 /// legal afterwards stays in the answer as plain text.
 async fn finish(
-    backend: &dyn ModelBackend,
+    rounds: &Rounds<'_>,
     turn: &TurnPosition,
-    request: &TurnRequest,
     mut messages: Vec<Message>,
     text: String,
     sink: &mut dyn TurnSink,
-    cancellation: &CancellationToken,
 ) -> TurnEnd {
     let answer = Answer::parse(&text, turn);
     if answer.failed.is_empty() {
@@ -164,23 +208,8 @@ async fn finish(
     });
     messages.push(Message::User(prompt::repair_request(&answer.failed)));
     sink.reset();
-    let tools = tools::specs();
-    let repaired = backend
-        .round(
-            RoundRequest {
-                model: &request.model,
-                effort: request.effort.as_deref(),
-                system: prompt::SYSTEM_PROMPT,
-                messages: &messages,
-                // The tools stay declared because the history refers to them; a repair that asks
-                // for a tool instead of answering has failed.
-                tools: &tools,
-            },
-            &mut |delta| sink.text(delta),
-            cancellation,
-        )
-        .await;
-    match repaired {
+    // A repair that asks for a tool instead of answering has failed.
+    match rounds.ask(&messages, sink).await {
         Ok(round) if round.tool_calls.is_empty() => {
             let repaired = Answer::parse(&round.text, turn);
             if repaired.failed.len() <= answer.failed.len() {
@@ -202,7 +231,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::coach::{
         answer::Segment,
-        backend::{Round, RoundFailure, TextSink, ToolCall},
+        backend::{TextSink, ToolCall},
+        stats::tests::{played, ScriptedStatistics},
         tools::tests::{ScriptedAnalyst, START},
     };
     use async_trait::async_trait;
@@ -213,6 +243,7 @@ pub(crate) mod tests {
     struct SeenRound {
         messages: Vec<Message>,
         effort: Option<String>,
+        tools: Vec<&'static str>,
     }
 
     /// A model double: answers each round from a script and records what it was sent.
@@ -253,6 +284,7 @@ pub(crate) mod tests {
                 seen.push(SeenRound {
                     messages: request.messages.to_vec(),
                     effort: request.effort.map(str::to_owned),
+                    tools: request.tools.iter().map(|tool| tool.name).collect(),
                 });
                 seen.len() - 1
             };
@@ -268,7 +300,9 @@ pub(crate) mod tests {
                 .pop()
                 .expect("the script has a round for every request");
             if let Ok(round) = &next {
-                on_text(&round.text);
+                if !round.text.is_empty() {
+                    on_text(&round.text);
+                }
             }
             next
         }
@@ -287,8 +321,12 @@ pub(crate) mod tests {
             self.events.push("reset".into());
         }
         fn tool(&mut self, activity: &ToolActivity) {
+            let source = match activity.source {
+                ToolSource::Engine => "tool",
+                ToolSource::Database => "database",
+            };
             self.events
-                .push(format!("tool:{}", activity.line.join(" ")));
+                .push(format!("{source}:{}", activity.line.join(" ")));
         }
     }
 
@@ -329,7 +367,43 @@ pub(crate) mod tests {
             ],
             question: "What is the plan?".into(),
             game: "1. e4 e5 *".into(),
+            repertoire: None,
+            repertoire_partial: false,
         }
+    }
+
+    fn named_calls(calls: &[(&str, &str)]) -> Script {
+        Ok(Round {
+            tool_calls: calls
+                .iter()
+                .enumerate()
+                .map(|(index, (name, arguments))| ToolCall {
+                    id: format!("call_{index}"),
+                    name: (*name).into(),
+                    arguments: (*arguments).into(),
+                })
+                .collect(),
+            ..Round::default()
+        })
+    }
+
+    async fn play_with_database(
+        backend: &ScriptedBackend,
+        statistics: &mut ScriptedStatistics,
+        turn: &TurnPosition,
+    ) -> (TurnEnd, Vec<String>) {
+        let mut sink = Recorded::default();
+        let end = run_turn(
+            backend,
+            &mut ScriptedAnalyst::default(),
+            Some(statistics),
+            turn,
+            &request(),
+            &mut sink,
+            &CancellationToken::new(),
+        )
+        .await;
+        (end, sink.events)
     }
 
     fn turn() -> TurnPosition {
@@ -345,6 +419,7 @@ pub(crate) mod tests {
         let end = run_turn(
             backend,
             analyst,
+            None,
             turn,
             &request(),
             &mut sink,
@@ -356,6 +431,106 @@ pub(crate) mod tests {
 
     fn line(san: &[&str]) -> Vec<String> {
         san.iter().map(|m| (*m).to_owned()).collect()
+    }
+
+    #[tokio::test]
+    async fn the_database_is_asked_about_the_position_before_the_model_and_offered_as_a_tool() {
+        let backend = ScriptedBackend::new(vec![
+            named_calls(&[(tools::OPENING_STATS, r#"{"line":"Nf3"}"#)]),
+            text("[[Nf3]] is the main move."),
+        ]);
+        let mut statistics = ScriptedStatistics {
+            answer: Some(Ok(vec![played("Nf3", 60, 30, 10)])),
+            ..Default::default()
+        };
+        let (end, events) = play_with_database(&backend, &mut statistics, &turn()).await;
+        assert!(matches!(end, TurnEnd::Completed(_)));
+        assert_eq!(
+            statistics.asked,
+            [
+                "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+                "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+            ]
+        );
+        let Message::User(context) = backend.messages(0).pop().unwrap() else {
+            panic!("context");
+        };
+        assert!(context.contains("reference database: {\"games\":100,"));
+        assert_eq!(
+            backend.seen.lock().unwrap()[0].tools,
+            [tools::ANALYSE, tools::OPENING_STATS]
+        );
+        let Message::ToolResult { content, .. } = backend.messages(1).pop().unwrap() else {
+            panic!("the lookup's result");
+        };
+        assert!(content.contains("\"games\":100"));
+        assert_eq!(
+            events,
+            [
+                "database:",
+                "database:Nf3",
+                "reset",
+                "text:[[Nf3]] is the main move."
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn without_a_database_the_tool_is_not_offered_and_nothing_is_said_about_one() {
+        let backend = ScriptedBackend::new(vec![text("Fine.")]);
+        let (_, events) = play(&backend, &mut ScriptedAnalyst::default(), &turn()).await;
+        assert_eq!(backend.seen.lock().unwrap()[0].tools, [tools::ANALYSE]);
+        let Message::User(context) = backend.messages(0).pop().unwrap() else {
+            panic!("context");
+        };
+        assert!(!context.contains("reference database"));
+        assert_eq!(events, ["text:Fine."]);
+    }
+
+    #[tokio::test]
+    async fn a_database_that_fails_at_the_start_is_named_and_not_offered_for_the_turn() {
+        let backend = ScriptedBackend::new(vec![
+            named_calls(&[(tools::OPENING_STATS, "{}")]),
+            text("Fine."),
+        ]);
+        let mut statistics = ScriptedStatistics {
+            answer: Some(Err(StatsError::Unavailable)),
+            ..Default::default()
+        };
+        let (end, _) = play_with_database(&backend, &mut statistics, &turn()).await;
+        assert!(matches!(end, TurnEnd::Completed(_)));
+        let Message::User(context) = backend.messages(0).pop().unwrap() else {
+            panic!("context");
+        };
+        assert!(context.contains("could not be read for this question"));
+        assert_eq!(backend.seen.lock().unwrap()[0].tools, [tools::ANALYSE]);
+        // A model that calls the tool anyway is told so; the database is not asked again.
+        let Message::ToolResult { content, .. } = backend.messages(1).pop().unwrap() else {
+            panic!("the refused call's result");
+        };
+        assert!(content.contains("No reference database"));
+        assert_eq!(statistics.asked.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_lookup_ends_the_turn_and_a_finished_game_is_not_looked_up() {
+        let backend = ScriptedBackend::new(Vec::new());
+        let mut cancelled = ScriptedStatistics {
+            answer: Some(Err(StatsError::Cancelled)),
+            ..Default::default()
+        };
+        let (end, _) = play_with_database(&backend, &mut cancelled, &turn()).await;
+        assert_eq!(end, failed(CoachError::Cancelled, String::new()));
+        assert_eq!(backend.rounds(), 0);
+
+        let mated = TurnPosition::new(START, &line(&["f2f3", "e7e5", "g2g4", "d8h4"])).unwrap();
+        let backend = ScriptedBackend::new(vec![text("White is checkmated.")]);
+        let mut statistics = ScriptedStatistics::default();
+        let (end, events) = play_with_database(&backend, &mut statistics, &mated).await;
+        assert!(matches!(end, TurnEnd::Completed(_)));
+        assert!(statistics.asked.is_empty());
+        assert_eq!(backend.seen.lock().unwrap()[0].tools, [tools::ANALYSE]);
+        assert_eq!(events, ["text:White is checkmated."]);
     }
 
     #[tokio::test]
@@ -607,6 +782,7 @@ pub(crate) mod tests {
         let end = run_turn(
             &backend,
             &mut analyst,
+            None,
             &turn(),
             &request(),
             &mut sink,

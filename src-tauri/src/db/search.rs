@@ -1355,35 +1355,121 @@ where
     let operation = crate::native_read_operation(ticket, &window, &state, command)?;
     let cancellation = operation.token();
     let progress = JobProgress::new(app.clone(), tab_id)?;
-    let authority = state.pgn_path_authority.clone();
-    let repository = Arc::clone(&state.database_repository);
-    let search_cache = Arc::clone(&state.search_cache);
-    let new_request = state.new_request.clone();
-    let lease = progress.lease();
-    let worker_app = app.clone();
-    crate::infra::operations::run_native_operation(operation, command, async move {
-        let permit = acquire_search_request(new_request, &cancellation).await?;
-        BLOCKING_GATEWAY
-            .spawn_cancellable(cancellation, move |token| {
-                let result = worker(
-                    authority,
-                    repository,
-                    search_cache,
-                    permit,
-                    lease,
-                    worker_app,
-                    token,
-                );
-                progress.complete(match &result {
-                    Ok(_) => ProgressState::Succeeded,
-                    Err(Error::Cancellation) => ProgressState::Cancelled,
-                    Err(_) => ProgressState::Failed,
-                });
-                result
-            })
-            .await
-    })
+    let resources = SearchResources::of(&state);
+    crate::infra::operations::run_native_operation(
+        operation,
+        command,
+        offload_position_search(resources, progress, app, cancellation, worker),
+    )
     .await
+}
+
+/// What a position search needs from the application state, owned so it can move into its
+/// operation.
+struct SearchResources {
+    authority: crate::infra::path_authority::SharedPathAuthority,
+    repository: Arc<DatabaseRepository>,
+    search_cache: Arc<SearchCache>,
+    new_request: Arc<tokio::sync::Semaphore>,
+}
+
+impl SearchResources {
+    fn of(state: &AppState) -> Self {
+        Self {
+            authority: state.pgn_path_authority.clone(),
+            repository: Arc::clone(&state.database_repository),
+            search_cache: Arc::clone(&state.search_cache),
+            new_request: state.new_request.clone(),
+        }
+    }
+}
+
+/// What every position search does once it runs inside an operation: wait for a search permit,
+/// run the blocking worker under the operation's cancellation, and give the progress job its
+/// terminal state.
+async fn offload_position_search<R, T, F>(
+    resources: SearchResources,
+    progress: JobProgress<R>,
+    app: tauri::AppHandle<R>,
+    cancellation: CancellationToken,
+    worker: F,
+) -> Result<T, Error>
+where
+    R: tauri::Runtime,
+    T: Send + 'static,
+    F: FnOnce(
+            crate::infra::path_authority::SharedPathAuthority,
+            Arc<DatabaseRepository>,
+            Arc<SearchCache>,
+            OwnedSemaphorePermit,
+            ProgressLease,
+            tauri::AppHandle<R>,
+            &CancellationToken,
+        ) -> Result<T, Error>
+        + Send
+        + 'static,
+{
+    let lease = progress.lease();
+    let permit = acquire_search_request(resources.new_request, &cancellation).await?;
+    BLOCKING_GATEWAY
+        .spawn_cancellable(cancellation, move |token| {
+            let result = worker(
+                resources.authority,
+                resources.repository,
+                resources.search_cache,
+                permit,
+                lease,
+                app,
+                token,
+            );
+            progress.complete(match &result {
+                Ok(_) => ProgressState::Succeeded,
+                Err(Error::Cancellation) => ProgressState::Cancelled,
+                Err(_) => ProgressState::Failed,
+            });
+            result
+        })
+        .await
+}
+
+/// The moves played from one position, for a native workflow that already runs inside its own
+/// operation (a Coach turn). It is the explorer's stats-only search: the same permit, the same
+/// position-statistics cache, no sample games. `progress_id` names the progress job, which no
+/// view has to listen to.
+pub(crate) async fn position_stats_for_operation<R: tauri::Runtime>(
+    state: &AppState,
+    app: tauri::AppHandle<R>,
+    progress_id: String,
+    file: DatabaseHandle,
+    fen: String,
+    cancellation: &CancellationToken,
+) -> Result<Vec<PositionStats>, Error> {
+    let progress = JobProgress::new(app.clone(), progress_id)?;
+    let found = offload_position_search(
+        SearchResources::of(state),
+        progress,
+        app,
+        cancellation.clone(),
+        move |authority, repository, search_cache, permit, lease, app, token| {
+            search_positions_stats_blocking(
+                &authority,
+                &repository,
+                &search_cache,
+                permit,
+                lease,
+                app,
+                file,
+                vec![fen],
+                token,
+            )
+        },
+    )
+    .await?;
+    found
+        .into_iter()
+        .next()
+        .map(|position| position.openings)
+        .ok_or_else(|| Error::Conflict("missing position statistics".into()))
 }
 
 async fn acquire_search_request(
@@ -3520,6 +3606,60 @@ mod batch_tests {
             .entries
             .values
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_native_entry_answers_one_position_like_the_batch_under_its_callers_token() {
+        let (_dir, app, handle, _path, fens) = fixture();
+        let state = app.state::<AppState>();
+        let permits = state.new_request.available_permits();
+        let progress = |id: &str| state.progress_state.get(id).unwrap().map(|item| item.state);
+        let token = CancellationToken::new();
+        let found = position_stats_for_operation(
+            &state,
+            app.clone(),
+            "coach:turn".into(),
+            handle.clone(),
+            fens[0].clone(),
+            &token,
+        )
+        .await
+        .unwrap();
+        let batch = run_batch(&app, &handle, &fens[..1], &token).unwrap();
+        assert!(!found.is_empty());
+        assert_eq!(sorted(found), sorted(batch[0].openings.clone()));
+        assert_eq!(progress("coach:turn"), Some(ProgressState::Succeeded));
+        assert_eq!(state.new_request.available_permits(), permits);
+
+        // A caller whose operation is over is refused before any work, its progress job ends,
+        // and nothing is held.
+        let stopped = CancellationToken::new();
+        stopped.cancel();
+        let refused = position_stats_for_operation(
+            &state,
+            app.clone(),
+            "coach:stopped".into(),
+            handle.clone(),
+            fens[0].clone(),
+            &stopped,
+        )
+        .await;
+        assert!(matches!(refused, Err(Error::Cancellation)));
+        assert_eq!(progress("coach:stopped"), Some(ProgressState::Cancelled));
+        assert_eq!(state.new_request.available_permits(), permits);
+
+        // A position that cannot be read is the search's typed refusal, not an empty answer.
+        let invalid = position_stats_for_operation(
+            &state,
+            app.clone(),
+            "coach:invalid".into(),
+            handle,
+            "bad fen".into(),
+            &token,
+        )
+        .await;
+        assert!(matches!(invalid, Err(Error::InvalidInput(_))));
+        assert_eq!(progress("coach:invalid"), Some(ProgressState::Failed));
     }
 
     #[test]

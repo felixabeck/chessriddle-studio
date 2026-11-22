@@ -4861,9 +4861,16 @@ mod blocking_offload_scans {
             !search_blocking.trim().is_empty(),
             "search_position_blocking must exist: {search_blocking}"
         );
-        // Both commands pass their blocking core as the worker owned by this dispatcher.
+        // Both commands pass their blocking core as the worker of this dispatcher, which hands
+        // it to the one runner that offloads every position search.
         let search_wrapper = body_at_indent(search, "async fn dispatch_position_search<T, F>(");
-        assert_body_offloads(search_wrapper, "dispatch_position_search", "worker");
+        assert_eq!(
+            search_wrapper.matches("offload_position_search(").count(),
+            1,
+            "{search_wrapper}"
+        );
+        let search_runner = body_at_indent(search, "async fn offload_position_search<R, T, F>(");
+        assert_body_offloads(search_runner, "offload_position_search", "worker");
         for name in ["search_position", "search_positions_stats"] {
             let wrapper = body_at_indent(search, &format!("pub async fn {name}("));
             let call = format!("{name}_blocking(");
@@ -4956,12 +4963,12 @@ mod blocking_offload_scans {
             );
         }
         assert!(
-            search_wrapper.contains("JobProgress"),
-            "search_position must retain JobProgress through worker completion: {search_wrapper}"
+            search_wrapper.contains("JobProgress") && search_runner.contains("JobProgress<R>"),
+            "search_position must hand its JobProgress to the runner that completes it: {search_wrapper}"
         );
         assert!(
-            search_wrapper.contains("complete("),
-            "search_position must complete the lease from the worker-owned closure: {search_wrapper}"
+            search_runner.contains("complete("),
+            "the position search runner must complete the lease from the worker-owned closure: {search_runner}"
         );
 
         let search_signature = search_blocking

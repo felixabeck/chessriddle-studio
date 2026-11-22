@@ -1,21 +1,25 @@
 //! The read-only tools a model may call during a turn.
 //!
 //! A tool call is untrusted text. Its arguments are parsed leniently, its line is checked by the
-//! chess library before the engine sees anything, and whatever goes wrong with the *call* is
-//! told to the model as a tool error. Only an engine failure or a cancellation ends the turn.
+//! chess library before the engine or the database sees anything, and whatever goes wrong with
+//! the *call* is told to the model as a tool error. Only an engine failure or a cancellation ends
+//! the turn.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use shakmaty::{Color, Position};
+use specta::Type;
 
 use super::{
     backend::{ToolCall, ToolSpec},
     engine::{Analyst, EngineLine},
     error::CoachError,
     lines::{move_tokens, position_fen, terminal, Terminal, TurnPosition},
+    stats::{stats_document, Statistics, StatsError},
 };
 
 pub(crate) const ANALYSE: &str = "analyse";
+pub(crate) const OPENING_STATS: &str = "opening_stats";
 /// Tool calls executed per round; further calls of the round are answered with an error.
 pub(crate) const MAX_TOOL_CALLS_PER_ROUND: usize = 4;
 const MAX_ANALYSIS_LINES: u16 = 5;
@@ -23,8 +27,18 @@ const TOOL_SEARCH_MILLIS: u32 = 1500;
 /// Plies of a principal variation that are passed on.
 const MAX_PV_PLIES: usize = 12;
 
-pub(crate) fn specs() -> Vec<ToolSpec> {
-    vec![ToolSpec {
+fn line_parameter() -> Value {
+    json!({
+        "type": "string",
+        "description": "Moves in SAN separated by spaces, starting from the position the user is \
+                        asking about, for example \"Nf3 Nc6 Bb5\". Empty for that position itself.",
+    })
+}
+
+/// The tools of a turn. The statistics tool is declared only when the turn has a reference
+/// database that answers.
+pub(crate) fn specs(with_statistics: bool) -> Vec<ToolSpec> {
+    let mut specs = vec![ToolSpec {
         name: ANALYSE,
         description: "Run the chess engine on the position reached after a line of moves, \
                       starting from the position the user is asking about. Returns the engine's \
@@ -32,12 +46,7 @@ pub(crate) fn specs() -> Vec<ToolSpec> {
         parameters: json!({
             "type": "object",
             "properties": {
-                "line": {
-                    "type": "string",
-                    "description": "Moves in SAN separated by spaces, starting from the position \
-                                    the user is asking about, for example \"Nf3 Nc6 Bb5\". Empty \
-                                    for that position itself.",
-                },
+                "line": line_parameter(),
                 "lines": {
                     "type": "integer",
                     "minimum": 1,
@@ -46,7 +55,21 @@ pub(crate) fn specs() -> Vec<ToolSpec> {
                 },
             },
         }),
-    }]
+    }];
+    if with_statistics {
+        specs.push(ToolSpec {
+            name: OPENING_STATS,
+            description: "Look up the position reached after a line of moves in the user's \
+                          reference database of games. Returns the moves played from it, most \
+                          played first, each with its number of games and how many White won, \
+                          were drawn and Black won, and the total number of games.",
+            parameters: json!({
+                "type": "object",
+                "properties": { "line": line_parameter() },
+            }),
+        });
+    }
+    specs
 }
 
 /// The moves of a line as a model may send them: one string, or a list of moves.
@@ -66,20 +89,40 @@ impl LineArgument {
     }
 }
 
+/// The arguments of either tool; `lines` matters to `analyse` only.
 #[derive(Deserialize)]
-struct AnalyseArguments {
+struct ToolArguments {
     #[serde(default)]
     line: Option<LineArgument>,
     #[serde(default)]
     lines: Option<i64>,
 }
 
+/// Where a tool looks a line up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ToolSource {
+    Engine,
+    Database,
+}
+
 /// What the user is shown while a tool runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ToolActivity {
-    /// The checked line in SAN; empty for the turn position itself.
+    pub source: ToolSource,
+    /// The line in SAN; empty for the turn position itself.
     pub line: Vec<String>,
 }
+
+/// The tool a call names, with what it needs to run.
+enum Tool<'a, 'b> {
+    Analyse,
+    OpeningStats(&'a mut (dyn Statistics + 'b)),
+}
+
+const STATISTICS_UNAVAILABLE: &str = "The reference database could not be read, so there are no \
+                                      statistics for this position. This does not mean that no \
+                                      games were played.";
 
 fn tool_error(message: impl Into<String>) -> String {
     json!({ "error": message.into() }).to_string()
@@ -120,26 +163,34 @@ pub(crate) fn terminal_result(terminal: Terminal) -> Value {
 }
 
 /// Runs one tool call and returns the result document for the model. `on_activity` is told the
-/// checked line before the engine starts on it. `Err` ends the turn (engine failure,
-/// cancellation).
+/// line before the engine or the database starts on it. `statistics` is the turn's reference
+/// database, if it has one that answers. `Err` ends the turn (engine failure, cancellation).
 pub(crate) async fn execute(
     call: &ToolCall,
     turn: &TurnPosition,
     analyst: &mut dyn Analyst,
+    statistics: Option<&mut (dyn Statistics + '_)>,
     on_activity: &mut (dyn FnMut(&ToolActivity) + Send),
 ) -> Result<String, CoachError> {
-    if call.name != ANALYSE {
-        return Ok(tool_error(format!("Unknown tool \"{}\".", call.name)));
-    }
+    let tool = match (call.name.as_str(), statistics) {
+        (ANALYSE, _) => Tool::Analyse,
+        (OPENING_STATS, Some(statistics)) => Tool::OpeningStats(statistics),
+        (OPENING_STATS, None) => {
+            return Ok(tool_error(
+                "No reference database can be asked for this question.",
+            ))
+        }
+        _ => return Ok(tool_error(format!("Unknown tool \"{}\".", call.name))),
+    };
     let arguments = if call.arguments.trim().is_empty() {
         "{}"
     } else {
         call.arguments.as_str()
     };
-    let Ok(arguments) = serde_json::from_str::<AnalyseArguments>(arguments) else {
+    let Ok(arguments) = serde_json::from_str::<ToolArguments>(arguments) else {
         return Ok(tool_error(
-            "The arguments are not a JSON object with a \"line\" string and an optional \
-             \"lines\" number.",
+            "The arguments are not a JSON object with a \"line\" string and, for the engine, \
+             an optional \"lines\" number.",
         ));
     };
     let tokens = arguments
@@ -149,44 +200,68 @@ pub(crate) async fn execute(
         .unwrap_or_default();
     let line = match turn.resolve(&tokens) {
         Ok(line) => line,
-        // An illegal line never reaches the engine.
+        // An illegal line never reaches the engine or the database.
         Err(error) => return Ok(tool_error(error.explain())),
     };
-    let wanted = arguments
-        .lines
-        .unwrap_or(1)
-        .clamp(1, i64::from(MAX_ANALYSIS_LINES));
-    let wanted = u16::try_from(wanted).unwrap_or(1);
     let mut result = json!({
         "line": line.san.join(" "),
         "fen": position_fen(&line.end),
         "side_to_move": if line.end.turn() == Color::White { "white" } else { "black" },
     });
     if let Some(terminal) = terminal(&line.end) {
-        // The rules decide a finished game; the engine has nothing to search.
+        // The rules decide a finished game; there is nothing to search or to look up.
         result["outcome"] = terminal_result(terminal);
         return Ok(result.to_string());
     }
-    on_activity(&ToolActivity {
-        line: line.san.clone(),
-    });
-    let found = analyst
-        .analyse(&turn.moves_with(&line), wanted, TOOL_SEARCH_MILLIS)
-        .await?;
-    if found.is_empty() {
-        return Ok(tool_error(
-            "The engine returned no evaluation for this position in the time available.",
-        ));
+    match tool {
+        Tool::Analyse => {
+            let wanted = arguments
+                .lines
+                .unwrap_or(1)
+                .clamp(1, i64::from(MAX_ANALYSIS_LINES));
+            let wanted = u16::try_from(wanted).unwrap_or(1);
+            on_activity(&ToolActivity {
+                source: ToolSource::Engine,
+                line: line.san.clone(),
+            });
+            let found = analyst
+                .analyse(&turn.moves_with(&line), wanted, TOOL_SEARCH_MILLIS)
+                .await?;
+            if found.is_empty() {
+                return Ok(tool_error(
+                    "The engine returned no evaluation for this position in the time available.",
+                ));
+            }
+            result["evaluations_from"] = "white".into();
+            result["continuations"] = engine_lines(&found);
+        }
+        Tool::OpeningStats(statistics) => {
+            on_activity(&ToolActivity {
+                source: ToolSource::Database,
+                line: line.san.clone(),
+            });
+            match statistics.moves(&position_fen(&line.end)).await {
+                Ok(moves) => {
+                    let document = stats_document(&moves);
+                    result["games"] = document["games"].clone();
+                    result["moves"] = document["moves"].clone();
+                }
+                Err(StatsError::Cancelled) => return Err(CoachError::Cancelled),
+                // A database that did not answer is never told as "no games".
+                Err(StatsError::Unavailable) => return Ok(tool_error(STATISTICS_UNAVAILABLE)),
+            }
+        }
     }
-    result["evaluations_from"] = "white".into();
-    result["continuations"] = engine_lines(&found);
     Ok(result.to_string())
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::coach::engine::Evaluation;
+    use crate::coach::{
+        engine::Evaluation,
+        stats::tests::{played, ScriptedStatistics},
+    };
     use async_trait::async_trait;
 
     pub(crate) const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -238,12 +313,41 @@ pub(crate) mod tests {
 
     async fn run(analyst: &mut ScriptedAnalyst, arguments: &str) -> (Value, Option<ToolActivity>) {
         let mut activity = None;
-        let content = execute(&call(ANALYSE, arguments), &turn(), analyst, &mut |seen| {
-            activity = Some(seen.clone());
-        })
+        let content = execute(
+            &call(ANALYSE, arguments),
+            &turn(),
+            analyst,
+            None,
+            &mut |seen| {
+                activity = Some(seen.clone());
+            },
+        )
         .await
         .unwrap();
         (serde_json::from_str(&content).unwrap(), activity)
+    }
+
+    async fn look_up(
+        statistics: &mut ScriptedStatistics,
+        arguments: &str,
+    ) -> (Result<Value, CoachError>, Option<ToolActivity>) {
+        let mut analyst = ScriptedAnalyst::default();
+        let mut activity = None;
+        let content = execute(
+            &call(OPENING_STATS, arguments),
+            &turn(),
+            &mut analyst,
+            Some(statistics),
+            &mut |seen| {
+                activity = Some(seen.clone());
+            },
+        )
+        .await;
+        assert!(analyst.asked.is_empty(), "a lookup never asks the engine");
+        (
+            content.map(|content| serde_json::from_str(&content).unwrap()),
+            activity,
+        )
     }
 
     #[tokio::test]
@@ -281,9 +385,105 @@ pub(crate) mod tests {
         assert_eq!(
             activity,
             Some(ToolActivity {
+                source: ToolSource::Engine,
                 line: vec!["Nf3".into(), "Nc6".into()]
             })
         );
+    }
+
+    #[test]
+    fn the_statistics_tool_is_declared_only_with_a_database() {
+        let names = |with_statistics| -> Vec<&str> {
+            specs(with_statistics)
+                .iter()
+                .map(|spec| spec.name)
+                .collect()
+        };
+        assert_eq!(names(false), [ANALYSE]);
+        assert_eq!(names(true), [ANALYSE, OPENING_STATS]);
+    }
+
+    #[tokio::test]
+    async fn opening_statistics_are_looked_up_for_the_position_after_the_line() {
+        let mut statistics = ScriptedStatistics {
+            answer: Some(Ok(vec![
+                played("Bb5", 40, 35, 25),
+                played("Bc4", 20, 10, 10),
+            ])),
+            ..Default::default()
+        };
+        let (result, activity) = look_up(&mut statistics, r#"{"line":"Nf3 Nc6"}"#).await;
+        let result = result.unwrap();
+        assert_eq!(
+            statistics.asked,
+            ["r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"]
+        );
+        assert_eq!(result["line"], "Nf3 Nc6");
+        assert_eq!(result["side_to_move"], "white");
+        assert_eq!(result["games"], 140);
+        assert_eq!(
+            result["moves"][0],
+            json!({ "move": "Bb5", "games": 100, "white_wins": 40, "draws": 35, "black_wins": 25 })
+        );
+        assert_eq!(result["moves"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            activity,
+            Some(ToolActivity {
+                source: ToolSource::Database,
+                line: vec!["Nf3".into(), "Nc6".into()]
+            })
+        );
+
+        // A position nobody played is an answer of its own: zero games.
+        let mut empty = ScriptedStatistics::default();
+        let (result, _) = look_up(&mut empty, "{}").await;
+        assert_eq!(result.unwrap()["games"], 0);
+    }
+
+    #[tokio::test]
+    async fn a_database_that_does_not_answer_is_a_tool_error_and_never_zero_games() {
+        let mut broken = ScriptedStatistics {
+            answer: Some(Err(StatsError::Unavailable)),
+            ..Default::default()
+        };
+        let (result, _) = look_up(&mut broken, "{}").await;
+        let result = result.unwrap();
+        assert!(result["error"]
+            .as_str()
+            .unwrap()
+            .contains("could not be read"));
+        assert!(result.get("games").is_none());
+
+        let mut cancelled = ScriptedStatistics {
+            answer: Some(Err(StatsError::Cancelled)),
+            ..Default::default()
+        };
+        let (result, _) = look_up(&mut cancelled, "{}").await;
+        assert_eq!(result, Err(CoachError::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn a_bad_statistics_call_never_reaches_the_database() {
+        let mut statistics = ScriptedStatistics::default();
+        for arguments in [r#"{"line":"Nf3 Nc6 Ke3"}"#, "not json"] {
+            let (result, activity) = look_up(&mut statistics, arguments).await;
+            assert!(result.unwrap()["error"].is_string(), "{arguments}");
+            assert!(activity.is_none());
+        }
+        assert!(statistics.asked.is_empty());
+
+        // Without a database the tool is not there to call.
+        let mut analyst = ScriptedAnalyst::default();
+        let content = execute(
+            &call(OPENING_STATS, "{}"),
+            &turn(),
+            &mut analyst,
+            None,
+            &mut |_| panic!("nothing runs without a database"),
+        )
+        .await
+        .unwrap();
+        assert!(content.contains("No reference database"));
     }
 
     #[tokio::test]
@@ -330,6 +530,7 @@ pub(crate) mod tests {
             &call("delete_game", "{}"),
             &turn(),
             &mut analyst,
+            None,
             &mut |_| {},
         )
         .await
@@ -346,6 +547,7 @@ pub(crate) mod tests {
             &call(ANALYSE, r#"{"line":"f3 e5 g4 Qh4#"}"#),
             &turn,
             &mut analyst,
+            None,
             &mut |_| panic!("nothing runs on a finished game"),
         )
         .await
@@ -369,9 +571,15 @@ pub(crate) mod tests {
             fail_with: Some(CoachError::EngineFailed),
             ..Default::default()
         };
-        let error = execute(&call(ANALYSE, "{}"), &turn(), &mut failing, &mut |_| {})
-            .await
-            .err();
+        let error = execute(
+            &call(ANALYSE, "{}"),
+            &turn(),
+            &mut failing,
+            None,
+            &mut |_| {},
+        )
+        .await
+        .err();
         assert_eq!(error, Some(CoachError::EngineFailed));
 
         let mut silent = ScriptedAnalyst {

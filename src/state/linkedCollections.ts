@@ -111,6 +111,23 @@ export function useCollectionCurrency(
     return snapshot.key === key ? snapshot : { key, collection: null, pending: !!file };
 }
 
+/**
+ * The database a chosen one stands for now: the database its linked collection currently
+ * publishes, or the chosen one itself when it belongs to no collection. `null` while that is being
+ * checked, could not be checked, or the collection is not ready.
+ */
+export function currentCollectionDatabase(
+    selected: DatabaseHandle | null,
+    currency: Pick<ReturnType<typeof useCollectionCurrency>, "collection" | "pending"> & {
+        error?: unknown;
+    },
+): DatabaseHandle | null {
+    const { collection } = currency;
+    if (currency.pending || currency.error) return null;
+    if (collection && (collection.status !== "ready" || !collection.database)) return null;
+    return collection?.database ?? selected;
+}
+
 /** Content identity of a database for read caches: the linked collection's generation plus this
  * renderer's write revision. `revision` is null while the collection lookup is pending, so a
  * consumer never keys a read on a generation it has not observed yet. */

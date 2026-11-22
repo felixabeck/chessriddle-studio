@@ -14,7 +14,7 @@ import { tauri } from "@/platform/tauri";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import AppModal from "../../common/AppModal";
 import { enginesAtom, referenceDbAtom } from "@/state/atoms";
-import { useCollectionCurrency } from "@/state/linkedCollections";
+import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linkedCollections";
 import { createZodStorage } from "@/state/utils";
 import {
   captureReportOwner,
@@ -109,11 +109,7 @@ function ReportModal({
   const atomStore = useJotaiStore();
   const currency = useCollectionCurrency(referenceDb);
   const referenceUnavailable =
-    !!referenceDb &&
-    (currency.pending ||
-      !!currency.error ||
-      (!!currency.collection &&
-        (currency.collection.status !== "ready" || !currency.collection.database)));
+    !!referenceDb && currentCollectionDatabase(referenceDb, currency) === null;
   // The novelty needs a reference whose index is ready; otherwise the option is off.
   const referenceReady = !!referenceDb && !referenceUnavailable;
   const engines = useAtomValue(enginesAtom);

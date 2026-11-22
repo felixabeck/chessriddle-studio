@@ -119,7 +119,7 @@ test("ask the Coach, read the streamed answer, preview a line and insert it", as
 
     const running = page.getByTestId("coach-running");
     await expect(running).toContainText("Thinking…");
-    await turnEvent({ type: "tool", line: ["e5", "Nf3"] });
+    await turnEvent({ type: "tool", source: "engine", line: ["e5", "Nf3"] });
     await expect(running).toContainText("The engine is checking e5 Nf3");
     await turnEvent({ type: "text", delta: "Black usually answers " });
     await turnEvent({ type: "text", delta: "in the centre" });

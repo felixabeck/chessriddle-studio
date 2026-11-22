@@ -9,7 +9,7 @@ import AppModal from "@/components/common/AppModal";
 import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useCoachErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
-import { coachTurnFamily, enginesAtom } from "@/state/atoms";
+import { coachTurnFamily, enginesAtom, fileWorkspaceAtom, referenceDbAtom } from "@/state/atoms";
 import {
   COACH_EFFORT_LEVELS,
   coachConnectionsAtom,
@@ -23,6 +23,8 @@ import {
   withCoachNoticeAccepted,
 } from "@/state/coach";
 import { sendCoachMessage, startNewCoachConversation, stopCoachTurn } from "@/state/coachTurns";
+import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linkedCollections";
+import { refreshRepertoireIndex } from "@/state/repertoireIndex";
 import { useOwnerTabId, useTabAtom } from "@/state/tabScope";
 import { CoachTranscript } from "./CoachTranscript";
 import classes from "./CoachPanel.module.css";
@@ -47,6 +49,17 @@ function CoachPanel() {
   const engines = useAtomValue(enginesAtom);
   const engine = effectiveCoachEngine(engines, useAtomValue(coachEngineAtom));
   const [accepted, setAccepted] = useAtom(coachNoticeAcceptedAtom);
+  // Opening statistics come from the reference database the explorer uses, as it stands now.
+  const selectedReference = useAtomValue(referenceDbAtom);
+  const referenceDb = currentCollectionDatabase(
+    selectedReference,
+    useCollectionCurrency(selectedReference),
+  );
+  // The repertoire files are indexed while the panel is open, so a question finds them ready.
+  const workspace = useAtomValue(fileWorkspaceAtom);
+  useEffect(() => {
+    void refreshRepertoireIndex(workspace);
+  }, [workspace]);
 
   const connections =
     connectionsState.status === "ready"
@@ -116,7 +129,10 @@ function CoachPanel() {
       model: chosen.model.id,
       effort: chosen.effort,
       engine,
+      referenceDb,
     });
+    // The context of this question is read already; the index is brought up to date for the next.
+    void refreshRepertoireIndex(workspace);
   };
   const submit = () => {
     if (!ready || running || question === "" || !chosen.connection) return;
