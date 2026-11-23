@@ -4,6 +4,7 @@ paths:
   - "src-tauri/tauri.conf.json"
   - "src-tauri/icons/**"
   - "src-tauri/linux/**"
+  - "src-tauri/src/infra/appimage_handler.rs"
   - ".claude/skills/push/**"
 ---
 
@@ -54,5 +55,14 @@ registry keys, the Linux `MimeType`), and `scripts/install-local.sh` does for it
   nothing else: it sets no default handler and never touches `mimeapps.list`.
 * Each leg of `.github/workflows/release.yml` asserts the registration on its built artefact. A
   manual dispatch is the rehearsal for a change here.
-* An AppImage that is run without desktop integration has no entry and therefore no handler; it
-  does not register itself.
+* On Linux, a genuine AppImage run (`APPIMAGE` naming an existing regular file, `APPDIR` set, and
+  the current executable inside `APPDIR`) registers a menu-hidden (`NoDisplay=true`) handler entry
+  at `<data home>/applications/chessriddle-studio-appimage-handler.desktop` carrying
+  `TryExec=<APPIMAGE>` and ownership key `X-ChessRiddle-Studio-AppImage-Handler=true`, only while
+  no other active handler exists across the XDG data directories. Any start removes that owned
+  entry when another active handler exists, and a non-AppImage start also removes it when its
+  `TryExec` target is provably missing (`NotFound`); before another start, `TryExec` causes GIO to
+  ignore a moved or deleted AppImage. It refreshes `update-desktop-database` best effort, never
+  sets a default handler, and never reads or writes `mimeapps.list`. KDE resolves handlers through
+  ksycoca rather than `mimeinfo.cache` (it watches the applications directories and honours
+  `TryExec`, though end-to-end verification probes GIO only).

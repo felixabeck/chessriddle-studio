@@ -1819,6 +1819,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &app_data,
                 app_data_locked,
             ));
+            infra::appimage_handler::reconcile_in_background();
             app.state::<AppState>()
                 .credentials
                 .initialize(&app_data)
@@ -4379,6 +4380,26 @@ mod blocking_offload_scans {
         assert!(setup.rfind("PathAuthority::open_for_app(").unwrap() < permitted);
         assert!(!setup[permitted + setter.len()..].contains("app_data"));
         assert!(permitted < setup.find(".install(authority)").unwrap());
+    }
+
+    #[test]
+    fn appimage_handler_reconciliation_runs_after_admission_and_before_launch_link_intake() {
+        let setup = body_at_indent(include_str!("main.rs"), ".setup(move |app| {");
+        let call = "infra::appimage_handler::reconcile_in_background();";
+        assert_eq!(setup.matches(call).count(), 1, "{setup}");
+        let reconcile = setup.find(call).expect("appimage handler call");
+        let held = setup
+            .find("crate::infra::path_authority::InstanceAdmission::HeldElsewhere => {")
+            .expect("HeldElsewhere arm");
+        let admission_end = setup[held..]
+            .find("\n            };\n")
+            .map(|offset| held + offset)
+            .expect("end of admission match");
+        let launch_link = setup
+            .find("if let Some(link) = infra::game_link::launch_link(std::env::args_os()) {")
+            .expect("launch link intake");
+        assert!(admission_end < reconcile, "{setup}");
+        assert!(reconcile < launch_link, "{setup}");
     }
 
     #[test]

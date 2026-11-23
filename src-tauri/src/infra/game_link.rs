@@ -17,7 +17,7 @@ use crate::error::Error;
 use crate::AppState;
 
 /// The URL scheme this application registers (`tauri.conf.json`, `scripts/install-local.sh`).
-const SCHEME: &str = "chessriddle-studio";
+pub(crate) const SCHEME: &str = "chessriddle-studio";
 
 /// A longer string is refused before it is parsed.
 const MAX_LINK_BYTES: usize = 512;
@@ -347,6 +347,17 @@ mod tests {
         // Taking empties the queue, so the dropped link is not resurrected and room returns.
         assert!(pending.take_all().is_empty());
         assert_eq!(pending.offer(&link(999)), Intake::Queued);
+    }
+
+    #[test]
+    fn scheme_matches_tauri_deep_link_config() {
+        let config: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json"))
+            .expect("tauri.conf.json is valid JSON");
+        let schemes = config
+            .pointer("/plugins/deep-link/desktop/schemes")
+            .and_then(|value| value.as_array())
+            .expect("plugins.deep-link.desktop.schemes is an array");
+        assert_eq!(schemes, &[serde_json::Value::String(SCHEME.to_owned())]);
     }
 
     #[test]

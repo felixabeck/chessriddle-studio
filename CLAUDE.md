@@ -37,7 +37,7 @@ project's name.
 | `persisted-state.md` | anything written to session/local storage, persisted atoms, tab lifecycle | `src/state/**`, `src/hooks/**`, `src/utils/tabs.ts`, `src/components/tabs/**` |
 | `pgn-scanning.md` | PGN boundaries, the byte-offset index, move encoding, search predicates, imports | `src-tauri/src/{pgn,lexer,opening,puzzle}.rs`, `db/**`, `ImportModal.tsx`, `src/utils/db.ts` |
 | `gate-tooling.md` | running, changing or recovering a gate, including a gate command typed before any file is opened | `scripts/**`, `.github/workflows/**`, `package.json`, `pnpm-workspace.yaml`, `stryker.config.mjs`, `*coverage-*.json`, `bundle-budgets.json`, `.claude/skills/push/**`, `mutants.out/**` |
-| `desktop-installation.md` | installing the desktop app, its desktop entry, launcher identity or the game-link scheme registration | `scripts/install-local*`, `src-tauri/tauri.conf.json`, `src-tauri/icons/**`, `src-tauri/linux/**`, `.claude/skills/push/**` |
+| `desktop-installation.md` | installing the desktop app, its desktop entry, launcher identity or the game-link scheme registration | `scripts/install-local*`, `src-tauri/tauri.conf.json`, `src-tauri/icons/**`, `src-tauri/linux/**`, `src-tauri/src/infra/appimage_handler.rs`, `.claude/skills/push/**` |
 
 Claude Code loads the always rule and matching path rules automatically. Grok, agy and review
 subagents open applicable rules before work. Rules bind regardless of delivery. Add a missing
