@@ -54,6 +54,8 @@ vi.mock("@/state/atoms", async () => {
     boardAnimationSpeedAtom: atom("normal"),
     boardImageAtom: atom("chessriddle.svg"),
     boardWoodTextureAtom: atom(false),
+    lastMoveHighlightColorAtom: atom("#ffff00"),
+    lastMoveHighlightOpacityAtom: atom(40),
     moveMethodAtom: atom("both"),
   };
 });
