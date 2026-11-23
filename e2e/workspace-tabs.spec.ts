@@ -1557,7 +1557,8 @@ test("workspace-tabs: creates, focuses, and cycles workspace tabs", async ({
     await expect(page).toHaveTitle(/ChessRiddle Studio/i);
     const tabs = page.getByRole("tab");
     await expect(tabs).toHaveCount(1);
-    await expect(tabs.first()).toBeFocused();
+    // Focusing the selected tab from code at launch drew the keyboard focus ring on it.
+    await expect(tabs.first()).not.toBeFocused();
 
     await newWorkspaceTabButton(page).click();
     await expect(tabs).toHaveCount(2);
