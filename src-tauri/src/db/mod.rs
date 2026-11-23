@@ -1261,6 +1261,81 @@ static CONVERSION_AFTER_COMMIT: crate::infra::test_hooks::KeyedTestHooks<String>
     crate::infra::test_hooks::KeyedTestHooks::new();
 
 #[cfg(test)]
+fn create_schema_database_file(dir: &std::path::Path, file_stem: &str) -> std::path::PathBuf {
+    use diesel::connection::SimpleConnection;
+
+    let database = dir.join(format!("{file_stem}.db3"));
+    let mut connection = diesel::SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+    connection.batch_execute(CREATE_TABLES_SQL).unwrap();
+    connection
+        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.4.0');")
+        .unwrap();
+    drop(connection);
+    database
+}
+
+#[cfg(test)]
+pub(crate) fn import_pgn_into_app_database(
+    app: &tauri::AppHandle<tauri::test::MockRuntime>,
+    dir: &std::path::Path,
+    stem: &str,
+    pgn: &str,
+) -> (DatabaseHandle, std::path::PathBuf) {
+    use tauri::Manager;
+
+    tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+        .events(tauri_specta::collect_events!(ConvertProgress))
+        .mount_events(app);
+
+    let database = create_schema_database_file(dir, stem);
+    let pgn_path = dir.join(format!("{stem}.pgn"));
+    std::fs::write(&pgn_path, pgn).unwrap();
+
+    let state = app.state::<AppState>();
+    let pgn_name = format!("{stem}.pgn");
+    let db_name = format!("{stem}.db3");
+    let (pgn_handle, db_handle) = state
+        .pgn_path_authority
+        .with_mut(|authority| {
+            let pgn_grant = authority.grant_persistent_file_for_test(
+                &pgn_path,
+                &pgn_name,
+                vec![PathOperation::ReadPgn],
+            );
+            let db_grant = authority.grant_persistent_file_for_test(
+                &database,
+                &db_name,
+                vec![
+                    PathOperation::DatabaseCreate,
+                    PathOperation::DatabaseRead,
+                    PathOperation::DatabaseMutate,
+                ],
+            );
+            (
+                FileWorkspaceHandle::new(pgn_grant.id),
+                DatabaseHandle::new(db_grant.id),
+            )
+        })
+        .unwrap();
+
+    convert_pgn_blocking(
+        &state.pgn_path_authority,
+        &state.database_repository,
+        &state.search_cache,
+        vec![pgn_handle],
+        db_handle.clone(),
+        None,
+        app.clone(),
+        stem.into(),
+        None,
+        format!("import-{stem}"),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    (db_handle, database)
+}
+
+#[cfg(test)]
 pub(crate) fn schema_database_case(
     file_stem: &str,
     operations: Vec<PathOperation>,
@@ -1270,16 +1345,8 @@ pub(crate) fn schema_database_case(
     DatabaseHandle,
     std::path::PathBuf,
 ) {
-    use diesel::connection::SimpleConnection;
-
     let dir = tempfile::tempdir().unwrap();
-    let database = dir.path().join(format!("{file_stem}.db3"));
-    let mut connection = diesel::SqliteConnection::establish(database.to_str().unwrap()).unwrap();
-    connection.batch_execute(CREATE_TABLES_SQL).unwrap();
-    connection
-        .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.4.0');")
-        .unwrap();
-    drop(connection);
+    let database = create_schema_database_file(dir.path(), file_stem);
 
     let (app, handle) = database_app_with_grant(dir.path(), &database, file_stem, operations);
     (dir, app, handle, database)

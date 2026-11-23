@@ -2597,48 +2597,24 @@ mod imported_search_tests {
         DatabaseHandle,
         std::path::PathBuf,
     ) {
-        let (dir, app, handle, database) = super::super::schema_database_case(
-            "imported-search",
-            vec![
-                PathOperation::DatabaseCreate,
-                PathOperation::DatabaseRead,
-                PathOperation::DatabaseMutate,
-            ],
-        );
-        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
-            .events(tauri_specta::collect_events!(
-                crate::progress::ProgressEvent,
-                super::super::ConvertProgress
-            ))
-            .mount_events(&app);
-        let pgn_path = dir.path().join("fixture.pgn");
-        std::fs::write(&pgn_path, pgn).unwrap();
-        let state = app.state::<AppState>();
-        let file = state
-            .pgn_path_authority
-            .with_mut(|authority| {
-                let grant = authority.grant_persistent_file_for_test(
-                    &pgn_path,
-                    "fixture.pgn",
-                    vec![PathOperation::ReadPgn],
-                );
-                super::super::FileWorkspaceHandle::new(grant.id)
-            })
-            .unwrap();
-        super::super::convert_pgn_blocking(
-            &state.pgn_path_authority,
-            &state.database_repository,
-            &state.search_cache,
-            vec![file],
-            handle.clone(),
-            None,
-            app.clone(),
-            "Imported search".into(),
-            None,
-            "imported-search".into(),
-            &CancellationToken::new(),
+        let dir = tempfile::tempdir().unwrap();
+        let authority = crate::infra::path_authority::PathAuthority::open(
+            dir.path().join("registry.json"),
+            vec![],
         )
         .unwrap();
+        let state = AppState::default();
+        state.pgn_path_authority.install(authority).unwrap();
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(
+                crate::progress::ProgressEvent
+            ))
+            .mount_events(&app);
+        app.manage(state);
+        let app = app.handle().clone();
+        let (handle, database) =
+            super::super::import_pgn_into_app_database(&app, dir.path(), "imported-search", pgn);
         (dir, app, handle, database)
     }
 
@@ -3191,6 +3167,20 @@ mod imported_search_tests {
     }
 
     #[test]
+    fn novelty_exclusion_does_not_exclude_same_length_game_with_different_moves() {
+        // Reference database holds only H: same start position and same mainline length as G
+        // (4 plies), sharing the first three plies but differing on ply 4 (2... Nf6 vs 2... Nc6).
+        let h_pgn = "[Event \"Same Length Different Move\"]\n[Site \"Fixture\"]\n[White \"C\"]\n[Black \"D\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nf6 1-0\n";
+        let (_dir, app, handle, _database) = imported_search_database(h_pgn);
+        let (queries, excluded) =
+            analysed_game_queries_and_exclusion(None, &["e2e4", "e7e5", "g1f3", "b8c6"]);
+
+        let with_exclusion =
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap();
+        assert_eq!(with_exclusion, vec![true, true, true, false]);
+    }
+
+    #[test]
     fn novelty_exclusion_handles_custom_fen_chess960_castling_and_start_identity() {
         // Custom FEN.
         let custom_fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1";
@@ -3310,10 +3300,10 @@ mod imported_search_tests {
             &CancellationToken::new(),
         )
         .unwrap_err();
-        let expected_prefix = format!("game {game_id} has illegal encoded move 250");
+        let expected_message = format!("game {game_id} has illegal encoded move 250");
         assert!(
-            matches!(error, Error::InvalidInput(ref cause) if cause == &expected_prefix),
-            "expected {expected_prefix:?}, got {error:?}"
+            matches!(error, Error::InvalidInput(ref cause) if cause == &expected_message),
+            "expected {expected_message:?}, got {error:?}"
         );
     }
 }

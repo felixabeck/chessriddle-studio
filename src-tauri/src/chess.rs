@@ -1765,6 +1765,9 @@ fn novelty_excluded_game(positions: &[ReplayedPosition]) -> Option<crate::db::Ex
 /// position is PRESENT in the reference database"; `novelty_outcome` turns the
 /// flags into the report's novelty. A full-index scan per ply is the cost this
 /// offload exists to bound.
+// Keep `permit` by value and the `AppState` pieces explicit at this blocking boundary:
+// source scans in `main.rs` assert `OwnedSemaphorePermit` in the signature, and grouping
+// the arguments into a struct would hide the permit and state dependencies.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn novelty_lookup_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
@@ -3162,77 +3165,6 @@ done
     }
 
     #[cfg(unix)]
-    fn import_reference_db_into_report_fixture(
-        directory: &tempfile::TempDir,
-        app: &tauri::AppHandle<tauri::test::MockRuntime>,
-        stem: &str,
-        pgn: &str,
-    ) -> DatabaseHandle {
-        use crate::infra::path_authority::PathOperation;
-        use diesel::{connection::SimpleConnection, Connection};
-
-        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
-            .events(tauri_specta::collect_events!(crate::db::ConvertProgress))
-            .mount_events(app);
-        let database = directory.path().join(format!("{stem}.db3"));
-        let mut connection =
-            diesel::SqliteConnection::establish(database.to_str().unwrap()).unwrap();
-        connection
-            .batch_execute(include_str!("db/create.sql"))
-            .unwrap();
-        connection
-            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.4.0');")
-            .unwrap();
-        drop(connection);
-
-        let pgn_path = directory.path().join(format!("{stem}.pgn"));
-        std::fs::write(&pgn_path, pgn).unwrap();
-
-        let state = app.state::<AppState>();
-        let pgn_name = format!("{stem}.pgn");
-        let db_name = format!("{stem}.db3");
-        let (pgn_handle, db_handle) = state
-            .pgn_path_authority
-            .with_mut(|authority| {
-                let pgn_grant = authority.grant_persistent_file_for_test(
-                    &pgn_path,
-                    &pgn_name,
-                    vec![PathOperation::ReadPgn],
-                );
-                let db_grant = authority.grant_persistent_file_for_test(
-                    &database,
-                    &db_name,
-                    vec![
-                        PathOperation::DatabaseCreate,
-                        PathOperation::DatabaseRead,
-                        PathOperation::DatabaseMutate,
-                    ],
-                );
-                (
-                    crate::infra::path_authority::FileWorkspaceHandle::new(pgn_grant.id),
-                    DatabaseHandle::new(db_grant.id),
-                )
-            })
-            .unwrap();
-
-        crate::db::convert_pgn_blocking(
-            &state.pgn_path_authority,
-            &state.database_repository,
-            &state.search_cache,
-            vec![pgn_handle],
-            db_handle.clone(),
-            None,
-            app.clone(),
-            stem.into(),
-            None,
-            format!("import-{stem}"),
-            &CancellationToken::new(),
-        )
-        .unwrap();
-        db_handle
-    }
-
-    #[cfg(unix)]
     #[tokio::test]
     async fn report_novelty_excludes_analysed_games_own_copy_in_reference_db() {
         let game_g = "[Event \"Game G\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 1-0\n";
@@ -3240,8 +3172,8 @@ done
 
         // Reference database holds only G: novelty is the first move (position 1).
         let (directory, app, engine) = report_script_fixture(&[]);
-        let reference_only_g =
-            import_reference_db_into_report_fixture(&directory, &app, "only-g", game_g);
+        let (reference_only_g, _) =
+            crate::db::import_pgn_into_app_database(&app, directory.path(), "only-g", game_g);
         let mut options = report_options(&["e2e4", "e7e5", "g1f3", "b8c6"]);
         options.annotate_novelties = true;
         options.reference_db = Some(reference_only_g);
@@ -3259,9 +3191,9 @@ done
 
         // Reference database holds G and a second game sharing G's first move: novelty is move 2 (position 2).
         let (directory, app, engine) = report_script_fixture(&[]);
-        let reference_with_other = import_reference_db_into_report_fixture(
-            &directory,
+        let (reference_with_other, _) = crate::db::import_pgn_into_app_database(
             &app,
+            directory.path(),
             "g-and-h",
             &format!("{game_g}\n{shared_first_move}"),
         );
