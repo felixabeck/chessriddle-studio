@@ -14,33 +14,20 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { availableParallelism } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
-  ONE_WAVE_BYTES,
-  P2_MUTATION_SHARE,
-  P2_VITEST_SHARE,
   PRE_REVIEW_GATE_SCHEDULE,
   PUSH_GATE_SCHEDULE,
-  discoverPreReviewChanges,
+  buildRelatedTestCommands,
+  discoverChangedPaths,
   runPushGates,
   selectPreReviewLanes,
 } from "./run-push-gates.mjs";
-import {
-  CONSERVATIVE_CGROUP_LIMIT_BYTES,
-  UNSIZED_PROCESS_RESERVE_BYTES,
-  VITEST_MINIMUM_BUDGET_BYTES,
-  vitestMaxWorkers,
-  workerCount,
-} from "./gate-parallelism.mjs";
-import { E2E_CONTAINER_MEMORY_BYTES } from "./run-e2e-container.mjs";
 import { startNodeCli } from "./mutation-runner-test-harness.mjs";
 import { superviseChild } from "./child-supervisor.mjs";
-import { GATE_LOG_DIRECTORY_ENV, MAX_GATE_LOG_RUNS, writeLogChunk } from "./gate-logs.mjs";
-import { RUST_COVERAGE_TOOLCHAIN } from "./toolchain-versions.mjs";
-import { copyRustCoverageEntrypoint } from "./rust-coverage-test-harness.mjs";
+import { MAX_GATE_LOG_RUNS, writeLogChunk } from "./gate-logs.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runnerPath = join(repositoryRoot, "scripts/run-push-gates.mjs");
@@ -137,25 +124,18 @@ function scheduledFakeCommands(blocks) {
   if (selected.has("rust") || selected.has("bindings")) {
     commands.push("pnpm rust:target:evict", "bash scripts/setup-rust.sh");
   }
-  if (selected.size > 0) commands.push("pnpm gate:run frontend-build");
+  if (selected.size > 0) commands.push("pnpm build-vite");
   if (selected.has("bindings")) commands.push("pnpm bindings:check");
   if (selected.has("rust")) {
     commands.push(
       "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
       "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
       "pnpm rust:windows:check",
-      "pnpm gate:ensure backend-test",
-      "pnpm gate:ensure backend-coverage",
     );
   }
   commands.push("pnpm gates:contract:check", "pnpm findings:kit:check");
   if (selected.has("frontend")) {
-    commands.push(
-      "pnpm gate:ensure frontend-coverage",
-      "pnpm bundle:check",
-      "pnpm gate:ensure e2e-container",
-      "pnpm gate:ensure frontend-mutation",
-    );
+    commands.push("pnpm bundle:check");
   }
   return commands;
 }
@@ -168,6 +148,8 @@ async function makeHarness(
     extraExecutables = [],
     budgetBytes = 10 * GIB,
     barrierLanes = [],
+    initGit = true,
+    upstream = true,
   } = {},
 ) {
   const root = await mkdtemp(join("/tmp", "push-gates-cli-"));
@@ -180,6 +162,16 @@ async function makeHarness(
   const helperPath = join(root, "fake-command.mjs");
   await writeFile(helperPath, FAKE_COMMAND);
   await symlink("/usr/bin/env", join(bin, "env"));
+  if (initGit) {
+    await initializeUpstream(root, {
+      upstream,
+      files: {
+        ".gitignore":
+          "/bin/\n/state/\n/artifacts/\n/fake-config.json\n/fake-command.mjs\n/mingw/\n/cargo-home/\n/scripts/\n/dist/\n",
+      },
+    });
+    await symlink("/usr/bin/git", join(bin, "git"));
+  }
 
   for (const executable of ["pnpm", "cargo", "bash", ...extraExecutables]) {
     if (omittedExecutables.includes(executable)) continue;
@@ -300,11 +292,7 @@ function laneForCommand(command) {
   return new Map([
     ["pnpm gates:contract:check", "contract"],
     ["cargo fmt --manifest-path src-tauri/Cargo.toml -- --check", "rust-lint"],
-    ["pnpm gate:ensure backend-test", "rust-test"],
-    ["pnpm gate:ensure backend-coverage", "rust-coverage"],
-    ["pnpm gate:ensure frontend-coverage", "frontend-coverage"],
     ["pnpm bundle:check", "bundle"],
-    ["pnpm gate:ensure frontend-mutation", "frontend-mutation"],
   ]).get(command);
 }
 
@@ -353,35 +341,6 @@ async function temporarySchedulerRoot(t) {
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }
-
-test("every scheduled child inherits the run directory in both push placements and pre-review", async (t) => {
-  for (const [args, budgetBytes] of [
-    [["--rust", "--frontend", "--bindings"], 10 * GIB],
-    [["--rust", "--frontend", "--bindings"], ONE_WAVE_BYTES + GIB],
-    [["--pre-review"], 10 * GIB],
-  ]) {
-    await t.test(`${args.join(" ")} with ${budgetBytes} bytes`, async (subtest) => {
-      const cwd = await temporarySchedulerRoot(subtest);
-      const events = [];
-      const env = { ...process.env, [GATE_LOG_DIRECTORY_ENV]: "/invalid/old-run" };
-      const result = await runPushGates(args, {
-        cwd,
-        env,
-        getGateBudgetBytes: () => budgetBytes,
-        availableParallelism: () => 24,
-        discoverChangedPaths: () => ["src-tauri/src/lib.rs", "src/state/workspace.ts"],
-        spawnProcess: makeMockSpawner({ events }),
-      });
-      assert.equal(result.exitCode, 0);
-      const starts = events.filter(({ type }) => type === "start");
-      assert.ok(starts.length > 1);
-      for (const event of starts) {
-        assert.equal(event.env[GATE_LOG_DIRECTORY_ENV], result.logDirectory, event.command);
-      }
-      assert.equal(env[GATE_LOG_DIRECTORY_ENV], "/invalid/old-run", "caller env stays unchanged");
-    });
-  }
-});
 
 test("scheduler startup prunes old runs before the first child starts", async (t) => {
   const cwd = await temporarySchedulerRoot(t);
@@ -543,7 +502,7 @@ test("untracked-only production input selects its pre-review lanes (CR-6)", asyn
   await mkdir(dirname(join(root, sourcePath)), { recursive: true });
   await writeFile(join(root, sourcePath), "export const workspace = 1;\n");
 
-  const changedPaths = discoverPreReviewChanges({ cwd: root }).paths;
+  const changedPaths = discoverChangedPaths({ cwd: root }).paths;
   assert.deepEqual(changedPaths, [sourcePath]);
   assert.ok(
     selectPreReviewLanes(changedPaths, { root }).some(({ name }) => name === "format-lint"),
@@ -555,12 +514,32 @@ test("untracked-only production input selects its pre-review lanes (CR-6)", asyn
   );
 });
 
+test("changed-path discovery runs git in the C locale so missing upstream stays recognisable", () => {
+  const calls = [];
+  const localisedRunGit = (executable, args, options) => {
+    calls.push(options.env?.LC_ALL);
+    return options.env?.LC_ALL === "C"
+      ? { status: 128, stdout: "", stderr: "fatal: no upstream configured for branch 'main'" }
+      : {
+          status: 128,
+          stdout: "",
+          stderr: "fatal: Kein Upstream-Branch für Branch 'main' konfiguriert.",
+        };
+  };
+  assert.throws(
+    () => discoverChangedPaths({ cwd: "/unused", runGit: localisedRunGit, headline: "H" }),
+    /^Error: H: missing upstream: git merge-base HEAD @\{u\} failed/u,
+  );
+  assert.deepEqual(calls, ["C"]);
+});
+
 test("pre-review refuses a missing upstream and every failing git call", async (t) => {
   const root = await temporarySchedulerRoot(t);
   await initializeUpstream(root, { upstream: false });
   assert.throws(
-    () => discoverPreReviewChanges({ cwd: root }),
-    /Cannot determine pre-review changed paths: git merge-base HEAD @\{u\} failed/u,
+    () =>
+      discoverChangedPaths({ cwd: root, headline: "Cannot determine pre-review changed paths" }),
+    /Cannot determine pre-review changed paths: missing upstream: git merge-base HEAD @\{u\} failed/u,
   );
 
   const failingRunGit = (executable, args) => {
@@ -568,8 +547,14 @@ test("pre-review refuses a missing upstream and every failing git call", async (
     return { status: 128, stdout: "", stderr: "injected diff failure" };
   };
   assert.throws(
-    () => discoverPreReviewChanges({ cwd: root, runGit: failingRunGit, listUntracked: () => [] }),
-    /git diff --name-only -z base-commit -- failed \(injected diff failure\)/u,
+    () =>
+      discoverChangedPaths({
+        cwd: root,
+        runGit: failingRunGit,
+        listUntracked: () => [],
+        headline: "Cannot determine pre-review changed paths",
+      }),
+    /Cannot determine pre-review changed paths: git diff --name-only -z base-commit -- failed \(injected diff failure\)/u,
   );
 });
 
@@ -611,15 +596,14 @@ test("Rust-only pre-review waits for the frontend build before Windows clippy", 
   assert.equal(result.exitCode, 0);
   const commands = events.filter(({ type }) => type === "start").map(({ command }) => command);
   assert.deepEqual(commands, [
-    "pnpm gate:run frontend-build",
+    "pnpm build-vite",
     "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "pnpm coverage:mapping:backend",
     "pnpm rust:windows:check",
   ]);
   assert.ok(
     PRE_REVIEW_GATE_SCHEDULE.p1[0].command === commands[0] &&
-      commands.indexOf("pnpm gate:run frontend-build") <
-        commands.indexOf("pnpm rust:windows:check"),
+      commands.indexOf("pnpm build-vite") < commands.indexOf("pnpm rust:windows:check"),
   );
 });
 
@@ -634,49 +618,19 @@ test("pre-review frontend-build red skips every selected lane (R7, DC-06)", asyn
     discoverChangedPaths: () => ["src-tauri/src/lib.rs", "src/state/workspace.ts"],
     spawnProcess: makeMockSpawner({
       events,
-      exits: { "pnpm gate:run frontend-build": 9 },
+      exits: { "pnpm build-vite": 9 },
     }),
   });
   assert.equal(result.exitCode, 9);
   const commands = commandSet(events);
-  assert.ok(commands.includes("pnpm gate:run frontend-build"));
-  assert.deepEqual(commands, ["pnpm gate:run frontend-build"]);
+  assert.ok(commands.includes("pnpm build-vite"));
+  assert.deepEqual(commands, ["pnpm build-vite"]);
   for (const laneName of selectPreReviewLanes(["src-tauri/src/lib.rs", "src/state/workspace.ts"], {
     root: cwd,
   }).map(({ name }) => name)) {
     const lane = result.results.find(({ name }) => name === laneName);
     assert.equal(lane.status, "skipped");
     assert.match(lane.reason, /frontend-build failed/u);
-  }
-});
-
-test("the e2e lane gets a longer termination timeout only for its Docker cleanup", async (t) => {
-  const cwd = await temporarySchedulerRoot(t);
-  const events = [];
-  const commandByChild = new WeakMap();
-  const terminationTimeouts = new Map();
-  const spawnProcess = (executable, args, options) => {
-    const child = makeMockSpawner({ events })(executable, args, options);
-    commandByChild.set(child, [executable, ...args].join(" "));
-    return child;
-  };
-  const superviseProcess = (child, options) => {
-    terminationTimeouts.set(commandByChild.get(child), options.terminationTimeoutMs);
-    return superviseChild(child, options);
-  };
-  const result = await runPushGates(["--frontend"], {
-    cwd,
-    env: { ...process.env, GATE_MEMORY_BYTES: String(7 * GIB) },
-    getGateBudgetBytes: () => 7 * GIB,
-    spawnProcess,
-    superviseProcess,
-  });
-  assert.equal(result.exitCode, 0);
-  assert.equal(terminationTimeouts.get("pnpm gate:ensure e2e-container"), 15_000);
-  assert.ok(terminationTimeouts.size > 1);
-  for (const [command, timeout] of terminationTimeouts) {
-    if (command === "pnpm gate:ensure e2e-container") continue;
-    assert.equal(timeout, 2_000, `${command} should keep the default timeout`);
   }
 });
 
@@ -738,7 +692,7 @@ test("CLI selection matrix, leading delimiter, and phase ordering (PG-60, PG-64,
       const p1Commands =
         entry.flags.length > 0
           ? [
-              "pnpm gate:run frontend-build",
+              "pnpm build-vite",
               ...(entry.flags.includes("--bindings") ? ["pnpm bindings:check"] : []),
             ]
           : [];
@@ -747,16 +701,16 @@ test("CLI selection matrix, leading delimiter, and phase ordering (PG-60, PG-64,
         const evictionFinish = cliCommandFinish(events, "pnpm rust:target:evict");
         const setupStart = cliCommandStart(events, "bash scripts/setup-rust.sh");
         const setupFinish = cliCommandFinish(events, "bash scripts/setup-rust.sh");
-        const buildStart = cliCommandStart(events, "pnpm gate:run frontend-build");
+        const buildStart = cliCommandStart(events, "pnpm build-vite");
         assert.ok(at(guardFinish) < at(evictionStart));
         assert.ok(at(evictionFinish) < at(setupStart));
         assert.ok(at(setupFinish) < at(buildStart));
       } else if (entry.flags.includes("--frontend")) {
-        assert.ok(at(guardFinish) < at(cliCommandStart(events, "pnpm gate:run frontend-build")));
+        assert.ok(at(guardFinish) < at(cliCommandStart(events, "pnpm build-vite")));
       }
       if (entry.flags.includes("--bindings")) {
         assert.ok(
-          at(cliCommandFinish(events, "pnpm gate:run frontend-build")) <
+          at(cliCommandFinish(events, "pnpm build-vite")) <
             at(cliCommandStart(events, "pnpm bindings:check")),
         );
       }
@@ -789,7 +743,7 @@ test("CLI selection matrix, leading delimiter, and phase ordering (PG-60, PG-64,
         const result = await runCli(subtest, harness, flags);
         assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
         const events = await readEvents(harness);
-        const buildFinish = cliCommandFinish(events, "pnpm gate:run frontend-build");
+        const buildFinish = cliCommandFinish(events, "pnpm build-vite");
         assert.ok(buildFinish, "the P1 frontend build must run");
         const consumer =
           flags[0] === "--bindings"
@@ -822,12 +776,17 @@ test("contract-only invocation, unknown flags, and P0 guard failure/spawn failur
     async (subtest) => {
       const harness = await makeHarness(subtest);
       harness.env.GATE_MEMORY_BYTES = "abc";
-      const result = await runCli(subtest, harness, ["--frontend"]);
+      const result = await runCli(subtest, harness, ["--rust"]);
       assert.equal(result.code, 1, `${result.stdout}\n${result.stderr}`);
       assert.match(result.stderr, /GATE_MEMORY_BYTES/u);
       assert.deepEqual(
         commandSet(await readEvents(harness)),
-        ["pnpm mutation:guard:check", "pnpm gate:run frontend-build"].sort(),
+        [
+          "pnpm mutation:guard:check",
+          "pnpm rust:target:evict",
+          "bash scripts/setup-rust.sh",
+          "pnpm build-vite",
+        ].sort(),
       );
     },
   );
@@ -860,7 +819,7 @@ test("P0/P1 reds skip every subsequent selected gate (R2, R8, PG-63, PG-75, PG-7
   for (const [name, command, code] of [
     ["mutation-guard", "pnpm mutation:guard:check", 7],
     ["setup-rust", "bash scripts/setup-rust.sh", 6],
-    ["frontend-build", "pnpm gate:run frontend-build", 9],
+    ["frontend-build", "pnpm build-vite", 9],
     ["bindings-check", "pnpm bindings:check", 5],
   ]) {
     await t.test(`${name} red reports each selected gate exactly once`, async (subtest) => {
@@ -871,6 +830,7 @@ test("P0/P1 reds skip every subsequent selected gate (R2, R8, PG-63, PG-75, PG-7
         env: { ...process.env },
         getGateBudgetBytes: () => 10 * GIB,
         availableParallelism: () => 24,
+        discoverChangedPaths: () => [],
         spawnProcess: makeMockSpawner({ events, exits: { [command]: code } }),
       });
       assert.equal(result.exitCode, code);
@@ -922,7 +882,7 @@ test("P0/P1 reds skip every subsequent selected gate (R2, R8, PG-63, PG-75, PG-7
 test("spawn failures, signals and SIGKILL codes propagate from P0, P1 and lanes (PG-55, PG-65, PG-68, PG-77, PG-80)", async (t) => {
   await t.test("missing lane executable fails its lane with 127", async (subtest) => {
     const harness = await makeHarness(subtest, {
-      commands: { "pnpm gate:run frontend-build": { removeExecutable: "cargo" } },
+      commands: { "pnpm build-vite": { removeExecutable: "cargo" } },
     });
     const result = await runCli(subtest, harness, ["--rust"]);
     assert.notEqual(result.code, 0);
@@ -932,7 +892,7 @@ test("spawn failures, signals and SIGKILL codes propagate from P0, P1 and lanes 
 
   for (const [name, args, command] of [
     ["setup-rust P0", ["--rust"], "bash scripts/setup-rust.sh"],
-    ["frontend-build P1", ["--frontend"], "pnpm gate:run frontend-build"],
+    ["frontend-build P1", ["--frontend"], "pnpm build-vite"],
     ["rust-lint lane", ["--rust"], "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"],
   ]) {
     await t.test(`${name} SIGKILL maps to 137`, async (subtest) => {
@@ -947,7 +907,7 @@ test("spawn failures, signals and SIGKILL codes propagate from P0, P1 and lanes 
 
   for (const [signal, expectedCode, args, command] of [
     ["SIGTERM", 143, ["--rust"], "bash scripts/setup-rust.sh"],
-    ["SIGTERM", 143, ["--frontend"], "pnpm gate:run frontend-build"],
+    ["SIGTERM", 143, ["--frontend"], "pnpm build-vite"],
   ]) {
     await t.test(
       `${signal} during ${command} latches and starts no later command`,
@@ -985,7 +945,7 @@ test("spawn failures, signals and SIGKILL codes propagate from P0, P1 and lanes 
     await t.test(
       `${signal} sent by a P1 fake that exits 0 prevents every later step`,
       async (subtest) => {
-        const command = "pnpm gate:run frontend-build";
+        const command = "pnpm build-vite";
         const harness = await makeHarness(subtest, {
           commands: { [command]: { signalRunner: signal, signalExitCode: 0 } },
         });
@@ -1000,16 +960,17 @@ test("spawn failures, signals and SIGKILL codes propagate from P0, P1 and lanes 
 
   for (const signal of ["SIGTERM", "SIGINT"]) {
     await t.test(
-      `${signal} while Rust is admitted cancels queued Rust and heavyweight frontend starts`,
+      `${signal} while light lanes run cancels queued related-tests`,
       async (subtest) => {
         const harness = await makeHarness(subtest, {
-          budgetBytes: ONE_WAVE_BYTES + GIB,
           commands: {
             "pnpm gates:contract:check": { hold: true },
             "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check": { hold: true },
             "pnpm bundle:check": { hold: true },
           },
         });
+        await mkdir(join(harness.root, "src/utils"), { recursive: true });
+        await writeFile(join(harness.root, "src/utils/annotation.ts"), "export const a = 1;\n");
         const running = startCli(subtest, harness, ["--rust", "--frontend", "--bindings"]);
         const heldCommands = [
           "pnpm gates:contract:check",
@@ -1036,17 +997,10 @@ test("spawn failures, signals and SIGKILL codes propagate from P0, P1 and lanes 
           );
         }
         const commands = commandSet(await readEvents(harness));
-        for (const command of [
-          "pnpm gate:ensure backend-coverage",
-          "pnpm gate:ensure frontend-coverage",
-          "pnpm gate:ensure frontend-mutation",
-          "pnpm gate:ensure e2e-container",
-        ]) {
-          assert.ok(
-            !commands.includes(command),
-            `${command} must remain queued after cancellation`,
-          );
-        }
+        assert.ok(
+          !commands.some((command) => command.includes("vitest related")),
+          "related-tests must remain queued after cancellation",
+        );
       },
     );
   }
@@ -1071,56 +1025,22 @@ test("lane command order, exit precedence, logs, e2e ordering and all-lane compl
     },
   );
 
-  await t.test(
-    "e2e starts only after bundle finishes, and never overlaps cargo lanes",
-    async (subtest) => {
-      const harness = await makeHarness(subtest, {
-        budgetBytes: ONE_WAVE_BYTES + GIB,
-        commands: {
-          "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check": { delayMs: 120 },
-          "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings":
-            { delayMs: 120 },
-          "pnpm rust:windows:check": { delayMs: 120 },
-          "pnpm gate:ensure backend-test": { delayMs: 120 },
-          "pnpm gate:ensure backend-coverage": { delayMs: 120 },
-          "pnpm bundle:check": { delayMs: 120 },
-          "pnpm gate:ensure e2e-container": { delayMs: 10 },
-        },
-      });
-      const result = await runCli(subtest, harness, ["--rust", "--frontend"]);
-      assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-      const events = await readEvents(harness);
-      const e2eStart = cliCommandStart(events, "pnpm gate:ensure e2e-container");
-      const bundleFinish = cliCommandFinish(events, "pnpm bundle:check");
-      assert.ok(at(bundleFinish) < at(e2eStart));
-      const rustLaneLast = [
-        "pnpm rust:windows:check",
-        "pnpm gate:ensure backend-test",
-        "pnpm gate:ensure backend-coverage",
-      ].map((command) => cliCommandFinish(events, command));
-      assert.ok(rustLaneLast.every(Boolean));
-      assert.ok(rustLaneLast.every((finish) => at(finish) < at(e2eStart)));
-    },
-  );
-
   for (const [name, command, code] of [
     ["bundle", "pnpm bundle:check", 8],
     ["rust-lint", "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check", 12],
   ]) {
-    await t.test(`${name} red skips every heavy lane`, async (subtest) => {
+    await t.test(`${name} red skips related-tests`, async (subtest) => {
       const harness = await makeHarness(subtest, { commands: { [command]: { exitCode: code } } });
+      await mkdir(join(harness.root, "src/utils"), { recursive: true });
+      await writeFile(join(harness.root, "src/utils/annotation.ts"), "export const a = 1;\n");
       const result = await runCli(subtest, harness, ["--rust", "--frontend"]);
       assert.equal(result.code, code, `${result.stdout}\n${result.stderr}`);
       const events = await readEvents(harness);
       assert.equal(cliCommandFinish(events, command).code, code);
-      for (const heavy of [
-        "pnpm gate:ensure backend-test",
-        "pnpm gate:ensure backend-coverage",
-        "pnpm gate:ensure frontend-coverage",
-        "pnpm gate:ensure e2e-container",
-        "pnpm gate:ensure frontend-mutation",
-      ])
-        assert.equal(cliCommandStart(events, heavy), undefined, heavy);
+      assert.ok(
+        !events.some((event) => event.type === "start" && event.command.includes("vitest related")),
+        "related-tests must not start after a red light lane",
+      );
     });
   }
 
@@ -1138,7 +1058,7 @@ test("lane command order, exit precedence, logs, e2e ordering and all-lane compl
   await t.test(
     "P1 failure takes exit precedence and the first failed lane follows table order",
     async (subtest) => {
-      const buildCommand = "pnpm gate:run frontend-build";
+      const buildCommand = "pnpm build-vite";
       const contractCommand = "pnpm gates:contract:check";
       const cargoCommand = "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check";
       const harness = await makeHarness(subtest, {
@@ -1187,16 +1107,7 @@ test("lane command order, exit precedence, logs, e2e ordering and all-lane compl
         "utf8",
       );
       assert.match(bundleLog, /fake-output:pnpm:bundle:check/u);
-      for (const lane of [
-        "contract",
-        "rust-lint",
-        "rust-test",
-        "rust-coverage",
-        "frontend-coverage",
-        "bundle",
-        "e2e",
-        "frontend-mutation",
-      ]) {
+      for (const lane of ["contract", "rust-lint", "bundle", "related-tests"]) {
         assert.match(
           result.stdout,
           new RegExp(`${lane}\\s+(?:passed|failed|skipped|stopped)`, "u"),
@@ -1206,7 +1117,7 @@ test("lane command order, exit precedence, logs, e2e ordering and all-lane compl
         ["pnpm mutation:guard:check", "mutation-guard"],
         ["pnpm rust:target:evict", "rust-target-eviction"],
         ["bash scripts/setup-rust.sh", "setup-rust"],
-        ["pnpm gate:run frontend-build", "frontend-build"],
+        ["pnpm build-vite", "frontend-build"],
         ["pnpm bindings:check", "bindings-check"],
         ["pnpm gates:contract:check", "contract"],
         ["pnpm findings:kit:check", "contract"],
@@ -1216,12 +1127,7 @@ test("lane command order, exit precedence, logs, e2e ordering and all-lane compl
           "rust-lint",
         ],
         ["pnpm rust:windows:check", "rust-lint"],
-        ["pnpm gate:ensure backend-test", "rust-test"],
-        ["pnpm gate:ensure backend-coverage", "rust-coverage"],
-        ["pnpm gate:ensure frontend-coverage", "frontend-coverage"],
         ["pnpm bundle:check", "bundle"],
-        ["pnpm gate:ensure e2e-container", "e2e"],
-        ["pnpm gate:ensure frontend-mutation", "frontend-mutation"],
       ]);
       for (const event of (await readEvents(harness)).filter((entry) => entry.type === "start")) {
         const taskName = logForCommand.get(event.command);
@@ -1239,188 +1145,43 @@ test("lane command order, exit precedence, logs, e2e ordering and all-lane compl
   );
 });
 
-test("P2 memory/CPU placement, concurrency anchor and cgroup-read guards (PG-47, PG-50, PG-58, PG-59, PG-85, PG-118)", async (t) => {
+test("P2 light concurrency, related-tests ordering, and contract-only isolation", async (t) => {
   await t.test(
-    "exclusive Rust admission retains contract and bundle concurrency then a frontend wave",
+    "contract, rust-lint and bundle run concurrently before related-tests starts",
     async (subtest) => {
       const barrierLanes = ["contract", "rust-lint", "bundle"];
-      const commands = {};
-      for (const lane of barrierLanes) {
-        const command = {
-          contract: "pnpm gates:contract:check",
-          "rust-lint": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
-          "rust-test": "pnpm gate:ensure backend-test",
-          "rust-coverage": "pnpm gate:ensure backend-coverage",
-          "frontend-coverage": "pnpm gate:ensure frontend-coverage",
-          bundle: "pnpm bundle:check",
-          "frontend-mutation": "pnpm gate:ensure frontend-mutation",
-        }[lane];
-        commands[command] = { barrierLane: lane };
-      }
-      const frontendPeers = ["frontend-coverage", "e2e"];
-      if (availableParallelism() >= 2) frontendPeers.push("frontend-mutation");
-      for (const lane of frontendPeers) {
-        const command = {
-          "frontend-coverage": "pnpm gate:ensure frontend-coverage",
-          e2e: "pnpm gate:ensure e2e-container",
-          "frontend-mutation": "pnpm gate:ensure frontend-mutation",
-        }[lane];
-        commands[command] = { barrierLane: lane, barrierPeers: frontendPeers };
-      }
+      const commands = {
+        "pnpm gates:contract:check": { barrierLane: "contract" },
+        "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check": { barrierLane: "rust-lint" },
+        "pnpm bundle:check": { barrierLane: "bundle" },
+      };
       const harness = await makeHarness(subtest, {
-        budgetBytes: ONE_WAVE_BYTES + 5 * GIB,
         barrierLanes,
         commands,
       });
+      await mkdir(join(harness.root, "src/utils"), { recursive: true });
+      await writeFile(join(harness.root, "src/utils/annotation.ts"), "export const a = 1;\n");
       const result = await runCli(subtest, harness, ["--rust", "--frontend", "--bindings"]);
       assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
       const markers = await readdir(join(harness.state, "barrier"));
-      assert.deepEqual(markers.sort(), [...barrierLanes, ...frontendPeers].sort());
+      assert.deepEqual(markers.sort(), [...barrierLanes].sort());
       const events = await readEvents(harness);
-      const lintFinish = cliCommandFinish(events, "pnpm rust:windows:check");
-      const testStart = cliCommandStart(events, "pnpm gate:ensure backend-test");
-      const testFinish = cliCommandFinish(events, "pnpm gate:ensure backend-test");
-      const coverageStart = cliCommandStart(events, "pnpm gate:ensure backend-coverage");
-      const coverageFinish = cliCommandFinish(events, "pnpm gate:ensure backend-coverage");
-      assert.ok(
-        at(lintFinish) < at(testStart),
-        "the complete lint lane must release admission before test",
+      const relatedStart = cliCommandStart(
+        events,
+        "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
       );
-      assert.ok(
-        at(testFinish) < at(coverageStart),
-        "native tests must release admission before instrumented compilation",
-      );
-      for (const command of [
-        "pnpm gate:ensure frontend-coverage",
-        "pnpm gate:ensure frontend-mutation",
-        "pnpm gate:ensure e2e-container",
+      assert.ok(relatedStart, "related-tests vitest command must run");
+      for (const lightFinishCommand of [
+        "pnpm findings:kit:check",
+        "pnpm rust:windows:check",
+        "pnpm bundle:check",
       ]) {
+        const finished = cliCommandFinish(events, lightFinishCommand);
+        assert.ok(finished, `missing finish for ${lightFinishCommand}`);
         assert.ok(
-          at(coverageFinish) < at(cliCommandStart(events, command)),
-          `${command} must wait for all Rust work`,
+          at(finished) < at(relatedStart),
+          `related-tests must wait for ${lightFinishCommand}`,
         );
-      }
-    },
-  );
-
-  await t.test("mutation runs after P2 below ONE_WAVE_BYTES", async (subtest) => {
-    const harness = await makeHarness(subtest, { budgetBytes: ONE_WAVE_BYTES - 1 });
-    const result = await runCli(subtest, harness, ["--frontend"]);
-    assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-    const events = await readEvents(harness);
-    const mutationStart = cliCommandStart(events, "pnpm gate:ensure frontend-mutation");
-    for (const command of [
-      "pnpm gates:contract:check",
-      "pnpm gate:ensure frontend-coverage",
-      "pnpm bundle:check",
-      "pnpm gate:ensure e2e-container",
-    ]) {
-      assert.ok(
-        at(cliCommandFinish(events, command)) < at(mutationStart),
-        `${command} must finish before mutation`,
-      );
-    }
-  });
-
-  await t.test(
-    "scheduler CPU seam keeps mutation after P2 at one CPU despite a large budget",
-    async (subtest) => {
-      const cwd = await temporarySchedulerRoot(subtest);
-      const events = [];
-      const spawnProcess = makeMockSpawner({ events });
-      const result = await runPushGates(["--frontend"], {
-        cwd,
-        env: { ...process.env, GATE_MEMORY_BYTES: String(ONE_WAVE_BYTES * 2) },
-        getGateBudgetBytes: () => ONE_WAVE_BYTES * 2,
-        availableParallelism: () => 1,
-        spawnProcess,
-      });
-      assert.equal(result.exitCode, 0);
-      const mutationIndex = events.findIndex(
-        (event) => event.type === "start" && event.command === "pnpm gate:ensure frontend-mutation",
-      );
-      const lastP2Finish = Math.max(
-        ...events.map((event, index) =>
-          event.type === "finish" &&
-          [
-            "pnpm gates:contract:check",
-            "pnpm gate:ensure frontend-coverage",
-            "pnpm bundle:check",
-            "pnpm gate:ensure e2e-container",
-          ].includes(event.command)
-            ? index
-            : -1,
-        ),
-      );
-      assert.ok(mutationIndex > lastP2Finish);
-      const mutation = events.find(
-        (event) => event.type === "start" && event.command === "pnpm gate:ensure frontend-mutation",
-      );
-      const coverage = events.find(
-        (event) => event.type === "start" && event.command === "pnpm gate:ensure frontend-coverage",
-      );
-      assert.equal(mutation.env.GATE_MEMORY_BYTES, String(ONE_WAVE_BYTES * 2));
-      assert.equal(mutation.env.GATE_CPU_SHARE, "1");
-      assert.equal(
-        coverage.env.GATE_MEMORY_BYTES,
-        String(ONE_WAVE_BYTES * 2 - E2E_CONTAINER_MEMORY_BYTES),
-      );
-      assert.equal(coverage.env.GATE_CPU_SHARE, "1");
-    },
-  );
-
-  await t.test(
-    "1, 2 and 24 CPU schedules pass the intended shares to self-sizing lanes",
-    async (subtest) => {
-      for (const cpuCount of [1, 2, 24]) {
-        const cwd = await temporarySchedulerRoot(subtest);
-        const events = [];
-        const budget = ONE_WAVE_BYTES * 2;
-        const result = await runPushGates(["--frontend"], {
-          cwd,
-          env: { ...process.env, GATE_MEMORY_BYTES: String(budget) },
-          getGateBudgetBytes: () => budget,
-          availableParallelism: () => cpuCount,
-          spawnProcess: makeMockSpawner({ events }),
-        });
-        assert.equal(result.exitCode, 0, `CPU count ${cpuCount}`);
-        const coverage = events.find(
-          (event) =>
-            event.type === "start" && event.command === "pnpm gate:ensure frontend-coverage",
-        );
-        const mutation = events.find(
-          (event) =>
-            event.type === "start" && event.command === "pnpm gate:ensure frontend-mutation",
-        );
-        if (cpuCount === 1) {
-          const e2eFinish = events.find(
-            (event) =>
-              event.type === "finish" && event.command === "pnpm gate:ensure e2e-container",
-          );
-          const mutationStart = events.find(
-            (event) =>
-              event.type === "start" && event.command === "pnpm gate:ensure frontend-mutation",
-          );
-          assert.ok(events.indexOf(e2eFinish) < events.indexOf(mutationStart));
-          assert.equal(mutation.env.GATE_CPU_SHARE, "1");
-          assert.equal(coverage.env.GATE_CPU_SHARE, "1");
-        } else {
-          assert.equal(mutation.env.GATE_CPU_SHARE, "0.5");
-          assert.equal(coverage.env.GATE_CPU_SHARE, "0.5");
-          const coverageWorkers = workerCount({
-            perWorkerBytes: 1,
-            budgetBytes: budget,
-            env: { GATE_CPU_SHARE: coverage.env.GATE_CPU_SHARE },
-            availableParallelism: () => cpuCount,
-          });
-          const mutationWorkers = workerCount({
-            perWorkerBytes: 1,
-            budgetBytes: budget,
-            env: { GATE_CPU_SHARE: mutation.env.GATE_CPU_SHARE },
-            availableParallelism: () => cpuCount,
-          });
-          assert.ok(coverageWorkers + mutationWorkers <= cpuCount);
-        }
       }
     },
   );
@@ -1441,7 +1202,7 @@ test("P2 memory/CPU placement, concurrency anchor and cgroup-read guards (PG-47,
           },
           availableParallelism() {
             cpuReads += 1;
-            throw new Error("must not read CPUs without self-sizing lanes");
+            throw new Error("must not read CPUs without Rust compilation");
           },
           spawnProcess: makeMockSpawner(),
         });
@@ -1768,7 +1529,7 @@ test("scheduler-level beforeStep cancellation and injected spawn failures (PG-51
       assert.equal(options.shell, undefined);
       const command = [executable, ...args].join(" ");
       events.push({ type: "start", command });
-      if (command === "pnpm gate:run frontend-build") {
+      if (command === "pnpm build-vite") {
         const error = new Error("injected ENOENT");
         error.code = "ENOENT";
         throw error;
@@ -1780,6 +1541,7 @@ test("scheduler-level beforeStep cancellation and injected spawn failures (PG-51
       env: { ...process.env, GATE_MEMORY_BYTES: String(7 * GIB) },
       getGateBudgetBytes: () => 7 * GIB,
       availableParallelism: () => 2,
+      discoverChangedPaths: () => [],
       spawnProcess,
     });
     assert.equal(result.exitCode, 127);
@@ -1788,95 +1550,159 @@ test("scheduler-level beforeStep cancellation and injected spawn failures (PG-51
   });
 });
 
-test("frontend self-sizing lane environment and P1 schedule anchor (PG-17, PG-58)", async (t) => {
-  assert.equal(PUSH_GATE_SCHEDULE.p1[0].command, "pnpm gate:run frontend-build");
-  await t.test(
-    "coverage and mutation receive memory and CPU shares in both placements",
-    async (subtest) => {
-      for (const [budgetBytes, cpuCount, concurrent, cargo] of [
-        [10 * GIB, 24, false, true],
-        [ONE_WAVE_BYTES + GIB, 24, true, true],
-        [ONE_WAVE_BYTES + GIB, 1, false, true],
-        [ONE_WAVE_BYTES + GIB, 24, true, false],
-      ]) {
-        const cwd = await temporarySchedulerRoot(subtest);
-        const events = [];
-        const flags = cargo ? ["--rust", "--frontend"] : ["--frontend"];
-        const result = await runPushGates(flags, {
-          cwd,
-          env: { ...process.env, GATE_MEMORY_BYTES: String(budgetBytes) },
-          getGateBudgetBytes: () => budgetBytes,
-          availableParallelism: () => cpuCount,
-          spawnProcess: makeMockSpawner({ events }),
-        });
-        assert.equal(result.exitCode, 0);
-        const coverage = events.find(
-          (event) =>
-            event.type === "start" && event.command === "pnpm gate:ensure frontend-coverage",
-        );
-        const mutation = events.find(
-          (event) =>
-            event.type === "start" && event.command === "pnpm gate:ensure frontend-mutation",
-        );
-        const budgetAfterContainer = budgetBytes - E2E_CONTAINER_MEMORY_BYTES;
-        const coverageMemory = Math.floor(
-          budgetAfterContainer * (concurrent ? P2_VITEST_SHARE : 1),
-        );
-        const minimumWorkerFloor =
-          budgetAfterContainer >= VITEST_MINIMUM_BUDGET_BYTES ? VITEST_MINIMUM_BUDGET_BYTES : 0;
-        const reservedCoverageMemory = Math.max(coverageMemory, minimumWorkerFloor);
-        const mutationMemory = Math.floor(
-          (budgetBytes - (concurrent ? E2E_CONTAINER_MEMORY_BYTES : 0)) *
-            (concurrent ? P2_MUTATION_SHARE : 1),
-        );
-        assert.equal(coverage.env.GATE_MEMORY_BYTES, String(reservedCoverageMemory));
-        assert.equal(mutation.env.GATE_MEMORY_BYTES, String(mutationMemory));
-        if (concurrent) {
-          assert.ok(
-            reservedCoverageMemory + mutationMemory <= budgetBytes - E2E_CONTAINER_MEMORY_BYTES,
-          );
-        }
-        assert.equal(coverage.env.GATE_CPU_SHARE, concurrent ? "0.5" : "1");
-        assert.equal(mutation.env.GATE_CPU_SHARE, concurrent ? "0.5" : "1");
-      }
-    },
-  );
+test("push schedule excludes heavy lanes and uses direct pnpm build-vite in P1", () => {
+  assert.equal(PUSH_GATE_SCHEDULE.p1[0].command, "pnpm build-vite");
+  assert.equal(PRE_REVIEW_GATE_SCHEDULE.p1[0].command, "pnpm build-vite");
+  const laneNames = PUSH_GATE_SCHEDULE.lanes.map(({ name }) => name);
+  for (const removed of [
+    "frontend-mutation",
+    "rust-test",
+    "rust-coverage",
+    "frontend-coverage",
+    "e2e",
+  ]) {
+    assert.equal(
+      laneNames.includes(removed),
+      false,
+      `${removed} must not be in PUSH_GATE_SCHEDULE`,
+    );
+  }
+  assert.deepEqual(laneNames, ["contract", "rust-lint", "bundle", "related-tests"]);
 });
 
-test("conservative 7 GiB fallback keeps frontend-coverage runnable beside the e2e reservation", async (t) => {
-  const fallbackBudgetBytes = CONSERVATIVE_CGROUP_LIMIT_BYTES - UNSIZED_PROCESS_RESERVE_BYTES;
-  assert.ok(
-    fallbackBudgetBytes - E2E_CONTAINER_MEMORY_BYTES >= VITEST_MINIMUM_BUDGET_BYTES,
-    `7 GiB fallback minus e2e reservation must stay at or above ${VITEST_MINIMUM_BUDGET_BYTES}`,
+test("buildRelatedTestCommands returns exact vitest and cargo commands for changed paths", async (t) => {
+  const root = await temporarySchedulerRoot(t);
+  for (const path of [
+    "src/utils/annotation.ts",
+    "scripts/check-untranslated-jsx.mjs",
+    "scripts/run-push-gates-tests.mjs",
+    "src-tauri/src/lexer.rs",
+    "src-tauri/src/db/mod.rs",
+    "src-tauri/src/main.rs",
+    "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
+  ]) {
+    await mkdir(dirname(join(root, path)), { recursive: true });
+    await writeFile(join(root, path), "// fixture\n");
+  }
+
+  const filtered = buildRelatedTestCommands(
+    [
+      "src/utils/annotation.ts",
+      "src-tauri/src/lexer.rs",
+      "src-tauri/src/db/mod.rs",
+      "src/utils/deleted.ts",
+    ],
+    { root },
   );
+  assert.deepEqual(
+    filtered.map(({ display }) => display),
+    [
+      "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
+      "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- db:: lexer::",
+    ],
+  );
+
+  assert.deepEqual(
+    buildRelatedTestCommands(
+      ["scripts/check-untranslated-jsx.mjs", "scripts/run-push-gates-tests.mjs"],
+      { root },
+    ).map(({ display }) => display),
+    ["pnpm exec vitest related --run --passWithNoTests scripts/check-untranslated-jsx.mjs"],
+  );
+
+  const withMain = buildRelatedTestCommands(
+    [
+      "src/utils/annotation.ts",
+      "src-tauri/src/lexer.rs",
+      "src-tauri/src/db/mod.rs",
+      "src/utils/deleted.ts",
+      "src-tauri/src/main.rs",
+    ],
+    { root },
+  );
+  assert.deepEqual(
+    withMain.map(({ display }) => display),
+    [
+      "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
+      "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins",
+    ],
+  );
+
+  for (const manifest of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"]) {
+    assert.deepEqual(
+      buildRelatedTestCommands([manifest], { root }).map(({ display }) => display),
+      ["cargo test --manifest-path src-tauri/Cargo.toml --locked --bins"],
+    );
+  }
+
+  assert.deepEqual(buildRelatedTestCommands(["src/utils/deleted.ts", "README.md"], { root }), []);
+});
+
+test("related-tests applies the Rust allocator only to Cargo commands and not to Vitest", async (t) => {
   const cwd = await temporarySchedulerRoot(t);
+  for (const path of ["src/utils/annotation.ts", "src-tauri/src/lexer.rs"]) {
+    await mkdir(dirname(join(cwd, path)), { recursive: true });
+    await writeFile(join(cwd, path), "// fixture\n");
+  }
   const events = [];
-  const env = { ...process.env, GATE_MEMORY_BYTES: String(fallbackBudgetBytes) };
-  delete env.STRYKER_MEMORY_BYTES;
+  const env = { ...process.env };
+  delete env.CARGO_BUILD_JOBS;
   const result = await runPushGates(["--frontend"], {
     cwd,
     env,
-    getGateBudgetBytes: () => fallbackBudgetBytes,
-    availableParallelism: () => 20,
+    getGateBudgetBytes: () => 10 * GIB,
+    availableParallelism: () => 24,
+    discoverChangedPaths: () => ["src/utils/annotation.ts", "src-tauri/src/lexer.rs"],
     spawnProcess: makeMockSpawner({ events }),
   });
   assert.equal(result.exitCode, 0);
-  const coverage = events.find(
-    (event) => event.type === "start" && event.command === "pnpm gate:ensure frontend-coverage",
+  const cargoStart = cliCommandStart(
+    events,
+    "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- lexer::",
   );
-  assert.ok(coverage, "missing frontend-coverage start event");
-  const workers = vitestMaxWorkers({
-    env: { ...coverage.env, VITEST: "true" },
-    availableParallelism: () => 20,
-  });
-  assert.ok(
-    Number.isInteger(workers) && workers > 0,
-    `expected positive integer workers, got ${workers}`,
+  const vitestStart = cliCommandStart(
+    events,
+    "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
   );
+  assert.ok(cargoStart, "related-tests cargo command must run");
+  assert.ok(vitestStart, "related-tests vitest command must run");
+  assert.equal(cargoStart.env.CARGO_BUILD_JOBS, "1");
+  assert.equal(vitestStart.env.CARGO_BUILD_JOBS, undefined);
 });
 
-test("Cargo allocation survives production bindings, receipt, coverage and Windows entrypoints", async (t) => {
-  const native = ["cargo", "test", "--manifest-path", "src-tauri/Cargo.toml", "--all-targets"];
+test("related-tests reports missing upstream separately from other git failures", async (t) => {
+  await t.test("missing upstream names missing upstream", async (subtest) => {
+    const harness = await makeHarness(subtest, { upstream: false });
+    const result = await runCli(subtest, harness, ["--frontend"]);
+    assert.equal(result.code, 1, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /related-tests\s+failed/u);
+    assert.match(result.stdout, /Cannot determine related-tests changed paths: missing upstream/u);
+  });
+
+  await t.test("non-upstream git failure uses the neutral headline", async (subtest) => {
+    const cwd = await temporarySchedulerRoot(subtest);
+    const result = await runPushGates(["--frontend"], {
+      cwd,
+      env: { ...process.env },
+      runGit: (_executable, args) =>
+        args[0] === "merge-base"
+          ? { status: 0, stdout: "base-commit\n" }
+          : { status: 128, stdout: "", stderr: "injected diff failure" },
+      spawnProcess: makeMockSpawner(),
+    });
+    assert.equal(result.exitCode, 1);
+    const related = result.results.find((task) => task.name === "related-tests");
+    assert.equal(related.status, "failed");
+    assert.match(
+      related.error.message,
+      /^Cannot determine related-tests changed paths: git diff --name-only -z base-commit -- failed \(injected diff failure\)$/u,
+    );
+    assert.doesNotMatch(related.error.message, /missing upstream/iu);
+  });
+});
+
+test("Cargo allocation survives production bindings and Windows entrypoints", async (t) => {
   const exporter = [
     "cargo",
     "run",
@@ -1903,68 +1729,28 @@ test("Cargo allocation survives production bindings, receipt, coverage and Windo
   for (const flags of [["--rust"], ["--bindings"], ["--rust", "--frontend", "--bindings"]]) {
     await t.test(flags.join(" "), async (subtest) => {
       const harness = await makeHarness(subtest, {
-        extraExecutables: ["rustup", "rustc", "llvm-profdata", "llvm-cov"],
+        extraExecutables: ["rustup", "rustc"],
       });
       const { root, bin } = harness;
-      // Module-relative writers and profile cleanup must own only this fixture. Coverage's
-      // entrypoint copy is shared with its failure fixture, other producers stay local here.
       const scripts = join(root, "scripts");
-      await copyRustCoverageEntrypoint(root);
+      await mkdir(scripts, { recursive: true });
       for (const name of [
         "check-bindings.mjs",
-        "gate-receipt.mjs",
         "rust-windows-check.mjs",
         "child-supervisor.mjs",
+        "entrypoint.mjs",
         "gate-logs.mjs",
-        "playwright-image.mjs",
         "executable-path.mjs",
       ]) {
         await copyFile(join(repositoryRoot, "scripts", name), join(scripts, name));
       }
-      await initializeUpstream(root, {
-        upstream: false,
-        files: { ".gitignore": "/*\n!/README.md\n!/.gitignore\n" },
-      });
-      await symlink("/usr/bin/git", join(bin, "git"));
       await symlink(process.execPath, join(bin, "node"));
-      const llvmBin = join(root, "lib/rustlib/x86_64-unknown-linux-gnu/bin");
-      await mkdir(llvmBin, { recursive: true });
-      for (const tool of ["llvm-profdata", "llvm-cov"]) {
-        await symlink(join(bin, tool), join(llvmBin, tool));
-      }
       const mingwBin = join(root, "mingw/usr/bin");
       await mkdir(mingwBin, { recursive: true });
       await symlink(join(bin, "cargo"), join(mingwBin, "x86_64-w64-mingw32-gcc"));
       const binding = join(root, "src/bindings/generated.ts");
       await mkdir(dirname(binding), { recursive: true });
       await writeFile(binding, "// fixture bindings\n");
-      const target = join(root, "src-tauri/target/llvm-cov-target");
-      await mkdir(target, { recursive: true });
-      const staleProfile = join(target, "stale.profraw");
-      const freshProfile = join(target, "fresh.profraw");
-      await writeFile(staleProfile, "old counts");
-      const source = join(root, "src-tauri/src/example.rs");
-      await mkdir(dirname(source), { recursive: true });
-      await writeFile(source, "pub fn example() {}\n");
-      await mkdir(join(root, "backend-coverage"));
-      await writeFile(
-        join(root, "backend-coverage-areas.json"),
-        JSON.stringify({ sources: [{ exclude: [] }] }),
-      );
-      const instrumented = [
-        "cargo",
-        `+${RUST_COVERAGE_TOOLCHAIN}`,
-        "llvm-cov",
-        "--manifest-path",
-        join(root, "src-tauri/Cargo.toml"),
-        "--bin",
-        "chessriddle-studio",
-        "--locked",
-        "--branch",
-        "--no-report",
-      ];
-      // pnpm dispatches to the current production producers, never directly to canned Cargo
-      // argv. Fake tools supply outputs only after those producers start real child processes.
       const entrypoint = (name, ...args) => ({
         childCommand: [process.execPath, join(scripts, name), ...args],
       });
@@ -1973,61 +1759,24 @@ test("Cargo allocation survives production bindings, receipt, coverage and Windo
         JSON.stringify({
           commands: {
             "pnpm bindings:check": entrypoint("check-bindings.mjs"),
-            "pnpm gate:ensure backend-test": entrypoint(
-              "gate-receipt.mjs",
-              "ensure",
-              "backend-test",
-            ),
-            "pnpm gate:ensure backend-coverage": entrypoint(
-              "gate-receipt.mjs",
-              "ensure",
-              "backend-coverage",
-            ),
-            "pnpm test:coverage:backend": entrypoint("rust-branch-coverage.mjs"),
             "pnpm rust:windows:check": entrypoint("rust-windows-check.mjs"),
             "rustc --version": { stdout: "rustc fixture\n" },
             "cargo --version": { stdout: "cargo fixture\n" },
-            "cargo llvm-cov --version": { stdout: "cargo-llvm-cov fixture\n" },
-            [`rustup run ${RUST_COVERAGE_TOOLCHAIN} rustc --version`]: {
-              stdout: "rustc nightly fixture\n",
-            },
-            [`rustup run ${RUST_COVERAGE_TOOLCHAIN} rustc --print sysroot`]: {
-              stdout: root + "\n",
-            },
-            [`rustup run ${RUST_COVERAGE_TOOLCHAIN} rustc -vV`]: {
-              stdout: "host: x86_64-unknown-linux-gnu\n",
-            },
             "rustup target list --installed": { stdout: "x86_64-pc-windows-gnu\n" },
-            [instrumented.join(" ")]: {
-              writeFiles: [
-                { path: freshProfile, contents: "fresh counts" },
-                {
-                  path: join(target, "debug/deps/chessriddle_studio-deadbeef"),
-                  contents: "fixture executable",
-                  mode: 0o755,
-                },
-              ],
-            },
-            [`llvm-cov export -format=lcov -instr-profile=${join(root, "backend-coverage/src-tauri.profdata")} ${join(target, "debug/deps/chessriddle_studio-deadbeef")} -sources ${source}`]:
-              {
-                stdout: `SF:${source}\nBRDA:1,0,0,1\nend_of_record\n`,
-              },
           },
         }),
       );
       harness.env.CARGO_BUILD_JOBS = "64";
       harness.env.CARGO_HOME = join(root, "cargo-home");
       harness.env.CARGO_TARGET_DIR = join(root, "src-tauri/target");
-      harness.env.LLVM_PROFILE_FILE = join(target, "fixture-%p.profraw");
       harness.env.CHESSFABLE_MINGW_PREFIX = join(root, "mingw");
       delete harness.env.RUST_TEST_THREADS;
-      assert.equal(existsSync(join(root, ".gate-receipts")), false);
       const result = await runCli(subtest, harness, flags);
       assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
       const events = await readEvents(harness);
       const expected = [
         ...(flags.includes("--bindings") ? [exporter] : []),
-        ...(flags.includes("--rust") ? [native, instrumented, windows] : []),
+        ...(flags.includes("--rust") ? [windows] : []),
       ];
       for (const argv of expected) {
         const compiler = cliCommandStart(events, argv.join(" "));
@@ -2039,25 +1788,6 @@ test("Cargo allocation survives production bindings, receipt, coverage and Windo
           undefined,
           "compilation sizing must not set libtest concurrency",
         );
-      }
-      if (flags.includes("--rust")) {
-        const logDirectory = result.stdout.match(/^Push gate logs: (.+)$/mu)[1];
-        for (const [gate, lane] of [
-          ["backend-test", "rust-test"],
-          ["backend-coverage", "rust-coverage"],
-        ]) {
-          assert.match(
-            await readFile(join(logDirectory, `${lane}.log`), "utf8"),
-            new RegExp(`gate receipt miss: ${gate} — receipt is absent`, "u"),
-          );
-          const receipt = JSON.parse(
-            await readFile(join(root, ".gate-receipts", `${gate}.json`), "utf8"),
-          );
-          assert.equal(receipt.gate, gate);
-        }
-        assert.equal(existsSync(staleProfile), false);
-        assert.equal(await readFile(freshProfile, "utf8"), "fresh counts");
-        assert.match(await readFile(join(root, "backend-coverage/lcov.info"), "utf8"), /^SF:/u);
       }
     });
   }
@@ -2076,20 +1806,23 @@ test("known insufficient Rust memory refuses bindings-only and all-block exporte
         "pnpm mutation:guard:check",
         "pnpm rust:target:evict",
         "bash scripts/setup-rust.sh",
-        "pnpm gate:run frontend-build",
+        "pnpm build-vite",
       ].sort(),
     );
   }
 });
 
-test("rust-lint clippy red skips all heavy gates with its reason (R1)", async (t) => {
+test("rust-lint clippy red skips related-tests with its reason (R1)", async (t) => {
   const cwd = await temporarySchedulerRoot(t);
+  await mkdir(join(cwd, "src/utils"), { recursive: true });
+  await writeFile(join(cwd, "src/utils/annotation.ts"), "export const a = 1;\n");
   const events = [];
   const result = await runPushGates(["--rust", "--frontend"], {
     cwd,
     env: { ...process.env },
     getGateBudgetBytes: () => 10 * GIB,
     availableParallelism: () => 24,
+    discoverChangedPaths: () => ["src/utils/annotation.ts"],
     spawnProcess: makeMockSpawner({
       events,
       exits: {
@@ -2098,24 +1831,23 @@ test("rust-lint clippy red skips all heavy gates with its reason (R1)", async (t
     }),
   });
   assert.equal(result.exitCode, 11);
-  for (const name of [
-    "rust-test",
-    "rust-coverage",
-    "frontend-coverage",
-    "e2e",
-    "frontend-mutation",
-  ]) {
-    const task = result.results.find((task) => task.name === name);
-    assert.equal(task.status, "skipped", name);
-    assert.match(task.reason, /rust-lint failed/u);
-    const lane = PUSH_GATE_SCHEDULE.lanes.find((lane) => lane.name === name);
-    for (const command of lane.commands) assert.equal(cliCommandStart(events, command), undefined);
-  }
+  const related = result.results.find((task) => task.name === "related-tests");
+  assert.equal(related.status, "skipped");
+  assert.match(related.reason, /rust-lint failed/u);
+  assert.equal(
+    cliCommandStart(
+      events,
+      "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
+    ),
+    undefined,
+  );
   assert.equal(cliCommandStart(events, "pnpm rust:windows:check"), undefined);
 });
 
-test("a running contract command completes after rust-lint red and no heavy lane starts (P3, R3)", async (t) => {
+test("a running contract command completes after rust-lint red and related-tests does not start (P3, R3)", async (t) => {
   const cwd = await temporarySchedulerRoot(t);
+  await mkdir(join(cwd, "src/utils"), { recursive: true });
+  await writeFile(join(cwd, "src/utils/annotation.ts"), "export const a = 1;\n");
   const events = [];
   const contractLast = "env -u KIT_ROOT pnpm findings:kit:check";
   const lint =
@@ -2125,6 +1857,7 @@ test("a running contract command completes after rust-lint red and no heavy lane
     env: { ...process.env },
     getGateBudgetBytes: () => 10 * GIB,
     availableParallelism: () => 24,
+    discoverChangedPaths: () => ["src/utils/annotation.ts"],
     spawnProcess: makeMockSpawner({
       events,
       exits: { [lint]: 11 },
@@ -2137,18 +1870,14 @@ test("a running contract command completes after rust-lint red and no heavy lane
   assert.equal(result.exitCode, 11);
   assert.equal(result.results.find(({ name }) => name === "contract").status, "passed");
   assert.ok(cliCommandFinish(events, contractLast));
-  for (const name of [
-    "rust-test",
-    "rust-coverage",
-    "frontend-coverage",
-    "e2e",
-    "frontend-mutation",
-  ]) {
-    assert.equal(result.results.find((task) => task.name === name).status, "skipped", name);
-    for (const command of PUSH_GATE_SCHEDULE.lanes.find((lane) => lane.name === name).commands) {
-      assert.equal(cliCommandStart(events, command), undefined);
-    }
-  }
+  assert.equal(result.results.find((task) => task.name === "related-tests").status, "skipped");
+  assert.equal(
+    cliCommandStart(
+      events,
+      "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
+    ),
+    undefined,
+  );
 });
 
 test("a running multi-command lane stops at its next boundary without an exit code (R4)", async (t) => {
@@ -2161,6 +1890,7 @@ test("a running multi-command lane stops at its next boundary without an exit co
     env: { ...process.env },
     getGateBudgetBytes: () => 10 * GIB,
     availableParallelism: () => 24,
+    discoverChangedPaths: () => [],
     spawnProcess: makeMockSpawner({
       events,
       exits: { [contract]: 7 },
@@ -2183,71 +1913,24 @@ test("a running multi-command lane stops at its next boundary without an exit co
   }
 });
 
-test("frontend-coverage red skips queued mutation and preserves running frontend siblings (R6, P6)", async (t) => {
-  for (const concurrent of [false, true]) {
-    await t.test(
-      concurrent ? "running mutation completes (P6)" : "queued mutation is skipped (R6)",
-      async (subtest) => {
-        const cwd = await temporarySchedulerRoot(subtest);
-        const events = [];
-        const coverage = "pnpm gate:ensure frontend-coverage";
-        const e2e = "pnpm gate:ensure e2e-container";
-        const mutation = "pnpm gate:ensure frontend-mutation";
-        const result = await runPushGates(["--frontend"], {
-          cwd,
-          env: { ...process.env },
-          getGateBudgetBytes: () => (concurrent ? ONE_WAVE_BYTES : 10 * GIB),
-          availableParallelism: () => 24,
-          spawnProcess: makeMockSpawner({
-            events,
-            exits: { [coverage]: 13 },
-            async beforeClose(command) {
-              if (command === coverage) {
-                await waitForMockEvent(events, "start", e2e);
-                if (concurrent) await waitForMockEvent(events, "start", mutation);
-              }
-              if (command === e2e || (concurrent && command === mutation)) {
-                await waitForMockEvent(events, "finish", coverage);
-              }
-            },
-          }),
-        });
-        assert.equal(result.exitCode, 13);
-        assert.equal(result.results.find(({ name }) => name === "e2e").status, "passed");
-        const task = result.results.find(({ name }) => name === "frontend-mutation");
-        assert.equal(task.status, concurrent ? "passed" : "skipped");
-        if (concurrent) assert.ok(cliCommandFinish(events, mutation));
-        else {
-          assert.equal(cliCommandStart(events, mutation), undefined);
-          assert.match(task.reason, /frontend-coverage failed/u);
-        }
-      },
-    );
-  }
-});
-
-test("light stage waits for held contract after rust-lint passes before heavy starts (R9)", async (t) => {
+test("light stage waits for held contract after rust-lint passes before related-tests starts (R9)", async (t) => {
   for (const flags of [["--rust", "--frontend"], ["--frontend"]]) {
     for (const contractCode of [0, 7]) {
       await t.test(`${flags.join(" ")} contract exits ${contractCode}`, async (subtest) => {
         const cwd = await temporarySchedulerRoot(subtest);
+        await mkdir(join(cwd, "src/utils"), { recursive: true });
+        await writeFile(join(cwd, "src/utils/annotation.ts"), "export const a = 1;\n");
         const events = [];
         const contractLast = "env -u KIT_ROOT pnpm findings:kit:check";
-        const heavyCommands = [
-          "rust-test",
-          "rust-coverage",
-          "frontend-coverage",
-          "e2e",
-          "frontend-mutation",
-        ]
-          .filter((name) => flags.includes("--rust") || !name.startsWith("rust-"))
-          .flatMap((name) => PUSH_GATE_SCHEDULE.lanes.find((lane) => lane.name === name).commands);
-        let heldHeavyStarts;
+        const relatedCommand =
+          "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts";
+        let startedWhileHeld;
         const result = await runPushGates(flags, {
           cwd,
           env: { ...process.env },
           getGateBudgetBytes: () => 10 * GIB,
           availableParallelism: () => 24,
+          discoverChangedPaths: () => ["src/utils/annotation.ts"],
           spawnProcess: makeMockSpawner({
             events,
             exits: { [contractLast]: contractCode },
@@ -2258,33 +1941,35 @@ test("light stage waits for held contract after rust-lint passes before heavy st
                   "finish",
                   flags.includes("--rust") ? "pnpm rust:windows:check" : "pnpm bundle:check",
                 );
-                heldHeavyStarts = heavyCommands.filter((command) =>
-                  cliCommandStart(events, command),
-                );
+                startedWhileHeld = cliCommandStart(events, relatedCommand);
               }
             },
           }),
         });
         assert.equal(result.exitCode, contractCode);
-        assert.deepEqual(heldHeavyStarts, [], "heavy work started while contract was running");
+        assert.equal(
+          startedWhileHeld,
+          undefined,
+          "related-tests started while contract was running",
+        );
         const contractFinish = events.indexOf(cliCommandFinish(events, contractLast));
-        for (const command of heavyCommands) {
-          const started = cliCommandStart(events, command);
-          if (contractCode) assert.equal(started, undefined, command);
-          else assert.ok(events.indexOf(started) > contractFinish, command);
-        }
+        const started = cliCommandStart(events, relatedCommand);
+        if (contractCode) assert.equal(started, undefined);
+        else assert.ok(events.indexOf(started) > contractFinish);
       });
     }
   }
 });
 
-test("unconfirmed process cleanup blocks queued Rust and heavyweight frontend starts after P1 or a Rust lane", async (t) => {
+test("unconfirmed process cleanup blocks queued related-tests starts after P1 or a Rust lane", async (t) => {
   for (const command of [
     "pnpm bindings:check",
     "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
   ]) {
     await t.test(command, async (subtest) => {
       const harness = await makeHarness(subtest, { commands: { [command]: { hold: true } } });
+      await mkdir(join(harness.root, "src/utils"), { recursive: true });
+      await writeFile(join(harness.root, "src/utils/annotation.ts"), "export const a = 1;\n");
       const commandsByChild = new WeakMap();
       let heldSupervisor;
       let heldEvent;
@@ -2319,15 +2004,10 @@ test("unconfirmed process cleanup blocks queued Rust and heavyweight frontend st
           "the unconfirmed child must still be alive during the assertion",
         );
         const commands = commandSet(await readEvents(harness));
-        for (const queued of [
-          "pnpm gate:ensure backend-test",
-          "pnpm gate:ensure backend-coverage",
-          "pnpm gate:ensure frontend-coverage",
-          "pnpm gate:ensure frontend-mutation",
-          "pnpm gate:ensure e2e-container",
-        ]) {
-          assert.ok(!commands.includes(queued), `${queued} started beside unconfirmed cleanup`);
-        }
+        assert.ok(
+          !commands.some((entry) => entry.includes("vitest related")),
+          "related-tests started beside unconfirmed cleanup",
+        );
         const failed = result.results.find(({ terminationError }) => terminationError);
         assert.match(failed.terminationError.message, /unconfirmed process-group cleanup/u);
       } finally {
@@ -2341,7 +2021,7 @@ test("unconfirmed process cleanup blocks queued Rust and heavyweight frontend st
 test("pre-review Windows compilation uses Rust allocation at both budget sizes", async (t) => {
   for (const [budgetBytes, expectedJobs] of [
     [10 * GIB, "1"],
-    [ONE_WAVE_BYTES + GIB, "5"],
+    [41 * GIB, "5"],
   ]) {
     const windows = "pnpm rust:windows:check";
     const harness = await makeHarness(t, { budgetBytes, commands: { [windows]: { delayMs: 50 } } });
@@ -2375,7 +2055,7 @@ test("known insufficient pre-review Rust memory refuses before Windows compiler 
     result.results.find(({ name }) => name === "scheduler").error.message,
     /Rust compilation refused:.*below the minimum.*9 GiB usable/u,
   );
-  assert.deepEqual(commandSet(await readEvents(harness)), ["pnpm gate:run frontend-build"]);
+  assert.deepEqual(commandSet(await readEvents(harness)), ["pnpm build-vite"]);
 });
 
 test("advisory rust-target-eviction is selected by name and never gates later work (O6, CR-6)", async (t) => {
@@ -2419,7 +2099,7 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
 
   const laterCommands = [
     "bash scripts/setup-rust.sh",
-    "pnpm gate:run frontend-build",
+    "pnpm build-vite",
     "pnpm gates:contract:check",
     "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
   ];
@@ -2440,6 +2120,7 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
         env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
         getGateBudgetBytes: () => 10 * GIB,
         availableParallelism: () => 24,
+        discoverChangedPaths: () => [],
         spawnProcess: makeMockSpawner({
           events,
           exits: { "pnpm rust:target:evict": 1 },
@@ -2479,6 +2160,7 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
       env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
       getGateBudgetBytes: () => 10 * GIB,
       availableParallelism: () => 24,
+      discoverChangedPaths: () => [],
       spawnProcess,
     });
     assert.equal(result.exitCode, 0);
@@ -2521,6 +2203,7 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
       env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
       getGateBudgetBytes: () => 10 * GIB,
       availableParallelism: () => 24,
+      discoverChangedPaths: () => [],
       spawnProcess,
     });
     assert.equal(result.exitCode, 0);

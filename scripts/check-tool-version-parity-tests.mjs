@@ -890,8 +890,8 @@ test("reports all pre-Phase-3 checker finding paths through CLI fixtures", async
     mutateCheckedInFileAndRunCli(
       subtest,
       ".github/workflows/test.yml",
-      (text) => text.replace("cargo-llvm-cov --version 0.8.7", "cargo-llvm-cov --version 0.8.8"),
-      "cargo-llvm-cov mismatch",
+      (text) => text.replace("nightly-2025-06-01", "nightly-2025-06-02"),
+      "nightly toolchain mismatch",
     ),
   );
 });

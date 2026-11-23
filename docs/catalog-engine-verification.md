@@ -3,7 +3,7 @@
 Run `pnpm verify:catalog-engines` on native Linux x86_64, Windows x86_64 or macOS
 x86_64/aarch64 after installing the repository's pinned Node, pnpm and Rust tools,
 native Tauri build prerequisites, and building the frontend with
-`pnpm gate:run frontend-build`. The frontend directory is a Tauri compile input.
+`pnpm build-vite`. The frontend directory is a Tauri compile input.
 Use the existing Rust setup and per-checkout Cargo target/cache configuration.
 No application window, user profile, signing secret or release permission is needed.
 

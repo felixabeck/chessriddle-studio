@@ -7,8 +7,8 @@ const PROCESS_CGROUP_FILE = "/proc/self/cgroup";
 
 // In a session scope (plain vitest), reserve 1 GiB for the agent sharing the cgroup
 // (0.32 GB RSS measured 2026-09-29) plus headroom. Inside the agent-gate scope, it covers
-// the scheduler (`node scripts/run-push-gates.mjs`), per-lane pnpm and sh parents, and
-// gate-receipt processes, which no worker count sizes (d-20261002-03).
+// the scheduler (`node scripts/run-push-gates.mjs`) and per-lane pnpm and sh parents, which no
+// worker count sizes (d-20261002-03).
 // On 2026-10-02 the all-blocks gate completed
 // in a 28 GiB agent-gate scope without observed OOM events or swap use; that checks the
 // whole run, not this reserve on its own.
@@ -41,7 +41,6 @@ export const VITEST_WORKER_BYTES = 256 * 1024 * 1024;
 // The same 2026-09-30 Vitest measurements imply about 1.20 GiB of base memory; 1.5 GiB keeps
 // headroom above that measured base.
 export const VITEST_BASE_BYTES = 1536 * 1024 * 1024;
-export const VITEST_MINIMUM_BUDGET_BYTES = VITEST_BASE_BYTES + VITEST_WORKER_BYTES;
 
 // f-20261029-16, measured 2026-11-06 on AMD Ryzen AI 9 365 (10 physical cores, SMT, 20 logical):
 // unloaded --maxWorkers=20: wall 69.2 s, slowest app test 2651 ms, 111 tests > 1 s;

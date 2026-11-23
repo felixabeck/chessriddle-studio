@@ -5,9 +5,6 @@ const PROCESS_GROUP_POLL_MS = 10;
 // Two seconds lets a gate handle SIGTERM cleanly before the supervisor escalates to SIGKILL
 // (its process group when supervised with killProcessGroup).
 export const CHILD_TERMINATION_TIMEOUT_MS = 2_000;
-// This 15-second window covers the 10-second `docker rm -f` timeout and 2-second client
-// termination grace, with 3 seconds left to report cleanup before the lane is killed.
-export const E2E_LANE_TERMINATION_TIMEOUT_MS = 15_000;
 
 /** Traverse nested errors once while letting each caller choose how to format their tree. */
 export function formatNestedError(error, format, depth = 0) {

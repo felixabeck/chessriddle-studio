@@ -6,50 +6,23 @@ import { availableParallelism as defaultAvailableParallelism } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { isEntrypoint } from "./entrypoint.mjs";
-import {
-  gateBudgetBytes,
-  rustBuildEnvironment,
-  VITEST_MINIMUM_BUDGET_BYTES,
-} from "./gate-parallelism.mjs";
+import { gateBudgetBytes, rustBuildEnvironment } from "./gate-parallelism.mjs";
 import {
   CHILD_TERMINATION_TIMEOUT_MS,
-  E2E_LANE_TERMINATION_TIMEOUT_MS,
   formatNestedError,
   installMultiChildSignalForwarding,
   signalExitCode,
   superviseChild as defaultSuperviseChild,
 } from "./child-supervisor.mjs";
 import {
-  GATE_LOG_DIRECTORY_ENV,
   createLogCapture,
   formatFailureTrailer,
   makeLogDirectory,
   readLogTail,
   writeLogChunk,
 } from "./gate-logs.mjs";
-import { E2E_CONTAINER_MEMORY_BYTES } from "./run-e2e-container.mjs";
 import { matches } from "./coverage-scope.mjs";
 import { listWorkingTreeFiles } from "./working-tree-files.mjs";
-
-const GIB = 1024 ** 3;
-
-// Shares apply after the selected e2e container reservation. Coverage gets half when
-// concurrent mutation shares P2 and the full remainder otherwise. With e2e selected, it is raised
-// to VITEST_MINIMUM_BUDGET_BYTES when the post-reservation budget can fund that floor.
-export const P2_VITEST_SHARE = 0.5;
-
-// Concurrent mutation gets 35% of the post-container remainder, leaving 15% beside coverage's
-// 50% share for contract/receipt peaks. A coverage floor that raises its share consumes
-// that nominal remainder. Below the one-wave budget, mutation runs after P2 with the full remainder.
-export const P2_MUTATION_SHARE = 0.35;
-
-// This is the raw gate budget threshold for two concurrent self-sizing lanes, before container
-// reservation. Below it, including the 7 GiB agent budget, mutation follows P2 with the remainder.
-export const ONE_WAVE_BYTES = 40 * GIB;
-
-// Two self-sizing lanes split the available CPU evenly; one CPU cannot run both without
-// oversubscribing its worker floors, so mutation follows P2 below this count.
-const MIN_CONCURRENT_SELF_SIZING_CPUS = 2;
 
 export const PUSH_GATE_SCHEDULE = Object.freeze({
   p0: Object.freeze([
@@ -69,7 +42,7 @@ export const PUSH_GATE_SCHEDULE = Object.freeze({
   p1: Object.freeze([
     Object.freeze({
       name: "frontend-build",
-      command: "pnpm gate:run frontend-build",
+      command: "pnpm build-vite",
       blocks: Object.freeze(["rust", "frontend", "bindings"]),
     }),
     Object.freeze({
@@ -98,47 +71,20 @@ export const PUSH_GATE_SCHEDULE = Object.freeze({
       blocks: Object.freeze(["rust"]),
     }),
     Object.freeze({
-      name: "rust-test",
-      rustCompilation: true,
-      commands: Object.freeze(["pnpm gate:ensure backend-test"]),
-      blocks: Object.freeze(["rust"]),
-    }),
-    Object.freeze({
-      name: "rust-coverage",
-      rustCompilation: true,
-      commands: Object.freeze(["pnpm gate:ensure backend-coverage"]),
-      blocks: Object.freeze(["rust"]),
-    }),
-    Object.freeze({
-      name: "frontend-coverage",
-      commands: Object.freeze(["pnpm gate:ensure frontend-coverage"]),
-      blocks: Object.freeze(["frontend"]),
-      selfSizing: "vitest",
-    }),
-    Object.freeze({
       name: "bundle",
       commands: Object.freeze(["pnpm bundle:check"]),
       blocks: Object.freeze(["frontend"]),
     }),
     Object.freeze({
-      name: "e2e",
-      commands: Object.freeze(["pnpm gate:ensure e2e-container"]),
-      blocks: Object.freeze(["frontend"]),
-      after: Object.freeze(["rust-lint", "rust-test", "rust-coverage", "bundle"]),
-    }),
-    Object.freeze({
-      name: "frontend-mutation",
-      commands: Object.freeze(["pnpm gate:ensure frontend-mutation"]),
-      blocks: Object.freeze(["frontend"]),
-      selfSizing: "mutation",
+      name: "related-tests",
+      commands: Object.freeze([]),
+      blocks: Object.freeze(["rust", "frontend", "bindings"]),
     }),
   ]),
 });
 
 export const PRE_REVIEW_GATE_SCHEDULE = Object.freeze({
-  p1: Object.freeze([
-    Object.freeze({ name: "frontend-build", command: "pnpm gate:run frontend-build" }),
-  ]),
+  p1: Object.freeze([Object.freeze({ name: "frontend-build", command: "pnpm build-vite" })]),
   lanes: Object.freeze([
     Object.freeze({
       name: "format-lint",
@@ -171,7 +117,7 @@ export const PRE_REVIEW_GATE_SCHEDULE = Object.freeze({
   ]),
 });
 
-export const FRONTEND_INPUTS = Object.freeze([
+const FRONTEND_INPUTS = Object.freeze([
   "src/**",
   "public/**",
   "index.html",
@@ -180,10 +126,6 @@ export const FRONTEND_INPUTS = Object.freeze([
   "pnpm-workspace.yaml",
   "vite.config.*",
   "tsconfig*.json",
-  "stryker.config.mjs",
-  "scripts/run-frontend-mutation.mjs",
-  "scripts/frontend-mutation-packages.mjs",
-  "scripts/frontend-mutation-baseline.mjs",
   "i18next.config.*",
   "src/translation/**",
   "src/catalogs/**",
@@ -306,7 +248,11 @@ function flattenGateSchedule(schedule, phases) {
   );
 }
 
-function gitFailure(args, result, headline = "Cannot determine pre-review changed paths") {
+// Git's own wording when `@{u}` cannot resolve (measured 2026-11-23 with git 2.43.0, LC_ALL=C;
+// under a German locale the same failure reads "Kein Upstream-Branch ...").
+const MISSING_UPSTREAM_STDERR = /no upstream configured|does not point to a branch/u;
+
+function gitFailure(args, result, headline) {
   const detail = result.error
     ? result.error.message
     : result.stderr?.trim() || `exit status ${result.status ?? "unknown"}`;
@@ -315,15 +261,27 @@ function gitFailure(args, result, headline = "Cannot determine pre-review change
   });
 }
 
-export function discoverPreReviewChanges({
+export function discoverChangedPaths({
   cwd = process.cwd(),
   runGit = spawnSync,
   listUntracked = (workspaceRoot) =>
     listWorkingTreeFiles({ workspaceRoot, pathspec: ".", untrackedOnly: true }),
+  headline = "Cannot determine changed paths",
 } = {}) {
   const run = (args) => {
-    const result = runGit("git", args, { cwd, encoding: "utf8" });
-    if (result.error || result.status !== 0) throw gitFailure(args, result);
+    // C locale: MISSING_UPSTREAM_STDERR matches git's untranslated wording.
+    const result = runGit("git", args, {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "C" },
+    });
+    if (result.error || result.status !== 0) {
+      const missingUpstream =
+        !result.error &&
+        args[0] === "merge-base" &&
+        MISSING_UPSTREAM_STDERR.test(result.stderr ?? "");
+      throw gitFailure(args, result, missingUpstream ? `${headline}: missing upstream` : headline);
+    }
     return String(result.stdout ?? "");
   };
 
@@ -331,7 +289,7 @@ export function discoverPreReviewChanges({
   const base = run(mergeBaseArgs).trim();
   if (!base) {
     throw new Error(
-      `Cannot determine pre-review changed paths: git ${mergeBaseArgs.join(" ")} returned no merge base`,
+      `${headline}: missing upstream (git ${mergeBaseArgs.join(" ")} returned no merge base)`,
     );
   }
   const tracked = run(["diff", "--name-only", "-z", base, "--"]).split("\0").filter(Boolean);
@@ -377,6 +335,86 @@ function hasCoverageInputsChanged(changedPaths, { root, config, baseline }) {
   return changedPaths.some(
     (path) => path === config || path === baseline || path.startsWith(`${root}/`),
   );
+}
+
+const RUST_FULL_SUITE_PATHS = new Set([
+  "src-tauri/src/main.rs",
+  "src-tauri/src/lib.rs",
+  "src-tauri/Cargo.toml",
+  "src-tauri/Cargo.lock",
+  "Cargo.toml",
+  "Cargo.lock",
+  "src-tauri/build.rs",
+]);
+
+function isVitestCoveredPath(path) {
+  return (
+    (path.startsWith("src/") && hasExtension(path, OXLINT_EXTENSIONS)) ||
+    (path.startsWith("scripts/") && path.endsWith(".mjs") && !path.endsWith("-tests.mjs"))
+  );
+}
+
+/** Build the exact Vitest and Cargo commands for the push gate's related-tests lane. */
+export function buildRelatedTestCommands(changedPaths, { root = process.cwd() } = {}) {
+  const existingPaths = [...new Set(changedPaths)]
+    .filter((path) => existsSync(resolve(root, path)))
+    .sort();
+  const commands = [];
+
+  const vitestPaths = existingPaths.filter(isVitestCoveredPath);
+  if (vitestPaths.length > 0) {
+    commands.push(
+      commandSpec("pnpm", [
+        "exec",
+        "vitest",
+        "related",
+        "--run",
+        "--passWithNoTests",
+        ...vitestPaths,
+      ]),
+    );
+  }
+
+  let runFullRustBins = false;
+  const rustFilters = new Set();
+  for (const path of existingPaths) {
+    if (RUST_FULL_SUITE_PATHS.has(path)) {
+      runFullRustBins = true;
+      continue;
+    }
+    const rustModule = /^src-tauri\/src\/(.+)\.rs$/u.exec(path)?.[1];
+    if (!rustModule) continue;
+    const modulePath = rustModule.endsWith("/mod")
+      ? rustModule.slice(0, -4).replaceAll("/", "::")
+      : rustModule.replaceAll("/", "::");
+    if (modulePath) rustFilters.add(`${modulePath}::`);
+  }
+
+  if (runFullRustBins) {
+    commands.push(
+      commandSpec("cargo", [
+        "test",
+        "--manifest-path",
+        "src-tauri/Cargo.toml",
+        "--locked",
+        "--bins",
+      ]),
+    );
+  } else if (rustFilters.size > 0) {
+    commands.push(
+      commandSpec("cargo", [
+        "test",
+        "--manifest-path",
+        "src-tauri/Cargo.toml",
+        "--locked",
+        "--bins",
+        "--",
+        ...[...rustFilters].sort(),
+      ]),
+    );
+  }
+
+  return commands;
 }
 
 export function selectPreReviewLanes(changedPaths, { root = process.cwd() } = {}) {
@@ -524,8 +562,7 @@ async function runCommand(
   child.stdout?.on("data", capture);
   child.stderr?.on("data", capture);
   const supervisor = superviseProcess(child, {
-    terminationTimeoutMs:
-      task.name === "e2e" ? E2E_LANE_TERMINATION_TIMEOUT_MS : CHILD_TERMINATION_TIMEOUT_MS,
+    terminationTimeoutMs: CHILD_TERMINATION_TIMEOUT_MS,
     killProcessGroup: true,
   });
   const childLabel =
@@ -729,7 +766,8 @@ async function runLane(lane, env, context, results) {
       });
       if (stopAtBoundary()) break;
       commandsStarted += 1;
-      result = await runCommand(command, step, { ...context, env });
+      const commandEnv = typeof env === "function" ? env(command) : env;
+      result = await runCommand(command, step, { ...context, env: commandEnv });
     } catch (error) {
       result = { code: 1, error };
     }
@@ -763,42 +801,6 @@ async function runLane(lane, env, context, results) {
   logProgress(task, "finish", result.error ? `error=${errorMessage(result.error)}` : "");
   return task;
 }
-
-function makeLaneEnvironment(env, laneName, budgetBytes, concurrentMutation, e2eSelected) {
-  if (laneName === "frontend-coverage") {
-    const memoryShare = concurrentMutation ? P2_VITEST_SHARE : 1;
-    const cpuShare = concurrentMutation ? P2_CPU_SHARE : 1;
-    const budgetAfterContainer = budgetBytes - (e2eSelected ? E2E_CONTAINER_MEMORY_BYTES : 0);
-    const sharedBudget = Math.floor(budgetAfterContainer * memoryShare);
-    const laneBudget =
-      e2eSelected && budgetAfterContainer >= VITEST_MINIMUM_BUDGET_BYTES
-        ? Math.max(sharedBudget, VITEST_MINIMUM_BUDGET_BYTES)
-        : sharedBudget;
-    return {
-      ...env,
-      GATE_MEMORY_BYTES: String(laneBudget),
-      GATE_CPU_SHARE: String(cpuShare),
-    };
-  }
-  if (laneName === "frontend-mutation") {
-    const memoryShare = concurrentMutation ? P2_MUTATION_SHARE : 1;
-    const cpuShare = concurrentMutation ? P2_CPU_SHARE : 1;
-    const reserveContainer = e2eSelected && concurrentMutation;
-    return {
-      ...env,
-      GATE_MEMORY_BYTES: String(
-        Math.floor(
-          (budgetBytes - (reserveContainer ? E2E_CONTAINER_MEMORY_BYTES : 0)) * memoryShare,
-        ),
-      ),
-      GATE_CPU_SHARE: String(cpuShare),
-    };
-  }
-  return env;
-}
-
-// The self-sizing Vitest and mutation lanes split CPU evenly when they share P2.
-const P2_CPU_SHARE = 0.5;
 
 function printSummary(results, logDirectory, preReviewMode = false) {
   const label = preReviewMode ? "Pre-review check" : "Push gate";
@@ -858,8 +860,8 @@ export async function runPushGates(
     env = process.env,
     availableParallelism = defaultAvailableParallelism,
     getGateBudgetBytes = (options) => gateBudgetBytes({ env, ...options }),
-    discoverChangedPaths = undefined,
-    discoverChanges = discoverPreReviewChanges,
+    discoverChangedPaths: customDiscoverChangedPaths = undefined,
+    discoverChanges = discoverChangedPaths,
     runGit = spawnSync,
     beforeStep = undefined,
     writeCapturedOutput = writeLogChunk,
@@ -881,14 +883,11 @@ export async function runPushGates(
   }
   const { blocks } = parsed;
   const logDirectory = makeLogDirectory(cwd);
-  env = { ...env, [GATE_LOG_DIRECTORY_ENV]: logDirectory };
   const signalForwarding = installMultiChildSignalForwarding({
     label: preReviewMode ? "pre-review checks" : "push gate",
   });
   const resultsByName = new Map();
   const stepResults = [];
-  let budgetBytes;
-  let cpuCount;
   let exitCode = 0;
   let cleanupFailed = false;
   let fatalError;
@@ -924,9 +923,9 @@ export async function runPushGates(
 
   try {
     if (preReviewMode) {
-      const changes = discoverChangedPaths
-        ? { paths: discoverChangedPaths({ cwd }), mergeBase: undefined }
-        : discoverChanges({ cwd, runGit });
+      const changes = customDiscoverChangedPaths
+        ? { paths: customDiscoverChangedPaths({ cwd }), mergeBase: undefined }
+        : discoverChanges({ cwd, runGit, headline: "Cannot determine pre-review changed paths" });
       const { paths: changedPaths } = changes;
       const lanes = selectPreReviewLanes(changedPaths, { root: cwd });
       for (const lane of lanes) selectedPreReviewLaneNames.add(lane.name);
@@ -973,98 +972,80 @@ export async function runPushGates(
       const runnableLanes = PUSH_GATE_SCHEDULE.lanes.filter((lane) =>
         selectedByBlocks(lane, blocks),
       );
-      if (blocks.has("frontend") && !blockedStartReason(context)) {
-        budgetBytes = getGateBudgetBytes();
-        cpuCount = availableParallelism();
-      }
-      const concurrentMutation =
-        blocks.has("frontend") &&
-        budgetBytes >= ONE_WAVE_BYTES &&
-        cpuCount >= MIN_CONCURRENT_SELF_SIZING_CPUS;
       const laneByName = new Map(runnableLanes.map((lane) => [lane.name, lane]));
-      const e2eSelected = laneByName.has("e2e");
-      const rustLanes = runnableLanes.filter((lane) => lane.rustCompilation);
+      const lightLanes = runnableLanes.filter((lane) => lane.name !== "related-tests");
+      const rustLanes = lightLanes.filter((lane) => lane.rustCompilation);
       const compilerEnv = rustLanes.length ? getRustEnvironment() : env;
-      const baseLanes = runnableLanes.filter(
-        (lane) => lane.name !== "e2e" && lane.name !== "frontend-mutation",
-      );
-      const p2Promises = new Map();
-      // Cold native, cross-target and instrumented contexts own the same unpartitioned
-      // compiler envelope. A red blocks every queued start after terminal cleanup.
-      // Finish contract, bundle and rust-lint before admitting heavyweight work.
-      // Replace this ordering only after comparable cold proof supports partitioning.
-      const lightLanes = runnableLanes.filter((lane) =>
-        ["contract", "bundle", "rust-lint"].includes(lane.name),
-      );
-      for (const lane of lightLanes) {
-        p2Promises.set(
-          lane.name,
+
+      // Finish every selected light lane before starting related-tests (fail-fast order and
+      // exclusive Rust admission: no other Rust compile runs beside related-tests).
+      await Promise.all(
+        lightLanes.map((lane) =>
           runLane(lane, lane.rustCompilation ? compilerEnv : env, context, resultsByName),
-        );
-      }
-      let rustDone = Promise.all(p2Promises.values());
-      for (const lane of rustLanes.filter((lane) => lane.name !== "rust-lint")) {
-        rustDone = rustDone.then(() => runLane(lane, compilerEnv, context, resultsByName));
-        p2Promises.set(lane.name, rustDone);
-      }
-      for (const lane of baseLanes) {
-        if (lane.rustCompilation || lightLanes.includes(lane)) continue;
-        const laneEnv = lane.selfSizing
-          ? makeLaneEnvironment(env, lane.name, budgetBytes, concurrentMutation, e2eSelected)
-          : env;
-        const lanePromise = lane.selfSizing
-          ? rustDone.then(() => runLane(lane, laneEnv, context, resultsByName))
-          : runLane(lane, laneEnv, context, resultsByName);
-        p2Promises.set(lane.name, lanePromise);
-      }
+        ),
+      );
 
-      const e2eLane = laneByName.get("e2e");
-      let e2ePromise;
-      if (e2eLane) {
-        const dependencies = e2eLane.after.map((name) => p2Promises.get(name)).filter(Boolean);
-        e2ePromise = Promise.all([rustDone, ...dependencies]).then(() =>
-          runLane(e2eLane, env, context, resultsByName),
-        );
-      }
-
-      const mutationLane = laneByName.get("frontend-mutation");
-      let mutationPromise;
-      if (mutationLane) {
-        if (concurrentMutation) {
-          const laneEnv = makeLaneEnvironment(
-            env,
-            mutationLane.name,
-            budgetBytes,
-            concurrentMutation,
-            e2eSelected,
-          );
-          mutationPromise = rustDone.then(() =>
-            runLane(mutationLane, laneEnv, context, resultsByName),
-          );
-          p2Promises.set(mutationLane.name, mutationPromise);
+      const relatedTestsLane = laneByName.get("related-tests");
+      if (relatedTestsLane) {
+        if (blockedStartReason(context)) {
+          await runLane(relatedTestsLane, env, context, resultsByName);
         } else {
-          const dependencies = [
-            ...baseLanes.map((lane) => p2Promises.get(lane.name)).filter(Boolean),
-            ...(e2ePromise ? [e2ePromise] : []),
-          ];
-          mutationPromise = Promise.all(dependencies).then(() => {
-            const laneEnv = makeLaneEnvironment(
-              env,
-              mutationLane.name,
-              budgetBytes,
-              false,
-              e2eSelected,
-            );
-            return runLane(mutationLane, laneEnv, context, resultsByName);
-          });
+          let changedPaths;
+          try {
+            const changes = customDiscoverChangedPaths
+              ? { paths: customDiscoverChangedPaths({ cwd }), mergeBase: undefined }
+              : discoverChanges({
+                  cwd,
+                  runGit,
+                  headline: "Cannot determine related-tests changed paths",
+                });
+            changedPaths = changes.paths;
+          } catch (error) {
+            const failed = createTaskResult(logDirectory, relatedTestsLane.name, "lane", {
+              phase: "P2",
+            });
+            resultsByName.set(relatedTestsLane.name, failed);
+            failed.status = "failed";
+            failed.code = 1;
+            failed.error = error;
+            latchFailure(failed, context);
+            const fd = writeTaskHeader(failed);
+            try {
+              writeLogChunk(fd, `${errorMessage(error)}\n`);
+            } finally {
+              closeSync(fd);
+            }
+            logProgress(failed, "finish", `error=${errorMessage(error)}`);
+          }
+          if (changedPaths !== undefined) {
+            const relatedCommands = buildRelatedTestCommands(changedPaths, { root: cwd });
+            if (relatedCommands.length === 0) {
+              const empty = createTaskResult(logDirectory, relatedTestsLane.name, "lane", {
+                phase: "P2",
+              });
+              resultsByName.set(relatedTestsLane.name, empty);
+              empty.status = "passed";
+              empty.code = 0;
+              const fd = writeTaskHeader(empty);
+              try {
+                writeLogChunk(fd, "No Vitest-covered or Rust paths changed.\n");
+              } finally {
+                closeSync(fd);
+              }
+              logProgress(empty, "finish", "commands=0");
+            } else {
+              const hasRust = relatedCommands.some((command) => command.executable === "cargo");
+              const relatedRustEnv = hasRust ? getRustEnvironment() : env;
+              await runLane(
+                { ...relatedTestsLane, commands: relatedCommands },
+                (command) => (commandArgv(command).executable === "cargo" ? relatedRustEnv : env),
+                context,
+                resultsByName,
+              );
+            }
+          }
         }
       }
-
-      await Promise.all([
-        ...p2Promises.values(),
-        ...(e2ePromise ? [e2ePromise] : []),
-        ...(mutationPromise && !concurrentMutation ? [mutationPromise] : []),
-      ]);
 
       const failedStep = firstFailure(stepResults);
       if (failedStep) exitCode = failedStep.code;

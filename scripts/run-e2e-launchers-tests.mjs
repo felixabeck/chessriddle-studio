@@ -5,14 +5,11 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  DOCKER_REMOVE_TIMEOUT_MS,
-  DOCKER_COMMAND_TERMINATION_TIMEOUT_MS,
   DOCKER_INFO_TIMEOUT_MS,
   E2E_CONTAINER_MEMORY,
   E2E_CONTAINER_MEMORY_BYTES,
   playwrightArguments,
 } from "./run-e2e-container.mjs";
-import { E2E_LANE_TERMINATION_TIMEOUT_MS } from "./child-supervisor.mjs";
 
 const scripts = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scripts, "..");
@@ -666,10 +663,7 @@ test("a Docker client kill failure still waits for named container cleanup", asy
     /Failed to terminate e2e Docker client:.*injected docker client EPERM/u,
   );
   const elapsed = Number(result.stdout.match(/elapsed=(\d+)/u)?.[1]);
-  assert.ok(
-    Number.isFinite(elapsed) && elapsed < E2E_LANE_TERMINATION_TIMEOUT_MS,
-    `launcher elapsed ${elapsed} ms`,
-  );
+  assert.ok(Number.isFinite(elapsed) && elapsed < 5_000, `launcher elapsed ${elapsed} ms`);
 });
 
 test("docker info timeout reports when a hung client cannot be terminated", async (t) => {
@@ -780,11 +774,7 @@ test("cleanup failure names the container and says a retry is not known to be cl
   assert.match(result.stderr, /retry is not known to be clean/u);
 });
 
-test("a hung docker rm reports the named cleanup failure before the e2e lane window", async (t) => {
-  assert.ok(
-    DOCKER_REMOVE_TIMEOUT_MS + DOCKER_COMMAND_TERMINATION_TIMEOUT_MS <
-      E2E_LANE_TERMINATION_TIMEOUT_MS,
-  );
+test("a hung docker rm reports the named cleanup failure promptly", async (t) => {
   const harness = await makeHarness(t, {
     FAKE_DOCKER_RUN_MODE: "fail",
     FAKE_DOCKER_RM_MODE: "hold",
@@ -805,10 +795,7 @@ test("a hung docker rm reports the named cleanup failure before the e2e lane win
   );
   assert.match(result.stderr, /retry is not known to be clean/u);
   const elapsed = Number(result.stdout.match(/elapsed=(\d+)/u)?.[1]);
-  assert.ok(
-    Number.isFinite(elapsed) && elapsed < E2E_LANE_TERMINATION_TIMEOUT_MS,
-    `launcher elapsed ${elapsed} ms`,
-  );
+  assert.ok(Number.isFinite(elapsed) && elapsed < 5_000, `launcher elapsed ${elapsed} ms`);
 });
 
 test("the native e2e command still selects only the named test through pnpm's separator", () => {

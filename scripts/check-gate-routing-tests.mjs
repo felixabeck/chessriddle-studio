@@ -30,7 +30,7 @@ const temporaryRoot = testTempRoots(after);
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTRACT_CHAIN =
-  "pnpm mutation:guard:check && pnpm lint:ci && pnpm tauri:boundary:check && pnpm rust:surface:check && pnpm ui:boundary:check && pnpm gates:routing:check && pnpm gates:routing:test && pnpm ci:remote:test && pnpm tools:parity:check && pnpm tools:parity:test && pnpm workflows:check && pnpm workflows:permissions:test && pnpm ui:boundary:report:test && pnpm coverage:report:test && pnpm bundle:report:test && pnpm mutation:runner:test && pnpm rust:target:evict:test && pnpm gates:receipt:test && pnpm gates:logs:test && pnpm gates:parallelism:test && pnpm gates:push:test && pnpm gates:child-supervisor:test && pnpm gates:imports:test && pnpm rust:windows:test && pnpm entrypoint:test && pnpm e2e:launchers:test && pnpm install:local:test && pnpm app:driver:test && ./scripts/findings.py check && pnpm ipc:consumers:check && pnpm extension:test";
+  "pnpm mutation:guard:check && pnpm lint:ci && pnpm tauri:boundary:check && pnpm rust:surface:check && pnpm ui:boundary:check && pnpm gates:routing:check && pnpm gates:routing:test && pnpm ci:remote:test && pnpm tools:parity:check && pnpm tools:parity:test && pnpm workflows:check && pnpm workflows:permissions:test && pnpm ui:boundary:report:test && pnpm coverage:report:test && pnpm bundle:report:test && pnpm mutation:runner:test && pnpm rust:target:evict:test && pnpm gates:logs:test && pnpm gates:parallelism:test && pnpm gates:push:test && pnpm gates:child-supervisor:test && pnpm gates:imports:test && pnpm rust:windows:test && pnpm entrypoint:test && pnpm e2e:launchers:test && pnpm install:local:test && pnpm app:driver:test && ./scripts/findings.py check && pnpm ipc:consumers:check && pnpm extension:test";
 
 async function write(root, relativePath, contents) {
   const path = join(root, relativePath);
@@ -59,9 +59,6 @@ async function fixture() {
         "mutation:guard:check": "true",
         "rust:target:evict": "node scripts/rust-target-eviction.mjs",
         "findings:kit:check": "env -u KIT_ROOT kit sync --check .",
-        "gate:ensure": "agent-gate node scripts/gate-receipt.mjs ensure",
-        "gate:run": "agent-gate node scripts/gate-receipt.mjs run",
-        "gate:check": "node scripts/gate-receipt.mjs check",
         "rust:windows:check": "true",
         "test:coverage": "true",
         "coverage:frontend:check": "true",
@@ -70,7 +67,6 @@ async function fixture() {
         "bindings:check": "true",
         "bundle:check": "true",
         "test:e2e:container": "true",
-        "mutation:frontend": "true",
         "test:coverage:backend": "true",
         "coverage:backend:check": "true",
         "coverage:mapping:backend": "true",
@@ -80,21 +76,12 @@ async function fixture() {
   await write(
     root,
     ".claude/skills/push/SKILL.md",
-    "## 2. Gates\n\n```bash\npnpm gates:push -- <blocks>\n```\n\n### Unconditional contract gate\n\n```bash\npnpm gates:contract:check\n```\n\n### Rust/Tauri backend\n\n```bash\nbash scripts/setup-rust.sh\ncargo fmt --manifest-path src-tauri/Cargo.toml -- --check\ncargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings\npnpm rust:windows:check\npnpm gate:ensure backend-test\npnpm gate:ensure backend-coverage\n```\n\n### TypeScript/React frontend\n\n```bash\npnpm gate:ensure frontend-coverage\npnpm gate:ensure frontend-mutation\npnpm gate:run frontend-build\npnpm bundle:check\npnpm gate:ensure e2e-container\n```\n\n### Cross-layer contracts\n\n```bash\npnpm bindings:check\n```\n\n### Findings ledger\n\n```bash\nenv -u KIT_ROOT pnpm findings:kit:check\n```\n\n## 2a. Pre-review checks\n\n```bash\npnpm checks:pre-review\n```\n\n```bash\npnpm gate:run frontend-build\npnpm exec oxfmt --check <changed-format-files>\npnpm exec oxlint --deny-warnings <changed-js-ts-files>\npnpm exec tsgo --noEmit\ncargo fmt --manifest-path src-tauri/Cargo.toml -- --check\npnpm coverage:mapping:frontend\npnpm coverage:mapping:backend\npnpm rust:windows:check\npnpm bundle:check\n```\n\n## 3. Review\n\n```text\nscripts/**\n```\n\n## 4. Finish\n",
+    "## 2. Gates\n\n```bash\npnpm gates:push -- <blocks>\n```\n\n### Unconditional contract gate\n\n```bash\npnpm gates:contract:check\n```\n\n### Rust/Tauri backend\n\n```bash\nbash scripts/setup-rust.sh\ncargo fmt --manifest-path src-tauri/Cargo.toml -- --check\ncargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings\npnpm rust:windows:check\n```\n\n### TypeScript/React frontend\n\n```bash\npnpm build-vite\npnpm bundle:check\n```\n\n### Cross-layer contracts\n\n```bash\npnpm bindings:check\n```\n\n### Findings ledger\n\n```bash\nenv -u KIT_ROOT pnpm findings:kit:check\n```\n\n## 2a. Pre-review checks\n\n```bash\npnpm checks:pre-review\n```\n\n```bash\npnpm build-vite\npnpm exec oxfmt --check <changed-format-files>\npnpm exec oxlint --deny-warnings <changed-js-ts-files>\npnpm exec tsgo --noEmit\ncargo fmt --manifest-path src-tauri/Cargo.toml -- --check\npnpm coverage:mapping:frontend\npnpm coverage:mapping:backend\npnpm rust:windows:check\npnpm bundle:check\n```\n\n## 3. Review\n\n```text\nscripts/**\n```\n\n## 4. Finish\n",
   );
   await write(
     root,
     ".github/workflows/test.yml",
-    "steps:\n  - name: Contract\n    run: pnpm gates:contract:check\n  - name: Frontend coverage\n    run: pnpm test:coverage\n  - name: Frontend ratchet\n    run: pnpm coverage:frontend:check\n  - name: Frontend build\n    run: pnpm build-vite\n  - name: Bindings\n    run: pnpm bindings:check\n  - name: Bundle\n    run: pnpm bundle:check\n  - name: Browser\n    run: pnpm test:e2e:container\n  - name: Mutation\n    run: pnpm mutation:frontend\n  - name: Rust gates\n    run: |\n      cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings\n  - name: Backend coverage\n    run: pnpm test:coverage:backend\n  - name: Backend ratchet\n    run: pnpm coverage:backend:check\n",
-  );
-  const skillPath = join(root, ".claude/skills/push/SKILL.md");
-  const skill = await readFile(skillPath, "utf8");
-  await writeFile(
-    skillPath,
-    skill.replace(
-      "## 3. Review",
-      "### Gate receipts\n\n```bash\npnpm gate:check frontend-build\n```\n\n## 3. Review",
-    ),
+    "steps:\n  - name: Contract\n    run: pnpm gates:contract:check\n  - name: Frontend coverage\n    run: pnpm test:coverage\n  - name: Frontend ratchet\n    run: pnpm coverage:frontend:check\n  - name: Frontend build\n    run: pnpm build-vite\n  - name: Bindings\n    run: pnpm bindings:check\n  - name: Bundle\n    run: pnpm bundle:check\n  - name: Browser\n    run: pnpm test:e2e:container\n  - name: Rust gates\n    run: |\n      cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings\n  - name: Rust tests\n    run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets\n  - name: Backend coverage\n    run: pnpm test:coverage:backend\n  - name: Backend ratchet\n    run: pnpm coverage:backend:check\n",
   );
   await write(root, "vite.config.ts", 'test: { include: ["scripts/**/*.test.mjs"] },\n');
   await write(root, "scripts/check-example.mjs", "\n");
@@ -132,20 +119,6 @@ test("heavy gate package scripts preserve the strict agent-gate wrapper and pre-
       replacement: "agent-gate node scripts/run-push-gates.mjs",
       expected:
         /package\.json checks:pre-review must invoke agent-gate node scripts\/run-push-gates\.mjs --pre-review/u,
-    },
-    {
-      title: "gate:ensure without the wrapper is rejected",
-      script: "gate:ensure",
-      replacement: "node scripts/gate-receipt.mjs ensure",
-      expected:
-        /package\.json gate:ensure must invoke agent-gate node scripts\/gate-receipt\.mjs ensure/u,
-    },
-    {
-      title: "gate:run without the wrapper is rejected",
-      script: "gate:run",
-      replacement: "node scripts/gate-receipt.mjs run",
-      expected:
-        /package\.json gate:run must invoke agent-gate node scripts\/gate-receipt\.mjs run/u,
     },
     {
       title: "gates:push with a command -v fallback is rejected",
@@ -453,53 +426,6 @@ test("accepts a direct workflow script command inside a routed package script", 
   assert.deepEqual(await checkGateRouting(root, { paths }), []);
 });
 
-test("reports unknown receipt names for every receipt verb", async () => {
-  for (const verb of ["ensure", "run", "check"]) {
-    const root = await fixture();
-    const skillPath = join(root, ".claude/skills/push/SKILL.md");
-    await writeFile(
-      skillPath,
-      `${await readFile(skillPath, "utf8")}\n\`\`\`bash\npnpm gate:${verb} absent-gate\n\`\`\`\n`,
-    );
-    assert.match(
-      (await checkGateRouting(root, { paths })).join("\n"),
-      new RegExp(`unknown receipt gate absent-gate.*pnpm gate:${verb} absent-gate`, "u"),
-    );
-  }
-});
-
-test("resolves nested package scripts through every receipt verb", async () => {
-  for (const verb of ["ensure", "run", "check"]) {
-    const root = await fixture();
-    const packagePath = join(root, "package.json");
-    const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
-    packageJson.scripts["build-vite"] = "pnpm receipt:nested:check";
-    packageJson.scripts["receipt:nested:check"] = "node scripts/receipt-nested.mjs";
-    await writeFile(packagePath, JSON.stringify(packageJson));
-    const skillPath = join(root, ".claude/skills/push/SKILL.md");
-    await writeFile(
-      skillPath,
-      `${await readFile(skillPath, "utf8")}\n\`\`\`bash\npnpm gate:${verb} frontend-build\n\`\`\`\n`,
-    );
-    assert.deepEqual(await checkGateRouting(root, { paths }), [], `${verb} did not expand`);
-  }
-});
-
-test("resolves a script reached only through a receipt", async () => {
-  const root = await fixture();
-  const packagePath = join(root, "package.json");
-  const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
-  packageJson.scripts["build-vite"] = "pnpm receipt-only:check";
-  packageJson.scripts["receipt-only:check"] = "node scripts/receipt-only.mjs";
-  await writeFile(packagePath, JSON.stringify(packageJson));
-  const skillPath = join(root, ".claude/skills/push/SKILL.md");
-  await writeFile(
-    skillPath,
-    `${await readFile(skillPath, "utf8")}\n\`\`\`bash\npnpm gate:ensure frontend-build\n\`\`\`\n`,
-  );
-  assert.deepEqual(await checkGateRouting(root, { paths }), []);
-});
-
 test("accepts a .test.mjs file included by Vitest", async () => {
   const root = await fixture();
   await write(root, "scripts/unit.test.mjs", "\n");
@@ -634,12 +560,12 @@ test("rejects if on any routed gate step but accepts if on an upload step", asyn
   await writeFile(
     workflowPath,
     `${workflow.replace(
-      "    run: pnpm mutation:frontend",
-      "    if: github.ref == 'refs/heads/master'\n    run: pnpm mutation:frontend",
+      "    run: pnpm test:e2e:container",
+      "    if: github.ref == 'refs/heads/master'\n    run: pnpm test:e2e:container",
     )}  - name: Upload\n    if: always()\n    uses: actions/upload-artifact@v4\n`,
   );
   const findings = (await checkGateRouting(root, { paths })).join("\n");
-  assert.match(findings, /workflow step has if: "github\.ref == 'refs\/heads\/master'": Mutation/u);
+  assert.match(findings, /workflow step has if: "github\.ref == 'refs\/heads\/master'": Browser/u);
   assert.doesNotMatch(findings, /Upload/u);
 });
 
@@ -667,13 +593,13 @@ test("rejects continue-on-error on another routed gate step", async () => {
   await writeFile(
     workflowPath,
     workflow.replace(
-      "    run: pnpm mutation:frontend",
-      "    continue-on-error: true\n    run: pnpm mutation:frontend",
+      "    run: pnpm test:e2e:container",
+      "    continue-on-error: true\n    run: pnpm test:e2e:container",
     ),
   );
   assert.match(
     (await checkGateRouting(root, { paths })).join("\n"),
-    /workflow step ignores the gate's exit status with continue-on-error: "true": Mutation/u,
+    /workflow step ignores the gate's exit status with continue-on-error: "true": Browser/u,
   );
 });
 
@@ -750,7 +676,10 @@ test("rejects changed arguments on a routed workflow script", async () => {
   const workflow = await readFile(workflowPath, "utf8");
   await writeFile(
     workflowPath,
-    workflow.replace("run: pnpm mutation:frontend", "run: pnpm mutation:frontend --list-packages"),
+    workflow.replace(
+      "run: pnpm test:e2e:container",
+      "run: pnpm test:e2e:container --update-snapshots",
+    ),
   );
   assert.match(
     (await checkGateRouting(root, { paths })).join("\n"),
@@ -964,18 +893,64 @@ test("reports a CI-only script in an explicitly indented block scalar", async ()
   );
 });
 
-test("reports a stale path-scoped CI map key absent from the workflow", async () => {
-  const root = await fixture();
-  const workflowPath = join(root, ".github/workflows/test.yml");
-  const workflow = await readFile(workflowPath, "utf8");
-  await writeFile(
-    workflowPath,
-    workflow.replace("  - name: Mutation\n    run: pnpm mutation:frontend\n", ""),
-  );
-  assert.match(
-    (await checkGateRouting(root, { paths })).join("\n"),
-    /CI_REQUIRED_SCRIPTS key mutation:frontend is absent/u,
-  );
+test("rejects test.yml missing e2e or either coverage ratchet", async (t) => {
+  for (const [label, stepText, scriptName] of [
+    ["e2e", "  - name: Browser\n    run: pnpm test:e2e:container\n", "test:e2e:container"],
+    [
+      "frontend ratchet",
+      "  - name: Frontend ratchet\n    run: pnpm coverage:frontend:check\n",
+      "coverage:frontend:check",
+    ],
+    [
+      "backend ratchet",
+      "  - name: Backend ratchet\n    run: pnpm coverage:backend:check\n",
+      "coverage:backend:check",
+    ],
+  ]) {
+    await t.test(label, async () => {
+      const root = await fixture();
+      const workflowPath = join(root, ".github/workflows/test.yml");
+      const workflow = await readFile(workflowPath, "utf8");
+      assert.ok(workflow.includes(stepText));
+      await writeFile(workflowPath, workflow.replace(stepText, ""));
+      assert.match(
+        (await checkGateRouting(root, { paths })).join("\n"),
+        new RegExp(`CI_REQUIRED_SCRIPTS key ${scriptName} is absent`, "u"),
+      );
+    });
+  }
+});
+
+test("rejects re-adding per-push frontend mutation to test.yml and accepts CI-only commands only through the named set", async (t) => {
+  await t.test("re-added pnpm mutation:frontend is rejected", async () => {
+    const root = await fixture();
+    const packagePath = join(root, "package.json");
+    const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
+    packageJson.scripts["mutation:frontend"] = "node scripts/run-frontend-mutation.mjs";
+    await writeFile(packagePath, JSON.stringify(packageJson));
+    const workflowPath = join(root, ".github/workflows/test.yml");
+    await writeFile(
+      workflowPath,
+      `${await readFile(workflowPath, "utf8")}  - name: Mutation\n    run: pnpm mutation:frontend\n`,
+    );
+    assert.match(
+      (await checkGateRouting(root, { paths })).join("\n"),
+      /workflow-routed package script mutation:frontend is absent from the push gate scheduler/u,
+    );
+  });
+
+  await t.test("unlisted CI-only cargo test variant is rejected", async () => {
+    const root = await fixture();
+    const workflowPath = join(root, ".github/workflows/test.yml");
+    await writeFile(
+      workflowPath,
+      `${await readFile(workflowPath, "utf8")}  - name: Unlisted cargo test\n    run: cargo test --manifest-path src-tauri/Cargo.toml --bins\n`,
+    );
+    assert.match(
+      (await checkGateRouting(root, { paths })).join("\n"),
+      /workflow command must exactly match.*cargo test --manifest-path src-tauri\/Cargo\.toml --bins/u,
+    );
+  });
 });
 
 test("the live repository pins one shared contract-gate list", async () => {
@@ -1014,11 +989,7 @@ test("executable schedules preserve routes when skill command examples are remov
   const root = await fixture();
   const skillPath = join(root, ".claude/skills/push/SKILL.md");
   const skill = await readFile(skillPath, "utf8");
-  await writeFile(
-    skillPath,
-    skill.replace(/^```bash\n[\s\S]*?^```\n/gmu, "") +
-      "\n```bash\npnpm gate:check frontend-build\n```\n",
-  );
+  await writeFile(skillPath, skill.replace(/^```bash\n[\s\S]*?^```\n/gmu, ""));
   assert.deepEqual(await checkGateRouting(root, { paths }), []);
 });
 
@@ -1052,87 +1023,59 @@ function ciWorkflowContracts(texts) {
     contracts.push([label, () => assert.ok(source?.includes(value), label)]);
   const forbid = (label, source, pattern) =>
     contracts.push([label, () => assert.doesNotMatch(source, pattern, label)]);
-  for (const [label, collection] of [
-    ["test", testJobs],
-    ["sweep", sweepJobs],
-  ]) {
-    const listing = collection.get("frontend-mutation-packages");
-    const matrix = collection.get("frontend-mutation");
-    requireText(
-      `${label} listing command`,
-      listing,
-      'run: echo "ids=$(node scripts/run-frontend-mutation.mjs --list-packages)" >> "$GITHUB_OUTPUT"',
-    );
-    requireText(`${label} listing output`, listing, "ids: ${{ steps.list.outputs.ids }}");
-    requireText(`${label} listing id`, listing, "id: list");
-    for (const value of [
-      "needs: frontend-mutation-packages",
-      "fail-fast: false",
-      "package: ${{ fromJSON(needs.frontend-mutation-packages.outputs.ids) }}",
-      "FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}",
-      "FRONTEND_MUTATION_INCREMENTAL_DIR: .frontend-mutation-incremental",
-      "uses: actions/checkout@v4\n        with:\n          fetch-depth: 0",
-      "run: pnpm mutation:frontend",
-      "name: frontend-mutation-${{ matrix.package }}",
-      "path: artifacts/mutation/frontend/${{ matrix.package }}/",
-      "id: dates",
-      "today=$(date -u +%Y%m%d)",
-      'echo "today=$today" >> "$GITHUB_OUTPUT"',
-    ])
-      requireText(`${label} ${value}`, matrix, value);
-    contracts.push([
-      `${label} dates before cache`,
-      () => assert.ok(matrix.indexOf("id: dates") < matrix.indexOf("uses: actions/cache/")),
-    ]);
-  }
-  const matrix = testJobs.get("frontend-mutation");
-  requireText(
-    "change base",
-    matrix,
-    "FRONTEND_MUTATION_CHANGED_SINCE: ${{ github.event_name == 'push' && github.event.before || github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}",
-  );
-  requireText(
-    "yesterday UTC",
-    matrix,
-    'echo "yesterday=$(date -u -d "$today -1 day" +%Y%m%d)" >> "$GITHUB_OUTPUT"',
-  );
-  requireText("restore only", matrix, "uses: actions/cache/restore@v4");
-  // d-20261101-06 bars per-push runs from publishing mutation results. The pinned actionlint
-  // binary is the one permitted exception (f-20261108-06), matched by its exact path.
+  contracts.push([
+    "test has no frontend-mutation-packages job",
+    () =>
+      assert.equal(
+        testJobs.has("frontend-mutation-packages"),
+        false,
+        "test has no frontend-mutation-packages job",
+      ),
+  ]);
+  contracts.push([
+    "test has no frontend-mutation job",
+    () =>
+      assert.equal(testJobs.has("frontend-mutation"), false, "test has no frontend-mutation job"),
+  ]);
+  // The pinned actionlint binary is the one permitted actions/cache exception in test.yml
+  // (f-20261108-06), matched by its exact path.
   forbid(
     "no push save or combined cache",
     texts.test,
     /uses:\s*["']?actions\/cache(?:\/save)?@[^\n]*\n(?!\s+with:\n\s+path: ~\/\.github-actionlint\/bin\n)/u,
   );
-  requireText(
-    "unmatched restore key",
-    matrix,
-    "key: frontend-mutation-restore-${{ matrix.package }}-${{ github.run_id }}-${{ github.run_attempt }}",
-  );
-  requireText(
-    "exact dated prefixes",
-    matrix,
-    "restore-keys: |\n            frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-\n            frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.yesterday }}-\n\n",
-  );
-  requireText("restore directory", matrix, "path: .frontend-mutation-incremental");
+  const listing = sweepJobs.get("frontend-mutation-packages");
   const sweep = sweepJobs.get("frontend-mutation");
+  requireText(
+    "sweep listing command",
+    listing,
+    'run: echo "ids=$(node scripts/run-frontend-mutation.mjs --list-packages)" >> "$GITHUB_OUTPUT"',
+  );
+  requireText("sweep listing output", listing, "ids: ${{ steps.list.outputs.ids }}");
+  requireText("sweep listing id", listing, "id: list");
+  for (const value of [
+    "needs: frontend-mutation-packages",
+    "fail-fast: false",
+    "package: ${{ fromJSON(needs.frontend-mutation-packages.outputs.ids) }}",
+    "FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}",
+    "FRONTEND_MUTATION_INCREMENTAL_DIR: .frontend-mutation-incremental",
+    "uses: actions/checkout@v4\n        with:\n          fetch-depth: 0",
+    "run: pnpm mutation:frontend",
+    "name: frontend-mutation-${{ matrix.package }}",
+    "path: artifacts/mutation/frontend/${{ matrix.package }}/",
+    "name: frontend-mutation-baseline-${{ matrix.package }}",
+    "path: .frontend-mutation-incremental/${{ matrix.package }}.json",
+  ])
+    requireText(`sweep ${value}`, sweep, value);
   requireText("force full sweep", sweep, 'FRONTEND_MUTATION_FORCE: "1"');
   forbid("no sweep change base", sweep, /FRONTEND_MUTATION_CHANGED_SINCE/u);
-  forbid("no sweep restore", sweep, /uses: actions\/cache(?:\/restore)?@/u);
-  requireText("success-only save", sweep, "if: success()\n        uses: actions/cache/save@v4");
+  forbid("no sweep cache step", sweep, /uses:\s*["']?actions\/cache(?:\/(?:save|restore))?@/u);
+  forbid("no sweep cache dates step", sweep, /\bid:\s*dates\b/u);
   requireText(
-    "dated save key",
+    "success-only baseline artifact",
     sweep,
-    "key: frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-${{ github.run_id }}",
+    "if: success()\n        uses: actions/upload-artifact@v4",
   );
-  requireText("save directory", sweep, "path: .frontend-mutation-incremental");
-  contracts.push([
-    "save after mutation",
-    () =>
-      assert.ok(
-        sweep.indexOf("run: pnpm mutation:frontend") < sweep.indexOf("uses: actions/cache/save@v4"),
-      ),
-  ]);
   requireText("daily cron", texts.sweep, '- cron: "17 2 * * *"');
   for (const name of ["frontend-mutation-packages", "frontend-mutation"])
     requireText(
@@ -1168,7 +1111,7 @@ function ciWorkflowContracts(texts) {
       );
     },
   ]);
-  for (const name of ["frontend", "e2e", "rust", "frontend-mutation"]) {
+  for (const name of ["frontend", "e2e", "rust"]) {
     const body = testJobs.get(name);
     requireText(`${name} shared setup`, body, "uses: ./.github/actions/setup-ci");
     contracts.push([
@@ -2052,15 +1995,13 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
   // A row with a fifth element must turn at least that labelled contract red (other contracts may
   // legitimately fail too); the older rows only need some contract to fail.
   for (const [label, file, before, afterText = "", contract] of [
-    ["matrix package env", "test", "      FRONTEND_MUTATION_PACKAGE: ${{ matrix.package }}\n"],
-    ["fetch full history", "test", "          fetch-depth: 0"],
-    ["restore action", "test", "uses: actions/cache/restore@v4"],
     [
-      "dated prefixes",
+      "re-added per-push frontend-mutation job",
       "test",
-      "frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.yesterday }}-",
+      "  rust:\n",
+      "  frontend-mutation:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pnpm mutation:frontend\n\n  rust:\n",
+      "test has no frontend-mutation job",
     ],
-    ["forbid push save", "test", "uses: actions/cache/restore@v4", "uses: actions/cache/save@v4"],
     [
       "forbid push save of any other path",
       "test",
@@ -2078,9 +2019,11 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
     ["forced sweep", "sweep", '      FRONTEND_MUTATION_FORCE: "1"\n'],
     ["success-only publication", "sweep", "        if: success()\n"],
     [
-      "dated publication",
+      "re-added sweep cache save",
       "sweep",
-      "key: frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-${{ github.run_id }}",
+      "      - name: Run full frontend mutation sweep\n        run: pnpm mutation:frontend\n",
+      "      - name: Run full frontend mutation sweep\n        run: pnpm mutation:frontend\n      - name: Save\n        uses: actions/cache/save@v4\n",
+      "no sweep cache step",
     ],
     ["dist missing", "test", "        run: mkdir -p dist\n"],
     [
@@ -2089,12 +2032,6 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
       "        run: mkdir -p dist",
       "        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check\n      - name: Late distribution directory\n        run: mkdir -p dist",
     ],
-    [
-      "listing disconnected",
-      "test",
-      "package: ${{ fromJSON(needs.frontend-mutation-packages.outputs.ids) }}",
-    ],
-    ["change base removed", "test", "github.event.pull_request.base.sha", "''"],
     ...linuxDesktopDepsRows,
   ]) {
     await t.test(label, () => {

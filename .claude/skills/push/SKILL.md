@@ -67,10 +67,9 @@ changes, and all three flags for cross-layer contracts or changes to workflows, 
 toolchain inputs. A Markdown/planning-only push uses no flags. The mutation guard and contract lane
 run on every invocation; the runner also runs the fenced commands below as their lane contents.
 P2 first runs the light stage: contract, bundle and rust-lint concurrently. Every selected light
-lane must terminate before the heavy stage starts. Rust-test then rust-coverage run serially,
-followed by frontend coverage and e2e together. Mutation runs last unless the existing memory
-and CPU thresholds admit it alongside frontend coverage and e2e. Budget and e2e reservation rules
-are unchanged (d-20261105-03).
+lane must terminate green before `related-tests` starts (when `--rust`, `--frontend`, or
+`--bindings` is selected). Full Rust tests, both coverage ratchets, and e2e run in CI
+(`.github/workflows/test.yml`); frontend mutation runs daily in `.github/workflows/mutation.yml`.
 In both push and pre-review mode, the first failed step or lane blocks every further step, lane
 and lane command. Advisory warnings do not block starts. Selected gates that never started are
 reported as skipped with a reason naming the first red gate. Running commands finish under their
@@ -92,7 +91,7 @@ release frees the lock 15 minutes after the last push. In a clone without `core.
 gate sets `core.hooksPath .githooks` itself before taking the lock (agent-kit d-20261106-01).
 `pnpm gates:push` and `pnpm checks:pre-review` run through `agent-gate`. Read
 `.claude/rules/gate-tooling.md` "Scheduling and placement" before running a gate for admission,
-worker sizing, e2e reservation, exit 125 and nesting. The shared
+worker sizing, exit 125 and nesting. The shared
 [gate-performance reference](~/.claude/references/gate-performance.md) owns machine slots and caps.
 
 **Gate on the exit code, never on a line of output.** `pnpm lint:ci && echo green || echo red` reports the failure and still leaves the shell at exit 0, so a `&&`-chained commit behind it proceeds over a red gate. Check `$?` (or `${PIPESTATUS[0]}` behind a pipe, with `set -o pipefail`) and stop. *Measured 2026-08-29: a formatting failure was printed as `lint:ci RED` and the same command committed and pushed anyway, which took a second commit to repair.*
@@ -121,8 +120,6 @@ bash scripts/setup-rust.sh
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
 pnpm rust:windows:check
-pnpm gate:ensure backend-test
-pnpm gate:ensure backend-coverage
 ```
 
 `cargo clippy --all-targets` type-checks test targets as well. The 2026-09-30 probe inserted a
@@ -134,33 +131,33 @@ The canonical [gate-tooling contract](../../rules/gate-tooling.md#scheduling-and
 owns Rust admission and allocation policy, implemented by `rustBuildEnvironment` in
 `scripts/gate-parallelism.mjs`.
 
-`pnpm rust:windows:check` covers GNU-target type-checking and linting only. The MSVC target
-(`rust-platform`) and all Windows tests (`rust-windows-test`) remain CI-only. If the gate is red
-because a toolchain prerequisite is missing, run the setup commands it prints and rerun the gate.
+`pnpm rust:windows:check` covers GNU-target type-checking and linting only. Full Rust tests, the
+backend coverage ratchet, the MSVC target (`rust-platform`), and all Windows/macOS tests remain
+CI-only in `.github/workflows/test.yml`. If the gate is red because a toolchain prerequisite is
+missing, run the setup commands it prints and rerun the gate.
 
-`test:coverage:backend` needs the pinned `nightly-2025-06-01` toolchain with `llvm-tools-preview` and `cargo-llvm-cov` 0.8.7 (the versions `.github/workflows/test.yml` installs); `coverage:backend:check` reads the LCOV it writes, so the two run in that order. `spawn cargo ENOENT` from any of these means `~/.cargo/bin` is missing from that shell's `PATH`, not that the checkout is broken — prefix the call with `PATH="$HOME/.cargo/bin:$PATH"`.
+`spawn cargo ENOENT` from any of these means `~/.cargo/bin` is missing from that shell's `PATH`, not that the checkout is broken — prefix the call with `PATH="$HOME/.cargo/bin:$PATH"`.
 
 ### TypeScript/React frontend
 
-Affected by `src/**`, `public/**`, `index.html`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `vite.config.*`, `stryker.config.mjs`, `scripts/run-frontend-mutation.mjs`, `scripts/frontend-mutation-packages.mjs`, or i18n configuration/catalogs:
+Affected by `src/**`, `public/**`, `index.html`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `vite.config.*`, or i18n configuration/catalogs:
 
 ```bash
-pnpm gate:ensure frontend-coverage
-pnpm gate:ensure frontend-mutation
-pnpm gate:run frontend-build
+pnpm build-vite
 pnpm bundle:check
-pnpm gate:ensure e2e-container
 ```
 
 The runner always builds `dist/` in P1 before cargo and bundle consumers. Tauri's
 `frontendDist: "../dist"` is a compile input through `generate_context!`; measured 2026-09-29, an
-otherwise no-op cargo check re-checked the crate after `pnpm build-vite`. `gate:run` is required
-because the receipt fingerprints tracked files while `dist/` is ignored, so a receipt cannot prove
-that `dist/` came from this tree. The e2e container runs its own `vite build` into the mounted tree,
-so it starts after bundle and every selected cargo lane finishes. Rust-only and bindings-only runs
-also rebuild `dist/`, even when an ignored directory already exists.
+otherwise no-op cargo check re-checked the crate after `pnpm build-vite`. Rust-only and
+bindings-only runs also rebuild `dist/`, even when an ignored directory already exists. `bundle:check`
+reads `dist/.vite/manifest.json` written by `build-vite`. Full frontend coverage (`test:coverage` and
+`coverage:frontend:check`) and `test:e2e:container` run in CI (`.github/workflows/test.yml`).
 
-The order is not cosmetic: `coverage:frontend:check` reads `coverage/lcov.info` written by `test:coverage`, and `bundle:check` reads `dist/.vite/manifest.json` written by `build-vite`. `pnpm test` alone is not sufficient — it produces no LCOV, so the coverage ratchet then measures a stale or absent file.
+No command that can rewrite a tracked file — `pnpm bindings:generate`, a stale `pnpm bindings:check`,
+`pnpm i18n:extract`, `pnpm format`, `pnpm lint:fix` — runs concurrently with any gate, in this
+session, a parallel script, or a review lens working in the checkout (`f-20260906-06`). Each gate
+transcript lands in `artifacts/gates/<run>/`, with the newest 100 runs retained.
 
 As a contract-gate member, `ui:boundary:check` scans the whole tree, reading files from disk, so it sees committed and uncommitted content alike. It was diff-scoped for two of its rules until 2026-08-29, which made those two vacuous on any clean checkout — including every CI run.
 
@@ -170,50 +167,6 @@ For visible UI changes, run the repo-local `$verify-ui` workflow during the brow
 stage, after review repairs and before known coordination-record commits and final gates (it owns
 `pnpm test:e2e:container` and the live Tauri-window check). Retain screenshots of every affected
 flow. Missing screenshots are not evidence that layout is correct.
-
-### Gate receipts
-
-The seven expensive gates are registered in `scripts/gate-receipt.mjs`. Use `ensure` for normal gate
-runs, `run` when fresh evidence is required, and `check` only to query the cache:
-
-```bash
-pnpm gate:ensure backend-test
-pnpm gate:ensure backend-coverage
-pnpm gate:ensure frontend-coverage
-pnpm gate:ensure frontend-mutation
-pnpm gate:ensure frontend-build
-pnpm gate:ensure e2e-container
-pnpm gate:ensure tauri-build
-pnpm gate:run frontend-build
-pnpm gate:check frontend-build
-```
-
-`gate:check` only reads the cache and starts no scope; how `gate:ensure` and `gate:run` are placed is in `.claude/rules/gate-tooling.md`.
-
-Receipts are reusable only for a clean tree with the same command, platform, toolchain, and
-an unexpired timestamp. Receipts except `frontend-coverage` ignore `tasks/**` in the tree key.
-Frontend coverage keeps the exact tree because its Vitest suite parses the real `tasks/findings.md`. A miss runs the gate under `ensure`; `check` never starts one. Gate failures
-propagate their own exit codes, and a tree change during a run refuses the receipt.
-
-That refusal keys on tracked-file size and mtime, not only bytes, so **receipt-backed gates may run
-concurrently**: the 2026-09-29 parallel run recorded receipts for all passing gates with no tree
-change refusal. The tracked-file-rewriter prohibition remains: no command that can rewrite a
-tracked file — `pnpm bindings:generate`, a stale `pnpm bindings:check`, `pnpm i18n:extract`,
-`pnpm format`, `pnpm lint:fix` — runs concurrently with any of them, in this session, a parallel
-script, or a review lens working in the checkout (`f-20260906-06`).
-
-Each gate transcript lands in `artifacts/gates/<run>/receipt-<gate>.log`, with the newest 100
-runs retained and the scheduler's run directory shared when run as a lane.
-A failed gate's last own output line names its transcript; through `pnpm gate:*`, only pnpm's
-one `ELIFECYCLE` line follows.
-
-`bindings:check` stays in P1 after the `dist/` build and before receipt-backed lanes because it
-compiles against `dist/` and conditionally rewrites `src/bindings/generated.ts` when stale. The
-contract lane's `lint:ci` runs `i18next-cli extract --ci`, which is also a conditional rewriter.
-Measured on a clean tree on 2026-09-30, it exited 0 without changing the size or mtime of any
-tracked translation file; a stale tree makes it write and then fail, so any concurrent receipt
-gate refuses the changed tree and the overall run remains red. The contract gate is also the
-runner's `contract` lane, followed by the required local kit-parity check.
 
 ### Cross-layer contracts
 
@@ -257,16 +210,22 @@ including the `_atomic_write` failure reporting of f-20260829-14, is tested in a
 Changes to workflows also run every gate whose toolchain they can affect. Changes to `package.json`,
 `pnpm-lock.yaml`, `src-tauri/Cargo.toml`, or `src-tauri/Cargo.lock` do the same.
 - `pnpm verify:app` is not a push gate: it drives the real Tauri window through `tauri-driver` under an off-screen compositor, so it needs a release build and a compositor that CI does not have. Run it by hand when a diff changes lifecycle, IPC or process teardown — it is the only check in this repository that observes the actual product. `d-20260830-18` and `.claude/skills/verify-ui/SKILL.md` carry the contract and the limits.
-- The frontend mutation suite is a receipt-backed frontend push gate: run it through `pnpm gate:ensure frontend-mutation`, which reuses each package's last successful daily sweep and falls back to a full package run (see `gate-tooling.md`). CI runs it per package with a change skip and bounded incremental reuse, and `.github/workflows/mutation.yml` runs the full sweep daily. Ordinary sizing charges each Stryker runner 2432 MiB (`STRYKER_RUNNER_BYTES`, re-measured 2026-10-31 for f-20261022-05; the measurement is recorded on the constant). In the laptop's 11596410880-byte `agent-gate` scope that schedules all four packages as three slots of one runner each and one changed package as one slot of three runners; both completed on 2026-10-31 with no OOM event or swap use. Historical: on 2026-10-02 the suite took 346.9 s as the last lane of an all-blocks `pnpm gates:push` with 21 runners per package under the former 1.2 GiB charge (`tasks/handoffs/2026-10-02-agent-gate-convergence-review.md`). The backend suite remains only in `.github/workflows/mutation.yml` (dispatchable, weekly, one job per package) because the eight packages take about an hour. **Never start `pnpm mutation:backend` as part of a push:** its eight-package schedule stays outside push gates. It runs `cargo-mutants --in-place` only in a verified external snapshot, uses `mutants.out/backend/cargo-target` instead of the live target, and requires Linux Python 3 descendant containment. The durable fence and first guard remain for incomplete cleanup and legacy interrupted live mutations (`f-20260829-09`).
+- The frontend mutation suite is not a push gate (neither locally nor in `.github/workflows/test.yml`). `.github/workflows/mutation.yml` runs the forced full frontend sweep daily (02:17 UTC) and publishes per-package baseline artifacts for manual `pnpm mutation:frontend` runs, which reuse today's or yesterday's UTC sweep unless `--full` is passed (see `gate-tooling.md`). Ordinary sizing charges each Stryker runner 2432 MiB (`STRYKER_RUNNER_BYTES`, re-measured 2026-10-31 for f-20261022-05; the measurement is recorded on the constant). The backend suite remains only in `.github/workflows/mutation.yml` (dispatchable, weekly, one job per package) because the eight packages take about an hour. **Never start `pnpm mutation:backend` as part of a push:** its eight-package schedule stays outside push gates. It runs `cargo-mutants --in-place` only in a verified external snapshot, uses `mutants.out/backend/cargo-target` instead of the live target, and requires Linux Python 3 descendant containment. The durable fence and first guard remain for incomplete cleanup and legacy interrupted live mutations (`f-20260829-09`).
 - Exercise changed shell/workflow mechanics against their refusal/error case where locally possible.
 - `$push` never tags, publishes a GitHub release, signs bundles, or deploys. Those require their own explicit workflow.
 
 ## Related tests
 
-For build phase proofs (agent-kit build skill), append tests for the phase's changed and created paths:
+In push mode (`pnpm gates:push` with `--rust`, `--frontend`, or `--bindings`), the `related-tests`
+lane runs automatically after every selected light lane terminates green. It inspects existing
+changed paths from `git merge-base HEAD @{u}..HEAD` plus dirty paths (deleted paths excluded; a
+missing upstream fails the lane). No scripts branch is needed because the `contract` lane already
+runs every `scripts/*-tests.mjs`.
 
-- `src/**` and other Vitest-covered TypeScript paths: `pnpm exec vitest related --run <paths>`.
-- `src-tauri/src/**/*.rs`: run per changed module with `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- <module path>::` (`src-tauri/src/a/b.rs` → `a::b`, `mod.rs` → its directory module, `main.rs` → no filter). The crate has only a binary target, so `--lib` does not apply. If `cargo` is missing, prefix with `PATH="$HOME/.cargo/bin:$PATH"`.
+For build phase proofs (agent-kit build skill) and the `related-tests` lane:
+
+- `src/**` and other Vitest-covered paths: `pnpm exec vitest related --run --passWithNoTests <paths>`.
+- `src-tauri/src/**/*.rs`: one `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- <module>:: ...` command with one filter per changed module (`src-tauri/src/a/b.rs` → `a::b::`, `mod.rs` → its directory module), under the shared Rust allocator. A changed `main.rs`, `Cargo.toml`, or `Cargo.lock` runs the whole `--bins` suite without filters. The crate has only a binary target, so `--lib` does not apply. If `cargo` is missing, prefix with `PATH="$HOME/.cargo/bin:$PATH"`.
 - `scripts/<name>.mjs`: run `node --test` on every matching `scripts/*-tests.mjs` file (`git grep -l <name> -- 'scripts/*-tests.mjs'`), plus changed `*-tests.mjs` files themselves.
 
 Verified forms (2026-11-02): Vitest related ran 4171 tests for `src/utils/annotation.ts`. The cargo filter `lexer::` ran 12 tests.
@@ -287,7 +246,7 @@ Windows clippy or bundle lane is selected, those lanes consume its `dist/` outpu
 uses the same Rust allocation as push. Signals and unconfirmed cleanup prevent queued starts. Commands in the selected lanes are:
 
 ```bash
-pnpm gate:run frontend-build
+pnpm build-vite
 pnpm exec oxfmt --check <changed-format-files>
 pnpm exec oxlint --deny-warnings <changed-js-ts-files>
 pnpm exec tsgo --noEmit

@@ -97,7 +97,7 @@ export const PARITY_FAMILIES = [
   },
   {
     name: "cargo-llvm-cov",
-    minimumSites: 2,
+    minimumSites: 1,
     declarations: [
       {
         globs: [".github/workflows/*.yml", ".github/workflows/*.yaml"],

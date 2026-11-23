@@ -3,7 +3,6 @@ import { readFile, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { globToRegExp, matches } from "./coverage-scope.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
-import { GATES } from "./gate-receipt.mjs";
 import { preReviewGateScheduleCommands, pushGateScheduleCommands } from "./run-push-gates.mjs";
 import { listWorkingTreeFiles } from "./working-tree-files.mjs";
 
@@ -21,8 +20,6 @@ const PUSH_LOCK_GATE = 'bash "$HOME/.claude/scripts/push-lock.sh" gate --';
 const GATE_RUNNER_SCRIPTS = Object.freeze({
   "gates:push": `${PUSH_LOCK_GATE} ${GATE_LAUNCHER} node scripts/run-push-gates.mjs`,
   "checks:pre-review": `${GATE_LAUNCHER} node scripts/run-push-gates.mjs --pre-review`,
-  "gate:ensure": `${GATE_LAUNCHER} node scripts/gate-receipt.mjs ensure`,
-  "gate:run": `${GATE_LAUNCHER} node scripts/gate-receipt.mjs run`,
 });
 // The kit-parity gate must run the RELEASED kit. `kit` on PATH resolves to
 // $HOME/.local/share/agent-kit/current/bin/kit, an immutable release worktree
@@ -33,7 +30,7 @@ const GATE_RUNNER_SCRIPTS = Object.freeze({
 const KIT_PARITY_SCRIPT = "findings:kit:check";
 const KIT_PARITY_COMMAND = "env -u KIT_ROOT kit sync --check .";
 const KIT_WORKBENCH_PATH = "Projekte/agent-kit";
-// CI membership is validated against executable scheduler routes.
+// CI membership stays enforced: heavy suites run only in CI, never locally on push.
 const CI_REQUIRED_SCRIPTS = new Set([
   "test:coverage",
   "coverage:frontend:check",
@@ -41,9 +38,20 @@ const CI_REQUIRED_SCRIPTS = new Set([
   "bindings:check",
   "bundle:check",
   "test:e2e:container",
-  "mutation:frontend",
   "test:coverage:backend",
   "coverage:backend:check",
+]);
+// Explicit closed set of CI-only commands accepted in test.yml without a local push-gate route.
+const CI_ONLY_SCRIPTS = new Set([
+  "test:coverage",
+  "coverage:frontend:check",
+  "test:e2e:container",
+  "test:coverage:backend",
+  "coverage:backend:check",
+]);
+const CI_ONLY_COMMANDS = new Set([
+  "cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
+  ...[...CI_ONLY_SCRIPTS].map((name) => `pnpm ${name}`),
 ]);
 
 const ALLOWED_CARGO_COMMANDS = new Set(["fmt", "check", "clippy", "test"]);
@@ -334,28 +342,11 @@ function reviewPathGlobPatterns(pushSkill) {
     );
 }
 
-function receiptReferences(command) {
-  return [
-    ...command.matchAll(
-      /(?:^|[;&|]\s*|\s)pnpm(?:\s+-{1,2}[\w-]+)*(?:\s+run)?\s+(gate:(?:ensure|run|check))\s+([\w.-]+)/gu,
-    ),
-  ].map((match) => ({ script: match[1], gate: match[2] }));
-}
-
 function routeCommands(commands, scripts, findings) {
   const routed = new Set();
   const pending = [];
   const enqueue = (command, source) => {
     pending.push(...pnpmReferences(command).map((name) => ({ name, source })));
-    for (const { gate } of receiptReferences(command)) {
-      if (!(gate in GATES)) {
-        findings.push(
-          `unknown receipt gate ${gate} in ${source}; register it in scripts/gate-receipt.mjs GATES or use a registered gate`,
-        );
-        continue;
-      }
-      pending.push(...pnpmReferences(GATES[gate]).map((name) => ({ name, source })));
-    }
   };
   for (const { command, source } of commands) enqueue(command, source);
 
@@ -614,7 +605,7 @@ export async function checkGateRouting(
 
   const directWorkflowScripts = new Set(steps.flatMap((step) => pnpmReferences(step.run)));
   for (const name of [...directWorkflowScripts].sort()) {
-    if (pushRouted.has(name)) continue;
+    if (pushRouted.has(name) || CI_ONLY_SCRIPTS.has(name)) continue;
     findings.push(`workflow-routed package script ${name} is absent from the push gate scheduler`);
   }
   for (const name of CI_REQUIRED_SCRIPTS) {
@@ -625,19 +616,12 @@ export async function checkGateRouting(
     }
   }
 
-  const gateLines = new Set([...directGateCommands, ...scheduledCommands]);
+  const gateLines = new Set([...directGateCommands, ...scheduledCommands, ...CI_ONLY_COMMANDS]);
   const routedPackageSegments = new Set(
     [...new Set([...routed, ...scheduledRouted])].flatMap((name) =>
       commandSegments(scripts[name] ?? ""),
     ),
   );
-  for (const command of gateLines) {
-    for (const { gate } of receiptReferences(command)) {
-      if (gate in GATES) {
-        for (const segment of commandSegments(GATES[gate])) routedPackageSegments.add(segment);
-      }
-    }
-  }
   for (const step of steps) {
     if (step.hasIf && invokesGate(step.run, repoRoot)) {
       findings.push(

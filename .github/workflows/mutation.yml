@@ -1,7 +1,7 @@
 # Mutation testing — daily full frontend sweeps and weekly backend checks.
 #
-# `test.yml` restores recent frontend sweep results but never publishes them.
-# Only successful forced sweeps here publish the dated incremental cache.
+# Successful forced frontend sweeps publish per-package incremental artifacts
+# for manual `pnpm mutation:frontend` reuse.
 #
 # The backend suite is different in kind. Measured on tuxedo-atlas 2026-08-29, the eight
 # packages take ~55 minutes together (`database-encoding` alone is 96 mutants in 10 minutes),
@@ -149,25 +149,12 @@ jobs:
       - name: Set up repository dependencies
         uses: ./.github/actions/setup-ci
 
-      - name: Compute UTC cache dates
-        id: dates
-        run: |
-          today=$(date -u +%Y%m%d)
-          echo "today=$today" >> "$GITHUB_OUTPUT"
-
       - name: Run full frontend mutation sweep
         run: pnpm mutation:frontend
 
-      - name: Save successful full mutation results
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: .frontend-mutation-incremental
-          key: frontend-mutation-full-${{ matrix.package }}-${{ steps.dates.outputs.today }}-${{ github.run_id }}
-
-      # The local push gate downloads these to retest only what changed. A failed sweep
-      # publishes nothing, so once results age out the local gate runs in full again.
-      - name: Publish successful full mutation results for the local gate
+      # Manual `pnpm mutation:frontend` runs download these to retest only what changed.
+      # A failed sweep publishes nothing, so once results age out manual runs execute in full again.
+      - name: Publish successful full mutation results for manual reuse
         if: success()
         uses: actions/upload-artifact@v4
         with:

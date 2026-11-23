@@ -12,18 +12,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import test from "node:test";
 import {
-  GATE_LOG_DIRECTORY_ENV,
   LOG_TAIL_BYTES,
   MAX_GATE_LOG_RUNS,
   createLogCapture,
   formatFailureTrailer,
   makeLogDirectory,
-  obtainLogDirectory,
   readLogTail,
-  transcriptFileName,
   writeLogChunk,
 } from "./gate-logs.mjs";
 
@@ -159,72 +156,6 @@ test(
   },
 );
 
-test("an inherited real direct child is reused, including a relative path", (t) => {
-  const { root, base } = fixture(t);
-  const inherited = join(base, "existing-run");
-  mkdirSync(inherited);
-  for (const value of [inherited, relative(root, inherited), `${inherited}/../existing-run/`]) {
-    const warnings = [];
-    assert.equal(
-      obtainLogDirectory(root, {
-        env: { [GATE_LOG_DIRECTORY_ENV]: value },
-        warn: (line) => warnings.push(line),
-      }),
-      inherited,
-    );
-    assert.deepEqual(warnings, []);
-    assert.deepEqual(readdirSync(base), ["existing-run"]);
-  }
-});
-
-test("invalid inherited directories warn once and are replaced by a fresh run", async (t) => {
-  for (const kind of ["outside", "missing", "symlink", "file", "nested", "base", "empty"]) {
-    await t.test(kind, (subtest) => {
-      const { root, base } = fixture(subtest);
-      const outside = join(root, "outside");
-      mkdirSync(outside);
-      const link = join(base, "link");
-      symlinkSync(outside, link, "dir");
-      const file = join(base, "file");
-      writeFileSync(file, "not a directory");
-      const nested = join(base, "parent", "nested");
-      mkdirSync(nested, { recursive: true });
-      const value = {
-        outside,
-        missing: join(base, "missing"),
-        symlink: link,
-        file,
-        nested,
-        base,
-        empty: "",
-      }[kind];
-      const warnings = [];
-      const directory = obtainLogDirectory(root, {
-        env: { [GATE_LOG_DIRECTORY_ENV]: value },
-        ...creationOptions,
-        warn: (line) => warnings.push(line),
-      });
-      assert.equal(directory, join(base, "20261007T123456789Z-123"));
-      assert.ok(lstatSync(directory).isDirectory());
-      assert.equal(warnings.length, 1);
-      assert.match(warnings[0], /Ignoring invalid GATE_LOG_DIRECTORY:/u);
-      assert.equal(warnings[0].split("\n").length, 1);
-    });
-  }
-});
-
-test("an absent inheritance key creates a run without a warning", (t) => {
-  const { root } = fixture(t);
-  const warnings = [];
-  const directory = obtainLogDirectory(root, {
-    env: {},
-    ...creationOptions,
-    warn: (line) => warnings.push(line),
-  });
-  assert.ok(lstatSync(directory).isDirectory());
-  assert.deepEqual(warnings, []);
-});
-
 test("a symlinked gate-log base cannot create or prune outside the repository", (t) => {
   const { root, base } = fixture(t);
   const outside = join(root, "outside");
@@ -233,11 +164,6 @@ test("a symlinked gate-log base cannot create or prune outside the repository", 
   symlinkSync(outside, base, "dir");
   assert.throws(() => makeLogDirectory(root, creationOptions), /not a real directory/u);
   assert.deepEqual(readdirSync(outside), []);
-});
-
-test("transcript names remain distinct from scheduler lane logs", () => {
-  assert.equal(transcriptFileName("frontend-build"), "receipt-frontend-build.log");
-  assert.equal(transcriptFileName("backend-test"), "receipt-backend-test.log");
 });
 
 test("the tail reader returns the last 8 KiB as UTF-8 and handles empty or missing logs", (t) => {

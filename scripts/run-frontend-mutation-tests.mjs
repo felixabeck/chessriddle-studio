@@ -25,11 +25,9 @@ import {
 } from "./mutation-runner-test-harness.mjs";
 import { fetchDailySweepResults, isRecentSweep } from "./frontend-mutation-baseline.mjs";
 import { currentIdentity, identityForPid } from "./process-identity.mjs";
-import {
-  canSkipFrontendMutation,
-  frontendMutationInputs,
-  recoveryIsSafe,
-} from "./run-frontend-mutation.mjs";
+import * as frontendMutationRunner from "./run-frontend-mutation.mjs";
+
+const { recoveryIsSafe } = frontendMutationRunner;
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const runner = join(projectRoot, "scripts", "run-frontend-mutation.mjs");
@@ -244,158 +242,32 @@ test("CI package selection runs exactly one complete package and rejects unknown
   assert.equal(existsSync(join(root, fence)), false);
 });
 
-const changeBase = "a".repeat(40);
-
-function fakeChangeGit(paths, failure = undefined) {
-  return (_command, args) => {
-    if (failure) return failure;
-    return {
-      status: 0,
-      stdout:
-        args[0] === "rev-parse" ? `${changeBase}\n` : paths.map((path) => `${path}\0`).join(""),
-    };
-  };
-}
-
-test("change skip uses the frontend superset and transitive runner/config imports", async () => {
-  const inputs = await frontendMutationInputs();
-  for (const path of [
-    "src/other.test.ts",
-    "public/asset.png",
-    "vite.config.ts",
-    "tsconfig.json",
-    "tsconfig.node.json",
-    "pnpm-lock.yaml",
-    "stryker.config.mjs",
-    "scripts/run-frontend-mutation.mjs",
-    "scripts/run-push-gates.mjs",
-    "scripts/child-supervisor.mjs",
-    "scripts/fsync-directory.mjs",
-    "scripts/gate-parallelism.mjs",
-    "scripts/process-identity.mjs",
-    "scripts/mutation-package-selection.mjs",
-    "scripts/parse-ts-source.mjs",
-    ".github/workflows/test.yml",
-    ".github/actions/setup-ci/action.yml",
-    ".github/actions/other/helper.sh",
-  ]) {
-    assert.equal(
-      await canSkipFrontendMutation(changeBase, {
-        runGit: fakeChangeGit([path]),
-        getInputs: () => inputs,
-      }),
-      false,
-      path,
-    );
-  }
-  for (const paths of [[], ["tasks/record.md", "src-tauri/src/main.rs"]]) {
-    assert.equal(
-      await canSkipFrontendMutation(changeBase, {
-        runGit: fakeChangeGit(paths),
-        getInputs: () => inputs,
-      }),
-      true,
-    );
-  }
-});
-
-test("change skip compares the base commit with HEAD in a real Git repository", async (t) => {
-  for (const [path, expectedSkip] of [
-    ["src/x.ts", false],
-    ["tasks/notes.md", true],
-    ["tsconfig.json", false],
-  ]) {
-    await t.test(path, async (t) => {
-      const root = await mkdtemp(join(tmpdir(), "frontend-mutation-git-"));
-      t.after(() => rm(root, { recursive: true, force: true }));
-      const git = (args) => {
-        const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
-        assert.equal(result.status, 0, result.stderr);
-        return result.stdout.trim();
-      };
-      git(["init", "--quiet"]);
-      git(["config", "user.name", "Mutation fixture"]);
-      git(["config", "user.email", "mutation-fixture@example.invalid"]);
-      await mkdir(dirname(join(root, path)), { recursive: true });
-      await writeFile(join(root, path), "base\n");
-      git(["add", "--", path]);
-      git(["commit", "--quiet", "-m", "base"]);
-      const base = git(["rev-parse", "HEAD"]);
-      await writeFile(join(root, path), "changed\n");
-      git(["add", "--", path]);
-      git(["commit", "--quiet", "-m", "change"]);
-
-      assert.equal(await canSkipFrontendMutation(base, { cwd: root }), expectedSkip);
-    });
-  }
-});
-
-test("change skip fails open on invalid bases, failed Git and uncertain input discovery", async () => {
-  for (const base of [undefined, "", "0".repeat(40), "garbage", "HEAD", "--help"]) {
-    assert.equal(
-      await canSkipFrontendMutation(base, {
-        runGit: () => {
-          throw new Error("must not query Git");
-        },
-      }),
-      false,
-    );
-  }
-  for (const failure of [
-    { status: 128, stderr: "unreachable" },
-    { status: null, error: new Error("git failed") },
-  ]) {
-    assert.equal(
-      await canSkipFrontendMutation(changeBase, { runGit: fakeChangeGit([], failure) }),
-      false,
-    );
-  }
-  for (const output of [{ status: 1 }, { status: 0, stdout: "unparseable" }]) {
-    assert.equal(
-      await canSkipFrontendMutation(changeBase, {
-        runGit: (command, args) => (args[0] === "diff" ? output : fakeChangeGit([])(command, args)),
-      }),
-      false,
-    );
-  }
-  assert.equal(
-    await canSkipFrontendMutation(changeBase, {
-      runGit: fakeChangeGit([]),
-      getInputs: () => {
-        throw new Error("unreadable module");
-      },
-    }),
-    false,
-  );
-});
-
-test("CLI change skip prints the base before touching an existing fence or sandbox", async (t) => {
+test("per-push changed-since skip code is removed and FRONTEND_MUTATION_CHANGED_SINCE does not skip", async (t) => {
+  assert.equal("canSkipFrontendMutation" in frontendMutationRunner, false);
+  assert.equal("frontendMutationInputs" in frontendMutationRunner, false);
   const { root, state } = await fixture(t);
+  const base = "a".repeat(40);
   const bin = join(root, "bin");
   await mkdir(bin);
   await writeShim(
     join(bin, "git"),
-    `#!/usr/bin/env node\nprocess.stdout.write(process.argv[2] === "rev-parse" ? ${JSON.stringify(`${changeBase}\n`)} : "tasks/record.md\\0");\n`,
+    `#!/usr/bin/env node\nprocess.stdout.write(process.argv[2] === "rev-parse" ? ${JSON.stringify(`${base}\n`)} : "tasks/record.md\\0");\n`,
   );
-  await seedFence(root, deadOwner());
-  await mkdir(join(root, ".stryker-tmp"));
-  await writeFile(join(root, ".stryker-tmp", "keep"), "keep");
   const result = run(
     root,
     environment({
       state,
-      FRONTEND_MUTATION_CHANGED_SINCE: changeBase,
+      mode: "record",
+      FRONTEND_MUTATION_CHANGED_SINCE: base,
       PATH: `${bin}:${process.env.PATH}`,
     }),
   );
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(
-    result.stdout,
-    `Frontend mutation skipped: no mutation inputs changed since ${changeBase}\n`,
+  assert.doesNotMatch(result.stdout, /Frontend mutation skipped/u);
+  assert.deepEqual(
+    (await readFile(join(state, "packages"), "utf8")).trim().split("\n").sort(),
+    [...packageNames].sort(),
   );
-  assert.equal(existsSync(join(root, fence)), true);
-  assert.equal(await readFile(join(root, ".stryker-tmp", "keep"), "utf8"), "keep");
-  assert.equal(existsSync(join(state, "packages")), false);
 });
 
 test("incremental files are per-package, force needs a directory and defaults clear inherited Stryker modes", async (t) => {

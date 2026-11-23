@@ -20,17 +20,16 @@ paths:
 `pnpm gates:push` and `pnpm checks:pre-review` are `agent-gate` commands (tuxedo-config's strict
 launcher, `d-20261002-01`).
 
-The push skill's §2 runs every final gate through one command,
+The push skill's §2 runs every final local gate through one command,
 `pnpm gates:push -- [--rust] [--frontend] [--bindings]` (`scripts/run-push-gates.mjs`; no flags is
 the contract-only run). For the selected blocks, it runs the mutation guard first (always), then
 the advisory `rust-target-eviction` step and `setup-rust` for Rust or bindings, then rebuilds
-`dist/` for every `dist/` consumer and runs `bindings:check` with `--bindings`. Contract and
-bundle run concurrently with rust-lint in the light stage. Every selected light lane must
-terminate before the heavy stage starts. Rust-test then rust-coverage run serially, followed by
-frontend coverage and e2e together. E2e waits for bundle and every Rust lane because its container
-build rewrites `dist/`, a Rust compile input. After Rust, frontend coverage shares memory only
-with concurrent mutation. Mutation runs last unless the existing budget and CPU thresholds allow
-one frontend wave (d-20261105-03).
+`dist/` (`pnpm build-vite`) for every `dist/` consumer and runs `bindings:check` with `--bindings`.
+Contract and bundle run concurrently with rust-lint in the light stage. Every selected light lane
+must terminate green before `related-tests` starts (when `--rust`, `--frontend`, or `--bindings` is
+selected), preserving fail-fast ordering and exclusive Rust admission. Full Rust tests, both
+coverage ratchets, and e2e run in CI (`.github/workflows/test.yml`); frontend mutation runs daily
+in `.github/workflows/mutation.yml`.
 
 In both push and pre-review mode, the first failed step or lane blocks every further step, lane
 and lane command. Advisory warnings do not latch. Every selected gate that never started is
@@ -46,16 +45,14 @@ slot admission and scope caps. `agent-gate` takes one shared slot and runs the w
 own `agents.slice/agent-gate-*.scope`. It fails closed: exit 125 (`agent-gate: REFUSED — …`) means nothing started and a
 retry is safe; a missing launcher fails the gate with no in-place fallback. Never wrap a gate
 command in another `flock` on `heavy-gate.lock`: it deadlocks against the launcher's own lock.
-A nested `agent-gate` is safe and runs in place. `gate:ensure` and `gate:run` enter the gate scope
-themselves through `agent-gate` (in place when already inside one), so a standalone receipt run
-is placed and locked like the scheduler; `gate:check` only reads the cache and starts no scope.
+A nested `agent-gate` is safe and runs in place.
 `scripts/gate-parallelism.mjs` sizes
 workers from that scope's complete cgroup chain, including the `agents.slice` budget. Frontend
 consumers retain the conservative 8 GiB scope / 7 GiB usable fallback if an ancestor limit cannot
 be read or no finite limit exists.
 
-The shared Rust allocator applies before the P1 bindings exporter, each admitted Rust lane and
-pre-review Windows compilation. Cold calibration covers bindings, native clippy/test, Windows GNU
+The shared Rust allocator applies before the P1 bindings exporter, each admitted Rust lane (including
+`related-tests` when Rust files changed) and pre-review Windows compilation. Cold calibration covers bindings, native clippy/test, Windows GNU
 clippy and nightly coverage. It allocates 8 GiB per compiler job plus 1 GiB Rust overhead, beside
 the existing 1 GiB generic reserve. The largest measured process was native test at 6704693248
 bytes, about 6.24 GiB. Known budgets below 9 GiB usable refuse before compilation. Unavailable
@@ -69,28 +66,22 @@ insufficient-budget refusal, without omitting proof. Replace the exclusive admis
 costs only after comparable cold measurements support the replacement with identical proof and
 containment, and delete this operative prose with the replaced mechanism.
 
-The e2e container runs with a 5 GiB limit reserved from frontend coverage and from frontend
-mutation only when mutation shares its concurrent schedule. It was sized 2026-11-22 at 1.2x the
-measured anon + kernel peak, capped at 5 GiB so the 7 GiB fallback keeps frontend coverage
-runnable (f-20261122-01, d-20261122-05). The schedule and its constants are
+The e2e container (`pnpm test:e2e:container`, CI-only for pushes and manual for `$verify-ui`) runs
+with a 5 GiB limit (`E2E_CONTAINER_MEMORY_BYTES`), sized 2026-11-22 at 1.2x the measured anon +
+kernel peak (f-20261122-01, d-20261122-05). The placement and reserve constants are
 `d-20260930-03`, `d-20261002-01` (placement), and `d-20261002-03` (reserve). This Rust admission
 replaces only the concurrent Rust and Rust-related frontend-share clauses of `d-20260930-04`.
 
 ## Mutation gate routing
 
-Decision ids: `d-20261101-06`, and `d-20261108-20` for the local gate. The local push gate
-(receipt-backed) runs `pnpm mutation:frontend`, which outside CI reuses results (`--full` opts out): each package reuses the results
-of its last successful daily sweep from today or yesterday (UTC), and Stryker retests only mutants
-whose source or covering tests changed. Missing, old or unreadable results run that package in
-full. No push therefore runs a complete proof unless it falls back. A change that only moves a score through a
-non-mutated dependency surfaces at the next daily sweep, and a failing sweep publishes nothing, so
-the local gate returns to full runs once results age out. Per-push CI (`test.yml` job `frontend-mutation`) runs one package per matrix job via
-`FRONTEND_MUTATION_PACKAGE`, skips when no path in the frontend mutation input superset changed
-since `FRONTEND_MUTATION_CHANGED_SINCE` (any doubt runs), and reuses Stryker incremental results
-only from a forced full sweep of today or yesterday (restore-only cache). `mutation.yml` runs that
-forced frontend sweep daily (02:17 UTC) and alone publishes the dated cache. The backend suite
-stays there weekly, with the eight packages as a matrix over `BACKEND_MUTATION_PACKAGE`.
-`gate-receipt.mjs` strips `FRONTEND_MUTATION_*` from gate children.
+Frontend mutation is not a push gate (neither locally nor in `.github/workflows/test.yml`).
+`.github/workflows/mutation.yml` runs the forced full frontend sweep daily (02:17 UTC) and
+publishes per-package baseline artifacts. Manual `pnpm mutation:frontend` runs outside CI reuse
+each package's last successful daily sweep from today or yesterday (UTC) unless `--full` is passed,
+so Stryker retests only mutants whose source or covering tests changed; missing, old, or unreadable
+results run that package in full, and a failing sweep publishes nothing. The backend suite stays in
+`.github/workflows/mutation.yml` weekly, with the eight packages as a matrix over
+`BACKEND_MUTATION_PACKAGE`.
 
 ## Backend mutation snapshot and recovery
 

@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -13,7 +13,6 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   installMultiChildSignalForwarding,
   signalExitCode,
@@ -26,8 +25,6 @@ import { fetchDailySweepResults } from "./frontend-mutation-baseline.mjs";
 import { mutationPackages } from "./frontend-mutation-packages.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
 import { selectMutationPackages } from "./mutation-package-selection.mjs";
-import { FRONTEND_INPUTS } from "./run-push-gates.mjs";
-import { matches } from "./coverage-scope.mjs";
 import {
   currentIdentity,
   identityForPid,
@@ -44,74 +41,6 @@ const logTailBytes = 8 * 1024;
 const packageRecords = Object.freeze(
   Object.entries(mutationPackages).map(([id, files]) => Object.freeze({ id, files })),
 );
-/** Include the runner/config's complete repository module closure in the CI skip scope. */
-export async function frontendMutationInputs() {
-  const { parseTsSource } = await import("./parse-ts-source.mjs");
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const inputs = new Set([...FRONTEND_INPUTS, ".github/workflows/test.yml", ".github/actions/**"]);
-  const pending = ["scripts/run-frontend-mutation.mjs", "stryker.config.mjs"];
-  const visited = new Set();
-  while (pending.length) {
-    const path = pending.pop();
-    if (visited.has(path)) continue;
-    visited.add(path);
-    inputs.add(path);
-    const ast = parseTsSource(readFileSync(resolve(root, path), "utf8"), path);
-    const visit = (node) => {
-      if (!node || typeof node !== "object") return;
-      let specifier;
-      if (
-        ["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration"].includes(node.type)
-      ) {
-        specifier = node.source?.value;
-      } else if (node.type === "CallExpression" && node.callee?.type === "Import") {
-        specifier = node.arguments[0]?.value;
-        if (typeof specifier !== "string") throw new Error("Unresolved dynamic import");
-      }
-      if (specifier?.startsWith(".")) {
-        const dependency = relative(root, resolve(root, dirname(path), specifier))
-          .split(sep)
-          .join("/");
-        if (dependency.startsWith("scripts/")) pending.push(dependency);
-        else throw new Error(`Import outside scripts: ${specifier}`);
-      }
-      for (const value of Object.values(node)) {
-        if (Array.isArray(value)) value.forEach(visit);
-        else if (value && typeof value === "object") visit(value);
-      }
-    };
-    visit(ast);
-  }
-  return [...inputs];
-}
-
-/** Uncertain bases, Git failures and incomplete input discovery always retain the run. */
-export async function canSkipFrontendMutation(
-  base,
-  { cwd = process.cwd(), runGit = spawnSync, getInputs = frontendMutationInputs } = {},
-) {
-  if (!base || !/^(?:[a-f\d]{40}|[a-f\d]{64})$/iu.test(base) || /^0+$/u.test(base)) return false;
-  try {
-    const options = { cwd, encoding: "utf8" };
-    const commit = runGit("git", ["rev-parse", "--verify", `${base}^{commit}`], options);
-    if (
-      commit.error ||
-      commit.status !== 0 ||
-      commit.stdout.trim().toLowerCase() !== base.toLowerCase()
-    )
-      return false;
-    const diff = runGit("git", ["diff", "--name-only", "-z", base, "HEAD"], options);
-    if (diff.error || diff.status !== 0 || typeof diff.stdout !== "string") return false;
-    if (diff.stdout && !diff.stdout.endsWith("\0")) return false;
-    const inputs = await getInputs();
-    return !diff.stdout
-      .split("\0")
-      .filter(Boolean)
-      .some((path) => matches(path, inputs));
-  } catch {
-    return false;
-  }
-}
 
 function incrementalDirectory(directory) {
   if (!directory) return undefined;
@@ -462,11 +391,6 @@ export async function runFrontendMutation(spawnChild = spawn, { resultsDirectory
   const incrementalDir = incrementalDirectory(
     resultsDirectory ?? process.env.FRONTEND_MUTATION_INCREMENTAL_DIR,
   );
-  const base = process.env.FRONTEND_MUTATION_CHANGED_SINCE;
-  if (await canSkipFrontendMutation(base)) {
-    console.log(`Frontend mutation skipped: no mutation inputs changed since ${base}`);
-    return 0;
-  }
   const runnerIdentity = currentIdentity();
   if (!acquireFence(runnerIdentity)) return 1;
 
@@ -638,7 +562,7 @@ async function main() {
     console.log(JSON.stringify(Object.keys(mutationPackages)));
     return 0;
   }
-  // CI brings its own bounded cache, and an explicit directory or --full names its own proof.
+  // CI, an explicit incremental directory, or --full runs directly without downloading a daily sweep.
   if (
     process.env.CI ||
     process.env.FRONTEND_MUTATION_INCREMENTAL_DIR ||

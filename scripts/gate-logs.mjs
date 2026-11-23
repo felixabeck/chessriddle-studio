@@ -1,9 +1,6 @@
 /**
- * Shared gate-log layout and diagnostics. GATE_LOG_DIRECTORY_ENV names the inheritance key;
- * makeLogDirectory(repoRoot, { now, pid, warn }) creates and prunes a run, while
- * obtainLogDirectory(repoRoot, { env, ...creationOptions }) accepts a validated inherited run
- * or creates one. Relative inherited paths resolve against repoRoot. transcriptFileName(gate)
- * separates receipts from lane logs; writeLogChunk(fd, value, write) completes each write;
+ * Shared gate-log layout and diagnostics. makeLogDirectory(repoRoot, { now, pid, warn }) creates
+ * and prunes a run; writeLogChunk(fd, value, write) completes each write;
  * createLogCapture(fd, write) drains chunks while retaining its first error. readLogTail(path)
  * returns at most LOG_TAIL_BYTES as UTF-8 or a one-line read error;
  * formatFailureTrailer(message, path, kind = "log") formats one line.
@@ -21,9 +18,8 @@ import {
   rmSync,
   writeSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
-export const GATE_LOG_DIRECTORY_ENV = "GATE_LOG_DIRECTORY";
 // Failed command output is bounded so one noisy gate cannot flood the summary.
 export const LOG_TAIL_BYTES = 8 * 1024;
 // About two days at ~48 runs/day (measured 2026-10-06), <= ~140 MB at the 1.37 MB maximum.
@@ -87,33 +83,6 @@ export function makeLogDirectory(
   mkdirSync(directory, { recursive: false });
   pruneRuns(base, directory, warn);
   return directory;
-}
-
-export function obtainLogDirectory(repoRoot, { env = process.env, ...creationOptions } = {}) {
-  const inherited = env[GATE_LOG_DIRECTORY_ENV];
-  if (inherited !== undefined) {
-    try {
-      const directory = resolve(repoRoot, inherited);
-      const base = logBase(repoRoot);
-      if (
-        dirname(directory) === base &&
-        lstatSync(directory).isDirectory() &&
-        realpathSync(directory) === directory
-      ) {
-        return directory;
-      }
-    } catch {
-      // Invalid or unavailable inherited directories are replaced by a fresh run.
-    }
-    (creationOptions.warn ?? stderrWarning)(
-      `Ignoring invalid ${GATE_LOG_DIRECTORY_ENV}: ${oneLine(inherited)}`,
-    );
-  }
-  return makeLogDirectory(repoRoot, creationOptions);
-}
-
-export function transcriptFileName(gate) {
-  return `receipt-${gate}.log`;
 }
 
 export function writeLogChunk(fd, value, write = writeSync) {
