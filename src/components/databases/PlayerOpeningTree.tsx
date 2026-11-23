@@ -524,7 +524,7 @@ function OpeningTree({
                   ))}
                 </Alert>
               )}
-              <div className={classes.body}>
+              <div className={classes.body} data-opening-body>
                 <div className={classes.board} data-opening-board data-fen={line.fen}>
                   <Chessground
                     fen={line.fen}

@@ -4238,7 +4238,7 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
     );
     await waitForFontsSettled(page);
     // The board beside both move tables, as the card lays out the two sections.
-    await expect(tree.locator("[data-opening-board]").locator("..")).toHaveScreenshot(
+    await expect(tree.locator("[data-opening-body]")).toHaveScreenshot(
         "opponent-card-sections.png",
     );
     await tree.getByRole("button", { name: "Prepare on board", exact: true }).click();
