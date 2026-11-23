@@ -90,12 +90,18 @@ another checkout gates or finishes its release (agent-kit d-20261107-01). Immedi
 code push and its single post-push records follow-up push (or right after the code push when no
 records follow), release the lock with `bash ~/.claude/scripts/push-lock.sh release || true`; a
 forgotten release frees the lock 15 minutes after the last push. The §4 required-CI wait runs
-unlocked (never call `push-lock.sh hold` during the wait). In a clone without `core.hooksPath`, the
+unlocked (never call `push-lock.sh hold` during the wait); see the ChessRiddle Studio overrides
+at the end of §4. In a clone without `core.hooksPath`, the
 gate sets `core.hooksPath .githooks` itself before taking the lock (agent-kit d-20261106-01).
 `pnpm gates:push` and `pnpm checks:pre-review` run through `agent-gate`. Read
 `.claude/rules/gate-tooling.md` "Scheduling and placement" before running a gate for admission,
 worker sizing, exit 125 and nesting. The shared
 [gate-performance reference](~/.claude/references/gate-performance.md) owns machine slots and caps.
+
+No command that can rewrite a tracked file — `pnpm bindings:generate`, a stale `pnpm bindings:check`,
+`pnpm i18n:extract`, `pnpm format`, `pnpm lint:fix` — runs concurrently with any gate, in this
+session, a parallel script, or a review lens working in the checkout (`f-20260906-06`). Each gate
+transcript lands in `artifacts/gates/<run>/`, with the newest 100 runs retained.
 
 **Gate on the exit code, never on a line of output.** `pnpm lint:ci && echo green || echo red` reports the failure and still leaves the shell at exit 0, so a `&&`-chained commit behind it proceeds over a red gate. Check `$?` (or `${PIPESTATUS[0]}` behind a pipe, with `set -o pipefail`) and stop. *Measured 2026-08-29: a formatting failure was printed as `lint:ci RED` and the same command committed and pushed anyway, which took a second commit to repair.*
 
@@ -156,11 +162,6 @@ otherwise no-op cargo check re-checked the crate after `pnpm build-vite`. Rust-o
 bindings-only runs also rebuild `dist/`, even when an ignored directory already exists. `bundle:check`
 reads `dist/.vite/manifest.json` written by `build-vite`. Full frontend coverage (`test:coverage` and
 `coverage:frontend:check`) and `test:e2e:container` run in CI (`.github/workflows/test.yml`).
-
-No command that can rewrite a tracked file — `pnpm bindings:generate`, a stale `pnpm bindings:check`,
-`pnpm i18n:extract`, `pnpm format`, `pnpm lint:fix` — runs concurrently with any gate, in this
-session, a parallel script, or a review lens working in the checkout (`f-20260906-06`). Each gate
-transcript lands in `artifacts/gates/<run>/`, with the newest 100 runs retained.
 
 As a contract-gate member, `ui:boundary:check` scans the whole tree, reading files from disk, so it sees committed and uncommitted content alike. It was diff-scoped for two of its rules until 2026-08-29, which made those two vacuous on any clean checkout — including every CI run.
 
@@ -225,11 +226,12 @@ changed paths from `git merge-base HEAD @{u}..HEAD` plus dirty paths (deleted pa
 missing upstream fails the lane). No scripts branch is needed because the `contract` lane already
 runs every `scripts/*-tests.mjs`.
 
-For build phase proofs (agent-kit build skill) and the `related-tests` lane:
+The lane and build phase proofs (agent-kit build skill) use the same two commands:
 
-- `src/**` and other Vitest-covered paths: `pnpm exec vitest related --run --passWithNoTests <paths>`.
-- `src-tauri/src/**/*.rs`: one `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- <module>:: ...` command with one filter per changed module (`src-tauri/src/a/b.rs` → `a::b::`, `mod.rs` → its directory module), under the shared Rust allocator. A changed `main.rs`, `Cargo.toml`, or `Cargo.lock` runs the whole `--bins` suite without filters. The crate has only a binary target, so `--lib` does not apply. If `cargo` is missing, prefix with `PATH="$HOME/.cargo/bin:$PATH"`.
-- `scripts/<name>.mjs`: run `node --test` on every matching `scripts/*-tests.mjs` file (`git grep -l <name> -- 'scripts/*-tests.mjs'`), plus changed `*-tests.mjs` files themselves.
+- `src/**` and `scripts/**/*.mjs` other than `*-tests.mjs`: `pnpm exec vitest related --run --passWithNoTests <paths>`.
+- `src-tauri/src/**/*.rs`: one `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- <module>:: ...` command with one filter per changed module (`src-tauri/src/a/b.rs` → `a::b::`, `mod.rs` → its directory module), under the shared Rust allocator. A changed `src-tauri/src/main.rs`, `src-tauri/src/lib.rs`, `src-tauri/build.rs`, `Cargo.toml` or `Cargo.lock` runs the whole `--bins` suite without filters. The crate has only a binary target, so `--lib` does not apply. If `cargo` is missing, prefix with `PATH="$HOME/.cargo/bin:$PATH"`.
+
+Build phase proofs additionally run, for a changed `scripts/<name>.mjs`, `node --test` on every matching `scripts/*-tests.mjs` file (`git grep -l <name> -- 'scripts/*-tests.mjs'`) plus changed `*-tests.mjs` files themselves; at push the contract lane covers these.
 
 Verified forms (2026-11-02): Vitest related ran 4171 tests for `src/utils/annotation.ts`. The cargo filter `lexer::` ran 12 tests.
 
@@ -366,11 +368,12 @@ pnpm ci:remote:check
   the oldest of them (`headSha` = first red SHA). Attribution is undetermined when an older `Test`
   run between the newest red and the last success for `J` is not completed yet, no success for
   `J` exists in the 30-run window, or a needed `gh` query fails.
-  Under policy §8, a finding owns a red job when it cites **any run id of that job's streak** (not
-  only the newest). An open repair finding whose `* **Repair owner:** <session id> on <host>, <ISO time>`
-  line is younger than 120 minutes is actively owned by that session; other sessions and drains
-  neither pin nor repair it (they wait). When that line is 120 minutes or older, or absent, any
-  session or drain may repair it.
+  ChessRiddle Studio rule (an override of policy §8's single-run ownership, listed at the end of
+  §4): a finding owns a red job when it cites **any run id of that job's streak** (not only the
+  newest). An open repair finding whose `* **Repair owner:** <session id> on <host>, <ISO time>`
+  line is younger than 120 minutes is actively owned by that session; other sessions neither pin
+  nor repair it (they wait). When that line is 120 minutes or older, or absent, any session may
+  repair it. Drains still follow policy §8 until agent-kit adopts the streak rule.
   Exit 1 refuses the push unless this push's commits repair the finding that owns every listed red
   job (for non-push `Mutation` sweeps, policy §8 clears a red once the finding citing that same run
   id in `**CI run:** <id>` is handled). If any listed red job has no owning finding, file it first
@@ -390,9 +393,7 @@ pnpm ci:remote:check
 - Build tier only: write and commit the single post-push records-only `tasks/build-ledger.md` run
   row (push SHA, gate timings, review counts; CI and install cells say `"CI pending at record time"`)
   and push it under the same held lock (`.githooks/pre-push` renews).
-- Immediately after the code push and its single post-push records follow-up push (or right after
-  the code push when no records follow), release the cross-repository push lock:
-  `bash ~/.claude/scripts/push-lock.sh release || true`.
+- Release the push lock as §2 states (right after the code push and its records follow-up push).
 - Wait **unlocked** on **every `Test` job** of the pushed HEAD (`<new>`, which is the records SHA
   when the build-ledger row was pushed; its `Test` run tests the code commit too) and gate on each
   job's `conclusion`, never on the run having started (the Windows/macOS jobs take about five to
@@ -405,7 +406,7 @@ pnpm ci:remote:check
   still `queued`: if the run has not completed 120 minutes after the push, cancel it, rerun it once,
   and if that attempt also misses 120 minutes, stop the wait and report the push as landed with CI
   unconfirmed, naming the stuck jobs.
-- If **green** (every `Test` job of `<new>` concludes `success`), run the installer only from a
+- If **green** (every `Test` job of `<new>` concludes `success`) and the push went to `master`, run the installer only from a
   checkout whose `HEAD` equals the verified pushed SHA, normally the pushing worktree. Check that
   equality immediately before invoking the installer. A main checkout on `master` is eligible only
   when its `HEAD` equals that same SHA. The installer performs a Tauri release build followed by an
@@ -420,8 +421,9 @@ agent-gate bash scripts/install-local.sh
   on 2026-11-16 (f-20261116-03). Exit 125 means `agent-gate` refused before anything started. This
   is how a pushed change reaches the application-menu entry Felix uses; nothing else updates it,
   and it is not a release or deployment. Report the installed short commit from
-  `~/.local/opt/chessriddle-studio/current/VERSION`, then release `build-run-lock` and remove any
-  owned worktree (`kit worktree remove`). If the build fails, the push stands and the failure is
+  `~/.local/opt/chessriddle-studio/current/VERSION`. In a `build` run, only then release its run
+  lock (`bash ~/.claude/scripts/build-run-lock.sh release`) and remove the worktree it owns
+  (`kit worktree remove <path>`). If the build fails, the push stands and the failure is
   reported as its own blocker — the previous installed copy keeps running.
 - If **red**, read the failing tests from `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`
   (because `gh run view --log-failed` returned nothing for these runs on 2026-09-19) and run
@@ -446,6 +448,13 @@ agent-gate bash scripts/install-local.sh
 - Report commits, destination, gate results, review findings/verdicts, CI/install outcome, and that
   no release/deployment occurred.
 - On any persistent red gate, follow the shared policy: do not push and report the exact blocker.
+
+ChessRiddle Studio overrides to shared policy §4a item 6 and §8 (2026-11-23, d-20261123-05): the
+push lock is released right after the code push and its records follow-up push, and the post-push
+required-CI wait runs unlocked, so no `push-lock.sh hold` before a wait call. A red job is owned by
+a finding citing any run id of its streak, and a `Repair owner` line younger than 120 minutes
+reserves the repair (see the `ci:remote:check` paragraph above). agent-kit's shared policy has not
+adopted either rule yet; this skill takes precedence for ChessRiddle Studio pushes.
 
 ChessRiddle Studio override to shared policy §7: this workflow never performs a force push. A message containing `force push` requires a separate stop for the exact refspec and force-with-lease decision; it is not treated as an automatic gate-skip-and-push marker here.
 
