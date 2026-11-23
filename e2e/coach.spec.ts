@@ -71,11 +71,14 @@ test("ask the Coach, read the streamed answer, preview a line and insert it", as
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
     await page.getByRole("tab", { name: "Coach", exact: true }).click();
 
-    await page.getByRole("textbox", { name: "Connection" }).click();
-    await page.getByRole("option", { name: "Local model" }).click();
+    // The only connection is chosen without a click; the hint names the missing model.
+    await expect(page.getByRole("textbox", { name: "Connection" })).toHaveValue("Local model");
+    const hint = page.getByText("Choose a model to ask a question.");
+    await expect(hint).toBeVisible();
     await page.getByRole("textbox", { name: "Model" }).click();
     await page.getByRole("option", { name: "Coach model" }).click();
     await expect(page.getByRole("textbox", { name: "Effort" })).toHaveValue("Provider default");
+    await expect(hint).toHaveCount(0);
 
     const composer = page.getByRole("textbox", { name: "Ask the Coach" });
     await composer.fill("What should Black play here?");

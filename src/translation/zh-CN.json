@@ -422,6 +422,8 @@
     "Coach.Error.Unavailable": "此版本不提供 Coach。",
     "Coach.Error.UsageLimitReached": "您的套餐用量已达上限。请稍后重试。",
     "Coach.FailedLines": "此回答中的部分变化无法验证。它们以纯文本显示。",
+    "Coach.Hint.ChooseConnection": "请选择连接和模型后再提问。",
+    "Coach.Hint.ChooseModel": "请选择模型后再提问。",
     "Coach.InsertLine": "作为变着插入",
     "Coach.InsertUnavailable": "对局中已没有这条变化的起始局面",
     "Coach.LookingUpLine": "正在参考数据库中查找 {{line}}",

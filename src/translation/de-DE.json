@@ -426,6 +426,8 @@
     "Coach.Error.Unavailable": "Der Coach ist in dieser Version nicht verfügbar.",
     "Coach.Error.UsageLimitReached": "Das Nutzungslimit deines Abos ist erreicht. Versuche es später erneut.",
     "Coach.FailedLines": "Einige Zugfolgen in dieser Antwort ließen sich nicht überprüfen. Sie erscheinen als einfacher Text.",
+    "Coach.Hint.ChooseConnection": "Wähle eine Verbindung und ein Modell, um eine Frage zu stellen.",
+    "Coach.Hint.ChooseModel": "Wähle ein Modell, um eine Frage zu stellen.",
     "Coach.InsertLine": "Als Variante einfügen",
     "Coach.InsertUnavailable": "Die Stellung, an der diese Zugfolge beginnt, gibt es in der Partie nicht mehr",
     "Coach.LookingUpLine": "{{line}} wird in der Referenzdatenbank nachgeschlagen",

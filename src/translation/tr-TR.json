@@ -426,6 +426,8 @@
     "Coach.Error.Unavailable": "Coach bu sürümde kullanılamıyor.",
     "Coach.Error.UsageLimitReached": "Planınızın kullanım sınırına ulaşıldı. Daha sonra yeniden deneyin.",
     "Coach.FailedLines": "Bu yanıttaki bazı varyantlar doğrulanamadı. Düz metin olarak gösteriliyorlar.",
+    "Coach.Hint.ChooseConnection": "Soru sormak için bir bağlantı ve bir model seçin.",
+    "Coach.Hint.ChooseModel": "Soru sormak için bir model seçin.",
     "Coach.InsertLine": "Varyasyon olarak ekle",
     "Coach.InsertUnavailable": "Bu varyantın başladığı pozisyon artık oyunda yok",
     "Coach.LookingUpLine": "Referans veritabanında aranıyor: {{line}}",

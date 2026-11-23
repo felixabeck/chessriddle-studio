@@ -430,6 +430,8 @@
     "Coach.Error.Unavailable": "El Coach no está disponible en esta versión.",
     "Coach.Error.UsageLimitReached": "Se ha alcanzado el límite de uso de tu plan. Inténtalo más tarde.",
     "Coach.FailedLines": "Algunas líneas de esta respuesta no se pudieron verificar. Se muestran como texto sin formato.",
+    "Coach.Hint.ChooseConnection": "Elige una conexión y un modelo para hacer una pregunta.",
+    "Coach.Hint.ChooseModel": "Elige un modelo para hacer una pregunta.",
     "Coach.InsertLine": "Insertar como variante",
     "Coach.InsertUnavailable": "La posición desde la que empieza esta línea ya no está en la partida",
     "Coach.LookingUpLine": "Buscando {{line}} en la base de datos de referencia",

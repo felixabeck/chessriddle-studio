@@ -434,6 +434,8 @@
     "Coach.Error.Unavailable": "Coach nie jest dostępny w tej wersji.",
     "Coach.Error.UsageLimitReached": "Limit użycia Twojego planu został osiągnięty. Spróbuj ponownie później.",
     "Coach.FailedLines": "Niektórych wariantów w tej odpowiedzi nie udało się zweryfikować. Są wyświetlane jako zwykły tekst.",
+    "Coach.Hint.ChooseConnection": "Wybierz połączenie i model, aby zadać pytanie.",
+    "Coach.Hint.ChooseModel": "Wybierz model, aby zadać pytanie.",
     "Coach.InsertLine": "Wstaw jako wariant",
     "Coach.InsertUnavailable": "Pozycji, od której zaczyna się ten wariant, nie ma już w partii",
     "Coach.LookingUpLine": "Wyszukiwanie {{line}} w bazie odniesienia",

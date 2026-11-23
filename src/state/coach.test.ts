@@ -162,12 +162,34 @@ test("a stored selection is honoured only while its connection and model exist",
         model: models[0],
         effort: "high",
     });
-    // A removed connection is never replaced by another one.
-    expect(effectiveCoachSelection(stored, [connections[0]], models)).toEqual({
+    // With several connections left, a removed one is never replaced by a guess.
+    expect(effectiveCoachSelection(stored, [connections[0], connection("c")], models)).toEqual({
         connection: null,
         model: null,
         effort: null,
     });
+    // A sole connection counts as chosen, whether nothing was stored or the stored one is gone.
+    expect(effectiveCoachSelection(stored, [connections[0]], null).connection).toBe(connections[0]);
+    // The stored model and effort belong to the stored connection and never carry over.
+    expect(effectiveCoachSelection(stored, [connections[0]], models)).toEqual({
+        connection: connections[0],
+        model: null,
+        effort: null,
+    });
+    expect(
+        effectiveCoachSelection(
+            { connection: null, model: "plain", effort: null },
+            [connections[0]],
+            models,
+        ),
+    ).toEqual({ connection: connections[0], model: null, effort: null });
+    expect(
+        effectiveCoachSelection(
+            { connection: null, model: null, effort: null },
+            connections,
+            models,
+        ).connection,
+    ).toBeNull();
     // An unloaded model list leaves model and effort undecided.
     expect(effectiveCoachSelection(stored, connections, null)).toEqual({
         connection: connections[1],

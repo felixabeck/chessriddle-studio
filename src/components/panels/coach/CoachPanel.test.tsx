@@ -234,6 +234,7 @@ test("a question needs a chosen model, and a model without reported levels sends
   await ask("Plan?");
   expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
   expect(button("Coach.Send").disabled).toBe(true);
+  expect(host.textContent).toContain("Coach.Hint.ChooseModel");
 
   await act(async () =>
     atoms.set(coachSelectionAtom, { connection: "conn-1", model: "plain", effort: null }),
@@ -244,6 +245,35 @@ test("a question needs a chosen model, and a model without reported levels sends
   await act(async () => button("Coach.Send").click());
   await act(async () => {});
   expect(mocks.coachTurn.mock.calls[0][2].effort).toBeUndefined();
+});
+
+test("a sole connection is chosen without a click, and the hint names what is still missing", async () => {
+  await render({ selected: false });
+  // Nothing stored: the only connection is used and its models are read.
+  expect(mocks.coachModels).toHaveBeenLastCalledWith("conn-1");
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Coach.Connection"]')!.value).toBe(
+    "Ollama",
+  );
+  expect(host.textContent).toContain("Coach.Hint.ChooseModel");
+  expect(host.textContent).not.toContain("Coach.Hint.ChooseConnection");
+
+  // A model chosen for the connection ends the hint. (That the model selector stores the
+  // connection with the model is proven by e2e/coach.spec.ts, which never picks the connection.)
+  await act(async () =>
+    atoms.set(coachSelectionAtom, { connection: "conn-1", model: "plain", effort: null }),
+  );
+  expect(host.textContent).not.toContain("Coach.Hint.");
+});
+
+test("with several connections and none chosen, the hint asks for a connection", async () => {
+  mocks.coachConnections.mockResolvedValue([
+    connection,
+    { ...connection, handle: "conn-2", label: "LM Studio" },
+  ]);
+  await render({ selected: false });
+  expect(mocks.coachModels).not.toHaveBeenCalledWith("conn-1");
+  expect(host.textContent).toContain("Coach.Hint.ChooseConnection");
+  expect(button("Coach.Send").disabled).toBe(true);
 });
 
 test("the panel keeps the repertoire index current and asks with the reference database of now", async () => {
@@ -333,6 +363,16 @@ test("a failed model list shows its error at the model selector", async () => {
   mocks.coachModels.mockRejectedValue(new CoachCommandError("keyRejected"));
   await render();
   expect(host.textContent).toContain("Coach.Error.KeyRejected");
+  expect(button("Coach.Send").disabled).toBe(true);
+  // The selector shows the failure; the hint adds nothing.
+  expect(host.textContent).not.toContain("Coach.Hint.");
+});
+
+test("while the model list loads, no hint asks for a model yet", async () => {
+  mocks.coachModels.mockReturnValue(new Promise(() => {}));
+  await render({ selected: false });
+  expect(mocks.coachModels).toHaveBeenLastCalledWith("conn-1");
+  expect(host.textContent).not.toContain("Coach.Hint.");
   expect(button("Coach.Send").disabled).toBe(true);
 });
 

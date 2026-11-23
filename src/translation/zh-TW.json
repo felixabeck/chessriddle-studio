@@ -422,6 +422,8 @@
     "Coach.Error.Unavailable": "此版本不提供 Coach。",
     "Coach.Error.UsageLimitReached": "您的方案用量已達上限。請稍後重試。",
     "Coach.FailedLines": "此回答中的部分變化無法驗證。它們以純文字顯示。",
+    "Coach.Hint.ChooseConnection": "請選擇連線和模型後再提問。",
+    "Coach.Hint.ChooseModel": "請選擇模型後再提問。",
     "Coach.InsertLine": "插入為變例",
     "Coach.InsertUnavailable": "對局中已沒有這條變化的起始局面",
     "Coach.LookingUpLine": "正在參考資料庫中查找 {{line}}",

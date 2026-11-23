@@ -18,6 +18,7 @@ import {
   coachModelsAtom,
   coachNoticeAcceptedAtom,
   coachSelectionAtom,
+  effectiveCoachConnection,
   effectiveCoachEngine,
   effectiveCoachSelection,
   openCoachUsage,
@@ -66,12 +67,14 @@ function CoachPanel() {
     connectionsState.status === "ready"
       ? connectionsState.connections.filter((connection) => connection.status === "ready")
       : [];
+  // A sole connection counts as chosen without a click, so the model list is matched to the
+  // effective connection, not only to the stored one.
+  const connection = effectiveCoachConnection(selection.connection, connections)?.handle ?? null;
   const models =
-    modelsState.status === "ready" && modelsState.connection === selection.connection
+    modelsState.status === "ready" && modelsState.connection === connection
       ? modelsState.models
       : null;
   const chosen = effectiveCoachSelection(selection, connections, models);
-  const connection = chosen.connection?.handle ?? null;
 
   // The model list belongs to the chosen connection; it is read when that changes.
   useEffect(() => {
@@ -164,6 +167,14 @@ function CoachPanel() {
     else send(question);
   };
 
+  // Send stays disabled until both are chosen; this says why. Nothing is said while the model
+  // list loads or failed: the model selector shows that state itself.
+  const missingChoice = !chosen.connection
+    ? t("Coach.Hint.ChooseConnection")
+    : models && !chosen.model
+      ? t("Coach.Hint.ChooseModel")
+      : null;
+
   const reportsEffort = (chosen.model?.effortLevels.length ?? 0) > 0;
   const effortLabel = (level: string) =>
     level === "low"
@@ -211,7 +222,7 @@ function CoachPanel() {
               ? errors[modelsState.error]
               : undefined
           }
-          onChange={(model) => setSelection({ ...selection, model, effort: null })}
+          onChange={(model) => setSelection({ connection, model, effort: null })}
         />
         <Select
           className={classes.effort}
@@ -292,6 +303,11 @@ function CoachPanel() {
             </Button>
           )}
         </Group>
+        {missingChoice && (
+          <Text size="xs" c="dimmed" mt={4}>
+            {missingChoice}
+          </Text>
+        )}
       </form>
       {notice !== null && chosen.connection && (
         <AppModal opened onClose={() => setNotice(null)} title={t("Coach.Notice.Title")}>

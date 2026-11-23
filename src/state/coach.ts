@@ -180,18 +180,36 @@ export type EffectiveCoachSelection = {
 };
 
 /**
- * The stored selection checked against what exists now. A connection or model that is gone yields
- * "none selected"; it is never replaced by another one. `models` is `null` while the list is not
- * loaded, which leaves the stored model and effort undecided rather than cleared.
+ * The connection the Coach uses among the ready ones: the stored one while it exists, otherwise
+ * the only ready connection when there is exactly one, otherwise none. With several connections a
+ * gone one is never replaced by a guess. A connection that was not chosen explicitly still has its
+ * own notice, so nothing is sent to it before the user accepted that.
+ */
+export function effectiveCoachConnection(
+    stored: string | null,
+    readyConnections: readonly ConnectionSummary[],
+): ConnectionSummary | null {
+    const found = readyConnections.find((candidate) => candidate.handle === stored);
+    if (found) return found;
+    return readyConnections.length === 1 ? readyConnections[0] : null;
+}
+
+/**
+ * The stored selection checked against what exists now (connection: `effectiveCoachConnection`).
+ * A stored model and effort belong to the stored connection: on a connection used without being
+ * chosen they count as "none selected", so a model is never carried over to another provider. A
+ * model that is gone yields "none selected"; it is never replaced by another one. `models` is
+ * the list of the effective connection, `null` while it is not loaded, which leaves the stored
+ * model and effort undecided rather than cleared.
  */
 export function effectiveCoachSelection(
     selection: CoachSelection,
-    connections: readonly ConnectionSummary[],
+    readyConnections: readonly ConnectionSummary[],
     models: readonly ModelInfo[] | null,
 ): EffectiveCoachSelection {
-    const connection =
-        connections.find((candidate) => candidate.handle === selection.connection) ?? null;
-    if (!connection || !models) return { connection, model: null, effort: null };
+    const connection = effectiveCoachConnection(selection.connection, readyConnections);
+    if (!connection || !models || connection.handle !== selection.connection)
+        return { connection, model: null, effort: null };
     const model = models.find((candidate) => candidate.id === selection.model) ?? null;
     if (!model) return { connection, model: null, effort: null };
     const reported = model.effortLevels.length > 0;

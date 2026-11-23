@@ -426,6 +426,8 @@
     "Coach.Error.Unavailable": "Coach er ikke tilgjengelig i denne versjonen.",
     "Coach.Error.UsageLimitReached": "Bruksgrensen for abonnementet ditt er nådd. Prøv igjen senere.",
     "Coach.FailedLines": "Noen varianter i dette svaret kunne ikke verifiseres. De vises som ren tekst.",
+    "Coach.Hint.ChooseConnection": "Velg en tilkobling og en modell for å stille et spørsmål.",
+    "Coach.Hint.ChooseModel": "Velg en modell for å stille et spørsmål.",
     "Coach.InsertLine": "Sett inn som variant",
     "Coach.InsertUnavailable": "Stillingen denne varianten starter fra, finnes ikke lenger i partiet",
     "Coach.LookingUpLine": "Slår opp {{line}} i referansedatabasen",
