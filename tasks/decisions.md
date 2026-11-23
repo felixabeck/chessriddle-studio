@@ -14027,3 +14027,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** One place for the rule, a gate that keeps new popovers on it, and the `AppModal` precedent. Reversal path: inline the handlers at each site and drop the boundary rule.
 * **Decided by:** Claude Code (Opus 5.5), drain run drain-90a2aa88, adopting plan tasks/plans/2026-11-23-popover-escape.md reviewed r1–r7 on agy · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"2dd192540cc6efd61a91840ad7fdf59b064b65277e2f63d4df4dafe8e6523474","input_sha256":"1397ed159c19355518b7234b331bd05dbee4be8121174bf15c9f1f988198a4ce","kind":"mutation-receipt","operation":"0aec4a05b4c156764aa5f1b49355df3d7c79dcd73b8f7ad73135ba711ba0183f","options":{"section":null},"request_id_sha256":null,"results":["d-20261123-06"],"target":"decisions-ledger","v":1} -->
+
+### d-20261123-07 — Does `AppModal` keep Mantine's capture-phase Escape?
+
+* **Question:** Mantine's `Modal` closes on any window Escape in the capture phase, before any layer inside it, so the motif picker's Escape also closes the Training settings dialog (probe for f-20261122-11).
+* **Governs:** f-20261122-11
+* **Chosen:** No. `AppModal` turns Mantine's `closeOnEscape` off and handles Escape with a `window` listener in the bubble phase while open and not pending; it does not close on an Escape that was composing, `defaultPrevented`, stopped by an inner layer, or whose target carries `data-mantine-stop-propagation="true"`.
+* **Rejected:** Keeping Mantine's capture listener (it runs before every inner layer). Marking dropdown elements with `data-mantine-stop-propagation` (Mantine reads the marker on `event.target` only, so a focused element deep in a dropdown is not covered).
+* **Reason:** Escape closes the innermost open layer only, as f-20261122-11 requires. Reversal path: restore `closeOnEscape={!pending}` in `AppModal` and remove its listener.
+* **Decided by:** Claude Code (Opus 5.5), drain run drain-90a2aa88, adopting plan tasks/plans/2026-11-23-popover-escape.md reviewed r1–r7 on agy · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"8edbfb8a1ecf0b00229e11586d4dd5968da7d69e0c90c1d151d92443f523bffc","input_sha256":"1037871966e5e14f4ae1cfe2a87ed013709fd0297de12dd759d19f2ae6e498a0","kind":"mutation-receipt","operation":"f062fd402a6ad3859a357d6e682214931742535e46379e1cd84acb709f1f2c4a","options":{"section":null},"request_id_sha256":null,"results":["d-20261123-07"],"target":"decisions-ledger","v":1} -->
