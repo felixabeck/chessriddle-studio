@@ -28586,3 +28586,5 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Fix direction:** let the card shrink to its panel (`minWidth: 0` on the flex chain, wrapping
   text and buttons) and add an assertion that the last time-control checkbox lies inside the
   card's visible box at 320px/200%.
+* **Impact class:** ux
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"30f022089ee139179a46e9835a978fb0620464eaacdb616222ec5999023485c6","input_sha256":"84a103cd85d857157acab07ff771fe7baf1180de95442f863a3276aabb6f9bd0","kind":"mutation-receipt","operation":"f7fb61cdbfaec78678f0bc35cfde52163657afe4ff275b3d20141f412e8ea4bb","options":{"section":null},"request_id_sha256":null,"results":["f-20261123-01"],"target":"f-20261123-01","v":1} -->
