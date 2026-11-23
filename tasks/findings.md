@@ -28565,3 +28565,24 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Filed from:** 5b4039e1-fa52-4cba-816a-4b3fd15c9104
 * **Closed 2026-11-23 as a duplicate of f-20261122-10** (drain session 7e3cd9aa-89b3-4fc6-b64f-c974f506d332): the same CI failure (run 45064671308) was filed twice, once through each checkout's inbox. Commit a2d44be5d on master already waits until focus is inside `[data-explorer-filters]` before Escape. This session's equivalent change was dropped during the rebase. The drain's probe agrees with that diagnosis: pressing Escape right after the click left the popover open, because Mantine 8.3.14 closes it only from the dropdown's own keydown and its focus trap moves focus in on a `setTimeout`. The shared popover behaviour is tracked in f-20261122-11.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2bbe49868ab56a0a71a167c83ebfb384b08de785eb266994029499d42cbe2a3e","header_sha256":"6f26061d550e0f0e1ee8ed7ebfa264b7ed8df7c227450c4490360342e592d7be","header_status":"handled","input_sha256":"fb9e0a626b6220cd8ea99afa293bc62c4c3b9543d33b4efdf729af7db1a58d71","kind":"mutation-receipt","operation":"4a62be0eeafe515258d73ed52e9b3d55abfd3410bf4fef482a27e6afe2061337","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-12"],"target":"f-20261122-12","v":1} -->
+
+---
+
+## 2026-11-23 — filed through the inbox spool
+
+### The opponent online-accounts card clips its own content at 320px with a 200% font scale
+
+* **ID:** f-20261123-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Where:** `src/components/databases/OpponentAccounts.tsx` (the linked-account card in the Players
+  detail panel), recorded by `e2e/database-files.spec.ts:4044` (`opponent-accounts-linked-320`).
+* **Defect:** at 320px and 200% font scale the card is wider than its panel and is cut off on the
+  right: "No games downloa…", "Add online acco…", "Remove online gam…", and the Rapid and Classical
+  time-control checkboxes sit outside the visible area, so they cannot be reached. The committed
+  snapshot records the clipped state. `assertNoHorizontalOverflow` stays green because the overflow
+  is clipped by an ancestor, the gap already described in `f-20260829-02` (handled), whose class
+  this is; that finding did not cover this panel, which was added on 2026-11-22.
+* **Observed:** 2026-11-23 while re-recording the snapshot for the checkbox-row spacing fix; the
+  expected (pre-change) and actual images both show the clipping.
+* **Fix direction:** let the card shrink to its panel (`minWidth: 0` on the flex chain, wrapping
+  text and buttons) and add an assertion that the last time-control checkbox lies inside the
+  card's visible box at 320px/200%.
