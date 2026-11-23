@@ -111,42 +111,51 @@ const quietSafari = [
   "2026-11-23 02:52:39.414 Df Safari[33247:166fb] [com.apple.sharekit:Framework] Completed querying extensions: <private>",
   "2026-11-23 02:52:39.790 Df Safari[33247:165ea] [com.apple.WebKit:Sandbox] Successfully created a sandbox extension for '<private>'",
 ];
-const verdict = (lines) => {
+// Everything the classifier prints: the lines about web extensions, then the verdict.
+const classify = (lines) => {
   const run = spawnSync("bash", [classifier], { encoding: "utf8", input: `${lines.join("\n")}\n` });
   assert.equal(run.status, 0, run.stderr);
   return run.stdout.trimEnd().split("\n");
 };
 
-test("the release classifies Safari's log with the tested script", () => {
+test("the release takes its verdict from the tested script's last line", () => {
   assert.match(
     workflow,
     /report=\$\(printf '%s\\n' "\$lines" \| bash browser-extension\/scripts\/safari-observation-verdict\.sh\)/,
   );
+  assert.ok(workflow.includes(`verdict=$(printf '%s\\n' "$report" | tail -n 1)\n`));
+  // The step's last command: nothing after it can print another verdict.
+  assert.match(workflow, / {10}finish "\$verdict"\n\n {6}- name: Log out of Certum/);
 });
 
 test("a Safari that logs nothing about web extensions is an unavailable observation", () => {
-  assert.deepEqual(verdict(quietSafari), [
+  assert.deepEqual(classify(quietSafari), [
     "observation unavailable: Safari logged nothing about web extensions",
   ]);
-  assert.deepEqual(verdict([]), [
+  assert.deepEqual(classify([]), [
     "observation unavailable: Safari logged nothing about web extensions",
   ]);
 });
 
 // The two symptoms from Apple developer forum thread 667859, with the identifier masked the way
 // the runner's log masks it.
-for (const symptom of [
-  "Df Safari[37188:1a2b] [Extensions] Blocking extension with identifier: <private>",
-  "Df Safari[37188:1a2b] [Extensions] Computing the code signing dictionary failed for extension with identifier <private>",
+for (const [name, symptom] of [
+  [
+    "a blocked extension",
+    "Df Safari[37188:1a2b] [Extensions] Blocking extension with identifier: <private>",
+  ],
+  [
+    "a failed code signing dictionary",
+    "Df Safari[37188:1a2b] [Extensions] Computing the code signing dictionary failed for extension with identifier <private>",
+  ],
 ])
-  test(`a block counts without naming the extension: ${symptom.slice(35, 75)}`, () => {
-    const output = verdict([...quietSafari, symptom]);
-    assert.deepEqual(output, [symptom, "BLOCK OBSERVED"]);
+  test(`${name} counts as a block without naming the extension`, () => {
+    assert.deepEqual(classify([...quietSafari, symptom]), [symptom, "BLOCK OBSERVED"]);
   });
 
 test("lines about web extensions without a block are no block observed", () => {
   const seen = "Df Safari[37188:1a2b] [WebExtensions] Loaded web extension <private>";
-  assert.deepEqual(verdict([...quietSafari, seen]), [seen, "no block observed"]);
+  assert.deepEqual(classify([...quietSafari, seen]), [seen, "no block observed"]);
   const named = "Df Safari[1:2] Found extension com.chessriddle.studio.Extension";
-  assert.deepEqual(verdict([named]), [named, "no block observed"]);
+  assert.deepEqual(classify([named]), [named, "no block observed"]);
 });

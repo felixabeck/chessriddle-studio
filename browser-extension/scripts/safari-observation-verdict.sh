@@ -8,13 +8,15 @@
 set -euo pipefail
 
 # What counts as a line about web extensions:
-# - "web extension", "web-extension", "WebExtension": Safari's name for this kind of extension. A
-#   bare "extension" also matches the share sheet's and the sandbox's lines, which Safari writes
-#   in every run and which say nothing about a web extension (release rehearsal 45101297031).
+# - "web extension", "web-extension", "WebExtension": Safari's name for this kind of extension.
+#   The pattern is not a bare "extension": that would match the share sheet's and the sandbox's
+#   lines, which Safari writes in every run and which say nothing about a web extension (release
+#   rehearsal 45101297031).
 # - "blocking extension" and "code signing dictionary": the two symptoms of a blocked Developer
 #   ID build (Apple developer forum threads 667859 and 695373).
-# - "chessriddle": a line that names the application or its extension in clear text. macOS
-#   usually masks such names as <private>, so nothing below depends on it.
+# - "chessriddle": a line that names the application or its extension in clear text also shows
+#   that Safari dealt with it. macOS usually masks such names as <private>, so a block is
+#   recognized without the name.
 relevant=$(grep -i \
   -e 'web.\{0,1\}extension' \
   -e 'blocking extension' \
