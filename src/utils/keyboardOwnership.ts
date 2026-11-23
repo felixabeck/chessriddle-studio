@@ -23,6 +23,14 @@ export function isKeyboardOwnedElsewhere(event: KeyboardEvent, surface: Element 
     return owner !== null && (surface === null || !owner.contains(surface));
 }
 
+/** keyCode an IME reports while a composition is active. */
+const IME_PROCESS_KEY_CODE = 229;
+
+/** True for an Escape press that is not part of an IME composition. */
+export function isPlainEscape(event: KeyboardEvent): boolean {
+    return event.key === "Escape" && !event.isComposing && event.keyCode !== IME_PROCESS_KEY_CODE;
+}
+
 const ARROW_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] as const;
 /** Widgets that act on these keys themselves when the event target is inside them, so a document hotkey must not act on the same press. role="listbox" is deliberately omitted because VariationChooserCard's listbox is driven by MoveControls' arrow hotkeys. */
 const KEY_HANDLING_WIDGETS: { selector: string; keys: readonly string[] }[] = [

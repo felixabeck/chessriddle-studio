@@ -13,6 +13,22 @@ export function focusedDialogButton(host: Element = document.body): {
     return { dialog, button };
 }
 
+export function dispatchEscape(
+    target: EventTarget,
+    init: Partial<KeyboardEventInit> = {},
+): KeyboardEvent {
+    const event = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+        ...init,
+    });
+    act(() => {
+        target.dispatchEvent(event);
+    });
+    return event;
+}
+
 export function press(
     key: string,
     {

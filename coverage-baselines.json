@@ -157,6 +157,7 @@
           "src/components/TopBar.tsx",
           "src/components/WindowResizeHandles.tsx",
           "src/components/common/AppModal.tsx",
+          "src/components/common/AppPopover.tsx",
           "src/components/common/CatalogDownloadCard.tsx",
           "src/components/common/CheckboxRow.tsx",
           "src/components/common/ConfirmModal.tsx",
