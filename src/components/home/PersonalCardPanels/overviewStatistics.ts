@@ -328,3 +328,57 @@ function summarizeColor(accum: ColorAccum): ColorOverview {
                   ),
     };
 }
+
+/** Every game with a result in these statistics, as the Overview headline counts them. */
+export function playerGameCount(info: PlayerGameInfo): number {
+    let games = 0;
+    for (const site of info.site_stats_data ?? []) {
+        for (const row of site.colors) games += row.won + row.drawn + row.lost;
+    }
+    return games;
+}
+
+/** The account sites these statistics have games from; other sites have no Website filter. */
+export function statisticsSites(info: PlayerGameInfo): AccountSite[] {
+    const present = new Set((info.site_stats_data ?? []).map((site) => site.site));
+    return Object.entries(WEBSITE_SITE)
+        .filter(([website]) => present.has(website))
+        .map(([, site]) => site);
+}
+
+/**
+ * The website and time-control category with the most rated games: a rating curve shows one
+ * site's one category at a time, and starts on this one. `null` without rated games.
+ */
+export function busiestRatingLine(
+    info: PlayerGameInfo,
+): { website: string; timeControl: string } | null {
+    const counts = new Map<string, { website: string; timeControl: string; games: number }>();
+    for (const site of info.site_stats_data ?? []) {
+        if (!(site.site in WEBSITE_SITE)) continue;
+        for (const row of site.daily) {
+            if (row.max_player_elo === null) continue;
+            const timeControl = getTimeControl(site.site, row.time_control);
+            const key = `${site.site}\n${timeControl}`;
+            const line = counts.get(key) ?? { website: site.site, timeControl, games: 0 };
+            line.games += row.won + row.drawn + row.lost;
+            counts.set(key, line);
+        }
+    }
+    let busiest: { website: string; timeControl: string; games: number } | null = null;
+    for (const line of counts.values()) {
+        if (busiest === null || line.games > busiest.games) busiest = line;
+    }
+    return busiest && { website: busiest.website, timeControl: busiest.timeControl };
+}
+
+/** The single-website filter value of each account site, the inverse of `WEBSITE_SITE`. */
+const SITE_WEBSITE: Record<AccountSite, string> = {
+    lichess: "Lichess",
+    chesscom: "Chess.com",
+};
+
+/** The single-website filter value of an account site. */
+export function websiteOf(site: AccountSite): string {
+    return SITE_WEBSITE[site];
+}

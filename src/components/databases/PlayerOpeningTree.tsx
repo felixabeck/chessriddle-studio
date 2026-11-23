@@ -12,17 +12,11 @@ import { notifications } from "@mantine/notifications";
 import { useNavigate } from "@tanstack/react-router";
 import type { Color } from "chessops";
 import dayjs from "dayjs";
-import { useAtomValue, useSetAtom, useStore } from "jotai";
+import { useSetAtom, useStore } from "jotai";
 import { ChevronLeft, RotateCcw } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  DatabaseHandle,
-  NormalizedGame,
-  OpponentAccount,
-  Player,
-  PositionStats,
-} from "@/bindings";
+import type { DatabaseHandle, NormalizedGame, Player, PositionStats } from "@/bindings";
 import { Chessground } from "@/chessground/Chessground";
 import { IconAction } from "@/components/common/IconAction";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
@@ -34,27 +28,23 @@ import {
   mergeLocalOpenings,
   useLocalExplorer,
 } from "@/components/panels/database/useLocalExplorer";
-import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { failureUnlessCancelled } from "@/platform/errors";
 import {
   dbTabFamily,
   dbTypeFamily,
   localOptionsFamily,
-  opponentLinksAtom,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
   tabFamily,
   tabsAtom,
 } from "@/state/atoms";
-import { findOpponentLink } from "@/state/opponentLinks";
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
 import { databaseGameHeaders } from "@/utils/databaseGameTree";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { createTab, runTabCreation } from "@/utils/tabs";
 import GamePreview from "./GamePreview";
-import { opponentGames } from "./OpponentAccounts";
 import { opponentPlayers } from "./opponentLookup";
-import { useOpponentPlayers } from "./useOpponentPlayers";
+import { type OnlineGames, useOnlineGames } from "./useOnlineGames";
 import PlayerOpeningRecency from "./PlayerOpeningRecency";
 import { playerOpeningLine } from "./playerOpeningLine";
 import classes from "./PlayerOpeningTree.module.css";
@@ -72,32 +62,6 @@ export type OpeningTreeSource = {
 type SourceQuery = { source: OpeningTreeSource; options: LocalOptions };
 type SourceResult = { source: OpeningTreeSource; result: LocalExplorerResult };
 type OpeningTreeVariant = "database" | "account";
-/**
- * Which player of the online games database the linked usernames name. `unavailable` covers both
- * a lookup that found no player and one that failed: the card says the same about either.
- */
-type OnlinePlayerLookup =
-  | { kind: "pending" }
-  | { kind: "found"; player: number }
-  | { kind: "unavailable" };
-
-/** Folds the lookup's SWR answer into its state; a cancelled run is still pending, not failed. */
-function onlinePlayerLookup(
-  players: readonly { id: number }[] | undefined,
-  error: unknown,
-): OnlinePlayerLookup {
-  if (players?.[0] !== undefined) return { kind: "found", player: players[0].id };
-  if (players !== undefined) return { kind: "unavailable" };
-  // SWR keeps a superseded run's cancellation as the key's error until the next run settles.
-  if (failureUnlessCancelled(error)) return { kind: "unavailable" };
-  return { kind: "pending" };
-}
-/** The player's downloaded online games: their database, the usernames and the player they name. */
-type OnlineGames = {
-  file: DatabaseHandle;
-  accounts: readonly OpponentAccount[];
-  lookup: OnlinePlayerLookup;
-};
 type CombinedResults = ReturnType<typeof combineSourceResults>;
 
 export default function PlayerOpeningTree({
@@ -109,16 +73,7 @@ export default function PlayerOpeningTree({
 }) {
   const { t } = useTranslation();
   const key = `${databaseHandleKey(file)}:${player.id}`;
-  const link = findOpponentLink(useAtomValue(opponentLinksAtom), player.name);
-  const { data: listing, error: listingError } = useDatabaseList();
-  const games = opponentGames(link, listing, listingError);
-  // Online games kept in the card's own database are not a second source of it.
-  const onlineFile =
-    link && games.kind === "games" && databaseHandleKey(games.file) !== databaseHandleKey(file)
-      ? games.file
-      : null;
-  const { data: onlinePlayers, error: onlineError } = useOpponentPlayers(link, onlineFile);
-  const lookup = onlinePlayerLookup(onlinePlayers, onlineError);
+  const online = useOnlineGames(player, file);
   return (
     <OpeningTree
       key={key}
@@ -129,9 +84,7 @@ export default function PlayerOpeningTree({
       }
       tabName={player.name ?? ""}
       sources={[{ key, label: "", file, player: player.id }]}
-      online={
-        link && onlineFile ? { file: onlineFile, accounts: link.accounts, lookup } : undefined
-      }
+      online={online}
     />
   );
 }

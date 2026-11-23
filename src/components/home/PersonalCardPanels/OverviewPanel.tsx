@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import type { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
 import type { DatabaseHandle, Player, PlayerGameInfo } from "@/bindings";
+import type { AccountSite } from "@/utils/session";
 import LastGamesList from "./LastGamesList";
 import ResultsChart from "./ResultsChart";
 import filterClasses from "./StatisticsFilters.module.css";
@@ -21,10 +22,12 @@ import WebsiteAccountSelector from "./WebsiteAccountSelector";
 import {
   type ColorOverview,
   type MonthResults,
+  ALL_WEBSITES,
   deriveOverviewStatistics,
   filterPlayerStats,
   formatResultCounts,
   formatScorePercent,
+  websiteOf,
 } from "./overviewStatistics";
 
 export function fillMissingMonths(data: MonthResults[]): MonthResults[] {
@@ -79,14 +82,20 @@ function OverviewPanel({
   info,
   isDatabase,
   databasePlayer,
+  onlineSites,
 }: {
   playerKey: string;
   info: PlayerGameInfo;
   isDatabase?: boolean;
-  databasePlayer?: { player: Player; file: DatabaseHandle };
+  databasePlayer?: { player: Pick<Player, "id">; file: DatabaseHandle };
+  /** The sites of a database player's online games; more than one offers the Website filter. */
+  onlineSites?: AccountSite[];
 }) {
   const { t } = useTranslation();
-  const [website, setWebsite] = useState<string | null>("All websites");
+  // Online games from one site offer no Website filter; the time controls are still that site's.
+  const [website, setWebsite] = useState<string | null>(
+    onlineSites?.length === 1 ? websiteOf(onlineSites[0]) : ALL_WEBSITES,
+  );
   const [account, setAccount] = useState<string | null>("All accounts");
   const [timeControl, setTimeControl] = useState<string | null>(null);
 
@@ -97,12 +106,13 @@ function OverviewPanel({
   return (
     <Stack>
       <div className={filterClasses.filters}>
-        {!isDatabase && (
+        {(!isDatabase || (onlineSites && onlineSites.length > 1)) && (
           <WebsiteAccountSelector
             playerKey={playerKey}
             onWebsiteChange={(website) => setWebsite(website)}
             onAccountChange={setAccount}
             allowAll={true}
+            sites={onlineSites}
           />
         )}
         <TimeControlSelector

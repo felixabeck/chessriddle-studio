@@ -11,7 +11,7 @@ import classes from "./LastGamesList.module.css";
 
 const LAST_GAMES_LIMIT = 10;
 
-function LastGamesList({ player, file }: { player: Player; file: DatabaseHandle }) {
+function LastGamesList({ player, file }: { player: Pick<Player, "id">; file: DatabaseHandle }) {
   const { t } = useTranslation();
   const gameOpen = useOpenDatabaseGame((game: NormalizedGame) => ({ game, database: file }));
   const { revision, unavailable } = useDatabaseContentRevision(file);
@@ -94,7 +94,7 @@ function LastGameRow({
   onOpen,
 }: {
   game: NormalizedGame;
-  player: Player;
+  player: Pick<Player, "id">;
   pending: boolean;
   onOpen: () => void;
 }) {

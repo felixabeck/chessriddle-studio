@@ -14,6 +14,7 @@ import {
 import type { PlayerGameInfo } from "@/bindings";
 import DateRangeTabs, { DateRange } from "./DateRangeTabs";
 import { parseCompleteDailyDate, summarizeDailyStats } from "./dailyStatsSummary";
+import type { AccountSite } from "@/utils/session";
 import { filterPlayerStats } from "./overviewStatistics";
 import {
   gradientStops,
@@ -47,15 +48,28 @@ function RatingsPanel({
   playerKey,
   info,
   isDatabase,
+  onlineFilters,
 }: {
   playerKey: string;
   info: PlayerGameInfo;
   isDatabase?: boolean;
+  /**
+   * A database player's online games: ratings of different sites and time controls are different
+   * scales, so the curve shows one site's one category, starting with the one with the most
+   * rated games.
+   */
+  onlineFilters?: {
+    sites: AccountSite[];
+    initial: { website: string; timeControl: string } | null;
+  };
 }) {
   const { t, i18n } = useTranslation();
   const [dateRange, setDateRange] = useState<string | null>(DateRange.AllTime);
-  const [timeControl, setTimeControl] = useState<string | null>(null);
-  const [website, setWebsite] = useState<string | null>(null);
+  // The online line's category from the first render: the selector reports it only after mount.
+  const [timeControl, setTimeControl] = useState<string | null>(
+    onlineFilters?.initial?.timeControl ?? null,
+  );
+  const [website, setWebsite] = useState<string | null>(onlineFilters?.initial?.website ?? null);
   const [account, setAccount] = useState<string | null>("All accounts");
   // A manual slider range is only meaningful against the dates it was picked on.
   const [manualRange, setManualRange] = useState<{
@@ -146,18 +160,23 @@ function RatingsPanel({
 
   return (
     <Stack>
-      {!isDatabase && (
+      {(!isDatabase || onlineFilters) && (
         <div className={filterClasses.filters}>
-          <WebsiteAccountSelector
-            playerKey={playerKey}
-            onWebsiteChange={setWebsite}
-            onAccountChange={setAccount}
-            allowAll={false}
-          />
+          {(!onlineFilters || onlineFilters.sites.length > 1) && (
+            <WebsiteAccountSelector
+              playerKey={playerKey}
+              onWebsiteChange={setWebsite}
+              onAccountChange={setAccount}
+              allowAll={false}
+              sites={onlineFilters?.sites}
+              initialWebsite={onlineFilters?.initial?.website}
+            />
+          )}
           <TimeControlSelector
             onTimeControlChange={setTimeControl}
             website={website}
             allowAll={false}
+            initialTimeControl={onlineFilters?.initial?.timeControl}
           />
         </div>
       )}

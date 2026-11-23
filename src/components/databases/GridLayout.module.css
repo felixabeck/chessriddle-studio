@@ -82,7 +82,8 @@
   }
   > :global(.mantine-Paper-root):not(.gameCard) {
     overflow: auto !important;
-    :global(.mantine-Tabs-root) {
+    /* The card's own tabs only: the Ratings tab's date-range tabs nested in them are one row. */
+    > :global(.mantine-Tabs-root) {
       min-height: 20rem;
     }
   }

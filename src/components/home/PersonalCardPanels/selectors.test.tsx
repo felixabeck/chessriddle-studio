@@ -214,4 +214,43 @@ describe("personal card selectors", () => {
     expect(replacementWebsiteCallback).toHaveBeenCalledWith("Chess.com");
     expect(replacementAccountCallback).toHaveBeenCalledWith("All accounts");
   });
+  test("offers the given sites instead of the player's and starts on the given website", async () => {
+    const onWebsiteChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <WebsiteAccountSelector
+          playerKey=""
+          allowAll={false}
+          sites={["chesscom", "lichess"]}
+          initialWebsite="Lichess"
+          onWebsiteChange={onWebsiteChange}
+          onAccountChange={vi.fn()}
+        />,
+      );
+    });
+    const websites = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Home.Accounts.Website"]',
+    )!;
+    expect([...websites.options].map((option) => option.value)).toEqual(["Chess.com", "Lichess"]);
+    expect(websites.value).toBe("Lichess");
+    expect(onWebsiteChange).toHaveBeenLastCalledWith("Lichess");
+    // Statistics without a player key have no accounts to choose between.
+    expect(container.querySelector('select[aria-label="Home.Accounts.Account"]')).toBeNull();
+  });
+
+  test("starts on the given time control instead of the default", async () => {
+    const onTimeControlChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <TimeControlSelector
+          website="Lichess"
+          allowAll={false}
+          initialTimeControl="blitz"
+          onTimeControlChange={onTimeControlChange}
+        />,
+      );
+    });
+    expect(container.querySelector<HTMLSelectElement>("select")!.value).toBe("blitz");
+    expect(onTimeControlChange).toHaveBeenLastCalledWith("blitz");
+  });
 });

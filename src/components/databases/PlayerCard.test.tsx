@@ -4,13 +4,18 @@ import { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle, Player } from "@/bindings";
 import { recordDatabaseWrite } from "@/platform/databaseWrites";
+import type { OnlineGames } from "./useOnlineGames";
 
 const mocks = vi.hoisted(() => ({
   getPlayersGameInfo: vi.fn(),
   personalCard: vi.fn(),
+  cardMounts: 0,
+  warn: vi.fn(),
   generation: null as string | null,
   pending: false,
   unavailable: false,
+  unavailableFiles: new Set<string>(),
+  online: undefined as OnlineGames | undefined,
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -29,21 +34,32 @@ vi.mock("@/state/linkedCollections", async (importOriginal) => {
       const writes = useDatabaseWriteRevision(file);
       return {
         revision: mocks.pending ? null : ([mocks.generation, writes] as const),
-        unavailable: mocks.unavailable,
+        unavailable: mocks.unavailable || mocks.unavailableFiles.has(file?.id.id ?? ""),
       };
     },
   };
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("../home/PersonalCard", () => ({
-  default: (props: { notice?: React.ReactNode }) => {
-    mocks.personalCard(props);
-    return <div>player-card{props.notice}</div>;
-  },
+vi.mock("../home/PersonalCard", async () => {
+  const { useEffect } = await import("react");
+  return {
+    default: (props: { notice?: React.ReactNode }) => {
+      mocks.personalCard(props);
+      useEffect(() => {
+        mocks.cardMounts += 1;
+      }, []);
+      return <div>player-card{props.notice}</div>;
+    },
+  };
+});
+vi.mock("@/platform/errors", async (original) => ({
+  ...(await original<typeof import("@/platform/errors")>()),
+  warnSafely: mocks.warn,
 }));
 vi.mock("./OpponentAccounts", () => ({
   default: ({ playerName }: { playerName: string }) => <div>online accounts of {playerName}</div>,
 }));
+vi.mock("./useOnlineGames", () => ({ useOnlineGames: () => mocks.online }));
 vi.mock("@mantine/core", () => ({
   Center: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Loader: () => null,
@@ -77,6 +93,9 @@ beforeEach(() => {
   mocks.generation = null;
   mocks.pending = false;
   mocks.unavailable = false;
+  mocks.unavailableFiles.clear();
+  mocks.online = undefined;
+  mocks.cardMounts = 0;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -110,6 +129,7 @@ test("the database caller passes its own player and database to the shared perso
     isDatabase: true,
     notice: expect.anything(),
     databasePlayer: { player, file },
+    online: undefined,
   });
   // The player's online accounts sit on the card, looked up by the player's name.
   expect(container.textContent).toContain("online accounts of Magnus");
@@ -183,4 +203,153 @@ test("a write to the player's database refetches game info and a write to anothe
     recordDatabaseWrite([file]);
   });
   await vi.waitFor(() => expect(mocks.getPlayersGameInfo).toHaveBeenCalledTimes(2));
+});
+
+const onlineFile: DatabaseHandle = { id: { id: "online-db" }, kind: "database" };
+const accounts = [{ provider: "lichess", username: "Thomzilla" }] as const;
+const boardInfo = { site_stats_data: [] };
+const onlineInfo = { site_stats_data: [{ site: "Lichess" }] };
+
+function answerByDatabase(online: () => Promise<unknown>) {
+  mocks.getPlayersGameInfo.mockImplementation((_id: string, database: DatabaseHandle) =>
+    database.id.id === onlineFile.id.id ? online() : Promise.resolve(boardInfo),
+  );
+}
+
+const lastOnline = () => mocks.personalCard.mock.calls.at(-1)?.[0].online;
+
+test("the online games' statistics are read for the player the linked usernames name", async () => {
+  mocks.online = { file: onlineFile, accounts, lookup: { kind: "found", player: 3 } };
+  answerByDatabase(() => Promise.resolve(onlineInfo));
+  await renderPlayerCard();
+  await vi.waitFor(() =>
+    expect(lastOnline()).toEqual({
+      kind: "ready",
+      info: onlineInfo,
+      databasePlayer: { player: { id: 3 }, file: onlineFile },
+    }),
+  );
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledWith(
+    expect.any(String),
+    onlineFile,
+    3,
+    expect.anything(),
+  );
+  // The over-the-board statistics stay the card's own.
+  expect(mocks.personalCard.mock.calls.at(-1)?.[0].info).toBe(boardInfo);
+});
+
+test("the online statistics wait for the player lookup and read nothing before it", async () => {
+  mocks.online = { file: onlineFile, accounts, lookup: { kind: "pending" } };
+  answerByDatabase(() => Promise.resolve(onlineInfo));
+  await renderPlayerCard();
+  await vi.waitFor(() => expect(lastOnline()).toEqual({ kind: "pending" }));
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce();
+  expect(mocks.getPlayersGameInfo.mock.calls[0][1]).toBe(file);
+});
+
+test("a lookup that found no player leaves the online statistics unavailable", async () => {
+  mocks.online = { file: onlineFile, accounts, lookup: { kind: "unavailable" } };
+  answerByDatabase(() => Promise.resolve(onlineInfo));
+  await renderPlayerCard();
+  await vi.waitFor(() => expect(lastOnline()).toEqual({ kind: "unavailable" }));
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce();
+});
+
+test("a failed online read is unavailable and a cancelled one is still loading", async () => {
+  mocks.online = { file: onlineFile, accounts, lookup: { kind: "found", player: 3 } };
+  answerByDatabase(() => Promise.reject(new Error("database is locked")));
+  await renderPlayerCard();
+  await vi.waitFor(() => expect(lastOnline()).toEqual({ kind: "unavailable" }));
+  // The card itself still shows the over-the-board games.
+  expect(mocks.personalCard.mock.calls.at(-1)?.[0].info).toBe(boardInfo);
+
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  mocks.personalCard.mockClear();
+  answerByDatabase(() =>
+    Promise.reject({ tag: "backend-error", category: "cancellation", message: "Cancellation" }),
+  );
+  await renderPlayerCard();
+  await vi.waitFor(() => expect(mocks.personalCard).toHaveBeenCalled());
+  await act(async () => {});
+  expect(lastOnline()).toEqual({ kind: "pending" });
+});
+
+test("an online database whose index cannot be read is unavailable without a read", async () => {
+  mocks.online = { file: onlineFile, accounts, lookup: { kind: "found", player: 3 } };
+  mocks.unavailableFiles.add(onlineFile.id.id);
+  answerByDatabase(() => Promise.resolve(onlineInfo));
+  await renderPlayerCard();
+  await vi.waitFor(() => expect(lastOnline()).toEqual({ kind: "unavailable" }));
+  expect(mocks.getPlayersGameInfo).toHaveBeenCalledOnce();
+});
+
+test("a failed statistics read is logged once, never retried, and a cancelled one is not", async () => {
+  mocks.online = { file: onlineFile, accounts, lookup: { kind: "found", player: 3 } };
+  answerByDatabase(() => Promise.reject(new Error("database is locked")));
+  vi.useFakeTimers();
+  try {
+    // The application's own SWR defaults: retrying is the hook's decision, not the test's.
+    await act(async () => {
+      root.render(
+        <SWRConfig value={{ provider: () => new Map() }}>
+          <PlayerCard player={player} file={file} />
+        </SWRConfig>,
+      );
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  } finally {
+    vi.useRealTimers();
+  }
+  expect(lastOnline()).toEqual({ kind: "unavailable" });
+  const onlineReads = mocks.getPlayersGameInfo.mock.calls.filter(
+    ([, database]) => database === onlineFile,
+  );
+  expect(onlineReads).toHaveLength(1);
+  expect(mocks.warn).toHaveBeenCalledOnce();
+  expect(mocks.warn.mock.calls[0][0]).toContain("player 3");
+  expect(mocks.warn.mock.calls[0][0]).toContain("database is locked");
+
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  mocks.warn.mockClear();
+  answerByDatabase(() =>
+    Promise.reject({ tag: "backend-error", category: "cancellation", message: "Cancellation" }),
+  );
+  await renderPlayerCard();
+  await vi.waitFor(() => expect(mocks.personalCard).toHaveBeenCalled());
+  await act(async () => {});
+  expect(mocks.warn).not.toHaveBeenCalled();
+});
+
+test("a write to the online games database re-reads the online statistics", async () => {
+  mocks.online = { file: onlineFile, accounts, lookup: { kind: "found", player: 3 } };
+  answerByDatabase(() => Promise.resolve(onlineInfo));
+  await renderPlayerCard();
+  const onlineReads = () =>
+    mocks.getPlayersGameInfo.mock.calls.filter(([, database]) => database === onlineFile).length;
+  await vi.waitFor(() => expect(onlineReads()).toBe(1));
+  await act(async () => {
+    recordDatabaseWrite([onlineFile]);
+  });
+  await vi.waitFor(() => expect(onlineReads()).toBe(2));
+});
+
+test("another player gets a freshly mounted card", async () => {
+  mocks.getPlayersGameInfo.mockResolvedValue(boardInfo);
+  await renderPlayerCard();
+  await vi.waitFor(() => expect(mocks.cardMounts).toBe(1));
+  // The same player keeps the card.
+  await renderPlayerCard();
+  expect(mocks.cardMounts).toBe(1);
+
+  await act(async () => {
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <PlayerCard player={{ ...player, id: 8, name: "Hikaru" }} file={file} />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(mocks.cardMounts).toBe(2));
 });

@@ -1,6 +1,16 @@
-import { Box, Flex, Paper, Tabs, Text } from "@mantine/core";
+import {
+  Box,
+  Center,
+  Flex,
+  Loader,
+  Paper,
+  SegmentedControl,
+  Stack,
+  Tabs,
+  Text,
+} from "@mantine/core";
 import { Info } from "lucide-react";
-import { useContext, useState, type ReactNode } from "react";
+import { useContext, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import type { PlayerGameInfo } from "@/bindings";
@@ -10,10 +20,30 @@ import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext"
 import FideInfo from "../databases/FideInfo";
 import OpeningsPanel, { type AccountOpeningSource } from "./PersonalCardPanels/OpeningsPanel";
 import OverviewPanel from "./PersonalCardPanels/OverviewPanel";
+import {
+  busiestRatingLine,
+  playerGameCount,
+  statisticsSites,
+} from "./PersonalCardPanels/overviewStatistics";
 import RatingsPanel from "./PersonalCardPanels/RatingsPanel";
 import { PlayerSelect } from "./PlayerSelect";
 import PlayerOpeningTree from "../databases/PlayerOpeningTree";
 import type { DatabaseHandle, Player } from "@/bindings";
+
+/**
+ * A database player's downloaded online games for the Overview and Ratings tabs. They are kept
+ * apart from the over-the-board games: ratings of different sites are different scales.
+ */
+export type OnlineStatistics =
+  | { kind: "pending" }
+  | { kind: "unavailable" }
+  | {
+      kind: "ready";
+      info: PlayerGameInfo;
+      databasePlayer: { player: Pick<Player, "id">; file: DatabaseHandle };
+    };
+
+type StatisticsSource = "overTheBoard" | "online";
 
 function PersonalPlayerCard({
   name,
@@ -24,9 +54,13 @@ function PersonalPlayerCard({
   notice,
   databasePlayer,
   openingSources,
+  online,
 }: {
   name: string;
-  /** The selected account player's key; absent for a database player, whose panels show no website filter. */
+  /**
+   * The selected account player's key; absent for a database player, whose panels offer a
+   * Website filter only for its online games.
+   */
   playerKey?: string;
   setPlayerKey?: (playerKey: string) => void;
   info: PlayerGameInfo;
@@ -35,6 +69,8 @@ function PersonalPlayerCard({
   databasePlayer?: { player: Player; file: DatabaseHandle };
   /** The account player's databases for the opening tree; absent leaves the Openings tab a list. */
   openingSources?: AccountOpeningSource[];
+  /** A linked opponent's online games; absent shows the Overview and Ratings tabs without a switch. */
+  online?: OnlineStatistics;
 }) {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
@@ -42,6 +78,25 @@ function PersonalPlayerCard({
   const setActiveTab = useStore(store, (s) => s.setPlayersActiveTab);
 
   const [opened, setOpened] = useState(false);
+  const [source, setSource] = useState<StatisticsSource>("overTheBoard");
+  const onlineInfo = online?.kind === "ready" ? online.info : undefined;
+  const onlineFilters = useMemo(
+    () =>
+      onlineInfo && {
+        sites: statisticsSites(onlineInfo),
+        initial: busiestRatingLine(onlineInfo),
+      },
+    [onlineInfo],
+  );
+  const showOnline = online !== undefined && source === "online";
+  const sourceSwitch = online && (
+    <SourceSwitch
+      value={source}
+      onChange={setSource}
+      overTheBoardGames={playerGameCount(info)}
+      onlineGames={onlineInfo && playerGameCount(onlineInfo)}
+    />
+  );
 
   return (
     <Paper
@@ -97,12 +152,27 @@ function PersonalPlayerCard({
           <Tabs.Tab value="openings">{t("Home.Personal.Openings")}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="overview" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-          <OverviewPanel
-            playerKey={playerKey ?? ""}
-            info={info}
-            isDatabase={isDatabase}
-            databasePlayer={databasePlayer}
-          />
+          {sourceSwitch}
+          {showOnline ? (
+            <OnlinePanel online={online}>
+              {(ready) => (
+                <OverviewPanel
+                  playerKey=""
+                  info={ready.info}
+                  isDatabase
+                  databasePlayer={ready.databasePlayer}
+                  onlineSites={onlineFilters?.sites}
+                />
+              )}
+            </OnlinePanel>
+          ) : (
+            <OverviewPanel
+              playerKey={playerKey ?? ""}
+              info={info}
+              isDatabase={isDatabase}
+              databasePlayer={databasePlayer}
+            />
+          )}
         </Tabs.Panel>
         <Tabs.Panel
           value="openings"
@@ -131,10 +201,83 @@ function PersonalPlayerCard({
           )}
         </Tabs.Panel>
         <Tabs.Panel value="ratings">
-          <RatingsPanel playerKey={playerKey ?? ""} info={info} isDatabase={isDatabase} />
+          {sourceSwitch}
+          {showOnline ? (
+            <OnlinePanel online={online}>
+              {(ready) => (
+                <RatingsPanel
+                  playerKey=""
+                  info={ready.info}
+                  isDatabase
+                  onlineFilters={onlineFilters}
+                />
+              )}
+            </OnlinePanel>
+          ) : (
+            <RatingsPanel playerKey={playerKey ?? ""} info={info} isDatabase={isDatabase} />
+          )}
         </Tabs.Panel>
       </Tabs>
     </Paper>
+  );
+}
+
+/** Over the board or online, each with its game count; the online count appears once read. */
+function SourceSwitch({
+  value,
+  onChange,
+  overTheBoardGames,
+  onlineGames,
+}: {
+  value: StatisticsSource;
+  onChange: (source: StatisticsSource) => void;
+  overTheBoardGames: number;
+  onlineGames: number | undefined;
+}) {
+  const { t } = useTranslation();
+  const onlineLabel = t("Databases.OpeningTree.Online");
+  return (
+    <SegmentedControl
+      mt="sm"
+      fullWidth
+      data-statistics-source
+      value={value}
+      onChange={(next) => onChange(next as StatisticsSource)}
+      data={[
+        {
+          value: "overTheBoard",
+          label: `${t("Databases.OpeningTree.OverTheBoard")} · ${overTheBoardGames}`,
+        },
+        {
+          value: "online",
+          label: onlineGames === undefined ? onlineLabel : `${onlineLabel} · ${onlineGames}`,
+        },
+      ]}
+    />
+  );
+}
+
+/** The online games' panel once they are read; a loader before, a notice when they cannot be. */
+function OnlinePanel({
+  online,
+  children,
+}: {
+  online: OnlineStatistics;
+  children: (ready: Extract<OnlineStatistics, { kind: "ready" }>) => ReactNode;
+}) {
+  const { t } = useTranslation();
+  if (online.kind === "ready") return children(online);
+  return (
+    <Center py="xl">
+      {online.kind === "pending" ? (
+        <Stack align="center">
+          <Text fw="bold">{t("Databases.Player.ProcessingData")}</Text>
+          <Loader />
+        </Stack>
+      ) : (
+        <Text ta="center">{t("Databases.OpeningTree.OnlineUnavailable")}</Text>
+      )}
+    </Center>
   );
 }
 

@@ -125,11 +125,31 @@ vi.mock("./ResultsChart", () => ({
   ),
 }));
 vi.mock("./LastGamesList", () => ({
-  default: () => <div data-testid="last-games">last-games</div>,
+  default: ({ player, file }: { player: { id: number }; file: { id: { id: string } } }) => (
+    <div data-testid="last-games" data-player={player.id} data-file={file.id.id}>
+      last-games
+    </div>
+  ),
 }));
 vi.mock("./TimeControlSelector", () => ({
-  default: ({ onTimeControlChange }: { onTimeControlChange: (value: string) => void }) => (
+  default: ({
+    onTimeControlChange,
+    initialTimeControl,
+    website,
+    allowAll,
+  }: {
+    onTimeControlChange: (value: string) => void;
+    initialTimeControl?: string;
+    website?: string | null;
+    allowAll?: boolean;
+  }) => (
     <>
+      <div
+        data-testid="time-control-selector"
+        data-initial={initialTimeControl}
+        data-website={website ?? ""}
+        data-allow-all={String(allowAll)}
+      />
       <button data-testid="select-rapid" onClick={() => onTimeControlChange("rapid")}>
         Rapid
       </button>
@@ -143,11 +163,23 @@ vi.mock("./WebsiteAccountSelector", () => ({
   default: ({
     onWebsiteChange,
     onAccountChange,
+    sites,
+    initialWebsite,
+    allowAll,
   }: {
     onWebsiteChange: (value: string) => void;
     onAccountChange: (value: string) => void;
+    sites?: string[];
+    initialWebsite?: string;
+    allowAll?: boolean;
   }) => (
     <>
+      <div
+        data-testid="website-selector"
+        data-sites={sites?.join(",")}
+        data-initial={initialWebsite}
+        data-allow-all={String(allowAll)}
+      />
       <button data-testid="select-all-websites" onClick={() => onWebsiteChange("All websites")}>
         All websites
       </button>
@@ -1184,7 +1216,7 @@ test("Overview last games appear only when a database player is passed", async (
       info={mixedResultOverview}
       isDatabase
       databasePlayer={{
-        player: { id: 1, name: "Magnus", elo: null, game_count: 6 },
+        player: { id: 1 },
         file: { id: { id: "db-1" }, kind: "database" },
       }}
     />,
@@ -1377,4 +1409,122 @@ test("the board's sources follow the website, account and time-control filters",
   expect(lastTreeSources()).toEqual([
     { key: "b:2", label: "Second on Lichess", file: handle("b"), player: 2 },
   ]);
+});
+
+const selector = (name: "website" | "time-control") =>
+  container.querySelector<HTMLElement>(`[data-testid='${name}-selector']`);
+
+test("database ratings have no filters; online ratings filter by site and time control", async () => {
+  await render(<RatingsPanel playerKey="" info={mixedResultOverview} isDatabase />);
+  expect(selector("website")).toBeNull();
+  expect(selector("time-control")).toBeNull();
+
+  await render(
+    <RatingsPanel
+      playerKey=""
+      info={mixedResultOverview}
+      isDatabase
+      onlineFilters={{
+        sites: ["chesscom", "lichess"],
+        initial: { website: "Lichess", timeControl: "blitz" },
+      }}
+    />,
+  );
+  expect(selector("website")?.dataset).toMatchObject({
+    sites: "chesscom,lichess",
+    initial: "Lichess",
+  });
+  expect(selector("time-control")?.dataset.initial).toBe("blitz");
+  // One site and one category at a time: neither filter offers "all".
+  expect(selector("website")?.dataset.allowAll).toBe("false");
+  expect(selector("time-control")?.dataset.allowAll).toBe("false");
+});
+
+test("online ratings from one site offer no Website filter but keep the time control", async () => {
+  await render(
+    <RatingsPanel
+      playerKey=""
+      info={mixedResultOverview}
+      isDatabase
+      onlineFilters={{ sites: ["lichess"], initial: { website: "Lichess", timeControl: "blitz" } }}
+    />,
+  );
+  expect(selector("website")).toBeNull();
+  expect(selector("time-control")?.dataset.initial).toBe("blitz");
+});
+
+test("the online Overview offers the Website filter only for games from more than one site", async () => {
+  await render(
+    <OverviewPanel playerKey="" info={mixedResultOverview} isDatabase onlineSites={["lichess"]} />,
+  );
+  expect(selector("website")).toBeNull();
+  // The time controls offered are that one site's.
+  expect(selector("time-control")?.dataset.website).toBe("Lichess");
+
+  await render(
+    <OverviewPanel
+      playerKey=""
+      info={mixedResultOverview}
+      isDatabase
+      onlineSites={["chesscom", "lichess"]}
+    />,
+  );
+  expect(selector("website")?.dataset.sites).toBe("chesscom,lichess");
+});
+
+test("online ratings count only the starting category from the first render", async () => {
+  const info: PlayerGameInfo = {
+    site_stats_data: [
+      {
+        site: "Lichess",
+        player: "Thomzilla",
+        daily: [
+          {
+            date: "2026.11.01",
+            time_control: "180+0",
+            won: 3,
+            drawn: 0,
+            lost: 1,
+            max_player_elo: 2140,
+          },
+          {
+            date: "2026.11.02",
+            time_control: "600+0",
+            won: 1,
+            drawn: 0,
+            lost: 0,
+            max_player_elo: 1990,
+          },
+        ],
+        openings: [],
+        colors: [],
+        latest: [],
+      },
+    ],
+  };
+  // The mocked selector never reports its value, as the real one does only after mount.
+  await render(
+    <RatingsPanel
+      playerKey=""
+      info={info}
+      isDatabase
+      onlineFilters={{ sites: ["lichess"], initial: { website: "Lichess", timeControl: "blitz" } }}
+    />,
+  );
+  expect(container.textContent).toContain("4 Common.Games");
+  expect(container.querySelector("[data-testid='rating-data']")?.textContent).toBe("2140");
+});
+
+test("the online Overview lists the online player's last games", async () => {
+  await render(
+    <OverviewPanel
+      playerKey=""
+      info={mixedResultOverview}
+      isDatabase
+      databasePlayer={{ player: { id: 9 }, file: { id: { id: "online-db" }, kind: "database" } }}
+      onlineSites={["lichess"]}
+    />,
+  );
+  const lastGames = container.querySelector<HTMLElement>("[data-testid='last-games']");
+  expect(lastGames?.dataset).toMatchObject({ player: "9", file: "online-db" });
 });

@@ -13,6 +13,10 @@ interface WebsiteAccountSelectorProps {
   onWebsiteChange: (website: string | null) => void;
   onAccountChange: (account: string | null) => void;
   allowAll: boolean;
+  /** The sites to offer instead of the account player's, for statistics without a player key. */
+  sites?: AccountSite[];
+  /** The website selected first instead of the first one offered. */
+  initialWebsite?: string;
 }
 
 const WebsiteAccountSelector = ({
@@ -20,6 +24,8 @@ const WebsiteAccountSelector = ({
   onWebsiteChange,
   onAccountChange,
   allowAll,
+  sites: givenSites,
+  initialWebsite,
 }: WebsiteAccountSelectorProps) => {
   const { t } = useTranslation();
   const sessions = useAtomValue(sessionsAtom);
@@ -28,7 +34,7 @@ const WebsiteAccountSelector = ({
     () => playerGroups(sessions).find(({ key }) => key === playerKey),
     [playerKey, sessions],
   );
-  const sites = useMemo(() => player?.sites ?? [], [player]);
+  const sites = useMemo(() => givenSites ?? player?.sites ?? [], [givenSites, player]);
   const websites = useMemo(() => {
     const availableWebsites = [];
     if (sites.includes("chesscom")) {
@@ -46,7 +52,9 @@ const WebsiteAccountSelector = ({
   const filterLogoSites = (value: string | null): AccountSite[] =>
     value === ALL_WEBSITES ? sites : value && WEBSITE_SITE[value] ? [WEBSITE_SITE[value]] : [];
 
-  const [website, setWebsite] = useState<string | null>(websites[0]?.value);
+  const [website, setWebsite] = useState<string | null>(
+    websites.find((option) => option.value === initialWebsite)?.value ?? websites[0]?.value,
+  );
   const [account, setAccount] = useState<string | null>(ALL_ACCOUNTS);
 
   useEffect(() => {

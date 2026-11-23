@@ -4179,6 +4179,131 @@ test("database-files: an opponent's downloaded online games show their count bes
     await expect(page).toHaveScreenshot("opponent-accounts-downloaded.png");
 });
 
+test("database-files: the card's Overview and Ratings switch to a linked opponent's online games", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [
+        "opponent-links",
+        JSON.stringify([opponentLink]),
+    ] as const);
+    await page.addInitScript(() => localStorage.setItem("font-size", "100"));
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+    const day = (date: string, timeControl: string, won: number, lost: number, elo: number) => ({
+        date,
+        time_control: timeControl,
+        won,
+        drawn: 0,
+        lost,
+        max_player_elo: elo,
+    });
+    const colorRow = (timeControl: string, white: boolean, won: number, lost: number) => ({
+        time_control: timeControl,
+        is_player_white: white,
+        won,
+        drawn: 0,
+        lost,
+        rated_won: won,
+        rated_drawn: 0,
+        rated_lost: lost,
+        opponent_elo_sum: (won + lost) * 2000,
+    });
+    const onlineStatistics = {
+        site_stats_data: [
+            {
+                site: "Lichess",
+                player: "FirstWhite",
+                daily: [
+                    day("2026.10.20", "180+0", 6, 2, 2110),
+                    day("2026.11.01", "180+0", 4, 3, 2140),
+                    day("2026.11.02", "600+0", 1, 0, 1980),
+                ],
+                openings: [],
+                colors: [
+                    colorRow("180+0", true, 6, 2),
+                    colorRow("180+0", false, 4, 3),
+                    colorRow("600+0", true, 1, 0),
+                ],
+                latest: [],
+            },
+            {
+                site: "Chess.com",
+                player: "first_white",
+                daily: [day("2026.09.15", "600", 2, 1, 1890)],
+                openings: [],
+                colors: [colorRow("600", true, 2, 1)],
+                latest: [],
+            },
+        ],
+    };
+    await mockScenario({
+        commands: {
+            ...databaseLayoutCommands,
+            ...opponentDatabaseCommands,
+            get_progress: { result: null },
+            get_players_game_info: {
+                ...databaseLayoutCommands.get_players_game_info,
+                byDatabase: { "opponent-online-db": onlineStatistics },
+            },
+        },
+    });
+    const preview = await openFirstWhiteCard(page);
+    const overview = preview.getByRole("tabpanel", { name: "Overview", exact: true });
+    const source = overview.locator("[data-statistics-source]");
+    // The over-the-board games come first; the count on Online says that games arrived.
+    await expect(
+        source.getByRole("radio", { name: "Over the board · 1", exact: true }),
+    ).toBeChecked();
+    await expect(source.getByRole("radio", { name: "Online · 19", exact: true })).not.toBeChecked();
+    await expect(preview.getByTestId("overview-headline")).toContainText("1 Games");
+
+    await source.getByText("Online · 19", { exact: true }).click();
+    await expect(preview.getByTestId("overview-headline")).toContainText("19 Games");
+    await expect(preview.getByTestId("overview-ratings")).toContainText("Peak: 2140");
+    // The online games come from two sites, so the Website filter appears.
+    await expect(overview.getByRole("textbox", { name: "Website", exact: true })).toHaveValue(
+        "All websites",
+    );
+    // The online player's statistics are read in the online games database.
+    const reads = await page.evaluate(() =>
+        window.__E2E_TAURI__
+            .invocations()
+            .filter(({ command }) => command === "get_players_game_info")
+            .map(({ args }) => (args as { file: { id: { id: string } } }).file.id.id),
+    );
+    expect(reads).toContain("opponent-online-db");
+    await assertNoHorizontalOverflow();
+    await waitForFontsSettled(page);
+    await page.mouse.move(0, 0);
+    await expect(overview).toHaveScreenshot("opponent-card-online-overview.png");
+
+    await preview.getByRole("tab", { name: "Ratings", exact: true }).click();
+    const ratings = preview.getByRole("tabpanel", { name: "Ratings", exact: true });
+    // The choice holds across the tabs; the rating curve starts on the busiest site and category.
+    await expect(
+        ratings
+            .locator("[data-statistics-source]")
+            .getByRole("radio", { name: "Online · 19", exact: true }),
+    ).toBeChecked();
+    await expect(ratings.getByRole("textbox", { name: "Website", exact: true })).toHaveValue(
+        "Lichess",
+    );
+    await expect(ratings.getByRole("textbox", { name: "Time control", exact: true })).toHaveValue(
+        "Blitz",
+    );
+    await expect(ratings).toContainText("15 Games");
+    // The date-range tabs are one row: the card's tab floor does not reach the tabs nested in it.
+    const dateRanges = ratings.getByRole("tablist").filter({ hasText: "All time" });
+    const [rowHeight, rangesHeight] = await dateRanges.evaluate((list) => [
+        list.getBoundingClientRect().height,
+        list.parentElement!.getBoundingClientRect().height,
+    ]);
+    expect(rangesHeight).toBeLessThan(rowHeight * 2);
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
+
 test("database-files: Prepare on board shows a linked opponent's over-the-board and online games side by side", async ({
     page,
     mockScenario,

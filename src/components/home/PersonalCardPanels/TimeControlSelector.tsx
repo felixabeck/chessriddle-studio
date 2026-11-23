@@ -30,12 +30,15 @@ interface TimeControlSelectorProps {
   onTimeControlChange: (value: string | null) => void;
   website: string | null;
   allowAll: boolean;
+  /** The category selected first instead of the default. */
+  initialTimeControl?: string;
 }
 
 const TimeControlSelector = ({
   onTimeControlChange,
   website,
   allowAll,
+  initialTimeControl,
 }: TimeControlSelectorProps) => {
   const { t } = useTranslation();
   const timeControls = useMemo(() => {
@@ -55,7 +58,9 @@ const TimeControlSelector = ({
   }, [allowAll, t, website]);
 
   const defaultTimeControl = allowAll ? "any" : "rapid";
-  const [timeControl, setTimeControl] = useState<string | null>(defaultTimeControl);
+  const [timeControl, setTimeControl] = useState<string | null>(
+    initialTimeControl ?? defaultTimeControl,
+  );
 
   useEffect(() => {
     onTimeControlChange(timeControl);

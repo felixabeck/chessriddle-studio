@@ -1,28 +1,39 @@
-import { tauri } from "@/platform/tauri";
 import { Center, Loader, Paper, Stack, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
-import useSWRImmutable from "swr/immutable";
 import type { DatabaseHandle, Player } from "@/bindings";
-import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { inlineFailureMessage } from "@/components/files/notifyError";
-import { useDatabaseContentRevision } from "@/state/linkedCollections";
-import PersonalPlayerCard from "../home/PersonalCard";
+import { failureUnlessCancelled } from "@/platform/errors";
+import { databaseHandleKey } from "@/utils/db";
+import PersonalPlayerCard, { type OnlineStatistics } from "../home/PersonalCard";
 import OpponentAccounts from "./OpponentAccounts";
+import { type OnlineGames, useOnlineGames } from "./useOnlineGames";
+import { type PlayerGameInfoState, usePlayerGameInfo } from "./usePlayerGameInfo";
+
+/**
+ * What the Overview and Ratings tabs show for the online games. A lookup that found no player, a
+ * failed read and an unreadable index all read as unavailable; a cancelled read is still loading.
+ */
+function onlineStatistics(online: OnlineGames, state: PlayerGameInfoState): OnlineStatistics {
+  if (online.lookup.kind === "unavailable") return { kind: "unavailable" };
+  if (online.lookup.kind === "pending") return { kind: "pending" };
+  if (state.info) {
+    return {
+      kind: "ready",
+      info: state.info,
+      databasePlayer: { player: { id: online.lookup.player }, file: online.file },
+    };
+  }
+  if (state.unavailable || failureUnlessCancelled(state.error)) return { kind: "unavailable" };
+  return { kind: "pending" };
+}
 
 function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) {
   const { t } = useTranslation();
-  const { revision, unavailable } = useDatabaseContentRevision(file);
-  const requestKey =
-    revision && !unavailable ? (["player-game-info", file, player.id, ...revision] as const) : null;
-  const requestOwner = useNativeRequestOwner(requestKey);
-  const {
-    data: info,
-    isLoading,
-    error,
-  } = useSWRImmutable(requestKey, ([, file, id]) =>
-    requestOwner!.run((signal) =>
-      tauri.getPlayersGameInfo(crypto.randomUUID(), file, id, { signal }),
-    ),
+  const { info, loading, error, unavailable } = usePlayerGameInfo(file, player.id);
+  const online = useOnlineGames(player, file);
+  const onlineState = usePlayerGameInfo(
+    online?.lookup.kind === "found" ? online.file : null,
+    online?.lookup.kind === "found" ? online.lookup.player : null,
   );
   const errorText = unavailable
     ? t("Collections.Unavailable", {
@@ -33,7 +44,7 @@ function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) 
 
   return (
     <>
-      {(isLoading || revision === null) && !unavailable && (
+      {loading && (
         <Paper withBorder h="100%">
           <Center h="100%">
             <Stack align="center">
@@ -52,11 +63,14 @@ function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) 
       )}
       {info && (
         <PersonalPlayerCard
+          // A new player starts on the over-the-board games again.
+          key={`${databaseHandleKey(file)}:${player.id}`}
           name={player.name!}
           info={info}
           isDatabase
           notice={<OpponentAccounts playerName={player.name!} />}
           databasePlayer={{ player, file }}
+          online={online && onlineStatistics(online, onlineState)}
         />
       )}
     </>

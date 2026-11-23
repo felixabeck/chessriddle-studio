@@ -8,6 +8,7 @@ import type {
 } from "@/bindings";
 import {
     aggregateOpenings,
+    busiestRatingLine,
     compareLatestRating,
     deriveOverviewStatistics,
     extractMonthlyResults,
@@ -19,9 +20,12 @@ import {
     matchingTimeControls,
     MIN_SCORED_GAMES,
     type OpeningStats,
+    playerGameCount,
     scoreHundredths,
     sortOpenings,
     scoreFraction,
+    statisticsSites,
+    websiteOf,
 } from "./overviewStatistics";
 
 function color(
@@ -588,5 +592,99 @@ describe("matchingTimeControls", () => {
         expect(matchingTimeControls(info, "rapid")).toEqual(["480+0", "600+0", "900+10"]);
         expect(matchingTimeControls(info, "blitz")).toEqual(["300+0", "480+0"]);
         expect(matchingTimeControls(info, "classical")).toEqual([]);
+    });
+});
+
+describe("online statistics", () => {
+    test("counts every game with a result, both colours and every site", () => {
+        expect(
+            playerGameCount({
+                site_stats_data: [
+                    site({
+                        colors: [
+                            color({ is_player_white: true, won: 2, drawn: 1, lost: 0 }),
+                            color({ is_player_white: false, won: 0, drawn: 0, lost: 4 }),
+                        ],
+                    }),
+                    site({ site: "Chess.com", colors: [color({ is_player_white: true, won: 1 })] }),
+                ],
+            }),
+        ).toBe(8);
+        expect(playerGameCount({ site_stats_data: [] })).toBe(0);
+    });
+
+    test("names the account sites present, Lichess first, and no other site", () => {
+        expect(
+            statisticsSites({
+                site_stats_data: [
+                    site({ site: "Chess.com" }),
+                    site({ site: "Bundesliga" }),
+                    site(),
+                ],
+            }),
+        ).toEqual(["lichess", "chesscom"]);
+        expect(statisticsSites({ site_stats_data: [site({ site: "Bundesliga" })] })).toEqual([]);
+        expect(websiteOf("lichess")).toBe("Lichess");
+        expect(websiteOf("chesscom")).toBe("Chess.com");
+    });
+
+    test("the busiest rating line is the site and category with the most rated games", () => {
+        expect(
+            busiestRatingLine({
+                site_stats_data: [
+                    site({
+                        daily: [
+                            daily({
+                                date: "2026.11.01",
+                                time_control: "180+0",
+                                won: 3,
+                                max_player_elo: 2100,
+                            }),
+                            daily({
+                                date: "2026.11.02",
+                                time_control: "300+3",
+                                lost: 1,
+                                max_player_elo: 2090,
+                            }),
+                            // Unrated days add no rating point and do not count.
+                            daily({
+                                date: "2026.11.03",
+                                time_control: "600+0",
+                                won: 9,
+                                max_player_elo: null,
+                            }),
+                        ],
+                    }),
+                    site({
+                        site: "Chess.com",
+                        daily: [
+                            daily({
+                                date: "2026.11.04",
+                                time_control: "600",
+                                drawn: 3,
+                                max_player_elo: 1900,
+                            }),
+                        ],
+                    }),
+                    // A site without a Website filter cannot be selected.
+                    site({
+                        site: "Bundesliga",
+                        daily: [
+                            daily({
+                                date: "2026.11.05",
+                                time_control: "180+0",
+                                won: 50,
+                                max_player_elo: 2000,
+                            }),
+                        ],
+                    }),
+                ],
+            }),
+        ).toEqual({ website: "Lichess", timeControl: "blitz" });
+        expect(
+            busiestRatingLine({
+                site_stats_data: [site({ daily: [daily({ date: "2026.11.03", won: 2 })] })],
+            }),
+        ).toBeNull();
     });
 });
