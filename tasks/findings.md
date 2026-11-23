@@ -28603,3 +28603,19 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
   card's visible box at 320px/200%.
 * **Impact class:** ux
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"30f022089ee139179a46e9835a978fb0620464eaacdb616222ec5999023485c6","input_sha256":"84a103cd85d857157acab07ff771fe7baf1180de95442f863a3276aabb6f9bd0","kind":"mutation-receipt","operation":"f7fb61cdbfaec78678f0bc35cfde52163657afe4ff275b3d20141f412e8ea4bb","options":{"section":null},"request_id_sha256":null,"results":["f-20261123-01"],"target":"f-20261123-01","v":1} -->
+
+---
+
+## 2026-11-23 — filed through the inbox spool
+
+### Light pre-review and push gates wait for the machine-wide heavy-gate slot behind other projects' long gates
+
+* **ID:** f-20261123-02 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `package.json:21-22` (`gates:push` and `checks:pre-review` both run `agent-gate node scripts/run-push-gates.mjs`), `scripts/run-push-gates.mjs`, `.claude/rules/gate-tooling.md` (Scheduling and placement), `~/.claude/references/gate-performance.md` rule (a), tuxedo-config `agent-gate`.
+* **Defect:** since the 2026-11-23 push-cycle change (d-20261123-04/05) the heavy suites run only in CI, but both local entry points still start under `agent-gate`, which takes one of the two machine-wide heavy-gate slots for the whole run. A ~30 s light pre-review (format, lint, tsgo, coverage mapping, bundle; plus the Windows clippy compile) therefore queues behind other projects' genuinely heavy gates. Felix's understanding (2026-11-23): "those two slots are for heavy gates only".
+* **Observed:** 2026-11-23 ~22:50–23:07, the pre-review rerun after a tests-only fix round of the preview-flip-orientation work waited over 15 minutes: slot 1 held by agent-kit `drain-newflow` `kit check` (pytest -n 4, 25 min), slot 2 by chess-tactics-app `gate_receipt.py ensure … frontend-e2e-mocked` (Playwright, 19 min). At 23:06 load average was 51.6 on 24 cores, 64 of 91 GB available system-wide, `agents.slice` at 32 of 40 GiB `MemoryHigh`.
+* **Failure scenario:** any ChessFable session runs `pnpm checks:pre-review` (after every repair batch) or `pnpm gates:push` while two other repositories run their full gates: it blocks until one of them finishes, although its own lanes would fit in the session's 8 GiB scope.
+* **Open question:** which local lanes still need a machine-wide slot after heavy suites moved to CI: only Rust compilation, or none, given each session scope is already capped at 8 GiB and `agents.slice` at 40 GiB `MemoryHigh`?
+* **Fix direction:** Optimal: only the lanes that are measured memory risks (Rust compilation: Windows clippy, filtered `cargo test` in related-tests, the bindings exporter; per gate-tooling's 8 GiB-per-compiler-job allocation) take a slot; the JS lanes run in the session scope without one. Re-measure lane peaks before deciding, and update gate-tooling.md and gate-performance.md in the same change.
+* **Found by:** Claude Code (Opus 5.5), session 03bb63e1-05c4-43b8-8bd4-ca13f30218d6, 2026-11-23.
