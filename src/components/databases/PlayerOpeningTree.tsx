@@ -238,7 +238,7 @@ function OpeningTree({
   name: string;
   tabName: string;
   sources: OpeningTreeSource[];
-  /** Shown as a second section here and as a second column on the board "Prepare on board" opens. */
+  /** Shown as a second section here and as a second column on the board that "Prepare on board" opens. */
   online?: OnlineGames;
 }) {
   const { t } = useTranslation();

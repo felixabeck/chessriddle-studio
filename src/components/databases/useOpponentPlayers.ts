@@ -5,9 +5,9 @@ import type { OpponentLink } from "@/state/opponentLinks";
 import { opponentPlayers } from "./opponentLookup";
 
 /**
- * The players the link's usernames name in its online games database, lowest id first. The
- * accounts box and the opening tree read the same cached answer; `undefined` while it loads, after
- * a failure, and when there are no games.
+ * The SWR answer for the players the link's usernames name in its online games database, lowest id
+ * first. The accounts box and the opening tree read the same cached answer; nothing is asked
+ * without a link or without a games database.
  */
 export function useOpponentPlayers(link: OpponentLink | undefined, file: DatabaseHandle | null) {
     // Read here, not inside the fetcher: the React Compiler memoizes the fetcher on the property
@@ -17,7 +17,7 @@ export function useOpponentPlayers(link: OpponentLink | undefined, file: Databas
     const usernames = accounts.map((account) => account.username).join("\n");
     return useSWRImmutable(
         file && link ? (["opponent-players", file, usernames] as const) : null,
-        ([, games]) => opponentPlayers(games, accounts),
+        ([, database]) => opponentPlayers(database, accounts),
         {
             // Every reader reports the missing answer in its own place; the cause goes to the log once.
             onError: (cause) => {

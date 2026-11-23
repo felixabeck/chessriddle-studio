@@ -3529,11 +3529,13 @@ test("database-files: the board explorer compares two databases side by side", a
     // its column group; no control but the settings button.
     const sources = page.locator("[data-explorer-source]");
     const databasePanel = page.getByRole("tabpanel", { name: "Database", exact: true });
-    await expect(sources).toHaveText(["Mega DatabaseElo 1900–2500", "Correspondence"]);
+    await expect(sources).toHaveCount(2);
     // The filters sit on their own line under the database name.
+    await expect(sources.nth(0).locator(":scope > :first-child")).toHaveText("Mega Database");
     await expect(sources.nth(0).locator("[data-explorer-source-detail]")).toHaveText(
         "Elo 1900–2500",
     );
+    await expect(sources.nth(1)).toHaveText("Correspondence");
     await expect(sources.nth(1).locator("[data-explorer-source-detail]")).toHaveCount(0);
     await expect(databasePanel.getByRole("textbox")).toHaveCount(0);
     await expect(databasePanel.getByRole("tab")).toHaveCount(0);
@@ -4233,6 +4235,11 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
     await expect(online.locator("[data-opening-moves]")).toContainText("b3");
     await expect(tree.locator('[data-opening-games-section="online"]')).toContainText(
         "online_rival",
+    );
+    await waitForFontsSettled(page);
+    // The board beside both move tables, as the card lays out the two sections.
+    await expect(tree.locator("[data-opening-board]").locator("..")).toHaveScreenshot(
+        "opponent-card-sections.png",
     );
     await tree.getByRole("button", { name: "Prepare on board", exact: true }).click();
     await expect(page).toHaveURL("/");
