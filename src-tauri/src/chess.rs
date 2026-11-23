@@ -1384,6 +1384,7 @@ struct ReplayedPosition {
     position: Chess,
     fen: Fen,
     moves: Vec<String>,
+    played_move: Option<shakmaty::Move>,
     terminal: Option<ReportTerminal>,
 }
 
@@ -1412,6 +1413,7 @@ fn collect_report_positions(
         position: chess.clone(),
         fen,
         moves: Vec::new(),
+        played_move: None,
     }];
 
     for (i, m) in moves.iter().enumerate() {
@@ -1431,6 +1433,7 @@ fn collect_report_positions(
             position: chess.clone(),
             fen: Fen::from_position(chess.clone(), EnPassantMode::Legal),
             moves: moves[..=i].to_vec(),
+            played_move: Some(played),
         });
     }
     Ok(positions)
@@ -1652,6 +1655,7 @@ async fn analyze_game_core<R: tauri::Runtime>(
     let novelty = match options.reference_db.clone() {
         Some(reference) if options.annotate_novelties => {
             let queries = novelty_queries(&replay);
+            let excluded_game = novelty_excluded_game(&replay);
             let authority = state.pgn_path_authority.clone();
             let repository = std::sync::Arc::clone(&state.database_repository);
             let search_cache = std::sync::Arc::clone(&state.search_cache);
@@ -1670,6 +1674,7 @@ async fn analyze_game_core<R: tauri::Runtime>(
                             permit,
                             reference,
                             queries,
+                            excluded_game.as_ref(),
                             worker_cancellation,
                         )
                     })
@@ -1745,11 +1750,22 @@ fn novelty_outcome(present: &[bool]) -> NoveltyOutcome {
     }
 }
 
+fn novelty_excluded_game(positions: &[ReplayedPosition]) -> Option<crate::db::ExcludedGame> {
+    let start = &positions.first()?.position;
+    let moves = positions
+        .iter()
+        .skip(1)
+        .filter_map(|entry| entry.played_move.clone())
+        .collect();
+    Some(crate::db::ExcludedGame::new(start, moves))
+}
+
 /// Returns a prefix of presence flags ending at the first absent position, or
 /// the full length when every position is present. Each element is "this
 /// position is PRESENT in the reference database"; `novelty_outcome` turns the
 /// flags into the report's novelty. A full-index scan per ply is the cost this
 /// offload exists to bound.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn novelty_lookup_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     repository: &DatabaseRepository,
@@ -1757,6 +1773,7 @@ pub(crate) fn novelty_lookup_blocking(
     permit: OwnedSemaphorePermit,
     file: DatabaseHandle,
     queries: Vec<GameQuery>,
+    excluded_game: Option<&crate::db::ExcludedGame>,
     cancellation: &CancellationToken,
 ) -> Result<Vec<bool>, Error> {
     let _permit = permit;
@@ -1771,6 +1788,7 @@ pub(crate) fn novelty_lookup_blocking(
             search_cache,
             &file,
             query,
+            excluded_game,
             cancellation,
         )?;
         present.push(found);
@@ -3141,6 +3159,126 @@ done
             .unwrap()
             .unwrap();
         assert_eq!(progress.state, ProgressState::Succeeded);
+    }
+
+    #[cfg(unix)]
+    fn import_reference_db_into_report_fixture(
+        directory: &tempfile::TempDir,
+        app: &tauri::AppHandle<tauri::test::MockRuntime>,
+        stem: &str,
+        pgn: &str,
+    ) -> DatabaseHandle {
+        use crate::infra::path_authority::PathOperation;
+        use diesel::{connection::SimpleConnection, Connection};
+
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(crate::db::ConvertProgress))
+            .mount_events(app);
+        let database = directory.path().join(format!("{stem}.db3"));
+        let mut connection =
+            diesel::SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        connection
+            .batch_execute(include_str!("db/create.sql"))
+            .unwrap();
+        connection
+            .batch_execute("INSERT INTO Info (Name, Value) VALUES ('Version', '2.4.0');")
+            .unwrap();
+        drop(connection);
+
+        let pgn_path = directory.path().join(format!("{stem}.pgn"));
+        std::fs::write(&pgn_path, pgn).unwrap();
+
+        let state = app.state::<AppState>();
+        let pgn_name = format!("{stem}.pgn");
+        let db_name = format!("{stem}.db3");
+        let (pgn_handle, db_handle) = state
+            .pgn_path_authority
+            .with_mut(|authority| {
+                let pgn_grant = authority.grant_persistent_file_for_test(
+                    &pgn_path,
+                    &pgn_name,
+                    vec![PathOperation::ReadPgn],
+                );
+                let db_grant = authority.grant_persistent_file_for_test(
+                    &database,
+                    &db_name,
+                    vec![
+                        PathOperation::DatabaseCreate,
+                        PathOperation::DatabaseRead,
+                        PathOperation::DatabaseMutate,
+                    ],
+                );
+                (
+                    crate::infra::path_authority::FileWorkspaceHandle::new(pgn_grant.id),
+                    DatabaseHandle::new(db_grant.id),
+                )
+            })
+            .unwrap();
+
+        crate::db::convert_pgn_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            vec![pgn_handle],
+            db_handle.clone(),
+            None,
+            app.clone(),
+            stem.into(),
+            None,
+            format!("import-{stem}"),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        db_handle
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn report_novelty_excludes_analysed_games_own_copy_in_reference_db() {
+        let game_g = "[Event \"Game G\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 1-0\n";
+        let shared_first_move = "[Event \"Game H\"]\n[Site \"Fixture\"]\n[White \"C\"]\n[Black \"D\"]\n[Result \"0-1\"]\n\n1. e4 c5 2. Nf3 d6 0-1\n";
+
+        // Reference database holds only G: novelty is the first move (position 1).
+        let (directory, app, engine) = report_script_fixture(&[]);
+        let reference_only_g =
+            import_reference_db_into_report_fixture(&directory, &app, "only-g", game_g);
+        let mut options = report_options(&["e2e4", "e7e5", "g1f3", "b8c6"]);
+        options.annotate_novelties = true;
+        options.reference_db = Some(reference_only_g);
+        let result = run_scripted_report(
+            &app,
+            engine,
+            "report-novelty-self-only",
+            GoMode::Depth(1),
+            options,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.novelty, NoveltyOutcome::Found { position: 1 });
+
+        // Reference database holds G and a second game sharing G's first move: novelty is move 2 (position 2).
+        let (directory, app, engine) = report_script_fixture(&[]);
+        let reference_with_other = import_reference_db_into_report_fixture(
+            &directory,
+            &app,
+            "g-and-h",
+            &format!("{game_g}\n{shared_first_move}"),
+        );
+        let mut options = report_options(&["e2e4", "e7e5", "g1f3", "b8c6"]);
+        options.annotate_novelties = true;
+        options.reference_db = Some(reference_with_other);
+        let result = run_scripted_report(
+            &app,
+            engine,
+            "report-novelty-self-and-other",
+            GoMode::Depth(1),
+            options,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.novelty, NoveltyOutcome::Found { position: 2 });
     }
 
     #[cfg(unix)]

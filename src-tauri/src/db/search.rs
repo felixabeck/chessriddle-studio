@@ -133,6 +133,23 @@ impl ExactPositionIdentity {
     }
 }
 
+/// Content identity of a game to exclude at most once from a presence scan:
+/// its starting position and decoded mainline moves.
+#[derive(Debug, Clone)]
+pub(crate) struct ExcludedGame {
+    start: ExactPositionIdentity,
+    moves: Vec<shakmaty::Move>,
+}
+
+impl ExcludedGame {
+    pub(crate) fn new(start: &Chess, moves: Vec<shakmaty::Move>) -> Self {
+        Self {
+            start: ExactPositionIdentity::new(start),
+            moves,
+        }
+    }
+}
+
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum PositionQuery {
     Exact(ExactData),
@@ -962,6 +979,53 @@ impl<'a> ReplayQueries<'a> {
     }
 }
 
+fn entry_start_position(game_id: i32, fen: Option<&str>) -> Result<Chess, Error> {
+    if let Some(fen) = fen {
+        let fen = Fen::from_ascii(fen.as_bytes()).map_err(|error| {
+            Error::InvalidInput(format!("game {game_id} has invalid FEN: {error}"))
+        })?;
+        database_setup_to_chess(fen.into_setup()).map_err(|error| {
+            Error::InvalidInput(format!("game {game_id} has invalid FEN setup: {error}"))
+        })
+    } else {
+        Ok(Chess::default())
+    }
+}
+
+fn entry_matches_excluded_game(
+    entry: SearchGameEntryRef<'_>,
+    excluded: &ExcludedGame,
+    cancellation: &CancellationToken,
+) -> Result<bool, Error> {
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
+    let mut chess = entry_start_position(entry.id, entry.fen)?;
+    if ExactPositionIdentity::new(&chess) != excluded.start {
+        return Ok(false);
+    }
+    let mainline_bytes: Vec<u8> =
+        try_iter_mainline_move_bytes_cancellable(entry.moves, cancellation)
+            .map_err(|error| invalid_move_stream(entry.id, error))?
+            .collect();
+    if mainline_bytes.len() != excluded.moves.len() {
+        return Ok(false);
+    }
+    for (byte, expected) in mainline_bytes.into_iter().zip(&excluded.moves) {
+        if cancellation.is_cancelled() {
+            return Err(Error::Cancellation);
+        }
+        let decoded = decode_move(byte, &chess).ok_or_else(|| {
+            Error::InvalidInput(format!("game {} has illegal encoded move {byte}", entry.id))
+        })?;
+        if decoded != *expected {
+            return Ok(false);
+        }
+        chess.play_unchecked(&decoded);
+    }
+    Ok(true)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn replay_position_matches(
     game_id: i32,
@@ -975,16 +1039,7 @@ fn replay_position_matches(
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
-    let mut chess = if let Some(fen) = fen {
-        let fen = Fen::from_ascii(fen.as_bytes()).map_err(|error| {
-            Error::InvalidInput(format!("game {game_id} has invalid FEN: {error}"))
-        })?;
-        database_setup_to_chess(fen.into_setup()).map_err(|error| {
-            Error::InvalidInput(format!("game {game_id} has invalid FEN setup: {error}"))
-        })?
-    } else {
-        Chess::default()
-    };
+    let mut chess = entry_start_position(game_id, fen)?;
 
     #[cfg(test)]
     if instrument {
@@ -1832,6 +1887,7 @@ pub fn is_position_in_db(
         search_cache,
         file,
         query,
+        None,
         &CancellationToken::new(),
     )
 }
@@ -1842,6 +1898,7 @@ pub(crate) fn is_position_in_db_cancellable(
     search_cache: &Arc<SearchCache>,
     file: &DatabaseHandle,
     query: &GameQuery,
+    excluded_game: Option<&ExcludedGame>,
     cancellation: &CancellationToken,
 ) -> Result<bool, Error> {
     if cancellation.is_cancelled() {
@@ -1885,6 +1942,7 @@ pub(crate) fn is_position_in_db_cancellable(
     // Presence therefore uses its own occurrence scan.
 
     let exists = AtomicBool::new(false);
+    let excluded_copies = AtomicUsize::new(0);
     let check_entry = |entry: SearchGameEntryRef<'_>,
                        entry_cancellation: &CancellationToken|
      -> Result<(), Error> {
@@ -1904,7 +1962,17 @@ pub(crate) fn is_position_in_db_cancellable(
                 )?
                 .is_some()
             {
-                exists.store(true, Ordering::Relaxed);
+                if let Some(excluded) = excluded_game {
+                    if entry_matches_excluded_game(entry, excluded, entry_cancellation)? {
+                        if excluded_copies.fetch_add(1, Ordering::Relaxed) >= 1 {
+                            exists.store(true, Ordering::Relaxed);
+                        }
+                    } else {
+                        exists.store(true, Ordering::Relaxed);
+                    }
+                } else {
+                    exists.store(true, Ordering::Relaxed);
+                }
             }
         }
         Ok(())
@@ -2801,6 +2869,7 @@ mod imported_search_tests {
             &state.search_cache,
             handle,
             query,
+            None,
             &CancellationToken::new(),
         )
         .unwrap()
@@ -2923,6 +2992,7 @@ mod imported_search_tests {
             state.new_request.clone().try_acquire_owned().unwrap(),
             handle,
             vec![present, absent],
+            None,
             &CancellationToken::new(),
         )
         .unwrap();
@@ -2984,6 +3054,267 @@ mod imported_search_tests {
                 "{error}"
             );
         }
+    }
+
+    fn analysed_game_queries_and_exclusion(
+        start_fen: Option<&str>,
+        uci_moves: &[&str],
+    ) -> (Vec<GameQuery>, ExcludedGame) {
+        let setup = match start_fen {
+            Some(fen) => Fen::from_ascii(fen.as_bytes()).unwrap().into_setup(),
+            None => Fen::default().into_setup(),
+        };
+        let (mut chess, _) = crate::engine::engine_setup_to_chess(setup).unwrap();
+        let start = chess.clone();
+        let mut queries = Vec::with_capacity(uci_moves.len());
+        let mut moves = Vec::with_capacity(uci_moves.len());
+        for &uci in uci_moves {
+            let parsed = shakmaty::uci::UciMove::from_ascii(uci.as_bytes()).unwrap();
+            let played = parsed.to_move(&chess).unwrap();
+            chess.play_unchecked(&played);
+            let fen = Fen::from_position(chess.clone(), EnPassantMode::Legal);
+            queries.push(exact_position_query(&fen.to_string()));
+            moves.push(played);
+        }
+        (queries, ExcludedGame::new(&start, moves))
+    }
+
+    fn novelty_lookup_with_exclusion(
+        app: &tauri::AppHandle<tauri::test::MockRuntime>,
+        handle: &DatabaseHandle,
+        queries: Vec<GameQuery>,
+        excluded: Option<&ExcludedGame>,
+    ) -> Result<Vec<bool>, Error> {
+        let state = app.state::<AppState>();
+        crate::chess::novelty_lookup_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            state.new_request.clone().try_acquire_owned().unwrap(),
+            handle.clone(),
+            queries,
+            excluded,
+            &CancellationToken::new(),
+        )
+    }
+
+    #[test]
+    fn novelty_exclusion_ignores_only_copy_of_analysed_game() {
+        let pgn = "[Event \"Self\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0\n";
+        let (_dir, app, handle, _database) = imported_search_database(pgn);
+        let (queries, excluded) = analysed_game_queries_and_exclusion(
+            None,
+            &["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"],
+        );
+
+        let without_exclusion =
+            novelty_lookup_with_exclusion(&app, &handle, queries.clone(), None).unwrap();
+        assert_eq!(without_exclusion, vec![true; 6]);
+
+        let with_exclusion =
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap();
+        assert_eq!(with_exclusion, vec![false]);
+    }
+
+    #[test]
+    fn novelty_exclusion_finds_first_move_not_played_by_other_game() {
+        let pgn = "\
+[Event \"Game G\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0\n\n\
+[Event \"Game H\"]\n[Site \"Fixture\"]\n[White \"C\"]\n[Black \"D\"]\n[Result \"0-1\"]\n\n1. e4 e5 2. Nf3 d6 3. d4 Nf6 0-1\n";
+        let (_dir, app, handle, _database) = imported_search_database(pgn);
+        let (queries, excluded) = analysed_game_queries_and_exclusion(
+            None,
+            &["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"],
+        );
+
+        let without_exclusion =
+            novelty_lookup_with_exclusion(&app, &handle, queries.clone(), None).unwrap();
+        assert_eq!(without_exclusion, vec![true; 6]);
+
+        let with_exclusion =
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap();
+        assert_eq!(with_exclusion, vec![true, true, true, false]);
+    }
+
+    #[test]
+    fn novelty_exclusion_keeps_position_present_when_two_copies_exist() {
+        let pgn = "\
+[Event \"Copy 1\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0\n\n\
+[Event \"Copy 2\"]\n[Site \"Fixture\"]\n[White \"C\"]\n[Black \"D\"]\n[Result \"0-1\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 0-1\n";
+        let (_dir, app, handle, _database) = imported_search_database(pgn);
+        let (queries, excluded) = analysed_game_queries_and_exclusion(
+            None,
+            &["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"],
+        );
+
+        let with_exclusion =
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap();
+        assert_eq!(with_exclusion, vec![true; 6]);
+    }
+
+    #[test]
+    fn novelty_exclusion_ignores_comments_nags_and_variations_in_stored_copy() {
+        let pgn = "[Event \"Annotated\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 {best by test} ! e5 (1... c5 2. Nf3 d6) 2. Nf3 $1 Nc6 {solid} 3. Bb5 a6 1-0\n";
+        let (_dir, app, handle, _database) = imported_search_database(pgn);
+        let (queries, excluded) = analysed_game_queries_and_exclusion(
+            None,
+            &["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"],
+        );
+
+        let without_exclusion =
+            novelty_lookup_with_exclusion(&app, &handle, queries.clone(), None).unwrap();
+        assert_eq!(without_exclusion, vec![true; 6]);
+
+        let with_exclusion =
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap();
+        assert_eq!(with_exclusion, vec![false]);
+    }
+
+    #[test]
+    fn novelty_exclusion_does_not_exclude_longer_or_shorter_stored_games() {
+        let (queries, excluded) =
+            analysed_game_queries_and_exclusion(None, &["e2e4", "e7e5", "g1f3", "b8c6"]);
+
+        // Stored game has one extra trailing move: not a copy of G.
+        let longer_pgn = "[Event \"Longer\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 1-0\n";
+        let (_dir, app, handle, _database) = imported_search_database(longer_pgn);
+        let with_longer =
+            novelty_lookup_with_exclusion(&app, &handle, queries.clone(), Some(&excluded)).unwrap();
+        assert_eq!(with_longer, vec![true, true, true, true]);
+
+        // Stored game has one fewer trailing move: not a copy of G.
+        let shorter_pgn = "[Event \"Shorter\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 1-0\n";
+        let (_dir, app, handle, _database) = imported_search_database(shorter_pgn);
+        let with_shorter =
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap();
+        assert_eq!(with_shorter, vec![true, true, true, false]);
+    }
+
+    #[test]
+    fn novelty_exclusion_handles_custom_fen_chess960_castling_and_start_identity() {
+        // Custom FEN.
+        let custom_fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1";
+        let custom_pgn = format!(
+            "[Event \"Custom\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n[SetUp \"1\"]\n[FEN \"{custom_fen}\"]\n\n1. e4 Ke7 2. e5 Ke6 1-0\n"
+        );
+        let (_dir, app, handle, _database) = imported_search_database(&custom_pgn);
+        let (queries, excluded) = analysed_game_queries_and_exclusion(
+            Some(custom_fen),
+            &["e2e4", "e8e7", "e4e5", "e7e6"],
+        );
+        assert_eq!(
+            novelty_lookup_with_exclusion(&app, &handle, queries.clone(), None).unwrap(),
+            vec![true; 4]
+        );
+        assert_eq!(
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap(),
+            vec![false]
+        );
+
+        // Chess960 setup with castling rights and a castling move.
+        let frc_fen = "rk2r3/pppppppp/8/8/8/8/PPPPPPPP/RK2R3 w AEae - 0 1";
+        let frc_pgn = format!(
+            "[Event \"Chess960\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n[Variant \"Chess960\"]\n[SetUp \"1\"]\n[FEN \"{frc_fen}\"]\n\n1. O-O O-O 2. Rfe1 1-0\n"
+        );
+        let (_dir, app, handle, _database) = imported_search_database(&frc_pgn);
+        let (queries, excluded) =
+            analysed_game_queries_and_exclusion(Some(frc_fen), &["b1e1", "b8e8", "f1e1"]);
+        assert_eq!(
+            novelty_lookup_with_exclusion(&app, &handle, queries.clone(), None).unwrap(),
+            vec![true; 3]
+        );
+        assert_eq!(
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap(),
+            vec![false]
+        );
+
+        // Negative case: stored start differs only in a castling right that is lost on move 1.
+        // Both games reach the exact same positions after ply 1 with the exact same Move sequence.
+        let analysed_start = "4k3/8/8/8/8/8/8/4K2R w K - 0 1";
+        let stored_start = "4k3/8/8/8/8/8/8/4K2R w - - 0 1";
+        let different_start_pgn = format!(
+            "[Event \"Different Start\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n[SetUp \"1\"]\n[FEN \"{stored_start}\"]\n\n1. Kf1 Kf8 2. Kg1 Kg8 1-0\n"
+        );
+        let (_dir, app, handle, _database) = imported_search_database(&different_start_pgn);
+        let (queries, excluded) = analysed_game_queries_and_exclusion(
+            Some(analysed_start),
+            &["e1f1", "e8f8", "f1g1", "f8g8"],
+        );
+        assert_eq!(
+            novelty_lookup_with_exclusion(&app, &handle, queries, Some(&excluded)).unwrap(),
+            vec![true, true, true, true]
+        );
+    }
+
+    #[test]
+    fn novelty_exclusion_reports_illegal_encoded_move_after_matched_position() {
+        let pgn = "[Event \"Corrupt Copy\"]\n[Site \"Fixture\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 1-0\n";
+        let (_dir, app, handle, database) = imported_search_database(pgn);
+        let state = app.state::<AppState>();
+
+        let mut connection = SqliteConnection::establish(database.to_str().unwrap()).unwrap();
+        let imported = games::table.load::<Game>(&mut connection).unwrap();
+        assert_eq!(imported.len(), 1);
+        let game_id = imported[0].id;
+        let mut corrupted_moves = imported[0].moves.clone();
+        assert_eq!(corrupted_moves.len(), 4);
+        // Ply 4 (index 3) is three plies after AFTER_E4_FEN (ply 1), past the continuation
+        // move at ply 2 that replay_position_matches decodes. 250 is below NAG_MARKER (252)
+        // and not a legal-move index after 1. e4 e5 2. Nf3.
+        corrupted_moves[3] = 250;
+        diesel::update(games::table.filter(games::id.eq(game_id)))
+            .set(games::moves.eq(&corrupted_moves))
+            .execute(&mut connection)
+            .unwrap();
+        drop(connection);
+
+        let target = super::super::resolve_database(
+            &state.pgn_path_authority,
+            &handle,
+            PathOperation::DatabaseRead,
+        )
+        .unwrap();
+        state.search_cache.invalidate_database(&target);
+        let index_path = get_index_path(&database);
+        if index_path.exists() {
+            std::fs::remove_file(&index_path).unwrap();
+        }
+
+        let query = exact_position_query(AFTER_E4_FEN);
+        let (_, excluded) =
+            analysed_game_queries_and_exclusion(None, &["e2e4", "e7e5", "g1f3", "b8c6"]);
+
+        // Control: without exclusion, the scan stops at the match (and its ply-2 continuation),
+        // never decoding ply 4, so the position is still reported present.
+        let control = is_position_in_db_cancellable(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            &handle,
+            &query,
+            None,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(control, "None control must report present");
+
+        // With exclusion, the copy comparison decodes ply 4 and must return a typed error
+        // naming the game id rather than panicking or treating the entry as not a copy.
+        let error = is_position_in_db_cancellable(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            &handle,
+            &query,
+            Some(&excluded),
+            &CancellationToken::new(),
+        )
+        .unwrap_err();
+        let expected_prefix = format!("game {game_id} has illegal encoded move 250");
+        assert!(
+            matches!(error, Error::InvalidInput(ref cause) if cause == &expected_prefix),
+            "expected {expected_prefix:?}, got {error:?}"
+        );
     }
 }
 
@@ -4121,6 +4452,7 @@ mod tests {
             &state.search_cache,
             &handle,
             &GameQuery::new(),
+            None,
             &CancellationToken::new(),
         );
         let recorded = super::super::take_resolve_database_operations();
@@ -4709,6 +5041,7 @@ mod tests {
                         &state.search_cache,
                         &handle,
                         &query,
+                        None,
                         &cancellation,
                     )
                     .map(|_| ())
@@ -5255,6 +5588,7 @@ mod tests {
             permit,
             handle,
             vec![exact_position_query(AFTER_E4_E5_NF3_FEN)],
+            None,
             &cancellation,
         );
 

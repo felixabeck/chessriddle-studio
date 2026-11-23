@@ -33,7 +33,7 @@ pub(crate) use repository::cancel_snapshot_copy_after_chunks;
 pub(crate) use repository::test_target;
 mod schema;
 mod search;
-pub(crate) use search::is_position_in_db_cancellable;
+pub(crate) use search::{is_position_in_db_cancellable, ExcludedGame};
 mod search_index;
 pub(crate) mod sqlite_cancellation;
 
