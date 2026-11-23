@@ -11,9 +11,8 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { libraryButtonProps } from "@/components/library/presentation";
 import { normalizeError } from "@/platform/errors";
 import { tabsAtom } from "@/state/atoms";
-import { scanBlockingTabs } from "@/state/quitGate";
+import { fileGameHasBlockingOpenTab } from "@/utils/fileGameWrite";
 import { readFileGame, setFileGameSection } from "@/utils/files";
-import { isTabOfFileGame } from "@/utils/tabs";
 
 export type LineSectionTarget = {
   index: number;
@@ -49,8 +48,7 @@ export default function LineSectionEditor({
   const [pending, setPending] = useState(false);
 
   async function save(section: string | null) {
-    const lineTabs = tabs.filter((tab) => isTabOfFileGame(tab, file, target.index));
-    if (scanBlockingTabs(lineTabs).length > 0) {
+    if (fileGameHasBlockingOpenTab(tabs, file, target.index)) {
       notifications.show({
         color: "danger",
         title: t("Common.Error"),

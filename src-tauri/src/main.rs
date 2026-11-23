@@ -106,7 +106,7 @@ use crate::oauth::{
 };
 use crate::pgn::{
     count_pgn_games, delete_game, file_revision, move_games, read_game, read_games,
-    set_game_section, write_game,
+    set_game_orientation, set_game_section, write_game,
 };
 use crate::practice::{
     acknowledge_practice_orphans, list_practice_decks, load_practice_deck, load_practice_reviews,
@@ -1646,6 +1646,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_public_lichess_json,
             write_game,
             set_game_section,
+            set_game_orientation,
             download_file,
             fs::install_engine_workflow,
             fs::pending_engine_completions,
@@ -4107,6 +4108,11 @@ mod blocking_offload_scans {
             ("move_games", "move_games_core", "move_games_core"),
             ("write_game", "write_game_core", "mutate_game_core"),
             ("set_game_section", "mutate_game_core", "mutate_game_core"),
+            (
+                "set_game_orientation",
+                "mutate_game_core",
+                "mutate_game_core",
+            ),
         ] {
             let pgn = include_str!("pgn.rs");
             let body = body_at_indent(pgn, &format!("pub async fn {command}("));

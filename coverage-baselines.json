@@ -102,6 +102,7 @@
           "src/utils/databaseGameTree.ts",
           "src/utils/db.ts",
           "src/utils/directories.ts",
+          "src/utils/fileGameWrite.ts",
           "src/utils/files.ts",
           "src/utils/gameReferences.ts",
           "src/utils/lineTitle.ts",

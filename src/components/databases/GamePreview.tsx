@@ -3,7 +3,7 @@ import { Box, Group, Menu, Stack } from "@mantine/core";
 import { useElementSize } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { ArrowUpDown, Copy } from "lucide-react";
-import { useContext, useMemo, useState } from "react";
+import { useContext, useMemo, useRef, useState } from "react";
 import useSWRImmutable from "swr/immutable";
 import { useStore } from "zustand";
 import BoardFrame from "@/components/boards/BoardFrame";
@@ -35,6 +35,8 @@ import classes from "./GridLayout.module.css";
 
 type BoardSide = "white" | "black";
 
+export type PersistPreviewOrientation = (side: BoardSide) => Promise<void>;
+
 type PreviewLayout = {
   hideControls?: boolean;
   showOpening?: boolean;
@@ -47,14 +49,17 @@ type PreviewLayout = {
 function GamePreviewWrapper({
   pgn,
   headers,
+  persistOrientation,
   ...layout
 }: {
   pgn: string;
   headers?: GameHeaders;
+  persistOrientation?: PersistPreviewOrientation;
 } & PreviewLayout) {
   const { t } = useTranslation();
-  // Held above the per-game key, so the board keeps its side while moving between games.
+  // Database previews carry flippedTo across games. File previews reset it when the loaded game changes.
   const [flippedTo, setFlippedTo] = useState<BoardSide | null>(null);
+  const persistInFlight = useRef(false);
   const requestKey = [pgn, headers?.fen] as const;
   const requestOwner = useNativeRequestOwner(requestKey);
   const { data: parsedGame } = useSWRImmutable(requestKey, async ([p, fen]) => {
@@ -103,16 +108,41 @@ function GamePreviewWrapper({
     );
   }, [parsedGame, gameKey]);
 
+  const persistsToFile = persistOrientation != null;
+  const flipResetKey = persistsToFile ? gameKey : null;
+  const seenFlipResetKey = useRef(flipResetKey);
+  if (seenFlipResetKey.current !== flipResetKey) {
+    seenFlipResetKey.current = flipResetKey;
+    persistInFlight.current = false;
+    if (flippedTo !== null) setFlippedTo(null);
+  }
+
+  const onFlip = (side: BoardSide) => {
+    if (!persistOrientation) {
+      setFlippedTo(side);
+      return;
+    }
+    if (persistInFlight.current) return;
+    persistInFlight.current = true;
+    const previous = flippedTo;
+    const resetKey = flipResetKey;
+    setFlippedTo(side);
+    void persistOrientation(side).then(
+      () => {
+        if (seenFlipResetKey.current === resetKey) persistInFlight.current = false;
+      },
+      () => {
+        if (seenFlipResetKey.current !== resetKey) return;
+        persistInFlight.current = false;
+        setFlippedTo(previous);
+      },
+    );
+  };
+
   return (
     <>
       {game && (
-        <GamePreview
-          key={gameKey}
-          game={game}
-          flippedTo={flippedTo}
-          onFlip={setFlippedTo}
-          {...layout}
-        />
+        <GamePreview key={gameKey} game={game} flippedTo={flippedTo} onFlip={onFlip} {...layout} />
       )}
     </>
   );

@@ -160,6 +160,18 @@ export async function setFileGameSection(
     );
 }
 
+export async function setFileGameOrientation(
+    handle: FileWorkspaceHandle,
+    gameNumber: number,
+    orientation: "white" | "black",
+    stamp: string,
+    revision: string,
+): Promise<WriteStamp> {
+    return withFileWrite(handle, () =>
+        tauri.setGameOrientation(handle, gameNumber, orientation, stamp, revision),
+    );
+}
+
 export async function loadFileGame(
     handle: FileWorkspaceHandle,
     gameNumber: number,

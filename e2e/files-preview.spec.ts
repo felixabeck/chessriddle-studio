@@ -919,6 +919,13 @@ test("files-preview: a right click on the board offers flip and copy FEN", async
     await flip.click();
     await expect(flip).toHaveCount(0);
     await expect(orientation).toHaveClass(/orientation-black/);
+    const orientationWrites = await page.evaluate(() =>
+        window.__E2E_TAURI__
+            .invocations()
+            .filter(({ command }) => command === "set_game_orientation"),
+    );
+    expect(orientationWrites).toHaveLength(1);
+    expect(orientationWrites[0]?.args).toMatchObject({ n: 0, orientation: "black" });
 
     await board.click({ button: "right" });
     await copy.click();

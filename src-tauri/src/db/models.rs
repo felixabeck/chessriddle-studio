@@ -228,4 +228,11 @@ impl BoardOrientation {
             _ => None,
         }
     }
+
+    pub fn as_pgn(self) -> &'static str {
+        match self {
+            Self::White => "white",
+            Self::Black => "black",
+        }
+    }
 }

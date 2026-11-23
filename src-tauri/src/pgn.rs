@@ -2910,7 +2910,39 @@ pub async fn set_game_section(
         lease,
         resolved,
         n,
-        GameEdit::Section(section),
+        GameEdit::Tag(TagEdit::Section(section)),
+        WriteExpectation::GameAtRevision { stamp, revision },
+        repository,
+        Some(rebind),
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_game_orientation(
+    file: crate::infra::path_authority::FileWorkspaceHandle,
+    n: i32,
+    orientation: crate::db::BoardOrientation,
+    stamp: String,
+    revision: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<WriteStamp, Error> {
+    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
+    let lease = state.operations.accept("set_game_orientation")?;
+    refuse_positional_collection_write(&state, &file)?;
+    let resolved = resolve_pgn(
+        &state,
+        &file,
+        crate::infra::path_authority::PathOperation::WritePgn,
+    )?;
+    let repository = state.pgn_repository.clone();
+    let rebind = PgnCapabilityRebind::new(state.pgn_path_authority.clone(), &file);
+    mutate_game_core(
+        lease,
+        resolved,
+        n,
+        GameEdit::Tag(TagEdit::Orientation(orientation)),
         WriteExpectation::GameAtRevision { stamp, revision },
         repository,
         Some(rebind),
@@ -2920,7 +2952,39 @@ pub async fn set_game_section(
 
 enum GameEdit {
     Replace(String),
+    Tag(TagEdit),
+}
+
+enum TagEdit {
     Section(Option<String>),
+    Orientation(crate::db::BoardOrientation),
+}
+
+impl TagEdit {
+    fn tag_name(&self) -> &'static str {
+        match self {
+            Self::Section(_) => "Section",
+            Self::Orientation(_) => "Orientation",
+        }
+    }
+
+    fn operation_name(&self) -> &'static str {
+        match self {
+            Self::Section(_) => "set_game_section",
+            Self::Orientation(_) => "set_game_orientation",
+        }
+    }
+
+    fn encoded_value(&self) -> Result<Option<Vec<u8>>, Error> {
+        match self {
+            Self::Section(section) => Ok(section
+                .as_deref()
+                .map(escaped_section)
+                .transpose()?
+                .map(String::into_bytes)),
+            Self::Orientation(orientation) => Ok(Some(orientation.as_pgn().as_bytes().to_vec())),
+        }
+    }
 }
 
 pub async fn write_game_core(
@@ -2956,7 +3020,7 @@ async fn mutate_game_core(
     let cancellation = lease.token();
     let operation_name = match &edit {
         GameEdit::Replace(_) => "write_game",
-        GameEdit::Section(_) => "set_game_section",
+        GameEdit::Tag(tag) => tag.operation_name(),
     };
     crate::infra::operations::run_native_operation(lease, operation_name, async move {
         if let Some(rebind) = &mut rebind {
@@ -2997,7 +3061,7 @@ async fn mutate_game_core(
         let (key, games) = scan_current(scan_snapshot, &repository, &cancellation).await?;
         let target = if let Some(range) = games.get(n).cloned() {
             range
-        } else if matches!(&edit, GameEdit::Section(_)) {
+        } else if matches!(&edit, GameEdit::Tag(_)) {
             return Err(Error::StaleGame);
         } else if n == games.len() {
             GameRange {
@@ -3009,7 +3073,7 @@ async fn mutate_game_core(
         };
         let pgn = match edit {
             GameEdit::Replace(pgn) => pgn,
-            GameEdit::Section(section) => {
+            GameEdit::Tag(tag) => {
                 if let WriteExpectation::GameAtRevision { revision, .. } = &expected {
                     if *revision != revision_string_for_key(&key) {
                         return Err(Error::StaleGame);
@@ -3019,9 +3083,8 @@ async fn mutate_game_core(
                 BLOCKING_GATEWAY
                     .spawn_cancellable(cancellation.clone(), move |token| {
                         let bytes = read_range_bytes(&mut source, target, token)?;
-                        let value = section.as_deref().map(escaped_section).transpose()?;
-                        let edited =
-                            edit_tag_pair(&bytes, "Section", value.as_deref().map(str::as_bytes))?;
+                        let value = tag.encoded_value()?;
+                        let edited = edit_tag_pair(&bytes, tag.tag_name(), value.as_deref())?;
                         if edited.len() > MAX_PGN_BYTES {
                             return Err(Error::ResourceLimit(
                                 "replacement PGN exceeds 10 MiB".into(),
@@ -4102,6 +4165,149 @@ mod tests {
         .await;
         assert!(matches!(result, Err(Error::ResourceLimit(_))), "{result:?}");
         assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn orientation_mutation_inserts_replaces_and_leaves_other_games_byte_identical() {
+        use crate::db::BoardOrientation;
+        use crate::infra::path_authority::{PathAuthority, PathOperation};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("orientation.pgn");
+        let original = concat!(
+            "\u{feff}[Event \"A\"]\r\n\r\n1. e4 *\r\n\r\n",
+            "[Event \"B\"]\r\n[Orientation \"white\"]\r\n\r\n1. d4 *\r\n",
+        );
+        std::fs::write(&path, original).unwrap();
+        let mut authority =
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+        let handle = promote_pgn_file(&mut authority, &path);
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        state.pgn_path_authority.install(authority).unwrap();
+        let first = read_game_core(
+            resolve_pgn(&state, &handle, PathOperation::ReadPgn).unwrap(),
+            0,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .unwrap();
+        let second = read_game_core(
+            resolve_pgn(&state, &handle, PathOperation::ReadPgn).unwrap(),
+            1,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .unwrap();
+        let inserted = set_game_orientation(
+            handle.clone(),
+            0,
+            BoardOrientation::Black,
+            first.stamp,
+            first.revision,
+            app.state(),
+        )
+        .await
+        .unwrap();
+        assert!(inserted.stamp.is_some());
+        assert!(inserted.revision.is_some());
+        let after_insert = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            after_insert,
+            concat!(
+                "\u{feff}[Event \"A\"]\r\n[Orientation \"black\"]\r\n\r\n1. e4 *\r\n\r\n",
+                "[Event \"B\"]\r\n[Orientation \"white\"]\r\n\r\n1. d4 *\r\n",
+            ),
+        );
+        let second_after_insert = read_game_core(
+            resolve_pgn(&state, &handle, PathOperation::ReadPgn).unwrap(),
+            1,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .unwrap();
+        assert_eq!(second_after_insert.pgn, second.pgn);
+        let replaced = set_game_orientation(
+            handle.clone(),
+            1,
+            BoardOrientation::Black,
+            second_after_insert.stamp,
+            second_after_insert.revision,
+            app.state(),
+        )
+        .await
+        .unwrap();
+        assert!(replaced.stamp.is_some());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            concat!(
+                "\u{feff}[Event \"A\"]\r\n[Orientation \"black\"]\r\n\r\n1. e4 *\r\n\r\n",
+                "[Event \"B\"]\r\n[Orientation \"black\"]\r\n\r\n1. d4 *\r\n",
+            ),
+        );
+        let restored = set_game_orientation(
+            handle,
+            1,
+            BoardOrientation::White,
+            replaced.stamp.clone().unwrap(),
+            replaced.revision.clone().unwrap(),
+            app.state(),
+        )
+        .await
+        .unwrap();
+        assert!(restored.stamp.is_some());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            concat!(
+                "\u{feff}[Event \"A\"]\r\n[Orientation \"black\"]\r\n\r\n1. e4 *\r\n\r\n",
+                "[Event \"B\"]\r\n[Orientation \"white\"]\r\n\r\n1. d4 *\r\n",
+            ),
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn orientation_mutation_refuses_stale_revision_and_out_of_range_index() {
+        use crate::db::BoardOrientation;
+        use crate::infra::path_authority::{PathAuthority, PathOperation};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("orientation-stale.pgn");
+        let original = "[Event \"A\"]\n\n1. e4 *\n\n[Event \"B\"]\n\n1. d4 *\n";
+        std::fs::write(&path, original).unwrap();
+        let mut authority =
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
+        let handle = promote_pgn_file(&mut authority, &path);
+        let app = mock_app();
+        let state = app.state::<AppState>();
+        state.pgn_path_authority.install(authority).unwrap();
+        let read = read_game_core(
+            resolve_pgn(&state, &handle, PathOperation::ReadPgn).unwrap(),
+            0,
+            &CancellationToken::new(),
+            &state.pgn_repository,
+        )
+        .await
+        .unwrap();
+        for (n, stamp, revision) in [
+            (0, "wrong".to_owned(), read.revision.clone()),
+            (0, read.stamp.clone(), "wrong".to_owned()),
+            (2, read.stamp.clone(), read.revision.clone()),
+        ] {
+            let result = set_game_orientation(
+                handle.clone(),
+                n,
+                BoardOrientation::White,
+                stamp,
+                revision,
+                app.state(),
+            )
+            .await;
+            assert!(matches!(result, Err(Error::StaleGame)), "{result:?}");
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        }
     }
 
     #[cfg(unix)]

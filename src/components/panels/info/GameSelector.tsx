@@ -21,6 +21,7 @@ import { useVirtualPageLoader } from "@/hooks/useVirtualPageLoader";
 import { errorUnlessCancelled } from "@/platform/errors";
 import { fontSizeAtom } from "@/state/atoms";
 import { parsePGN } from "@/utils/chess";
+import { advanceRowsAfterTagWrite, certainWriteIdentity } from "@/utils/fileGameWrite";
 import { formatNumber } from "@/utils/format";
 import { getGameName } from "@/utils/treeReducer";
 import classes from "./GameSelector.module.css";
@@ -402,25 +403,21 @@ export default function GameSelector({
           onClose={() => setSectionTarget(null)}
           onRefresh={() => setGames(new Map())}
           onSaved={(index, section, written) => {
-            if (!written.stamp || !written.revision) {
+            const confirmed = certainWriteIdentity(written);
+            if (!confirmed) {
               setGames(new Map());
               return;
             }
-            const { stamp, revision } = written;
             // This write moved the file on by one revision and changed only this line, so rows
             // read at the edited revision are still current. An older row must stay refused.
-            setGames(
-              (previous) =>
-                new Map(
-                  Array.from(previous, ([rowIndex, row]) => [
-                    rowIndex,
-                    rowIndex === index
-                      ? { ...row, section, identity: { stamp, revision } }
-                      : row.identity?.revision === sectionTarget.revision
-                        ? { ...row, identity: { ...row.identity, revision } }
-                        : row,
-                  ]),
-                ),
+            setGames((previous) =>
+              advanceRowsAfterTagWrite(
+                previous,
+                index,
+                confirmed,
+                sectionTarget.revision,
+                (row) => ({ ...row, section }),
+              ),
             );
           }}
         />

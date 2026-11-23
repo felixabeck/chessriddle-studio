@@ -1002,6 +1002,9 @@ export async function selectFilesTreeRow(page: Page, name: string): Promise<Loca
 export const pgnFileCommands: NonNullable<MockScenario["commands"]> = {
     read_games: { result: [stampedPgnGame] },
     read_game: { result: stampedPgnGame },
+    set_game_orientation: {
+        result: { stamp: pgnGameStamp, revision: pgnGameRevision },
+    },
     file_revision: { result: pgnGameRevision },
     lex_pgn: {
         result: [

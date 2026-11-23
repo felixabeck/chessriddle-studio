@@ -22,6 +22,17 @@ const mocks = vi.hoisted(() => ({
   actualSelector: false,
   moveGames: vi.fn(),
   onMoveLines: undefined as import("./reorderLines").MoveLines | undefined,
+  setGameOrientation: vi.fn(),
+  fileGameHasBlockingOpenTab: vi.fn(),
+  games: undefined as
+    | Map<number, import("../panels/info/GameSelector").GameSelectorRow>
+    | undefined,
+  setGames: undefined as
+    | React.Dispatch<
+        React.SetStateAction<Map<number, import("../panels/info/GameSelector").GameSelectorRow>>
+      >
+    | undefined,
+  flipResult: undefined as Promise<void> | undefined,
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -34,6 +45,7 @@ vi.mock("@/platform/tauri", async () => {
       readGame: mocks.readGame,
       writeGame: mocks.writeGame,
       moveGames: mocks.moveGames,
+      setGameOrientation: mocks.setGameOrientation,
     },
   };
 });
@@ -86,8 +98,38 @@ vi.mock("react-i18next", async (original) => ({
   useTranslation: () => ({ t }),
 }));
 
+vi.mock("@/utils/fileGameWrite", async (original) => ({
+  ...(await original<typeof import("@/utils/fileGameWrite")>()),
+  fileGameHasBlockingOpenTab: mocks.fileGameHasBlockingOpenTab,
+}));
+
 vi.mock("../databases/GamePreview", () => ({
-  default: ({ pgn }: { pgn: string }) => <div data-testid="game-preview">{pgn}</div>,
+  default: ({
+    pgn,
+    persistOrientation,
+  }: {
+    pgn: string;
+    persistOrientation?: (side: "white" | "black") => Promise<void>;
+  }) => (
+    <div>
+      <div data-testid="game-preview">{pgn}</div>
+      {persistOrientation
+        ? (["black", "white"] as const).map((side) => (
+            <button
+              key={side}
+              type="button"
+              data-testid="flip-preview"
+              data-side={side}
+              onClick={() => {
+                const write = persistOrientation(side);
+                mocks.flipResult = write;
+                void write.catch(() => undefined);
+              }}
+            />
+          ))
+        : null}
+    </div>
+  ),
 }));
 
 vi.mock("@tanstack/react-virtual", () => ({
@@ -104,6 +146,8 @@ vi.mock("../panels/info/GameSelector", async (original) => {
   return {
     default: (props: React.ComponentProps<typeof actual.default>) => {
       mocks.onMoveLines = props.onMoveLines;
+      mocks.games = props.games;
+      mocks.setGames = props.setGames;
       return mocks.actualSelector ? (
         <actual.default {...props} />
       ) : (
@@ -175,7 +219,12 @@ describe("FileCard", () => {
     getDefaultStore().set(libraryGamePositionAtom, null);
     mocks.actualSelector = false;
     mocks.onMoveLines = undefined;
+    mocks.games = undefined;
+    mocks.setGames = undefined;
+    mocks.flipResult = undefined;
     mocks.moveGames.mockReset().mockResolvedValue({ changed: true, start: 0, order: [1, 0, 2] });
+    mocks.fileGameHasBlockingOpenTab.mockReturnValue(false);
+    mocks.setGameOrientation.mockResolvedValue({ stamp: "s2", revision: "r2" });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -452,12 +501,314 @@ describe("FileCard", () => {
 
     expect(container.textContent).toContain("Files.GameTooLarge");
     expect(container.querySelector("[data-testid='game-preview']")).toBeNull();
+    expect(container.querySelector("[data-testid='flip-preview']")).toBeNull();
     expect(openButton().disabled).toBe(true);
     await act(async () => openButton().click());
     expect(mocks.readGame).not.toHaveBeenCalled();
     expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
     expect(mocks.showNotification).not.toHaveBeenCalled();
+  });
 
+  test("preview flip writes orientation and pins later writes to the new identity", async () => {
+    const preview = stampedGame("Preview");
+    mocks.readGames.mockResolvedValue([preview]);
+    mocks.readGame
+      .mockResolvedValueOnce(preview)
+      .mockResolvedValueOnce({ ...preview, stamp: "s2", revision: "r2" });
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    const flip = container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']");
+    expect(flip).not.toBeNull();
+    await act(async () => flip!.click());
+    expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(sampleFileA.handle, 0, undefined);
+    expect(mocks.setGameOrientation).toHaveBeenCalledExactlyOnceWith(
+      sampleFileA.handle,
+      0,
+      "black",
+      "stamp-revision",
+      "revision",
+    );
+    await act(async () => flip!.click());
+    expect(mocks.readGame).toHaveBeenLastCalledWith(sampleFileA.handle, 0, undefined);
+    expect(mocks.setGameOrientation).toHaveBeenLastCalledWith(
+      sampleFileA.handle,
+      0,
+      "black",
+      "s2",
+      "r2",
+    );
+  });
+
+  test("a preview flip advances selector row identities", async () => {
+    const preview = stampedGame("Preview");
+    mocks.readGames.mockResolvedValue([preview]);
+    mocks.readGame.mockResolvedValue(preview);
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    await act(async () => {
+      mocks.setGames!(
+        new Map([
+          [0, { name: "First", identity: { stamp: "stamp-revision", revision: "revision" } }],
+          [1, { name: "Second", identity: { stamp: "s1", revision: "revision" } }],
+          [2, { name: "Older", identity: { stamp: "s2", revision: "r0" } }],
+        ]),
+      );
+    });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    await expect(mocks.flipResult).resolves.toBeUndefined();
+    expect(mocks.games?.get(0)?.identity).toEqual({ stamp: "s2", revision: "r2" });
+    expect(mocks.games?.get(1)?.identity).toEqual({ stamp: "s1", revision: "r2" });
+    expect(mocks.games?.get(2)?.identity).toEqual({ stamp: "s2", revision: "r0" });
+  });
+
+  test("preview flip writes white", async () => {
+    const preview = stampedGame("Preview");
+    mocks.readGames.mockResolvedValue([preview]);
+    mocks.readGame.mockResolvedValue(preview);
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>("[data-testid='flip-preview'][data-side='white']")!
+        .click(),
+    );
+    expect(mocks.setGameOrientation).toHaveBeenCalledExactlyOnceWith(
+      sampleFileA.handle,
+      0,
+      "white",
+      "stamp-revision",
+      "revision",
+    );
+  });
+
+  test.each([
+    { stamp: null, revision: "r2" },
+    { stamp: "s2", revision: null },
+  ])(
+    "an incomplete WriteStamp (stamp=$stamp, revision=$revision) reloads without nulling identity",
+    async (written) => {
+      const preview = stampedGame("Preview");
+      let resolveReload!: (value: StampedGame[]) => void;
+      mocks.readGames.mockResolvedValueOnce([preview]).mockReturnValue(
+        new Promise((resolve) => {
+          resolveReload = resolve;
+        }),
+      );
+      mocks.readGame.mockResolvedValue(preview);
+      mocks.setGameOrientation.mockResolvedValueOnce(written);
+      await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+      expect(mocks.readGames).toHaveBeenCalledTimes(1);
+      const flip = container.querySelector<HTMLButtonElement>(
+        "[data-testid='flip-preview'][data-side='black']",
+      );
+      await act(async () => flip!.click());
+      expect(mocks.setGameOrientation).toHaveBeenCalledExactlyOnceWith(
+        sampleFileA.handle,
+        0,
+        "black",
+        "stamp-revision",
+        "revision",
+      );
+      await vi.waitFor(() => expect(mocks.readGames).toHaveBeenCalledTimes(2));
+      await act(async () => flip!.click());
+      expect(mocks.showNotification).not.toHaveBeenCalled();
+      expect(mocks.setGameOrientation).toHaveBeenLastCalledWith(
+        sampleFileA.handle,
+        0,
+        "black",
+        "stamp-revision",
+        "revision",
+      );
+      await act(async () => resolveReload([preview]));
+    },
+  );
+
+  test("a preview flip writes with a newer revision when the game stamp is unchanged", async () => {
+    const preview = stampedGame("Preview");
+    mocks.readGames.mockResolvedValue([preview]);
+    mocks.readGame.mockResolvedValue({ ...preview, revision: "r-later" });
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(sampleFileA.handle, 0, undefined);
+    expect(mocks.setGameOrientation).toHaveBeenCalledExactlyOnceWith(
+      sampleFileA.handle,
+      0,
+      "black",
+      "stamp-revision",
+      "r-later",
+    );
+    expect(mocks.showNotification).not.toHaveBeenCalled();
+  });
+
+  test("a stale preview flip notifies and reloads without keeping the write", async () => {
+    const preview = stampedGame("Preview");
+    mocks.readGames.mockResolvedValue([preview]);
+    mocks.readGame.mockResolvedValue(preview);
+    mocks.setGameOrientation.mockRejectedValue({
+      tag: "backend-error",
+      category: "stale-game",
+      message: "stale",
+    });
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    expect(mocks.readGames).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    expect(mocks.readGame).toHaveBeenCalledOnce();
+    expect(mocks.setGameOrientation).toHaveBeenCalledOnce();
+    expect(mocks.showNotification).toHaveBeenCalledWith({
+      color: "danger",
+      title: "Common.Error",
+      message: "Files.LineSection.Stale",
+    });
+    await expect(mocks.flipResult).rejects.toMatchObject({
+      tag: "backend-error",
+      category: "stale-game",
+    });
+    await vi.waitFor(() => expect(mocks.readGames).toHaveBeenCalledTimes(2));
+  });
+
+  test("a preview flip whose game stamp moved on notifies and does not write", async () => {
+    const preview = stampedGame("Preview");
+    mocks.readGames.mockResolvedValue([preview]);
+    mocks.readGame.mockResolvedValue({ ...preview, stamp: "other-stamp", revision: "r-later" });
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    expect(mocks.readGames).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(sampleFileA.handle, 0, undefined);
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith({
+      color: "danger",
+      title: "Common.Error",
+      message: "Files.LineSection.Stale",
+    });
+    await expect(mocks.flipResult).rejects.toThrow("stale preview");
+    await vi.waitFor(() => expect(mocks.readGames).toHaveBeenCalledTimes(2));
+  });
+
+  test("an unsaved open tab refuses a preview flip without writing", async () => {
+    const tabs = [
+      {
+        value: crypto.randomUUID(),
+        name: "Preview",
+        type: "analysis" as const,
+        gameOrigin: {
+          kind: "file" as const,
+          file: sampleFileA,
+          gameNumber: 0,
+        },
+      },
+    ];
+    getDefaultStore().set(tabsAtom, tabs);
+    mocks.readGames.mockResolvedValue([stampedGame("Preview")]);
+    mocks.fileGameHasBlockingOpenTab.mockReturnValue(true);
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    expect(mocks.fileGameHasBlockingOpenTab).toHaveBeenCalledWith(
+      getDefaultStore().get(tabsAtom),
+      sampleFileA.handle,
+      0,
+    );
+    expect(mocks.readGame).not.toHaveBeenCalled();
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith({
+      color: "danger",
+      title: "Common.Error",
+      message: "Files.LineSection.UnsavedTab",
+    });
+    await expect(mocks.flipResult).rejects.toThrow("unsaved tab");
+  });
+
+  test("a preview flip while another game is selected does not write the previous game", async () => {
+    mocks.readGames
+      .mockResolvedValueOnce([stampedGame("First")])
+      .mockReturnValue(new Promise(() => {}));
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    expect(container.querySelector("[data-testid='game-preview']")?.textContent).toBe("First");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='game-selector']")!.click(),
+    );
+    expect(container.querySelector("[data-testid='game-preview']")?.textContent).toBe("First");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    expect(mocks.readGame).not.toHaveBeenCalled();
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith({
+      color: "danger",
+      title: "Common.Error",
+      message: "Files.LineSection.Stale",
+    });
+    await expect(mocks.flipResult).rejects.toThrow("stale preview");
+  });
+
+  test("a preview flip whose fresh read throws notifies and does not write", async () => {
+    const preview = stampedGame("Preview");
+    const error = new Error("read failed");
+    mocks.readGames.mockResolvedValue([preview]);
+    mocks.readGame.mockRejectedValue(error);
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", error);
+    await expect(mocks.flipResult).rejects.toBe(error);
+  });
+
+  test.each([
+    { reason: "missing", game: { ...stampedGame("Preview"), present: false } },
+    {
+      reason: "omitted",
+      game: { ...stampedGame("Preview"), omission: "tooLarge" as const },
+    },
+  ])("a preview flip whose fresh read is $reason notifies and does not write", async ({ game }) => {
+    mocks.readGames.mockResolvedValue([stampedGame("Preview")]);
+    mocks.readGame.mockResolvedValue(game);
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    expect(mocks.readGames).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith({
+      color: "danger",
+      title: "Common.Error",
+      message: "Files.LineSection.Stale",
+    });
+    await vi.waitFor(() => expect(mocks.readGames).toHaveBeenCalledTimes(2));
+  });
+
+  test("a preview flip that is applied despite error reloads the list", async () => {
+    const preview = stampedGame("Preview");
+    const error = {
+      tag: "backend-error" as const,
+      category: "durability" as const,
+      message: "wrote",
+    };
+    mocks.readGames.mockResolvedValue([preview]);
+    mocks.readGame.mockResolvedValue(preview);
+    mocks.setGameOrientation.mockRejectedValue(error);
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
+    expect(mocks.readGames).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-testid='flip-preview']")!.click(),
+    );
+    expect(mocks.setGameOrientation).toHaveBeenCalledOnce();
+    expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", error);
+    await vi.waitFor(() => expect(mocks.readGames).toHaveBeenCalledTimes(2));
+  });
+
+  test("switching from an omitted preview restores a readable game", async () => {
+    mocks.readGames.mockResolvedValue([
+      { pgn: "", stamp: "", revision: "revision", present: true, omission: "tooLarge" },
+    ]);
+    await renderWithMantine(<FileCard onEditMetadata={vi.fn()} selected={sampleFileA} />, root);
     mocks.readGames.mockResolvedValue([stampedGame("Readable next")]);
     await act(async () =>
       container.querySelector<HTMLButtonElement>("[data-testid='game-selector']")!.click(),

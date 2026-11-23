@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
     readGame: vi.fn(),
     qualifyFileGame: vi.fn(async () => null),
     writeGame: vi.fn(),
+    setGameSection: vi.fn(),
+    setGameOrientation: vi.fn(),
     issueFileWorkspace: vi.fn(),
     parsePGN: vi.fn(),
     storeGet: vi.fn(),
@@ -55,6 +57,7 @@ import {
     loadFileGame,
     pickPgnFile,
     sameGameIdentity,
+    setFileGameOrientation,
     writeFileGame,
 } from "./files";
 
@@ -571,6 +574,73 @@ test.each(["success", "rejection"] as const)(
             focus();
             await flushPromises();
             expect(mocks.writeGame).toHaveBeenCalledOnce();
+            expect(fileRevision).not.toHaveBeenCalled();
+
+            let expectedOutcome:
+                | { status: "resolved"; result: WriteStamp }
+                | { status: "rejected"; error: Error };
+            if (outcome === "success") {
+                const written = { stamp: "a".repeat(64), revision: "r1" };
+                pendingWrite.resolve(written);
+                expectedOutcome = { status: "resolved", result: written };
+            } else {
+                pendingWrite.reject(failure);
+                expectedOutcome = { status: "rejected", error: failure };
+            }
+            await expect(observedWrite).resolves.toEqual(expectedOutcome);
+            await flushPromises();
+
+            expect(fileRevision).toHaveBeenCalledOnce();
+            expect(getFileFreshness(tab.value).state).toBe("verified");
+        } finally {
+            stop();
+        }
+    },
+);
+
+test.each(["success", "rejection"] as const)(
+    "setFileGameOrientation tracks the write through %s and releases it afterward",
+    async (outcome) => {
+        const handle: FileWorkspaceHandle = {
+            id: { id: "files-write-helper-handle" },
+            kind: "fileWorkspace",
+        };
+        const tab: Tab = {
+            value: "files-write-helper",
+            name: "Write helper",
+            type: "analysis",
+            gameOrigin: { kind: "file", file: { handle }, gameNumber: 0 },
+        } as Tab;
+        setFileFreshness(tab.value, "verified", { verifiedRevision: "r1" });
+        const pendingWrite = deferred<WriteStamp>();
+        mocks.setGameOrientation.mockReturnValueOnce(pendingWrite.promise);
+        const fileRevision = vi.fn(async () => "r1");
+        let focus: () => void = () => undefined;
+        const stop = startFileRevisionPoll({
+            getTabs: () => [tab],
+            fileRevision,
+            subscribeFocus: (callback) => {
+                focus = callback;
+                return () => undefined;
+            },
+        });
+
+        try {
+            const write = setFileGameOrientation(handle, 0, "black", "stamp", "r1");
+            const failure = new Error("write failed");
+            const observedWrite = write.then(
+                (result) => ({ status: "resolved" as const, result }),
+                (error: unknown) => ({ status: "rejected" as const, error }),
+            );
+            focus();
+            await flushPromises();
+            expect(mocks.setGameOrientation).toHaveBeenCalledExactlyOnceWith(
+                handle,
+                0,
+                "black",
+                "stamp",
+                "r1",
+            );
             expect(fileRevision).not.toHaveBeenCalled();
 
             let expectedOutcome:

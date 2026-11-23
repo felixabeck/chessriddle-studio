@@ -448,13 +448,23 @@ describe("GamePreview board sizing", () => {
     orientation: "black",
   };
 
-  async function renderRecord(headers?: GameHeaders, warm = false, adaptive = true) {
+  async function renderRecord(
+    headers?: GameHeaders,
+    warm = false,
+    adaptive = true,
+    persistOrientation?: (side: "white" | "black") => Promise<void>,
+  ) {
     await act(async () =>
       root.render(
         <MantineProvider>
           <SWRConfig value={{ provider: () => new Map() }}>
             <div data-testid="selected-preview">
-              <GamePreviewWrapper pgn="same movetext" headers={headers} adaptive={adaptive} />
+              <GamePreviewWrapper
+                pgn="same movetext"
+                headers={headers}
+                adaptive={adaptive}
+                persistOrientation={persistOrientation}
+              />
             </div>
             <div hidden>{warm && <GamePreviewWrapper pgn="same movetext" headers={recordB} />}</div>
           </SWRConfig>
@@ -840,6 +850,148 @@ describe("GamePreview board sizing", () => {
       await renderRecord({ ...recordA, id: 3, white: "Other", orientation: "white" });
       expect(selectedHeaders().white).toBe("Other");
       expect(selectedBoard().dataset.orientation).toBe("black");
+    });
+
+    test("a file preview writes the flipped side and shows each game's stored side", async () => {
+      const persist = vi.fn().mockResolvedValue(undefined);
+      await renderRecord(recordA, false, true, persist);
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await vi.waitFor(() => expect(persist).toHaveBeenCalledExactlyOnceWith("black"));
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await renderRecord(
+        { ...recordA, id: 3, white: "Other", orientation: "white" },
+        false,
+        true,
+        persist,
+      );
+      expect(selectedHeaders().white).toBe("Other");
+      expect(selectedBoard().dataset.orientation).toBe("white");
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      await vi.waitFor(() => expect(persist).toHaveBeenLastCalledWith("black"));
+      await renderRecord(recordB, false, true, persist);
+      expect(selectedBoard().dataset.orientation).toBe("black");
+    });
+
+    test("a file preview writes white when flipped from the stored black side", async () => {
+      const persist = vi.fn().mockResolvedValue(undefined);
+      await renderRecord(recordB, false, true, persist);
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      await vi.waitFor(() => expect(persist).toHaveBeenCalledExactlyOnceWith("white"));
+      expect(selectedBoard().dataset.orientation).toBe("white");
+    });
+
+    test("a second file preview flip is ignored while persist is pending", async () => {
+      let resolveWrite: (value?: void) => void = () => undefined;
+      const persist = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+      await renderRecord(recordA, false, true, persist);
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await vi.waitFor(() => expect(persist).toHaveBeenCalledExactlyOnceWith("black"));
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      expect(persist).toHaveBeenCalledOnce();
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await act(async () => resolveWrite());
+      expect(selectedBoard().dataset.orientation).toBe("black");
+    });
+
+    test("a flip on a new file game is accepted after switching while persist hangs", async () => {
+      const persist = vi.fn(() => new Promise<void>(() => {}));
+      await renderRecord(recordA, false, true, persist);
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      await vi.waitFor(() => expect(persist).toHaveBeenCalledExactlyOnceWith("black"));
+      await renderRecord(
+        { ...recordA, id: 3, white: "Other", orientation: "white" },
+        false,
+        true,
+        persist,
+      );
+      expect(selectedBoard().dataset.orientation).toBe("white");
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      await vi.waitFor(() => expect(persist).toHaveBeenNthCalledWith(2, "black"));
+      expect(selectedBoard().dataset.orientation).toBe("black");
+    });
+
+    test("a persist that rejects after the file game changed does not change the new game's orientation", async () => {
+      let rejectWrite: (error: Error) => void = () => undefined;
+      const persist = vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((_, reject) => {
+              rejectWrite = reject;
+            }),
+        );
+      await renderRecord(recordA, false, true, persist);
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      await vi.waitFor(() => expect(persist).toHaveBeenCalledExactlyOnceWith("black"));
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      expect(selectedBoard().dataset.orientation).toBe("white");
+      await vi.waitFor(() => expect(persist).toHaveBeenLastCalledWith("white"));
+      await renderRecord(
+        { ...recordA, id: 3, white: "Other", orientation: "white" },
+        false,
+        true,
+        persist,
+      );
+      expect(selectedHeaders().white).toBe("Other");
+      expect(selectedBoard().dataset.orientation).toBe("white");
+      await act(async () => {
+        rejectWrite(new Error("write failed"));
+      });
+      expect(selectedBoard().dataset.orientation).toBe("white");
+    });
+
+    test("a later failed file preview write restores the last saved flipped side", async () => {
+      const persist = vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error("write failed"));
+      await renderRecord(recordA, false, true, persist);
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      await vi.waitFor(() => expect(persist).toHaveBeenCalledExactlyOnceWith("black"));
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      await vi.waitFor(() => expect(persist).toHaveBeenLastCalledWith("white"));
+      await vi.waitFor(() => expect(selectedBoard().dataset.orientation).toBe("black"));
+    });
+
+    test("a failed file preview write reverts to the stored side", async () => {
+      let rejectWrite: (error: Error) => void = () => undefined;
+      const persist = vi.fn(
+        () =>
+          new Promise<void>((_, reject) => {
+            rejectWrite = reject;
+          }),
+      );
+      await renderRecord(recordA, false, true, persist);
+      await openMenu();
+      await choose("Board.Preview.FlipBoard");
+      expect(selectedBoard().dataset.orientation).toBe("black");
+      await vi.waitFor(() => expect(persist).toHaveBeenCalledExactlyOnceWith("black"));
+      await act(async () => {
+        rejectWrite(new Error("write failed"));
+      });
+      await vi.waitFor(() => expect(selectedBoard().dataset.orientation).toBe("white"));
     });
 
     test("copies the FEN of the position on the board", async () => {

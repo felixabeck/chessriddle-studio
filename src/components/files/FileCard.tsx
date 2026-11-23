@@ -1,11 +1,12 @@
 import { tauri } from "@/platform/tauri";
 import { Box, Divider, Group, Stack, Text } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { LibraryTypeBadge } from "@/components/library/presentation";
 import { libraryGamePositionAtom } from "@/components/library/memory";
 import { Pencil } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useStore } from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useElementSize } from "@mantine/hooks";
 import { useTranslation } from "react-i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -19,6 +20,13 @@ import { openFile } from "@/utils/openFile";
 import { runTabCreation } from "@/utils/tabs";
 import { capitalize, formatNumber } from "@/utils/format";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import { normalizeError } from "@/platform/errors";
+import {
+  advanceRowsAfterTagWrite,
+  certainWriteIdentity,
+  fileGameHasBlockingOpenTab,
+} from "@/utils/fileGameWrite";
+import { readFileGame, setFileGameOrientation } from "@/utils/files";
 import GamePreview from "../databases/GamePreview";
 import GameSelector, { type GameSelectorRow } from "../panels/info/GameSelector";
 import type { FileMetadata } from "./file";
@@ -44,12 +52,18 @@ function FileCard({
 }) {
   const { t } = useTranslation();
 
-  const [, setTabs] = useAtom(tabsAtom);
+  const [tabs, setTabs] = useAtom(tabsAtom);
   const workspace = useStore();
   const navigate = useNavigate();
 
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
+  const [previewIdentity, setPreviewIdentity] = useState<{
+    index: number;
+    stamp: string;
+    revision: string;
+  } | null>(null);
   const [previewOmitted, setPreviewOmitted] = useState(false);
+  const [loadedPreviewIndex, setLoadedPreviewIndex] = useState<number | null>(null);
   const [position, setPosition] = useAtom(libraryGamePositionAtom);
   const [games, setGames] = useState<Map<number, GameSelectorRow>>(new Map());
   const [reloadGeneration, setReloadGeneration] = useState(0);
@@ -82,13 +96,23 @@ function FileCard({
         });
         if (!controller.signal.aborted) {
           const omitted = data[0]?.omission === "tooLarge";
+          const game = data[0];
+          const pgn = omitted ? null : (game?.pgn ?? null);
           setPreviewOmitted(omitted);
-          setSelectedGame(omitted ? null : (data[0]?.pgn ?? null));
+          setSelectedGame(pgn);
+          setLoadedPreviewIndex(pgn === null ? null : page);
+          setPreviewIdentity(
+            omitted || !game?.pgn || !game.stamp || !game.revision
+              ? null
+              : { index: page, stamp: game.stamp, revision: game.revision },
+          );
         }
       } catch (error) {
         if (controller.signal.aborted) return;
         setSelectedGame(null);
+        setPreviewIdentity(null);
         setPreviewOmitted(false);
+        setLoadedPreviewIndex(null);
         notifyUnlessCancelled(t("Common.Error"), error);
       }
     }
@@ -98,11 +122,85 @@ function FileCard({
     };
   }, [handleKey, page, t, reloadGeneration]);
 
-  const reloadGames = (reset: boolean) => {
+  const reloadGames = useCallback((reset: boolean) => {
     if (!mounted.current) return;
     if (reset) setGames(new Map());
     setReloadGeneration((previous) => previous + 1);
-  };
+  }, []);
+  const persistPreviewOrientation = useCallback(
+    async (side: "white" | "black") => {
+      const identity = previewIdentity;
+      const gameNumber = page;
+      const handle = selected.handle;
+      const showStale = () => {
+        notifications.show({
+          color: "danger",
+          title: t("Common.Error"),
+          message: t("Files.LineSection.Stale", {
+            defaultValue: "The file changed. Check the list and try again.",
+          }),
+        });
+        reloadGames(false);
+      };
+      if (!identity || identity.index !== gameNumber) {
+        showStale();
+        throw new Error("stale preview");
+      }
+      if (fileGameHasBlockingOpenTab(tabs, handle, gameNumber)) {
+        notifications.show({
+          color: "danger",
+          title: t("Common.Error"),
+          message: t("Files.LineSection.UnsavedTab", {
+            defaultValue: "Save or close this game's open tab first.",
+          }),
+        });
+        throw new Error("unsaved tab");
+      }
+      let current;
+      try {
+        current = await readFileGame(handle, gameNumber);
+      } catch (error) {
+        if (mounted.current) notifyUnlessCancelled(t("Common.Error"), error);
+        throw error;
+      }
+      if (!current.present || current.omission || current.stamp !== identity.stamp) {
+        if (mounted.current) showStale();
+        throw new Error("stale preview");
+      }
+      try {
+        const written = await setFileGameOrientation(
+          handle,
+          gameNumber,
+          side,
+          current.stamp,
+          current.revision,
+        );
+        if (!mounted.current) return;
+        const confirmed = certainWriteIdentity(written);
+        if (!confirmed) {
+          reloadGames(false);
+          return;
+        }
+        setPreviewIdentity((previous) =>
+          previous?.index === gameNumber ? { ...previous, ...confirmed } : previous,
+        );
+        setGames((previous) =>
+          advanceRowsAfterTagWrite(previous, gameNumber, confirmed, current.revision),
+        );
+      } catch (error) {
+        if (!mounted.current) throw error;
+        const details = normalizeError(error);
+        if (details.backendCategory === "stale-game") {
+          showStale();
+        } else {
+          if (details.category === "applied-despite-error") reloadGames(false);
+          notifyUnlessCancelled(t("Common.Error"), error);
+        }
+        throw error;
+      }
+    },
+    [page, previewIdentity, reloadGames, selected.handle, t, tabs],
+  );
   const onMoveLines: MoveLines = async (movement, revision) => {
     try {
       return await reorderFileLines({
@@ -253,8 +351,14 @@ function FileCard({
       {selected.numGames > 0 && (
         <Box flex="3 1 0" mih={0} px="xs" pb="xs">
           {previewOmitted && <Text>{t("Files.GameTooLarge")}</Text>}
-          {selectedGame !== null && (
-            <GamePreview pgn={selectedGame} hideControls={narrow} fitHeight />
+          {selectedGame !== null && loadedPreviewIndex !== null && (
+            <GamePreview
+              key={loadedPreviewIndex}
+              pgn={selectedGame}
+              hideControls={narrow}
+              fitHeight
+              persistOrientation={persistPreviewOrientation}
+            />
           )}
         </Box>
       )}

@@ -21,6 +21,7 @@ mod event_summaries;
 pub(crate) mod linked_collections;
 mod migrations;
 mod models;
+pub(crate) use models::BoardOrientation;
 mod name_identity;
 mod ops;
 mod pgn_date;
