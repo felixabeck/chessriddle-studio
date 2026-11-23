@@ -92,7 +92,8 @@ There is no App Store listing and no second download.
 registration are checked by the release legs on GitHub's macOS runners; that the button appears
 and works in Safari is checked nowhere. Apple documents this way of distribution, but developers have reported that Safari blocked
 Developer ID-signed web extensions (Apple developer forum threads 667859 and 695373). The
-release's last Safari step opens the application and Safari on the runner and prints
+release's last Safari step opens the application and Safari on the runner, classifies Safari's
+log with `scripts/safari-observation-verdict.sh` and prints
 `SAFARI: BLOCK OBSERVED`, `SAFARI: no block observed` or `SAFARI: observation unavailable`; it
 never fails a release. Read that line in the macOS legs of a release before announcing the Safari
 version. If Safari blocks the extension on users' Macs, the fallback is an App Store

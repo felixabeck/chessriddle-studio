@@ -6,6 +6,9 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("../scripts/build-safari-appex.sh", import.meta.url));
+const classifier = fileURLToPath(
+  new URL("../scripts/safari-observation-verdict.sh", import.meta.url),
+);
 const entitlements = await readFile(
   new URL("../safari/extension.entitlements", import.meta.url),
   "utf8",
@@ -67,7 +70,7 @@ const observe = "Observe the Safari verdict on the extension (macOS only, inform
 
 // Activation (d-20261122-33): every macOS release carries the extension. The steps were staged
 // behind a dispatch input until rehearsal 45101297031 was green.
-test("the Safari steps run on every macOS leg, without a switch", () => {
+test("the Safari steps run on every macOS leg, and no dispatch input gates them", () => {
   assert.doesNotMatch(workflow, /safari_extension/);
   assert.match(workflow, /^ {2}workflow_dispatch:\n\n/m);
   const safari = releaseSteps().filter(({ name }) => name.includes("Safari"));
@@ -98,4 +101,52 @@ test("the Safari steps sit around the build", () => {
     order.indexOf("Verify signature and notarization (macOS only)") < order.indexOf(verify),
   );
   assert.ok(order.indexOf(verify) < order.indexOf(observe));
+});
+
+// Lines as Safari wrote them in release rehearsal 45101297031: it opened, and logged nothing
+// about web extensions. The first version of the observation read them as "no block observed".
+const quietSafari = [
+  "2026-11-23 02:52:39.414 Df Safari[33247:169e9] [com.apple.sharekit:Framework] Discover extensions with attributes <private>",
+  '    NSExtensionPointName = "com.apple.services";',
+  "2026-11-23 02:52:39.414 Df Safari[33247:166fb] [com.apple.sharekit:Framework] Completed querying extensions: <private>",
+  "2026-11-23 02:52:39.790 Df Safari[33247:165ea] [com.apple.WebKit:Sandbox] Successfully created a sandbox extension for '<private>'",
+];
+const verdict = (lines) => {
+  const run = spawnSync("bash", [classifier], { encoding: "utf8", input: `${lines.join("\n")}\n` });
+  assert.equal(run.status, 0, run.stderr);
+  return run.stdout.trimEnd().split("\n");
+};
+
+test("the release classifies Safari's log with the tested script", () => {
+  assert.match(
+    workflow,
+    /report=\$\(printf '%s\\n' "\$lines" \| bash browser-extension\/scripts\/safari-observation-verdict\.sh\)/,
+  );
+});
+
+test("a Safari that logs nothing about web extensions is an unavailable observation", () => {
+  assert.deepEqual(verdict(quietSafari), [
+    "observation unavailable: Safari logged nothing about web extensions",
+  ]);
+  assert.deepEqual(verdict([]), [
+    "observation unavailable: Safari logged nothing about web extensions",
+  ]);
+});
+
+// The two symptoms from Apple developer forum thread 667859, with the identifier masked the way
+// the runner's log masks it.
+for (const symptom of [
+  "Df Safari[37188:1a2b] [Extensions] Blocking extension with identifier: <private>",
+  "Df Safari[37188:1a2b] [Extensions] Computing the code signing dictionary failed for extension with identifier <private>",
+])
+  test(`a block counts without naming the extension: ${symptom.slice(35, 75)}`, () => {
+    const output = verdict([...quietSafari, symptom]);
+    assert.deepEqual(output, [symptom, "BLOCK OBSERVED"]);
+  });
+
+test("lines about web extensions without a block are no block observed", () => {
+  const seen = "Df Safari[37188:1a2b] [WebExtensions] Loaded web extension <private>";
+  assert.deepEqual(verdict([...quietSafari, seen]), [seen, "no block observed"]);
+  const named = "Df Safari[1:2] Found extension com.chessriddle.studio.Extension";
+  assert.deepEqual(verdict([named]), [named, "no block observed"]);
 });

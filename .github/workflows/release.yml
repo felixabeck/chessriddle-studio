@@ -475,15 +475,13 @@ jobs:
           plutil -p "$HOME/Library/Containers/com.apple.Safari/Data/Library/Safari/WebExtensions/Extensions.plist" 2>&1 | head -n 40 || true
           lines=$(log show --start "$started" --info --style compact --predicate 'process CONTAINS "Safari"' 2>&1) \
             || finish "observation unavailable: the unified log could not be read"
-          relevant=$(printf '%s\n' "$lines" | grep -i -e 'web.\{0,1\}extension' -e 'blocking extension' -e 'code signing dictionary' -e 'chessriddle' || true)
-          printf '%s\n' "$relevant" | tail -n 150
-          # The two symptoms of the forum reports. This is the only web extension on the runner.
-          if printf '%s\n' "$relevant" | grep -i -e 'blocking extension' -e 'code signing dictionary failed' > /dev/null; then
-            echo "::warning::Safari reports that it blocks $identifier"
-            finish "BLOCK OBSERVED"
-          fi
-          [ -n "$relevant" ] || finish "observation unavailable: Safari logged nothing about web extensions"
-          finish "no block observed"
+          # The script prints the lines about web extensions and, last, the verdict.
+          report=$(printf '%s\n' "$lines" | bash browser-extension/scripts/safari-observation-verdict.sh) \
+            || finish "observation unavailable: the log could not be classified"
+          printf '%s\n' "$report"
+          verdict=$(printf '%s\n' "$report" | tail -n 1)
+          if [ "$verdict" = "BLOCK OBSERVED" ]; then echo "::warning::Safari reports that it blocks $identifier"; fi
+          finish "$verdict"
 
       - name: Log out of Certum SimplySign (Windows only)
         if: always() && steps.certum.outcome != 'skipped'
