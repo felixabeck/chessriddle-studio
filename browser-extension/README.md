@@ -97,12 +97,13 @@ opens the application and Safari on the runner, classifies Safari's log with
 `scripts/safari-observation-verdict.sh` and prints `SAFARI: BLOCK OBSERVED`,
 `SAFARI: no block observed` or `SAFARI: observation unavailable`; it never fails a release.
 
-In rehearsal run 45121673614 (2026-11-23, both macOS legs) Safari did not block the extension:
-its log reads "Computing the code signing dictionary succeeded for extension with identifier:
+In rehearsal run 45121673614 (2026-11-23, both macOS legs) Safari showed no sign of a block: its
+log reads "Computing the code signing dictionary succeeded for extension with identifier:
 com.chessriddle.studio.Extension", and Safari's own extension list held the extension with the
 three site patterns of the manifest. **Not observed anywhere:** a user enabling the extension, and
-the button appearing and working on a page in Safari. If Safari blocks the extension on users'
-Macs after all, the fallback is an App Store container application built from the same files.
+the button appearing and working on a page in Safari. Read the `SAFARI:` line in the macOS legs
+of a release before announcing the Safari version. If Safari blocks the extension on users' Macs
+after all, the fallback is an App Store container application built from the same files.
 
 ## The link contract
 
