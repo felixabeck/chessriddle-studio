@@ -51,8 +51,7 @@ async function fixture() {
         "example:test": "node --test scripts/example-tests.mjs",
         "gates:contract:check":
           "pnpm mutation:guard:check && pnpm gates:child-supervisor:test && pnpm gates:imports:test && pnpm all:check && pnpm example:test",
-        "gates:push":
-          'bash "$HOME/.claude/scripts/push-lock.sh" gate -- agent-gate node scripts/run-push-gates.mjs',
+        "gates:push": "agent-gate node scripts/run-push-gates.mjs",
         "checks:pre-review": "agent-gate node scripts/run-push-gates.mjs --pre-review",
         "gates:child-supervisor:test": "node --test scripts/child-supervisor-tests.mjs",
         "gates:imports:test": "node --test scripts/import-path-tests.mjs",
@@ -104,14 +103,7 @@ test("heavy gate package scripts preserve the strict agent-gate wrapper and pre-
       script: "gates:push",
       replacement: "node scripts/run-push-gates.mjs",
       expected:
-        /package\.json gates:push must invoke bash "\$HOME\/\.claude\/scripts\/push-lock\.sh" gate -- agent-gate node scripts\/run-push-gates\.mjs/u,
-    },
-    {
-      title: "gates:push without the push lock is rejected",
-      script: "gates:push",
-      replacement: "agent-gate node scripts/run-push-gates.mjs",
-      expected:
-        /package\.json gates:push must invoke bash "\$HOME\/\.claude\/scripts\/push-lock\.sh" gate -- agent-gate node scripts\/run-push-gates\.mjs/u,
+        /package\.json gates:push must invoke agent-gate node scripts\/run-push-gates\.mjs/u,
     },
     {
       title: "checks:pre-review without --pre-review is rejected",
@@ -126,7 +118,7 @@ test("heavy gate package scripts preserve the strict agent-gate wrapper and pre-
       replacement:
         "if command -v agent-gate >/dev/null 2>&1; then agent-gate node scripts/run-push-gates.mjs; else node scripts/run-push-gates.mjs; fi",
       expected:
-        /package\.json gates:push must invoke bash "\$HOME\/\.claude\/scripts\/push-lock\.sh" gate -- agent-gate node scripts\/run-push-gates\.mjs/u,
+        /package\.json gates:push must invoke agent-gate node scripts\/run-push-gates\.mjs/u,
     },
   ];
   for (const { title, script, replacement, expected } of cases) {

@@ -8,14 +8,18 @@ disable-model-invocation: false
 
 Complete the push autonomously. Read `~/.claude/references/push-review-policy.md` first; it is the single source for authorization, attribution, review lenses, model allocation, triage, remediation, and red-gate behavior. This skill adds only ChessRiddle Studio mechanics.
 
+ChessRiddle Studio uses short gates at push; the full suites run in CI on every push, and release
+builds run in release.yml. ChessRiddle Studio does not use the push lock; the lock, hold/release and
+exit-76 sentences of the shared policy do not apply.
+
 **Execution order:** establish the exact push scope (§1) → run pre-review checks (§2a) on the last
 implementation phase → complete review and arbitration with repairs (§3), including any preliminary
 checks needed to reproduce review claims → run relevant browser verification through `verify-ui` →
 commit implementation changes and known coordination records (including any known finding closure via
 `./scripts/findings.py close`) according to `~/.claude/references/coordination-file-commits.md` → run
 the final affected gates (§2) → push (§4) on the unchanged verified tree (code push, any single
-build-tier `tasks/build-ledger.md` records follow-up push under the same held lock, lock release,
-unlocked CI wait on every `Test` job of the pushed HEAD, and install on `master` after green). A
+build-tier `tasks/build-ledger.md` records follow-up push, CI wait on every `Test` job of the
+pushed HEAD, and install on `master` after green). A
 gate repair returns to `repair`, commit, and the required affected final-gate rerun before push.
 
 The workflow owns balanced `drain_stage` start/end records at each boundary: `code-review` for
@@ -80,19 +84,9 @@ with that reason and no exit code (d-20261105-04, d-20261105-05). Signals and un
 cleanup retain precedence over the red-gate reason. Exit-code precedence is unchanged. A failure
 returns to `repair`, commit, and the required affected final-gate rerun before push.
 
-`pnpm gates:push` first takes agent-kit's cross-repository push lock through
-`push-lock.sh gate` (agent-kit d-20261105-01): it waits while another checkout holds it, exits 76
-without starting when `origin/master` moved since the rebase (rebase and rerun), and releases it
-after a red run. The tracked `.githooks/pre-push` keeps it at the code push (converting it to
-release phase) and renews it at the release's single post-push records follow-up, preventing any
-foreign landing between the code push and its records follow-up, and refuses a `master` push while
-another checkout gates or finishes its release (agent-kit d-20261107-01). Immediately after the
-code push and its single post-push records follow-up push (or right after the code push when no
-records follow), release the lock with `bash ~/.claude/scripts/push-lock.sh release || true`; a
-forgotten release frees the lock 15 minutes after the last push. The §4 required-CI wait runs
-unlocked (never call `push-lock.sh hold` during the wait); see the ChessRiddle Studio overrides
-at the end of §4. In a clone without `core.hooksPath`, the
-gate sets `core.hooksPath .githooks` itself before taking the lock (agent-kit d-20261106-01).
+ChessRiddle Studio does not use the push lock; a rejected push means rebase, rerun
+`pnpm gates:push` (about 5 minutes) and push again.
+
 `pnpm gates:push` and `pnpm checks:pre-review` run through `agent-gate`. Read
 `.claude/rules/gate-tooling.md` "Scheduling and placement" before running a gate for admission,
 worker sizing, exit 125 and nesting. The shared
@@ -392,9 +386,8 @@ pnpm ci:remote:check
   `HEAD` equals `@{u}`.
 - Build tier only: write and commit the single post-push records-only `tasks/build-ledger.md` run
   row (push SHA, gate timings, review counts; CI and install cells say `"CI pending at record time"`)
-  and push it under the same held lock (`.githooks/pre-push` renews).
-- Release the push lock as §2 states (right after the code push and its records follow-up push).
-- Wait **unlocked** on **every `Test` job** of the pushed HEAD (`<new>`, which is the records SHA
+  and push it.
+- Wait on **every `Test` job** of the pushed HEAD (`<new>`, which is the records SHA
   when the build-ledger row was pushed; its `Test` run tests the code commit too) and gate on each
   job's `conclusion`, never on the run having started (the Windows/macOS jobs take about five to
   ten minutes, and the Linux jobs run in parallel across `frontend`, `e2e`, and `rust`).
@@ -439,7 +432,7 @@ agent-gate bash scripts/install-local.sh
     through `./scripts/findings.py file` with those lines (or annotate an already-open finding).
     Push the records-only change under policy §8's exception, then claim it locally
     (`./scripts/findings.py next --pin <id> --claim`). Do **not** install that SHA. Return to
-    `repair`, gate, and push again through the ordinary lock route.
+    `repair`, gate, and push again through the ordinary route.
   - **Inherited red** (exit 0; every red `Test` job's first red SHA is outside `<old>..<new>`):
     report the inherited red job(s) and their attribution (first red run, SHA, subject) in the push
     report, do **not** repair, do **not** install that SHA, and finish.
@@ -449,12 +442,10 @@ agent-gate bash scripts/install-local.sh
   no release/deployment occurred.
 - On any persistent red gate, follow the shared policy: do not push and report the exact blocker.
 
-ChessRiddle Studio overrides to shared policy §4a item 6 and §8 (2026-11-23, d-20261123-05): the
-push lock is released right after the code push and its records follow-up push, and the post-push
-required-CI wait runs unlocked, so no `push-lock.sh hold` before a wait call. A red job is owned by
-a finding citing any run id of its streak, and a `Repair owner` line younger than 120 minutes
-reserves the repair (see the `ci:remote:check` paragraph above). agent-kit's shared policy has not
-adopted either rule yet; this skill takes precedence for ChessRiddle Studio pushes.
+ChessRiddle Studio project rule (2026-11-23, d-20261123-05): a red job is owned by a finding citing
+any run id of its streak, and a `Repair owner` line younger than 120 minutes reserves the repair
+(see the `ci:remote:check` paragraph above). This skill takes precedence for ChessRiddle Studio
+pushes.
 
 ChessRiddle Studio override to shared policy §7: this workflow never performs a force push. A message containing `force push` requires a separate stop for the exact refspec and force-with-lease decision; it is not treated as an automatic gate-skip-and-push marker here.
 
