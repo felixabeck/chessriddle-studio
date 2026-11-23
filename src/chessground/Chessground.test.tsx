@@ -555,3 +555,41 @@ test("a caller's brushes cannot replace a drawing colour", async () => {
     color: "#e8c500",
   });
 });
+
+test("an overlay sits beside the board and the painted size is published on their parent", async () => {
+  const parent = document.createElement("div");
+  const root = createRoot(parent);
+  mountedRoots.add(root);
+  await act(async () => {
+    root.render(
+      <MantineProvider>
+        <Chessground fen="start" overlay={<span data-testid="hint" />} />
+      </MantineProvider>,
+    );
+  });
+  const config = createChessground.mock.calls[0][1];
+  // Chessground writes ---cg-width/---cg-height there; the overlay inherits them as a sibling.
+  expect(config.addDimensionsCssVarsTo).toBe(parent);
+  const board = createChessground.mock.calls[0][0];
+  const overlay = parent.querySelector<HTMLElement>("[data-board-overlay]")!;
+  expect(overlay.parentElement).toBe(parent);
+  expect(board.nextElementSibling).toBe(overlay);
+  expect(overlay.querySelector('[data-testid="hint"]')).not.toBeNull();
+  expect(overlay.style.width).toBe("var(---cg-width)");
+  expect(overlay.style.height).toBe("var(---cg-height)");
+  expect(overlay.style.pointerEvents).toBe("none");
+});
+
+test("no overlay element is rendered without an overlay", async () => {
+  const parent = document.createElement("div");
+  const root = createRoot(parent);
+  mountedRoots.add(root);
+  await act(async () => {
+    root.render(
+      <MantineProvider>
+        <Chessground fen="start" />
+      </MantineProvider>,
+    );
+  });
+  expect(parent.querySelector("[data-board-overlay]")).toBeNull();
+});

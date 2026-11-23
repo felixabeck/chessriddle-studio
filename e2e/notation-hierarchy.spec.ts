@@ -530,9 +530,8 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
         const geometry = await hint.evaluate((element) => {
             const hint = element.getBoundingClientRect();
             const board = document.querySelector("#left cg-board")!.getBoundingClientRect();
-            // The hint's square is a percentage of the overlay layer, which must match the board.
-            const layer = element.closest("[data-board-annotation-layer]")!.getBoundingClientRect();
-            const wrap = document.querySelector("#left .cg-wrap")!.getBoundingClientRect();
+            // The hint's square is a percentage of the overlay, which must match the painted board.
+            const layer = element.closest("[data-board-overlay]")!.getBoundingClientRect();
             // White orientation, a3 is file 0 and row 5 from the top of the painted board.
             const square = {
                 left: board.left,
@@ -544,8 +543,18 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
                 hint: { x: hint.x, y: hint.y, width: hint.width, height: hint.height },
                 center: { x: hint.x + hint.width / 2, y: hint.y + hint.height / 2 },
                 square,
-                layer: { left: layer.left, width: layer.width },
-                wrap: { left: wrap.left, width: wrap.width },
+                layer: {
+                    left: layer.left,
+                    top: layer.top,
+                    width: layer.width,
+                    height: layer.height,
+                },
+                board: {
+                    left: board.left,
+                    top: board.top,
+                    width: board.width,
+                    height: board.height,
+                },
             };
         });
         console.log(`320x720/200% a3! annotation ${state} ${JSON.stringify(geometry)}`);
@@ -553,12 +562,14 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
         expect(geometry.center.x).toBeLessThanOrEqual(geometry.square.right);
         expect(geometry.center.y).toBeGreaterThanOrEqual(geometry.square.top);
         expect(geometry.center.y).toBeLessThanOrEqual(geometry.square.bottom);
-        expect(Math.abs(geometry.layer.left - geometry.wrap.left)).toBeLessThanOrEqual(1);
-        expect(Math.abs(geometry.layer.width - geometry.wrap.width)).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.layer.left - geometry.board.left)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.layer.width - geometry.board.width)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.layer.top - geometry.board.top)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(geometry.layer.height - geometry.board.height)).toBeLessThanOrEqual(0.5);
     };
     await expectHintOverA3("eval open");
     // Collapsed, the 8px stacked eval column widens to the 1rem (32px here) reopen button, which
-    // the board would otherwise clip; the hint's offset follows the wider column.
+    // the board would otherwise clip; the hint must stay on its square as the board shifts.
     await page.locator("#left").getByRole("grid").first().focus();
     await page.keyboard.press("z");
     const showEvaluation = page.getByRole("button", { name: "Show evaluation", exact: true });
@@ -567,6 +578,101 @@ test("notation-hierarchy: overflow-only stacked annotation stays over its square
     await waitForBoardSizeSettled(page);
     await assertNothingClipped(showEvaluation, { mode: "reachable" });
     await expectHintOverA3("eval collapsed");
+});
+
+test("notation-hierarchy: annotation badges on edge squares stay inside the board", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+            ...pgnFileCommands,
+            lex_pgn: {
+                pgnTokens: {
+                    [filesWorkspaceFixture.pgnGame]: [
+                        { type: "Header", value: { tag: "Result", value: "*" } },
+                        { type: "San", value: "h4" },
+                        { type: "Nag", value: "$1" },
+                        { type: "San", value: "Nh6" },
+                        { type: "San", value: "a3" },
+                        { type: "Nag", value: "$3" },
+                        { type: "San", value: "Ng8" },
+                        { type: "Nag", value: "$2" },
+                        { type: "San", value: "Ra2" },
+                        { type: "San", value: "Nh6" },
+                        { type: "San", value: "Ra1" },
+                        { type: "Nag", value: "$1" },
+                        { type: "Outcome", value: "*" },
+                    ],
+                },
+            },
+        }),
+    });
+    await openLibraryFile(page);
+    await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    const notation = page.locator("#bottomRight");
+    const hint = page.locator("#left [data-board-annotation-hint]");
+    await waitForFontsSettled(page);
+    // `column` and `row` count painted squares from the board's top-left corner.
+    const expectHint = async (san: string, column: number, row: number) => {
+        await notation.getByRole("button", { name: san, exact: true }).click();
+        await expect(hint).toBeVisible();
+        const geometry = await hint.evaluate((element) => {
+            const rect = (r: DOMRect) => ({
+                left: r.left,
+                right: r.right,
+                top: r.top,
+                bottom: r.bottom,
+            });
+            return {
+                hint: rect(element.getBoundingClientRect()),
+                board: rect(document.querySelector("#left cg-board")!.getBoundingClientRect()),
+                // The hint's percentages resolve against this overlay.
+                overlay: rect(element.closest("[data-board-overlay]")!.getBoundingClientRect()),
+                // The overlay spans the board, so it must let moves and arrows through.
+                boardTakesPointer: (() => {
+                    const board = document.querySelector("#left cg-board")!.getBoundingClientRect();
+                    const hit = document.elementFromPoint(
+                        board.left + board.width / 2,
+                        board.top + board.height / 2,
+                    );
+                    return Boolean(hit?.closest("cg-board"));
+                })(),
+            };
+        });
+        console.log(`${san} annotation ${JSON.stringify(geometry)}`);
+        expect(geometry.boardTakesPointer).toBe(true);
+        for (const side of ["left", "right", "top", "bottom"] as const) {
+            expect(Math.abs(geometry.overlay[side] - geometry.board[side])).toBeLessThanOrEqual(
+                0.5,
+            );
+            const inward = side === "left" || side === "top" ? 1 : -1;
+            expect((geometry.hint[side] - geometry.board[side]) * inward).toBeGreaterThanOrEqual(
+                -0.5,
+            );
+        }
+        // Exact placement: the badge straddles the square's top-right corner (left edge at 67.5%,
+        // top edge 18% above the square) and moves inward only on the right file and top rank.
+        const square = (geometry.board.right - geometry.board.left) / 8;
+        const expectedLeft =
+            geometry.board.left + (column + (column === 7 ? 0.55 : 0.675)) * square;
+        const expectedTop = geometry.board.top + (row + (row === 0 ? 0 : -0.18)) * square;
+        expect(Math.abs(geometry.hint.left - expectedLeft)).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.hint.top - expectedTop)).toBeLessThanOrEqual(1);
+        expect(
+            Math.abs(geometry.hint.right - geometry.hint.left - 0.45 * square),
+        ).toBeLessThanOrEqual(1);
+    };
+    // White at the bottom: h4 is on the right edge, Ng8 on the top edge.
+    await expectHint("h4!", 7, 4);
+    await expectHint("♘g8?", 6, 0);
+    // Flipped, the a-file is the right edge and the eighth rank the bottom.
+    await page.getByRole("button", { name: /^Flip Board/ }).click();
+    await expectHint("a3!!", 7, 2);
+    await expectHint("♘g8?", 1, 7);
+    // a1 is the flipped top-right corner, where both edges apply.
+    await expectHint("♖a1!", 7, 0);
 });
 
 test("notation-hierarchy: overflow-only stacked geometry and wheel reachability", async ({

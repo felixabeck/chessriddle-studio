@@ -19,7 +19,15 @@ vi.mock("react-i18next", () => ({
 }));
 vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
-vi.mock("@/chessground/Chessground", () => ({ Chessground: () => <div data-chessground /> }));
+// Board draws its annotation hint through Chessground's overlay, so the stand-in renders it.
+vi.mock("@/chessground/Chessground", () => ({
+  Chessground: ({ overlay }: { overlay?: ReactNode }) => (
+    <>
+      <div data-chessground />
+      {overlay}
+    </>
+  ),
+}));
 vi.mock("@/components/common/ShowMaterial", () => ({ default: () => null }));
 vi.mock("@/components/databases/FideInfo", () => ({ default: () => null }));
 vi.mock("@/components/panels/analysis/BestMoves", () => ({ arrowColors: [] }));

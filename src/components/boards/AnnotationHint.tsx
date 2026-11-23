@@ -15,6 +15,10 @@ export default function AnnotationHint({
 }) {
   const { file, rank } = squareToCoordinates(square, orientation);
   const color = ANNOTATION_INFO[annotation]?.color || "gray";
+  // The badge straddles the square's top-right corner. The board clips everything outside it, so
+  // on the rightmost file and the top rank it moves inward just far enough to stay whole.
+  const left = file === 8 ? 100 - HINT_SIZE : HINT_LEFT;
+  const top = rank === 8 ? 0 : HINT_TOP;
 
   return (
     <Box
@@ -26,38 +30,41 @@ export default function AnnotationHint({
         bottom: `${(rank - 1) * 12.5}%`,
       }}
     >
-      <Box pl="90%">
-        {
-          <Box
-            data-board-annotation-hint
-            style={{
-              transform: "translateY(-40%) translateX(-50%)",
-              zIndex: 100,
-              filter: "url(#shadow)",
-              overflow: "initial",
-              borderRadius: "50%",
-            }}
-            w="45%"
-            h="45%"
-            pos="absolute"
-            bg={color}
-            variant="filled"
-          >
-            <svg viewBox="0 0 100 100">
-              <title>{annotation}</title>
-              <defs>
-                <filter id="shadow">
-                  <feDropShadow dx="0" dy="1" floodOpacity="0.3" stdDeviation="0" />
-                </filter>
-              </defs>
-              <g>{glyphToSvg[annotation]}</g>
-            </svg>
-          </Box>
-        }
+      <Box
+        data-board-annotation-hint
+        style={{
+          left: `${left}%`,
+          top: `${top}%`,
+          zIndex: 100,
+          filter: "url(#shadow)",
+          overflow: "initial",
+          borderRadius: "50%",
+        }}
+        w={`${HINT_SIZE}%`}
+        h={`${HINT_SIZE}%`}
+        pos="absolute"
+        bg={color}
+        variant="filled"
+      >
+        <svg viewBox="0 0 100 100">
+          <title>{annotation}</title>
+          <defs>
+            <filter id="shadow">
+              <feDropShadow dx="0" dy="1" floodOpacity="0.3" stdDeviation="0" />
+            </filter>
+          </defs>
+          <g>{glyphToSvg[annotation]}</g>
+        </svg>
       </Box>
     </Box>
   );
 }
+
+// Badge geometry in percent of its square: diameter, and the offsets that centre it slightly
+// inside the top-right corner (horizontal centre at 90%, vertical centre at 4.5%).
+const HINT_SIZE = 45;
+const HINT_LEFT = 90 - HINT_SIZE / 2;
+const HINT_TOP = -0.4 * HINT_SIZE;
 
 // taken from lichess https://github.com/lichess-org/lila/blob/b7d9abb9f624b1525804aeb49a5b2678f23aae09/ui/analyse/src/glyphs.ts#L49C1-L85
 // added manually drawn path for Miss (⊗)

@@ -5,7 +5,14 @@ import type { Key } from "@lichess-org/chessground/types";
 import { Box } from "@mantine/core";
 import equal from "fast-deep-equal";
 import { useAtomValue } from "jotai";
-import { type Ref, type RefObject, useEffect, useImperativeHandle, useRef } from "react";
+import {
+  type ReactNode,
+  type Ref,
+  type RefObject,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from "react";
 import {
   BOARD_ANIMATION_DURATION_MS,
   boardAnimationSpeedAtom,
@@ -70,6 +77,12 @@ export interface ChessgroundRef {
 interface ChessgroundProps extends Config {
   setBoardFen?: (fen: string) => void;
   ref?: Ref<ChessgroundRef>;
+  /**
+   * Drawn over the painted squares, sized from the board's `---cg-width` and `---cg-height`.
+   * Chessground rounds the painted board below its box, so percentages of the box would drift.
+   * The parent must be positioned and place the board at its top-left corner.
+   */
+  overlay?: ReactNode;
 }
 
 function configForBounds(config: Config, { width, height }: DOMRect): Config {
@@ -141,7 +154,7 @@ function snapshot(value: unknown): unknown {
   return value;
 }
 
-export function Chessground({ ref, ...props }: ChessgroundProps) {
+export function Chessground({ ref, overlay, ...props }: ChessgroundProps) {
   const boardRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
 
@@ -235,7 +248,8 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
         withTrampolines(configRef.current, appliedConfigRef, callbacksRef.current),
         element.getBoundingClientRect(),
       ),
-      addDimensionsCssVarsTo: element,
+      // On the parent, so the overlay beside the board element inherits the painted size too.
+      addDimensionsCssVarsTo: element.parentElement ?? element,
     };
     // configure mutates movable.dests, so capture the authoritative input before handing it over.
     lastAppliedRef.current = snapshot(initial);
@@ -300,17 +314,34 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
   const lastMoveOpacity = useAtomValue(lastMoveHighlightOpacityAtom);
 
   return (
-    <Box
-      style={{
-        aspectRatio: 1,
-        width: "100%",
-        "--board-image": `url('/board/${boardImage}')`,
-        "--board-texture": woodTexture ? "url('/board/wood4-square.png')" : "none",
-        "--board-coord-color-white": boardCoordColors.white,
-        "--board-coord-color-black": boardCoordColors.black,
-        "--last-move-color": lastMoveHighlightBackground(lastMoveColor, lastMoveOpacity),
-      }}
-      ref={boardRef}
-    />
+    <>
+      <Box
+        style={{
+          aspectRatio: 1,
+          width: "100%",
+          "--board-image": `url('/board/${boardImage}')`,
+          "--board-texture": woodTexture ? "url('/board/wood4-square.png')" : "none",
+          "--board-coord-color-white": boardCoordColors.white,
+          "--board-coord-color-black": boardCoordColors.black,
+          "--last-move-color": lastMoveHighlightBackground(lastMoveColor, lastMoveOpacity),
+        }}
+        ref={boardRef}
+      />
+      {overlay && (
+        <Box
+          data-board-overlay
+          pos="absolute"
+          top={0}
+          left={0}
+          style={{
+            width: "var(---cg-width)",
+            height: "var(---cg-height)",
+            pointerEvents: "none",
+          }}
+        >
+          {overlay}
+        </Box>
+      )}
+    </>
   );
 }

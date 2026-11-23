@@ -588,27 +588,6 @@ function Board({
             }}
             gap="sm"
           >
-            {showComments && annotations.length > 0 && currentNode.move && square !== undefined && (
-              <Box
-                style={{
-                  // The offset counts the open bar's width; a collapsed column can be wider.
-                  paddingLeft: `calc(var(--board-annotation-offset, 2.5rem) + ${evalColumnWidth} - ${EVAL_WIDTH})`,
-                  // Spans the padded row, so it drops the ring reserve to stay as wide as the board.
-                  paddingRight: FOCUS_RING_EXTENT,
-                }}
-                w="100%"
-                h="100%"
-                pos="absolute"
-              >
-                <Box data-board-annotation-layer pos="relative" w="100%" h="100%">
-                  <AnnotationHint
-                    orientation={orientation}
-                    square={square}
-                    annotation={annotations[0]}
-                  />
-                </Box>
-              </Box>
-            )}
             <Box
               h="100%"
               style={{
@@ -712,6 +691,18 @@ function Board({
 
                 <Chessground
                   ref={cgRef}
+                  overlay={
+                    showComments &&
+                    annotations.length > 0 &&
+                    currentNode.move &&
+                    square !== undefined && (
+                      <AnnotationHint
+                        orientation={orientation}
+                        square={square}
+                        annotation={annotations[0]}
+                      />
+                    )
+                  }
                   setBoardFen={setBoardFen}
                   orientation={orientation}
                   fen={currentNode.fen}
