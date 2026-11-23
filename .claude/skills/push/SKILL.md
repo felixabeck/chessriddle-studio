@@ -11,10 +11,12 @@ Complete the push autonomously. Read `~/.claude/references/push-review-policy.md
 **Execution order:** establish the exact push scope (§1) → run pre-review checks (§2a) on the last
 implementation phase → complete review and arbitration with repairs (§3), including any preliminary
 checks needed to reproduce review claims → run relevant browser verification through `verify-ui` →
-commit implementation changes and known coordination records according to
-`~/.claude/references/coordination-file-commits.md` → run the final affected gates (§2) → push (§4)
-on the unchanged verified tree. A gate repair returns to `repair`, commit, and the required affected
-final-gate rerun before push.
+commit implementation changes and known coordination records (including any known finding closure via
+`./scripts/findings.py close`) according to `~/.claude/references/coordination-file-commits.md` → run
+the final affected gates (§2) → push (§4) on the unchanged verified tree (code push, any single
+build-tier `tasks/build-ledger.md` records follow-up push under the same held lock, lock release,
+unlocked CI wait on every `Test` job of the pushed HEAD, and install on `master` after green). A
+gate repair returns to `repair`, commit, and the required affected final-gate rerun before push.
 
 The workflow owns balanced `drain_stage` start/end records at each boundary: `code-review` for
 §3, `repair` for each repair batch, `browser-verification` for the browser pass, `final-gates`
@@ -81,13 +83,14 @@ returns to `repair`, commit, and the required affected final-gate rerun before p
 `pnpm gates:push` first takes agent-kit's cross-repository push lock through
 `push-lock.sh gate` (agent-kit d-20261105-01): it waits while another checkout holds it, exits 76
 without starting when `origin/master` moved since the rebase (rebase and rerun), and releases it
-after a red run. The tracked `.githooks/pre-push` keeps it at each push for the release's records
-follow-up and refuses a `master` push while another checkout gates or finishes its release
-(agent-kit d-20261107-01). The §4 required-CI wait runs as shell calls of at most 10 minutes
-each; start every one of them with `bash ~/.claude/scripts/push-lock.sh hold || true`, so the hold
-survives a queued run's long wait. After the last push of the release (the
-records follow-up, or none) run `bash ~/.claude/scripts/push-lock.sh release || true`; a forgotten
-release frees the lock 15 minutes after the last push. In a clone without `core.hooksPath`, the
+after a red run. The tracked `.githooks/pre-push` keeps it at the code push (converting it to
+release phase) and renews it at the release's single post-push records follow-up, preventing any
+foreign landing between the code push and its records follow-up, and refuses a `master` push while
+another checkout gates or finishes its release (agent-kit d-20261107-01). Immediately after the
+code push and its single post-push records follow-up push (or right after the code push when no
+records follow), release the lock with `bash ~/.claude/scripts/push-lock.sh release || true`; a
+forgotten release frees the lock 15 minutes after the last push. The §4 required-CI wait runs
+unlocked (never call `push-lock.sh hold` during the wait). In a clone without `core.hooksPath`, the
 gate sets `core.hooksPath .githooks` itself before taking the lock (agent-kit d-20261106-01).
 `pnpm gates:push` and `pnpm checks:pre-review` run through `agent-gate`. Read
 `.claude/rules/gate-tooling.md` "Scheduling and placement" before running a gate for admission,
@@ -342,9 +345,10 @@ Use the exact-string override keywords from
 ## 4. Commit, push, and verify
 
 - After review, repairs, and browser verification, commit implementation changes and coordination
-  records already known to the run according to `~/.claude/references/coordination-file-commits.md`,
-  using the attribution above and only the remaining authorized paths. These commits precede the
-  final affected gates.
+  records already known to the run according to `~/.claude/references/coordination-file-commits.md`
+  — **including any finding closure (`./scripts/findings.py close`)** — using the attribution above
+  and only the remaining authorized paths. These commits precede the final affected gates so no
+  closure commit follows the code push and the post-push record stays a single commit.
 - Require `git diff --check`, all affected gates green on the final tree, and no unresolved `Fix` finding.
 - If a final gate requires a repair, return to `repair`, commit the repair, and rerun the affected
   final gates on the changed tree before push. The push then uses the unchanged verified tree.
@@ -354,40 +358,93 @@ Use the exact-string override keywords from
 pnpm ci:remote:check
 ```
 
+  It checks the `Test` workflow (newest 30 runs) and the daily `Mutation` workflow's frontend jobs
+  (newest 10 runs, skipping Sunday backend-only runs and cancelled runs where frontend jobs are
+  `skipped` or `cancelled`; if no frontend result exists in 10 runs it reports that without
+  failing). For each red `Test` job `J` on the branch, its **red streak** is the maximal run of
+  consecutive completed `Test` runs (newest first) whose `J` is non-success; its first red run is
+  the oldest of them (`headSha` = first red SHA). Attribution is undetermined when an older `Test`
+  run between the newest red and the last success for `J` is not completed yet, no success for
+  `J` exists in the 30-run window, or a needed `gh` query fails.
+  Under policy §8, a finding owns a red job when it cites **any run id of that job's streak** (not
+  only the newest). An open repair finding whose `* **Repair owner:** <session id> on <host>, <ISO time>`
+  line is younger than 120 minutes is actively owned by that session; other sessions and drains
+  neither pin nor repair it (they wait). When that line is 120 minutes or older, or absent, any
+  session or drain may repair it.
   Exit 1 refuses the push unless this push's commits repair the finding that owns every listed red
-  job. If any listed red job has no owning finding, file it first through `./scripts/findings.py file`;
-  filing a finding alone never licenses a code push (policy §8 names the one records-only
-  exception for that filing). Exit 2 refuses the push and reports its
-  cause. Only `success` passes: `skipped`, `neutral` and every other non-success conclusion are red
-  because no `Test` workflow job is skipped by design. Policy §8 is the source of this refusal
-  rule. The §2 gate locally type-checks and lints the `x86_64-pc-windows-gnu` target; the jobs this
-  machine cannot reproduce remain `rust-windows-test`, `rust-macos-test` and the `rust-platform`
-  matrix of the `Test` workflow, including the MSVC target. All Windows tests stay CI-only. These
-  named jobs only decide what to wait for after the push.
-- In an opted-in linked worktree, recheck that `worktreeBuilds.target` is `master` and the branch still tracks `origin/master`, then push its rebased commits with exactly `git push origin HEAD:refs/heads/master`. Never push a `build/*` or `drain/*` branch or open it as a PR. Otherwise run ordinary non-force `git push` to the configured upstream.
-- Verify local `HEAD` equals `@{u}` and report commits, destination, gate results, review findings/verdicts, and that no release/deployment occurred.
-- Wait for those jobs on the pushed SHA (the Windows/macOS jobs take about five to ten minutes,
-  and the Linux jobs run in parallel across frontend, e2e, rust, and per-package frontend-mutation)
-  and gate on each job's `conclusion`, never on the run having started. Red returns to
-  `repair`; read the failing tests from `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`,
-  because `gh run view --log-failed` returned nothing for these runs on 2026-09-19.
+  job (for non-push `Mutation` sweeps, policy §8 clears a red once the finding citing that same run
+  id in `**CI run:** <id>` is handled). If any listed red job has no owning finding, file it first
+  through `./scripts/findings.py file`; filing a finding alone never licenses a code push (policy §8
+  names the one records-only exception for that filing). Exit 2 refuses the push and reports its
+  cause. Only `success` passes for `Test`: `skipped`, `neutral` and every other non-success
+  conclusion are red because no `Test` workflow job is skipped by design. Policy §8 is the source
+  of this refusal rule. The §2 gate locally type-checks and lints the `x86_64-pc-windows-gnu` target;
+  `rust-windows-test`, `rust-macos-test` and `rust-platform` remain CI-only alongside the Linux
+  heavy suites (`frontend`, `e2e`, `rust`).
+- Record `<old>` (`git rev-parse @{u}`) before pushing so post-push CI attribution can check
+  `<old>..<new>`. In an opted-in linked worktree, recheck that `worktreeBuilds.target` is `master`
+  and the branch still tracks `origin/master`, then push its rebased commits with exactly
+  `git push origin HEAD:refs/heads/master`. Never push a `build/*` or `drain/*` branch or open it
+  as a PR. Otherwise run ordinary non-force `git push` to the configured upstream. Verify local
+  `HEAD` equals `@{u}`.
+- Build tier only: write and commit the single post-push records-only `tasks/build-ledger.md` run
+  row (push SHA, gate timings, review counts; CI and install cells say `"CI pending at record time"`)
+  and push it under the same held lock (`.githooks/pre-push` renews).
+- Immediately after the code push and its single post-push records follow-up push (or right after
+  the code push when no records follow), release the cross-repository push lock:
+  `bash ~/.claude/scripts/push-lock.sh release || true`.
+- Wait **unlocked** on **every `Test` job** of the pushed HEAD (`<new>`, which is the records SHA
+  when the build-ledger row was pushed; its `Test` run tests the code commit too) and gate on each
+  job's `conclusion`, never on the run having started (the Windows/macOS jobs take about five to
+  ten minutes, and the Linux jobs run in parallel across `frontend`, `e2e`, and `rust`).
   Exception for runner infrastructure: when a red job's failing or timed-out step is a setup step
   (`Set up job`, checkout, `Set up repository dependencies`, toolchain install) and no repository
   check had started, wait until the whole run has completed, then run
   `gh run rerun <run-id> --failed` once and wait again. A second red, or a hang in any later step,
-  takes the ordinary red-job path above. Every job carries `timeout-minutes`, which does not cover
-  a job still `queued`: if the run has not completed 120 minutes after the push, cancel it, rerun
-  it once, and if that attempt also misses 120 minutes, stop the wait and report the push as
-  landed with CI unconfirmed, naming the stuck jobs.
-- The post-push coordination-record exception remains governed by
-  `~/.claude/references/coordination-file-commits.md`; it does not generalize to implementation changes.
-- After a verified push to `master`, including the required remote-CI wait above, run the installer only from a checkout whose `HEAD` equals the verified pushed SHA, normally the pushing worktree. Check that equality immediately before invoking the installer. A main checkout on `master` is eligible only when its `HEAD` equals that same SHA. The installer performs a Tauri release build followed by an atomic swap of `~/.local/opt/chessriddle-studio/current`:
+  takes the red-job path below. Every job carries `timeout-minutes`, which does not cover a job
+  still `queued`: if the run has not completed 120 minutes after the push, cancel it, rerun it once,
+  and if that attempt also misses 120 minutes, stop the wait and report the push as landed with CI
+  unconfirmed, naming the stuck jobs.
+- If **green** (every `Test` job of `<new>` concludes `success`), run the installer only from a
+  checkout whose `HEAD` equals the verified pushed SHA, normally the pushing worktree. Check that
+  equality immediately before invoking the installer. A main checkout on `master` is eligible only
+  when its `HEAD` equals that same SHA. The installer performs a Tauri release build followed by an
+  atomic swap of `~/.local/opt/chessriddle-studio/current`:
 
 ```bash
 agent-gate bash scripts/install-local.sh
 ```
 
-  The release `rustc` alone peaks above 4 GB, so the installer runs in its own `agent-gate` scope like the other heavy gates; run directly inside an agent session's 8 GiB scope it was OOM-killed on 2026-11-16 (f-20261116-03). Exit 125 means `agent-gate` refused before anything started. This is how a pushed change reaches the application-menu entry Felix uses; nothing else updates it, and it is not a release or deployment. Report the installed short commit from `~/.local/opt/chessriddle-studio/current/VERSION`. If the build fails, the push stands and the failure is reported as its own blocker — the previous installed copy keeps running.
+  The release `rustc` alone peaks above 4 GB, so the installer runs in its own `agent-gate` scope
+  like the other heavy gates; run directly inside an agent session's 8 GiB scope it was OOM-killed
+  on 2026-11-16 (f-20261116-03). Exit 125 means `agent-gate` refused before anything started. This
+  is how a pushed change reaches the application-menu entry Felix uses; nothing else updates it,
+  and it is not a release or deployment. Report the installed short commit from
+  `~/.local/opt/chessriddle-studio/current/VERSION`, then release `build-run-lock` and remove any
+  owned worktree (`kit worktree remove`). If the build fails, the push stands and the failure is
+  reported as its own blocker — the previous installed copy keeps running.
+- If **red**, read the failing tests from `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`
+  (because `gh run view --log-failed` returned nothing for these runs on 2026-09-19) and run
+  `pnpm ci:remote:check --owner <old>..<new>` (full 40-hex SHAs; ignores `Mutation`; resolves the
+  pushed commit set with `git rev-list`; exit 2 refuses when `<new>`'s `Test` run is not completed
+  or not in the window, or when any red job's attribution is undetermined — wait and re-check if an
+  older `Test` run is still in progress):
+  - **Own red** (exit 1; some red `Test` job's first red SHA is in `<old>..<new>`): if the run
+    closed a finding pre-gate, reopen it with
+    `./scripts/findings.py set-header <id> --status open --note-file <note>` where `<note>`
+    carries `* **CI run:** <first red run id>` and
+    `* **Repair owner:** <session id> on <host>, <ISO time>`; for a red with no finding, file one
+    through `./scripts/findings.py file` with those lines (or annotate an already-open finding).
+    Push the records-only change under policy §8's exception, then claim it locally
+    (`./scripts/findings.py next --pin <id> --claim`). Do **not** install that SHA. Return to
+    `repair`, gate, and push again through the ordinary lock route.
+  - **Inherited red** (exit 0; every red `Test` job's first red SHA is outside `<old>..<new>`):
+    report the inherited red job(s) and their attribution (first red run, SHA, subject) in the push
+    report, do **not** repair, do **not** install that SHA, and finish.
+- The post-push coordination-record exception remains governed by
+  `~/.claude/references/coordination-file-commits.md`; it does not generalize to implementation changes.
+- Report commits, destination, gate results, review findings/verdicts, CI/install outcome, and that
+  no release/deployment occurred.
 - On any persistent red gate, follow the shared policy: do not push and report the exact blocker.
 
 ChessRiddle Studio override to shared policy §7: this workflow never performs a force push. A message containing `force push` requires a separate stop for the exact refspec and force-with-lease decision; it is not treated as an automatic gate-skip-and-push marker here.
