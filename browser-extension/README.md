@@ -88,16 +88,21 @@ There is no App Store listing and no second download.
 - **For a user:** open ChessRiddle Studio once, then in Safari choose Settings, Extensions, enable
   "Analyze in ChessRiddle Studio" and allow it on chess.com and lichess.org.
 
-**Not observed:** nobody in the project has a Mac. Packaging, signing, embedding, notarization and
-registration are checked by the release legs on GitHub's macOS runners; that the button appears
-and works in Safari is checked nowhere. Apple documents this way of distribution, but developers have reported that Safari blocked
-Developer ID-signed web extensions (Apple developer forum threads 667859 and 695373). The
-release's last Safari step opens the application and Safari on the runner, classifies Safari's
-log with `scripts/safari-observation-verdict.sh` and prints
-`SAFARI: BLOCK OBSERVED`, `SAFARI: no block observed` or `SAFARI: observation unavailable`; it
-never fails a release. Read that line in the macOS legs of a release before announcing the Safari
-version. If Safari blocks the extension on users' Macs, the fallback is an App Store
-container application built from the same files.
+**Observed on GitHub's macOS runners, not on a user's Mac:** nobody in the project has a Mac.
+Packaging, signing, embedding, notarization and registration are checked by the release legs.
+Apple documents this way of distribution, but developers have reported that Safari blocked
+Developer ID-signed web extensions (Apple developer forum threads 667859 and 695373), with the
+log line "Computing the code signing dictionary failed". The release's last Safari step therefore
+opens the application and Safari on the runner, classifies Safari's log with
+`scripts/safari-observation-verdict.sh` and prints `SAFARI: BLOCK OBSERVED`,
+`SAFARI: no block observed` or `SAFARI: observation unavailable`; it never fails a release.
+
+In rehearsal run 45121673614 (2026-11-23, both macOS legs) Safari did not block the extension:
+its log reads "Computing the code signing dictionary succeeded for extension with identifier:
+com.chessriddle.studio.Extension", and Safari's own extension list held the extension with the
+three site patterns of the manifest. **Not observed anywhere:** a user enabling the extension, and
+the button appearing and working on a page in Safari. If Safari blocks the extension on users'
+Macs after all, the fallback is an App Store container application built from the same files.
 
 ## The link contract
 
