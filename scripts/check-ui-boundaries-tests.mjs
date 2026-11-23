@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test, { after } from "node:test";
 import { testTempRoots } from "./test-temp-root.mjs";
@@ -44,6 +44,12 @@ esac
       PATH: [bin, process.env.PATH].filter(Boolean).join(delimiter),
     },
   });
+}
+
+async function writeListedFile(root, listedPath, source) {
+  const fullPath = join(root, listedPath);
+  await mkdir(dirname(fullPath), { recursive: true });
+  await writeFile(fullPath, source);
 }
 
 test("skips a source file removed by an uncommitted deletion", async () => {
@@ -105,4 +111,80 @@ test("accepts a layered per-component Mantine stylesheet import", async () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.error, undefined);
+});
+
+test("rejects single-line direct Popover, Modal, and ActionIcon value imports", async () => {
+  for (const [name, pattern] of [
+    ["Popover", /direct Popover import; use AppPopover instead/],
+    ["Modal", /direct Modal import; use AppModal instead/],
+    ["ActionIcon", /direct ActionIcon import; use IconAction instead/],
+  ]) {
+    const result = await runChecker("src/App.tsx", (root) =>
+      writeListedFile(root, "src/App.tsx", `import { Button, ${name} } from "@mantine/core";\n`),
+    );
+
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, pattern);
+  }
+});
+
+test("rejects multi-line direct Popover, Modal, and ActionIcon value imports", async () => {
+  for (const [name, pattern] of [
+    ["Popover", /direct Popover import; use AppPopover instead/],
+    ["Modal", /direct Modal import; use AppModal instead/],
+    ["ActionIcon", /direct ActionIcon import; use IconAction instead/],
+  ]) {
+    const result = await runChecker("src/App.tsx", (root) =>
+      writeListedFile(
+        root,
+        "src/App.tsx",
+        `import {\n  Button,\n  ${name},\n  Text,\n} from "@mantine/core";\n`,
+      ),
+    );
+
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, pattern);
+  }
+});
+
+test("allows multi-line imports with type Modal and type Popover specifiers", async () => {
+  const result = await runChecker("src/App.tsx", (root) =>
+    writeListedFile(
+      root,
+      "src/App.tsx",
+      'import {\n  Button,\n  type ActionIcon,\n  type Modal,\n  type Popover,\n} from "@mantine/core";\n',
+    ),
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.error, undefined);
+});
+
+test("allows import type { Popover } and PopoverProps", async () => {
+  const result = await runChecker("src/App.tsx", (root) =>
+    writeListedFile(
+      root,
+      "src/App.tsx",
+      'import type { Popover } from "@mantine/core";\nimport { PopoverProps } from "@mantine/core";\n',
+    ),
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.error, undefined);
+});
+
+test("allows exempt wrapper files and theme.ts to import their wrapped components", async () => {
+  for (const [listedPath, source] of [
+    ["src/components/common/AppPopover.tsx", 'import {\n  Popover,\n} from "@mantine/core";\n'],
+    ["src/components/common/AppModal.tsx", 'import { Modal } from "@mantine/core";\n'],
+    ["src/components/common/IconAction.tsx", 'import {\n  ActionIcon,\n} from "@mantine/core";\n'],
+    ["src/styles/theme.ts", 'import {\n  ActionIcon,\n  Popover,\n} from "@mantine/core";\n'],
+  ]) {
+    const result = await runChecker(listedPath, (root) =>
+      writeListedFile(root, listedPath, source),
+    );
+
+    assert.equal(result.status, 0, `${listedPath}: ${result.stderr}`);
+    assert.equal(result.error, undefined);
+  }
 });

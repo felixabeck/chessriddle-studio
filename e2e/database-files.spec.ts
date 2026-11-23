@@ -634,6 +634,9 @@ test("database-files: the local explorer options keep their controls legible and
     const filterButton = page.getByRole("button", { name: "Filters: No filter", exact: true });
     await filterButton.click();
     const options = page.locator("[data-explorer-filters]");
+    await page.keyboard.press("Escape");
+    await expect(options).toHaveCount(0);
+    await filterButton.click();
 
     // The colour only says which side the selected player has.
     await expect(options.getByText("Plays as", { exact: true })).toBeVisible();
@@ -670,9 +673,19 @@ test("database-files: the local explorer options keep their controls legible and
     expect(layout.sidewaysOverflow).toBe(0);
     expect(layout.switchCursor).toBe("pointer");
 
-    // A date picked in the popover's own calendar leaves the filters open.
+    // Escape closes only an open DateInput calendar, and the next Escape closes the filters.
     await options.getByPlaceholder("Start date", { exact: true }).click();
     const calendar = page.locator("[data-dates-dropdown]");
+    await expect(calendar).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(calendar).toBeHidden();
+    await expect(options).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(options).toHaveCount(0);
+
+    // A date picked in the popover's own calendar leaves the filters open.
+    await filterButton.click();
+    await options.getByPlaceholder("Start date", { exact: true }).click();
     await calendar.getByRole("button", { name: /^15 / }).first().click();
     await expect(options).toBeVisible();
     await expect(options.getByPlaceholder("Start date", { exact: true })).not.toHaveValue("");
@@ -4406,18 +4419,14 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
     );
     expect(lookups.slice(-2)).toEqual(["FirstWhite", "first_white"]);
 
-    await sources
-        .nth(1)
-        .getByRole("button", { name: /^Filters:/ })
-        .click();
+    const comparisonFilters = sources.nth(1).getByRole("button", { name: /^Filters:/ });
+    await comparisonFilters.click();
     const filters = page.locator("[data-explorer-filters]");
+    await page.keyboard.press("Escape");
+    await expect(filters).toHaveCount(0);
+    await comparisonFilters.click();
     await expect(filters.getByRole("radio", { name: "White", exact: true })).toBeChecked();
     await expect(filters.getByRole("textbox", { name: "Search" })).toHaveCount(0);
-    // Escape closes the filters only from inside them, and the focus arrives there a moment
-    // after they open.
-    await expect
-        .poll(() => filters.evaluate((panel) => panel.contains(document.activeElement)))
-        .toBe(true);
     await page.keyboard.press("Escape");
     await expect(filters).toHaveCount(0);
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);

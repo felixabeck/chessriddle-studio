@@ -2,7 +2,6 @@ import {
   Button,
   Group,
   Input,
-  Popover,
   Radio,
   ScrollArea,
   Select,
@@ -16,6 +15,7 @@ import { ChevronDown } from "lucide-react";
 import { useId, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import AppModal from "@/components/common/AppModal";
+import AppPopover from "@/components/common/AppPopover";
 import { trainingSettings as settings } from "@/state/chessRiddleTrainingSettings";
 import { difficultyOptions, motifCategoryLabels, motifLabel } from "./trainingLabels";
 import { ALL_MOTIFS_ICON, CATEGORY_ORDER, CATEGORY_PATHS, motifMeta } from "./motifCatalog";
@@ -184,15 +184,14 @@ function MotifPicker({
   };
   return (
     <Input.Wrapper label={t("Training.Settings.Motif")} labelProps={{ id: labelId }}>
-      <Popover
+      <AppPopover
         opened={opened && !disabled}
         onChange={setOpened}
         width="min(560px, calc(100vw - 32px))"
         position="bottom-start"
-        trapFocus
         returnFocus
       >
-        <Popover.Target>
+        <AppPopover.Target>
           <Button
             fullWidth
             variant="default"
@@ -209,8 +208,8 @@ function MotifPicker({
           >
             <span id={valueId}>{value ? motifLabel(value, t) : allLabel}</span>
           </Button>
-        </Popover.Target>
-        <Popover.Dropdown role="dialog" aria-labelledby={labelId}>
+        </AppPopover.Target>
+        <AppPopover.Dropdown role="dialog" aria-labelledby={labelId}>
           <Stack gap="sm">
             <Radio.Group
               value={activeCategory}
@@ -257,8 +256,8 @@ function MotifPicker({
               </SimpleGrid>
             </ScrollArea.Autosize>
           </Stack>
-        </Popover.Dropdown>
-      </Popover>
+        </AppPopover.Dropdown>
+      </AppPopover>
     </Input.Wrapper>
   );
 }

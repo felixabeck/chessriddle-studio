@@ -10,25 +10,53 @@ try {
 }
 
 const violations = [];
-const actionIconImport = /import\s*\{[^}]*\bActionIcon\b[^}]*\}\s*from\s*["']@mantine\/core["']/;
-const modalImport = /import\s*\{[^}]*\bModal\b[^}]*\}\s*from\s*["']@mantine\/core["']/;
+const mantineNamedImport =
+  /\bimport\b(\s+type\b)?\s*(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*["']@mantine\/core["']/g;
+const wrapperImportRules = [
+  {
+    name: "ActionIcon",
+    exemptFiles: new Set(["src/components/common/IconAction.tsx", "src/styles/theme.ts"]),
+    message: "direct ActionIcon import; use IconAction instead",
+  },
+  {
+    name: "Modal",
+    exemptFiles: new Set(["src/components/common/AppModal.tsx"]),
+    message: "direct Modal import; use AppModal instead",
+  },
+  {
+    name: "Popover",
+    exemptFiles: new Set(["src/components/common/AppPopover.tsx", "src/styles/theme.ts"]),
+    message: "direct Popover import; use AppPopover instead",
+  },
+];
 const unsafeFocusReset = /\b(all\s*:\s*unset|outline\s*:\s*(?:none|0(?:px)?))\b/;
 const mantineStylesheetSpec =
   /(?:from|import)\s+["']((?:@mantine\/[\w-]+|mantine-contextmenu|mantine-datatable)\/(?:styles(?:\.layer)?\.css|styles\/[\w.-]+\.css))["']/;
 
-function inspectLine(file, line) {
-  if (
-    actionIconImport.test(line) &&
-    file !== "src/components/common/IconAction.tsx" &&
-    file !== "src/styles/theme.ts"
-  ) {
-    violations.push(`${file}: direct ActionIcon import; use IconAction instead`);
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
+function inspectMantineImports(file, contents) {
+  for (const match of contents.matchAll(mantineNamedImport)) {
+    if (match[1]) continue;
+    for (const raw of stripComments(match[2]).split(",")) {
+      const spec = raw.trim();
+      if (!spec || /^type\s+(?!as\b)/.test(spec)) continue;
+      const imported = spec.match(/^([\w$]+)(?:\s+as\s+[\w$]+)?$/)?.[1];
+      if (!imported) continue;
+      for (const rule of wrapperImportRules) {
+        if (imported === rule.name && !rule.exemptFiles.has(file)) {
+          violations.push(`${file}: ${rule.message}`);
+        }
+      }
+    }
   }
+}
+
+function inspectLine(file, line) {
   if (unsafeFocusReset.test(line)) {
     violations.push(`${file}: unsafe focus reset; preserve or restore :focus-visible`);
-  }
-  if (modalImport.test(line) && file !== "src/components/common/AppModal.tsx") {
-    violations.push(`${file}: direct Modal import; use AppModal instead`);
   }
   const stylesheet = line.match(mantineStylesheetSpec);
   if (stylesheet && !stylesheet[1].endsWith(".layer.css")) {
@@ -67,6 +95,9 @@ for (const file of sourceFiles) {
   if (/\.test\.[jt]sx?$/.test(file)) continue;
   const contents = readWorkingTreeFile(file);
   if (contents === null) continue;
+  if (!file.endsWith(".css")) {
+    inspectMantineImports(file, contents);
+  }
   for (const line of contents.split("\n")) {
     inspectLine(file, line);
   }

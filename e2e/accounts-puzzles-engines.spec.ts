@@ -315,9 +315,18 @@ for (const layout of ["desktop", "narrow"] as const) {
         await goToBoards(page);
         await page.getByRole("button", { name: /^Analysis Board$/ }).click();
         await page.getByRole("tab", { name: "Analysis", exact: true }).click();
-        await page.getByRole("button", { name: "Select engines", exact: true }).click();
+        const selectEngines = page.getByRole("button", { name: "Select engines", exact: true });
+        await selectEngines.click();
         const picker = page.locator(".mantine-Popover-dropdown");
         await expect(picker).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(picker).toBeHidden();
+        await expect(selectEngines).toBeFocused();
+        await selectEngines.click();
+        await expect(picker).toBeVisible();
+        await expect
+            .poll(() => picker.evaluate((panel) => panel.contains(document.activeElement)))
+            .toBe(true);
         await assertPortraits([picker]);
         await expect(picker.getByRole("checkbox")).not.toBeChecked();
         expect(await page.evaluate(() => localStorage.getItem("engines"))).toBe(saved);

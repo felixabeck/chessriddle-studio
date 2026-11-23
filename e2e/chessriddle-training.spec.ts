@@ -629,11 +629,20 @@ test("keyboard submit, navigation, ignored keys, next and Analyse", async ({
     await captureTraining(page, page.getByRole("dialog"), "en-US-desktop-shortcuts.png", false);
     await page.keyboard.press("Escape");
     await panel.getByRole("button", { name: "Training settings", exact: true }).click();
-    await page
-        .getByRole("dialog")
-        .getByRole("button", { name: "Motif All motifs", exact: true })
-        .click();
+    const settingsDialog = page.getByRole("dialog", { name: "Training settings", exact: true });
+    const motifButton = settingsDialog.getByRole("button", {
+        name: "Motif All motifs",
+        exact: true,
+    });
+    const motifPicker = page.getByRole("dialog", { name: "Motif", exact: true });
+    await motifButton.click();
+    await page.keyboard.press("Escape");
+    await expect(motifPicker).toBeHidden();
+    await expect(settingsDialog).toBeVisible();
+    await motifButton.click();
+    await expect(motifPicker.getByRole("radio", { name: "All", exact: true })).toBeFocused();
     await page.keyboard.press("Enter");
+    await expect(motifPicker).toBeVisible();
     expect(
         await page.evaluate(
             () =>
@@ -643,7 +652,10 @@ test("keyboard submit, navigation, ignored keys, next and Analyse", async ({
         ),
     ).toBe(0);
     await page.keyboard.press("Escape");
+    await expect(motifPicker).toBeHidden();
+    await expect(settingsDialog).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(settingsDialog).toBeHidden();
     await page.locator("[data-training-panel]").click({ position: { x: 5, y: 5 } });
     await page.keyboard.press("Enter");
     await expect(panel.getByText("Correct", { exact: true })).toBeVisible();

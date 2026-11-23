@@ -6,7 +6,6 @@ import {
   Card,
   Group,
   Paper,
-  Popover,
   ScrollArea,
   Space,
   Stack,
@@ -21,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
+import AppPopover from "@/components/common/AppPopover";
 import { IconAction } from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useElementWidth } from "@/hooks/useElementWidth";
@@ -248,8 +248,8 @@ function AnalysisPanel() {
                 >
                   {t("Board.Analysis.ManageEngines")}
                 </Button>
-                <Popover width={250} position="top-end" shadow="md">
-                  <Popover.Target>
+                <AppPopover width={250} position="top-end" shadow="md">
+                  <AppPopover.Target>
                     <IconAction
                       label={t("Board.Analysis.SelectEngines")}
                       variant="default"
@@ -257,12 +257,12 @@ function AnalysisPanel() {
                     >
                       <ChevronsUpDown />
                     </IconAction>
-                  </Popover.Target>
+                  </AppPopover.Target>
 
-                  <Popover.Dropdown>
+                  <AppPopover.Dropdown>
                     <EngineSelection />
-                  </Popover.Dropdown>
-                </Popover>
+                  </AppPopover.Dropdown>
+                </AppPopover>
               </Group>
             </Stack>
           </ScrollArea>

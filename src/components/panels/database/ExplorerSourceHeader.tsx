@@ -1,7 +1,8 @@
-import { Button, Group, Popover, Stack, Text } from "@mantine/core";
+import { Button, Group, Stack, Text } from "@mantine/core";
 import { ListFilter } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import AppPopover from "@/components/common/AppPopover";
 import classes from "./ExplorerSourceHeader.module.css";
 
 /** The database select never grows beyond this, so a wide cell keeps room for the filter label. */
@@ -43,8 +44,8 @@ function ExplorerSourceHeader({
             {action}
           </Group>
         )}
-        <Popover position="bottom-start" shadow="md" width="30rem" trapFocus withinPortal>
-          <Popover.Target>
+        <AppPopover position="bottom-start" shadow="md" width="30rem" withinPortal>
+          <AppPopover.Target>
             <Button
               variant="default"
               size="compact-sm"
@@ -56,11 +57,11 @@ function ExplorerSourceHeader({
             >
               {filterLabel}
             </Button>
-          </Popover.Target>
-          <Popover.Dropdown className={classes.filters} data-explorer-filters>
+          </AppPopover.Target>
+          <AppPopover.Dropdown className={classes.filters} data-explorer-filters>
             {filters}
-          </Popover.Dropdown>
-        </Popover>
+          </AppPopover.Dropdown>
+        </AppPopover>
       </Group>
     </Stack>
   );

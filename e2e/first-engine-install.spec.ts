@@ -201,13 +201,17 @@ test("automatic install stays visible across routes, cancels, and never starts a
     await enginesTab.click();
     await expect(enginesTab).toHaveAttribute("aria-selected", "true");
     await page.getByRole("button", { name: "Select engines", exact: true }).click();
+    const picker = page.locator(".mantine-Popover-dropdown");
     await expect(button).toBeVisible();
     await expect(button).toBeEnabled();
     await expect(button).toBeInViewport({ ratio: 1 });
-    await assertNothingClipped(page.locator(".mantine-Popover-dropdown"));
-    await expect(page.locator(".mantine-Popover-dropdown")).toHaveScreenshot(
-        "analysis-install-stockfish.png",
-    );
+    await expect
+        .poll(() => picker.evaluate((panel) => panel.contains(document.activeElement)))
+        .toBe(true);
+    await assertNothingClipped(picker);
+    await expect(picker).toHaveScreenshot("analysis-install-stockfish.png");
+    await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
 });
 
 test("an existing engines key leaves the profile untouched and offers the fallback", async ({
