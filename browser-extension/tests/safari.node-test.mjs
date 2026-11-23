@@ -64,24 +64,18 @@ function releaseSteps() {
 const build = "Build and embed the Safari extension (macOS only)";
 const verify = "Verify the embedded Safari extension (macOS only)";
 const observe = "Observe the Safari verdict on the extension (macOS only, informational)";
-const staged = "runner.os == 'macOS' && inputs.safari_extension";
 
-// Staging (d-20261122-33): until a rehearsal with the input is green, a tag release must run
-// exactly the steps it ran before the Safari steps existed.
-test("the Safari steps run only on macOS and only when a dispatch asks for them", () => {
-  assert.match(
-    workflow,
-    / {2}workflow_dispatch:\n {4}inputs:\n(?: {6}#.*\n)* {6}safari_extension:\n {8}description: .+\n {8}type: boolean\n {8}default: false\n/,
-  );
-  const steps = releaseSteps();
-  const safari = steps.filter(({ name }) => name.includes("Safari"));
+// Activation (d-20261122-33): every macOS release carries the extension. The steps were staged
+// behind a dispatch input until rehearsal 45101297031 was green.
+test("the Safari steps run on every macOS leg, without a switch", () => {
+  assert.doesNotMatch(workflow, /safari_extension/);
+  assert.match(workflow, /^ {2}workflow_dispatch:\n\n/m);
+  const safari = releaseSteps().filter(({ name }) => name.includes("Safari"));
   assert.deepEqual(
     safari.map(({ name }) => name),
     [build, verify, observe],
   );
-  for (const step of safari) assert.equal(step.if, staged, step.name);
-  // The input is named by its definition and by these three conditions, nowhere else.
-  assert.equal(workflow.match(/safari_extension/g).length, 4);
+  for (const step of safari) assert.equal(step.if, "runner.os == 'macOS'", step.name);
 });
 
 test("only the observation of Safari may fail without failing the leg, and it cannot stall it", () => {
@@ -94,9 +88,8 @@ test("only the observation of Safari may fail without failing the leg, and it ca
     if (name !== observe) assert.equal(keys["continue-on-error"], undefined, name);
 });
 
-test("the Safari steps sit around the build, and every other release step is unchanged", () => {
-  const steps = releaseSteps();
-  const order = steps.map(({ name }) => name);
+test("the Safari steps sit around the build", () => {
+  const order = releaseSteps().map(({ name }) => name);
   const secrets = "Require the Apple secrets and write the notarization key (macOS only)";
   assert.ok(order.indexOf("Install app dependencies") < order.indexOf(build));
   assert.ok(order.indexOf(secrets) < order.indexOf(build));
@@ -105,32 +98,4 @@ test("the Safari steps sit around the build, and every other release step is unc
     order.indexOf("Verify signature and notarization (macOS only)") < order.indexOf(verify),
   );
   assert.ok(order.indexOf(verify) < order.indexOf(observe));
-  assert.deepEqual(
-    steps
-      .filter(({ name }) => !name.includes("Safari"))
-      .map(({ name, if: condition }) => [name, condition ?? null]),
-    [
-      ["Checkout repository", null],
-      ["Install dependencies (ubuntu only)", "matrix.platform == 'ubuntu-24.04'"],
-      ["Install Rust toolchain", null],
-      ["Install macOS Rust targets", "runner.os == 'macOS'"],
-      ["Rust cache", null],
-      ["Install pnpm", null],
-      ["Sync node version and setup cache", null],
-      ["Install app dependencies", null],
-      [secrets, "runner.os == 'macOS'"],
-      ["Log in to Certum SimplySign (Windows only)", "runner.os == 'Windows'"],
-      ["Point the bundler at the Certum certificate (Windows only)", "runner.os == 'Windows'"],
-      ["Build the app", null],
-      ["Verify signature and notarization (macOS only)", "runner.os == 'macOS'"],
-      ["Verify the Authenticode signatures (Windows only)", "runner.os == 'Windows'"],
-      ["Verify the game-link scheme registration (macOS only)", "runner.os == 'macOS'"],
-      ["Verify the game-link scheme registration (Linux only)", "runner.os == 'Linux'"],
-      ["Verify the game-link scheme registration (Windows only)", "runner.os == 'Windows'"],
-      [
-        "Log out of Certum SimplySign (Windows only)",
-        "always() && steps.certum.outcome != 'skipped'",
-      ],
-    ],
-  );
 });

@@ -1,6 +1,7 @@
 # Analyze in ChessRiddle Studio
 
-A shared Manifest V3 extension for desktop Chrome/Chromium and Firefox. It adds an
+A shared Manifest V3 extension for desktop Chrome/Chromium, Firefox and Safari (Safari's
+version ships inside the macOS application, see [Safari](#safari)). It adds an
 **Analyze in ChessRiddle Studio** link inside the game controls of finished
 Chess.com and Lichess games. A click opens the game in the locally installed
 ChessRiddle Studio, in a new analysis tab. Nothing else is started.
@@ -82,9 +83,8 @@ There is no App Store listing and no second download.
 - **Release:** the macOS legs of `.github/workflows/release.yml` build the bundle before the Rust
   build, embed it through `bundle.macOS.files`, and fail unless the application and the
   application inside the disk image carry exactly one signed, sandboxed, hardened extension of the
-  application's team and version that the system lists as a Safari web extension. These steps are
-  staged: they run only in a manual dispatch with `safari_extension` set, until such a rehearsal
-  is green.
+  application's team and version that the system lists as a Safari web extension. First green on
+  both macOS legs in rehearsal run 45101297031 (2026-11-23, Xcode 26.6).
 - **For a user:** open ChessRiddle Studio once, then in Safari choose Settings, Extensions, enable
   "Analyze in ChessRiddle Studio" and allow it on chess.com and lichess.org.
 
@@ -94,7 +94,8 @@ and works in Safari is checked nowhere. Apple documents this way of distribution
 Developer ID-signed web extensions (Apple developer forum threads 667859 and 695373). The
 release's last Safari step opens the application and Safari on the runner and prints
 `SAFARI: BLOCK OBSERVED`, `SAFARI: no block observed` or `SAFARI: observation unavailable`; it
-never fails a release. If Safari blocks the extension on users' Macs, the fallback is an App Store
+never fails a release. Read that line in the macOS legs of a release before announcing the Safari
+version. If Safari blocks the extension on users' Macs, the fallback is an App Store
 container application built from the same files.
 
 ## The link contract

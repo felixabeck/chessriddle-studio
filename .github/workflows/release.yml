@@ -4,13 +4,6 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      # Staging for d-20261122-33: the Safari steps run only in a rehearsal that sets this, so a
-      # tag release is unchanged until such a rehearsal is green. Removed with that proof.
-      safari_extension:
-        description: Build, embed and verify the Safari extension in the macOS legs
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -147,7 +140,7 @@ jobs:
       # entitlement. A failed build or a failed cleanup fails the step; the configuration that
       # embeds the bundle is written only after both succeeded.
       - name: Build and embed the Safari extension (macOS only)
-        if: runner.os == 'macOS' && inputs.safari_extension
+        if: runner.os == 'macOS'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -385,7 +378,7 @@ jobs:
       # and version, and that the system accepts as a Safari web extension. The deep verification,
       # the stapler and Gatekeeper above already cover the nested bundle.
       - name: Verify the embedded Safari extension (macOS only)
-        if: runner.os == 'macOS' && inputs.safari_extension
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           identifier=com.chessriddle.studio.Extension
@@ -452,9 +445,11 @@ jobs:
       # It never fails or stalls a release: a Studio release must not depend on Safari policy. It
       # ends with one line, "SAFARI: BLOCK OBSERVED", "SAFARI: no block observed" (not proof that
       # Safari loads the extension) or "SAFARI: observation unavailable: <reason>"; a run without
-      # such a line (a timeout) counts as unavailable.
+      # such a line (a timeout) counts as unavailable. Rehearsal 45101297031 showed that the log
+      # masks identifiers as <private> and that a quiet Safari logs nothing about web extensions
+      # at all, so a block counts without naming the extension, and silence counts as unavailable.
       - name: Observe the Safari verdict on the extension (macOS only, informational)
-        if: runner.os == 'macOS' && inputs.safari_extension
+        if: runner.os == 'macOS'
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
@@ -475,18 +470,19 @@ jobs:
           open -g -a Safari || finish "observation unavailable: Safari did not open"
           sleep 40
           pluginkit -m -A -v -p com.apple.Safari.web-extension || true
-          lines=$(log show --start "$started" --info --style compact --predicate \
-            'eventMessage CONTAINS "com.chessriddle.studio" OR eventMessage CONTAINS[c] "code signing dictionary" OR (process == "Safari" AND eventMessage CONTAINS[c] "extension")' 2>&1) \
+          # Safari's own record of the web extensions it knows, for the reader of this log; macOS
+          # may refuse another process the access.
+          plutil -p "$HOME/Library/Containers/com.apple.Safari/Data/Library/Safari/WebExtensions/Extensions.plist" 2>&1 | head -n 40 || true
+          lines=$(log show --start "$started" --info --style compact --predicate 'process CONTAINS "Safari"' 2>&1) \
             || finish "observation unavailable: the unified log could not be read"
-          printf '%s\n' "$lines" | tail -n 150
-          matched=$(printf '%s\n' "$lines" | grep -c -e "$identifier" -e 'Safari' || true)
-          [ "$matched" -gt 0 ] || finish "observation unavailable: the log holds no line about Safari or the extension"
-          # The two symptoms of the forum reports. This is the only web extension on the runner, so
-          # a failed code signing dictionary counts even on a line that does not name it.
-          if printf '%s\n' "$lines" | grep -i -e "block.*$identifier" -e "$identifier.*block" -e 'code signing dictionary failed' > /dev/null; then
+          relevant=$(printf '%s\n' "$lines" | grep -i -e 'web.\{0,1\}extension' -e 'blocking extension' -e 'code signing dictionary' -e 'chessriddle' || true)
+          printf '%s\n' "$relevant" | tail -n 150
+          # The two symptoms of the forum reports. This is the only web extension on the runner.
+          if printf '%s\n' "$relevant" | grep -i -e 'blocking extension' -e 'code signing dictionary failed' > /dev/null; then
             echo "::warning::Safari reports that it blocks $identifier"
             finish "BLOCK OBSERVED"
           fi
+          [ -n "$relevant" ] || finish "observation unavailable: Safari logged nothing about web extensions"
           finish "no block observed"
 
       - name: Log out of Certum SimplySign (Windows only)
