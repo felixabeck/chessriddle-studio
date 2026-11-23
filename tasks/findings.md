@@ -28397,7 +28397,7 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 
 ### A game that is itself in the reference database never gets a novelty mark
 
-* **ID:** f-20261122-04 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261122-04 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** planning audit of the game report, plan `tasks/plans/2026-11-22-game-report-improvements.md` ("Not part of this task"), BASE `0b2978623`
 * **Where:** `src-tauri/src/chess.rs` `novelty_lookup_blocking` and `mark_first_novelty` (one index scan per ply until the first position absent from the reference database, d-20260904-02).
@@ -28407,6 +28407,15 @@ Addendum 2026-11-21 (push review): review-root-cause noted that per-test entranc
 * **Fix:** to be designed; see the open question.
 * **Proof:** plan audit, T8 (`chess.rs:1579-1608` at `0b2978623`).
 * **Found by:** Claude Code (planning session), filed by the build run of the game-report plan, 2026-11-22.
+
+Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, agy write and review leaves), adopting the reviewed plan tasks/plans/2026-11-23-novelty-self-exclusion.md (plan review r1–r5).
+
+* **Fix:** the report's novelty lookup now ignores exactly one stored copy of the analysed game, identified by content: same exact start position (`ExactPositionIdentity`) and the same decoded mainline moves, same length (NAGs, comments and variations ignored). A position is present when a non-copy reaches it or when at least two copies do. The exclusion is an optional argument of `is_position_in_db_cancellable` and `novelty_lookup_blocking`; `analyze_game_core` builds it from the report's own replay. An undecodable stored move in the comparison is a typed error naming the game. Decision `d-20261123-03` (rejected: database id, minimum game count, excluding every copy).
+* **Commits:** df695c16e (decision), f9f595fa7 (fix and tests), 794fdc400 (review repairs: move-comparison anchor test, one shared PGN-import test helper, allow rationale).
+* **Proof:** tests import real PGN text: only-G gives novelty at the first move, G plus a game sharing three plies gives `[true, true, true, false]`, two copies stay present, annotated copy recognised, longer/shorter and same-length-different-moves games are not copies, custom FEN and Chess960 castling copies recognised, a start differing only in a lost castling right is not a copy, an illegal stored move past the match is a typed error with a `None` control; end to end `analyze_game_core` returns `Found { position: 1 }` / `Found { position: 2 }`. Red-on-revert shown for the forwarding, the case-1 exclusion and the move comparison.
+* **Diff review:** r6 ten lenses (correctness, root-cause, tests, chess-semantics, pgn-index, engine-protocol, error-handling, minimalism, code-quality, platform-semantics): 3 Fix, closed in r7 (tests, minimalism, code-quality, correctness all APPROVED).
+* **Known limit:** a game not in the reference that repeats exactly one earlier game move for move is indistinguishable from its own copy.
+<!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"87e80210aaccfcc65358243c3f472085485c788a9d0aee073a55f3d85db3f2bf","header_sha256":"bd84079e596937fb23199d63bc46fb8c5bd77ca41fd270cd286c2d68bd06729f","header_status":"handled","input_sha256":"3af130166f44ade63b57b384f4d4b1ba682b7d8f540f48a8d3f36a47839f02b5","kind":"mutation-receipt","operation":"f703aa1aee7e179318b3d0c43bf3ac749f527f18eda555ee91cbb98ba363abbd","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-04"],"target":"f-20261122-04","v":1} -->
 
 ---
 
