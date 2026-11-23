@@ -3,11 +3,13 @@ import { Checkbox, type CheckboxProps, Group, type GroupProps } from "@mantine/c
 // Mantine puts a label 12px from its box; in a horizontal row with a similar gap, a label reads as
 // belonging to the next box. A row keeps each label close to its own box and far from the next.
 const ROW_GAP = "lg";
+// Wrapped lines keep Mantine's usual spacing; only the horizontal pairing needs the wider gap.
+const LINE_GAP = "var(--mantine-spacing-sm)";
 const LABEL_OFFSET = "calc(var(--mantine-spacing-xs) / 2)";
 
-function CheckboxRow({ children, ...props }: Omit<GroupProps, "gap" | "wrap">) {
+function CheckboxRow({ children, ...props }: Omit<GroupProps, "gap" | "wrap" | "style">) {
   return (
-    <Group gap={ROW_GAP} wrap="wrap" {...props}>
+    <Group gap={ROW_GAP} wrap="wrap" style={{ rowGap: LINE_GAP }} {...props}>
       {children}
     </Group>
   );

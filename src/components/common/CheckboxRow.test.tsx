@@ -47,6 +47,7 @@ test("separates pairs by a gap wider than each label's offset from its own box",
   await renderRow();
   const row = host!.querySelector<HTMLElement>('[data-testid="row"]')!;
   expect(row.style.getPropertyValue("--group-gap")).toBe("var(--mantine-spacing-lg)");
+  expect(row.style.rowGap).toBe("var(--mantine-spacing-sm)");
   for (const label of ["Bullet", "Blitz"]) {
     expect(itemRoot(label).element.style.getPropertyValue("--label-offset-start")).toBe(
       "calc(var(--mantine-spacing-xs) / 2)",
