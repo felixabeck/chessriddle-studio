@@ -131,7 +131,7 @@ mod linux {
     }
 
     #[derive(Clone, Debug, PartialEq, Eq)]
-    enum NoChangeReason {
+    enum SkipReason {
         Undetermined(UndeterminedReason),
         NoDataHome,
         DataHomeMissing(PathBuf),
@@ -156,7 +156,7 @@ mod linux {
             refresh: RefreshOutcome,
         },
         Unchanged,
-        NoChange(NoChangeReason),
+        Skipped(SkipReason),
         ScanIncomplete(ScanIncompleteReason),
     }
 
@@ -181,8 +181,6 @@ mod linux {
 
     struct CommandRefreshRunner {
         program: OsString,
-        extra_args: Vec<OsString>,
-        pass_dir: bool,
         timeout: Duration,
     }
 
@@ -190,8 +188,6 @@ mod linux {
         fn update_desktop_database() -> Self {
             Self {
                 program: OsString::from(UPDATE_DESKTOP_DATABASE_BIN),
-                extra_args: Vec::new(),
-                pass_dir: true,
                 timeout: REFRESH_TIMEOUT,
             }
         }
@@ -200,11 +196,8 @@ mod linux {
     impl RefreshRunner for CommandRefreshRunner {
         fn refresh(&self, applications_dir: &Path) -> RefreshOutcome {
             let mut command = Command::new(&self.program);
-            command.args(&self.extra_args);
-            if self.pass_dir {
-                command.arg(applications_dir);
-            }
             command
+                .arg(applications_dir)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
@@ -286,8 +279,8 @@ mod linux {
                 log::info!("removed AppImage scheme handler (durable={durable})");
             }
             Outcome::Unchanged => {}
-            Outcome::NoChange(reason) => {
-                log::warn!("AppImage scheme-handler reconciliation made no change: {reason:?}");
+            Outcome::Skipped(reason) => {
+                log::warn!("AppImage scheme-handler reconciliation skipped: {reason:?}");
             }
             Outcome::ScanIncomplete(reason) => {
                 log::warn!("AppImage scheme-handler scan incomplete; made no change: {reason:?}");
@@ -385,6 +378,8 @@ mod linux {
         let Some(canon_appdir) = excluded_appdir else {
             return dirs;
         };
+        // AppRun prepends `$APPDIR/usr/share` to `XDG_DATA_DIRS` and the packaged entry there
+        // lists the scheme; that mount is never visible to the desktop (plan P-16).
         dirs.into_iter()
             .filter(|dir| match std::fs::canonicalize(dir) {
                 Ok(canon_dir) => !canon_dir.starts_with(&canon_appdir),
@@ -426,24 +421,28 @@ mod linux {
         out
     }
 
+    fn push_desktop_escape(out: &mut String, next: Option<char>) {
+        match next {
+            Some('s') => out.push(' '),
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('\\') => out.push('\\'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+
     /// Unescapes a Desktop Entry Specification `string` value (`\s`, `\n`, `\t`, `\r`, `\\`).
     fn unescape_desktop_string(raw: &str) -> String {
         let mut out = String::with_capacity(raw.len());
         let mut chars = raw.chars();
         while let Some(ch) = chars.next() {
             if ch == '\\' {
-                match chars.next() {
-                    Some('s') => out.push(' '),
-                    Some('n') => out.push('\n'),
-                    Some('t') => out.push('\t'),
-                    Some('r') => out.push('\r'),
-                    Some('\\') => out.push('\\'),
-                    Some(other) => {
-                        out.push('\\');
-                        out.push(other);
-                    }
-                    None => out.push('\\'),
-                }
+                push_desktop_escape(&mut out, chars.next());
             } else {
                 out.push(ch);
             }
@@ -461,16 +460,7 @@ mod linux {
             match ch {
                 '\\' => match chars.next() {
                     Some(';') => current.push(';'),
-                    Some('s') => current.push(' '),
-                    Some('n') => current.push('\n'),
-                    Some('t') => current.push('\t'),
-                    Some('r') => current.push('\r'),
-                    Some('\\') => current.push('\\'),
-                    Some(other) => {
-                        current.push('\\');
-                        current.push(other);
-                    }
-                    None => current.push('\\'),
+                    next => push_desktop_escape(&mut current, next),
                 },
                 ';' => {
                     let trimmed = current.trim();
@@ -592,10 +582,12 @@ mod linux {
             let Some(path_var) = path_env else {
                 return false;
             };
+            let mut checked_any = false;
             for dir in std::env::split_paths(path_var) {
                 if dir.as_os_str().is_empty() {
                     continue;
                 }
+                checked_any = true;
                 let joined = dir.join(try_exec);
                 match std::fs::metadata(&joined) {
                     Ok(_) => return false,
@@ -609,7 +601,7 @@ mod linux {
                     }
                 }
             }
-            return true;
+            return checked_any;
         }
         false
     }
@@ -808,6 +800,16 @@ mod linux {
         }
     }
 
+    fn record_atomic_outcome(outcome: AtomicFileOutcome, verb: &'static str) -> bool {
+        match outcome {
+            AtomicFileOutcome::DurableCommit => true,
+            AtomicFileOutcome::CommittedDurabilityUncertain(error) => {
+                log::warn!("AppImage handler entry {verb} with uncertain durability: {error}");
+                false
+            }
+        }
+    }
+
     fn reconcile(
         env: &Environment,
         current_exe: Result<PathBuf, std::io::Error>,
@@ -815,11 +817,11 @@ mod linux {
     ) -> Outcome {
         let run_kind = classify_run(env, current_exe);
         if let RunKind::Undetermined(reason) = run_kind {
-            return Outcome::NoChange(NoChangeReason::Undetermined(reason));
+            return Outcome::Skipped(SkipReason::Undetermined(reason));
         }
 
         let Some(data_home) = resolve_data_home(env) else {
-            return Outcome::NoChange(NoChangeReason::NoDataHome);
+            return Outcome::Skipped(SkipReason::NoDataHome);
         };
         let data_dirs = resolve_data_dirs(env);
         let user_apps_path = data_home.join(APPLICATIONS_DIR_NAME);
@@ -846,7 +848,7 @@ mod linux {
         let data_home_fd = match open_data_home_dir(&data_home) {
             Ok(fd) => fd,
             Err(error) => {
-                return Outcome::NoChange(NoChangeReason::DataHomeOpenFailed {
+                return Outcome::Skipped(SkipReason::DataHomeOpenFailed {
                     dir: data_home,
                     error: error.to_string(),
                 });
@@ -877,20 +879,20 @@ mod linux {
         };
 
         if let OwnEntry::UnownedOrUnreadable(reason) = own_entry {
-            return Outcome::NoChange(NoChangeReason::OwnEntryUntouched(reason));
+            return Outcome::Skipped(SkipReason::OwnEntryUntouched(reason));
         }
 
         match (run_kind, another_handler_exists, own_entry) {
             (RunKind::AppImage(appimage), false, OwnEntry::Absent) => {
                 let Some(home_fd) = data_home_fd.as_ref() else {
-                    return Outcome::NoChange(NoChangeReason::DataHomeMissing(data_home));
+                    return Outcome::Skipped(SkipReason::DataHomeMissing(data_home));
                 };
                 let apps_fd = match existing_apps_fd {
                     Some(fd) => fd,
                     None => match ensure_directory_at(home_fd, OsStr::new(APPLICATIONS_DIR_NAME)) {
                         Ok(fd) => fd,
                         Err(error) => {
-                            return Outcome::NoChange(NoChangeReason::WriteFailed(format!(
+                            return Outcome::Skipped(SkipReason::WriteFailed(format!(
                                 "could not ensure applications directory: {error}"
                             )));
                         }
@@ -901,22 +903,14 @@ mod linux {
                     file.write_all(content.as_bytes()).map_err(Error::from)
                 }) {
                     Ok(installed) => {
-                        let durable = match installed.outcome {
-                            AtomicFileOutcome::DurableCommit => true,
-                            AtomicFileOutcome::CommittedDurabilityUncertain(error) => {
-                                log::warn!(
-                                    "AppImage handler entry created with uncertain durability: {error}"
-                                );
-                                false
-                            }
-                        };
+                        let durable = record_atomic_outcome(installed.outcome, "created");
                         let refresh_outcome = refresh.refresh(&user_apps_path);
                         Outcome::Written {
                             durable,
                             refresh: refresh_outcome,
                         }
                     }
-                    Err(error) => Outcome::NoChange(NoChangeReason::WriteFailed(error.to_string())),
+                    Err(error) => Outcome::Skipped(SkipReason::WriteFailed(error.to_string())),
                 }
             }
             (
@@ -931,7 +925,7 @@ mod linux {
                     return Outcome::Unchanged;
                 }
                 let Some(apps_fd) = existing_apps_fd.as_ref() else {
-                    return Outcome::NoChange(NoChangeReason::WriteFailed(
+                    return Outcome::Skipped(SkipReason::WriteFailed(
                         "applications directory descriptor missing".into(),
                     ));
                 };
@@ -942,22 +936,14 @@ mod linux {
                     |file| file.write_all(content.as_bytes()).map_err(Error::from),
                 ) {
                     Ok(outcome) => {
-                        let durable = match outcome {
-                            AtomicFileOutcome::DurableCommit => true,
-                            AtomicFileOutcome::CommittedDurabilityUncertain(error) => {
-                                log::warn!(
-                                    "AppImage handler entry replaced with uncertain durability: {error}"
-                                );
-                                false
-                            }
-                        };
+                        let durable = record_atomic_outcome(outcome, "replaced");
                         let refresh_outcome = refresh.refresh(&user_apps_path);
                         Outcome::Replaced {
                             durable,
                             refresh: refresh_outcome,
                         }
                     }
-                    Err(error) => Outcome::NoChange(NoChangeReason::WriteFailed(error.to_string())),
+                    Err(error) => Outcome::Skipped(SkipReason::WriteFailed(error.to_string())),
                 }
             }
             (RunKind::AppImage(_), true, OwnEntry::Owned { identity, .. })
@@ -1004,7 +990,7 @@ mod linux {
         refresh: &dyn RefreshRunner,
     ) -> Outcome {
         let Some(apps_fd) = apps_fd else {
-            return Outcome::NoChange(NoChangeReason::RemoveFailed(
+            return Outcome::Skipped(SkipReason::RemoveFailed(
                 "applications directory descriptor missing".into(),
             ));
         };
@@ -1024,7 +1010,7 @@ mod linux {
                     refresh: refresh_outcome,
                 }
             }
-            Err(error) => Outcome::NoChange(NoChangeReason::RemoveFailed(error.to_string())),
+            Err(error) => Outcome::Skipped(SkipReason::RemoveFailed(error.to_string())),
         }
     }
 
@@ -1351,7 +1337,7 @@ mod linux {
                 env.appimage = Some(bad);
                 assert!(matches!(
                     reconcile(&env, Ok(fx.exe_in_appdir.clone()), &refresh),
-                    Outcome::NoChange(NoChangeReason::Undetermined(
+                    Outcome::Skipped(SkipReason::Undetermined(
                         UndeterminedReason::MalformedAppImage(_)
                     ))
                 ));
@@ -1364,7 +1350,7 @@ mod linux {
                     Err(std::io::Error::other("no procfs")),
                     &refresh
                 ),
-                Outcome::NoChange(NoChangeReason::Undetermined(
+                Outcome::Skipped(SkipReason::Undetermined(
                     UndeterminedReason::CurrentExeUnavailable(_)
                 ))
             ));
@@ -1446,7 +1432,7 @@ mod linux {
             std::fs::write(fx.own_entry_path(), foreign_content).unwrap();
             assert!(matches!(
                 reconcile(&fx.appimage_env(), Ok(fx.exe_in_appdir.clone()), &refresh),
-                Outcome::NoChange(NoChangeReason::OwnEntryUntouched(_))
+                Outcome::Skipped(SkipReason::OwnEntryUntouched(_))
             ));
             assert_eq!(
                 std::fs::read_to_string(fx.own_entry_path()).unwrap(),
@@ -1464,7 +1450,7 @@ mod linux {
             symlink(&target, fx.own_entry_path()).unwrap();
             assert!(matches!(
                 reconcile(&fx.appimage_env(), Ok(fx.exe_in_appdir.clone()), &refresh),
-                Outcome::NoChange(NoChangeReason::OwnEntryUntouched(_))
+                Outcome::Skipped(SkipReason::OwnEntryUntouched(_))
             ));
             assert!(fx
                 .own_entry_path()
@@ -1478,7 +1464,7 @@ mod linux {
             std::fs::create_dir(fx.own_entry_path()).unwrap();
             assert!(matches!(
                 reconcile(&fx.appimage_env(), Ok(fx.exe_in_appdir.clone()), &refresh),
-                Outcome::NoChange(NoChangeReason::OwnEntryUntouched(_))
+                Outcome::Skipped(SkipReason::OwnEntryUntouched(_))
             ));
             assert!(fx.own_entry_path().is_dir());
             std::fs::remove_dir(fx.own_entry_path()).unwrap();
@@ -1487,7 +1473,7 @@ mod linux {
             std::fs::write(fx.own_entry_path(), vec![b'x'; MAX_DESKTOP_FILE_BYTES + 1]).unwrap();
             assert!(matches!(
                 reconcile(&fx.appimage_env(), Ok(fx.exe_in_appdir.clone()), &refresh),
-                Outcome::NoChange(NoChangeReason::OwnEntryUntouched(_))
+                Outcome::Skipped(SkipReason::OwnEntryUntouched(_))
             ));
             std::fs::remove_file(fx.own_entry_path()).unwrap();
 
@@ -1507,7 +1493,7 @@ mod linux {
             );
             assert!(matches!(
                 unreadable_outcome,
-                Outcome::NoChange(NoChangeReason::OwnEntryUntouched(_))
+                Outcome::Skipped(SkipReason::OwnEntryUntouched(_))
             ));
             assert!(refresh.calls().is_empty());
         }
@@ -1592,6 +1578,29 @@ mod linux {
 
         #[test]
         fn escaping_round_trip_for_special_characters_and_newline_refusal() {
+            // Exact rendered bytes for a fixed path containing space, $, `, ", \ and %.
+            let fixed_path = r#"/opt/My App/x$`"\%.AppImage"#;
+            let expected = concat!(
+                "[Desktop Entry]\n",
+                "Type=Application\n",
+                "Name=ChessRiddle Studio\n",
+                "NoDisplay=true\n",
+                "Terminal=false\n",
+                r#"Exec="/opt/My App/x\\$\\`\\"\\\\%%.AppImage" %u"#,
+                "\n",
+                r#"TryExec=/opt/My App/x$`"\\%.AppImage"#,
+                "\n",
+                "MimeType=x-scheme-handler/chessriddle-studio;\n",
+                "X-ChessRiddle-Studio-AppImage-Handler=true\n",
+            );
+            assert_eq!(render_desktop_entry(fixed_path), expected);
+
+            // Raw escape/unescape assertion so identity implementations fail.
+            let raw_val = r" a\b";
+            let escaped = escape_desktop_string(raw_val);
+            assert_eq!(escaped, r"\sa\\b");
+            assert_eq!(unescape_desktop_string(&escaped), raw_val);
+
             let special = "/home/user/my \"app\" $1 `cmd` \\dir\\100%u.AppImage";
             let rendered = render_desktop_entry(special);
             let parsed = parse_desktop_entry(&rendered);
@@ -1625,7 +1634,7 @@ mod linux {
             env.xdg_data_home = Some(fx._root.path().join("does-not-exist").into_os_string());
             assert!(matches!(
                 reconcile(&env, Ok(fx.exe_in_appdir.clone()), &refresh),
-                Outcome::NoChange(NoChangeReason::DataHomeMissing(_))
+                Outcome::Skipped(SkipReason::DataHomeMissing(_))
             ));
             assert!(refresh.calls().is_empty());
         }
@@ -1636,10 +1645,15 @@ mod linux {
             let fx = TestFixture::new();
 
             // Timeout: kills and reaps child that outlives the 200 ms bound.
+            let slow_script = fx._root.path().join("slow-refresh.sh");
+            crate::infra::test_executable::publish_test_executable(
+                &slow_script,
+                b"#!/bin/sh\nexec sleep 30\n",
+                0o755,
+            )
+            .expect("publish slow refresh test script");
             let slow_runner = CommandRefreshRunner {
-                program: OsString::from("sleep"),
-                extra_args: vec![OsString::from("30")],
-                pass_dir: false,
+                program: slow_script.into_os_string(),
                 timeout: Duration::from_millis(200),
             };
             let start = Instant::now();
@@ -1660,8 +1674,6 @@ mod linux {
             // Missing tool -> RefreshOutcome::ToolMissing, reconciliation still succeeds.
             let missing_runner = CommandRefreshRunner {
                 program: OsString::from("/nonexistent/update-desktop-database-missing"),
-                extra_args: Vec::new(),
-                pass_dir: true,
                 timeout: Duration::from_secs(1),
             };
             assert_eq!(
@@ -1670,10 +1682,15 @@ mod linux {
             );
 
             // Non-zero exit -> RefreshOutcome::NonZeroExit, reconciliation still succeeds.
+            let fail_script = fx._root.path().join("fail-refresh.sh");
+            crate::infra::test_executable::publish_test_executable(
+                &fail_script,
+                b"#!/bin/sh\nexit 7\n",
+                0o755,
+            )
+            .expect("publish failing refresh test script");
             let failing_runner = CommandRefreshRunner {
-                program: OsString::from("sh"),
-                extra_args: vec![OsString::from("-c"), OsString::from("exit 7")],
-                pass_dir: false,
+                program: fail_script.into_os_string(),
                 timeout: Duration::from_secs(5),
             };
             assert_eq!(
@@ -1704,6 +1721,119 @@ mod linux {
                     },
                 }
             );
+        }
+
+        #[test]
+        fn foreign_handler_in_data_home_prevents_write_and_triggers_removal() {
+            let fx = TestFixture::new();
+            let refresh = RecordingRefresh::default();
+
+            // Foreign handler in $XDG_DATA_HOME/applications (e.g. from scripts/install-local.sh).
+            write_foreign_handler(&fx.data_home, "chessriddle-studio.desktop", "");
+
+            // Absent owned entry: AppImage run does not write our entry.
+            assert_eq!(
+                reconcile(&fx.appimage_env(), Ok(fx.exe_in_appdir.clone()), &refresh),
+                Outcome::Unchanged
+            );
+            assert!(!fx.own_entry_path().exists());
+            assert!(refresh.calls().is_empty());
+
+            // Present owned entry: AppImage run removes our entry.
+            std::fs::write(
+                fx.own_entry_path(),
+                render_desktop_entry(fx.appimage_file.to_str().unwrap()),
+            )
+            .unwrap();
+            assert_eq!(
+                reconcile(&fx.appimage_env(), Ok(fx.exe_in_appdir.clone()), &refresh),
+                Outcome::Removed {
+                    durable: true,
+                    refresh: RefreshOutcome::Succeeded,
+                }
+            );
+            assert!(!fx.own_entry_path().exists());
+            assert_eq!(refresh.calls().len(), 1);
+        }
+
+        #[test]
+        fn bare_name_try_exec_is_not_provably_missing_when_path_is_unset_or_empty() {
+            assert!(!try_exec_is_provably_missing("nonexistent-bin", None));
+            assert!(!try_exec_is_provably_missing(
+                "nonexistent-bin",
+                Some(OsStr::new(""))
+            ));
+            assert!(!try_exec_is_provably_missing(
+                "nonexistent-bin",
+                Some(OsStr::new("::"))
+            ));
+        }
+
+        #[test]
+        fn indeterminate_try_exec_permission_denied_is_not_provably_missing() {
+            if rustix::process::geteuid().is_root() {
+                return;
+            }
+            let fx = TestFixture::new();
+            let refresh = RecordingRefresh::default();
+            let locked_dir = fx._root.path().join("locked");
+            std::fs::create_dir_all(&locked_dir).unwrap();
+            let hidden_target = locked_dir.join("target-app");
+            std::fs::write(&hidden_target, b"bin").unwrap();
+
+            // Write owned entry pointing inside locked_dir, then lock the directory.
+            let apps = fx.data_home.join(APPLICATIONS_DIR_NAME);
+            std::fs::create_dir_all(&apps).unwrap();
+            std::fs::write(
+                fx.own_entry_path(),
+                render_desktop_entry(hidden_target.to_str().unwrap()),
+            )
+            .unwrap();
+
+            std::fs::set_permissions(&locked_dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+            // Owned entry: PermissionDenied is indeterminate -> Other run keeps it.
+            let owned_outcome = reconcile(&fx.other_env(), Ok(fx.exe_outside.clone()), &refresh);
+            let owned_exists = fx.own_entry_path().exists();
+
+            // Foreign entry: PermissionDenied is indeterminate -> still counts as a handler.
+            let fx2 = TestFixture::new();
+            let refresh2 = RecordingRefresh::default();
+            write_foreign_handler(
+                &fx2.system_data_dir,
+                "foreign.desktop",
+                &format!("TryExec={}\n", hidden_target.display()),
+            );
+            let foreign_outcome = reconcile(
+                &fx2.appimage_env(),
+                Ok(fx2.exe_in_appdir.clone()),
+                &refresh2,
+            );
+            let foreign_own_exists = fx2.own_entry_path().exists();
+
+            // Restore permissions before assertions / tempdir drop.
+            let _ = std::fs::set_permissions(&locked_dir, std::fs::Permissions::from_mode(0o755));
+
+            assert_eq!(owned_outcome, Outcome::Unchanged);
+            assert!(owned_exists);
+            assert_eq!(foreign_outcome, Outcome::Unchanged);
+            assert!(!foreign_own_exists);
+        }
+
+        #[test]
+        fn resolve_data_dirs_defaults_when_xdg_data_dirs_unset_or_empty() {
+            let expected = vec![
+                PathBuf::from("/usr/local/share"),
+                PathBuf::from("/usr/share"),
+            ];
+            let unset = Environment::default();
+            assert_eq!(resolve_data_dirs(&unset), expected);
+
+            let empty = Environment {
+                xdg_data_dirs: Some(OsString::from("")),
+                ..Environment::default()
+            };
+            assert_eq!(resolve_data_dirs(&empty), expected);
         }
 
         #[test]
