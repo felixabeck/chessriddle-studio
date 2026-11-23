@@ -11,7 +11,7 @@ const ACTION_ALLOWANCE = 30;
 
 /**
  * One explorer source in the sources bar: its database select, the button that names its active
- * filters and opens them, and its own progress bar.
+ * filters and opens them.
  */
 function ExplorerSourceHeader({
   select,
@@ -19,14 +19,12 @@ function ExplorerSourceHeader({
   filterDisabled = false,
   filters,
   action,
-  loader,
 }: {
   select?: ReactNode;
   filterLabel: string;
   filterDisabled?: boolean;
   filters: ReactNode;
   action?: ReactNode;
-  loader: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -64,24 +62,15 @@ function ExplorerSourceHeader({
           </Popover.Dropdown>
         </Popover>
       </Group>
-      {loader}
     </Stack>
   );
 }
 
 /**
- * One explorer source while the header is collapsed: its name, whatever narrows its numbers,
- * and its own progress bar. It takes the header's cell, so it lines up with the same columns.
+ * One explorer source while the header is collapsed: its name and whatever narrows its numbers.
+ * It takes the header's cell, so it lines up with the same columns.
  */
-export function ExplorerSourceCaption({
-  name,
-  detail,
-  loader,
-}: {
-  name: string;
-  detail?: string;
-  loader: ReactNode;
-}) {
+export function ExplorerSourceCaption({ name, detail }: { name: string; detail?: string }) {
   return (
     <Stack gap={0} miw={0} data-explorer-source>
       <Text fz="sm" fw={600} truncate title={name}>
@@ -93,7 +82,6 @@ export function ExplorerSourceCaption({
           {detail}
         </Text>
       )}
-      {loader}
     </Stack>
   );
 }

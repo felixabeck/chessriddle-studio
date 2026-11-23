@@ -47,14 +47,14 @@ afterEach(async () => {
   host.remove();
 });
 
-async function renderTable(rows: Opening[] = openings, total?: Opening) {
+async function renderTable(rows: Opening[] = openings, total?: Opening, loading = false) {
   await act(async () =>
     root.render(
       <MantineProvider env="test">
         <I18nextProvider i18n={locale}>
           <Provider store={jotai}>
             <TreeStateContext.Provider value={treeStore}>
-              <OpeningsTable openings={rows} total={total} loading={false} />
+              <OpeningsTable openings={rows} total={total} loading={loading} />
             </TreeStateContext.Provider>
           </Provider>
         </I18nextProvider>
@@ -273,6 +273,13 @@ test("a source still searching marks its own cells while the other one is shown"
   expect(cells(e4)[3]).toBe("…");
   expect(cells(total)[3]).toBe("…");
   expect(host.querySelectorAll("[data-no-games]")).toHaveLength(0);
+  expect(host.querySelector(".mantine-datatable-loader-fetching")).toBeNull();
+});
+
+test("a single source shows the table-wide overlay while it searches", async () => {
+  await renderTable(openings, undefined, true);
+  expect(host.querySelector(".mantine-datatable-loader-fetching")).not.toBeNull();
+  await renderTable();
   expect(host.querySelector(".mantine-datatable-loader-fetching")).toBeNull();
 });
 

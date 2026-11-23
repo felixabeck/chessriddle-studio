@@ -62,7 +62,6 @@ import {
 } from "@/utils/lichess/api";
 import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/explorer";
 import classes from "./DatabasePanel.module.css";
-import DatabaseLoader from "./DatabaseLoader";
 import { comparisonState } from "./explorerComparison";
 import ExplorerSourceHeader, { ExplorerSourceCaption } from "./ExplorerSourceHeader";
 import { lichessFiltersActive, localFilterSummary, masterFiltersActive } from "./filterSummary";
@@ -356,7 +355,7 @@ function DatabasePanel() {
     comparison.kind === "none" &&
     comparisonChoices.length > 0;
 
-  /** A local source's cell: the two differ only in their database, filters and progress. */
+  /** A local source's cell: the two differ only in their database and filters. */
   const localSourceHeader = (source: {
     key: string;
     choices: typeof dbSelectData;
@@ -368,7 +367,6 @@ function DatabasePanel() {
     fixedPlayer?: boolean;
     binding: Pick<ReturnType<typeof useExplorerFilters>, "filters" | "setFilters">;
     playerName: string | undefined;
-    explorer: Pick<ReturnType<typeof useLocalExplorer>, "loading" | "progressId">;
     action?: ReactNode;
   }) => (
     <ExplorerSourceHeader
@@ -405,12 +403,8 @@ function DatabasePanel() {
         />
       }
       action={source.action}
-      loader={
-        <DatabaseLoader isLoading={source.explorer.loading} tab={source.explorer.progressId} />
-      }
     />
   );
-  const onlineLoader = <DatabaseLoader isLoading={isLoading} tab={tab?.value ?? null} />;
   const sourceHeader = match(db)
     .with("local", () =>
       localSourceHeader({
@@ -420,7 +414,6 @@ function DatabasePanel() {
         choose: chooseDatabase,
         binding: { filters: localFilters, setFilters: setLocalFilters },
         playerName: primaryPlayerName,
-        explorer: localExplorer,
       }),
     )
     .with("lch_all", () => (
@@ -428,7 +421,6 @@ function DatabasePanel() {
         key={db}
         filterLabel={t("Board.Database.Filters")}
         filters={<LichessOptionsPanel />}
-        loader={onlineLoader}
       />
     ))
     .with("lch_master", () => (
@@ -436,7 +428,6 @@ function DatabasePanel() {
         key={db}
         filterLabel={t("Board.Database.Filters")}
         filters={<MasterOptionsPanel />}
-        loader={onlineLoader}
       />
     ))
     .exhaustive();
@@ -451,7 +442,6 @@ function DatabasePanel() {
       ...(pinned ? { fixedTitle: comparison.title, fixedPlayer: comparisonPlayer !== null } : {}),
       binding: comparisonFilters,
       playerName: comparisonPlayerName,
-      explorer: comparisonExplorer,
       action: (
         <IconAction
           label={t("Board.Database.RemoveComparison")}
@@ -482,7 +472,6 @@ function DatabasePanel() {
     name: string;
     filters: ExplorerFilters;
     playerName: string | undefined;
-    explorer: Pick<ReturnType<typeof useLocalExplorer>, "loading" | "progressId">;
   }) => (
     <ExplorerSourceCaption
       key={source.key}
@@ -495,9 +484,6 @@ function DatabasePanel() {
       ]
         .filter((part) => part !== null)
         .join(" · ")}
-      loader={
-        <DatabaseLoader isLoading={source.explorer.loading} tab={source.explorer.progressId} />
-      }
     />
   );
   const onlineCaption = (name: string, filtered: boolean) => (
@@ -505,7 +491,6 @@ function DatabasePanel() {
       key={db}
       name={name}
       detail={filtered ? t("Board.Database.Filters") : undefined}
-      loader={onlineLoader}
     />
   );
   const sourceCaptions = match(db)
@@ -515,7 +500,6 @@ function DatabasePanel() {
         name: primaryTitle,
         filters: localFilters,
         playerName: primaryPlayerName,
-        explorer: localExplorer,
       }),
       comparison.kind === "source" &&
         localCaption({
@@ -523,7 +507,6 @@ function DatabasePanel() {
           name: comparison.title,
           filters: comparisonFilters.filters,
           playerName: comparisonPlayerName,
-          explorer: comparisonExplorer,
         }),
     ])
     .with("lch_all", () =>

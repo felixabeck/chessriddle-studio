@@ -634,8 +634,7 @@ function MovesPanel({
       {loading && (
         <>
           <DatabaseLoader
-            isLoading
-            tab={progressId}
+            progressId={progressId}
             label={t("Databases.OpeningTree.Searching", {
               defaultValue: "Searching {{name}}'s games…",
               name,

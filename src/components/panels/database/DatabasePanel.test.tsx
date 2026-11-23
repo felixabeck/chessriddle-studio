@@ -1262,6 +1262,9 @@ describe("DatabasePanel", () => {
 
     const sources = () =>
       Array.from(container.querySelectorAll<HTMLElement>("[data-explorer-source]"));
+    // The table shows a search itself, so no source header carries a progress bar.
+    const sourceProgressBars = () =>
+      container.querySelectorAll('[data-explorer-source] [role="progressbar"]');
     const searchesOf = (database: DatabaseHandle) =>
       mocks.searchPosition.mock.calls.filter(
         ([file]) => databaseHandleKey(file) === databaseHandleKey(database),
@@ -1296,6 +1299,7 @@ describe("DatabasePanel", () => {
       );
       expect(sources()[1].textContent).toBe("Correspondence");
       expect(sources()[1].querySelector("[data-explorer-source-detail]")).toBeNull();
+      expect(sourceProgressBars()).toHaveLength(0);
       // The view is a plain region: no tab panel names a tab that is not shown.
       expect(container.querySelector('[role="tabpanel"]')).toBeNull();
       expect(
@@ -1316,6 +1320,7 @@ describe("DatabasePanel", () => {
           (source) => source.querySelector<HTMLInputElement>(".mantine-Select-input")?.value,
         ),
       ).toEqual(["Saved reference", "Correspondence"]);
+      expect(sourceProgressBars()).toHaveLength(0);
       selectedPanel("stats");
 
       await act(async () => settingsButton().click());
@@ -1367,6 +1372,7 @@ describe("DatabasePanel", () => {
       await vi.waitFor(() => expect(sources()).toHaveLength(1));
       expect(headerControls()).toHaveLength(0);
       expect(sources()[0].textContent).toBe("Board.Database.LichessAll");
+      expect(sourceProgressBars()).toHaveLength(0);
       // The stored Games view renders as a plain region below the caption.
       expect(container.querySelector('[role="tabpanel"]')).toBeNull();
       await vi.waitFor(() => expect(container.textContent).toContain("W1"));
@@ -1384,6 +1390,7 @@ describe("DatabasePanel", () => {
 
       await act(async () => store.set(dbTypeFamily(tabId), "lch_master"));
       await vi.waitFor(() => expect(sources()[0].textContent).toBe("Board.Database.LichessMaster"));
+      expect(sourceProgressBars()).toHaveLength(0);
       await act(async () => {
         await store.set(masterOptionsAtom, { since: new Date("2020-01-01T00:00:00Z") });
       });

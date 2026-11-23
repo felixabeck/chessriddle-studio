@@ -119,8 +119,8 @@ vi.mock("./GamePreview", () => ({
   default: ({ pgn }: { pgn: string }) => <div data-game-preview>{pgn}</div>,
 }));
 vi.mock("@/components/panels/database/DatabaseLoader", () => ({
-  default: ({ tab, label }: { tab: string; label?: string }) => (
-    <div data-progress={tab}>{label}</div>
+  default: ({ progressId, label }: { progressId: string; label: string }) => (
+    <div data-progress={progressId}>{label}</div>
   ),
 }));
 
