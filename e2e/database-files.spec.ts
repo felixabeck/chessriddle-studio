@@ -3529,7 +3529,12 @@ test("database-files: the board explorer compares two databases side by side", a
     // its column group; no control but the settings button.
     const sources = page.locator("[data-explorer-source]");
     const databasePanel = page.getByRole("tabpanel", { name: "Database", exact: true });
-    await expect(sources).toHaveText(["Mega Database · Elo 1900–2500", "Correspondence"]);
+    await expect(sources).toHaveText(["Mega DatabaseElo 1900–2500", "Correspondence"]);
+    // The filters sit on their own line under the database name.
+    await expect(sources.nth(0).locator("[data-explorer-source-detail]")).toHaveText(
+        "Elo 1900–2500",
+    );
+    await expect(sources.nth(1).locator("[data-explorer-source-detail]")).toHaveCount(0);
     await expect(databasePanel.getByRole("textbox")).toHaveCount(0);
     await expect(databasePanel.getByRole("tab")).toHaveCount(0);
     await expect(databasePanel.locator("tbody tr")).toHaveCount(5);
@@ -4218,9 +4223,17 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
     const preview = await openFirstWhiteCard(page);
     await preview.getByRole("tab", { name: "Openings", exact: true }).click();
     const tree = preview.locator("[data-player-opening-tree]");
-    // The card's own tree stays over-the-board only.
-    await expect(tree.locator("[data-opening-moves]")).toContainText("e4");
-    await expect(tree.locator("[data-opening-moves]")).not.toContainText("b3");
+    // The card shows the online games as their own section beside the over-the-board games.
+    const overTheBoard = tree.locator('[data-opening-section="primary"]');
+    const online = tree.locator('[data-opening-section="online"]');
+    await expect(overTheBoard).toContainText("Over the board");
+    await expect(overTheBoard.locator("[data-opening-moves]")).toContainText("e4");
+    await expect(overTheBoard.locator("[data-opening-moves]")).not.toContainText("b3");
+    await expect(online).toContainText("Online");
+    await expect(online.locator("[data-opening-moves]")).toContainText("b3");
+    await expect(tree.locator('[data-opening-games-section="online"]')).toContainText(
+        "online_rival",
+    );
     await tree.getByRole("button", { name: "Prepare on board", exact: true }).click();
     await expect(page).toHaveURL("/");
 

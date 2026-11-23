@@ -786,7 +786,7 @@ function GamesPanel({
   if (loading || failed || games.length === 0) return null;
   const total = positionTotal(openings);
   return (
-    <Stack gap="xs" data-opening-games-section={key}>
+    <Stack gap="sm" data-opening-games-section={key}>
       <SectionTitle title={title} />
       {total > games.length && (
         <Text size="xs" c="dimmed">
