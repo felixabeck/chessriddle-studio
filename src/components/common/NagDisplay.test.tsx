@@ -1,5 +1,5 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
-import { DEFAULT_THEME, MantineProvider } from "@mantine/core";
+import { MantineProvider } from "@mantine/core";
 import { Provider, createStore as createAtomStore } from "jotai";
 import { act, cloneElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -127,9 +127,9 @@ test.each([
   expect(title?.textContent ?? null).toBe(glyph);
   expect(host.querySelector("svg g path") !== null).toBe(glyph !== null);
   const board = host.querySelector('[role="grid"]') as HTMLElement;
-  expect(board.style.getPropertyValue("--light-color")).toBe(
-    glyph === "!" ? DEFAULT_THEME.colors.teal[6] : "",
-  );
+  // The last move keeps the user's highlight colour; an annotation never recolours its squares.
+  expect(board.style.getPropertyValue("--light-color")).toBe("");
+  expect(board.style.getPropertyValue("--dark-color")).toBe("");
 });
 
 test.each([

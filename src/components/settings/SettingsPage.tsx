@@ -46,6 +46,7 @@ import {
   boardAnimationSpeedAtom,
   type BoardAnimationSpeed,
   moveHighlightAtom,
+  lastMoveHighlightOpacityAtom,
   moveInputAtom,
   moveMethodAtom,
   moveNotationTypeAtom,
@@ -74,6 +75,11 @@ import { keybindLabel, keyMapAtom } from "@/state/keybinds";
 import { panelsBesideNotationAtom } from "@/state/layoutStorage";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
 import { PIECE_SCALE_MAX, PIECE_SCALE_MIN, PIECE_SCALE_STEP } from "@/state/pieceScale";
+import {
+  LAST_MOVE_HIGHLIGHT_OPACITY_MAX,
+  LAST_MOVE_HIGHLIGHT_OPACITY_MIN,
+  LAST_MOVE_HIGHLIGHT_OPACITY_STEP,
+} from "@/state/lastMoveHighlight";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import DraftNumberInput from "../common/DraftNumberInput";
@@ -83,6 +89,7 @@ import BoardSelect from "./BoardSelect";
 import { CoachConnections } from "./coach/CoachConnections";
 import { CoachEngineSelect } from "./coach/CoachEngineSelect";
 import KeybindInput from "./KeybindInput";
+import LastMoveHighlightColorInput from "./LastMoveHighlightColorInput";
 import { DrawingKeybinds } from "./DrawingKeybinds";
 import PercentagePreferenceSlider from "./PercentagePreferenceSlider";
 import PiecesSelect from "./PiecesSelect";
@@ -99,6 +106,12 @@ import VolumeSlider from "./VolumeSlider";
 
 const FONT_SIZE_MARKS = [FONT_SCALE_MIN, 100, 150, FONT_SCALE_MAX];
 const PIECE_SIZE_MARKS = [PIECE_SCALE_MIN, 85, PIECE_SCALE_MAX];
+const MOVE_HIGHLIGHT_OPACITY_MARKS = [
+  LAST_MOVE_HIGHLIGHT_OPACITY_MIN,
+  40,
+  70,
+  LAST_MOVE_HIGHLIGHT_OPACITY_MAX,
+];
 
 const COMPACT_SETTINGS_WIDTH_EM = 50;
 
@@ -211,6 +224,31 @@ export default function Page() {
         description: t("Settings.MoveHighlight.Desc"),
         keywords: ["highlight", "last move"],
         render: () => <SettingsSwitch atom={moveHighlightAtom} />,
+      },
+      {
+        id: "move-highlight-color",
+        category: "board",
+        title: t("Settings.MoveHighlightColor"),
+        description: t("Settings.MoveHighlightColor.Desc"),
+        keywords: ["highlight", "last move", "color", "colour"],
+        render: () => <LastMoveHighlightColorInput />,
+      },
+      {
+        id: "move-highlight-opacity",
+        category: "board",
+        title: t("Settings.MoveHighlightOpacity"),
+        description: t("Settings.MoveHighlightOpacity.Desc"),
+        keywords: ["highlight", "last move", "opacity", "transparency"],
+        render: () => (
+          <PercentagePreferenceSlider
+            atom={lastMoveHighlightOpacityAtom}
+            min={LAST_MOVE_HIGHLIGHT_OPACITY_MIN}
+            max={LAST_MOVE_HIGHLIGHT_OPACITY_MAX}
+            step={LAST_MOVE_HIGHLIGHT_OPACITY_STEP}
+            marks={MOVE_HIGHLIGHT_OPACITY_MARKS}
+            thumbLabel={t("Settings.MoveHighlightOpacity")}
+          />
+        ),
       },
       {
         id: "arrows",

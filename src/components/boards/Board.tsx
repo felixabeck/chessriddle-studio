@@ -1,6 +1,6 @@
 import { useTabAtom, useOwnerTabId } from "@/state/tabScope";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import { Box, Center, Group, Text, useMantineTheme, VisuallyHidden } from "@mantine/core";
+import { Box, Center, Group, Text, VisuallyHidden } from "@mantine/core";
 import { ChevronRight } from "lucide-react";
 import {
   type Color,
@@ -45,7 +45,7 @@ import {
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import classes from "@/styles/Chessboard.module.css";
-import { ANNOTATION_INFO, isBasicAnnotation, nagGlyphs } from "@/utils/annotation";
+import { nagGlyphs } from "@/utils/annotation";
 import { getVariationLine } from "@/utils/chess";
 import { displayedScore } from "@/utils/treeReducer";
 import {
@@ -397,16 +397,11 @@ function Board({
     );
   }
 
-  const theme = useMantineTheme();
   const annotations = nagGlyphs(currentNode.nags);
-  const color = ANNOTATION_INFO[annotations[0]]?.color || "gray";
-  const lightColor = theme.colors[color][6];
-  const darkColor = theme.colors[color][8];
 
   const [enableBoardScroll] = useAtom(enableBoardScrollAtom);
   const [snapArrows] = useAtom(snapArrowsAtom);
   const showComments = useAtomValue(useTabAtom(showCommentsFamily));
-  const visualAnnotation = showComments ? annotations[0] : "";
 
   const setBoardFen = useCallback(
     (fen: string) => {
@@ -645,14 +640,6 @@ function Board({
             </Box>
             <BoardFrame>
               <Box
-                style={
-                  isBasicAnnotation(visualAnnotation)
-                    ? {
-                        "--light-color": lightColor,
-                        "--dark-color": darkColor,
-                      }
-                    : undefined
-                }
                 className={classes.chessboard}
                 ref={boardRef}
                 role="grid"

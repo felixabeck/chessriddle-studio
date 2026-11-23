@@ -15,6 +15,12 @@ import { FONT_SCALE_DEFAULT, fontScaleSchema } from "../fontScale";
 import { soundCollectionSchema, soundVolumeSchema } from "../preferenceSchemas";
 import { PIECE_SCALE_DEFAULT, pieceScaleSchema } from "../pieceScale";
 import {
+    LAST_MOVE_HIGHLIGHT_COLOR_DEFAULT,
+    LAST_MOVE_HIGHLIGHT_OPACITY_DEFAULT,
+    lastMoveHighlightColorSchema,
+    lastMoveHighlightOpacitySchema,
+} from "../lastMoveHighlight";
+import {
     DEFAULT_BOARD_IMAGE,
     DEFAULT_PIECE_SET,
     boardImageSchema,
@@ -71,6 +77,16 @@ export const moveHighlightAtom = atomWithStorage<boolean>(
     "move-highlight",
     true,
     createPreferenceStorage(true),
+);
+export const lastMoveHighlightColorAtom = atomWithStorage<string>(
+    "last-move-highlight-color",
+    LAST_MOVE_HIGHLIGHT_COLOR_DEFAULT,
+    createZodStorage(lastMoveHighlightColorSchema, localStorage),
+);
+export const lastMoveHighlightOpacityAtom = atomWithStorage<number>(
+    "last-move-highlight-opacity",
+    LAST_MOVE_HIGHLIGHT_OPACITY_DEFAULT,
+    createZodStorage(lastMoveHighlightOpacitySchema, localStorage),
 );
 export const snapArrowsAtom = atomWithStorage<boolean>(
     "snap-dests",

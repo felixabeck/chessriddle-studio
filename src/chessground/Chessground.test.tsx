@@ -289,6 +289,37 @@ test.each([
   }
 });
 
+test.each([
+  ["default", null, null, "rgba(255, 255, 0, 0.4)"],
+  ["stored blue at 70%", '"#0095ff"', "70", "rgba(0, 149, 255, 0.7)"],
+])(
+  "last-move colour custom property with %s preference",
+  async (_name, color, opacity, expected) => {
+    localStorage.clear();
+    if (color !== null) localStorage.setItem("last-move-highlight-color", color);
+    if (opacity !== null) localStorage.setItem("last-move-highlight-opacity", opacity);
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    mountedRoots.add(root);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 400, 400),
+    );
+    try {
+      await act(async () => {
+        root.render(
+          <MantineProvider>
+            <Chessground />
+          </MantineProvider>,
+        );
+      });
+      const board = createChessground.mock.calls[0][0];
+      expect(board.style.getPropertyValue("--last-move-color")).toBe(expected);
+    } finally {
+      localStorage.clear();
+    }
+  },
+);
+
 test("a re-render after mount clears the bounds cache before set when the board is visible", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);

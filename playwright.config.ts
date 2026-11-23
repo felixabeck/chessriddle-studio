@@ -231,6 +231,11 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
         {
+            name: "board-last-move-highlight",
+            testMatch: /board-last-move-highlight\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+        },
+        {
             name: "board-animation-speed",
             testMatch: /board-animation-speed\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },

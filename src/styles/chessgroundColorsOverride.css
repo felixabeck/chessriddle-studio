@@ -13,6 +13,10 @@ cg-board {
 }
 
 /** Interactive board square colors */
+/* The colour and opacity come from the board settings, set on the board by `Chessground.tsx`. */
+cg-board square.last-move {
+  background-color: var(--last-move-color);
+}
 cg-board square.premove-dest {
   background: radial-gradient(rgba(20, 30, 85, 0.5) 22%, rgba(0, 0, 0, 0) calc(22% + 1px));
 }

@@ -11,8 +11,11 @@ import {
   boardAnimationSpeedAtom,
   boardImageAtom,
   boardWoodTextureAtom,
+  lastMoveHighlightColorAtom,
+  lastMoveHighlightOpacityAtom,
   moveMethodAtom,
 } from "@/state/atoms";
+import { lastMoveHighlightBackground } from "@/state/lastMoveHighlight";
 import { pgnDrawingBrushes } from "@/utils/drawings";
 
 const BOARD_COORDINATE_COLORS: Record<string, { white: string; black: string }> = {
@@ -293,6 +296,8 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
   const boardImage = useAtomValue(boardImageAtom);
   const woodTexture = useAtomValue(boardWoodTextureAtom);
   const boardCoordColors = getBoardCoordinateColors(boardImage);
+  const lastMoveColor = useAtomValue(lastMoveHighlightColorAtom);
+  const lastMoveOpacity = useAtomValue(lastMoveHighlightOpacityAtom);
 
   return (
     <Box
@@ -303,6 +308,7 @@ export function Chessground({ ref, ...props }: ChessgroundProps) {
         "--board-texture": woodTexture ? "url('/board/wood4-square.png')" : "none",
         "--board-coord-color-white": boardCoordColors.white,
         "--board-coord-color-black": boardCoordColors.black,
+        "--last-move-color": lastMoveHighlightBackground(lastMoveColor, lastMoveOpacity),
       }}
       ref={boardRef}
     />
