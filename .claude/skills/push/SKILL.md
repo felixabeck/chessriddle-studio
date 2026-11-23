@@ -1,6 +1,6 @@
 ---
 name: push
-description: Validate, independently review, remediate, commit, and ordinarily push ChessRiddle Studio changes to the current branch's configured upstream. Use when Felix asks to push, or when a drain session or a build run invokes it (push-review-policy section 1); push is not a release or deployment.
+description: Run ChessRiddle Studio's short push gates on the rebased, reviewed commits, push to the current branch's configured upstream, wait for CI and install. Use when Felix asks to push, or when a drain session or a build run invokes it (push-review-policy section 1); push is not a release or deployment.
 disable-model-invocation: false
 ---
 
@@ -9,26 +9,26 @@ disable-model-invocation: false
 Complete the push autonomously. Read `~/.claude/references/push-review-policy.md` first; it is the single source for authorization, attribution, review lenses, model allocation, triage, remediation, and red-gate behavior. This skill adds only ChessRiddle Studio mechanics.
 
 ChessRiddle Studio uses short gates at push; the full suites run in CI on every push, and release
-builds run in release.yml. ChessRiddle Studio does not use the push lock; the lock, hold/release and
-exit-76 sentences of the shared policy do not apply.
+builds run in release.yml. ChessRiddle Studio does not use a push lock.
 
-**Execution order:** establish the exact push scope (§1) → run pre-review checks (§2a) on the last
-implementation phase → complete review and arbitration with repairs (§3), including any preliminary
-checks needed to reproduce review claims → run relevant browser verification through `verify-ui` →
-commit implementation changes and known coordination records (including any known finding closure via
-`./scripts/findings.py close`) according to `~/.claude/references/coordination-file-commits.md` → run
-the final affected gates (§2) → push (§4) on the unchanged verified tree (code push, any single
-build-tier `tasks/build-ledger.md` records follow-up push, CI wait on every `Test` job of the
-pushed HEAD, and install on `master` after green). A
-gate repair returns to `repair`, commit, and the required affected final-gate rerun before push.
+**Execution order:** establish the exact push scope (§1) → commit known coordination records
+(including any known finding closure via `./scripts/findings.py close`) according to
+`~/.claude/references/coordination-file-commits.md` → fetch and rebase onto the upstream (policy
+§4a item 6, with the range-diff carry or rebased-commit closure) → run the push gates (§2) → push
+(§4) on the unchanged verified tree (code push, any single build-tier `tasks/build-ledger.md`
+records follow-up push, CI wait on every `Test` job of the pushed HEAD, and install on `master`
+after green). Review (§3), repairs and relevant `verify-ui` browser verification run on the staged
+diff before each commit, through `.claude/skills/git/SKILL.md`, never at push. A gate repair is
+staged, reviewed under §3, committed, and followed by the required push-gate rerun before push.
 
 The workflow owns balanced `drain_stage` start/end records at each boundary: `code-review` for
 §3, `repair` for each repair batch, `browser-verification` for the browser pass, `final-gates`
-for §2, and `push` for §4, each with concise human-readable phase/round/name detail. Parallel
+for §2, and `push` for §4, each with concise human-readable phase/round/name detail. Emit the
+review, repair and browser records when those stages run before a commit. Parallel
 review fixes use one enclosing repair start/end, closed after every repair proof and inspection.
 A stage is the last reported state; never infer it from a later command. Review fixes still run the
 §2a pre-review checks (`pnpm checks:pre-review`) immediately after each repair batch, before review
-resumes, and any changed tree invalidates the final gates. A
+resumes, and any changed tree invalidates the push gates. A
 build handoff already contains review, repairs, browser verification, and pre-gate coordination-
 record commits; do not restart review or start §2 while build lenses or repairs remain outstanding.
 
@@ -51,17 +51,17 @@ interrupted runs, and accumulated work from another session.
 
 - Inspect `git status --porcelain=v1`, `git branch --show-current`, `git rev-parse --abbrev-ref @{u}`, `git remote get-url origin`, and `git remote get-url --push origin`.
 - This repository's expected remote is `felixabeck/chessriddle-studio` in either of its two legitimate forms — `git@github.com:felixabeck/chessriddle-studio.git` (the `tuxedo-atlas` clone) or `https://github.com/felixabeck/chessriddle-studio.git`. Any other owner, repository or host is a stop. Reject a separate `remote.origin.pushurl`. In an opted-in linked worktree, require `.project.json`'s `worktreeBuilds.target` to be `master` and the branch's configured upstream to be `origin/master`. Otherwise the current local branch must track the same-named `origin/<branch>`, so `master` must track `origin/master`. Commits on a `build/*` or `drain/*` branch may reach `master` only through that opted-in worktree push route. Stop for Felix if any identity is missing or different. Never invent or change a remote/upstream.
-- Build an explicit owned-path manifest from files created or edited in the invoking conversation plus file scopes assigned to its finished workers. Compare it with the initial status. Ambiguous or foreign paths are excluded and left untouched. Commits already ahead of the upstream in this single-user checkout are Felix's own agents' unpushed work: they are in the reviewed range (`~/.claude/references/push-review-policy.md` §2) and are carried by this push, never a reason to stop for Felix; stop only for a committer outside the Multi-Agent rubric or an unexpected remote (§1). A drain session (`--yes` at drain start) or a `build` run invoking this skill is the explicit push request. Commit only manifest paths in cohesive atomic commits and never use `git add -A`.
+- Build an explicit owned-path manifest from files created or edited in the invoking conversation plus file scopes assigned to its finished workers. Compare it with the initial status. Ambiguous or foreign paths are excluded and left untouched. Commits already ahead of the upstream in this single-user checkout are Felix's own agents' unpushed work, reviewed before their commits: attribute them under `~/.claude/references/push-review-policy.md` §§1–2 and carry them with this push, never a reason to stop for Felix; stop only for a committer outside the Multi-Agent rubric or an unexpected remote (§1). A drain session (`--yes` at drain start) or a `build` run invoking this skill is the explicit push request. Owned work is committed through `.claude/skills/git/SKILL.md` before `$push`, in cohesive atomic commits of manifest paths, never with `git add -A`; `$push` itself commits only known coordination records (§4).
 - Gates execute against the complete worktree. Therefore stop before any compile, generator, formatter, or browser gate when a foreign dirty path is code, generated output, dependency/configuration, test, asset, locale, workflow, or another input to an affected gate. Only clearly inert foreign Markdown/planning files may remain. Never generate or commit an owned output from foreign dirty inputs.
-- Every workflow-created commit sets `GIT_COMMITTER_NAME` to the acting agent named in the committer rubric of `/home/felixb/Projekte/agent-kit/references/multi-agent-coordination.md`: `Claude Code`, `Grok` for the Grok CLI run in Felix's terminal, or `GrokBot` for Felix's Grok Bot desktop assistant. Leave the author untouched and add no co-author trailer.
-- Determine pushed files from `BASE=$(git merge-base HEAD @{u})` and both the committed and owned dirty diffs. Review `git diff "$BASE"..HEAD`, `git diff -- <owned tracked paths>`, `git diff --cached -- <owned tracked paths>`, plus each owned untracked file as a new-file diff. An explicit push includes already-ahead commits, so review their effective diff too.
+- Every workflow-created commit carries the acting agent as committer through the session-native committer contract (policy §1; never a per-command prefix), as named in the committer rubric of `/home/felixb/Projekte/agent-kit/references/multi-agent-coordination.md`: `Claude Code`, `Grok` for the Grok CLI run in Felix's terminal, or `GrokBot` for Felix's Grok Bot desktop assistant. Leave the author untouched and add no co-author trailer.
+- Determine pushed files from `BASE=$(git merge-base HEAD @{u})` and `git diff --name-only "$BASE"..HEAD`; they select the §2 gate flags. Owned uncommitted work is staged, reviewed under §3 and committed through `.claude/skills/git/SKILL.md` before the push starts. `$push` runs no lenses; the only lens run at push is policy §4a item 6's rebased-commit closure.
 
-Markdown/planning-only changes need no *build* gate; the contract gate still runs. They still require the shared review and clean-diff checks.
+Markdown/planning-only changes need no *build* gate; the contract gate still runs. Their pre-commit review and clean-diff checks still apply.
 
 ## 2. Run affected gates
 
-These are the final affected gates. Run them only after review/arbitration and repairs (§3),
-relevant browser verification, and known coordination-record commits. Run them through the push
+These are the declared push gates. Run them on the clean rebased HEAD, after known
+coordination-record commits and the policy §4a item 6 rebase. Run them through the push
 gate scheduler:
 
 ```bash
@@ -82,7 +82,7 @@ reported as skipped with a reason naming the first red gate. Running commands fi
 existing supervision. A running multi-command lane starts no further command and records stopped
 with that reason and no exit code (d-20261105-04, d-20261105-05). Signals and unconfirmed child
 cleanup retain precedence over the red-gate reason. Exit-code precedence is unchanged. A failure
-returns to `repair`, commit, and the required affected final-gate rerun before push.
+is repaired as a staged diff, reviewed under §3 and committed, then the push gates rerun.
 
 ChessRiddle Studio does not use the push lock; a rejected push means rebase, rerun
 `pnpm gates:push` (about 5 minutes) and push again.
@@ -159,10 +159,10 @@ reads `dist/.vite/manifest.json` written by `build-vite`. Full frontend coverage
 
 As a contract-gate member, `ui:boundary:check` scans the whole tree, reading files from disk, so it sees committed and uncommitted content alike. It was diff-scoped for two of its rules until 2026-08-29, which made those two vacuous on any clean checkout — including every CI run.
 
-The coverage floors in `coverage-areas.json` / `backend-coverage-areas.json` and the baselines in the two `*-baselines.json` files are ratchets, and `bundle-budgets.json` caps gzip bytes. A red ratchet is a finding about the diff. Never run `coverage:baseline:*` or change a coverage baseline or floor to make a gate pass. Do not repair a red bundle check with a blind numeric ceiling change. The only permitted ceiling increase is the existing conscious feature-growth route in `docs/bundle-budgets.md`: before the ceiling is updated, a recorded technical decision must provide comparable published-base and candidate production measurements and a rationale showing that required behavior is preserved, and independent review must approve the change. Red checks remain defects, normal proofs remain mandatory, and final gates must pass on the clean reviewed HEAD.
+The coverage floors in `coverage-areas.json` / `backend-coverage-areas.json` and the baselines in the two `*-baselines.json` files are ratchets, and `bundle-budgets.json` caps gzip bytes. A red ratchet is a finding about the diff. Never run `coverage:baseline:*` or change a coverage baseline or floor to make a gate pass. Do not repair a red bundle check with a blind numeric ceiling change. The only permitted ceiling increase is the existing conscious feature-growth route in `docs/bundle-budgets.md`: before the ceiling is updated, a recorded technical decision must provide comparable published-base and candidate production measurements and a rationale showing that required behavior is preserved, and independent review must approve the change. Red checks remain defects, normal proofs remain mandatory, and push gates must pass on the clean reviewed HEAD.
 
 For visible UI changes, run the repo-local `$verify-ui` workflow during the browser-verification
-stage, after review repairs and before known coordination-record commits and final gates (it owns
+stage, after review repairs and before the commit (it owns
 `pnpm test:e2e:container` and the live Tauri-window check). Retain screenshots of every affected
 flow. Missing screenshots are not evidence that layout is correct.
 
@@ -220,20 +220,20 @@ changed paths from `git merge-base HEAD @{u}..HEAD` plus dirty paths (deleted pa
 missing upstream fails the lane). No scripts branch is needed because the `contract` lane already
 runs every `scripts/*-tests.mjs`.
 
-The lane and build phase proofs (agent-kit build skill) use the same two commands:
+The lane, every pre-commit check (git skill) and build phase proofs (agent-kit build skill) use the same two commands:
 
 - `src/**` and `scripts/**/*.mjs` other than `*-tests.mjs`: `pnpm exec vitest related --run --passWithNoTests <paths>`.
 - `src-tauri/src/**/*.rs`: one `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- <module>:: ...` command with one filter per changed module (`src-tauri/src/a/b.rs` → `a::b::`, `mod.rs` → its directory module), under the shared Rust allocator. A changed `src-tauri/src/main.rs`, `src-tauri/src/lib.rs`, `src-tauri/build.rs`, `Cargo.toml` or `Cargo.lock` runs the whole `--bins` suite without filters. The crate has only a binary target, so `--lib` does not apply. If `cargo` is missing, prefix with `PATH="$HOME/.cargo/bin:$PATH"`.
 
-Build phase proofs additionally run, for a changed `scripts/<name>.mjs`, `node --test` on every matching `scripts/*-tests.mjs` file (`git grep -l <name> -- 'scripts/*-tests.mjs'`) plus changed `*-tests.mjs` files themselves; at push the contract lane covers these.
+Pre-commit checks and build phase proofs additionally run, for a changed `scripts/<name>.mjs`, `node --test` on every matching `scripts/*-tests.mjs` file (`git grep -l <name> -- 'scripts/*-tests.mjs'`) plus changed `*-tests.mjs` files themselves; at push the contract lane covers these.
 
 Verified forms (2026-11-02): Vitest related ran 4171 tests for `src/utils/annotation.ts`. The cargo filter `lexer::` ran 12 tests.
 
 ## 2a. Pre-review checks
 
-Run this after the last implementation phase and after every repair batch, before code review
-(including build step 6) and before a closure round over a diff. A red pre-review run is repaired
-before review starts or resumes. These cheap, changed-path checks do not replace the final affected
+Run this before each pre-commit review (build step 5 phase review; step 6 only on cumulative
+file overlap) and after every repair batch, before a closure round over a diff. A red pre-review run is repaired
+before review starts or resumes. These cheap, changed-path checks do not replace the push
 gates in §2.
 
 ```bash
@@ -258,9 +258,11 @@ pnpm bundle:check
 
 ## 3. Independent review and remediation
 
-Run the review exactly as `~/.claude/references/push-review-policy.md` §§2–4 specify — named
-lenses over the effective pushed diff plus enclosing code; `review-correctness` and
-`review-root-cause` always on; the rest when their `description:` line applies. Every finding
+Run the review on the staged diff before each commit, exactly as
+`~/.claude/references/push-review-policy.md` §§2–4a specify — named lenses over
+`git diff --cached -- <owned paths>` read with full `merge-base..HEAD` context;
+`review-correctness` and `review-root-cause` always on; the rest when their `description:` line
+applies. `.claude/skills/git/SKILL.md` runs this step; `$push` does not. Every finding
 gets a `Fix` / `Defer` / `Skip(reason)` verdict. Out-of-area findings are `Defer`d autonomously
 through the project ledger/inbox workflow (policy §4, universal rule 4b); ledger-backed deferrals
 need no manual handoff prompt. Never ask Felix which.
@@ -340,14 +342,15 @@ Use the exact-string override keywords from
 
 ## 4. Commit, push, and verify
 
-- After review, repairs, and browser verification, commit implementation changes and coordination
-  records already known to the run according to `~/.claude/references/coordination-file-commits.md`
-  — **including any finding closure (`./scripts/findings.py close`)** — using the attribution above
-  and only the remaining authorized paths. These commits precede the final affected gates so no
-  closure commit follows the code push and the post-push record stays a single commit.
-- Require `git diff --check`, all affected gates green on the final tree, and no unresolved `Fix` finding.
-- If a final gate requires a repair, return to `repair`, commit the repair, and rerun the affected
-  final gates on the changed tree before push. The push then uses the unchanged verified tree.
+- Implementation commits arrive reviewed (§3, through `.claude/skills/git/SKILL.md`). Commit the
+  coordination records already known to the run according to
+  `~/.claude/references/coordination-file-commits.md` — **including any finding closure
+  (`./scripts/findings.py close`)** — using the attribution above and only the remaining authorized
+  paths, then fetch and rebase under policy §4a item 6 and run §2. These commits precede the push
+  gates so no closure commit follows the code push and the post-push record stays a single commit.
+- Require `git diff --check`, all push gates green on the final tree, and no unresolved `Fix` finding.
+- If a push gate requires a repair, stage it, review it under §3, commit it, and rerun the affected
+  push gates on the changed tree before push. The push then uses the unchanged verified tree.
 - Before pushing, apply the shared policy §8 "A red remote is a red gate" by running:
 
 ```bash
@@ -362,12 +365,8 @@ pnpm ci:remote:check
   the oldest of them (`headSha` = first red SHA). Attribution is undetermined when an older `Test`
   run between the newest red and the last success for `J` is not completed yet, no success for
   `J` exists in the 30-run window, or a needed `gh` query fails.
-  ChessRiddle Studio rule (an override of policy §8's single-run ownership, listed at the end of
-  §4): a finding owns a red job when it cites **any run id of that job's streak** (not only the
-  newest). An open repair finding whose `* **Repair owner:** <session id> on <host>, <ISO time>`
-  line is younger than 120 minutes is actively owned by that session; other sessions neither pin
-  nor repair it (they wait). When that line is 120 minutes or older, or absent, any session may
-  repair it. Drains still follow policy §8 until agent-kit adopts the streak rule.
+  Streak ownership and the 120-minute `* **Repair owner:**` reservation follow policy §8 "Red
+  streaks and repair owners" (agent-kit d-20261123-02) for every session and drain.
   Exit 1 refuses the push unless this push's commits repair the finding that owns every listed red
   job (for non-push `Mutation` sweeps, policy §8 clears a red once the finding citing that same run
   id in `**CI run:** <id>` is handled). If any listed red job has no owning finding, file it first
@@ -442,11 +441,6 @@ agent-gate bash scripts/install-local.sh
   no release/deployment occurred.
 - On any persistent red gate, follow the shared policy: do not push and report the exact blocker.
 
-ChessRiddle Studio project rule (2026-11-23, d-20261123-05): a red job is owned by a finding citing
-any run id of its streak, and a `Repair owner` line younger than 120 minutes reserves the repair
-(see the `ci:remote:check` paragraph above). This skill takes precedence for ChessRiddle Studio
-pushes.
-
 ChessRiddle Studio override to shared policy §7: this workflow never performs a force push. A message containing `force push` requires a separate stop for the exact refspec and force-with-lease decision; it is not treated as an automatic gate-skip-and-push marker here.
 
 ## Project review lenses
@@ -465,7 +459,7 @@ lenses live in `~/.claude/agents/`, ChessRiddle Studio-specific ones in `.claude
 | `review-tauri-security` | OAuth token acquisition, credential storage and refresh, renderer-session sanitization, path containment and recursive deletion, signed download manifest verification, bearer-token and raw-diagnostic egress | `src-tauri/src/oauth.rs`, `src-tauri/src/credentials.rs`, `src/utils/session.ts`, `src-tauri/src/fs.rs`, `src-tauri/src/infra/**`, `docs/signed-download-manifests.md` |
 | `review-platform-semantics` | OS behavior of filesystem, handle, process and FFI code; platform-gated test parity across Linux, macOS and Windows | `src-tauri/src/**` with `cfg` on `target_os`, `windows` or `unix`, or filesystem/process/handle/FFI code; tests with platform-specific fixtures or cfg-gated helpers |
 
-Which lenses run for a push is decided by `~/.claude/references/push-review-policy.md`; this table
+Which lenses review a staged diff is decided by `~/.claude/references/push-review-policy.md`; this table
 says what each one knows, so a plan can be sanity-checked against the right lens before code exists.
 
 
@@ -514,8 +508,8 @@ gates from `.claude/skills/push/SKILL.md`. Executor selection and leaf launch be
 * Claude Code reads `.claude/skills/push/SKILL.md` directly, and
   `.grok/rules/grok-chessfable.md` points Grok at the canonical file.
 * Gate scope is split. Per commit and after every repair batch, run `pnpm checks:pre-review` from
-  `.claude/skills/push/SKILL.md`. Once per task, after the last commit, run the full affected set.
-  Never commit on red.
+  `.claude/skills/push/SKILL.md`, plus the related tests and the §3 staged-diff review before the
+  commit. At push, run `pnpm gates:push`; the full suites run in CI. Never commit on red.
 
 ### Worktree builds
 
@@ -529,10 +523,10 @@ gates from `.claude/skills/push/SKILL.md`. Executor selection and leaf launch be
 ## Other-agent coordination
 
 
-* Set `GIT_COMMITTER_NAME` to the acting agent (`Claude Code`, `Grok` or `GrokBot`, see §1);
+* Commit as the acting agent (`Claude Code`, `Grok` or `GrokBot`) through the session-native committer contract (§1);
   author stays Felix Beck, with no co-author or AI trailer.
-* Per commit, run the narrowest affected checks from the canonical push mapping; once per task,
-  after the last commit, run the full affected set. Never commit on red.
+* Per commit, run `pnpm checks:pre-review`, the related tests and the §3 staged-diff review;
+  at push, run `pnpm gates:push`; the full suites run in CI. Never commit on red.
 * Handoffs longer than a few lines go in `tasks/handoffs/YYYY-MM-DD-<slug>.md`, never through Felix;
   pass the receiving agent the file path.
 
