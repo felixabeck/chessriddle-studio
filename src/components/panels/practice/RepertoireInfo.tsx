@@ -21,6 +21,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
+import { ResultBar } from "@/components/common/ResultBar";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { TreeStatsBar } from "@/components/common/TreeStatsBar";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -29,19 +30,15 @@ import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linked
 import { capabilityKey } from "@/utils/pathCapabilities";
 import { formatMoveNumber, roundKeepSum } from "@/utils/format";
 import { isPrefix } from "@/utils/misc";
-import {
-  computeTreeCoverage,
-  fetchPositionMoves,
-  findBiggestGap,
-  findNextGap,
-  type PositionMove,
-} from "@/utils/repertoire";
+import { findBiggestGap, findNextGap, type PositionMove } from "@/utils/repertoire";
 import {
   getBoardState,
   getMemoizedBoardStateMap,
   getNodeAtPath,
   type TreeNode,
 } from "@/utils/treeReducer";
+import { useReferenceMoves } from "./useReferenceMoves";
+import { useRepertoireCoverage, type CoverageStatus } from "./useRepertoireCoverage";
 import classes from "./RepertoireInfo.module.css";
 import paneClasses from "@/components/common/PaneTabs.module.css";
 
@@ -49,12 +46,11 @@ function formatMoveNotation(halfMoves: number, san: string): string {
   return `${formatMoveNumber(halfMoves)} ${san}`;
 }
 
-type CoverageStatus = "absent" | "loading" | "error" | "success";
-
 function RepertoireInfo() {
   const { t } = useTranslation();
-  const commonErrorRef = useRef(t("Common.Error"));
-  commonErrorRef.current = t("Common.Error");
+  const errorTitle = t("Common.Error");
+  const commonErrorRef = useRef(errorTitle);
+  commonErrorRef.current = errorTitle;
   const store = useContext(TreeStateContext)!;
   const view = useTreeView(store);
   const { root, headers } = view;
@@ -90,31 +86,17 @@ function RepertoireInfo() {
 
   const orientation = useMemo(() => headers.orientation || "white", [headers.orientation]);
 
-  const [dbMovesMap, setDbMovesMap] = useState<
-    Map<
-      string,
-      { moves: { move: string; white: number; draw: number; black: number }[]; total: number }
-    >
-  >(new Map());
-  const positionRequest = useRef<AbortController | null>(null);
-  useEffect(() => {
-    positionRequest.current?.abort();
-    setDbMovesMap(new Map());
-  }, [
+  const { dbMovesMap, replaceMoves } = useReferenceMoves({
+    currentFen: currentNode.fen,
+    referenceDb,
     selectedReferenceKey,
     referenceKey,
-    currency.collection?.generation,
-    currency.collection?.status,
-    currency.error,
-    currency.pending,
-  ]);
-
-  useEffect(
-    () => () => {
-      positionRequest.current?.abort();
-    },
-    [],
-  );
+    currencyGeneration: currency.collection?.generation,
+    currencyStatus: currency.collection?.status,
+    currencyError: currency.error,
+    currencyPending: currency.pending,
+    errorTitle,
+  });
 
   const startPath = useMemo(() => headers.start || [], [headers.start]);
   const boardStateMap = useMemo(() => {
@@ -146,109 +128,22 @@ function RepertoireInfo() {
     return movesMap;
   }, [boardStateMap, startPath]);
 
-  const [coverageRetry, setCoverageRetry] = useState(0);
-  const coverageInput = useMemo(
-    () => ({
-      root,
-      orientation,
-      referenceDb,
-      selectedReference: selectedReferenceKey,
-      generation: currency.collection?.generation,
-      status: currency.collection?.status,
-      error: currency.error,
-      pending: currency.pending,
-      minGames,
-      startPath,
-      startStateMoves,
-      retry: coverageRetry,
-    }),
-    [
-      root,
-      orientation,
-      referenceDb,
-      selectedReferenceKey,
-      currency.collection?.generation,
-      currency.collection?.status,
-      currency.error,
-      currency.pending,
-      minGames,
-      startPath,
-      startStateMoves,
-      coverageRetry,
-    ],
-  );
-  type CoverageOutcome = { input: typeof coverageInput } & (
-    | { status: "loading" | "error" }
-    | { status: "success"; result: Awaited<ReturnType<typeof computeTreeCoverage>> }
-  );
-  const [coverageOutcome, setCoverageOutcome] = useState<CoverageOutcome | null>(null);
-  const liveCoverageInput = useRef(coverageInput);
-  liveCoverageInput.current = coverageInput;
-  const currentCoverage = coverageOutcome?.input === coverageInput ? coverageOutcome : null;
-  const coverageResult = currentCoverage?.status === "success" ? currentCoverage.result : null;
-  const coverageStatus: CoverageStatus = !referenceDb
-    ? "absent"
-    : (currentCoverage?.status ?? "loading");
-  const coverageMap = coverageResult?.coverageMap;
-  const retryCoverage = useCallback(() => setCoverageRetry((attempt) => attempt + 1), []);
-
-  useEffect(() => {
-    if (!referenceDb) return;
-    const boardFen = getBoardState(currentNode.fen);
-    if (dbMovesMap.has(boardFen)) return;
-
-    positionRequest.current?.abort();
-    const controller = new AbortController();
-    positionRequest.current = controller;
-    fetchPositionMoves(referenceDb, boardFen, controller.signal)
-      .then((data) => {
-        if (controller.signal.aborted) return;
-        setDbMovesMap((prev) => {
-          if (prev.has(boardFen)) return prev; // may have been filled by coverage meanwhile
-          const next = new Map(prev);
-          next.set(boardFen, data);
-          return next;
-        });
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        notifyUnlessCancelled(commonErrorRef.current, error);
-      });
-    return () => controller.abort();
-  }, [currentNode.fen, referenceDb, dbMovesMap]);
-
-  useEffect(() => {
-    // buildDbCache walks the whole tree before its first await. That stays off this commit.
-    if (isTreeViewDeferred(store)) return;
-    if (!coverageInput.referenceDb) return;
-    const controller = new AbortController();
-    const isCurrent = () =>
-      !controller.signal.aborted && liveCoverageInput.current === coverageInput;
-    setCoverageOutcome({ input: coverageInput, status: "loading" });
-
-    computeTreeCoverage(
-      coverageInput.root,
-      coverageInput.orientation,
-      coverageInput.referenceDb,
-      coverageInput.minGames,
-      coverageInput.startPath,
-      coverageInput.startStateMoves,
-      controller.signal,
-    )
-      .then((result) => {
-        if (isCurrent()) {
-          setCoverageOutcome({ input: coverageInput, status: "success", result });
-          setDbMovesMap(result.dbMovesMap);
-        }
-      })
-      .catch((error) => {
-        if (isCurrent()) {
-          setCoverageOutcome({ input: coverageInput, status: "error" });
-          notifyUnlessCancelled(commonErrorRef.current, error);
-        }
-      });
-    return () => controller.abort();
-  }, [coverageInput, store]);
+  const { coverageResult, coverageStatus, coverageMap, retryCoverage } = useRepertoireCoverage({
+    store,
+    root,
+    orientation,
+    referenceDb,
+    selectedReferenceKey,
+    currencyGeneration: currency.collection?.generation,
+    currencyStatus: currency.collection?.status,
+    currencyError: currency.error,
+    currencyPending: currency.pending,
+    minGames,
+    startPath,
+    startStateMoves,
+    replaceMoves,
+    errorTitle,
+  });
 
   const nodeToPath = useMemo(() => {
     const map = new Map<TreeNode, number[]>();
@@ -902,6 +797,8 @@ function getCoverageColor(coverage: number): string {
   return "success";
 }
 
+const MOVE_ROW_LABEL_MIN_PERCENT = 20;
+
 function MoveRow({
   move,
   halfMoves,
@@ -924,6 +821,8 @@ function MoveRow({
   const coverageColor = getCoverageColor(move.coverage);
   const pct = move.frequency > 0 ? `${(move.frequency * 100).toFixed(0)}%` : "—";
   const [wPct, dPct, bPct] = roundKeepSum([move.white * 100, move.draw * 100, move.black * 100]);
+  const segmentLabel = (share: number) =>
+    share > MOVE_ROW_LABEL_MIN_PERCENT ? String(share) : undefined;
 
   return (
     <UnstyledButton
@@ -965,17 +864,28 @@ function MoveRow({
             position="top"
             withArrow
           >
-            <Progress.Root size="xl" w={100}>
-              <Progress.Section value={wPct} color="var(--cf-eval-bar-light)">
-                {wPct > 20 && <Progress.Label c="var(--cf-eval-bar-dark)">{wPct}</Progress.Label>}
-              </Progress.Section>
-              <Progress.Section value={dPct} color="var(--cf-chart-4)">
-                {dPct > 20 && <Progress.Label>{dPct}</Progress.Label>}
-              </Progress.Section>
-              <Progress.Section value={bPct} color="var(--cf-eval-bar-dark)">
-                {bPct > 20 && <Progress.Label>{bPct}</Progress.Label>}
-              </Progress.Section>
-            </Progress.Root>
+            <ResultBar
+              size="xl"
+              w={100}
+              segments={[
+                {
+                  value: wPct,
+                  color: "var(--cf-eval-bar-light)",
+                  label: segmentLabel(wPct),
+                  labelColor: "var(--cf-eval-bar-dark)",
+                },
+                {
+                  value: dPct,
+                  color: "var(--cf-chart-4)",
+                  label: segmentLabel(dPct),
+                },
+                {
+                  value: bPct,
+                  color: "var(--cf-eval-bar-dark)",
+                  label: segmentLabel(bPct),
+                },
+              ]}
+            />
           </Tooltip>
           {showCoverage && (
             <Box w={100}>

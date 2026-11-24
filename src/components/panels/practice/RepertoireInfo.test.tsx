@@ -1503,3 +1503,46 @@ test("ten fully covered fractional continuations admit healthy completeness and 
   expect(host.textContent).toContain("Board.Practice.Build.NoGapsFound");
   expect(mocks.notificationShow).not.toHaveBeenCalled();
 });
+
+test("move row result bar renders W/D/L sections, >20 bare integer labels, and ResultDistribution tooltip", async () => {
+  const builder = createTreeStore();
+  builder.getState().makeMove({ payload: "e4", changePosition: false });
+  const initial = builder.getState();
+  const rootFen = getBoardState(initial.root.fen);
+  const dbMoves = {
+    moves: [{ move: "e4", white: 55, draw: 20, black: 25 }],
+    total: 100,
+  };
+  mocks.fetchPositionMoves.mockResolvedValue(dbMoves);
+  mocks.computeTreeCoverage.mockResolvedValue({
+    ...emptyCoverage,
+    dbMovesMap: new Map([[rootFen, dbMoves]]),
+  });
+
+  await renderRepertoireInfo(initial, "move-row-result-bar");
+
+  const row = moveRow("e4");
+  const resultBar = row.querySelector<HTMLElement>(".mantine-Progress-root")!;
+  const sections = resultBar.querySelectorAll<HTMLElement>(".mantine-Progress-section");
+  expect(sections).toHaveLength(3);
+  expect(Array.from(sections, (section) => section.getAttribute("aria-valuenow"))).toEqual([
+    "55",
+    "20",
+    "25",
+  ]);
+  expect(sections[0].querySelector(".mantine-Progress-label")?.textContent).toBe("55");
+  expect(sections[1].querySelector(".mantine-Progress-label")).toBeNull();
+  expect(sections[2].querySelector(".mantine-Progress-label")?.textContent).toBe("25");
+
+  await act(async () => {
+    resultBar.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    resultBar.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+  });
+  await vi.waitFor(() => {
+    const tooltips = Array.from(
+      document.querySelectorAll('[role="tooltip"]'),
+      (node) => node.textContent,
+    );
+    expect(tooltips).toContain("Board.Practice.ResultDistribution");
+  });
+});

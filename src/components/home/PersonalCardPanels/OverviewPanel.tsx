@@ -141,7 +141,6 @@ function OverviewPanel({
               draw={stats.total.drawn}
               lost={stats.total.lost}
               size="2rem"
-              playerPerspective
             />
           </>
         )}
@@ -245,13 +244,7 @@ function ColorRow({
         )}
       </Group>
       {color.games > 0 && (
-        <ResultsChart
-          won={color.won}
-          draw={color.drawn}
-          lost={color.lost}
-          size="1rem"
-          playerPerspective
-        />
+        <ResultsChart won={color.won} draw={color.drawn} lost={color.lost} size="1rem" />
       )}
     </Stack>
   );

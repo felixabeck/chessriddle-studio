@@ -188,13 +188,7 @@ function RatingsPanel({
       {dates.length > 1 && (
         <>
           {summary.games > 0 && (
-            <ResultsChart
-              won={summary.won}
-              draw={summary.draw}
-              lost={summary.lost}
-              size="2rem"
-              playerPerspective
-            />
+            <ResultsChart won={summary.won} draw={summary.draw} lost={summary.lost} size="2rem" />
           )}
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={ratingData}>

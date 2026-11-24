@@ -699,7 +699,6 @@ function MovesPanel({
                             draw={row.draw}
                             lost={lost}
                             size="1.125rem"
-                            playerPerspective
                             labelThreshold={0.2}
                           />
                         </td>

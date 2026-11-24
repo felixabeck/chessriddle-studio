@@ -322,13 +322,7 @@ function OpeningDetail({
           })}
         </Text>
       </div>
-      <ResultsChart
-        won={opening.won}
-        draw={opening.draw}
-        lost={opening.lost}
-        size="1.5rem"
-        playerPerspective
-      />
+      <ResultsChart won={opening.won} draw={opening.draw} lost={opening.lost} size="1.5rem" />
     </Stack>
   );
 }

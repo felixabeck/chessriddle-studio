@@ -53,3 +53,37 @@ test("the tree's 20% threshold shows a 25% label and omits a 15% label", async (
     [...container.querySelectorAll(".mantine-Progress-label")].map((label) => label.textContent),
   ).toEqual(["60.0%", "25.0%", ""]);
 });
+
+test("renders player-perspective Wins and Losses tooltips", async () => {
+  await render(4, 2, 1);
+  const sections = container.querySelectorAll(".mantine-Progress-section");
+  expect(sections).toHaveLength(3);
+
+  for (const [index, expected] of [
+    [0, "4 Databases.OpeningTree.Wins"],
+    [1, "2 Board.Analysis.Tablebase.Draw"],
+    [2, "1 Databases.OpeningTree.Losses"],
+  ] as const) {
+    await act(async () => {
+      sections[index].dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      sections[index].dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    });
+    await vi.waitFor(() => {
+      const tooltips = Array.from(
+        document.querySelectorAll('[role="tooltip"]'),
+        (node) => node.textContent,
+      );
+      expect(tooltips).toContain(expected);
+    });
+    await act(async () => {
+      sections[index].dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+      sections[index].dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+    });
+  }
+});
+
+test("renders an empty progress root when total is zero", async () => {
+  await render(0, 0, 0);
+  expect(container.querySelector(".mantine-Progress-root")).not.toBeNull();
+  expect(container.querySelectorAll(".mantine-Progress-section")).toHaveLength(0);
+});

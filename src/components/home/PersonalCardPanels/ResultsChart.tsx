@@ -1,54 +1,55 @@
-import { Tooltip as MTTooltip, Progress } from "@mantine/core";
+import { Progress } from "@mantine/core";
 import { useTranslation } from "react-i18next";
+import { ResultBar } from "@/components/common/ResultBar";
+
+const LABEL_STYLE = { textOverflow: "clip" } as const;
 
 function ResultsChart({
   won,
   draw,
   lost,
   size,
-  playerPerspective = false,
   labelThreshold = 0.15,
 }: {
   won: number;
   draw: number;
   lost: number;
   size: string;
-  playerPerspective?: boolean;
   labelThreshold?: number;
 }) {
   const { t } = useTranslation();
   const total = won + draw + lost;
-  if (playerPerspective && total === 0) return <Progress.Root size={size} />;
+  if (total === 0) return <Progress.Root size={size} />;
+  const formatLabel = (count: number) =>
+    count / total > labelThreshold ? `${((count / total) * 100).toFixed(1)}%` : "";
+
   return (
-    <Progress.Root size={size}>
-      <MTTooltip
-        label={`${won} ${playerPerspective ? t("Databases.OpeningTree.Wins", { defaultValue: "Wins" }) : t("Board.Database.Local.Result.WhiteWon")}`}
-      >
-        <Progress.Section value={(won / total) * 100} color="success">
-          <Progress.Label style={{ textOverflow: "clip" }}>
-            {won / total > labelThreshold ? `${((won / total) * 100).toFixed(1)}%` : undefined}
-          </Progress.Label>
-        </Progress.Section>
-      </MTTooltip>
-
-      <MTTooltip label={`${draw} ${t("Board.Analysis.Tablebase.Draw")}`}>
-        <Progress.Section value={(draw / total) * 100} color="gray">
-          <Progress.Label style={{ textOverflow: "clip" }}>
-            {draw / total > labelThreshold ? `${((draw / total) * 100).toFixed(1)}%` : undefined}
-          </Progress.Label>
-        </Progress.Section>
-      </MTTooltip>
-
-      <MTTooltip
-        label={`${lost} ${playerPerspective ? t("Databases.OpeningTree.Losses", { defaultValue: "Losses" }) : t("Board.Database.Local.Result.BlackWon")}`}
-      >
-        <Progress.Section value={(lost / total) * 100} color="danger">
-          <Progress.Label style={{ textOverflow: "clip" }}>
-            {lost / total > labelThreshold ? `${((lost / total) * 100).toFixed(1)}%` : undefined}
-          </Progress.Label>
-        </Progress.Section>
-      </MTTooltip>
-    </Progress.Root>
+    <ResultBar
+      size={size}
+      segments={[
+        {
+          value: (won / total) * 100,
+          color: "success",
+          label: formatLabel(won),
+          labelStyle: LABEL_STYLE,
+          tooltip: `${won} ${t("Databases.OpeningTree.Wins")}`,
+        },
+        {
+          value: (draw / total) * 100,
+          color: "gray",
+          label: formatLabel(draw),
+          labelStyle: LABEL_STYLE,
+          tooltip: `${draw} ${t("Board.Analysis.Tablebase.Draw")}`,
+        },
+        {
+          value: (lost / total) * 100,
+          color: "danger",
+          label: formatLabel(lost),
+          labelStyle: LABEL_STYLE,
+          tooltip: `${lost} ${t("Databases.OpeningTree.Losses")}`,
+        },
+      ]}
+    />
   );
 }
 

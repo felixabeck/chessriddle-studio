@@ -1,4 +1,4 @@
-import { Group, Progress, Text } from "@mantine/core";
+import { Group, Text } from "@mantine/core";
 import { useAtom } from "jotai";
 import { ChevronUp, ChevronsUpDown } from "lucide-react";
 import { DataTable, type DataTableColumn } from "mantine-datatable";
@@ -6,6 +6,7 @@ import { memo, useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { gameRowActivation } from "@/components/common/gameOpen";
+import { ResultBar } from "@/components/common/ResultBar";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { moveNotationTypeAtom } from "@/state/atoms";
 import { addPieceSymbol } from "@/utils/annotation";
@@ -141,17 +142,28 @@ function OpeningsTable({
             ? `${percent.toFixed(1)}%`
             : "";
       return (
-        <Progress.Root size="xl" className={classes.result}>
-          <Progress.Section value={whitePercent} className={classes.whiteResultsSection}>
-            <Progress.Label c="var(--cf-eval-bar-dark)">{label(whitePercent)}</Progress.Label>
-          </Progress.Section>
-          <Progress.Section value={drawPercent} color="var(--cf-chart-4)">
-            <Progress.Label>{label(drawPercent)}</Progress.Label>
-          </Progress.Section>
-          <Progress.Section value={blackPercent} color="var(--cf-eval-bar-dark)">
-            <Progress.Label>{label(blackPercent)}</Progress.Label>
-          </Progress.Section>
-        </Progress.Root>
+        <ResultBar
+          size="xl"
+          className={classes.result}
+          segments={[
+            {
+              value: whitePercent,
+              className: classes.whiteResultsSection,
+              label: label(whitePercent),
+              labelColor: "var(--cf-eval-bar-dark)",
+            },
+            {
+              value: drawPercent,
+              color: "var(--cf-chart-4)",
+              label: label(drawPercent),
+            },
+            {
+              value: blackPercent,
+              color: "var(--cf-eval-bar-dark)",
+              label: label(blackPercent),
+            },
+          ]}
+        />
       );
     },
   });

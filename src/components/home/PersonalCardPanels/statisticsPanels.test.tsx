@@ -107,20 +107,9 @@ vi.mock("recharts", () => ({
   YAxis: () => null,
 }));
 vi.mock("./ResultsChart", () => ({
-  default: ({
-    won,
-    draw,
-    lost,
-    playerPerspective,
-  }: {
-    won: number;
-    draw: number;
-    lost: number;
-    playerPerspective?: boolean;
-  }) => (
-    <div data-testid="result-counts" data-perspective={playerPerspective ? "player" : "board"}>
-      {won}:{draw}:{lost}
-      {playerPerspective ? " Wins/Losses" : " WhiteWon/BlackWon"}
+  default: ({ won, draw, lost }: { won: number; draw: number; lost: number }) => (
+    <div data-testid="result-counts">
+      {won}:{draw}:{lost} Wins/Losses
     </div>
   ),
 }));
@@ -1185,9 +1174,6 @@ test("Overview mixed results keep per-colour games, score and W/D/L distinct", a
   expect(headline).toContain("6 Common.Games");
   expect(headline).toContain("50%");
   expect(headline).toContain("+2 =2 −2");
-  expect(headline).toContain("Wins/Losses");
-  expect(headline).not.toContain("WhiteWon");
-  expect(headline).not.toContain("BlackWon");
 
   const white = container.querySelector("[data-testid='overview-white']")?.textContent ?? "";
   expect(white).toContain("4 Common.Games");
@@ -1199,11 +1185,7 @@ test("Overview mixed results keep per-colour games, score and W/D/L distinct", a
   expect(black).toContain("25%");
   expect(black).toContain("+0 =1 −1");
 
-  expect(
-    Array.from(container.querySelectorAll("[data-testid='result-counts']"), (node) =>
-      node.getAttribute("data-perspective"),
-    ),
-  ).toEqual(["player", "player", "player"]);
+  expect(container.querySelectorAll("[data-testid='result-counts']")).toHaveLength(3);
 });
 
 test("Overview last games appear only when a database player is passed", async () => {
