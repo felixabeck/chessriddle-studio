@@ -28883,3 +28883,19 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Fix:** add tests that distinguish each condition (a navigation that starts at the root versus below it, a first versus a later sibling index, and the eviction when the cache holds an undefined-free oldest key), or remove the condition if it is provably redundant.
 * **Proof:** `FRONTEND_MUTATION_PACKAGE=tree-path pnpm mutation:frontend` reports 100.
 * **Found by:** Claude Code (Opus 5.5), build run frequency-weighted-practice, 2026-11-24
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### The Grok sign-in test checks "nothing stored" after the background poll loop may already have stored the connection
+
+* **ID:** f-20261124-11 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45399506408
+* **Repair owner:** d7fe9f80-ecd3-4c85-a398-7ac3d9272fe1 on tuxedo-atlas, 2026-11-24T14:24:20Z
+* **Where:** `src-tauri/src/coach/grok.rs`, test `coach::grok::tests::a_sign_in_shows_the_code_waits_for_the_user_and_stores_the_connection`.
+* **Defect:** `SignIn::begin` spawns the poll loop before it returns the code. The test queues the whole answer sequence, grant included, before `begin`, and its provider seconds last 2 ms, so the loop can poll through to the grant and store the connection in a few tens of milliseconds. The test then asserts `stored() == 0` ("Nothing is stored while the user is away") with nothing holding the loop back.
+* **Failure scenario:** `Test` run 45399506408 attempt 2 on 6450c350b (a README-only commit), job `rust-macos-test` 138494797288: `assertion left == right failed, left: 1, right: 0` at `src/coach/grok.rs:854`; 3740 passed, 1 failed. Attempt 1 of the same job ended with "The hosted runner lost communication with the server". While this is the newest red, `pnpm ci:remote:check` refuses every push.
+* **Fix:** queue only "authorization_pending" (repeated) before `begin`, wait for the first poll, assert nothing is stored, then append the remaining answers. Sibling of handled f-20261122-09 (same file family, the test read state before the spawned task reached it), separate mechanism.
+* **Found by:** Claude Code (Opus 5.5), 2026-11-24, post-push CI wait of the donation-link removal.
