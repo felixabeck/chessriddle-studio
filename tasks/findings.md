@@ -28871,7 +28871,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The daily tree-path mutation sweep is red: three survivors in tree navigation and the start-path map cache
 
-* **ID:** f-20261124-10 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-10 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45395218545
 * **First red:** run 45395218545 on `41bf2e516` (previous Mutation run 45160185213 on `ac45297ff` was green)
@@ -28883,6 +28883,8 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Fix:** add tests that distinguish each condition (a navigation that starts at the root versus below it, a first versus a later sibling index, and the eviction when the cache holds an undefined-free oldest key), or remove the condition if it is provably redundant.
 * **Proof:** `FRONTEND_MUTATION_PACKAGE=tree-path pnpm mutation:frontend` reports 100.
 * **Found by:** Claude Code (Opus 5.5), build run frequency-weighted-practice, 2026-11-24
+* **Handled (2026-11-24, Claude Code (Opus 5.5), build run frequency-weighted-practice, Grok write leaf, diff review on grok r1-r2):** commit "fix(tree): drop three conditions the tree-path mutation sweep proved redundant". All three survivors are equivalent mutants (root cursor never popped, continuation already marked passed in queueChildren, eviction always has three string keys), so the conditions are removed. Proof: `FRONTEND_MUTATION_PACKAGE=tree-path pnpm mutation:frontend` final score 100.00 (treeReducer.ts 353 killed, 8 timeout, 0 survived); existing nextOpenVariation and eviction tests unchanged and green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"605d9ed93fc36a3ebee88928f8a0460d3991dc8b351386ddd650fb0932685414","header_sha256":"44b2dd149f1a4e5123a81fd931293e2f5a8161b3cad0c6e8bed436115fc17483","header_status":"handled","input_sha256":"05d2c80e38e97d7a98cb426bbdd3020ac424f798ec49c298315c0a78cdb270a6","kind":"mutation-receipt","operation":"072f86e6bbf0b03b5ebf2c31478cd24154b5dc7b624cfaeb7942be519fb6f381","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-10"],"target":"f-20261124-10","v":1} -->
 
 ---
 
