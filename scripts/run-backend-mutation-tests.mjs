@@ -134,12 +134,13 @@ async function fixture() {
 echo $$ > "$SHIM_STATE/pid"
 printf '%s' "$PWD" > "$SHIM_STATE/cwd"
 printf '%s' "$CARGO_TARGET_DIR" > "$SHIM_STATE/target"
-: > "$SHIM_STATE/started"
 printf '%s\n' "$@" > "$SHIM_STATE/arguments"
 printf '%s' "\${CHESSFABLE_ENCODING_MUTATION_SUPPRESS_CORE-}" > "$SHIM_STATE/core-suppression"
 if [ -e "$LIVE_ROOT/mutants.out/backend/.mutation-in-progress" ]; then
   : > "$SHIM_STATE/fence-present-at-spawn"
 fi
+# Last marker: tests wait for it and then read every marker above.
+: > "$SHIM_STATE/started"
 output=""
 previous=""
 for argument in "$@"; do
