@@ -28795,3 +28795,19 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Fix:** replace `shortDescription` (and, if used, `Cargo.toml` `description`) with a ChessRiddle Studio summary, fill `copyright` (authors in `Cargo.toml` stay as they are: `f-20260830-48` recorded that GPL-3 §4 requires keeping Francisco's original copyright notice), and extend `product.test.ts` so these fields cannot slip back. `scripts/install-local.sh` already has a suitable Comment.
 * **Proof:** `rg -n 'Ultimate Chess Toolkit|A Modern Chess Database|^    "copyright"' src-tauri/tauri.conf.json src-tauri/Cargo.toml` still shows the three leftovers; `rg -n 'shortDescription|Ultimate Chess' src/utils/product.test.ts` is empty. After the change, those strings are gone from the bundle config and the product identity test fails if they return.
 * **Found by:** Grok Bot, 2026-11-24, release-readiness review (SC-1)
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### `src/utils/format.ts` has no unit tests for `roundKeepSum`, `formatNodes`, `formatThemeLabel` or `getInitials`
+
+* **ID:** f-20261124-06 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** test-coverage review of old upstream code (Felix t85u, pass 2) at origin/master `d7877bce8`
+* **Where:** `src/utils/format.ts` (`capitalize` `:100-102`, `formatThemeLabel` `:104-123`, `formatNodes` `:125-136`, `getInitials` `:158-162`, `roundKeepSum` `:164-184`). The file existed before merge-base `9654961d6`. Callers include the practice W/D/L bar (`src/components/panels/practice/RepertoireInfo.tsx:823`), engine node/nps display (`BestMoves.tsx:357-358`), puzzle theme labels, and player/engine initials. `src/utils/format.test.ts` covers `formatRelativeTime`, `formatReviewInterval`, `formatDecimal`, `formatTime`, `formatBytes` and `formatMoveNumber` only.
+* **Defect:** those five helpers have no unit tests (their names do not appear in any `*test*` file). The important one is `roundKeepSum`, which floors each share and distributes the remainder so the W/D/L percentages add to 100. Its loop only increments when the remainder is positive (`for (let i = 0; i < remainder; i++)`), so a floored sum already above the target is left alone. `formatNodes` repeatedly divides by 1000 and labels k/M/B/T; `formatThemeLabel` splits snake/camel/digit tokens and title-cases them. A change here can mis-label puzzle themes, engine node counts, or the practice win/draw/loss bar while `format.test.ts` stays green. This is low priority: it is a coverage gap, not a demonstrated display bug. (Skip `src/utils/phase.ts`, already filed as `f-20261121-04`.)
+* **Failure scenario:** a refactor of `roundKeepSum`'s remainder distribution, or of `formatNodes`' unit boundaries, changes the practice W/D/L percentages so they no longer add to 100, or prints `1000k` instead of `1.00M` for engine nodes, and no unit test fails.
+* **Fix:** extend `src/utils/format.test.ts` for: (1) `roundKeepSum` on shares that already sum to 100, on ties in the decimal part, on an all-zero input, and on a floored sum above the target; (2) `formatNodes` at the 1000/1_000_000 boundaries and with `bigint`; (3) `formatThemeLabel` on snake, camel, and digit-mixed slugs, plus the empty/punctuation-only case that returns the raw string; (4) `getInitials` on a single token and on several names.
+* **Proof:** `rg -n 'roundKeepSum|formatNodes|formatThemeLabel|getInitials|^export function capitalize' src/utils/format.test.ts` is empty today. After the tests exist, the same command lists them, and a temporary revert of `roundKeepSum`'s remainder loop (or of a `formatNodes` boundary) turns those new assertions red.
+* **Found by:** Grok Bot, 2026-11-24, old-upstream coverage review (SC-2)
