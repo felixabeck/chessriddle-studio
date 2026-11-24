@@ -16,7 +16,7 @@ import {
 } from "./annotation";
 import { parseSanOrUci, positionFromFen } from "./chessops";
 import { makePgnDrawings, PGN_COMMENT_COMMAND, toDrawShape } from "./drawings";
-import { harmonicMean, isPrefix, mean } from "./misc";
+import { harmonicMean, mean } from "./misc";
 import { DIAGRAM_MARKER, splitPgnComment } from "./pgnComment";
 import {
     formatScore,
@@ -1007,18 +1007,4 @@ export function getMaterialDiff(fen: string) {
 
 export function stripClock(fen: string): string {
     return fen.split(" ").slice(0, -2).join(" ");
-}
-
-export function hasMorePriority(position1: number[], position2: number[]): boolean {
-    if (isPrefix(position1, position2)) {
-        return true;
-    }
-
-    // remove common beggining of the arrays
-    let i = 0;
-    while (i < position1.length && i < position2.length && position1[i] === position2[i]) {
-        i++;
-    }
-
-    return position1[i] < position2[i];
 }

@@ -19,7 +19,6 @@ import {
     getGameStats,
     getOpening,
     getPGN,
-    hasMorePriority,
     headersToPGN,
     openingLineFens,
     parsePGN,
@@ -1165,17 +1164,6 @@ test("NAGs are consistent", () => {
         const nag = ANNOTATION_INFO[k as Annotation].nag!;
         expect(NAG_INFO.get(nag)).toBe(k);
     }
-});
-
-test("priority comparison", () => {
-    expect(hasMorePriority([0, 0], [0])).toBe(false);
-    expect(hasMorePriority([0], [0, 0])).toBe(true);
-    expect(hasMorePriority([0], [1])).toBe(true);
-    expect(hasMorePriority([1], [0])).toBe(false);
-    expect(hasMorePriority([0, 0], [0, 1])).toBe(true);
-    expect(hasMorePriority([0, 1], [0, 0])).toBe(false);
-    expect(hasMorePriority([0, 1], [0, 2])).toBe(true);
-    expect(hasMorePriority([0, 2], [0, 1])).toBe(false);
 });
 
 test("Start headers accept only bounded existing nonnegative paths", () => {

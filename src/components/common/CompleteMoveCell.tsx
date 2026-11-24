@@ -8,8 +8,9 @@ import Comment from "@/components/common/Comment";
 import IconAction from "@/components/common/IconAction";
 
 import type { Annotation } from "@/utils/annotation";
-import { hasMorePriority, stripClock } from "@/utils/chess";
+import { stripClock } from "@/utils/chess";
 import { formatMoveNumber } from "@/utils/format";
+import { isPrefix } from "@/utils/misc";
 import { isRepertoireTab } from "@/utils/tabs";
 import { getEffectiveGameEnd, type TreeNode } from "@/utils/treeReducer";
 import type { NotationNodeIndex } from "./notationRows";
@@ -50,24 +51,34 @@ function getTranspositionMap(root: TreeNode) {
   return map;
 }
 
-function getTranspositions(
+/**
+ * Where a move's transposition marker leads, or undefined when its position occurs nowhere else.
+ * Every occurrence is marked, whichever line was entered first. The target is the first other
+ * occurrence in tree order (main line first) that has a continuation, because that is where the
+ * position was already analysed; when none continues, the first other occurrence. An occurrence on
+ * the move's own line is a repetition, not a transposition, and is never a target.
+ */
+function getTranspositionTarget(
   fen: string,
   node: TreeNode,
   position: number[],
   root: TreeNode,
   index: NotationNodeIndex,
-) {
-  if (position.length === 0 || position.every((value) => value === 0)) return [];
+): number[] | undefined {
+  if (position.length === 0) return undefined;
 
-  const matchingNodes = getTranspositionMap(root).get(stripClock(fen)) || [];
-  const paths: number[][] = [];
+  const matchingNodes = getTranspositionMap(root).get(stripClock(fen));
+  if (!matchingNodes || matchingNodes.length < 2) return undefined;
+
+  let firstOther: number[] | undefined;
   for (const targetNode of matchingNodes) {
+    if (targetNode === node) continue;
     const targetPath = pathForNotationNode(index, targetNode);
-    if (targetPath && targetNode !== node && !hasMorePriority(position, targetPath)) {
-      paths.push(targetPath);
-    }
+    if (!targetPath || isPrefix(targetPath, position) || isPrefix(position, targetPath)) continue;
+    if (targetNode.children.length > 0) return targetPath;
+    firstOther ??= targetPath;
   }
-  return paths;
+  return firstOther;
 }
 
 type CompleteMoveCellProps = {
@@ -113,8 +124,8 @@ function CompleteMoveCell({
   const path = useMemo(() => pathForNotationNode(nodeIndex, node) ?? [], [node, nodeIndex]);
   const isCurrentVariation = providedIsCurrentVariation ?? node === state.currentNode();
   const isStart = providedIsStart ?? equal(path, state.headers.start || []);
-  const transpositions = useMemo(
-    () => getTranspositions(fen, node, path, root, nodeIndex),
+  const transpositionTarget = useMemo(
+    () => getTranspositionTarget(fen, node, path, root, nodeIndex),
     [fen, node, nodeIndex, path, root],
   );
   const [open, setOpen] = useState(false);
@@ -207,10 +218,10 @@ function CompleteMoveCell({
         ) : (
           moveCell
         )}
-        {transpositions.length > 0 && (
+        {transpositionTarget && (
           <TranspositionAction
             onClick={() => {
-              if (store.getState().root === root) store.getState().goToMove(transpositions[0]);
+              if (store.getState().root === root) store.getState().goToMove(transpositionTarget);
             }}
           />
         )}

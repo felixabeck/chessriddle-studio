@@ -587,6 +587,127 @@ test("updates transposition actions when another branch is added", async () => {
   expect(host.querySelector('[aria-label="Notation.Transposition"]')).not.toBeNull();
 });
 
+function positionNode(fen: string, children: TreeNode[] = [], clocks = "0 1"): TreeNode {
+  const node = createNode({
+    fen: `${fen} w - - ${clocks}`,
+    move: parseUci("e2e4")!,
+    san: fen,
+    halfMoves: 1,
+  });
+  node.children = children;
+  return node;
+}
+
+// Each case renders the move at `cell` and names the path its marker jumps to, or null for none.
+test.each([
+  [
+    "a main-line move reached first elsewhere jumps to the analysed variation",
+    () => [
+      positionNode("shared"),
+      positionNode("detour", [positionNode("shared", [positionNode("reply")])]),
+    ],
+    [0],
+    [1, 0],
+  ],
+  [
+    "an analysed variation move is marked as well and jumps to the main-line occurrence",
+    () => [
+      positionNode("shared"),
+      positionNode("detour", [positionNode("shared", [positionNode("reply")])]),
+    ],
+    [1, 0],
+    [0],
+  ],
+  [
+    "an occurrence with a continuation wins over an earlier one without",
+    () => [
+      positionNode("shared"),
+      positionNode("detour", [positionNode("shared", [positionNode("reply")])]),
+      positionNode("shared"),
+    ],
+    [2],
+    [1, 0],
+  ],
+  [
+    "two analysed occurrences point at each other",
+    () => [
+      positionNode("shared", [positionNode("reply")]),
+      positionNode("shared", [positionNode("other-reply")]),
+    ],
+    [0],
+    [1],
+  ],
+  [
+    "of several analysed occurrences the first in tree order wins",
+    () => [
+      positionNode("shared"),
+      positionNode("detour", [positionNode("shared", [positionNode("reply")])]),
+      positionNode("shared", [positionNode("other-reply")]),
+    ],
+    [0],
+    [1, 0],
+  ],
+  [
+    "move counters do not make the same position a different one",
+    () => [
+      positionNode("shared", [], "0 5"),
+      positionNode("detour", [positionNode("shared", [positionNode("reply")], "2 9")]),
+    ],
+    [0],
+    [1, 0],
+  ],
+  [
+    "a repetition on the move's own line is not a transposition",
+    () => [positionNode("shared", [positionNode("away", [positionNode("shared")])])],
+    [0, 0, 0],
+    null,
+  ],
+  [
+    "a repetition is skipped in favour of an occurrence on another line",
+    () => [
+      positionNode("shared", [positionNode("away", [positionNode("shared")])]),
+      positionNode("shared"),
+    ],
+    [0],
+    [1],
+  ],
+] as const)("transposition marker: %s", async (_name, children, cell, expected) => {
+  const tree = defaultTree();
+  tree.root.children = children();
+  const store = createTreeStore();
+  store.setState({ ...store.getState(), root: tree.root });
+  const node = store.getState().getNode([...cell])!;
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="tab">
+          <CompleteMoveCell
+            node={node}
+            nodeIndex={createNotationNodeIndex(tree.root)}
+            root={tree.root}
+            halfMoves={node.halfMoves}
+            move={node.san}
+            fen={node.fen}
+            comment=""
+            annotations={[]}
+            showComments={false}
+            isStart={false}
+            isCurrentVariation={false}
+          />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  const marker = host.querySelector<HTMLButtonElement>('[aria-label="Notation.Transposition"]');
+  await act(async () => {
+    marker?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+  });
+  // The cursor starts at the root, so a marker that jumps nowhere cannot pass as a jump.
+  expect(marker === null ? null : store.getState().position).toEqual(expected);
+});
+
 test.each([
   ["workspace", false, false],
   ["workspace", true, false],
