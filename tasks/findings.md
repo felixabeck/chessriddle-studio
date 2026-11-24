@@ -28947,3 +28947,22 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario:** a later import or game-list change takes the nearby comment as the intended policy and "restores" the ELO skip, or tries to wire `max_rating` / `query.speed` back into `NewGame` / `GameQuery`. The first would silently drop unrated games on import; the others would not compile, but only after someone has already gone down a dead path. Players are not affected until that happens; the comments are what would steer the next edit wrong.
 * **Fix:** delete the three commented-out blocks. Do not reintroduce an ELO skip, a `max_rating` column, or a `games.speed` filter; unrated games stay importable, and speed is already expressed as `TimeControl` / `time_controls`.
 * **Found by:** full-scope review of the Rust backend (commands, PathAuthority, downloads, engines, game database) for bugs, worthwhile refactors and code quality, Felix t94u, 2026-11-24. Verified by reading the live `Importer` / `TempGame` / `NewGame` / `GameQuery` / `schema.rs` definitions on `7d91c7788`. Related open finding (not the same defect): f-20261124-09 (statistics drop FEN games; this is only stale comments).
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### The Assistant's answer screenshot no longer matches after the rebase onto frequency-weighted practice
+
+* **ID:** f-20261124-13 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45421454008
+* **First red:** run 45421454008 on `77eae9390` (own push of the Assistant, range `7d91c7788..77eae9390`)
+* **Repair owner:** 30987728-f84c-4b90-a66a-b7f8ec64b590 on tuxedo-atlas, 2026-11-24T15:31:49Z
+* **Spotted outside diff:** no
+* **Where:** `e2e/assistant.spec.ts:144`, snapshot `e2e/assistant.spec.ts-snapshots/assistant-answer-assistant.png`
+* **Defect:** the snapshot was recorded and passed in the container on the pre-rebase tree (513 passed); after the rebase onto master with frequency-weighted practice, the page behind the docked Assistant panel renders differently and the full-page screenshot differs by 1,557 pixels (ratio 0.01).
+* **Failure scenario:** job `e2e` of Test run 45421454008: "expect(page).toHaveScreenshot(expected) failed — 1557 pixels (ratio 0.01 of all image pixels) are different. Snapshot: assistant-answer.png". The red `Test` run refuses every later push to master.
+* **Fix:** reproduce in the container on the rebased tree, confirm the difference is the upstream page content and not the Assistant panel, and re-record the snapshot (or mask the unrelated region).
+* **Proof:** `pnpm test:e2e:container` green on the rebased tree; the next `Test` run's `e2e` job succeeds.
+* **Found by:** Claude Code (Opus 5.5), build run tasks/plans/2026-11-24-help-assistant.md, 2026-11-24
