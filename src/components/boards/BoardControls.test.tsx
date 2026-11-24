@@ -5,7 +5,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { Provider as JotaiProvider, createStore as createJotaiStore } from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
-import { activeTabAtom, currentTabAtom, gameStateFamily, tabsAtom } from "@/state/atoms";
+import {
+  activeTabAtom,
+  currentTabAtom,
+  gameInputColorAtom,
+  playFromHereColorFamily,
+  gameStateFamily,
+  tabsAtom,
+} from "@/state/atoms";
 import {
   closeTreeStore,
   createTreeStore,
@@ -388,6 +395,7 @@ describe("BoardControls tab type durability", () => {
 
   test("Play from here seeds a new play tab from the current line and leaves analysis intact", async () => {
     await act(async () => {
+      jotaiStore.set(gameInputColorAtom, "random");
       treeStore.getState().makeMoves({ payload: ["e4", "e5", "Nf3"] });
       treeStore.getState().goToMove([0]);
       treeStore.getState().makeMove({ payload: "c5" });
@@ -429,6 +437,46 @@ describe("BoardControls tab type durability", () => {
     expect(playState.root.children[0].children[0].comment).toBe("");
     expect(playState.root.children[0].children[0].children).toEqual([]);
     expect(jotaiStore.get(activeTabAtom)).toBe(playTab!.value);
+    expect(jotaiStore.get(playFromHereColorFamily(playTab!.value))).toEqual({ chosen: null });
+    expect(jotaiStore.get(gameInputColorAtom)).toBe("random");
+  });
+
+  test.each(["white", "black", "random"] as const)(
+    "Play from here after 1.e4 writes a seed and leaves global colour %s",
+    async (prior) => {
+      await act(async () => {
+        jotaiStore.set(gameInputColorAtom, prior);
+        treeStore.getState().makeMove({ payload: "e4" });
+      });
+
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('[aria-label="Board.Action.PlayFromHere"]')!
+          .click();
+      });
+
+      const playTab = jotaiStore.get(tabsAtom).find((open) => open.type === "play");
+      expect(jotaiStore.get(playFromHereColorFamily(playTab!.value))).toEqual({ chosen: null });
+      expect(jotaiStore.get(gameInputColorAtom)).toBe(prior);
+    },
+  );
+
+  test("Play from here at a black-to-move root FEN writes a seed and leaves global colour", async () => {
+    await act(async () => {
+      jotaiStore.set(gameInputColorAtom, "white");
+      treeStore.getState().setFen("8/8/8/4k3/8/8/4P3/4K3 b - - 0 1");
+    });
+    expect(treeStore.getState().position).toEqual([]);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.PlayFromHere"]')!
+        .click();
+    });
+
+    const playTab = jotaiStore.get(tabsAtom).find((open) => open.type === "play");
+    expect(jotaiStore.get(playFromHereColorFamily(playTab!.value))).toEqual({ chosen: null });
+    expect(jotaiStore.get(gameInputColorAtom)).toBe("white");
   });
 
   test("converts a play tab to analysis in place without opening another tab", async () => {

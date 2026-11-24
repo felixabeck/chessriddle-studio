@@ -36,6 +36,7 @@ import {
   enginesAtom,
   flipBoardAfterMoveAtom,
   gameInterruptionFamily,
+  playFromHereColorFamily,
   gameStateFamily,
   gameOpeningBookEnabledAtom,
   gameOpeningBookMaxPlyAtom,
@@ -48,7 +49,7 @@ import {
 import { positionFromFen } from "@/utils/chessops";
 import { uciNormalize } from "@/utils/chess";
 import { useTauriListener } from "@/platform/useTauriListener";
-import { getNodeAtPath, type GameHeaders } from "@/utils/treeReducer";
+import { getMainlineEndNode, getNodeAtPath, type GameHeaders } from "@/utils/treeReducer";
 import DraftNumberInput from "../common/DraftNumberInput";
 import EngineLogsView from "../common/EngineLogsView";
 import FileInput from "../common/FileInput";
@@ -381,11 +382,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
   }
 
   const [pos, error] = useMemo(() => {
-    let node = root;
-    while (node.children.length > 0) {
-      node = node.children[0];
-    }
-    return positionFromFen(node.fen);
+    return positionFromFen(getMainlineEndNode(root).fen);
   }, [root]);
 
   const syncTreeWithMovesRef = useRef(syncTreeWithMoves);
@@ -1054,6 +1051,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
     setWhiteTime(null);
     setBlackTime(null);
     resetTree();
+    atomStore.set(playFromHereColorFamily(ownerTabId), null);
   }
 
   useEffect(() => {

@@ -12,6 +12,7 @@ import {
     findMainlinePath,
     getBoardState,
     getGameName,
+    getMainlineEndNode,
     getMemoizedBoardStateMap,
     getNodeAtPath,
     getResolvedPathLength,
@@ -312,6 +313,17 @@ test("lineToTree stops copying when a path node has a null san", () => {
     expect(copied.position).toEqual([0]);
     expect(copied.root.children.map((node) => node.san)).toEqual(["e4"]);
     expect(copied.root.children[0].children).toEqual([]);
+});
+
+test("getMainlineEndNode is the last children[0] node, ignoring sibling variations", () => {
+    const root = defaultTree().root;
+    expect(getMainlineEndNode(root)).toBe(root);
+    const first = child("first", 1);
+    const reply = child("reply", 2);
+    const side = child("side", 2);
+    first.children.push(reply, side);
+    root.children.push(first);
+    expect(getMainlineEndNode(root)).toBe(reply);
 });
 
 test("path lookup stops at the last valid node instead of crossing a missing child", () => {

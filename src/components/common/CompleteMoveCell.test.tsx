@@ -9,9 +9,11 @@ import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
 import { TreeStateContext } from "./TreeStateContext";
 import { createNotationNodeIndex, type NotationNodeIndex } from "./notationRows";
 
-const { currentTabAtom, moveCell } = vi.hoisted(() => ({
+const { currentTabAtom, moveCell, tab, playFromHere } = vi.hoisted(() => ({
   currentTabAtom: Symbol("current-tab"),
   moveCell: { useReal: false },
+  tab: { value: "tab", type: undefined as string | undefined },
+  playFromHere: vi.fn(),
 }));
 
 vi.mock("@/state/atoms", () => ({
@@ -21,9 +23,12 @@ vi.mock("@/state/atoms", () => ({
   moveNotationTypeAtom: "type",
 }));
 vi.mock("jotai", () => ({
-  useAtomValue: () => [{ value: "tab" }],
+  useAtomValue: () => [tab],
   useSetAtom: () => vi.fn(),
   useAtom: (atom: unknown) => [atom === "type" ? "letters" : true],
+}));
+vi.mock("@/components/boards/usePlayFromHere", () => ({
+  usePlayFromHere: () => playFromHere,
 }));
 vi.mock("@/utils/tabs", () => ({
   isRepertoireTab: (tab: unknown) => !!tab,
@@ -37,6 +42,7 @@ vi.mock("lucide-react", () => {
     Copy: Icon,
     Flag: Icon,
     Grid2x2: Icon,
+    Target: Icon,
     Trash2: Icon,
   };
 });
@@ -145,6 +151,8 @@ let root: Root;
 
 beforeEach(() => {
   moveCell.useReal = false;
+  tab.type = undefined;
+  playFromHere.mockReset();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -923,3 +931,112 @@ test.each([true, false])(
     expect(deleteMove).not.toHaveBeenCalled();
   },
 );
+
+async function renderPlayFromHereLine(type: string) {
+  tab.type = type;
+  const tree = defaultTree();
+  tree.headers.orientation = "black";
+  const e4 = createNode({
+    fen: "after-e4 b - - 0 1",
+    move: parseUci("e2e4")!,
+    san: "e4",
+    halfMoves: 1,
+  });
+  const e5 = createNode({
+    fen: "after-e5 w - - 0 1",
+    move: parseUci("e7e5")!,
+    san: "e5",
+    halfMoves: 2,
+  });
+  const nf3 = createNode({
+    fen: "after-nf3 b - - 1 2",
+    move: parseUci("g1f3")!,
+    san: "Nf3",
+    halfMoves: 3,
+  });
+  e5.children = [nf3];
+  e4.children = [e5];
+  tree.root.children = [e4];
+  const store = createTreeStore();
+  store.setState({
+    ...store.getState(),
+    root: tree.root,
+    headers: tree.headers,
+    position: [0],
+  });
+  const nodeIndex = createNotationNodeIndex(tree.root);
+  const cell = (node: TreeNode, isCurrent: boolean) => (
+    <CompleteMoveCell
+      node={node}
+      nodeIndex={nodeIndex}
+      root={tree.root}
+      halfMoves={node.halfMoves}
+      move={node.san}
+      fen={node.fen}
+      comment=""
+      annotations={[]}
+      showComments={false}
+      isCurrentVariation={isCurrent}
+    />
+  );
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="tab">
+          {cell(e4, true)}
+          {cell(e5, false)}
+          {cell(nf3, false)}
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+  const moveButton = (san: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>("[data-move]")].find(
+      (button) => button.dataset.move === san,
+    )!;
+  return { store, analysisRoot: tree.root, moveButton };
+}
+
+test("an analysis tab offers Play from here on a non-current move and calls it with that path", async () => {
+  const { store, analysisRoot, moveButton } = await renderPlayFromHereLine("analysis");
+  expect(store.getState().position).toEqual([0]);
+
+  await act(async () => {
+    moveButton("e5").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+  });
+
+  const items = [...host.querySelectorAll<HTMLButtonElement>("[data-menu-item]")];
+  expect(items[0]?.textContent).toBe("Board.Action.PlayFromHere");
+  await act(async () => items[0]!.click());
+  expect(playFromHere).toHaveBeenCalledExactlyOnceWith(analysisRoot, "black", [0, 0]);
+});
+
+test("Play from here does not fire after the tree root has been replaced", async () => {
+  const { store, analysisRoot, moveButton } = await renderPlayFromHereLine("analysis");
+  await act(async () => {
+    moveButton("e5").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+  });
+  store.setState({ root: { ...analysisRoot } });
+  await act(async () => {
+    [...host.querySelectorAll<HTMLButtonElement>("[data-menu-item]")]
+      .find((item) => item.textContent === "Board.Action.PlayFromHere")!
+      .click();
+  });
+  expect(playFromHere).not.toHaveBeenCalled();
+});
+
+test("a play tab omits Play from here from the move menu", async () => {
+  const { moveButton } = await renderPlayFromHereLine("play");
+  await act(async () => {
+    moveButton("e5").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+  });
+  expect(
+    [...host.querySelectorAll("[data-menu-item]")].map((item) => item.textContent),
+  ).not.toContain("Board.Action.PlayFromHere");
+});

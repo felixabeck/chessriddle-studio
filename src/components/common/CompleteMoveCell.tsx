@@ -1,9 +1,10 @@
 import { useOwnerTab } from "@/state/tabScope";
 import { Box, Menu, Text } from "@mantine/core";
-import { Merge, ArrowUpRight, Copy, Flag, Grid2x2, Trash2 } from "lucide-react";
+import { Merge, ArrowUpRight, Copy, Flag, Grid2x2, Target, Trash2 } from "lucide-react";
 import equal from "fast-deep-equal";
 import { createContext, memo, useContext, useMemo, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { usePlayFromHere } from "@/components/boards/usePlayFromHere";
 import Comment from "@/components/common/Comment";
 import IconAction from "@/components/common/IconAction";
 
@@ -250,6 +251,7 @@ function TranspositionAction({ onClick }: { onClick: () => void }) {
 }
 
 type MoveMenuActions = {
+  playFromHere?: () => void;
   toggleDiagram?: () => void;
   markGameEnd?: () => void;
   markStart?: () => void;
@@ -273,6 +275,14 @@ function MoveActionItems({
   const { t } = useTranslation();
   return (
     <>
+      {actions.playFromHere && (
+        <Menu.Item
+          leftSection={<Target size="0.875rem" />}
+          onClick={() => onAction(actions.playFromHere!)}
+        >
+          {t("Board.Action.PlayFromHere")}
+        </Menu.Item>
+      )}
       {actions.toggleDiagram && (
         <Menu.Item
           leftSection={<Grid2x2 size="0.875rem" />}
@@ -358,6 +368,7 @@ function OpenMoveMenu({
 }) {
   const [currentTab] = useOwnerTab();
   const deletion = useContext(MoveDeletionContext);
+  const playFromHere = usePlayFromHere();
   const actions = store.getState();
   const mainline = path.length > 0 && path.every((index) => index === 0);
   const isGameEnd = equal(getEffectiveGameEnd(root)?.position, path);
@@ -385,6 +396,10 @@ function OpenMoveMenu({
       <Menu.Dropdown>
         <MoveActionItems
           actions={{
+            playFromHere:
+              currentTab?.type === "analysis"
+                ? () => playFromHere(root, store.getState().headers.orientation, path)
+                : undefined,
             toggleDiagram: () => actions.toggleDiagram(path),
             markGameEnd:
               currentTab && mainline

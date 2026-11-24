@@ -15,17 +15,16 @@ import {
 } from "lucide-react";
 import { tauri } from "@/platform/tauri";
 import domtoimage from "dom-to-image";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue } from "jotai";
 import { memo, useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import IconAction from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { autoSaveAtom, eraseDrawablesOnClickAtom, tabsAtom } from "@/state/atoms";
+import { autoSaveAtom, eraseDrawablesOnClickAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
-import { createTab, runTabCreation } from "@/utils/tabs";
-import { lineToTree } from "@/utils/treeReducer";
+import { usePlayFromHere } from "./usePlayFromHere";
 
 interface BoardControlsProps {
   boardRef: React.RefObject<HTMLDivElement | null>;
@@ -71,9 +70,9 @@ function BoardControls({
 
   const keyMap = useAtomValue(keyMapAtom);
   const [currentTab, setCurrentTab] = useOwnerTab();
-  const setTabs = useSetAtom(tabsAtom);
   const autoSave = useAtomValue(autoSaveAtom);
   const eraseDrawablesOnClick = useAtomValue(eraseDrawablesOnClickAtom);
+  const playFromHere = usePlayFromHere();
 
   const orientation = headers.orientation || "white";
   const toggleOrientation = () =>
@@ -85,15 +84,7 @@ function BoardControls({
 
   function playFromHereOrAnalyze() {
     if (currentTab?.type === "analysis") {
-      void runTabCreation({
-        create: () =>
-          createTab({
-            tab: { name: t("Home.NewGame"), type: "play" },
-            setTabs,
-            initialTree: lineToTree(root, headers.orientation, position),
-          }),
-        onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
-      });
+      playFromHere(root, headers.orientation, position);
       return;
     }
     setCurrentTab((tab) => ({

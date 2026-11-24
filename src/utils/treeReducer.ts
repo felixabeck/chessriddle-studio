@@ -118,10 +118,7 @@ export function getEffectiveTermination(
 export function applyGameEndLoadDefault(tree: TreeState): TreeState {
     let endNode: EffectiveGameEnd["node"] | undefined = getEffectiveGameEnd(tree.root)?.node;
     if (!endNode && tree.headers.result !== "*") {
-        let last = tree.root;
-        while (last.children[0]) {
-            last = last.children[0];
-        }
+        const last = getMainlineEndNode(tree.root);
         if (last !== tree.root) {
             endNode = Object.assign(last, { gameEnd: {} });
         }
@@ -313,6 +310,13 @@ export const getNodeAtPath = (node: TreeNode, path: number[]): TreeNode => {
     }
     return currentNode;
 };
+
+/** The last node of the unique children[0] mainline, which is `root` when it has no moves. */
+export function getMainlineEndNode(root: TreeNode): TreeNode {
+    let node = root;
+    while (node.children.length > 0) node = node.children[0];
+    return node;
+}
 
 /**
  * The path to the first mainline node (the root included) that has the same position as the

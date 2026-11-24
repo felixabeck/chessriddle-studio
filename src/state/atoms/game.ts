@@ -71,6 +71,17 @@ export const gameOpeningBookMaxPlyAtom = atomWithStorage<number>(
 type GameState = "settingUp" | "playing" | "gameOver";
 export const gameStateFamily = tabAtomFamily((_tab: string) => atom<GameState>("settingUp"));
 
+/**
+ * Per play tab, in memory only, disposed with the tab. null: an ordinary play tab, colour comes
+ * from the global preference. { chosen: null }: opened by Play from here, player 1's colour is
+ * derived from the side to move by `seededInputColor` (player 1 takes it unless player 1 is an
+ * engine and player 2 is human). { chosen: colour }: the user cycled the colour in this tab.
+ */
+export type PlayFromHereColor = { chosen: GameInputColor | null };
+export const playFromHereColorFamily = tabAtomFamily((_tab: string) =>
+    atom<PlayFromHereColor | null>(null),
+);
+
 export const playersFamily = tabAtomFamily((_tab: string) =>
     atom<{
         white: OpponentSettings;

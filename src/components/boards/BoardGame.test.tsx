@@ -46,6 +46,9 @@ vi.mock("@/state/atoms", async () => {
   const gameInterruptionFamily = atomFamily(() => atom<any>(null));
   const gameStateFamily = atomFamily(() => atom<"settingUp" | "playing" | "gameOver">("settingUp"));
   const pendingGameStartFamily = atomFamily(() => atom<Promise<void> | null>(null));
+  const playFromHereColorFamily = atomFamily(() =>
+    atom<{ chosen: "white" | "black" | "random" | null } | null>(null),
+  );
   const playersFamily = atomFamily(() =>
     atom({ white: { type: "human", name: "White" }, black: { type: "human", name: "Black" } }),
   );
@@ -59,6 +62,7 @@ vi.mock("@/state/atoms", async () => {
     gameInterruptionFamily,
     gameStateFamily,
     pendingGameStartFamily,
+    playFromHereColorFamily,
     playersFamily,
     disposeTabAtoms: (tabId: string) => {
       gameIdFamily.remove(tabId);
@@ -66,6 +70,7 @@ vi.mock("@/state/atoms", async () => {
       gameInterruptionFamily.remove(tabId);
       gameStateFamily.remove(tabId);
       pendingGameStartFamily.remove(tabId);
+      playFromHereColorFamily.remove(tabId);
       playersFamily.remove(tabId);
     },
     gameInputColorAtom: atom<"white" | "black" | "random">("white"),
@@ -285,11 +290,13 @@ import {
   gameOpeningBookEnabledAtom,
   gameOpeningBookHandleAtom,
   gameOpeningBookMaxPlyAtom,
+  playFromHereColorFamily,
   gameStateFamily,
   pendingGameStartFamily,
   playersFamily,
   tabsAtom,
 } from "@/state/atoms";
+import { WorkspaceTabScope } from "@/state/tabScope";
 import BoardGame from "./BoardGame";
 import { makeUci, parseUci } from "chessops";
 import { INITIAL_FEN } from "chessops/fen";
@@ -365,9 +372,11 @@ function mainlineUcis(rootNode: any) {
 async function render(tabId = "tab-a") {
   await act(async () =>
     root.render(
-      <TreeStateContext.Provider value={fixtures.treeStore}>
-        <BoardGame tabId={tabId} />
-      </TreeStateContext.Provider>,
+      <WorkspaceTabScope tabId={tabId}>
+        <TreeStateContext.Provider value={fixtures.treeStore}>
+          <BoardGame tabId={tabId} />
+        </TreeStateContext.Provider>
+      </WorkspaceTabScope>,
     ),
   );
 }
@@ -484,6 +493,7 @@ beforeEach(() => {
     store.set(gameInterruptionFamily(tabId), null);
     store.set(gameStateFamily(tabId), "settingUp");
     store.set(pendingGameStartFamily(tabId), null);
+    store.set(playFromHereColorFamily(tabId), null);
   }
   store.set(gamePlayer1SettingsAtom, { type: "human", name: "Alice" });
   store.set(gamePlayer2SettingsAtom, { type: "human", name: "Bob" });
@@ -2449,13 +2459,26 @@ test("successful unmount retires ownership as gameOver and remount can reset", a
   expect(store.get(gameStateFamily("tab-a"))).toBe("settingUp");
 });
 
+test("New game clears a play-from-here seed", async () => {
+  store.set(playFromHereColorFamily("tab-a"), { chosen: "black" });
+  store.set(gameStateFamily("tab-a"), "gameOver");
+  await render();
+  expect(store.get(playFromHereColorFamily("tab-a"))).toEqual({ chosen: "black" });
+  await act(async () => button("Home.NewGame").click());
+  expect(store.get(playFromHereColorFamily("tab-a"))).toBeNull();
+  expect(fixtures.resetTree).toHaveBeenCalled();
+  expect(store.get(gameStateFamily("tab-a"))).toBe("settingUp");
+});
+
 test("StrictMode setup replay restores the mounted owner", async () => {
   await act(async () =>
     root.render(
       <StrictMode>
-        <TreeStateContext.Provider value={fixtures.treeStore}>
-          <BoardGame tabId="tab-a" />
-        </TreeStateContext.Provider>
+        <WorkspaceTabScope tabId="tab-a">
+          <TreeStateContext.Provider value={fixtures.treeStore}>
+            <BoardGame tabId="tab-a" />
+          </TreeStateContext.Provider>
+        </WorkspaceTabScope>
       </StrictMode>,
     ),
   );
@@ -3250,9 +3273,11 @@ describe("native game delivery reconciliation", () => {
     await act(async () =>
       root.render(
         <StrictMode>
-          <TreeStateContext.Provider value={fixtures.treeStore}>
-            <BoardGame tabId="tab-a" />
-          </TreeStateContext.Provider>
+          <WorkspaceTabScope tabId="tab-a">
+            <TreeStateContext.Provider value={fixtures.treeStore}>
+              <BoardGame tabId="tab-a" />
+            </TreeStateContext.Provider>
+          </WorkspaceTabScope>
         </StrictMode>,
       ),
     );
