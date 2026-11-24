@@ -27981,7 +27981,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### FileFreshnessPublication's main-thread budget test asserts wall-clock time and fails under shared-machine load
 
-* **ID:** f-20261120-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261120-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** f45e25ea-dbe9-473f-a401-c199e5b3579e
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (split out of f-20261115-27's 2026-11-16 recurrence note while working that finding, 2026-11-20)
@@ -27991,6 +27991,8 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Open question:** how should the budget proof stay meaningful without depending on machine load in the coverage lane (deterministic clock injected around the apply path, a ratio between the wedged and clean arms, or running the wall-clock proof only in `pnpm verify:app`), given d-20260901-36 rejects raising timeouts?
 * **Related:** f-20261115-27 (handled; same push-gate symptom family, different cause).
 * **Found by:** Claude Code drain session f45e25ea-dbe9-473f-a401-c199e5b3579e
+* **Entry revalidation (2026-11-24, drain f223941f):** build → lens (review-tests). The open question resolves from existing code: `scripts/verify-app.mjs:5859` already asserts `fileFreshnessMainThreadWithinBudget` against the real application, so the wall-clock proof has an owner and the jsdom unit test only needs to prove that apply-path work lands inside the measured interval. A virtual clock advanced only by the stall hook does that without load dependence. The ratio option was rejected because it stays partly load-dependent. Raising the timeout or budget stays rejected under d-20260901-36. Change is test-only in one file.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"03ece63fbbfc85db5c033118d64f5d8a43b2c6496952ad7cceda441c94720e29","header_sha256":"4a221388b644e8eedf93ed752951599e5f0f05df56d9aaf5e355a76dc099f487","header_status":"open","input_sha256":"ec6ab986daa2fa8f83c008845b5680ee0279426d8a968fe1c380c9d2aa0fdf51","kind":"mutation-receipt","operation":"0bb0f37e26702234278d3b7090cf6f8e585052dcaa56534e30d7fbb90bbb1fab","options":{"headers":{"Entry":"lens"},"section":null},"request_id_sha256":null,"results":["f-20261120-01"],"target":"f-20261120-01","v":1} -->
 
 ### check-rust-release-surface-config-c O3.7 test times out at 5 s in the loaded frontend-coverage lane
 
