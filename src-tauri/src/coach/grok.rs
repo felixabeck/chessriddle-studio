@@ -704,6 +704,33 @@ pub(crate) mod tests {
             *self.token.lock().unwrap() = answers.into_iter().collect();
         }
 
+        /// Queues `answers` behind the current ones; the current last answer is then served
+        /// once more before them, because it is no longer the last.
+        fn then(&self, answers: impl IntoIterator<Item = (StatusCode, Value)>) {
+            self.token.lock().unwrap().extend(answers);
+        }
+
+        /// How many queued answers are left behind the one being repeated.
+        fn unanswered(&self) -> usize {
+            self.token.lock().unwrap().len().saturating_sub(1)
+        }
+
+        /// Waits, bounded, until the token endpoint has been asked `count` times, and returns
+        /// how often it has been asked by then.
+        async fn wait_for_polls(&self, count: usize) -> usize {
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    let polls = self.polls();
+                    if polls >= count {
+                        return polls;
+                    }
+                    tokio::time::sleep(Duration::from_millis(2)).await;
+                }
+            })
+            .await
+            .expect("the sign-in polls")
+        }
+
         fn device_field(&self, name: &str, value: Value) {
             self.device.lock().unwrap().1[name] = value;
         }
@@ -834,13 +861,10 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_sign_in_shows_the_code_waits_for_the_user_and_stores_the_connection() {
         let fixture = fixture();
-        fixture.double.answers([
-            pending_answer("authorization_pending"),
-            (StatusCode::BAD_GATEWAY, Value::Null),
-            pending_answer("slow_down"),
-            (StatusCode::TOO_MANY_REQUESTS, Value::Null),
-            granted(1, Some("player@example.com")),
-        ]);
+        // Until the user approves, the provider only ever answers "pending".
+        fixture
+            .double
+            .answers([pending_answer("authorization_pending")]);
         let code = fixture.begin("first").await.unwrap();
         assert_eq!(
             code,
@@ -850,8 +874,16 @@ pub(crate) mod tests {
                 expires_in_seconds: 600,
             }
         );
-        // Nothing is stored while the user is away.
+        // Nothing is stored while the user is away, however often the sign-in has asked.
+        let waiting = fixture.double.wait_for_polls(1).await;
         assert_eq!(fixture.stored().await, 0);
+        // Then the user approves; transient failures and a slow-down come first.
+        fixture.double.then([
+            (StatusCode::BAD_GATEWAY, Value::Null),
+            pending_answer("slow_down"),
+            (StatusCode::TOO_MANY_REQUESTS, Value::Null),
+            granted(1, Some("player@example.com")),
+        ]);
         let saved = fixture.finish("first").await.unwrap();
         assert_eq!(saved.connection.kind, ConnectionKind::Grok);
         assert_eq!(saved.connection.status, ConnectionStatus::Ready);
@@ -859,7 +891,10 @@ pub(crate) mod tests {
             saved.connection.account.as_deref(),
             Some("player@example.com")
         );
-        assert_eq!(fixture.double.polls(), 5);
+        // Every queued answer was consumed by its own poll before the grant was stored.
+        assert_eq!(fixture.double.unanswered(), 0);
+        let polls = fixture.double.polls();
+        assert!(polls >= waiting + 4, "{polls} polls after {waiting}");
 
         // The requests name the public client, the scopes and the device code.
         let device = fixture.double.device_forms.lock().unwrap()[0].clone();
@@ -882,7 +917,7 @@ pub(crate) mod tests {
         assert_eq!(secret.token_endpoint, fixture.double.server.url("/token"));
         let bearer = fixture.sign_in.accounts.bearer(handle).await.unwrap();
         assert_eq!(bearer.token, "grok-access-1");
-        assert_eq!(fixture.double.polls(), 5);
+        assert_eq!(fixture.double.polls(), polls);
 
         // The result is handed out once; the attempt is gone from the holder.
         assert_eq!(fixture.finish("first").await, Err(CoachError::Cancelled));
