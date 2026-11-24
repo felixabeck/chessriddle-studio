@@ -28892,7 +28892,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The Grok sign-in test checks "nothing stored" after the background poll loop may already have stored the connection
 
-* **ID:** f-20261124-11 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-11 · **Status:** handled · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45399506408
 * **Repair owner:** d7fe9f80-ecd3-4c85-a398-7ac3d9272fe1 on tuxedo-atlas, 2026-11-24T14:24:20Z
@@ -28901,6 +28901,8 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario:** `Test` run 45399506408 attempt 2 on 6450c350b (a README-only commit), job `rust-macos-test` 138494797288: `assertion left == right failed, left: 1, right: 0` at `src/coach/grok.rs:854`; 3740 passed, 1 failed. Attempt 1 of the same job ended with "The hosted runner lost communication with the server". While this is the newest red, `pnpm ci:remote:check` refuses every push.
 * **Fix:** queue only "authorization_pending" (repeated) before `begin`, wait for the first poll, assert nothing is stored, then append the remaining answers. Sibling of handled f-20261122-09 (same file family, the test read state before the spawned task reached it), separate mechanism.
 * **Found by:** Claude Code (Opus 5.5), 2026-11-24, post-push CI wait of the donation-link removal.
+* **Handled 2026-11-24** (Claude Code, Opus 5.5, session d7fe9f80-ecd3-4c85-a398-7ac3d9272fe1): commit aa36da541 "test(coach): hold the Grok grant until the test has seen nothing stored". The double answers only "authorization_pending" until the test has waited for the first poll and checked that nothing is stored; the remaining answers are then appended. Poll count is now asserted as `polls >= waiting + 4` with every queued answer consumed, since a poll in flight at the append may consume the repeated pending answer. No production change. **Proof:** with a 300 ms sleep staged before the check, the old test fails locally with the CI message (`left: 1, right: 0`) and the new one passes; `cargo test -- coach::grok::` 7 passed; `pnpm checks:pre-review` green. Review on agy (Google family, family-separated from the Claude author): review-correctness, review-root-cause, review-tests all APPROVED, no findings.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"52bc2f12dd2ce65febb44cdf8279a16829e8fab6e1ca218b41d2ac7622c29a26","header_sha256":"84b50781b78a149ac589d8cf25f0b11419675ee939423c75ff3385c226375706","header_status":"handled","input_sha256":"8d00d621d08998a69a076610e97930242f9713ba63bf506daecca64d6cf67a65","kind":"mutation-receipt","operation":"93181bd5f1262831dbd51d9fdad304b53c1ca8bdb0378328ece47df453ed27e3","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-11"],"target":"f-20261124-11","v":1} -->
 
 ---
 
