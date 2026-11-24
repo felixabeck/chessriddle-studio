@@ -23,8 +23,10 @@ caller's scope; only Rust-compiling commands take a machine-wide heavy-gate slot
 scripts).
 
 The push skill's §2 runs every final local gate through one command,
-`pnpm gates:push -- [--rust] [--frontend] [--bindings]` (`scripts/run-push-gates.mjs`; no flags is
-the contract-only run). For the selected blocks, it runs the mutation guard first (always), then
+`pnpm gates:push -- [--rust] [--frontend] [--bindings] [--base <commit>]`
+(`scripts/run-push-gates.mjs`; no flags is the contract-only run; `--base` replaces `@{u}` as the
+`related-tests` diff base for a proof of an already-published range; an empty changed-path set
+fails `related-tests` rather than passing with zero commands). For the selected blocks, it runs the mutation guard first (always), then
 the advisory `rust-target-eviction` step and `setup-rust` for Rust or bindings, then rebuilds
 `dist/` (`pnpm build-vite`) for every `dist/` consumer and runs `bindings:check` with `--bindings`.
 Contract and bundle run concurrently with rust-lint in the light stage. Every selected light lane

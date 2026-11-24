@@ -26,6 +26,7 @@ import {
   buildRelatedTestCommands,
   discoverChangedPaths,
   heavyGateCommand,
+  parsePushGateArguments,
   runPushGates,
   runRustCommand,
   selectPreReviewLanes,
@@ -177,6 +178,12 @@ async function makeHarness(
       },
     });
     await symlink("/usr/bin/git", join(bin, "git"));
+    if (upstream) {
+      // One unpublished commit: a push-gate run proves a range, and an empty one is refused.
+      await writeFile(join(root, "CHANGELOG.md"), "unpublished\n");
+      git(root, ["add", "CHANGELOG.md"]);
+      git(root, ["commit", "--quiet", "-m", "unpublished"]);
+    }
   }
 
   for (const executable of ["pnpm", "cargo", "bash", ...extraExecutables]) {
@@ -854,7 +861,7 @@ test("P0/P1 reds skip every subsequent selected gate (R2, R8, PG-63, PG-75, PG-7
       const result = await runPushGates(["--rust", "--frontend", "--bindings"], {
         cwd,
         env: { ...process.env },
-        discoverChangedPaths: () => [],
+        discoverChangedPaths: () => ["README.md"],
         spawnProcess: makeMockSpawner({ events, exits: { [command]: code } }),
       });
       assert.equal(result.exitCode, code);
@@ -1558,7 +1565,7 @@ test("scheduler-level beforeStep cancellation and injected spawn failures (PG-51
     const result = await runPushGates(["--frontend"], {
       cwd,
       env: { ...process.env, GATE_MEMORY_BYTES: String(7 * GIB) },
-      discoverChangedPaths: () => [],
+      discoverChangedPaths: () => ["README.md"],
       spawnProcess,
     });
     assert.equal(result.exitCode, 127);
@@ -1745,6 +1752,92 @@ test("related-tests reports missing upstream separately from other git failures"
   });
 });
 
+test("--base parsing accepts one commit and refuses a missing, flag-like or repeated value", () => {
+  assert.deepEqual(parsePushGateArguments(["--", "--frontend", "--base", "abc123"]), {
+    blocks: new Set(["frontend"]),
+    base: "abc123",
+  });
+  assert.equal(parsePushGateArguments(["--base=abc123"]).base, "abc123");
+  assert.equal(parsePushGateArguments(["--rust"]).base, undefined);
+  assert.match(parsePushGateArguments(["--base"]).error, /--base needs a commit/u);
+  assert.match(parsePushGateArguments(["--base", "--rust"]).error, /--base needs a commit/u);
+  assert.match(parsePushGateArguments(["--base="]).error, /--base needs a commit/u);
+  assert.match(
+    parsePushGateArguments(["--base", "a", "--base", "b"]).error,
+    /--base given more than once/u,
+  );
+});
+
+test("a published range (HEAD = @{u}) selects its paths for related-tests only with --base (f-20261124-03)", async (t) => {
+  const cwd = await temporarySchedulerRoot(t);
+  await initializeUpstream(cwd, { files: { ".gitignore": "/artifacts/\n" } });
+  const rangeStart = git(cwd, ["rev-parse", "HEAD"]).stdout.trim();
+  const sourcePath = "src/utils/annotation.ts";
+  await mkdir(dirname(join(cwd, sourcePath)), { recursive: true });
+  await writeFile(join(cwd, sourcePath), "export const annotation = 1;\n");
+  git(cwd, ["add", sourcePath]);
+  git(cwd, ["commit", "--quiet", "-m", "range"]);
+  git(cwd, ["push", "--quiet"]);
+  assert.equal(
+    git(cwd, ["rev-parse", "HEAD"]).stdout,
+    git(cwd, ["rev-parse", "@{u}"]).stdout,
+    "fixture must be fully published",
+  );
+  const vitest = `pnpm exec vitest related --run --passWithNoTests ${sourcePath}`;
+
+  const withoutBase = [];
+  const unscoped = await runPushGates(["--frontend"], {
+    cwd,
+    env: { ...process.env },
+    spawnProcess: makeMockSpawner({ events: withoutBase }),
+  });
+  assert.equal(unscoped.exitCode, 1, "an empty published range must not pass vacuously");
+  assert.equal(cliCommandStart(withoutBase, vitest), undefined);
+  const refused = unscoped.results.find((task) => task.name === "related-tests");
+  assert.equal(refused.status, "failed");
+  assert.match(refused.error.message, /HEAD is already published\. Pass --base <commit>/u);
+
+  const emptyRange = await runPushGates(["--frontend", "--base", "HEAD"], {
+    cwd,
+    env: { ...process.env },
+    spawnProcess: makeMockSpawner(),
+  });
+  assert.equal(emptyRange.exitCode, 1);
+  assert.match(
+    emptyRange.results.find((task) => task.name === "related-tests").error.message,
+    /No changed paths since merge-base HEAD HEAD: the range to prove is empty\./u,
+  );
+
+  for (const baseArguments of [["--base", rangeStart], [`--base=${rangeStart}`]]) {
+    const events = [];
+    const result = await runPushGates(["--", "--frontend", ...baseArguments], {
+      cwd,
+      env: { ...process.env },
+      spawnProcess: makeMockSpawner({ events }),
+    });
+    assert.equal(result.exitCode, 0);
+    assert.ok(cliCommandStart(events, vitest), `related-tests must test ${sourcePath}`);
+  }
+});
+
+test("an unresolvable --base fails related-tests without calling it a missing upstream", async (t) => {
+  const cwd = await temporarySchedulerRoot(t);
+  await initializeUpstream(cwd, { upstream: false });
+  const result = await runPushGates(["--frontend", "--base", "no-such-commit"], {
+    cwd,
+    env: { ...process.env },
+    spawnProcess: makeMockSpawner(),
+  });
+  assert.equal(result.exitCode, 1);
+  const related = result.results.find((task) => task.name === "related-tests");
+  assert.equal(related.status, "failed");
+  assert.match(
+    related.error.message,
+    /^Cannot determine related-tests changed paths: git merge-base HEAD no-such-commit failed/u,
+  );
+  assert.doesNotMatch(related.error.message, /missing upstream/iu);
+});
+
 test("Cargo allocation survives production bindings and Windows entrypoints", async (t) => {
   const exporter = [
     "cargo",
@@ -1929,7 +2022,7 @@ test("a running multi-command lane stops at its next boundary without an exit co
   const result = await runPushGates(["--rust"], {
     cwd,
     env: { ...process.env },
-    discoverChangedPaths: () => [],
+    discoverChangedPaths: () => ["README.md"],
     spawnProcess: makeMockSpawner({
       events,
       exits: { [contract]: 7 },
@@ -2172,7 +2265,7 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
       result = await runPushGates(["--rust"], {
         cwd,
         env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
-        discoverChangedPaths: () => [],
+        discoverChangedPaths: () => ["README.md"],
         spawnProcess: makeMockSpawner({
           events,
           exits: { "pnpm rust:target:evict": 1 },
@@ -2210,7 +2303,7 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
     const result = await runPushGates(["--rust"], {
       cwd,
       env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
-      discoverChangedPaths: () => [],
+      discoverChangedPaths: () => ["README.md"],
       spawnProcess,
     });
     assert.equal(result.exitCode, 0);
@@ -2251,7 +2344,7 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
     const result = await runPushGates(["--rust"], {
       cwd,
       env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
-      discoverChangedPaths: () => [],
+      discoverChangedPaths: () => ["README.md"],
       spawnProcess,
     });
     assert.equal(result.exitCode, 0);

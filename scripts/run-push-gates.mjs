@@ -245,20 +245,35 @@ function recordChildOutcome(task, result) {
   task.terminationError = result.terminationError;
 }
 
+const PUSH_GATE_USAGE =
+  "Usage: pnpm gates:push -- [--rust] [--frontend] [--bindings] [--base <commit>]";
+
+// `--base <commit>` selects related-tests paths from `merge-base HEAD <commit>` instead of
+// `merge-base HEAD @{u}`. A gate proof of an already-published range (HEAD = @{u}) names the
+// range's start here; without it the changed-path set is empty and related-tests runs nothing.
 export function parsePushGateArguments(argumentsList) {
   const args = [...argumentsList];
   if (args[0] === "--") args.shift();
   const blocks = new Set();
-  for (const argument of args) {
+  let base;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--base" || argument.startsWith("--base=")) {
+      const value = argument === "--base" ? args[(index += 1)] : argument.slice("--base=".length);
+      if (base !== undefined) return { error: `--base given more than once. ${PUSH_GATE_USAGE}` };
+      if (!value || value.startsWith("-")) {
+        return { error: `--base needs a commit. ${PUSH_GATE_USAGE}` };
+      }
+      base = value;
+      continue;
+    }
     const block = BLOCK_FLAGS[argument];
     if (!block) {
-      return {
-        error: `Unknown argument ${JSON.stringify(argument)}. Usage: pnpm gates:push -- [--rust] [--frontend] [--bindings]`,
-      };
+      return { error: `Unknown argument ${JSON.stringify(argument)}. ${PUSH_GATE_USAGE}` };
     }
     blocks.add(block);
   }
-  return { blocks };
+  return { blocks, base };
 }
 
 export function pushGateScheduleCommands(schedule = PUSH_GATE_SCHEDULE) {
@@ -296,6 +311,7 @@ export function discoverChangedPaths({
   listUntracked = (workspaceRoot) =>
     listWorkingTreeFiles({ workspaceRoot, pathspec: ".", untrackedOnly: true }),
   headline = "Cannot determine changed paths",
+  base: baseRef = undefined,
 } = {}) {
   const run = (args) => {
     // C locale: MISSING_UPSTREAM_STDERR matches git's untranslated wording.
@@ -308,17 +324,19 @@ export function discoverChangedPaths({
       const missingUpstream =
         !result.error &&
         args[0] === "merge-base" &&
+        baseRef === undefined &&
         MISSING_UPSTREAM_STDERR.test(result.stderr ?? "");
       throw gitFailure(args, result, missingUpstream ? `${headline}: missing upstream` : headline);
     }
     return String(result.stdout ?? "");
   };
 
-  const mergeBaseArgs = ["merge-base", "HEAD", "@{u}"];
+  const mergeBaseArgs = ["merge-base", "HEAD", baseRef ?? "@{u}"];
   const base = run(mergeBaseArgs).trim();
   if (!base) {
+    const reason = baseRef === undefined ? "missing upstream" : "no common history with --base";
     throw new Error(
-      `${headline}: missing upstream (git ${mergeBaseArgs.join(" ")} returned no merge base)`,
+      `${headline}: ${reason} (git ${mergeBaseArgs.join(" ")} returned no merge base)`,
     );
   }
   const tracked = run(["diff", "--name-only", "-z", base, "--"]).split("\0").filter(Boolean);
@@ -1063,7 +1081,7 @@ export async function runPushGates(
     process.stderr.write(`${parsed.error}\n`);
     return { exitCode: 2, results: [], logDirectory: undefined };
   }
-  const { blocks } = parsed;
+  const { blocks, base } = parsed;
   const activeSchedule =
     schedule ?? (preReviewMode ? PRE_REVIEW_GATE_SCHEDULE : PUSH_GATE_SCHEDULE);
   const logDirectory = makeLogDirectory(cwd);
@@ -1156,12 +1174,22 @@ export async function runPushGates(
           let changedPaths;
           try {
             const changes = customDiscoverChangedPaths
-              ? { paths: customDiscoverChangedPaths({ cwd }), mergeBase: undefined }
+              ? { paths: customDiscoverChangedPaths({ cwd, base }), mergeBase: undefined }
               : discoverChanges({
                   cwd,
                   runGit,
                   headline: "Cannot determine related-tests changed paths",
+                  base,
                 });
+            // An empty set means the range to prove was never selected (HEAD = @{u} after a
+            // push), not that nothing needs testing: refuse rather than pass with zero commands.
+            if (changes.paths.length === 0) {
+              throw new Error(
+                base === undefined
+                  ? "No changed paths since merge-base HEAD @{u}: HEAD is already published. Pass --base <commit> naming the start of the range to prove."
+                  : `No changed paths since merge-base HEAD ${base}: the range to prove is empty.`,
+              );
+            }
             changedPaths = changes.paths;
           } catch (error) {
             const failed = createTaskResult(logDirectory, relatedTestsLane.name, "lane", {

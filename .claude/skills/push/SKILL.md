@@ -54,7 +54,7 @@ interrupted runs, and accumulated work from another session.
 - Build an explicit owned-path manifest from files created or edited in the invoking conversation plus file scopes assigned to its finished workers. Compare it with the initial status. Ambiguous or foreign paths are excluded and left untouched. Commits already ahead of the upstream in this single-user checkout are Felix's own agents' unpushed work, reviewed before their commits: attribute them under `~/.claude/references/push-review-policy.md` §§1–2 and carry them with this push, never a reason to stop for Felix; stop only for a committer outside the Multi-Agent rubric or an unexpected remote (§1). A drain session (`--yes` at drain start) or a `build` run invoking this skill is the explicit push request. Owned work is committed through `.claude/skills/git/SKILL.md` before `$push`, in cohesive atomic commits of manifest paths, never with `git add -A`; `$push` itself commits only known coordination records (§4).
 - Gates execute against the complete worktree. Therefore stop before any compile, generator, formatter, or browser gate when a foreign dirty path is code, generated output, dependency/configuration, test, asset, locale, workflow, or another input to an affected gate. Only clearly inert foreign Markdown/planning files may remain. Never generate or commit an owned output from foreign dirty inputs.
 - Every workflow-created commit carries the acting agent as committer through the session-native committer contract (policy §1; never a per-command prefix), as named in the committer rubric of `/home/felixb/Projekte/agent-kit/references/multi-agent-coordination.md`: `Claude Code`, `Grok` for the Grok CLI run in Felix's terminal, or `GrokBot` for Felix's Grok Bot desktop assistant. Leave the author untouched and add no co-author trailer.
-- Determine pushed files from `BASE=$(git merge-base HEAD @{u})` and `git diff --name-only "$BASE"..HEAD`; they select the §2 gate flags. Owned uncommitted work is staged, reviewed under §3 and committed through `.claude/skills/git/SKILL.md` before the push starts. `$push` runs no lenses; the only lens run at push is policy §4a item 6's rebased-commit closure.
+- Determine pushed files from `BASE=$(git merge-base HEAD @{u})` and `git diff --name-only "$BASE"..HEAD`; they select the §2 gate flags (a proof of an already-published range uses the launch-upstream SHA in place of `@{u}`, see Related tests). Owned uncommitted work is staged, reviewed under §3 and committed through `.claude/skills/git/SKILL.md` before the push starts. `$push` runs no lenses; the only lens run at push is policy §4a item 6's rebased-commit closure.
 
 Markdown/planning-only changes need no *build* gate; the contract gate still runs. Their pre-commit review and clean-diff checks still apply.
 
@@ -223,7 +223,11 @@ Changes to workflows also run every gate whose toolchain they can affect. Change
 In push mode (`pnpm gates:push` with `--rust`, `--frontend`, or `--bindings`), the `related-tests`
 lane runs automatically after every selected light lane terminates green. It inspects existing
 changed paths from `git merge-base HEAD @{u}..HEAD` plus dirty paths (deleted paths excluded; a
-missing upstream fails the lane). No scripts branch is needed because the `contract` lane already
+missing upstream fails the lane). An empty changed-path set fails the lane instead of passing with
+zero commands (`f-20261124-03`). A gate proof of an already-published range, where `HEAD` = `@{u}`
+(a drain resume's `push-gate` attempt), passes `--base <sha>` naming the range's start (the
+launch-upstream SHA, policy "Canonical headless gate route"), so the lane diffs from
+`git merge-base HEAD <sha>`. The same SHA replaces `@{u}` when choosing the flags (§1). No scripts branch is needed because the `contract` lane already
 runs every `scripts/*-tests.mjs`.
 
 The lane, every pre-commit check (git skill) and build phase proofs (agent-kit build skill) use the same two commands:
