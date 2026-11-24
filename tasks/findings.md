@@ -28598,7 +28598,7 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 
 ### The opponent online-accounts card clips its own content at 320px with a 200% font scale
 
-* **ID:** f-20261123-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261123-01 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Where:** `src/components/databases/OpponentAccounts.tsx` (the linked-account card in the Players
   detail panel), recorded by `e2e/database-files.spec.ts:4044` (`opponent-accounts-linked-320`).
 * **Defect:** at 320px and 200% font scale the card is wider than its panel and is cut off on the
@@ -28614,6 +28614,10 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
   card's visible box at 320px/200%.
 * **Impact class:** ux
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"30f022089ee139179a46e9835a978fb0620464eaacdb616222ec5999023485c6","input_sha256":"84a103cd85d857157acab07ff771fe7baf1180de95442f863a3276aabb6f9bd0","kind":"mutation-receipt","operation":"f7fb61cdbfaec78678f0bc35cfde52163657afe4ff275b3d20141f412e8ea4bb","options":{"section":null},"request_id_sha256":null,"results":["f-20261123-01"],"target":"f-20261123-01","v":1} -->
+
+* **Closed as not holding (2026-11-24, drain session 3604582b-53bb-4db9-afe6-241a6b1eb9a1, no code change):** the card is not clipped, and every control can be reached. Measured in the pinned container, at 320px/200%/dark, with a temporary probe in `opponent-accounts-linked-320` that has since been reverted. The ancestor chain is `[data-opponent-accounts]` 574px inside the PersonalCard Paper, then that Paper at 640px, which is `min-width: 20rem` from `GridLayout.module.css` `.previewContent:has(> .mantine-Paper-root:not(.gameCard)) > *` under the compact view, then `.previewContent` at 272px with `overflow: auto` (scrollWidth 640, clientWidth 272). None of the card's own children is wider than the strip; the widest Group is 532px. `scrollIntoViewIfNeeded` put the Rapid checkbox at x=24 and the Classical checkbox at x=158 inside the pane (24–296, scrollLeft 308). Clicking each one toggled it. "Remove online games" and "Add online account" also scroll into view. The snapshot shows the pane at scrollLeft 0, which the finding read as clipping. This is the outcome d-20260831-16 accepts: content becomes reachable through an ancestor with `overflow-x: auto`, and the document does not scroll horizontally. It also matches the deliberate 20rem preview floor (d-20261012-17; the player-card online switch decision keeps that floor on the card's own tabs). The existing `assertNothingClipped(strip, { mode: "reachable" })` in the spec already asserts this.
+  * **Rejected:** the filed fix direction, `minWidth: 0` down to the card. It would contradict the recorded 20rem preview floor that GridLayout applies to every non-game preview card. Reflowing the whole compact preview below that floor would be a separate layout decision, and no evidenced defect calls for it.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"3d94fd0f45ba008d106a8a125387165bd241e028d3a93b6b0c7a8570c7e573d8","header_sha256":"39def8691bcf3845465886f5d6f07305192438dd9a6d3b14396d9f5e2214cb76","header_status":"handled","input_sha256":"b0c1ec6ee38c87408fc54f9247f17d78bd24bcdc6ef276ea80daa862358a2266","kind":"mutation-receipt","operation":"e63d791afc6cd481364e2d31e437e03a491fb9aa5cb3cd690aa3025e58e8e97e","options":{"section":null},"request_id_sha256":null,"results":["f-20261123-01"],"target":"f-20261123-01","v":1} -->
 
 ---
 
