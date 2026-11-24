@@ -1,4 +1,4 @@
-/** Tab order of the settings browser; each entry's title, description and icon live in `SettingsPage`. */
+/** Tab order of the settings browser; titles come from `settingCategoryTitle` below, descriptions and icons live in `SettingsPage`. */
 export const SETTING_CATEGORIES = [
     "board",
     "inputs",
