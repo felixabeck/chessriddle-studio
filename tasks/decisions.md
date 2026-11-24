@@ -14129,3 +14129,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The Tauri updater compares versions, so any version above 1.0.0 fixes the update offer; the minor bump is the conventional reading of the content. Reversal path: change the three version fields and the strings in `tauri.conf.json`/`Cargo.toml` together with the matching assertions in `src/utils/product.test.ts`; nothing has been tagged with 1.1.0 yet.
 * **Decided by:** Claude Code (Opus 5.5), autonomously under `full auto`, drain session 84acb421-5768-42cf-b53f-1431127f0ffb · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"bcee743034f57d1c6670b4c347fd00ae7443c85f06e097c70b26c073a265636a","input_sha256":"f07f2e64fd960a39533d7d4b3486b84c2ab9263092f5cd92e9d53e2985f7d647","kind":"mutation-receipt","operation":"5d584203403da92fcb2f763ca52d3a69fee2857c4bdad9f8b3c3224cb5d48cbf","options":{"section":null},"request_id_sha256":null,"results":["d-20261124-13"],"target":"decisions-ledger","v":1} -->
+
+### d-20261124-14 — When does the Add Database dialog close after a local PGN import is submitted?
+
+* **Question:** Felix imported Mega Database 2027 (12.6 M games, about 16 minutes) on 2026-11-24 and reported that after "Convert" the dialog stayed open with only a greyed-out button, while the live progress (game count, games per second, Cancel) sat hidden in the Library row behind it.
+* **Governs:** -
+* **Chosen:** Felix chose on 2026-11-24 to close the dialog as soon as the import is submitted, so the Library row shows the running import. A failure or cancellation after that is reported through the existing notification and Library row, not by leaving the filled dialog open.
+* **Rejected:** Showing the same progress inside the dialog: it duplicates the Library row's progress and Cancel in a second place.
+* **Reason:** The import runs for minutes and its only progress display was covered by the dialog. Reversal path: in `AddDatabase.tsx`'s local submit, await the conversion before `setOpened(false)` again, and restore the "keeps the modal open" assertions in `AddDatabase.test.tsx` and the e2e test in `e2e/database-files.spec.ts`.
+* **Decided by:** Felix, 2026-11-24, in an interactive Claude Code (Opus 5.5) session · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"c2fc77f5521f2ec7aa1cd4dca0b37e044ff1dd45e632119251c02e31bf2d8adb","input_sha256":"e97b918e6e0674c8682183cd2c014f7768808241280a194f7a25dc6f544c7627","kind":"mutation-receipt","operation":"5f652e5203a868e21a47cae0073f12fb2e04923354461cc41b2eb0f4744e33bd","options":{"section":null},"request_id_sha256":null,"results":["d-20261124-14"],"target":"decisions-ledger","v":1} -->
