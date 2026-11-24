@@ -27901,7 +27901,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### Three hand-rolled win/draw/loss bars, and `ResultsChart` carries a white/black branch that no caller reaches
 
-* **ID:** f-20261119-23 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-23 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t68u) at origin/master `0b14f4525`
 * **Where:**
@@ -27914,6 +27914,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Found by:** Grok Bot, refactoring review (t68u), origin/master `0b14f4525`.
 * **Correction (2026-11-19, same session):** the Failure scenario says the `total === 0` guard "never runs". That is wrong: every caller passes `playerPerspective`, so the guard is the live path for an empty record. Only the `playerPerspective === false` path is dead: the WhiteWon/BlackWon tooltips, and a `total === 0` bar that would compute `NaN` widths. The Fix is unchanged; the guard should become unconditional when the prop is removed.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"2335cb82140d6d28a0d58ca8db8973aa3ba0b2e5458429d3d4ec5ea17c8d16b8","input_sha256":"ff92b43f8c9c25892abce1d8e90092ad8ae35bb16bd8ce6b9872c915f66224c9","kind":"mutation-receipt","operation":"32f750e78eca4aac3a4cb05bb3890472914ee93947b8e30c96c323305344b832","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-23"],"target":"f-20261119-23","v":1} -->
+
+**Closed 2026-11-24:** `src/components/common/ResultBar.tsx` is the one W/D/L share bar: three segments with optional tooltip and label, and root props plus ref forwarded so a wrapping Mantine `Tooltip` still anchors (the repertoire move row's whole-bar tooltip; a test proves it). `ResultsChart`, `OpeningsTable`'s results column and `RepertoireInfo`'s `MoveRow` render through it and keep their own thresholds, label formats and colours (not unified). `ResultsChart` lost the `playerPerspective` prop and the WhiteWon/BlackWon branch, its `total === 0` guard is unconditional, and the Wins/Losses `defaultValue` fallbacks are gone. The five call sites and the `statisticsPanels.test.tsx` mock were updated. `ResultBar.tsx` is mapped into `databases-files` (scope-only baseline edit, precedent 30f7c5a3f). The e2e container suite passed 511/511 with no snapshot moved. Commit f0167bfed.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"b9ef68d792ae79be870b53a3685b4f21513f14a33d73eb8ab6c6088b764eeb88","header_sha256":"aab12094c30385d6e1cfc90052c794dd2e51c500e2574e5924fe238670f7dc05","header_status":"handled","input_sha256":"37b09e3f8527aa928f9b657a78ca7e6eda9fd62a55a228d630d6b0cfd8258343","kind":"mutation-receipt","operation":"d4f3a45a7e5581a7dbd1ace4922f2a50c1d87a31b504099d063d7bb364157c1a","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-23"],"target":"f-20261119-23","v":1} -->
 
 ---
 
