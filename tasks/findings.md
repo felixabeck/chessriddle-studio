@@ -28936,7 +28936,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### Commented-out game-database leftovers still name types and fields that no longer exist
 
-* **ID:** f-20261124-12 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-12 · **Status:** handled · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (full-scope Rust backend quality review, Felix t94u, at origin/master `7d91c7788`)
 * **Where:** three commented-out remnants in the game-database layer:
@@ -28954,6 +28954,8 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario:** a later import or game-list change takes the nearby comment as the intended policy and "restores" the ELO skip, or tries to wire `max_rating` / `query.speed` back into `NewGame` / `GameQuery`. The first would silently drop unrated games on import; the others would not compile, but only after someone has already gone down a dead path. Players are not affected until that happens; the comments are what would steer the next edit wrong.
 * **Fix:** delete the three commented-out blocks. Do not reintroduce an ELO skip, a `max_rating` column, or a `games.speed` filter; unrated games stay importable, and speed is already expressed as `TimeControl` / `time_controls`.
 * **Found by:** full-scope review of the Rust backend (commands, PathAuthority, downloads, engines, game database) for bugs, worthwhile refactors and code quality, Felix t94u, 2026-11-24. Verified by reading the live `Importer` / `TempGame` / `NewGame` / `GameQuery` / `schema.rs` definitions on `7d91c7788`. Related open finding (not the same defect): f-20261124-09 (statistics drop FEN games; this is only stale comments).
+* **Handled 2026-11-24 (drain next-finding, co-located with f-20261124-09):** `d172502be` deletes the three commented-out blocks (`Importer::end_headers` ELO skip, `TempGame::insert_to_db` `max_rating`, `load_games` `query.speed` filter). No live code changed.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3cbf2ac559dfe1682e5788ec761786c86cdb69948e226fe502ce9c51c3045ab3","header_sha256":"a63e59340e67456771f28a1c95df006b921448a3140525598518b39ced286957","header_status":"handled","input_sha256":"3af1dc91a7ed05ea252eeaa9a802568b5c8063858b2ecf685396d7832d4478cd","kind":"mutation-receipt","operation":"5decc75b6dc82656469225d20a703c5bb946ade841b311aa254f7eca754c8f9c","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-12"],"target":"f-20261124-12","v":1} -->
 
 ---
 
