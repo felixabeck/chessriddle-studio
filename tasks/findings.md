@@ -29071,7 +29071,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 ## 2026-11-24 — filed through the inbox spool
 
 ### Remote CI repair: Test
-* **ID:** f-20261124-19 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261124-19 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
 
 * **Impact class:** tooling
 * **Found by:** drain remote-CI check (Claude Code)
@@ -29081,3 +29081,5 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Proof:** `gh run view 45493926892 --log-failed`
 * **CI run:** 45493926892
 * **Repair owner:** 1cbb3816-c416-4240-a270-56676003661f on tuxedo-felix, 2026-11-24T22:03:56Z
+* **Handled (2026-11-24, drain 1cbb3816):** cause was d831646e5 adding the Handbuch (Guide) entry to `buildInAppMenuItems` without re-recording `e2e/async-errors.spec.ts-snapshots/compact-menu-root-async-errors.png`; the CI diff was that row alone. Reproduced red in the Playwright container, re-recorded only that snapshot with `pnpm test:e2e:update -- --project=async-errors --grep "compact title-bar: mouse actions"`, then the whole `async-errors` project passed in the container (58/58). Commit d11959f6c. review-correctness and review-root-cause approved; no other committed snapshot shows this menu open. Rejected: loosening the screenshot threshold, which would hide real menu regressions.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"aa689326ef642e68bfe42108cd05d6228dcf8f447ce09423a6bc2d607ca8ede3","header_sha256":"00a3e3f7c07c96d56305f2724f61fd49f375c3641ad275d4a54cce00efb3c2f3","header_status":"handled","input_sha256":"75914521b36d0f98b8d6ce69f5413d776945ede6434a8ca21c8c3754983574f7","kind":"mutation-receipt","operation":"78d3a9cfbde2ccdf0b89c80347182821714d075481d1fcf0c39c76681d1238b5","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-19"],"target":"f-20261124-19","v":1} -->
