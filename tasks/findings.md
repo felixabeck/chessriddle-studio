@@ -28002,7 +28002,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### check-rust-release-surface-config-c O3.7 test times out at 5 s in the loaded frontend-coverage lane
 
-* **ID:** f-20261120-02 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261120-02 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** f45e25ea-dbe9-473f-a401-c199e5b3579e
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (split out of f-20261115-27's 2026-11-18 recurrence note while working that finding, 2026-11-20)
@@ -28012,6 +28012,13 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** measure the test's cost (spawned processes, repository fixtures created per case) and remove it at its source, as in f-20261109-08; d-20260901-36 rejects raising the timeout. Lens: review-tests.
 * **Related:** f-20261115-27 (handled; same push-gate symptom, different cause).
 * **Found by:** Claude Code drain session f45e25ea-dbe9-473f-a401-c199e5b3579e
+* **Closed 2026-11-24 (drain session 265bc18b-979b-4cd9-b147-59e018df2e8d):** fixed in `f191d30d3`.
+  * **Cause:** every `runCheckerOver` case (`scripts/rust-release-surface-fixture.mjs`) seeded the checkout's real `main.rs` (245 KB), `fs.rs` (493 KB) and `file_workspace.rs` (601 KB) into a throwaway repository, and the spawned checker analysed all 1.3 MB. `fs.rs` and `file_workspace.rs` were seeded while they sat on the filesystem-surface allowlist. Both have since left it (f-20260913-02, f-20260919-03), so analysing them bought nothing. Cases that fail before analysis took about 85 ms, cases that analyse the seed about 340 ms. Under load the latter crossed 5 s.
+  * **Fix:** `BASELINE_RUST_FILES` is now `main.rs` only. It stays because `INITIAL_GATE_REGION_BASELINE` pins two regions in its real text (a minimal `main.rs` fails with "pinned gate region … no longer exists"). The new `the fixture seed needs %s` test requires each seed file to be load-bearing: omitting it from the clean fixture must make the checker exit non-zero. The two `omitPrefixes: ["src-tauri/src/fs.rs"]` options had become no-ops and were removed. Per d-20260901-36, the timeout stays at the default.
+  * **Proof:** the O3.7 "ignored nested child" case took 338 ms before and 161 ms after (unloaded). Summed test time of the ten release-surface files went from 60.5 s to 28.0 s, with 303 of 303 tests passing. With the old three-file seed restored, the new test fails for `fs.rs` and `file_workspace.rs`.
+  * **Review:** Grok lenses (xai.low). Correctness and root-cause approved in round 1. Tests asked for revisions in round 1 (no assertion pinned the seed) and approved in round 2 after the seed-necessity test was added.
+  * **Rejected:** raising `testTimeout` (d-20260901-36). Synthesising a `main.rs` containing only the pinned regions was also rejected: those regions are SHA-pinned to `main.rs` text, so a synthetic copy breaks on every edit to them.
+<!-- ledger-meta {"command":"close","effect_lines":6,"effect_sha256":"7ad74c8709c052cf19a4bf51104c08e84ba98b51717db0fffb36287b84e9f897","header_sha256":"3acce90db2f46cabea4f5608775ee4574bbdebd3c8c8b5d04c1dffe32aa033cb","header_status":"handled","input_sha256":"f017f406cc27b57d1edf5884046d5bb6f7414aaaeced60b9419d8597091fdfa9","kind":"mutation-receipt","operation":"25923086f0ec8d8451162ff3148edc4ef1c0a457ce34c110d6ea0a12891a4418","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-02"],"target":"f-20261120-02","v":1} -->
 
 ---
 
