@@ -15,11 +15,11 @@ export const LEGACY_ALLOWED_FILE = "src-tauri/src/infra/path_authority.rs";
 
 export const CHECKER = join(process.cwd(), "scripts/check-rust-release-surface.mjs");
 
-export const BASELINE_RUST_FILES = [
-  "src-tauri/src/main.rs",
-  "src-tauri/src/fs.rs",
-  "src-tauri/src/file_workspace.rs",
-];
+// main.rs carries the pinned gate regions, so the checker needs its real text. fs.rs and
+// file_workspace.rs were seeded while they sat on the filesystem-surface allowlist; both left it
+// (f-20260913-02, f-20260919-03) and seeding their ~1.1 MB made every spawned case analyse it
+// for nothing (f-20261120-02).
+export const BASELINE_RUST_FILES = ["src-tauri/src/main.rs"];
 
 export const FIXED_INPUTS = [
   "Cargo.toml",

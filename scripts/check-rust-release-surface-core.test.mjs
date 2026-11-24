@@ -15,6 +15,7 @@ import {
 } from "./check-rust-release-surface.mjs";
 import {
   allowedSource,
+  BASELINE_RUST_FILES,
   CHECKOUT_MAIN,
   customExpectBaseline,
   expectCliStatus,
@@ -417,6 +418,16 @@ mod tests {
       ),
     ).toEqual([]);
   });
+  // Every spawned fixture copies and analyses the seed, so a file the checker does not need
+  // costs each case its full analysis time (f-20261120-02: two cleared 1.1 MB files pushed a
+  // case past the 5 s budget). A seed file earns its place only if omitting it reddens the
+  // otherwise clean fixture.
+  test.each(BASELINE_RUST_FILES)("the fixture seed needs %s", async (path) => {
+    const result = await runCheckerOver([], [], { omitPrefixes: [path] });
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).not.toBe(0);
+  });
   test("an allowlisted file's production match count is pinned", () => {
     const path = "src-tauri/src/fs.rs";
     const violations = checkFilesystemSurface(
@@ -618,16 +629,13 @@ mod tests {
     const result = await runCheckerOver(
       [{ path: "src-tauri/src/infra/path_authority.rs", contents: "pub struct PathAuthority;\n" }],
       ["--check-allowlist-residency"],
-      { omitPrefixes: ["src-tauri/src/fs.rs"] },
     );
 
     expectCliStatus(result, 0);
     expect(result.output).not.toContain("is not present in the working tree");
   });
   test("the residency flag keeps an R3 leak visible with the empty default allowlist", async () => {
-    const result = await runCheckerOver(LEAK_FIXTURE, ["--check-allowlist-residency"], {
-      omitPrefixes: ["src-tauri/src/fs.rs"],
-    });
+    const result = await runCheckerOver(LEAK_FIXTURE, ["--check-allowlist-residency"]);
 
     expectCliStatus(result, 1);
     expect(result.output).not.toContain("is not present in the working tree");
