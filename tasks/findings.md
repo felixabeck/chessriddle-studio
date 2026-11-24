@@ -29064,7 +29064,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The over-cap revocation loopback test times out at its 3 s wall clock on the macOS runner
 
-* **ID:** f-20261124-18 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-18 · **Status:** handled · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45490173290
 * **Where:** `src-tauri/src/oauth.rs` test `production_revocation_bounds_streaming_confirmation_and_distinguishes_read_failure`, the `tokio::time::timeout(Duration::from_secs(3), ...)` around the server join at about `:1259-1271`.
@@ -29072,6 +29072,9 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario (observed):** Test run 45490173290, job `rust-macos-test`, on probe commit `22cfa8b6f` (branch `probe-windows-pgn`, 2026-11-24 21:36 UTC): `3768 passed; 1 failed`. The probe's diff touched `oauth.rs` only by deleting the `off_unix_refusal` lines in `authenticate` and `migrate_legacy_lichess_token`, not the revocation path. The same test passed on Linux and Windows in that run and on master's recent runs.
 * **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/<rust-macos-test job of run 45490173290>/logs`. Fix: bound the test by the production deadline or the retained-byte counter instead of a 3 s wall clock, or raise only the outer bound with a comment saying what it guards against (a hang), and keep the byte-cap assertion.
 * **Found by:** Claude Code interactive session 6e4e9f65-6ab8-4aba-8e73-84f9f3ed21d9, 2026-11-24, on the Windows-port probe run for f-20261124-17.
+
+Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOUT + 5 s` (35 s) with a comment that it only catches a hang; the byte cap stays proven by `outcome == Rejected` and the `retained <= MAX_TOKEN_TEST_RESPONSE_BYTES` counter, and the production deadline turns a stalled client into `Unreachable`, which still fails the test. Rejected alternative: keep a short wall clock and only nudge it (e.g. 5 s) — still load-dependent against the 2 s server trailer bound. Proof: `cargo test --bin chessriddle-studio production_revocation_bounds_streaming` passes locally; macOS CI confirms on push. review-correctness and review-root-cause approved.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"0437dcf3b111538ac2e0f418cedd21f31b2491cd60f63a5a39abfc9c171ad426","header_sha256":"47e5e51461eef76490b531f2afe493dec608a9288daa4599ce8323717888e0b0","header_status":"handled","input_sha256":"22e38309e232b3ac86f880656e3e9e2161cd2fe7dd7527531847b2bba0b2920c","kind":"mutation-receipt","operation":"81ab73327bce43471dae1e2838868309b8c5b4f183105b9e3b9943be5fe674f3","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-18"],"target":"f-20261124-18","v":1} -->
 
 ---
 
