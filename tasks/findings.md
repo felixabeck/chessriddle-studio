@@ -28986,7 +28986,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The board-wood-texture snapshot export test exceeds its 45 s test timeout on hosted CI, after the f-20261106-49 retry
 
-* **ID:** f-20261124-15 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-15 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45399506408
 * **Filed from:** 275e9313-8f5a-48c0-9de5-747655d15940
@@ -28996,6 +28996,13 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/138464075674/logs` (copy at `/tmp/e2e-138464075674.log`), the `1) [board-wood-texture]` block. Fix: read the trace to find the slow step, then either make that wait deterministic or give this test an explicit budget covering its declared waits (`test.setTimeout`), and prove it under CPU load with `--repeat-each=10` in the container as f-20261106-49 did.
 * **Related:** f-20261106-49 (handled, same test; its closing note's known limit names an export slower than 6 s). f-20261105-07 (handled, a different load-dependent test in the same spec).
 * **Found by:** Claude Code drain session 275e9313-8f5a-48c0-9de5-747655d15940, 2026-11-24, at the pre-push remote check of the f-20261124-03 release.
+
+**Handled 2026-11-24 (drain ed84e546-7487-401e-9bda-670dd867eecb, Claude Code, full auto):** commit `2adf95992` "test(e2e): keep snapshot PNG bytes in the page in the wood-texture export test".
+**Cause (from the trace):** no step hung. The attempt-1 trace of run 45399506408 (artifact 14924006998; the job-log artifact name was later overwritten by the passing attempt 2) shows the time in the `page.evaluate` calls that returned every exported PNG to the test process as a JSON `number[]`: 3273, 3703, 4149, 3600, 4084, 5002, 5721 and 2433 ms, about 32 s of the 45 s budget. One 3.6 s + 4.1 s pair spent the second export's 6 s poll window, so the f-20261106-49 retry click fired a third export. The passing attempt 2 spent 1.7-3.2 s per evaluate (body 24 s).
+**Fix:** poll only the `save_board_snapshot` count, return the snapshot's index, and decode both PNGs inside the page. The grain assertion and the retry are unchanged.
+**Proof:** container e2e `--project=board-wood-texture --grep "exported board snapshot" --repeat-each=10` under 20 CPU busy loops: before 18.6-21.9 s per run, after 5.6-8.4 s per run, 10/10 both. The whole `board-wood-texture` project `--repeat-each=2` unloaded: 18 passed, the export test 2.5-3.1 s. Lenses (grok): correctness, root-cause, tests, code-quality approved; code-quality's naming should-fix was adopted and closed.
+**Rejected:** `test.setTimeout` only (it would hide the self-inflicted serialization cost, which grows with runner slowness).
+<!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"846581cad19ce1ad8272a9b99fe47b9fd9134d63d53729f71ca3460b22e00e91","header_sha256":"24228902748d1d445670029301b57f4f7eb4207acec68dcbb0477d5e634ec0e4","header_status":"handled","input_sha256":"4dc7b8119671a31caef8773fda0a8da3e93ffc9c51b5e8b74d9c547a1cfe4646","kind":"mutation-receipt","operation":"38909b649cc46c957646628c87a84a1892544c4393a1054c72adebc2dc5483f3","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-15"],"target":"f-20261124-15","v":1} -->
 
 ### The daily tree-path mutation sweep is red: three treeReducer mutants from 2026-11-24's open-variation and transposition commits survive
 
