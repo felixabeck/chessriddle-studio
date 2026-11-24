@@ -14,29 +14,43 @@ import { serializeStoreTree } from "@/utils/tabs";
  * failed write is retried only after a later edit changes the PGN, and a view-only change that
  * leaves the PGN unchanged (a live engine score) never writes. `saveToFile` orders writes that
  * overlap across subscriptions for the same store.
+ *
+ * The last attempt belongs to the store, not to the mounted board. A failed write can make the
+ * file-freshness gate unmount and remount the board; a per-mount record would forget the failed
+ * PGN and write it again on every remount, an endless write-and-notify loop.
  */
+const lastAttempts = new WeakMap<StoreApi<TreeStoreState>, string>();
+
 export function useAutoSave(
     store: StoreApi<TreeStoreState>,
     enabled: boolean,
     save: () => Promise<unknown>,
 ) {
     useEffect(() => {
+        if (enabled) return;
+        // While autosave is off nothing writes, but a clean tree still ends the record, so a
+        // later return to the same PGN is written once autosave is back on.
+        if (!store.getState().dirty) lastAttempts.delete(store);
+        return store.subscribe((state) => {
+            if (!state.dirty) lastAttempts.delete(store);
+        });
+    }, [store, enabled]);
+    useEffect(() => {
         if (!enabled) return;
         let disposed = false;
         let running = false;
-        let lastAttempt: string | null = null;
         const run = async () => {
             if (running) return;
             running = true;
             try {
                 while (!disposed) {
                     if (!store.getState().dirty) {
-                        lastAttempt = null;
+                        lastAttempts.delete(store);
                         return;
                     }
                     const pgn = serializeStoreTree(store);
-                    if (pgn === lastAttempt) return;
-                    lastAttempt = pgn;
+                    if (pgn === lastAttempts.get(store)) return;
+                    lastAttempts.set(store, pgn);
                     await save();
                 }
             } finally {
@@ -46,7 +60,7 @@ export function useAutoSave(
         void run();
         const unsubscribe = store.subscribe((state, previous) => {
             if (!state.dirty) {
-                lastAttempt = null;
+                lastAttempts.delete(store);
             } else if (
                 !previous.dirty ||
                 state.root !== previous.root ||

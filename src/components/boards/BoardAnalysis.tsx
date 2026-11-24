@@ -8,7 +8,8 @@ import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useStore } from "zustand";
+import { type StoreApi, useStore } from "zustand";
+import type { TreeStoreState } from "@/state/store/tree";
 import {
   allEnabledFamily,
   autoSaveAtom,
@@ -77,6 +78,9 @@ import { BoardLayoutModeContext } from "@/state/paneLayout";
  * Owns the single file position index request for the mounted file-backed analysis tab, releasing
  * it on unmount, leaving the file, or verified-revision changes.
  */
+// Tree stores whose current autosave failure streak was already reported (see `saveFile`).
+const autoSaveFailuresShown = new WeakSet<StoreApi<TreeStoreState>>();
+
 function FilePositionIndexSync() {
   const [currentTab] = useOwnerTab();
   const tabId = useOwnerTabId();
@@ -135,11 +139,11 @@ function BoardAnalysis() {
   );
 
   // Autosave reports a failure streak once; a clean tree ends the streak. This effect only
-  // resets that notice, `useAutoSave` below decides when to write.
-  const autoSaveFailureShown = useRef(false);
+  // resets that notice, `useAutoSave` below decides when to write. The streak belongs to the
+  // tab's store: a failed write can remount this board, and the streak must survive that.
   useEffect(() => {
-    if (!dirty) autoSaveFailureShown.current = false;
-  }, [dirty]);
+    if (!dirty) autoSaveFailuresShown.delete(store);
+  }, [dirty, store]);
   const saveFile = useCallback(
     async (isUserSave = false) => {
       const result = await saveToFile({
@@ -151,8 +155,8 @@ function BoardAnalysis() {
         skipIfClean: !isUserSave,
       });
       if (typeof result === "object" && result.status === "failed") {
-        if (isUserSave || !autoSaveFailureShown.current) notifyError(result.error);
-        if (!isUserSave && errorUnlessCancelled(result.error)) autoSaveFailureShown.current = true;
+        if (isUserSave || !autoSaveFailuresShown.has(store)) notifyError(result.error);
+        if (!isUserSave && errorUnlessCancelled(result.error)) autoSaveFailuresShown.add(store);
       } else if (isUserSave && result === "superseded") {
         notifyError({
           category: "validation",

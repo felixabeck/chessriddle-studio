@@ -1878,17 +1878,21 @@ describe("BoardAnalysis", () => {
     tree.dirty = true;
     treeStore = createTreeStore(undefined, tree);
     await act(async () => {
-      root.render(
-        <JotaiProvider store={jotaiStore}>
-          <TreeStateContext.Provider value={treeStore}>
-            <WorkspaceTabScope tabId={tabId}>
-              <BoardAnalysis />
-            </WorkspaceTabScope>
-          </TreeStateContext.Provider>
-        </JotaiProvider>,
-      );
+      renderAutosaveBoard();
       jotaiStore.set(autoSaveAtom, true);
     });
+  }
+
+  function renderAutosaveBoard() {
+    root.render(
+      <JotaiProvider store={jotaiStore}>
+        <TreeStateContext.Provider value={treeStore}>
+          <WorkspaceTabScope tabId={tabId}>
+            <BoardAnalysis />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>
+      </JotaiProvider>,
+    );
   }
 
   test.each(["file", "database"] as const)(
@@ -2002,6 +2006,36 @@ describe("BoardAnalysis", () => {
       expect(mocks.showNotification).toHaveBeenCalledTimes(category === "cancellation" ? 0 : 1);
     },
   );
+
+  test("a board remounted during a failing autosave streak neither rewrites the PGN nor reports it again", async () => {
+    mocks.writeGame.mockRejectedValue({
+      tag: "backend-error",
+      category: "io",
+      message: "Autosave failed",
+    });
+    await startAutosave();
+    await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledOnce());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(mocks.showNotification).toHaveBeenCalledOnce();
+
+    // A failed write can make the file-freshness gate unmount and remount the board.
+    await act(async () => root.render(null));
+    await act(async () => renderAutosaveBoard());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(mocks.writeGame).toHaveBeenCalledOnce();
+
+    // A later edit is written once and fails silently: the streak survived the remount.
+    await act(async () => treeStore.getState().setComment("Edit after remount"));
+    await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(mocks.showNotification).toHaveBeenCalledOnce();
+  });
 
   test("a follow-up autosave queued behind a manual save that cleaned the tree does not rewrite it", async () => {
     let resolveWrite!: (written: unknown) => void;
