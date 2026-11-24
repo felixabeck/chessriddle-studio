@@ -28788,7 +28788,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### Installer metadata still ships En Croissant's "Ultimate Chess Toolkit" tagline and an empty copyright
 
-* **ID:** f-20261124-05 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-05 · **Status:** handled · **Area:** app-startup · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** release-readiness review (Felix t85u, pass 1) at origin/master `d7877bce8`
 * **Where:** `src-tauri/tauri.conf.json:5` (`copyright` is `""`), `:30` (`shortDescription`: "Ultimate Chess Toolkit"), `:31` (`longDescription` is `""`); `src-tauri/Cargo.toml:4` (`description = "A Modern Chess Database"`). The identity tests in `src/utils/product.test.ts:13-20` pin `productName`, `publisher` and the window title, but not these fields.
@@ -28797,6 +28797,8 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Fix:** replace `shortDescription` (and, if used, `Cargo.toml` `description`) with a ChessRiddle Studio summary, fill `copyright` (authors in `Cargo.toml` stay as they are: `f-20260830-48` recorded that GPL-3 §4 requires keeping Francisco's original copyright notice), and extend `product.test.ts` so these fields cannot slip back. `scripts/install-local.sh` already has a suitable Comment.
 * **Proof:** `rg -n 'Ultimate Chess Toolkit|A Modern Chess Database|^    "copyright"' src-tauri/tauri.conf.json src-tauri/Cargo.toml` still shows the three leftovers; `rg -n 'shortDescription|Ultimate Chess' src/utils/product.test.ts` is empty. After the change, those strings are gone from the bundle config and the product identity test fails if they return.
 * **Found by:** Grok Bot, 2026-11-24, release-readiness review (SC-1)
+* **Closed:** 2026-11-24, commit 3e46a5312, co-located with f-20261124-04. `shortDescription` is the install script's Comment ("Analyse games, search databases, play against engines"; the deb/rpm desktop template's `{{comment}}` reads it), Cargo `description` is "Chess analysis and database", `copyright` keeps Francisco Salgueiro's notice beside Felix Beck's. `product.test.ts` pins all three. `longDescription` stays empty (Tauri falls back to the short one). Decision d-20261124-13.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ae3e52a6925841254169312b99a9c4ff230173bc80508d819e333e483502dd7c","header_sha256":"292bea6f2576bc98fcab32ae77d3d7d7516ce1e320dec2a482d260de6b5c1489","header_status":"handled","input_sha256":"1ab6e57ef8b6901c5146e65bc8d0bd2d4758e78c97c78b293d61357e9968b804","kind":"mutation-receipt","operation":"078a67ffd2e2bb498a96b7547e6dc8798702c537f73ab109d719d29fbd27cbf5","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-05"],"target":"f-20261124-05","v":1} -->
 
 ---
 
