@@ -24,6 +24,22 @@ pub(crate) fn database_setup_to_chess(setup: Setup) -> Result<Chess, Error> {
         .map_err(Error::from)
 }
 
+/// The position a stored game starts from: its `Games.Fen` through the import policy, or the
+/// standard start when the column is null. Position search and player statistics replay
+/// stored moves from it, so they decode against the setup and `CastlingMode` the importer used.
+pub(crate) fn database_start_position(game_id: i32, fen: Option<&str>) -> Result<Chess, Error> {
+    if let Some(fen) = fen {
+        let fen = Fen::from_ascii(fen.as_bytes()).map_err(|error| {
+            Error::InvalidInput(format!("game {game_id} has invalid FEN: {error}"))
+        })?;
+        database_setup_to_chess(fen.into_setup()).map_err(|error| {
+            Error::InvalidInput(format!("game {game_id} has invalid FEN setup: {error}"))
+        })
+    } else {
+        Ok(Chess::default())
+    }
+}
+
 /// `database_setup_to_chess` for a FEN whose text the caller keeps. The returned text is
 /// `fen_text` unchanged, or with its en-passant field rewritten to `-` when the policy dropped
 /// the square, so the kept text and the position agree.

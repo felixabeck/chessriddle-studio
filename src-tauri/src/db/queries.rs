@@ -587,11 +587,6 @@ pub(super) fn load_games(
             }
         }
 
-        // if let Some(speed) = query.speed {
-        //     sql_query = sql_query.filter(games::speed.eq(speed as i32));
-        //     count_query = count_query.filter(games::speed.eq(speed as i32));
-        // }
-
         if let Some(outcome) = query.outcome {
             sql_query = sql_query.filter(games::result.eq(outcome.clone()));
             count_query = count_query.filter(games::result.eq(outcome));

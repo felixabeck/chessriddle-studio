@@ -28,7 +28,8 @@ use crate::progress::ProgressUpdateHook;
 use crate::{
     db::{
         encoding::{
-            database_setup_to_chess, decode_move, try_iter_mainline_move_bytes_cancellable,
+            database_setup_to_chess, database_start_position, decode_move,
+            try_iter_mainline_move_bytes_cancellable,
         },
         get_db_or_create, get_pawn_home,
         models::*,
@@ -979,19 +980,6 @@ impl<'a> ReplayQueries<'a> {
     }
 }
 
-fn entry_start_position(game_id: i32, fen: Option<&str>) -> Result<Chess, Error> {
-    if let Some(fen) = fen {
-        let fen = Fen::from_ascii(fen.as_bytes()).map_err(|error| {
-            Error::InvalidInput(format!("game {game_id} has invalid FEN: {error}"))
-        })?;
-        database_setup_to_chess(fen.into_setup()).map_err(|error| {
-            Error::InvalidInput(format!("game {game_id} has invalid FEN setup: {error}"))
-        })
-    } else {
-        Ok(Chess::default())
-    }
-}
-
 fn entry_matches_excluded_game(
     entry: SearchGameEntryRef<'_>,
     excluded: &ExcludedGame,
@@ -1000,7 +988,7 @@ fn entry_matches_excluded_game(
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
-    let mut chess = entry_start_position(entry.id, entry.fen)?;
+    let mut chess = database_start_position(entry.id, entry.fen)?;
     if ExactPositionIdentity::new(&chess) != excluded.start {
         return Ok(false);
     }
@@ -1039,7 +1027,7 @@ fn replay_position_matches(
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
-    let mut chess = entry_start_position(game_id, fen)?;
+    let mut chess = database_start_position(game_id, fen)?;
 
     #[cfg(test)]
     if instrument {

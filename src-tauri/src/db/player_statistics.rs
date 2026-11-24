@@ -162,8 +162,7 @@ pub(super) fn get_players_game_info_blocking<R: tauri::Runtime>(
         let base_query = games::table
             .inner_join(sites::table.on(games::site_id.eq(sites::id)))
             .inner_join(players::table.on(players::id.eq(id)))
-            .filter(games::white_id.eq(id).or(games::black_id.eq(id)))
-            .filter(games::fen.is_null());
+            .filter(games::white_id.eq(id).or(games::black_id.eq(id)));
 
         let progress_error_diagnosed = std::sync::atomic::AtomicBool::new(false);
         let emit_progress = |kept_rows, total_rows| {
@@ -213,6 +212,7 @@ pub(super) fn get_players_game_info_blocking<R: tauri::Runtime>(
                 players::name,
                 games::id,
                 games::time,
+                games::fen,
             ));
             let rows = sql_query.load_iter::<PlayerStatisticsRow, DefaultLoadingMode>(db)?;
             process_player_statistics_batches(
@@ -280,6 +280,8 @@ pub(super) struct PlayerStatisticsRow {
     pub(super) player: Option<String>,
     pub(super) game_id: i32,
     pub(super) time: Option<String>,
+    /// The stored starting position; `None` is the standard start.
+    pub(super) fen: Option<String>,
 }
 
 impl PlayerStatisticsRow {
@@ -292,6 +294,7 @@ impl PlayerStatisticsRow {
             .saturating_add(self.time_control.as_ref().map_or(0, String::len))
             .saturating_add(self.site.as_ref().map_or(0, String::len))
             .saturating_add(self.player.as_ref().map_or(0, String::len))
+            .saturating_add(self.fen.as_ref().map_or(0, String::len))
     }
 }
 
@@ -572,8 +575,14 @@ pub(super) fn evaluate_player_statistics_row(
         Err(Error::Cancellation) => return Err(Error::Cancellation),
         Err(_) => return Ok(None),
     };
+    // Moves are encoded against the game's own start, so they are replayed from it. A game
+    // from a custom position or Chess960 counts in the results like any other; its opening
+    // is whatever a position after one of its moves matches, often none.
+    // An unreadable stored FEN is corrupt data, like an invalid move stream, and drops the row.
+    let Ok(mut chess) = database_start_position(row.game_id, row.fen.as_deref()) else {
+        return Ok(None);
+    };
     let mut setups = vec![];
-    let mut chess = Chess::default();
     for byte in move_bytes.take(OPENING_STATISTICS_PLY_LIMIT) {
         cancellation_check(cancellation)?;
         let Some(m) = decode_move(byte, &chess) else {

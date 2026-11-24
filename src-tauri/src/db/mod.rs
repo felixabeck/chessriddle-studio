@@ -48,8 +48,8 @@ use crate::{
     cancellable_read::{map_read_error, CancellableRead, SourceRead, SourceReadState},
     db::{
         encoding::{
-            decode_game_to_movetext, decode_game_to_movetext_cancellable, decode_move,
-            iter_mainline_move_bytes, try_iter_mainline_move_bytes_cancellable,
+            database_start_position, decode_game_to_movetext, decode_game_to_movetext_cancellable,
+            decode_move, iter_mainline_move_bytes, try_iter_mainline_move_bytes_cancellable,
         },
         models::*,
         ops::*,
@@ -500,7 +500,6 @@ impl TempGame {
             black_elo: self.black_elo,
             white_material: minimal_white_material,
             black_material: minimal_black_material,
-            // max_rating: self.game.white.rating.max(self.game.black.rating),
             date: self.date.as_deref(),
             time: self.time.as_deref(),
             time_control: self.time_control.as_deref(),
@@ -743,9 +742,6 @@ impl Visitor for Importer {
     }
 
     fn end_headers(&mut self) -> Skip {
-        // Skip games without ELO
-        // self.skip |= self.current.white_elo.is_none() || self.current.black_elo.is_none();
-
         self.game.date = self.resolve_date();
         self.frames.clear();
         self.frames
@@ -10179,8 +10175,8 @@ mod tests {
             (player.id, nameless_player.id)
         };
 
-        // Excluded: missing or unfinished result, nameless site, custom start position and
-        // nameless player. Kept: the base game, the undated game, both unrated games
+        // Excluded: missing or unfinished result, nameless site, an unloadable stored start
+        // position (no kings) and nameless player. Kept: the base game, the undated game, both unrated games
         // (d-20260907-05 reversal, f-20261114-21) and the self-play game without Black's
         // rating, which counts once from White's side.
         let info = load_player_statistics(&app, handle.clone(), player_id);
@@ -10232,6 +10228,136 @@ mod tests {
 
         let nameless_info = load_player_statistics(&app, handle, nameless_player_id);
         assert!(nameless_info.site_stats_data.is_empty());
+    }
+
+    fn encode_player_statistics_moves(start: &Chess, sans: &[&str]) -> Vec<u8> {
+        let mut position = start.clone();
+        sans.iter()
+            .map(|san| {
+                let m = san
+                    .parse::<shakmaty::san::San>()
+                    .unwrap()
+                    .to_move(&position)
+                    .unwrap();
+                let byte = encode_move(&m, &position).unwrap();
+                position.play_unchecked(&m);
+                byte
+            })
+            .collect()
+    }
+
+    #[test]
+    fn player_statistics_count_games_that_start_from_a_stored_fen() {
+        const CHESS960: &str = "brkbqrnn/pppppppp/8/8/8/8/PPPPPPPP/BRKBQRNN w FBfb - 0 1";
+        const AFTER_E4: &str = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+        const START_WITHOUT_CLOCKS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -";
+        let (_dir, app, handle, database) = blocking_database_case();
+        let player_id = {
+            let state = app.state::<AppState>();
+            let mut db = state
+                .database_repository
+                .connection(&test_target(&database), None)
+                .unwrap();
+            let player = create_player(&mut db, "Player").unwrap();
+            let opponent = create_player(&mut db, "Opponent").unwrap();
+            let event = create_event(&mut db, "Event", None).unwrap();
+            let site = create_site(&mut db, "Site").unwrap();
+            let start = |fen| database_start_position(0, Some(fen)).unwrap();
+            let base = PlayerStatisticsGame {
+                player_id: player.id,
+                opponent_id: opponent.id,
+                event_id: event.id,
+                site_id: site.id,
+                is_player_white: true,
+                player_elo: Some(2000),
+                opponent_elo: Some(1900),
+                moves: encode_player_statistics_moves(&start(CHESS960), &["e4", "e5", "Nf3"]),
+                date: Some("2026.08.10"),
+                result: Some("1-0"),
+                time_control: None,
+                fen: Some(CHESS960),
+            };
+            insert_player_statistics_game(&mut db, base.clone());
+            insert_player_statistics_game(
+                &mut db,
+                PlayerStatisticsGame {
+                    is_player_white: false,
+                    moves: encode_player_statistics_moves(&start(AFTER_E4), &["c5"]),
+                    date: Some("2026.08.11"),
+                    result: Some("0-1"),
+                    fen: Some(AFTER_E4),
+                    ..base.clone()
+                },
+            );
+            insert_player_statistics_game(
+                &mut db,
+                PlayerStatisticsGame {
+                    moves: encode_player_statistics_moves(
+                        &start(START_WITHOUT_CLOCKS),
+                        &["e4", "c5"],
+                    ),
+                    date: Some("2026.08.12"),
+                    result: Some("1/2-1/2"),
+                    fen: Some(START_WITHOUT_CLOCKS),
+                    ..base.clone()
+                },
+            );
+            player.id
+        };
+
+        let info = load_player_statistics(&app, handle, player_id);
+        assert_eq!(info.site_stats_data.len(), 1);
+        let group = &info.site_stats_data[0];
+        let daily: Vec<_> = group
+            .daily
+            .iter()
+            .map(|day| {
+                (
+                    day.date.as_str(),
+                    day.won,
+                    day.drawn,
+                    day.lost,
+                    day.max_player_elo,
+                )
+            })
+            .collect();
+        assert_eq!(
+            daily,
+            [
+                ("2026.08.10", 1, 0, 0, Some(2000)),
+                ("2026.08.11", 1, 0, 0, Some(2000)),
+                ("2026.08.12", 0, 1, 0, Some(2000)),
+            ]
+        );
+        let openings: Vec<_> = group
+            .openings
+            .iter()
+            .map(|row| {
+                (
+                    row.is_player_white,
+                    row.opening.as_str(),
+                    row.won,
+                    row.drawn,
+                    row.lost,
+                )
+            })
+            .collect();
+        assert_eq!(
+            openings,
+            [
+                (false, "Sicilian Defense", 1, 0, 0),
+                (true, "", 1, 0, 0),
+                (true, "Sicilian Defense", 0, 1, 0),
+            ]
+        );
+        let colors: Vec<_> = group
+            .colors
+            .iter()
+            .map(|row| (row.is_player_white, row.won, row.drawn, row.lost))
+            .collect();
+        assert_eq!(colors, [(false, 1, 0, 0), (true, 1, 1, 0)]);
+        assert_eq!(group.latest.len(), 1);
+        assert_eq!(group.latest[0].date, "2026.08.12");
     }
 
     #[test]
@@ -10419,6 +10545,7 @@ mod tests {
             time_control: None,
             site: None,
             player: None,
+            fen: None,
         }
     }
 
@@ -11304,7 +11431,6 @@ mod tests {
                             .eq(player_id)
                             .or(games::black_id.eq(player_id)),
                     )
-                    .filter(games::fen.is_null())
                     .count()
                     .get_result::<i64>(&mut *connection)
             })
