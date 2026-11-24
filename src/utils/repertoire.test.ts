@@ -1,6 +1,10 @@
 import { describe, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle } from "@/bindings";
 import { parseUci } from "chessops";
+import { Chess } from "chessops/chess";
+import { makeFen, parseFen } from "chessops/fen";
+import { parseSan } from "chessops/san";
+import { createEmptyCard } from "ts-fsrs";
 import {
     boardStateMapBuilder,
     buildTranspositionMaps,
@@ -12,6 +16,7 @@ import {
     type TreeNode,
 } from "./treeReducer";
 import { createTreeStore, type TreeStoreState } from "@/state/store/tree";
+import { openingLine } from "./tests/openingLine";
 
 const mocks = vi.hoisted(() => ({ searchPosition: vi.fn(), searchPositionsStats: vi.fn() }));
 vi.mock("./db", () => ({ searchPosition: mocks.searchPosition }));
@@ -19,7 +24,17 @@ vi.mock("@/platform/tauri", () => ({
     tauri: { searchPositionsStats: mocks.searchPositionsStats },
 }));
 
-import { computeTreeCoverage, fetchPositionMoves, findBiggestGap, getStats } from "./repertoire";
+import {
+    applyReachWeights,
+    computeReachWeights,
+    reachWeightsChange,
+    computeTreeCoverage,
+    fetchPositionMoves,
+    fetchTreeStatistics,
+    findBiggestGap,
+    getStats,
+    roundReachWeight,
+} from "./repertoire";
 
 const database: DatabaseHandle = { id: { id: "db" }, kind: "database" };
 
@@ -795,4 +810,439 @@ describe("findBiggestGap", () => {
         const result = findBiggestGap(root, "white", coverageMap, gamesMap, missingGamesMap, 10);
         expect(result).toEqual([0, 0, 0]);
     });
+});
+
+function addLine(from: TreeNode, moves: string[]): TreeNode {
+    const position = Chess.fromSetup(parseFen(from.fen).unwrap()).unwrap();
+    let node = from;
+    for (const san of moves) {
+        const move = parseSan(position, san)!;
+        expect(move).toBeDefined();
+        position.play(move);
+        const existing = node.children.find((child) => child.san === san);
+        if (existing) {
+            node = existing;
+            continue;
+        }
+        const child = createNode({
+            fen: makeFen(position.toSetup()),
+            move,
+            san,
+            halfMoves: node.halfMoves + 1,
+        });
+        node.children.push(child);
+        node = child;
+    }
+    return node;
+}
+
+function recorded(moves: { move: string; games: number }[]) {
+    return {
+        moves: moves.map((move) => ({
+            move: move.move,
+            white: move.games,
+            draw: 0,
+            black: 0,
+        })),
+        total: moves.reduce((sum, move) => sum + move.games, 0),
+    };
+}
+
+function statsFor(
+    root: TreeNode,
+    entries: [string[], { move: string; games: number }[]][],
+): Map<string, ReturnType<typeof recorded>> {
+    const map = new Map<string, ReturnType<typeof recorded>>();
+    for (const [path, moves] of entries) {
+        let node = root;
+        for (const san of path) {
+            const child = node.children.find((candidate) => candidate.san === san);
+            expect(child).toBeDefined();
+            node = child!;
+        }
+        map.set(getBoardState(node.fen), recorded(moves));
+    }
+    return map;
+}
+
+function nodeAt(root: TreeNode, sans: string[]): TreeNode {
+    let node = root;
+    for (const san of sans) {
+        const child = node.children.find((candidate) => candidate.san === san);
+        expect(child).toBeDefined();
+        node = child!;
+    }
+    return node;
+}
+
+describe("computeReachWeights", () => {
+    test("White repertoire multiplies opponent frequencies and leaves own moves unchanged", () => {
+        const root = openingLine(["e4", "e5", "Nf3"]);
+        const stats = statsFor(root, [
+            [[], [{ move: "e4", games: 100 }]],
+            [
+                ["e4"],
+                [
+                    { move: "e5", games: 80 },
+                    { move: "c5", games: 20 },
+                ],
+            ],
+        ]);
+        const weights = computeReachWeights(root, "white", [], stats)!;
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5"]).fen))).toBe(0.8);
+    });
+
+    test("Black repertoire uses opponent frequencies from the first move", () => {
+        const root = openingLine(["e4", "e5", "Nf3", "Nc6"]);
+        const stats = statsFor(root, [
+            [
+                [],
+                [
+                    { move: "e4", games: 80 },
+                    { move: "d4", games: 20 },
+                ],
+            ],
+            [["e4", "e5"], [{ move: "Nf3", games: 100 }]],
+        ]);
+        const weights = computeReachWeights(root, "black", [], stats)!;
+        expect(weights.get(getBoardState(nodeAt(root, ["e4"]).fen))).toBe(0.8);
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5", "Nf3"]).fen))).toBe(0.8);
+    });
+
+    test("a Black-to-move custom root has reach 1", () => {
+        const root = openingLine(
+            ["e5", "Nf3", "Nc6"],
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        );
+        const stats = statsFor(root, [
+            [
+                ["e5"],
+                [
+                    { move: "Nf3", games: 40 },
+                    { move: "Nc3", games: 60 },
+                ],
+            ],
+        ]);
+        const weights = computeReachWeights(root, "black", [], stats)!;
+        expect(weights.get(getBoardState(root.fen))).toBeUndefined();
+        expect(weights.get(getBoardState(nodeAt(root, ["e5", "Nf3"]).fen))).toBe(0.4);
+    });
+
+    test("a transposition reached by two opponent move orders sums", () => {
+        const root = openingLine(["e4", "e5", "Nf3", "Nc6", "Bb5"]);
+        addLine(root, ["e4", "Nc6", "Nf3", "e5", "Bb5"]);
+        const stats = statsFor(root, [
+            [
+                ["e4"],
+                [
+                    { move: "e5", games: 60 },
+                    { move: "Nc6", games: 40 },
+                ],
+            ],
+            [["e4", "e5", "Nf3"], [{ move: "Nc6", games: 100 }]],
+            [
+                ["e4", "Nc6", "Nf3"],
+                [
+                    { move: "e5", games: 50 },
+                    { move: "d5", games: 50 },
+                ],
+            ],
+        ]);
+        const weights = computeReachWeights(root, "white", [], stats)!;
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5", "Nf3", "Nc6"]).fen))).toBe(0.8);
+    });
+
+    test("an own-move alternative inherits the parent reach", () => {
+        const root = openingLine(["e4", "e5", "Nf3", "Nc6"]);
+        addLine(root, ["e4", "e5", "Bc4", "Nc6"]);
+        const stats = statsFor(root, [
+            [
+                ["e4"],
+                [
+                    { move: "e5", games: 70 },
+                    { move: "c5", games: 30 },
+                ],
+            ],
+            [["e4", "e5", "Nf3"], [{ move: "Nc6", games: 100 }]],
+            [["e4", "e5", "Bc4"], [{ move: "Nc6", games: 100 }]],
+        ]);
+        const weights = computeReachWeights(root, "white", [], stats)!;
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5"]).fen))).toBe(0.7);
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5", "Nf3", "Nc6"]).fen))).toBe(0.7);
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5", "Bc4", "Nc6"]).fen))).toBe(0.7);
+    });
+
+    test("a move the database does not record counts as one game", () => {
+        const root = openingLine(["e4", "a6", "Nf3"]);
+        const stats = statsFor(root, [
+            [
+                ["e4"],
+                [
+                    { move: "e5", games: 90 },
+                    { move: "c5", games: 10 },
+                ],
+            ],
+        ]);
+        const weights = computeReachWeights(root, "white", [], stats)!;
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "a6"]).fen))).toBe(0.01);
+    });
+
+    test("a position without statistics splits equally among tree replies", () => {
+        const root = openingLine(["e4", "e5", "Nf3"]);
+        addLine(root, ["e4", "c5", "Nf3"]);
+        const weights = computeReachWeights(root, "white", [], new Map())!;
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5"]).fen))).toBe(0.5);
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "c5"]).fen))).toBe(0.5);
+    });
+
+    test("a Start marker deep in the tree excludes earlier cards", () => {
+        const root = openingLine(["e4", "e5", "Nf3", "Nc6", "Bb5"]);
+        const stats = statsFor(root, [
+            [
+                ["e4"],
+                [
+                    { move: "e5", games: 50 },
+                    { move: "c5", games: 50 },
+                ],
+            ],
+            [["e4", "e5", "Nf3"], [{ move: "Nc6", games: 100 }]],
+        ]);
+        const startPath = [0, 0, 0];
+        const weights = computeReachWeights(root, "white", startPath, stats)!;
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5"]).fen))).toBeUndefined();
+        expect(weights.get(getBoardState(nodeAt(root, ["e4", "e5", "Nf3", "Nc6"]).fen))).toBe(0.5);
+    });
+
+    test("a repetition that returns to the root does not add the out-of-scope reach", () => {
+        const root = openingLine(["Nf3", "Nf6", "Ng1", "Ng8"]);
+        const stats = statsFor(root, [
+            [
+                ["Nf3"],
+                [
+                    { move: "Nf6", games: 50 },
+                    { move: "d5", games: 50 },
+                ],
+            ],
+            [
+                ["Nf3", "Nf6", "Ng1"],
+                [
+                    { move: "Ng8", games: 50 },
+                    { move: "d5", games: 50 },
+                ],
+            ],
+        ]);
+        const weights = computeReachWeights(root, "white", [], stats)!;
+        expect(weights.get(getBoardState(root.fen))).toBe(0.25);
+        expect(weights.get(getBoardState(nodeAt(root, ["Nf3", "Nf6"]).fen))).toBe(0.5);
+    });
+
+    test("a repetition that returns to a position before Start does not add the out-of-scope reach", () => {
+        const root = defaultTree().root;
+        const before = createNode({
+            fen: "before b - - 0 1",
+            move: parseUci("e2e4")!,
+            san: "e4",
+            halfMoves: 1,
+        });
+        const start = createNode({
+            fen: "start w - - 0 1",
+            move: parseUci("e7e5")!,
+            san: "e5",
+            halfMoves: 2,
+        });
+        const reply = createNode({
+            fen: "reply b - - 0 1",
+            move: parseUci("g1f3")!,
+            san: "Nf3",
+            halfMoves: 3,
+        });
+        const returned = createNode({
+            fen: "before b - - 1 2",
+            move: parseUci("b8c6")!,
+            san: "Nc6",
+            halfMoves: 4,
+        });
+        reply.children = [returned];
+        start.children = [reply];
+        before.children = [start];
+        root.children = [before];
+        const stats = new Map([
+            [
+                getBoardState(before.fen),
+                recorded([
+                    { move: "e5", games: 50 },
+                    { move: "c5", games: 50 },
+                ]),
+            ],
+            [
+                getBoardState(reply.fen),
+                recorded([
+                    { move: "Nc6", games: 50 },
+                    { move: "d6", games: 50 },
+                ]),
+            ],
+        ]);
+        const weights = computeReachWeights(root, "white", [0, 0], stats)!;
+        expect(weights.get(getBoardState(before.fen))).toBe(0.25);
+        expect(weights.get(getBoardState(start.fen))).toBe(0.5);
+    });
+
+    test("a branch before Start that transposes below Start takes no part", () => {
+        const root = defaultTree().root;
+        const e4 = createNode({
+            fen: "e4 b - - 0 1",
+            move: parseUci("e2e4")!,
+            san: "e4",
+            halfMoves: 1,
+        });
+        const start = createNode({
+            fen: "start w - - 0 1",
+            move: parseUci("e7e5")!,
+            san: "e5",
+            halfMoves: 2,
+        });
+        const below = createNode({
+            fen: "below b - - 0 1",
+            move: parseUci("g1f3")!,
+            san: "Nf3",
+            halfMoves: 3,
+        });
+        const c5 = createNode({
+            fen: "c5 w - - 0 1",
+            move: parseUci("c7c5")!,
+            san: "c5",
+            halfMoves: 2,
+        });
+        const transpose = createNode({
+            fen: "below b - - 0 1",
+            move: parseUci("g1f3")!,
+            san: "Nf3",
+            halfMoves: 3,
+        });
+        start.children = [below];
+        c5.children = [transpose];
+        e4.children = [start, c5];
+        root.children = [e4];
+        const stats = new Map([
+            [
+                getBoardState(e4.fen),
+                recorded([
+                    { move: "e5", games: 10 },
+                    { move: "c5", games: 90 },
+                ]),
+            ],
+        ]);
+        const weights = computeReachWeights(root, "white", [0, 0], stats)!;
+        expect(weights.get(getBoardState(below.fen))).toBe(0.1);
+    });
+
+    test("an unresolved Start produces no weights", () => {
+        const root = openingLine(["e4", "e5"]);
+        expect(computeReachWeights(root, "white", [0, 9], new Map())).toBeNull();
+    });
+
+    test("the summed reach is capped at 1", () => {
+        const root = defaultTree().root;
+        const e4 = createNode({
+            fen: "e4 b - - 0 1",
+            move: parseUci("e2e4")!,
+            san: "e4",
+            halfMoves: 1,
+        });
+        const first = createNode({
+            fen: "same w - - 0 1",
+            move: parseUci("e7e5")!,
+            san: "e5",
+            halfMoves: 2,
+        });
+        const d4 = createNode({
+            fen: "d4 b - - 0 1",
+            move: parseUci("d2d4")!,
+            san: "d4",
+            halfMoves: 1,
+        });
+        const second = createNode({
+            fen: "same w - - 0 1",
+            move: parseUci("d7d5")!,
+            san: "d5",
+            halfMoves: 2,
+        });
+        e4.children = [first];
+        d4.children = [second];
+        root.children = [e4, d4];
+        const weights = computeReachWeights(root, "white", [], new Map())!;
+        expect(weights.get(getBoardState(first.fen))).toBe(1);
+        expect(roundReachWeight(1.6)).toBe(1);
+    });
+});
+
+test("the statistics request includes the path from the root to Start", async () => {
+    const root = openingLine(["e4", "e5", "Nf3"]);
+    mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+        fens.map((fen) => ({ fen, openings: [] })),
+    );
+    await fetchTreeStatistics(root, [0, 0], database);
+    const fens = mocks.searchPositionsStats.mock.calls[0][1] as string[];
+    expect(fens).toEqual(
+        expect.arrayContaining([
+            getBoardState(root.fen),
+            getBoardState(nodeAt(root, ["e4"]).fen),
+            getBoardState(nodeAt(root, ["e4", "e5"]).fen),
+            getBoardState(nodeAt(root, ["e4", "e5", "Nf3"]).fen),
+        ]),
+    );
+});
+
+test("path-to-Start statistics fill dbMovesMap and leave coverage maps at Start", async () => {
+    const root = openingLine(["e4", "e5", "Nf3"]);
+    const startPath = [0, 0];
+    const start = nodeAt(root, ["e4", "e5"]);
+    const below = nodeAt(root, ["e4", "e5", "Nf3"]);
+    const stateMoves = new Map([
+        [getBoardState(start.fen), new Map([["Nf3", getBoardState(below.fen)]])],
+    ]);
+    mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+        fens.map((fen) => ({
+            fen,
+            openings: [{ move: "*", white: 10, draw: 0, black: 0 }],
+        })),
+    );
+    const result = await computeTreeCoverage(root, "white", database, 1, startPath, stateMoves);
+    const startKey = startPath.join(",");
+    expect(
+        [...result.coverageMap.keys()].every(
+            (key) => key === startKey || key.startsWith(`${startKey},`),
+        ),
+    ).toBe(true);
+    expect(
+        [...result.gamesMap.keys()].every(
+            (key) => key === startKey || key.startsWith(`${startKey},`),
+        ),
+    ).toBe(true);
+    expect(result.coverageMap.has("")).toBe(false);
+    expect(result.dbMovesMap.has(getBoardState(root.fen))).toBe(true);
+    expect(result.dbMovesMap.has(getBoardState(nodeAt(root, ["e4"]).fen))).toBe(true);
+    expect(result.dbMovesMap.has(getBoardState(start.fen))).toBe(true);
+});
+
+test("applyReachWeights writes only changed in-scope cards", () => {
+    const root = openingLine(["e4", "e5", "Nf3"]);
+    const fen = nodeAt(root, ["e4", "e5"]).fen;
+    const inScope = { fen, answer: "Nf3", card: createEmptyCard() };
+    const outOfScope = {
+        fen: nodeAt(root, ["e4"]).fen,
+        answer: "e5",
+        card: createEmptyCard(),
+        outOfScope: true as const,
+        weight: 0.4,
+    };
+    const weights = new Map([
+        [getBoardState(fen), 0.8],
+        [getBoardState(outOfScope.fen), 0.1],
+    ]);
+    const first = applyReachWeights([inScope, outOfScope], weights);
+    expect(reachWeightsChange([inScope, outOfScope], weights)).toBe(true);
+    expect(first).toEqual([{ ...inScope, weight: 0.8 }, outOfScope]);
+    expect(reachWeightsChange(first!, weights)).toBe(false);
+    expect(applyReachWeights(first!, weights)).toBeNull();
 });

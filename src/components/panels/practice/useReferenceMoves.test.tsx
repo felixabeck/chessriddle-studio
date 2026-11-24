@@ -163,6 +163,26 @@ test("a late fetch does not overwrite an entry coverage already filled", async (
   expect(result.current.dbMovesMap.get(startBoardFen)).toEqual(coverageEntry);
 });
 
+test("a change of reference identity clears a seeded map", async () => {
+  mocks.fetchPositionMoves.mockReturnValue(new Promise(() => {}));
+  const { result, rerender } = await renderUseReferenceMoves(baseParams());
+  const coverageEntry: DbMovesEntry = {
+    moves: [{ move: "d4", white: 1, draw: 0, black: 0 }],
+    total: 1,
+  };
+  await act(async () => {
+    result.current.replaceMoves(new Map([[startBoardFen, coverageEntry]]));
+  });
+  expect(result.current.dbMovesMap.get(startBoardFen)).toEqual(coverageEntry);
+  await rerender(
+    baseParams({
+      selectedReferenceKey: "db:other",
+      referenceKey: "db:other",
+    }),
+  );
+  expect(result.current.dbMovesMap.size).toBe(0);
+});
+
 test("a fetch that rejects after its controller was aborted by a reference change does not notify", async () => {
   const { active } = await renderAbortedReferenceFetch();
 

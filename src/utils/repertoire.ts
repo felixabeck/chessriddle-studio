@@ -2,7 +2,16 @@ import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
 import type { DatabaseHandle, PositionStats } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { searchPosition } from "./db";
-import { getNodeAtPath, type TreeNode, getBoardState, isOpenVariation } from "./treeReducer";
+import type { Position } from "./practicePosition";
+import { validWeight } from "./practicePosition";
+import { isInPracticeScope, isUserToMove } from "./practiceScope";
+import {
+    getNodeAtPath,
+    getResolvedPathLength,
+    type TreeNode,
+    getBoardState,
+    isOpenVariation,
+} from "./treeReducer";
 import type { TreeStoreState } from "@/state/store/tree";
 import { memoize } from "proxy-memoize";
 
@@ -57,34 +66,53 @@ function positionMovesFromStats(openings: PositionStats[]) {
     return { moves, total: gamesEndingHere + gamesContinuing };
 }
 
-type DbCache = Map<
-    string,
-    {
-        moves: { move: string; white: number; draw: number; black: number }[];
-        total: number;
-    }
->;
+export type TreeStatisticsEntry = {
+    moves: { move: string; white: number; draw: number; black: number }[];
+    total: number;
+};
 
-async function buildDbCache(
+export type TreeStatistics = Map<string, TreeStatisticsEntry>;
+
+const REACH_WEIGHT_SIGNIFICANT_DIGITS = 4;
+
+function moveGames(move: { white: number; draw: number; black: number }): number {
+    return move.white + move.draw + move.black;
+}
+
+function collectStatisticsFens(
+    root: TreeNode,
+    startPath: number[],
+    signal?: AbortSignal,
+): string[] {
+    const fenSet = new Set<string>();
+    let node = root;
+    fenSet.add(getBoardState(node.fen));
+    const resolved = getResolvedPathLength(root, startPath);
+    for (let i = 0; i < resolved; i++) {
+        if (signal?.aborted) throw new DOMException("Cancellation", "AbortError");
+        node = node.children[startPath[i]];
+        fenSet.add(getBoardState(node.fen));
+    }
+
+    const startNode = startPath.length > 0 ? getNodeAtPath(root, startPath) : root;
+    const stack: TreeNode[] = [startNode];
+    while (stack.length > 0) {
+        if (signal?.aborted) throw new DOMException("Cancellation", "AbortError");
+        const current = stack.pop()!;
+        fenSet.add(getBoardState(current.fen));
+        for (const child of current.children) stack.push(child);
+    }
+    return [...fenSet];
+}
+
+export async function fetchTreeStatistics(
     root: TreeNode,
     startPath: number[],
     dbPath: DatabaseHandle,
     signal?: AbortSignal,
-): Promise<DbCache> {
-    const startNode = startPath.length > 0 ? getNodeAtPath(root, startPath) : root;
-
-    const fenSet = new Set<string>();
-    const stack: TreeNode[] = [startNode];
-    while (stack.length > 0) {
-        if (signal?.aborted) throw new DOMException("Cancellation", "AbortError");
-        const node = stack.pop()!;
-        fenSet.add(getBoardState(node.fen));
-        for (const child of node.children) stack.push(child);
-    }
-    const fenList = [...fenSet];
-
-    const cache: DbCache = new Map();
-
+): Promise<TreeStatistics> {
+    const fenList = collectStatisticsFens(root, startPath, signal);
+    const cache: TreeStatistics = new Map();
     if (fenList.length > 0) {
         const results = await tauri.searchPositionsStats(
             dbPath,
@@ -97,6 +125,116 @@ async function buildDbCache(
     return cache;
 }
 
+function opponentMoveFrequency(parent: TreeNode, child: TreeNode, stats: TreeStatistics): number {
+    const replies = parent.children.length;
+    const dbData = stats.get(getBoardState(parent.fen));
+    const recorded = dbData?.moves ?? [];
+    const recordedTotal = recorded.reduce((sum, move) => sum + moveGames(move), 0);
+    if (!dbData || recorded.length === 0 || recordedTotal <= 0) {
+        return replies > 0 ? 1 / replies : 0;
+    }
+    const recordedMove = child.san ? recorded.find((move) => move.move === child.san) : undefined;
+    if (!recordedMove) return 1 / recordedTotal;
+    return moveGames(recordedMove) / recordedTotal;
+}
+
+function childReach(
+    parent: TreeNode,
+    child: TreeNode,
+    reach: number,
+    color: "white" | "black",
+    stats: TreeStatistics,
+): number {
+    return isUserToMove(parent.halfMoves, color)
+        ? reach
+        : reach * opponentMoveFrequency(parent, child, stats);
+}
+
+export function roundReachWeight(value: number): number {
+    const capped = Math.min(1, value);
+    if (!Number.isFinite(capped) || capped <= 0) return capped;
+    return Number.parseFloat(capped.toPrecision(REACH_WEIGHT_SIGNIFICANT_DIGITS));
+}
+
+/**
+ * Reach of each in-scope board state from the reference statistics. Null when Start does not
+ * resolve. Keys are `getBoardState`; values are capped at 1 and rounded to four significant digits.
+ */
+export function computeReachWeights(
+    root: TreeNode,
+    color: "white" | "black",
+    startPath: number[],
+    stats: TreeStatistics,
+): Map<string, number> | null {
+    if (getResolvedPathLength(root, startPath) !== startPath.length) return null;
+
+    const sums = new Map<string, number>();
+    const addIfInScope = (node: TreeNode, path: number[], reach: number) => {
+        if (!isInPracticeScope(path, startPath)) return;
+        const key = getBoardState(node.fen);
+        sums.set(key, (sums.get(key) ?? 0) + reach);
+    };
+
+    let node = root;
+    let reach = 1;
+    addIfInScope(node, [], reach);
+    for (let i = 0; i < startPath.length; i++) {
+        const child = node.children[startPath[i]];
+        reach = childReach(node, child, reach, color, stats);
+        node = child;
+        addIfInScope(node, startPath.slice(0, i + 1), reach);
+    }
+
+    const walkSubtree = (current: TreeNode, path: number[], currentReach: number) => {
+        for (let i = 0; i < current.children.length; i++) {
+            const child = current.children[i];
+            const nextReach = childReach(current, child, currentReach, color, stats);
+            const childPath = [...path, i];
+            addIfInScope(child, childPath, nextReach);
+            walkSubtree(child, childPath, nextReach);
+        }
+    };
+    walkSubtree(node, startPath, reach);
+
+    const weights = new Map<string, number>();
+    for (const [key, sum] of sums) weights.set(key, roundReachWeight(sum));
+    return weights;
+}
+
+function replacementReachWeight(
+    position: Position,
+    weights: Map<string, number>,
+): number | undefined {
+    if (position.outOfScope) return undefined;
+    const computed = validWeight(weights.get(getBoardState(position.fen)));
+    const stored = validWeight(position.weight);
+    if (computed === undefined || stored === computed) return undefined;
+    return computed;
+}
+
+/** True when applyReachWeights would write at least one card. */
+export function reachWeightsChange(
+    positions: readonly Position[],
+    weights: Map<string, number>,
+): boolean {
+    return positions.some((position) => replacementReachWeight(position, weights) !== undefined);
+}
+
+/** Writes computed weights onto in-scope cards. Returns null when every stored weight is unchanged. */
+export function applyReachWeights(
+    positions: readonly Position[],
+    weights: Map<string, number>,
+): Position[] | null {
+    let changed = false;
+    const next = positions.map((position) => {
+        const computed = replacementReachWeight(position, weights);
+        if (computed === undefined) return position;
+        changed = true;
+        return { ...position, weight: computed };
+    });
+    return changed ? next : null;
+}
+
 /**
  * Compute coverage and missing games for a single `getBoardState` key.
  * Recurses into child keys (which must already be in dbCache and stateMoves).
@@ -104,7 +242,7 @@ async function buildDbCache(
  */
 function computeCoverageForFen(
     boardFen: string,
-    dbCache: DbCache,
+    dbCache: TreeStatistics,
     stateMoves: Map<string, Map<string, string>>,
     orientation: "white" | "black",
     minGames: number,
@@ -198,23 +336,17 @@ function buildPathMaps(
     root: TreeNode,
     startPath: number[],
     fenCoverageCache: Map<string, { coverage: number; missing: number }>,
-    dbCache: DbCache,
+    dbCache: TreeStatistics,
 ): {
     coverageMap: Map<string, number>;
     gamesMap: Map<string, number>;
     missingGamesMap: Map<string, number>;
-    dbMovesMap: Map<
-        string,
-        { moves: { move: string; white: number; draw: number; black: number }[]; total: number }
-    >;
+    dbMovesMap: TreeStatistics;
 } {
     const coverageMap = new Map<string, number>();
     const gamesMap = new Map<string, number>();
     const missingGamesMap = new Map<string, number>();
-    const dbMovesMap = new Map<
-        string,
-        { moves: { move: string; white: number; draw: number; black: number }[]; total: number }
-    >();
+    const dbMovesMap: TreeStatistics = new Map();
 
     const startNode = startPath.length > 0 ? getNodeAtPath(root, startPath) : root;
     function walk(node: TreeNode, path: number[]) {
@@ -254,12 +386,9 @@ export async function computeTreeCoverage(
     coverageMap: Map<string, number>;
     gamesMap: Map<string, number>;
     missingGamesMap: Map<string, number>;
-    dbMovesMap: Map<
-        string,
-        { moves: { move: string; white: number; draw: number; black: number }[]; total: number }
-    >;
+    dbMovesMap: TreeStatistics;
 }> {
-    const dbCache = await buildDbCache(root, startPath, dbPath, signal);
+    const dbCache = await fetchTreeStatistics(root, startPath, dbPath, signal);
 
     if (signal?.aborted) throw new DOMException("Cancellation", "AbortError");
 
@@ -269,6 +398,10 @@ export async function computeTreeCoverage(
     }
 
     const pathMaps = buildPathMaps(root, startPath, memo, dbCache);
+    // Path-to-Start frequencies live in the cache for reach weights. Coverage maps stay Start-only.
+    for (const [fen, data] of dbCache) {
+        if (!pathMaps.dbMovesMap.has(fen)) pathMaps.dbMovesMap.set(fen, data);
+    }
 
     return pathMaps;
 }
@@ -281,7 +414,6 @@ export function findNextGap(
     gamesMap: Map<string, number>,
     minGames: number,
 ): number[] | null {
-    const userParity = userColor === "white" ? 0 : 1;
     const startNode = getNodeAtPath(root, startPath);
 
     function findNextInSubtree(node: TreeNode, path: number[]): number[] | null {
@@ -293,7 +425,7 @@ export function findNextGap(
             return null;
         }
 
-        const isUserTurn = node.halfMoves % 2 === userParity;
+        const isUserTurn = isUserToMove(node.halfMoves, userColor);
 
         for (let i = 0; i < node.children.length; i++) {
             const result = findNextInSubtree(node.children[i], [...path, i]);
@@ -325,7 +457,6 @@ export function findBiggestGap(
     minGames: number,
     startPath: number[] = [],
 ): number[] | null {
-    const userParity = userColor === "white" ? 0 : 1;
     const startNode = getNodeAtPath(root, startPath);
 
     let maxMissing = -1;
@@ -341,7 +472,7 @@ export function findBiggestGap(
             return;
         }
 
-        const isUserTurn = node.halfMoves % 2 === userParity;
+        const isUserTurn = isUserToMove(node.halfMoves, userColor);
 
         for (let i = 0; i < node.children.length; i++) {
             traverse(node.children[i], [...path, i]);

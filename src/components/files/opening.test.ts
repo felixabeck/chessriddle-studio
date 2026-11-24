@@ -1,7 +1,4 @@
 import { parseUci } from "chessops";
-import { Chess } from "chessops/chess";
-import { makeFen, parseFen } from "chessops/fen";
-import { parseSan } from "chessops/san";
 import { type Card, createEmptyCard } from "ts-fsrs";
 import { expect, test, vi } from "vitest";
 import {
@@ -10,12 +7,12 @@ import {
     getCardStatus,
     getStats,
     inScopeCards,
-    isInPracticeScope,
     resolvePracticeCard,
     syncDeck,
     updateCardPerformance,
 } from "./opening";
 import { positionSchema } from "@/utils/practicePosition";
+import { openingLine } from "@/utils/tests/openingLine";
 import {
     createNode,
     defaultTree,
@@ -23,35 +20,6 @@ import {
     treeIterator,
     type TreeNode,
 } from "@/utils/treeReducer";
-
-test("practice scope includes only non-root positions or the Start subtree", () => {
-    expect(isInPracticeScope([], [])).toBe(false);
-    expect(isInPracticeScope([1], [])).toBe(true);
-    expect(isInPracticeScope([1, 0], [1, 0])).toBe(true);
-    expect(isInPracticeScope([1, 0, 0], [1, 0])).toBe(true);
-    expect(isInPracticeScope([1], [1, 0])).toBe(false);
-    expect(isInPracticeScope([1, 1], [1, 0])).toBe(false);
-});
-
-function openingLine(moves: string[], fen?: string): TreeNode {
-    const root = defaultTree(fen).root;
-    const position = Chess.fromSetup(parseFen(root.fen).unwrap()).unwrap();
-    let node = root;
-    for (const san of moves) {
-        const move = parseSan(position, san)!;
-        expect(move).toBeDefined();
-        position.play(move);
-        const child = createNode({
-            fen: makeFen(position.toSetup()),
-            move,
-            san,
-            halfMoves: node.halfMoves + 1,
-        });
-        node.children.push(child);
-        node = child;
-    }
-    return root;
-}
 
 test.each([
     {
@@ -565,6 +533,42 @@ test("positionSchema keeps the outOfScope flag", () => {
             card,
         }),
     ).not.toHaveProperty("outOfScope");
+});
+
+test("positionSchema keeps a valid weight through a round trip", () => {
+    const card = createEmptyCard();
+    expect(
+        positionSchema.parse({
+            fen: "8/8/8/8/8/8/8/8 w - - 0 1",
+            answer: "e4",
+            card,
+            weight: 0.125,
+        }).weight,
+    ).toBe(0.125);
+});
+
+test.each([0, -0.1, 1.1, Number.NaN, Number.POSITIVE_INFINITY, "0.5", null])(
+    "positionSchema reads invalid stored weight %j as absent without failing the deck",
+    (weight) => {
+        const card = createEmptyCard();
+        const parsed = positionSchema.parse({
+            fen: "8/8/8/8/8/8/8/8 w - - 0 1",
+            answer: "e4",
+            card,
+            weight,
+        });
+        expect(parsed.weight).toBeUndefined();
+    },
+);
+
+test("sync and rating keep a stored weight", () => {
+    const root = openingLine(["e4", "e5", "Nf3"]);
+    const [position] = buildFromTree(root, "white", []);
+    const weighted = { ...position, weight: 0.8 };
+    const synced = syncDeck([weighted], root, "white", []);
+    expect(synced.positions[0].weight).toBe(0.8);
+    const rated = updateCardPerformance(synced.positions, 0, synced.positions[0].card, 3)!;
+    expect(rated.positions[0].weight).toBe(0.8);
 });
 
 test("getStats ignores out-of-scope cards", () => {

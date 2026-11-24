@@ -1,17 +1,25 @@
+import { WorkspaceTabScope } from "@/state/tabScope";
+import { MantineProvider } from "@mantine/core";
+import { Provider, createStore } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { DatabaseHandle } from "@/bindings";
-import { createTreeStore } from "@/state/store/tree";
+import { TreeStateProvider } from "@/components/common/TreeStateContext";
+import { closeTreeStore } from "@/state/store/tree";
+import { activeTabAtom, coverageMinGamesAtom, referenceDbAtom, tabsAtom } from "@/state/atoms";
 import type { computeTreeCoverage } from "@/utils/repertoire";
+import { installMatchMediaStub } from "@/tests/matchMedia";
 import { defaultTree } from "@/utils/treeReducer";
-import { useRepertoireCoverage, type UseRepertoireCoverageParams } from "./useRepertoireCoverage";
+import { usePracticeStatistics } from "./usePracticeStatistics";
+
+installMatchMediaStub();
 
 const mocks = vi.hoisted(() => ({
   computeTreeCoverage: vi.fn(),
   notificationShow: vi.fn(),
 }));
 
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@mantine/notifications", () => ({
   notifications: { show: mocks.notificationShow },
 }));
@@ -22,18 +30,27 @@ vi.mock("@/utils/repertoire", async () => {
     computeTreeCoverage: mocks.computeTreeCoverage,
   };
 });
+vi.mock("@/platform/tauri", async (original) => {
+  const actual = await original<typeof import("@/platform/tauri")>();
+  return {
+    ...actual,
+    tauri: { ...actual.tauri, collectionForDatabase: vi.fn(async () => null) },
+  };
+});
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 type CoverageResult = Awaited<ReturnType<typeof computeTreeCoverage>>;
 
-const database: DatabaseHandle = { id: { id: "reference" }, kind: "database" };
+const database = { id: { id: "reference" }, kind: "database" as const };
 
 let root: Root;
 let host: HTMLDivElement;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
+  sessionStorage.clear();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -42,6 +59,11 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  closeTreeStore("practice-statistics");
+  closeTreeStore("practice-statistics-retry");
+  closeTreeStore("practice-statistics-reference");
+  localStorage.clear();
+  sessionStorage.clear();
 });
 
 function createDeferred<T>() {
@@ -63,46 +85,33 @@ function makeCoverageResult(label: string): CoverageResult {
   };
 }
 
-function baseParams(
-  overrides: Partial<UseRepertoireCoverageParams> = {},
-): UseRepertoireCoverageParams {
-  const tree = defaultTree();
-  return {
-    store: createTreeStore(undefined, tree),
-    root: tree.root,
-    orientation: "white",
-    referenceDb: database,
-    selectedReferenceKey: "db:reference",
-    currencyGeneration: undefined,
-    currencyStatus: undefined,
-    currencyError: undefined,
-    currencyPending: false,
-    minGames: 50,
-    startPath: [],
-    startStateMoves: new Map(),
-    replaceMoves: vi.fn(),
-    errorTitle: "Common.Error",
-    ...overrides,
-  };
-}
-
-async function renderUseRepertoireCoverage(initialParams: UseRepertoireCoverageParams) {
-  const result = { current: undefined as unknown as ReturnType<typeof useRepertoireCoverage> };
-  function Harness({ params }: { params: UseRepertoireCoverageParams }) {
-    result.current = useRepertoireCoverage(params);
+async function renderStatistics(id = "practice-statistics") {
+  const store = createStore();
+  store.set(tabsAtom, [
+    { name: "Repertoire", value: "tab", type: "analysis", gameOrigin: { kind: "none" } },
+  ]);
+  store.set(activeTabAtom, "tab");
+  const result = { current: undefined as unknown as ReturnType<typeof usePracticeStatistics> };
+  function Harness() {
+    result.current = usePracticeStatistics();
     return null;
   }
   await act(async () => {
-    root.render(<Harness params={initialParams} />);
+    root.render(
+      <MantineProvider>
+        <Provider store={store}>
+          <TreeStateProvider id={id} initial={defaultTree()}>
+            <WorkspaceTabScope tabId="tab">
+              <Harness />
+            </WorkspaceTabScope>
+          </TreeStateProvider>
+        </Provider>
+      </MantineProvider>,
+    );
+    await Promise.resolve();
   });
-  return {
-    result,
-    rerender: async (nextParams: UseRepertoireCoverageParams) => {
-      await act(async () => {
-        root.render(<Harness params={nextParams} />);
-      });
-    },
-  };
+  await act(async () => store.set(referenceDbAtom, database));
+  return { result, store };
 }
 
 test("an outcome from a superseded input is discarded", async () => {
@@ -119,13 +128,11 @@ test("an outcome from a superseded input is discarded", async () => {
       return second.promise;
     });
 
-  const replaceMoves = vi.fn();
-  const initial = baseParams({ replaceMoves, minGames: 50 });
-  const { result, rerender } = await renderUseRepertoireCoverage(initial);
+  const { result, store } = await renderStatistics();
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(1);
   expect(result.current.coverageStatus).toBe("loading");
 
-  await rerender({ ...initial, minGames: 100 });
+  await act(async () => store.set(coverageMinGamesAtom, 100));
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
   expect(signals[0]?.aborted).toBe(true);
   expect(signals[1]?.aborted).toBe(false);
@@ -138,7 +145,6 @@ test("an outcome from a superseded input is discarded", async () => {
 
   expect(result.current.coverageStatus).toBe("loading");
   expect(result.current.coverageResult).toBeNull();
-  expect(replaceMoves).not.toHaveBeenCalled();
 
   const freshResult = makeCoverageResult("fresh");
   await act(async () => {
@@ -148,17 +154,15 @@ test("an outcome from a superseded input is discarded", async () => {
 
   expect(result.current.coverageStatus).toBe("success");
   expect(result.current.coverageResult).toBe(freshResult);
-  expect(replaceMoves).toHaveBeenCalledExactlyOnceWith(freshResult.dbMovesMap);
 });
 
 test("retryCoverage re-runs coverage computation after failure", async () => {
   const recovered = makeCoverageResult("recovered");
-  const replaceMoves = vi.fn();
   mocks.computeTreeCoverage
     .mockRejectedValueOnce(new Error("transient failure"))
     .mockResolvedValueOnce(recovered);
 
-  const { result } = await renderUseRepertoireCoverage(baseParams({ replaceMoves }));
+  const { result } = await renderStatistics("practice-statistics-retry");
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(1);
   expect(result.current.coverageStatus).toBe("error");
   expect(result.current.coverageResult).toBeNull();
@@ -171,5 +175,20 @@ test("retryCoverage re-runs coverage computation after failure", async () => {
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
   expect(result.current.coverageStatus).toBe("success");
   expect(result.current.coverageResult).toBe(recovered);
-  expect(replaceMoves).toHaveBeenCalledExactlyOnceWith(recovered.dbMovesMap);
+});
+
+test("a change of reference cancels the in-flight request", async () => {
+  const first = createDeferred<CoverageResult>();
+  const signals: (AbortSignal | undefined)[] = [];
+  mocks.computeTreeCoverage.mockImplementation(
+    (_root, _orient, _db, _min, _start, _moves, signal?: AbortSignal) => {
+      signals.push(signal);
+      return first.promise;
+    },
+  );
+  const { store } = await renderStatistics("practice-statistics-reference");
+  expect(signals[0]?.aborted).toBe(false);
+  await act(async () => store.set(referenceDbAtom, { id: { id: "other" }, kind: "database" }));
+  expect(signals[0]?.aborted).toBe(true);
+  expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
 });

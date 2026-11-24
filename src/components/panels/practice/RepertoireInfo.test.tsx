@@ -1,7 +1,7 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { MantineProvider } from "@mantine/core";
 import { Provider, createStore } from "jotai";
-import { act, useContext, useLayoutEffect } from "react";
+import { act, StrictMode, useContext, useLayoutEffect } from "react";
 import { useStore } from "zustand";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
@@ -14,6 +14,7 @@ import { createNode, defaultTree, getBoardState, getNodeAtPath } from "@/utils/t
 import { parseUci } from "chessops";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import RepertoireInfo from "./RepertoireInfo";
+import { PracticeStatisticsContext, type PracticeStatistics } from "./usePracticeStatistics";
 import { startFileRevisionPoll } from "@/state/fileFreshness";
 
 const mocks = vi.hoisted(() => ({
@@ -1550,4 +1551,69 @@ test("move row result bar renders W/D/L sections, >20 bare integer labels, and R
     );
     expect(tooltips).toContain("Board.Practice.ResultDistribution");
   });
+});
+
+test("StrictMode remount under an existing success owner seeds the reference move row", async () => {
+  const builder = createTreeStore();
+  expect(builder.getState().makeMoves({ payload: ["e4", "e5", "Nf3"] }).success).toBe(true);
+  builder.getState().goToMove([0]);
+  const initial = builder.getState();
+  const e4Fen = getBoardState(initial.root.children[0].fen);
+  const statistics: PracticeStatistics = {
+    coverageResult: {
+      coverageMap: new Map(),
+      gamesMap: new Map(),
+      missingGamesMap: new Map(),
+      dbMovesMap: new Map([
+        [
+          e4Fen,
+          {
+            moves: [
+              { move: "e5", white: 30, draw: 0, black: 0 },
+              { move: "c5", white: 70, draw: 0, black: 0 },
+            ],
+            total: 100,
+          },
+        ],
+      ]),
+    },
+    coverageStatus: "success",
+    coverageMap: new Map(),
+    retryCoverage: () => undefined,
+    referenceDb: database,
+    selectedReference: database,
+    selectedReferenceKey: "db:reference",
+    referenceKey: "db:reference",
+    currencyGeneration: undefined,
+    currencyStatus: undefined,
+    currencyError: undefined,
+    currencyPending: false,
+  };
+  mocks.fetchPositionMoves.mockResolvedValue({ moves: [], total: 0 });
+  const store = createStore();
+  store.set(tabsAtom, [
+    { name: "Repertoire", value: "tab", type: "analysis", gameOrigin: { kind: "none" } },
+  ]);
+  store.set(activeTabAtom, "tab");
+  store.set(referenceDbAtom, database);
+  await act(async () => {
+    root.render(
+      <StrictMode>
+        <MantineProvider>
+          <Provider store={store}>
+            <TreeStateProvider id="seed-on-remount" initial={initial}>
+              <WorkspaceTabScope tabId="tab">
+                <PracticeStatisticsContext.Provider value={statistics}>
+                  <RepertoireInfo />
+                </PracticeStatisticsContext.Provider>
+              </WorkspaceTabScope>
+            </TreeStateProvider>
+          </Provider>
+        </MantineProvider>
+      </StrictMode>,
+    );
+  });
+  expect(host.textContent).toContain("c5");
+  expect(host.textContent).toContain("70%");
+  expect(mocks.computeTreeCoverage).not.toHaveBeenCalled();
 });

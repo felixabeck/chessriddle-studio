@@ -6,8 +6,8 @@ import {
     type ReviewLog,
     generatorParameters,
 } from "ts-fsrs";
-import { isPrefix } from "@/utils/misc";
 import type { Position } from "@/utils/practicePosition";
+import { isInPracticeScope, isUserToMove } from "@/utils/practiceScope";
 import { getBoardState, type TreeNode, treeIterator } from "@/utils/treeReducer";
 
 const params = generatorParameters({ enable_fuzz: true });
@@ -18,18 +18,13 @@ export function inScopeCards(positions: readonly Position[]): Position[] {
     return positions.filter((position) => !position.outOfScope);
 }
 
-/** Empty Start excludes the root. Otherwise, practice includes Start and its descendants. */
-export function isInPracticeScope(position: number[], start: number[]): boolean {
-    return start.length === 0 ? position.length > 0 : isPrefix(start, position);
-}
-
 function* practiceCardsFromTree(tree: TreeNode, color: "white" | "black", start: number[]) {
     for (const frame of treeIterator(tree)) {
         const answer = frame.node.children[0]?.san;
         if (
             !isInPracticeScope(frame.position, start) ||
             !answer ||
-            (color === "white" ? frame.node.halfMoves % 2 !== 0 : frame.node.halfMoves % 2 !== 1)
+            !isUserToMove(frame.node.halfMoves, color)
         ) {
             continue;
         }

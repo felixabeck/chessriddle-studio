@@ -17,7 +17,7 @@ import {
 } from "@mantine/core";
 import { Check, ChevronDown, ChevronRight, Flag, Info, Play } from "lucide-react";
 import { useAtomValue } from "jotai";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
@@ -25,11 +25,10 @@ import { ResultBar } from "@/components/common/ResultBar";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { TreeStatsBar } from "@/components/common/TreeStatsBar";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { coverageMinGamesAtom, referenceDbAtom } from "@/state/atoms";
-import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linkedCollections";
-import { capabilityKey } from "@/utils/pathCapabilities";
+import { coverageMinGamesAtom } from "@/state/atoms";
 import { formatMoveNumber, roundKeepSum } from "@/utils/format";
 import { isPrefix } from "@/utils/misc";
+import { isUserToMove } from "@/utils/practiceScope";
 import { findBiggestGap, findNextGap, type PositionMove } from "@/utils/repertoire";
 import {
   getBoardState,
@@ -38,7 +37,11 @@ import {
   type TreeNode,
 } from "@/utils/treeReducer";
 import { useReferenceMoves } from "./useReferenceMoves";
-import { useRepertoireCoverage, type CoverageStatus } from "./useRepertoireCoverage";
+import {
+  PracticeStatisticsProvider,
+  usePracticeStatisticsContext,
+  type CoverageStatus,
+} from "./usePracticeStatistics";
 import classes from "./RepertoireInfo.module.css";
 import paneClasses from "@/components/common/PaneTabs.module.css";
 
@@ -47,6 +50,19 @@ function formatMoveNotation(halfMoves: number, san: string): string {
 }
 
 function RepertoireInfo() {
+  const statistics = usePracticeStatisticsContext();
+  if (!statistics) {
+    // Standalone mount (no Practice panel above) owns the statistics fetch here.
+    return (
+      <PracticeStatisticsProvider>
+        <RepertoireInfoView />
+      </PracticeStatisticsProvider>
+    );
+  }
+  return <RepertoireInfoView />;
+}
+
+function RepertoireInfoView() {
   const { t } = useTranslation();
   const errorTitle = t("Common.Error");
   const commonErrorRef = useRef(errorTitle);
@@ -66,21 +82,21 @@ function RepertoireInfo() {
   const makeMoves = useStore(store, (s) => s.makeMoves);
   const setStart = useStore(store, (s) => s.setStart);
 
-  const selectedReference = useAtomValue(referenceDbAtom);
-  const selectedReferenceKey = selectedReference ? capabilityKey(selectedReference) : null;
-  const currency = useCollectionCurrency(selectedReference);
-  const resolvedReference = currentCollectionDatabase(selectedReference, currency);
-  const referenceKey = resolvedReference ? capabilityKey(resolvedReference) : null;
-  // Native metadata checks decode new handle objects for the same capability. Retain the
-  // admitted handle until its authority changes, so polling is not an implicit coverage Retry.
-  const referenceHandle = useRef(resolvedReference);
-  if ((referenceHandle.current ? capabilityKey(referenceHandle.current) : null) !== referenceKey) {
-    referenceHandle.current = resolvedReference;
-  }
-  const referenceDb = referenceHandle.current;
-  useEffect(() => {
-    if (currency.error) notifyUnlessCancelled(commonErrorRef.current, currency.error);
-  }, [currency.error]);
+  const statistics = usePracticeStatisticsContext()!;
+  const {
+    coverageResult,
+    coverageStatus,
+    coverageMap,
+    retryCoverage,
+    referenceDb,
+    selectedReference,
+    selectedReferenceKey,
+    referenceKey,
+    currencyGeneration,
+    currencyStatus,
+    currencyError,
+    currencyPending,
+  } = statistics;
   const [currentTab] = useOwnerTab();
   const minGames = useAtomValue(coverageMinGamesAtom);
 
@@ -91,12 +107,17 @@ function RepertoireInfo() {
     referenceDb,
     selectedReferenceKey,
     referenceKey,
-    currencyGeneration: currency.collection?.generation,
-    currencyStatus: currency.collection?.status,
-    currencyError: currency.error,
-    currencyPending: currency.pending,
+    currencyGeneration,
+    currencyStatus,
+    currencyError,
+    currencyPending,
     errorTitle,
   });
+  const seededCoverageResult = useRef<typeof coverageResult>(null);
+  if (coverageResult && seededCoverageResult.current !== coverageResult) {
+    seededCoverageResult.current = coverageResult;
+    replaceMoves(coverageResult.dbMovesMap);
+  }
 
   const startPath = useMemo(() => headers.start || [], [headers.start]);
   const boardStateMap = useMemo(() => {
@@ -107,43 +128,6 @@ function RepertoireInfo() {
   const isBeforeStart =
     hasStart && position.length < startPath.length && isPrefix(position, startPath);
   const isEmptyTree = root.children.length === 0;
-
-  const startStateMoves = useMemo(() => {
-    const movesMap = new Map<string, Map<string, string>>();
-    for (const [fen, entries] of Object.entries(boardStateMap)) {
-      const perFenMap = new Map<string, string>();
-      for (const { node, path } of entries) {
-        if (isPrefix(startPath, path)) {
-          for (const child of node.children) {
-            if (child.san) {
-              perFenMap.set(child.san, getBoardState(child.fen));
-            }
-          }
-        }
-      }
-      if (perFenMap.size > 0) {
-        movesMap.set(fen, perFenMap);
-      }
-    }
-    return movesMap;
-  }, [boardStateMap, startPath]);
-
-  const { coverageResult, coverageStatus, coverageMap, retryCoverage } = useRepertoireCoverage({
-    store,
-    root,
-    orientation,
-    referenceDb,
-    selectedReferenceKey,
-    currencyGeneration: currency.collection?.generation,
-    currencyStatus: currency.collection?.status,
-    currencyError: currency.error,
-    currencyPending: currency.pending,
-    minGames,
-    startPath,
-    startStateMoves,
-    replaceMoves,
-    errorTitle,
-  });
 
   const nodeToPath = useMemo(() => {
     const map = new Map<TreeNode, number[]>();
@@ -227,8 +211,7 @@ function RepertoireInfo() {
     return allMoves.sort((a, b) => b.frequency - a.frequency);
   }, [currentNode.fen, dbMovesMap, transpositionMoves, coverageMap]);
 
-  const isUserTurn =
-    orientation === "white" ? currentNode.halfMoves % 2 === 0 : currentNode.halfMoves % 2 === 1;
+  const isUserTurn = isUserToMove(currentNode.halfMoves, orientation);
 
   const handleMoveClick = useCallback(
     (move: PositionMove) => {

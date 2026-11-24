@@ -195,6 +195,31 @@ vi.mock("@/components/common/IconAction", () => ({
   ),
 }));
 vi.mock("./RepertoireInfo", () => ({ default: () => null }));
+vi.mock("./usePracticeStatistics", () => {
+  const statistics = {
+    coverageResult: null,
+    coverageStatus: "absent" as const,
+    coverageMap: undefined,
+    retryCoverage: () => undefined,
+    referenceDb: null,
+    selectedReference: null,
+    selectedReferenceKey: null,
+    referenceKey: null,
+    currencyGeneration: undefined,
+    currencyStatus: undefined,
+    currencyError: undefined,
+    currencyPending: false,
+  };
+  return {
+    PracticeStatisticsContext: {
+      Provider: ({ children }: { children: React.ReactNode }) => children,
+    },
+    PracticeStatisticsProvider: ({ children }: { children: React.ReactNode }) => children,
+    usePracticeStatistics: () => statistics,
+    usePracticeStatisticsContext: () => statistics,
+  };
+});
+vi.mock("./useDeckWeights", () => ({ useDeckWeights: vi.fn() }));
 vi.mock("lucide-react", () => {
   const Icon = () => null;
   return {

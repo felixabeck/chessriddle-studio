@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { CollectionDescriptor, DatabaseHandle } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { fetchPositionMoves } from "@/utils/repertoire";
+import {
+    fetchPositionMoves,
+    type TreeStatistics,
+    type TreeStatisticsEntry,
+} from "@/utils/repertoire";
 import { getBoardState } from "@/utils/treeReducer";
 
-export type DbMovesEntry = {
-    moves: { move: string; white: number; draw: number; black: number }[];
-    total: number;
-};
-
-export type DbMovesMap = Map<string, DbMovesEntry>;
+export type DbMovesEntry = TreeStatisticsEntry;
+export type DbMovesMap = TreeStatistics;
 
 export type UseReferenceMovesParams = {
     currentFen: string;
@@ -22,6 +22,27 @@ export type UseReferenceMovesParams = {
     currencyPending: boolean;
     errorTitle: string;
 };
+
+type ReferenceMovesIdentity = Pick<
+    UseReferenceMovesParams,
+    | "selectedReferenceKey"
+    | "referenceKey"
+    | "currencyGeneration"
+    | "currencyStatus"
+    | "currencyError"
+    | "currencyPending"
+>;
+
+function sameReferenceMovesIdentity(left: ReferenceMovesIdentity, right: ReferenceMovesIdentity) {
+    return (
+        Object.is(left.selectedReferenceKey, right.selectedReferenceKey) &&
+        Object.is(left.referenceKey, right.referenceKey) &&
+        Object.is(left.currencyGeneration, right.currencyGeneration) &&
+        Object.is(left.currencyStatus, right.currencyStatus) &&
+        Object.is(left.currencyError, right.currencyError) &&
+        Object.is(left.currencyPending, right.currencyPending)
+    );
+}
 
 export function useReferenceMoves({
     currentFen,
@@ -39,8 +60,23 @@ export function useReferenceMoves({
 
     const [dbMovesMap, setDbMovesMap] = useState<DbMovesMap>(new Map());
     const positionRequest = useRef<AbortController | null>(null);
+    const identity = {
+        selectedReferenceKey,
+        referenceKey,
+        currencyGeneration,
+        currencyStatus,
+        currencyError,
+        currencyPending,
+    };
+    const lastIdentity = useRef(identity);
+    const identityRef = useRef(identity);
+    identityRef.current = identity;
 
     useEffect(() => {
+        // Last-seen comparison keeps a StrictMode effect replay from wiping a render-time seed.
+        const next = identityRef.current;
+        if (sameReferenceMovesIdentity(lastIdentity.current, next)) return;
+        lastIdentity.current = next;
         positionRequest.current?.abort();
         setDbMovesMap(new Map());
     }, [
