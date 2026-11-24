@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach y conexiones de IA
 summary: Conecta un proveedor de IA o un modelo local para habilitar el Coach en el tablero de análisis y el Assistant.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 Las conexiones de IA dan soporte tanto al Coach (en el tablero de análisis) como al Assistant. Gestiona tus conexiones en [[settings-category:coach]] ({{label:Settings.AI}}).
@@ -14,7 +14,9 @@ Para añadir una conexión, elige una de estas opciones en [[settings-category:c
 
 Las claves y credenciales de inicio de sesión se guardan en el llavero del sistema de tu ordenador. Cuando haya al menos una conexión guardada, el Assistant aparecerá en el menú {{label:Menu.Help}} ({{label:Menu.Help.Assistant}}) y en la barra de navegación ({{label:Navigation.Assistant}}).
 
-Tanto el Coach como el Assistant comparten la misma conexión, modelo y nivel de razonamiento seleccionados. Usa {{label:Settings.Coach.Connection.Check}} en una conexión para comprobarla y listar sus modelos disponibles, o {{label:Settings.Coach.Connection.Remove}} para eliminarla.
+Elige la conexión, el modelo y el nivel de razonamiento en [[setting:coach-model]] ({{label:Settings.Coach.Model}}). Tanto el Coach como el Assistant responden con esa misma elección. El botón del modelo junto a {{label:Coach.Send}} en cualquiera de los dos paneles muestra qué modelo responde y cambia esa misma elección; {{label:Coach.NewConversation}} está justo al lado.
+
+Usa {{label:Settings.Coach.Connection.Check}} en una conexión para comprobarla y listar sus modelos disponibles, o {{label:Settings.Coach.Connection.Remove}} para eliminarla.
 
 Para usar el Coach en el tablero de análisis:
 - Abre la pestaña {{label:Board.Tabs.Coach}} (o pulsa el atajo {{label:Settings.Keybinds.Actions.COACH_TAB}}).

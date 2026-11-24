@@ -2,7 +2,7 @@
 id: settings
 title: 设置概览
 summary: 在棋盘、输入、外观、声音、快捷键、目录、开局库、AI 和高级类别中查找与搜索设置。
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 从应用程序菜单打开 [[page:settings]] ({{label:SideBar.Settings}})（或在 macOS 上按 Cmd+,）。使用 [[page:settings]] 顶部的 {{label:Common.Search}} 栏按标题、描述或关键字筛选所有设置，按 Escape 清除搜索。
@@ -15,5 +15,5 @@ source: b40bdfbf3b6de933
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}})：自定义键盘快捷键、通过 {{label:Common.Reset}} 重置快捷键，并查看 {{label:Settings.Drawing}} 鼠标修饰键。
 - [[settings-category:directories]] ({{label:Settings.Directories}})：通过 [[setting:files-directory]]、[[setting:databases-directory]]、[[setting:engines-directory]] 和 [[setting:puzzles-directory]] 配置存储文件夹。
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}})：通过 [[setting:repertoire-depth]]、[[setting:practice-grading]] 和 [[setting:practice-new-per-session]] 设置开局库覆盖阈值与练习安排。
-- [[settings-category:coach]] ({{label:Settings.AI}})：管理 Coach 和 Assistant 的 AI 连接，并在 [[setting:coach-engine]] 中选择 Coach 使用的本地引擎。
+- [[settings-category:coach]] ({{label:Settings.AI}})：管理 Coach 和 Assistant 的 AI 连接，在 [[setting:coach-model]] 中选择它们用于回答的模型，并在 [[setting:coach-engine]] 中选择 Coach 使用的本地引擎。
 - [[settings-category:advanced]] ({{label:Settings.Advanced}})：维护工具，包括 [[setting:reload]]、[[setting:clear-saved-data]] 和 [[setting:open-logs]]。

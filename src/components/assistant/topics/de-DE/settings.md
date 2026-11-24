@@ -2,7 +2,7 @@
 id: settings
 title: Einstellungsübersicht
 summary: Einstellungen über die Kategorien Brett, Eingaben, Erscheinungsbild, Ton, Tastenkombinationen, Verzeichnisse, Repertoire, KI und Erweitert finden und durchsuchen.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Öffne [[page:settings]] ({{label:SideBar.Settings}}) über das Anwendungsmenü (oder drücke unter macOS Cmd+,). Nutze die Leiste {{label:Common.Search}} oben in [[page:settings]], um alle Einstellungen nach Titel, Beschreibung oder Stichwort zu filtern, und drücke Escape, um die Suche zu leeren.
@@ -15,5 +15,5 @@ Die Einstellungen gliedern sich in neun Kategorien:
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): Tastenkombinationen anpassen, mit {{label:Common.Reset}} zurücksetzen und die Maus-Modifikatoren für {{label:Settings.Drawing}} einsehen.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): Speicherordner einrichten über [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] und [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): Schwellenwert für Repertoire-Abdeckung und Übungsplanung über [[setting:repertoire-depth]], [[setting:practice-grading]] und [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): KI-Verbindungen für Coach und Assistant verwalten sowie die lokale Engine des Coach unter [[setting:coach-engine]] wählen.
+- [[settings-category:coach]] ({{label:Settings.AI}}): KI-Verbindungen für Coach und Assistant verwalten, das Modell für ihre Antworten unter [[setting:coach-model]] wählen sowie die lokale Engine des Coach unter [[setting:coach-engine]] wählen.
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): Wartungswerkzeuge einschließlich [[setting:reload]], [[setting:clear-saved-data]] und [[setting:open-logs]].

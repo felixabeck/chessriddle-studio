@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach и подключения ИИ
 summary: Подключение провайдера ИИ или локальной модели для работы Coach на доске анализа и Assistant.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 Подключения ИИ обеспечивают работу как Coach (на доске анализа), так и Assistant. Управляйте подключениями в разделе [[settings-category:coach]] ({{label:Settings.AI}}).
@@ -14,7 +14,9 @@ source: db8abb1b23f8812c
 
 Ключи и данные входа хранятся в системном хранилище ключей вашего компьютера. Как только сохранено хотя бы одно подключение, Assistant появляется в меню {{label:Menu.Help}} ({{label:Menu.Help.Assistant}}) и на верхней панели навигации ({{label:Navigation.Assistant}}).
 
-Coach и Assistant используют одно и то же выбранное подключение, модель и глубину рассуждений. Нажмите {{label:Settings.Coach.Connection.Check}} на подключении, чтобы проверить его и получить список доступных моделей, или {{label:Settings.Coach.Connection.Remove}}, чтобы удалить его.
+Выберите подключение, модель и глубину рассуждений в [[setting:coach-model]] ({{label:Settings.Coach.Model}}). И Coach, и Assistant отвечают с помощью этого единого выбора. Кнопка модели рядом с {{label:Coach.Send}} в любой из панелей показывает, какая модель отвечает, и меняет этот же выбор; рядом находится {{label:Coach.NewConversation}}.
+
+Нажмите {{label:Settings.Coach.Connection.Check}} на подключении, чтобы проверить его и получить список доступных моделей, или {{label:Settings.Coach.Connection.Remove}}, чтобы удалить его.
 
 Чтобы использовать Coach на доске анализа:
 - Откройте вкладку {{label:Board.Tabs.Coach}} (или нажмите сочетание клавиш {{label:Settings.Keybinds.Actions.COACH_TAB}}).

@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach 与 AI 连接
 summary: 连接 AI 提供商或本地模型，以启用分析棋盘上的 Coach 和 Assistant。
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 AI 连接同时为 Coach（分析棋盘上）和 Assistant 提供支持。在 [[settings-category:coach]] ({{label:Settings.AI}}) 中管理您的连接。
@@ -14,7 +14,9 @@ AI 连接同时为 Coach（分析棋盘上）和 Assistant 提供支持。在 [[
 
 密钥和登录凭据保存在您电脑的系统钥匙串中。保存至少一个连接后，Assistant 就会出现在 {{label:Menu.Help}} 菜单 ({{label:Menu.Help.Assistant}}) 和顶部导航栏 ({{label:Navigation.Assistant}}) 中。
 
-Coach 和 Assistant 共用同一个选定连接、模型和推理强度。使用连接上的 {{label:Settings.Coach.Connection.Check}} 验证连接并列出可用模型，或使用 {{label:Settings.Coach.Connection.Remove}} 将其移除。
+在 [[setting:coach-model]] ({{label:Settings.Coach.Model}}) 中选择连接、模型和推理强度。Coach 和 Assistant 都使用这同一项选择进行回答。任一面板中 {{label:Coach.Send}} 旁的模型按钮都会显示当前回答的模型并修改这同一选择；{{label:Coach.NewConversation}} 就在其旁边。
+
+使用连接上的 {{label:Settings.Coach.Connection.Check}} 验证连接并列出可用模型，或使用 {{label:Settings.Coach.Connection.Remove}} 将其移除。
 
 要在分析棋盘上使用 Coach：
 - 打开 {{label:Board.Tabs.Coach}} 标签页（或按 {{label:Settings.Keybinds.Actions.COACH_TAB}} 快捷键）。

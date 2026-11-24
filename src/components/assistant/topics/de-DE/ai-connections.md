@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach und KI-Verbindungen
 summary: Verbinde einen KI-Anbieter oder ein lokales Modell, um den Coach auf dem Analysebrett und den Assistant zu nutzen.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 KI-Verbindungen versorgen sowohl den Coach (auf dem Analysebrett) als auch den Assistant. Verwalte deine Verbindungen unter [[settings-category:coach]] ({{label:Settings.AI}}).
@@ -14,7 +14,9 @@ Um eine Verbindung hinzuzufügen, wähle unter [[settings-category:coach]] eine 
 
 Schlüssel und Anmeldedaten werden im Schlüsselbund deines Computers gespeichert. Sobald mindestens eine Verbindung gespeichert ist, erscheint der Assistant im Menü {{label:Menu.Help}} ({{label:Menu.Help.Assistant}}) und in der Navigationsleiste ({{label:Navigation.Assistant}}).
 
-Coach und Assistant teilen sich dieselbe ausgewählte Verbindung, dasselbe Modell und dieselbe Denktiefe. Nutze {{label:Settings.Coach.Connection.Check}} bei einer Verbindung, um sie zu prüfen und verfügbare Modelle aufzulisten, oder {{label:Settings.Coach.Connection.Remove}}, um sie zu entfernen.
+Wähle die Verbindung, das Modell und die Denktiefe unter [[setting:coach-model]] ({{label:Settings.Coach.Model}}). Coach und Assistant antworten beide mit dieser einen Auswahl. Die Modell-Schaltfläche neben {{label:Coach.Send}} in beiden Bereichen zeigt an, welches Modell antwortet, und ändert dieselbe Auswahl; {{label:Coach.NewConversation}} sitzt daneben.
+
+Nutze {{label:Settings.Coach.Connection.Check}} bei einer Verbindung, um sie zu prüfen und verfügbare Modelle aufzulisten, oder {{label:Settings.Coach.Connection.Remove}}, um sie zu entfernen.
 
 So nutzt du den Coach auf dem Analysebrett:
 - Öffne den Tab {{label:Board.Tabs.Coach}} (oder drücke das Tastenkürzel {{label:Settings.Keybinds.Actions.COACH_TAB}}).

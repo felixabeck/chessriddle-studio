@@ -2,7 +2,7 @@
 id: settings
 title: Агляд налад
 summary: Пошук і налада параметраў у катэгорыях Дошка, Уводы, Знешні выгляд, Гук, Гарачыя клавішы, Каталогі, Рэпертуар, ШІ і Дадаткова.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Адкрыйце [[page:settings]] ({{label:SideBar.Settings}}) з меню праграмы (або націсніце Cmd+, на macOS). Выкарыстоўвайце радок {{label:Common.Search}} уверсе [[page:settings]], каб адфільтраваць усе параметры па назве, апісанні або ключавым слове, і націсніце Escape, каб ачысціць пошук.
@@ -15,5 +15,5 @@ source: b40bdfbf3b6de933
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): налада гарачых клавіш, іх скід кнопкай {{label:Common.Reset}} і прагляд мадыфікатараў мышы {{label:Settings.Drawing}}.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): выбар папак захоўвання праз [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] і [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): парог пакрыцця рэпертуару і расклад трэніровак праз [[setting:repertoire-depth]], [[setting:practice-grading]] і [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): кіраванне падключэннямі ШІ для Coach і Assistant і выбар лакальнага рухавіка Coach у [[setting:coach-engine]].
+- [[settings-category:coach]] ({{label:Settings.AI}}): кіраванне падключэннямі ШІ для Coach і Assistant, выбар мадэлі, якой яны адказваюць, у [[setting:coach-model]] і выбар лакальнага рухавіка Coach у [[setting:coach-engine]].
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): інструменты абслугоўвання, уключаючы [[setting:reload]], [[setting:clear-saved-data]] і [[setting:open-logs]].

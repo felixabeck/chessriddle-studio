@@ -2,7 +2,7 @@
 id: settings
 title: Panoramica delle impostazioni
 summary: Trova e cerca le impostazioni nelle categorie Scacchiera, Input, Aspetto, Suono, Tasti di scelta rapida, Cartelle, Repertorio, IA e Avanzate.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Apri [[page:settings]] ({{label:SideBar.Settings}}) dal menu dell’applicazione (oppure premi Cmd+, su macOS). Usa la barra {{label:Common.Search}} in alto in [[page:settings]] per filtrare tutte le impostazioni per titolo, descrizione o parola chiave, e premi Esc per azzerare la ricerca.
@@ -15,5 +15,5 @@ Le impostazioni sono organizzate in nove categorie:
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): personalizza i tasti di scelta rapida, ripristinali con {{label:Common.Reset}} e consulta i modificatori del mouse per {{label:Settings.Drawing}}.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): configura le cartelle di archiviazione tramite [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] e [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): soglia di copertura del repertorio e pianificazione della pratica tramite [[setting:repertoire-depth]], [[setting:practice-grading]] e [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): gestisci le connessioni IA per Coach e Assistant e scegli il motore locale del Coach in [[setting:coach-engine]].
+- [[settings-category:coach]] ({{label:Settings.AI}}): gestisci le connessioni IA per Coach e Assistant, scegli il modello con cui rispondono in [[setting:coach-model]] e scegli il motore locale del Coach in [[setting:coach-engine]].
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): strumenti di manutenzione inclusi [[setting:reload]], [[setting:clear-saved-data]] e [[setting:open-logs]].

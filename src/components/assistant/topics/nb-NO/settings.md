@@ -2,7 +2,7 @@
 id: settings
 title: Oversikt over innstillinger
 summary: Finn og søk i innstillinger på tvers av Brett, Inputs, Utseende, Lyd, Tastaturbindinger, Mapper, Repertoar, KI og Avansert.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Åpne [[page:settings]] ({{label:SideBar.Settings}}) fra programmenyen (eller trykk Cmd+, på macOS). Bruk feltet {{label:Common.Search}} øverst i [[page:settings]] for å filtrere alle innstillinger etter tittel, beskrivelse eller nøkkelord, og trykk Escape for å tømme søket.
@@ -15,5 +15,5 @@ Innstillingene er ordnet i ni kategorier:
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): tilpass tastaturbindinger, tilbakestill dem med {{label:Common.Reset}} og se musmodifikatorene for {{label:Settings.Drawing}}.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): angi lagringsmapper via [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] og [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): dekningsgrense for repertoar og treningsplanlegging via [[setting:repertoire-depth]], [[setting:practice-grading]] og [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): administrer KI-tilkoblinger for Coach og Assistant, og velg lokal motor for Coach i [[setting:coach-engine]].
+- [[settings-category:coach]] ({{label:Settings.AI}}): administrer KI-tilkoblinger for Coach og Assistant, velg modellen de svarer med i [[setting:coach-model]], og velg lokal motor for Coach i [[setting:coach-engine]].
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): vedlikeholdsverktøy inkludert [[setting:reload]], [[setting:clear-saved-data]] og [[setting:open-logs]].

@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach i połączenia AI
 summary: Połącz dostawcę AI lub model lokalny, aby włączyć Coach na tablicy analizy oraz Assistant.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 Połączenia AI zasilają zarówno Coach (na tablicy analizy), jak i Assistant. Zarządzaj swoimi połączeniami w [[settings-category:coach]] ({{label:Settings.AI}}).
@@ -14,7 +14,9 @@ Aby dodać połączenie, wybierz jedną z tych opcji w [[settings-category:coach
 
 Klucze i dane logowania są przechowywane w systemowym pęku kluczy na Twoim komputerze. Gdy zapisane jest co najmniej jedno połączenie, Assistant pojawia się w menu {{label:Menu.Help}} ({{label:Menu.Help.Assistant}}) oraz na pasku nawigacji ({{label:Navigation.Assistant}}).
 
-Coach i Assistant korzystają z tego samego wybranego połączenia, modelu i poziomu rozumowania. Użyj {{label:Settings.Coach.Connection.Check}} przy połączeniu, aby je sprawdzić i wyświetlić dostępne modele, lub {{label:Settings.Coach.Connection.Remove}}, aby je usunąć.
+Wybierz połączenie, model i poziom rozumowania w [[setting:coach-model]] ({{label:Settings.Coach.Model}}). Zarówno Coach, jak i Assistant odpowiadają przy użyciu tego jednego wyboru. Przycisk modelu obok {{label:Coach.Send}} w obu panelach pokazuje, który model odpowiada, i zmienia ten sam wybór; obok znajduje się {{label:Coach.NewConversation}}.
+
+Użyj {{label:Settings.Coach.Connection.Check}} przy połączeniu, aby je sprawdzić i wyświetlić dostępne modele, lub {{label:Settings.Coach.Connection.Remove}}, aby je usunąć.
 
 Aby używać Coach na tablicy analizy:
 - Otwórz kartę {{label:Board.Tabs.Coach}} (lub naciśnij skrót {{label:Settings.Keybinds.Actions.COACH_TAB}}).

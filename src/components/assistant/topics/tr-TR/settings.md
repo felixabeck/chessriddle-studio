@@ -2,7 +2,7 @@
 id: settings
 title: Ayarlara genel bakış
 summary: Tahta, Girdiler, Görünüş, Ses, Tuş Atamaları, Klasörler, Repertuvar, Yapay zekâ ve Gelişmiş kategorilerindeki ayarları bulun ve arayın.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Uygulama menüsünden [[page:settings]] ({{label:SideBar.Settings}}) sayfasını açın (veya macOS'ta Cmd+, tuşlarına basın). Tüm ayarları başlığa, açıklamaya veya anahtar sözcüğe göre filtrelemek için [[page:settings]] sayfasının üstündeki {{label:Common.Search}} çubuğunu kullanın ve aramayı temizlemek için Escape tuşuna basın.
@@ -15,5 +15,5 @@ Ayarlar dokuz kategoriye ayrılmıştır:
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): klavye kısayollarını özelleştirin, {{label:Common.Reset}} ile sıfırlayın ve {{label:Settings.Drawing}} fare değiştiricilerini görüntüleyin.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] ve [[setting:puzzles-directory]] üzerinden depolama klasörlerini yapılandırın.
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): [[setting:repertoire-depth]], [[setting:practice-grading]] ve [[setting:practice-new-per-session]] aracılığıyla repertuvar kapsam eşiği ve çalışma zamanlaması.
-- [[settings-category:coach]] ({{label:Settings.AI}}): Coach ve Assistant için yapay zekâ bağlantılarını yönetin ve [[setting:coach-engine]] içinde Coach'un yerel motorunu seçin.
+- [[settings-category:coach]] ({{label:Settings.AI}}): Coach ve Assistant için yapay zekâ bağlantılarını yönetin, yanıt verdikleri modeli [[setting:coach-model]] içinde seçin ve [[setting:coach-engine]] içinde Coach'un yerel motorunu seçin.
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): [[setting:reload]], [[setting:clear-saved-data]] ve [[setting:open-logs]] dahil bakım araçları.

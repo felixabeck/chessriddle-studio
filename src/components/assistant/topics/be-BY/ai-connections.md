@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach і падключэнні ШІ
 summary: Падключыце правайдэра ШІ або лакальную мадэль, каб выкарыстоўваць Coach на дошцы аналізу і Assistant.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 Падключэнні ШІ забяспечваюць працу як Coach (на дошцы аналізу), так і Assistant. Кіруйце сваімі падключэннямі ў [[settings-category:coach]] ({{label:Settings.AI}}).
@@ -14,7 +14,9 @@ source: db8abb1b23f8812c
 
 Ключы і даныя ўваходу захоўваюцца ў сістэмным сховішчы ключоў вашага камп’ютара. Як толькі захавана хаця б адно падключэнне, Assistant з’яўляецца ў меню {{label:Menu.Help}} ({{label:Menu.Help.Assistant}}) і ў радку навігацыі ({{label:Navigation.Assistant}}).
 
-І Coach, і Assistant выкарыстоўваюць адно і тое ж выбранае падключэнне, мадэль і ўзровень разважанняў. Націсніце {{label:Settings.Coach.Connection.Check}} на падключэнні, каб праверыць яго і паказаць спіс даступных мадэляў, або {{label:Settings.Coach.Connection.Remove}}, каб выдаліць яго.
+Выберыце падключэнне, мадэль і ўзровень разважанняў у [[setting:coach-model]] ({{label:Settings.Coach.Model}}). І Coach, і Assistant адказваюць з гэтым адзіным выбарам. Кнопка мадэлі побач з {{label:Coach.Send}} на любой з панэляў паказвае, якая мадэль адказвае, і змяняе гэты ж выбар; побач знаходзіцца {{label:Coach.NewConversation}}.
+
+Націсніце {{label:Settings.Coach.Connection.Check}} на падключэнні, каб праверыць яго і паказаць спіс даступных мадэляў, або {{label:Settings.Coach.Connection.Remove}}, каб выдаліць яго.
 
 Каб карыстацца Coach на дошцы аналізу:
 - Адкрыйце ўкладку {{label:Board.Tabs.Coach}} (або націсніце спалучэнне клавіш {{label:Settings.Keybinds.Actions.COACH_TAB}}).

@@ -2,7 +2,7 @@
 id: settings
 title: Vue d’ensemble des paramètres
 summary: Trouvez et recherchez des réglages dans Échiquier, Entrées, Apparence, Son, Raccourcis clavier, Dossiers, Répertoire, IA et Avancé.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Ouvrez [[page:settings]] ({{label:SideBar.Settings}}) depuis le menu de l’application (ou appuyez sur Cmd+, sur macOS). Utilisez la barre {{label:Common.Search}} en haut de [[page:settings]] pour filtrer tous les paramètres par titre, description ou mot-clé, et appuyez sur Échap pour effacer la recherche.
@@ -15,5 +15,5 @@ Les paramètres sont organisés en neuf catégories :
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) : personnalisez les raccourcis clavier, réinitialisez-les avec {{label:Common.Reset}} et consultez les modificateurs de souris de {{label:Settings.Drawing}}.
 - [[settings-category:directories]] ({{label:Settings.Directories}}) : configurez les dossiers de stockage via [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] et [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}) : seuil de couverture du répertoire et planification de l’entraînement via [[setting:repertoire-depth]], [[setting:practice-grading]] et [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}) : gérez les connexions IA du Coach et de l’Assistant et choisissez le moteur local du Coach dans [[setting:coach-engine]].
+- [[settings-category:coach]] ({{label:Settings.AI}}) : gérez les connexions IA du Coach et de l’Assistant, choisissez le modèle avec lequel ils répondent dans [[setting:coach-model]] et choisissez le moteur local du Coach dans [[setting:coach-engine]].
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}) : outils de maintenance incluant [[setting:reload]], [[setting:clear-saved-data]] et [[setting:open-logs]].

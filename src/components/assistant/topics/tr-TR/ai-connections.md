@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach ve yapay zekâ bağlantıları
 summary: Analiz tahtasındaki Coach ve Assistant özelliklerini etkinleştirmek için bir yapay zekâ sağlayıcısı veya yerel model bağlayın.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 Yapay zekâ bağlantıları hem Coach (analiz tahtasında) hem de Assistant için çalışır. Bağlantılarınızı [[settings-category:coach]] ({{label:Settings.AI}}) altında yönetin.
@@ -14,7 +14,9 @@ Bağlantı eklemek için [[settings-category:coach]] içinde şu seçeneklerden 
 
 Anahtarlar ve oturum açma bilgileri bilgisayarınızın sistem anahtarlığında saklanır. En az bir bağlantı kaydedildiğinde Assistant, {{label:Menu.Help}} menüsünde ({{label:Menu.Help.Assistant}}) ve gezinme satırında ({{label:Navigation.Assistant}}) görünür.
 
-Hem Coach hem de Assistant aynı seçili bağlantıyı, modeli ve akıl yürütme düzeyini paylaşır. Bir bağlantıyı doğrulamak ve kullanılabilir modellerini listelemek için {{label:Settings.Coach.Connection.Check}} düğmesini veya kaldırmak için {{label:Settings.Coach.Connection.Remove}} düğmesini kullanın.
+Bağlantıyı, modeli ve akıl yürütme düzeyini [[setting:coach-model]] ({{label:Settings.Coach.Model}}) içinde seçin. Hem Coach hem de Assistant bu tek seçimle yanıt verir. Her iki panelde de {{label:Coach.Send}} yanındaki model düğmesi hangi modelin yanıt verdiğini gösterir ve aynı seçimi değiştirir; {{label:Coach.NewConversation}} hemen yanında yer alır.
+
+Bir bağlantıyı doğrulamak ve kullanılabilir modellerini listelemek için {{label:Settings.Coach.Connection.Check}} düğmesini veya kaldırmak için {{label:Settings.Coach.Connection.Remove}} düğmesini kullanın.
 
 Analiz tahtasında Coach özelliğini kullanmak için:
 - {{label:Board.Tabs.Coach}} sekmesini açın (veya {{label:Settings.Keybinds.Actions.COACH_TAB}} kısayoluna basın).

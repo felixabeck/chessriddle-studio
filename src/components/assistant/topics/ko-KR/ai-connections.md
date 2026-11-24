@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach 및 AI 연결
 summary: 분석 보드의 Coach와 Assistant를 활성화하기 위해 AI 공급자 또는 로컬 모델 연결하기.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 AI 연결은 분석 보드의 Coach와 Assistant 모두에 사용됩니다. [[settings-category:coach]] ({{label:Settings.AI}})에서 연결을 관리하세요.
@@ -14,7 +14,9 @@ AI 연결은 분석 보드의 Coach와 Assistant 모두에 사용됩니다. [[se
 
 키와 로그인 자격 증명은 컴퓨터의 시스템 키링에 저장됩니다. 하나 이상의 연결이 저장되면 {{label:Menu.Help}} 메뉴({{label:Menu.Help.Assistant}})와 탐색 줄({{label:Navigation.Assistant}})에 Assistant가 나타납니다.
 
-Coach와 Assistant는 동일한 선택된 연결, 모델 및 추론 강도를 공유합니다. 연결을 검증하고 사용 가능한 모델을 나열하려면 {{label:Settings.Coach.Connection.Check}}을(를), 연결을 제거하려면 {{label:Settings.Coach.Connection.Remove}}을(를) 사용하세요.
+[[setting:coach-model]] ({{label:Settings.Coach.Model}})에서 연결, 모델 및 추론 강도를 선택하세요. Coach와 Assistant는 모두 이 하나의 선택으로 응답합니다. 두 패널 모두에서 {{label:Coach.Send}} 옆에 있는 모델 버튼은 어떤 모델이 응답하는지 보여주고 같은 선택을 변경하며, {{label:Coach.NewConversation}}이 그 옆에 있습니다.
+
+연결을 검증하고 사용 가능한 모델을 나열하려면 {{label:Settings.Coach.Connection.Check}}을(를), 연결을 제거하려면 {{label:Settings.Coach.Connection.Remove}}을(를) 사용하세요.
 
 분석 보드에서 Coach를 사용하려면:
 - {{label:Board.Tabs.Coach}} 탭을 엽니다(또는 {{label:Settings.Keybinds.Actions.COACH_TAB}} 단축키를 누릅니다).

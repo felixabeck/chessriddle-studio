@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach e connessioni IA
 summary: Collega un provider di IA o un modello locale per abilitare il Coach sulla scacchiera di analisi e l’Assistant.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 Le connessioni IA alimentano sia il Coach (sulla scacchiera di analisi) sia l’Assistant. Gestisci le tue connessioni in [[settings-category:coach]] ({{label:Settings.AI}}).
@@ -14,7 +14,9 @@ Per aggiungere una connessione, scegli una di queste opzioni in [[settings-categ
 
 Le chiavi e le credenziali di accesso vengono salvate nel portachiavi di sistema del tuo computer. Non appena è salvata almeno una connessione, l’Assistant compare nel menu {{label:Menu.Help}} ({{label:Menu.Help.Assistant}}) e nella barra di navigazione ({{label:Navigation.Assistant}}).
 
-Sia il Coach sia l’Assistant condividono la stessa connessione, lo stesso modello e lo stesso livello di ragionamento selezionati. Usa {{label:Settings.Coach.Connection.Check}} su una connessione per verificarla ed elencare i modelli disponibili, oppure {{label:Settings.Coach.Connection.Remove}} per rimuoverla.
+Scegli la connessione, il modello e il livello di ragionamento in [[setting:coach-model]] ({{label:Settings.Coach.Model}}). Sia il Coach sia l’Assistant rispondono con questa stessa scelta. Il pulsante del modello accanto a {{label:Coach.Send}} in entrambi i pannelli mostra quale modello risponde e modifica la stessa scelta; {{label:Coach.NewConversation}} si trova accanto.
+
+Usa {{label:Settings.Coach.Connection.Check}} su una connessione per verificarla ed elencare i modelli disponibili, oppure {{label:Settings.Coach.Connection.Remove}} per rimuoverla.
 
 Per usare il Coach sulla scacchiera di analisi:
 - Apri la scheda {{label:Board.Tabs.Coach}} (oppure premi la scorciatoia {{label:Settings.Keybinds.Actions.COACH_TAB}}).

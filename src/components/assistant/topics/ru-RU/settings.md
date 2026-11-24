@@ -2,7 +2,7 @@
 id: settings
 title: Обзор настроек
 summary: Поиск и настройка параметров по категориям: Доска, Ввод, Внешний вид, Звук, Горячие клавиши, Каталоги, Репертуар, ИИ и Дополнительно.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Откройте [[page:settings]] ({{label:SideBar.Settings}}) из меню приложения (или нажмите Cmd+, на macOS). Используйте строку {{label:Common.Search}} в верхней части [[page:settings]], чтобы отфильтровать все параметры по названию, описанию или ключевому слову, и нажмите Escape для очистки поиска.
@@ -15,5 +15,5 @@ source: b40bdfbf3b6de933
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): настройка горячих клавиш, их сброс кнопкой {{label:Common.Reset}} и просмотр модификаторов мыши {{label:Settings.Drawing}}.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): выбор папок хранения через [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] и [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): порог покрытия репертуара и планирование тренировок через [[setting:repertoire-depth]], [[setting:practice-grading]] и [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): управление подключениями ИИ для Coach и Assistant и выбор локального движка для Coach в [[setting:coach-engine]].
+- [[settings-category:coach]] ({{label:Settings.AI}}): управление подключениями ИИ для Coach и Assistant, выбор модели для их ответов в [[setting:coach-model]] и выбор локального движка для Coach в [[setting:coach-engine]].
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): служебные инструменты, включая [[setting:reload]], [[setting:clear-saved-data]] и [[setting:open-logs]].

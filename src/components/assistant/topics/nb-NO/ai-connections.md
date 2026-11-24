@@ -2,7 +2,7 @@
 id: ai-connections
 title: Coach og KI-tilkoblinger
 summary: Koble til en KI-leverandør eller lokal modell for å aktivere Coach på analysebrettet og Assistant.
-source: db8abb1b23f8812c
+source: eac73d15e14729e1
 ---
 
 KI-tilkoblinger driver både Coach (på analysebrettet) og Assistant. Administrer tilkoblingene dine under [[settings-category:coach]] ({{label:Settings.AI}}).
@@ -14,7 +14,9 @@ For å legge til en tilkobling velger du ett av disse alternativene i [[settings
 
 Nøkler og innloggingsdata lagres i systemets nøkkelring på datamaskinen din. Når minst én tilkobling er lagret, vises Assistant i menyen {{label:Menu.Help}} ({{label:Menu.Help.Assistant}}) og på navigasjonslinjen ({{label:Navigation.Assistant}}).
 
-Både Coach og Assistant deler samme valgte tilkobling, modell og resonneringsnivå. Bruk {{label:Settings.Coach.Connection.Check}} på en tilkobling for å kontrollere den og liste opp tilgjengelige modeller, eller {{label:Settings.Coach.Connection.Remove}} for å fjerne den.
+Velg tilkobling, modell og resonneringsnivå i [[setting:coach-model]] ({{label:Settings.Coach.Model}}). Både Coach og Assistant svarer med dette ene valget. Modellknappen ved siden av {{label:Coach.Send}} i begge panelene viser hvilken modell som svarer og endrer det samme valget; {{label:Coach.NewConversation}} ligger ved siden av.
+
+Bruk {{label:Settings.Coach.Connection.Check}} på en tilkobling for å kontrollere den og liste opp tilgjengelige modeller, eller {{label:Settings.Coach.Connection.Remove}} for å fjerne den.
 
 Slik bruker du Coach på analysebrettet:
 - Åpne fanen {{label:Board.Tabs.Coach}} (eller trykk hurtigtasten {{label:Settings.Keybinds.Actions.COACH_TAB}}).

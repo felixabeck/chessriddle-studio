@@ -2,7 +2,7 @@
 id: settings
 title: Visão geral das definições
 summary: Encontre e pesquise definições nas categorias Tabuleiro, Entradas, Aparência, Som, Atalhos de teclado, Diretórios, Repertório, IA e Avançado.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Abra [[page:settings]] ({{label:SideBar.Settings}}) a partir do menu da aplicação (ou prima Cmd+, no macOS). Utilize a barra {{label:Common.Search}} no topo de [[page:settings]] para filtrar todas as definições por título, descrição ou palavra-chave, e prima Escape para limpar a pesquisa.
@@ -15,5 +15,5 @@ As definições estão organizadas em nove categorias:
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): personalize atalhos de teclado, reponha-os com {{label:Common.Reset}} e consulte os modificadores do rato para {{label:Settings.Drawing}}.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): configure pastas de armazenamento através de [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] e [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): limiar de cobertura do repertório e agendamento de treino através de [[setting:repertoire-depth]], [[setting:practice-grading]] e [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): gira ligações de IA para o Coach e o Assistant e escolha o motor local do Coach em [[setting:coach-engine]].
+- [[settings-category:coach]] ({{label:Settings.AI}}): gira ligações de IA para o Coach e o Assistant, escolha o modelo com que respondem em [[setting:coach-model]] e escolha o motor local do Coach em [[setting:coach-engine]].
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): ferramentas de manutenção incluindo [[setting:reload]], [[setting:clear-saved-data]] e [[setting:open-logs]].

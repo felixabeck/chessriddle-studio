@@ -2,7 +2,7 @@
 id: settings
 title: Огляд налаштувань
 summary: Знаходьте та шукайте параметри в категоріях Дошка, Ввід, Зовнішній вигляд, Звук, Гарячі клавіші, Каталоги, Репертуар, ШІ та Додатково.
-source: b40bdfbf3b6de933
+source: 83781801054182a6
 ---
 
 Відкрийте [[page:settings]] ({{label:SideBar.Settings}}) з меню програми (або натисніть Cmd+, у macOS). Використовуйте рядок {{label:Common.Search}} угорі [[page:settings]], щоб фільтрувати всі параметри за назвою, описом або ключовим словом, і натисніть Escape для очищення пошуку.
@@ -15,5 +15,5 @@ source: b40bdfbf3b6de933
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): налаштування гарячих клавіш, їх скидання кнопкою {{label:Common.Reset}} і перегляд модифікаторів миші {{label:Settings.Drawing}}.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): налаштування тек зберігання через [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] і [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): поріг покриття репертуару та розклад тренувань через [[setting:repertoire-depth]], [[setting:practice-grading]] і [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): керування підключеннями ШІ для Coach та Assistant і вибір локального рушія для Coach у [[setting:coach-engine]].
+- [[settings-category:coach]] ({{label:Settings.AI}}): керування підключеннями ШІ для Coach та Assistant, вибір моделі, якою вони відповідають, у [[setting:coach-model]] і вибір локального рушія для Coach у [[setting:coach-engine]].
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): інструменти обслуговування, включно з [[setting:reload]], [[setting:clear-saved-data]] і [[setting:open-logs]].
