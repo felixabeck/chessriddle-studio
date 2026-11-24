@@ -53,6 +53,8 @@ function subscribeCollectionCurrency(
 
 export function useCollectionCurrencies(collections: readonly CollectionDescriptor[]) {
     const { mutate } = useSWRConfig();
+    const mutateRef = useRef(mutate);
+    mutateRef.current = mutate;
     const inputs = useRef(collections);
     inputs.current = collections;
     const key = collections
@@ -68,12 +70,12 @@ export function useCollectionCurrencies(collections: readonly CollectionDescript
             if (!database || collection.status === "retired") return [];
             return [
                 subscribeCollectionCurrency(database, collection, () => {
-                    void mutate(isCollectionConsumer);
+                    void mutateRef.current(isCollectionConsumer);
                 }),
             ];
         });
         return () => cleanups.forEach((cleanup) => cleanup());
-    }, [key, mutate]);
+    }, [key]);
 }
 
 export function useCollectionCurrency(
@@ -81,6 +83,8 @@ export function useCollectionCurrency(
     initial?: CollectionDescriptor,
 ) {
     const { mutate } = useSWRConfig();
+    const mutateRef = useRef(mutate);
+    mutateRef.current = mutate;
     const key = file ? capabilityKey(file) : null;
     const inputs = useRef({ file, initial });
     inputs.current = { file, initial };
@@ -93,7 +97,14 @@ export function useCollectionCurrency(
     useEffect(() => {
         const { file, initial } = inputs.current;
         if (!file || !key) {
-            setSnapshot({ key, collection: null, pending: false });
+            setSnapshot((current) =>
+                current.key === key &&
+                current.collection === null &&
+                !current.pending &&
+                current.error === undefined
+                    ? current
+                    : { key, collection: null, pending: false },
+            );
             return;
         }
         setSnapshot({ key, collection: initial ?? null, pending: true });
@@ -101,13 +112,13 @@ export function useCollectionCurrency(
             file,
             initial,
             () => {
-                void mutate(isCollectionConsumer);
+                void mutateRef.current(isCollectionConsumer);
             },
             (collection, error) => {
                 setSnapshot({ key, collection, error, pending: false });
             },
         );
-    }, [key, initial?.id, mutate]);
+    }, [key, initial?.id]);
     return snapshot.key === key ? snapshot : { key, collection: null, pending: !!file };
 }
 

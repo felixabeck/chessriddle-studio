@@ -19,7 +19,7 @@ import {
 } from "@mantine/core";
 import { useAtom, useSetAtom, useStore } from "jotai";
 import equal from "fast-deep-equal";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   updateRecentFilesAtom,
@@ -48,6 +48,7 @@ import {
   Crosshair,
   Search,
   ScanSearch,
+  Target,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
@@ -59,9 +60,14 @@ import { chessRiddleTrainingSessions as trainingSessions } from "@/state/chessRi
 
 import { useLibraryData } from "@/components/library/useLibraryData";
 import { useLibraryDueCounts } from "@/components/library/useLibraryDueCounts";
+import TrainOpeningsPopover from "@/components/panels/practice/TrainOpeningsPopover";
 import { useOwnGamesFeed } from "@/components/library/useOwnGamesFeed";
 import { openDatabaseTable } from "@/components/library/openDatabaseTable";
-import { compareLibraryRows, type LibraryRow } from "@/components/library/libraryData";
+import {
+  compareLibraryRows,
+  libraryFileMetadata,
+  type LibraryRow,
+} from "@/components/library/libraryData";
 import type { OwnGame } from "@/components/library/ownGamesFeed";
 import type { FileMetadata, FileType } from "@/components/files/file";
 import { databaseGameOpenedKey } from "@/state/lastOpened";
@@ -396,18 +402,7 @@ export default function NewTabHome({ id }: { id: string }) {
       const request = { key: row.key, controller: new AbortController() };
       fileRequest.current = request;
       setCountingFile(row.key);
-      const source = row.file;
-      const file: FileMetadata =
-        "metadata" in source
-          ? source
-          : {
-              type: "file",
-              name: source.name,
-              handle: source.handle,
-              numGames: 0,
-              metadata: { type: source.type, tags: [] },
-              lastModified: Date.now(),
-            };
+      const file = libraryFileMetadata(row.file);
       try {
         const numGames = await tauri.countPgnGames(file.handle, {
           signal: request.controller.signal,
@@ -605,6 +600,20 @@ export default function NewTabHome({ id }: { id: string }) {
           }
         },
       },
+      {
+        icon: <Target size={18} />,
+        description: t("Home.Card.TrainOpenings.Desc"),
+        label: t("Home.Card.TrainOpenings.Title"),
+        wrap: (button: ReactNode) => (
+          <TrainOpeningsPopover
+            newTabId={id}
+            due={due}
+            listingInFlight={library.loading}
+            discoveryFailed={discoveryFailed}
+            trigger={button}
+          />
+        ),
+      },
     ],
     [
       {
@@ -639,19 +648,30 @@ export default function NewTabHome({ id }: { id: string }) {
         <Group gap="md" className={classes.actions} data-home-actions>
           {actionGroups.map((group, index) => (
             <Group gap="md" key={index}>
-              {group.map((action) => (
-                <Tooltip label={action.description} key={action.label}>
+              {group.map((action) => {
+                const button = (
                   <Button
                     variant="default"
                     leftSection={action.icon}
-                    onClick={action.onClick}
+                    onClick={"onClick" in action ? action.onClick : undefined}
                     className={classes.action}
                     data-home-action
                   >
                     {action.label}
                   </Button>
-                </Tooltip>
-              ))}
+                );
+                const control =
+                  "wrap" in action && action.wrap ? (
+                    <div style={{ display: "inline-flex" }}>{action.wrap(button)}</div>
+                  ) : (
+                    button
+                  );
+                return (
+                  <Tooltip label={action.description} key={action.label}>
+                    {control}
+                  </Tooltip>
+                );
+              })}
             </Group>
           ))}
         </Group>

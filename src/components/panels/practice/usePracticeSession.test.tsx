@@ -8,13 +8,16 @@ import { buildFromTree } from "@/components/files/opening";
 import {
   activeTabAtom,
   practiceGradingAtom,
+  practiceMoveControllerFamily,
   practiceNewPerSessionAtom,
+  practiceRunRequestFamily,
+  practiceSessionEndAtom,
   practiceStateFamily,
   tabsAtom,
 } from "@/state/atoms";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { WorkspaceTabScope } from "@/state/tabScope";
-import { defaultTree } from "@/utils/treeReducer";
+import { defaultTree, getBoardState } from "@/utils/treeReducer";
 import { PRACTICE_REPLAY_STEP_MS } from "./session";
 import type { UseDeckSyncResult } from "./useDeckSync";
 import { usePracticeSession } from "./usePracticeSession";
@@ -49,7 +52,10 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-async function mountSession() {
+async function mountSession(options?: {
+  syncedWithTreeAndScope?: boolean;
+  deckStatus?: "ready" | "write-pending" | "write-blocked";
+}) {
   const tree = createTreeStore(undefined, defaultTree());
   tree.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6", "Bb5"] });
   tree.getState().setHeaders({ ...tree.getState().headers, orientation: "white", start: [] });
@@ -61,7 +67,7 @@ async function mountSession() {
   deepCard.card = { ...deepCard.card, reps: 1, due: new Date(Date.now() - 1_000) };
 
   const deck: UseDeckSyncResult["deck"] = {
-    status: "ready",
+    status: options?.deckStatus ?? "ready",
     positions: [deepCard],
     revision: 1,
     generation: 0,
@@ -96,6 +102,7 @@ async function mountSession() {
       currentTabTreeKey: "tree-a",
       tab,
       clearSyncMessageTimer,
+      syncedWithTreeAndScope: options?.syncedWithTreeAndScope ?? false,
     });
     return null;
   }
@@ -120,6 +127,7 @@ async function mountSession() {
     tree,
     atoms,
     tabId,
+    deck,
     clearSyncMessageTimer,
     getLatest: () => latest,
     renderTab,
@@ -212,4 +220,113 @@ test("leaving the train tab ends an active session", async () => {
   expect(getLatest().practiceState.phase).toBe("idle");
   expect(atoms.get(practiceStateFamily(tabId)).phase).toBe("idle");
   expect(getLatest().completedSummary).toBeNull();
+});
+
+test("an explicit run queue does not auto-start when the deck is not writable", async () => {
+  const session = await mountSession({
+    syncedWithTreeAndScope: true,
+    deckStatus: "write-pending",
+  });
+  const key = getBoardState(session.deck.positions[0].fen);
+  await act(async () => {
+    session.atoms.set(practiceRunRequestFamily(session.tabId), {
+      runId: "run-blocked",
+      segmentId: "seg-blocked",
+      positionKeys: [key],
+      deadline: Date.now() + 60_000,
+    });
+  });
+  expect(session.getLatest().practiceState.phase).toBe("idle");
+});
+
+test("an explicit run queue starts only after the deck reports synced and ready", async () => {
+  const first = await mountSession({ syncedWithTreeAndScope: false });
+  const firstKey = getBoardState(first.deck.positions[0].fen);
+  await act(async () => {
+    first.atoms.set(practiceRunRequestFamily(first.tabId), {
+      runId: "run-1",
+      segmentId: "seg-1",
+      positionKeys: [firstKey],
+      deadline: Date.now() + 60_000,
+    });
+  });
+  expect(first.getLatest().practiceState.phase).toBe("idle");
+
+  mounted = false;
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  mounted = true;
+  const second = await mountSession({ syncedWithTreeAndScope: true });
+  const secondKey = getBoardState(second.deck.positions[0].fen);
+  await act(async () => {
+    second.atoms.set(practiceRunRequestFamily(second.tabId), {
+      runId: "run-2",
+      segmentId: "seg-2",
+      positionKeys: [secondKey],
+      deadline: Date.now() + 60_000,
+    });
+  });
+  expect(second.getLatest().practiceState.phase).toBe("replaying");
+});
+
+test("an explicit queue whose every card fails to resolve reports queue exhausted once", async () => {
+  const { atoms, tabId, getLatest } = await mountSession({ syncedWithTreeAndScope: true });
+  await act(async () => {
+    atoms.set(practiceRunRequestFamily(tabId), {
+      runId: "run-empty",
+      segmentId: "seg-empty",
+      positionKeys: ["missing-a", "missing-b"],
+      deadline: Date.now() + 60_000,
+    });
+  });
+  expect(getLatest().practiceState.phase).toBe("idle");
+  expect(atoms.get(practiceSessionEndAtom)).toMatchObject({
+    runId: "run-empty",
+    segmentId: "seg-empty",
+    reason: "queue-exhausted",
+  });
+  await act(async () => {
+    getLatest().endPracticeSession("stop");
+  });
+  expect(atoms.get(practiceSessionEndAtom)?.reason).toBe("queue-exhausted");
+});
+
+test("a deadline after the current card ends the session once the card completes", async () => {
+  const { atoms, tabId, deck, getLatest } = await mountSession({ syncedWithTreeAndScope: true });
+  const key = getBoardState(deck.positions[0].fen);
+  await act(async () => {
+    atoms.set(practiceRunRequestFamily(tabId), {
+      runId: "run-deadline",
+      segmentId: "seg-deadline",
+      positionKeys: [key],
+      deadline: Date.now() + 60_000,
+    });
+  });
+  expect(getLatest().practiceState.phase).toBe("replaying");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(PRACTICE_REPLAY_STEP_MS * 20);
+  });
+  expect(getLatest().practiceState.phase).toBe("waiting");
+  await act(async () => {
+    atoms.set(practiceRunRequestFamily(tabId), {
+      runId: "run-deadline",
+      segmentId: "seg-deadline",
+      positionKeys: [key],
+      deadline: Date.now() - 1,
+    });
+  });
+  expect(getLatest().practiceState.phase).toBe("waiting");
+  const controller = atoms.get(practiceMoveControllerFamily(tabId));
+  expect(controller?.canMove).toBe(true);
+  await act(async () => {
+    controller?.submitMove(deck.positions[0].answer);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(atoms.get(practiceSessionEndAtom)).toMatchObject({
+    runId: "run-deadline",
+    segmentId: "seg-deadline",
+    reason: "deadline",
+  });
 });

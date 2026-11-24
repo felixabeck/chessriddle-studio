@@ -4,9 +4,12 @@ import { atomFamily, atomWithStorage } from "jotai/utils";
 import { z } from "zod";
 import { createZodStorage, initializeBeforeUse } from "../utils";
 import { createPracticeDeckAtom } from "../practiceStorage";
+import type { PracticeDeckStatus } from "../practiceStorage";
 import { emptyPracticeStats, type PracticeSessionStats } from "../practiceSessionStats";
 import { initializeRendererState } from "./rendererState";
 import { tabAtomFamily } from "./tabFamilies";
+import type { FileMetadata } from "@/components/files/file";
+import type { TimedRunCandidate } from "@/components/panels/practice/runPlanner";
 
 export type { PracticeData } from "../practiceStorage";
 
@@ -86,4 +89,120 @@ export const practiceNewPerSessionAtom = atomWithStorage<number>(
     ),
 );
 
+export const PRACTICE_TRAIN_MINUTES = [10, 15, 20, 30, 45, 60] as const;
+export type PracticeTrainMinutes = (typeof PRACTICE_TRAIN_MINUTES)[number];
+export const PRACTICE_TRAIN_MINUTES_DEFAULT: PracticeTrainMinutes = 30;
+
+export const practiceTrainMinutesAtom = atomWithStorage<PracticeTrainMinutes>(
+    "practice-train-minutes",
+    PRACTICE_TRAIN_MINUTES_DEFAULT,
+    createZodStorage(
+        z.union([
+            z.literal(10),
+            z.literal(15),
+            z.literal(20),
+            z.literal(30),
+            z.literal(45),
+            z.literal(60),
+        ]),
+        localStorage,
+    ),
+);
+
 export const practiceCardStartTimeFamily = tabAtomFamily((_tab: string) => atom<number>(0));
+
+export type TimedRunChapter = {
+    file: string;
+    game: number;
+    metadata: FileMetadata;
+};
+
+export type TimedRunLaunch = {
+    id: string;
+    deadline: number;
+    startedAt: number;
+    newTabId: string;
+    candidates: TimedRunCandidate[];
+    chapters: TimedRunChapter[];
+};
+
+export const timedRunLaunchAtom = atom<TimedRunLaunch | null>(null);
+
+export type TimedRunSegmentStatus = "opening" | "waiting" | "active";
+
+export type TimedRunSegment = {
+    id: string;
+    file: string;
+    game: number;
+    positionKeys: string[];
+    tabId: string | null;
+    status: TimedRunSegmentStatus;
+};
+
+export type TimedRun = {
+    id: string;
+    deadline: number;
+    startedAt: number;
+    newTabId: string;
+    candidates: TimedRunCandidate[];
+    chapters: TimedRunChapter[];
+    presentedCount: number;
+    correct: number;
+    incorrect: number;
+    currentSegment: TimedRunSegment | null;
+    previous: { tabId: string; openedByRun: boolean } | null;
+    openedTabIds: readonly string[];
+    lastSegmentTabId: string | null;
+    phase: "running" | "finished" | "cancelled";
+};
+
+export const timedRunAtom = atom<TimedRun | null>(null);
+
+export type PracticeRunRequest = {
+    runId: string;
+    segmentId: string;
+    positionKeys: string[];
+    deadline: number;
+};
+
+export const practiceRunRequestFamily = tabAtomFamily((_tab: string) =>
+    atom<PracticeRunRequest | null>(null),
+);
+
+export type PracticeSessionEndReason =
+    | "queue-exhausted"
+    | "deadline"
+    | "stop"
+    | "tab-left"
+    | "unwritable"
+    | "identity-change";
+
+export type PracticeSessionEndReport = {
+    runId: string;
+    segmentId: string;
+    reason: PracticeSessionEndReason;
+    correct: number;
+    incorrect: number;
+};
+
+export const practiceSessionEndAtom = atom<PracticeSessionEndReport | null>(null);
+
+export type PracticeSegmentGate = {
+    synced: boolean;
+    status: PracticeDeckStatus;
+};
+
+export const practiceSegmentGateFamily = tabAtomFamily((_tab: string) =>
+    atom<PracticeSegmentGate | null>(null),
+);
+
+export type TimedRunSummary = {
+    positions: number;
+    correct: number;
+    incorrect: number;
+    elapsedMs: number;
+};
+
+export const practiceRunSummaryFamily = tabAtomFamily((_tab: string) =>
+    atom<TimedRunSummary | null>(null),
+);

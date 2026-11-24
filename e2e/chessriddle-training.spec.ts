@@ -1133,7 +1133,7 @@ test("unavailable connection keeps the existing offline Puzzles entry and view",
     page,
 }) => {
     await page.goto("/");
-    await expect(page.locator("[data-home-action]")).toHaveCount(5);
+    await expect(page.locator("[data-home-action]")).toHaveCount(6);
     await page.getByRole("button", { name: "Puzzles", exact: true }).click();
     await expect(page.getByPlaceholder("Select database")).toBeVisible();
     await expect(page.getByRole("radio", { name: "ChessRiddle", exact: true })).toHaveCount(0);
@@ -1273,7 +1273,7 @@ for (const locale of ["en-US", "de-DE"] as const) {
                 });
                 await page.goto("/");
                 const homeActions = page.locator("[data-home-actions]");
-                await expect(homeActions.locator("[data-home-action]")).toHaveCount(5);
+                await expect(homeActions.locator("[data-home-action]")).toHaveCount(6);
                 const trainingButton = homeActions.getByRole("button", {
                     name: text("Home.Card.Puzzle.Title"),
                     exact: true,

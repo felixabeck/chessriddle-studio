@@ -1,7 +1,7 @@
 import { useAtom, useStore as useAtomStore } from "jotai";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { buildFromTree, syncDeck } from "@/components/files/opening";
-import { deckAtomFamily, tabsAtom } from "@/state/atoms";
+import { deckAtomFamily, practiceSegmentGateFamily, tabsAtom } from "@/state/atoms";
 import type { GameHeaders, TreeNode } from "@/utils/treeReducer";
 import { collectRetainedPracticePositions } from "./retainedPositions";
 
@@ -36,6 +36,7 @@ export function useDeckSync({
     const [deck, setDeck] = useAtom(deckAtomFamily(deckIdentity));
 
     const [syncMessage, setSyncMessage] = useState<SyncMessage | null>(null);
+    const [syncedWithTreeAndScope, setSyncedWithTreeAndScope] = useState(false);
     const deckPositionsRef = useRef(deck.positions);
     deckPositionsRef.current = deck.positions;
     // The tree and deck scope (orientation, start) last diffed into the deck. A remount renders
@@ -54,16 +55,32 @@ export function useDeckSync({
     useEffect(() => {
         if (deck.status === "loading" || deck.status === "read-failed") {
             lastSyncedRef.current = null;
+            setSyncedWithTreeAndScope(false);
             return;
         }
-        if (treeViewDeferred) return;
-        if (deck.status !== "ready" || deckIdentity.file === "") return;
+        if (treeViewDeferred || deckIdentity.file === "") {
+            setSyncedWithTreeAndScope(false);
+            return;
+        }
+        if (deck.status !== "ready") {
+            const orientation = headers.orientation || "white";
+            const start = headers.start || [];
+            const scope = `${orientation}:${start.join(",")}`;
+            const lastSynced = lastSyncedRef.current;
+            setSyncedWithTreeAndScope(
+                !!lastSynced && lastSynced.root === root && lastSynced.scope === scope,
+            );
+            return;
+        }
 
         const orientation = headers.orientation || "white";
         const start = headers.start || [];
         const scope = `${orientation}:${start.join(",")}`;
         const lastSynced = lastSyncedRef.current;
-        if (lastSynced?.root === root && lastSynced.scope === scope) return;
+        if (lastSynced?.root === root && lastSynced.scope === scope) {
+            setSyncedWithTreeAndScope(true);
+            return;
+        }
 
         if (deckPositionsRef.current.length === 0) {
             const newDeck = buildFromTree(root, orientation, start);
@@ -96,6 +113,7 @@ export function useDeckSync({
             }
         }
         lastSyncedRef.current = { root, scope };
+        setSyncedWithTreeAndScope(true);
     }, [
         root,
         headers,
@@ -108,12 +126,28 @@ export function useDeckSync({
         currentTabId,
     ]);
 
+    useEffect(() => {
+        if (!currentTabId) return;
+        return () => {
+            atomStore.set(practiceSegmentGateFamily(currentTabId), null);
+        };
+    }, [atomStore, currentTabId]);
+
+    useEffect(() => {
+        if (!currentTabId) return;
+        atomStore.set(practiceSegmentGateFamily(currentTabId), {
+            synced: syncedWithTreeAndScope,
+            status: deck.status,
+        });
+    }, [atomStore, currentTabId, syncedWithTreeAndScope, deck.status]);
+
     return {
         deck,
         setDeck,
         syncMessage,
         setSyncMessage,
         clearSyncMessageTimer,
+        syncedWithTreeAndScope,
     };
 }
 

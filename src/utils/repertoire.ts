@@ -105,24 +105,44 @@ function collectStatisticsFens(
     return [...fenSet];
 }
 
-export async function fetchTreeStatistics(
-    root: TreeNode,
-    startPath: number[],
+async function fetchBatchStatistics(
+    fenList: readonly string[],
     dbPath: DatabaseHandle,
     signal?: AbortSignal,
 ): Promise<TreeStatistics> {
-    const fenList = collectStatisticsFens(root, startPath, signal);
     const cache: TreeStatistics = new Map();
     if (fenList.length > 0) {
         const results = await tauri.searchPositionsStats(
             dbPath,
-            fenList,
+            [...fenList],
             `coverage-calc:${crypto.randomUUID()}`,
             { signal },
         );
         for (const { fen, openings } of results) cache.set(fen, positionMovesFromStats(openings));
     }
     return cache;
+}
+
+export async function fetchTreeStatistics(
+    root: TreeNode,
+    startPath: number[],
+    dbPath: DatabaseHandle,
+    signal?: AbortSignal,
+): Promise<TreeStatistics> {
+    return fetchBatchStatistics(collectStatisticsFens(root, startPath, signal), dbPath, signal);
+}
+
+/** One batch statistics request over every tree's reach positions. */
+export async function fetchTreesStatistics(
+    trees: readonly { root: TreeNode; startPath: number[] }[],
+    dbPath: DatabaseHandle,
+    signal?: AbortSignal,
+): Promise<TreeStatistics> {
+    const fens = new Set<string>();
+    for (const tree of trees) {
+        for (const fen of collectStatisticsFens(tree.root, tree.startPath, signal)) fens.add(fen);
+    }
+    return fetchBatchStatistics([...fens], dbPath, signal);
 }
 
 function opponentMoveFrequency(parent: TreeNode, child: TreeNode, stats: TreeStatistics): number {

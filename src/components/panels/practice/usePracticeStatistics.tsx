@@ -13,9 +13,8 @@ import type { CollectionDescriptor, DatabaseHandle } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
-import { coverageMinGamesAtom, referenceDbAtom } from "@/state/atoms";
-import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linkedCollections";
-import { capabilityKey } from "@/utils/pathCapabilities";
+import { coverageMinGamesAtom } from "@/state/atoms";
+import { useReferenceResolution } from "./useReferenceResolution";
 import { isPrefix } from "@/utils/misc";
 import { computeTreeCoverage } from "@/utils/repertoire";
 import { getBoardState, getMemoizedBoardStateMap } from "@/utils/treeReducer";
@@ -53,19 +52,19 @@ export function usePracticeStatistics(): PracticeStatistics {
   const store = useContext(TreeStateContext)!;
   const { root, headers } = useTreeView(store);
 
-  const selectedReference = useAtomValue(referenceDbAtom);
-  const selectedReferenceKey = selectedReference ? capabilityKey(selectedReference) : null;
-  const currency = useCollectionCurrency(selectedReference);
-  const resolvedReference = currentCollectionDatabase(selectedReference, currency);
-  const referenceKey = resolvedReference ? capabilityKey(resolvedReference) : null;
-  const referenceHandle = useRef(resolvedReference);
-  if ((referenceHandle.current ? capabilityKey(referenceHandle.current) : null) !== referenceKey) {
-    referenceHandle.current = resolvedReference;
-  }
-  const referenceDb = referenceHandle.current;
+  const {
+    selectedReference,
+    selectedReferenceKey,
+    referenceDb,
+    referenceKey,
+    currencyGeneration,
+    currencyStatus,
+    currencyError,
+    currencyPending,
+  } = useReferenceResolution();
   useEffect(() => {
-    if (currency.error) notifyUnlessCancelled(errorTitleRef.current, currency.error);
-  }, [currency.error]);
+    if (currencyError) notifyUnlessCancelled(errorTitleRef.current, currencyError);
+  }, [currencyError]);
 
   const minGames = useAtomValue(coverageMinGamesAtom);
   const orientation = useMemo(() => headers.orientation || "white", [headers.orientation]);
@@ -101,10 +100,10 @@ export function usePracticeStatistics(): PracticeStatistics {
       orientation,
       referenceDb,
       selectedReference: selectedReferenceKey,
-      generation: currency.collection?.generation,
-      status: currency.collection?.status,
-      error: currency.error,
-      pending: currency.pending,
+      generation: currencyGeneration,
+      status: currencyStatus,
+      error: currencyError,
+      pending: currencyPending,
       minGames,
       startPath,
       startStateMoves,
@@ -115,10 +114,10 @@ export function usePracticeStatistics(): PracticeStatistics {
       orientation,
       referenceDb,
       selectedReferenceKey,
-      currency.collection?.generation,
-      currency.collection?.status,
-      currency.error,
-      currency.pending,
+      currencyGeneration,
+      currencyStatus,
+      currencyError,
+      currencyPending,
       minGames,
       startPath,
       startStateMoves,
@@ -181,10 +180,10 @@ export function usePracticeStatistics(): PracticeStatistics {
     selectedReference,
     selectedReferenceKey,
     referenceKey,
-    currencyGeneration: currency.collection?.generation,
-    currencyStatus: currency.collection?.status,
-    currencyError: currency.error,
-    currencyPending: currency.pending,
+    currencyGeneration,
+    currencyStatus,
+    currencyError,
+    currencyPending,
   };
 }
 

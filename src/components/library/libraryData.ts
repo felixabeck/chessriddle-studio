@@ -51,7 +51,24 @@ export function standaloneDatabases(
     );
 }
 
-/** Projection timestamps are milliseconds, while source file metadata keeps native Unix seconds. */
+/** Normalize a library file or recent-file row to FileMetadata for openFile and practice launch. */
+export function libraryFileMetadata(
+    file: FileMetadata | Extract<RecentFile, { handle: unknown }>,
+): FileMetadata {
+    if ("metadata" in file && "numGames" in file) return file;
+    return {
+        type: "file",
+        name: file.name,
+        handle: file.handle,
+        numGames: 0,
+        metadata: { type: "type" in file ? file.type : "repertoire", tags: [] },
+        lastModified:
+            "lastModified" in file && typeof file.lastModified === "number"
+                ? file.lastModified
+                : Date.now(),
+    };
+}
+
 export type LibraryRow =
     | {
           kind: "file";
@@ -150,6 +167,7 @@ export function projectLibrary(input: LibraryProjectionInput) {
                 key,
                 name: file.name,
                 file,
+                // Projection timestamps are milliseconds, while source file metadata keeps native Unix seconds.
                 modified: file.lastModified * 1000,
                 opened: opened.get(key),
             });

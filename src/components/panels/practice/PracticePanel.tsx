@@ -15,8 +15,8 @@ import {
 } from "@mantine/core";
 import { useToggle } from "@mantine/hooks";
 import { Undo2, BookOpen, Check, Info, Target, X } from "lucide-react";
-import { useAtom } from "jotai";
-import { useContext } from "react";
+import { useAtom, useAtomValue } from "jotai";
+import { useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatMoveNumber, formatNumber } from "@/utils/format";
 import { useStore } from "zustand";
@@ -26,7 +26,7 @@ import Comment from "@/components/common/Comment";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { IconAction } from "@/components/common/IconAction";
 import { buildFromTree, getStats } from "@/components/files/opening";
-import { practiceTabFamily } from "@/state/atoms";
+import { practiceRunSummaryFamily, practiceTabFamily, timedRunAtom } from "@/state/atoms";
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import RepertoireInfo from "./RepertoireInfo";
@@ -37,11 +37,19 @@ import { useDeckSync } from "./useDeckSync";
 import { useDeckWeights } from "./useDeckWeights";
 import { PracticeStatisticsContext, usePracticeStatistics } from "./usePracticeStatistics";
 import { usePracticeSession } from "./usePracticeSession";
+import { PRACTICE_RUN_COUNTDOWN_TICK_MS } from "./session";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "@/components/common/PaneTabs.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "@/components/boards/paneTabs";
 
 const PRACTICE_START_BUTTON_STYLE = { scrollMarginBlock: "var(--mantine-spacing-xs)" };
+
+function formatRunClock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
 
 function PracticePanel() {
   const { t, i18n } = useTranslation();
@@ -60,12 +68,21 @@ function PracticePanel() {
   const [positionsOpen, setPositionsOpen] = useToggle();
   const [logsOpen, setLogsOpen] = useToggle();
   const [tab, setTab] = useAtom(useTabAtom(practiceTabFamily));
+  const timedRun = useAtomValue(timedRunAtom);
+  const runSummary = useAtomValue(useTabAtom(practiceRunSummaryFamily));
   const deckIdentity = {
     file: tabFile ? fileWorkspaceKey(tabFile.handle) : "",
     game: getTabGameNumber(currentTab),
   };
 
-  const { deck, setDeck, syncMessage, setSyncMessage, clearSyncMessageTimer } = useDeckSync({
+  const {
+    deck,
+    setDeck,
+    syncMessage,
+    setSyncMessage,
+    clearSyncMessageTimer,
+    syncedWithTreeAndScope,
+  } = useDeckSync({
     root,
     headers,
     treeViewDeferred,
@@ -119,7 +136,17 @@ function PracticePanel() {
     currentTabTreeKey: currentTab?.treeKey,
     tab,
     clearSyncMessageTimer,
+    syncedWithTreeAndScope,
   });
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (timedRun?.phase !== "running") return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), PRACTICE_RUN_COUNTDOWN_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [timedRun?.phase, timedRun?.id]);
+  const remainingMs = timedRun?.phase === "running" ? Math.max(0, timedRun.deadline - now) : 0;
 
   const displayedSessionStats = completedSummary ?? sessionStats;
   const showPracticeContent =
@@ -158,6 +185,25 @@ function PracticePanel() {
             style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}
           >
             <Stack p="sm" gap="md">
+              {timedRun?.phase === "running" && (
+                <Text fz="sm" fw={500} style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {t("Board.Practice.RunCountdown", { time: formatRunClock(remainingMs) })}
+                </Text>
+              )}
+              {runSummary && (
+                <Text fz="sm">
+                  {t("Board.Practice.RunSummary", {
+                    positions: runSummary.positions,
+                    correct: runSummary.correct,
+                    incorrect: runSummary.incorrect,
+                    accuracy: Math.round(
+                      (100 * runSummary.correct) /
+                        Math.max(1, runSummary.correct + runSummary.incorrect),
+                    ),
+                    elapsed: formatRunClock(runSummary.elapsedMs),
+                  })}
+                </Text>
+              )}
               {deck.status === "loading" && (
                 <Alert icon={<Info />}>{t("Board.Practice.Loading")}</Alert>
               )}
@@ -371,7 +417,10 @@ function PracticePanel() {
                               incorrect: sessionStats.incorrect,
                             })}
                           </Text>
-                          <IconAction label={t("Common.Stop")} onClick={endPracticeSession}>
+                          <IconAction
+                            label={t("Common.Stop")}
+                            onClick={() => endPracticeSession("stop")}
+                          >
                             <X size={16} />
                           </IconAction>
                         </Group>

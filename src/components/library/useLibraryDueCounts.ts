@@ -25,6 +25,7 @@ type FileRow = Extract<LibraryRow, { kind: "file" }>;
 type DueDiscovery = "pending" | "complete" | "failed";
 type InventoryListing = "pending" | "listed" | "failed";
 type ChapterDecks = Map<string, Map<number, PracticeDeckValue>>;
+const EMPTY_CHAPTER_DECKS: ChapterDecks = new Map();
 
 function identityKey(file: string, game: number): string {
     return `${file}\u0000${game}`;
@@ -34,7 +35,7 @@ function deckFailed(deck: PracticeDeckValue): boolean {
     return deck.status === "read-failed" || deck.status === "write-blocked" || !!deck.error;
 }
 
-function deckCountable(deck: PracticeDeckValue): boolean {
+export function deckCountable(deck: PracticeDeckValue): boolean {
     return deck.status === "ready" || deck.status === "write-pending";
 }
 
@@ -211,11 +212,13 @@ export function useLibraryDueCounts(libraryRows: readonly LibraryRow[]) {
             cleanups.forEach((cleanup) => cleanup());
         };
     }, [store, identity, reloadGeneration]);
-    const result = projectLibraryDueCounts(
-        repertoires,
-        state?.identity === identity ? state.decks : new Map(),
-        state?.identity === identity ? state.discovery : "pending",
-    );
+    const decks = state?.identity === identity ? state.decks : EMPTY_CHAPTER_DECKS;
+    const discovery = state?.identity === identity ? state.discovery : "pending";
+    const result = projectLibraryDueCounts(repertoires, decks, discovery);
     useDueBoundaryRerender(result.nextDue, identity);
-    return result;
+    return {
+        ...result,
+        decks,
+        discoveryPending: discovery === "pending",
+    };
 }

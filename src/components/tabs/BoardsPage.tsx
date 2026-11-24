@@ -10,6 +10,7 @@ import FileFreshnessGate from "./FileFreshnessGate";
 import TreeRecoveryGate from "./TreeRecoveryGate";
 import { boardTabId, boardTabPanelId } from "./boardTabDom";
 import { useTabCommands } from "./TabCommands";
+import TimedRunOwner from "@/components/panels/practice/TimedRunOwner";
 
 import "react-mosaic-component/react-mosaic-component.css";
 
@@ -22,6 +23,7 @@ export default function BoardsPage() {
 
   return (
     <div className={classes.tabsContainer}>
+      <TimedRunOwner />
       {tab && (
         <div
           key={tab.value}

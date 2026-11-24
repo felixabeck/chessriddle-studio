@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { buildFromTree } from "@/components/files/opening";
-import { tabsAtom } from "@/state/atoms";
+import { practiceSegmentGateFamily, tabsAtom } from "@/state/atoms";
 import { resetPracticeMigrationForTests } from "@/state/practiceStorage";
 import { createTreeStore } from "@/state/store/tree";
 import { defaultTree } from "@/utils/treeReducer";
@@ -128,6 +128,8 @@ async function mountSyncedDeck() {
   return {
     getLatest: () => latest,
     renderTree,
+    atomStore,
+    tabId,
   };
 }
 
@@ -195,4 +197,16 @@ test("a second sync before the first timer expires re-arms the dismiss timer", a
     await vi.advanceTimersByTimeAsync(1);
   });
   expect(getLatest().syncMessage).toBeNull();
+});
+
+test("reports synced with the current tree and scope on the tab gate", async () => {
+  const { getLatest, atomStore, tabId } = await mountSyncedDeck();
+  expect(getLatest().syncedWithTreeAndScope).toBe(true);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(atomStore.get(practiceSegmentGateFamily(tabId))).toEqual({
+    synced: true,
+    status: "ready",
+  });
 });

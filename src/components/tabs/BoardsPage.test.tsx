@@ -293,6 +293,7 @@ vi.mock("./ConfirmChangesModal", () => ({
     return null;
   },
 }));
+vi.mock("@/components/panels/practice/TimedRunOwner", () => ({ default: () => null }));
 vi.mock("./NewTabHome", () => ({
   default: ({ id }: { id: string }) => {
     if (id === "next" && !fixtures.nextReady && fixtures.mountPanels) throw fixtures.nextPromise;

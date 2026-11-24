@@ -22,10 +22,13 @@ const fixtures = vi.hoisted(() => ({
     practiceMoveController: Symbol("practice-move-controller"),
     practiceSessionStats: Symbol("practice-session-stats"),
     practiceState: Symbol("practice-state"),
+    practiceRunRequest: Symbol("practice-run-request"),
+    timedRun: Symbol("timed-run"),
+    runSummary: Symbol("run-summary"),
   },
   deck: null as any,
   setDeck: vi.fn(),
-  atomStore: { get: vi.fn() },
+  atomStore: { get: vi.fn(), set: vi.fn() },
   collectRetainedPracticePositions: vi.fn(() => new Set<string>()),
   practiceState: { phase: "idle" } as any,
   setPracticeState: vi.fn(),
@@ -62,6 +65,17 @@ const fixtures = vi.hoisted(() => ({
   },
   currentTab: { value: "practice-tab" },
   grading: "auto" as "auto" | "manual",
+  timedRun: null as {
+    phase: string;
+    id: string;
+    deadline: number;
+  } | null,
+  runSummary: null as {
+    positions: number;
+    correct: number;
+    incorrect: number;
+    elapsedMs: number;
+  } | null,
 }));
 
 vi.mock("@/state/atoms", () => ({
@@ -80,6 +94,11 @@ vi.mock("@/state/atoms", () => ({
   practiceMoveControllerFamily: () => fixtures.atoms.practiceMoveController,
   practiceSessionStatsFamily: () => fixtures.atoms.practiceSessionStats,
   practiceStateFamily: () => fixtures.atoms.practiceState,
+  practiceRunRequestFamily: () => fixtures.atoms.practiceRunRequest,
+  practiceSessionEndAtom: Symbol("session-end"),
+  timedRunAtom: fixtures.atoms.timedRun,
+  practiceRunSummaryFamily: () => fixtures.atoms.runSummary,
+  practiceSegmentGateFamily: () => Symbol("gate"),
 }));
 vi.mock("jotai", () => ({
   useStore: () => fixtures.atomStore,
@@ -96,12 +115,16 @@ vi.mock("jotai", () => ({
       return [null, fixtures.setPracticeMoveController];
     }
     if (atom === fixtures.atoms.practiceCompletedSummary) return [null, vi.fn()];
+    if (atom === fixtures.atoms.runSummary) return [null, vi.fn()];
     return [false, vi.fn()];
   },
   useAtomValue: (atom: symbol) => {
     if (atom === fixtures.atoms.currentTab) return [fixtures.currentTab];
     if (atom === fixtures.atoms.practiceGrading) return fixtures.grading;
     if (atom === fixtures.atoms.practiceCardStartTime) return 0;
+    if (atom === fixtures.atoms.practiceRunRequest) return null;
+    if (atom === fixtures.atoms.timedRun) return fixtures.timedRun;
+    if (atom === fixtures.atoms.runSummary) return fixtures.runSummary;
     return 10;
   },
   useSetAtom: (atom: symbol) =>
@@ -274,14 +297,32 @@ vi.mock("@mantine/hooks", async () => {
 });
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { count?: number; cause?: string; date?: string; value?: string }) =>
-      options?.date !== undefined
-        ? `${key}:${options.date}`
-        : options?.value !== undefined
-          ? `${key}:${options.value}`
-          : options?.count === undefined
-            ? key
-            : `${key}:${options.count}`,
+    t: (
+      key: string,
+      options?: {
+        count?: number;
+        cause?: string;
+        date?: string;
+        value?: string;
+        time?: string;
+        elapsed?: string;
+        positions?: number;
+        correct?: number;
+        incorrect?: number;
+        accuracy?: number;
+      },
+    ) =>
+      options?.time !== undefined
+        ? `${key}:${options.time}`
+        : options?.elapsed !== undefined
+          ? `${key}:${options.elapsed}:${options.positions}:${options.correct}:${options.incorrect}:${options.accuracy}`
+          : options?.date !== undefined
+            ? `${key}:${options.date}`
+            : options?.value !== undefined
+              ? `${key}:${options.value}`
+              : options?.count === undefined
+                ? key
+                : `${key}:${options.count}`,
     i18n: { language: fixtures.language },
   }),
 }));
@@ -295,6 +336,7 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { deferTreeView, releaseTreeView } from "@/state/deferredTreeView";
 import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
 import PracticePanel from "./PracticePanel";
+import { PRACTICE_RUN_COUNTDOWN_TICK_MS } from "./session";
 
 const position = (fen: string, card = { due: "2026-09-22T00:00:00.000Z", reps: 0 }) => ({
   fen,
@@ -349,6 +391,8 @@ beforeEach(() => {
   fixtures.tree.headers = { orientation: "white", start: [] };
   fixtures.tree.root = {};
   fixtures.practiceState = { phase: "idle" };
+  fixtures.timedRun = null;
+  fixtures.runSummary = null;
   fixtures.practiceStats = {
     mode: "anki",
     remainingPositionKeys: [],
@@ -902,6 +946,36 @@ test("drops a log page that started before the deck generation changed", async (
   });
   await act(async () => Promise.resolve());
   expect(container?.textContent).not.toContain("reset-late");
+});
+
+test("countdown ticks from timedRunAtom", async () => {
+  vi.useFakeTimers();
+  try {
+    fixtures.timedRun = {
+      phase: "running",
+      id: "run-clock",
+      deadline: Date.now() + 65_000,
+    };
+    await rerenderPracticePanel();
+    expect(container?.textContent).toContain("Board.Practice.RunCountdown:1:05");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PRACTICE_RUN_COUNTDOWN_TICK_MS);
+    });
+    expect(container?.textContent).toContain("Board.Practice.RunCountdown:1:04");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("the run summary renders from practiceRunSummaryFamily", async () => {
+  fixtures.runSummary = {
+    positions: 4,
+    correct: 3,
+    incorrect: 1,
+    elapsedMs: 125_000,
+  };
+  await rerenderPracticePanel();
+  expect(container?.textContent).toContain("Board.Practice.RunSummary:2:05:4:3:1:75");
 });
 
 async function rerenderPracticePanel() {

@@ -6,6 +6,7 @@ import { getBoardState } from "@/utils/treeReducer";
 
 export const PRACTICE_SLOW_ANSWER_MS = 10_000;
 export const PRACTICE_REPLAY_STEP_MS = 450;
+export const PRACTICE_RUN_COUNTDOWN_TICK_MS = 1_000;
 
 export function getAutomaticPracticeGrade(timeTaken: number): 2 | 3 {
     return timeTaken <= PRACTICE_SLOW_ANSWER_MS ? 3 : 2;
@@ -16,7 +17,10 @@ export type PracticeQueue = {
     reappendedPositionKeys: string[];
 };
 
-function compareUnseenByWeight(left: Position, right: Position): number {
+export function compareUnseenByWeight(
+    left: { weight?: number },
+    right: { weight?: number },
+): number {
     const leftWeight = validWeight(left.weight);
     const rightWeight = validWeight(right.weight);
     if (leftWeight === undefined && rightWeight === undefined) return 0;

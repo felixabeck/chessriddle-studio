@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   },
   due: {} as Record<string, { count: number | null; failed: boolean }>,
   inventoryFailed: false,
+  discoveryPending: false,
+  decks: new Map(),
   feed: { games: [] as OwnGame[], loading: false, hasMore: false, incompleteCount: 0 },
   feedArgs: vi.fn(),
   showMore: vi.fn(),
@@ -67,8 +69,13 @@ vi.mock("@/components/library/useLibraryDueCounts", () => ({
       total: values.reduce((sum, row) => sum + (row.count ?? 0), 0),
       incomplete: values.some((row) => row.count === null) || mocks.inventoryFailed,
       inventoryFailed: mocks.inventoryFailed,
+      discoveryPending: mocks.discoveryPending,
+      decks: mocks.decks,
     };
   },
+}));
+vi.mock("@/components/panels/practice/TrainOpeningsPopover", () => ({
+  default: ({ trigger }: { trigger: unknown }) => trigger,
 }));
 vi.mock("@/components/library/useOwnGamesFeed", () => ({
   useOwnGamesFeed: (collections: unknown, query: string, active: boolean) => {
@@ -213,6 +220,8 @@ beforeEach(() => {
   mocks.databases = { data: undefined, isLoading: false, error: undefined };
   mocks.due = {};
   mocks.inventoryFailed = false;
+  mocks.discoveryPending = false;
+  mocks.decks = new Map();
   mocks.feed = { games: [], loading: false, hasMore: false, incompleteCount: 0 };
   mocks.count.mockReset().mockResolvedValue(1);
   mocks.readGames.mockReset().mockResolvedValue(chapterGames());
@@ -975,13 +984,14 @@ test("transient validation failures retain recents and refused opening does not 
 
 test("compact actions replace their own tab and pass import ownership", async () => {
   await render();
-  expect(host.querySelectorAll("[data-home-action]")).toHaveLength(5);
+  expect(host.querySelectorAll("[data-home-action]")).toHaveLength(6);
   expect(
     [...host.querySelectorAll("[data-home-action]")].map((action) => action.textContent),
   ).toEqual([
     "Home.Card.PlayChess.Button",
     "Home.Card.AnalysisBoard.Title",
     "Home.Card.Puzzle.Title",
+    "Home.Card.TrainOpenings.Title",
     "Home.Card.NewRepertoire.Title",
     "Home.Card.ImportGame.Button",
   ]);
@@ -1012,7 +1022,7 @@ test.each([true, false, "failed"] as const)(
     if (available === "failed") mocks.available.mockRejectedValue("server");
     else mocks.available.mockResolvedValue(available);
     await render();
-    expect(host.querySelectorAll("[data-home-action]")).toHaveLength(5);
+    expect(host.querySelectorAll("[data-home-action]")).toHaveLength(6);
     await click("Home.Card.Puzzle.Title");
     expect(store.get(tabsAtom)[0]).toMatchObject({ type: "puzzles", name: "Home.PuzzleTraining" });
     expect(store.get(tabsAtom)[0].puzzleSource).toBe(

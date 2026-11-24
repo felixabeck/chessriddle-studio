@@ -336,6 +336,8 @@ test("pre-existing family params subscribe and count while inventory listing is 
   expect(latest.total).toBe(1);
   expect(latest.incomplete).toBe(true);
   expect(latest.inventoryFailed).toBe(false);
+  expect(latest.discoveryPending).toBe(true);
+  expect(latest.decks.get(row.key)?.get(1)?.status).toBe("ready");
 });
 
 test("pre-existing family params subscribe even when inventory listing rejects", async () => {

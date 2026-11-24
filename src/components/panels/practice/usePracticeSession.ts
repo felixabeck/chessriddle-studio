@@ -16,9 +16,12 @@ import {
     practiceGradingAtom,
     practiceMoveControllerFamily,
     practiceNewPerSessionAtom,
+    practiceRunRequestFamily,
+    practiceSessionEndAtom,
     practiceSessionStatsFamily,
     practiceStateFamily,
     showCommentsFamily,
+    type PracticeSessionEndReason,
     type PracticeSessionStats,
 } from "@/state/atoms";
 import { emptyPracticeStats } from "@/state/practiceSessionStats";
@@ -53,6 +56,7 @@ export type UsePracticeSessionParams = {
     currentTabTreeKey: string | undefined;
     tab: string;
     clearSyncMessageTimer: () => void;
+    syncedWithTreeAndScope?: boolean;
 };
 
 export function usePracticeSession({
@@ -67,6 +71,7 @@ export function usePracticeSession({
     currentTabTreeKey,
     tab,
     clearSyncMessageTimer,
+    syncedWithTreeAndScope = false,
 }: UsePracticeSessionParams) {
     const setPracticePath = useStore(store, (s) => s.setPracticePath);
     const activeTab = useAtomValue(activeTabAtom);
@@ -84,6 +89,8 @@ export function usePracticeSession({
     const setCardStartTime = useSetAtom(useTabAtom(practiceCardStartTimeFamily));
     const practiceGrading = useAtomValue(practiceGradingAtom);
     const newPerSession = useAtomValue(practiceNewPerSessionAtom);
+    const runRequest = useAtomValue(useTabAtom(practiceRunRequestFamily));
+    const setSessionEndReport = useSetAtom(practiceSessionEndAtom);
     const sessionRef = useRef<PracticeSession>(idlePracticeSession());
     const sessionStatsRef = useRef(sessionStats);
     sessionStatsRef.current = sessionStats;
@@ -92,7 +99,16 @@ export function usePracticeSession({
     const presentationRef = useRef({ failed: false, learning: false, rated: false, startedAt: 0 });
     const [alternative, setAlternative] = useState(false);
     const navigationTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
-    const endPracticeSessionRef = useRef<() => void>(() => undefined);
+    const endPracticeSessionRef = useRef<(reason: PracticeSessionEndReason) => void>(
+        () => undefined,
+    );
+    const sessionStartedRef = useRef(false);
+    const endReportedRef = useRef(false);
+    const handledRunRequestRef = useRef<string | null>(null);
+    const runRequestRef = useRef(runRequest);
+    runRequestRef.current = runRequest;
+    const setSessionEndReportRef = useRef(setSessionEndReport);
+    setSessionEndReportRef.current = setSessionEndReport;
 
     const clearPracticeTimers = useCallback(() => {
         for (const timer of navigationTimersRef.current) clearTimeout(timer);
@@ -117,36 +133,54 @@ export function usePracticeSession({
         [setSessionStats],
     );
 
-    const endPracticeSession = useCallback(() => {
-        if (sessionRef.current.phase === "idle") return;
-        clearPracticeTimers();
-        const summary = sessionStatsRef.current;
-        setSession(
-            practiceSessionReducer(sessionRef.current, {
-                type: "end",
-                token: sessionRef.current.token,
-            }),
-        );
-        setPracticePath(null);
-        setInvisible(false);
-        setShowComments(true);
-        setEvalOpen(true);
-        setCardStartTime(0);
-        setPracticeMoveController(null);
-        publishStats(emptyPracticeStats());
-        setCompletedSummary(summary.correct + summary.incorrect > 0 ? summary : null);
-    }, [
-        clearPracticeTimers,
-        setSession,
-        setPracticePath,
-        setInvisible,
-        setShowComments,
-        setEvalOpen,
-        setCardStartTime,
-        setPracticeMoveController,
-        publishStats,
-        setCompletedSummary,
-    ]);
+    const endPracticeSession = useCallback(
+        (reason: PracticeSessionEndReason = "stop") => {
+            if (!sessionStartedRef.current && sessionRef.current.phase === "idle") return;
+            if (endReportedRef.current) return;
+            endReportedRef.current = true;
+            sessionStartedRef.current = false;
+            clearPracticeTimers();
+            const summary = sessionStatsRef.current;
+            const request = runRequestRef.current;
+            if (request) {
+                setSessionEndReportRef.current({
+                    runId: request.runId,
+                    segmentId: request.segmentId,
+                    reason,
+                    correct: summary.correct,
+                    incorrect: summary.incorrect,
+                });
+            }
+            if (sessionRef.current.phase !== "idle") {
+                setSession(
+                    practiceSessionReducer(sessionRef.current, {
+                        type: "end",
+                        token: sessionRef.current.token,
+                    }),
+                );
+            }
+            setPracticePath(null);
+            setInvisible(false);
+            setShowComments(true);
+            setEvalOpen(true);
+            setCardStartTime(0);
+            setPracticeMoveController(null);
+            publishStats(emptyPracticeStats());
+            setCompletedSummary(summary.correct + summary.incorrect > 0 ? summary : null);
+        },
+        [
+            clearPracticeTimers,
+            setSession,
+            setPracticePath,
+            setInvisible,
+            setShowComments,
+            setEvalOpen,
+            setCardStartTime,
+            setPracticeMoveController,
+            publishStats,
+            setCompletedSummary,
+        ],
+    );
     endPracticeSessionRef.current = endPracticeSession;
 
     useEffect(() => {
@@ -219,6 +253,11 @@ export function usePracticeSession({
 
     const newPractice = useCallback(
         (transition: "first" | "next" | "restart" = "next") => {
+            const request = runRequestRef.current;
+            if (transition !== "restart" && request && Date.now() >= request.deadline) {
+                endPracticeSession("deadline");
+                return;
+            }
             clearPracticeTimers();
             let latest = sessionStatsRef.current;
             const state = store.getState();
@@ -236,7 +275,7 @@ export function usePracticeSession({
             }
             publishStats(latest);
             if (!resolved || latest.remainingPositionKeys.length === 0) {
-                endPracticeSession();
+                endPracticeSession("queue-exhausted");
                 return;
             }
             const key = latest.remainingPositionKeys[0];
@@ -357,8 +396,12 @@ export function usePracticeSession({
         });
         if (session.phase === "correct")
             setSession(practiceSessionReducer(session, { type: "advance", token: session.token }));
+        if (runRequestRef.current && Date.now() >= runRequestRef.current.deadline) {
+            endPracticeSession("deadline");
+            return;
+        }
         newPractice();
-    }, [clearPracticeTimers, publishStats, setSession, newPractice]);
+    }, [clearPracticeTimers, publishStats, setSession, newPractice, endPracticeSession]);
 
     const submitMove = useCallback(
         (san: string) => {
@@ -472,18 +515,36 @@ export function usePracticeSession({
         advancePresentation();
     }
 
-    function startSession(mode: PracticeSessionStats["mode"]) {
+    function startSession(mode: PracticeSessionStats["mode"], explicitKeys?: string[]) {
         if (!deckCanWrite) return;
+        sessionStartedRef.current = true;
+        endReportedRef.current = false;
         setCompletedSummary(null);
         publishStats({
             ...emptyPracticeStats(),
             mode,
-            ...buildPracticeQueue(deckRef.current.positions, mode, newPerSession, new Date()),
+            ...(explicitKeys
+                ? { remainingPositionKeys: explicitKeys, reappendedPositionKeys: [] }
+                : buildPracticeQueue(deckRef.current.positions, mode, newPerSession, new Date())),
         });
         newPractice("first");
     }
     const startPractice = () => startSession("anki");
     const startFullPractice = () => startSession("full");
+    const startSessionRef = useRef(startSession);
+    startSessionRef.current = startSession;
+
+    useEffect(() => {
+        if (!runRequest) {
+            handledRunRequestRef.current = null;
+            return;
+        }
+        const key = `${runRequest.runId}:${runRequest.segmentId}`;
+        if (handledRunRequestRef.current === key) return;
+        if (!syncedWithTreeAndScope || !deckCanWrite) return;
+        handledRunRequestRef.current = key;
+        startSessionRef.current("anki", runRequest.positionKeys);
+    }, [runRequest, syncedWithTreeAndScope, deckCanWrite]);
 
     const goBackToPosition = useCallback(() => {
         const state = store.getState();
@@ -539,13 +600,18 @@ export function usePracticeSession({
     ]);
 
     useEffect(() => {
-        if (sessionRef.current.phase !== "idle" && activeTab !== currentTabId) endPracticeSession();
+        if (
+            (sessionStartedRef.current || sessionRef.current.phase !== "idle") &&
+            activeTab !== currentTabId
+        ) {
+            endPracticeSession("tab-left");
+        }
     }, [activeTab, currentTabId, endPracticeSession]);
 
     useEffect(
         () => () => {
             clearPracticeTimers();
-            endPracticeSessionRef.current();
+            endPracticeSessionRef.current("identity-change");
         },
         [clearPracticeTimers, deckIdentity.file, deckIdentity.game, currentTabTreeKey],
     );
@@ -595,7 +661,9 @@ export function usePracticeSession({
     );
 
     useEffect(() => {
-        if (tab !== "train" && practiceState.phase !== "idle") endPracticeSession();
+        if (tab !== "train" && (practiceState.phase !== "idle" || sessionStartedRef.current)) {
+            endPracticeSession("tab-left");
+        }
     }, [endPracticeSession, practiceState.phase, tab]);
 
     useEffect(() => {
@@ -603,7 +671,7 @@ export function usePracticeSession({
             practiceState.phase !== "idle" &&
             (deck.status === "write-blocked" || deck.status === "read-failed")
         )
-            endPracticeSession();
+            endPracticeSession("unwritable");
     }, [deck.status, practiceState.phase, endPracticeSession]);
 
     useEffect(() => {

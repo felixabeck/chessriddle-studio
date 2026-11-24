@@ -161,11 +161,11 @@ test("workspace-tabs: home has compact actions and one reachable Library list", 
             async (action) => (await action.boundingBox())!,
         ),
     );
-    expect(actions).toHaveLength(5);
+    expect(actions).toHaveLength(6);
     for (let i = 1; i < actions.length; i++) {
         expect(actions[i].y).toBeCloseTo(actions[0].y, 0);
         expect(actions[i].x - (actions[i - 1].x + actions[i - 1].width)).toBeCloseTo(
-            i === 3 ? 32 : 16,
+            i === 4 ? 32 : 16,
             0,
         );
     }
@@ -228,7 +228,7 @@ test("workspace-tabs: home actions wrap without horizontal scrolling at 200% fon
     await page.addInitScript(() => localStorage.setItem("font-size", "200"));
     await page.goto("/");
     const actions = page.locator("[data-home-action]");
-    await expect(actions).toHaveCount(5);
+    await expect(actions).toHaveCount(6);
     const first = (await actions.first().boundingBox())!;
     const last = (await actions.last().boundingBox())!;
     expect(last.y).toBeGreaterThan(first.y);
