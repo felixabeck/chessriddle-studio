@@ -2,7 +2,7 @@
   "bundle": {
     "active": true,
     "category": "BoardGame",
-    "copyright": "",
+    "copyright": "Copyright (C) 2022-2026 Francisco Salgueiro; modifications Copyright (C) 2026 Felix Beck",
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
@@ -27,7 +27,7 @@
       }
     },
     "publisher": "Felix Beck",
-    "shortDescription": "Ultimate Chess Toolkit",
+    "shortDescription": "Analyse games, search databases, play against engines",
     "longDescription": "",
     "macOS": {
       "entitlements": null,

@@ -8,6 +8,8 @@ import bugForm from "../../.github/ISSUE_TEMPLATE/bug.yml?raw";
 import indexDocument from "../../index.html?raw";
 import artifactVerifier from "../../src-tauri/src/fs.rs?raw";
 import releasePublicKey from "../../src-tauri/keys/release.minisign.pub?raw";
+import installScript from "../../scripts/install-local.sh?raw";
+import packageManifest from "../../package.json";
 
 describe("product identity", () => {
     test("keeps independent native, document and renderer inputs consistent", () => {
@@ -17,6 +19,22 @@ describe("product identity", () => {
         expect(config.bundle.publisher).toBe("Felix Beck");
         expect(config.app.windows[0].title).toBe(PRODUCT_NAME);
         expect(indexDocument).toContain(`<title>${PRODUCT_NAME}</title>`);
+    });
+
+    test("describes the fork, not upstream, in the installer package metadata", () => {
+        expect(installScript).toContain(`Comment=${config.bundle.shortDescription}\n`);
+        expect(config.bundle.shortDescription).not.toContain("Ultimate Chess Toolkit");
+        expect(cargoManifest).toContain('description = "Chess analysis and database"');
+        // GPL-3 section 4 keeps the original author's notice beside the modifier's.
+        expect(config.bundle.copyright).toContain("Francisco Salgueiro");
+        expect(config.bundle.copyright).toContain("Felix Beck");
+    });
+
+    test("ships a version above the published v1.0.0 so installed copies are offered updates", () => {
+        const cargoVersion = /^version = "([^"]+)"$/mu.exec(cargoManifest)?.[1];
+        expect(cargoVersion).toBe(packageManifest.version);
+        const [major, minor, patch] = packageManifest.version.split(".").map(Number);
+        expect(major * 1_000_000 + minor * 1_000 + patch).toBeGreaterThan(1_000_000);
     });
 
     test("routes source, contribution and bug support to the fork", () => {
