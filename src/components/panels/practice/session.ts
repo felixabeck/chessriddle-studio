@@ -1,5 +1,6 @@
 import { inScopeCards } from "@/components/files/opening";
 import type { Position } from "@/utils/practicePosition";
+import { validWeight } from "@/utils/practicePosition";
 import type { PracticePhase, PracticeSessionStats, PracticeState } from "@/state/atoms";
 import { getBoardState } from "@/utils/treeReducer";
 
@@ -15,20 +16,43 @@ export type PracticeQueue = {
     reappendedPositionKeys: string[];
 };
 
+function compareUnseenByWeight(left: Position, right: Position): number {
+    const leftWeight = validWeight(left.weight);
+    const rightWeight = validWeight(right.weight);
+    if (leftWeight === undefined && rightWeight === undefined) return 0;
+    if (leftWeight === undefined) return 1;
+    if (rightWeight === undefined) return -1;
+    return rightWeight - leftWeight;
+}
+
 export function buildPracticeQueue(
     positions: Position[],
     mode: PracticeSessionStats["mode"],
     newPerSession: number,
     now: Date,
 ): PracticeQueue {
-    let newCount = 0;
-    const remainingPositionKeys = inScopeCards(positions)
-        .filter(({ card }) => {
-            if (mode === "full") return true;
-            if (card.reps > 0) return new Date(card.due) <= now;
-            if (newCount >= newPerSession) return false;
-            newCount++;
-            return true;
+    const scoped = inScopeCards(positions);
+    if (mode === "full") {
+        return {
+            remainingPositionKeys: scoped.map(({ fen }) => getBoardState(fen)),
+            reappendedPositionKeys: [],
+        };
+    }
+
+    const unseenIndices: number[] = [];
+    for (let index = 0; index < scoped.length; index++) {
+        if (scoped[index].card.reps === 0) unseenIndices.push(index);
+    }
+    unseenIndices.sort((left, right) => {
+        const byWeight = compareUnseenByWeight(scoped[left], scoped[right]);
+        return byWeight !== 0 ? byWeight : left - right;
+    });
+    const selectedUnseen = new Set(unseenIndices.slice(0, newPerSession));
+
+    const remainingPositionKeys = scoped
+        .filter((position, index) => {
+            if (position.card.reps > 0) return new Date(position.card.due) <= now;
+            return selectedUnseen.has(index);
         })
         .map(({ fen }) => getBoardState(fen));
     return { remainingPositionKeys, reappendedPositionKeys: [] };

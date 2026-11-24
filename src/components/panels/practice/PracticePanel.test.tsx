@@ -435,6 +435,26 @@ test("grade buttons format review intervals in the active German locale", async 
   }
 });
 
+test("grade buttons request next-review times with the current card's weight", async () => {
+  fixtures.grading = "manual";
+  fixtures.practiceState = {
+    phase: "correct",
+    positionKey: "in-repertoire",
+    timeTaken: 2500,
+  };
+  fixtures.deck = deck({
+    positions: [{ ...position("in-repertoire"), weight: 0.1 }],
+  });
+  fixtures.getNextReviewTimes.mockReturnValue({
+    1: new Date(),
+    2: new Date(),
+    3: new Date(),
+    4: new Date(),
+  });
+  await rerenderPracticePanel();
+  expect(fixtures.getNextReviewTimes).toHaveBeenCalledWith(fixtures.deck.positions[0].card, 0.1);
+});
+
 test("shows loading without an empty deck, reset, or session start", async () => {
   fixtures.deck = deck({ positions: [], status: "loading" });
   await rerenderPracticePanel();

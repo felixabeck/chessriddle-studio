@@ -433,6 +433,63 @@ describe("practice queue", () => {
             keys[4],
         ]);
     });
+
+    it("selects unseen cards by highest weight, presents them in tree order, and keeps ties in tree order", () => {
+        const weighted: Position[] = positions.map((position, index) => {
+            if (index === 0) return { ...position, weight: 0.01 };
+            if (index === 3) return { ...position, weight: 0.1 };
+            if (index === 4) return { ...position, weight: 0.1 };
+            return position;
+        });
+        expect(buildPracticeQueue(weighted, "anki", 1, now).remainingPositionKeys).toEqual([
+            keys[1],
+            keys[3],
+            keys[5],
+        ]);
+        expect(buildPracticeQueue(weighted, "anki", 2, now).remainingPositionKeys).toEqual([
+            keys[1],
+            keys[3],
+            keys[4],
+            keys[5],
+        ]);
+        expect(buildPracticeQueue(weighted, "full", 0, now).remainingPositionKeys).toEqual(keys);
+    });
+
+    it("ranks unseen cards without a weight after weighted ones", () => {
+        const weighted: Position[] = positions.map((position, index) =>
+            index === 4 ? { ...position, weight: 0.001 } : position,
+        );
+        expect(buildPracticeQueue(weighted, "anki", 1, now).remainingPositionKeys).toEqual([
+            keys[1],
+            keys[4],
+            keys[5],
+        ]);
+        expect(buildPracticeQueue(weighted, "anki", 2, now).remainingPositionKeys).toEqual([
+            keys[0],
+            keys[1],
+            keys[4],
+            keys[5],
+        ]);
+    });
+
+    it("treats an invalid stored weight as missing when choosing unseen cards", () => {
+        const withZero: Position[] = positions.map((position, index) =>
+            index === 3 ? { ...position, weight: 0 } : position,
+        );
+        const withNaN: Position[] = positions.map((position, index) =>
+            index === 3 ? { ...position, weight: Number.NaN } : position,
+        );
+        expect(buildPracticeQueue(withZero, "anki", 1, now).remainingPositionKeys).toEqual([
+            keys[0],
+            keys[1],
+            keys[5],
+        ]);
+        expect(buildPracticeQueue(withNaN, "anki", 1, now).remainingPositionKeys).toEqual([
+            keys[0],
+            keys[1],
+            keys[5],
+        ]);
+    });
 });
 
 describe("practice replay", () => {

@@ -1,18 +1,60 @@
 import {
     type Card,
     createEmptyCard,
+    type FSRS,
     fsrs,
     type Grade,
     type ReviewLog,
     generatorParameters,
 } from "ts-fsrs";
 import type { Position } from "@/utils/practicePosition";
+import { validWeight } from "@/utils/practicePosition";
 import { isInPracticeScope, isUserToMove } from "@/utils/practiceScope";
 import { getBoardState, type TreeNode, treeIterator } from "@/utils/treeReducer";
 
-const params = generatorParameters({ enable_fuzz: true });
+const DEFAULT_RETENTION = 0.9;
+const MIN_RETENTION = 0.85;
+const MAX_RETENTION = 0.95;
+const RETENTION_SLOPE = 0.05;
+const RETENTION_LOG10_OFFSET = 2;
+const RETENTION_DECIMALS = 2;
 
-const f = fsrs(params);
+/** 0.90 + 0.05 * (log10(weight) + 2), clamped to 0.85..0.95, rounded to two decimals; absent/invalid -> 0.90 (d-20261124-09). */
+export function retentionForWeight(weight: unknown): number {
+    const stored = validWeight(weight);
+    if (stored === undefined) return DEFAULT_RETENTION;
+    const mapped =
+        DEFAULT_RETENTION + RETENTION_SLOPE * (Math.log10(stored) + RETENTION_LOG10_OFFSET);
+    const clamped = Math.min(MAX_RETENTION, Math.max(MIN_RETENTION, mapped));
+    const scale = 10 ** RETENTION_DECIMALS;
+    return Math.round(clamped * scale) / scale;
+}
+
+/** Cache of production fuzz-on instances, one per retention target (0.85..0.95). Fuzz-off schedulers are test-only and uncached. */
+const schedulers = new Map<number, FSRS>();
+
+export type ScheduleOptions = {
+    now?: Date;
+    enableFuzz?: boolean;
+};
+
+function schedulerFor(retention: number, enableFuzz: boolean): FSRS {
+    if (!enableFuzz) {
+        return fsrs(generatorParameters({ enable_fuzz: false, request_retention: retention }));
+    }
+    const cached = schedulers.get(retention);
+    if (cached) return cached;
+    const created = fsrs(generatorParameters({ enable_fuzz: true, request_retention: retention }));
+    schedulers.set(retention, created);
+    return created;
+}
+
+function repeatCard(card: Card, weight: unknown, options?: ScheduleOptions) {
+    return schedulerFor(retentionForWeight(weight), options?.enableFuzz ?? true).repeat(
+        card,
+        options?.now ?? new Date(),
+    );
+}
 
 export function inScopeCards(positions: readonly Position[]): Position[] {
     return positions.filter((position) => !position.outOfScope);
@@ -134,16 +176,16 @@ export function updateCardPerformance(
     i: number,
     card: Card,
     grade: 1 | 2 | 3 | 4,
+    options?: ScheduleOptions,
 ): {
     positions: Position[];
     entry: ReviewLog & { fen: string };
     entryId: string;
 } | null {
-    const schedulingCards = f.repeat(card, new Date());
-
-    const { card: newCard, log } = schedulingCards[grade];
     const position = positions[i];
     if (!position) return null;
+    const schedulingCards = repeatCard(card, position.weight, options);
+    const { card: newCard, log } = schedulingCards[grade];
     return {
         positions: positions.map((candidate, index) =>
             index === i ? { ...candidate, card: newCard } : candidate,
@@ -225,8 +267,12 @@ export function syncDeck(
     return { positions: merged, added, removed, updated, reordered };
 }
 
-export function getNextReviewTimes(card: Card): Record<Grade, Date> {
-    const schedulingCards = f.repeat(card, new Date());
+export function getNextReviewTimes(
+    card: Card,
+    weight?: unknown,
+    options?: ScheduleOptions,
+): Record<Grade, Date> {
+    const schedulingCards = repeatCard(card, weight, options);
     return {
         1: schedulingCards[1].card.due,
         2: schedulingCards[2].card.due,

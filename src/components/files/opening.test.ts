@@ -5,9 +5,11 @@ import {
     buildFromTree,
     classifyPracticeAnswer,
     getCardStatus,
+    getNextReviewTimes,
     getStats,
     inScopeCards,
     resolvePracticeCard,
+    retentionForWeight,
     syncDeck,
     updateCardPerformance,
 } from "./opening";
@@ -569,6 +571,87 @@ test("sync and rating keep a stored weight", () => {
     expect(synced.positions[0].weight).toBe(0.8);
     const rated = updateCardPerformance(synced.positions, 0, synced.positions[0].card, 3)!;
     expect(rated.positions[0].weight).toBe(0.8);
+});
+
+test.each([
+    { weight: 0.1, retention: 0.95 },
+    { weight: 0.01, retention: 0.9 },
+    { weight: 0.001, retention: 0.85 },
+    { weight: 1, retention: 0.95 },
+    { weight: 0.0001, retention: 0.85 },
+    { weight: undefined, retention: 0.9 },
+    { weight: 0, retention: 0.9 },
+    { weight: Number.NaN, retention: 0.9 },
+    { weight: 1.1, retention: 0.9 },
+])("retentionForWeight maps $weight to $retention", ({ weight, retention }) => {
+    expect(retentionForWeight(weight)).toBe(retention);
+});
+
+test("a high-weight rating is due sooner than the same rating with a low weight when fuzz is on", () => {
+    const now = new Date("2026-11-24T12:00:00Z");
+    const [position] = buildFromTree(openingLine(["e4", "e5", "Nf3"]), "white", []);
+    const learned = {
+        ...position,
+        card: {
+            ...position.card,
+            reps: 5,
+            state: 2,
+            stability: 100,
+            difficulty: 5,
+            elapsed_days: 30,
+            scheduled_days: 100,
+            last_review: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+            due: now,
+        },
+    };
+    const high = { ...learned, weight: 0.1 };
+    const low = { ...learned, weight: 0.001 };
+    const schedule = { now, enableFuzz: true } as const;
+    const highDue = updateCardPerformance([high], 0, high.card, 3, schedule)!.positions[0].card.due;
+    const lowDue = updateCardPerformance([low], 0, low.card, 3, schedule)!.positions[0].card.due;
+    const highInterval = new Date(highDue).getTime() - now.getTime();
+    const lowInterval = new Date(lowDue).getTime() - now.getTime();
+    // 0.95 vs 0.85 targets give about 3.4x via 9*(1/R-1), fuzz moves an interval by a few percent.
+    const MIN_INTERVAL_RATIO = 2;
+    expect(highInterval).toBeLessThan(lowInterval);
+    expect(lowInterval).toBeGreaterThan(highInterval * MIN_INTERVAL_RATIO);
+});
+
+test("a high-weight rating is due sooner than the same rating with a low weight with fuzz off", () => {
+    const now = new Date("2026-11-24T12:00:00Z");
+    const [position] = buildFromTree(openingLine(["e4", "e5", "Nf3"]), "white", []);
+    const learned = {
+        ...position,
+        card: {
+            ...position.card,
+            reps: 5,
+            state: 2,
+            stability: 30,
+            difficulty: 5,
+            elapsed_days: 10,
+            scheduled_days: 30,
+            last_review: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
+            due: now,
+        },
+    };
+    const high = { ...learned, weight: 0.1 };
+    const low = { ...learned, weight: 0.001 };
+    const schedule = { now, enableFuzz: false } as const;
+    const highDue = updateCardPerformance([high], 0, high.card, 3, schedule)!.positions[0].card.due;
+    const lowDue = updateCardPerformance([low], 0, low.card, 3, schedule)!.positions[0].card.due;
+    expect(new Date(highDue).getTime()).toBeLessThan(new Date(lowDue).getTime());
+});
+
+test("grade-button times match the rating for the same weight", () => {
+    const now = new Date("2026-11-24T12:00:00Z");
+    const [position] = buildFromTree(openingLine(["e4", "e5", "Nf3"]), "white", []);
+    const weighted = { ...position, weight: 0.1 };
+    const schedule = { now, enableFuzz: false } as const;
+    const reviewTimes = getNextReviewTimes(weighted.card, weighted.weight, schedule);
+    for (const grade of [1, 2, 3, 4] as const) {
+        const rated = updateCardPerformance([weighted], 0, weighted.card, grade, schedule)!;
+        expect(rated.positions[0].card.due).toEqual(reviewTimes[grade]);
+    }
 });
 
 test("getStats ignores out-of-scope cards", () => {

@@ -443,6 +443,7 @@ function PracticePanel() {
                         <QualityRatingPanel
                           onRate={handleQualityRating}
                           card={currentCard?.card}
+                          weight={currentCard?.weight}
                           timeTaken={practiceState.timeTaken}
                         />
                       )}

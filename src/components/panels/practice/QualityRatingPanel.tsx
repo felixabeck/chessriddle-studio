@@ -9,13 +9,15 @@ export function QualityRatingPanel({
   onRate,
   card,
   timeTaken,
+  weight,
 }: {
   onRate: (grade: 1 | 2 | 3 | 4) => void;
   card?: Card;
   timeTaken?: number;
+  weight?: number;
 }) {
   const { t, i18n } = useTranslation();
-  const reviewTimes = card ? getNextReviewTimes(card) : null;
+  const reviewTimes = card ? getNextReviewTimes(card, weight) : null;
   const now = Date.now();
 
   return (
