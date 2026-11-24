@@ -49,10 +49,6 @@ pnpm build
 
 The built app can be found at `src-tauri/target/release`
 
-## Donate
-
-If you wish to support the original En Croissant project, you can do so [here](https://encroissant.org/support). All donations are greatly appreciated!
-
 ## Contributing
 
 For contributing to this project please refer to the [Contributing guide](./CONTRIBUTING.md).
