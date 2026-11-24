@@ -28864,3 +28864,22 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Why it matters:** this is a silent miscount of the player's own games, the class this review is for. It is not a corrupt import; the rows are on disk and simply never entered into the statistics command. d-20261119-02 already says result totals should include unrated and undated games; this exclusion is a coarser cut on starting position and was not revisited then.
 * **Recommended fix:** drop the `fen.is_null()` filter, and start the opening replay (and any other move decode in this command) from the stored FEN via the same setup path position search uses (`entry_start_position` / `database_setup_to_chess`). A non-standard start can still have an empty opening name; it should not disappear from the W/D/L and rating figures. Optionally treat a FEN that is the standard start as `NULL` by position, not by exact tag bytes.
 * **Found by:** SC-4 correctness review of PGN import, position search and aggregates (Felix t90u), 2026-11-24. Verified against the statistics query, the opening replay, the importer's exact-standard-FEN branch, and the Chess.com 960 fixture's FEN spelling. Related handled findings (not the same defect): f-20261101-09 and f-20261119-01 (import used to *drop* illegal-castling / impossible-EP games; those now import, which makes the statistics hole more visible), f-20261114-21 (eligibility used to skip unrated/undated rows).
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### The daily tree-path mutation sweep is red: three survivors in tree navigation and the start-path map cache
+
+* **ID:** f-20261124-10 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45395218545
+* **First red:** run 45395218545 on `41bf2e516` (previous Mutation run 45160185213 on `ac45297ff` was green)
+* **Repair owner:** 56c2102b-b1ec-4f67-955d-75bbe5583b57 on tuxedo-atlas, 2026-11-24T14:04:07Z
+* **Spotted outside diff:** yes (push gate `pnpm ci:remote:check` of build run frequency-weighted-practice)
+* **Where:** `src/utils/treeReducer.ts:341` (`let passedCursor = cursor === root` survives as `false`), `:361` (`if (index >= 1)` survives as `true`), both in the open-variation navigation added by `361d6ec63`; `:515` (`if (oldestKey !== undefined) byStart.delete(oldestKey)` survives as `true`) in the start-path map LRU added by `0c278a72e`
+* **Defect:** the tests that cover these lines do not fail when the conditions are replaced, so the frontend mutation package tree-path scores 99.22 under its breaking threshold of 100 and the daily Mutation workflow is red, which refuses every later push.
+* **Failure scenario:** job `frontend-mutation (tree-path)` of Mutation run 45395218545: "Final mutation score 99.22 under breaking threshold 100, setting exit code to 1".
+* **Fix:** add tests that distinguish each condition (a navigation that starts at the root versus below it, a first versus a later sibling index, and the eviction when the cache holds an undefined-free oldest key), or remove the condition if it is provably redundant.
+* **Proof:** `FRONTEND_MUTATION_PACKAGE=tree-path pnpm mutation:frontend` reports 100.
+* **Found by:** Claude Code (Opus 5.5), build run frequency-weighted-practice, 2026-11-24
