@@ -338,7 +338,8 @@ export function isOpenVariation(parent: TreeNode, childIndex: number): boolean {
  */
 export function nextOpenVariation(root: TreeNode, position: number[]): number[] | null {
     const cursor = getNodeAtPath(root, position);
-    let passedCursor = cursor === root;
+    // Root is never popped as a child; wrapping from an unpassed cursor is the first open variation.
+    let passedCursor = false;
     let first: number[] | null = null;
     const pending: { parent: TreeNode; index: number; path: number[] }[] = [];
     const queueChildren = (parent: TreeNode, path: number[]) => {
@@ -358,13 +359,11 @@ export function nextOpenVariation(root: TreeNode, position: number[]): number[] 
     while (pending.length > 0) {
         const { parent, index, path } = pending.pop()!;
         const node = parent.children[index];
-        if (index >= 1) {
-            if (isOpenVariation(parent, index)) {
-                if (passedCursor) return path;
-                first ??= path;
-            }
-            if (node === cursor) passedCursor = true;
+        if (isOpenVariation(parent, index)) {
+            if (passedCursor) return path;
+            first ??= path;
         }
+        if (node === cursor) passedCursor = true;
         queueChildren(node, path);
     }
     return first;
@@ -511,8 +510,8 @@ export function getMemoizedBoardStateMap(root: TreeNode, startPath: number[] = [
     }
     byStart.set(startKey, map);
     if (byStart.size > MAX_CACHED_START_PATHS_PER_ROOT) {
-        const oldestKey = byStart.keys().next().value;
-        if (oldestKey !== undefined) byStart.delete(oldestKey);
+        const oldest = byStart.keys().next().value!;
+        byStart.delete(oldest);
     }
     return map;
 }
