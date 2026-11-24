@@ -29065,3 +29065,19 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario (observed):** Test run 45490173290, job `rust-macos-test`, on probe commit `22cfa8b6f` (branch `probe-windows-pgn`, 2026-11-24 21:36 UTC): `3768 passed; 1 failed`. The probe's diff touched `oauth.rs` only by deleting the `off_unix_refusal` lines in `authenticate` and `migrate_legacy_lichess_token`, not the revocation path. The same test passed on Linux and Windows in that run and on master's recent runs.
 * **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/<rust-macos-test job of run 45490173290>/logs`. Fix: bound the test by the production deadline or the retained-byte counter instead of a 3 s wall clock, or raise only the outer bound with a comment saying what it guards against (a hang), and keep the byte-cap assertion.
 * **Found by:** Claude Code interactive session 6e4e9f65-6ab8-4aba-8e73-84f9f3ed21d9, 2026-11-24, on the Windows-port probe run for f-20261124-17.
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### Remote CI repair: Test
+* **ID:** f-20261124-19 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
+
+* **Impact class:** tooling
+* **Found by:** drain remote-CI check (Claude Code)
+* **Where:** workflow `Test`, jobs `e2e`.
+* **Defect:** failed jobs: `e2e` (first red run 45492481434 on `f99cc82fda88a8a67298359638a62295ece8fab6`).
+* **Run URL:** https://github.com/felixabeck/chessriddle-studio/actions/runs/45493926892
+* **Proof:** `gh run view 45493926892 --log-failed`
+* **CI run:** 45493926892
+* **Repair owner:** 1cbb3816-c416-4240-a270-56676003661f on tuxedo-felix, 2026-11-24T22:03:56Z
