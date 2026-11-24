@@ -1,11 +1,16 @@
 import { describe, expect, test } from "vitest";
 import {
+    capitalize,
     formatBytes,
     formatDecimal,
     formatMoveNumber,
+    formatNodes,
     formatRelativeTime,
     formatReviewInterval,
+    formatThemeLabel,
     formatTime,
+    getInitials,
+    roundKeepSum,
 } from "./format";
 
 describe("formatRelativeTime", () => {
@@ -117,5 +122,84 @@ describe("formatMoveNumber", () => {
         [40, "20..."],
     ])("formats ply %i as %s", (halfMoves, expected) => {
         expect(formatMoveNumber(halfMoves)).toBe(expected);
+    });
+});
+
+describe("roundKeepSum", () => {
+    test("whole shares that already sum to 100 stay unchanged", () => {
+        expect(roundKeepSum([50, 30, 20])).toEqual([50, 30, 20]);
+    });
+
+    test("the floored remainder goes to the largest decimal parts", () => {
+        expect(roundKeepSum([45.6, 30.3, 24.1])).toEqual([46, 30, 24]);
+        expect(roundKeepSum([10.2, 10.9, 78.9])).toEqual([10, 11, 79]);
+    });
+
+    test("a decimal tie gives the remainder to the earlier share", () => {
+        expect(roundKeepSum([100 / 3, 100 / 3, 100 / 3])).toEqual([34, 33, 33]);
+    });
+
+    test("all-zero shares stay zero instead of inventing 100", () => {
+        expect(roundKeepSum([0, 0, 0])).toEqual([0, 0, 0]);
+    });
+
+    test("a custom target is respected", () => {
+        expect(roundKeepSum([0.5, 0.5], 1)).toEqual([1, 0]);
+    });
+
+    test("shares whose floored sum already exceeds the target are only floored", () => {
+        expect(roundKeepSum([60.7, 50.2])).toEqual([60, 50]);
+    });
+});
+
+describe("formatNodes", () => {
+    test.each([
+        [0, 0, "0"],
+        [999, 0, "999"],
+        [1000, 0, "1k"],
+        [999_999, 2, "1000.00k"],
+        [1_000_000, 2, "1.00M"],
+        [1_500_000, 1, "1.5M"],
+        [2_000_000_000, 0, "2B"],
+        [3_000_000_000_000, 0, "3T"],
+        [5_000_000_000_000_000, 0, "5000T"],
+    ])("formats %d nodes with %d decimals as %s", (nodes, decimals, expected) => {
+        expect(formatNodes(nodes, decimals)).toBe(expected);
+    });
+
+    test("accepts a bigint node count", () => {
+        expect(formatNodes(12_345_678n, 2)).toBe("12.35M");
+    });
+});
+
+describe("formatThemeLabel", () => {
+    test.each([
+        ["mateIn2", "Mate In 2"],
+        ["back_rank-mate", "Back Rank Mate"],
+        ["advancedPawn", "Advanced Pawn"],
+        ["XMLParser", "Xml Parser"],
+        ["mate2moves", "Mate 2 Moves"],
+        ["  fork  ", "Fork"],
+    ])("formats %j as %j", (theme, expected) => {
+        expect(formatThemeLabel(theme)).toBe(expected);
+    });
+
+    test("returns the raw slug when nothing is left after normalizing", () => {
+        expect(formatThemeLabel("")).toBe("");
+        expect(formatThemeLabel("__-")).toBe("__-");
+    });
+});
+
+describe("capitalize and getInitials", () => {
+    test("capitalize uppercases only the first character", () => {
+        expect(capitalize("knight")).toBe("Knight");
+        expect(capitalize("eN")).toBe("EN");
+        expect(capitalize("")).toBe("");
+    });
+
+    test("getInitials takes the first letter of every space-separated name", () => {
+        expect(getInitials("stockfish")).toBe("S");
+        expect(getInitials("magnus carlsen")).toBe("MC");
+        expect(getInitials("Jan-Krzysztof duda")).toBe("JD");
     });
 });
