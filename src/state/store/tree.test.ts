@@ -681,6 +681,7 @@ test.each([
     "nextBranching",
     "nextBranch",
     "previousBranch",
+    "goToNextOpenVariation",
 ] as const)("%s stays at the practice card", (action) => {
     const store = createTreeStore(undefined, practiceDrillTree());
     store.getState().setPracticePath([0, 0]);
@@ -702,7 +703,7 @@ test.each(["goToEnd", "goToBranchEnd", "goToBranchEndOrNextLine", "nextBranching
     },
 );
 
-test.each(["nextBranch", "previousBranch"] as const)(
+test.each(["nextBranch", "previousBranch", "goToNextOpenVariation"] as const)(
     "%s follows the drill prefix onto the sibling card",
     (action) => {
         const store = createTreeStore(undefined, practiceDrillTree());
@@ -767,6 +768,8 @@ test.each([
     { action: "nextBranching", expected: [0, 0, 0, 0] },
     { action: "nextBranch", expected: [0, 1] },
     { action: "previousBranch", expected: [0, 1] },
+    // 1...c5 is the tree's only side line one move long.
+    { action: "goToNextOpenVariation", expected: [0, 1] },
 ] as const)("$action still moves when practicePath is null", ({ action, expected }) => {
     const store = createTreeStore(undefined, practiceDrillTree());
 
@@ -2346,4 +2349,16 @@ test("appendMove admits a legal mainline reply while the cursor starts at root",
 
     expect(store.getState().root.children[0].children[0].san).toBe("e5");
     expect(store.getState().position).toEqual([0, 0]);
+});
+
+test("goToNextOpenVariation keeps the cursor when the tree has no open variation", () => {
+    const tree = defaultTree();
+    addMove(addMove(tree.root, "e2e4"), "e7e5");
+    tree.position = [0];
+    const store = createTreeStore(undefined, tree);
+    const before = store.getState().position;
+
+    store.getState().goToNextOpenVariation();
+
+    expect(store.getState().position).toBe(before);
 });

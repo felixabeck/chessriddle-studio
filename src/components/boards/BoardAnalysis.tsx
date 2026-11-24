@@ -520,6 +520,7 @@ function BoardAnalysis() {
             <PinnedExplorer placement="notation" />
             <GameNotation
               topBar
+              markOpenVariations
               controls={
                 <BoardControls
                   boardRef={boardRef}

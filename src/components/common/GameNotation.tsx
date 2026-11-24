@@ -62,6 +62,7 @@ import CompleteMoveCell, {
 } from "./CompleteMoveCell";
 import {
   buildNotationRows,
+  collapseKeysOnPath,
   pathForNotationNode,
   variationCollapseKey,
   type NotationMove,
@@ -139,10 +140,16 @@ function GameNotation({
   topBar,
   controls,
   moveActions,
+  markOpenVariations,
 }: {
   topBar?: boolean;
   controls?: React.ReactNode;
   moveActions?: NotationMoveActions;
+  /**
+   * Frame side lines that are one move long. Set where the tree is a file being built (the
+   * analysis board); a puzzle solution, a database preview or a game in play has no line to finish.
+   */
+  markOpenVariations?: boolean;
 }) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
@@ -156,6 +163,7 @@ function GameNotation({
     [root, headers, store],
   );
   const currentNode = useStore(store, (s) => s.currentNode());
+  const position = useStore(store, (s) => s.position);
   const copyPgn = useStore(store, (s) => s.copyPgn);
   const showComments = useAtomValue(useTabAtom(showCommentsFamily));
   const showVariations = useAtomValue(useTabAtom(showVariationsFamily));
@@ -179,6 +187,7 @@ function GameNotation({
       showDiagrams,
       tableView: moveActions === undefined ? tableView : false,
       collapsedVariations,
+      markOpenVariations,
     });
   }, [
     root,
@@ -187,10 +196,28 @@ function GameNotation({
     showDiagrams,
     tableView,
     collapsedVariations,
+    markOpenVariations,
     store,
     moveActions,
   ]);
   const startNode = useMemo(() => getNodeAtPath(root, headers.start || []), [root, headers.start]);
+
+  // A cursor that lands inside a collapsed variation opens it, so the current move is never
+  // hidden. Keyed on the path, not the node: editing the current move replaces its node, and that
+  // must not reopen a variation the user has just collapsed around it.
+  const revealedPosition = useRef<string | null>(null);
+  useEffect(() => {
+    const positionKey = position.join(",");
+    if (revealedPosition.current === positionKey) return;
+    revealedPosition.current = positionKey;
+    const hiding = collapseKeysOnPath(root, position);
+    setCollapsedVariations((previous) =>
+      hiding.some((key) => previous.has(key))
+        ? new Set([...previous].filter((key) => !hiding.includes(key)))
+        : previous,
+    );
+  }, [position, root]);
+
   const rowVirtualizer = useVirtualizer({
     count: model.rows.length,
     estimateSize: () => 32,
@@ -567,6 +594,7 @@ function moveProps(
     tableLayout,
     scoreText,
     analysis: move.analysis,
+    openVariation: move.openVariation,
   };
 }
 

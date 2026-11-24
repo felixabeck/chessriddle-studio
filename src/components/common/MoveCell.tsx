@@ -3,6 +3,7 @@ import { Box, rgba, useMantineTheme } from "@mantine/core";
 import { Flag } from "lucide-react";
 import { useAtom } from "jotai";
 import type { MouseEvent, ReactNode, RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import { showCommentsFamily, moveNotationTypeAtom } from "@/state/atoms";
 import {
   ANNOTATION_INFO,
@@ -52,10 +53,13 @@ interface MoveCellProps {
   fullWidth?: boolean;
   rightAccessory?: ReactNode;
   analysis?: boolean;
+  /** A side line one move long: framed with a dashed line until it gets a second move. */
+  openVariation?: boolean;
   ref?: RefObject<HTMLButtonElement>;
 }
 
 function MoveCell(props: MoveCellProps) {
+  const { t } = useTranslation();
   const [moveNotationType] = useAtom(moveNotationTypeAtom);
   const [showComments] = useAtom(useTabAtom(showCommentsFamily));
   const showAnnotations = props.forceAnnotations || showComments;
@@ -100,6 +104,8 @@ function MoveCell(props: MoveCellProps) {
       component="button"
       className={`${classes.cell} ${props.fullWidth ? classes.cellFullWidth : ""}`}
       data-notation-analysis={props.analysis ? "true" : undefined}
+      data-notation-open-variation={props.openVariation ? "true" : undefined}
+      title={props.openVariation ? t("Notation.OpenVariation") : undefined}
       aria-current={props.isCurrentVariation ? "true" : undefined}
       style={{
         "--light-color": lightColor,

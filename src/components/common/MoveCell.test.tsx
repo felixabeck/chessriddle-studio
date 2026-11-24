@@ -8,6 +8,7 @@ vi.mock("jotai", () => ({
   useAtom: (atom: string) => [atom === "type" ? "letters" : true],
 }));
 vi.mock("lucide-react", () => ({ Flag: () => null }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@mantine/core", () => ({
   Box: ({ component: Component = "div", children, ...props }: any) => (
     <Component {...props}>{children}</Component>
@@ -165,3 +166,26 @@ test.each([
     expect(cell().style.getPropertyValue("--move-hover")).toBe(hover);
   },
 );
+
+test("only an open variation carries the mark and its explanation", async () => {
+  expect(cell().hasAttribute("data-notation-open-variation")).toBe(false);
+  expect(cell().hasAttribute("title")).toBe(false);
+
+  await act(async () =>
+    root.render(
+      <MoveCell
+        annotations={[]}
+        isStart={false}
+        isCurrentVariation={false}
+        move="c6"
+        onClick={onClick}
+        onContextMenu={() => {}}
+        openVariation
+      />,
+    ),
+  );
+
+  expect(cell().getAttribute("data-notation-open-variation")).toBe("true");
+  expect(cell().getAttribute("title")).toBe("Notation.OpenVariation");
+  expect(cell().classList.contains(classes.cell)).toBe(true);
+});

@@ -38,6 +38,7 @@ import {
     type GameHeaders,
     getNodeAtPath,
     type ListNode,
+    nextOpenVariation,
     type TreeNode,
     type TreeState,
     treeIteratorMainLine,
@@ -121,6 +122,11 @@ export interface TreeStoreState extends TreeState {
     /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
     nextBranching: () => void;
     previousBranching: () => void;
+    /**
+     * Goes to the next open variation (a side line one move long) in notation order, wrapping to
+     * the first one. During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05).
+     */
+    goToNextOpenVariation: () => void;
 
     /** During a practice drill, does nothing unless its target is on practicePath up to and including the card (a prefix of practicePath; d-20260923-04/-05). */
     goToAnnotation: (annotation: Annotation, color: "white" | "black") => void;
@@ -385,7 +391,7 @@ export function nextSiblingVariationOrMainMove(
 
 /**
  * Shared cursor assignment of the jump actions (`stepSibling`, `goToAnnotation`, `goToEnd`,
- * `goToBranchEnd`, `nextBranching`). d-20260923-04/-05: during a practice drill they may only land
+ * `goToBranchEnd`, `nextBranching`, `goToNextOpenVariation`). d-20260923-04/-05: during a practice drill they may only land
  * on the drill line up to the card position; anything past or beside it shows the answer.
  */
 function moveCursorWithinDrill(state: Draft<TreeStoreState>, target: number[]): void {
@@ -426,6 +432,7 @@ type TreeNavigationActions = Pick<
     | "previousBranch"
     | "nextBranching"
     | "previousBranching"
+    | "goToNextOpenVariation"
 >;
 
 type TreeMutationActions = Pick<
@@ -657,6 +664,18 @@ function treeNavigationActions(set: TreeSet, get: TreeGet): TreeNavigationAction
                     } while (branchCount === 1 && state.position.length > 0);
                 }),
             ),
+
+        goToNextOpenVariation: () => {
+            // Walked outside the recipe: inside it, the walk would wrap every node in a draft.
+            const { root, position } = get();
+            const target = nextOpenVariation(root, position);
+            if (target === null) return;
+            set(
+                produce((state) => {
+                    moveCursorWithinDrill(state, target);
+                }),
+            );
+        },
     };
 }
 

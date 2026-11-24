@@ -319,6 +319,53 @@ export function getMainlineEndNode(root: TreeNode): TreeNode {
 }
 
 /**
+ * A side line that stops after its first move: an alternative (never `children[0]`, the
+ * continuation) with nothing below it. Its comment, NAGs and evaluation do not enter into it.
+ */
+export function isOpenVariation(parent: TreeNode, childIndex: number): boolean {
+    return childIndex >= 1 && parent.children[childIndex]?.children.length === 0;
+}
+
+/**
+ * The path of the first open variation after the cursor in notation order, wrapping to the first
+ * one in the tree, or null when the tree has none. Notation order prints a move, then each of its
+ * alternatives with everything below it, then the move's own continuation.
+ */
+export function nextOpenVariation(root: TreeNode, position: number[]): number[] | null {
+    const cursor = getNodeAtPath(root, position);
+    let passedCursor = cursor === root;
+    let first: number[] | null = null;
+    const pending: { parent: TreeNode; index: number; path: number[] }[] = [];
+    const queueChildren = (parent: TreeNode, path: number[]) => {
+        if (parent.children.length === 0) return;
+        // Stack order: pushed first, so popped last. What stands below the continuation is
+        // printed after every alternative and everything below those.
+        pending.push({ parent, index: 0, path: [...path, 0] });
+        for (let index = parent.children.length - 1; index >= 1; index -= 1) {
+            pending.push({ parent, index, path: [...path, index] });
+        }
+        // Notation order: the continuation move itself is printed before its alternatives, so a
+        // cursor on it is already passed when they are visited.
+        if (parent.children[0] === cursor) passedCursor = true;
+    };
+
+    queueChildren(root, []);
+    while (pending.length > 0) {
+        const { parent, index, path } = pending.pop()!;
+        const node = parent.children[index];
+        if (index >= 1) {
+            if (isOpenVariation(parent, index)) {
+                if (passedCursor) return path;
+                first ??= path;
+            }
+            if (node === cursor) passedCursor = true;
+        }
+        queueChildren(node, path);
+    }
+    return first;
+}
+
+/**
  * The path to the first mainline node (the root included) that has the same position as the
  * earliest-listed of `fens` the mainline reaches, or null. The list is in order of preference.
  * Database games are stored and searched as a mainline, so variations are not walked.

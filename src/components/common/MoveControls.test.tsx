@@ -1,10 +1,11 @@
 import { MantineProvider } from "@mantine/core";
-import { Provider } from "jotai";
+import { Provider, useAtom } from "jotai";
 import { act, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
-import { EphemeralTabScope } from "@/state/tabScope";
+import { showVariationsFamily } from "@/state/atoms";
+import { EphemeralTabScope, useTabAtom } from "@/state/tabScope";
 import { press } from "@/tests/keyboard";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
@@ -32,6 +33,7 @@ const settings = vi.hoisted(() => ({
     PREVIOUS_BRANCH: "x",
     NEXT_BRANCHING: "shift+arrowright",
     PREVIOUS_BRANCHING: "shift+arrowleft",
+    NEXT_OPEN_VARIATION: "u",
     DELETE_MOVE: "delete",
   },
 }));
@@ -103,6 +105,14 @@ function CaptureStore() {
   return null;
 }
 
+/** The tab's "show variations" setting as the controls see it. */
+let variations: { shown: boolean; set: (shown: boolean) => void };
+function CaptureVariations() {
+  const [shown, set] = useAtom(useTabAtom(showVariationsFamily));
+  variations = { shown, set };
+  return null;
+}
+
 function render({
   modal = false,
   controlsInModal = false,
@@ -122,9 +132,12 @@ function render({
               <div role="grid" />
             </BoardFrame>
             {!controlsInModal && (
-              <MoveDeletionContext.Provider value={deletion}>
-                <MoveControls readOnly={readOnly} />
-              </MoveDeletionContext.Provider>
+              <EphemeralTabScope>
+                <CaptureVariations />
+                <MoveDeletionContext.Provider value={deletion}>
+                  <MoveControls readOnly={readOnly} />
+                </MoveDeletionContext.Provider>
+              </EphemeralTabScope>
             )}
             {editors && (
               <>
@@ -142,7 +155,11 @@ function render({
             {modal && (
               <AppModal opened onClose={vi.fn()} title="Citation" transitionProps={{ duration: 0 }}>
                 <button type="button">Dialog action</button>
-                {controlsInModal && <MoveControls />}
+                {controlsInModal && (
+                  <EphemeralTabScope>
+                    <MoveControls />
+                  </EphemeralTabScope>
+                )}
               </AppModal>
             )}
           </TreeStateProvider>
@@ -474,6 +491,7 @@ test.each([
   ["PREVIOUS_BRANCH", "previousBranch", "x", false],
   ["NEXT_BRANCHING", "nextBranching", "ArrowRight", true],
   ["PREVIOUS_BRANCHING", "previousBranching", "ArrowLeft", true],
+  ["NEXT_OPEN_VARIATION", "goToNextOpenVariation", "u", false],
 ] as const)("%s runs and lets a marked row give up focus", (_shortcut, action, key, shiftKey) => {
   settings.chooseVariation = false;
   store = middleGameStore();
@@ -857,3 +875,41 @@ test.each(["input", "contenteditable"])(
     }
   },
 );
+
+test("the open-variation key steps through them in notation order and turns hidden variations on", () => {
+  // 1.e4 (1.d4) (1.c4) e5: both alternatives are one move long.
+  render();
+  act(() => variations.set(false));
+
+  press("u");
+  expect(store.getState().position).toEqual([1]);
+  expect(variations.shown).toBe(true);
+
+  press("u");
+  expect(store.getState().position).toEqual([2]);
+  press("u");
+  expect(store.getState().position).toEqual([1]);
+});
+
+test("the open-variation key leaves hidden variations hidden when there is nowhere to go", () => {
+  const tree = defaultTree();
+  tree.root.children = [fixtureNode("e4", { children: [fixtureNode("e5", { halfMoves: 2 })] })];
+  store = createTreeStore(undefined, tree);
+  render();
+  act(() => variations.set(false));
+
+  press("u");
+
+  expect(store.getState().position).toEqual([]);
+  expect(variations.shown).toBe(false);
+});
+
+test("the open-variation key typed into a comment field does not move the game", () => {
+  render({ editors: true });
+  const input = host.querySelector<HTMLInputElement>("input")!;
+  input.focus();
+
+  press("u", { target: input });
+
+  expect(store.getState().position).toEqual([]);
+});

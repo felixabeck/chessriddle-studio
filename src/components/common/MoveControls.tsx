@@ -9,7 +9,11 @@ import { chooseVariationAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { nextContinuation } from "@/state/store/tree";
 import { isEngineLinePreviewOpen, isHotkeySuppressed } from "@/utils/keyboardOwnership";
-import { TreeStateContext, useVariationChooser } from "@/components/common/TreeStateContext";
+import {
+  TreeStateContext,
+  useGoToNextOpenVariation,
+  useVariationChooser,
+} from "@/components/common/TreeStateContext";
 import IconAction from "./IconAction";
 import { releaseFocusOnMoveKey } from "./MoveCell";
 import { MoveDeletionContext } from "./MoveDeletionContext";
@@ -41,6 +45,7 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   const previousBranch = useStore(store, (s) => s.previousBranch);
   const nextBranching = useStore(store, (s) => s.nextBranching);
   const previousBranching = useStore(store, (s) => s.previousBranching);
+  const goToNextOpenVariation = useGoToNextOpenVariation(store);
   const chooseVariation = useAtomValue(chooseVariationAtom);
 
   const { choice, open, select, close } = useVariationChooser();
@@ -129,6 +134,11 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   useHotkeys(
     keyMap.PREVIOUS_BRANCHING.keys,
     moveKey(navigate(previousBranching)),
+    shortcutOptions(),
+  );
+  useHotkeys(
+    keyMap.NEXT_OPEN_VARIATION.keys,
+    moveKey(navigate(goToNextOpenVariation)),
     shortcutOptions(),
   );
 

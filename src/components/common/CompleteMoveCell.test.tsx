@@ -1040,3 +1040,70 @@ test("a play tab omits Play from here from the move menu", async () => {
     [...host.querySelectorAll("[data-menu-item]")].map((item) => item.textContent),
   ).not.toContain("Board.Action.PlayFromHere");
 });
+
+test("the open-variation mark follows its flag on an unchanged node, also under the open move menu", async () => {
+  moveCell.useReal = true;
+  const tree = defaultTree();
+  const mainMove = createNode({
+    fen: "main b - - 0 1",
+    move: parseUci("e2e4")!,
+    san: "e4",
+    halfMoves: 1,
+  });
+  const sideMove = createNode({
+    fen: "side b - - 0 1",
+    move: parseUci("d2d4")!,
+    san: "d4",
+    halfMoves: 1,
+  });
+  tree.root.children = [mainMove, sideMove];
+  const store = createTreeStore();
+  store.setState({ root: tree.root });
+  const nodeIndex = createNotationNodeIndex(tree.root);
+  const annotations: [] = [];
+  const render = (openVariation: boolean) =>
+    act(async () =>
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="tab">
+            <CompleteMoveCell
+              node={sideMove}
+              nodeIndex={nodeIndex}
+              root={tree.root}
+              halfMoves={1}
+              move="d4"
+              fen={sideMove.fen}
+              comment=""
+              annotations={annotations}
+              showComments={false}
+              isStart={false}
+              isCurrentVariation={false}
+              openVariation={openVariation}
+            />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      ),
+    );
+  const marked = () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "d4")
+      ?.getAttribute("data-notation-open-variation");
+
+  await render(false);
+  expect(marked()).toBeNull();
+
+  // Only the flag changes: the memo comparator must let the cell through.
+  await render(true);
+  expect(marked()).toBe("true");
+
+  await act(async () =>
+    host
+      .querySelector("[data-notation-open-variation]")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  expect(host.querySelector("[data-menu]")).not.toBeNull();
+  expect(marked()).toBe("true");
+
+  await render(false);
+  expect(marked()).toBeNull();
+});

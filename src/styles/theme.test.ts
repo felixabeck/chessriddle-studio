@@ -103,7 +103,7 @@ describe("ChessRiddle foundation", () => {
     });
 });
 
-describe("annotation text colours", () => {
+describe("notation mark colours", () => {
     const theme = mergeMantineTheme(
         DEFAULT_THEME,
         createAppTheme({ spellCheck: false, fontSize: 100 }),
@@ -173,6 +173,46 @@ describe("annotation text colours", () => {
                 for (const [name, background] of Object.entries(backgrounds)) {
                     const ratio = contrast(text, background);
                     if (ratio < 4.5) below.push(`${hue} on ${name}: ${ratio.toFixed(2)}`);
+                }
+            }
+            expect(below).toEqual([]);
+        },
+    );
+
+    test.each(["light", "dark"] as const)(
+        "the open-variation mark reads as text on the card, the page and inset blocks in %s",
+        (scheme) => {
+            const tokens = chessRiddleTokens[scheme];
+            const value = appCssVariablesResolver(theme)[scheme]["--cf-open-variation"];
+            const mixed = value.match(
+                /^color-mix\(in srgb, (hsl\([^)]+\)) (\d+)%, (black|white)\)$/,
+            );
+            if (!mixed) throw new Error(`unparsed ${value}`);
+            // The info hue: no move-quality mark uses it.
+            expect(mixed[1]).toBe(tokens["chart-6"]);
+            const mark = mix(
+                hsl(mixed[1]),
+                mixed[3] === "black" ? [0, 0, 0] : [255, 255, 255],
+                +mixed[2] / 100,
+            );
+            const card = hsl(tokens.card);
+            const inset = hsl(tokens["surface-inset"]);
+            const primary = hsl(tokens.primary);
+            // The count is text on the card and the page; the frame sits on inset blocks.
+            const text = { card, page: hsl(tokens.background), inset };
+            // A framed move can be the current one: the frame is a graphic there, at 3:1.
+            const graphic = {
+                currentOnCard: mix(primary, card, 0.1),
+                currentOnInset: mix(primary, inset, 0.1),
+            };
+            const below: string[] = [];
+            for (const [minimum, backgrounds] of [
+                [4.5, text],
+                [3, graphic],
+            ] as const) {
+                for (const [name, background] of Object.entries(backgrounds)) {
+                    const ratio = contrast(mark, background);
+                    if (ratio < minimum) below.push(`${name}: ${ratio.toFixed(2)}`);
                 }
             }
             expect(below).toEqual([]);

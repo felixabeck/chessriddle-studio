@@ -112,6 +112,7 @@ vi.mock("./CompleteMoveCell", async () => ({
         data-starting-comment={props.startingComment}
         data-score-text={props.scoreText}
         data-analysis={props.analysis ? "true" : "false"}
+        data-open-variation={props.openVariation ? "true" : "false"}
         onClick={() => store.getState().goToMove(path)}
       >
         {props.move}
@@ -1075,3 +1076,93 @@ test.each([false, true])(
     expect(toggle!.closest("[inert]")).toBeNull();
   },
 );
+
+const renderNotation = (markOpenVariations = false) =>
+  act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation markOpenVariations={markOpenVariations} />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+const cellAttribute = (san: string, name: string) =>
+  host.querySelector(`[data-node="${san}"]`)?.getAttribute(name);
+
+test.each([false, true])(
+  "hands each move its open-variation flag and drops it with the second move (tableView: %s)",
+  async (tableView) => {
+    notationSettings.tableView = tableView;
+    // 1.e4 (1.d4) e5 (1...c5 2.Nf3)
+    store.getState().makeMoves({ payload: ["e4", "e5"] });
+    store.getState().goToMove([0]);
+    store.getState().makeMoves({ payload: ["c5", "Nf3"] });
+    store.getState().goToStart();
+    store.getState().makeMove({ payload: "d4" });
+
+    // Only a notation that asks for the mark hands it on.
+    await renderNotation();
+    expect(cellAttribute("d4", "data-open-variation")).toBe("false");
+
+    await renderNotation(true);
+
+    expect(cellAttribute("d4", "data-open-variation")).toBe("true");
+    expect(cellAttribute("c5", "data-open-variation")).toBe("false");
+    expect(cellAttribute("Nf3", "data-open-variation")).toBe("false");
+    expect(cellAttribute("e5", "data-open-variation")).toBe("false");
+
+    await act(async () => store.getState().makeMove({ payload: "d5" }));
+
+    expect(cellAttribute("d4", "data-open-variation")).toBe("false");
+  },
+);
+
+test("a cursor that lands inside a collapsed variation opens it", async () => {
+  // 1.e4 (1.d4 d5 (1...Nf6)) e5: the open variation 1...Nf6 sits inside the 1.d4 side line.
+  store.getState().makeMoves({ payload: ["e4", "e5"] });
+  store.getState().goToStart();
+  store.getState().makeMoves({ payload: ["d4", "d5"] });
+  store.getState().goToMove([1]);
+  store.getState().makeMove({ payload: "Nf6" });
+  store.getState().goToMove([0]);
+  await renderNotation();
+  const toggles = () => [
+    ...host.querySelectorAll<HTMLButtonElement>('[aria-label="Notation.ToggleVariation"]'),
+  ];
+  // Collapse the inner toggle first, then the outer one that also hides it.
+  await act(async () => toggles()[1].click());
+  await act(async () => toggles()[0].click());
+  expect(cellAttribute("d4", "data-current")).toBeUndefined();
+  expect(cellAttribute("Nf6", "data-current")).toBeUndefined();
+
+  await act(async () => store.getState().goToNextOpenVariation());
+
+  expect(store.getState().position).toEqual([1, 1]);
+  expect(cellAttribute("Nf6", "data-current")).toBe("true");
+  expect(cellAttribute("d5", "data-current")).toBe("false");
+});
+
+test("a variation collapsed around the current move stays closed while that move is edited", async () => {
+  store.getState().makeMoves({ payload: ["e4"] });
+  store.getState().goToStart();
+  store.getState().makeMove({ payload: "d4" });
+  await renderNotation();
+  expect(store.getState().position).toEqual([1]);
+  const toggle = host.querySelector<HTMLButtonElement>('[aria-label="Notation.ToggleVariation"]');
+  await act(async () => toggle!.click());
+  expect(host.querySelector('[data-node="d4"]')).toBeNull();
+
+  // An edit replaces the current node; the cursor has not moved.
+  await act(async () => store.getState().setComment("still to analyse"));
+
+  expect(store.getState().currentNode().comment).toBe("still to analyse");
+  expect(host.querySelector('[data-node="d4"]')).toBeNull();
+
+  // Leaving and coming back is a cursor move and opens it.
+  await act(async () => store.getState().goToMove([0]));
+  expect(host.querySelector('[data-node="d4"]')).toBeNull();
+  await act(async () => store.getState().goToMove([1]));
+  expect(cellAttribute("d4", "data-current")).toBe("true");
+});

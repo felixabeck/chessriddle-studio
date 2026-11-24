@@ -267,6 +267,12 @@ function schemeVariables(theme: MantineTheme, scheme: "light" | "dark") {
     for (const hue of ANNOTATION_HUES) {
         variables[`--cf-annotation-${hue}-text`] = annotationTextShade(hue, scheme);
     }
+    // The open-variation mark and its count: the info hue, which no move-quality mark uses,
+    // shaded to read as text at 4.5:1 on the card, the page and the inset variation blocks.
+    variables["--cf-open-variation"] =
+        scheme === "light"
+            ? `color-mix(in srgb, ${tokens["chart-6"]} 80%, black)`
+            : `color-mix(in srgb, ${tokens["chart-6"]} 70%, white)`;
     for (const fill of ANNOTATION_FILLS) {
         variables[`--cf-annotation-${fill}-on-fill`] = annotationFillForeground(
             theme,

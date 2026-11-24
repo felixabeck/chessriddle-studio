@@ -96,6 +96,8 @@ type CompleteMoveCellProps = {
   tableLayout?: boolean;
   scoreText?: string;
   analysis?: boolean;
+  /** Frame the move as an open variation: a side line one move long, in a notation that marks them. */
+  openVariation?: boolean;
   isStart?: boolean;
   isCurrentVariation?: boolean;
   root: TreeNode;
@@ -115,6 +117,7 @@ function CompleteMoveCell({
   tableLayout,
   scoreText,
   analysis,
+  openVariation,
   isStart: providedIsStart,
   isCurrentVariation: providedIsCurrentVariation,
   root,
@@ -162,6 +165,7 @@ function CompleteMoveCell({
       fullWidth={tableLayout}
       rightAccessory={rightAccessory}
       analysis={analysis}
+      openVariation={openVariation}
     />
   ) : null;
 
@@ -214,6 +218,7 @@ function CompleteMoveCell({
             fullWidth={tableLayout}
             rightAccessory={rightAccessory}
             analysis={analysis}
+            openVariation={openVariation}
             onClose={() => setOpen(false)}
           />
         ) : (
@@ -351,6 +356,7 @@ function OpenMoveMenu({
   fullWidth,
   rightAccessory,
   analysis,
+  openVariation,
   onClose,
 }: {
   store: NonNullable<React.ContextType<typeof TreeStateContext>>;
@@ -364,6 +370,7 @@ function OpenMoveMenu({
   fullWidth?: boolean;
   rightAccessory?: React.ReactNode;
   analysis?: boolean;
+  openVariation?: boolean;
   onClose: () => void;
 }) {
   const [currentTab] = useOwnerTab();
@@ -391,6 +398,7 @@ function OpenMoveMenu({
           fullWidth={fullWidth}
           rightAccessory={rightAccessory}
           analysis={analysis}
+          openVariation={openVariation}
         />
       </Menu.Target>
       <Menu.Dropdown>
@@ -447,6 +455,7 @@ export default memo(CompleteMoveCell, (prev, next) => {
     prev.tableLayout === next.tableLayout &&
     prev.scoreText === next.scoreText &&
     prev.analysis === next.analysis &&
+    prev.openVariation === next.openVariation &&
     prev.isStart === next.isStart &&
     prev.isCurrentVariation === next.isCurrentVariation
   );

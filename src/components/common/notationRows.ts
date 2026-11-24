@@ -1,6 +1,6 @@
 import { makeUci } from "chessops";
 import { splitPgnComment } from "@/utils/pgnComment";
-import { getEffectiveGameEnd, type TreeNode } from "@/utils/treeReducer";
+import { getEffectiveGameEnd, isOpenVariation, type TreeNode } from "@/utils/treeReducer";
 
 /** The largest run mounted as one notation row. */
 export const NOTATION_ROW_MAX_MOVES = 32;
@@ -12,6 +12,11 @@ export type NotationMove = {
     analysis?: boolean;
     /** A diagram row follows this move and carries its comment. */
     diagram?: boolean;
+    /**
+     * The notation frames this move: an open variation (`isOpenVariation`) in a notation that
+     * marks them (`markOpenVariations`). False for every move of a notation that does not.
+     */
+    openVariation: boolean;
 };
 
 export type InlineNotationRow = {
@@ -91,6 +96,8 @@ export type NotationRowOptions = {
     showDiagrams: boolean;
     tableView: boolean;
     collapsedVariations?: ReadonlySet<string>;
+    /** Flag side lines one move long: for the notation of a tree that is being built. */
+    markOpenVariations?: boolean;
 };
 
 function collapseMoveToken(node: TreeNode): string {
@@ -111,6 +118,18 @@ export function variationCollapseKey(root: TreeNode, path: number[]): string {
         node = child;
     }
     return tokens.join(" ");
+}
+
+/**
+ * The collapse keys of every variation toggle that can hide the move at `path`: one per side line
+ * the path enters, keyed by the node that side line branches from, as `queueVariationTasks` keys it.
+ */
+export function collapseKeysOnPath(root: TreeNode, path: number[]): string[] {
+    const keys: string[] = [];
+    for (let depth = 0; depth < path.length; depth += 1) {
+        if (path[depth] >= 1) keys.push(variationCollapseKey(root, path.slice(0, depth)));
+    }
+    return keys;
 }
 
 type InlineTask = {
@@ -308,6 +327,8 @@ function appendInlineTasks(
                 startingComment: starting,
                 analysis: options.analysisNodes.has(node),
                 diagram,
+                openVariation:
+                    options.markOpenVariations === true && isOpenVariation(parent, childIndex),
             });
             first = false;
 
@@ -393,11 +414,22 @@ function addTableRow(
     addRow(rows, rowForNode, {
         type: "table",
         moveNumber,
+        // Table rows hold main-line moves only, and a continuation is never an open variation.
         white: white
-            ? { node: white, first: true, analysis: options.analysisNodes.has(white) }
+            ? {
+                  node: white,
+                  first: true,
+                  analysis: options.analysisNodes.has(white),
+                  openVariation: false,
+              }
             : null,
         black: black
-            ? { node: black, first: true, analysis: options.analysisNodes.has(black) }
+            ? {
+                  node: black,
+                  first: true,
+                  analysis: options.analysisNodes.has(black),
+                  openVariation: false,
+              }
             : null,
         splitRow,
     });

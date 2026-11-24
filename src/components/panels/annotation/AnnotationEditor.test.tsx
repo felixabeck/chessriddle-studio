@@ -22,6 +22,7 @@ import {
 } from "@/components/common/tests/commentDialectCases";
 import { assertCommentFormatting } from "@/components/common/tests/assertCommentFormatting";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
+import { EphemeralTabScope } from "@/state/tabScope";
 import { keyMapAtom } from "@/state/keybinds";
 import { chooseVariationAtom } from "@/state/atoms";
 import { nextContinuation } from "@/state/store/tree";
@@ -107,7 +108,12 @@ function editorTree(controls = false, fenInput = false) {
         <TreeStateContext.Provider value={store}>
           <VariationChooserContext.Provider value={chooser}>
             <AnnotationEditor />
-            {controls && <MoveControls />}
+            {controls && (
+              // The board's move controls always live in a tab.
+              <EphemeralTabScope>
+                <MoveControls />
+              </EphemeralTabScope>
+            )}
             {fenInput && <CurrentFenInput />}
           </VariationChooserContext.Provider>
         </TreeStateContext.Provider>

@@ -89,7 +89,19 @@ test("iterative tree stats match the previous varied-tree counts", () => {
         total: 4,
         leafs: 2,
         depth: 3,
+        // 1.d4 beside 1.e4 e5 2.Nf3 is a side line one move long.
+        openVariations: 1,
     });
+
+    // A second move closes it. The store replaces changed nodes, and so does this tree.
+    const reply = createNode({
+        fen: "reply b - - 0 1",
+        move: parseUci("d7d5")!,
+        san: "d5",
+        halfMoves: 2,
+    });
+    const answered = { ...root, children: [first, { ...second, children: [reply] }] };
+    expect(getStats({ ...defaultTree(), root: answered } as TreeStoreState).openVariations).toBe(0);
 });
 
 test.each(["forward", "reverse"] as const)(

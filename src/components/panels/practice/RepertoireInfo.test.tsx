@@ -543,7 +543,12 @@ test("renders the shared tree-stats row with and without a reference database", 
     [...host.querySelectorAll("p")]
       .map((element) => element.textContent)
       .filter((text) => text?.startsWith("TreeStats."));
-  const expected = ["TreeStats.Variations: 1", "TreeStats.MaxDepth: 2", "TreeStats.TotalMoves: 2"];
+  const expected = [
+    "TreeStats.Variations: 1",
+    "TreeStats.MaxDepth: 2",
+    "TreeStats.TotalMoves: 2",
+    "TreeStats.OpenVariations: 0",
+  ];
   expect(stats()).toEqual(expected);
 
   await act(async () => atoms.set(referenceDbAtom, null));

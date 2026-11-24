@@ -1,5 +1,8 @@
-import { createContext, useContext, useEffect, useRef } from "react";
+import { useSetAtom } from "jotai";
+import { createContext, useCallback, useContext, useEffect, useRef } from "react";
 import { useStore } from "zustand";
+import { showVariationsFamily } from "@/state/atoms";
+import { useTabAtom } from "@/state/tabScope";
 import { createTreeStore, getOrCreateTreeStore, type TreeStore } from "@/state/store/tree";
 import {
   createVariationChooserStore,
@@ -14,6 +17,19 @@ export const VariationChooserContext = createContext<VariationChooserStore | nul
 export function useVariationChooser() {
   const store = useContext(VariationChooserContext)!;
   return useStore(store);
+}
+
+/**
+ * Jumps to the next open variation and, when the cursor moved, turns the tab's variations on:
+ * the target is a side line, which "hide variations" would keep out of the notation.
+ */
+export function useGoToNextOpenVariation(store: TreeStore): () => void {
+  const setShowVariations = useSetAtom(useTabAtom(showVariationsFamily));
+  return useCallback(() => {
+    const before = store.getState().position;
+    store.getState().goToNextOpenVariation();
+    if (store.getState().position !== before) setShowVariations(true);
+  }, [store, setShowVariations]);
 }
 
 export function TreeStateProvider({

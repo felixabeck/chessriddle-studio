@@ -245,7 +245,17 @@ vi.mock("./DetachedEval", () => ({
   default: ({ placement }: { placement: string }) => <span data-engine-slot={placement} />,
 }));
 vi.mock("../common/GameNotation", () => ({
-  default: ({ controls }: { controls?: ReactNode }) => <span data-game-notation>{controls}</span>,
+  default: ({
+    controls,
+    markOpenVariations,
+  }: {
+    controls?: ReactNode;
+    markOpenVariations?: boolean;
+  }) => (
+    <span data-game-notation data-mark-open-variations={markOpenVariations ? "true" : "false"}>
+      {controls}
+    </span>
+  ),
 }));
 vi.mock("../common/MoveControls", () => ({ default: () => <span data-move-controls /> }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
@@ -643,6 +653,11 @@ describe("BoardAnalysis", () => {
     expect(above.parentElement!.firstElementChild).toBe(above);
     expect(below.parentElement!.lastElementChild).toBe(below);
     expect(below.previousElementSibling?.hasAttribute("data-move-controls")).toBe(true);
+  });
+
+  test("the analysis notation asks for the open-variation mark: it is where a file is built", () => {
+    const notation = document.querySelector("[data-game-notation]");
+    expect(notation?.getAttribute("data-mark-open-variations")).toBe("true");
   });
 
   test("pins the explorer strip in each place next to its content, with the engine bar outside it", async () => {

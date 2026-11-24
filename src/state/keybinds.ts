@@ -124,6 +124,11 @@ const definitions = {
         name: "Previous branching point",
         keys: "shift+arrowleft",
     },
+    NEXT_OPEN_VARIATION: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.NEXT_OPEN_VARIATION"),
+        name: "Next open variation",
+        keys: "u",
+    },
     DELETE_MOVE: {
         labelKey: i18nKey("Settings.Keybinds.Actions.DELETE_MOVE"),
         name: "Delete move",

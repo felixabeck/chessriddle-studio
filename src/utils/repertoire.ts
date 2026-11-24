@@ -2,7 +2,7 @@ import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
 import type { DatabaseHandle, PositionStats } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { searchPosition } from "./db";
-import { getNodeAtPath, type TreeNode, getBoardState } from "./treeReducer";
+import { getNodeAtPath, type TreeNode, getBoardState, isOpenVariation } from "./treeReducer";
 import type { TreeStoreState } from "@/state/store/tree";
 import { memoize } from "proxy-memoize";
 
@@ -371,6 +371,7 @@ function getTreeStats(root: TreeNode) {
     let total = 0;
     let leafs = 0;
     let depth = 0;
+    let openVariations = 0;
     const stack: { node: TreeNode; depth: number }[] = [{ node: root, depth: 0 }];
 
     while (stack.length > 0) {
@@ -381,11 +382,12 @@ function getTreeStats(root: TreeNode) {
             continue;
         }
         total += node.children.length;
-        for (const child of node.children) {
-            stack.push({ node: child, depth: nodeDepth + 1 });
+        for (let index = 0; index < node.children.length; index += 1) {
+            if (isOpenVariation(node, index)) openVariations += 1;
+            stack.push({ node: node.children[index], depth: nodeDepth + 1 });
         }
     }
-    return { total, leafs, depth };
+    return { total, leafs, depth, openVariations };
 }
 
 export const getStats = memoize((store: TreeStoreState) => getTreeStats(store.root));

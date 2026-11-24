@@ -1396,6 +1396,7 @@ describe("InfoPanel game loading and cancellation", () => {
       "TreeStats.Variations: 1",
       "TreeStats.MaxDepth: 2",
       "TreeStats.TotalMoves: 2",
+      "TreeStats.OpenVariations: 0",
     ]);
   });
 

@@ -3,6 +3,7 @@ import { makeFen, parseFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { describe, expect, test, vi } from "vitest";
 import * as chessops from "@/utils/chessops";
+import { fixtureNode } from "@/tests/treeFixtures";
 import {
     acceptsStartingComment,
     boardStateMapBuilder,
@@ -16,7 +17,9 @@ import {
     getMemoizedBoardStateMap,
     getNodeAtPath,
     getResolvedPathLength,
+    isOpenVariation,
     lineToTree,
+    nextOpenVariation,
     normalizeTreeHalfMoves,
     rootHalfMoves,
     treeIterator,
@@ -738,4 +741,81 @@ test("acceptsStartingComment holds on a variation's first move and on a move sti
     expect(acceptsStartingComment(root, [])).toBe(false);
     expect(acceptsStartingComment(root, [2])).toBe(false);
     expect(acceptsStartingComment(root, [0, 3])).toBe(false);
+});
+
+/**
+ * 1.e4 (1.d4) e5 (1...c5 2.Nf3 d6 (2...Nc6)) (1...e6) 2.Nf3 (2.Bc4)
+ * Open variations in notation order: d4, Nc6, e6, Bc4.
+ */
+function openVariationTree() {
+    const root = defaultTree().root;
+    const nc6 = fixtureNode("Nc6", { halfMoves: 4 });
+    const c5 = fixtureNode("c5", {
+        halfMoves: 2,
+        children: [
+            fixtureNode("Nf3", {
+                halfMoves: 3,
+                children: [fixtureNode("d6", { halfMoves: 4 }), nc6],
+            }),
+        ],
+    });
+    const e5 = fixtureNode("e5", {
+        halfMoves: 2,
+        children: [fixtureNode("Nf3", { halfMoves: 3 }), fixtureNode("Bc4", { halfMoves: 3 })],
+    });
+    const e4 = fixtureNode("e4", {
+        children: [e5, c5, fixtureNode("e6", { halfMoves: 2 })],
+    });
+    root.children = [e4, fixtureNode("d4")];
+    return { root, e4, e5, c5, nc6 };
+}
+
+const OPEN_D4 = [1];
+const OPEN_NC6 = [0, 1, 0, 1];
+const OPEN_E6 = [0, 2];
+const OPEN_BC4 = [0, 0, 1];
+
+test("an open variation is an alternative with nothing below it, whatever it is annotated with", () => {
+    const { root, e4, e5, c5, nc6 } = openVariationTree();
+    nc6.comment = "still to analyse";
+    nc6.nags = [2];
+    nc6.score = { value: { type: "cp", value: 300 }, wdl: null };
+
+    expect(isOpenVariation(root, 1)).toBe(true);
+    expect(isOpenVariation(c5.children[0], 1)).toBe(true);
+    // A side line that already has a second move.
+    expect(isOpenVariation(e4, 1)).toBe(false);
+    // A continuation is never one, even as the last move of its line.
+    expect(isOpenVariation(e5, 0)).toBe(false);
+    expect(isOpenVariation(c5.children[0], 0)).toBe(false);
+    expect(isOpenVariation(e4, 3)).toBe(false);
+
+    const oneMoveGame = defaultTree().root;
+    oneMoveGame.children = [fixtureNode("e4")];
+    expect(isOpenVariation(oneMoveGame, 0)).toBe(false);
+});
+
+test.each([
+    { from: "the root", position: [], expected: OPEN_D4 },
+    { from: "the continuation printed before its alternative", position: [0], expected: OPEN_D4 },
+    { from: "the first open variation", position: OPEN_D4, expected: OPEN_NC6 },
+    { from: "a continuation with alternatives", position: [0, 0], expected: OPEN_NC6 },
+    { from: "inside an alternative", position: [0, 1, 0, 0], expected: OPEN_NC6 },
+    { from: "a nested open variation", position: OPEN_NC6, expected: OPEN_E6 },
+    { from: "the last alternative of a move", position: OPEN_E6, expected: OPEN_BC4 },
+    { from: "below the continuation", position: [0, 0, 0], expected: OPEN_BC4 },
+    { from: "the last open variation, wrapping", position: OPEN_BC4, expected: OPEN_D4 },
+])("the next open variation from $from follows notation order", ({ position, expected }) => {
+    expect(nextOpenVariation(openVariationTree().root, position)).toEqual(expected);
+});
+
+test("the only open variation is its own next one, and a tree without any has none", () => {
+    const root = defaultTree().root;
+    root.children = [fixtureNode("e4", { children: [fixtureNode("e5", { halfMoves: 2 })] })];
+    expect(nextOpenVariation(root, [])).toBeNull();
+    expect(nextOpenVariation(root, [0, 0])).toBeNull();
+
+    root.children.push(fixtureNode("d4"));
+    expect(nextOpenVariation(root, [1])).toEqual([1]);
+    expect(nextOpenVariation(root, [0, 0])).toEqual([1]);
 });

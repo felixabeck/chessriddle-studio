@@ -36,6 +36,23 @@
   font-style: italic;
 }
 
+/* A side line one move long (DESIGN.md "Notation moves"). The dashed frame is painted over the
+   cell, so the cell keeps its size, and text colour and fill stay free for the annotation hue and
+   the current move. It stops short of the cell's top and bottom: one-move lines often follow each
+   other row by row, and their frames must not merge into one thick line. */
+.cell[data-notation-open-variation="true"] {
+  position: relative;
+}
+
+.cell[data-notation-open-variation="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 3px 0;
+  border: 1px dashed var(--cf-open-variation);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
 [data-mantine-color-scheme="light"] .cell {
   color: var(--light-color);
 }

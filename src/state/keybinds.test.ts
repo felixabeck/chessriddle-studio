@@ -139,3 +139,26 @@ test.each(["NOT_A_SHIPPED_ACTION", "toString", "constructor", "__proto__", "hasO
         );
     },
 );
+
+test("a keymap saved before the open-variation shortcut gains its default and keeps overrides", () => {
+    const current = createStore().get(keyMapAtom);
+    expect(current.NEXT_OPEN_VARIATION).toEqual({ name: "Next open variation", keys: "u" });
+    const { NEXT_OPEN_VARIATION: added, ...older } = current;
+    sessionStorage.setItem("keybinds", JSON.stringify(older));
+    const storage = createKeybindStorage(current, sessionStorage);
+    expect(storage.getItem("keybinds", current).NEXT_OPEN_VARIATION).toEqual(added);
+
+    sessionStorage.setItem(
+        "keybinds",
+        JSON.stringify({ ...current, NEXT_OPEN_VARIATION: { ...added, keys: "ctrl+u" } }),
+    );
+    expect(storage.getItem("keybinds", current).NEXT_OPEN_VARIATION.keys).toBe("ctrl+u");
+});
+
+test("no other default shares the open-variation shortcut's key", () => {
+    const current = createStore().get(keyMapAtom);
+    const sharing = Object.entries(current)
+        .filter(([, binding]) => binding.keys === current.NEXT_OPEN_VARIATION.keys)
+        .map(([id]) => id);
+    expect(sharing).toEqual(["NEXT_OPEN_VARIATION"]);
+});

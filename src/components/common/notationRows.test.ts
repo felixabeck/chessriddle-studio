@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { fixtureNode } from "@/tests/treeFixtures";
 import {
     buildNotationRows,
+    collapseKeysOnPath,
     NOTATION_ROW_MAX_MOVES,
     pathForNotationNode,
     variationCollapseKey,
@@ -812,5 +813,99 @@ describe("diagram rows", () => {
         tree.e5.diagram = true;
         const model = buildNotationRows(tree.root, options);
         expect(model.rows[model.rowForNode.get(tree.e5)!].type).toBe("moves");
+    });
+});
+
+describe("open variations", () => {
+    const shown = {
+        showComments: false,
+        showDiagrams: false,
+        showVariations: true,
+        markOpenVariations: true,
+    };
+
+    function openMoves(rows: NotationRow[]) {
+        return rows.flatMap((row) => {
+            if (row.type === "moves") return row.moves;
+            if (row.type === "table") return [row.white, row.black].filter((move) => move !== null);
+            return [];
+        });
+    }
+
+    test.each([false, true])(
+        "only a side line one move long carries the flag (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            // 1.e4 (1.d4) e5 (1...c5 2.Nf3 (2.Nc3)) 2.Nf3 Nc6 3.Bb5 a6
+            const nc3 = fixtureNode("Nc3", { halfMoves: 3 });
+            tree.c5.children = [
+                fixtureNode("Nf3", { halfMoves: 3, fen: "sicilian w - - 0 1" }),
+                nc3,
+            ];
+            nc3.comment = "still to analyse";
+            nc3.nags = [2];
+
+            const moves = openMoves(buildNotationRows(tree.root, { ...shown, tableView }).rows);
+
+            expect(moves.filter((move) => move.openVariation).map((move) => move.node)).toEqual([
+                tree.d4,
+                nc3,
+            ]);
+            // Every printed move states it, so no consumer can read an absent flag as "not open".
+            expect(moves.every((move) => typeof move.openVariation === "boolean")).toBe(true);
+            // The last move of the main line and of a longer side line are continuations.
+            expect(moves.find((move) => move.node === tree.a6)?.openVariation).toBe(false);
+            expect(moves.find((move) => move.node === tree.c5)?.openVariation).toBe(false);
+
+            // A notation that does not ask for the mark gets none: a puzzle solution or a
+            // database preview has no line to finish.
+            const unmarked = openMoves(
+                buildNotationRows(tree.root, { ...shown, markOpenVariations: undefined, tableView })
+                    .rows,
+            );
+            expect(unmarked.map((move) => move.openVariation)).toEqual(moves.map(() => false));
+        },
+    );
+
+    test("the flag does not depend on the side to move at the root", () => {
+        const tree = variedTree();
+        const blackToMove = defaultTree(
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        );
+        blackToMove.root.children = tree.root.children;
+
+        const moves = openMoves(
+            buildNotationRows(blackToMove.root, { ...shown, tableView: false }).rows,
+        );
+
+        expect(moves.filter((move) => move.openVariation).map((move) => move.node)).toEqual([
+            tree.d4,
+            tree.c5,
+        ]);
+    });
+
+    test("the keys on a path are those of the toggles that hide its side lines", () => {
+        const tree = variedTree();
+        const nc3 = fixtureNode("Nc3", { halfMoves: 3 });
+        tree.c5.children = [fixtureNode("Nf3", { halfMoves: 3, fen: "sicilian w - - 0 1" }), nc3];
+        const path = [0, 1, 1];
+        expect(getNodeAtPath(tree.root, path)).toBe(nc3);
+
+        const keys = collapseKeysOnPath(tree.root, path);
+
+        expect(keys).toEqual([
+            variationCollapseKey(tree.root, [0]),
+            variationCollapseKey(tree.root, [0, 1]),
+        ]);
+        expect(collapseKeysOnPath(tree.root, [0, 0, 0])).toEqual([]);
+        // Collapsing either toggle takes the move out of the rows; collapsing neither shows it.
+        const rowsWith = (collapsed: string[]) =>
+            buildNotationRows(tree.root, {
+                ...shown,
+                tableView: false,
+                collapsedVariations: new Set(collapsed),
+            });
+        expect(rowsWith([]).rowForNode.has(nc3)).toBe(true);
+        for (const key of keys) expect(rowsWith([key]).rowForNode.has(nc3)).toBe(false);
     });
 });
