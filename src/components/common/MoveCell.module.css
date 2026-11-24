@@ -1,4 +1,5 @@
-/* Variable defaults keep main-line and engine-line text unchanged; only .variationBlock sets them. */
+/* Variable defaults keep played main-line and engine-line text unchanged; .variationBlock sets
+   them, and the analysis-move rule below sets --notation-unannotated-move-color. */
 .cell {
   /* Gold fill of the current move, shared by the notation's current move and an unannotated
      previewed engine-line move. MoveCell.tsx never sets these inline, so they hold. */
@@ -27,9 +28,12 @@
   outline-offset: 2px;
 }
 
+/* Moves after the game end read apart from the played game through italics, and an unannotated
+   one through the dimmed secondary colour variations use; no opacity, which would pull annotated
+   text below 4.5:1 (DESIGN.md "Notation moves"). */
 .cell[data-notation-analysis="true"] {
-  --notation-analysis-opacity: 0.6;
-  opacity: var(--notation-analysis-opacity);
+  --notation-unannotated-move-color: var(--mantine-color-dimmed);
+  font-style: italic;
 }
 
 [data-mantine-color-scheme="light"] .cell {
