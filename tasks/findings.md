@@ -27924,7 +27924,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### `useDisplayedEngineLines.ts` is the shared engine-analysis read model under one hook's name, and the hook hand-mirrors `readEngineLines`' atom reads as bare subscriptions
 
-* **ID:** f-20261119-24 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261119-24 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** refactoring review of old upstream code (Felix t68u) at origin/master `0b14f4525`
 * **Where:** `src/components/panels/analysis/useDisplayedEngineLines.ts` (280 lines) exports eight things besides the hook it is named after: `engineFailureMessage`, `engineTerminalLogs`, `reportEngineFailure`, `matchingEngineTerminal`, `readEngineLines`, `engineLinesWaiting`, `useEngineWaitExpired` and `createLiveEngineScoreAtom`. Ten production modules import from it, and most of them never call `useDisplayedEngineLines`: `BoardGame.tsx:84` (failure text and terminal logs for the game opponent), `ReportModal.tsx:22` / `ReportPanel.tsx:20` (`reportEngineFailure`), `LogsPanel.tsx:17` (`matchingEngineTerminal`, `engineTerminalLogs`), `BoardAnalysis.tsx:30` (`readEngineLines`), and `EvalListener.tsx:41` / `useEvalBarScore.ts:7` (`createLiveEngineScoreAtom`, `useEngineWaitExpired`). Inside the hook (`useDisplayedEngineLines`, about `:205-218`), four bare `useAtomValue(...)` calls exist only to subscribe to `tabEngineSettingsFamily`, `engineMovesFamily`, `engineTerminalFamily` and `engineRetryFamily`. The hook then calls `readEngineLines(store.get, …)`, which reads the same four atoms untracked. `createLiveEngineScoreAtom`, in the same file, does it the tracked way: `atom((get) => readEngineLines(get, …))`. `engineFailureMessage` also keeps `snapshot?.` optional chaining on six lines after its own `if (!snapshot) return` guard.
@@ -27933,6 +27933,22 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Fix:** (1) in the hook, replace the four bare subscriptions plus `store.get` with `const read = useAtomValue(useMemo(() => atom((get) => readEngineLines(get, tab, engine, fen, moves, threat)), [tab, engine, fen, moves, threat]))`, the same pattern as `createLiveEngineScoreAtom`. `useDisplayedEngineLines.test.ts` and `BestMoves.test.tsx` guard the behaviour. (2) move `engineFailureMessage` / `engineTerminalLogs` / `reportEngineFailure` to `engineFailure.ts`, and `matchingEngineTerminal` / `readEngineLines` / `engineLinesWaiting` / `createLiveEngineScoreAtom` / `useEngineWaitExpired` to `engineLines.ts`, keeping the hook in its file and importing from them. (3) drop the redundant `?.` after the guard. No behaviour change.
 * **Proof:** read at `0b14f4525`. `rg -n 'from "[^"]*useDisplayedEngineLines"' src -g '!*.test.*'` lists the ten importers above. The four `useAtomValue` calls have no assigned result, and `readEngineLines` reads exactly those four families through `get`.
 * **Found by:** Grok Bot, refactoring review (t68u), origin/master `0b14f4525`.
+* **Handled 2026-11-24 (drain, inline at `lens` tier):** all three parts of the fix landed, with no behaviour change.
+  (1) `useDisplayedEngineLines` now reads through one tracked derived atom,
+  `atom((get) => readEngineLines(get, …))` behind `useMemo`, the same pattern as
+  `createLiveEngineScoreAtom`. The four mirrored bare `useAtomValue` subscriptions and the
+  untracked `store.get` are gone, so every atom `readEngineLines` reads re-renders the hook. The memo keys
+  `moves` by content (`JSON.stringify`) rather than array identity. Keyed by identity, the
+  hook's own test probe (default `moves = []`, a fresh array per render) re-rendered without
+  end: jotai re-renders on every atom swap, and the file hung past 300 s. Keyed by content it
+  passes 34/34. (2) `engineFailureMessage` / `engineTerminalLogs` / `reportEngineFailure` moved to
+  `panels/analysis/engineFailure.ts`. `ENGINE_LINES_LOADING_DELAY_MS` / `matchingEngineTerminal` /
+  `readEngineLines` / `engineLinesWaiting` / `useEngineWaitExpired` / `LiveEngineScore` /
+  `createLiveEngineScoreAtom` moved to `panels/analysis/engineLines.ts`. All ten importers and the
+  tests were updated, with no re-export shim. (3) The redundant `snapshot?.` after the guard was dropped.
+  Proof: `pnpm lint` green, and vitest over `src/components/{panels/analysis,boards,common}` passed
+  88 files and 1534 tests. Commit: `1870328e3`. The pre-commit review (agy executor, `google.low`) ran correctness, root-cause, engine-protocol, code-quality and minimalism. Two adopted should-fixes went in the same commit: `useEvalBarScore` had the same identity-keyed `moves` memo, now routed through the shared `useContentStableMoves` in `engineLines.ts`, and the pure localized `engineFailureMessage` test moved to `engineFailure.test.ts`. Both closure lenses approved. Skipped: keying `engine` by content, because engines are `enginesAtom`-held objects and a changed engine must swap the atom.
+<!-- ledger-meta {"command":"close","effect_lines":15,"effect_sha256":"0a9bd7da014c5d8660c78017aaf19aac29d839677236e05ad9c6260179f21c6f","header_sha256":"6eb87f94d31dc8caafaa21ac157bac087eb568abcad258805d77c66e0eb02edf","header_status":"handled","input_sha256":"5bd45c4e81d31401e7fcb90f3dee83ee082decbaa5fbd26080e2b1bc2fa0cb72","kind":"mutation-receipt","operation":"3dbf67c06c9953af2640fdf30dea184d21682c50255c7010488a46d5c3e3b925","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-24"],"target":"f-20261119-24","v":1} -->
 
 ---
 
