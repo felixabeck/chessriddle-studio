@@ -1,9 +1,18 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { FeedbackType } from "@/bindings";
 import ErrorComponent from "./ErrorComponent";
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), notify: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  notify: vi.fn(),
+  lastFeedbackProps: null as {
+    opened: boolean;
+    initialType?: FeedbackType;
+    initialMessage?: string;
+  } | null,
+}));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (value: string) => value }),
@@ -14,14 +23,26 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
 vi.mock("@/components/feedback/LazyFeedbackModal", () => ({
-  default: ({ opened, onClose }: { opened: boolean; onClose: () => void }) =>
-    opened ? (
+  default: ({
+    opened,
+    onClose,
+    initialType,
+    initialMessage,
+  }: {
+    opened: boolean;
+    onClose: () => void;
+    initialType?: FeedbackType;
+    initialMessage?: string;
+  }) => {
+    mocks.lastFeedbackProps = { opened, initialType, initialMessage };
+    return opened ? (
       <div data-testid="feedback-modal">
         <button type="button" data-testid="feedback-modal-close" onClick={onClose}>
           close
         </button>
       </div>
-    ) : null,
+    ) : null;
+  },
 }));
 vi.mock("@mantine/core", () => ({
   Anchor: ({ children, href }: any) => <a href={href}>{children}</a>,
@@ -39,6 +60,7 @@ let host: HTMLDivElement;
 beforeEach(() => {
   mocks.navigate.mockReset();
   mocks.notify.mockReset();
+  mocks.lastFeedbackProps = null;
 });
 
 afterEach(() => {
@@ -146,7 +168,7 @@ test("a successful diagnostic copy shows copied feedback without a notification"
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
-test("send feedback opens the dialog without RootLayout", async () => {
+test("send feedback opens the dialog empty without RootLayout", async () => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -160,6 +182,11 @@ test("send feedback opens the dialog without RootLayout", async () => {
     send?.click();
   });
   expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
+  expect(mocks.lastFeedbackProps).toEqual({
+    opened: true,
+    initialType: undefined,
+    initialMessage: undefined,
+  });
   expect(host.querySelector("a")?.getAttribute("href")).toContain(
     "github.com/felixabeck/chessriddle-studio",
   );

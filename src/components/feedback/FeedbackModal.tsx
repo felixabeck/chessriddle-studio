@@ -35,6 +35,13 @@ const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
 // Matches Rust str::trim (Unicode White_Space), which the native feedback validation applies.
 const NATIVE_TRIM = /^\p{White_Space}+|\p{White_Space}+$/gu;
 
+export type FeedbackModalProps = {
+  opened: boolean;
+  onClose: () => void;
+  initialType?: FeedbackType;
+  initialMessage?: string;
+};
+
 function trimLikeNative(value: string): string {
   return value.replace(NATIVE_TRIM, "");
 }
@@ -126,13 +133,12 @@ function captureFilter(node: HTMLElement): boolean {
 export default function FeedbackModal({
   opened,
   onClose,
-}: {
-  opened: boolean;
-  onClose: () => void;
-}) {
+  initialType,
+  initialMessage,
+}: FeedbackModalProps) {
   const { t } = useTranslation();
-  const [feedbackType, setFeedbackType] = useState<FeedbackType>("bug");
-  const [message, setMessage] = useState("");
+  const [feedbackType, setFeedbackType] = useState<FeedbackType>(initialType ?? "bug");
+  const [message, setMessage] = useState(initialMessage ?? "");
   const [email, setEmail] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [attachmentId, setAttachmentId] = useState(0);

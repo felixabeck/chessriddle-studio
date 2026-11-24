@@ -1,6 +1,7 @@
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, expect, test, vi } from "vitest";
+import type { FeedbackType } from "@/bindings";
 import type { AppMenuCallbacks } from "./-appMenu";
 import { focusedDialogButton, press } from "@/tests/keyboard";
 
@@ -8,6 +9,12 @@ const mocks = vi.hoisted(() => ({
   fileRevision: vi.fn(),
   windowFocus: vi.fn(),
   lastCallbacks: null as AppMenuCallbacks | null,
+  lastFeedbackProps: null as {
+    opened: boolean;
+    initialType?: FeedbackType;
+    initialMessage?: string;
+  } | null,
+  outlet: (() => null) as () => ReactNode,
   createTab: vi.fn(),
   pickPgnFile: vi.fn(),
   requestBoardCommand: vi.fn(),
@@ -69,14 +76,26 @@ vi.mock("@/platform/tauri", () => ({
 vi.mock("@/components/About", () => ({ default: () => null }));
 vi.mock("@/components/library/ChessBaseGuide", () => ({ default: () => null }));
 vi.mock("@/components/feedback/LazyFeedbackModal", () => ({
-  default: ({ opened, onClose }: { opened: boolean; onClose: () => void }) =>
-    opened ? (
+  default: ({
+    opened,
+    onClose,
+    initialType,
+    initialMessage,
+  }: {
+    opened: boolean;
+    onClose: () => void;
+    initialType?: FeedbackType;
+    initialMessage?: string;
+  }) => {
+    mocks.lastFeedbackProps = { opened, initialType, initialMessage };
+    return opened ? (
       <div data-testid="feedback-modal">
         <button type="button" data-testid="feedback-modal-close" onClick={onClose}>
           close
         </button>
       </div>
-    ) : null,
+    ) : null;
+  },
 }));
 vi.mock("@/components/tabs/NavigationRow", () => ({
   default: ({ onSendFeedback }: { onSendFeedback: () => void }) => (
@@ -141,13 +160,13 @@ vi.mock("./-appMenu", async (importOriginal) => {
 });
 vi.mock("@mantine/notifications", () => ({ notifications: { show: vi.fn() } }));
 vi.mock("@tanstack/react-router", () => ({
-  Outlet: () => null,
+  Outlet: () => mocks.outlet(),
   createRootRouteWithContext: () => (options: unknown) => options,
   useNavigate: () => vi.fn(),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-import { RootLayout, startRootFileFreshnessPoll } from "./__root";
+import { RootLayout, startRootFileFreshnessPoll, useOpenFeedback } from "./__root";
 import { installAppMenuSurface, menuWindowPlatform, wantRealMenu } from "./-appMenu";
 import { getDefaultStore } from "jotai";
 import { getCurrentWindow } from "@/platform/native";
@@ -158,6 +177,8 @@ beforeEach(() => {
   mocks.fileRevision.mockReset().mockResolvedValue("dev:ino:revision");
   mocks.windowFocus.mockReset().mockResolvedValue(vi.fn());
   mocks.lastCallbacks = null;
+  mocks.lastFeedbackProps = null;
+  mocks.outlet = () => null;
   mocks.createTab.mockReset().mockResolvedValue("created");
   mocks.pickPgnFile.mockReset().mockResolvedValue(null);
   mocks.ask.mockReset().mockResolvedValue(false);
@@ -257,6 +278,11 @@ test("the row feedback button opens the same dialog", async () => {
     host.querySelector<HTMLButtonElement>("[data-testid='row-feedback']")?.click();
   });
   expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
+  expect(mocks.lastFeedbackProps).toEqual({
+    opened: true,
+    initialType: undefined,
+    initialMessage: undefined,
+  });
   await act(async () => root.unmount());
   host.remove();
 });
@@ -275,12 +301,121 @@ test("the Help-menu feedback action opens the dialog", async () => {
     mocks.lastCallbacks?.sendFeedback();
   });
   expect(host.querySelector("[data-testid='feedback-modal']")).not.toBeNull();
+  expect(mocks.lastFeedbackProps).toEqual({
+    opened: true,
+    initialType: undefined,
+    initialMessage: undefined,
+  });
   await act(async () => {
     host.querySelector<HTMLButtonElement>("[data-testid='feedback-modal-close']")?.click();
   });
   expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
   await act(async () => root.unmount());
   host.remove();
+});
+
+test("useOpenFeedback opens the dialog prefilled and reopening without a draft opens it empty", async () => {
+  function FeedbackTrigger() {
+    const openFeedback = useOpenFeedback();
+    return (
+      <div>
+        <button
+          type="button"
+          data-testid="open-prefilled-feedback"
+          onClick={() =>
+            openFeedback({ type: "suggestion", message: "Please link directly to Settings." })
+          }
+        >
+          prefilled
+        </button>
+        <button type="button" data-testid="open-empty-feedback" onClick={() => openFeedback()}>
+          empty
+        </button>
+      </div>
+    );
+  }
+  mocks.outlet = () => <FeedbackTrigger />;
+
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root: Root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => {
+    root.render(<RootLayout />);
+  });
+
+  try {
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid='open-prefilled-feedback']")?.click();
+    });
+    expect(mocks.lastFeedbackProps).toEqual({
+      opened: true,
+      initialType: "suggestion",
+      initialMessage: "Please link directly to Settings.",
+    });
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid='feedback-modal-close']")?.click();
+    });
+    expect(host.querySelector("[data-testid='feedback-modal']")).toBeNull();
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid='row-feedback']")?.click();
+    });
+    expect(mocks.lastFeedbackProps).toEqual({
+      opened: true,
+      initialType: undefined,
+      initialMessage: undefined,
+    });
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid='feedback-modal-close']")?.click();
+    });
+    await act(async () => {
+      mocks.lastCallbacks?.sendFeedback();
+    });
+    expect(mocks.lastFeedbackProps).toEqual({
+      opened: true,
+      initialType: undefined,
+      initialMessage: undefined,
+    });
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid='feedback-modal-close']")?.click();
+    });
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid='open-empty-feedback']")?.click();
+    });
+    expect(mocks.lastFeedbackProps).toEqual({
+      opened: true,
+      initialType: undefined,
+      initialMessage: undefined,
+    });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+test("useOpenFeedback throws outside OpenFeedbackContext", async () => {
+  function OrphanConsumer() {
+    useOpenFeedback();
+    return null;
+  }
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root: Root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    await expect(act(async () => root.render(<OrphanConsumer />))).rejects.toThrow(
+      "useOpenFeedback used outside RootLayout",
+    );
+  } finally {
+    errorSpy.mockRestore();
+    await act(async () => root.unmount());
+    host.remove();
+  }
 });
 
 test("the root binds no Save hotkey; Ctrl+S belongs to the board alone", async () => {

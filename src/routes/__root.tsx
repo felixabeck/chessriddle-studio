@@ -6,9 +6,18 @@ import { exit, getCurrentWebviewWindow, getCurrentWindow, platform } from "@/pla
 import { logFailureSafely, warnSafely } from "@/platform/errors";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
 import { useAtom, useAtomValue, useStore as useJotaiStore } from "jotai";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
+import type { FeedbackType } from "@/bindings";
 import AboutModal from "@/components/About";
 import ChessBaseGuide from "@/components/library/ChessBaseGuide";
 import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
@@ -86,6 +95,20 @@ async function createMenu(menuActions: MenuGroup[]): Promise<MenuHandle> {
     menu: (items) => Menu.new({ items: items as never }),
   });
   return menu as unknown as MenuHandle;
+}
+
+export type FeedbackDraft = {
+  type?: FeedbackType;
+  message?: string;
+};
+
+export const OpenFeedbackContext = createContext<((draft?: FeedbackDraft) => void) | null>(null);
+
+/** Opens the root feedback modal, optionally prefilled with an initial type and message. */
+export function useOpenFeedback(): (draft?: FeedbackDraft) => void {
+  const open = useContext(OpenFeedbackContext);
+  if (!open) throw new Error("useOpenFeedback used outside RootLayout");
+  return open;
 }
 
 export const Route = createRootRouteWithContext<Record<string, never>>()({
@@ -199,7 +222,18 @@ function RootShell() {
 
   const [keyMap] = useAtom(keyMapAtom);
   const [aboutOpened, setAboutOpened] = useState(false);
-  const [feedbackOpened, setFeedbackOpened] = useState(false);
+  const [feedbackState, setFeedbackState] = useState<{
+    opened: boolean;
+    draft?: FeedbackDraft;
+  }>({ opened: false });
+
+  const openFeedback = useCallback((draft?: FeedbackDraft) => {
+    setFeedbackState({ opened: true, draft });
+  }, []);
+
+  const closeFeedback = useCallback(() => {
+    setFeedbackState({ opened: false });
+  }, []);
   const [quitDialog, setQuitDialog] = useState<{
     failClosed: boolean;
     tabs: BlockingTab[];
@@ -261,7 +295,7 @@ function RootShell() {
       bindAppMenuCallbacks({
         runMenu,
         about: () => setAboutOpened(true),
-        sendFeedback: () => setFeedbackOpened(true),
+        sendFeedback: () => openFeedback(),
         createNewTab: newTab,
         openNewFile,
         saveGame: () => requestSave("save"),
@@ -276,6 +310,7 @@ function RootShell() {
       newTab,
       openAccounts,
       openEngines,
+      openFeedback,
       openNewFile,
       openSettings,
       requestQuit,
@@ -362,55 +397,62 @@ function RootShell() {
   }, [isNative, nativeMenuActions, notifyMenuError, windowPlatform]);
 
   return (
-    <AppShell
-      padding={0}
-      header={{ height: "2.625rem" }}
-      styles={{
-        main: {
-          height: "100vh",
-          minHeight: 0,
-          paddingTop: "2.625rem",
-          paddingBottom: 0,
-          overflow: "auto",
-          userSelect: "none",
-          background: "var(--cf-background)",
-        },
-        header: {
-          background: "var(--cf-surface-inset)",
-          borderBottom: "none",
-          minWidth: 0,
-          padding: 0,
-        },
-      }}
-    >
-      {coachEnabled && <CoachTurnListener />}
-      <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
-      <ChessBaseGuide />
-      <LazyFeedbackModal opened={feedbackOpened} onClose={() => setFeedbackOpened(false)} />
-      <QuitConfirmModal
-        opened={quitDialog !== null}
-        failClosed={quitDialog?.failClosed ?? false}
-        tabs={quitDialog?.tabs ?? []}
-        onCancel={() => {
-          setQuitDialog(null);
-          cancelQuitGate();
+    <OpenFeedbackContext.Provider value={openFeedback}>
+      <AppShell
+        padding={0}
+        header={{ height: "2.625rem" }}
+        styles={{
+          main: {
+            height: "100vh",
+            minHeight: 0,
+            paddingTop: "2.625rem",
+            paddingBottom: 0,
+            overflow: "auto",
+            userSelect: "none",
+            background: "var(--cf-background)",
+          },
+          header: {
+            background: "var(--cf-surface-inset)",
+            borderBottom: "none",
+            minWidth: 0,
+            padding: 0,
+          },
         }}
-        onQuitWithoutSaving={() => {
-          void quitWithoutSaving();
-        }}
-        onSaveAndQuit={saveAndQuit}
-      />
-      <AppShell.Header>
-        <NavigationRow
-          menuActions={inAppMenuActions}
-          showWindowControls={showWindowControls}
-          onSendFeedback={menuCallbacks.sendFeedback}
+      >
+        {coachEnabled && <CoachTurnListener />}
+        <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
+        <ChessBaseGuide />
+        <LazyFeedbackModal
+          opened={feedbackState.opened}
+          initialType={feedbackState.draft?.type}
+          initialMessage={feedbackState.draft?.message}
+          onClose={closeFeedback}
         />
-      </AppShell.Header>
-      {renderResizeHandles(windowPlatform, showWindowControls) && <WindowResizeHandles />}
-      <AppShell.Main>
-        <Outlet />
-      </AppShell.Main>
-    </AppShell>
+        <QuitConfirmModal
+          opened={quitDialog !== null}
+          failClosed={quitDialog?.failClosed ?? false}
+          tabs={quitDialog?.tabs ?? []}
+          onCancel={() => {
+            setQuitDialog(null);
+            cancelQuitGate();
+          }}
+          onQuitWithoutSaving={() => {
+            void quitWithoutSaving();
+          }}
+          onSaveAndQuit={saveAndQuit}
+        />
+        <AppShell.Header>
+          <NavigationRow
+            menuActions={inAppMenuActions}
+            showWindowControls={showWindowControls}
+            onSendFeedback={menuCallbacks.sendFeedback}
+          />
+        </AppShell.Header>
+        {renderResizeHandles(windowPlatform, showWindowControls) && <WindowResizeHandles />}
+        <AppShell.Main>
+          <Outlet />
+        </AppShell.Main>
+      </AppShell>
+    </OpenFeedbackContext.Provider>
   );
 }

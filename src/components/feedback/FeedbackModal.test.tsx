@@ -8,7 +8,7 @@ import {
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { FeedbackOutcome } from "@/bindings";
+import type { FeedbackOutcome, FeedbackType } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
   submitFeedback: vi.fn(),
@@ -196,9 +196,18 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function renderModal() {
+async function renderModal(
+  props: { opened?: boolean; initialType?: FeedbackType; initialMessage?: string } = {},
+) {
   await act(async () => {
-    root.render(<FeedbackModal opened onClose={onClose} />);
+    root.render(
+      <FeedbackModal
+        opened={props.opened ?? true}
+        initialType={props.initialType}
+        initialMessage={props.initialMessage}
+        onClose={onClose}
+      />,
+    );
   });
 }
 
@@ -957,4 +966,87 @@ test("passes the attached image as the fifth argument", async () => {
     firstKey,
     SMALL_PNG,
   );
+});
+
+function selectedTypeLabel(): string | undefined {
+  return (
+    container.querySelector<HTMLButtonElement>("button[data-selected='true']")?.textContent ??
+    undefined
+  );
+}
+
+test("opens empty by default with bug selected and an empty message", async () => {
+  await renderModal();
+  expect(selectedTypeLabel()).toBe("Feedback.Type.Bug");
+  expect(container.querySelector("textarea")?.value).toBe("");
+  expect(sendButton()?.disabled).toBe(true);
+});
+
+test.each<[FeedbackType, string]>([
+  ["bug", "Feedback.Type.Bug"],
+  ["suggestion", "Feedback.Type.Suggestion"],
+  ["praise", "Feedback.Type.Praise"],
+  ["other", "Feedback.Type.Other"],
+])(
+  "opens prefilled with initial type %s and initial message",
+  async (initialType, expectedLabel) => {
+    const draft = "This is a prepared Studio draft.";
+    await renderModal({ initialType, initialMessage: draft });
+    expect(selectedTypeLabel()).toBe(expectedLabel);
+    expect(container.querySelector("textarea")?.value).toBe(draft);
+    expect(sendButton()?.disabled).toBe(false);
+    await submitForm();
+    expect(mocks.submitFeedback).toHaveBeenCalledExactlyOnceWith(
+      initialType,
+      draft,
+      null,
+      firstKey,
+      null,
+    );
+  },
+);
+
+test("allows editing a prefilled draft before submitting", async () => {
+  await renderModal({
+    initialType: "suggestion",
+    initialMessage: "Original draft text.",
+  });
+  const praise = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Feedback.Type.Praise",
+  );
+  await act(async () => {
+    praise?.click();
+  });
+  await fillMessage("Edited draft text.");
+  await submitForm();
+  expect(mocks.submitFeedback).toHaveBeenCalledExactlyOnceWith(
+    "praise",
+    "Edited draft text.",
+    null,
+    firstKey,
+    null,
+  );
+});
+
+test("discards the draft on close and reopens empty without a draft", async () => {
+  await renderModal({
+    initialType: "other",
+    initialMessage: "Prepared draft to discard.",
+  });
+  expect(selectedTypeLabel()).toBe("Feedback.Type.Other");
+  expect(container.querySelector("textarea")?.value).toBe("Prepared draft to discard.");
+
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("[data-testid='dialog-close']")?.click();
+  });
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(selectedTypeLabel()).toBe("Feedback.Type.Bug");
+  expect(container.querySelector("textarea")?.value).toBe("");
+
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await renderModal({ opened: true });
+  expect(selectedTypeLabel()).toBe("Feedback.Type.Bug");
+  expect(container.querySelector("textarea")?.value).toBe("");
+  expect(sendButton()?.disabled).toBe(true);
 });
