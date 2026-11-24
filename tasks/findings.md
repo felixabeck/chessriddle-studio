@@ -28922,3 +28922,28 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Open question:** none; the wording per locale follows the existing catalogue style.
 * **Proof:** a `NewTabHome` test with the real en-US catalogue that renders one repertoire and one position and expects "1 position due across 1 repertoire" (fails at HEAD).
 * **Found by:** Claude Code (Opus 5.5), build run frequency-weighted-practice, real-app verification, 2026-11-24
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### Commented-out game-database leftovers still name types and fields that no longer exist
+
+* **ID:** f-20261124-12 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Spotted outside diff:** yes (full-scope Rust backend quality review, Felix t94u, at origin/master `7d91c7788`)
+* **Where:** three commented-out remnants in the game-database layer:
+
+  1. `src-tauri/src/db/mod.rs:746-747`, in `Importer::end_headers`: `// Skip games without ELO` and `// self.skip |= self.current.white_elo.is_none() || self.current.black_elo.is_none();`
+  2. `src-tauri/src/db/mod.rs:503`, in `TempGame::insert_to_db` when building `NewGame`: `// max_rating: self.game.white.rating.max(self.game.black.rating),`
+  3. `src-tauri/src/db/queries.rs:590-593`, in `load_games`: a commented `if let Some(speed) = query.speed` filter on `games::speed`.
+
+* **Defect:** each block is leftover upstream code that would not compile if it were uncommented, and the comments around it state a policy or field layout the tree no longer has.
+
+  1. `Importer` has never had a `current` field; ratings live on `self.game.white_elo` / `black_elo`. Unrated games are imported (`white_elo` is optional; `"-"` is stored as `0`). The comment still reads as if "skip games without ELO" were the live rule.
+  2. `NewGame` (`src-tauri/src/db/models.rs:69-89`) and the `Games` schema (`src-tauri/src/db/schema.rs:47-88`) have no `max_rating` column. `insert_to_db` is a method on `TempGame`, so `self.game.white.rating` is the wrong path twice (`self.white_elo` would be the current field).
+  3. `GameQuery` has no `speed` field (the live filter is `time_controls: Option<Vec<String>>` on verbatim `TimeControl` values). `games::speed` is not a schema column.
+
+* **Failure scenario:** a later import or game-list change takes the nearby comment as the intended policy and "restores" the ELO skip, or tries to wire `max_rating` / `query.speed` back into `NewGame` / `GameQuery`. The first would silently drop unrated games on import; the others would not compile, but only after someone has already gone down a dead path. Players are not affected until that happens; the comments are what would steer the next edit wrong.
+* **Fix:** delete the three commented-out blocks. Do not reintroduce an ELO skip, a `max_rating` column, or a `games.speed` filter; unrated games stay importable, and speed is already expressed as `TimeControl` / `time_controls`.
+* **Found by:** full-scope review of the Rust backend (commands, PathAuthority, downloads, engines, game database) for bugs, worthwhile refactors and code quality, Felix t94u, 2026-11-24. Verified by reading the live `Importer` / `TempGame` / `NewGame` / `GameQuery` / `schema.rs` definitions on `7d91c7788`. Related open finding (not the same defect): f-20261124-09 (statistics drop FEN games; this is only stale comments).
