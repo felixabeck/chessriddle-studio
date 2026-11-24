@@ -59,7 +59,7 @@ import { useTrainingSession } from "@/components/chessriddle/useTrainingSession"
 import { chessRiddleTrainingSessions as trainingSessions } from "@/state/chessRiddleTraining";
 
 import { useLibraryData } from "@/components/library/useLibraryData";
-import { useLibraryDueCounts } from "@/components/library/useLibraryDueCounts";
+import { dueTotalLabel, useLibraryDueCounts } from "@/components/library/useLibraryDueCounts";
 import TrainOpeningsPopover from "@/components/panels/practice/TrainOpeningsPopover";
 import { useOwnGamesFeed } from "@/components/library/useOwnGamesFeed";
 import { openDatabaseTable } from "@/components/library/openDatabaseTable";
@@ -711,7 +711,7 @@ export default function NewTabHome({ id }: { id: string }) {
             )}
             {feed.incompleteCount > 0 && (
               <Text size="sm" role="status">
-                {t("Home.Library.GamesIncomplete", { collections: feed.incompleteCount })}
+                {t("Home.Library.GamesIncomplete", { count: feed.incompleteCount })}
               </Text>
             )}
             {filter === "games" && library.collections === undefined && !library.loading && (
@@ -721,10 +721,11 @@ export default function NewTabHome({ id }: { id: string }) {
             )}
             {filter === "due" && due.dueRows.length > 0 && (
               <Text size="sm" c="dimmed">
-                {t("Home.DuePractice.Total", {
-                  positions: due.total,
-                  repertoires: due.dueRows.filter((row) => row.count !== null).length,
-                })}
+                {dueTotalLabel(
+                  t,
+                  due.total,
+                  due.dueRows.filter((row) => row.count !== null).length,
+                )}
                 {incomplete && <> · {t("Home.DuePractice.Incomplete")}</>}
               </Text>
             )}

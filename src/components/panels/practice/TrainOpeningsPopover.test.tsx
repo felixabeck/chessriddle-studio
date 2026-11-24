@@ -77,8 +77,17 @@ vi.mock("@mantine/notifications", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { minutes?: number }) =>
-      options?.minutes != null ? `${key}:${options.minutes}` : key,
+    t: (
+      key: string,
+      options?: { minutes?: number; count?: number; positions?: string; repertoires?: string },
+    ) =>
+      options?.minutes != null
+        ? `${key}:${options.minutes}`
+        : options?.count != null
+          ? `${key}#${options.count}`
+          : options?.positions != null
+            ? `${key}(${options.positions}|${options.repertoires})`
+            : key,
     i18n: { language: "en-US" },
   }),
 }));
@@ -366,6 +375,23 @@ test("Start stays enabled beside a failed sibling deck", async () => {
   )!;
   expect(start.disabled).toBe(false);
   expect(dropdown()?.textContent).toContain("Home.DuePractice.Incomplete");
+});
+
+test("the due total pluralises positions and the repertoires that have a count", async () => {
+  await renderPopover(
+    dueState({
+      rows: [
+        { file: repertoireRow("file-a"), count: 5, failed: false },
+        { file: repertoireRow("file-b"), count: 0, failed: false },
+        { file: repertoireRow("file-c"), count: null, failed: true },
+      ],
+      total: 5,
+    }),
+  );
+  await open();
+  expect(dropdown()?.textContent).toContain(
+    "Home.DuePractice.Total(Home.DuePractice.Positions#5|Home.DuePractice.Repertoires#2)",
+  );
 });
 
 test("Start is disabled when inventory failed and nothing is eligible", async () => {

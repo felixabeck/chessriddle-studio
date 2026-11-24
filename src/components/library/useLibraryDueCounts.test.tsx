@@ -5,7 +5,10 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createEmptyCard } from "ts-fsrs";
 import type { PracticeDeckValue } from "@/state/practiceStorage";
 import type { LibraryRow } from "./libraryData";
+import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
+import type { SupportedLocale } from "@/i18n";
 import {
+  dueTotalLabel,
   LIBRARY_DECK_CONCURRENCY,
   projectLibraryDueCounts,
   useLibraryDueCounts,
@@ -469,3 +472,22 @@ test("concurrency bound holds across chapters of several repertoires", async () 
   expect(latest.total).toBe(9);
   expect(latest.incomplete).toBe(false);
 });
+
+test("the due line pluralises each count on its own in the real en-US catalogue", async () => {
+  const { t } = await catalogueI18n("en-US");
+  expect(dueTotalLabel(t, 1, 1)).toBe("1 position due across 1 repertoire");
+  expect(dueTotalLabel(t, 6, 1)).toBe("6 positions due across 1 repertoire");
+  expect(dueTotalLabel(t, 1, 3)).toBe("1 position due across 3 repertoires");
+});
+
+test.each(shippedCatalogues())(
+  "the due line resolves every plural form in $locale",
+  async ({ locale }) => {
+    const { t } = await catalogueI18n(locale as SupportedLocale);
+    for (const count of [0, 1, 2, 5, 22, 1.5]) {
+      const label = dueTotalLabel(t, count, count);
+      expect(label).not.toMatch(/Home\.DuePractice|\{\{/);
+      expect(label.split(String(count)).length - 1).toBe(2);
+    }
+  },
+);

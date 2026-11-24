@@ -54,7 +54,9 @@ vi.mock("@/hooks/useDatabaseList", () => ({
   useDatabaseList: () => mocks.databases,
 }));
 vi.mock("swr", () => ({ useSWRConfig: () => ({ mutate: vi.fn(), cache: new Map() }) }));
-vi.mock("@/components/library/useLibraryDueCounts", () => ({
+vi.mock("@/components/library/useLibraryDueCounts", async (original) => ({
+  dueTotalLabel: (await original<typeof import("@/components/library/useLibraryDueCounts")>())
+    .dueTotalLabel,
   useLibraryDueCounts: (rows: LibraryRow[]) => {
     const values = rows
       .filter(
@@ -353,6 +355,17 @@ test("Due with no rows while a repertoire count is still pending shows Loading",
   expect(host.textContent).not.toContain("Home.DuePractice.NothingDue");
 });
 
+/** What the mocked `t` renders for the due line, with each count pluralised on its own. */
+function mockedDueTotal(positions: number, repertoires: number) {
+  return (
+    "Home.DuePractice.Total" +
+    JSON.stringify({
+      positions: `Home.DuePractice.Positions${JSON.stringify({ count: positions })}`,
+      repertoires: `Home.DuePractice.Repertoires${JSON.stringify({ count: repertoires })}`,
+    })
+  );
+}
+
 test("Due sorts overdue counts, includes failed decks, and keeps their whole row operable", async () => {
   mocks.listing = {
     data: ["Done", "Failed", "Two", "Five"].map((name) => file(name, "repertoire")),
@@ -372,7 +385,7 @@ test("Due sorts overdue counts, includes failed decks, and keeps their whole row
     "Two",
     "Failed",
   ]);
-  expect(host.textContent).toContain('Home.DuePractice.Total{"positions":7,"repertoires":2}');
+  expect(host.textContent).toContain(mockedDueTotal(7, 2));
   expect(host.textContent).toContain("Home.DuePractice.Incomplete");
   expect(rows().every((row) => row.tagName === "BUTTON" && !row.disabled)).toBe(true);
   await open("Failed");
@@ -417,7 +430,7 @@ test.each(["listing", "unreadable", "metadata", "database-listing", "unread-data
     const total = [...host.querySelectorAll("p")].find((item) =>
       item.textContent?.includes("Home.DuePractice.Total"),
     );
-    expect(total?.textContent).toContain('Home.DuePractice.Total{"positions":3,"repertoires":1}');
+    expect(total?.textContent).toContain(mockedDueTotal(3, 1));
     expect(total?.textContent).toContain("Home.DuePractice.Incomplete");
   },
 );
@@ -907,6 +920,7 @@ test("empty, no-workspace, partial failure and platform file-game notices offer 
   await filter("games");
   for (const key of ["Empty", "NoWorkspace", "LoadFailed", "GamesIncomplete", "GameFiles"])
     expect(host.textContent).toContain("Home.Library." + key);
+  expect(host.textContent).toContain('Home.Library.GamesIncomplete{"count":2}');
   await click("Home.Library.OpenLibrary");
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/library" });
 });
@@ -1072,6 +1086,13 @@ test.each(["another action", "a retired home owner"])(
   },
 );
 
+test("the partial games notice is singular for one collection in en-US", async () => {
+  const instance = await catalogueI18n("en-US");
+  expect(instance.t("Home.Library.GamesIncomplete", { count: 1 })).toMatch(
+    /^Games from 1 collection could/,
+  );
+});
+
 test.each(shippedCatalogues())(
   "every new Home key resolves in $locale without fallback",
   async ({ locale, translation }) => {
@@ -1085,7 +1106,6 @@ test.each(shippedCatalogues())(
       "Home.Library.Search",
       "Home.Library.NoWorkspace",
       "Home.Library.LoadFailed",
-      "Home.Library.GamesIncomplete",
       "Home.Library.GameFiles",
       "Home.Library.CollectionUnavailable",
       "Home.Library.Empty",
@@ -1095,7 +1115,7 @@ test.each(shippedCatalogues())(
     ];
     for (const key of homeKeys) {
       expect(instance.exists(key)).toBe(true);
-      expect(instance.t(key, { collections: 2 }).trim()).not.toBe("");
+      expect(instance.t(key).trim()).not.toBe("");
       expect(instance.t(key)).not.toBe(key);
     }
     const translatedKeys = homeKeys.filter(
@@ -1103,7 +1123,11 @@ test.each(shippedCatalogues())(
         !locale.startsWith("en-") && !(locale === "de-DE" && key === "Home.Library.Repertoires"),
     );
     for (const key of translatedKeys) expect(translation[key]).not.toBe(english[key]);
-    expect(instance.t("Home.Library.GamesIncomplete", { collections: 2 })).toContain("2");
+    for (const count of [1, 2, 5, 22]) {
+      const incomplete = instance.t("Home.Library.GamesIncomplete", { count });
+      expect(incomplete).not.toMatch(/Home\.Library|\{\{/);
+      expect(incomplete).toContain(String(count));
+    }
   },
 );
 

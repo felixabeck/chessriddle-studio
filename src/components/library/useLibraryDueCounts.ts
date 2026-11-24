@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { useStore } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { deckAtomFamily } from "@/state/atoms";
@@ -92,6 +93,14 @@ export function projectLibraryDueCounts(
             null,
         ),
     };
+}
+
+/** The due summary line; each count picks its own plural form. */
+export function dueTotalLabel(t: TFunction, positions: number, repertoires: number): string {
+    return t("Home.DuePractice.Total", {
+        positions: t("Home.DuePractice.Positions", { count: positions }),
+        repertoires: t("Home.DuePractice.Repertoires", { count: repertoires }),
+    });
 }
 
 /** Each effect owns its queue, subscriptions and deliveries, including StrictMode replay. */

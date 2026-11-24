@@ -14,7 +14,7 @@ import { useTranslation } from "react-i18next";
 import type { FileMetadata } from "@/components/files/file";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { libraryFileMetadata, type LibraryRow } from "@/components/library/libraryData";
-import { deckCountable } from "@/components/library/useLibraryDueCounts";
+import { deckCountable, dueTotalLabel } from "@/components/library/useLibraryDueCounts";
 import AppPopover from "@/components/common/AppPopover";
 import {
   deckAtomFamily,
@@ -232,10 +232,7 @@ export default function TrainOpeningsPopover({
             data={minuteData}
           />
           <Text size="sm" c="dimmed">
-            {t("Home.DuePractice.Total", {
-              positions: due.total,
-              repertoires: due.rows.filter((row) => row.count !== null).length,
-            })}
+            {dueTotalLabel(t, due.total, due.rows.filter((row) => row.count !== null).length)}
             {incomplete && <> · {t("Home.DuePractice.Incomplete")}</>}
           </Text>
           {nothingDue && (
