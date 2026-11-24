@@ -250,8 +250,11 @@ function AddDatabase({
               await runUnlessCancelled(
                 t("Common.Error"),
                 async () => {
-                  await convertDB(values.files, values.title, values.description);
+                  // The Library row shows the running import (game count, rate,
+                  // Cancel); the dialog would only hide it until the import ends.
+                  const conversion = convertDB(values.files, values.title, values.description);
                   setOpened(false);
+                  await conversion;
                 },
                 "database",
               );

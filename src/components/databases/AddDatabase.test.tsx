@@ -482,6 +482,7 @@ test.each(["convert", "download"] as const)(
     }
     for (const labelled of [true, false]) {
       mocks.notify.mockClear();
+      setOpened.mockClear();
       mocks.getDatabaseWorkspace.mockRejectedValue({
         tag: "backend-error",
         category: "io",
@@ -502,7 +503,9 @@ test.each(["convert", "download"] as const)(
           ? "This database folder is no longer available. Choose another."
           : "native failure",
       });
-      expect(setOpened).not.toHaveBeenCalled();
+      // A submitted import hands its progress to the Library row at once; a
+      // catalog download card keeps the dialog open.
+      expect(setOpened.mock.calls).toEqual(surface === "convert" ? [[false]] : []);
     }
   },
 );
@@ -639,7 +642,7 @@ test("commits a selected PGN workspace into the form", async () => {
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
-test("keeps the modal open when local conversion fails", async () => {
+test("closes the modal at submit and still reports a local conversion that fails", async () => {
   const { setOpened } = await renderAddDatabase();
   mocks.issuePgnWorkspace.mockResolvedValue({
     handle: { id: { id: "pgn" }, kind: "fileWorkspace" },
@@ -672,7 +675,7 @@ test("keeps the modal open when local conversion fails", async () => {
   )!;
   await act(async () => convert.click());
 
-  expect(setOpened).not.toHaveBeenCalledWith(false);
+  expect(setOpened).toHaveBeenCalledExactlyOnceWith(false);
   expect(mocks.convertPgn).not.toHaveBeenCalled();
   expect(getDefaultStore().get(databaseConversionStateAtom)).toEqual([]);
   expect(mocks.notify).toHaveBeenCalledWith({
@@ -922,7 +925,7 @@ test.each(["none", "delete", "reloadDatabases", "logger", "refreshLogger"])(
       title: "Common.Error",
       message: failure.message,
     });
-    expect(setOpened).not.toHaveBeenCalledWith(false);
+    expect(setOpened).toHaveBeenCalledExactlyOnceWith(false);
     expect(getDefaultStore().get(databaseConversionStateAtom)).toEqual([]);
     const cleanupFailed = secondaryFailure === "delete" || secondaryFailure === "logger";
     expect(mocks.logError.mock.calls).toEqual(
@@ -983,14 +986,14 @@ test("cancellation deletes the created database and rethrows the same error", as
   );
 });
 
-test("a cancelled local conversion removes its entry and keeps the modal open silently", async () => {
+test("a cancelled local conversion removes its entry silently after the modal closed at submit", async () => {
   setupLocalImport();
   mocks.convertPgn.mockRejectedValueOnce(new Error("Cancellation"));
   const { setOpened } = await renderAddDatabase();
   await submitLocalImport();
   expect(mocks.deleteDatabase).toHaveBeenCalledExactlyOnceWith(importHandle);
   expect(getDefaultStore().get(databaseConversionStateAtom)).toEqual([]);
-  expect(setOpened).not.toHaveBeenCalledWith(false);
+  expect(setOpened).toHaveBeenCalledExactlyOnceWith(false);
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
@@ -1042,6 +1045,9 @@ test("a successful new-target conversion wins a pending cancellation and keeps i
   );
   const { setOpened } = await renderAddDatabase();
   await submitLocalImport();
+  // The import is still running: the dialog has already closed so the Library
+  // row with the live game count and Cancel is visible.
+  expect(setOpened).toHaveBeenCalledExactlyOnceWith(false);
   const store = getDefaultStore();
   await act(async () => store.get(databaseConversionStateAtom)[0].cancel!());
   expect(mocks.cancelConversion).toHaveBeenCalledWith("conversion-ticket");

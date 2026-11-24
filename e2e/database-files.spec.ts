@@ -3118,6 +3118,66 @@ const databaseScenario: MockScenario = {
     },
 };
 
+test("database-files: a new local import closes the add dialog and shows its live progress", async ({
+    page,
+    mockScenario,
+    emitTauriEvent,
+}) => {
+    await mockScenario({
+        commands: {
+            ...databaseScenario.commands,
+            issue_pgn_workspace: {
+                result: {
+                    handle: { id: { id: "mega-pgn" }, kind: "fileWorkspace" },
+                    displayName: "mega.pgn",
+                    availability: "available",
+                },
+            },
+            create_workspace_database: { result: { id: { id: "mega-db" }, kind: "database" } },
+            count_pgn_games: { result: 100 },
+            convert_pgn: { delay: 60_000, result: null },
+        },
+    });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Import or download database", exact: true }).click();
+    const add = page.getByRole("dialog");
+    await add.getByRole("tab", { name: "Local", exact: true }).click();
+    await add.getByRole("button", { name: "PGN file", exact: true }).click();
+    await add.getByRole("button", { name: "Convert", exact: true }).click();
+    // The import runs for minutes; the dialog must not cover its progress row meanwhile.
+    await expect(add).toHaveCount(0);
+    // The closed dialog cannot be reopened to submit the same file a second time.
+    await expect(
+        page.getByRole("button", { name: "Import or download database", exact: true }),
+    ).toBeDisabled();
+    await expect
+        .poll(() =>
+            page.evaluate(() =>
+                window.__E2E_TAURI__.invocations().find((call) => call.command === "convert_pgn"),
+            ),
+        )
+        .not.toBeUndefined();
+    const progressId = await page.evaluate(
+        () =>
+            (
+                window.__E2E_TAURI__.invocations().find((call) => call.command === "convert_pgn")!
+                    .args as { progressId: string }
+            ).progressId,
+    );
+    await emitTauriEvent({
+        event: "convert-progress",
+        payload: {
+            id: progressId,
+            imported_games: 120,
+            elapsed_ms: 2000,
+            source_file_name: "mega.pgn",
+        },
+    });
+    const row = page.getByText("Convert: mega.pgn", { exact: true }).locator("../..");
+    await expect(row).toHaveText("Convert: mega.pgn120 games • 60.0 games/sCancel");
+    await expect(row.getByRole("button", { name: "Cancel: mega.pgn", exact: true })).toBeVisible();
+});
+
 test("database-files: concurrent conversions render their own live progress counters", async ({
     page,
     mockScenario,
