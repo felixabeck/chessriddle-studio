@@ -8,6 +8,7 @@ import {
   ANNOTATION_INFO,
   type Annotation,
   addPieceSymbol,
+  annotationTextColor,
   formatNagGlyphs,
 } from "@/utils/annotation";
 import classes from "./MoveCell.module.css";
@@ -62,7 +63,6 @@ function MoveCell(props: MoveCellProps) {
 
   const color = ANNOTATION_INFO[visualAnnotation]?.color || "gray";
   const theme = useMantineTheme();
-  const isAnnotated = color !== "gray";
   const unannotatedColor = (fallback: string) =>
     `var(--notation-unannotated-move-color, ${fallback})`;
 
@@ -75,11 +75,12 @@ function MoveCell(props: MoveCellProps) {
   let background = "transparent";
   let hover = "var(--cf-move-hover)";
 
-  if (isAnnotated) {
-    const annotationColor = theme.colors[color][6];
-    lightColor = annotationColor;
-    darkColor = annotationColor;
-    hover = rgba(annotationColor, 0.1);
+  const annotationText = annotationTextColor(color);
+  if (annotationText) {
+    // The text takes the mark's readable shade per scheme; the hover tint stays the shade 6 hue.
+    lightColor = annotationText;
+    darkColor = annotationText;
+    hover = rgba(theme.colors[color][6], 0.1);
   }
 
   // Every current move is gold, annotated or not, as [data-notation-current] .cell draws it.

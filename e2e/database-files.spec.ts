@@ -4,6 +4,7 @@ import {
     expect,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
+    paintedText,
     pgnFileCommands,
     assertButtonGlyphsUnclipped,
     assertFilesColumnsNotClipped,
@@ -3412,15 +3413,7 @@ for (const scheme of ["dark", "light"] as const) {
         const current = page.getByRole("menuitem", { name: "25", exact: true });
         await expect(current).toBeVisible();
 
-        const metrics = await current.evaluate((element) => {
-            // Every background from the document root down to the item, painted in that order.
-            const layers: string[] = [];
-            for (let node: Element | null = element; node; node = node.parentElement) {
-                layers.unshift(getComputedStyle(node).backgroundColor);
-            }
-            const style = getComputedStyle(element);
-            return { layers, color: style.color, opacity: Number(style.opacity) };
-        });
+        const metrics = await paintedText(current);
         expect(metrics.opacity, "the current size is not drawn as unavailable").toBe(1);
         expect(
             contrastRatio(metrics.color, metrics.layers),

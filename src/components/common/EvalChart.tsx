@@ -8,7 +8,14 @@ import type { CategoricalChartFunc } from "recharts/types/chart/types";
 import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import { reportTypeAtom } from "@/state/atoms";
-import { ANNOTATION_INFO, formatNagGlyphs, isBasicAnnotation, nagGlyphs } from "@/utils/annotation";
+import {
+  ANNOTATION_INFO,
+  annotationTextColor,
+  formatNagGlyphs,
+  isBasicAnnotation,
+  nagGlyphs,
+} from "@/utils/annotation";
+import type { AnnotationHue } from "@/styles/theme";
 import { positionFromFen } from "@/utils/chessops";
 import { skipWhile, takeWhile } from "@/utils/misc";
 import { getGamePhases } from "@/utils/phase";
@@ -33,7 +40,7 @@ type DataPoint = {
   wdlLines: string[];
   yValue: number | "none";
   movePath: number[];
-  color: string;
+  color: AnnotationHue | "gray";
   annotation?: string;
   White: number;
   Draw: number;
@@ -295,10 +302,7 @@ function CustomTooltip({
     const dataPoint = payload[0].payload;
     return (
       <Paper px="md" py="sm" withBorder shadow="md" radius="md">
-        <Text
-          className={classes.tooltipTitle}
-          c={dataPoint.color === "gray" ? undefined : dataPoint.color}
-        >
+        <Text className={classes.tooltipTitle} c={annotationTextColor(dataPoint.color)}>
           {dataPoint.name}
         </Text>
         {type === "cp" ? (

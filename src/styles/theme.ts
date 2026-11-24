@@ -178,6 +178,22 @@ export const chessRiddleTokens = {
     },
 } as const;
 
+/** The hues of the move-quality marks (`ANNOTATION_INFO` in `src/utils/annotation.ts`). */
+export const ANNOTATION_HUES = ["cyan", "teal", "lime", "yellow", "orange", "red"] as const;
+export type AnnotationHue = (typeof ANNOTATION_HUES)[number];
+
+/**
+ * Text in a mark's hue keeps its meaning (DESIGN.md) but must read at WCAG AA 4.5:1 on the card,
+ * the surface-inset variation blocks and the 10% gold current-move fill. In light even shade 9 of
+ * yellow and lime stays near 3:1 on white, so the text is shade 6 half-mixed with black; in dark
+ * it is shade 3.
+ */
+function annotationTextShade(hue: AnnotationHue, scheme: "light" | "dark") {
+    return scheme === "light"
+        ? `color-mix(in srgb, var(--mantine-color-${hue}-6) 50%, black)`
+        : `var(--mantine-color-${hue}-3)`;
+}
+
 function schemeVariables(scheme: "light" | "dark") {
     const tokens = chessRiddleTokens[scheme];
     const variables: Record<string, string> = Object.fromEntries(
@@ -220,6 +236,9 @@ function schemeVariables(scheme: "light" | "dark") {
             [`--mantine-color-${palette}-outline-hover`]: `color-mix(in srgb, ${color} 10%, transparent)`,
             [`--mantine-color-${palette}-text`]: color,
         });
+    }
+    for (const hue of ANNOTATION_HUES) {
+        variables[`--cf-annotation-${hue}-text`] = annotationTextShade(hue, scheme);
     }
     return variables;
 }

@@ -347,6 +347,14 @@ function assertHierarchyStyles(metrics: HierarchyMetrics, view: "inline" | "tabl
         `${view} variation SAN contrast`,
     ).toBeGreaterThanOrEqual(4.5);
     expect(metrics.nagVariationColor, `${view} NAG $2 variation SAN`).toBe(metrics.nagMainColor);
+    expect(
+        contrastRatio(metrics.nagMainColor, [metrics.cardBackground]),
+        `${view} NAG $2 main-line SAN contrast`,
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+        contrastRatio(metrics.nagVariationColor, [metrics.blockBackground]),
+        `${view} NAG $2 variation SAN contrast`,
+    ).toBeGreaterThanOrEqual(4.5);
     expect(metrics.opacities, `${view} variation block opacity chain`).toEqual(
         metrics.opacities.map(() => "1"),
     );

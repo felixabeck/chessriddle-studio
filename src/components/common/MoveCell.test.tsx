@@ -14,7 +14,10 @@ vi.mock("@mantine/core", () => ({
   ),
   rgba: (color: string, alpha: number) => `rgba(${color}, ${alpha})`,
   useMantineTheme: () => ({
-    colors: { gray: Array(10).fill("#888"), teal: Array(10).fill("#099") },
+    colors: {
+      gray: Array(10).fill("#888"),
+      teal: Array(10).fill("#099"),
+    },
   }),
 }));
 
@@ -128,7 +131,9 @@ test.each([false, true])(
     expect(cell().textContent).toBe(annotated ? "c6!" : "c6");
     for (const property of ["--light-color", "--dark-color"]) {
       expect(cell().style.getPropertyValue(property)).toBe(
-        annotated ? "#099" : "var(--notation-unannotated-move-color, #888)",
+        annotated
+          ? "var(--cf-annotation-teal-text)"
+          : "var(--notation-unannotated-move-color, #888)",
       );
     }
     await act(async () => cell().click());

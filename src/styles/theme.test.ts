@@ -1,6 +1,8 @@
 import { DEFAULT_THEME, mergeMantineTheme } from "@mantine/core";
 import { describe, expect, test } from "vitest";
+import { ANNOTATION_INFO } from "@/utils/annotation";
 import {
+    ANNOTATION_HUES,
     appCssVariablesResolver,
     chessRiddleTokens,
     createAppTheme,
@@ -97,5 +99,85 @@ describe("ChessRiddle foundation", () => {
             lg: "16px",
             xl: "9999px",
         });
+    });
+});
+
+describe("annotation text colours", () => {
+    const theme = mergeMantineTheme(
+        DEFAULT_THEME,
+        createAppTheme({ spellCheck: false, fontSize: 100 }),
+    );
+    type Rgb = readonly [number, number, number];
+    const hex = (value: string): Rgb =>
+        [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16)) as unknown as Rgb;
+    const hsl = (value: string): Rgb => {
+        const match = value.match(/^hsl\(([\d.]+) ([\d.]+)% ([\d.]+)%\)$/);
+        if (!match) throw new Error(`unparsed ${value}`);
+        const [h, s, l] = [+match[1], +match[2] / 100, +match[3] / 100];
+        const k = (n: number) => (n + h / 30) % 12;
+        const a = s * Math.min(l, 1 - l);
+        const f = (n: number) => 255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)));
+        return [f(0), f(8), f(4)];
+    };
+    const mix = (top: Rgb, below: Rgb, share: number): Rgb =>
+        top.map((value, i) => value * share + below[i] * (1 - share)) as unknown as Rgb;
+    const luminance = (rgb: Rgb) => {
+        const [r, g, b] = rgb.map((value) => {
+            const c = value / 255;
+            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a: Rgb, b: Rgb) => {
+        const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+        return (high + 0.05) / (low + 0.05);
+    };
+    /** Resolves the two forms the resolver publishes: a palette shade, or one mixed with black. */
+    const resolve = (value: string): Rgb => {
+        const shade = value.match(/var\(--mantine-color-(\w+)-(\d)\)/);
+        if (!shade) throw new Error(`unparsed ${value}`);
+        const color = hex(theme.colors[shade[1]][+shade[2]]);
+        const mixed = value.match(
+            /^color-mix\(in srgb, var\(--mantine-color-\w+-\d\) (\d+)%, black\)$/,
+        );
+        if (mixed) return mix(color, [0, 0, 0], +mixed[1] / 100);
+        if (value === shade[0]) return color;
+        throw new Error(`unparsed ${value}`);
+    };
+
+    test.each(["light", "dark"] as const)(
+        "every mark hue reaches 4.5:1 on the card, inset blocks and the current-move fill in %s",
+        (scheme) => {
+            const tokens = chessRiddleTokens[scheme];
+            const card = hsl(tokens.card);
+            const inset = hsl(tokens["surface-inset"]);
+            const primary = hsl(tokens.primary);
+            // The notation's current move: --cf-primary at 10% (MoveCell.module.css).
+            const backgrounds = {
+                card,
+                inset,
+                currentOnCard: mix(primary, card, 0.1),
+                currentOnInset: mix(primary, inset, 0.1),
+            };
+            const resolved = appCssVariablesResolver(theme)[scheme];
+            const below: string[] = [];
+            for (const hue of ANNOTATION_HUES) {
+                const text = resolve(resolved[`--cf-annotation-${hue}-text`]);
+                for (const [name, background] of Object.entries(backgrounds)) {
+                    const ratio = contrast(text, background);
+                    if (ratio < 4.5) below.push(`${hue} on ${name}: ${ratio.toFixed(2)}`);
+                }
+            }
+            expect(below).toEqual([]);
+        },
+    );
+
+    test("every hue a mark carries has a published text colour", () => {
+        const hues = new Set(
+            Object.values(ANNOTATION_INFO)
+                .map(({ color }) => color)
+                .filter((color) => color !== undefined && color !== "gray"),
+        );
+        expect([...hues].sort()).toEqual([...ANNOTATION_HUES].sort());
     });
 });

@@ -1,9 +1,11 @@
 import {
+    contrastRatio,
     expect,
     test,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
     gameReportCommands,
+    paintedText,
     pgnFileCommands,
     scrollbarFreeScreenshot,
     seedAnalysisEngines,
@@ -169,8 +171,18 @@ test("game report: a run fills the Report tab from the native result", async ({
     await expect(keyMoments).toHaveScreenshot("report-key-moments.png", {
         stylePath: scrollbarFreeScreenshot,
     });
-    // Annotated notation moves fail colour contrast in the light scheme: f-20261122-06.
-    await assertAccessible({ exclude: ['[class*="_moveText_"]'] });
+    await assertAccessible();
+    // The move-quality table writes marks in their hue; axe left its contrast unflagged at 2.48:1.
+    const table = panel.getByRole("table");
+    for (const cell of [
+        table.getByRole("rowheader", { name: /Dubious/ }),
+        table.getByRole("rowheader", { name: /Blunder/ }),
+        table.getByRole("button", { name: /Dubious/ }),
+        table.getByRole("button", { name: /Blunder/ }),
+    ]) {
+        const { color, layers } = await paintedText(cell);
+        expect(contrastRatio(color, layers)).toBeGreaterThanOrEqual(4.5);
+    }
 
     // A key moment goes to its move.
     await moments.nth(1).click();

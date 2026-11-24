@@ -413,6 +413,21 @@ export function contrastRatio(foreground: string, backgroundLayers: readonly str
     return (lighter + 0.05) / (darker + 0.05);
 }
 
+/**
+ * The text colour and opacity of `locator`'s element, and every background from the document root
+ * down to it in paint order, ready for `contrastRatio(color, layers)`.
+ */
+export async function paintedText(locator: Locator) {
+    return locator.evaluate((element) => {
+        const layers: string[] = [];
+        for (let node: Element | null = element; node; node = node.parentElement) {
+            layers.unshift(getComputedStyle(node).backgroundColor);
+        }
+        const style = getComputedStyle(element);
+        return { layers, color: style.color, opacity: Number(style.opacity) };
+    });
+}
+
 export async function waitForFontsSettled(page: Page) {
     // One frame lets faces needed by just-rendered text enter loading before the first read, otherwise an empty set already reads as "loaded".
     await page.evaluate(

@@ -167,7 +167,10 @@ test.each([
     await render(<EvalChart isAnalysing={false} />, nags);
     const point = host.querySelector("[data-chart-color]")!;
     expect(point.getAttribute("data-chart-color")).toBe(color);
-    expect(point.querySelector('[class*="tooltipTitle"]')?.textContent).toBe(label);
+    const title = point.querySelector<HTMLElement>('[class*="tooltipTitle"]');
+    expect(title?.textContent).toBe(label);
+    // The title takes the mark's readable text colour, not the raw hue (f-20261122-06).
+    expect(title?.style.color).toBe(color === "gray" ? "" : `var(--cf-annotation-${color}-text)`);
     expect(point.textContent).not.toMatch(/220|\b1,/);
     expect(point.querySelector("circle")?.getAttribute("fill") ?? null).toBe(
       color === "gray" ? null : `var(--mantine-color-${color}-7)`,

@@ -22,7 +22,12 @@ import ProgressButton from "@/components/common/ProgressButton";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useProgress } from "@/hooks/useProgress";
 import { reportModalOpenFamily } from "@/state/atoms";
-import { ANNOTATION_INFO, type BasicAnnotation, isBasicAnnotation } from "@/utils/annotation";
+import {
+  ANNOTATION_INFO,
+  annotationTextColor,
+  type BasicAnnotation,
+  isBasicAnnotation,
+} from "@/utils/annotation";
 import {
   type AnnotationCounts,
   getGameStats,
@@ -352,7 +357,11 @@ const GameStats = memo(
                       annotationName={annotationName}
                       goToAnnotation={goToAnnotation}
                     />
-                    <Table.Th scope="row" fw="normal" c={w + b > 0 ? color : undefined}>
+                    <Table.Th
+                      scope="row"
+                      fw="normal"
+                      c={w + b > 0 ? annotationTextColor(color) : undefined}
+                    >
                       <Text component="span" fw="bold" mr="xs">
                         {annotation}
                       </Text>
@@ -405,7 +414,7 @@ function AnnotationCount({
     <Table.Td ta="center">
       <UnstyledButton
         className={classes.label}
-        c={color}
+        c={annotationTextColor(color)}
         aria-label={
           side === "white"
             ? t("Board.Analysis.NextAnnotationByWhite", { annotation: annotationName, total })

@@ -1,4 +1,4 @@
-import type { MantineColor } from "@mantine/core";
+import type { AnnotationHue } from "@/styles/theme";
 
 const pieceChars = { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘" };
 
@@ -103,11 +103,22 @@ export function formatNagGlyphs(glyphs: readonly Annotation[]): string {
     return glyphs.join(NAG_GLYPH_SEPARATOR);
 }
 
+/**
+ * The text colour of a mark's hue, readable in both schemes (`--cf-annotation-<hue>-text` in
+ * `src/styles/theme.ts`); `undefined` for gray or a mark without a hue, which keeps the
+ * surrounding text colour.
+ */
+export function annotationTextColor(color: AnnotationHue | "gray" | undefined): string | undefined {
+    return color === undefined || color === "gray"
+        ? undefined
+        : `var(--cf-annotation-${color}-text)`;
+}
+
 type AnnotationInfo = {
     group?: string;
     name: string;
     translationKey?: string;
-    color?: MantineColor;
+    color?: AnnotationHue | "gray";
     nag: number;
 };
 
