@@ -4,6 +4,9 @@ import tauriConfigText from "../../src-tauri/tauri.conf.json?raw";
 import capabilityText from "../../src-tauri/capabilities/main.json?raw";
 import publicKeyFile from "../../src-tauri/keys/release.minisign.pub?raw";
 import releaseWorkflow from "../../.github/workflows/release.yml?raw";
+import changelog from "../../CHANGELOG.md?raw";
+import packageManifest from "../../package.json";
+import { main, releaseNotes } from "../../scripts/release-notes.mjs";
 
 const FORK_UPDATE_ENDPOINT =
     "https://github.com/felixabeck/chessriddle-studio/releases/latest/download/latest.json";
@@ -80,7 +83,7 @@ test("release.yml builds on tags into one draft and publishes only a complete ma
     );
     expect(createRelease).toMatch(/contents: write/);
     expect(createRelease).toMatch(/release_id:/);
-    expect(createRelease).toContain("-F draft=true");
+    expect(createRelease).toContain("draft: true");
     // The id must come from the create response, never from a follow-up listing (run 42286539160).
     expect(createRelease).toContain("--jq .id)");
     expect(createRelease).not.toMatch(/gh api "repos\/\$GITHUB_REPOSITORY\/releases" \\\n/);
@@ -186,5 +189,65 @@ test("a manual dispatch of release.yml rehearses the build and can never publish
     // The legs run without a draft, so tauri-action has no release to upload into.
     expect(jobBlock("release")).toContain(
         "if: ${{ !cancelled() && (needs.create-release.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.create-release.result == 'skipped')) }}\n",
+    );
+});
+
+test("CHANGELOG.md has release notes for the current version", () => {
+    expect(releaseNotes(changelog, packageManifest.version)).toMatch(/^### /);
+});
+
+test("release notes are the version's section up to the next version", () => {
+    const text = "# Changelog\n\n## 2.0.0\n\n- two\n\n## 1.0.0\n\n- one\n";
+    expect(releaseNotes(text, "2.0.0")).toBe("- two\n");
+    expect(releaseNotes(text, "1.0.0")).toBe("- one\n");
+    expect(() => releaseNotes(text, "3.0.0")).toThrow('no section "## 3.0.0"');
+    expect(() => releaseNotes("## 2.0.0\n\n## 1.0.0\n- one\n", "2.0.0")).toThrow("is empty");
+    for (const html of ["<b>x</b>", "</p>", "<!-- note -->", "<!DOCTYPE html>", "<?xml?>"]) {
+        expect(() => releaseNotes(`## 2.0.0\n- ${html}\n`, "2.0.0")).toThrow("raw HTML");
+    }
+    expect(releaseNotes("## 2.0.0\n- 3 < 4 and [link](https://x.y)\n", "2.0.0")).toBe(
+        "- 3 < 4 and [link](https://x.y)\n",
+    );
+});
+
+test("the release-notes command takes a v-tag and fails a bad or missing section", () => {
+    const files: Record<string, string> = {
+        "CHANGELOG.md": changelog,
+        "test.md": "# Changelog\n\n## 2.0.0\n\n- two\n\n## 1.0.0\n",
+    };
+    const readText = (path: string) => {
+        if (!(path in files)) throw new Error(`no file ${path}`);
+        return files[path];
+    };
+
+    expect(main(["v2.0.0", "test.md"], readText)).toEqual({
+        status: 0,
+        stdout: "- two\n",
+        stderr: "",
+    });
+    for (const tag of ["v3.0.0", "v1.0.0"]) {
+        const failed = main([tag, "test.md"], readText);
+        expect(failed).toMatchObject({ status: 1, stdout: "" });
+        expect(failed.stderr).toMatch(/^::error::CHANGELOG\.md/);
+    }
+    expect(main([], readText)).toMatchObject({ status: 2, stdout: "" });
+    expect(main([`v${packageManifest.version}`], readText)).toMatchObject({ status: 0 });
+});
+
+test("release.yml publishes the tag's notes as the draft's body", () => {
+    const createRelease = jobBlock("create-release");
+    expect(createRelease).toMatch(
+        /sparse-checkout: \|\n\s+CHANGELOG\.md\n\s+scripts\/release-notes\.mjs\n/,
+    );
+    expect(createRelease).toContain(
+        'run: node scripts/release-notes.mjs "$TAG" > "$RUNNER_TEMP/release-notes.md"',
+    );
+    expect(createRelease).toMatch(
+        /- name: Extract the release notes\n\s+env:\n\s+TAG: \$\{\{ github\.ref_name \}\}\n/,
+    );
+    expect(createRelease).toContain('--rawfile body "$RUNNER_TEMP/release-notes.md"');
+    expect(createRelease).toContain("body: $body}");
+    expect(createRelease).toContain(
+        'gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input - --jq .id',
     );
 });
