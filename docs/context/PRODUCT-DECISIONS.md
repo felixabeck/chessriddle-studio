@@ -433,3 +433,40 @@ finding ids and date.
   this."` For file scope and click behaviour: `"All files up to a limit"` and `"Switch chapter in
   same tab"`. Builds on the in-chapter transposition precedent (`d-20261124-06`).
 - **Date:** 2026-11-24.
+
+## 2026-11-24 — Opponent preparation against the user's own repertoire, without AI
+
+- **Question:** How should Studio help prepare against an opponent: with AI, with a generated
+  preparation file, or with the user's own repertoire files? Which games count, how is recency
+  handled, do the training answers count for the normal schedule, where does it live, and should
+  the preparation board also show the general database?
+- **Choice:**
+  - No AI in this step: "we keep AI for later as a second step."
+  - The user's own repertoire files, with the irrelevant lines collapsed, instead of a generated
+    file: "using my own files also is very good, because I might be tempted to look at some other
+    lines. […] So it's definitely better, as you suggest, to use the normal files. […] We can just
+    collapse all the lines that are irrelevant."
+  - Recency through the period control, 3 years by default: "And yes, recency is also good."
+  - Games used: a switch "Over the board | Online | Both", starting on Over the board (answer
+    "Switch, 3 ways").
+  - Answers in "Train these lines" reschedule the cards like any practice (answer "Yes, counts").
+  - Place: a new fourth tab "Preparation" on the database player's card (answer "New tab
+    \"Preparation\"").
+  - The general database shown in addition on the board that "Prepare on board" opens, from a
+    user's feedback Felix forwarded: "Ich vermisse im Vorbereitungsfenster die Möglichkeit die
+    normale Datenbank zusätzlich anzuzeigen, dass ich nicht nur sehe, was er OTB macht und was er
+    online macht, sondern auch was die häufigsten Züge sind. […] Can we implement this in the
+    same run?"
+- **Agent proposals Felix confirmed, not his wording:** the whole recommendation ("Yes, that
+  sounds very good, everything."): lines ranked by how often this opponent reached them, a list of
+  gaps (his moves the repertoire does not cover), positions compared instead of move orders,
+  opening a line in the user's file, a training run limited to these positions, and finding
+  online accounts kept manual.
+- **Ruled out:** an AI summary in this step; a generated preparation file or a bare pointer to a
+  file; finding online accounts by name.
+- **Felix's reason:** "I don't want to review all of my files for a certain variation but only the
+  moves he plays. So It's not enough to just point me to one of my opening files, because they
+  have a lot of different variations in it."
+- **Agent decisions of the plan:** d-20261124-24 to d-20261124-34. "Vorbereitungsfenster" is read
+  as the board "Prepare on board" opens (plan "Risks / open questions").
+- **Date:** 2026-11-24.
