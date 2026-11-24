@@ -1231,6 +1231,7 @@
     "Notation.TableView": "Table view",
     "Notation.ToggleVariation": "Toggle variation",
     "Notation.Transposition": "Transposition",
+    "Notation.TranspositionMissingInChapter": "This position is no longer in that chapter.",
     "PgnInput.Comments": "Comments",
     "PgnInput.Editor": "PGN editor",
     "PgnInput.ExtraMarkups": "Extra Markups",

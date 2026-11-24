@@ -62,6 +62,7 @@ import * as tabs from "@/utils/tabs";
 import { useHotkeys } from "@mantine/hooks";
 import { MantineProvider } from "@mantine/core";
 import BoardAnalysis from "./BoardAnalysis";
+import { useFileChapterSwitch, type SwitchFileChapter } from "./FileChapterSwitch";
 import { requestBoardCommand } from "./boardCommands";
 import type Board from "./Board";
 import { normalizeError, type AppError } from "@/platform/errors";
@@ -90,6 +91,7 @@ const mocks = vi.hoisted(() => ({
     options?.target === undefined ? key : `${key}(${options.target})`,
   boardControls: undefined as { saveFile?: () => void } | undefined,
   addGameActivation: undefined as (() => void) | undefined,
+  notationChapterSwitch: undefined as SwitchFileChapter | null | undefined,
   realTabs: false,
   compactTabs: false,
   gameNameModal: undefined as
@@ -251,11 +253,14 @@ vi.mock("../common/GameNotation", () => ({
   }: {
     controls?: ReactNode;
     markOpenVariations?: boolean;
-  }) => (
-    <span data-game-notation data-mark-open-variations={markOpenVariations ? "true" : "false"}>
-      {controls}
-    </span>
-  ),
+  }) => {
+    mocks.notationChapterSwitch = useFileChapterSwitch();
+    return (
+      <span data-game-notation data-mark-open-variations={markOpenVariations ? "true" : "false"}>
+        {controls}
+      </span>
+    );
+  },
 }));
 vi.mock("../common/MoveControls", () => ({ default: () => <span data-move-controls /> }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
@@ -373,6 +378,7 @@ describe("BoardAnalysis", () => {
     board.mockClear();
     mocks.gameNameModal = undefined;
     mocks.editingMode = false;
+    mocks.notationChapterSwitch = undefined;
     mocks.realTabs = false;
     mocks.compactTabs = false;
     sessionStorage.clear();
@@ -485,6 +491,29 @@ describe("BoardAnalysis", () => {
       expect(board.mock.lastCall?.[0].repertoire).toBe(type === "repertoire");
     },
   );
+
+  test("BoardAnalysis provides the chapter switcher to notation while a non-Info side panel is active", async () => {
+    mocks.realTabs = true;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    await act(async () => {
+      jotaiStore.set(tabFamily(tabId), "analysis");
+      root.render(
+        <MantineProvider>
+          <JotaiProvider store={jotaiStore}>
+            <TreeStateContext.Provider value={treeStore}>
+              <RetainedBoardHarness />
+            </TreeStateContext.Provider>
+          </JotaiProvider>
+        </MantineProvider>,
+      );
+    });
+    expect(container.querySelector('[data-testid="add-game"]')).toBeNull();
+    expect(container.querySelector("[data-game-notation]")).not.toBeNull();
+    expect(typeof mocks.notationChapterSwitch).toBe("function");
+  });
 
   test("a pinned explorer renders once above the tabs, leaves the tab list, and a stored Database choice shows Annotate", async () => {
     mocks.realTabs = true;

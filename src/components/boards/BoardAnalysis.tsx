@@ -61,6 +61,7 @@ import Board from "./Board";
 import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
 import EvalListener from "./EvalListener";
+import { FileChapterSwitchProvider } from "./FileChapterSwitch";
 import { useAutoSave } from "./useAutoSave";
 import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
@@ -334,7 +335,7 @@ function BoardAnalysis() {
   );
 
   return (
-    <>
+    <FileChapterSwitchProvider>
       {nameDialog && (
         <GameNameModal
           opened
@@ -539,7 +540,7 @@ function BoardAnalysis() {
           </NotationColumn>
         )}
       </Portal>
-    </>
+    </FileChapterSwitchProvider>
   );
 }
 

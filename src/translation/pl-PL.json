@@ -1265,6 +1265,7 @@
     "Notation.TableView": "Widok tabeli",
     "Notation.ToggleVariation": "Przełącz wariant",
     "Notation.Transposition": "Transpozycja",
+    "Notation.TranspositionMissingInChapter": "Tej pozycji nie ma już w tym rozdziale.",
     "PgnInput.Comments": "Komentarze",
     "PgnInput.Editor": "Edytor PGN",
     "PgnInput.ExtraMarkups": "Dodatkowe oznaczenia",

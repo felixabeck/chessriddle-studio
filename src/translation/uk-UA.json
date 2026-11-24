@@ -1265,6 +1265,7 @@
     "Notation.TableView": "Табличний вигляд",
     "Notation.ToggleVariation": "Перемкнути варіант",
     "Notation.Transposition": "Транспозиція",
+    "Notation.TranspositionMissingInChapter": "Цієї позиції більше немає в цьому розділі.",
     "PgnInput.Comments": "Коментарі",
     "PgnInput.Editor": "Редактор PGN",
     "PgnInput.ExtraMarkups": "Додаткові позначки",

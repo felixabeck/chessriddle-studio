@@ -1231,6 +1231,7 @@
     "Notation.TableView": "Tabellvisning",
     "Notation.ToggleVariation": "Vis/skjul variant",
     "Notation.Transposition": "Transponering",
+    "Notation.TranspositionMissingInChapter": "Denne stillingen finnes ikke lenger i det kapitlet.",
     "PgnInput.Comments": "Kommentarer",
     "PgnInput.Editor": "PGN-redigerer",
     "PgnInput.ExtraMarkups": "Markups",

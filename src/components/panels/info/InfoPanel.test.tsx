@@ -31,6 +31,7 @@ import type { SuccessDatabaseInfo } from "@/utils/db";
 import type { loadFileGame } from "@/utils/files";
 import type { GameSelectorRow } from "./GameSelector";
 import InfoPanel from "./InfoPanel";
+import { FileChapterSwitchProvider } from "@/components/boards/FileChapterSwitch";
 import { TabCommandsProvider } from "@/components/tabs/TabCommands";
 import classes from "./InfoPanel.module.css";
 
@@ -471,7 +472,9 @@ describe("InfoPanel game loading and cancellation", () => {
           <TabCommandsProvider>
             <TreeStateContext.Provider value={store}>
               <WorkspaceTabScope tabId={tabId}>
-                <InfoPanel />
+                <FileChapterSwitchProvider>
+                  <InfoPanel />
+                </FileChapterSwitchProvider>
               </WorkspaceTabScope>
             </TreeStateContext.Provider>
           </TabCommandsProvider>

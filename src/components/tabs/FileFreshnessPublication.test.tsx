@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import GameNotation from "@/components/common/GameNotation";
 import EvalChart from "@/components/common/EvalChart";
+import { FileChapterSwitchProvider } from "@/components/boards/FileChapterSwitch";
 import InfoPanel from "@/components/panels/info/InfoPanel";
 import RepertoireInfo from "@/components/panels/practice/RepertoireInfo";
 import { activeTabAtom, pgnOptionsFamily, referenceDbAtom, tabsAtom } from "@/state/atoms";
@@ -209,35 +210,37 @@ function panels() {
         <TabCommandsProvider>
           <WorkspaceTabScope tabId={tabId}>
             <TreeStateContext.Provider value={store}>
-              <FileFreshnessGate tab={tab} closeTab={() => undefined}>
-                <section data-panel="inner-notation">
+              <FileChapterSwitchProvider>
+                <FileFreshnessGate tab={tab} closeTab={() => undefined}>
+                  <section data-panel="inner-notation">
+                    <GameNotation />
+                  </section>
+                  <section data-panel="inner-info">
+                    <InfoPanel />
+                  </section>
+                  <section data-panel="inner-repertoire">
+                    <RepertoireInfo />
+                  </section>
+                  <section data-panel="inner-chart">
+                    <EvalChart isAnalysing={false} />
+                  </section>
+                  {/* BoardsPage renders the board inside this gate. The probe has to be here too. */}
+                  <BoardProbe />
+                </FileFreshnessGate>
+                {/* Keep every heavy consumer mounted across the gate's checking state. */}
+                <section data-panel="notation">
                   <GameNotation />
                 </section>
-                <section data-panel="inner-info">
+                <section data-panel="info">
                   <InfoPanel />
                 </section>
-                <section data-panel="inner-repertoire">
+                <section data-panel="repertoire">
                   <RepertoireInfo />
                 </section>
-                <section data-panel="inner-chart">
+                <section data-panel="chart">
                   <EvalChart isAnalysing={false} />
                 </section>
-                {/* BoardsPage renders the board inside this gate. The probe has to be here too. */}
-                <BoardProbe />
-              </FileFreshnessGate>
-              {/* Keep every heavy consumer mounted across the gate's checking state. */}
-              <section data-panel="notation">
-                <GameNotation />
-              </section>
-              <section data-panel="info">
-                <InfoPanel />
-              </section>
-              <section data-panel="repertoire">
-                <RepertoireInfo />
-              </section>
-              <section data-panel="chart">
-                <EvalChart isAnalysing={false} />
-              </section>
+              </FileChapterSwitchProvider>
             </TreeStateContext.Provider>
           </WorkspaceTabScope>
         </TabCommandsProvider>

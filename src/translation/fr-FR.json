@@ -1248,6 +1248,7 @@
     "Notation.TableView": "Affichage sous forme de tableau",
     "Notation.ToggleVariation": "Afficher/masquer la variante",
     "Notation.Transposition": "Transposition",
+    "Notation.TranspositionMissingInChapter": "Cette position ne se trouve plus dans ce chapitre.",
     "PgnInput.Comments": "Commentaires",
     "PgnInput.Editor": "Éditeur PGN",
     "PgnInput.ExtraMarkups": "Balises supplémentaires",
