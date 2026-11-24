@@ -323,34 +323,33 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
     await page.mouse.move(0, 0);
 
     // The fixture records every IPC call; the exported PNG is the `bytes` of save_board_snapshot.
-    const invocations = () =>
-        page.evaluate(() =>
-            window.__E2E_TAURI__
-                .invocations()
-                .filter(({ command }) => command === "save_board_snapshot")
-                .map(({ args }) => (args as { bytes: number[] }).bytes),
+    // Only the count crosses into the test process: each PNG is a JSON array of several hundred
+    // thousand numbers, and serialising them on every poll took most of the test's budget on
+    // hosted CI (f-20261124-15). The bytes are decoded in the page, by index.
+    const snapshotCount = () =>
+        page.evaluate(
+            () =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .filter(({ command }) => command === "save_board_snapshot").length,
         );
 
-    const exportedBytes = async () => {
+    const exportSnapshotIndex = async () => {
         const takeSnapshot = page.getByRole("button", { name: "Take Snapshot", exact: true });
         await expect(takeSnapshot).toBeEnabled();
-        const before = (await invocations()).length;
+        const before = await snapshotCount();
         await takeSnapshot.click();
         try {
-            await expect
-                .poll(async () => (await invocations()).length, { timeout: 6_000 })
-                .toBeGreaterThan(before);
+            await expect.poll(snapshotCount, { timeout: 6_000 }).toBeGreaterThan(before);
         } catch {
             // Under load the click can be lost after the route change. Retry once only, after
             // a window long enough that a slow export is not duplicated.
             await takeSnapshot.click();
-            await expect
-                .poll(async () => (await invocations()).length, { timeout: 6_000 })
-                .toBeGreaterThan(before);
+            await expect.poll(snapshotCount, { timeout: 6_000 }).toBeGreaterThan(before);
         }
-        return (await invocations()).at(-1)!;
+        return (await snapshotCount()) - 1;
     };
-    const withTexture = await exportedBytes();
+    const withTextureIndex = await exportSnapshotIndex();
 
     const woodTexture = await openAppearanceTab(page);
     await woodTexture.uncheck();
@@ -358,10 +357,14 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
     await goToBoards(page);
     await expect(board).toHaveCSS("background-image", /^none, url\(/);
     await page.mouse.move(0, 0);
-    const withoutTexture = await exportedBytes();
+    const withoutTextureIndex = await exportSnapshotIndex();
 
     const result = await page.evaluate(
         async ([on, off]) => {
+            const snapshots = window.__E2E_TAURI__
+                .invocations()
+                .filter(({ command }) => command === "save_board_snapshot")
+                .map(({ args }) => (args as { bytes: number[] }).bytes);
             const decode = async (bytes: number[]) => {
                 const bitmap = await createImageBitmap(
                     new Blob([new Uint8Array(bytes)], { type: "image/png" }),
@@ -373,7 +376,10 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
                 context.drawImage(bitmap, 0, 0);
                 return context.getImageData(0, 0, bitmap.width, bitmap.height);
             };
-            const [first, second] = await Promise.all([decode(on), decode(off)]);
+            const [first, second] = await Promise.all([
+                decode(snapshots[on]),
+                decode(snapshots[off]),
+            ]);
             let different = 0;
             for (let index = 0; index < first.data.length; index += 4) {
                 const distance = Math.max(
@@ -392,7 +398,7 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
                 different,
             };
         },
-        [withTexture, withoutTexture],
+        [withTextureIndex, withoutTextureIndex],
     );
     expect(result.sizes[0]).toEqual(result.sizes[1]);
     // The grain covers every square, so most pixels of the board differ once it is exported on.
