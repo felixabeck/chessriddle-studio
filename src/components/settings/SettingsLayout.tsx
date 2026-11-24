@@ -5,11 +5,13 @@ import classes from "./SettingsPage.module.css";
 export const SettingLabelContext = createContext<string | undefined>(undefined);
 
 export function SettingRow({
+  id,
   title,
   description,
   children,
   highlight = false,
 }: {
+  id?: string;
   title: string;
   description: string;
   children: ReactNode;
@@ -20,6 +22,7 @@ export function SettingRow({
       justify="space-between"
       gap="xl"
       className={classes.item}
+      data-setting-id={id}
       data-highlighted={highlight || undefined}
     >
       <div className={classes.settingCopy}>

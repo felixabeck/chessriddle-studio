@@ -18,6 +18,10 @@
 
 .item[data-highlighted] {
   background: color-mix(in srgb, var(--cf-primary) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--cf-primary);
+  border-radius: var(--mantine-radius-sm);
+  padding: var(--mantine-spacing-sm);
+  margin-inline: calc(-1 * var(--mantine-spacing-sm));
 }
 
 .settingCopy {

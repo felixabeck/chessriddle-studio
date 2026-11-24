@@ -9,10 +9,15 @@ import {
   practiceGradingAtom,
   practiceNewPerSessionAtom,
 } from "@/state/atoms";
+import {
+  requestSettingsNavigation,
+  settingsNavigationRequestAtom,
+} from "@/state/settingsNavigation";
 import { catalogueI18n } from "@/tests/catalogues";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
+import { describeSettings } from "./settingsDescription";
 import Page from "./SettingsPage";
 
 vi.mock("@/platform/native", () => ({
@@ -108,8 +113,7 @@ afterEach(async () => {
   else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
-async function renderSettingsPage() {
-  const atoms = createStore();
+async function renderSettingsPage(atoms = createStore()) {
   const container = document.createElement("div");
   host = container;
   document.body.append(container);
@@ -433,4 +437,174 @@ test("settings search finds the three Advanced rows", async () => {
   await searchSettings(host, "clear");
   expect(host.textContent).toContain("Menu.Help.ClearSavedData");
   expect(host.textContent).not.toContain("Menu.View.Reload");
+});
+
+test.each([false, true])(
+  "the page shows a row for every setting of the description and none besides (coachEnabled=%s)",
+  async (coachEnabled) => {
+    coach.enabled = coachEnabled;
+    const { host } = await renderSettingsPage();
+    const expectedIds = describeSettings(translation.identity, {
+      platform: import.meta.env.VITE_PLATFORM,
+      coachEnabled,
+    })
+      .filter((setting) => setting.shown)
+      .map((setting) => setting.id);
+
+    const renderedIds = [...host.querySelectorAll<HTMLElement>("[data-setting-id]")].map(
+      (row) => row.dataset.settingId,
+    );
+    expect(renderedIds).toEqual(expect.arrayContaining(expectedIds));
+    expect(renderedIds).toHaveLength(expectedIds.length);
+  },
+);
+
+test("a request for a setting selects its category, marks its row, scrolls it into view and clears an entered search", async () => {
+  const { atoms, host } = await renderSettingsPage();
+  await searchSettings(host, "reload");
+  expect(host.querySelector('[role="tablist"]')).toBeNull();
+
+  const scrollSpy = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+  scrollSpy.mockClear();
+
+  await act(async () => {
+    requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+  });
+
+  const search = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
+  expect(search.value).toBe("");
+  const activeTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+  expect(activeTab?.textContent).toBe("Settings.Sound");
+
+  const row = host.querySelector<HTMLElement>('[data-setting-id="volume"]')!;
+  expect(row.getAttribute("data-highlighted")).toBe("true");
+  expect(host.querySelectorAll("[data-highlighted]")).toHaveLength(1);
+  expect(scrollSpy).toHaveBeenCalledTimes(1);
+  expect(scrollSpy.mock.instances[0]).toBe(row);
+  expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
+});
+
+test("a request for a category selects it, clears an entered search, and clears a prior highlight", async () => {
+  const { atoms, host } = await renderSettingsPage();
+  await act(async () => {
+    requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+  });
+  expect(host.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted")).toBe(
+    "true",
+  );
+
+  await searchSettings(host, "volume");
+
+  await act(async () => {
+    requestSettingsNavigation({ kind: "category", category: "directories" }, atoms);
+  });
+
+  const search = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
+  expect(search.value).toBe("");
+  const activeTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+  expect(activeTab?.textContent).toBe("Settings.Directories");
+  expect(host.querySelectorAll("[data-highlighted]")).toHaveLength(0);
+  expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
+});
+
+test("switching tabs manually clears a prior setting highlight", async () => {
+  const { atoms, host } = await renderSettingsPage();
+  await act(async () => {
+    requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+  });
+  expect(host.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted")).toBe(
+    "true",
+  );
+
+  const appearanceTab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (node) => node.textContent === "Settings.Appearance",
+  )!;
+  await act(async () => appearanceTab.click());
+
+  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Settings.Appearance",
+  );
+  expect(host.querySelectorAll("[data-highlighted]")).toHaveLength(0);
+});
+
+test("a consumed request does not act again on remount", async () => {
+  const atoms = createStore();
+  requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+  const { host: firstHost } = await renderSettingsPage(atoms);
+
+  expect(firstHost.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Settings.Sound",
+  );
+  expect(
+    firstHost.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted"),
+  ).toBe("true");
+  expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
+
+  await act(async () => root!.unmount());
+  firstHost.remove();
+  root = undefined;
+
+  const scrollSpy = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+  scrollSpy.mockClear();
+
+  const { host: secondHost } = await renderSettingsPage(atoms);
+  expect(secondHost.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Settings.Board",
+  );
+  expect(secondHost.querySelectorAll("[data-highlighted]")).toHaveLength(0);
+  expect(scrollSpy).not.toHaveBeenCalled();
+});
+
+test("a newer request replaces an unconsumed one before Settings mounts", async () => {
+  const atoms = createStore();
+  requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+  requestSettingsNavigation({ kind: "setting", settingId: "font-size" }, atoms);
+
+  const { host } = await renderSettingsPage(atoms);
+  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Settings.Appearance",
+  );
+  expect(
+    host.querySelector('[data-setting-id="font-size"]')?.getAttribute("data-highlighted"),
+  ).toBe("true");
+  expect(
+    host.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted"),
+  ).toBeNull();
+  expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
+});
+
+test("a request for a hidden setting is consumed without leaving a broken selection", async () => {
+  const atoms = createStore();
+  requestSettingsNavigation({ kind: "setting", settingId: "coach-engine" }, atoms);
+
+  const { host } = await renderSettingsPage(atoms);
+  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Settings.Board",
+  );
+  expect(host.querySelectorAll("[data-highlighted]")).toHaveLength(0);
+  expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
+});
+
+test("a request for a hidden category leaves tab, search and highlight untouched and is consumed", async () => {
+  const { atoms, host } = await renderSettingsPage();
+  await act(async () => {
+    requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+  });
+  await searchSettings(host, "reload");
+
+  await act(async () => {
+    requestSettingsNavigation({ kind: "category", category: "coach" }, atoms);
+  });
+
+  expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
+  const search = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
+  expect(search.value).toBe("reload");
+
+  await searchSettings(host, "");
+  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Settings.Sound",
+  );
+  expect(host.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted")).toBe(
+    "true",
+  );
 });

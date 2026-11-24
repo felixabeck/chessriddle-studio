@@ -29,7 +29,7 @@ import {
 import { useLoaderData } from "@tanstack/react-router";
 import { useAtom, useAtomValue } from "jotai";
 import { RESET } from "jotai/utils";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { changeLocale } from "@/i18n";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
@@ -71,6 +71,7 @@ import {
   puzzleWorkspaceGenerationAtom,
 } from "@/state/atoms";
 import { coachEnabledAtom } from "@/state/coach";
+import { settingsNavigationRequestAtom } from "@/state/settingsNavigation";
 import { keybindLabel, keyMapAtom } from "@/state/keybinds";
 import { panelsBesideNotationAtom } from "@/state/layoutStorage";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
@@ -98,6 +99,13 @@ import { DirectorySetting } from "./DirectorySetting";
 import { WorkspaceDirectorySetting } from "./WorkspaceDirectorySetting";
 import classes from "./SettingsPage.module.css";
 import { SettingRow } from "./SettingsLayout";
+import {
+  describeSettings,
+  visibleSettingCategories,
+  type SettingCategory,
+  type SettingDescription,
+  type SettingId,
+} from "./settingsDescription";
 import SettingsSelect from "./SettingsSelect";
 import SettingsSwitch from "./SettingsSwitch";
 import SoundSelect from "./SoundSelect";
@@ -114,21 +122,6 @@ const MOVE_HIGHLIGHT_OPACITY_MARKS = [
 ];
 
 const COMPACT_SETTINGS_WIDTH_EM = 50;
-
-/** Tab order of the settings browser; each entry's title, description and icon is in `categoryInfo`. */
-const SETTING_CATEGORIES = [
-  "board",
-  "inputs",
-  "appearance",
-  "sound",
-  "keybinds",
-  "directories",
-  "repertoire",
-  "coach",
-  "advanced",
-] as const;
-
-type SettingCategory = (typeof SETTING_CATEGORIES)[number];
 
 function AdvancedActionButton({
   label,
@@ -162,19 +155,15 @@ function AdvancedActionButton({
   );
 }
 
-interface SettingItem {
-  id: string;
-  category: SettingCategory;
-  title: string;
-  description: string;
-  keywords?: string[];
-  render: () => React.ReactNode;
-}
-
 export default function Page() {
   const { t, i18n } = useTranslation();
   const compactTabs = useScaledMaxWidth(COMPACT_SETTINGS_WIDTH_EM);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState<SettingCategory>("board");
+  const [highlightedSettingId, setHighlightedSettingId] = useState<SettingId | null>(null);
+  const [pendingScroll, setPendingScroll] = useState<{ settingId: SettingId } | null>(null);
+  const [navigationRequest, setNavigationRequest] = useAtom(settingsNavigationRequestAtom);
+  const pageRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [keyMap, setKeyMap] = useAtom(keyMapAtom);
@@ -201,591 +190,273 @@ export default function Page() {
   const [practiceNewPerSession, setPracticeNewPerSession] = useAtom(practiceNewPerSessionAtom);
   // A build without the Coach shows nothing of it: no category, no rows, no search results.
   const coachEnabled = useAtomValue(coachEnabledAtom);
-  const categories = useMemo(
-    () => SETTING_CATEGORIES.filter((category) => category !== "coach" || coachEnabled),
-    [coachEnabled],
+  const categories = useMemo(() => visibleSettingCategories({ coachEnabled }), [coachEnabled]);
+  const effectiveCategory = categories.includes(activeCategory) ? activeCategory : categories[0];
+
+  const settings = useMemo(
+    () =>
+      describeSettings(t, {
+        platform: import.meta.env.VITE_PLATFORM,
+        coachEnabled,
+      }).filter((setting) => setting.shown),
+    [t, coachEnabled],
   );
 
-  const allSettings: SettingItem[] = useMemo(
-    () => [
-      // Board settings
-      {
-        id: "piece-dest",
-        category: "board",
-        title: t("Settings.PieceDest"),
-        description: t("Settings.PieceDest.Desc"),
-        keywords: ["destination", "moves", "highlight"],
-        render: () => <SettingsSwitch atom={showDestsAtom} />,
-      },
-      {
-        id: "move-highlight",
-        category: "board",
-        title: t("Settings.MoveHighlight"),
-        description: t("Settings.MoveHighlight.Desc"),
-        keywords: ["highlight", "last move"],
-        render: () => <SettingsSwitch atom={moveHighlightAtom} />,
-      },
-      {
-        id: "move-highlight-color",
-        category: "board",
-        title: t("Settings.MoveHighlightColor"),
-        description: t("Settings.MoveHighlightColor.Desc"),
-        keywords: ["highlight", "last move", "color", "colour"],
-        render: () => <LastMoveHighlightColorInput />,
-      },
-      {
-        id: "move-highlight-opacity",
-        category: "board",
-        title: t("Settings.MoveHighlightOpacity"),
-        description: t("Settings.MoveHighlightOpacity.Desc"),
-        keywords: ["highlight", "last move", "opacity", "transparency"],
-        render: () => (
-          <PercentagePreferenceSlider
-            atom={lastMoveHighlightOpacityAtom}
-            min={LAST_MOVE_HIGHLIGHT_OPACITY_MIN}
-            max={LAST_MOVE_HIGHLIGHT_OPACITY_MAX}
-            step={LAST_MOVE_HIGHLIGHT_OPACITY_STEP}
-            marks={MOVE_HIGHLIGHT_OPACITY_MARKS}
-            thumbLabel={t("Settings.MoveHighlightOpacity")}
-          />
-        ),
-      },
-      {
-        id: "arrows",
-        category: "board",
-        title: t("Settings.Arrows"),
-        description: t("Settings.Arrows.Desc"),
-        keywords: ["arrows", "analysis"],
-        render: () => <SettingsSwitch atom={showArrowsAtom} />,
-      },
-      {
-        id: "variation-arrows",
-        category: "board",
-        title: t("Settings.VariationArrows"),
-        description: t("Settings.VariationArrows.Desc"),
-        keywords: ["arrows", "variations", "alternative"],
-        render: () => <SettingsSwitch atom={showVariationArrowsAtom} />,
-      },
-      {
-        id: "move-notation",
-        category: "board",
-        title: t("Settings.MoveNotation"),
-        description: t("Settings.MoveNotation.Desc"),
-        keywords: ["notation", "letters", "symbols", "pieces"],
-        render: () => (
-          <SettingsSelect
-            data={[
-              { label: t("Settings.MoveNotation.Letters"), value: "letters" },
-              { label: t("Settings.MoveNotation.Symbols"), value: "symbols" },
-            ]}
-            allowDeselect={false}
-            value={moveNotationType}
-            onChange={(val) => setMoveNotationType(val as "letters" | "symbols")}
-          />
-        ),
-      },
-      {
-        id: "move-method",
-        category: "board",
-        title: t("Settings.MoveMethod"),
-        description: t("Settings.MoveMethod.Desc"),
-        keywords: ["drag", "click", "move", "pieces"],
-        render: () => (
-          <SettingsSelect
-            data={[
-              { label: t("Settings.MoveMethod.Drag"), value: "drag" },
-              { label: t("Settings.MoveMethod.Click"), value: "select" },
-              { label: t("Settings.MoveMethod.Both"), value: "both" },
-            ]}
-            allowDeselect={false}
-            value={moveMethod}
-            onChange={(val) => setMoveMethod(val as "drag" | "select" | "both")}
-          />
-        ),
-      },
-      {
-        id: "snap-arrows",
-        category: "board",
-        title: t("Settings.SnapArrows"),
-        description: t("Settings.SnapArrows.Desc"),
-        keywords: ["arrows", "snap"],
-        render: () => <SettingsSwitch atom={snapArrowsAtom} />,
-      },
-      {
-        id: "consecutive-arrows",
-        category: "board",
-        title: t("Settings.ConsecutiveArrows"),
-        description: t("Settings.ConsecutiveArrows.Desc"),
-        keywords: ["arrows", "consecutive"],
-        render: () => <SettingsSwitch atom={showConsecutiveArrowsAtom} />,
-      },
-      {
-        id: "erase-drawables",
-        category: "board",
-        title: t("Settings.EraseDrawablesOnClick"),
-        description: t("Settings.EraseDrawablesOnClick.Desc"),
-        keywords: ["erase", "drawables", "click", "arrows"],
-        render: () => <SettingsSwitch atom={eraseDrawablesOnClickAtom} />,
-      },
-      {
-        id: "auto-promote",
-        category: "board",
-        title: t("Settings.AutoPromition"),
-        description: t("Settings.AutoPromition.Desc"),
-        keywords: ["promote", "queen", "pawn"],
-        render: () => <SettingsSwitch atom={autoPromoteAtom} />,
-      },
-      {
-        id: "coordinates",
-        category: "board",
-        title: t("Settings.Coordinates"),
-        description: t("Settings.Coordinates.Desc"),
-        keywords: ["coordinates", "a-h", "1-8"],
-        render: () => (
-          <SettingsSelect
-            data={[
-              { label: t("Settings.Coordinates.None"), value: "no" },
-              { label: t("Settings.Coordinates.Edge"), value: "edge" },
-              { label: t("Settings.Coordinates.All"), value: "all" },
-            ]}
-            allowDeselect={false}
-            value={showCoordinates}
-            onChange={(val) => setShowCoordinates(val as "no" | "edge" | "all")}
-          />
-        ),
-      },
-      {
-        id: "animation-speed",
-        category: "board",
-        title: t("Settings.AnimationSpeed"),
-        description: t("Settings.AnimationSpeed.Desc"),
-        keywords: ["animation", "speed", "duration", "move"],
-        render: () => (
-          <SettingsSelect
-            data={[
-              { label: t("Settings.AnimationSpeed.Off"), value: "off" },
-              { label: t("Settings.AnimationSpeed.Fast"), value: "fast" },
-              { label: t("Settings.AnimationSpeed.Normal"), value: "normal" },
-              { label: t("Settings.AnimationSpeed.Slow"), value: "slow" },
-            ]}
-            allowDeselect={false}
-            value={animationSpeed}
-            onChange={(val) => setAnimationSpeed(val as BoardAnimationSpeed)}
-          />
-        ),
-      },
-      {
-        id: "auto-save",
-        category: "board",
-        title: t("Settings.AutoSave"),
-        description: t("Settings.AutoSave.Desc"),
-        keywords: ["save", "auto"],
-        render: () => <SettingsSwitch atom={autoSaveAtom} />,
-      },
-      {
-        id: "preview-board",
-        category: "board",
-        title: t("Settings.PreviewBoard"),
-        description: t("Settings.PreviewBoard.Desc"),
-        keywords: ["preview", "hover"],
-        render: () => <SettingsSwitch atom={previewBoardOnHoverAtom} />,
-      },
-      {
-        id: "flip-board-after-move",
-        category: "board",
-        title: t("Settings.FlipBoardAfterMove"),
-        description: t("Settings.FlipBoardAfterMove.Desc"),
-        keywords: ["flip", "board", "move"],
-        render: () => <SettingsSwitch atom={flipBoardAfterMoveAtom} />,
-      },
-      {
-        id: "scroll-moves",
-        category: "board",
-        title: t("Settings.ScrollThroughMoves"),
-        description: t("Settings.ScrollThroughMoves.Desc"),
-        keywords: ["scroll", "moves", "wheel"],
-        render: () => <SettingsSwitch atom={enableBoardScrollAtom} />,
-      },
-      {
-        id: "choose-variation",
-        category: "board",
-        title: t("Settings.ChooseVariation"),
-        description: t("Settings.ChooseVariation.Desc"),
-        keywords: ["variation", "branch", "arrow", "keyboard", "continuation"],
-        render: () => <SettingsSwitch atom={chooseVariationAtom} />,
-      },
-      {
-        id: "material-display",
-        category: "board",
-        title: t("Settings.MaterialDisplay"),
-        description: t("Settings.MaterialDisplay.Desc"),
-        keywords: ["material", "captured", "pieces", "difference", "hide"],
-        render: () => (
-          <SettingsSelect
-            data={[
-              { label: t("Settings.MaterialDisplay.Diff"), value: "diff" },
-              { label: t("Settings.MaterialDisplay.All"), value: "all" },
-              { label: t("Settings.MaterialDisplay.None"), value: "none" },
-            ]}
-            allowDeselect={false}
-            value={materialDisplay}
-            onChange={(val) => setMaterialDisplay(val as MaterialDisplay)}
-          />
-        ),
-      },
-      {
-        id: "default-panel-tab",
-        category: "board",
-        title: t("Settings.DefaultPanel"),
-        description: t("Settings.DefaultPanel.Desc"),
-        keywords: ["default", "panel", "tab", "open", "info", "analysis", "database", "annotate"],
-        render: () => (
-          <SettingsSelect
-            data={[
-              { label: t("Board.Tabs.Info"), value: "info" },
-              { label: t("Board.Tabs.Analysis"), value: "analysis" },
-              { label: t("Board.Tabs.Database"), value: "database" },
-              { label: t("Board.Tabs.Annotate"), value: "annotate" },
-            ]}
-            allowDeselect={false}
-            value={defaultPanelTab}
-            onChange={(val) => setDefaultPanelTab(val as DefaultPanelTab)}
-          />
-        ),
-      },
-      {
-        id: "panels-beside-notation",
-        category: "board",
-        title: t("Settings.PanelsBesideNotation"),
-        description: t("Settings.PanelsBesideNotation.Desc"),
-        keywords: ["layout", "panel", "tabs", "notation", "beside", "side", "column", "annotate"],
-        render: () => <SettingsSwitch atom={panelsBesideNotationAtom} />,
-      },
-      // Input settings
-      {
-        id: "text-input",
-        category: "inputs",
-        title: t("Settings.Inputs.TextInput"),
-        description: t("Settings.Inputs.TextInput.Desc"),
-        keywords: ["text", "input", "type"],
-        render: () => <SettingsSwitch atom={moveInputAtom} />,
-      },
-      {
-        id: "spell-check",
-        category: "inputs",
-        title: t("Settings.Inputs.SpellCheck"),
-        description: t("Settings.Inputs.SpellCheck.Desc"),
-        keywords: ["spell", "check", "grammar"],
-        render: () => <SettingsSwitch atom={spellCheckAtom} />,
-      },
-      // Appearance settings
-      {
-        id: "theme",
-        category: "appearance",
-        title: t("Settings.Appearance.Theme"),
-        description: t("Settings.Appearance.Theme.Desc"),
-        keywords: ["theme", "dark", "light", "color"],
-        render: () => <ThemeButton />,
-      },
-      {
-        id: "language",
-        category: "appearance",
-        title: t("Settings.Appearance.Language"),
-        description: t("Settings.Appearance.Language.Desc"),
-        keywords: ["language", "locale", "translation"],
-        render: () => (
-          <SettingsSelect
-            allowDeselect={false}
-            data={[
-              { value: "be_BY", label: "Belarusian" },
-              { value: "zh_CN", label: "Chinese (Simplified)" },
-              { value: "zh_TW", label: "Chinese (Traditional)" },
-              { value: "en_GB", label: "English (UK)" },
-              { value: "en_US", label: "English (US)" },
-              { value: "fr_FR", label: "Français" },
-              { value: "pl_PL", label: "Polish" },
-              { value: "nb_NO", label: "Norsk bokmål" },
-              { value: "pt_PT", label: "Portuguese" },
-              { value: "ru_RU", label: "Russian" },
-              { value: "es_ES", label: "Spanish" },
-              { value: "it_IT", label: "Italian" },
-              { value: "uk_UA", label: "Ukrainian" },
-              { value: "tr_TR", label: "Türkçe" },
-              { value: "ko_KR", label: "한국어" },
-              { value: "de_DE", label: "Deutsch" },
-            ]}
-            value={(i18n.resolvedLanguage || i18n.language || "en-US").replace("-", "_")}
-            onChange={(val) => {
-              void changeLocale(val?.replace("_", "-") || "en-US");
-            }}
-          />
-        ),
-      },
-      ...(import.meta.env.VITE_PLATFORM === "win32" || import.meta.env.VITE_PLATFORM === "linux"
-        ? [
+  const settingControls: Record<SettingId, () => React.ReactNode> = useMemo(
+    () => ({
+      "piece-dest": () => <SettingsSwitch atom={showDestsAtom} />,
+      "move-highlight": () => <SettingsSwitch atom={moveHighlightAtom} />,
+      "move-highlight-color": () => <LastMoveHighlightColorInput />,
+      "move-highlight-opacity": () => (
+        <PercentagePreferenceSlider
+          atom={lastMoveHighlightOpacityAtom}
+          min={LAST_MOVE_HIGHLIGHT_OPACITY_MIN}
+          max={LAST_MOVE_HIGHLIGHT_OPACITY_MAX}
+          step={LAST_MOVE_HIGHLIGHT_OPACITY_STEP}
+          marks={MOVE_HIGHLIGHT_OPACITY_MARKS}
+          thumbLabel={t("Settings.MoveHighlightOpacity")}
+        />
+      ),
+      arrows: () => <SettingsSwitch atom={showArrowsAtom} />,
+      "variation-arrows": () => <SettingsSwitch atom={showVariationArrowsAtom} />,
+      "move-notation": () => (
+        <SettingsSelect
+          data={[
+            { label: t("Settings.MoveNotation.Letters"), value: "letters" },
+            { label: t("Settings.MoveNotation.Symbols"), value: "symbols" },
+          ]}
+          allowDeselect={false}
+          value={moveNotationType}
+          onChange={(val) => setMoveNotationType(val as "letters" | "symbols")}
+        />
+      ),
+      "move-method": () => (
+        <SettingsSelect
+          data={[
+            { label: t("Settings.MoveMethod.Drag"), value: "drag" },
+            { label: t("Settings.MoveMethod.Click"), value: "select" },
+            { label: t("Settings.MoveMethod.Both"), value: "both" },
+          ]}
+          allowDeselect={false}
+          value={moveMethod}
+          onChange={(val) => setMoveMethod(val as "drag" | "select" | "both")}
+        />
+      ),
+      "snap-arrows": () => <SettingsSwitch atom={snapArrowsAtom} />,
+      "consecutive-arrows": () => <SettingsSwitch atom={showConsecutiveArrowsAtom} />,
+      "erase-drawables": () => <SettingsSwitch atom={eraseDrawablesOnClickAtom} />,
+      "auto-promote": () => <SettingsSwitch atom={autoPromoteAtom} />,
+      coordinates: () => (
+        <SettingsSelect
+          data={[
+            { label: t("Settings.Coordinates.None"), value: "no" },
+            { label: t("Settings.Coordinates.Edge"), value: "edge" },
+            { label: t("Settings.Coordinates.All"), value: "all" },
+          ]}
+          allowDeselect={false}
+          value={showCoordinates}
+          onChange={(val) => setShowCoordinates(val as "no" | "edge" | "all")}
+        />
+      ),
+      "animation-speed": () => (
+        <SettingsSelect
+          data={[
+            { label: t("Settings.AnimationSpeed.Off"), value: "off" },
+            { label: t("Settings.AnimationSpeed.Fast"), value: "fast" },
+            { label: t("Settings.AnimationSpeed.Normal"), value: "normal" },
+            { label: t("Settings.AnimationSpeed.Slow"), value: "slow" },
+          ]}
+          allowDeselect={false}
+          value={animationSpeed}
+          onChange={(val) => setAnimationSpeed(val as BoardAnimationSpeed)}
+        />
+      ),
+      "auto-save": () => <SettingsSwitch atom={autoSaveAtom} />,
+      "preview-board": () => <SettingsSwitch atom={previewBoardOnHoverAtom} />,
+      "flip-board-after-move": () => <SettingsSwitch atom={flipBoardAfterMoveAtom} />,
+      "scroll-moves": () => <SettingsSwitch atom={enableBoardScrollAtom} />,
+      "choose-variation": () => <SettingsSwitch atom={chooseVariationAtom} />,
+      "material-display": () => (
+        <SettingsSelect
+          data={[
+            { label: t("Settings.MaterialDisplay.Diff"), value: "diff" },
+            { label: t("Settings.MaterialDisplay.All"), value: "all" },
+            { label: t("Settings.MaterialDisplay.None"), value: "none" },
+          ]}
+          allowDeselect={false}
+          value={materialDisplay}
+          onChange={(val) => setMaterialDisplay(val as MaterialDisplay)}
+        />
+      ),
+      "default-panel-tab": () => (
+        <SettingsSelect
+          data={[
+            { label: t("Board.Tabs.Info"), value: "info" },
+            { label: t("Board.Tabs.Analysis"), value: "analysis" },
+            { label: t("Board.Tabs.Database"), value: "database" },
+            { label: t("Board.Tabs.Annotate"), value: "annotate" },
+          ]}
+          allowDeselect={false}
+          value={defaultPanelTab}
+          onChange={(val) => setDefaultPanelTab(val as DefaultPanelTab)}
+        />
+      ),
+      "panels-beside-notation": () => <SettingsSwitch atom={panelsBesideNotationAtom} />,
+      "text-input": () => <SettingsSwitch atom={moveInputAtom} />,
+      "spell-check": () => <SettingsSwitch atom={spellCheckAtom} />,
+      theme: () => <ThemeButton />,
+      language: () => (
+        <SettingsSelect
+          allowDeselect={false}
+          data={[
+            { value: "be_BY", label: "Belarusian" },
+            { value: "zh_CN", label: "Chinese (Simplified)" },
+            { value: "zh_TW", label: "Chinese (Traditional)" },
+            { value: "en_GB", label: "English (UK)" },
+            { value: "en_US", label: "English (US)" },
+            { value: "fr_FR", label: "Français" },
+            { value: "pl_PL", label: "Polish" },
+            { value: "nb_NO", label: "Norsk bokmål" },
+            { value: "pt_PT", label: "Portuguese" },
+            { value: "ru_RU", label: "Russian" },
+            { value: "es_ES", label: "Spanish" },
+            { value: "it_IT", label: "Italian" },
+            { value: "uk_UA", label: "Ukrainian" },
+            { value: "tr_TR", label: "Türkçe" },
+            { value: "ko_KR", label: "한국어" },
+            { value: "de_DE", label: "Deutsch" },
+          ]}
+          value={(i18n.resolvedLanguage || i18n.language || "en-US").replace("-", "_")}
+          onChange={(val) => {
+            void changeLocale(val?.replace("_", "-") || "en-US");
+          }}
+        />
+      ),
+      "title-bar": () => (
+        <SettingsSelect
+          allowDeselect={false}
+          data={[
             {
-              id: "title-bar",
-              category: "appearance" as SettingCategory,
-              title: t("Settings.Appearance.TitleBar"),
-              description: t("Settings.Appearance.TitleBar.Desc"),
-              keywords: ["title", "bar", "native", "custom"],
-              render: () => (
-                <SettingsSelect
-                  allowDeselect={false}
-                  data={[
-                    {
-                      value: "Native",
-                      label: t("Settings.Appearance.TitleBar.Native"),
-                    },
-                    {
-                      value: "Custom",
-                      label: t("Settings.Appearance.TitleBar.Custom"),
-                    },
-                  ]}
-                  value={isNative ? "Native" : "Custom"}
-                  onChange={(val) => setIsNative(val === "Native")}
-                />
-              ),
+              value: "Native",
+              label: t("Settings.Appearance.TitleBar.Native"),
             },
-          ]
-        : []),
-      {
-        id: "font-size",
-        category: "appearance",
-        title: t("Settings.Appearance.FontSize"),
-        description: t("Settings.Appearance.FontSize.Desc"),
-        keywords: ["font", "size", "text"],
-        render: () => (
-          <PercentagePreferenceSlider
-            atom={fontSizeAtom}
-            min={FONT_SCALE_MIN}
-            max={FONT_SCALE_MAX}
-            step={FONT_SCALE_STEP}
-            marks={FONT_SIZE_MARKS}
-            thumbLabel={t("Settings.Appearance.FontSize")}
-          />
-        ),
-      },
-      {
-        id: "piece-set",
-        category: "appearance",
-        title: t("Settings.Appearance.PieceSet"),
-        description: t("Settings.Appearance.PieceSet.Desc"),
-        keywords: ["piece", "set", "style"],
-        render: () => <PiecesSelect />,
-      },
-      {
-        id: "piece-size",
-        category: "appearance",
-        title: t("Settings.Appearance.PieceSize"),
-        description: t("Settings.Appearance.PieceSize.Desc"),
-        keywords: ["piece", "size", "scale"],
-        render: () => (
-          <PercentagePreferenceSlider
-            atom={pieceSizeAtom}
-            min={PIECE_SCALE_MIN}
-            max={PIECE_SCALE_MAX}
-            step={PIECE_SCALE_STEP}
-            marks={PIECE_SIZE_MARKS}
-            thumbLabel={t("Settings.Appearance.PieceSize")}
-          />
-        ),
-      },
-      {
-        id: "board-image",
-        category: "appearance",
-        title: t("Settings.Appearance.BoardImage"),
-        description: t("Settings.Appearance.BoardImage.Desc"),
-        keywords: ["board", "image", "texture"],
-        render: () => <BoardSelect />,
-      },
-      {
-        id: "board-wood-texture",
-        category: "appearance",
-        title: t("Settings.Appearance.WoodTexture"),
-        description: t("Settings.Appearance.WoodTexture.Desc"),
-        keywords: ["wood", "texture", "grain", "board"],
-        render: () => <SettingsSwitch atom={boardWoodTextureAtom} />,
-      },
-      // Repertoire settings
-      {
-        id: "repertoire-depth",
-        category: "repertoire",
-        title: t("Settings.Repertoire.Depth"),
-        description: t("Settings.Repertoire.Depth.Desc"),
-        keywords: ["repertoire", "depth", "games", "min"],
-        render: () => <RepertoireMinGamesSetting />,
-      },
-      {
-        id: "practice-grading",
-        category: "repertoire",
-        title: t("Settings.Repertoire.Grading"),
-        description: t("Settings.Repertoire.Grading.Desc"),
-        keywords: ["repertoire", "auto", "difficulty", "select", "anki"],
-        render: () => (
-          <SettingsSelect
-            allowDeselect={false}
-            data={[
-              { label: t("Settings.Repertoire.Grading.Automatic"), value: "auto" },
-              { label: t("Settings.Repertoire.Grading.Manual"), value: "manual" },
-            ]}
-            aria-label={t("Settings.Repertoire.Grading")}
-            value={practiceGrading}
-            onChange={(val) => {
-              if (val === "auto" || val === "manual") setPracticeGrading(val);
-            }}
-          />
-        ),
-      },
-      {
-        id: "practice-new-per-session",
-        category: "repertoire",
-        title: t("Settings.Repertoire.NewPerSession"),
-        description: t("Settings.Repertoire.NewPerSession.Desc"),
-        keywords: ["practice", "new", "limit", "session"],
-        render: () => (
-          <DraftNumberInput
-            aria-label={t("Settings.Repertoire.NewPerSession")}
-            min={PRACTICE_NEW_PER_SESSION.min}
-            max={PRACTICE_NEW_PER_SESSION.max}
-            allowDecimal={false}
-            value={practiceNewPerSession}
-            onChange={(value) => {
-              if (
-                typeof value === "number" &&
-                Number.isInteger(value) &&
-                value >= PRACTICE_NEW_PER_SESSION.min &&
-                value <= PRACTICE_NEW_PER_SESSION.max
-              )
-                setPracticeNewPerSession(value);
-            }}
-          />
-        ),
-      },
-      // Sound settings
-      {
-        id: "volume",
-        category: "sound",
-        title: t("Settings.Sound.Volume"),
-        description: t("Settings.Sound.Volume.Desc"),
-        keywords: ["volume", "audio", "loud"],
-        render: () => <VolumeSlider />,
-      },
-      {
-        id: "sound-collection",
-        category: "sound",
-        title: t("Settings.Sound.Collection"),
-        description: t("Settings.Sound.Collection.Desc"),
-        keywords: ["sound", "collection", "audio", "effects"],
-        render: () => <SoundSelect />,
-      },
-      // Directories settings
-      {
-        id: "files-directory",
-        category: "directories",
-        title: t("Settings.Directories.Files"),
-        description: t("Settings.Directories.Files.Desc"),
-        keywords: ["files", "directory", "folder", "path", "collection", "pgn"],
-        render: () => (
-          <DirectorySetting
-            value={fileWorkspaceDisplayName || null}
-            issueWorkspace={async () => {
-              const workspace = await tauri.issueFileWorkspace();
-              setFileWorkspace(workspace.handle);
-              return workspace.displayName;
-            }}
-            onSelect={setFileWorkspaceDisplayName}
-            onError={showDirectoryError}
-          />
-        ),
-      },
-      {
-        id: "databases-directory",
-        category: "directories",
-        title: t("Settings.Directories.Databases"),
-        description: t("Settings.Directories.Databases.Desc"),
-        keywords: ["databases", "directory", "folder", "path"],
-        render: () => (
-          <WorkspaceDirectorySetting
-            load={() => tauri.getDatabaseWorkspace()}
-            issue={() => tauri.issueDatabaseWorkspace()}
-            onError={showDirectoryError}
-          />
-        ),
-      },
-      {
-        id: "engines-directory",
-        category: "directories",
-        title: t("Settings.Directories.Engines"),
-        description: t("Settings.Directories.Engines.Desc"),
-        keywords: ["engines", "directory", "folder", "path"],
-        render: () => (
-          <WorkspaceDirectorySetting
-            load={() => tauri.getEngineWorkspace()}
-            issue={() => tauri.issueEngineWorkspace()}
-            onError={showDirectoryError}
-          />
-        ),
-      },
-      {
-        id: "puzzles-directory",
-        category: "directories",
-        title: t("Settings.Directories.Puzzles"),
-        description: t("Settings.Directories.Puzzles.Desc"),
-        keywords: ["puzzles", "directory", "folder", "path"],
-        render: () => (
-          <WorkspaceDirectorySetting
-            load={() => tauri.getPuzzleWorkspace()}
-            issue={() => tauri.issuePuzzleWorkspace()}
-            onSelected={() => setPuzzleWorkspaceGeneration((generation) => generation + 1)}
-            onError={showDirectoryError}
-          />
-        ),
-      },
-      {
-        id: "coach-engine",
-        category: "coach",
-        title: t("Settings.Coach.Engine"),
-        description: t("Settings.Coach.Engine.Desc"),
-        keywords: ["coach", "ai", "engine"],
-        render: () => <CoachEngineSelect />,
-      },
-      {
-        id: "reload",
-        category: "advanced",
-        title: t("Menu.View.Reload"),
-        description: t("Settings.Advanced.Reload.Desc"),
-        keywords: ["reload", "refresh"],
-        render: () => <AdvancedActionButton label={t("Menu.View.Reload")} action={reloadApp} />,
-      },
-      {
-        id: "clear-saved-data",
-        category: "advanced",
-        title: t("Menu.Help.ClearSavedData"),
-        description: t("Settings.Advanced.ClearSavedData.Desc"),
-        keywords: ["clear", "data", "reset", "storage"],
-        render: () => (
-          <AdvancedActionButton
-            label={t("Menu.Help.ClearSavedData")}
-            action={() => clearSavedData({ t })}
-          />
-        ),
-      },
-      {
-        id: "open-logs",
-        category: "advanced",
-        title: t("Menu.Help.OpenLogs"),
-        description: t("Settings.Advanced.OpenLogs.Desc"),
-        keywords: ["logs", "log", "diagnostic"],
-        render: () => (
-          <AdvancedActionButton
-            label={t("Menu.Help.OpenLogs")}
-            action={openAppLogs}
-            successMessage={t("Menu.Help.OpenLogs")}
-          />
-        ),
-      },
-    ],
+            {
+              value: "Custom",
+              label: t("Settings.Appearance.TitleBar.Custom"),
+            },
+          ]}
+          value={isNative ? "Native" : "Custom"}
+          onChange={(val) => setIsNative(val === "Native")}
+        />
+      ),
+      "font-size": () => (
+        <PercentagePreferenceSlider
+          atom={fontSizeAtom}
+          min={FONT_SCALE_MIN}
+          max={FONT_SCALE_MAX}
+          step={FONT_SCALE_STEP}
+          marks={FONT_SIZE_MARKS}
+          thumbLabel={t("Settings.Appearance.FontSize")}
+        />
+      ),
+      "piece-set": () => <PiecesSelect />,
+      "piece-size": () => (
+        <PercentagePreferenceSlider
+          atom={pieceSizeAtom}
+          min={PIECE_SCALE_MIN}
+          max={PIECE_SCALE_MAX}
+          step={PIECE_SCALE_STEP}
+          marks={PIECE_SIZE_MARKS}
+          thumbLabel={t("Settings.Appearance.PieceSize")}
+        />
+      ),
+      "board-image": () => <BoardSelect />,
+      "board-wood-texture": () => <SettingsSwitch atom={boardWoodTextureAtom} />,
+      "repertoire-depth": () => <RepertoireMinGamesSetting />,
+      "practice-grading": () => (
+        <SettingsSelect
+          allowDeselect={false}
+          data={[
+            { label: t("Settings.Repertoire.Grading.Automatic"), value: "auto" },
+            { label: t("Settings.Repertoire.Grading.Manual"), value: "manual" },
+          ]}
+          aria-label={t("Settings.Repertoire.Grading")}
+          value={practiceGrading}
+          onChange={(val) => {
+            if (val === "auto" || val === "manual") setPracticeGrading(val);
+          }}
+        />
+      ),
+      "practice-new-per-session": () => (
+        <DraftNumberInput
+          aria-label={t("Settings.Repertoire.NewPerSession")}
+          min={PRACTICE_NEW_PER_SESSION.min}
+          max={PRACTICE_NEW_PER_SESSION.max}
+          allowDecimal={false}
+          value={practiceNewPerSession}
+          onChange={(value) => {
+            if (
+              typeof value === "number" &&
+              Number.isInteger(value) &&
+              value >= PRACTICE_NEW_PER_SESSION.min &&
+              value <= PRACTICE_NEW_PER_SESSION.max
+            )
+              setPracticeNewPerSession(value);
+          }}
+        />
+      ),
+      volume: () => <VolumeSlider />,
+      "sound-collection": () => <SoundSelect />,
+      "files-directory": () => (
+        <DirectorySetting
+          value={fileWorkspaceDisplayName || null}
+          issueWorkspace={async () => {
+            const workspace = await tauri.issueFileWorkspace();
+            setFileWorkspace(workspace.handle);
+            return workspace.displayName;
+          }}
+          onSelect={setFileWorkspaceDisplayName}
+          onError={showDirectoryError}
+        />
+      ),
+      "databases-directory": () => (
+        <WorkspaceDirectorySetting
+          load={() => tauri.getDatabaseWorkspace()}
+          issue={() => tauri.issueDatabaseWorkspace()}
+          onError={showDirectoryError}
+        />
+      ),
+      "engines-directory": () => (
+        <WorkspaceDirectorySetting
+          load={() => tauri.getEngineWorkspace()}
+          issue={() => tauri.issueEngineWorkspace()}
+          onError={showDirectoryError}
+        />
+      ),
+      "puzzles-directory": () => (
+        <WorkspaceDirectorySetting
+          load={() => tauri.getPuzzleWorkspace()}
+          issue={() => tauri.issuePuzzleWorkspace()}
+          onSelected={() => setPuzzleWorkspaceGeneration((generation) => generation + 1)}
+          onError={showDirectoryError}
+        />
+      ),
+      "coach-engine": () => <CoachEngineSelect />,
+      reload: () => <AdvancedActionButton label={t("Menu.View.Reload")} action={reloadApp} />,
+      "clear-saved-data": () => (
+        <AdvancedActionButton
+          label={t("Menu.Help.ClearSavedData")}
+          action={() => clearSavedData({ t })}
+        />
+      ),
+      "open-logs": () => (
+        <AdvancedActionButton
+          label={t("Menu.Help.OpenLogs")}
+          action={openAppLogs}
+          successMessage={t("Menu.Help.OpenLogs")}
+        />
+      ),
+    }),
     [
       t,
       i18n,
@@ -813,11 +484,6 @@ export default function Page() {
       setPracticeNewPerSession,
       showDirectoryError,
     ],
-  );
-
-  const settings = useMemo(
-    () => allSettings.filter((setting) => categories.includes(setting.category)),
-    [allSettings, categories],
   );
 
   useHotkeys([["mod+f", () => searchInputRef.current?.focus()]]);
@@ -885,9 +551,41 @@ export default function Page() {
         setting.description.toLowerCase().includes(query) ||
         categoryInfo[setting.category].title.toLowerCase().includes(query) ||
         setting.id.toLowerCase().includes(query) ||
-        setting.keywords?.some((kw) => kw.toLowerCase().includes(query)),
+        setting.keywords.some((kw) => kw.toLowerCase().includes(query)),
     );
   }, [searchQuery, settings, categoryInfo]);
+
+  useEffect(() => {
+    if (!navigationRequest) return;
+    setNavigationRequest((current) => (current?.id === navigationRequest.id ? null : current));
+
+    if (navigationRequest.target.kind === "category") {
+      if (!categories.includes(navigationRequest.target.category)) return;
+      setSearchQuery("");
+      setActiveCategory(navigationRequest.target.category);
+      setHighlightedSettingId(null);
+      setPendingScroll(null);
+      return;
+    }
+
+    const targetId = navigationRequest.target.settingId;
+    const targetSetting = settings.find((setting) => setting.id === targetId);
+    if (!targetSetting || !categories.includes(targetSetting.category)) return;
+    setSearchQuery("");
+    setActiveCategory(targetSetting.category);
+    setHighlightedSettingId(targetSetting.id);
+    setPendingScroll({ settingId: targetSetting.id });
+  }, [navigationRequest, categories, settings, setNavigationRequest]);
+
+  useEffect(() => {
+    if (!pendingScroll || filteredSettings) return;
+    const row = pageRef.current?.querySelector<HTMLElement>(
+      `[data-setting-id="${pendingScroll.settingId}"]`,
+    );
+    if (!row) return;
+    row.scrollIntoView?.({ block: "center", behavior: "auto" });
+    setPendingScroll(null);
+  }, [pendingScroll, filteredSettings, effectiveCategory]);
 
   const renderSearchResults = () => {
     if (!filteredSettings) return null;
@@ -911,7 +609,7 @@ export default function Page() {
         acc[setting.category].push(setting);
         return acc;
       },
-      {} as Record<SettingCategory, SettingItem[]>,
+      {} as Record<SettingCategory, SettingDescription[]>,
     );
 
     return (
@@ -925,8 +623,13 @@ export default function Page() {
               </Text>
             </Group>
             {categorySettings.map((setting) => (
-              <SettingRow key={setting.id} title={setting.title} description={setting.description}>
-                {setting.render()}
+              <SettingRow
+                key={setting.id}
+                id={setting.id}
+                title={setting.title}
+                description={setting.description}
+              >
+                {settingControls[setting.id]()}
               </SettingRow>
             ))}
           </div>
@@ -938,8 +641,14 @@ export default function Page() {
   const renderCategorySettings = (category: SettingCategory) => {
     const categorySettings = settings.filter((s) => s.category === category);
     return categorySettings.map((setting) => (
-      <SettingRow key={setting.id} title={setting.title} description={setting.description}>
-        {setting.render()}
+      <SettingRow
+        key={setting.id}
+        id={setting.id}
+        title={setting.title}
+        description={setting.description}
+        highlight={highlightedSettingId === setting.id}
+      >
+        {settingControls[setting.id]()}
       </SettingRow>
     ));
   };
@@ -971,7 +680,7 @@ export default function Page() {
   );
 
   return (
-    <Stack h="100%" gap={0} data-compact={compactTabs || undefined}>
+    <Stack ref={pageRef} h="100%" gap={0} data-compact={compactTabs || undefined}>
       <Group px="md" pt="md" pb="sm" className={classes.searchRow}>
         <Title order={1} size="h3" className="wrap-anywhere" miw={0}>
           {t("SideBar.Settings")}
@@ -982,7 +691,10 @@ export default function Page() {
           aria-label={t("Common.Search")}
           leftSection={<Search size="1rem" />}
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.currentTarget.value)}
+          onChange={(e) => {
+            setSearchQuery(e.currentTarget.value);
+            setPendingScroll(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === "f" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -1004,7 +716,14 @@ export default function Page() {
         </ScrollArea>
       ) : (
         <Tabs
-          defaultValue="board"
+          value={effectiveCategory}
+          onChange={(value) => {
+            if (value && categories.includes(value as SettingCategory)) {
+              setActiveCategory(value as SettingCategory);
+              setHighlightedSettingId(null);
+              setPendingScroll(null);
+            }
+          }}
           orientation={compactTabs ? "horizontal" : "vertical"}
           flex={1}
           className={classes.settingsTabs}
