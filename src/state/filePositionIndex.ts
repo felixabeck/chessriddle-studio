@@ -21,10 +21,12 @@ export type FilePositionIndexBounds = {
 };
 
 /**
- * Synthetic benchmark at the limit (500 chapters, 4,804,500 bytes, 200,000 positions, page size
- * 100, mocked `lexPgn`): total build 5,753.0 ms, max per-chapter parse+yield gap 27.04 ms.
- * Meets the budget in `tasks/plans/2026-11-24-file-wide-transpositions.md` (Risks R1: within a
- * few seconds at the limit with no main-thread block above one chapter's parse).
+ * Measured once on 2026-11-24 at the limit (500 chapters, 4,804,500 bytes, 200,000 positions,
+ * page size 100, mocked `lexPgn`): total build 5,753.0 ms, max per-chapter
+ * parse+yield gap 27.04 ms, within the budget in
+ * `tasks/plans/2026-11-24-file-wide-transpositions.md` (Risks R1: within a few seconds at the
+ * limit with no main-thread block above one chapter's parse). This is not a test: the limit
+ * semantics are tested with small bounds.
  */
 export const MAX_FILE_INDEX_CHAPTERS = 500;
 export const MAX_FILE_INDEX_BYTES = 5 * 1024 * 1024;

@@ -35,7 +35,6 @@ const {
     FILE_INDEX_PAGE_SIZE,
     MAX_FILE_INDEX_BYTES,
     MAX_FILE_INDEX_CHAPTERS,
-    MAX_FILE_INDEX_POSITIONS,
     MAX_INDEXED_FILES,
     createFilePositionIndexRegistry,
     getFileChapterOccurrences,
@@ -656,38 +655,55 @@ test("yields to event loop between chapters and notifies subscribers on completi
     unsub();
 });
 
-test("synthetic limit benchmark: 500 chapters, ~5 MiB, 200,000 positions within budget", async () => {
-    // 500 chapters * (root + 399 moves = 400 positions) = 200,000 positions.
-    // Repeat a legal 4-move cycle (1. Nf3 Nf6 2. Ng1 Ng8) 99 times + 1. Nf3 Nf6 2. Ng1 = 399 half-moves.
-    const cycle = "Nf3 Nf6 Ng1 Ng8 ";
-    const moves = cycle.repeat(99) + "Nf3 Nf6 Ng1 *";
-    // Pad headers so 500 chapters total ~4.8 MiB (< 5 MiB).
-    const pad = "x".repeat(8_000);
-    const chapterPgn = `[Event "${pad}"]\n\n${moves}`;
-    const chapterTokens = lex(chapterPgn);
-    const totalBytes = new TextEncoder().encode(chapterPgn).length * MAX_FILE_INDEX_CHAPTERS;
-    expect(totalBytes).toBeLessThanOrEqual(MAX_FILE_INDEX_BYTES);
-    expect(totalBytes).toBeGreaterThan(4 * 1024 * 1024);
-
-    const chapters = Array.from({ length: MAX_FILE_INDEX_CHAPTERS }, () => stamped(chapterPgn));
-    serveChapters(chapters);
-
-    mocks.lexPgn.mockImplementation(async (_pgn: string, options?: { signal?: AbortSignal }) => {
-        if (options?.signal?.aborted) throw cancellationError();
-        return chapterTokens;
+test("a file exactly at every limit is built, across pages", async () => {
+    // 4 chapters * 10 bytes = 40 bytes, 4 * (root + 2 moves) = 12 positions, pages of 3 → 2 reads.
+    const registry = createFilePositionIndexRegistry({
+        maxChapters: 4,
+        maxBytes: 40,
+        maxPositions: 12,
+        pageSize: 3,
     });
+    serveChapters([
+        stamped("1. e4 e5 *"),
+        stamped("1. d4 d5 *"),
+        stamped("1. c4 c5 *"),
+        stamped("1. g3 g6 *"),
+    ]);
 
-    const file = makeFile("ws-limit-bench");
-    const outcome = await requestFilePositionIndex(file, "r1").finished;
-
-    expect(outcome).toBe("built");
-    const index = getFilePositionIndex(file.handle, "r1")!;
-    expect(index.chapters.size).toBe(MAX_FILE_INDEX_CHAPTERS);
-
+    const file = makeFile("ws-at-limit");
+    expect(await registry.request(file, "r1").finished).toBe("built");
+    const index = registry.getIndex(file.handle, "r1")!;
+    expect(index.chapters.size).toBe(4);
     let countedPositions = 0;
     for (const occs of index.positions.values()) countedPositions += occs.length;
-    expect(countedPositions).toBe(MAX_FILE_INDEX_POSITIONS);
+    expect(countedPositions).toBe(12);
+    expect(mocks.readGames).toHaveBeenCalledTimes(2);
+    expect(mocks.warn).not.toHaveBeenCalled();
+});
+
+test("the default registry accepts MAX_FILE_INDEX_CHAPTERS chapters and rejects one more", async () => {
+    // Each chapter is a bare result: one position, so the chapter limit is the only one reached.
+    serveChapters(Array.from({ length: MAX_FILE_INDEX_CHAPTERS }, () => stamped("*")));
+    const file = makeFile("ws-default-chapters");
+    expect(await requestFilePositionIndex(file, "r1").finished).toBe("built");
+    expect(getFilePositionIndex(file.handle, "r1")!.chapters.size).toBe(MAX_FILE_INDEX_CHAPTERS);
     expect(mocks.readGames).toHaveBeenCalledTimes(
         Math.ceil(MAX_FILE_INDEX_CHAPTERS / FILE_INDEX_PAGE_SIZE),
     );
-}, 30_000);
+
+    mocks.readGames.mockClear();
+    serveChapters(Array.from({ length: MAX_FILE_INDEX_CHAPTERS + 1 }, () => stamped("*")));
+    expect(await requestFilePositionIndex(makeFile("ws-default-over"), "r1").finished).toBe(
+        "ineligible",
+    );
+    expect(mocks.readGames).not.toHaveBeenCalled();
+});
+
+test("the default registry rejects a file over MAX_FILE_INDEX_BYTES before parsing", async () => {
+    const oversized = `[Event "${"x".repeat(MAX_FILE_INDEX_BYTES)}"]\n\n*`;
+    serveChapters([stamped(oversized), stamped("1. e4 *")]);
+    expect(await requestFilePositionIndex(makeFile("ws-default-bytes"), "r1").finished).toBe(
+        "ineligible",
+    );
+    expect(mocks.lexPgn).not.toHaveBeenCalled();
+});
