@@ -28954,7 +28954,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The Assistant's answer screenshot no longer matches after the rebase onto frequency-weighted practice
 
-* **ID:** f-20261124-13 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-13 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45421454008
 * **First red:** run 45421454008 on `77eae9390` (own push of the Assistant, range `7d91c7788..77eae9390`)
@@ -28966,3 +28966,5 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Fix:** reproduce in the container on the rebased tree, confirm the difference is the upstream page content and not the Assistant panel, and re-record the snapshot (or mask the unrelated region).
 * **Proof:** `pnpm test:e2e:container` green on the rebased tree; the next `Test` run's `e2e` job succeeds.
 * **Found by:** Claude Code (Opus 5.5), build run tasks/plans/2026-11-24-help-assistant.md, 2026-11-24
+* **Handled:** 2026-11-24, re-recorded `e2e/assistant.spec.ts-snapshots/assistant-answer-assistant.png` in the container after confirming in the diff image that only the New Tab action row (the new "Train openings" button from frequency-weighted practice) differed; the Assistant panel and the other three Assistant snapshots were unchanged. Proof: `pnpm test:e2e:container` 516 passed on the rebased tree.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a33557384e6bdb470a3b5d10de0426a9f037d85408809b0d33e7bb0b744479e6","header_sha256":"37af392d8b453c5d2be8178184e2220c5e20f23f7b4a5528b97c5fbe4bdbe954","header_status":"handled","input_sha256":"f856df507264544581df8a90c8e151b6d1b606c1fd07b78903a9f2cd38082581","kind":"mutation-receipt","operation":"b7479d4ac089fe97b218e7608f1b7e342949b9587e27b29b791de4fa5e2e61f9","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-13"],"target":"f-20261124-13","v":1} -->
