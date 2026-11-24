@@ -110,6 +110,7 @@
           "src/utils/gameReferences.ts",
           "src/utils/lineTitle.ts",
           "src/utils/openFile.ts",
+          "src/utils/opponentPreparation.ts",
           "src/utils/pgnDate.ts",
           "src/utils/practicePosition.ts",
           "src/utils/practiceScope.ts",

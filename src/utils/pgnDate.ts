@@ -7,6 +7,14 @@ export function canonicalPgnDate(date: string): string {
     return `${match[1]}.${canonicalPart(match[2])}.${canonicalPart(match[3])}`;
 }
 
+/**
+ * Orders PGN dates like the native sample order: stored dates are verbatim, so they are padded
+ * first; an unknown component sorts below every known one and an unknown date below all.
+ */
+export function dateOrderKey(date: string | null | undefined): string {
+    return !date || date.startsWith("?") ? "" : canonicalPgnDate(date).replaceAll("?", "0");
+}
+
 function pad(value: number, width = 2): string {
     return String(value).padStart(width, "0");
 }

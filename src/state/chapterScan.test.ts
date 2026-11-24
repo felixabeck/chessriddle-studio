@@ -35,6 +35,8 @@ test("visits root, continuations, variations, and line ends in pre-order with mo
         path: number[];
         hasContinuation: boolean;
         moveOrder: string;
+        halfMoves: number;
+        san: string | null;
     }> = [];
     const result = await scanChapterPositions(
         '[White "Main"]\n\n1. e4 (1. d4 d5) 1... e5 2. Nf3 *',
@@ -45,13 +47,36 @@ test("visits root, continuations, variations, and line ends in pre-order with mo
 
     expect(result.headers.white).toBe("Main");
     expect(result.rootKey).toBe("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -");
-    expect(visited.map((item) => [item.path, item.hasContinuation, item.moveOrder])).toEqual([
-        [[], true, ""],
-        [[0], true, "e4"],
-        [[0, 0], true, "e4 e5"],
-        [[0, 0, 0], false, "e4 e5 Nf3"],
-        [[1], true, "d4"],
-        [[1, 0], false, "d4 d5"],
+    expect(
+        visited.map((item) => [
+            item.path,
+            item.hasContinuation,
+            item.moveOrder,
+            item.halfMoves,
+            item.san,
+        ]),
+    ).toEqual([
+        [[], true, "", 0, null],
+        [[0], true, "e4", 1, "e4"],
+        [[0, 0], true, "e4 e5", 2, "e5"],
+        [[0, 0, 0], false, "e4 e5 Nf3", 3, "Nf3"],
+        [[1], true, "d4", 1, "d4"],
+        [[1, 0], false, "d4 d5", 2, "d5"],
+    ]);
+});
+
+test("anchors halfMoves to a custom Black-to-move root FEN", async () => {
+    const visited: Array<{ path: number[]; halfMoves: number; san: string | null }> = [];
+    await scanChapterPositions(
+        '[FEN "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]\n\n1... c5 2. Nf3 *',
+        (pos) => {
+            visited.push({ path: pos.path, halfMoves: pos.halfMoves, san: pos.san });
+        },
+    );
+    expect(visited).toEqual([
+        { path: [], halfMoves: 1, san: null },
+        { path: [0], halfMoves: 2, san: "c5" },
+        { path: [0, 0], halfMoves: 3, san: "Nf3" },
     ]);
 });
 

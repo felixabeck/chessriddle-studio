@@ -5,6 +5,7 @@ import { lex } from "./tests/lexPgn";
 const mocks = vi.hoisted(() => ({
     listFileWorkspace: vi.fn(),
     fileRevision: vi.fn(),
+    countPgnGames: vi.fn(),
     readGame: vi.fn(),
     lexPgn: vi.fn(),
 }));
@@ -18,6 +19,7 @@ vi.mock("@/platform/native", () => ({
 const {
     MAX_COACH_REPERTOIRE_BYTES,
     REPERTOIRE_BOUNDS,
+    readRepertoireIndex,
     refreshRepertoireIndex,
     repertoireContext,
     resetRepertoireIndexForTests,
@@ -78,10 +80,18 @@ beforeEach(() => {
         Vienna: ["1. e4 e5 2. Nc3 Nf6 *"],
         "My games": ["1. e4 e5 2. Ke2 *"],
     };
+    mocks.countPgnGames.mockImplementation(
+        async (handle: { id: { id: string } }) => games[handle.id.id]?.length ?? 0,
+    );
     mocks.readGame.mockImplementation(async (handle: { id: { id: string } }, index: number) => {
         const pgn = games[handle.id.id]?.[index];
         if (pgn === undefined) throw new Error("no such game");
-        return { pgn, stamp: "stamp", revision: "revision", present: true };
+        return {
+            pgn,
+            stamp: "stamp",
+            revision: revisions[handle.id.id] ?? "r1",
+            present: true,
+        };
     });
     mocks.lexPgn.mockImplementation(async (pgn: string) => lex(pgn));
     revisions = {};
@@ -195,7 +205,7 @@ test("a question asked while the index is still being built says so", async () =
     serve([file("Vienna", "repertoire", 1)]);
     mocks.readGame.mockImplementationOnce(async () => {
         await held;
-        return { pgn: games.Vienna[0], stamp: "stamp", revision: "revision", present: true };
+        return { pgn: games.Vienna[0], stamp: "stamp", revision: "r1", present: true };
     });
     const building = refreshRepertoireIndex(workspace);
     // A second call joins the refresh that runs.
@@ -228,7 +238,7 @@ test("a game the native side left out or reports as absent is skipped as unread"
     mocks.readGame.mockImplementation(async (_handle: unknown, index: number) => ({
         pgn: index === 0 ? "" : games["Open games"][0],
         stamp: "stamp",
-        revision: "revision",
+        revision: "r1",
         present: index !== 0,
     }));
     await refreshRepertoireIndex(workspace);
@@ -245,7 +255,7 @@ test("another workspace starts a new index and the old build stops writing", asy
     serve([file("Open games", "repertoire", 2)]);
     mocks.readGame.mockImplementationOnce(async () => {
         await held;
-        return { pgn: games["Open games"][0], stamp: "stamp", revision: "revision", present: true };
+        return { pgn: games["Open games"][0], stamp: "stamp", revision: "r1", present: true };
     });
     const first = refreshRepertoireIndex(workspace);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -375,10 +385,219 @@ test("a game the native side marks as left out is not indexed", async () => {
     mocks.readGame.mockResolvedValueOnce({
         pgn: games.Vienna[0],
         stamp: "stamp",
-        revision: "revision",
+        revision: "r1",
         present: true,
         omission: "tooLarge",
     });
     await refreshRepertoireIndex(workspace);
     expect(await repertoireContext(AFTER_E4_E5)).toEqual({ text: null, partial: true });
+});
+
+test("readRepertoireIndex returns settled chapters, nodes, FileMetadata, partial and reason", async () => {
+    expect(readRepertoireIndex(workspace)).toBeNull();
+    expect(readRepertoireIndex(null)).toBeNull();
+
+    games.Sicilian = [
+        '[Event "Najdorf"]\n[White "Bg5"]\n[Black "Poisoned Pawn"]\n[Orientation "black"]\n[Start "[0,0]"]\n\n1. e4 c5 2. Nf3 *',
+    ];
+    serve([file("Sicilian", "repertoire", 1)]);
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    mocks.readGame.mockImplementationOnce(async () => {
+        await held;
+        return { pgn: games.Sicilian[0], stamp: "stamp", revision: "r1", present: true };
+    });
+    const running = refreshRepertoireIndex(workspace);
+    // While a refresh is running the snapshot is not settled yet.
+    expect(readRepertoireIndex(workspace)).toBeNull();
+    release();
+    await running;
+
+    const other = { id: { id: "other" }, kind: "fileWorkspace" } as unknown as FileWorkspaceHandle;
+    expect(readRepertoireIndex(other)).toBeNull();
+
+    const snapshot = readRepertoireIndex(workspace);
+    expect(snapshot).not.toBeNull();
+    expect(snapshot!.partial).toBe(false);
+    expect(snapshot!.partialReason).toBeNull();
+    expect(snapshot!.files).toHaveLength(1);
+    const indexed = snapshot!.files[0];
+    expect(indexed.file.name).toBe("Sicilian");
+    expect(indexed.file.numGames).toBe(1);
+    expect(indexed.file.metadata.type).toBe("repertoire");
+    expect(indexed.partial).toBe(false);
+    expect(indexed.chapters).toHaveLength(1);
+    expect(indexed.chapters[0].chapter).toBe(0);
+    expect(indexed.chapters[0].headers).toEqual({
+        orientation: "black",
+        start: [0, 0],
+        white: "Bg5",
+        black: "Poisoned Pawn",
+        event: "Najdorf",
+    });
+    expect(
+        indexed.chapters[0].nodes.map((node) => ({
+            parent: node.parent,
+            san: node.san,
+            path: node.path,
+            halfMoves: node.halfMoves,
+            hasContinuation: node.hasContinuation,
+        })),
+    ).toEqual([
+        { parent: -1, san: null, path: [], halfMoves: 0, hasContinuation: true },
+        { parent: 0, san: "e4", path: [0], halfMoves: 1, hasContinuation: true },
+        { parent: 1, san: "c5", path: [0, 0], halfMoves: 2, hasContinuation: true },
+        { parent: 2, san: "Nf3", path: [0, 0, 0], halfMoves: 3, hasContinuation: false },
+    ]);
+});
+
+test("the entries bound also charges a line's last move", async () => {
+    // 1. e4 e5 has 3 nodes: root, e4, and leaf e5.
+    games.Short = ["1. e4 e5 *"];
+    serve([file("Short", "repertoire", 1)]);
+
+    // Budget of 2 leaves out the leaf move e5 and marks the index partial with bound-reached.
+    await refreshRepertoireIndex(workspace, {
+        files: 50,
+        games: 100,
+        bytes: 1_000_000,
+        entries: 2,
+    });
+    const partial = readRepertoireIndex(workspace)!;
+    expect(partial.partial).toBe(true);
+    expect(partial.partialReason).toBe("bound-reached");
+    expect(partial.files[0].chapters[0].nodes).toHaveLength(2);
+
+    // Budget of 3 fits all 3 nodes including the leaf and is complete.
+    resetRepertoireIndexForTests();
+    await refreshRepertoireIndex(workspace, {
+        files: 50,
+        games: 100,
+        bytes: 1_000_000,
+        entries: 3,
+    });
+    const full = readRepertoireIndex(workspace)!;
+    expect(full.partial).toBe(false);
+    expect(full.partialReason).toBeNull();
+    expect(full.files[0].chapters[0].nodes).toHaveLength(3);
+});
+
+test("a file whose game reports another revision is partial and read again on the next refresh", async () => {
+    serve([file("Open games", "repertoire", 2)]);
+    mocks.readGame
+        .mockResolvedValueOnce({
+            pgn: games["Open games"][0],
+            stamp: "stamp",
+            revision: "r1",
+            present: true,
+        })
+        .mockResolvedValueOnce({
+            pgn: games["Open games"][1],
+            stamp: "stamp",
+            revision: "r2",
+            present: true,
+        });
+
+    await refreshRepertoireIndex(workspace);
+    const first = readRepertoireIndex(workspace)!;
+    expect(first.partial).toBe(true);
+    expect(first.partialReason).toBe("read-failed");
+    expect(first.files[0].partial).toBe(true);
+    expect(first.files[0].chapters).toHaveLength(1);
+
+    // Next refresh reads the file again even though fileRevision still reports r1.
+    mocks.readGame.mockClear();
+    await refreshRepertoireIndex(workspace);
+    expect(mocks.readGame).toHaveBeenCalledTimes(2);
+    const second = readRepertoireIndex(workspace)!;
+    expect(second.partial).toBe(false);
+    expect(second.partialReason).toBeNull();
+    expect(second.files[0].chapters).toHaveLength(2);
+});
+
+test("a chapter whose start position cannot be set up is left out alone", async () => {
+    games.Mixed = ['[FEN "8/8/8/8/8/8/8/8 w - - 0 1"]\n\n*', "1. e4 e5 *"];
+    serve([file("Mixed", "repertoire", 2)]);
+
+    await refreshRepertoireIndex(workspace);
+    const snapshot = readRepertoireIndex(workspace)!;
+    expect(snapshot.partial).toBe(true);
+    expect(snapshot.partialReason).toBe("read-failed");
+    expect(snapshot.files[0].partial).toBe(true);
+    expect(snapshot.files[0].chapters.map((chapter) => chapter.chapter)).toEqual([1]);
+    expect(snapshot.files[0].chapters[0].nodes.map((node) => node.san)).toEqual([null, "e4", "e5"]);
+});
+
+test("a failed workspace listing is reported with listing-failed", async () => {
+    mocks.listFileWorkspace.mockRejectedValueOnce(new Error("disk offline"));
+    await refreshRepertoireIndex(workspace);
+    const snapshot = readRepertoireIndex(workspace)!;
+    expect(snapshot.partial).toBe(true);
+    expect(snapshot.partialReason).toBe("listing-failed");
+    expect(snapshot.files).toEqual([]);
+});
+
+test("re-indexing an edited earlier file keeps the workspace listing order", async () => {
+    games.Alpha = ["1. e4 e5 *"];
+    games.Beta = ["1. d4 d5 *"];
+    serve([file("Alpha", "repertoire", 1), file("Beta", "repertoire", 1)]);
+    await refreshRepertoireIndex(workspace);
+    expect(readRepertoireIndex(workspace)!.files.map((entry) => entry.file.name)).toEqual([
+        "Alpha",
+        "Beta",
+    ]);
+
+    games.Alpha = ["1. e4 c5 *"];
+    revisions.Alpha = "r2";
+    await refreshRepertoireIndex(workspace);
+    expect(readRepertoireIndex(workspace)!.files.map((entry) => entry.file.name)).toEqual([
+        "Alpha",
+        "Beta",
+    ]);
+});
+
+test("parent pointers stay accurate across variations in a chapter", async () => {
+    games.Branching = ["1. e4 (1. d4 d5) 1... e5 2. Nf3 *"];
+    serve([file("Branching", "repertoire", 1)]);
+    await refreshRepertoireIndex(workspace);
+    const nodes = readRepertoireIndex(workspace)!.files[0].chapters[0].nodes;
+    expect(
+        nodes.map((node) => ({
+            parent: node.parent,
+            san: node.san,
+            path: node.path,
+        })),
+    ).toEqual([
+        { parent: -1, san: null, path: [] },
+        { parent: 0, san: "e4", path: [0] },
+        { parent: 1, san: "e5", path: [0, 0] },
+        { parent: 2, san: "Nf3", path: [0, 0, 0] },
+        { parent: 0, san: "d4", path: [1] },
+        { parent: 4, san: "d5", path: [1, 0] },
+    ]);
+});
+
+test("countPgnGames rejection makes the file partial, and its count overrides listing gameCount", async () => {
+    games.Counted = ["1. e4 e5 *", "1. d4 d5 *"];
+    serve([file("Counted", "repertoire", 1)]);
+
+    // Rejected countPgnGames -> partial with read-failed.
+    mocks.countPgnGames.mockRejectedValueOnce(new Error("cannot count"));
+    await refreshRepertoireIndex(workspace);
+    const failed = readRepertoireIndex(workspace)!;
+    expect(failed.partial).toBe(true);
+    expect(failed.partialReason).toBe("read-failed");
+    expect(failed.files[0].partial).toBe(true);
+    expect(failed.files[0].chapters).toHaveLength(0);
+
+    // countPgnGames returns 2 while listing reported gameCount 1 -> numGames and chapters read are 2.
+    await refreshRepertoireIndex(workspace);
+    const counted = readRepertoireIndex(workspace)!;
+    expect(counted.partial).toBe(false);
+    expect(counted.partialReason).toBeNull();
+    expect(counted.files[0].file.numGames).toBe(2);
+    expect(counted.files[0].chapters.map((chapter) => chapter.chapter)).toEqual([0, 1]);
 });

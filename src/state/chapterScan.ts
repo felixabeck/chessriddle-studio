@@ -7,6 +7,10 @@ export type ChapterPosition = {
     hasContinuation: boolean;
     /** Space-separated SAN moves from the chapter root to this node (empty at root). */
     moveOrder: string;
+    /** Half-move count of this node, anchored to the chapter's root FEN. */
+    halfMoves: number;
+    /** Move played to reach this node, or `null` at the root. */
+    san: string | null;
 };
 
 export type ChapterScanResult = {
@@ -44,6 +48,8 @@ export async function scanChapterPositions(
             path: position,
             hasContinuation: node.children.length > 0,
             moveOrder: sans.join(" "),
+            halfMoves: node.halfMoves,
+            san: node.san,
         });
         if (shouldContinue === false) break;
     }

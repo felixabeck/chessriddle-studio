@@ -2,6 +2,7 @@ import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
 import type { DatabaseHandle, PositionStats, PositionStatsFilter } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { searchPosition } from "./db";
+import { dateOrderKey } from "./pgnDate";
 import type { Position } from "./practicePosition";
 import { validWeight } from "./practicePosition";
 import { isInPracticeScope, isUserToMove } from "./practiceScope";
@@ -64,6 +65,43 @@ function positionMovesFromStats(openings: PositionStats[]) {
     const gamesEndingHere = summary ? summary.white + summary.draw + summary.black : 0;
     const gamesContinuing = moves.reduce((acc, m) => acc + m.white + m.draw + m.black, 0);
     return { moves, total: gamesEndingHere + gamesContinuing };
+}
+
+/**
+ * Merges `PositionStats` rows across multiple sources by move SAN: counts (`white`, `draw`,
+ * `black`, `unknown`) and `year_counts` are summed and the later `last_played` wins.
+ */
+export function mergePositionStats(
+    lists: Iterable<readonly PositionStats[] | undefined>,
+): PositionStats[] {
+    const moves = new Map<string, PositionStats>();
+    for (const openings of lists) {
+        if (!openings) continue;
+        for (const row of openings) {
+            const merged = moves.get(row.move);
+            if (!merged) {
+                moves.set(row.move, {
+                    ...row,
+                    year_counts: row.year_counts.map((y) => ({ ...y })),
+                });
+                continue;
+            }
+            merged.white += row.white;
+            merged.draw += row.draw;
+            merged.black += row.black;
+            merged.unknown += row.unknown;
+            if (dateOrderKey(row.last_played) > dateOrderKey(merged.last_played)) {
+                merged.last_played = row.last_played;
+            }
+            for (const { year, count } of row.year_counts) {
+                const existing = merged.year_counts.find((entry) => entry.year === year);
+                if (existing) existing.count += count;
+                else merged.year_counts.push({ year, count });
+            }
+            merged.year_counts.sort((a, b) => a.year - b.year);
+        }
+    }
+    return [...moves.values()];
 }
 
 export type TreeStatisticsEntry = {

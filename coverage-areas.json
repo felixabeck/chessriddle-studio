@@ -134,6 +134,7 @@
         "src/utils/fileGameWrite.ts",
         "src/utils/lineTitle.ts",
         "src/utils/openFile.ts",
+        "src/utils/opponentPreparation.ts",
         "src/utils/practicePosition.ts",
         "src/utils/practiceScope.ts",
         "src/utils/workspaceListing.ts"
