@@ -29093,3 +29093,21 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Repair owner:** 1cbb3816-c416-4240-a270-56676003661f on tuxedo-felix, 2026-11-24T22:03:56Z
 * **Handled (2026-11-24, drain 1cbb3816):** cause was d831646e5 adding the Handbuch (Guide) entry to `buildInAppMenuItems` without re-recording `e2e/async-errors.spec.ts-snapshots/compact-menu-root-async-errors.png`; the CI diff was that row alone. Reproduced red in the Playwright container, re-recorded only that snapshot with `pnpm test:e2e:update -- --project=async-errors --grep "compact title-bar: mouse actions"`, then the whole `async-errors` project passed in the container (58/58). Commit d11959f6c. review-correctness and review-root-cause approved; no other committed snapshot shows this menu open. Rejected: loosening the screenshot threshold, which would hide real menu regressions.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"aa689326ef642e68bfe42108cd05d6228dcf8f447ce09423a6bc2d607ca8ede3","header_sha256":"00a3e3f7c07c96d56305f2724f61fd49f375c3641ad275d4a54cce00efb3c2f3","header_status":"handled","input_sha256":"75914521b36d0f98b8d6ce69f5413d776945ede6434a8ca21c8c3754983574f7","kind":"mutation-receipt","operation":"78d3a9cfbde2ccdf0b89c80347182821714d075481d1fcf0c39c76681d1238b5","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-19"],"target":"f-20261124-19","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The backend mutation runner test reads the shim's fence-present-at-spawn marker before the shim writes it
+
+* **ID:** f-20261125-01 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 7d5901c2-a5aa-44ea-bbdf-5e629a484643
+* **Impact class:** tooling
+* **CI run:** 45504551677
+* **Repair owner:** 7d5901c2-a5aa-44ea-bbdf-5e629a484643 on tuxedo-atlas, 2026-11-24T23:08Z
+* **Where:** `scripts/run-backend-mutation-tests.mjs` test `a normal clean run holds the fence for the run and removes it afterwards` (~:411-416), and the cargo shim in `fixture()` (~:133-142).
+* **Defect:** the shim writes `started` first, then `arguments`, `core-suppression` and only then `fence-present-at-spawn`. The test waits for `started` and then reads `fence-present-at-spawn` with a bare `readFile`, so a slow shim loses the race.
+* **Failure scenario (observed):** Test run 45504551677 on `340bcc0e1` (2026-11-24), job `frontend`: `ENOENT: no such file or directory, open '/tmp/backend-mutation-runner-4U7iWX/shim-state/fence-present-at-spawn'`. The pushed range changed only an oauth.rs test and the ledger. The previous run 45501578338 on `7218abfa8` was green. `pnpm ci:remote:check` refuses code pushes while it stays red.
+* **Proof:** wait for the marker (`waitFor`) instead of reading it once, or have the shim write `started` last. Prove it by delaying the shim between `started` and the fence marker and seeing the old test go red and the fixed one go green.
+* **Related:** f-20261005-08 (handled; the same test raced the runner's fence write, fixed by waiting for the completed owner record).
+* **Found by:** Claude Code drain session 7d5901c2-a5aa-44ea-bbdf-5e629a484643, push of f-20261124-18, reading the job log of run 45504551677.
