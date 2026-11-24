@@ -28660,7 +28660,7 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 
 ### Analysis moves after the game end are dimmed to opacity 0.6, below 4.5:1 text contrast
 
-* **ID:** f-20261124-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261124-02 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** 87b44464-0f90-42fc-bf1c-b8c73059c79f
 * **Impact class:** ux
 * **Spotted outside diff:** review-root-cause round 2 of f-20261122-06 (drain, 2026-11-24).
@@ -28671,3 +28671,5 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 * **Open question:** which cue sets analysis apart from the played game once opacity cannot carry it alone?
 * **Proof:** computed from the variable values and opacity; not yet measured in the container. Related: f-20261122-06.
 * **Found by:** Claude Code, drain session, 2026-11-24.
+* **Handled 2026-11-24 (drain, adopted plan `tasks/plans/2026-11-24-analysis-move-contrast.md`, reviewed r1–r2 on agy):** `.cell[data-notation-analysis="true"]` no longer sets opacity; analysis moves render italic and an unannotated one takes `--mantine-color-dimmed` through `--notation-unannotated-move-color` (d-20261124-04). `e2e/game-end.spec.ts` now places an annotated analysis move (`Nf3?` after a `[%gameend]` on `e5`) and an unannotated one (`Nc6`, played on the board) on the main line and asserts, in light/dark × table/inline, an opacity chain of 1, italic vs normal, the dimmed colour, and `contrastRatio >= 4.5` for both and the played move. Proof: targeted container run 10 passed; red with the old CSS ("annotated analysis opacity chain"); full container suite 509 passed with no snapshot moved; vitest related 2130 passed; diff lenses correctness, root-cause, tests, code-quality APPROVED (one comment nit fixed, CR-1 closed). Commit `fc4740600`. Rejected: a smaller opacity, the inset block treatment, the dimmed colour alone (see d-20261124-04).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d387b1bb964326feecedbfffcd2d21f6621874ab440bcd257ef2d4e7553a4f0f","header_sha256":"8a3a8f193d794717f8b7729a7ec14ae225a53d95663c78b3432dbbe7bc4920e5","header_status":"handled","input_sha256":"3c0204e6aad18b04fda2b34577337107d5ce5fefb7a9f3f41ab44511df69c94c","kind":"mutation-receipt","operation":"1d9221e662e4b62763c40afc260f29316c94dda51e68be71189b52acd57a3669","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-02"],"target":"f-20261124-02","v":1} -->
