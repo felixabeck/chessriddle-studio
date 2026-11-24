@@ -392,6 +392,105 @@ test("the memoized map is keyed by the whole start path, not its concatenated di
     }
 });
 
+test("getMemoizedBoardStateMap keeps whole-tree and start-path maps for one root without evicting each other", () => {
+    const root = defaultTree().root;
+    root.children.push(child("after-e4 b KQkq - 0 1", 1));
+    const build = vi.spyOn(boardStateMapBuilder, "build");
+    try {
+        const whole = getMemoizedBoardStateMap(root);
+        const start = getMemoizedBoardStateMap(root, [0]);
+
+        expect(whole).not.toBe(start);
+        expect(getMemoizedBoardStateMap(root)).toBe(whole);
+        expect(getMemoizedBoardStateMap(root, [0])).toBe(start);
+        expect(getMemoizedBoardStateMap(root)).toBe(whole);
+        expect(build.mock.calls.map(([, startPath]) => startPath)).toEqual([[], [0]]);
+    } finally {
+        build.mockRestore();
+    }
+});
+
+test("getMemoizedBoardStateMap evicts the least recently used start-path map after a third start path", () => {
+    const root = defaultTree().root;
+    root.children.push(child("after-e4 b KQkq - 0 1", 1), child("after-d4 b KQkq - 0 1", 1));
+    const build = vi.spyOn(boardStateMapBuilder, "build");
+    try {
+        const whole = getMemoizedBoardStateMap(root);
+        const zero = getMemoizedBoardStateMap(root, [0]);
+        expect(getMemoizedBoardStateMap(root)).toBe(whole); // Refreshes `[]`; `[0]` is LRU.
+
+        const one = getMemoizedBoardStateMap(root, [1]);
+        expect(getMemoizedBoardStateMap(root)).toBe(whole);
+        expect(getMemoizedBoardStateMap(root, [1])).toBe(one);
+
+        const rebuiltZero = getMemoizedBoardStateMap(root, [0]);
+        expect(rebuiltZero).not.toBe(zero);
+        expect(build.mock.calls.map(([, startPath]) => startPath)).toEqual([[], [0], [1], [0]]);
+    } finally {
+        build.mockRestore();
+    }
+});
+
+test("per-node board-state cache invalidates when the same node object gets a new fen", () => {
+    const root = defaultTree().root;
+    const oldFen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+    const newFen = "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1";
+    const move = child(oldFen, 1);
+    root.children.push(move);
+
+    const oldKey = getBoardState(oldFen);
+    const newKey = getBoardState(newFen);
+    expect(getMemoizedBoardStateMap(root)[oldKey]?.map(({ path }) => path)).toEqual([[0]]);
+
+    move.fen = newFen;
+    const nextRoot: TreeNode = { ...root };
+    const updated = getMemoizedBoardStateMap(nextRoot);
+    expect(updated[oldKey]).toBeUndefined();
+    expect(updated[newKey]?.map(({ path }) => path)).toEqual([[0]]);
+});
+
+test("R1(b): per-node board-state cache keeps a 10,000-node post-edit map within the stripClock budget", () => {
+    const sampleFens = [
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2",
+        "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+        "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+    ];
+    const root = defaultTree().root;
+    let totalNodes = 1;
+    const queue: TreeNode[] = [root];
+    while (totalNodes < 10_000 && queue.length > 0) {
+        const parent = queue.shift()!;
+        for (let i = 0; i < 3 && totalNodes < 10_000; i++) {
+            const node = child(
+                sampleFens[(totalNodes + i) % sampleFens.length],
+                parent.halfMoves + 1,
+            );
+            parent.children.push(node);
+            queue.push(node);
+            totalNodes++;
+        }
+    }
+
+    // Measured on 10,000 nodes after a single-node edit (budget: <= 2x BASE stripClock ~6.6 ms):
+    // without per-node cache: getBoardState = 81.30 ms vs stripClock = 6.60 ms (budget missed);
+    // with WeakMap<TreeNode, { fen, boardState }>: getBoardState = 4.30 ms vs stripClock = 4.44 ms.
+    getMemoizedBoardStateMap(root);
+    const editedRoot: TreeNode = {
+        ...root,
+        children: [{ ...root.children[0], comment: "edited" }, ...root.children.slice(1)],
+    };
+
+    const parse = vi.spyOn(chessops, "positionFromFen");
+    try {
+        const boardResult = getMemoizedBoardStateMap(editedRoot);
+        expect(Object.keys(boardResult).length).toBeGreaterThan(0);
+        expect(parse).toHaveBeenCalledTimes(2);
+    } finally {
+        parse.mockRestore();
+    }
+});
+
 test.each([
     { board: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR", rights: "HAha" },
     { board: "rkr5/8/8/8/8/8/8/RKR5", rights: "CAca" },

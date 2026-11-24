@@ -257,6 +257,11 @@ export default defineConfig({
             grep: /overflow-only/,
             use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
         },
+        {
+            name: "file-wide-transpositions",
+            testMatch: /file-wide-transpositions\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+        },
     ],
     webServer: {
         // Invoked through node_modules/.bin rather than `pnpm exec`, so the suite runs

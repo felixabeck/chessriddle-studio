@@ -92,6 +92,8 @@ const mocks = vi.hoisted(() => ({
   boardControls: undefined as { saveFile?: () => void } | undefined,
   addGameActivation: undefined as (() => void) | undefined,
   notationChapterSwitch: undefined as SwitchFileChapter | null | undefined,
+  requestFilePositionIndex: vi.fn(),
+  releaseFilePositionIndex: vi.fn(),
   realTabs: false,
   compactTabs: false,
   gameNameModal: undefined as
@@ -287,6 +289,11 @@ vi.mock("./GameNameModal", () => ({
   },
 }));
 vi.mock("./EditingCard", () => ({ default: () => null }));
+vi.mock("@/state/filePositionIndex", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/state/filePositionIndex")>()),
+  requestFilePositionIndex: (...args: unknown[]) => mocks.requestFilePositionIndex(...args),
+}));
+
 vi.mock("./EvalListener", () => ({ default: () => null }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -379,6 +386,11 @@ describe("BoardAnalysis", () => {
     mocks.gameNameModal = undefined;
     mocks.editingMode = false;
     mocks.notationChapterSwitch = undefined;
+    mocks.releaseFilePositionIndex.mockReset();
+    mocks.requestFilePositionIndex.mockReset().mockImplementation(() => ({
+      release: mocks.releaseFilePositionIndex,
+      finished: Promise.resolve("built" as const),
+    }));
     mocks.realTabs = false;
     mocks.compactTabs = false;
     sessionStorage.clear();
@@ -3392,5 +3404,144 @@ describe("BoardAnalysis", () => {
       closeTreeStore(otherId);
       removeFileFreshness(otherId);
     }
+  });
+});
+
+describe("BoardAnalysis file position index sync", () => {
+  const tabId = "44444444-4444-4444-8444-444444444444";
+  const fileHandle = { id: { id: "index-file-1" }, kind: "fileWorkspace" } as const;
+  const secondHandle = { id: { id: "index-file-2" }, kind: "fileWorkspace" } as const;
+  const makeFileTab = (
+    handle: typeof fileHandle | typeof secondHandle,
+    name = "repertoire.pgn",
+  ): Tab => ({
+    name: "Chapter 1",
+    value: tabId,
+    type: "analysis",
+    gameOrigin: {
+      kind: "file",
+      gameNumber: 0,
+      file: {
+        type: "file",
+        handle,
+        name,
+        numGames: 2,
+        metadata: { type: "repertoire", tags: [] },
+        lastModified: 1,
+      },
+    },
+  });
+
+  let container: HTMLDivElement;
+  let root: Root;
+  let jotaiStore: ReturnType<typeof createJotaiStore>;
+  let treeStore: TreeStore;
+
+  beforeEach(async () => {
+    mocks.releaseFilePositionIndex.mockReset();
+    mocks.requestFilePositionIndex.mockReset().mockImplementation(() => ({
+      release: mocks.releaseFilePositionIndex,
+      finished: Promise.resolve("built" as const),
+    }));
+    sessionStorage.clear();
+    localStorage.clear();
+    removeFileFreshness(tabId);
+    jotaiStore = createJotaiStore();
+    jotaiStore.set(tabsAtom, [makeFileTab(fileHandle)], tabId);
+    jotaiStore.set(activeTabAtom, tabId);
+    jotaiStore.set(autoSaveAtom, false);
+    treeStore = createTreeStore(tabId, defaultTree());
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    tabStorage.flush();
+    closeTreeStore(tabId);
+    removeFileFreshness(tabId);
+  });
+
+  const renderBoard = async () => {
+    await act(async () => {
+      root.render(
+        <JotaiProvider store={jotaiStore}>
+          <WorkspaceTabScope tabId={tabId}>
+            <TreeStateContext.Provider value={treeStore}>
+              <BoardAnalysis />
+            </TreeStateContext.Provider>
+          </WorkspaceTabScope>
+        </JotaiProvider>,
+      );
+    });
+  };
+
+  test("does not request while verifiedRevision is null, then requests once verified", async () => {
+    await renderBoard();
+    expect(mocks.requestFilePositionIndex).not.toHaveBeenCalled();
+
+    await act(async () => {
+      setFileFreshness(tabId, "verified", { verifiedRevision: "rev-1" });
+    });
+    expect(mocks.requestFilePositionIndex).toHaveBeenCalledTimes(1);
+    expect(mocks.requestFilePositionIndex).toHaveBeenCalledWith(
+      expect.objectContaining({ handle: fileHandle, name: "repertoire.pgn" }),
+      "rev-1",
+    );
+    expect(mocks.releaseFilePositionIndex).not.toHaveBeenCalled();
+  });
+
+  test("releases on revision change, leaving the file, and unmount", async () => {
+    const releases: ReturnType<typeof vi.fn>[] = [];
+    mocks.requestFilePositionIndex.mockImplementation(() => {
+      const release = vi.fn();
+      releases.push(release);
+      return { release, finished: Promise.resolve("built" as const) };
+    });
+    setFileFreshness(tabId, "verified", { verifiedRevision: "rev-1" });
+    await renderBoard();
+    expect(mocks.requestFilePositionIndex).toHaveBeenCalledTimes(1);
+
+    // Revision becomes unverified (null): releases rev-1 and issues no new request.
+    await act(async () => {
+      setFileFreshness(tabId, "unverified");
+    });
+    expect(releases[0]).toHaveBeenCalledTimes(1);
+    expect(mocks.requestFilePositionIndex).toHaveBeenCalledTimes(1);
+
+    // Verified at rev-2: requests rev-2 once.
+    await act(async () => {
+      setFileFreshness(tabId, "verified", { verifiedRevision: "rev-2" });
+    });
+    expect(mocks.requestFilePositionIndex).toHaveBeenCalledTimes(2);
+    expect(mocks.requestFilePositionIndex).toHaveBeenLastCalledWith(
+      expect.objectContaining({ handle: fileHandle }),
+      "rev-2",
+    );
+    expect(releases[1]).not.toHaveBeenCalled();
+
+    // Leaving the file (switching to a non-file origin) releases rev-2.
+    await act(async () => {
+      jotaiStore.set(
+        tabsAtom,
+        [{ name: "Scratch", value: tabId, type: "analysis", gameOrigin: { kind: "none" } }],
+        tabId,
+      );
+    });
+    expect(releases[1]).toHaveBeenCalledTimes(1);
+
+    // Re-attaching a second file requests that file, and unmount releases it.
+    await act(async () => {
+      jotaiStore.set(tabsAtom, [makeFileTab(secondHandle, "second.pgn")], tabId);
+    });
+    expect(mocks.requestFilePositionIndex).toHaveBeenCalledTimes(3);
+    expect(mocks.requestFilePositionIndex).toHaveBeenLastCalledWith(
+      expect.objectContaining({ handle: secondHandle, name: "second.pgn" }),
+      "rev-2",
+    );
+    await act(async () => root.unmount());
+    expect(releases[2]).toHaveBeenCalledTimes(1);
   });
 });

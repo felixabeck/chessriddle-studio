@@ -444,7 +444,11 @@ for (const { count, linked } of [
             calls.filter(({ command }) => command === "issue_pgn_export_destination"),
         ).toHaveLength(1);
         expect(calls.filter(({ command }) => command === "issue_pgn_workspace")).toHaveLength(0);
-        expect(calls.filter(({ command }) => command === "count_pgn_games")).toMatchObject([
+        const firstWriteIndex = calls.findIndex(({ command }) => command === "write_game");
+        const countsBeforeWrite = (
+            firstWriteIndex === -1 ? calls : calls.slice(0, firstWriteIndex)
+        ).filter(({ command }) => command === "count_pgn_games");
+        expect(countsBeforeWrite).toMatchObject([
             { command: "count_pgn_games", args: { file: handle } },
         ]);
         const writes = calls.filter(({ command }) => command === "write_game");

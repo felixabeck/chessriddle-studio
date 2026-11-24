@@ -1004,7 +1004,3 @@ export function getMaterialDiff(fen: string) {
 
     return { pieces, whiteCaptured, blackCaptured, diff };
 }
-
-export function stripClock(fen: string): string {
-    return fen.split(" ").slice(0, -2).join(" ");
-}

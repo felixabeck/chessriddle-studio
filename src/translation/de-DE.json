@@ -1231,6 +1231,7 @@
     "Notation.TableView": "Zeige Tabelle",
     "Notation.ToggleVariation": "Variante umschalten",
     "Notation.Transposition": "Zugumstellung",
+    "Notation.TranspositionInChapter": "Zugumstellung in {{chapter}}",
     "Notation.TranspositionMissingInChapter": "Diese Stellung ist nicht mehr in diesem Kapitel.",
     "PgnInput.Comments": "Kommentare",
     "PgnInput.Editor": "PGN-Editor",

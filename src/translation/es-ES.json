@@ -1248,6 +1248,7 @@
     "Notation.TableView": "Vista de tabla",
     "Notation.ToggleVariation": "Alternar variante",
     "Notation.Transposition": "Transposición",
+    "Notation.TranspositionInChapter": "Transposición en {{chapter}}",
     "Notation.TranspositionMissingInChapter": "Esta posición ya no está en ese capítulo.",
     "PgnInput.Comments": "Comentarios",
     "PgnInput.Editor": "Editor PGN",

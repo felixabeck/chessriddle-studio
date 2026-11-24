@@ -401,3 +401,35 @@ finding ids and date.
 - **Finding filed on the way:** f-20261122-03 (a Lichess account added without login on the
   Accounts page can never download its games).
 - **Date:** 2026-11-22.
+
+## 2026-11-24 — Transposition markers span all chapters of a file up to a limit and switch chapter in the same tab
+
+- **Question:** When a move reaches a position that exists in another chapter of the same PGN
+  file, how should the notation mark it, which files should be indexed, and what should clicking
+  the marker do?
+- **Choice:**
+  - Every multi-chapter file up to a size limit is indexed per verified revision (`"All files up
+    to a limit"`), not repertoire files only. Files exceeding the chapter, byte, or position limit
+    are skipped silently, keeping in-chapter markers only.
+  - The marker keeps the Merge icon with no text in the notation or PGN. An in-chapter target
+    keeps the `Transposition` label; a target in another chapter names that chapter in its
+    accessible label (`Transposition in <chapter>`).
+  - Clicking a marker targeting another chapter switches the chapter in the same tab (`"Switch
+    chapter in same tab"`) and lands the cursor on the matching position; unsaved changes follow
+    the normal chapter-switch confirmation prompt.
+  - Occurrences reached by the same moves from the same starting position in another chapter are
+    not marked as transpositions, so shared opening moves across chapters stay unmarked.
+  - If the target chapter or position is gone when clicked (before the revision poll retires the
+    stale index), nothing is switched and an error notice tells the user that the position is no
+    longer in that chapter.
+- **Agent proposals Felix confirmed, not his wording:**
+  - Confirmed in Felix's handover on 2026-11-24: `"The three agent proposals (shared opening
+    moves are no transposition, the silent limit, the \"position is no longer in that chapter\"
+    notice) are confirmed unless struck here: none struck."`
+- **Ruled out:** Adding text markers in the notation or PGN. Limiting the check to repertoire files.
+  Opening the target chapter in a new tab instead of switching in the same tab. Marking shared
+  opening move orders as transpositions.
+- **Felix's reason:** For the icon-only presentation: `"The icon is fine. I don't need a text for
+  this."` For file scope and click behaviour: `"All files up to a limit"` and `"Switch chapter in
+  same tab"`. Builds on the in-chapter transposition precedent (`d-20261124-06`).
+- **Date:** 2026-11-24.

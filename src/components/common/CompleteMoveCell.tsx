@@ -2,26 +2,48 @@ import { useOwnerTab } from "@/state/tabScope";
 import { Box, Menu, Text } from "@mantine/core";
 import { Merge, ArrowUpRight, Copy, Flag, Grid2x2, Target, Trash2 } from "lucide-react";
 import equal from "fast-deep-equal";
-import { createContext, memo, useContext, useMemo, useState, type MouseEvent } from "react";
+import {
+  createContext,
+  memo,
+  useContext,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type MouseEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
+import { useFileChapterSwitch } from "@/components/boards/FileChapterSwitch";
 import { usePlayFromHere } from "@/components/boards/usePlayFromHere";
 import Comment from "@/components/common/Comment";
 import IconAction from "@/components/common/IconAction";
+import { useFileFreshness } from "@/state/fileFreshness";
+import {
+  getFileChapterOccurrences,
+  getFilePositionIndex,
+  subscribeFilePositionIndex,
+} from "@/state/filePositionIndex";
+import {
+  getMoveLine,
+  getTranspositionTarget,
+  type OpenChapterOccurrence,
+  type TranspositionTarget,
+} from "@/state/transpositionTarget";
 
 import type { Annotation } from "@/utils/annotation";
-import { stripClock } from "@/utils/chess";
 import { formatMoveNumber } from "@/utils/format";
-import { isPrefix } from "@/utils/misc";
-import { isRepertoireTab } from "@/utils/tabs";
-import { getEffectiveGameEnd, type TreeNode } from "@/utils/treeReducer";
+import { getTabFile, getTabGameNumber, isRepertoireTab } from "@/utils/tabs";
+import {
+  getBoardState,
+  getEffectiveGameEnd,
+  getMemoizedBoardStateMap,
+  type TreeNode,
+} from "@/utils/treeReducer";
 import type { NotationNodeIndex } from "./notationRows";
 import { pathForNotationNode } from "./notationRows";
 import MoveCell, { releasePointerFocus } from "./MoveCell";
 import { TreeStateContext } from "./TreeStateContext";
 import { MoveDeletionContext } from "./MoveDeletionContext";
 import classes from "./GameNotation.module.css";
-
-const transpositionCache = new WeakMap<TreeNode, Map<string, TreeNode[]>>();
 
 export type NotationMoveActions =
   | false
@@ -30,57 +52,6 @@ export type NotationMoveActions =
       delete: (path: number[]) => void;
     };
 export const NotationMoveActionsContext = createContext<NotationMoveActions | undefined>(undefined);
-
-function getTranspositionMap(root: TreeNode) {
-  const cached = transpositionCache.get(root);
-  if (cached) return cached;
-
-  const map = new Map<string, TreeNode[]>();
-  const stack: TreeNode[] = [root];
-  while (stack.length > 0) {
-    const node = stack.pop()!;
-    const strippedFen = stripClock(node.fen);
-    const matchingNodes = map.get(strippedFen);
-    if (matchingNodes) matchingNodes.push(node);
-    else map.set(strippedFen, [node]);
-    for (let index = node.children.length - 1; index >= 0; index -= 1) {
-      stack.push(node.children[index]);
-    }
-  }
-
-  transpositionCache.set(root, map);
-  return map;
-}
-
-/**
- * Where a move's transposition marker leads, or undefined when its position occurs nowhere else.
- * Every occurrence is marked, whichever line was entered first. The target is the first other
- * occurrence in tree order (main line first) that has a continuation, because that is where the
- * position was already analysed; when none continues, the first other occurrence. An occurrence on
- * the move's own line is a repetition, not a transposition, and is never a target.
- */
-function getTranspositionTarget(
-  fen: string,
-  node: TreeNode,
-  position: number[],
-  root: TreeNode,
-  index: NotationNodeIndex,
-): number[] | undefined {
-  if (position.length === 0) return undefined;
-
-  const matchingNodes = getTranspositionMap(root).get(stripClock(fen));
-  if (!matchingNodes || matchingNodes.length < 2) return undefined;
-
-  let firstOther: number[] | undefined;
-  for (const targetNode of matchingNodes) {
-    if (targetNode === node) continue;
-    const targetPath = pathForNotationNode(index, targetNode);
-    if (!targetPath || isPrefix(targetPath, position) || isPrefix(position, targetPath)) continue;
-    if (targetNode.children.length > 0) return targetPath;
-    firstOther ??= targetPath;
-  }
-  return firstOther;
-}
 
 type CompleteMoveCellProps = {
   halfMoves: number;
@@ -124,14 +95,52 @@ function CompleteMoveCell({
 }: CompleteMoveCellProps) {
   const store = useContext(TreeStateContext)!;
   const moveActions = useContext(NotationMoveActionsContext);
+  const [currentTab] = useOwnerTab();
+  const switchChapter = useFileChapterSwitch();
+  const tabFile =
+    switchChapter && currentTab?.type === "analysis" ? getTabFile(currentTab) : undefined;
+  const openChapter = tabFile ? getTabGameNumber(currentTab) : undefined;
+  const { verifiedRevision } = useFileFreshness(currentTab?.value ?? "");
+  const activeRevision = tabFile ? verifiedRevision : null;
+  const fileIndex = useSyncExternalStore(
+    subscribeFilePositionIndex,
+    () => (tabFile ? getFilePositionIndex(tabFile.handle, activeRevision) : null),
+    () => null,
+  );
   const state = store.getState();
   const path = useMemo(() => pathForNotationNode(nodeIndex, node) ?? [], [node, nodeIndex]);
   const isCurrentVariation = providedIsCurrentVariation ?? node === state.currentNode();
   const isStart = providedIsStart ?? equal(path, state.headers.start || []);
-  const transpositionTarget = useMemo(
-    () => getTranspositionTarget(fen, node, path, root, nodeIndex),
-    [fen, node, nodeIndex, path, root],
-  );
+  const boardState = useMemo(() => getBoardState(fen), [fen]);
+  const boardStateMap = useMemo(() => getMemoizedBoardStateMap(root), [root]);
+  const transpositionTarget = useMemo(() => {
+    if (path.length === 0) return undefined;
+    const rawOccurrences = Object.hasOwn(boardStateMap, boardState)
+      ? boardStateMap[boardState]
+      : undefined;
+    const openOccurrences: OpenChapterOccurrence[] = rawOccurrences
+      ? rawOccurrences.map((entry) => ({
+          path: entry.path,
+          hasContinuation: entry.node.children.length > 0,
+        }))
+      : [];
+    const fileOccurrences =
+      fileIndex && openChapter !== undefined
+        ? getFileChapterOccurrences(fileIndex, boardState, openChapter)
+        : [];
+    const moveLine =
+      fileOccurrences.length > 0 ? getMoveLine(root, path) : { rootKey: "", moveOrder: "" };
+    return getTranspositionTarget(
+      {
+        path,
+        rootKey: moveLine.rootKey,
+        moveOrder: moveLine.moveOrder,
+        chapter: openChapter,
+      },
+      openOccurrences,
+      fileOccurrences,
+    );
+  }, [boardState, boardStateMap, fileIndex, openChapter, path, root]);
   const [open, setOpen] = useState(false);
 
   const isWhite = halfMoves % 2 === 1;
@@ -226,8 +235,17 @@ function CompleteMoveCell({
         )}
         {transpositionTarget && (
           <TranspositionAction
+            target={transpositionTarget}
             onClick={() => {
-              if (store.getState().root === root) store.getState().goToMove(transpositionTarget);
+              if (store.getState().root !== root) return;
+              if (transpositionTarget.scope === "chapter") {
+                store.getState().goToMove(transpositionTarget.path);
+              } else {
+                void switchChapter?.(transpositionTarget.chapter, {
+                  path: transpositionTarget.path,
+                  boardState,
+                });
+              }
             }}
           />
         )}
@@ -239,11 +257,21 @@ function CompleteMoveCell({
   );
 }
 
-function TranspositionAction({ onClick }: { onClick: () => void }) {
+function TranspositionAction({
+  target,
+  onClick,
+}: {
+  target: TranspositionTarget;
+  onClick: () => void;
+}) {
   const { t } = useTranslation();
+  const label =
+    target.scope === "file"
+      ? t("Notation.TranspositionInChapter", { chapter: target.chapterName })
+      : t("Notation.Transposition", { defaultValue: "Transposition" });
   return (
     <IconAction
-      label={t("Notation.Transposition", { defaultValue: "Transposition" })}
+      label={label}
       size="xs"
       onClick={(event) => {
         releasePointerFocus(event);

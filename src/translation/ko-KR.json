@@ -1214,6 +1214,7 @@
     "Notation.TableView": "표 보기",
     "Notation.ToggleVariation": "변형 수순 전환",
     "Notation.Transposition": "전위",
+    "Notation.TranspositionInChapter": "{{chapter}}의 전위",
     "Notation.TranspositionMissingInChapter": "이 포지션은 더 이상 해당 챕터에 없습니다.",
     "PgnInput.Comments": "주석",
     "PgnInput.Editor": "PGN 편집기",

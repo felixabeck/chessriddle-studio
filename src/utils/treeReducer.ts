@@ -23,7 +23,12 @@ export interface TreeState {
 
 type BoardStateMap = Record<string, { node: TreeNode; path: number[] }[]>;
 
-const boardStateMapCache = new WeakMap<TreeNode, { startKey: string; map: BoardStateMap }>();
+// Keep both callers' maps (whole tree [] and chapter Start path) per root without evicting each other.
+const MAX_CACHED_START_PATHS_PER_ROOT = 2;
+const boardStateMapCache = new WeakMap<TreeNode, Map<string, BoardStateMap>>();
+// R1(b): uncached getBoardState parses castling/EP through chessops (~81 ms vs ~6.6 ms for
+// stripClock on a 10,000-node tree), so cache each node's key by object identity + FEN.
+const nodeBoardStateCache = new WeakMap<TreeNode, { fen: string; boardState: string }>();
 
 export const GAME_END_COMMAND = "gameend";
 export const GAME_END_PROSE = "Game ended here";
@@ -447,6 +452,14 @@ export function acceptsStartingComment(root: TreeNode, path: readonly number[]):
     return path[path.length - 1] > 0 || !!getNodeAtPath(root, [...path]).startingComment;
 }
 
+function getNodeBoardState(node: TreeNode): string {
+    const cached = nodeBoardStateCache.get(node);
+    if (cached && cached.fen === node.fen) return cached.boardState;
+    const boardState = getBoardState(node.fen);
+    nodeBoardStateCache.set(node, { fen: node.fen, boardState });
+    return boardState;
+}
+
 export function buildTranspositionMaps(root: TreeNode, startPath: number[] = []): BoardStateMap {
     const map: BoardStateMap = {};
     const startNode = getNodeAtPath(root, startPath);
@@ -459,7 +472,7 @@ export function buildTranspositionMaps(root: TreeNode, startPath: number[] = [])
     ];
     while (stack.length > 0) {
         const { node, path } = stack.pop()!;
-        const boardFen = getBoardState(node.fen);
+        const boardFen = getNodeBoardState(node);
         if (!map[boardFen]) map[boardFen] = [];
         map[boardFen].push({ node, path });
         for (let i = node.children.length - 1; i >= 0; i -= 1) {
@@ -478,14 +491,29 @@ export const boardStateMapBuilder = {
 /**
  * Lazily derives the repertoire map for the current root and start path. Roots are weakly keyed,
  * so an edited tree releases its old map when the old Immer tree is no longer referenced.
+ * Up to two start paths are retained per root so the notation (whole tree) and practice/Next-key
+ * callers (`headers.start`) do not evict each other.
  */
 export function getMemoizedBoardStateMap(root: TreeNode, startPath: number[] = []): BoardStateMap {
     const startKey = startPath.join(",");
-    const cached = boardStateMapCache.get(root);
-    if (cached?.startKey === startKey) return cached.map;
+    let byStart = boardStateMapCache.get(root);
+    const cached = byStart?.get(startKey);
+    if (cached) {
+        byStart!.delete(startKey);
+        byStart!.set(startKey, cached);
+        return cached;
+    }
 
     const map = boardStateMapBuilder.build(root, startPath);
-    boardStateMapCache.set(root, { startKey, map });
+    if (!byStart) {
+        byStart = new Map();
+        boardStateMapCache.set(root, byStart);
+    }
+    byStart.set(startKey, map);
+    if (byStart.size > MAX_CACHED_START_PATHS_PER_ROOT) {
+        const oldestKey = byStart.keys().next().value;
+        if (oldestKey !== undefined) byStart.delete(oldestKey);
+    }
     return map;
 }
 

@@ -1214,6 +1214,7 @@
     "Notation.TableView": "表格视图",
     "Notation.ToggleVariation": "切換變例",
     "Notation.Transposition": "轉置",
+    "Notation.TranspositionInChapter": "{{chapter}}中的轉置",
     "Notation.TranspositionMissingInChapter": "此局面已不在該章節中。",
     "PgnInput.Comments": "註解",
     "PgnInput.Editor": "PGN 編輯器",

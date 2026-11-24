@@ -1231,6 +1231,7 @@
     "Notation.TableView": "Tablo görünümü",
     "Notation.ToggleVariation": "Varyasyonu aç/kapat",
     "Notation.Transposition": "Transpozisyon",
+    "Notation.TranspositionInChapter": "{{chapter}} bölümünde transpozisyon",
     "Notation.TranspositionMissingInChapter": "Bu konum artık o bölümde yok.",
     "PgnInput.Comments": "Yorumlar",
     "PgnInput.Editor": "PGN düzenleyicisi",

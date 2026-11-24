@@ -38,8 +38,9 @@ fields were compared. Every incident below survived review at the time.
   `fen.split(" - ")[0]`, which breaks the moment castling rights are non-empty and ignores the
   en-passant square. The fix introduced `getBoardState = fen.split(" ").slice(0, 4).join(" ")`
   (`src/utils/treeReducer.ts:212`). `242d01df` — the 50-move rule walked the tree instead of reading
-  the halfmove clock out of the FEN. `8f85fef3` caches transpositions under a third key,
-  `stripClock(fen)` (`src/utils/chess.ts:687`).
+  the halfmove clock out of the FEN. `8f85fef3` cached transpositions under a third key,
+  `stripClock(fen)` (`src/utils/chess.ts:687`), which was removed on 2026-11-24 when the
+  transposition marker moved to `getBoardState`.
 * **A path outliving the tree it indexed.** `0de7cc43` —
   `while (!promoteVariation(state, path)) {}` never refreshed `path` from `state.position` and
   looped forever (issue #496). `a59b561c` — `deleteMove` only corrected `state.position` when the
@@ -61,15 +62,15 @@ fields were compared. Every incident below survived review at the time.
 
 Note that `7ff0646f` and `d250925f` *re-fix* the first two classes rather than closing them.
 
-## Three helpers, three questions
+## Two helpers, three questions
 
-`getBoardState` (first four FEN fields), `stripClock`, and the full FEN answer different questions.
-Pick by what is being asked, and never introduce a fourth truncation:
+`getBoardState` (first four FEN fields) and the full FEN answer these questions. Pick by what is
+being asked, and never introduce another truncation:
 
 | Question | Key |
 | --- | --- |
 | Is this the same position for repetition or repertoire coverage? | `getBoardState(fen)` |
-| Is this the same node for a transposition cache? | `stripClock(fen)` |
+| Is this the same node for a transposition cache? | `getBoardState(fen)` |
 | Can the 50-move rule fire? | the halfmove field of the FEN, read directly |
 
 Two different truncations coexisting in one flow is a defect even if both are individually

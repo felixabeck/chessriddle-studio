@@ -4,16 +4,31 @@ import { act, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useStore } from "zustand";
+import type { SwitchFileChapter } from "@/components/boards/FileChapterSwitch";
+import { removeFileFreshness, setFileFreshness } from "@/state/fileFreshness";
+import {
+  requestFilePositionIndex,
+  resetFilePositionIndexForTests,
+} from "@/state/filePositionIndex";
 import { createTreeStore } from "@/state/store/tree";
-import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
+import { lex } from "@/state/tests/lexPgn";
+import type { Tab } from "@/state/workspaceTypes";
+import { createNode, defaultTree, getBoardState, type TreeNode } from "@/utils/treeReducer";
 import { TreeStateContext } from "./TreeStateContext";
 import { createNotationNodeIndex, type NotationNodeIndex } from "./notationRows";
 
-const { currentTabAtom, moveCell, tab, playFromHere } = vi.hoisted(() => ({
+const { currentTabAtom, moveCell, tab, playFromHere, mocks } = vi.hoisted(() => ({
   currentTabAtom: Symbol("current-tab"),
   moveCell: { useReal: false },
   tab: { value: "tab", type: undefined as string | undefined },
   playFromHere: vi.fn(),
+  mocks: {
+    tabs: null as unknown[] | null,
+    switchChapter: null as SwitchFileChapter | null,
+    countPgnGames: vi.fn(),
+    readGames: vi.fn(),
+    lexPgn: vi.fn(),
+  },
 }));
 
 vi.mock("@/state/atoms", () => ({
@@ -22,18 +37,45 @@ vi.mock("@/state/atoms", () => ({
   showCommentsFamily: Object.assign((id: string) => `comments:${id}`, { remove: () => {} }),
   moveNotationTypeAtom: "type",
 }));
-vi.mock("jotai", () => ({
-  useAtomValue: () => [tab],
+vi.mock("jotai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("jotai")>()),
+  useAtomValue: () => mocks.tabs ?? [tab],
   useSetAtom: () => vi.fn(),
   useAtom: (atom: unknown) => [atom === "type" ? "letters" : true],
 }));
 vi.mock("@/components/boards/usePlayFromHere", () => ({
   usePlayFromHere: () => playFromHere,
 }));
-vi.mock("@/utils/tabs", () => ({
+vi.mock("@/utils/tabs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/tabs")>()),
   isRepertoireTab: (tab: unknown) => !!tab,
 }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("@/components/boards/FileChapterSwitch", () => ({
+  useFileChapterSwitch: () => mocks.switchChapter,
+}));
+vi.mock("@/platform/tauri", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/platform/tauri")>();
+  return {
+    ...actual,
+    tauri: {
+      ...actual.tauri,
+      countPgnGames: mocks.countPgnGames,
+      readGames: mocks.readGames,
+      lexPgn: mocks.lexPgn,
+    },
+  };
+});
+vi.mock("@/platform/native", () => ({
+  platform: () => "linux",
+  warn: vi.fn().mockResolvedValue(undefined),
+  error: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { chapter?: string }) =>
+      options?.chapter === undefined ? key : `${key}(${options.chapter})`,
+  }),
+}));
 vi.mock("lucide-react", () => {
   const Icon = () => null;
   return {
@@ -153,6 +195,13 @@ beforeEach(() => {
   moveCell.useReal = false;
   tab.type = undefined;
   playFromHere.mockReset();
+  mocks.tabs = null;
+  mocks.switchChapter = null;
+  mocks.countPgnGames.mockReset();
+  mocks.readGames.mockReset();
+  mocks.lexPgn.mockReset().mockImplementation(async (pgn: string) => lex(pgn));
+  resetFilePositionIndexForTests();
+  removeFileFreshness("tab");
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -161,6 +210,8 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  resetFilePositionIndexForTests();
+  removeFileFreshness("tab");
 });
 
 test("renders the starting comment before the move and updates it without changing the node", async () => {
@@ -1106,4 +1157,485 @@ test("the open-variation mark follows its flag on an unchanged node, also under 
 
   await render(false);
   expect(marked()).toBeNull();
+});
+
+test("O0: matches four-field and Shredder-castling spellings with standard FENs in the open chapter", async () => {
+  for (const [variantFen, standardFen] of [
+    [
+      "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+      "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+    ],
+    [
+      "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b HAha - 0 1",
+      "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 4 3",
+    ],
+  ] as const) {
+    const tree = defaultTree(variantFen);
+    const branchA = createNode({
+      fen: variantFen,
+      move: parseUci("e2e4")!,
+      san: "e4",
+      halfMoves: 1,
+    });
+    const branchB = createNode({
+      fen: standardFen,
+      move: parseUci("d2d4")!,
+      san: "d4",
+      halfMoves: 1,
+    });
+    tree.root.children = [branchA, branchB];
+    const store = createTreeStore();
+    store.setState({ ...store.getState(), root: tree.root });
+
+    const { getMemoizedBoardStateMap } = await import("@/utils/treeReducer");
+    const key = getBoardState(standardFen);
+    expect(getMemoizedBoardStateMap(tree.root)[key].map(({ path }) => path)).toEqual([
+      [],
+      [0],
+      [1],
+    ]);
+
+    await act(async () => {
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="tab">
+            <CompleteMoveCell
+              node={branchA}
+              nodeIndex={createNotationNodeIndex(tree.root)}
+              root={tree.root}
+              halfMoves={branchA.halfMoves}
+              move={branchA.san}
+              fen={branchA.fen}
+              comment=""
+              annotations={[]}
+              showComments={false}
+            />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      );
+    });
+
+    const marker = host.querySelector<HTMLButtonElement>('[aria-label="Notation.Transposition"]');
+    expect(marker).not.toBeNull();
+    await act(async () => {
+      marker!.click();
+    });
+    expect(store.getState().position).toEqual([1]);
+  }
+});
+
+test("O3: file-wide transposition label, switch call, revision guard, and non-file/no-switcher fallback", async () => {
+  const fileHandle = { id: { id: "repertoire-file" }, kind: "fileWorkspace" } as const;
+  const fileTab: Tab = {
+    value: "tab",
+    name: "Chapter 2",
+    type: "analysis",
+    gameOrigin: {
+      kind: "file",
+      gameNumber: 1,
+      file: {
+        type: "file",
+        handle: fileHandle,
+        name: "openings.pgn",
+        numGames: 2,
+        metadata: { type: "repertoire", tags: [] },
+        lastModified: 1,
+      },
+    },
+  };
+  const ch0 = '[White "Italian Base"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 *';
+  // Chapter 1 on disk also holds the side line `2... c5 3. Nc3 Nc6`; its indexed occurrences must be
+  // ignored while chapter 1 is the open chapter (the open tree is the sole authority for its own
+  // chapter).
+  const ch1 = '[White "Transposing Order"]\n\n1. Nf3 Nc6 2. e4 e5 (2... c5 3. Nc3 Nc6) *';
+  mocks.countPgnGames.mockResolvedValue(2);
+  mocks.readGames.mockResolvedValue([
+    { pgn: ch0, stamp: "s0", revision: "rev-1", present: true, omission: null, linked: null },
+    { pgn: ch1, stamp: "s1", revision: "rev-1", present: true, omission: null, linked: null },
+  ]);
+
+  const { finished } = requestFilePositionIndex(
+    fileTab.gameOrigin.kind === "file" ? fileTab.gameOrigin.file : (undefined as never),
+    "rev-1",
+  );
+  expect(await finished).toBe("built");
+
+  const store = createTreeStore();
+  const parsedCh1 = await (await import("@/utils/chess")).parsePGN(ch1);
+  // Add an in-chapter transposition at another variation to test plain label precedence too.
+  const altFirst = createNode({
+    fen: "alt-only b - - 0 1",
+    move: parseUci("d2d4")!,
+    san: "d4",
+    halfMoves: 1,
+  });
+  const sharedOpen = createNode({
+    fen: "open-only w - - 0 1",
+    move: parseUci("d7d5")!,
+    san: "d5",
+    halfMoves: 2,
+  });
+  const duplicateOpen = createNode({
+    fen: "open-only w - - 0 1",
+    move: parseUci("c2c4")!,
+    san: "c4",
+    halfMoves: 1,
+  });
+  altFirst.children = [sharedOpen];
+  parsedCh1.root.children.push(altFirst, duplicateOpen);
+  store.setState({ ...store.getState(), root: parsedCh1.root });
+
+  const targetMove = store.getState().getNode([0, 0, 0, 0])!; // 2...e5 reaching 1.e4 e5 2.Nf3 Nc6
+  const nodeIndex = createNotationNodeIndex(parsedCh1.root);
+  const switchChapter = vi.fn().mockResolvedValue(undefined);
+  mocks.tabs = [fileTab];
+  mocks.switchChapter = switchChapter;
+  setFileFreshness("tab", "verified", { verifiedRevision: "rev-1" });
+
+  const renderMove = async (node: TreeNode) => {
+    await act(async () => {
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="tab">
+            <CompleteMoveCell
+              node={node}
+              nodeIndex={nodeIndex}
+              root={parsedCh1.root}
+              halfMoves={node.halfMoves}
+              move={node.san}
+              fen={node.fen}
+              comment=""
+              annotations={[]}
+              showComments={false}
+            />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      );
+    });
+  };
+
+  // 1. Verified file-backed analysis tab with switcher: names the other chapter and switches on click.
+  await renderMove(targetMove);
+  const fileMarker = host.querySelector<HTMLButtonElement>(
+    '[aria-label="Notation.TranspositionInChapter(Italian Base)"]',
+  );
+  expect(fileMarker).not.toBeNull();
+  await act(async () => {
+    fileMarker!.click();
+  });
+  expect(switchChapter).toHaveBeenCalledTimes(1);
+  expect(switchChapter).toHaveBeenCalledWith(0, {
+    path: [0, 0, 0, 0],
+    boardState: getBoardState(targetMove.fen),
+  });
+
+  // 2. Open-chapter target keeps the plain label, and same-chapter index entries are excluded.
+  await renderMove(duplicateOpen);
+  expect(host.querySelector('[aria-label="Notation.Transposition"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label^="Notation.TranspositionInChapter"]')).toBeNull();
+
+  // Open tree edited to have 1. d4 without the indexed `c5/Nc3` variation: chapter 1 in index is excluded.
+  const openOnlyD4 = createNode({
+    fen: store.getState().getNode([0, 0, 0, 1, 0])!.fen,
+    move: parseUci("d2d4")!,
+    san: "d4",
+    halfMoves: 1,
+  });
+  const prunedRoot = { ...parsedCh1.root, children: [openOnlyD4] };
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="tab">
+          <CompleteMoveCell
+            node={openOnlyD4}
+            nodeIndex={createNotationNodeIndex(prunedRoot)}
+            root={prunedRoot}
+            halfMoves={openOnlyD4.halfMoves}
+            move={openOnlyD4.san}
+            fen={openOnlyD4.fen}
+            comment=""
+            annotations={[]}
+            showComments={false}
+          />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+  expect(host.querySelector('[aria-label^="Notation.Transposition"]')).toBeNull();
+
+  // 3. Revision null hides the file-wide marker.
+  await renderMove(targetMove);
+  expect(
+    host.querySelector('[aria-label="Notation.TranspositionInChapter(Italian Base)"]'),
+  ).not.toBeNull();
+  await act(async () => {
+    setFileFreshness("tab", "unverified");
+  });
+  expect(host.querySelector('[aria-label^="Notation.Transposition"]')).toBeNull();
+
+  // 4. Mismatched verifiedRevision hides the file-wide marker.
+  await act(async () => {
+    setFileFreshness("tab", "verified", { verifiedRevision: "rev-2" });
+  });
+  expect(host.querySelector('[aria-label^="Notation.Transposition"]')).toBeNull();
+
+  // 5. Restoring rev-1 brings it back, and removing switcher or leaving file-backed tab hides it.
+  await act(async () => {
+    setFileFreshness("tab", "verified", { verifiedRevision: "rev-1" });
+  });
+  expect(
+    host.querySelector('[aria-label="Notation.TranspositionInChapter(Italian Base)"]'),
+  ).not.toBeNull();
+
+  // Remount with a fresh cell root when changing mocked non-reactive provider values.
+  const remountMove = async (node: TreeNode) => {
+    await act(async () => {
+      root.render(null);
+    });
+    await renderMove(node);
+  };
+
+  mocks.switchChapter = null;
+  await remountMove(targetMove);
+  expect(host.querySelector('[aria-label^="Notation.Transposition"]')).toBeNull();
+
+  mocks.switchChapter = switchChapter;
+  mocks.tabs = [{ value: "tab", name: "Play", type: "play", gameOrigin: { kind: "none" } }];
+  await remountMove(targetMove);
+  expect(host.querySelector('[aria-label^="Notation.Transposition"]')).toBeNull();
+});
+
+test("O3: shared opening moves across chapters stay unmarked while different move orders mark, and stale-root clicks do not switch", async () => {
+  const fileHandle = { id: { id: "shared-opening-file" }, kind: "fileWorkspace" } as const;
+  const fileTab: Tab = {
+    value: "tab",
+    name: "Shared vs Detour",
+    type: "analysis",
+    gameOrigin: {
+      kind: "file",
+      gameNumber: 1,
+      file: {
+        type: "file",
+        handle: fileHandle,
+        name: "shared.pgn",
+        numGames: 2,
+        metadata: { type: "repertoire", tags: [] },
+        lastModified: 1,
+      },
+    },
+  };
+  const ch0 = '[White "Italian Base"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 *';
+  const ch1 = '[White "Main Plus Detour"]\n\n1. e4 e5 2. Nf3 Nc6 *';
+  mocks.countPgnGames.mockResolvedValue(2);
+  mocks.readGames.mockResolvedValue([
+    { pgn: ch0, stamp: "s0", revision: "rev-shared", present: true, omission: null, linked: null },
+    { pgn: ch1, stamp: "s1", revision: "rev-shared", present: true, omission: null, linked: null },
+  ]);
+
+  const { finished } = requestFilePositionIndex(
+    fileTab.gameOrigin.kind === "file" ? fileTab.gameOrigin.file : (undefined as never),
+    "rev-shared",
+  );
+  expect(await finished).toBe("built");
+
+  const { parsePGN } = await import("@/utils/chess");
+  const parsedCh1 = await parsePGN(ch1);
+
+  const store = createTreeStore();
+  store.setState({ ...store.getState(), root: parsedCh1.root });
+  const nodeIndex = createNotationNodeIndex(parsedCh1.root);
+  const sharedMove = store.getState().getNode([0, 0, 0, 0])!; // 1.e4 e5 2.Nf3 Nc6 (same move order as ch0)
+  const switchChapter = vi.fn().mockResolvedValue(undefined);
+  mocks.tabs = [fileTab];
+  mocks.switchChapter = switchChapter;
+  setFileFreshness("tab", "verified", { verifiedRevision: "rev-shared" });
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="tab">
+          <CompleteMoveCell
+            node={sharedMove}
+            nodeIndex={nodeIndex}
+            root={parsedCh1.root}
+            halfMoves={sharedMove.halfMoves}
+            move={sharedMove.san}
+            fen={sharedMove.fen}
+            comment=""
+            annotations={[]}
+            showComments={false}
+          />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+  expect(host.querySelector('[aria-label^="Notation.Transposition"]')).toBeNull();
+
+  // Different move order in chapter 1 keeps its marker, and clicking after store root change is ignored.
+  const detourHandle = { id: { id: "detour-opening-file" }, kind: "fileWorkspace" } as const;
+  const detourTab: Tab = {
+    ...fileTab,
+    gameOrigin: {
+      kind: "file",
+      gameNumber: 1,
+      file: {
+        type: "file",
+        handle: detourHandle,
+        name: "detour.pgn",
+        numGames: 2,
+        metadata: { type: "repertoire", tags: [] },
+        lastModified: 1,
+      },
+    },
+  };
+  const detourCh1 = '[White "Detour"]\n\n1. Nf3 Nc6 2. e4 e5 *';
+  mocks.readGames.mockResolvedValue([
+    { pgn: ch0, stamp: "s0", revision: "rev-detour", present: true, omission: null, linked: null },
+    {
+      pgn: detourCh1,
+      stamp: "s1",
+      revision: "rev-detour",
+      present: true,
+      omission: null,
+      linked: null,
+    },
+  ]);
+  const { finished: detourFinished } = requestFilePositionIndex(
+    detourTab.gameOrigin.kind === "file" ? detourTab.gameOrigin.file : (undefined as never),
+    "rev-detour",
+  );
+  expect(await detourFinished).toBe("built");
+
+  const parsedDetour = await parsePGN(detourCh1);
+  store.setState({ ...store.getState(), root: parsedDetour.root });
+  const detourMove = store.getState().getNode([0, 0, 0, 0])!;
+  mocks.tabs = [detourTab];
+
+  await act(async () => {
+    setFileFreshness("tab", "verified", { verifiedRevision: "rev-detour" });
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="tab">
+          <CompleteMoveCell
+            node={detourMove}
+            nodeIndex={createNotationNodeIndex(parsedDetour.root)}
+            root={parsedDetour.root}
+            halfMoves={detourMove.halfMoves}
+            move={detourMove.san}
+            fen={detourMove.fen}
+            comment=""
+            annotations={[]}
+            showComments={false}
+          />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  const marker = host.querySelector<HTMLButtonElement>(
+    '[aria-label="Notation.TranspositionInChapter(Italian Base)"]',
+  );
+  expect(marker).not.toBeNull();
+
+  // Clicking the marker after the store's root changed must not switch chapters.
+  store.setState({ ...store.getState(), root: defaultTree().root });
+  await act(async () => {
+    marker!.click();
+  });
+  expect(switchChapter).not.toHaveBeenCalled();
+});
+
+test("O3: cell mounted before index build completes shows the file-wide marker once the build finishes without remount", async () => {
+  const fileHandle = { id: { id: "pending-index-file" }, kind: "fileWorkspace" } as const;
+  const fileTab: Tab = {
+    value: "tab",
+    name: "King Knight Detour",
+    type: "analysis",
+    gameOrigin: {
+      kind: "file",
+      gameNumber: 1,
+      file: {
+        type: "file",
+        handle: fileHandle,
+        name: "pending.pgn",
+        numGames: 2,
+        metadata: { type: "repertoire", tags: [] },
+        lastModified: 1,
+      },
+    },
+  };
+  const ch0 = '[White "Italian Base"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 *';
+  const ch1 = '[White "King Knight Detour"]\n\n1. Nf3 Nc6 2. e4 e5 *';
+
+  let resolveReadGames!: (value: unknown) => void;
+  mocks.countPgnGames.mockResolvedValue(2);
+  mocks.readGames.mockReturnValue(
+    new Promise((resolve) => {
+      resolveReadGames = resolve;
+    }),
+  );
+
+  const { parsePGN } = await import("@/utils/chess");
+  const parsedCh1 = await parsePGN(ch1);
+  const store = createTreeStore();
+  store.setState({ ...store.getState(), root: parsedCh1.root });
+  const targetMove = store.getState().getNode([0, 0, 0, 0])!;
+  const nodeIndex = createNotationNodeIndex(parsedCh1.root);
+
+  mocks.tabs = [fileTab];
+  mocks.switchChapter = vi.fn().mockResolvedValue(undefined);
+  setFileFreshness("tab", "verified", { verifiedRevision: "rev-pending" });
+
+  const { finished } = requestFilePositionIndex(
+    fileTab.gameOrigin.kind === "file" ? fileTab.gameOrigin.file : (undefined as never),
+    "rev-pending",
+  );
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="tab">
+          <CompleteMoveCell
+            node={targetMove}
+            nodeIndex={nodeIndex}
+            root={parsedCh1.root}
+            halfMoves={targetMove.halfMoves}
+            move={targetMove.san}
+            fen={targetMove.fen}
+            comment=""
+            annotations={[]}
+            showComments={false}
+          />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  expect(host.querySelector('[aria-label^="Notation.Transposition"]')).toBeNull();
+
+  await act(async () => {
+    resolveReadGames([
+      {
+        pgn: ch0,
+        stamp: "s0",
+        revision: "rev-pending",
+        present: true,
+        omission: null,
+        linked: null,
+      },
+      {
+        pgn: ch1,
+        stamp: "s1",
+        revision: "rev-pending",
+        present: true,
+        omission: null,
+        linked: null,
+      },
+    ]);
+    expect(await finished).toBe("built");
+  });
+
+  expect(
+    host.querySelector('[aria-label="Notation.TranspositionInChapter(Italian Base)"]'),
+  ).not.toBeNull();
 });

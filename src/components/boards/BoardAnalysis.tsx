@@ -61,6 +61,9 @@ import Board from "./Board";
 import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
 import EvalListener from "./EvalListener";
+import { useFileFreshness } from "@/state/fileFreshness";
+import { requestFilePositionIndex } from "@/state/filePositionIndex";
+import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { FileChapterSwitchProvider } from "./FileChapterSwitch";
 import { useAutoSave } from "./useAutoSave";
 import ConfirmChangesModal from "@/components/tabs/ConfirmChangesModal";
@@ -69,6 +72,29 @@ import paneClasses from "../common/PaneTabs.module.css";
 import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
 import { BoardLayoutModeContext } from "@/state/paneLayout";
+
+/**
+ * Owns the single file position index request for the mounted file-backed analysis tab, releasing
+ * it on unmount, leaving the file, or verified-revision changes.
+ */
+function FilePositionIndexSync() {
+  const [currentTab] = useOwnerTab();
+  const tabId = useOwnerTabId();
+  const tabFile = currentTab?.type === "analysis" ? getTabFile(currentTab) : undefined;
+  const fileKey = tabFile ? fileWorkspaceKey(tabFile.handle) : null;
+  const { verifiedRevision } = useFileFreshness(tabId);
+  const tabFileRef = useRef(tabFile);
+  tabFileRef.current = tabFile;
+
+  useEffect(() => {
+    const file = tabFileRef.current;
+    if (!file || !fileKey || verifiedRevision === null) return;
+    const { release } = requestFilePositionIndex(file, verifiedRevision);
+    return release;
+  }, [fileKey, verifiedRevision]);
+
+  return null;
+}
 
 function BoardAnalysis() {
   const { t } = useTranslation();
@@ -384,6 +410,7 @@ function BoardAnalysis() {
         }}
       />
       <EvalListener />
+      <FilePositionIndexSync />
       <Portal target="#left" style={{ height: "100%" }}>
         <Stack
           h="100%"
