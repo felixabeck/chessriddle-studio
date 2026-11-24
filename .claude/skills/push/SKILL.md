@@ -87,9 +87,15 @@ is repaired as a staged diff, reviewed under §3 and committed, then the push ga
 ChessRiddle Studio does not use the push lock; a rejected push means rebase, rerun
 `pnpm gates:push` (about 5 minutes) and push again.
 
-`pnpm gates:push` and `pnpm checks:pre-review` run through `agent-gate`. Read
-`.claude/rules/gate-tooling.md` "Scheduling and placement" before running a gate for admission,
-worker sizing, exit 125 and nesting. The shared
+`pnpm gates:push` and `pnpm checks:pre-review` run in the caller's scope (`d-20261124-02`); only
+Rust-compiling commands — P1 `bindings-check`, `rust-lint`'s `cargo clippy` and
+`pnpm rust:windows:check`, pre-review `windows-clippy`, and `related-tests` `cargo test` — are
+spawned through `agent-gate`, serialised run-wide so one run never has two `agent-gate` calls alive
+at once, with `CARGO_BUILD_JOBS` sized inside each gate scope. Non-Rust lanes were measured below
+the 6 GiB session-scope threshold on 2026-11-24 on `tuxedo-felix` at `bb9d374f6` (2.25 GiB
+pre-review, 1.51 GiB push `--frontend` light part, 3.97 GiB `vitest related` over 246 files;
+0 OOM kills, 0 swap). Read `.claude/rules/gate-tooling.md` "Scheduling and placement" before
+running a gate for admission, worker sizing, exit 125 and nesting. The shared
 [gate-performance reference](~/.claude/references/gate-performance.md) owns machine slots and caps.
 
 No command that can rewrite a tracked file — `pnpm bindings:generate`, a stale `pnpm bindings:check`,

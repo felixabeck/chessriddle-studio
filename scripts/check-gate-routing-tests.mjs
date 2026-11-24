@@ -51,8 +51,8 @@ async function fixture() {
         "example:test": "node --test scripts/example-tests.mjs",
         "gates:contract:check":
           "pnpm mutation:guard:check && pnpm gates:child-supervisor:test && pnpm gates:imports:test && pnpm all:check && pnpm example:test",
-        "gates:push": "agent-gate node scripts/run-push-gates.mjs",
-        "checks:pre-review": "agent-gate node scripts/run-push-gates.mjs --pre-review",
+        "gates:push": "node scripts/run-push-gates.mjs",
+        "checks:pre-review": "node scripts/run-push-gates.mjs --pre-review",
         "gates:child-supervisor:test": "node --test scripts/child-supervisor-tests.mjs",
         "gates:imports:test": "node --test scripts/import-path-tests.mjs",
         "mutation:guard:check": "true",
@@ -96,29 +96,34 @@ test("accepts routed tests, nested scripts, allowed tools, and live sensitive gl
   assert.deepEqual(await checkGateRouting(root, { paths }), []);
 });
 
-test("heavy gate package scripts preserve the strict agent-gate wrapper and pre-review mode", async (t) => {
+test("gate runner package scripts pin the plain node invocations without an outer agent-gate wrapper", async (t) => {
   const cases = [
     {
-      title: "gates:push without the wrapper is rejected",
+      title: "gates:push with an outer agent-gate wrapper is rejected",
       script: "gates:push",
-      replacement: "node scripts/run-push-gates.mjs",
+      replacement: "agent-gate node scripts/run-push-gates.mjs",
+      expected: /package\.json gates:push must invoke node scripts\/run-push-gates\.mjs/u,
+    },
+    {
+      title: "checks:pre-review with an outer agent-gate wrapper is rejected",
+      script: "checks:pre-review",
+      replacement: "agent-gate node scripts/run-push-gates.mjs --pre-review",
       expected:
-        /package\.json gates:push must invoke agent-gate node scripts\/run-push-gates\.mjs/u,
+        /package\.json checks:pre-review must invoke node scripts\/run-push-gates\.mjs --pre-review/u,
     },
     {
       title: "checks:pre-review without --pre-review is rejected",
       script: "checks:pre-review",
-      replacement: "agent-gate node scripts/run-push-gates.mjs",
+      replacement: "node scripts/run-push-gates.mjs",
       expected:
-        /package\.json checks:pre-review must invoke agent-gate node scripts\/run-push-gates\.mjs --pre-review/u,
+        /package\.json checks:pre-review must invoke node scripts\/run-push-gates\.mjs --pre-review/u,
     },
     {
       title: "gates:push with a command -v fallback is rejected",
       script: "gates:push",
       replacement:
         "if command -v agent-gate >/dev/null 2>&1; then agent-gate node scripts/run-push-gates.mjs; else node scripts/run-push-gates.mjs; fi",
-      expected:
-        /package\.json gates:push must invoke agent-gate node scripts\/run-push-gates\.mjs/u,
+      expected: /package\.json gates:push must invoke node scripts\/run-push-gates\.mjs/u,
     },
   ];
   for (const { title, script, replacement, expected } of cases) {

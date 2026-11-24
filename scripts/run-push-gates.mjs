@@ -5,6 +5,7 @@ import { closeSync, existsSync, openSync } from "node:fs";
 import { availableParallelism as defaultAvailableParallelism } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 import { isEntrypoint } from "./entrypoint.mjs";
 import { gateBudgetBytes, rustBuildEnvironment } from "./gate-parallelism.mjs";
 import {
@@ -23,6 +24,31 @@ import {
 } from "./gate-logs.mjs";
 import { matches } from "./coverage-scope.mjs";
 import { listWorkingTreeFiles } from "./working-tree-files.mjs";
+
+export const GATE_LAUNCHER = "agent-gate";
+export const RUST_SIZING_MODE_FLAG = "--run-rust-command";
+const RUNNER_SCRIPT_PATH = fileURLToPath(import.meta.url);
+const RUST_COMMAND_FORWARDED_SIGNALS = Object.freeze(["SIGINT", "SIGTERM", "SIGHUP"]);
+
+function commandDisplay(executable, args) {
+  return [executable, ...args]
+    .map((argument) => (/[\s'"\\]/u.test(argument) ? JSON.stringify(argument) : argument))
+    .join(" ");
+}
+
+function commandSpec(executable, args, { heavyGateSlot = false } = {}) {
+  return Object.freeze({
+    executable,
+    args: Object.freeze([...args]),
+    display: commandDisplay(executable, args),
+    heavyGateSlot,
+  });
+}
+
+export function heavyGateCommand(command) {
+  const [executable, ...args] = command.split(" ");
+  return commandSpec(executable, args, { heavyGateSlot: true });
+}
 
 export const PUSH_GATE_SCHEDULE = Object.freeze({
   p0: Object.freeze([
@@ -49,6 +75,7 @@ export const PUSH_GATE_SCHEDULE = Object.freeze({
       name: "bindings-check",
       command: "pnpm bindings:check",
       blocks: Object.freeze(["bindings"]),
+      heavyGateSlot: true,
     }),
   ]),
   lanes: Object.freeze([
@@ -62,11 +89,12 @@ export const PUSH_GATE_SCHEDULE = Object.freeze({
     }),
     Object.freeze({
       name: "rust-lint",
-      rustCompilation: true,
       commands: Object.freeze([
         "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
-        "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
-        "pnpm rust:windows:check",
+        heavyGateCommand(
+          "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
+        ),
+        heavyGateCommand("pnpm rust:windows:check"),
       ]),
       blocks: Object.freeze(["rust"]),
     }),
@@ -105,8 +133,7 @@ export const PRE_REVIEW_GATE_SCHEDULE = Object.freeze({
     }),
     Object.freeze({
       name: "windows-clippy",
-      rustCompilation: true,
-      commands: Object.freeze(["pnpm rust:windows:check"]),
+      commands: Object.freeze([heavyGateCommand("pnpm rust:windows:check")]),
       requires: Object.freeze(["frontend-build"]),
     }),
     Object.freeze({
@@ -244,7 +271,9 @@ export function preReviewGateScheduleCommands(schedule = PRE_REVIEW_GATE_SCHEDUL
 
 function flattenGateSchedule(schedule, phases) {
   return phases.flatMap((phase) =>
-    schedule[phase].flatMap((entry) => entry.commands ?? [entry.command]),
+    schedule[phase].flatMap((entry) =>
+      (entry.commands ?? [entry.command]).map((command) => commandLabel(command)),
+    ),
   );
 }
 
@@ -295,16 +324,6 @@ export function discoverChangedPaths({
   const tracked = run(["diff", "--name-only", "-z", base, "--"]).split("\0").filter(Boolean);
   const untracked = listUntracked(cwd);
   return { mergeBase: base, paths: [...new Set([...tracked, ...untracked])].sort() };
-}
-
-function commandDisplay(executable, args) {
-  return [executable, ...args]
-    .map((argument) => (/[\s'"\\]/u.test(argument) ? JSON.stringify(argument) : argument))
-    .join(" ");
-}
-
-function commandSpec(executable, args) {
-  return { executable, args, display: commandDisplay(executable, args) };
 }
 
 function hasExtension(path, extensions) {
@@ -392,32 +411,37 @@ export function buildRelatedTestCommands(changedPaths, { root = process.cwd() } 
 
   if (runFullRustBins) {
     commands.push(
-      commandSpec("cargo", [
-        "test",
-        "--manifest-path",
-        "src-tauri/Cargo.toml",
-        "--locked",
-        "--bins",
-      ]),
+      commandSpec(
+        "cargo",
+        ["test", "--manifest-path", "src-tauri/Cargo.toml", "--locked", "--bins"],
+        { heavyGateSlot: true },
+      ),
     );
   } else if (rustFilters.size > 0) {
     commands.push(
-      commandSpec("cargo", [
-        "test",
-        "--manifest-path",
-        "src-tauri/Cargo.toml",
-        "--locked",
-        "--bins",
-        "--",
-        ...[...rustFilters].sort(),
-      ]),
+      commandSpec(
+        "cargo",
+        [
+          "test",
+          "--manifest-path",
+          "src-tauri/Cargo.toml",
+          "--locked",
+          "--bins",
+          "--",
+          ...[...rustFilters].sort(),
+        ],
+        { heavyGateSlot: true },
+      ),
     );
   }
 
   return commands;
 }
 
-export function selectPreReviewLanes(changedPaths, { root = process.cwd() } = {}) {
+export function selectPreReviewLanes(
+  changedPaths,
+  { root = process.cwd(), schedule = PRE_REVIEW_GATE_SCHEDULE } = {},
+) {
   const paths = [...new Set(changedPaths)];
   const existing = (path) => existsSync(resolve(root, path));
   const formatFiles = paths.filter((path) => isOxfmtOwned(path) && existing(path)).sort();
@@ -428,7 +452,7 @@ export function selectPreReviewLanes(changedPaths, { root = process.cwd() } = {}
   const commands = [];
   const selected = [];
   const addLane = (name, overrides = {}) => {
-    const scheduled = PRE_REVIEW_GATE_SCHEDULE.lanes.find((lane) => lane.name === name);
+    const scheduled = schedule.lanes.find((lane) => lane.name === name);
     if (!scheduled) throw new Error(`Unknown pre-review lane: ${name}`);
     selected.push({ ...scheduled, ...overrides });
   };
@@ -496,6 +520,135 @@ function commandArgv(command) {
 
 function commandLabel(command) {
   return typeof command === "string" ? command : command.display;
+}
+
+function isHeavyGateCommand(command) {
+  return typeof command !== "string" && command.heavyGateSlot === true;
+}
+
+/** Wrap a Rust-compiling command so `agent-gate` acquires one heavy-gate slot and sizes inside that scope. */
+export function wrapHeavyGateCommand(command) {
+  const { executable, args } = commandArgv(command);
+  return commandSpec(
+    GATE_LAUNCHER,
+    [process.execPath, RUNNER_SCRIPT_PATH, RUST_SIZING_MODE_FLAG, "--", executable, ...args],
+    { heavyGateSlot: true },
+  );
+}
+
+function createSlotAdmission() {
+  let tail = Promise.resolve();
+  return async function withSlot(run) {
+    let release;
+    const next = new Promise((resolve) => {
+      release = resolve;
+    });
+    const previous = tail;
+    tail = tail.then(() => next);
+    await previous;
+    try {
+      return await run();
+    } finally {
+      release();
+    }
+  };
+}
+
+function oneLineMessage(error) {
+  return errorMessage(error).replaceAll(/[\r\n]+/gu, " ");
+}
+
+/**
+ * In-scope sizing mode (`node scripts/run-push-gates.mjs --run-rust-command -- <cmd> [args...]`).
+ * Sizes `CARGO_BUILD_JOBS` from the active gate scope's cgroup chain, then spawns `<cmd>` in the
+ * same process group and forwards SIGINT/SIGTERM/SIGHUP until the child exits.
+ */
+export async function runRustCommand(
+  argumentsList,
+  {
+    cwd = process.cwd(),
+    env = process.env,
+    stderr = process.stderr,
+    spawnProcess = spawn,
+    availableParallelism = defaultAvailableParallelism,
+    getGateBudgetBytes = (options) => gateBudgetBytes({ env, stderr, ...options }),
+    signalTarget = process,
+  } = {},
+) {
+  const args = [...argumentsList];
+  if (args[0] !== "--" || typeof args[1] !== "string" || args[1].length === 0) {
+    stderr.write(
+      `Usage: node scripts/run-push-gates.mjs ${RUST_SIZING_MODE_FLAG} -- <command> [args...]\n`,
+    );
+    return 2;
+  }
+  const executable = args[1];
+  const commandArgs = args.slice(2);
+
+  let rustEnv;
+  try {
+    rustEnv = rustBuildEnvironment({ env, availableParallelism, getGateBudgetBytes });
+  } catch (error) {
+    stderr.write(`${oneLineMessage(error)}\n`);
+    return 1;
+  }
+
+  let child;
+  try {
+    child = spawnProcess(executable, commandArgs, {
+      cwd,
+      env: rustEnv,
+      stdio: "inherit",
+      detached: false,
+    });
+  } catch (error) {
+    stderr.write(`spawn ${executable} failed: ${oneLineMessage(error)}\n`);
+    return 127;
+  }
+
+  const forwardSignal = (signal) => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    try {
+      child.kill(signal);
+    } catch (error) {
+      if (error?.code !== "ESRCH") {
+        stderr.write(`Failed to forward ${signal} to ${executable}: ${oneLineMessage(error)}\n`);
+      }
+    }
+  };
+  const signalListeners = RUST_COMMAND_FORWARDED_SIGNALS.map((signal) => {
+    const listener = () => forwardSignal(signal);
+    signalTarget.on(signal, listener);
+    return [signal, listener];
+  });
+
+  try {
+    return await new Promise((resolveExit) => {
+      let settled = false;
+      const finish = (code) => {
+        if (settled) return;
+        settled = true;
+        resolveExit(code);
+      };
+      child.once("error", (error) => {
+        stderr.write(`spawn ${executable} failed: ${oneLineMessage(error)}\n`);
+        finish(127);
+      });
+      child.once("close", (code, signal) => {
+        if (signal !== null) {
+          const exitCode = signalExitCode(signal);
+          stderr.write(`${executable} terminated by signal ${signal} (exit ${exitCode})\n`);
+          finish(exitCode);
+          return;
+        }
+        finish(code ?? 1);
+      });
+    });
+  } finally {
+    for (const [signal, listener] of signalListeners) {
+      signalTarget.off(signal, listener);
+    }
+  }
 }
 
 function createTaskResult(logDirectory, name, kind, fields = {}) {
@@ -663,11 +816,13 @@ async function runStep(task, command, context) {
     skipTask(task, blockedStartReason(context));
     return task;
   }
+  const heavy = isHeavyGateCommand(command);
+  const effectiveCommand = heavy ? wrapHeavyGateCommand(command) : command;
   try {
     await context.beforeStep?.({
       phase: task.phase,
       name: task.name,
-      command: commandLabel(command),
+      command: commandLabel(effectiveCommand),
       index: task.commandIndex ?? 0,
     });
   } catch (error) {
@@ -675,7 +830,7 @@ async function runStep(task, command, context) {
     latchFailure(task, context);
     task.code = 1;
     task.error = error;
-    const fd = writeTaskHeader(task, commandLabel(command));
+    const fd = writeTaskHeader(task, commandLabel(effectiveCommand));
     try {
       writeLogChunk(fd, `beforeStep failed: ${errorMessage(error)}\n`);
     } finally {
@@ -689,37 +844,44 @@ async function runStep(task, command, context) {
     return task;
   }
 
-  task.startedAt = performance.now();
-  logProgress(task, "start", `command=${commandLabel(command)}`);
-  let result;
-  try {
-    result = await runCommand(command, task, context);
-  } catch (error) {
-    result = { code: 1, error };
-  }
-  task.durationMs = performance.now() - task.startedAt;
-  task.error = result.error;
-  task.logError = result.logError;
-  recordChildOutcome(task, result);
-  if (context.signalForwarding.requestedSignal) {
-    task.code = signalExitCode(context.signalForwarding.requestedSignal);
-    task.status = "interrupted";
-  } else if (result.code === 0) {
-    task.code = result.code;
-    task.status = "passed";
-  } else if (task.advisory && !result.terminationError) {
-    task.code = result.code;
-    task.status = "warning";
-  } else {
-    task.code = result.code;
-    task.status = "failed";
-  }
-  latchFailure(task, context);
-  logProgress(task, "finish", result.error ? `error=${errorMessage(result.error)}` : "");
-  return task;
+  const execute = async () => {
+    if (blockedStartReason(context)) {
+      skipTask(task, blockedStartReason(context));
+      return task;
+    }
+    task.startedAt = performance.now();
+    logProgress(task, "start", `command=${commandLabel(effectiveCommand)}`);
+    let result;
+    try {
+      result = await runCommand(effectiveCommand, task, context);
+    } catch (error) {
+      result = { code: 1, error };
+    }
+    task.durationMs = performance.now() - task.startedAt;
+    task.error = result.error;
+    task.logError = result.logError;
+    recordChildOutcome(task, result);
+    if (context.signalForwarding.requestedSignal) {
+      task.code = signalExitCode(context.signalForwarding.requestedSignal);
+      task.status = "interrupted";
+    } else if (result.code === 0) {
+      task.code = result.code;
+      task.status = "passed";
+    } else if (task.advisory && !result.terminationError) {
+      task.code = result.code;
+      task.status = "warning";
+    } else {
+      task.code = result.code;
+      task.status = "failed";
+    }
+    latchFailure(task, context);
+    logProgress(task, "finish", result.error ? `error=${errorMessage(result.error)}` : "");
+    return task;
+  };
+  return heavy ? context.slotAdmission(execute) : execute();
 }
 
-async function runLane(lane, env, context, results) {
+async function runLane(lane, context, results) {
   const task = createTaskResult(context.logDirectory, lane.name, "lane", {
     phase: "P2",
   });
@@ -753,24 +915,45 @@ async function runLane(lane, env, context, results) {
   };
   for (const [index, command] of lane.commands.entries()) {
     if (stopAtBoundary()) break;
+    const heavy = isHeavyGateCommand(command);
+    const effectiveCommand = heavy ? wrapHeavyGateCommand(command) : command;
     const step = createTaskResult(context.logDirectory, lane.name, "lane-step", {
       phase: "P2",
       commandIndex: index,
     });
+    let stoppedInSlot = false;
     try {
       await context.beforeStep?.({
         phase: "P2",
         name: lane.name,
-        command: commandLabel(command),
+        command: commandLabel(effectiveCommand),
         index,
       });
       if (stopAtBoundary()) break;
-      commandsStarted += 1;
-      const commandEnv = typeof env === "function" ? env(command) : env;
-      result = await runCommand(command, step, { ...context, env: commandEnv });
+      const execute = async () => {
+        if (stopAtBoundary()) return { stopped: true };
+        commandsStarted += 1;
+        let commandOutcome;
+        try {
+          commandOutcome = await runCommand(effectiveCommand, step, context);
+        } catch (error) {
+          commandOutcome = { code: 1, error };
+        }
+        if (!context.signalForwarding.requestedSignal && commandOutcome.code !== 0) {
+          context.firstRed.name ??= lane.name;
+        }
+        return { stopped: false, result: commandOutcome };
+      };
+      const outcome = heavy ? await context.slotAdmission(execute) : await execute();
+      if (outcome.stopped) {
+        stoppedInSlot = true;
+      } else {
+        result = outcome.result;
+      }
     } catch (error) {
       result = { code: 1, error };
     }
+    if (stoppedInSlot) break;
     if (context.signalForwarding.requestedSignal) {
       result = {
         ...result,
@@ -781,7 +964,7 @@ async function runLane(lane, env, context, results) {
     if (result.code !== 0) {
       task.error = result.error;
       task.logError = result.logError;
-      task.failedCommand = commandLabel(command);
+      task.failedCommand = commandLabel(effectiveCommand);
       break;
     }
   }
@@ -850,7 +1033,7 @@ function firstFailure(tasks) {
   return tasks.find((task) => task.status === "failed" || task.status === "interrupted");
 }
 
-/** Run the selected push-gate schedule. Spawn, CPU count, and budget are injectable for scheduler tests. */
+/** Run the selected push-gate schedule. Spawn and schedule are injectable for scheduler tests. */
 export async function runPushGates(
   argumentsList = [],
   {
@@ -858,13 +1041,12 @@ export async function runPushGates(
     superviseProcess = defaultSuperviseChild,
     cwd = process.cwd(),
     env = process.env,
-    availableParallelism = defaultAvailableParallelism,
-    getGateBudgetBytes = (options) => gateBudgetBytes({ env, ...options }),
     discoverChangedPaths: customDiscoverChangedPaths = undefined,
     discoverChanges = discoverChangedPaths,
     runGit = spawnSync,
     beforeStep = undefined,
     writeCapturedOutput = writeLogChunk,
+    schedule = undefined,
   } = {},
 ) {
   const args = [...argumentsList];
@@ -882,6 +1064,8 @@ export async function runPushGates(
     return { exitCode: 2, results: [], logDirectory: undefined };
   }
   const { blocks } = parsed;
+  const activeSchedule =
+    schedule ?? (preReviewMode ? PRE_REVIEW_GATE_SCHEDULE : PUSH_GATE_SCHEDULE);
   const logDirectory = makeLogDirectory(cwd);
   const signalForwarding = installMultiChildSignalForwarding({
     label: preReviewMode ? "pre-review checks" : "push gate",
@@ -900,25 +1084,21 @@ export async function runPushGates(
     signalForwarding,
     childCleanup: {},
     firstRed: {},
+    slotAdmission: createSlotAdmission(),
     beforeStep,
     logDirectory,
     writeCapturedOutput,
   };
-  const runSerialStep = async (entry, phase, stepEnv = env) => {
+  const runSerialStep = async (entry, phase) => {
     const task = createTaskResult(logDirectory, entry.name, "step", {
       phase,
       advisory: entry.advisory === true,
     });
     stepResults.push(task);
-    const finished = await runStep(task, entry.command, { ...context, env: stepEnv });
+    const stepCommand = entry.heavyGateSlot ? heavyGateCommand(entry.command) : entry.command;
+    const finished = await runStep(task, stepCommand, context);
     if (!resultsByName.has(entry.name)) resultsByName.set(entry.name, finished);
     return finished;
-  };
-  let rustEnv;
-  const getRustEnvironment = () => {
-    if (blockedStartReason(context)) return env;
-    rustEnv ??= rustBuildEnvironment({ env, availableParallelism, getGateBudgetBytes });
-    return rustEnv;
   };
 
   try {
@@ -927,7 +1107,7 @@ export async function runPushGates(
         ? { paths: customDiscoverChangedPaths({ cwd }), mergeBase: undefined }
         : discoverChanges({ cwd, runGit, headline: "Cannot determine pre-review changed paths" });
       const { paths: changedPaths } = changes;
-      const lanes = selectPreReviewLanes(changedPaths, { root: cwd });
+      const lanes = selectPreReviewLanes(changedPaths, { root: cwd, schedule: activeSchedule });
       for (const lane of lanes) selectedPreReviewLaneNames.add(lane.name);
       const laneNames = lanes.map(({ name }) => name);
       process.stdout.write(`Pre-review changed paths: ${changedPaths.length}\n`);
@@ -937,19 +1117,14 @@ export async function runPushGates(
 
       const buildRequired = lanes.some((lane) => lane.requires?.includes("frontend-build"));
       if (buildRequired) {
-        await runSerialStep(PRE_REVIEW_GATE_SCHEDULE.p1[0], "P1");
+        await runSerialStep(activeSchedule.p1[0], "P1");
       }
-      const compilerEnv = lanes.some((lane) => lane.rustCompilation) ? getRustEnvironment() : env;
-      await Promise.all(
-        lanes.map((lane) =>
-          runLane(lane, lane.rustCompilation ? compilerEnv : env, context, resultsByName),
-        ),
-      );
+      await Promise.all(lanes.map((lane) => runLane(lane, context, resultsByName)));
 
       const failedStep = firstFailure(stepResults);
       if (failedStep) exitCode = failedStep.code;
       else {
-        for (const lane of PRE_REVIEW_GATE_SCHEDULE.lanes) {
+        for (const lane of activeSchedule.lanes) {
           const result = resultsByName.get(lane.name);
           if (result && (result.status === "failed" || result.status === "interrupted")) {
             exitCode = result.code;
@@ -958,37 +1133,25 @@ export async function runPushGates(
         }
       }
     } else {
-      for (const entry of PUSH_GATE_SCHEDULE.p0) {
+      for (const entry of activeSchedule.p0 ?? []) {
         if (selectedByBlocks(entry, blocks)) await runSerialStep(entry, "P0");
       }
-      for (const entry of PUSH_GATE_SCHEDULE.p1) {
+      for (const entry of activeSchedule.p1 ?? []) {
         if (!selectedByBlocks(entry, blocks)) continue;
-        await runSerialStep(
-          entry,
-          "P1",
-          entry.name === "bindings-check" ? getRustEnvironment() : env,
-        );
+        await runSerialStep(entry, "P1");
       }
-      const runnableLanes = PUSH_GATE_SCHEDULE.lanes.filter((lane) =>
-        selectedByBlocks(lane, blocks),
-      );
+      const runnableLanes = activeSchedule.lanes.filter((lane) => selectedByBlocks(lane, blocks));
       const laneByName = new Map(runnableLanes.map((lane) => [lane.name, lane]));
       const lightLanes = runnableLanes.filter((lane) => lane.name !== "related-tests");
-      const rustLanes = lightLanes.filter((lane) => lane.rustCompilation);
-      const compilerEnv = rustLanes.length ? getRustEnvironment() : env;
 
       // Finish every selected light lane before starting related-tests (fail-fast order and
       // exclusive Rust admission: no other Rust compile runs beside related-tests).
-      await Promise.all(
-        lightLanes.map((lane) =>
-          runLane(lane, lane.rustCompilation ? compilerEnv : env, context, resultsByName),
-        ),
-      );
+      await Promise.all(lightLanes.map((lane) => runLane(lane, context, resultsByName)));
 
       const relatedTestsLane = laneByName.get("related-tests");
       if (relatedTestsLane) {
         if (blockedStartReason(context)) {
-          await runLane(relatedTestsLane, env, context, resultsByName);
+          await runLane(relatedTestsLane, context, resultsByName);
         } else {
           let changedPaths;
           try {
@@ -1034,11 +1197,8 @@ export async function runPushGates(
               }
               logProgress(empty, "finish", "commands=0");
             } else {
-              const hasRust = relatedCommands.some((command) => command.executable === "cargo");
-              const relatedRustEnv = hasRust ? getRustEnvironment() : env;
               await runLane(
                 { ...relatedTestsLane, commands: relatedCommands },
-                (command) => (commandArgv(command).executable === "cargo" ? relatedRustEnv : env),
                 context,
                 resultsByName,
               );
@@ -1050,7 +1210,7 @@ export async function runPushGates(
       const failedStep = firstFailure(stepResults);
       if (failedStep) exitCode = failedStep.code;
       else {
-        for (const lane of PUSH_GATE_SCHEDULE.lanes) {
+        for (const lane of activeSchedule.lanes) {
           const result = resultsByName.get(lane.name);
           if (result && (result.status === "failed" || result.status === "interrupted")) {
             exitCode = result.code;
@@ -1084,7 +1244,7 @@ export async function runPushGates(
   }
 
   if (preReviewMode) {
-    for (const lane of PRE_REVIEW_GATE_SCHEDULE.lanes) {
+    for (const lane of activeSchedule.lanes) {
       if (resultsByName.has(lane.name)) continue;
       const skipped = createTaskResult(logDirectory, lane.name, "lane", { phase: "P2" });
       const reason = fatalError
@@ -1103,7 +1263,7 @@ export async function runPushGates(
     exitCode = exitCode || 1;
   }
   const results = [...stepResults];
-  for (const lane of preReviewMode ? PRE_REVIEW_GATE_SCHEDULE.lanes : PUSH_GATE_SCHEDULE.lanes) {
+  for (const lane of activeSchedule.lanes) {
     const task = resultsByName.get(lane.name);
     if (task && task.kind === "lane") results.push(task);
   }
@@ -1125,7 +1285,11 @@ export async function runPushGates(
 }
 
 async function main() {
-  const result = await runPushGates(process.argv.slice(2), { cwd: process.cwd() });
+  const args = process.argv.slice(2);
+  if (args[0] === RUST_SIZING_MODE_FLAG) {
+    return runRustCommand(args.slice(1), { cwd: process.cwd() });
+  }
+  const result = await runPushGates(args, { cwd: process.cwd() });
   return result.exitCode;
 }
 

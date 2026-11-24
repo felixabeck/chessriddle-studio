@@ -14,16 +14,22 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
+  GATE_LAUNCHER,
   PRE_REVIEW_GATE_SCHEDULE,
   PUSH_GATE_SCHEDULE,
+  RUST_SIZING_MODE_FLAG,
   buildRelatedTestCommands,
   discoverChangedPaths,
+  heavyGateCommand,
   runPushGates,
+  runRustCommand,
   selectPreReviewLanes,
+  wrapHeavyGateCommand,
 } from "./run-push-gates.mjs";
 import { startNodeCli } from "./mutation-runner-test-harness.mjs";
 import { superviseChild } from "./child-supervisor.mjs";
@@ -182,6 +188,11 @@ async function makeHarness(
     );
     await chmod(shimPath, 0o755);
   }
+  if (!omittedExecutables.includes(GATE_LAUNCHER)) {
+    const gateShimPath = join(bin, GATE_LAUNCHER);
+    await writeFile(gateShimPath, '#!/bin/sh\nexec "$@"\n');
+    await chmod(gateShimPath, 0o755);
+  }
   t.after(async () => rm(root, { recursive: true, force: true }));
   return {
     root,
@@ -228,6 +239,16 @@ async function waitForEvent(harness, predicate, timeoutMs = EVENT_WAIT_TIMEOUT_M
 function groupExists(pid) {
   try {
     process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === "ESRCH") return false;
+    return true;
+  }
+}
+
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
     return true;
   } catch (error) {
     if (error.code === "ESRCH") return false;
@@ -296,6 +317,10 @@ function laneForCommand(command) {
   ]).get(command);
 }
 
+function wrappedHeavyCommand(command) {
+  return wrapHeavyGateCommand(command).display;
+}
+
 function makeMockSpawner({
   exits = {},
   events = [],
@@ -305,7 +330,7 @@ function makeMockSpawner({
   return (executable, args, options) => {
     assert.equal(options.shell, undefined, "scheduled commands must spawn without a shell");
     const command = [executable, ...args].join(" ");
-    events.push({ type: "start", command, env: options.env, options });
+    events.push({ type: "start", executable, args: [...args], command, env: options.env, options });
     const child = new EventEmitter();
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
@@ -387,8 +412,6 @@ test("failed schedules finish with all failed paths after their summary and tail
         result = await runPushGates(preReview ? ["--pre-review"] : ["--rust"], {
           cwd,
           env: { ...process.env },
-          getGateBudgetBytes: () => 10 * GIB,
-          availableParallelism: () => 24,
           discoverChangedPaths: () => ["src-tauri/src/lib.rs"],
           spawnProcess: makeMockSpawner({
             exits: {
@@ -595,15 +618,16 @@ test("Rust-only pre-review waits for the frontend build before Windows clippy", 
   });
   assert.equal(result.exitCode, 0);
   const commands = events.filter(({ type }) => type === "start").map(({ command }) => command);
+  const windowsCommand = wrappedHeavyCommand("pnpm rust:windows:check");
   assert.deepEqual(commands, [
     "pnpm build-vite",
     "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "pnpm coverage:mapping:backend",
-    "pnpm rust:windows:check",
+    windowsCommand,
   ]);
   assert.ok(
     PRE_REVIEW_GATE_SCHEDULE.p1[0].command === commands[0] &&
-      commands.indexOf("pnpm build-vite") < commands.indexOf("pnpm rust:windows:check"),
+      commands.indexOf("pnpm build-vite") < commands.indexOf(windowsCommand),
   );
 });
 
@@ -772,21 +796,23 @@ test("contract-only invocation, unknown flags, and P0 guard failure/spawn failur
   });
 
   await t.test(
-    "invalid GATE_MEMORY_BYTES after P1 prevents every P2 lane, including contract, from starting",
+    "invalid GATE_MEMORY_BYTES refuses Rust compilation inside the gate scope without spawning cargo clippy",
     async (subtest) => {
       const harness = await makeHarness(subtest);
       harness.env.GATE_MEMORY_BYTES = "abc";
       const result = await runCli(subtest, harness, ["--rust"]);
       assert.equal(result.code, 1, `${result.stdout}\n${result.stderr}`);
-      assert.match(result.stderr, /GATE_MEMORY_BYTES/u);
-      assert.deepEqual(
-        commandSet(await readEvents(harness)),
-        [
-          "pnpm mutation:guard:check",
-          "pnpm rust:target:evict",
-          "bash scripts/setup-rust.sh",
-          "pnpm build-vite",
-        ].sort(),
+      assert.match(result.stdout, /GATE_MEMORY_BYTES/u);
+      const started = commandSet(await readEvents(harness));
+      assert.ok(
+        !started.includes(
+          "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
+        ),
+        "cargo clippy must not spawn when in-scope sizing rejects GATE_MEMORY_BYTES",
+      );
+      assert.ok(
+        !started.includes("pnpm rust:windows:check"),
+        "later Rust commands must not start after sizing refusal",
       );
     },
   );
@@ -820,7 +846,7 @@ test("P0/P1 reds skip every subsequent selected gate (R2, R8, PG-63, PG-75, PG-7
     ["mutation-guard", "pnpm mutation:guard:check", 7],
     ["setup-rust", "bash scripts/setup-rust.sh", 6],
     ["frontend-build", "pnpm build-vite", 9],
-    ["bindings-check", "pnpm bindings:check", 5],
+    ["bindings-check", wrappedHeavyCommand("pnpm bindings:check"), 5],
   ]) {
     await t.test(`${name} red reports each selected gate exactly once`, async (subtest) => {
       const cwd = await temporarySchedulerRoot(subtest);
@@ -828,8 +854,6 @@ test("P0/P1 reds skip every subsequent selected gate (R2, R8, PG-63, PG-75, PG-7
       const result = await runPushGates(["--rust", "--frontend", "--bindings"], {
         cwd,
         env: { ...process.env },
-        getGateBudgetBytes: () => 10 * GIB,
-        availableParallelism: () => 24,
         discoverChangedPaths: () => [],
         spawnProcess: makeMockSpawner({ events, exits: { [command]: code } }),
       });
@@ -854,7 +878,9 @@ test("P0/P1 reds skip every subsequent selected gate (R2, R8, PG-63, PG-75, PG-7
         commandSet(events),
         selected
           .slice(0, redIndex + 1)
-          .map((entry) => entry.command)
+          .map((entry) =>
+            entry.heavyGateSlot ? wrappedHeavyCommand(entry.command) : entry.command,
+          )
           .sort(),
       );
     });
@@ -1186,32 +1212,25 @@ test("P2 light concurrency, related-tests ordering, and contract-only isolation"
     },
   );
 
-  await t.test(
-    "contract-only runs do not acquire a Rust or frontend allocation",
-    async (subtest) => {
-      for (const flags of [[]]) {
-        const cwd = await temporarySchedulerRoot(subtest);
-        let budgetReads = 0;
-        let cpuReads = 0;
-        const result = await runPushGates(flags, {
-          cwd,
-          env: { ...process.env },
-          getGateBudgetBytes() {
-            budgetReads += 1;
-            throw new Error("injected unreadable cgroup");
-          },
-          availableParallelism() {
-            cpuReads += 1;
-            throw new Error("must not read CPUs without Rust compilation");
-          },
-          spawnProcess: makeMockSpawner(),
-        });
-        assert.equal(result.exitCode, 0);
-        assert.equal(budgetReads, 0);
-        assert.equal(cpuReads, 0);
-      }
-    },
-  );
+  await t.test("contract-only runs spawn no agent-gate or Rust sizing command", async (subtest) => {
+    const cwd = await temporarySchedulerRoot(subtest);
+    const events = [];
+    const env = { ...process.env, GATE_MEMORY_BYTES: "not-a-number" };
+    delete env.CARGO_BUILD_JOBS;
+    const result = await runPushGates([], {
+      cwd,
+      env,
+      spawnProcess: makeMockSpawner({ events }),
+    });
+    assert.equal(result.exitCode, 0);
+    const starts = events.filter((event) => event.type === "start");
+    assert.ok(starts.length > 0);
+    for (const event of starts) {
+      assert.notEqual(event.executable, GATE_LAUNCHER);
+      assert.ok(!event.args.includes(RUST_SIZING_MODE_FLAG));
+      assert.equal(event.env.CARGO_BUILD_JOBS, undefined);
+    }
+  });
 });
 
 test("a passing lane retains its complete output line across a short final write", async (t) => {
@@ -1539,8 +1558,6 @@ test("scheduler-level beforeStep cancellation and injected spawn failures (PG-51
     const result = await runPushGates(["--frontend"], {
       cwd,
       env: { ...process.env, GATE_MEMORY_BYTES: String(7 * GIB) },
-      getGateBudgetBytes: () => 7 * GIB,
-      availableParallelism: () => 2,
       discoverChangedPaths: () => [],
       spawnProcess,
     });
@@ -1596,10 +1613,16 @@ test("buildRelatedTestCommands returns exact vitest and cargo commands for chang
     { root },
   );
   assert.deepEqual(
-    filtered.map(({ display }) => display),
+    filtered.map(({ display, heavyGateSlot }) => ({ display, heavyGateSlot })),
     [
-      "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
-      "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- db:: lexer::",
+      {
+        display: "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
+        heavyGateSlot: false,
+      },
+      {
+        display: "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- db:: lexer::",
+        heavyGateSlot: true,
+      },
     ],
   );
 
@@ -1607,8 +1630,14 @@ test("buildRelatedTestCommands returns exact vitest and cargo commands for chang
     buildRelatedTestCommands(
       ["scripts/check-untranslated-jsx.mjs", "scripts/run-push-gates-tests.mjs"],
       { root },
-    ).map(({ display }) => display),
-    ["pnpm exec vitest related --run --passWithNoTests scripts/check-untranslated-jsx.mjs"],
+    ).map(({ display, heavyGateSlot }) => ({ display, heavyGateSlot })),
+    [
+      {
+        display:
+          "pnpm exec vitest related --run --passWithNoTests scripts/check-untranslated-jsx.mjs",
+        heavyGateSlot: false,
+      },
+    ],
   );
 
   const withMain = buildRelatedTestCommands(
@@ -1622,24 +1651,38 @@ test("buildRelatedTestCommands returns exact vitest and cargo commands for chang
     { root },
   );
   assert.deepEqual(
-    withMain.map(({ display }) => display),
+    withMain.map(({ display, heavyGateSlot }) => ({ display, heavyGateSlot })),
     [
-      "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
-      "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins",
+      {
+        display: "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
+        heavyGateSlot: false,
+      },
+      {
+        display: "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins",
+        heavyGateSlot: true,
+      },
     ],
   );
 
   for (const manifest of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"]) {
     assert.deepEqual(
-      buildRelatedTestCommands([manifest], { root }).map(({ display }) => display),
-      ["cargo test --manifest-path src-tauri/Cargo.toml --locked --bins"],
+      buildRelatedTestCommands([manifest], { root }).map(({ display, heavyGateSlot }) => ({
+        display,
+        heavyGateSlot,
+      })),
+      [
+        {
+          display: "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins",
+          heavyGateSlot: true,
+        },
+      ],
     );
   }
 
   assert.deepEqual(buildRelatedTestCommands(["src/utils/deleted.ts", "README.md"], { root }), []);
 });
 
-test("related-tests applies the Rust allocator only to Cargo commands and not to Vitest", async (t) => {
+test("related-tests wraps only Cargo commands with agent-gate and sizing mode, not Vitest", async (t) => {
   const cwd = await temporarySchedulerRoot(t);
   for (const path of ["src/utils/annotation.ts", "src-tauri/src/lexer.rs"]) {
     await mkdir(dirname(join(cwd, path)), { recursive: true });
@@ -1651,23 +1694,23 @@ test("related-tests applies the Rust allocator only to Cargo commands and not to
   const result = await runPushGates(["--frontend"], {
     cwd,
     env,
-    getGateBudgetBytes: () => 10 * GIB,
-    availableParallelism: () => 24,
     discoverChangedPaths: () => ["src/utils/annotation.ts", "src-tauri/src/lexer.rs"],
     spawnProcess: makeMockSpawner({ events }),
   });
   assert.equal(result.exitCode, 0);
-  const cargoStart = cliCommandStart(
-    events,
+  const expectedCargo = wrappedHeavyCommand(
     "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- lexer::",
   );
+  const cargoStart = cliCommandStart(events, expectedCargo);
   const vitestStart = cliCommandStart(
     events,
     "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
   );
-  assert.ok(cargoStart, "related-tests cargo command must run");
-  assert.ok(vitestStart, "related-tests vitest command must run");
-  assert.equal(cargoStart.env.CARGO_BUILD_JOBS, "1");
+  assert.ok(cargoStart, "related-tests cargo command must run through agent-gate");
+  assert.ok(vitestStart, "related-tests vitest command must run directly");
+  assert.equal(cargoStart.executable, GATE_LAUNCHER);
+  assert.equal(cargoStart.env.CARGO_BUILD_JOBS, undefined);
+  assert.equal(vitestStart.executable, "pnpm");
   assert.equal(vitestStart.env.CARGO_BUILD_JOBS, undefined);
 });
 
@@ -1798,7 +1841,7 @@ test("known insufficient Rust memory refuses bindings-only and all-block exporte
     const harness = await makeHarness(t, { budgetBytes: 9 * GIB - 1 });
     const result = await runCli(t, harness, flags);
     assert.equal(result.code, 1, `${result.stdout}\n${result.stderr}`);
-    assert.match(result.stderr, /Rust compilation refused:.*below the minimum.*9 GiB usable/u);
+    assert.match(result.stdout, /Rust compilation refused:.*below the minimum.*9 GiB usable/u);
     const commands = commandSet(await readEvents(harness));
     assert.deepEqual(
       commands,
@@ -1817,17 +1860,16 @@ test("rust-lint clippy red skips related-tests with its reason (R1)", async (t) 
   await mkdir(join(cwd, "src/utils"), { recursive: true });
   await writeFile(join(cwd, "src/utils/annotation.ts"), "export const a = 1;\n");
   const events = [];
+  const clippy = wrappedHeavyCommand(
+    "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
+  );
   const result = await runPushGates(["--rust", "--frontend"], {
     cwd,
     env: { ...process.env },
-    getGateBudgetBytes: () => 10 * GIB,
-    availableParallelism: () => 24,
     discoverChangedPaths: () => ["src/utils/annotation.ts"],
     spawnProcess: makeMockSpawner({
       events,
-      exits: {
-        "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings": 11,
-      },
+      exits: { [clippy]: 11 },
     }),
   });
   assert.equal(result.exitCode, 11);
@@ -1841,7 +1883,7 @@ test("rust-lint clippy red skips related-tests with its reason (R1)", async (t) 
     ),
     undefined,
   );
-  assert.equal(cliCommandStart(events, "pnpm rust:windows:check"), undefined);
+  assert.equal(cliCommandStart(events, wrappedHeavyCommand("pnpm rust:windows:check")), undefined);
 });
 
 test("a running contract command completes after rust-lint red and related-tests does not start (P3, R3)", async (t) => {
@@ -1850,13 +1892,12 @@ test("a running contract command completes after rust-lint red and related-tests
   await writeFile(join(cwd, "src/utils/annotation.ts"), "export const a = 1;\n");
   const events = [];
   const contractLast = "env -u KIT_ROOT pnpm findings:kit:check";
-  const lint =
-    "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings";
+  const lint = wrappedHeavyCommand(
+    "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
+  );
   const result = await runPushGates(["--rust", "--frontend"], {
     cwd,
     env: { ...process.env },
-    getGateBudgetBytes: () => 10 * GIB,
-    availableParallelism: () => 24,
     discoverChangedPaths: () => ["src/utils/annotation.ts"],
     spawnProcess: makeMockSpawner({
       events,
@@ -1888,8 +1929,6 @@ test("a running multi-command lane stops at its next boundary without an exit co
   const result = await runPushGates(["--rust"], {
     cwd,
     env: { ...process.env },
-    getGateBudgetBytes: () => 10 * GIB,
-    availableParallelism: () => 24,
     discoverChangedPaths: () => [],
     spawnProcess: makeMockSpawner({
       events,
@@ -1909,7 +1948,7 @@ test("a running multi-command lane stops at its next boundary without an exit co
   for (const command of PUSH_GATE_SCHEDULE.lanes
     .find(({ name }) => name === "rust-lint")
     .commands.slice(1)) {
-    assert.equal(cliCommandStart(events, command), undefined);
+    assert.equal(cliCommandStart(events, wrappedHeavyCommand(command)), undefined);
   }
 });
 
@@ -1928,8 +1967,6 @@ test("light stage waits for held contract after rust-lint passes before related-
         const result = await runPushGates(flags, {
           cwd,
           env: { ...process.env },
-          getGateBudgetBytes: () => 10 * GIB,
-          availableParallelism: () => 24,
           discoverChangedPaths: () => ["src/utils/annotation.ts"],
           spawnProcess: makeMockSpawner({
             events,
@@ -1939,7 +1976,9 @@ test("light stage waits for held contract after rust-lint passes before related-
                 await waitForMockEvent(
                   events,
                   "finish",
-                  flags.includes("--rust") ? "pnpm rust:windows:check" : "pnpm bundle:check",
+                  flags.includes("--rust")
+                    ? wrappedHeavyCommand("pnpm rust:windows:check")
+                    : "pnpm bundle:check",
                 );
                 startedWhileHeld = cliCommandStart(events, relatedCommand);
               }
@@ -1962,9 +2001,12 @@ test("light stage waits for held contract after rust-lint passes before related-
 });
 
 test("unconfirmed process cleanup blocks queued related-tests starts after P1 or a Rust lane", async (t) => {
-  for (const command of [
-    "pnpm bindings:check",
-    "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+  for (const [command, spawnedCommand] of [
+    ["pnpm bindings:check", wrappedHeavyCommand("pnpm bindings:check")],
+    [
+      "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+      "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+    ],
   ]) {
     await t.test(command, async (subtest) => {
       const harness = await makeHarness(subtest, { commands: { [command]: { hold: true } } });
@@ -1972,7 +2014,11 @@ test("unconfirmed process cleanup blocks queued related-tests starts after P1 or
       await writeFile(join(harness.root, "src/utils/annotation.ts"), "export const a = 1;\n");
       const commandsByChild = new WeakMap();
       let heldSupervisor;
+      let heldGroupPid;
       let heldEvent;
+      subtest.after(async () => {
+        await heldSupervisor?.terminate();
+      });
       const result = await runPushGates(["--rust", "--frontend", "--bindings"], {
         cwd: harness.root,
         env: harness.env,
@@ -1983,8 +2029,9 @@ test("unconfirmed process cleanup blocks queued related-tests starts after P1 or
         },
         superviseProcess(child, options) {
           const supervisor = superviseChild(child, options);
-          if (commandsByChild.get(child) !== command) return supervisor;
+          if (commandsByChild.get(child) !== spawnedCommand) return supervisor;
           heldSupervisor = supervisor;
+          heldGroupPid = child.pid;
           return {
             ...supervisor,
             done: waitForEvent(
@@ -2000,7 +2047,11 @@ test("unconfirmed process cleanup blocks queued related-tests starts after P1 or
       try {
         assert.equal(result.exitCode, 1);
         assert.ok(
-          groupExists(heldEvent.pid),
+          groupExists(heldGroupPid),
+          "the unconfirmed supervised process group must still be alive during the assertion",
+        );
+        assert.ok(
+          processExists(heldEvent.pid),
           "the unconfirmed child must still be alive during the assertion",
         );
         const commands = commandSet(await readEvents(harness));
@@ -2013,15 +2064,17 @@ test("unconfirmed process cleanup blocks queued related-tests starts after P1 or
       } finally {
         await heldSupervisor?.terminate();
       }
-      assert.equal(groupExists(heldEvent.pid), false);
+      assert.equal(groupExists(heldGroupPid), false);
+      assert.equal(processExists(heldEvent.pid), false);
     });
   }
 });
 
 test("pre-review Windows compilation uses Rust allocation at both budget sizes", async (t) => {
+  const maxFive = String(Math.min(availableParallelism(), 5));
   for (const [budgetBytes, expectedJobs] of [
     [10 * GIB, "1"],
-    [41 * GIB, "5"],
+    [41 * GIB, maxFive],
   ]) {
     const windows = "pnpm rust:windows:check";
     const harness = await makeHarness(t, { budgetBytes, commands: { [windows]: { delayMs: 50 } } });
@@ -2032,7 +2085,6 @@ test("pre-review Windows compilation uses Rust allocation at both budget sizes",
     const result = await runPushGates(["--pre-review"], {
       cwd: harness.root,
       env: harness.env,
-      availableParallelism: () => 24,
       discoverChangedPaths: () => ["src-tauri/src/lib.rs", "src/state/workspace.ts"],
     });
     assert.equal(result.exitCode, 0);
@@ -2047,15 +2099,17 @@ test("known insufficient pre-review Rust memory refuses before Windows compiler 
   const result = await runPushGates(["--pre-review"], {
     cwd: harness.root,
     env: harness.env,
-    availableParallelism: () => 24,
     discoverChangedPaths: () => ["src-tauri/src/lib.rs"],
   });
   assert.equal(result.exitCode, 1);
+  const windowsTask = result.results.find(({ name }) => name === "windows-clippy");
+  assert.equal(windowsTask.status, "failed");
+  assert.equal(windowsTask.code, 1);
   assert.match(
-    result.results.find(({ name }) => name === "scheduler").error.message,
+    await readFile(windowsTask.logPath, "utf8"),
     /Rust compilation refused:.*below the minimum.*9 GiB usable/u,
   );
-  assert.deepEqual(commandSet(await readEvents(harness)), ["pnpm build-vite"]);
+  assert.ok(!commandSet(await readEvents(harness)).includes("pnpm rust:windows:check"));
 });
 
 test("advisory rust-target-eviction is selected by name and never gates later work (O6, CR-6)", async (t) => {
@@ -2118,8 +2172,6 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
       result = await runPushGates(["--rust"], {
         cwd,
         env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
-        getGateBudgetBytes: () => 10 * GIB,
-        availableParallelism: () => 24,
         discoverChangedPaths: () => [],
         spawnProcess: makeMockSpawner({
           events,
@@ -2158,8 +2210,6 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
     const result = await runPushGates(["--rust"], {
       cwd,
       env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
-      getGateBudgetBytes: () => 10 * GIB,
-      availableParallelism: () => 24,
       discoverChangedPaths: () => [],
       spawnProcess,
     });
@@ -2201,8 +2251,6 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
     const result = await runPushGates(["--rust"], {
       cwd,
       env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
-      getGateBudgetBytes: () => 10 * GIB,
-      availableParallelism: () => 24,
       discoverChangedPaths: () => [],
       spawnProcess,
     });
@@ -2278,6 +2326,495 @@ test("advisory rust-target-eviction is selected by name and never gates later wo
         await heldSupervisor?.terminate();
       }
       assert.equal(groupExists(heldEvent.pid), false);
+    },
+  );
+});
+
+test("per-command heavy-gate placement wraps only Rust-compiling commands and never sizes in the runner", async (t) => {
+  const sizingPrefix = [process.execPath, runnerPath, RUST_SIZING_MODE_FLAG, "--"];
+
+  await t.test(
+    "push mode wraps exact Rust-compiling set and leaves every other command direct",
+    async (subtest) => {
+      const cwd = await temporarySchedulerRoot(subtest);
+      for (const path of ["src/utils/annotation.ts", "src-tauri/src/lexer.rs"]) {
+        await mkdir(dirname(join(cwd, path)), { recursive: true });
+        await writeFile(join(cwd, path), "// fixture\n");
+      }
+      const events = [];
+      const env = { ...process.env, GATE_MEMORY_BYTES: "not-a-number" };
+      delete env.CARGO_BUILD_JOBS;
+      const result = await runPushGates(["--rust", "--frontend", "--bindings"], {
+        cwd,
+        env,
+        discoverChangedPaths: () => ["src/utils/annotation.ts", "src-tauri/src/lexer.rs"],
+        spawnProcess: makeMockSpawner({ events }),
+      });
+      assert.equal(result.exitCode, 0);
+      const starts = events.filter((event) => event.type === "start");
+      const wrappedStarts = starts.filter((event) => event.executable === GATE_LAUNCHER);
+      const directStarts = starts.filter((event) => event.executable !== GATE_LAUNCHER);
+
+      for (const event of wrappedStarts) {
+        assert.deepEqual(event.args.slice(0, sizingPrefix.length), sizingPrefix);
+        assert.equal(
+          event.env.CARGO_BUILD_JOBS,
+          undefined,
+          "runner must not compute CARGO_BUILD_JOBS in its own process",
+        );
+      }
+      assert.deepEqual(
+        wrappedStarts.map((event) => event.args.slice(sizingPrefix.length).join(" ")).sort(),
+        [
+          "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
+          "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- lexer::",
+          "pnpm bindings:check",
+          "pnpm rust:windows:check",
+        ],
+      );
+      for (const event of directStarts) {
+        assert.notEqual(event.executable, GATE_LAUNCHER);
+        assert.ok(!event.args.includes(RUST_SIZING_MODE_FLAG));
+      }
+      assert.deepEqual(directStarts.map((event) => event.command).sort(), [
+        "bash scripts/setup-rust.sh",
+        "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+        "env -u KIT_ROOT pnpm findings:kit:check",
+        "pnpm build-vite",
+        "pnpm bundle:check",
+        "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
+        "pnpm gates:contract:check",
+        "pnpm mutation:guard:check",
+        "pnpm rust:target:evict",
+      ]);
+    },
+  );
+
+  await t.test(
+    "pre-review mode wraps only windows-clippy and leaves all other commands direct",
+    async (subtest) => {
+      const cwd = await temporarySchedulerRoot(subtest);
+      for (const path of ["src/state/workspace.ts", "src-tauri/src/lib.rs"]) {
+        await mkdir(dirname(join(cwd, path)), { recursive: true });
+        await writeFile(join(cwd, path), "// fixture\n");
+      }
+      const events = [];
+      const env = { ...process.env, GATE_MEMORY_BYTES: "not-a-number" };
+      delete env.CARGO_BUILD_JOBS;
+      const result = await runPushGates(["--pre-review"], {
+        cwd,
+        env,
+        discoverChangedPaths: () => ["src/state/workspace.ts", "src-tauri/src/lib.rs"],
+        spawnProcess: makeMockSpawner({ events }),
+      });
+      assert.equal(result.exitCode, 0);
+      const starts = events.filter((event) => event.type === "start");
+      const wrappedStarts = starts.filter((event) => event.executable === GATE_LAUNCHER);
+      const directStarts = starts.filter((event) => event.executable !== GATE_LAUNCHER);
+
+      assert.equal(wrappedStarts.length, 1);
+      assert.deepEqual(wrappedStarts[0].args.slice(0, sizingPrefix.length), sizingPrefix);
+      assert.deepEqual(wrappedStarts[0].args.slice(sizingPrefix.length), [
+        "pnpm",
+        "rust:windows:check",
+      ]);
+      assert.equal(wrappedStarts[0].env.CARGO_BUILD_JOBS, undefined);
+      assert.deepEqual(directStarts.map((event) => event.command).sort(), [
+        "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+        "pnpm build-vite",
+        "pnpm bundle:check",
+        "pnpm coverage:mapping:backend",
+        "pnpm coverage:mapping:frontend",
+        "pnpm exec oxfmt --check src/state/workspace.ts",
+        "pnpm exec oxlint --deny-warnings src/state/workspace.ts",
+        "pnpm exec tsgo --noEmit",
+      ]);
+    },
+  );
+});
+
+test("agent-gate exit 125 refusal and missing launcher fail the lane and latch with no fallback", async (t) => {
+  await t.test(
+    "exit 125 from agent-gate fails rust-lint and skips related-tests",
+    async (subtest) => {
+      const cwd = await temporarySchedulerRoot(subtest);
+      await mkdir(join(cwd, "src/utils"), { recursive: true });
+      await writeFile(join(cwd, "src/utils/annotation.ts"), "export const a = 1;\n");
+      const events = [];
+      const clippy = wrappedHeavyCommand(
+        "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings",
+      );
+      const result = await runPushGates(["--rust", "--frontend"], {
+        cwd,
+        env: { ...process.env },
+        discoverChangedPaths: () => ["src/utils/annotation.ts"],
+        spawnProcess: makeMockSpawner({
+          events,
+          exits: { [clippy]: 125 },
+          stdout: "agent-gate: REFUSED — lock failed\n",
+        }),
+      });
+      assert.equal(result.exitCode, 125);
+      const rustLint = result.results.find((task) => task.name === "rust-lint");
+      assert.equal(rustLint.status, "failed");
+      assert.equal(rustLint.code, 125);
+      const related = result.results.find((task) => task.name === "related-tests");
+      assert.equal(related.status, "skipped");
+      assert.match(related.reason, /rust-lint failed/u);
+      assert.equal(
+        cliCommandStart(events, wrappedHeavyCommand("pnpm rust:windows:check")),
+        undefined,
+      );
+      assert.equal(
+        cliCommandStart(
+          events,
+          "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
+        ),
+        undefined,
+      );
+    },
+  );
+
+  await t.test(
+    "missing agent-gate executable exits 127 and latches with no in-place fallback",
+    async (subtest) => {
+      const harness = await makeHarness(subtest, { omittedExecutables: [GATE_LAUNCHER] });
+      const result = await runCli(subtest, harness, ["--bindings"]);
+      assert.equal(result.code, 127, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, /spawn agent-gate ENOENT/u);
+      const started = commandSet(await readEvents(harness));
+      assert.ok(!started.includes("pnpm bindings:check"));
+      assert.ok(!started.includes("pnpm gates:contract:check"));
+    },
+  );
+});
+
+test("run-wide slot admission serialises concurrent slot-taking lanes while non-slot lanes keep running (PR-9)", async (t) => {
+  await t.test(
+    "two concurrent slot-taking lanes never overlap while a light lane overlaps freely",
+    async (subtest) => {
+      const cwd = await temporarySchedulerRoot(subtest);
+      const heavySchedule = {
+        p0: [],
+        p1: [],
+        lanes: [
+          {
+            name: "heavy-a",
+            always: true,
+            commands: [heavyGateCommand("pnpm heavy-a")],
+          },
+          {
+            name: "heavy-b",
+            always: true,
+            commands: [heavyGateCommand("pnpm heavy-b")],
+          },
+          {
+            name: "light-c",
+            always: true,
+            commands: ["pnpm light-c"],
+          },
+        ],
+      };
+      const events = [];
+      let activeHeavy = 0;
+      let maxActiveHeavy = 0;
+      let lightRanDuringHeavy = false;
+      let signalFirstHeavyStarted;
+      let releaseFirstHeavy;
+      const firstHeavyStarted = new Promise((resolve) => {
+        signalFirstHeavyStarted = resolve;
+      });
+      const firstHeavyHeld = new Promise((resolve) => {
+        releaseFirstHeavy = resolve;
+      });
+      const heavyA = wrappedHeavyCommand("pnpm heavy-a");
+      const heavyB = wrappedHeavyCommand("pnpm heavy-b");
+
+      const spawnProcess = (executable, args) => {
+        const command = [executable, ...args].join(" ");
+        const isHeavy = executable === GATE_LAUNCHER;
+        if (isHeavy) {
+          activeHeavy += 1;
+          maxActiveHeavy = Math.max(maxActiveHeavy, activeHeavy);
+          if (command === heavyA) signalFirstHeavyStarted();
+        }
+        events.push({ type: "start", command });
+        const child = new EventEmitter();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        child.pid = undefined;
+        child.exitCode = null;
+        child.signalCode = null;
+        child.kill = () => false;
+        setImmediate(async () => {
+          try {
+            if (command === heavyA) await firstHeavyHeld;
+            if (command === "pnpm light-c") {
+              await firstHeavyStarted;
+              if (activeHeavy === 1) lightRanDuringHeavy = true;
+              releaseFirstHeavy();
+            }
+          } finally {
+            if (isHeavy) activeHeavy -= 1;
+            child.exitCode = 0;
+            child.stdout.end();
+            child.stderr.end();
+            events.push({ type: "finish", command, code: 0 });
+            child.emit("close", 0, null);
+          }
+        });
+        return child;
+      };
+
+      try {
+        const result = await runPushGates([], {
+          cwd,
+          env: { ...process.env },
+          schedule: heavySchedule,
+          spawnProcess,
+        });
+        assert.equal(result.exitCode, 0);
+        assert.equal(maxActiveHeavy, 1, "at most one agent-gate child may be alive at once");
+        assert.equal(
+          lightRanDuringHeavy,
+          true,
+          "non-slot lanes must continue running concurrently",
+        );
+        assert.ok(cliCommandFinish(events, heavyA));
+        assert.ok(cliCommandStart(events, heavyB));
+        assert.ok(
+          events.indexOf(cliCommandFinish(events, heavyA)) <
+            events.indexOf(cliCommandStart(events, heavyB)),
+          "second slot-taking command must not start until first has exited",
+        );
+      } finally {
+        signalFirstHeavyStarted();
+        releaseFirstHeavy();
+      }
+    },
+  );
+
+  await t.test(
+    "a failed slot-taking lane prevents a peer waiting on the slot from spawning",
+    async (subtest) => {
+      const cwd = await temporarySchedulerRoot(subtest);
+      const heavySchedule = {
+        p0: [],
+        p1: [],
+        lanes: [
+          {
+            name: "heavy-a",
+            always: true,
+            commands: [heavyGateCommand("pnpm heavy-a")],
+          },
+          {
+            name: "heavy-b",
+            always: true,
+            commands: [heavyGateCommand("pnpm heavy-b")],
+          },
+        ],
+      };
+      const events = [];
+      const heavyA = wrappedHeavyCommand("pnpm heavy-a");
+      const heavyB = wrappedHeavyCommand("pnpm heavy-b");
+      const result = await runPushGates([], {
+        cwd,
+        env: { ...process.env },
+        schedule: heavySchedule,
+        spawnProcess: makeMockSpawner({
+          events,
+          exits: { [heavyA]: 125 },
+        }),
+      });
+      assert.equal(result.exitCode, 125);
+      assert.equal(cliCommandStart(events, heavyB), undefined);
+      const peer = result.results.find((task) => task.name === "heavy-b");
+      assert.equal(peer.status, "skipped");
+      assert.match(peer.reason, /heavy-a failed/u);
+    },
+  );
+});
+
+test("in-scope Rust sizing mode propagates CARGO_BUILD_JOBS, fails closed, maps spawn errors and signals", async (t) => {
+  await t.test(
+    "computes CARGO_BUILD_JOBS inside the entry and passes it to the child without detached",
+    async () => {
+      for (const [budgetBytes, expectedJobs] of [
+        [10 * GIB, "1"],
+        [41 * GIB, "5"],
+      ]) {
+        let spawned;
+        let stderr = "";
+        const code = await runRustCommand(["--", "cargo", "clippy", "--locked"], {
+          cwd: "/tmp",
+          env: { CARGO_BUILD_JOBS: "64", RUST_TEST_THREADS: "3" },
+          stderr: { write: (chunk) => (stderr += chunk) },
+          availableParallelism: () => 24,
+          getGateBudgetBytes: () => budgetBytes,
+          spawnProcess(executable, args, options) {
+            spawned = { executable, args, options };
+            const child = new EventEmitter();
+            child.exitCode = null;
+            child.signalCode = null;
+            setImmediate(() => {
+              child.exitCode = 0;
+              child.emit("close", 0, null);
+            });
+            return child;
+          },
+        });
+        assert.equal(code, 0, stderr);
+        assert.equal(stderr, "");
+        assert.equal(spawned.executable, "cargo");
+        assert.deepEqual(spawned.args, ["clippy", "--locked"]);
+        assert.equal(spawned.options.env.CARGO_BUILD_JOBS, expectedJobs);
+        assert.equal(spawned.options.env.RUST_TEST_THREADS, "3");
+        assert.equal(spawned.options.detached, false);
+        assert.equal(spawned.options.stdio, "inherit");
+      }
+    },
+  );
+
+  await t.test(
+    "refuses budgets below 9 GiB usable and invalid sizing env vars before spawning",
+    async () => {
+      const cases = [
+        {
+          label: "budget below 9 GiB usable",
+          env: {},
+          getGateBudgetBytes: () => 9 * GIB - 1,
+          expected: /Rust compilation refused:.*below the minimum.*9 GiB usable/u,
+        },
+        {
+          label: "invalid CARGO_BUILD_JOBS",
+          env: { CARGO_BUILD_JOBS: "0" },
+          getGateBudgetBytes: () => 10 * GIB,
+          expected: /CARGO_BUILD_JOBS/u,
+        },
+        {
+          label: "invalid GATE_MEMORY_BYTES",
+          env: { GATE_MEMORY_BYTES: "not-bytes" },
+          getGateBudgetBytes: undefined,
+          expected: /GATE_MEMORY_BYTES/u,
+        },
+        {
+          label: "invalid GATE_CPU_SHARE",
+          env: { GATE_CPU_SHARE: "0" },
+          getGateBudgetBytes: () => 10 * GIB,
+          expected: /GATE_CPU_SHARE/u,
+        },
+      ];
+      for (const { label, env, getGateBudgetBytes, expected } of cases) {
+        let spawned = false;
+        let stderr = "";
+        const code = await runRustCommand(["--", "cargo", "test"], {
+          env,
+          stderr: { write: (chunk) => (stderr += chunk) },
+          availableParallelism: () => 24,
+          ...(getGateBudgetBytes ? { getGateBudgetBytes } : {}),
+          spawnProcess() {
+            spawned = true;
+            throw new Error("must not spawn");
+          },
+        });
+        assert.equal(code, 1, label);
+        assert.equal(spawned, false, label);
+        assert.match(stderr, expected, label);
+        assert.equal(stderr.trimEnd().split("\n").length, 1, `${label} must be one-line stderr`);
+      }
+    },
+  );
+
+  await t.test("rejects missing or malformed command arguments before spawning", async () => {
+    for (const badArgs of [[], ["cargo"], ["--"], ["--", ""], ["extra", "--", "cargo"]]) {
+      let spawned = false;
+      let stderr = "";
+      const code = await runRustCommand(badArgs, {
+        env: {},
+        stderr: { write: (chunk) => (stderr += chunk) },
+        getGateBudgetBytes: () => 10 * GIB,
+        spawnProcess() {
+          spawned = true;
+          throw new Error("must not spawn");
+        },
+      });
+      assert.equal(code, 2, JSON.stringify(badArgs));
+      assert.equal(spawned, false, JSON.stringify(badArgs));
+      assert.match(stderr, /Usage:.*--run-rust-command/u);
+      assert.equal(stderr.trimEnd().split("\n").length, 1);
+    }
+  });
+
+  await t.test("maps spawn failure to exit 127 with a diagnostic naming the command", async () => {
+    let stderr = "";
+    const code = await runRustCommand(["--", "nonexistent-rust-tool-xyz"], {
+      env: {},
+      stderr: { write: (chunk) => (stderr += chunk) },
+      getGateBudgetBytes: () => 10 * GIB,
+      availableParallelism: () => 24,
+    });
+    assert.equal(code, 127);
+    assert.match(stderr, /spawn nonexistent-rust-tool-xyz failed:.*ENOENT/u);
+  });
+
+  await t.test(
+    "maps signal-terminated child (OOM SIGKILL) to 128 + signum and logs the signal",
+    async () => {
+      const result = spawnSync(
+        process.execPath,
+        [
+          runnerPath,
+          RUST_SIZING_MODE_FLAG,
+          "--",
+          process.execPath,
+          "-e",
+          "process.kill(process.pid, 'SIGKILL')",
+        ],
+        {
+          encoding: "utf8",
+          env: { ...process.env, GATE_MEMORY_BYTES: String(10 * GIB) },
+        },
+      );
+      assert.equal(result.status, 137, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stderr, /terminated by signal SIGKILL \(exit 137\)/u);
+    },
+  );
+
+  await t.test(
+    "forwards SIGINT, SIGTERM and SIGHUP to the child and exits only after child exit",
+    async () => {
+      for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+        const signalTarget = new EventEmitter();
+        const forwarded = [];
+        let childClosed = false;
+        const code = await runRustCommand(["--", "cargo", "clippy"], {
+          env: {},
+          stderr: { write() {} },
+          getGateBudgetBytes: () => 10 * GIB,
+          availableParallelism: () => 24,
+          signalTarget,
+          spawnProcess() {
+            const child = new EventEmitter();
+            child.exitCode = null;
+            child.signalCode = null;
+            child.kill = (received) => {
+              forwarded.push(received);
+              setTimeout(() => {
+                childClosed = true;
+                child.signalCode = received;
+                child.emit("close", null, received);
+              }, 20);
+              return true;
+            };
+            setImmediate(() => signalTarget.emit(signal, signal));
+            return child;
+          },
+        });
+        assert.equal(childClosed, true, `${signal} must wait for child exit`);
+        assert.deepEqual(forwarded, [signal]);
+        assert.ok(code > 128, `${signal} must map to 128 + signum`);
+        assert.equal(signalTarget.listenerCount(signal), 0, "signal listener must be uninstalled");
+      }
     },
   );
 });

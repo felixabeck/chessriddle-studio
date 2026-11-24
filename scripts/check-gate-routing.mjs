@@ -3,7 +3,11 @@ import { readFile, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { globToRegExp, matches } from "./coverage-scope.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
-import { preReviewGateScheduleCommands, pushGateScheduleCommands } from "./run-push-gates.mjs";
+import {
+  GATE_LAUNCHER,
+  preReviewGateScheduleCommands,
+  pushGateScheduleCommands,
+} from "./run-push-gates.mjs";
 import { listWorkingTreeFiles } from "./working-tree-files.mjs";
 
 const PUSH_SKILL = ".claude/skills/push/SKILL.md";
@@ -11,12 +15,12 @@ const PACKAGE_JSON = "package.json";
 const TEST_WORKFLOW = ".github/workflows/test.yml";
 const VITE_CONFIG = "vite.config.ts";
 const CONTRACT_GATE = "gates:contract:check";
-// The strict launcher takes the machine-wide heavy-gate lock and its own agents.slice scope;
-// it fails closed, nests in place, and permits no command -v fallback (d-20261002-01).
-const GATE_LAUNCHER = "agent-gate";
+// The runner and non-compiling commands run in the caller's scope; only Rust-compiling commands
+// are spawned through `agent-gate` by scripts/run-push-gates.mjs (d-20261124-02, superseding
+// d-20261002-01's placement clause for gates:push and checks:pre-review).
 const GATE_RUNNER_SCRIPTS = Object.freeze({
-  "gates:push": `${GATE_LAUNCHER} node scripts/run-push-gates.mjs`,
-  "checks:pre-review": `${GATE_LAUNCHER} node scripts/run-push-gates.mjs --pre-review`,
+  "gates:push": "node scripts/run-push-gates.mjs",
+  "checks:pre-review": "node scripts/run-push-gates.mjs --pre-review",
 });
 // The kit-parity gate must run the RELEASED kit. `kit` on PATH resolves to
 // $HOME/.local/share/agent-kit/current/bin/kit, an immutable release worktree

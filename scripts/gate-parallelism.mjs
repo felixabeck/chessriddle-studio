@@ -5,10 +5,11 @@ import { dirname, join, resolve, sep } from "node:path";
 const CGROUP_ROOT = "/sys/fs/cgroup";
 const PROCESS_CGROUP_FILE = "/proc/self/cgroup";
 
-// In a session scope (plain vitest), reserve 1 GiB for the agent sharing the cgroup
-// (0.32 GB RSS measured 2026-09-29) plus headroom. Inside the agent-gate scope, it covers
-// the scheduler (`node scripts/run-push-gates.mjs`) and per-lane pnpm and sh parents, which no
-// worker count sizes (d-20261002-03).
+// In a session scope (plain vitest, light gate lanes), reserve 1 GiB for the agent sharing the
+// cgroup (0.32 GB RSS measured 2026-09-29) plus headroom. Inside a Rust-compiling command's
+// agent-gate scope, it covers the in-scope sizing entry (`node scripts/run-push-gates.mjs
+// --run-rust-command`) and any pnpm/sh parents, which no worker count sizes (d-20261002-03,
+// d-20261124-02).
 // On 2026-10-02 the all-blocks gate completed
 // in a 28 GiB agent-gate scope without observed OOM events or swap use; that checks the
 // whole run, not this reserve on its own.
@@ -305,7 +306,7 @@ export function workerCount({
   return Math.max(1, Math.min(cpuCap, memoryCap));
 }
 
-/** One compiler allowance for push lanes, P1 bindings and pre-review Windows compilation. */
+/** One compiler allowance sized inside each Rust-compiling command's agent-gate scope. */
 export function rustBuildEnvironment({
   env = process.env,
   availableParallelism = defaultAvailableParallelism,

@@ -17,8 +17,10 @@ paths:
 
 ## Scheduling and placement
 
-`pnpm gates:push` and `pnpm checks:pre-review` are `agent-gate` commands (tuxedo-config's strict
-launcher, `d-20261002-01`).
+`pnpm gates:push` and `pnpm checks:pre-review` run `node scripts/run-push-gates.mjs` in the
+caller's scope; only Rust-compiling commands take a machine-wide heavy-gate slot through
+`agent-gate` (`d-20261124-02`, superseding `d-20261002-01`'s placement clause for those two
+scripts).
 
 The push skill's §2 runs every final local gate through one command,
 `pnpm gates:push -- [--rust] [--frontend] [--bindings]` (`scripts/run-push-gates.mjs`; no flags is
@@ -41,18 +43,40 @@ precedence is unchanged. Pre-review retains its single concurrent lane stage
 (d-20261105-04, d-20261105-05).
 
 The shared [gate-performance reference](~/.claude/references/gate-performance.md) owns machine-wide
-slot admission and scope caps. `agent-gate` takes one shared slot and runs the whole run in its
-own `agents.slice/agent-gate-*.scope`. It fails closed: exit 125 (`agent-gate: REFUSED — …`) means nothing started and a
-retry is safe; a missing launcher fails the gate with no in-place fallback. Never wrap a gate
-command in another `flock` on `heavy-gate.lock`: it deadlocks against the launcher's own lock.
-A nested `agent-gate` is safe and runs in place.
-`scripts/gate-parallelism.mjs` sizes
-workers from that scope's complete cgroup chain, including the `agents.slice` budget. Frontend
-consumers retain the conservative 8 GiB scope / 7 GiB usable fallback if an ancestor limit cannot
-be read or no finite limit exists.
+slot admission and scope caps. The slot-taking set is declared per command and is exactly the
+Rust-compiling commands: P1 `bindings-check` (`pnpm bindings:check`), `rust-lint`'s `cargo clippy`
+and `pnpm rust:windows:check`, pre-review `windows-clippy` (`pnpm rust:windows:check`), and the
+`related-tests` `cargo test` command. Each slot-taking command is spawned through `agent-gate` via
+the in-scope sizing mode (`node scripts/run-push-gates.mjs --run-rust-command -- <cmd>`), so it
+takes one shared slot, runs in its own `agents.slice/agent-gate-*.scope`, computes
+`CARGO_BUILD_JOBS` from that scope's cgroup chain, and releases the slot when it exits. The runner
+serialises slot-taking commands run-wide so one run never has two `agent-gate` calls alive at once;
+non-slot lanes continue running concurrently in the caller's scope. `agent-gate` fails closed: exit
+125 (`agent-gate: REFUSED — …`) means nothing started and a retry is safe; a missing launcher fails
+that command and latches with no in-place fallback. Never wrap a gate command in another `flock` on
+`heavy-gate.lock`: it deadlocks against the launcher's own lock. A nested `agent-gate` is safe and
+runs in place. `scripts/gate-parallelism.mjs` sizes workers from the active scope's complete cgroup
+chain, including the `agents.slice` budget. Frontend consumers retain the conservative 8 GiB scope /
+7 GiB usable fallback if an ancestor limit cannot be read or no finite limit exists.
 
-The shared Rust allocator applies before the P1 bindings exporter, each admitted Rust lane (including
-`related-tests` when Rust files changed) and pre-review Windows compilation. Cold calibration covers bindings, native clippy/test, Windows GNU
+Non-Rust placement measurement (2026-11-24, host `tuxedo-felix` laptop: 20 logical CPUs, one
+heavy-gate slot, `agents.slice` `MemoryHigh` 24 GiB; base `bb9d374f6` + `d-20261124-02`; each item
+in its own fresh `systemd-run --user --scope --slice=agents.slice -p MemoryMax=8G` scope,
+threshold ≤ 6 GiB with `oom_kill` 0 and `memory.swap.peak` 0):
+* pre-review, every non-Rust lane from a cold `dist/` (P1 `frontend-build`, then `format-lint`,
+  `coverage-mapping-frontend`, `bundle`, plus `coverage-mapping-backend` concurrently):
+  `memory.peak` 2,420,289,536 B (2.25 GiB), 14 s, `oom_kill` 0, `memory.swap.peak` 0;
+* push `--frontend` light part (P1 `frontend-build`, then `contract` [`gates:contract:check` +
+  `findings:kit:check`] and `bundle` concurrently): `memory.peak` 1,618,771,968 B (1.51 GiB),
+  117 s, `oom_kill` 0, `memory.swap.peak` 0;
+* `related-tests` Vitest `vitest related --run --passWithNoTests src/utils/chess.ts
+  src/utils/treeReducer.ts` (246 files, 7600 tests, workers sized by `vitestMaxWorkers` from the
+  8 GiB scope): `memory.peak` 4,260,466,688 B (3.97 GiB), 54 s, `oom_kill` 0, `memory.swap.peak` 0.
+All three stayed under 6 GiB, so no light command was promoted into the slot-taking set.
+
+The shared Rust allocator runs inside each Rust-compiling command's `agent-gate` scope (P1 bindings
+exporter, `rust-lint`'s `cargo clippy` and `pnpm rust:windows:check`, `related-tests` `cargo test`,
+and pre-review `windows-clippy`). Cold calibration covers bindings, native clippy/test, Windows GNU
 clippy and nightly coverage. It allocates 8 GiB per compiler job plus 1 GiB Rust overhead, beside
 the existing 1 GiB generic reserve. The largest measured process was native test at 6704693248
 bytes, about 6.24 GiB. Known budgets below 9 GiB usable refuse before compilation. Unavailable
@@ -69,8 +93,10 @@ containment, and delete this operative prose with the replaced mechanism.
 The e2e container (`pnpm test:e2e:container`, CI-only for pushes and manual for `$verify-ui`) runs
 with a 5 GiB limit (`E2E_CONTAINER_MEMORY_BYTES`), sized 2026-11-22 at 1.2x the measured anon +
 kernel peak (f-20261122-01, d-20261122-05). The placement and reserve constants are
-`d-20260930-03`, `d-20261002-01` (placement), and `d-20261002-03` (reserve). This Rust admission
-replaces only the concurrent Rust and Rust-related frontend-share clauses of `d-20260930-04`.
+`d-20260930-03`, `d-20261124-02` (per-Rust-command placement, superseding `d-20261002-01`'s
+placement clause for `gates:push` and `checks:pre-review`), and `d-20261002-03` (reserve). This
+Rust admission replaces only the concurrent Rust and Rust-related frontend-share clauses of
+`d-20260930-04`.
 
 ## Mutation gate routing
 
