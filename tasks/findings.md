@@ -28770,7 +28770,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The tree is still version 1.0.0, 1475 commits after the published v1.0.0, so this week's build cannot be offered as an update
 
-* **ID:** f-20261124-04 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-04 · **Status:** handled · **Area:** app-startup · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** release-readiness review (Felix t85u, pass 1) at origin/master `d7877bce8`
 * **Where:** `package.json:3` and `src-tauri/Cargo.toml:3` (`version = "1.0.0"`); updater endpoint in `src-tauri/tauri.conf.json:62-64` (`https://github.com/felixabeck/chessriddle-studio/releases/latest/download/latest.json`); startup check in `src/App.tsx:180-201` (`checkForAppUpdate`).
@@ -28779,6 +28779,8 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Fix:** bump `package.json` and `src-tauri/Cargo.toml` (and any other pinned version) to a new version, then tag and publish that version so `latest.json` advertises it. 1.0.1 is enough if this is a patch over the already-public 1.0.0; 1.1.0 if the Coach and later features should read as a minor release. Do not reuse the `v1.0.0` tag.
 * **Proof:** `python3 -c 'import json,pathlib; print(json.loads(pathlib.Path("package.json").read_text())["version"])'` and `rg -n '^version' src-tauri/Cargo.toml` both print `1.0.0`; `git rev-list --count v1.0.0..HEAD` is 1475; `gh release view v1.0.0 --repo felixabeck/chessriddle-studio` shows a published release; `curl -sL https://github.com/felixabeck/chessriddle-studio/releases/latest/download/latest.json` has `"version": "1.0.0"`. After the bump, the two source versions differ from that published 1.0.0.
 * **Found by:** Grok Bot, 2026-11-24, release-readiness review (SC-1)
+* **Closed:** 2026-11-24, commit 3e46a5312. Version is now 1.1.0 in `package.json`, `src-tauri/Cargo.toml` and `Cargo.lock` (`tauri.conf.json` has no version field; Tauri and `release.yml`'s Safari step read `Cargo.toml`). `src/utils/product.test.ts` requires the two source versions to agree and exceed the published 1.0.0. Decision d-20261124-13 (1.1.0, not 1.0.1). Not done here: tagging and publishing `v1.1.0` (a release, separate authority). `browser-extension/manifest.json` keeps its own 1.0.0: the extension is versioned and store-published separately. Proof: `pnpm vitest run src/utils/product.test.ts` 6/6 green; `cargo metadata --locked` accepts the lockfile.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"82e161354e4f68aa886969751cd71dc76faf5656c210a3f3b95a4301a071b1fd","header_sha256":"1cb9810d23a31f71daca62edbc6ba1bd56cbbbcc7e30df2e22000f8ffb69c007","header_status":"handled","input_sha256":"ca99a626660fdbc0b200d5d4fd5483bd78034ff771e1e19ab64a5440875a5924","kind":"mutation-receipt","operation":"c69791751c2b402206176fc876f3ade1feac862898ca52511fd80f576d29d919","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-04"],"target":"f-20261124-04","v":1} -->
 
 ---
 
