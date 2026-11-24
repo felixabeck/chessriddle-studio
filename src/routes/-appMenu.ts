@@ -24,6 +24,7 @@ export type MenuGroup = {
 export type AppMenuCallbacks = {
     about: () => void;
     sendFeedback: () => void;
+    openAssistant?: () => void;
     createNewTab: () => void | Promise<void>;
     openNewFile: () => void | Promise<void>;
     saveGame: () => void | Promise<void>;
@@ -69,12 +70,21 @@ export function renderResizeHandles(
 export function buildAppMenuTree(args: {
     t: MenuTranslator;
     isMacOS: boolean;
+    showAssistant?: boolean;
     newTabShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
     callbacks: AppMenuCallbacks;
 }): MenuGroup[] {
-    const { t, isMacOS, newTabShortcut, openFileShortcut, saveShortcut, callbacks } = args;
+    const {
+        t,
+        isMacOS,
+        showAssistant = false,
+        newTabShortcut,
+        openFileShortcut,
+        saveShortcut,
+        callbacks,
+    } = args;
 
     const aboutOption: MenuItemAction = {
         label: t("Menu.Help.About"),
@@ -185,6 +195,15 @@ export function buildAppMenuTree(args: {
         {
             label: t("Menu.Help"),
             options: [
+                ...(showAssistant
+                    ? [
+                          {
+                              label: t("Menu.Help.Assistant"),
+                              id: "assistant",
+                              action: callbacks.openAssistant,
+                          },
+                      ]
+                    : []),
                 {
                     label: t("Menu.Help.SendFeedback"),
                     id: "send_feedback",
@@ -199,12 +218,21 @@ export function buildAppMenuTree(args: {
 export function buildInAppMenuItems(args: {
     t: MenuTranslator;
     isMacOS: boolean;
+    showAssistant?: boolean;
     newTabShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
     callbacks: AppMenuCallbacks;
 }): MenuAction[] {
-    const { t, isMacOS, newTabShortcut, openFileShortcut, saveShortcut, callbacks } = args;
+    const {
+        t,
+        isMacOS,
+        showAssistant = false,
+        newTabShortcut,
+        openFileShortcut,
+        saveShortcut,
+        callbacks,
+    } = args;
     return [
         {
             label: t("Menu.File.NewTab"),
@@ -254,6 +282,15 @@ export function buildInAppMenuItems(args: {
             action: callbacks.toggleFullscreen,
         },
         { kind: "separator" },
+        ...(showAssistant
+            ? [
+                  {
+                      label: t("Menu.Help.Assistant"),
+                      id: "assistant",
+                      action: callbacks.openAssistant,
+                  },
+              ]
+            : []),
         {
             label: t("Menu.Help.SendFeedback"),
             id: "send_feedback",
@@ -323,6 +360,7 @@ export type AppMenuCommandBindings = {
     runMenu: (command: () => Promise<unknown>, successMessage?: string) => Promise<void>;
     about: () => void;
     sendFeedback: () => void;
+    openAssistant?: () => void;
     createNewTab: () => Promise<unknown> | void;
     openNewFile: () => Promise<unknown>;
     saveGame: () => Promise<unknown>;
@@ -338,6 +376,7 @@ export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuC
     return {
         about: bindings.about,
         sendFeedback: bindings.sendFeedback,
+        ...(bindings.openAssistant ? { openAssistant: bindings.openAssistant } : {}),
         createNewTab: () => bindings.runMenu(async () => bindings.createNewTab()),
         openNewFile: () => bindings.runMenu(bindings.openNewFile),
         saveGame: () => bindings.runMenu(bindings.saveGame),

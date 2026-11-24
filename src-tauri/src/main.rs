@@ -1508,11 +1508,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chessriddle::chessriddle_training_motifs,
             chessriddle::chessriddle_open_website,
             coach::coach_available,
+            coach::coach_has_connection,
             coach::coach_connections,
             coach::coach_save_api_connection,
             coach::coach_remove_connection,
             coach::coach_models,
             coach::coach_turn,
+            coach::assistant_turn,
             coach::coach_sign_in_chatgpt,
             coach::coach_begin_grok_sign_in,
             coach::coach_finish_grok_sign_in,
@@ -1695,7 +1697,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ClockUpdateEvent,
             GameOverEvent,
             infra::game_link::GameLinkPending,
-            coach::CoachTurnEvent
+            coach::CoachTurnEvent,
+            coach::AssistantTurnEvent
         ));
 
     #[cfg(debug_assertions)]

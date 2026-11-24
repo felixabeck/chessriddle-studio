@@ -215,6 +215,62 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
     expect(option(groups, "Menu.View", "toggle_fullscreen").shortcut).toBe("Ctrl+Cmd+F");
 });
 
+test("Help menu and in-app menu include Assistant only when showAssistant is true", () => {
+    let opened = 0;
+    const actions = callbacks({
+        openAssistant: () => {
+            opened += 1;
+        },
+    });
+    const hiddenTree = buildAppMenuTree({
+        t,
+        isMacOS: true,
+        showAssistant: false,
+        newTabShortcut: "Cmd+T",
+        openFileShortcut: "Cmd+O",
+        saveShortcut: "meta+s",
+        callbacks: actions,
+    });
+    expect(idsOf(hiddenTree, "Menu.Help")).toEqual(["send_feedback"]);
+
+    const shownTree = buildAppMenuTree({
+        t,
+        isMacOS: true,
+        showAssistant: true,
+        newTabShortcut: "Cmd+T",
+        openFileShortcut: "Cmd+O",
+        saveShortcut: "meta+s",
+        callbacks: actions,
+    });
+    expect(idsOf(shownTree, "Menu.Help")).toEqual(["assistant", "send_feedback"]);
+    option(shownTree, "Menu.Help", "assistant").action?.();
+    expect(opened).toBe(1);
+
+    const hiddenItems = buildInAppMenuItems({
+        t,
+        isMacOS: false,
+        showAssistant: false,
+        newTabShortcut: "Ctrl+T",
+        openFileShortcut: "Ctrl+O",
+        saveShortcut: "ctrl+s",
+        callbacks: actions,
+    });
+    expect(idsOfItems(hiddenItems)).not.toContain("assistant");
+
+    const shownItems = buildInAppMenuItems({
+        t,
+        isMacOS: false,
+        showAssistant: true,
+        newTabShortcut: "Ctrl+T",
+        openFileShortcut: "Ctrl+O",
+        saveShortcut: "ctrl+s",
+        callbacks: actions,
+    });
+    expect(idsOfItems(shownItems)).toContain("assistant");
+    item(shownItems, "assistant").action?.();
+    expect(opened).toBe(2);
+});
+
 test("changing t changes labels", () => {
     const items = buildInAppMenuItems({
         t: (key) => `${key}.fr`,

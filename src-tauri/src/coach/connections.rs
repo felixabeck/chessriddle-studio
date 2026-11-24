@@ -286,6 +286,16 @@ impl Connections {
         }
     }
 
+    /// Whether at least one connection exists in the registry, without reading the keyring.
+    pub(crate) async fn has_any(&self) -> Result<bool, CoachError> {
+        let accounts = self
+            .credentials
+            .list()
+            .await
+            .map_err(|_| CoachError::Storage)?;
+        Ok(!accounts.is_empty())
+    }
+
     pub(crate) async fn list(&self) -> Result<Vec<ConnectionSummary>, CoachError> {
         let accounts = self
             .credentials

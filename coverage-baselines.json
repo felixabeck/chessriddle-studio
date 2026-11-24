@@ -160,6 +160,7 @@
           "src/components/Sidebar.tsx",
           "src/components/TopBar.tsx",
           "src/components/WindowResizeHandles.tsx",
+          "src/components/assistant/**",
           "src/components/common/AppModal.tsx",
           "src/components/common/AppPopover.tsx",
           "src/components/common/CatalogDownloadCard.tsx",

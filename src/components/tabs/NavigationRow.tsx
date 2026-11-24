@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Library,
   MessageSquarePlus,
+  MessagesSquare,
   Plus,
   Settings,
   User,
@@ -130,10 +131,16 @@ export default function NavigationRow({
   menuActions,
   showWindowControls = true,
   onSendFeedback,
+  showAssistant = false,
+  assistantOpened = false,
+  onToggleAssistant,
 }: {
   menuActions: MenuAction[];
   showWindowControls?: boolean;
   onSendFeedback: () => void;
+  showAssistant?: boolean;
+  assistantOpened?: boolean;
+  onToggleAssistant?: () => void;
 }) {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -505,6 +512,26 @@ export default function NavigationRow({
           )}
         </div>
         <div className={classes.dragGap} data-tauri-drag-region />
+        {showAssistant && onToggleAssistant && (
+          <Tooltip
+            label={t("Navigation.Assistant")}
+            disabled={!compact}
+            position="bottom"
+            openDelay={400}
+          >
+            <button
+              type="button"
+              className={classes.barAction}
+              aria-label={t("Navigation.Assistant")}
+              aria-pressed={assistantOpened}
+              data-active={assistantOpened || undefined}
+              onClick={onToggleAssistant}
+            >
+              <MessagesSquare size="0.875rem" aria-hidden />
+              <span className={classes.compactLabel}>{t("Navigation.Assistant")}</span>
+            </button>
+          </Tooltip>
+        )}
         <Tooltip
           label={t("Navigation.Feedback")}
           disabled={!compact}
@@ -513,7 +540,7 @@ export default function NavigationRow({
         >
           <button
             type="button"
-            className={classes.feedback}
+            className={classes.barAction}
             aria-label={t("Navigation.Feedback")}
             onClick={onSendFeedback}
           >

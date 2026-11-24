@@ -1,0 +1,27 @@
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.0625rem 0.4375rem;
+  margin: 0 0.125rem;
+  border: 1px solid var(--cf-border-strong);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-interactive);
+  color: var(--cf-foreground);
+  font: inherit;
+  font-size: 0.875em;
+  font-weight: 500;
+  line-height: 1.4;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.link:hover {
+  background: var(--cf-interactive-hover);
+  border-color: var(--cf-primary);
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: 1px;
+}

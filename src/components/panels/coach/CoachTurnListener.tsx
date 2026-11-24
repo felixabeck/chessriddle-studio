@@ -1,24 +1,7 @@
-import { useStore } from "jotai";
-import { warnSafely } from "@/platform/errors";
 import { tauriSubscriptions } from "@/platform/tauri";
-import { useTauriListener } from "@/platform/useTauriListener";
+import { createLazyModuleLoader, useLazyTurnListener } from "./useLazyTurnListener";
 
-type CoachTurns = typeof import("@/state/coachTurns");
-
-let coachTurns: Promise<CoachTurns> | undefined;
-
-/**
- * The turn logic, loaded on demand so the application shell stays small. Every event awaits the
- * same promise, so events are applied in the order they came; a failed load is tried again by
- * the next event.
- */
-function loadCoachTurns(): Promise<CoachTurns> {
-  coachTurns ??= import("@/state/coachTurns").catch((cause: unknown) => {
-    coachTurns = undefined;
-    throw cause;
-  });
-  return coachTurns;
-}
+const loadCoachTurns = createLazyModuleLoader(() => import("@/state/coachTurns"));
 
 /**
  * The one subscription to Coach turn events. It is mounted by the application shell for as long
@@ -26,14 +9,11 @@ function loadCoachTurns(): Promise<CoachTurns> {
  * By the time an event can arrive, the panel that started the turn has loaded the turn logic.
  */
 export function CoachTurnListener() {
-  const atoms = useStore();
-  useTauriListener(
-    tauriSubscriptions.coachTurn,
-    async (event) => {
-      const { applyCoachTurnEvent } = await loadCoachTurns();
-      applyCoachTurnEvent(atoms, event.payload);
-    },
-    { onError: (error) => warnSafely(`Coach turn event failed: ${error.message}`) },
-  );
+  useLazyTurnListener({
+    subscribe: tauriSubscriptions.coachTurn,
+    load: loadCoachTurns,
+    apply: (turns, atoms, payload) => turns.applyCoachTurnEvent(atoms, payload),
+    errorLabel: "Coach turn event failed",
+  });
   return null;
 }

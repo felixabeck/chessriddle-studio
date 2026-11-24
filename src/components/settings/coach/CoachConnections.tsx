@@ -187,6 +187,9 @@ export function CoachConnections() {
       <Text size="xs" c="dimmed">
         {t("Settings.Coach.Connections.Desc")}
       </Text>
+      <Text size="xs" c="dimmed" mt={4}>
+        {t("Settings.Coach.Connections.AssistantNote")}
+      </Text>
       {state.status === "failed" && (
         <Alert color="danger" px="xs" mt="sm" role="alert">
           <Group justify="space-between" gap="sm">

@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 pub(crate) use crate::chessriddle::FEEDBACK_URL;
 const STUDIO_PRODUCT: &str = "ChessRiddle Studio";
-const MIN_MESSAGE_CHARS: usize = 10;
-const MAX_MESSAGE_CHARS: usize = 5000;
+pub(crate) const MIN_MESSAGE_CHARS: usize = 10;
+pub(crate) const MAX_MESSAGE_CHARS: usize = 5000;
 const MIN_EMAIL_CHARS: usize = 3;
 const MAX_EMAIL_CHARS: usize = 254;
 const MAX_EMAIL_LOCAL_PART_CHARS: usize = 64;

@@ -10,6 +10,8 @@ The Coach is a chat about the position on the analysis board. The user asks a qu
 | Connections in Settings | `src/components/settings/coach/` |
 | Renderer state: selection, conversation per tab, running turns | `src/state/coach.ts`, `src/state/coachSession.ts`, `src/state/coachTurns.ts` |
 | Repertoire lines for the position | `src/state/repertoireIndex.ts` |
+| Assistant panel, targets, help topics | `src/components/assistant/`, `src/components/assistant/topics/` |
+| Assistant state and turns | `src/state/coachAvailability.ts`, `src/state/assistant.ts`, `src/state/assistantTurns.ts` |
 
 ## The switch
 
@@ -65,12 +67,35 @@ Bounds: 6 model rounds, 4 tool calls per round, 5 minutes in total, a 2-second b
 
 The model never changes the game. A line in an answer previews on the board when clicked, and a button inserts it as a variation.
 
+## Assistant
+
+The Assistant is a read-only AI helper that explains how ChessRiddle Studio works, links directly to settings and pages in the app, and can prepare a feedback draft when something is missing or broken. It changes no setting, file, database, or game, and never sends feedback itself.
+
+**Entry points and visibility.** The Assistant is reachable from the Help menu (`Assistant`, in both the macOS native menu and the in-app menu) and from a button beside Feedback in the navigation row. Both entries appear only when the Coach switch is enabled and at least one AI connection exists in the credential registry (`coach_has_connection`, checked without reading the system keyring; failures fail closed, log, and re-check after connections change). It opens as a docked right panel (or an overlay with a close control below `56em` window width), sharing the Coach's stored connection, model, and effort selection. The conversation lives in memory for that window only.
+
+**What a turn sends.** Built natively from the bounded renderer input and sent only to the provider of the chosen connection:
+
+- the Assistant's instructions, the user's question, and the earlier completed exchanges of this window's conversation,
+- the app version and operating system (native facts) and the interface language,
+- where the user is: the current page and, on a board tab, its tab kind,
+- setup facts already held by the renderer without starting a read: the names of installed engines (fenced as data; sent as "not known" if the engine list has not been read yet) and whether a reference database is chosen,
+- the topic index (id, title, one-line summary of every shipped help topic),
+- the settings list (target id, category, title, description of every setting shown in this build, in the interface language),
+- the link targets (id and label),
+- the full text of the help topics the model requests via its `read_topics` tool.
+
+Not sent: games, positions, files, file names and paths, database names, account names, keys, or setting values. A separate first-use notice (stored per connection under `assistant-notice-accepted`, independent of the Coach's acceptance) names this list before the first question is sent.
+
+**Bounds and turn lifecycle.** An Assistant turn runs under a window-owned native read reservation (`prepare_native_read` / `cancel_native_read`), so Stop, closing the window, reloading, or quitting cancels it. It shares the Coach's bounded model loop and turn driver: 6 model rounds, 4 tool calls per round, and a 5-minute deadline, with its own slot pool (`MAX_ASSISTANT_TURNS = 4` overall, at most one per window). Native input bounds (`src-tauri/src/coach/mod.rs` `MAX_ASSISTANT_*`): 4,000-character question, 40 history messages / 96 KiB (shared with Coach), up to 64 topics (32 KiB per body, 512 KiB total, at most 4 topics per `read_topics` call), 256 settings (128 KiB total), 512 link targets, 64 engine names, plus per-field character limits (`128` id/turn-id/page/engine-name, `200` title, `400` summary/description, `64` tab kind, `32` language).
+
+**Links, feedback hand-off, and help topics.** The model writes links as `[[target-id]]`, split by the shared bracket scanner. Only target ids offered in that turn become clickable links, rendered with the app's translated label (never model text); unknown ids and unclosed brackets stay plain text, with no repair round. Clicking a setting or category link navigates to Settings via a one-shot non-persisted request that clears any active search, switches to the category, scrolls to the row, and highlights it. The `draft_feedback` tool validates a feedback type and message against `src-tauri/src/feedback.rs`'s limits (10–5,000 characters) and attaches the draft to the answer; clicking the answer's feedback link opens the feedback form prefilled for the user to review and send. Shipped English help topics live in `src/components/assistant/topics/`, load lazily on first use, and resolve `{{label:...}}` references into the active interface language.
+
 ## Checking the real providers
 
 The unit tests run every sign-in and both wire formats against loopback doubles. A real sign-in needs the account owner in the browser once:
 
 1. Start a `.dev` build (`pnpm dev`).
-2. Settings → Coach → "Continue with ChatGPT" (or "Sign in with Grok"), approve in the browser.
+2. Settings → AI → "Continue with ChatGPT" (or "Sign in with Grok"), approve in the browser.
 3. "Check" on the connection lists its models.
 4. Open a game, open the Coach panel, pick the connection and a model, ask a question. The answer should name engine lines, and "The engine is checking …" should appear while it works.
 5. Remove the connection. No notice means the provider confirmed the sign-out.

@@ -184,6 +184,7 @@
       "paths": [
         "src/components/About.tsx",
         "src/components/ErrorComponent.tsx",
+        "src/components/assistant/**",
         "src/components/feedback/**",
         "src/components/Sidebar.tsx",
         "src/components/TopBar.tsx",

@@ -38,3 +38,24 @@ export function useCoachErrorMessages(): Record<CoachError, string> {
         [t],
     );
 }
+
+/**
+ * One sentence per native error code for the Assistant. Codes whose Coach wording names the Coach,
+ * the engine or the connection form get Assistant-specific wording; the others are shared.
+ */
+export function useAssistantErrorMessages(): Record<CoachError, string> {
+    const { t } = useTranslation();
+    const coach = useCoachErrorMessages();
+    return useMemo(
+        () => ({
+            ...coach,
+            busy: t("Assistant.Error.Busy"),
+            limitExceeded: t("Assistant.Error.LimitExceeded"),
+            unavailable: t("Assistant.Error.Unavailable"),
+            invalidInput: t("Assistant.Error.InvalidInput"),
+            noFunctionCalling: t("Assistant.Error.NoFunctionCalling"),
+            engineFailed: t("Assistant.Error.EngineFailed"),
+        }),
+        [coach, t],
+    );
+}

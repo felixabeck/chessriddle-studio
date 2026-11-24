@@ -248,7 +248,7 @@
   min-width: 2.5rem;
 }
 
-.feedback {
+.barAction {
   align-self: center;
   display: inline-flex;
   align-items: center;
@@ -268,13 +268,14 @@
   cursor: pointer;
 }
 
-.feedback:hover {
+.barAction:hover,
+.barAction[data-active] {
   background: var(--cf-bar-hover);
   /* The 80% label falls below 4.5:1 on the dark bar-hover fill. */
   color: var(--cf-foreground);
 }
 
-.feedback:focus-visible {
+.barAction:focus-visible {
   outline: 2px solid var(--cf-ring);
   outline-offset: -2px;
 }

@@ -1,31 +1,15 @@
 import { atom } from "jotai";
-import { atomWithStorage, loadable } from "jotai/utils";
+import { atomWithStorage } from "jotai/utils";
 import { z } from "zod";
 import type { CoachError, ConnectionSummary, ModelInfo } from "@/bindings";
 import { coachErrorCode } from "@/platform/coach";
 import { warn } from "@/platform/native";
 import { tauri } from "@/platform/tauri";
 import type { Engine, LocalEngine } from "@/utils/engines";
+import { coachEnabledAtom, refreshAssistantAvailabilityAtom } from "./coachAvailability";
 import { createZodStorage } from "./utils";
 
-/**
- * Whether this build has the Coach. Read once per document: the native switch cannot change while
- * the app runs. A failed read counts as "not available" so nothing of the Coach is rendered.
- */
-const coachAvailableAtom = atom(async () => {
-    try {
-        return await tauri.coachAvailable();
-    } catch {
-        return false;
-    }
-});
-const coachAvailableLoadableAtom = loadable(coachAvailableAtom);
-
-/** `true` only once the native side has confirmed the Coach; `false` while that is still unknown. */
-export const coachEnabledAtom = atom((get) => {
-    const available = get(coachAvailableLoadableAtom);
-    return available.state === "hasData" && available.data;
-});
+export { coachEnabledAtom };
 
 export type CoachConnectionsState =
     | { status: "loading" }
@@ -52,6 +36,7 @@ export const coachConnectionsAtom = atom(
             next = { status: "failed", error: coachErrorCode(cause) };
         }
         if (get(connectionsRequestAtom) === request) set(connectionsStateAtom, next);
+        if (get(coachEnabledAtom)) void set(refreshAssistantAvailabilityAtom);
     },
 );
 coachConnectionsAtom.onMount = (reload) => {
@@ -101,18 +86,31 @@ const MAX_EFFORT_CHARS = 32;
 /** An engine's immutable id. */
 const MAX_ENGINE_ID_CHARS = 128;
 
+/** Creates a bounded, schema-validated per-connection notice acceptance atom. */
+export function createNoticeAcceptedAtom(key: string, options?: { getOnInit?: boolean }) {
+    return atomWithStorage<string[]>(
+        key,
+        [],
+        createZodStorage(
+            z.array(z.string().max(MAX_HANDLE_CHARS)).max(MAX_NOTICE_CONNECTIONS),
+            localStorage,
+        ),
+        options,
+    );
+}
+
+/** Appends a connection handle to a bounded notice-acceptance list, newest last. */
+export function withNoticeAccepted(accepted: readonly string[], connection: string) {
+    return [...accepted.filter((handle) => handle !== connection), connection].slice(
+        -MAX_NOTICE_CONNECTIONS,
+    );
+}
+
 /**
  * The connections for which the user accepted the first-use notice (what is sent to whom). Kept
  * per connection handle, newest last; without an entry no turn is started for that connection.
  */
-export const coachNoticeAcceptedAtom = atomWithStorage<string[]>(
-    "coach-notice-accepted",
-    [],
-    createZodStorage(
-        z.array(z.string().max(MAX_HANDLE_CHARS)).max(MAX_NOTICE_CONNECTIONS),
-        localStorage,
-    ),
-);
+export const coachNoticeAcceptedAtom = createNoticeAcceptedAtom("coach-notice-accepted");
 
 /** Opens the provider's page where the usage of a ChatGPT plan is managed, in the system browser. */
 export function openCoachUsage() {
@@ -131,11 +129,7 @@ export const coachPlanNoticeSeenAtom = atomWithStorage<boolean>(
     createZodStorage(z.boolean(), localStorage),
 );
 
-export function withCoachNoticeAccepted(accepted: readonly string[], connection: string) {
-    return [...accepted.filter((handle) => handle !== connection), connection].slice(
-        -MAX_NOTICE_CONNECTIONS,
-    );
-}
+export const withCoachNoticeAccepted = withNoticeAccepted;
 
 /** `null` effort means "provider default": no effort level is sent. */
 const selectionSchema = z.object({

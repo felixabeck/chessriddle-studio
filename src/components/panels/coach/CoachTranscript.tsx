@@ -1,12 +1,12 @@
-import { Button, Group, Loader, Text } from "@mantine/core";
+import { Text } from "@mantine/core";
 import { memo, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useCoachErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
-import { openCoachUsage } from "@/state/coach";
 import type { CoachAnswerMessage, CoachMessage, CoachRunningTurn } from "@/state/coachSession";
 import { getBoardState, locateBoardState } from "@/utils/treeReducer";
+import { AiAnswerStatus, AiRunningTurnView } from "./AiTranscriptFrame";
 import { CoachLine } from "./CoachLine";
 import { CoachText } from "./CoachText";
 import classes from "./CoachPanel.module.css";
@@ -50,24 +50,11 @@ const Answer = memo(function Answer({ message }: { message: CoachAnswerMessage }
           )}
         </div>
       )}
-      {message.state === "failed" && message.error && (
-        <Text size="sm" c="danger" className={classes.status} role="alert">
-          {errors[message.error]}
-        </Text>
-      )}
-      {/* At the plan's limit the way on is the provider's usage page. */}
-      {message.error === "usageLimitReached" && (
-        <div className={classes.status}>
-          <Button size="xs" onClick={openCoachUsage}>
-            {t("Coach.Plan.ManageUsage")}
-          </Button>
-        </div>
-      )}
-      {message.state === "cancelled" && (
-        <Text size="sm" c="dimmed" className={classes.status}>
-          {t("Coach.Stopped")}
-        </Text>
-      )}
+      <AiAnswerStatus
+        state={message.state}
+        error={message.error}
+        errorText={message.error ? errors[message.error] : undefined}
+      />
       {message.failedLines !== undefined && (
         <Text size="xs" c="dimmed" className={classes.status}>
           {t("Coach.FailedLines")}
@@ -93,22 +80,12 @@ function Running({ turn }: { turn: CoachRunningTurn }) {
           ? t("Coach.CheckingLine", { line })
           : t("Coach.CheckingPosition");
   return (
-    <>
-      <div className={classes.question}>{turn.question}</div>
-      <div data-testid="coach-running">
-        {turn.text && (
-          <div className={classes.answer}>
-            <CoachText text={turn.text} />
-          </div>
-        )}
-        <Group gap="xs" className={classes.status} role="status" aria-live="polite">
-          <Loader size="xs" aria-hidden />
-          <Text size="sm" c="dimmed">
-            {activity}
-          </Text>
-        </Group>
-      </div>
-    </>
+    <AiRunningTurnView
+      question={turn.question}
+      text={turn.text}
+      activity={activity}
+      testId="coach-running"
+    />
   );
 }
 
@@ -121,7 +98,7 @@ export function CoachTranscript({
   running: CoachRunningTurn | null;
 }) {
   return (
-    <div className={classes.messages}>
+    <>
       {messages.map((message) =>
         message.role === "user" ? (
           <div key={message.id} className={classes.question} data-testid="coach-question">
@@ -132,6 +109,6 @@ export function CoachTranscript({
         ),
       )}
       {running && !running.orphaned && <Running turn={running} />}
-    </div>
+    </>
   );
 }

@@ -39,6 +39,33 @@ export function visibleSettingCategories(
 }
 
 /**
+ * Localized title for a settings category. Every key is a literal `t` call so i18next extraction
+ * retains every key.
+ */
+export function settingCategoryTitle(t: SettingsTranslator, category: SettingCategory): string {
+    switch (category) {
+        case "board":
+            return t("Settings.Board");
+        case "inputs":
+            return t("Settings.Inputs");
+        case "appearance":
+            return t("Settings.Appearance");
+        case "sound":
+            return t("Settings.Sound");
+        case "keybinds":
+            return t("Settings.Keybinds");
+        case "directories":
+            return t("Settings.Directories");
+        case "repertoire":
+            return t("Settings.Repertoire");
+        case "coach":
+            return t("Settings.AI");
+        case "advanced":
+            return t("Settings.Advanced");
+    }
+}
+
+/**
  * Pure description of every setting row in the Settings page.
  * Every title and description uses a literal `t` call so i18next extraction retains every key.
  */

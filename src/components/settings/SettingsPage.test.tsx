@@ -303,11 +303,11 @@ test("Advanced is the eighth and last settings category", async () => {
 
 test("a build without the Coach shows no Coach category, row or search result", async () => {
   const { host } = await renderSettingsPage();
-  expect(host.textContent).not.toContain("Settings.Coach");
+  expect(host.textContent).not.toContain("Settings.AI");
   expect(host.querySelector('[data-testid="coach-connections"]')).toBeNull();
   await searchSettings(host, "coach");
   expect(host.textContent).toContain("Settings.Search.NoResults");
-  expect(host.textContent).not.toContain("Settings.Coach");
+  expect(host.textContent).not.toContain("Settings.AI");
 });
 
 test("the Coach shortcut is listed only in a build with the Coach", async () => {
@@ -335,9 +335,9 @@ test("a build with the Coach adds its category before Advanced, with connections
   const { host } = await renderSettingsPage();
   const tabs = [...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
   expect(tabs).toHaveLength(9);
-  expect(tabs.slice(-2)).toEqual(["Settings.Coach", "Settings.Advanced"]);
+  expect(tabs.slice(-2)).toEqual(["Settings.AI", "Settings.Advanced"]);
   const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === "Settings.Coach",
+    (node) => node.textContent === "Settings.AI",
   )!;
   await act(async () => tab.click());
   const panel = host.querySelector<HTMLElement>(`#${tab.getAttribute("aria-controls")}`)!;

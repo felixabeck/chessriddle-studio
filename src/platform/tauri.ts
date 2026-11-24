@@ -44,11 +44,13 @@ const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error
     ["connectChessriddle", ChessRiddleCommandError],
     ["disconnectChessriddle", ChessRiddleCommandError],
     ["coachAvailable", CoachCommandError],
+    ["coachHasConnection", CoachCommandError],
     ["coachConnections", CoachCommandError],
     ["coachSaveApiConnection", CoachCommandError],
     ["coachRemoveConnection", CoachCommandError],
     ["coachModels", CoachCommandError],
     ["coachTurn", CoachCommandError],
+    ["assistantTurn", CoachCommandError],
     ["coachSignInChatgpt", CoachCommandError],
     ["coachBeginGrokSignIn", CoachCommandError],
     ["coachFinishGrokSignIn", CoachCommandError],
@@ -590,6 +592,8 @@ export const tauriSubscriptions = {
     ),
     coachTurn: (callback: Parameters<typeof events.coachTurnEvent.listen>[0]) =>
         events.coachTurnEvent.listen(callback),
+    assistantTurn: (callback: Parameters<typeof events.assistantTurnEvent.listen>[0]) =>
+        events.assistantTurnEvent.listen(callback),
     convertProgress: (callback: Parameters<typeof events.convertProgress.listen>[0]) =>
         events.convertProgress.listen(callback),
     databaseContentFailure: (

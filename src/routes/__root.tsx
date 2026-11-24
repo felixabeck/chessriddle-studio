@@ -5,22 +5,18 @@ import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@/platform/native";
 import { exit, getCurrentWebviewWindow, getCurrentWindow, platform } from "@/platform/native";
 import { logFailureSafely, warnSafely } from "@/platform/errors";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
-import { useAtom, useAtomValue, useStore as useJotaiStore } from "jotai";
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useAtom, useAtomValue, useSetAtom, useStore as useJotaiStore } from "jotai";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
-import type { FeedbackType } from "@/bindings";
 import AboutModal from "@/components/About";
 import ChessBaseGuide from "@/components/library/ChessBaseGuide";
 import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
+import {
+  OpenFeedbackContext,
+  useOpenFeedback,
+  type FeedbackDraft,
+} from "@/components/feedback/openFeedbackContext";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { WindowResizeHandles } from "@/components/WindowResizeHandles";
 import NavigationRow from "@/components/tabs/NavigationRow";
@@ -29,7 +25,14 @@ import { useIncomingGameLinks } from "@/components/tabs/useIncomingGameLinks";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
 import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
-import { coachEnabledAtom } from "@/state/coach";
+import {
+  assistantAvailableAtom,
+  assistantPanelOpenAtom,
+  coachEnabledAtom,
+  refreshAssistantAvailabilityAtom,
+} from "@/state/coachAvailability";
+import { AssistantPanelHost } from "@/components/assistant/AssistantPanelHost";
+import { AssistantTurnListener } from "@/components/assistant/AssistantTurnListener";
 import { CoachTurnListener } from "@/components/panels/coach/CoachTurnListener";
 import {
   cancelQuitGate,
@@ -97,19 +100,7 @@ async function createMenu(menuActions: MenuGroup[]): Promise<MenuHandle> {
   return menu as unknown as MenuHandle;
 }
 
-export type FeedbackDraft = {
-  type?: FeedbackType;
-  message?: string;
-};
-
-export const OpenFeedbackContext = createContext<((draft?: FeedbackDraft) => void) | null>(null);
-
-/** Opens the root feedback modal, optionally prefilled with an initial type and message. */
-export function useOpenFeedback(): (draft?: FeedbackDraft) => void {
-  const open = useContext(OpenFeedbackContext);
-  if (!open) throw new Error("useOpenFeedback used outside RootLayout");
-  return open;
-}
+export { OpenFeedbackContext, useOpenFeedback, type FeedbackDraft };
 
 export const Route = createRootRouteWithContext<Record<string, never>>()({
   component: RootLayout,
@@ -134,7 +125,14 @@ export function RootLayout() {
 function RootShell() {
   const isNative = useAtomValue(nativeBarAtom);
   const coachEnabled = useAtomValue(coachEnabledAtom);
+  const assistantAvailable = useAtomValue(assistantAvailableAtom);
+  const [assistantOpened, setAssistantOpened] = useAtom(assistantPanelOpenAtom);
+  const refreshAssistantAvailability = useSetAtom(refreshAssistantAvailabilityAtom);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (coachEnabled) void refreshAssistantAvailability();
+  }, [coachEnabled, refreshAssistantAvailability]);
   const jotaiStore = useJotaiStore();
   const { newTab } = useTabCommands();
   useIncomingGameLinks();
@@ -290,12 +288,20 @@ function RootShell() {
     });
   }, [notifyQuitError, requestQuit, t]);
 
+  const openAssistant = useCallback(() => setAssistantOpened(true), [setAssistantOpened]);
+  const toggleAssistant = useCallback(
+    () => setAssistantOpened((open) => !open),
+    [setAssistantOpened],
+  );
+  const closeAssistant = useCallback(() => setAssistantOpened(false), [setAssistantOpened]);
+
   const menuCallbacks: AppMenuCallbacks = useMemo(
     () =>
       bindAppMenuCallbacks({
         runMenu,
         about: () => setAboutOpened(true),
         sendFeedback: () => openFeedback(),
+        openAssistant,
         createNewTab: newTab,
         openNewFile,
         saveGame: () => requestSave("save"),
@@ -309,6 +315,7 @@ function RootShell() {
     [
       newTab,
       openAccounts,
+      openAssistant,
       openEngines,
       openFeedback,
       openNewFile,
@@ -334,25 +341,43 @@ function RootShell() {
         ? buildAppMenuTree({
             t,
             isMacOS,
+            showAssistant: assistantAvailable,
             newTabShortcut: keyMap.NEW_TAB.keys,
             openFileShortcut: keyMap.OPEN_FILE.keys,
             saveShortcut: keyMap.SAVE_FILE.keys,
             callbacks: menuCallbacks,
           })
         : [],
-    [isMacOS, keyMap.NEW_TAB.keys, keyMap.OPEN_FILE.keys, keyMap.SAVE_FILE.keys, menuCallbacks, t],
+    [
+      assistantAvailable,
+      isMacOS,
+      keyMap.NEW_TAB.keys,
+      keyMap.OPEN_FILE.keys,
+      keyMap.SAVE_FILE.keys,
+      menuCallbacks,
+      t,
+    ],
   );
   const inAppMenuActions = useMemo(
     () =>
       buildInAppMenuItems({
         t,
         isMacOS,
+        showAssistant: assistantAvailable,
         newTabShortcut: keyMap.NEW_TAB.keys,
         openFileShortcut: keyMap.OPEN_FILE.keys,
         saveShortcut: keyMap.SAVE_FILE.keys,
         callbacks: menuCallbacks,
       }),
-    [isMacOS, keyMap.NEW_TAB.keys, keyMap.OPEN_FILE.keys, keyMap.SAVE_FILE.keys, menuCallbacks, t],
+    [
+      assistantAvailable,
+      isMacOS,
+      keyMap.NEW_TAB.keys,
+      keyMap.OPEN_FILE.keys,
+      keyMap.SAVE_FILE.keys,
+      menuCallbacks,
+      t,
+    ],
   );
 
   // The native macOS menu fires its own accelerator; binding F11 there too would toggle twice.
@@ -407,7 +432,7 @@ function RootShell() {
             minHeight: 0,
             paddingTop: "2.625rem",
             paddingBottom: 0,
-            overflow: "auto",
+            overflow: "hidden",
             userSelect: "none",
             background: "var(--cf-background)",
           },
@@ -420,6 +445,7 @@ function RootShell() {
         }}
       >
         {coachEnabled && <CoachTurnListener />}
+        {coachEnabled && <AssistantTurnListener />}
         <AboutModal opened={aboutOpened} setOpened={setAboutOpened} />
         <ChessBaseGuide />
         <LazyFeedbackModal
@@ -446,11 +472,26 @@ function RootShell() {
             menuActions={inAppMenuActions}
             showWindowControls={showWindowControls}
             onSendFeedback={menuCallbacks.sendFeedback}
+            showAssistant={assistantAvailable}
+            assistantOpened={assistantOpened}
+            onToggleAssistant={toggleAssistant}
           />
         </AppShell.Header>
         {renderResizeHandles(windowPlatform, showWindowControls) && <WindowResizeHandles />}
         <AppShell.Main>
-          <Outlet />
+          <div style={{ display: "flex", height: "100%", minHeight: 0, position: "relative" }}>
+            <div style={{ flex: "1 1 0", minWidth: 0, height: "100%", overflow: "auto" }}>
+              <Outlet />
+            </div>
+            <AssistantPanelHost
+              opened={assistantOpened}
+              onClose={closeAssistant}
+              createNewTab={newTab}
+              openAccounts={openAccounts}
+              openEngines={openEngines}
+              openSettings={openSettings}
+            />
+          </div>
         </AppShell.Main>
       </AppShell>
     </OpenFeedbackContext.Provider>

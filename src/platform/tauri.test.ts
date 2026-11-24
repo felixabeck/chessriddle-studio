@@ -14,11 +14,13 @@ const mocks = vi.hoisted(() => ({
     chessriddleTrainingMotifs: vi.fn(),
     chessriddleOpenWebsite: vi.fn(),
     coachAvailable: vi.fn(),
+    coachHasConnection: vi.fn(),
     coachConnections: vi.fn(),
     coachSaveApiConnection: vi.fn(),
     coachRemoveConnection: vi.fn(),
     coachModels: vi.fn(),
     coachTurn: vi.fn(),
+    assistantTurn: vi.fn(),
     coachSignInChatgpt: vi.fn(),
     coachBeginGrokSignIn: vi.fn(),
     coachFinishGrokSignIn: vi.fn(),
@@ -195,11 +197,13 @@ test.each([
 
 test.each([
     "coachAvailable",
+    "coachHasConnection",
     "coachConnections",
     "coachSaveApiConnection",
     "coachRemoveConnection",
     "coachModels",
     "coachTurn",
+    "assistantTurn",
     "coachSignInChatgpt",
     "coachBeginGrokSignIn",
     "coachFinishGrokSignIn",
@@ -211,6 +215,8 @@ test.each([
         switch (command) {
             case "coachAvailable":
                 return tauri.coachAvailable();
+            case "coachHasConnection":
+                return tauri.coachHasConnection();
             case "coachConnections":
                 return tauri.coachConnections();
             case "coachSaveApiConnection":
@@ -224,6 +230,8 @@ test.each([
                 return tauri.coachModels("handle");
             case "coachTurn":
                 return tauri.coachTurn("ticket", "tab", {} as never);
+            case "assistantTurn":
+                return tauri.assistantTurn("turn-id", "ticket", {} as never);
             case "coachSignInChatgpt":
                 return tauri.coachSignInChatgpt("attempt");
             case "coachBeginGrokSignIn":
@@ -316,11 +324,13 @@ vi.mock("@/bindings/generated", () => ({
         chessriddleTrainingMotifs: mocks.chessriddleTrainingMotifs,
         chessriddleOpenWebsite: mocks.chessriddleOpenWebsite,
         coachAvailable: mocks.coachAvailable,
+        coachHasConnection: mocks.coachHasConnection,
         coachConnections: mocks.coachConnections,
         coachSaveApiConnection: mocks.coachSaveApiConnection,
         coachRemoveConnection: mocks.coachRemoveConnection,
         coachModels: mocks.coachModels,
         coachTurn: mocks.coachTurn,
+        assistantTurn: mocks.assistantTurn,
         coachSignInChatgpt: mocks.coachSignInChatgpt,
         coachBeginGrokSignIn: mocks.coachBeginGrokSignIn,
         coachFinishGrokSignIn: mocks.coachFinishGrokSignIn,

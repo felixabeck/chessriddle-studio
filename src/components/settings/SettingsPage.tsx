@@ -101,6 +101,7 @@ import classes from "./SettingsPage.module.css";
 import { SettingRow } from "./SettingsLayout";
 import {
   describeSettings,
+  settingCategoryTitle,
   visibleSettingCategories,
   type SettingCategory,
   type SettingDescription,
@@ -494,47 +495,47 @@ export default function Page() {
   > = useMemo(
     () => ({
       board: {
-        title: t("Settings.Board"),
+        title: settingCategoryTitle(t, "board"),
         description: t("Settings.Board.Desc"),
         icon: <ChessKnight size="1rem" />,
       },
       inputs: {
-        title: t("Settings.Inputs"),
+        title: settingCategoryTitle(t, "inputs"),
         description: t("Settings.Inputs.Desc"),
         icon: <Mouse size="1rem" />,
       },
       appearance: {
-        title: t("Settings.Appearance"),
+        title: settingCategoryTitle(t, "appearance"),
         description: t("Settings.Appearance.Desc"),
         icon: <Palette size="1rem" />,
       },
       sound: {
-        title: t("Settings.Sound"),
+        title: settingCategoryTitle(t, "sound"),
         description: t("Settings.Sound.Desc"),
         icon: <Volume2 size="1rem" />,
       },
       keybinds: {
-        title: t("Settings.Keybinds"),
+        title: settingCategoryTitle(t, "keybinds"),
         description: t("Settings.Keybinds.Desc"),
         icon: <Keyboard size="1rem" />,
       },
       directories: {
-        title: t("Settings.Directories"),
+        title: settingCategoryTitle(t, "directories"),
         description: t("Settings.Directories.Desc"),
         icon: <Folder size="1rem" />,
       },
       repertoire: {
-        title: t("Settings.Repertoire"),
+        title: settingCategoryTitle(t, "repertoire"),
         description: t("Settings.Repertoire.Desc"),
         icon: <BookOpen size="1rem" />,
       },
       coach: {
-        title: t("Settings.Coach"),
+        title: settingCategoryTitle(t, "coach"),
         description: t("Settings.Coach.Desc"),
         icon: <MessagesSquare size="1rem" />,
       },
       advanced: {
-        title: t("Settings.Advanced"),
+        title: settingCategoryTitle(t, "advanced"),
         description: t("Settings.Advanced.Desc"),
         icon: <Wrench size="1rem" />,
       },

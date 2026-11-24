@@ -12,6 +12,7 @@ project's name.
 | `src-tauri/src/` | Rust: commands, engine supervision, SQLite/Diesel database, PGN parsing, OAuth |
 | `src-tauri/src/coach/` | Coach, the AI chat about the position: connections and their secrets, sign-in, provider traffic, the turn loop (`docs/coach.md`) |
 | `src/` | React renderer: components, state, utils |
+| `src/components/assistant/` | Assistant docked panel, link target registry, and lazily loaded help topics (`topics/`) |
 | `DESIGN.md` | ChessRiddle design source, semantic tokens, controls, typography and board defaults |
 | `src/bindings/generated.ts` | **Generated** by Specta from the Rust command/event registry — never hand-edited |
 | `src/platform/` | The renderer's only sanctioned door to Tauri (`tauri.ts`, `native.ts`, `errors.ts`) |

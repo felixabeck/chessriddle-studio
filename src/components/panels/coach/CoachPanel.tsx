@@ -1,39 +1,28 @@
-import { Anchor, Button, Group, ScrollArea, Select, Stack, Text, Textarea } from "@mantine/core";
+import { Button, Stack, Text } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
-import { MessageSquarePlus } from "lucide-react";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
-import AppModal from "@/components/common/AppModal";
-import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useCoachErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
 import { coachTurnFamily, enginesAtom, fileWorkspaceAtom, referenceDbAtom } from "@/state/atoms";
 import {
-  COACH_EFFORT_LEVELS,
-  coachConnectionsAtom,
-  coachEffortLevels,
   coachEngineAtom,
-  coachModelsAtom,
   coachNoticeAcceptedAtom,
-  coachSelectionAtom,
-  effectiveCoachConnection,
   effectiveCoachEngine,
-  effectiveCoachSelection,
-  openCoachUsage,
   withCoachNoticeAccepted,
 } from "@/state/coach";
 import { sendCoachMessage, startNewCoachConversation, stopCoachTurn } from "@/state/coachTurns";
 import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linkedCollections";
 import { refreshRepertoireIndex } from "@/state/repertoireIndex";
 import { useOwnerTabId, useTabAtom } from "@/state/tabScope";
+import { AiComposer } from "./AiComposer";
+import { AiConnectionGate, AiModelHeader, useAiModelSelection } from "./AiModelSelection";
+import { AiNoticeModal } from "./AiNoticeModal";
+import { AiTranscriptFrame } from "./AiTranscriptFrame";
 import { CoachTranscript } from "./CoachTranscript";
 import classes from "./CoachPanel.module.css";
-
-const MAX_QUESTION_CHARS = 4000;
-/** The effort selector's entry for "send no effort level". */
-const PROVIDER_DEFAULT = "provider-default";
 
 function CoachPanel() {
   const { t } = useTranslation();
@@ -45,9 +34,8 @@ function CoachPanel() {
   const session = useStore(tree, (state) => state.coachSession);
   const running = useAtomValue(useTabAtom(coachTurnFamily));
 
-  const [connectionsState, reloadConnections] = useAtom(coachConnectionsAtom);
-  const [modelsState, loadModels] = useAtom(coachModelsAtom);
-  const [selection, setSelection] = useAtom(coachSelectionAtom);
+  const modelSelection = useAiModelSelection();
+  const { connectionsState, reloadConnections, connections, models, chosen } = modelSelection;
   const engines = useAtomValue(enginesAtom);
   const engine = effectiveCoachEngine(engines, useAtomValue(coachEngineAtom));
   const [accepted, setAccepted] = useAtom(coachNoticeAcceptedAtom);
@@ -63,27 +51,8 @@ function CoachPanel() {
     void refreshRepertoireIndex(workspace);
   }, [workspace]);
 
-  const connections =
-    connectionsState.status === "ready"
-      ? connectionsState.connections.filter((connection) => connection.status === "ready")
-      : [];
-  // A sole connection counts as chosen without a click, so the model list is matched to the
-  // effective connection, not only to the stored one.
-  const connection = effectiveCoachConnection(selection.connection, connections)?.handle ?? null;
-  const models =
-    modelsState.status === "ready" && modelsState.connection === connection
-      ? modelsState.models
-      : null;
-  const chosen = effectiveCoachSelection(selection, connections, models);
-
-  // The model list belongs to the chosen connection; it is read when that changes.
-  useEffect(() => {
-    void loadModels(connection);
-  }, [connection, loadModels]);
-
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const viewport = useRef<HTMLDivElement>(null);
   const messages = session?.messages ?? [];
   const shownTurn = running && !running.orphaned ? running : null;
   // An answer that ended because the sign-in is over: the connection list says so from now on.
@@ -92,55 +61,6 @@ function CoachPanel() {
   useEffect(() => {
     if (signInEnded) void reloadConnections();
   }, [signInEnded, reloadConnections]);
-  // New content keeps the end of the conversation in view.
-  useEffect(() => {
-    viewport.current?.scrollTo({ top: viewport.current.scrollHeight });
-  }, [messages.length, shownTurn?.text, shownTurn?.checking]);
-
-  if (connectionsState.status === "loading") return null;
-  if (connectionsState.status === "failed") {
-    return (
-      <Text className={classes.empty} c="danger" role="alert">
-        {errors[connectionsState.error]}
-      </Text>
-    );
-  }
-  if (
-    connections.length === 0 &&
-    connectionsState.connections.some((connection) => connection.status === "storageUnavailable")
-  ) {
-    // There are connections, but the keyring did not answer: that is not "no connection".
-    return (
-      <Stack className={classes.empty} align="flex-start" gap="sm">
-        <Text c="danger" role="alert">
-          {errors.storage}
-        </Text>
-        <Button variant="default" onClick={() => void reloadConnections()}>
-          {t("Common.Retry")}
-        </Button>
-      </Stack>
-    );
-  }
-  if (connections.length === 0) {
-    return (
-      <Stack className={classes.empty} align="flex-start" gap="sm">
-        <Text>{t("Coach.NoConnection")}</Text>
-        <Button variant="default" onClick={() => void navigate({ to: "/settings" })}>
-          {t("Coach.OpenSettings")}
-        </Button>
-      </Stack>
-    );
-  }
-  if (engines !== undefined && !engine) {
-    return (
-      <Stack className={classes.empty} align="flex-start" gap="sm">
-        <Text>{t("Coach.NoEngine")}</Text>
-        <Button variant="default" onClick={() => void navigate({ to: "/engines" })}>
-          {t("Coach.OpenEngines")}
-        </Button>
-      </Stack>
-    );
-  }
 
   const question = draft.trim();
   const ready = chosen.connection && chosen.model && engine;
@@ -175,163 +95,66 @@ function CoachPanel() {
       ? t("Coach.Hint.ChooseModel")
       : null;
 
-  const reportsEffort = (chosen.model?.effortLevels.length ?? 0) > 0;
-  const effortLabel = (level: string) =>
-    level === "low"
-      ? t("Coach.Effort.Low")
-      : level === "medium"
-        ? t("Coach.Effort.Medium")
-        : level === "high"
-          ? t("Coach.Effort.High")
-          : level;
-  const effortOptions = [
-    ...(reportsEffort ? [] : [{ value: PROVIDER_DEFAULT, label: t("Coach.Effort.Default") }]),
-    ...(chosen.model ? coachEffortLevels(chosen.model) : COACH_EFFORT_LEVELS).map((level) => ({
-      value: level,
-      label: effortLabel(level),
-    })),
-  ];
-
   return (
-    <div className={classes.panel}>
-      <Group className={classes.header} gap="xs" wrap="wrap">
-        <Select
-          className={classes.selector}
-          size="xs"
-          aria-label={t("Coach.Connection")}
-          placeholder={t("Coach.Connection")}
-          data={connections.map((item) => ({ value: item.handle, label: item.label }))}
-          value={connection}
-          allowDeselect={false}
-          onChange={(handle) => setSelection({ connection: handle, model: null, effort: null })}
-        />
-        <Select
-          className={classes.selector}
-          size="xs"
-          searchable
-          aria-label={t("Coach.Model")}
-          placeholder={
-            modelsState.status === "loading" ? t("Coach.ModelsLoading") : t("Coach.ChooseModel")
-          }
-          data={(models ?? []).map((model) => ({ value: model.id, label: model.name }))}
-          value={chosen.model?.id ?? null}
-          allowDeselect={false}
-          disabled={!models}
-          error={
-            modelsState.status === "failed" && modelsState.connection === connection
-              ? errors[modelsState.error]
-              : undefined
-          }
-          onChange={(model) => setSelection({ connection, model, effort: null })}
-        />
-        <Select
-          className={classes.effort}
-          size="xs"
-          aria-label={t("Coach.Effort")}
-          data={effortOptions}
-          value={chosen.effort ?? (reportsEffort ? null : PROVIDER_DEFAULT)}
-          allowDeselect={false}
-          disabled={!chosen.model}
-          onChange={(level) =>
-            setSelection({ ...selection, effort: level === PROVIDER_DEFAULT ? null : level })
-          }
-        />
-        <IconAction
-          label={t("Coach.NewConversation")}
-          variant="default"
-          disabled={messages.length === 0 && !running}
-          onClick={() => startNewCoachConversation(atoms, tab, tree)}
-        >
-          <MessageSquarePlus size="1rem" />
-        </IconAction>
-        {chosen.connection?.kind === "chatGpt" && (
-          <Group className={classes.plan} gap="xs">
-            <Text size="xs" c="dimmed">
-              {t("Coach.Plan.Using")}
-            </Text>
-            <Anchor component="button" type="button" size="xs" onClick={openCoachUsage}>
-              {t("Coach.Plan.ManageUsage")}
-            </Anchor>
-          </Group>
-        )}
-      </Group>
-      <ScrollArea className={classes.transcript} viewportRef={viewport}>
-        {messages.length === 0 && !shownTurn ? (
-          <Text className={classes.empty} c="dimmed">
-            {t("Coach.Empty")}
-          </Text>
-        ) : (
-          <CoachTranscript messages={messages} running={shownTurn} />
-        )}
-      </ScrollArea>
-      <form
-        className={classes.composer}
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        <Group gap="xs" align="flex-end" wrap="nowrap">
-          <Textarea
-            style={{ flex: 1 }}
-            autosize
-            minRows={1}
-            maxRows={6}
-            maxLength={MAX_QUESTION_CHARS}
-            aria-label={t("Coach.Ask")}
-            placeholder={t("Coach.Ask")}
-            value={draft}
-            onChange={(event) => setDraft(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                submit();
-              }
-            }}
+    <AiConnectionGate
+      connectionsState={connectionsState}
+      readyConnections={connections}
+      errors={errors}
+      noConnectionText={t("Coach.NoConnection")}
+      onReload={() => void reloadConnections()}
+      onOpenSettings={() => void navigate({ to: "/settings" })}
+    >
+      {engines !== undefined && !engine ? (
+        <Stack className={classes.empty} align="flex-start" gap="sm">
+          <Text>{t("Coach.NoEngine")}</Text>
+          <Button variant="default" onClick={() => void navigate({ to: "/engines" })}>
+            {t("Coach.OpenEngines")}
+          </Button>
+        </Stack>
+      ) : (
+        <div className={classes.panel}>
+          <AiModelHeader
+            state={modelSelection}
+            errors={errors}
+            newConversationDisabled={messages.length === 0 && !running}
+            onNewConversation={() => startNewCoachConversation(atoms, tab, tree)}
           />
-          {running ? (
-            <Button
-              variant="default"
-              disabled={running.stopping}
-              onClick={() => stopCoachTurn(atoms, tab)}
-            >
-              {t("Coach.Stop")}
-            </Button>
-          ) : (
-            <Button type="submit" disabled={!ready || question === ""}>
-              {t("Coach.Send")}
-            </Button>
+          <AiTranscriptFrame
+            isEmpty={messages.length === 0 && !shownTurn}
+            emptyText={t("Coach.Empty")}
+            scrollKey={`${messages.length}:${shownTurn?.text.length ?? 0}:${shownTurn?.checking?.source ?? ""}:${shownTurn?.checking?.line.join(",") ?? ""}`}
+          >
+            <CoachTranscript messages={messages} running={shownTurn} />
+          </AiTranscriptFrame>
+          <AiComposer
+            draft={draft}
+            onDraftChange={setDraft}
+            onSubmit={submit}
+            onStop={() => stopCoachTurn(atoms, tab)}
+            running={Boolean(running)}
+            stopping={running?.stopping ?? false}
+            canSend={Boolean(ready) && question !== ""}
+            placeholder={t("Coach.Ask")}
+            ariaLabel={t("Coach.Ask")}
+            missingChoice={missingChoice}
+          />
+          {notice !== null && chosen.connection && (
+            <AiNoticeModal
+              title={t("Coach.Notice.Title")}
+              body={t("Coach.Notice.Body", { provider: chosen.connection.label })}
+              acceptLabel={t("Coach.Notice.Accept")}
+              onCancel={() => setNotice(null)}
+              onAccept={() => {
+                if (!chosen.connection) return;
+                setAccepted(withCoachNoticeAccepted(accepted, chosen.connection.handle));
+                setNotice(null);
+                send(notice);
+              }}
+            />
           )}
-        </Group>
-        {missingChoice && (
-          <Text size="xs" c="dimmed" mt={4}>
-            {missingChoice}
-          </Text>
-        )}
-      </form>
-      {notice !== null && chosen.connection && (
-        <AppModal opened onClose={() => setNotice(null)} title={t("Coach.Notice.Title")}>
-          <Stack>
-            <Text>{t("Coach.Notice.Body", { provider: chosen.connection.label })}</Text>
-            <Group justify="right">
-              <Button variant="default" onClick={() => setNotice(null)}>
-                {t("Common.Cancel")}
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!chosen.connection) return;
-                  setAccepted(withCoachNoticeAccepted(accepted, chosen.connection.handle));
-                  setNotice(null);
-                  send(notice);
-                }}
-              >
-                {t("Coach.Notice.Accept")}
-              </Button>
-            </Group>
-          </Stack>
-        </AppModal>
+        </div>
       )}
-    </div>
+    </AiConnectionGate>
   );
 }
 

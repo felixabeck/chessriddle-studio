@@ -199,6 +199,14 @@ impl ProviderCredentials<CoachConnectionHandle> {
             .expect("coach credential registry");
         (credentials, directory)
     }
+
+    #[cfg(test)]
+    pub(crate) fn poison_registry_for_test(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = self.manager.registry.lock().unwrap();
+            panic!("poison registry for test");
+        }));
+    }
 }
 
 impl<H: ProviderHandle> ProviderCredentials<H> {

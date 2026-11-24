@@ -1,0 +1,25 @@
+---
+id: analysis-board
+title: Analysis board, variations, comments, and arrows
+summary: Enter moves, edit positions, manage variations, write comments, add annotations, and draw arrows on the board.
+---
+
+Open an analysis board from [[page:new-tab]] by clicking {{label:Home.Card.AnalysisBoard.Title}}, or by opening a saved game or repertoire from [[page:library]].
+
+Make moves by dragging or clicking pieces (configured in [[setting:move-method]]). You can also enable [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}) to type moves in SAN notation. Use the move controls below the notation, the arrow keys, or the mouse wheel (if [[setting:scroll-moves]] is enabled) to step through moves.
+
+The toolbar beside the notation provides board actions:
+- {{label:Board.Action.TakeSnapshot}}: save an image of the current board.
+- {{label:Board.Action.EditPosition}}: set up a custom position by placing pieces or editing the FEN.
+- {{label:Board.Action.PlayFromHere}}: start a game from the current position.
+- {{label:Board.Action.ClearDrawings}}: remove arrows and square highlights (shown when [[setting:erase-drawables]] is off).
+- {{label:Board.Database.Save}}: save the game to a library file or database.
+- Undo, redo, save, and flip board controls.
+
+Playing a different move from an earlier position creates a variation. Right-click any move in the notation to {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}}, or {{label:Notation.MarkGameEndHere}}. Use the notation header buttons to toggle {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}}, and {{label:Notation.HideVariations}}.
+
+To annotate moves and write comments, open the {{label:Board.Tabs.Annotate}} tab. Click a move-quality symbol (or press keys 1 through 6) to toggle `!!`, `!`, `!?`, `?!`, `?`, or `??`, or click {{label:Annotate.ShowMore}} for evaluation and positional symbols. Below the symbols, use the rich-text editor to write formatted comments and toggle inline board diagrams.
+
+To draw arrows and highlight squares, right-click and drag on the board (or right-click a square for a circle). Hold modifier keys for different colors: Shift for {{label:Settings.Drawing.Red}}, Alt for {{label:Settings.Drawing.Blue}}, Shift+Alt for {{label:Settings.Drawing.Yellow}}, Ctrl (Cmd on macOS) for {{label:Settings.Drawing.Orange}}, and Ctrl+Alt (Cmd+Alt on macOS) for {{label:Settings.Drawing.Cyan}}. See the full drawing list in [[settings-category:keybinds]].
+
+The {{label:Board.Tabs.Info}} tab shows game headers, FEN, PGN text, and tree statistics, and lets you switch between games in a multi-game PGN file.

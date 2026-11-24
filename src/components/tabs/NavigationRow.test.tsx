@@ -210,11 +210,17 @@ async function renderRow({
   showWindowControls = true,
   menuActions,
   onSendFeedback = () => undefined,
+  showAssistant = false,
+  assistantOpened = false,
+  onToggleAssistant,
 }: {
   path?: string;
   showWindowControls?: boolean;
   menuActions?: MenuAction[];
   onSendFeedback?: () => void;
+  showAssistant?: boolean;
+  assistantOpened?: boolean;
+  onToggleAssistant?: () => void;
 } = {}) {
   function Shell() {
     const { newTab } = useTabCommands();
@@ -253,6 +259,9 @@ async function renderRow({
         menuActions={actions}
         showWindowControls={showWindowControls}
         onSendFeedback={onSendFeedback}
+        showAssistant={showAssistant}
+        assistantOpened={assistantOpened}
+        onToggleAssistant={onToggleAssistant}
       />
     );
   }
@@ -855,6 +864,27 @@ test("opens feedback without navigating", async () => {
   });
   expect(onSendFeedback).toHaveBeenCalledTimes(1);
   expect(router.state.location.pathname).toBe("/library");
+});
+
+test("shows the Assistant button beside Feedback only when showAssistant is true", async () => {
+  const onToggleAssistant = vi.fn();
+  await renderRow({ showAssistant: false, onToggleAssistant });
+  expect(host!.querySelector('[aria-label="Navigation.Assistant"]')).toBeNull();
+
+  await renderRow({ showAssistant: true, assistantOpened: true, onToggleAssistant });
+  const assistantButton = host!.querySelector<HTMLButtonElement>(
+    '[aria-label="Navigation.Assistant"]',
+  )!;
+  const feedbackButton = host!.querySelector<HTMLButtonElement>(
+    '[aria-label="Navigation.Feedback"]',
+  )!;
+  expect(assistantButton).not.toBeNull();
+  expect(assistantButton.getAttribute("aria-pressed")).toBe("true");
+  expect(following(assistantButton, feedbackButton)).toBe(true);
+  await act(async () => {
+    assistantButton.click();
+  });
+  expect(onToggleAssistant).toHaveBeenCalledOnce();
 });
 
 test("reactively resumes the active database in the Library link", async () => {

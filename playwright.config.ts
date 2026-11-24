@@ -108,6 +108,16 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
         },
         {
+            name: "assistant",
+            testMatch: /assistant\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "assistant-narrow",
+            testMatch: /assistant\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 720, height: 720 }, colorScheme: "light" },
+        },
+        {
             name: "engine-hotkeys",
             testMatch: /engine-hotkeys\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },

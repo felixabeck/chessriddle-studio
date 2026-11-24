@@ -109,6 +109,18 @@ async coachAvailable() : Promise<Result<boolean, CoachError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Whether the Coach is available and at least one connection exists in the credential registry,
+ * answered without reading the system keyring.
+ */
+async coachHasConnection() : Promise<Result<boolean, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("coach_has_connection") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async coachConnections() : Promise<Result<ConnectionSummary[], CoachError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("coach_connections") };
@@ -152,6 +164,21 @@ async coachModels(handle: CoachConnectionHandle) : Promise<Result<ModelList, Coa
 async coachTurn(id: string, tab: string, turn: TurnInput) : Promise<Result<TurnUpdate, CoachError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("coach_turn", { id, tab, turn }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Runs one Assistant turn under a window-owned native read reservation. `id` is the renderer's
+ * turn id carried on every `AssistantTurnEvent`; `ticket` is the read reservation reserved with
+ * `prepare_native_read`. One Assistant turn may run per window, separate from the Coach's turn
+ * slots. Returns the same terminal update the last event carried; an `Err` means the turn never
+ * started and no event follows.
+ */
+async assistantTurn(id: string, ticket: string, turn: AssistantTurnInput) : Promise<Result<AssistantTurnUpdate, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("assistant_turn", { id, ticket, turn }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1584,6 +1611,7 @@ async takePendingGameLinks() : Promise<Result<GameLink[], ErrorPayload>> {
 
 
 export const events = __makeEvents__<{
+assistantTurnEvent: AssistantTurnEvent,
 bestMovesPayload: BestMovesPayload,
 chessBaseSelected: ChessBaseSelected,
 clockUpdateEvent: ClockUpdateEvent,
@@ -1596,6 +1624,7 @@ gameMoveEvent: GameMoveEvent,
 gameOverEvent: GameOverEvent,
 progressEvent: ProgressEvent
 }>({
+assistantTurnEvent: "assistant-turn-event",
 bestMovesPayload: "best-moves-payload",
 chessBaseSelected: "chess-base-selected",
 clockUpdateEvent: "clock-update-event",
@@ -1647,6 +1676,70 @@ export type ArtifactIntegrity = { sha256: string; signature: string }
  * reported without asking callers to retry a mutation that may already have committed.
  */
 export type ArtifactPublication = { handle: FileWorkspaceHandle; durability: CommitDurability }
+/**
+ * Setup facts held by the renderer when the question is sent.
+ */
+export type AssistantContext = { page: string; boardTabKind?: string | null; language: string; 
+/**
+ * `None` when the installed engine list is not known yet.
+ */
+installedEngines?: string[] | null; 
+/**
+ * `Some(true)` yes, `Some(false)` no, `None` not known.
+ */
+referenceDatabase?: boolean | null }
+/**
+ * A feedback draft prepared by the Assistant for the user to review and send.
+ */
+export type AssistantFeedbackDraft = { feedbackType: FeedbackType; message: string }
+export type AssistantHistoryMessage = { role: AssistantHistoryRole; text: string }
+export type AssistantHistoryRole = "user" | "assistant"
+/**
+ * One navigation target the Assistant may link to in this turn.
+ */
+export type AssistantLinkTarget = { id: string; label: string }
+/**
+ * One segment of a completed Assistant answer.
+ */
+export type AssistantSegment = { type: "text"; text: string } | { type: "link"; target: string }
+/**
+ * One setting shown in this build, in the interface language.
+ */
+export type AssistantSetting = { targetId: string; category: string; title: string; description: string }
+/**
+ * One help topic resolved to the interface language by the renderer.
+ */
+export type AssistantTopic = { id: string; title: string; summary: string; body: string }
+/**
+ * Broadcast to every window; the receiver keeps only the turn it is waiting for.
+ */
+export type AssistantTurnEvent = { 
+/**
+ * The turn's id, supplied by the renderer.
+ */
+turn: string; update: AssistantTurnUpdate }
+/**
+ * Everything the renderer supplies for one Assistant turn. All counts and sizes are bounded
+ * before the connection is read.
+ */
+export type AssistantTurnInput = { connection: CoachConnectionHandle; model: string; effort?: string | null; 
+/**
+ * Earlier user and assistant messages of this window's conversation, oldest first.
+ */
+history: AssistantHistoryMessage[]; message: string; context: AssistantContext; topics: AssistantTopic[]; settings: AssistantSetting[]; targets: AssistantLinkTarget[] }
+/**
+ * What a running Assistant turn tells the renderer. Every turn ends with exactly one of
+ * `Completed`, `Cancelled` and `Failed`.
+ */
+export type AssistantTurnUpdate = { type: "text"; delta: string } | 
+/**
+ * The text streamed so far is superseded by what follows.
+ */
+{ type: "reset" } | 
+/**
+ * The Assistant is reading these help topics (topic ids).
+ */
+{ type: "readingTopics"; topics: string[] } | { type: "completed"; segments: AssistantSegment[]; feedbackDraft: AssistantFeedbackDraft | null } | { type: "cancelled"; text: string } | { type: "failed"; error: CoachError; text: string }
 export type AuthenticationJob = string
 export type AuthenticationStatus = { state: "pending" } | { state: "succeeded"; account: LichessAccountMetadata; durability_uncertain?: boolean } | { state: "failed" }
 export type BestMoves = { nodes: bigint; depth: number; score: Score; uciMoves: string[]; sanMoves: string[]; multipv: number; nps: bigint }

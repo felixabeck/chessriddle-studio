@@ -6,6 +6,7 @@
 pub(crate) mod accounts;
 pub(crate) mod address;
 pub(crate) mod answer;
+pub(crate) mod assistant;
 pub(crate) mod attempts;
 pub(crate) mod backend;
 pub(crate) mod brackets;
@@ -42,10 +43,12 @@ use tauri_plugin_opener::OpenerExt;
 use tauri_specta::Event;
 use tokio_util::sync::CancellationToken;
 
+pub(crate) use self::assistant::{AssistantTurnEvent, AssistantTurnInput, AssistantTurnUpdate};
 use self::{
     accounts::{Accounts, ConnectionBearer, HeldSignIn, SignInProvider},
     address::Address,
     answer::{Answer, Segment},
+    assistant::AssistantTurnParts,
     attempts::{SignInAttempts, SignInKind},
     backend::{Message, ModelBackend},
     chat_completions::ChatCompletions,
@@ -78,15 +81,35 @@ use crate::{
 
 /// Turns that may run at the same time, over all windows and tabs.
 const MAX_TURNS: usize = 4;
-const MAX_QUESTION_CHARS: usize = 4000;
-const MAX_HISTORY_MESSAGES: usize = 40;
-const MAX_HISTORY_BYTES: usize = 96 * 1024;
+pub(crate) const MAX_QUESTION_CHARS: usize = 4000;
+pub(crate) const MAX_HISTORY_MESSAGES: usize = 40;
+pub(crate) const MAX_HISTORY_BYTES: usize = 96 * 1024;
 const MAX_GAME_BYTES: usize = 24 * 1024;
 const MAX_REPERTOIRE_BYTES: usize = 8 * 1024;
-const MAX_MODEL_CHARS: usize = 200;
-const MAX_EFFORT_CHARS: usize = 32;
+pub(crate) const MAX_MODEL_CHARS: usize = 200;
+pub(crate) const MAX_EFFORT_CHARS: usize = 32;
 const MAX_TURN_PLIES: usize = 2000;
 const MAX_TAB_CHARS: usize = 128;
+
+/// Assistant turns that may run at the same time (at most one per window).
+pub(crate) const MAX_ASSISTANT_TURNS: usize = 4;
+pub(crate) const MAX_ASSISTANT_TURN_ID_CHARS: usize = 128;
+pub(crate) const MAX_ASSISTANT_TOPICS: usize = 64;
+pub(crate) const MAX_ASSISTANT_TOPIC_BODY_BYTES: usize = 32 * 1024;
+pub(crate) const MAX_ASSISTANT_TOPICS_TOTAL_BYTES: usize = 512 * 1024;
+pub(crate) const MAX_ASSISTANT_SETTINGS: usize = 256;
+pub(crate) const MAX_ASSISTANT_SETTINGS_TOTAL_BYTES: usize = 128 * 1024;
+pub(crate) const MAX_ASSISTANT_TARGETS: usize = 512;
+pub(crate) const MAX_ASSISTANT_ENGINES: usize = 64;
+pub(crate) const MAX_ASSISTANT_ID_CHARS: usize = 128;
+pub(crate) const MAX_ASSISTANT_TITLE_CHARS: usize = 200;
+pub(crate) const MAX_ASSISTANT_SUMMARY_CHARS: usize = 400;
+pub(crate) const MAX_ASSISTANT_DESCRIPTION_CHARS: usize = 400;
+pub(crate) const MAX_ASSISTANT_PAGE_CHARS: usize = 128;
+pub(crate) const MAX_ASSISTANT_TAB_KIND_CHARS: usize = 64;
+pub(crate) const MAX_ASSISTANT_LANGUAGE_CHARS: usize = 32;
+pub(crate) const MAX_ASSISTANT_ENGINE_NAME_CHARS: usize = 128;
+pub(crate) const MAX_ASSISTANT_TOPICS_PER_CALL: usize = 4;
 
 /// Kill switch for the Coach in release builds. Felix released it on 2026-11-24; setting it
 /// false in a patch release hides the Coach again. `.dev` builds always have it.
@@ -102,6 +125,7 @@ pub(crate) struct Coach {
     credentials: Arc<CoachCredentials>,
     http: HttpClients,
     turns: Arc<TurnSlots>,
+    assistant_turns: Arc<TurnSlots<String, MAX_ASSISTANT_TURNS>>,
     chatgpt: Arc<ChatGpt>,
     grok: Arc<Grok>,
     /// The tokens of the signed-in connections.
@@ -111,21 +135,27 @@ pub(crate) struct Coach {
     grok_sign_in: Arc<PendingSignIn>,
 }
 
-/// The turns that run now, by window and tab: one per tab, [`MAX_TURNS`] overall.
-#[derive(Default)]
-struct TurnSlots(Mutex<HashSet<(String, String)>>);
+/// Active turns, keyed by `K`: one per key, `MAX` overall.
+pub(crate) struct TurnSlots<K = (String, String), const MAX: usize = MAX_TURNS>(
+    pub(crate) Mutex<HashSet<K>>,
+);
 
-/// One running turn's place. Dropping it frees the place on every way the turn ends.
-struct TurnSlot {
-    slots: Arc<TurnSlots>,
-    key: (String, String),
+impl<K, const MAX: usize> Default for TurnSlots<K, MAX> {
+    fn default() -> Self {
+        Self(Mutex::new(HashSet::new()))
+    }
 }
 
-impl TurnSlots {
-    fn take(self: &Arc<Self>, window: &str, tab: &str) -> Result<TurnSlot, CoachError> {
-        let key = (window.to_owned(), tab.to_owned());
+/// One running turn's place. Dropping it frees the place on every way the turn ends.
+pub(crate) struct TurnSlot<K: Eq + std::hash::Hash, const MAX: usize> {
+    slots: Arc<TurnSlots<K, MAX>>,
+    key: K,
+}
+
+impl<K: Eq + std::hash::Hash + Clone, const MAX: usize> TurnSlots<K, MAX> {
+    pub(crate) fn take_key(self: &Arc<Self>, key: K) -> Result<TurnSlot<K, MAX>, CoachError> {
         let mut running = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        if running.len() >= MAX_TURNS || !running.insert(key.clone()) {
+        if running.len() >= MAX || !running.insert(key.clone()) {
             return Err(CoachError::Busy);
         }
         Ok(TurnSlot {
@@ -135,7 +165,17 @@ impl TurnSlots {
     }
 }
 
-impl Drop for TurnSlot {
+impl TurnSlots<(String, String), MAX_TURNS> {
+    fn take(
+        self: &Arc<Self>,
+        window: &str,
+        tab: &str,
+    ) -> Result<TurnSlot<(String, String), MAX_TURNS>, CoachError> {
+        self.take_key((window.to_owned(), tab.to_owned()))
+    }
+}
+
+impl<K: Eq + std::hash::Hash, const MAX: usize> Drop for TurnSlot<K, MAX> {
     fn drop(&mut self) {
         self.slots
             .0
@@ -212,23 +252,57 @@ pub(crate) fn plain(text: &str, max_chars: usize) -> bool {
     !text.is_empty() && text.chars().count() <= max_chars && !text.chars().any(char::is_control)
 }
 
+pub(crate) fn effort_is_plain(effort: Option<&str>) -> bool {
+    effort.is_none_or(|effort| {
+        !effort.is_empty()
+            && effort.len() <= MAX_EFFORT_CHARS
+            && effort
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    })
+}
+
+/// One prior turn message that can be bounded and converted into a provider [`Message`].
+pub(crate) trait HistoryEntry {
+    fn is_user(&self) -> bool;
+    fn text_len(&self) -> usize;
+    fn into_text(self) -> String;
+}
+
+impl HistoryEntry for HistoryMessage {
+    fn is_user(&self) -> bool {
+        matches!(self.role, HistoryRole::User)
+    }
+
+    fn text_len(&self) -> usize {
+        self.text.len()
+    }
+
+    fn into_text(self) -> String {
+        self.text
+    }
+}
+
 /// The newest history messages that fit the bounds, oldest first. Older ones are left out rather
 /// than refused: a long conversation stays usable.
-fn bounded_history(history: Vec<HistoryMessage>) -> Vec<Message> {
+pub(crate) fn bounded_history<M: HistoryEntry>(history: Vec<M>) -> Vec<Message> {
     let mut kept = Vec::new();
     let mut bytes = 0;
     for message in history.into_iter().rev() {
-        bytes += message.text.len();
+        bytes += message.text_len();
         if kept.len() == MAX_HISTORY_MESSAGES || bytes > MAX_HISTORY_BYTES {
             break;
         }
-        kept.push(match message.role {
-            HistoryRole::User => Message::User(message.text),
-            HistoryRole::Coach => Message::Assistant {
-                text: message.text,
+        let is_user = message.is_user();
+        let text = message.into_text();
+        kept.push(if is_user {
+            Message::User(text)
+        } else {
+            Message::Assistant {
+                text,
                 tool_calls: Vec::new(),
                 extra: serde_json::Map::new(),
-            },
+            }
         });
     }
     kept.reverse();
@@ -238,17 +312,10 @@ fn bounded_history(history: Vec<HistoryMessage>) -> Vec<Message> {
 impl TurnInput {
     fn into_parts(self) -> Result<TurnParts, CoachError> {
         let question = self.message.trim();
-        let effort_is_plain = self.effort.as_deref().is_none_or(|effort| {
-            !effort.is_empty()
-                && effort.len() <= MAX_EFFORT_CHARS
-                && effort
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-        });
         if question.is_empty()
             || question.chars().count() > MAX_QUESTION_CHARS
             || !plain(&self.model, MAX_MODEL_CHARS)
-            || !effort_is_plain
+            || !effort_is_plain(self.effort.as_deref())
             || self.game.len() > MAX_GAME_BYTES
             || self.moves.len() > MAX_TURN_PLIES
             || self
@@ -466,6 +533,7 @@ impl Coach {
             credentials,
             http,
             turns: Arc::default(),
+            assistant_turns: Arc::default(),
             chatgpt,
             grok,
             sign_ins: Arc::default(),
@@ -702,6 +770,16 @@ pub(crate) async fn coach_available(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<bool, CoachError> {
     Ok(coach(&state).is_ok())
+}
+
+/// Whether the Coach is available and at least one connection exists in the credential registry,
+/// answered without reading the system keyring.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn coach_has_connection(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<bool, CoachError> {
+    coach(&state)?.connections.has_any().await
 }
 
 #[tauri::command]
@@ -942,6 +1020,65 @@ async fn start_turn<R: tauri::Runtime>(
         .map_err(|_| CoachError::ProviderFailure)
 }
 
+/// Runs one Assistant turn under a window-owned native read reservation. `id` is the renderer's
+/// turn id carried on every `AssistantTurnEvent`; `ticket` is the read reservation reserved with
+/// `prepare_native_read`. One Assistant turn may run per window, separate from the Coach's turn
+/// slots. Returns the same terminal update the last event carried; an `Err` means the turn never
+/// started and no event follows.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn assistant_turn(
+    id: String,
+    ticket: String,
+    turn: AssistantTurnInput,
+    state: tauri::State<'_, crate::AppState>,
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<AssistantTurnUpdate, CoachError> {
+    start_assistant_turn(id, ticket, turn, state.inner(), app, window.label()).await
+}
+
+async fn start_assistant_turn<R: tauri::Runtime>(
+    id: String,
+    ticket: String,
+    turn: AssistantTurnInput,
+    state: &crate::AppState,
+    app: tauri::AppHandle<R>,
+    window: &str,
+) -> Result<AssistantTurnUpdate, CoachError> {
+    let coach = coach(state)?;
+    if !plain(&id, MAX_ASSISTANT_TURN_ID_CHARS) {
+        return Err(CoachError::InvalidInput);
+    }
+    let AssistantTurnParts {
+        connection,
+        request,
+    } = turn.into_parts()?;
+    let slot = coach.assistant_turns.take_key(window.to_owned())?;
+    let operation = state
+        .operations
+        .claim_read(&ticket, window, &format!("assistant_turn {id}"))
+        .map_err(|_| CoachError::Busy)?;
+    let backend = coach.backend(connection).await?;
+    let cancellation = operation.token();
+    let workflow = async move {
+        let _slot = slot;
+        let end = assistant::drive_turn(
+            &app,
+            &id,
+            backend.as_ref(),
+            &request,
+            &cancellation,
+            TURN_DEADLINE,
+        )
+        .await;
+        Ok(end)
+    };
+    crate::infra::operations::run_native_operation(operation, "assistant_turn", workflow)
+        .await
+        .map_err(|_| CoachError::ProviderFailure)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1007,6 +1144,10 @@ mod tests {
             app.manage(state);
 
             assert_eq!(coach_available(app.state()).await, Ok(false));
+            assert_eq!(
+                coach_has_connection(app.state()).await.unwrap_err(),
+                CoachError::Unavailable
+            );
             assert_eq!(
                 coach_connections(app.state()).await.unwrap_err(),
                 CoachError::Unavailable
@@ -2060,5 +2201,358 @@ mod tests {
             .engine_supervisor
             .get_exact(&EngineKey::new("analysis".into(), ticket).unwrap())
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn coach_has_connection_reads_registry_without_keyring_and_reports_storage_error() {
+        use crate::credentials::CredentialStore;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        /// Allows storing a connection into the registry, but fails every keyring read.
+        struct NoKeyringReads {
+            reads: AtomicUsize,
+        }
+
+        impl CredentialStore for NoKeyringReads {
+            fn set(&self, _key: &str, _secret: &str) -> Result<(), crate::error::Error> {
+                Ok(())
+            }
+
+            fn get(&self, _key: &str) -> Result<Option<String>, crate::error::Error> {
+                self.reads.fetch_add(1, Ordering::SeqCst);
+                Err(crate::error::Error::CredentialFailure(
+                    "keyring read must not happen".into(),
+                ))
+            }
+
+            fn delete(&self, _key: &str) -> Result<(), crate::error::Error> {
+                Ok(())
+            }
+        }
+
+        let store = Arc::new(NoKeyringReads {
+            reads: AtomicUsize::new(0),
+        });
+        let (credentials, _dir) = CoachCredentials::for_test(store.clone());
+        let coach = Coach::new(true, Arc::new(credentials)).unwrap();
+        let app = tauri::test::mock_app();
+        let state = crate::AppState::default();
+        assert!(state.coach.set(coach).is_ok());
+        app.manage(state);
+
+        // Empty registry -> false, zero keyring reads.
+        assert_eq!(coach_has_connection(app.state()).await, Ok(false));
+        assert_eq!(store.reads.load(Ordering::SeqCst), 0);
+
+        // Add one connection -> true, still zero keyring reads.
+        local_connection(
+            app.state::<crate::AppState>().coach.get().unwrap(),
+            "http://127.0.0.1:9/v1",
+            Some("sk-test"),
+        )
+        .await;
+        assert_eq!(coach_has_connection(app.state()).await, Ok(true));
+        assert_eq!(store.reads.load(Ordering::SeqCst), 0);
+
+        // Registry failure (unreadable/poisoned registry) -> Storage, never false.
+        let (broken_credentials, _broken_dir) = CoachCredentials::for_test(store);
+        broken_credentials.poison_registry_for_test();
+        let broken_coach = Coach::new(true, Arc::new(broken_credentials)).unwrap();
+        let broken_app = tauri::test::mock_app();
+        let broken_state = crate::AppState::default();
+        assert!(broken_state.coach.set(broken_coach).is_ok());
+        broken_app.manage(broken_state);
+        assert_eq!(
+            coach_has_connection(broken_app.state()).await,
+            Err(CoachError::Storage)
+        );
+    }
+
+    #[tokio::test]
+    async fn assistant_turn_refuses_switch_off_bounds_unclaimable_ticket_and_second_turn() {
+        use tauri::Listener;
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(AssistantTurnEvent))
+            .mount_events(&app);
+        let events = Arc::new(Mutex::new(Vec::<serde_json::Value>::new()));
+        let sink = events.clone();
+        app.listen_any(AssistantTurnEvent::NAME, move |event| {
+            let value = serde_json::from_str(event.payload()).expect("JSON event");
+            sink.lock().unwrap().push(value);
+        });
+
+        // Switch off / uninitialized -> Unavailable.
+        for coach in [None, Some(test_coach(false))] {
+            let state = crate::AppState::default();
+            let _dir = coach.map(|(coach, dir)| {
+                assert!(state.coach.set(coach).is_ok());
+                dir
+            });
+            assert_eq!(
+                start_assistant_turn(
+                    "turn-1".into(),
+                    "ticket".into(),
+                    assistant::tests::sample_input(some_handle()),
+                    &state,
+                    app.handle().clone(),
+                    "main",
+                )
+                .await,
+                Err(CoachError::Unavailable)
+            );
+        }
+
+        let (coach, _dir) = test_coach(true);
+        let connection = local_connection(&coach, "http://127.0.0.1:9/v1", None).await;
+        let state = crate::AppState::default();
+        assert!(state.coach.set(coach).is_ok());
+
+        // Bounds refused before connection or ticket is checked (unknown connection + unknown ticket).
+        let mut bad = assistant::tests::sample_input(some_handle());
+        bad.message = "   ".into();
+        assert_eq!(
+            start_assistant_turn(
+                "turn-1".into(),
+                "no-ticket".into(),
+                bad,
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+            .await,
+            Err(CoachError::InvalidInput)
+        );
+        // Empty turn id is InvalidInput.
+        assert_eq!(
+            start_assistant_turn(
+                String::new(),
+                "no-ticket".into(),
+                assistant::tests::sample_input(some_handle()),
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+            .await,
+            Err(CoachError::InvalidInput)
+        );
+
+        // Unclaimable tickets (unknown, foreign window, cancelled, already claimed, sealed) -> Busy.
+        assert_eq!(
+            start_assistant_turn(
+                "turn-1".into(),
+                "unknown-ticket".into(),
+                assistant::tests::sample_input(connection.clone()),
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+            .await,
+            Err(CoachError::Busy)
+        );
+        let foreign_ticket = state.operations.prepare_read("other-window").unwrap();
+        assert_eq!(
+            start_assistant_turn(
+                "turn-1".into(),
+                foreign_ticket,
+                assistant::tests::sample_input(connection.clone()),
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+            .await,
+            Err(CoachError::Busy)
+        );
+        let cancelled_ticket = state.operations.prepare_read("main").unwrap();
+        state
+            .operations
+            .cancel_read(&cancelled_ticket, "main")
+            .unwrap();
+        assert_eq!(
+            start_assistant_turn(
+                "turn-1".into(),
+                cancelled_ticket,
+                assistant::tests::sample_input(connection.clone()),
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+            .await,
+            Err(CoachError::Busy)
+        );
+        let claimed_ticket = state.operations.prepare_read("main").unwrap();
+        let _active_read = state
+            .operations
+            .claim_read(&claimed_ticket, "main", "already")
+            .unwrap();
+        assert_eq!(
+            start_assistant_turn(
+                "turn-1".into(),
+                claimed_ticket,
+                assistant::tests::sample_input(connection.clone()),
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+            .await,
+            Err(CoachError::Busy)
+        );
+        drop(_active_read);
+
+        // Second turn in the same window -> Busy; Coach's TurnSlots is independent.
+        let coach_slot = state
+            .coach
+            .get()
+            .unwrap()
+            .turns
+            .take("main", "tab-0")
+            .unwrap();
+        let held_assistant = state
+            .coach
+            .get()
+            .unwrap()
+            .assistant_turns
+            .take_key("main".to_owned())
+            .unwrap();
+        let valid_ticket = state.operations.prepare_read("main").unwrap();
+        assert_eq!(
+            start_assistant_turn(
+                "turn-2".into(),
+                valid_ticket.clone(),
+                assistant::tests::sample_input(connection.clone()),
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+            .await,
+            Err(CoachError::Busy)
+        );
+        drop(held_assistant);
+        drop(coach_slot);
+
+        // Sealed registry -> Busy.
+        state.operations.seal_and_request_cancellation().unwrap();
+        assert_eq!(
+            start_assistant_turn(
+                "turn-3".into(),
+                valid_ticket,
+                assistant::tests::sample_input(connection),
+                &state,
+                app.handle().clone(),
+                "main",
+            )
+            .await,
+            Err(CoachError::Busy)
+        );
+
+        // None of the refusals emitted an event or leaked a window slot.
+        assert!(events.lock().unwrap().is_empty());
+        assert!(state
+            .coach
+            .get()
+            .unwrap()
+            .assistant_turns
+            .0
+            .lock()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancelling_read_reservation_stops_assistant_turn_and_frees_window_place() {
+        use axum::{body::StreamBody, routing::post};
+        use tauri::Listener;
+        use tokio::sync::Notify;
+
+        let started_stream = Arc::new(Notify::new());
+        let notify_server = started_stream.clone();
+        let server = test_server::serve(Router::new().route(
+            "/v1/chat/completions",
+            post(move || {
+                let notify = notify_server.clone();
+                async move {
+                    notify.notify_one();
+                    let first = futures_util::stream::iter([Ok::<_, std::convert::Infallible>(
+                        "data: {\"choices\":[{\"delta\":{\"content\":\"Halfway\"}}]}\n\n",
+                    )]);
+                    let silent = futures_util::stream::pending();
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                        StreamBody::new(futures_util::StreamExt::chain(first, silent)),
+                    )
+                }
+            }),
+        ));
+
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(AssistantTurnEvent))
+            .mount_events(&app);
+        let events = Arc::new(Mutex::new(Vec::<serde_json::Value>::new()));
+        let sink = events.clone();
+        app.listen_any(AssistantTurnEvent::NAME, move |event| {
+            let value = serde_json::from_str(event.payload()).expect("JSON event");
+            sink.lock().unwrap().push(value);
+        });
+
+        let (coach, _dir) = test_coach(true);
+        let connection = local_connection(&coach, &server.url("/v1"), None).await;
+        let state = crate::AppState::default();
+        assert!(state.coach.set(coach).is_ok());
+        let ticket = state.operations.prepare_read("main").unwrap();
+
+        let state_for_cancel = state.clone();
+        let ticket_for_cancel = ticket.clone();
+        let cancel_task = tokio::spawn(async move {
+            started_stream.notified().await;
+            // Let the SSE chunk arrive and be processed before cancelling.
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            state_for_cancel
+                .operations
+                .cancel_read(&ticket_for_cancel, "main")
+                .unwrap();
+        });
+
+        let result = start_assistant_turn(
+            "turn-cancel".into(),
+            ticket.clone(),
+            assistant::tests::sample_input(connection),
+            &state,
+            app.handle().clone(),
+            "main",
+        )
+        .await;
+        cancel_task.await.unwrap();
+
+        let expected = AssistantTurnUpdate::Cancelled {
+            text: "Halfway".into(),
+        };
+        assert_eq!(result, Ok(expected.clone()));
+        let seen = events.lock().unwrap().clone();
+        let terminal: Vec<_> = seen
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e["update"]["type"].as_str(),
+                    Some("completed" | "cancelled" | "failed")
+                )
+            })
+            .collect();
+        assert_eq!(terminal.len(), 1);
+        assert_eq!(terminal[0]["turn"], "turn-cancel");
+        assert_eq!(
+            terminal[0]["update"],
+            serde_json::to_value(&expected).unwrap()
+        );
+        // The window's place is free again.
+        assert!(state
+            .coach
+            .get()
+            .unwrap()
+            .assistant_turns
+            .0
+            .lock()
+            .unwrap()
+            .is_empty());
     }
 }
