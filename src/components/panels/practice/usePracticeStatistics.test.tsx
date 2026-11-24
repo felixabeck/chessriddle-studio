@@ -130,7 +130,7 @@ test("an outcome from a superseded input is discarded", async () => {
 
   const { result, store } = await renderStatistics();
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(1);
-  expect(result.current.coverageStatus).toBe("loading");
+  expect(result.current.statisticsStatus).toBe("loading");
 
   await act(async () => store.set(coverageMinGamesAtom, 100));
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
@@ -143,8 +143,8 @@ test("an outcome from a superseded input is discarded", async () => {
     await first.promise;
   });
 
-  expect(result.current.coverageStatus).toBe("loading");
-  expect(result.current.coverageResult).toBeNull();
+  expect(result.current.statisticsStatus).toBe("loading");
+  expect(result.current.statisticsResult).toBeNull();
 
   const freshResult = makeCoverageResult("fresh");
   await act(async () => {
@@ -152,11 +152,11 @@ test("an outcome from a superseded input is discarded", async () => {
     await second.promise;
   });
 
-  expect(result.current.coverageStatus).toBe("success");
-  expect(result.current.coverageResult).toBe(freshResult);
+  expect(result.current.statisticsStatus).toBe("success");
+  expect(result.current.statisticsResult).toBe(freshResult);
 });
 
-test("retryCoverage re-runs coverage computation after failure", async () => {
+test("retryStatistics re-runs coverage computation after failure", async () => {
   const recovered = makeCoverageResult("recovered");
   mocks.computeTreeCoverage
     .mockRejectedValueOnce(new Error("transient failure"))
@@ -164,17 +164,17 @@ test("retryCoverage re-runs coverage computation after failure", async () => {
 
   const { result } = await renderStatistics("practice-statistics-retry");
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(1);
-  expect(result.current.coverageStatus).toBe("error");
-  expect(result.current.coverageResult).toBeNull();
+  expect(result.current.statisticsStatus).toBe("error");
+  expect(result.current.statisticsResult).toBeNull();
   expect(mocks.notificationShow).toHaveBeenCalledTimes(1);
 
   await act(async () => {
-    result.current.retryCoverage();
+    result.current.retryStatistics();
   });
 
   expect(mocks.computeTreeCoverage).toHaveBeenCalledTimes(2);
-  expect(result.current.coverageStatus).toBe("success");
-  expect(result.current.coverageResult).toBe(recovered);
+  expect(result.current.statisticsStatus).toBe("success");
+  expect(result.current.statisticsResult).toBe(recovered);
 });
 
 test("a change of reference cancels the in-flight request", async () => {

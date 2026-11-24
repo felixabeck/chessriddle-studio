@@ -96,9 +96,8 @@ export default function TrainOpeningsPopover({
   useEffect(() => () => abortPrep(), []);
 
   const inFlight = listingInFlight || due.discoveryPending;
-  const hasFailedDeck = due.rows.some((row) => row.failed);
   const hasEligible = trainOpeningsHasEligible(due.decks, new Date(), newPerSession);
-  const nothingDue = !inFlight && !due.inventoryFailed && !hasFailedDeck && !hasEligible;
+  const nothingDue = !inFlight && !hasEligible;
   const startDisabled = inFlight || nothingDue || preparing;
   const incomplete = due.incomplete || discoveryFailed;
   const noReference = !resolution.selectedReference;

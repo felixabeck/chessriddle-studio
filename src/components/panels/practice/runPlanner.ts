@@ -40,17 +40,12 @@ function candidateKey(candidate: Pick<TimedRunCandidate, "file" | "game" | "posi
 }
 
 function compareDue(left: TimedRunCandidate, right: TimedRunCandidate): number {
-    const leftWeight = left.weight;
-    const rightWeight = right.weight;
-    if (leftWeight !== undefined && rightWeight !== undefined) {
-        const byWeight = rightWeight - leftWeight;
-        if (byWeight !== 0) return byWeight;
-        return left.treeIndex - right.treeIndex;
+    const byWeight = compareUnseenByWeight({ weight: left.weight }, { weight: right.weight });
+    if (byWeight !== 0) return byWeight;
+    if (validWeight(left.weight) === undefined && validWeight(right.weight) === undefined) {
+        const byDue = left.dueAt - right.dueAt;
+        if (byDue !== 0) return byDue;
     }
-    if (leftWeight !== undefined) return -1;
-    if (rightWeight !== undefined) return 1;
-    const byDue = left.dueAt - right.dueAt;
-    if (byDue !== 0) return byDue;
     return left.treeIndex - right.treeIndex;
 }
 

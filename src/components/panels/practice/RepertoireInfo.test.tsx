@@ -1560,7 +1560,7 @@ test("StrictMode remount under an existing success owner seeds the reference mov
   const initial = builder.getState();
   const e4Fen = getBoardState(initial.root.children[0].fen);
   const statistics: PracticeStatistics = {
-    coverageResult: {
+    statisticsResult: {
       coverageMap: new Map(),
       gamesMap: new Map(),
       missingGamesMap: new Map(),
@@ -1577,9 +1577,9 @@ test("StrictMode remount under an existing success owner seeds the reference mov
         ],
       ]),
     },
-    coverageStatus: "success",
+    statisticsStatus: "success",
     coverageMap: new Map(),
-    retryCoverage: () => undefined,
+    retryStatistics: () => undefined,
     referenceDb: database,
     selectedReference: database,
     selectedReferenceKey: "db:reference",

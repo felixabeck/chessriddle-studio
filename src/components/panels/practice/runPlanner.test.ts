@@ -249,6 +249,21 @@ describe("planNextSegment", () => {
         });
     });
 
+    it("returns a one-card segment when remaining time is positive but below pace", () => {
+        const due = [
+            candidate({ positionKey: "a1", file: "a", treeIndex: 0, weight: 1 }),
+            candidate({ positionKey: "a2", file: "a", treeIndex: 1, weight: 0.9 }),
+        ];
+        const remaining = TIMED_RUN_INITIAL_PACE_SECONDS / 2;
+        expect(remaining).toBeGreaterThan(0);
+        expect(remaining).toBeLessThan(TIMED_RUN_INITIAL_PACE_SECONDS);
+        expect(planNextSegment(due, remaining, 0, 0)).toEqual({
+            file: "a",
+            game: 0,
+            positionKeys: ["a1"],
+        });
+    });
+
     it("returns null when none remain or the deadline has been reached", () => {
         expect(planNextSegment([], 30, 0, 0)).toBeNull();
         expect(planNextSegment([candidate({ positionKey: "a1", weight: 1 })], 0, 0, 0)).toBeNull();

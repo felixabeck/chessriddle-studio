@@ -220,10 +220,10 @@ vi.mock("@/components/common/IconAction", () => ({
 vi.mock("./RepertoireInfo", () => ({ default: () => null }));
 vi.mock("./usePracticeStatistics", () => {
   const statistics = {
-    coverageResult: null,
-    coverageStatus: "absent" as const,
+    statisticsResult: null,
+    statisticsStatus: "absent" as const,
     coverageMap: undefined,
-    retryCoverage: () => undefined,
+    retryStatistics: () => undefined,
     referenceDb: null,
     selectedReference: null,
     selectedReferenceKey: null,

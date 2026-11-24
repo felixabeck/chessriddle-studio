@@ -28,7 +28,7 @@ export function useDeckWeights({
     useEffect(() => {
         if (treeViewDeferred) return;
         if (deck.status !== "ready") return;
-        if (statistics.coverageStatus !== "success" || !statistics.coverageResult) return;
+        if (statistics.statisticsStatus !== "success" || !statistics.statisticsResult) return;
 
         const orientation = headers.orientation || "white";
         const startPath = headers.start || [];
@@ -36,7 +36,7 @@ export function useDeckWeights({
             root,
             orientation,
             startPath,
-            statistics.coverageResult.dbMovesMap,
+            statistics.statisticsResult.dbMovesMap,
         );
         if (!weights) return;
 
@@ -53,7 +53,7 @@ export function useDeckWeights({
         treeViewDeferred,
         deck.status,
         deck.positions,
-        statistics.coverageStatus,
-        statistics.coverageResult,
+        statistics.statisticsStatus,
+        statistics.statisticsResult,
     ]);
 }

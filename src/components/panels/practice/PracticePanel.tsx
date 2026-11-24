@@ -89,14 +89,14 @@ function PracticePanel() {
     deckIdentity,
     currentTabId: currentTab?.value,
   });
-  const statistics = usePracticeStatistics();
+  const referenceStatistics = usePracticeStatistics();
   useDeckWeights({
     root,
     headers,
     treeViewDeferred,
     deck,
     setDeck,
-    statistics,
+    statistics: referenceStatistics,
   });
 
   const deckCanWrite = deck.status === "ready";
@@ -153,7 +153,7 @@ function PracticePanel() {
     deck.status === "ready" || deck.status === "write-pending" || deck.status === "write-blocked";
 
   return (
-    <PracticeStatisticsContext.Provider value={statistics}>
+    <PracticeStatisticsContext.Provider value={referenceStatistics}>
       <>
         <Tabs
           h="100%"

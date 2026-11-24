@@ -55,15 +55,15 @@ function opponentE5Stats(root: TreeNode, e5Games = 30, otherGames = 70): TreeSta
 
 function successStatistics(dbMovesMap: TreeStatistics): PracticeStatistics {
   return {
-    coverageResult: {
+    statisticsResult: {
       coverageMap: new Map(),
       gamesMap: new Map(),
       missingGamesMap: new Map(),
       dbMovesMap,
     },
-    coverageStatus: "success",
+    statisticsStatus: "success",
     coverageMap: new Map(),
-    retryCoverage: () => undefined,
+    retryStatistics: () => undefined,
     referenceDb: { id: { id: "reference" }, kind: "database" },
     selectedReference: { id: { id: "reference" }, kind: "database" },
     selectedReferenceKey: "db:reference",
@@ -170,8 +170,8 @@ test("nothing is written when the statistics read failed", async () => {
   const positions = buildFromTree(store.getState().root, "white", []);
   const setDeck = vi.fn();
   const statistics = successStatistics(new Map());
-  statistics.coverageStatus = "error";
-  statistics.coverageResult = null;
+  statistics.statisticsStatus = "error";
+  statistics.statisticsResult = null;
   await renderWeights({
     root: store.getState().root,
     headers: store.getState().headers,

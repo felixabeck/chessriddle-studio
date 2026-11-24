@@ -31,6 +31,7 @@ import {
     computeTreeCoverage,
     fetchPositionMoves,
     fetchTreeStatistics,
+    fetchTreesStatistics,
     findBiggestGap,
     getStats,
     roundReachWeight,
@@ -1174,6 +1175,32 @@ describe("computeReachWeights", () => {
         expect(weights.get(getBoardState(first.fen))).toBe(1);
         expect(roundReachWeight(1.6)).toBe(1);
     });
+});
+
+test("fetchTreesStatistics issues one searchPositionsStats call over the union of two trees", async () => {
+    const treeA = openingLine(["e4", "e5"]);
+    const treeB = openingLine(["e4", "c5"]);
+    mocks.searchPositionsStats.mockImplementation(async (_db, fens: string[]) =>
+        fens.map((fen) => ({ fen, openings: [] })),
+    );
+    await fetchTreesStatistics(
+        [
+            { root: treeA, startPath: [] },
+            { root: treeB, startPath: [] },
+        ],
+        database,
+    );
+    expect(mocks.searchPositionsStats).toHaveBeenCalledTimes(1);
+    const fens = mocks.searchPositionsStats.mock.calls[0][1] as string[];
+    expect(fens).toEqual(
+        expect.arrayContaining([
+            getBoardState(treeA.fen),
+            getBoardState(nodeAt(treeA, ["e4"]).fen),
+            getBoardState(nodeAt(treeA, ["e4", "e5"]).fen),
+            getBoardState(nodeAt(treeB, ["e4", "c5"]).fen),
+        ]),
+    );
+    expect(new Set(fens).size).toBe(fens.length);
 });
 
 test("the statistics request includes the path from the root to Start", async () => {

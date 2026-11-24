@@ -20,13 +20,15 @@ import { computeTreeCoverage } from "@/utils/repertoire";
 import { getBoardState, getMemoizedBoardStateMap } from "@/utils/treeReducer";
 import { useTranslation } from "react-i18next";
 
+/** Lifecycle of the shared statistics batch (Build coverage and Train weights). */
 export type CoverageStatus = "absent" | "loading" | "error" | "success";
 
+/** Shared statistics batch for Build coverage and Train weights, including the path to Start. */
 export type PracticeStatistics = {
-  coverageResult: Awaited<ReturnType<typeof computeTreeCoverage>> | null;
-  coverageStatus: CoverageStatus;
+  statisticsResult: Awaited<ReturnType<typeof computeTreeCoverage>> | null;
+  statisticsStatus: CoverageStatus;
   coverageMap: Map<string, number> | undefined;
-  retryCoverage: () => void;
+  retryStatistics: () => void;
   referenceDb: DatabaseHandle | null;
   selectedReference: DatabaseHandle | null;
   selectedReferenceKey: string | null;
@@ -99,7 +101,7 @@ export function usePracticeStatistics(): PracticeStatistics {
       root,
       orientation,
       referenceDb,
-      selectedReference: selectedReferenceKey,
+      selectedReferenceKey,
       generation: currencyGeneration,
       status: currencyStatus,
       error: currencyError,
@@ -132,15 +134,15 @@ export function usePracticeStatistics(): PracticeStatistics {
   const liveCoverageInput = useRef(coverageInput);
   liveCoverageInput.current = coverageInput;
   const currentCoverage = coverageOutcome?.input === coverageInput ? coverageOutcome : null;
-  const coverageResult = currentCoverage?.status === "success" ? currentCoverage.result : null;
-  const coverageStatus: CoverageStatus = !referenceDb
+  const statisticsResult = currentCoverage?.status === "success" ? currentCoverage.result : null;
+  const statisticsStatus: CoverageStatus = !referenceDb
     ? "absent"
     : (currentCoverage?.status ?? "loading");
-  const coverageMap = coverageResult?.coverageMap;
-  const retryCoverage = useCallback(() => setCoverageRetry((attempt) => attempt + 1), []);
+  const coverageMap = statisticsResult?.coverageMap;
+  const retryStatistics = useCallback(() => setCoverageRetry((attempt) => attempt + 1), []);
 
   useEffect(() => {
-    // fetchTreeStatistics walks the whole tree before its first await. That stays off this commit.
+    // fetchTreeStatistics walks the whole tree before its first await. Keep that walk off this React render.
     if (isTreeViewDeferred(store)) return;
     if (!coverageInput.referenceDb) return;
     const controller = new AbortController();
@@ -172,10 +174,10 @@ export function usePracticeStatistics(): PracticeStatistics {
   }, [coverageInput, store]);
 
   return {
-    coverageResult,
-    coverageStatus,
+    statisticsResult,
+    statisticsStatus,
     coverageMap,
-    retryCoverage,
+    retryStatistics,
     referenceDb,
     selectedReference,
     selectedReferenceKey,

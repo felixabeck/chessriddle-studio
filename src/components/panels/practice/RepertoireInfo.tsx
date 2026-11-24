@@ -84,10 +84,10 @@ function RepertoireInfoView() {
 
   const statistics = usePracticeStatisticsContext()!;
   const {
-    coverageResult,
-    coverageStatus,
+    statisticsResult: coverageResult,
+    statisticsStatus: coverageStatus,
     coverageMap,
-    retryCoverage,
+    retryStatistics: retryCoverage,
     referenceDb,
     selectedReference,
     selectedReferenceKey,

@@ -239,6 +239,20 @@ test("an explicit run queue does not auto-start when the deck is not writable", 
   expect(session.getLatest().practiceState.phase).toBe("idle");
 });
 
+test("a timed-run segment starts a spaced anki session", async () => {
+  const { atoms, tabId, deck, getLatest } = await mountSession({ syncedWithTreeAndScope: true });
+  const key = getBoardState(deck.positions[0].fen);
+  await act(async () => {
+    atoms.set(practiceRunRequestFamily(tabId), {
+      runId: "run-anki",
+      segmentId: "seg-anki",
+      positionKeys: [key],
+      deadline: Date.now() + 60_000,
+    });
+  });
+  expect(getLatest().sessionStats.mode).toBe("anki");
+});
+
 test("an explicit run queue starts only after the deck reports synced and ready", async () => {
   const first = await mountSession({ syncedWithTreeAndScope: false });
   const firstKey = getBoardState(first.deck.positions[0].fen);

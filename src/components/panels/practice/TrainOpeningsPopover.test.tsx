@@ -154,7 +154,7 @@ function dueState(overrides: Partial<TrainOpeningsDue> = {}): TrainOpeningsDue {
   };
 }
 
-async function renderPopover(due: TrainOpeningsDue) {
+async function renderPopover(due: TrainOpeningsDue, listingInFlight = false) {
   await act(async () =>
     root.render(
       <MantineProvider env="test">
@@ -162,7 +162,7 @@ async function renderPopover(due: TrainOpeningsDue) {
           <TrainOpeningsPopover
             newTabId="home"
             due={due}
-            listingInFlight={false}
+            listingInFlight={listingInFlight}
             discoveryFailed={false}
             trigger={
               <button type="button" data-train-openings-trigger>
@@ -267,6 +267,81 @@ test("Start is disabled while discovery is in flight", async () => {
   expect(start.disabled).toBe(true);
 });
 
+test("Start is disabled while the Library listing is in flight", async () => {
+  await renderPopover(dueState({ discoveryPending: false }), true);
+  await open();
+  const start = [...(dropdown()?.querySelectorAll("button") ?? [])].find(
+    (button) => button.textContent === "Home.TrainOpenings.Start",
+  )!;
+  expect(start.disabled).toBe(true);
+});
+
+test("Start is disabled when a failed sibling sits beside a chapter with no eligible card", async () => {
+  const row = repertoireRow("file-a");
+  const unseen = readyDeck(false);
+  store.set(practiceNewPerSessionAtom, 0);
+  store.set(deckAtomFamily({ file: row.key, game: 0 }), unseen);
+  store.set(deckAtomFamily({ file: row.key, game: 1 }), failedDeck());
+  await renderPopover(
+    dueState({
+      decks: new Map([
+        [
+          row.key,
+          new Map([
+            [0, unseen],
+            [1, failedDeck()],
+          ]),
+        ],
+      ]),
+      incomplete: true,
+      total: 0,
+      rows: [{ file: row, count: 0, failed: true }],
+    }),
+  );
+  await open();
+  let start = [...(dropdown()?.querySelectorAll("button") ?? [])].find(
+    (button) => button.textContent === "Home.TrainOpenings.Start",
+  )!;
+  expect(start.disabled).toBe(true);
+  expect(dropdown()?.textContent).toContain("Home.DuePractice.Incomplete");
+  expect(dropdown()?.textContent).toContain("Home.DuePractice.NothingDue");
+
+  await act(async () => root.unmount());
+  store = createStore();
+  store.set(practiceTrainMinutesAtom, 30);
+  store.set(practiceNewPerSessionAtom, 0);
+  store.set(referenceDbAtom, null);
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  const due = readyDeck(true);
+  store.set(deckAtomFamily({ file: row.key, game: 0 }), due);
+  store.set(deckAtomFamily({ file: row.key, game: 1 }), failedDeck());
+  await renderPopover(
+    dueState({
+      decks: new Map([
+        [
+          row.key,
+          new Map([
+            [0, due],
+            [1, failedDeck()],
+          ]),
+        ],
+      ]),
+      incomplete: true,
+      total: 1,
+      rows: [{ file: row, count: 1, failed: true }],
+    }),
+  );
+  await open();
+  start = [...(dropdown()?.querySelectorAll("button") ?? [])].find(
+    (button) => button.textContent === "Home.TrainOpenings.Start",
+  )!;
+  expect(start.disabled).toBe(false);
+  expect(dropdown()?.textContent).toContain("Home.DuePractice.Incomplete");
+  expect(dropdown()?.textContent).not.toContain("Home.DuePractice.NothingDue");
+});
+
 test("Start stays enabled beside a failed sibling deck", async () => {
   const row = repertoireRow("file-a");
   const decks = new Map([
@@ -291,6 +366,45 @@ test("Start stays enabled beside a failed sibling deck", async () => {
   )!;
   expect(start.disabled).toBe(false);
   expect(dropdown()?.textContent).toContain("Home.DuePractice.Incomplete");
+});
+
+test("Start is disabled when inventory failed and nothing is eligible", async () => {
+  const row = repertoireRow("file-a");
+  const unseen = readyDeck(false);
+  store.set(practiceNewPerSessionAtom, 0);
+  store.set(deckAtomFamily({ file: row.key, game: 0 }), unseen);
+  await renderPopover(
+    dueState({
+      decks: new Map([[row.key, new Map([[0, unseen]])]]),
+      inventoryFailed: true,
+      incomplete: true,
+      total: 0,
+      rows: [{ file: row, count: 0, failed: false }],
+    }),
+  );
+  await open();
+  const start = [...(dropdown()?.querySelectorAll("button") ?? [])].find(
+    (button) => button.textContent === "Home.TrainOpenings.Start",
+  )!;
+  expect(start.disabled).toBe(true);
+  expect(dropdown()?.textContent).toContain("Home.DuePractice.Incomplete");
+  expect(dropdown()?.textContent).toContain("Home.DuePractice.NothingDue");
+});
+
+test("Start stays enabled when inventory failed beside an eligible card", async () => {
+  await renderPopover(
+    dueState({
+      inventoryFailed: true,
+      incomplete: true,
+    }),
+  );
+  await open();
+  const start = [...(dropdown()?.querySelectorAll("button") ?? [])].find(
+    (button) => button.textContent === "Home.TrainOpenings.Start",
+  )!;
+  expect(start.disabled).toBe(false);
+  expect(dropdown()?.textContent).toContain("Home.DuePractice.Incomplete");
+  expect(dropdown()?.textContent).not.toContain("Home.DuePractice.NothingDue");
 });
 
 test("the nothing-due message appears only when Start is disabled for an empty library", async () => {
