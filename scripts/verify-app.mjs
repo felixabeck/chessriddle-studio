@@ -288,6 +288,7 @@ const filesWorkspaceId = "verify-files-workspace";
 const filesRowName = "verify-sample";
 const filesMetadataRowName = "verify-metadata-only";
 const openingRowName = "verify-game-opening";
+const newGameWhite = "Verify New Game White";
 const emptyOpeningRowName = "verify-empty-opening";
 const conversionSourceName = "verify-conversion-cancellation";
 const conversionSeedName = "verify-conversion-seed";
@@ -3995,7 +3996,25 @@ async function verifyNewGameToDatabase(session) {
       session.execute("return location.pathname === '/' && !!document.querySelector('cg-board')"),
     );
     await move("e2", "e4");
+    // A draft is named before its first save: Save PGN opens the naming dialog, and only its
+    // confirmation writes the row (`requestUserSave` in BoardAnalysis.tsx).
     await clickButton(session, "Save PGN", true);
+    // The dialog's first field is White; WebDriver returns it as an element reference.
+    const whiteElement = await wait("new-game naming dialog", () =>
+      session.execute(`
+        const dialog = document.querySelector('[role="dialog"]');
+        const input = dialog?.querySelector('form input');
+        return dialog?.querySelector('form button[type="submit"]') && input ? input : null;
+      `),
+    );
+    const whiteElementId = encodeURIComponent(whiteElement["element-6066-11e4-a52e-4f735466cecf"]);
+    await session.call("POST", `/element/${whiteElementId}/clear`, {});
+    await session.call("POST", `/element/${whiteElementId}/value`, { text: newGameWhite });
+    const confirm = await pointer(
+      "new-game naming confirmation",
+      `document.querySelector('[role="dialog"] form button[type="submit"]')`,
+    );
+    await clickAt(session, confirm.x, confirm.y);
     const first = await wait("new-game insert through native read", async () => {
       const games = await read();
       const added = games.data.filter((game) => !priorIds.has(game.id));
@@ -4003,9 +4022,13 @@ async function verifyNewGameToDatabase(session) {
         games.count === before.count + 1 &&
         added.length === 1 &&
         added[0].moves.includes("e4") &&
+        added[0].white === newGameWhite &&
         added[0]
       );
     });
+    await wait("new-game naming dialog closed", () =>
+      session.execute(`return !document.querySelector('[role="dialog"]')`),
+    );
     await move("e7", "e5");
     await clickButton(session, "Save PGN", true);
     const edited = await wait("new-game edit updates its original native row", async () => {
@@ -4029,6 +4052,21 @@ async function verifyNewGameToDatabase(session) {
       "NG1 New game inserts once and the next explicit save updates the same native database row",
       `${error.message}; renderer state: ${JSON.stringify(await rendererChromeState(session))}`,
     );
+    // A dialog NG1 leaves open covers the navigation row the later scenarios drive.
+    await session
+      .call("POST", "/actions", {
+        actions: [
+          {
+            type: "key",
+            id: "new-game-dismiss",
+            actions: [
+              { type: "keyDown", value: "\uE00C" },
+              { type: "keyUp", value: "\uE00C" },
+            ],
+          },
+        ],
+      })
+      .catch(() => {});
   }
 }
 
