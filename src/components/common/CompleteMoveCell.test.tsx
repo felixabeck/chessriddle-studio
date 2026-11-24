@@ -12,7 +12,7 @@ import {
 } from "@/state/filePositionIndex";
 import { createTreeStore } from "@/state/store/tree";
 import { lex } from "@/state/tests/lexPgn";
-import type { Tab } from "@/state/workspaceTypes";
+import type { FileBackedTab } from "@/utils/tabs";
 import { createNode, defaultTree, getBoardState, type TreeNode } from "@/utils/treeReducer";
 import { TreeStateContext } from "./TreeStateContext";
 import { createNotationNodeIndex, type NotationNodeIndex } from "./notationRows";
@@ -1226,7 +1226,7 @@ test("O0: matches four-field and Shredder-castling spellings with standard FENs 
 
 test("O3: file-wide transposition label, switch call, revision guard, and non-file/no-switcher fallback", async () => {
   const fileHandle = { id: { id: "repertoire-file" }, kind: "fileWorkspace" } as const;
-  const fileTab: Tab = {
+  const fileTab: FileBackedTab = {
     value: "tab",
     name: "Chapter 2",
     type: "analysis",
@@ -1254,10 +1254,7 @@ test("O3: file-wide transposition label, switch call, revision guard, and non-fi
     { pgn: ch1, stamp: "s1", revision: "rev-1", present: true, omission: null, linked: null },
   ]);
 
-  const { finished } = requestFilePositionIndex(
-    fileTab.gameOrigin.kind === "file" ? fileTab.gameOrigin.file : (undefined as never),
-    "rev-1",
-  );
+  const { finished } = requestFilePositionIndex(fileTab.gameOrigin.file, "rev-1");
   expect(await finished).toBe("built");
 
   const store = createTreeStore();
@@ -1407,7 +1404,7 @@ test("O3: file-wide transposition label, switch call, revision guard, and non-fi
 
 test("O3: shared opening moves across chapters stay unmarked while different move orders mark, and stale-root clicks do not switch", async () => {
   const fileHandle = { id: { id: "shared-opening-file" }, kind: "fileWorkspace" } as const;
-  const fileTab: Tab = {
+  const fileTab: FileBackedTab = {
     value: "tab",
     name: "Shared vs Detour",
     type: "analysis",
@@ -1432,10 +1429,7 @@ test("O3: shared opening moves across chapters stay unmarked while different mov
     { pgn: ch1, stamp: "s1", revision: "rev-shared", present: true, omission: null, linked: null },
   ]);
 
-  const { finished } = requestFilePositionIndex(
-    fileTab.gameOrigin.kind === "file" ? fileTab.gameOrigin.file : (undefined as never),
-    "rev-shared",
-  );
+  const { finished } = requestFilePositionIndex(fileTab.gameOrigin.file, "rev-shared");
   expect(await finished).toBe("built");
 
   const { parsePGN } = await import("@/utils/chess");
@@ -1473,7 +1467,7 @@ test("O3: shared opening moves across chapters stay unmarked while different mov
 
   // Different move order in chapter 1 keeps its marker, and clicking after store root change is ignored.
   const detourHandle = { id: { id: "detour-opening-file" }, kind: "fileWorkspace" } as const;
-  const detourTab: Tab = {
+  const detourTab: FileBackedTab = {
     ...fileTab,
     gameOrigin: {
       kind: "file",
@@ -1501,7 +1495,7 @@ test("O3: shared opening moves across chapters stay unmarked while different mov
     },
   ]);
   const { finished: detourFinished } = requestFilePositionIndex(
-    detourTab.gameOrigin.kind === "file" ? detourTab.gameOrigin.file : (undefined as never),
+    detourTab.gameOrigin.file,
     "rev-detour",
   );
   expect(await detourFinished).toBe("built");
@@ -1547,7 +1541,7 @@ test("O3: shared opening moves across chapters stay unmarked while different mov
 
 test("O3: cell mounted before index build completes shows the file-wide marker once the build finishes without remount", async () => {
   const fileHandle = { id: { id: "pending-index-file" }, kind: "fileWorkspace" } as const;
-  const fileTab: Tab = {
+  const fileTab: FileBackedTab = {
     value: "tab",
     name: "King Knight Detour",
     type: "analysis",
@@ -1586,10 +1580,7 @@ test("O3: cell mounted before index build completes shows the file-wide marker o
   mocks.switchChapter = vi.fn().mockResolvedValue(undefined);
   setFileFreshness("tab", "verified", { verifiedRevision: "rev-pending" });
 
-  const { finished } = requestFilePositionIndex(
-    fileTab.gameOrigin.kind === "file" ? fileTab.gameOrigin.file : (undefined as never),
-    "rev-pending",
-  );
+  const { finished } = requestFilePositionIndex(fileTab.gameOrigin.file, "rev-pending");
 
   await act(async () => {
     root.render(
