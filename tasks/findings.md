@@ -28919,7 +28919,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The due total says "across 1 repertoires" because the count is not pluralised
 
-* **ID:** f-20261124-07 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261124-07 · **Status:** handled · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes (real-app run of the timed opening training, build frequency-weighted-practice, 2026-11-24)
 * **Where:** `Home.DuePractice.Total` in every catalogue under `src/translation/` ("{{positions}} positions due across {{repertoires}} repertoires" in en-US), rendered by `src/components/tabs/NewTabHome.tsx:724` and by the Train openings popover
@@ -28929,6 +28929,8 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Open question:** none; the wording per locale follows the existing catalogue style.
 * **Proof:** a `NewTabHome` test with the real en-US catalogue that renders one repertoire and one position and expects "1 position due across 1 repertoire" (fails at HEAD).
 * **Found by:** Claude Code (Opus 5.5), build run frequency-weighted-practice, real-app verification, 2026-11-24
+* **Handled 2026-11-24 (drain next-finding, lens tier):** `a465dcfcf` splits the due line into two plural fragments, `Home.DuePractice.Positions` and `Home.DuePractice.Repertoires` (each with `count`), joined by `Home.DuePractice.Total`. Both renderers (`NewTabHome.tsx` and `TrainOpeningsPopover.tsx`) call one helper, `dueTotalLabel` in `src/components/library/useLibraryDueCounts.ts`. Every catalogue ships its CLDR plural categories. ru, uk and be keep their existing "label: N" colon style, so their forms are identical. `Home.Library.GamesIncomplete` on the same page had the same defect ("Games from 1 collections") and now takes `count` with plural forms. Proof: a real-catalogue test expects "1 position due across 1 repertoire" (en-US exact strings plus a plural sweep over every locale), and a test expects "Games from 1 collection"; popover and New Tab tests assert the nested plural calls. Review: correctness, root-cause, tests (the named lens), code-quality, minimalism, persisted-state and chess-semantics, all APPROVED after one repair round (the repair added the popover test and the GamesIncomplete fix). Rejected: one string with nested `$t()` plurals, because it is fragile under extraction and hides word order from translators.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"79fd2d243efcd66e80e54f742d21f2ef56f85c1ab7b4e09dbd5afd4e1c07599d","header_sha256":"d2c2752fd3891fa09a3d354eeed09cd1a9b96f5350970d01cd867a5d7cc85929","header_status":"handled","input_sha256":"fd084ef218e96f20a931643325f6dc03eb355d1b46f8fd9035fa6630d134fa39","kind":"mutation-receipt","operation":"18beadbd8f670cf992eb79c9a224da2ae06dbf1a638e5ddbf6e6f8dfe98d8c23","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-07"],"target":"f-20261124-07","v":1} -->
 
 ---
 
