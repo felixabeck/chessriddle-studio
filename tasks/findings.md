@@ -28993,7 +28993,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The daily tree-path mutation sweep is red: three treeReducer mutants from 2026-11-24's open-variation and transposition commits survive
 
-* **ID:** f-20261124-16 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-16 · **Status:** handled · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45395218545
 * **Filed from:** 275e9313-8f5a-48c0-9de5-747655d15940
@@ -29002,6 +29002,8 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario (observed):** scheduled `Mutation` run 45395218545 on `41bf2e516` (2026-11-24 12:36 UTC), job `frontend-mutation (tree-path)`: `Final mutation score 99.22 under breaking threshold 100`. The previous completed run, 45160185213 on `ac45297ff`, was green, so this is the first red run. `pnpm ci:remote:check` refuses every code push while the job stays red.
 * **Proof:** `gh run view 45395218545 -R felixabeck/chessriddle-studio --log-failed`, the three `[Survived] ConditionalExpression` blocks. Fix: add tests that go red under each of the first two mutants (an open variation reached from the root cursor, and a cursor on a main-line continuation whose siblings must not count as passed). For `:515`, kill it with a test or, if it is provably equivalent, remove the dead guard (it is not a Stryker disable case unless proven equivalent). Re-run `pnpm mutation:frontend` for `tree-path` and see 100.
 * **Found by:** Claude Code drain session 275e9313-8f5a-48c0-9de5-747655d15940, 2026-11-24, at the pre-push remote check of the f-20261124-03 release.
+* **Duplicate, closed 2026-11-24 (drain, Claude Code):** same Mutation run 45395218545 and the same three tree-path survivors (`treeReducer.ts` `:341`, `:361`, `:515`) as f-20261124-10, which is handled: commit "fix(tree): drop three conditions the tree-path mutation sweep proved redundant" removed them as equivalent mutants. This entry was filed through the inbox spool by session 275e9313-8f5a-48c0-9de5-747655d15940 before that closure reached its checkout. No further work.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2aedc1ef0819c19cbfe1b49cc2d4382a1f644a87f7f08b73dc27216818b0dfad","header_sha256":"644277514031a8d0839d90335bd18bde1c8d1409fa2a50b7fe0b55f00211b582","header_status":"handled","input_sha256":"e3bc96a392f22f2433000cd181bfdffd9af333dc84e26755e32a78dcda3eb35c","kind":"mutation-receipt","operation":"8fea8e393b2682f5c09d85d761db50ec461197cde61658015649d89e413e56e0","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-16"],"target":"f-20261124-16","v":1} -->
 
 ### The filePositionIndex 500-chapter limit benchmark times out at 30 s on the hosted frontend job
 
