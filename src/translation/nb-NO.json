@@ -1389,6 +1389,7 @@
     "Settings.Coach.Engine.None": "Ingen motor installert",
     "Settings.Coach.Form.Address": "Adresse",
     "Settings.Coach.Form.Address.Desc": "Basisadressen til tjenestens OpenAI-kompatible grensesnitt.",
+    "Settings.Coach.Form.Address.Preset": "Allerede fylt ut for denne tjenesten. Endre den bare hvis tjenesten oppgir en annen adresse.",
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud gir hvert arbeidsområde sin egen adresse. Kopier din fra konsollen i Model Studio.",
     "Settings.Coach.Form.EditTitle": "Rediger tilkobling",
     "Settings.Coach.Form.Key": "API-nøkkel",

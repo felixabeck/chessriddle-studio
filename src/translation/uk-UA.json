@@ -1429,6 +1429,7 @@
     "Settings.Coach.Engine.None": "Немає встановлених рушіїв",
     "Settings.Coach.Form.Address": "Адреса",
     "Settings.Coach.Form.Address.Desc": "Базова адреса інтерфейсу сервісу, сумісного з OpenAI.",
+    "Settings.Coach.Form.Address.Preset": "Уже заповнено для цього сервісу. Змінюйте адресу, лише якщо сервіс указує іншу.",
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud надає кожному робочому простору власну адресу. Скопіюйте свою з консолі Model Studio.",
     "Settings.Coach.Form.EditTitle": "Редагувати підключення",
     "Settings.Coach.Form.Key": "Ключ API",

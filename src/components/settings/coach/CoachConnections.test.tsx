@@ -261,6 +261,53 @@ test("choosing Google Gemini prefills its address and says where its key comes f
   expect(dialog()!.textContent).not.toContain("Settings.Coach.Form.Key.Gemini");
 });
 
+test("a preset says its address is filled in; only Other names the OpenAI-compatible interface", async () => {
+  await render();
+  await click(button(host, "Settings.Coach.Connections.Add"));
+  // A preset user is told to leave the address alone, not that it belongs to OpenAI.
+  await chooseService("Google Gemini");
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Address.Preset");
+  expect(dialog()!.textContent).not.toContain("Settings.Coach.Form.Address.Desc");
+
+  // Qwen's address differs per workspace, so it keeps its own hint.
+  await chooseService("Qwen (Alibaba Cloud)");
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Address.Workspace");
+  expect(dialog()!.textContent).not.toContain("Settings.Coach.Form.Address.Preset");
+
+  await chooseService("Settings.Coach.Form.Service.Custom");
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Address.Desc");
+  expect(dialog()!.textContent).not.toContain("Settings.Coach.Form.Address.Preset");
+});
+
+test("editing a connection at a preset's address describes it as that service", async () => {
+  const gemini: ConnectionSummary = {
+    ...hosted,
+    handle: "handle-gemini",
+    label: "Gemini",
+    address: "https://generativelanguage.googleapis.com/v1beta/openai",
+    hasKey: false,
+  };
+  mocks.coachConnections.mockResolvedValue([ollama, hosted, gemini]);
+  await render();
+
+  // Only the address is stored, so the service is recognised by it.
+  await click(button(row("Gemini"), "Settings.Coach.Form.EditTitle"));
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Address.Preset");
+  expect(dialog()!.textContent).not.toContain("Settings.Coach.Form.Address.Desc");
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Key.Gemini");
+  await click(button(dialog()!, "Common.Cancel"));
+
+  await click(button(row("Ollama"), "Settings.Coach.Form.EditTitle"));
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Address.Preset");
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Key.Optional");
+  await click(button(dialog()!, "Common.Cancel"));
+
+  // An address no preset uses is described by what it has to be.
+  await click(button(row("Hosted"), "Settings.Coach.Form.EditTitle"));
+  expect(dialog()!.textContent).toContain("Settings.Coach.Form.Address.Desc");
+  expect(dialog()!.textContent).not.toContain("Settings.Coach.Form.Address.Preset");
+});
+
 test("editing addresses the connection by handle and leaves an untouched key out", async () => {
   await render();
   await click(button(row("Hosted"), "Settings.Coach.Form.EditTitle"));

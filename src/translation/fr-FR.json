@@ -1409,6 +1409,7 @@
     "Settings.Coach.Engine.None": "Aucun moteur installé",
     "Settings.Coach.Form.Address": "Adresse",
     "Settings.Coach.Form.Address.Desc": "L’adresse de base de l’interface compatible OpenAI du service.",
+    "Settings.Coach.Form.Address.Preset": "Déjà renseignée pour ce service. Ne la modifiez que si le service indique une autre adresse.",
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud attribue à chaque espace de travail sa propre adresse. Copiez la vôtre depuis la console Model Studio.",
     "Settings.Coach.Form.EditTitle": "Modifier la connexion",
     "Settings.Coach.Form.Key": "Clé API",

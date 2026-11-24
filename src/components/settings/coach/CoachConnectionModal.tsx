@@ -18,8 +18,12 @@ type Draft = { preset: CoachPresetId; label: string; address: string; key: strin
 
 function initialDraft(connection: ConnectionSummary | null): Draft {
   if (connection) {
+    // Only the address is stored; a connection still at a preset's address is that service.
+    const matched = COACH_PRESETS.find(
+      (entry) => entry.id !== "custom" && entry.address === connection.address,
+    );
     return {
-      preset: "custom",
+      preset: matched?.id ?? "custom",
       label: connection.label,
       address: connection.address ?? "",
       key: "",
@@ -130,7 +134,9 @@ export function CoachConnectionModal({
             description={
               draft.preset === "qwen"
                 ? t("Settings.Coach.Form.Address.Workspace")
-                : t("Settings.Coach.Form.Address.Desc")
+                : draft.preset === "custom"
+                  ? t("Settings.Coach.Form.Address.Desc")
+                  : t("Settings.Coach.Form.Address.Preset")
             }
             value={draft.address}
             maxLength={MAX_ADDRESS_CHARS}

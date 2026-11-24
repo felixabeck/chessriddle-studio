@@ -1369,6 +1369,7 @@
     "Settings.Coach.Engine.None": "未安裝引擎",
     "Settings.Coach.Form.Address": "位址",
     "Settings.Coach.Form.Address.Desc": "該服務的 OpenAI 相容介面的基礎位址。",
+    "Settings.Coach.Form.Address.Preset": "已為此服務填好。僅當該服務提供其他位址時才需要修改。",
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud 為每個工作區提供獨立的位址。請從 Model Studio 主控台複製您的位址。",
     "Settings.Coach.Form.EditTitle": "編輯連線",
     "Settings.Coach.Form.Key": "API 金鑰",

@@ -1369,6 +1369,7 @@
     "Settings.Coach.Engine.None": "설치된 엔진 없음",
     "Settings.Coach.Form.Address": "주소",
     "Settings.Coach.Form.Address.Desc": "서비스의 OpenAI 호환 인터페이스 기본 주소입니다.",
+    "Settings.Coach.Form.Address.Preset": "이 서비스에 맞게 이미 입력되어 있습니다. 서비스에서 다른 주소를 안내한 경우에만 변경하세요.",
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud는 워크스페이스마다 고유한 주소를 제공합니다. Model Studio 콘솔에서 내 주소를 복사하세요.",
     "Settings.Coach.Form.EditTitle": "연결 수정",
     "Settings.Coach.Form.Key": "API 키",

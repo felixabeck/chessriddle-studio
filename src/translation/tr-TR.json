@@ -1389,6 +1389,7 @@
     "Settings.Coach.Engine.None": "Yüklü motor yok",
     "Settings.Coach.Form.Address": "Adres",
     "Settings.Coach.Form.Address.Desc": "Hizmetin OpenAI uyumlu arayüzünün temel adresi.",
+    "Settings.Coach.Form.Address.Preset": "Bu hizmet için zaten dolduruldu. Yalnızca hizmet farklı bir adres belirtirse değiştirin.",
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud her çalışma alanına kendi adresini verir. Kendi adresinizi Model Studio konsolundan kopyalayın.",
     "Settings.Coach.Form.EditTitle": "Bağlantıyı düzenle",
     "Settings.Coach.Form.Key": "API anahtarı",

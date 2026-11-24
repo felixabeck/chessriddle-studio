@@ -1429,6 +1429,7 @@
     "Settings.Coach.Engine.None": "Brak zainstalowanego silnika",
     "Settings.Coach.Form.Address": "Adres",
     "Settings.Coach.Form.Address.Desc": "Adres bazowy interfejsu usługi zgodnego z OpenAI.",
+    "Settings.Coach.Form.Address.Preset": "Już wypełniony dla tej usługi. Zmień go tylko wtedy, gdy usługa podaje inny adres.",
     "Settings.Coach.Form.Address.Workspace": "Alibaba Cloud nadaje każdemu obszarowi roboczemu własny adres. Skopiuj swój z konsoli Model Studio.",
     "Settings.Coach.Form.EditTitle": "Edytuj połączenie",
     "Settings.Coach.Form.Key": "Klucz API",
