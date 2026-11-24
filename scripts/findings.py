@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --script
-# agent-kit-sha256: 211742aa023322fa3f726bf9b24ad3c28b2de00309ac21aa5a2ef214235c615f
+# agent-kit-sha256: 160622eaed322e4ae570405198a2134cce4819c782dd3f071fe2146e79049bcf
 # /// script
 # requires-python = ">=3.14"
 # ///
@@ -38,7 +38,7 @@ Subcommands
 ``file``         publish one new finding entry through the inbox spool
 ``merge-inbox``  fold published findings from the inbox into the ledger
 ``finalize-claims`` release prepared claims whose entries are proven in ``HEAD``
-``decisions``    print Felix-facing blockers waiting on Felix
+``decisions``    print human-facing blockers waiting on a human
 ``apply-answers`` fold answers back in and unblock what was decided
 ``answer``       publish one answer atomically through the answers spool
 ``commit-ledger`` commit an expected ledger snapshot by its exact bytes
@@ -103,6 +103,9 @@ IMPACT_QUEUE_CONTRACT_LEVEL = 2
 STRICT_REPORTING_CONTRACT_LEVEL = 3
 ANSWERED_SPOOL_CONTRACT_LEVEL = 4
 EFFECTIVE_FOLLOW_UP_CONTRACT_LEVEL = 5
+# Level 6 gates the counts-line wording "human precondition" (was "Felix
+# precondition"); lower declared levels keep the historical bytes.
+HUMAN_WORDING_CONTRACT_LEVEL = 6
 
 
 def _parse_supervisor_contract_level(value: str | None) -> int | None:
@@ -705,10 +708,16 @@ VACUOUS_IMPACT_RE = re.compile(
     r")$",
     re.IGNORECASE | re.DOTALL,
 )
-# Slugs naming the waits that depend on Felix. Answerable blockers carry a
-# question; other `felix-*` values name preconditions he must clear.
-FELIX_DECISION = "felix-decision"
-ANSWERABLE_BLOCKERS = frozenset({FELIX_DECISION})
+# Slugs naming the waits that depend on a human (any project owner, never one
+# person by name). Answerable blockers carry a question; other `human-*` values
+# name preconditions a human must clear. The `felix-*` spellings are the legacy
+# form: still read, never newly written. Remove LEGACY_* once no OPEN finding in
+# agent-kit or any `[consumers]` ledger carries a `felix-*` blocker and no
+# `[writer-tests.*]` fixture uses one.
+HUMAN_DECISION = "human-decision"
+LEGACY_FELIX_DECISION = "felix-decision"
+ANSWERABLE_BLOCKERS = frozenset({HUMAN_DECISION, LEGACY_FELIX_DECISION})
+PRECONDITION_PREFIXES = ("human-", "felix-")
 # The `summary --json` contract. Versioned because the drain's preflight and
 # the cross-repository view both read it from another process; a shape change
 # that both ends learned to expect the way this one is spelled would otherwise
@@ -756,12 +765,12 @@ BLOCKER_CLASSES = frozenset(
 
 
 def classify_blocker(blocked: str) -> str:
-    """Classify a blocker without enumerating future Felix-only preconditions."""
+    """Classify a blocker without enumerating future human-only preconditions."""
     if blocked == BLOCKER_NONE:
         blocker_class = BLOCKER_NONE
     elif blocked in ANSWERABLE_BLOCKERS:
         blocker_class = BLOCKER_ANSWERABLE
-    elif blocked.startswith("felix-"):
+    elif blocked.startswith(PRECONDITION_PREFIXES):
         blocker_class = BLOCKER_PRECONDITION
     else:
         blocker_class = BLOCKER_EXTERNAL
@@ -1471,7 +1480,7 @@ class Finding:
 class SummaryBuckets:
     """One classification of a parsed ledger, for every counting consumer.
 
-    Consumers that print or count Felix-facing classes read these fields
+    Consumers that print or count human-facing classes read these fields
     instead of re-deriving them, so the overview, the drain's start screen and
     ``decisions`` cannot disagree about which finding waits on what.
 
@@ -1519,7 +1528,7 @@ def summary_buckets(
     product = tuple(
         finding
         for finding in open_findings
-        if finding.blocked == FELIX_DECISION
+        if finding.blocked in ANSWERABLE_BLOCKERS
     )
     preconditions = tuple(
         finding
@@ -1558,7 +1567,19 @@ def summary_buckets(
 
 
 def _summary_counts_line(buckets: SummaryBuckets) -> str:
-    """The one counts line, byte-identical to the drain's historical summary."""
+    """The one counts line, byte-identical to the drain's historical summary.
+
+    A declaring caller (the drain supervisor) keeps the historical
+    "Felix precondition" wording; undeclared callers, i.e. people running
+    `summary`, read "human precondition" (contract §7: lower declared levels
+    keep old output).
+    """
+    level = supervisor_contract_level()
+    precondition = (
+        "human precondition"
+        if level is None or level >= HUMAN_WORDING_CONTRACT_LEVEL
+        else "Felix precondition"
+    )
 
     def amount(count, singular, plural):
         return "%d %s" % (count, singular if count == 1 else plural)
@@ -1572,7 +1593,7 @@ def _summary_counts_line(buckets: SummaryBuckets) -> str:
         amount(buckets.blocked, "blocked finding", "blocked findings"),
         amount(len(buckets.product), "decision", "decisions"),
         amount(
-            len(buckets.preconditions), "Felix precondition", "Felix preconditions"
+            len(buckets.preconditions), precondition, precondition + "s"
         ),
         amount(
             len(buckets.external),
@@ -3378,8 +3399,8 @@ def validate(
                 f"{where}: status 'rejected' needs a '**Why rejected:**' bullet with a "
                 "stated reason why this is genuinely not a defect"
             )
-        if f.status == "open" and f.blocked == FELIX_DECISION:
-            issues.extend(_park_brief_issues(where, joined))
+        if f.status == "open" and f.blocked in ANSWERABLE_BLOCKERS:
+            issues.extend(_park_brief_issues(where, joined, f.blocked))
 
     return issues
 
@@ -3431,8 +3452,8 @@ def _repeated_field_issues(finding: Finding, where: object) -> list[str]:
     ]
 
 
-def _park_brief_issues(where: str, joined: str) -> list[str]:
-    """Check a `felix-decision` park's brief, reporting every missing part.
+def _park_brief_issues(where: str, joined: str, slug: str = HUMAN_DECISION) -> list[str]:
+    """Check a `human-decision` park's brief, reporting every missing part.
 
     Two properties that were both wrong until 2026-09-01:
 
@@ -3451,7 +3472,7 @@ def _park_brief_issues(where: str, joined: str) -> list[str]:
     decision = DECISION_BRIEF_RE.search(joined)
     if decision is None:
         return [
-            f"{where}: blocked on {FELIX_DECISION} but carries no "
+            f"{where}: blocked on {slug} but carries no "
             "'**Decision:**' bullet — state the question, the options and what "
             "each costs, while the investigation that produced them is loaded"
         ]
@@ -4564,7 +4585,7 @@ def _render_summary_text(
     print(counts_line)
     print()
     print("WAITING ON YOU")
-    # Product answers and preconditions are the two Felix-facing groups.
+    # Product answers and preconditions are the two human-facing groups.
     # Omit empty groups.
     for label, rows in (
         ("product decisions", buckets.product),
@@ -12205,7 +12226,7 @@ def cmd_file(args: argparse.Namespace) -> int:
 
 
 def cmd_decisions(args: argparse.Namespace) -> int:
-    """Print Felix-facing blockers.
+    """Print human-facing blockers.
 
     Optionally restricted to ``args.ids``.
 
@@ -12265,7 +12286,7 @@ def cmd_decisions(args: argparse.Namespace) -> int:
             print(f"{f.id} — {f.title}")
             # The slug IS the precondition -- it is the only place the entry says
             # what must become true. Printing the title and `Where` without it
-            # told Felix to "clear this precondition" while naming none of them:
+            # told the reader to "clear this precondition" while naming none of them:
             # `felix-sentry-permission` read as an unexplained instruction to go
             # fix something in a file path.
             print(f"  waits on: {f.blocked}")
@@ -12626,7 +12647,7 @@ def _annotation_refusal(annotation: str, target: Finding, source: Path) -> str |
         if marker is not None:
             return (
                 f"{source} contains unfenced '{marker}' answer evidence; refusing it "
-                "because annotate cannot forge Felix's answer. Only apply-answers "
+                "because annotate cannot forge a human's answer. Only apply-answers "
                 "may write it."
             )
     return None
@@ -13321,7 +13342,7 @@ def _cmd_answer(args: argparse.Namespace) -> int:
         raise LedgerError("--actor is required")
     if blocker_class == BLOCKER_ANSWERABLE:
         if not isinstance(decision, str) or not decision.strip():
-            raise LedgerError("felix-decision answers require --decision")
+            raise LedgerError("human-decision answers require --decision")
         choice = decision.strip()
     else:
         raise LedgerError(
@@ -15678,7 +15699,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_finalize.set_defaults(func=cmd_finalize_claims)
 
     p_dec = sub.add_parser(
-        "decisions", help="print Felix-facing blockers waiting on Felix"
+        "decisions", help="print human-facing blockers waiting on a human"
     )
     p_dec.add_argument("ids", nargs="*", help="only these findings (default: all)")
     p_dec.set_defaults(func=cmd_decisions)
