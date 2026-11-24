@@ -28426,7 +28426,7 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 
 ### Annotated notation moves fail text contrast in the light scheme (?! at 1.86:1, ?? at 3.28:1)
 
-* **ID:** f-20261122-06 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261122-06 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** axe check of the new `e2e/game-report.spec.ts` populated Report tab (game-report build, 2026-11-22), branch `build/game-report-20261122`
 * **Where:** `src/components/common/MoveCell.tsx` sets an annotated move's text colour to `theme.colors[color][6]` in both schemes (light and dark alike), from the NAG colours in `src/utils/annotation.ts` (`?!` yellow, `??` red, and the other basic marks).
@@ -28435,6 +28435,12 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 * **Fix:** keep the annotation hue (DESIGN.md: NAG colours keep their meaning) but pick a text shade per scheme that reaches 4.5:1 on the card and on `surface-inset` variation blocks, for example shade 8–9 in light and 4–5 in dark, and assert the contrast in an e2e check with `contrastRatio` from `e2e/fixtures.ts`. Then drop the notation exclusion in `e2e/game-report.spec.ts`'s accessibility check.
 * **Proof:** axe output of `pnpm test:e2e:container` for `game-report.spec.ts` on 2026-11-22 (`color-contrast: … _moveText_…`, ratios above).
 * **Found by:** Claude Code, game-report build run, 2026-11-22.
+* **Handled 2026-11-24** (drain session 87b44464, lens tier). Each move-quality hue has one text colour per scheme, `--cf-annotation-<hue>-text` from `appCssVariablesResolver` (`ANNOTATION_HUES` in `src/styles/theme.ts`): light `color-mix(in srgb, var(--mantine-color-<hue>-6) 50%, black)`, dark `var(--mantine-color-<hue>-3)`. `annotationTextColor()` (`src/utils/annotation.ts`) is used by MoveCell and, found in review (same mechanism), by the report's move-quality row header and count button and the evaluation-chart tooltip title, which wrote the raw hue too (container probe: `?!` Dubious at yellow-8 `rgb(240,140,0)`, about 2.5:1, which axe did not flag). Decision d-20261124-03.
+  * Commit: a2b964821 (decision d-20261124-03 in 5bbc65593).
+  * Proof: `theme.test.ts` checks every hue against card, surface-inset and the 10% gold current fill in both schemes (minimum light 4.65:1, dark 5.28:1; it fails for yellow and lime at a 60% mix). The `game-report.spec.ts` accessibility check no longer has the notation exclusion and asserts the table contrast in light and dark. `notation-hierarchy.spec.ts` asserts the `$2` move on the card and the variation block. `NagDisplay.test.tsx` asserts the tooltip colour, and it went red with the old code. Ten snapshots moved, all on annotated move text only, re-recorded in the container: notation-hierarchy inline/table light/dark and the six chessriddle-training verdicts. Full container suite 509/509 at round 1, affected specs green after the final repair.
+  * Rejected: a darker palette shade (shade 9 yellow 3.0:1 and lime 3.69:1 on white), per-hue tuned mixes, overriding the named palettes (d-20261029-25), fixing MoveCell alone.
+  * Review: correctness, root-cause and tests, plus code-quality and minimalism (agy lenses, three rounds). Filed from review: white glyphs on NAG fills (Annotate buttons and board badges), and post-game analysis moves dimmed below 4.5:1.
+<!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"04bd76db101aa96deb6ac97c89e80648716e55e4eca44a7087450012b5798d3c","header_sha256":"38e0cc054e01668bff209dbde56b1b69828ff400c0e8efeec0c5a9bc5d931fc9","header_status":"handled","input_sha256":"84e323678b8dfbb07b488e8aa0ae853f70d9a523e981c58ad7198f6dc4b80b09","kind":"mutation-receipt","operation":"217c38448ee6280a654513633870114e244acd390d59f8307190e95c0f6f0dc3","options":{"section":null},"request_id_sha256":null,"results":["f-20261122-06"],"target":"f-20261122-06","v":1} -->
 
 ---
 
