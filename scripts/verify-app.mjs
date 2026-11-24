@@ -226,7 +226,7 @@ import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { Chess, makeSquare } from "chessops";
 import { makeFen, parseFen } from "chessops/fen";
-import { makeSan } from "chessops/san";
+import { makeSan, parseSan } from "chessops/san";
 import { createEmptyCard } from "ts-fsrs";
 import {
   deserializeStorageValue,
@@ -256,10 +256,14 @@ import {
 
 const screenshotIndex = process.argv.indexOf("--screenshot");
 const screenshotPath = screenshotIndex === -1 ? undefined : process.argv[screenshotIndex + 1];
+const screenshotDirIndex = process.argv.indexOf("--screenshot-dir");
+const screenshotDirectory =
+  screenshotDirIndex === -1 ? undefined : process.argv[screenshotDirIndex + 1];
 const progressContractOnly = process.argv.includes("--progress-contract");
 const fallbackEngineInstallOnly = process.argv.includes("--fallback-engine-install");
 // Installs the catalog engine like --fallback-engine-install, then runs a real game report.
 const gameReportOnly = process.argv.includes("--game-report");
+const timedRunOnly = process.argv.includes("--timed-run");
 const expectClearRejection = process.argv.includes("--expect-clear-rejection");
 const applicationIndex = process.argv.indexOf("--application");
 const progressGenerationIndex = process.argv.indexOf("--expect-progress-generation");
@@ -809,7 +813,12 @@ function emptyPracticeCard() {
 }
 
 function practicePositionsDocument(positions) {
-  return positions.map(({ fen, answer }) => ({ fen, answer, card: emptyPracticeCard() }));
+  return positions.map(({ fen, answer, weight }) => ({
+    fen,
+    answer,
+    card: emptyPracticeCard(),
+    ...(typeof weight === "number" ? { weight } : {}),
+  }));
 }
 
 async function seedNativePracticeDeck(practiceDirectory, fileId, game, positions, reviewCount) {
@@ -871,6 +880,31 @@ async function seedNativePracticeDeck(practiceDirectory, fileId, game, positions
     );
   }
   return { positions: positionValues, reviewIds: entries.map(({ id }) => id) };
+}
+
+async function seedRendererLocalStorage(session, items) {
+  await session.execute(
+    `for (const [key, value] of Object.entries(arguments[0])) localStorage.setItem(key, value);
+     return true`,
+    [items],
+  );
+}
+
+async function pathAuthorityEntry(id, displayName, nativePath, purpose, operations, targetIsDir) {
+  const metadata = await stat(nativePath, { bigint: true });
+  return {
+    id: { id },
+    display_name: displayName,
+    class: targetIsDir ? "persistentCustomRoot" : "persistentFile",
+    operations,
+    path: {
+      platform: "unix",
+      bytes: Buffer.from(nativePath).toString("base64").replace(/=+$/, ""),
+    },
+    identity: { a: Number(metadata.dev), b: Number(metadata.ino) },
+    target_is_dir: targetIsDir,
+    purpose,
+  };
 }
 
 async function requestCloseThroughTitlebar(session, label) {
@@ -2572,6 +2606,52 @@ async function clickAt(session, x, y, id = "mouse") {
         parameters: { pointerType: "mouse" },
         actions: [
           { type: "pointerMove", duration: 0, x, y, origin: "viewport" },
+          { type: "pointerDown", button: 0 },
+          { type: "pointerUp", button: 0 },
+        ],
+      },
+    ],
+  });
+}
+
+/** One pointer sequence for a UCI move: two square clicks separated by PRACTICE_MOVE_CLICK_DELAY_MS. Does not wait for a tree ply. */
+async function playPracticeBoardMove(session, uci, pointerId) {
+  const pointer = await session.execute(
+    `const board = document.querySelector('cg-board');
+     if (!board) return false;
+     const box = board.getBoundingClientRect();
+     const square = (name) => ({
+       x: Math.round(box.left + (name.charCodeAt(0) - 96.5) * box.width / 8),
+       y: Math.round(box.top + (8.5 - Number(name[1])) * box.height / 8),
+     });
+     return { from: square(arguments[0].slice(0, 2)), to: square(arguments[0].slice(2, 4)) };`,
+    [uci],
+  );
+  if (!pointer) throw new Error(`practice board was not available for ${uci}`);
+  await session.call("POST", "/actions", {
+    actions: [
+      {
+        type: "pointer",
+        id: pointerId,
+        parameters: { pointerType: "mouse" },
+        actions: [
+          {
+            type: "pointerMove",
+            duration: 0,
+            x: pointer.from.x,
+            y: pointer.from.y,
+            origin: "viewport",
+          },
+          { type: "pointerDown", button: 0 },
+          { type: "pointerUp", button: 0 },
+          { type: "pause", duration: PRACTICE_MOVE_CLICK_DELAY_MS },
+          {
+            type: "pointerMove",
+            duration: 0,
+            x: pointer.to.x,
+            y: pointer.to.y,
+            origin: "viewport",
+          },
           { type: "pointerDown", button: 0 },
           { type: "pointerUp", button: 0 },
         ],
@@ -5007,26 +5087,17 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   );
   // `file-workspace` owns the Files workspace entry through startup reconciliation.
   // Disable auto-save in this throwaway profile so the NAG edit proves SAVE_FILE wrote it.
-  await seedSession.execute(
-    `localStorage.setItem("engines", arguments[0]);
-     localStorage.setItem("file-workspace", arguments[1]);
-     localStorage.setItem("file-workspace-display-name", arguments[2]);
-     localStorage.setItem("download-destination-capability", arguments[3]);
-     localStorage.setItem("auto-save", "false");
-     localStorage.setItem(arguments[4], arguments[5]);
-     return true`,
-    [
-      JSON.stringify([
-        ownerEngine("retained", retainedImageId),
-        ownerEngine("retire-on-shutdown", retiredImageId),
-      ]),
-      JSON.stringify({ id: { id: filesWorkspaceId }, kind: "fileWorkspace" }),
-      JSON.stringify("Files fixture"),
-      JSON.stringify({ id: "verify-download-destination" }),
-      legacyPracticeKey,
-      legacyPracticeDocument,
-    ],
-  );
+  await seedRendererLocalStorage(seedSession, {
+    engines: JSON.stringify([
+      ownerEngine("retained", retainedImageId),
+      ownerEngine("retire-on-shutdown", retiredImageId),
+    ]),
+    "file-workspace": JSON.stringify({ id: { id: filesWorkspaceId }, kind: "fileWorkspace" }),
+    "file-workspace-display-name": JSON.stringify("Files fixture"),
+    "download-destination-capability": JSON.stringify({ id: "verify-download-destination" }),
+    "auto-save": "false",
+    [legacyPracticeKey]: legacyPracticeDocument,
+  });
   const seedClose = await closeApplicationThroughTitlebar(seedSession, "seed");
   if (!seedClose.gone || seedClose.survivors.length > 0) {
     throw new Error(`seed processes survived close: ${seedClose.survivors.join(", ")}`);
@@ -5124,28 +5195,12 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   await writeFile(orphanImage, "orphan managed image bytes");
   const registryFile = join(profileDirectory, ".config/com.chessriddle.studio/path-authority.json");
   await mkdir(join(profileDirectory, ".config/com.chessriddle.studio"), { recursive: true });
-  const storedEntry = async (id, displayName, nativePath, purpose, operations, targetIsDir) => {
-    const metadata = await stat(nativePath, { bigint: true });
-    return {
-      id: { id },
-      display_name: displayName,
-      class: targetIsDir ? "persistentCustomRoot" : "persistentFile",
-      operations,
-      path: {
-        platform: "unix",
-        bytes: Buffer.from(nativePath).toString("base64").replace(/=+$/, ""),
-      },
-      identity: { a: Number(metadata.dev), b: Number(metadata.ino) },
-      target_is_dir: targetIsDir,
-      purpose,
-    };
-  };
   await writeFile(
     registryFile,
     JSON.stringify({
       schema_version: 1,
       entries: [
-        await storedEntry(
+        await pathAuthorityEntry(
           "verify-permission-puzzles",
           "Permission puzzles",
           permissionPuzzleRoot,
@@ -5153,7 +5208,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["puzzleRead", "puzzleDelete", "downloadFile"],
           true,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           "verify-permission-engines",
           "Permission engines",
           permissionEngineRoot,
@@ -5161,7 +5216,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["downloadArchive", "engineInstall", "engineExecute", "engineConfigure"],
           true,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           "verify-owned-root",
           "Owned fixture root",
           ownedRoot,
@@ -5169,7 +5224,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["databaseRead", "databaseMutate", "databaseCreate", "databaseExport", "downloadFile"],
           true,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           "verify-download-destination",
           "Download destination fixture",
           downloadDestination,
@@ -5177,7 +5232,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["downloadFile"],
           true,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           "verify-unowned-book",
           "Unowned fixture book",
           orphanFile,
@@ -5185,7 +5240,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["openingBookRead"],
           false,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           retainedImageId,
           "Retained engine image",
           retainedImage,
@@ -5193,7 +5248,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["imageRead"],
           false,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           retiredImageId,
           "Shutdown engine image",
           retiredImage,
@@ -5201,7 +5256,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["imageRead"],
           false,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           orphanImageId,
           "Orphan engine image",
           orphanImage,
@@ -5209,7 +5264,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["imageRead"],
           false,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           filesWorkspaceId,
           "Files fixture",
           filesWorkspace,
@@ -5217,7 +5272,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["readPgn", "writePgn"],
           true,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           largePracticeId,
           "Large practice fixture",
           largePracticePath,
@@ -5225,7 +5280,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
           ["readPgn", "writePgn"],
           false,
         ),
-        await storedEntry(
+        await pathAuthorityEntry(
           legacyPracticeId,
           "Legacy practice fixture",
           legacyPracticePath,
@@ -5325,7 +5380,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     const probeId = "verify-unowned-book";
     registry.entries = registry.entries.filter(({ id }) => id.id !== probeId);
     registry.entries.push(
-      await storedEntry(
+      await pathAuthorityEntry(
         probeId,
         "Startup reconciliation probe",
         orphanFile,
@@ -5574,48 +5629,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       ratingIndex = index;
       practiceStage = "rate practice cards";
       const move = position.uci;
-      const pointer = await session.execute(
-        `const board = document.querySelector('cg-board');
-       if (!board) return false;
-       const box = board.getBoundingClientRect();
-       const square = (name) => ({
-         x: Math.round(box.left + (name.charCodeAt(0) - 96.5) * box.width / 8),
-         y: Math.round(box.top + (8.5 - Number(name[1])) * box.height / 8),
-       });
-       return { from: square(arguments[0].slice(0, 2)), to: square(arguments[0].slice(2, 4)) };`,
-        [move],
-      );
-      if (!pointer) throw new Error(`practice board was not available for rating ${index + 1}`);
-      await session.call("POST", "/actions", {
-        actions: [
-          {
-            type: "pointer",
-            id: `practice-rating-${index}`,
-            parameters: { pointerType: "mouse" },
-            actions: [
-              {
-                type: "pointerMove",
-                duration: 0,
-                x: pointer.from.x,
-                y: pointer.from.y,
-                origin: "viewport",
-              },
-              { type: "pointerDown", button: 0 },
-              { type: "pointerUp", button: 0 },
-              { type: "pause", duration: PRACTICE_MOVE_CLICK_DELAY_MS },
-              {
-                type: "pointerMove",
-                duration: 0,
-                x: pointer.to.x,
-                y: pointer.to.y,
-                origin: "viewport",
-              },
-              { type: "pointerDown", button: 0 },
-              { type: "pointerUp", button: 0 },
-            ],
-          },
-        ],
-      });
+      await playPracticeBoardMove(session, move, `practice-rating-${index}`);
       const moveResult = await waitFor(`practice move ${index + 1} to resolve`, () =>
         session
           .execute(
@@ -7673,6 +7687,584 @@ async function verifyGameReport(session) {
   }
 }
 
+const TIMED_RUN_TIMEOUT_MS = 60_000;
+const TIMED_RUN_REPERTOIRE_ID = "verify-timed-run-00000000-0000-4000-8000-000000000001";
+const TIMED_RUN_REPERTOIRE_NAME = "verify-timed-run";
+const TIMED_RUN_REFERENCE_NAME = "verify-timed-run-reference";
+const TIMED_RUN_DATABASE_ROOT_ID = "verify-timed-run-db-root";
+const TIMED_RUN_PGN_ITALIAN = "Italian Game";
+const TIMED_RUN_PGN_QUEENS_GAMBIT = "Queen's Gambit";
+const TIMED_RUN_SELECTED_MINUTES = 10;
+const TIMED_RUN_COUNTDOWN_SECONDS = TIMED_RUN_SELECTED_MINUTES * 60;
+const TIMED_RUN_COUNTDOWN_FLOOR_SECONDS = 8 * 60;
+// Higher weights on the second PGN chapter so TR4 fails if the planner walks file order.
+const TIMED_RUN_LEADING_CHAPTER_WEIGHTS = [0.9, 0.6];
+const TIMED_RUN_TRAILING_CHAPTER_WEIGHTS = [0.3, 0.2];
+const TIMED_RUN_FIRST_SEGMENT = TIMED_RUN_PGN_QUEENS_GAMBIT;
+const TIMED_RUN_SECOND_SEGMENT = TIMED_RUN_PGN_ITALIAN;
+
+function whiteLinePracticePositions(sans) {
+  const position = Chess.default();
+  const cards = [];
+  for (const san of sans) {
+    const move = parseSan(position, san);
+    if (!move) throw new Error(`timed-run fixture move is illegal: ${san}`);
+    if (position.turn === "white") {
+      cards.push({
+        fen: makeFen(position.toSetup()),
+        answer: san,
+        uci: practiceMoveUci(move),
+      });
+    }
+    position.play(move);
+  }
+  if (cards.length === 0) throw new Error("timed-run fixture produced no white cards");
+  return cards;
+}
+
+/** Empty Start excludes the game root, so the first white ply is not a practice card. */
+function timedRunChapterCards(sans) {
+  const cards = whiteLinePracticePositions(sans).slice(1);
+  if (cards.length === 0) throw new Error("timed-run chapter produced no in-scope white cards");
+  return cards;
+}
+
+function timedRunPgn(event, white, black, moves) {
+  return `[Event "${event}"]
+[Site "verify:app"]
+[Date "2026.11.24"]
+[Round "1"]
+[White "${white}"]
+[Black "${black}"]
+[Result "*"]
+
+${moves}
+`;
+}
+
+async function writeTimedRunScreenshot(directory, name, session) {
+  const path = join(directory, name);
+  await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
+  console.log(`  .. timed-run screenshot: ${path}`);
+}
+
+function timedRunLogFile(profileDirectory) {
+  return join(profileDirectory, ".local/share/com.chessriddle.studio/logs/chessriddle-studio.log");
+}
+
+async function printTimedRunAppLog(profileDirectory) {
+  try {
+    const text = await readFile(timedRunLogFile(profileDirectory), "utf8");
+    const { lines } = formatSinceOpenLog(text);
+    console.log("  .. timed-run application-log ERROR/WARN:");
+    if (lines.length === 0) console.log("     (none)");
+    else for (const line of lines) console.log(`     ${line}`);
+  } catch (error) {
+    console.log(`  .. timed-run application-log unavailable: ${error.message}`);
+  }
+}
+
+async function captureTimedRunFailure(session, screenshotDirectory, label) {
+  const slug = label
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+  try {
+    const body = await session.execute(`
+      return (document.body && document.body.innerText ? document.body.innerText : "")
+        .replace(/\\s+/g, " ")
+        .trim();
+    `);
+    console.log(`  .. ${label} visible text: ${body}`);
+  } catch (error) {
+    console.log(`  .. ${label} visible text unavailable: ${error.message}`);
+  }
+  try {
+    await writeTimedRunScreenshot(screenshotDirectory, `${slug}-fail.png`, session);
+  } catch (error) {
+    console.log(`  .. ${label} failure screenshot unavailable: ${error.message}`);
+  }
+}
+
+async function timedRunMinutesState(session) {
+  return session.execute(`
+    const root = document.querySelector('[data-train-openings] [role="radiogroup"]');
+    if (!root) return { present: false };
+    const boxOf = (node) => {
+      const box = node.getBoundingClientRect();
+      return { x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.width), h: Math.round(box.height) };
+    };
+    const inputs = [...root.querySelectorAll('input[type="radio"]')].map((input) => ({
+      value: input.value,
+      checked: input.checked,
+    }));
+    const labels = [...root.querySelectorAll('label')].map((label) => ({
+      text: label.textContent.replace(/\\s+/g, " ").trim(),
+      active: label.hasAttribute("data-active"),
+      activeAttr: label.getAttribute("data-active"),
+      box: boxOf(label),
+    }));
+    const indicator = root.querySelector('[class*="indicator"]');
+    return {
+      present: true,
+      checked: inputs.find((input) => input.checked)?.value ?? null,
+      inputs,
+      labels,
+      indicator: indicator ? boxOf(indicator) : null,
+    };
+  `);
+}
+
+function minuteIndicatorFollowsActive(state, tolerancePx = 2) {
+  const active = state?.labels?.find((label) => label.active);
+  if (!state?.present || !active?.box || !state.indicator) return false;
+  return (
+    Math.abs(state.indicator.x - active.box.x) <= tolerancePx &&
+    Math.abs(state.indicator.w - active.box.w) <= tolerancePx
+  );
+}
+
+function assertTimedRunMinutePaint(state, minutes) {
+  if (state?.checked !== String(minutes)) {
+    throw new Error(`minute control value was ${JSON.stringify(state)}`);
+  }
+  const active = state.labels?.find((label) => label.active);
+  if (!active?.box) {
+    throw new Error(`no data-active minute label: ${JSON.stringify(state)}`);
+  }
+  if (!state.indicator) {
+    throw new Error(`minute indicator missing: ${JSON.stringify(state)}`);
+  }
+  if (!minuteIndicatorFollowsActive(state)) {
+    throw new Error(
+      `minute indicator ${JSON.stringify(state.indicator)} did not match data-active ${JSON.stringify(active.box)}: ${JSON.stringify(state)}`,
+    );
+  }
+}
+
+async function timedRunPageText(session) {
+  return session.execute(`
+    const tab = document.querySelector('header [role="tablist"] [role="tab"][aria-selected="true"]');
+    const train = [...document.querySelectorAll('[role="tab"]')].find((node) => node.textContent.trim() === 'Train');
+    const body = (document.body && document.body.innerText ? document.body.innerText : "").replace(/\\s+/g, " ").trim();
+    const countdown = body.match(/(\\d+):(\\d{2}) remaining/);
+    const summary = body.match(/(\\d+) positions · (\\d+) correct · (\\d+) wrong · (\\d+)% accuracy/);
+    const start = [...document.querySelectorAll('[data-train-openings] button')]
+      .find((button) => button.textContent.trim() === 'Start');
+    return {
+      path: location.pathname,
+      tab: tab ? tab.textContent.replace(/\\s+/g, ' ').trim() : '',
+      trainSelected: train?.getAttribute('aria-selected') === 'true',
+      countdownSeconds: countdown ? Number(countdown[1]) * 60 + Number(countdown[2]) : null,
+      makeYourMove: body.includes('Make your move'),
+      summary: summary
+        ? { positions: Number(summary[1]), correct: Number(summary[2]), incorrect: Number(summary[3]) }
+        : null,
+      popover: document.querySelector('[data-train-openings]')?.innerText.replace(/\\s+/g, ' ').trim() ?? null,
+      startDisabled: start ? !!start.disabled : null,
+      startBusy: start ? start.getAttribute('data-loading') === 'true' || start.getAttribute('aria-busy') === 'true' : null,
+      notifications: [...document.querySelectorAll('[data-mantine-notification], .mantine-Notification-root')]
+        .map((node) => node.innerText.replace(/\\s+/g, ' ').trim())
+        .filter(Boolean),
+      body: body.slice(0, 800),
+    };
+  `);
+}
+
+async function selectTimedRunMinutes(session, minutes) {
+  const labelText = `${minutes} min`;
+  const minuteLabel = await reachableStableCoordinates(
+    session,
+    labelText,
+    `[...document.querySelectorAll('[data-train-openings] label, [data-train-openings] button')]
+      .find((node) => node.textContent.trim() === ${JSON.stringify(labelText)})`,
+  );
+  await clickAt(session, minuteLabel.x, minuteLabel.y);
+  const selected = await waitFor(
+    `${labelText} checked after pointer click`,
+    async () => {
+      const state = await timedRunMinutesState(session);
+      return state.present && state.checked === String(minutes) ? state : false;
+    },
+    { timeoutMs: 3_000, everyMs: 100 },
+  );
+  console.log(`  .. minute control after pointer click: ${JSON.stringify(selected)}`);
+  return selected;
+}
+
+async function answerTimedRunChapter(session, cards, pointerPrefix, waitAfterLast) {
+  for (const [index, position] of cards.entries()) {
+    await waitFor(
+      `${pointerPrefix} card ${index + 1} to finish replay`,
+      async () => (await timedRunPageText(session)).makeYourMove,
+      { timeoutMs: TIMED_RUN_TIMEOUT_MS },
+    );
+    await playPracticeBoardMove(session, position.uci, `${pointerPrefix}-${index}`);
+    const last = index === cards.length - 1;
+    if (last) {
+      await waitAfterLast();
+      return;
+    }
+    await waitFor(
+      `${pointerPrefix} card ${index + 1} counted correct`,
+      async () => {
+        const text = await session.execute("return document.body.innerText");
+        return text.includes(`${index + 1} correct`);
+      },
+      { timeoutMs: TIMED_RUN_TIMEOUT_MS },
+    );
+  }
+}
+
+async function verifyTimedRun(profileDirectory, screenshotDirectory) {
+  const italianCards = timedRunChapterCards(["e4", "e5", "Nf3", "Nc6", "Bc4"]);
+  italianCards[0].weight = TIMED_RUN_TRAILING_CHAPTER_WEIGHTS[0];
+  italianCards[1].weight = TIMED_RUN_TRAILING_CHAPTER_WEIGHTS[1];
+  const queensCards = timedRunChapterCards(["d4", "d5", "c4", "e6", "Nc3"]);
+  queensCards[0].weight = TIMED_RUN_LEADING_CHAPTER_WEIGHTS[0];
+  queensCards[1].weight = TIMED_RUN_LEADING_CHAPTER_WEIGHTS[1];
+  const dueTotal = italianCards.length + queensCards.length;
+  const repertoirePgn =
+    timedRunPgn(
+      TIMED_RUN_PGN_ITALIAN,
+      TIMED_RUN_PGN_ITALIAN,
+      "e5",
+      "1. e4 e5 2. Nf3 Nc6 3. Bc4 *",
+    ) +
+    "\n" +
+    timedRunPgn(
+      TIMED_RUN_PGN_QUEENS_GAMBIT,
+      TIMED_RUN_PGN_QUEENS_GAMBIT,
+      "d5",
+      "1. d4 d5 2. c4 e6 3. Nc3 *",
+    );
+  const referencePgn =
+    timedRunPgn(
+      "Reference Italian",
+      "Ref White",
+      "Ref Black",
+      "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 1-0",
+    ) +
+    "\n" +
+    timedRunPgn(
+      "Reference Queen's Gambit",
+      "Ref White",
+      "Ref Black",
+      "1. d4 d5 2. c4 e6 3. Nc3 Nf6 1-0",
+    );
+
+  const fixtureDirectory = join(profileDirectory, "path-owner-fixture");
+  const ownedRoot = join(fixtureDirectory, "owned-database-root");
+  const filesWorkspace = join(fixtureDirectory, "files-workspace");
+  const practiceDirectory = join(profileDirectory, ".local/share/com.chessriddle.studio/practice");
+  const repertoirePath = join(filesWorkspace, `${TIMED_RUN_REPERTOIRE_NAME}.pgn`);
+  const referencePath = join(filesWorkspace, `${TIMED_RUN_REFERENCE_NAME}.pgn`);
+  await mkdir(ownedRoot, { recursive: true });
+  await mkdir(filesWorkspace, { recursive: true });
+  await writeFile(repertoirePath, repertoirePgn);
+  await writeFile(
+    join(filesWorkspace, `${TIMED_RUN_REPERTOIRE_NAME}.info`),
+    JSON.stringify({ type: "repertoire", tags: [] }),
+  );
+  await writeFile(referencePath, referencePgn);
+  await seedNativePracticeDeck(practiceDirectory, TIMED_RUN_REPERTOIRE_ID, 0, italianCards, 1);
+  await seedNativePracticeDeck(practiceDirectory, TIMED_RUN_REPERTOIRE_ID, 1, queensCards, 1);
+  const registryFile = join(profileDirectory, ".config/com.chessriddle.studio/path-authority.json");
+  await mkdir(join(profileDirectory, ".config/com.chessriddle.studio"), { recursive: true });
+  await writeFile(
+    registryFile,
+    JSON.stringify({
+      schema_version: 1,
+      entries: [
+        await pathAuthorityEntry(
+          TIMED_RUN_DATABASE_ROOT_ID,
+          "Timed-run database root",
+          ownedRoot,
+          "databaseRoot",
+          ["databaseRead", "databaseMutate", "databaseCreate", "databaseExport", "downloadFile"],
+          true,
+        ),
+        await pathAuthorityEntry(
+          filesWorkspaceId,
+          "Files fixture",
+          filesWorkspace,
+          "pgnWorkspace",
+          ["readPgn", "writePgn"],
+          true,
+        ),
+        await pathAuthorityEntry(
+          TIMED_RUN_REPERTOIRE_ID,
+          "Timed-run repertoire",
+          repertoirePath,
+          "pgnFile",
+          ["readPgn", "writePgn"],
+          false,
+        ),
+      ],
+      active_database_root: { id: TIMED_RUN_DATABASE_ROOT_ID },
+      pending_artifacts: [],
+      provisional_attachments: [],
+      image_cleanup: [],
+    }),
+  );
+
+  console.log("  .. opening timed-run seed WebDriver session");
+  const seedSession = await Session.open(APP_BINARY);
+  let session;
+  try {
+    try {
+      await waitFor("the timed-run seed renderer to expose Tauri", () =>
+        seedSession
+          .execute("return typeof window.__TAURI_INTERNALS__ === 'object'")
+          .catch(() => false),
+      );
+      const invoke = (command, args) =>
+        invokeIpc(seedSession, "__verifyTimedRunIPC", command, args);
+      const referenceFile = await waitFor(
+        "timed-run files workspace listing",
+        async () => {
+          try {
+            const listing = await invoke("list_file_workspace", {
+              workspace: { id: { id: filesWorkspaceId }, kind: "fileWorkspace" },
+              ticket: null,
+            });
+            const found = listing.entries?.find(
+              (entry) =>
+                entry.name === TIMED_RUN_REFERENCE_NAME ||
+                entry.name === `${TIMED_RUN_REFERENCE_NAME}.pgn`,
+            );
+            return found?.handle ?? false;
+          } catch {
+            return false;
+          }
+        },
+        { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+      );
+      const root = (await invoke("get_database_workspace", {})).root;
+      const database = await invoke("create_workspace_database", {
+        root,
+        filename: "verify-timed-run-reference.db3",
+      });
+      await invoke("convert_pgn", {
+        progressId: `verify-timed-run:${randomUUID()}`,
+        files: [referenceFile],
+        database,
+        title: "verify timed-run reference",
+        description: "Timed-run reference fixture",
+        ticket: null,
+      });
+      console.log(`  .. reference database seeded: ${database.id.id}`);
+      await seedRendererLocalStorage(seedSession, {
+        "file-workspace": JSON.stringify({ id: { id: filesWorkspaceId }, kind: "fileWorkspace" }),
+        "file-workspace-display-name": JSON.stringify("Files fixture"),
+        "auto-save": "false",
+        "reference-database": JSON.stringify(database),
+      });
+      const seedClose = await closeApplicationThroughTitlebar(seedSession, "timed-run-seed");
+      if (!seedClose.gone || seedClose.survivors.length > 0) {
+        throw new Error(
+          `timed-run seed processes survived close: ${seedClose.survivors.join(", ")}`,
+        );
+      }
+    } finally {
+      const seedQuit = await seedSession.quit();
+      if (!seedQuit.released) {
+        console.log(`  .. timed-run seed WebDriver session release returned: ${seedQuit.error}`);
+      }
+    }
+
+    session = await Session.open(APP_BINARY);
+    const tr = async (label, action) => {
+      const passed = await assertion(label, action);
+      if (!passed) await captureTimedRunFailure(session, screenshotDirectory, label);
+      return passed;
+    };
+    try {
+      const startup = await tr("TR1 timed-run renderer starts on the seeded profile", () =>
+        waitFor("timed-run renderer startup", () => session.execute(closeControlProbe)),
+      );
+      if (startup) {
+        await session.call("POST", "/window/rect", { width: 1400, height: 900 });
+        const rect = await session.call("GET", "/window/rect");
+        if ((rect.width ?? 0) < 1400 || (rect.height ?? 0) < 900) {
+          throw new Error(`timed-run window rect was ${JSON.stringify(rect)}`);
+        }
+      }
+      const home = await tr("TR2 New Tab offers Train openings", async () => {
+        if (!startup) throw new Error("TR1 renderer startup failed");
+        await goToBoards(session);
+        await waitFor("New Tab Train openings action", () =>
+          session.execute(`
+            return location.pathname === '/' && [...document.querySelectorAll('[data-home-action]')]
+              .some((action) => action.textContent.trim() === 'Train openings');
+          `),
+        );
+      });
+      const popover = await tr(
+        `TR3 the Train openings popover shows ${TIMED_RUN_SELECTED_MINUTES} minutes and the due total`,
+        async () => {
+          if (!home) throw new Error("TR2 Train openings action was not reached");
+          await clickButton(session, "Train openings");
+          await waitFor("Train openings popover", () =>
+            session.execute("return !!document.querySelector('[data-train-openings]')"),
+          );
+          await selectTimedRunMinutes(session, TIMED_RUN_SELECTED_MINUTES);
+          const radioState = await waitFor(
+            `${TIMED_RUN_SELECTED_MINUTES} min indicator to follow the data-active label`,
+            async () => {
+              const state = await timedRunMinutesState(session);
+              return state.present &&
+                state.checked === String(TIMED_RUN_SELECTED_MINUTES) &&
+                minuteIndicatorFollowsActive(state)
+                ? state
+                : false;
+            },
+            { timeoutMs: 3_000, everyMs: 50 },
+          ).catch(async () => timedRunMinutesState(session));
+          assertTimedRunMinutePaint(radioState, TIMED_RUN_SELECTED_MINUTES);
+          const text = await waitFor(
+            "Train openings due total and enabled Start",
+            async () => {
+              const page = await timedRunPageText(session);
+              if (!page.popover) return false;
+              if (page.startDisabled !== false) return false;
+              if (!page.popover.includes(`${dueTotal} positions due`)) return false;
+              if (!page.popover.includes("1 repertoires") && !page.popover.includes("1 repertoire"))
+                return false;
+              return page.popover;
+            },
+            { timeoutMs: TIMED_RUN_TIMEOUT_MS },
+          );
+          if (text.includes("A reference database lets the most-played lines come first.")) {
+            throw new Error(
+              `reference was seeded but the popover still shows the no-reference hint: ${text}`,
+            );
+          }
+          await writeTimedRunScreenshot(screenshotDirectory, "popover.png", session);
+        },
+      );
+      const started = await tr(
+        "TR4 Start opens the first segment on Practice/Train with a countdown",
+        async () => {
+          if (!popover) throw new Error("TR3 popover was not ready");
+          const start = await reachableStableCoordinates(
+            session,
+            "Train openings Start",
+            `[...document.querySelectorAll('[data-train-openings] button')]
+            .find((button) => !button.disabled && button.textContent.trim() === 'Start')`,
+          );
+          await clickAt(session, start.x, start.y);
+          let lastSnapshot;
+          try {
+            const page = await waitFor(
+              "first timed-run segment with countdown",
+              async () => {
+                const snapshot = await timedRunPageText(session);
+                lastSnapshot = snapshot;
+                return snapshot.tab.includes(TIMED_RUN_FIRST_SEGMENT) &&
+                  snapshot.trainSelected &&
+                  snapshot.countdownSeconds !== null
+                  ? snapshot
+                  : false;
+              },
+              { timeoutMs: TIMED_RUN_TIMEOUT_MS },
+            );
+            if (
+              page.countdownSeconds > TIMED_RUN_COUNTDOWN_SECONDS ||
+              page.countdownSeconds <= TIMED_RUN_COUNTDOWN_FLOOR_SECONDS
+            ) {
+              throw new Error(
+                `countdown was ${page.countdownSeconds}s, expected a ${TIMED_RUN_SELECTED_MINUTES}-minute run`,
+              );
+            }
+            await writeTimedRunScreenshot(screenshotDirectory, "first-segment.png", session);
+            console.log(
+              `  .. first segment: ${page.tab}; countdown ${Math.floor(page.countdownSeconds / 60)}:${String(
+                page.countdownSeconds % 60,
+              ).padStart(2, "0")}`,
+            );
+          } catch (error) {
+            throw new Error(
+              `${error.message}; last snapshot: ${JSON.stringify(lastSnapshot ?? (await timedRunPageText(session).catch((dump) => dump.message)))}`,
+            );
+          }
+        },
+      );
+      const decreasing = await tr("TR5 the run countdown is visible and decreasing", async () => {
+        if (!started) throw new Error("TR4 first segment did not open");
+        const first = await timedRunPageText(session);
+        if (first.countdownSeconds === null) throw new Error("countdown was not visible");
+        await waitFor(
+          "countdown to decrease",
+          async () => {
+            const next = await timedRunPageText(session);
+            return next.countdownSeconds !== null && next.countdownSeconds < first.countdownSeconds
+              ? next
+              : false;
+          },
+          { timeoutMs: 5_000, everyMs: 250 },
+        );
+      });
+      const switched = await tr(
+        "TR6 answering the first segment switches the run to the second segment",
+        async () => {
+          if (!decreasing) throw new Error("TR5 countdown did not decrease");
+          await answerTimedRunChapter(session, queensCards, "first-segment", async () => {
+            await waitFor(
+              "second timed-run segment after the switch",
+              async () => {
+                const snapshot = await timedRunPageText(session);
+                return snapshot.tab.includes(TIMED_RUN_SECOND_SEGMENT) &&
+                  snapshot.trainSelected &&
+                  snapshot.countdownSeconds !== null
+                  ? snapshot
+                  : false;
+              },
+              { timeoutMs: TIMED_RUN_TIMEOUT_MS },
+            );
+          });
+          await writeTimedRunScreenshot(screenshotDirectory, "second-segment.png", session);
+          const page = await timedRunPageText(session);
+          console.log(`  .. second segment: ${page.tab}`);
+        },
+      );
+      await tr("TR7 finishing the second segment shows the run summary", async () => {
+        if (!switched) throw new Error("TR6 segment switch did not happen");
+        await answerTimedRunChapter(session, italianCards, "second-segment", async () => {
+          await waitFor(
+            "timed-run summary",
+            async () => {
+              const snapshot = await timedRunPageText(session);
+              return snapshot.summary && snapshot.summary.positions > 0 ? snapshot : false;
+            },
+            { timeoutMs: TIMED_RUN_TIMEOUT_MS },
+          );
+        });
+        const page = await timedRunPageText(session);
+        if (!page.summary) throw new Error("run summary was not visible");
+        if (page.summary.positions !== dueTotal || page.summary.correct !== dueTotal) {
+          throw new Error(`unexpected summary: ${JSON.stringify(page.summary)}`);
+        }
+        await writeTimedRunScreenshot(screenshotDirectory, "summary.png", session);
+        console.log(`  .. summary: ${JSON.stringify(page.summary)}`);
+      });
+      const closed = await closeApplicationThroughTitlebar(session, "timed-run");
+      if (!closed.gone || closed.survivors.length > 0) {
+        throw new Error(`timed-run processes survived close: ${closed.survivors.join(", ")}`);
+      }
+    } finally {
+      if (session) {
+        const quit = await session.quit();
+        if (!quit.released) {
+          console.log(`  .. timed-run WebDriver session release returned: ${quit.error}`);
+        }
+      }
+    }
+  } finally {
+    await printTimedRunAppLog(profileDirectory);
+  }
+}
+
 async function main() {
   process.on("exit", () => {
     restoreRootPermissionsForCleanup("exit");
@@ -7681,11 +8273,19 @@ async function main() {
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, handleSignal);
   try {
     if (
-      [progressContractOnly, fallbackEngineInstallOnly, gameReportOnly].filter(Boolean).length > 1
+      [progressContractOnly, fallbackEngineInstallOnly, gameReportOnly, timedRunOnly].filter(
+        Boolean,
+      ).length > 1
     ) {
       throw new Error(
-        "--fallback-engine-install, --game-report and --progress-contract are mutually exclusive",
+        "--fallback-engine-install, --game-report, --progress-contract and --timed-run are mutually exclusive",
       );
+    }
+    if (
+      screenshotDirIndex !== -1 &&
+      (!screenshotDirectory || screenshotDirectory.startsWith("--"))
+    ) {
+      throw new Error("--screenshot-dir requires a directory path");
     }
     if (!isAbsolute(progressApplication) || !existsSync(progressApplication)) {
       throw new Error("progress application must name an existing absolute binary path");
@@ -7732,6 +8332,12 @@ async function main() {
       } finally {
         await fallbackSession.quit();
       }
+    } else if (timedRunOnly) {
+      const timedRunScreenshotDirectory =
+        screenshotDirectory ?? join(profileDirectory, "timed-run-screenshots");
+      await mkdir(timedRunScreenshotDirectory, { recursive: true });
+      console.log(`  .. timed-run screenshots: ${timedRunScreenshotDirectory}`);
+      await verifyTimedRun(profileDirectory, timedRunScreenshotDirectory);
     } else {
       await verifyFullApplication(profileDirectory, appEnvironment);
     }
