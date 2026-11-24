@@ -41,7 +41,7 @@ import type { ReportSummary } from "@/utils/treeReducer";
 import classes from "./AnalysisPanel.module.css";
 import ReportModal from "./ReportModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { reportEngineFailure } from "./useDisplayedEngineLines";
+import { reportEngineFailure } from "./engineFailure";
 
 function ReportPanel() {
   const { t } = useTranslation();

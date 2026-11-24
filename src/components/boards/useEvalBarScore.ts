@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { Score } from "@/bindings";
 import {
     createLiveEngineScoreAtom,
+    useContentStableMoves,
     useEngineWaitExpired,
-} from "@/components/panels/analysis/useDisplayedEngineLines";
+} from "@/components/panels/analysis/engineLines";
 
 /** What the evaluation bar shows. `engineName` is null for a score no running engine gives. */
 type EvalBarScore = { score: Score; engineName: string | null };
@@ -36,8 +37,12 @@ export function useEvalBarScore({
     moves: string[];
 }): EvalBarScore | null {
     const scope = `${tab}:${documentId}`;
+    const stableMoves = useContentStableMoves(moves);
     const live = useAtomValue(
-        useMemo(() => createLiveEngineScoreAtom(tab, rootFen, moves), [tab, rootFen, moves]),
+        useMemo(
+            () => createLiveEngineScoreAtom(tab, rootFen, stableMoves),
+            [tab, rootFen, stableMoves],
+        ),
     );
     const current = useMemo<EvalBarScore | null>(
         () => live.source ?? (score ? { score, engineName: null } : null),

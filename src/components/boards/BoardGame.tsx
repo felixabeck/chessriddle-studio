@@ -76,10 +76,7 @@ import { OpponentForm, type OpponentSettings } from "./OpponentForm";
 import { hasStartableTimeControl, toPlayerConfig } from "./playerConfig";
 import { PRODUCT_NAME } from "@/utils/product.json";
 import { pgnDateTags } from "@/utils/pgnDate";
-import {
-  engineFailureMessage,
-  engineTerminalLogs,
-} from "../panels/analysis/useDisplayedEngineLines";
+import { engineFailureMessage, engineTerminalLogs } from "../panels/analysis/engineFailure";
 
 function gameResultToOutcome(result: GameResult): Outcome {
   const outcomes = {

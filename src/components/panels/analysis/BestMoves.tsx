@@ -46,7 +46,8 @@ import AssessmentSymbol from "./AssessmentSymbol";
 import classes from "./BestMoves.module.css";
 import EngineSettingsForm from "./EngineSettingsForm";
 import { ThreatBadge } from "./ThreatBadge";
-import { engineFailureMessage, useDisplayedEngineLines } from "./useDisplayedEngineLines";
+import { engineFailureMessage } from "./engineFailure";
+import { useDisplayedEngineLines } from "./useDisplayedEngineLines";
 import { useTabEngineSettings } from "./useTabEngineSettings";
 
 export const arrowColors = [

@@ -14,7 +14,8 @@ import {
 } from "@/state/atoms";
 import type { LocalEngine } from "@/utils/engines";
 import { engineLineContext } from "./analysisLineContext";
-import { engineTerminalLogs, matchingEngineTerminal } from "./useDisplayedEngineLines";
+import { engineTerminalLogs } from "./engineFailure";
+import { matchingEngineTerminal } from "./engineLines";
 import EngineLogsView from "../../common/EngineLogsView";
 
 export default function LogsPanel() {

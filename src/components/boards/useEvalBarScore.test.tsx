@@ -2,7 +2,7 @@ import { INITIAL_FEN } from "chessops/fen";
 import { act } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Score } from "@/bindings";
-import { ENGINE_LINES_LOADING_DELAY_MS } from "@/components/panels/analysis/useDisplayedEngineLines";
+import { ENGINE_LINES_LOADING_DELAY_MS } from "@/components/panels/analysis/engineLines";
 import {
   engineMovesFamily,
   engineTerminalFamily,

@@ -38,7 +38,7 @@ import {
   engineIdentity,
   engineLineContext,
 } from "@/components/panels/analysis/analysisLineContext";
-import { createLiveEngineScoreAtom } from "@/components/panels/analysis/useDisplayedEngineLines";
+import { createLiveEngineScoreAtom } from "@/components/panels/analysis/engineLines";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
 import {
   type Engine,

@@ -28,7 +28,7 @@ import { capabilityKey } from "@/utils/pathCapabilities";
 import { normalizeEngineOptions } from "@/components/engines/engineOptions";
 import { z } from "zod";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { reportEngineFailure } from "./useDisplayedEngineLines";
+import { reportEngineFailure } from "./engineFailure";
 
 type ReportGoMode = Extract<GoMode, { t: "Depth" | "Time" | "Nodes" }>;
 

@@ -27,7 +27,7 @@ import {
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import { withKeyboardOwnership } from "@/utils/keyboardOwnership";
-import { readEngineLines } from "../panels/analysis/useDisplayedEngineLines";
+import { readEngineLines } from "../panels/analysis/engineLines";
 import { coachEnabledAtom } from "@/state/coach";
 import { keyMapAtom } from "@/state/keybinds";
 import type { Annotation } from "@/utils/annotation";
