@@ -1257,7 +1257,12 @@ mod tests {
             .await
         };
         let retained = AtomicUsize::new(usize::MAX);
-        let (_extra_write, outcome) = tokio::time::timeout(Duration::from_secs(3), async {
+        // The byte cap is proven by `retained`, not by speed. This bound only
+        // catches a hang: the production deadline plus the server's own
+        // trailer-write bound and slack for a loaded runner (f-20261124-18,
+        // a 3 s wall clock timed out on hosted macOS).
+        let hang_bound = REVOCATION_TIMEOUT + Duration::from_secs(5);
+        let (_extra_write, outcome) = tokio::time::timeout(hang_bound, async {
             tokio::join!(
                 server,
                 services.revoke_token_before(
@@ -1268,7 +1273,7 @@ mod tests {
             )
         })
         .await
-        .expect("revocation must stop reading the over-cap loopback response");
+        .expect("over-cap loopback revocation must not hang");
         assert_eq!(outcome, Rejected);
         assert!(
             retained.load(Ordering::Relaxed) <= MAX_TOKEN_TEST_RESPONSE_BYTES,
