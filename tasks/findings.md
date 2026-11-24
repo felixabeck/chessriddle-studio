@@ -28779,3 +28779,19 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Fix:** bump `package.json` and `src-tauri/Cargo.toml` (and any other pinned version) to a new version, then tag and publish that version so `latest.json` advertises it. 1.0.1 is enough if this is a patch over the already-public 1.0.0; 1.1.0 if the Coach and later features should read as a minor release. Do not reuse the `v1.0.0` tag.
 * **Proof:** `python3 -c 'import json,pathlib; print(json.loads(pathlib.Path("package.json").read_text())["version"])'` and `rg -n '^version' src-tauri/Cargo.toml` both print `1.0.0`; `git rev-list --count v1.0.0..HEAD` is 1475; `gh release view v1.0.0 --repo felixabeck/chessriddle-studio` shows a published release; `curl -sL https://github.com/felixabeck/chessriddle-studio/releases/latest/download/latest.json` has `"version": "1.0.0"`. After the bump, the two source versions differ from that published 1.0.0.
 * **Found by:** Grok Bot, 2026-11-24, release-readiness review (SC-1)
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### Installer metadata still ships En Croissant's "Ultimate Chess Toolkit" tagline and an empty copyright
+
+* **ID:** f-20261124-05 · **Status:** open · **Area:** app-startup · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** release-readiness review (Felix t85u, pass 1) at origin/master `d7877bce8`
+* **Where:** `src-tauri/tauri.conf.json:5` (`copyright` is `""`), `:30` (`shortDescription`: "Ultimate Chess Toolkit"), `:31` (`longDescription` is `""`); `src-tauri/Cargo.toml:4` (`description = "A Modern Chess Database"`). The identity tests in `src/utils/product.test.ts:13-20` pin `productName`, `publisher` and the window title, but not these fields.
+* **Defect:** the earlier branding pass (`f-20260830-48`, handled) replaced the product name, publisher, bundle identifier and update channel. The package taglines were left as En Croissant's. "Ultimate Chess Toolkit" is upstream's slogan; "A Modern Chess Database" is the Cargo package description. The copyright field is empty, so a Windows File Properties / macOS / deb-rpm copyright line would be blank. This is not a release blocker: the app name, window title, About dialog and `scripts/install-local.sh` Comment (`:272-275`, "Analyse games, search databases, play against engines") already say ChessRiddle Studio. Bundled GitHub/Tauri packages read `shortDescription` and the Cargo description for their package metadata. Felix's daily local install does not.
+* **Failure scenario:** a player installs the GitHub `.deb`, `.rpm`, AppImage or Windows setup, then looks at the package summary, Add/Remove Programs description or file-properties copyright: they see "Ultimate Chess Toolkit" (and no copyright), not a ChessRiddle Studio description.
+* **Fix:** replace `shortDescription` (and, if used, `Cargo.toml` `description`) with a ChessRiddle Studio summary, fill `copyright` (authors in `Cargo.toml` stay as they are: `f-20260830-48` recorded that GPL-3 §4 requires keeping Francisco's original copyright notice), and extend `product.test.ts` so these fields cannot slip back. `scripts/install-local.sh` already has a suitable Comment.
+* **Proof:** `rg -n 'Ultimate Chess Toolkit|A Modern Chess Database|^    "copyright"' src-tauri/tauri.conf.json src-tauri/Cargo.toml` still shows the three leftovers; `rg -n 'shortDescription|Ultimate Chess' src/utils/product.test.ts` is empty. After the change, those strings are gone from the bundle config and the product identity test fails if they return.
+* **Found by:** Grok Bot, 2026-11-24, release-readiness review (SC-1)
