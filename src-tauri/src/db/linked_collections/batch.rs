@@ -649,7 +649,6 @@ pub(crate) async fn append_collection_batch(
     source: FileWorkspaceHandle,
     cancellation: CancellationToken,
 ) -> Result<AppendOutcome, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let service = state
         .pgn_path_authority
         .collections()?
@@ -673,7 +672,6 @@ pub(crate) async fn append_collection_games(
     source: FileWorkspaceHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<AppendOutcome, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let operation = state.operations.accept("append_collection_games")?;
     let state = state.inner().clone();
     let cancellation = operation.token();

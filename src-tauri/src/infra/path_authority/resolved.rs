@@ -754,30 +754,40 @@ impl ResolvedPath {
         Ok(())
     }
 
+    /// Replaces the PGN with what `write` produces from the snapshot's file. Every handle this
+    /// call owns on the old PGN is closed before the rename: the snapshot's file once `write`
+    /// returns, and the resolution's own file up front. Windows' classic rename, the fallback on
+    /// volumes without POSIX rename semantics (exFAT, FAT32, some network shares), refuses to
+    /// replace a file that is still open.
     pub(crate) fn replace_pgn_atomic<F>(
-        &self,
-        expected: &PgnSnapshot,
+        &mut self,
+        expected: PgnSnapshot,
         cancellation: &CancellationToken,
         write: F,
     ) -> Result<AtomicInstalledFile, Error>
     where
         F: FnOnce(&mut OwnedFile, &mut OwnedFile) -> Result<(), Error>,
     {
-        crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
         if self.operation != PathOperation::WritePgn {
             return Err(Error::InvalidInput(
                 "resolved capability is not writable PGN".into(),
             ));
         }
-        let parent = self
+        drop(self.file.take());
+        let this = &*self;
+        let PgnSnapshot {
+            file: mut source,
+            identity,
+            revision,
+        } = expected;
+        let parent = this
             .parent
             .as_ref()
             .ok_or_else(|| Error::Conflict("PGN parent descriptor is unavailable".into()))?;
-        let leaf = self
+        let leaf = this
             .leaf
             .as_ref()
             .ok_or_else(|| Error::Conflict("PGN leaf descriptor is unavailable".into()))?;
-        let mut source = expected.file.try_clone()?;
         crate::infra::fs::atomic_replace_at_identified_with_precommit(
             parent,
             leaf,
@@ -785,14 +795,18 @@ impl ResolvedPath {
                 if cancellation.is_cancelled() {
                     return Err(Error::Cancellation);
                 }
-                self.revalidate_logical_parent()?;
-                let current = self.fresh_pgn_snapshot()?;
-                if current.identity != expected.identity || current.revision != expected.revision {
+                this.revalidate_logical_parent()?;
+                let current = this.fresh_pgn_snapshot()?;
+                if current.identity != identity || current.revision != revision {
                     return Err(Error::Conflict("PGN changed before atomic commit".into()));
                 }
                 Ok(())
             },
-            |temporary| write(&mut source, temporary),
+            move |temporary| {
+                let written = write(&mut source, temporary);
+                drop(source);
+                written
+            },
         )
     }
 

@@ -2909,7 +2909,6 @@ pub(crate) async fn migrate_linked_collection(
     destination_name: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<CollectionDescriptor>, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let operation = state.operations.accept("migrate_linked_collection")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -3040,7 +3039,6 @@ pub(crate) async fn edit_linked_collection(
     edit: CollectionEdit,
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let operation = state.operations.accept("edit_linked_collection")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -3991,7 +3989,6 @@ pub(crate) async fn reselect_linked_collection(
     source: FileWorkspaceHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<CollectionDescriptor, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let operation = state.operations.accept("reselect_linked_collection")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();

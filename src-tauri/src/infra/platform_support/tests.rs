@@ -607,6 +607,17 @@ by `production_replace_pgn_atomic_calls_are_only_edit_existing_and_export_to_pgn
 and `production_calls_of_every_pgn_atomic_path_node_are_only_from_allowed_callers`, whose
 staged breaks are recorded in the matrix below.
 
+The Windows PGN-write and Lichess sign-in phase (2026-11-24, `d-20261124-22`) removes every
+remaining guard row: the PGN write commands, linked-collection writes, PGN export,
+`replace_pgn_atomic`, Lichess authentication and legacy token migration now run on Windows
+through the ported atomic-replace primitive and the Windows credential store. That leaves
+**0 body rows and 0 guard rows**; `off_unix_refusal` and the singular `unsupported` helper are
+deleted with their last caller, and the
+guard-placement and PGN call-graph pins that only proved the guards' completeness go with it.
+`phase_f_removed_rows_have_one_ungated_definition_without_refusals` is the Linux-red pin
+against re-inserting any of the fourteen guards. The matrix entries below that name those
+deleted pins are history.
+
 Staged failure matrix. Every run used a detached disposable worktree copied
 from this phase, mutated production files only, and ran the named
 `platform_support` test or filter with
@@ -1028,10 +1039,6 @@ fn probe_error_caller_rows_keep_the_split_explicit() {
     );
 }
 
-fn singular_message(operation: &str) -> String {
-    [operation, " is unsupported on this ", "platform"].concat()
-}
-
 fn plural_message(operations: &str) -> String {
     [operations, " are unsupported on this ", "platform"].concat()
 }
@@ -1045,16 +1052,6 @@ fn error_message(error: Error) -> String {
 
 #[test]
 fn refusals_have_typed_messages() {
-    let operation = "test operation";
-    assert!(off_unix_refusal(operation, true).is_ok());
-    assert_eq!(
-        error_message(unsupported(operation)),
-        singular_message(operation)
-    );
-    assert_eq!(
-        error_message(off_unix_refusal(operation, false).unwrap_err()),
-        singular_message(operation)
-    );
     let operations = "test operations";
     assert_eq!(
         error_message(unsupported_plural(operations)),
@@ -2419,11 +2416,6 @@ fn legacy_index_mapping_is_dropped_before_removal() {
     );
 }
 
-/// The live guard-row count at the current phase boundary. Every
-/// `phase_*_removed_rows...` test reads this, so a phase that removes a row edits the live
-/// count in exactly one place instead of five copies.
-const LIVE_GUARD_ROW_COUNT: usize = 14;
-
 fn assert_removed_rows_are_ungated(phase: &str, rows: &[(&str, &str)]) {
     let mut failures = Vec::new();
     for (file, signature) in rows {
@@ -2449,9 +2441,8 @@ fn assert_removed_rows_are_ungated(phase: &str, rows: &[(&str, &str)]) {
         }
     }
     assert!(
-        failures.is_empty() && guard_rows().len() == LIVE_GUARD_ROW_COUNT,
-        "{phase} refusal rows or definitions are wrong: {} guard rows, {:?}",
-        guard_rows().len(),
+        failures.is_empty(),
+        "{phase} refusal rows or definitions are wrong: {:?}",
         failures
     );
 }
@@ -2531,6 +2522,47 @@ fn phase_e_removed_rows_have_one_ungated_definition_without_refusals() {
             (
                 "infra/path_authority/mod.rs",
                 "pub(crate) fn ensure_app_owned_default_dir(",
+            ),
+        ],
+    );
+}
+
+#[test]
+fn phase_f_removed_rows_have_one_ungated_definition_without_refusals() {
+    assert_removed_rows_are_ungated(
+        "Phase F",
+        &[
+            ("oauth.rs", "pub async fn authenticate("),
+            ("oauth.rs", "pub async fn migrate_legacy_lichess_token("),
+            (
+                "infra/path_authority/resolved.rs",
+                "pub(crate) fn replace_pgn_atomic<F>(",
+            ),
+            ("pgn.rs", "pub async fn delete_game("),
+            ("pgn.rs", "pub async fn write_game("),
+            ("pgn.rs", "pub async fn set_game_section("),
+            ("pgn.rs", "pub async fn set_game_orientation("),
+            ("pgn.rs", "pub async fn move_games("),
+            ("db/export.rs", "pub async fn export_to_pgn("),
+            (
+                "db/linked_collections.rs",
+                "pub(crate) async fn migrate_linked_collection(",
+            ),
+            (
+                "db/linked_collections.rs",
+                "pub(crate) async fn edit_linked_collection(",
+            ),
+            (
+                "db/linked_collections.rs",
+                "pub(crate) async fn reselect_linked_collection(",
+            ),
+            (
+                "db/linked_collections/batch.rs",
+                "pub(crate) async fn append_collection_batch(",
+            ),
+            (
+                "db/linked_collections/batch.rs",
+                "pub(crate) async fn append_collection_games(",
             ),
         ],
     );
@@ -2890,329 +2922,6 @@ fn check_scope_and_modules(file: &str, source: &str, item_start: usize, errors: 
     }
 }
 
-fn check_function_attributes(
-    file: &str,
-    source: &str,
-    signature: &str,
-    start: usize,
-    errors: &mut Vec<String>,
-) {
-    for attribute in attribute_lines_before(source, start) {
-        if attribute.contains("#[cfg") || attribute.contains("cfg_attr") {
-            errors.push(format!("{file}: {signature} carries forbidden {attribute}"));
-        }
-    }
-}
-
-struct GuardRow {
-    file: &'static str,
-    signature: &'static str,
-    operation: &'static str,
-    effects: &'static [&'static str],
-}
-
-fn guard_rows() -> &'static [GuardRow] {
-    &[
-        GuardRow {
-            file: "oauth.rs",
-            signature: "pub async fn authenticate(",
-            operation: "Lichess authentication",
-            effects: &["create_job("],
-        },
-        GuardRow {
-            file: "oauth.rs",
-            signature: "pub async fn migrate_legacy_lichess_token(",
-            operation: "legacy Lichess token migration",
-            effects: &["ProdOAuthServices::new("],
-        },
-        GuardRow {
-            file: "infra/path_authority/resolved.rs",
-            signature: "pub(crate) fn replace_pgn_atomic<F>(",
-            operation: "PGN atomic replacement",
-            effects: &["atomic_replace_at_identified_with_precommit("],
-        },
-        GuardRow {
-            file: "pgn.rs",
-            signature: "pub async fn delete_game(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "pgn.rs",
-            signature: "pub async fn write_game(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "pgn.rs",
-            signature: "pub async fn set_game_section(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "pgn.rs",
-            signature: "pub async fn set_game_orientation(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "pgn.rs",
-            signature: "pub async fn move_games(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "db/export.rs",
-            signature: "pub async fn export_to_pgn(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "db/linked_collections.rs",
-            signature: "pub(crate) async fn migrate_linked_collection(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "db/linked_collections.rs",
-            signature: "pub(crate) async fn edit_linked_collection(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "db/linked_collections.rs",
-            signature: "pub(crate) async fn reselect_linked_collection(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-        GuardRow {
-            file: "db/linked_collections/batch.rs",
-            signature: "pub(crate) async fn append_collection_batch(",
-            operation: "PGN atomic replacement",
-            effects: &["append_batch("],
-        },
-        GuardRow {
-            file: "db/linked_collections/batch.rs",
-            signature: "pub(crate) async fn append_collection_games(",
-            operation: "PGN atomic replacement",
-            effects: &["operations.accept("],
-        },
-    ]
-}
-
-#[test]
-fn refusal_guards_are_first_statements_and_precede_their_effects() {
-    let mut errors = Vec::new();
-    for row in guard_rows() {
-        let source = source_for(row.file);
-        let starts = function_starts(source, row.signature);
-        if starts.len() != 1 {
-            errors.push(format!(
-                "{}: {}: expected one function, found {}",
-                row.file,
-                row.signature,
-                starts.len()
-            ));
-            continue;
-        }
-        let start = starts[0];
-        check_function_attributes(row.file, source, row.signature, start, &mut errors);
-        check_scope_and_modules(row.file, source, start, &mut errors);
-        let body = body_at(source, start);
-        let normalised = normalise(source, Literals::Blank);
-        let guard = "crate::infra::platform_support::off_unix_refusal(";
-        let guard_starts = normalised[body.start..body.end]
-            .match_indices(guard)
-            .map(|(offset, _)| body.start + offset)
-            .collect::<Vec<_>>();
-        if guard_starts.len() != 1 {
-            errors.push(format!(
-                "{}: {}: expected one refusal guard, found {}",
-                row.file,
-                row.signature,
-                guard_starts.len()
-            ));
-            continue;
-        }
-        let guard_start = guard_starts[0];
-        let Some(statement_end) = normalised[guard_start..body.end]
-            .find(';')
-            .map(|offset| guard_start + offset + 1)
-        else {
-            errors.push(format!(
-                "{}: {}: guard statement is unterminated",
-                row.file, row.signature
-            ));
-            continue;
-        };
-        let raw_statement = compact(&source[guard_start..statement_end]);
-        let expected = format!(
-            "crate::infra::platform_support::off_unix_refusal(\"{}\",cfg!(unix))?;",
-            row.operation
-        );
-        if raw_statement != expected {
-            errors.push(format!(
-                "{}: {}: guard changed: {raw_statement}",
-                row.file, row.signature
-            ));
-        }
-        let before = &normalised[body.start + 1..guard_start];
-        let depth = before.bytes().fold(1_i32, |depth, byte| match byte {
-            b'{' => depth + 1,
-            b'}' => depth - 1,
-            _ => depth,
-        });
-        if !before.chars().all(char::is_whitespace) {
-            errors.push(format!(
-                "{}: {}: guard is not first statement",
-                row.file, row.signature
-            ));
-        }
-        if depth != 1 {
-            errors.push(format!(
-                "{}: {}: guard depth changed",
-                row.file, row.signature
-            ));
-        }
-        if normalised[body.start..guard_start].contains("#[") {
-            errors.push(format!(
-                "{}: {}: guard has an attached attribute",
-                row.file, row.signature
-            ));
-        }
-        for effect in row.effects {
-            if !normalised[statement_end..body.end].contains(effect) {
-                errors.push(format!(
-                    "{}: {}: effect {effect} no longer follows guard",
-                    row.file, row.signature
-                ));
-            }
-        }
-    }
-    assert!(
-        errors.is_empty(),
-        "refusal guard pins failed:\n{}",
-        errors.join("\n")
-    );
-}
-
-/// Pin (1) of the `f-20260914-15` completeness unit (d-20260918-13). In production regions
-/// the helper token `.replace_pgn_atomic(` may occur exactly once, in `edit_existing`, and
-/// exactly once, in `export_to_pgn_blocking`; every other file's production region holds none.
-/// The definition is `fn replace_pgn_atomic<F>(`, which this token cannot match, so a third
-/// production call site — including a test helper above `mod tests` — is the regression.
-/// Scanning is `Literals::Blank`, so a comment or a string literal cannot hide or fake a call.
-#[test]
-fn production_replace_pgn_atomic_calls_are_only_edit_existing_and_export_to_pgn_blocking() {
-    let expected = [
-        ("pgn.rs", "edit_existing"),
-        ("db/export.rs", "export_to_pgn_blocking"),
-    ];
-    let mut errors = Vec::new();
-    for_each_production_region(|key, source, normalised| {
-        let count = normalised.matches(".replace_pgn_atomic(").count();
-        match expected.iter().find(|(file, _)| *file == key) {
-            Some((_, function)) => {
-                if count != 1 {
-                    errors.push(format!(
-                        "{key}: expected one production .replace_pgn_atomic( call, found {count}"
-                    ));
-                    return;
-                }
-                let call = normalised
-                    .find(".replace_pgn_atomic(")
-                    .expect("the counted call exists");
-                match enclosing_function_name(source, call) {
-                    Some(name) if name == *function => {}
-                    other => errors.push(format!(
-                        "{key}: .replace_pgn_atomic( must be in {function}, enclosing {other:?}"
-                    )),
-                }
-            }
-            None => {
-                if count != 0 {
-                    errors.push(format!(
-                        "{key}: {count} production .replace_pgn_atomic( call(s) outside edit_existing and export_to_pgn_blocking"
-                    ));
-                }
-            }
-        }
-    });
-    assert!(
-        errors.is_empty(),
-        "production replace_pgn_atomic call pin failed:\n{}",
-        errors.join("\n")
-    );
-}
-
-/// Pin (2) of the `f-20260914-15` completeness unit (d-20260918-13). Every node on the
-/// `replace_pgn_atomic` path may be called from production code only by the functions that
-/// lead to the guarded commands, including linked collection writes. `append_batch`'s only
-/// production caller is `append_collection_batch`, which refuses before appending.
-/// `append_collection_games` refuses before `operations.accept` and then calls it.
-/// A callee's own definition sits outside any body and is
-/// allowed. This is what catches a new `#[tauri::command]` in any file that calls a `pub`
-/// core, or a new private wrapper around `commit_pgn_mutation`. Enclosing identity is the
-/// nearest preceding `fn <name>` whose brace region still contains the call offset.
-#[test]
-fn production_calls_of_every_pgn_atomic_path_node_are_only_from_allowed_callers() {
-    let rows: &[(&str, &[&str])] = &[
-        (
-            "replace_pgn_atomic",
-            &["edit_existing", "export_to_pgn_blocking"],
-        ),
-        ("edit_existing", &["commit_pgn_mutation"]),
-        (
-            "commit_pgn_mutation",
-            &[
-                "delete_game_core",
-                "move_games_core",
-                "mutate_game_core",
-                "transform_file_core",
-            ],
-        ),
-        (
-            "transform_file_core",
-            &["append_batch", "edit_linked_collection"],
-        ),
-        ("append_batch", &["append_collection_batch"]),
-        ("delete_game_core", &["delete_game"]),
-        ("move_games_core", &["move_games"]),
-        ("write_game_core", &["write_game"]),
-        (
-            "mutate_game_core",
-            &[
-                "write_game_core",
-                "set_game_section",
-                "set_game_orientation",
-            ],
-        ),
-        ("export_to_pgn_blocking", &["export_to_pgn"]),
-    ];
-    let mut errors = Vec::new();
-    for_each_production_region(|key, source, normalised| {
-        for (callee, allowed) in rows {
-            let token = format!("{callee}(");
-            for (call, _) in normalised.match_indices(&token) {
-                let Some(enclosing) = enclosing_function_name(source, call) else {
-                    // A callee's own declaration: the signature is outside every body.
-                    continue;
-                };
-                if !allowed.contains(&enclosing.as_str()) {
-                    errors.push(format!(
-                        "{key}: {callee} called from {enclosing}, allowed {allowed:?}"
-                    ));
-                }
-            }
-        }
-    });
-    assert!(
-        errors.is_empty(),
-        "production PGN atomic-path caller pin failed:\n{}",
-        errors.join("\n")
-    );
-}
-
 fn for_each_production_region(mut visit: impl FnMut(&str, &str, &str)) {
     let test_only = out_of_line_test_module_paths();
     for path in rust_source_paths() {
@@ -3233,12 +2942,8 @@ fn for_each_production_region(mut visit: impl FnMut(&str, &str, &str)) {
 fn refusal_subject_is_pinned_whole() {
     const EXPECTED: &str = concat!(
         "usecrate::error::Error;",
-        "fnrefusal(subject:&str,verb:&str)->Error{",
-        "Error::Conflict(format!(\"{subject} {verb} unsupported on this platform\"))}",
-        "pub(crate)fnunsupported(operation:&str)->Error{refusal(operation,\"is\")}",
-        "pub(crate)fnunsupported_plural(operations:&str)->Error{refusal(operations,\"are\")}",
-        "pub(crate)fnoff_unix_refusal(operation:&str,unix:bool)->Result<(),Error>{",
-        "ifunix{Ok(())}else{Err(unsupported(operation))}}",
+        "pub(crate)fnunsupported_plural(operations:&str)->Error{",
+        "Error::Conflict(format!(\"{operations} are unsupported on this platform\"))}",
         "#[cfg(test)]modtests;",
     );
     let source = include_str!("../platform_support.rs");
@@ -3271,20 +2976,7 @@ fn for_each_refusal_region(mut visit: impl FnMut(&str, &str, &str)) {
 
 #[test]
 fn production_refusal_inventory_matches_rows() {
-    let mut expected = guard_rows()
-        .iter()
-        .map(|row| {
-            let name = row
-                .signature
-                .split("fn ")
-                .nth(1)
-                .unwrap()
-                .chars()
-                .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
-                .collect::<String>();
-            site(row.file, &name, "off_unix_refusal", row.operation)
-        })
-        .collect::<Vec<_>>();
+    let mut expected = Vec::new();
     let routed_rows = [(
         "infra/path_authority/mod.rs",
         "opened_file_change_stamp",
@@ -3338,7 +3030,7 @@ fn production_refusal_inventory_matches_rows() {
                     .last()
                     .is_none_or(|byte| !ascii_ident(*byte) && *byte != b':')
             });
-            let helper = ["off_unix_refusal", "unsupported", "unsupported_plural"]
+            let helper = ["unsupported_plural"]
                 .into_iter()
                 .find(|helper| tail.starts_with(&format!("::{helper}(")));
             let Some(helper) = helper.filter(|_| qualified) else {
@@ -3790,9 +3482,8 @@ fn unported_marker(finding: &str) -> String {
 
 /// D5b. `#[cfg_attr(not(unix), ignore)]` makes `rust-windows-test` print `ignored` and still
 /// exit 0, and the Linux run executes the test either way, so nothing goes red if a marker
-/// stays. This is the assertion that the eleven `f-20260914-08` markers are gone — and that
-/// the six `f-20260914-10` ones, whose tests still reach the refusing `replace_pgn_atomic`,
-/// were not removed with them.
+/// stays. This is the assertion that the eleven `f-20260914-08` markers and the six
+/// `f-20260914-10` markers are gone, so the PGN replacement tests run on Windows.
 #[test]
 fn pgn_tests_carry_no_unported_marker_for_this_finding() {
     let source = source_for("pgn.rs");
@@ -3803,8 +3494,8 @@ fn pgn_tests_carry_no_unported_marker_for_this_finding() {
     );
     assert_eq!(
         source.matches(&unported_marker("f-20260914-10")).count(),
-        6,
-        "replace_pgn_atomic still refuses, so its six markers stay"
+        0,
+        "PGN atomic replacement runs on Windows, so no f-20260914-10 marker may stay"
     );
 }
 

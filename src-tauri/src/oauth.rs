@@ -331,7 +331,6 @@ pub async fn authenticate(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<AuthenticationJob, Error> {
-    crate::infra::platform_support::off_unix_refusal("Lichess authentication", cfg!(unix))?;
     let lifecycle = state.auth.clone();
     let credentials = state.credentials.clone();
     let http_client = state.json_http_client.clone();
@@ -499,7 +498,6 @@ pub async fn migrate_legacy_lichess_token(
     token: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<LichessAccountStoreResult, Error> {
-    crate::infra::platform_support::off_unix_refusal("legacy Lichess token migration", cfg!(unix))?;
     let services = ProdOAuthServices::new(state.json_http_client.clone());
     migrate_legacy_token_internal(username, token, state.credentials.clone(), &services).await
 }

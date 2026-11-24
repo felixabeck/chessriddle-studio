@@ -2186,12 +2186,12 @@ fn pgn_file_selected_through_symlinked_ancestor_is_stored_canonically_and_writab
             .unwrap(),
         real.join("g.pgn")
     );
-    let resolved = authority
+    let mut resolved = authority
         .resolve(&committed.id, PathOperation::WritePgn, &[])
         .unwrap();
     let snapshot = resolved.pgn_snapshot().unwrap();
     let _ = resolved
-        .replace_pgn_atomic(&snapshot, &CancellationToken::new(), |_source, target| {
+        .replace_pgn_atomic(snapshot, &CancellationToken::new(), |_source, target| {
             target.write_all(b"1. d4 *").map_err(Error::from)
         })
         .unwrap();
@@ -2466,7 +2466,7 @@ fn pgn_atomic_precommit_reopens_target_and_rejects_external_replacement() {
             1,
         )
         .unwrap();
-    let resolved = authority
+    let mut resolved = authority
         .resolve(&id, PathOperation::WritePgn, &[])
         .unwrap();
     let snapshot = resolved.pgn_snapshot().unwrap();
@@ -2474,7 +2474,7 @@ fn pgn_atomic_precommit_reopens_target_and_rejects_external_replacement() {
     fs::write(&replacement, b"external").unwrap();
     fs::rename(&replacement, &path).unwrap();
     assert!(resolved
-        .replace_pgn_atomic(&snapshot, &CancellationToken::new(), |_, temp| temp
+        .replace_pgn_atomic(snapshot, &CancellationToken::new(), |_, temp| temp
             .write_all(b"new")
             .map_err(Error::from))
         .is_err());
@@ -2503,14 +2503,14 @@ fn pgn_precommit_retains_parent_handle_and_intermediate_symlink_swap_cannot_over
             1,
         )
         .unwrap();
-    let resolved = authority
+    let mut resolved = authority
         .resolve(&id, PathOperation::WritePgn, &[])
         .unwrap();
     let snapshot = resolved.pgn_snapshot().unwrap();
     fs::rename(&slot, dir.path().join("slot-old")).unwrap();
     std::os::unix::fs::symlink(&attacker, &slot).unwrap();
     assert!(resolved
-        .replace_pgn_atomic(&snapshot, &CancellationToken::new(), |_, temp| temp
+        .replace_pgn_atomic(snapshot, &CancellationToken::new(), |_, temp| temp
             .write_all(b"new")
             .map_err(Error::from))
         .is_err());
@@ -3168,12 +3168,12 @@ fn pgn_export_destination_through_symlinked_ancestor_is_stored_canonically() {
             .unwrap(),
         real.join("new.pgn")
     );
-    let resolved = authority
+    let mut resolved = authority
         .resolve(&destination.handle.id, PathOperation::WritePgn, &[])
         .unwrap();
     let snapshot = resolved.pgn_snapshot().unwrap();
     let _ = resolved
-        .replace_pgn_atomic(&snapshot, &CancellationToken::new(), |_source, target| {
+        .replace_pgn_atomic(snapshot, &CancellationToken::new(), |_source, target| {
             target.write_all(b"1. e4 *").map_err(Error::from)
         })
         .unwrap();
@@ -3206,12 +3206,12 @@ fn pgn_export_destination_reuses_an_existing_file_under_its_canonical_spelling()
             .unwrap(),
         real.join("old.pgn")
     );
-    let resolved = authority
+    let mut resolved = authority
         .resolve(&destination.handle.id, PathOperation::WritePgn, &[])
         .unwrap();
     let snapshot = resolved.pgn_snapshot().unwrap();
     let _ = resolved
-        .replace_pgn_atomic(&snapshot, &CancellationToken::new(), |_source, target| {
+        .replace_pgn_atomic(snapshot, &CancellationToken::new(), |_source, target| {
             target.write_all(b"1. c4 *").map_err(Error::from)
         })
         .unwrap();
@@ -10201,7 +10201,7 @@ fn legacy_persistent_file_is_rebound_and_writable_after_open() {
         authority.persistent["legacy-file"].availability,
         PathAvailability::Available
     );
-    let resolved = authority
+    let mut resolved = authority
         .resolve(
             &PathRef {
                 id: "legacy-file".into(),
@@ -10212,7 +10212,7 @@ fn legacy_persistent_file_is_rebound_and_writable_after_open() {
         .unwrap();
     let snapshot = resolved.pgn_snapshot().unwrap();
     let _ = resolved
-        .replace_pgn_atomic(&snapshot, &CancellationToken::new(), |_source, target| {
+        .replace_pgn_atomic(snapshot, &CancellationToken::new(), |_source, target| {
             target.write_all(b"1. d4 *").map_err(Error::from)
         })
         .unwrap();

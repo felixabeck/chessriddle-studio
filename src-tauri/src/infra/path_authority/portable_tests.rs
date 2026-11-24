@@ -3409,6 +3409,54 @@ pub(super) fn authority_at(
     }
 }
 
+/// FAT32 and exFAT have no POSIX rename, so the Windows replace falls back to the classic
+/// rename, which refuses to replace a file that is still open. `replace_pgn_atomic` must
+/// therefore close the resolution's and the snapshot's handles on the old PGN before the
+/// rename (f-20261124-17). The `rust-windows-test` job mounts both volumes.
+#[cfg(windows)]
+#[test]
+fn pgn_replacement_commits_on_volumes_without_posix_rename() {
+    use std::io::{Read, Write};
+    let roots = [
+        ("fat32", std::env::var_os("CHESSFABLE_FAT32_ROOT")),
+        ("exfat", std::env::var_os("CHESSFABLE_EXFAT_ROOT")),
+    ];
+    let missing_root = roots
+        .iter()
+        .any(|(_, root)| root.as_ref().is_none_or(|root| root.is_empty()));
+    if std::env::var_os("GITHUB_ACTIONS").is_none() && missing_root {
+        return;
+    }
+    assert!(!missing_root, "both volume roots are required in CI");
+    for (filesystem, root) in roots {
+        let volume = tempfile::tempdir_in(std::path::PathBuf::from(root.unwrap())).unwrap();
+        let registry = tempfile::tempdir().unwrap();
+        let path = volume.path().join("game.pgn");
+        let mut authority = authority(&registry, Arc::new(TestClock::new(1)));
+        let destination = authority
+            .create_pgn_export_destination(&path, "game.pgn")
+            .unwrap();
+        fs::write(&path, b"1. e4 *").unwrap();
+        let mut resolved = authority
+            .resolve(destination.handle.path_ref(), PathOperation::WritePgn, &[])
+            .unwrap();
+        let snapshot = resolved.pgn_snapshot().unwrap();
+        resolved
+            .replace_pgn_atomic(
+                snapshot,
+                &tokio_util::sync::CancellationToken::new(),
+                |source, temporary| {
+                    let mut old = Vec::new();
+                    source.read_to_end(&mut old)?;
+                    assert_eq!(old, b"1. e4 *");
+                    temporary.write_all(b"1. d4 *").map_err(Error::from)
+                },
+            )
+            .unwrap_or_else(|error| panic!("{filesystem}: {error:?}"));
+        assert_eq!(fs::read(&path).unwrap(), b"1. d4 *", "{filesystem}");
+    }
+}
+
 #[test]
 fn pgn_export_destination_binds_unicode_composition_variant() {
     let dir = tempfile::tempdir().unwrap();

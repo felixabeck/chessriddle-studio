@@ -131,7 +131,6 @@ pub async fn export_to_pgn(
     destination: FileWorkspaceHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let operation = state.operations.accept("export_to_pgn")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -156,7 +155,7 @@ pub(super) fn export_to_pgn_blocking(
     #[cfg(test)]
     database_command_checkpoint("export_to_pgn", &file);
     let target = resolve_database(authority, &file, PathOperation::DatabaseExport)?;
-    let (resolved, snapshot) = authority.with_mut(|authority| {
+    let (mut resolved, snapshot) = authority.with_mut(|authority| {
         let resolved = authority.resolve(destination.path_ref(), PathOperation::WritePgn, &[])?;
         let snapshot = resolved.pgn_snapshot()?;
         Ok::<_, Error>((resolved, snapshot))
@@ -189,7 +188,7 @@ pub(super) fn export_to_pgn_blocking(
         None
     };
 
-    let installed = resolved.replace_pgn_atomic(&snapshot, cancellation, |_, temporary| {
+    let installed = resolved.replace_pgn_atomic(snapshot, cancellation, |_, temporary| {
         if let Some(source) = &collection_source {
             let mut bytes = source.file.try_clone()?;
             crate::pgn::copy_range(&mut bytes, temporary, 0, source.revision.size, cancellation)?;

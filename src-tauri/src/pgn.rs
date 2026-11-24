@@ -1567,7 +1567,7 @@ pub(crate) fn copy_range(
 }
 
 fn edit_existing(
-    resolved: &crate::infra::path_authority::ResolvedPath,
+    resolved: &mut crate::infra::path_authority::ResolvedPath,
     expected: CacheKey,
     snapshot: crate::infra::path_authority::PgnSnapshot,
     target: GameRange,
@@ -1577,7 +1577,7 @@ fn edit_existing(
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
-    resolved.replace_pgn_atomic(&snapshot, cancellation, |source, temporary| {
+    resolved.replace_pgn_atomic(snapshot, cancellation, |source, temporary| {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
@@ -2179,7 +2179,7 @@ pub(crate) async fn transform_file_core<T: Send + 'static>(
 }
 
 async fn commit_pgn_mutation(
-    resolved: crate::infra::path_authority::ResolvedPath,
+    mut resolved: crate::infra::path_authority::ResolvedPath,
     key: CacheKey,
     mutation: PgnMutation,
     repository: &PgnRepository,
@@ -2267,7 +2267,7 @@ async fn commit_pgn_mutation(
                 rebind.validate_binding()?;
             }
             let installed = edit_existing(
-                &resolved,
+                &mut resolved,
                 key.clone(),
                 commit_snapshot,
                 target,
@@ -2617,7 +2617,6 @@ pub async fn move_games(
     revision: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<GameMoveResult, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let lease = state.operations.accept("move_games")?;
     refuse_positional_collection_write(&state, &file)?;
     let resolved = resolve_pgn(
@@ -2694,7 +2693,6 @@ pub async fn delete_game(
     revision: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let lease = state.operations.accept("delete_game")?;
     let resolved = resolve_pgn(
         &state,
@@ -2852,7 +2850,6 @@ pub async fn write_game(
     expected: WriteExpectation,
     state: tauri::State<'_, AppState>,
 ) -> Result<WriteStamp, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let lease = state.operations.accept("write_game")?;
     if matches!(
         &expected,
@@ -2896,7 +2893,6 @@ pub async fn set_game_section(
     revision: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<WriteStamp, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let lease = state.operations.accept("set_game_section")?;
     refuse_positional_collection_write(&state, &file)?;
     let resolved = resolve_pgn(
@@ -2928,7 +2924,6 @@ pub async fn set_game_orientation(
     revision: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<WriteStamp, Error> {
-    crate::infra::platform_support::off_unix_refusal("PGN atomic replacement", cfg!(unix))?;
     let lease = state.operations.accept("set_game_orientation")?;
     refuse_positional_collection_write(&state, &file)?;
     let resolved = resolve_pgn(
@@ -4692,20 +4687,22 @@ mod tests {
         }
     }
 
-    #[cfg(not(unix))]
+    /// The command path end to end, on every platform: `delete_game` resolves the registered
+    /// file, replaces it atomically and leaves only the other game. On Windows this is the proof
+    /// that the PGN replacement no longer refuses (f-20261124-17, d-20261124-22).
     #[tokio::test]
-    async fn delete_command_platform_refusal_preserves_practice_state() {
-        use crate::infra::path_authority::{
-            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, PathAuthority,
-            PathOperation,
-        };
+    async fn delete_command_replaces_the_file_without_the_deleted_game() {
+        use crate::infra::path_authority::{PathAuthority, PathOperation};
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("practice.pgn");
-        std::fs::write(&path, "[Event \"White\"]\n\n1. e4 *\n").unwrap();
+        let path = directory.path().join("two-games.pgn");
+        std::fs::write(
+            &path,
+            "[Event \"First\"]\n\n1. e4 *\n\n[Event \"Second\"]\n\n1. d4 *\n",
+        )
+        .unwrap();
         let mut authority =
             PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap();
         let handle = promote_pgn_file(&mut authority, &path);
-        let file_id = handle.path_ref().id.clone();
         let app = mock_app();
         let state = app.state::<AppState>();
         state.pgn_path_authority.install(authority).unwrap();
@@ -4718,60 +4715,19 @@ mod tests {
         )
         .await
         .unwrap();
-        let practice = ensure_app_owned_default_dir(
-            &AppDataDir::for_test(directory.path()),
-            AppOwnedDefaultRoot::Practice,
-        )
-        .unwrap();
-        crate::practice::sync_practice_positions_in(
-            &practice,
-            &file_id,
-            0,
-            0,
-            0,
-            r#"{"positions":[]}"#,
-        )
-        .unwrap();
-        let pending = crate::practice::prepare_delete_in(&practice, &file_id, 0, 1).unwrap();
-        crate::practice::finish_delete_in(&practice, &file_id, &pending, false).unwrap();
-        let epoch = crate::practice::practice_epoch_in(&practice, &file_id, 0).unwrap();
-        state.pgn_repository.initialize_practice(practice).unwrap();
-        let practice = state
-            .pgn_repository
-            .inner()
-            .unwrap()
-            .practice_directory
-            .clone()
-            .unwrap();
-        let before = std::fs::read_dir(practice.path())
-            .unwrap()
-            .map(|entry| {
-                let entry = entry.unwrap();
-                (entry.file_name(), std::fs::read(entry.path()).unwrap())
-            })
-            .collect::<std::collections::BTreeMap<_, _>>();
-        let result = delete_game(
+        delete_game(
             handle,
             0,
             selected.stamp,
             selected.revision,
             app.state::<AppState>(),
         )
-        .await;
-        assert!(
-            matches!(result, Err(Error::Conflict(message)) if message == "PGN atomic replacement is unsupported on this platform")
-        );
-        let after_epoch = crate::practice::practice_epoch_in(&practice, &file_id, 0).unwrap();
-        assert_eq!(after_epoch.epoch, epoch.epoch);
-        assert_eq!(after_epoch.legacy_superseded, epoch.legacy_superseded);
-        let after = std::fs::read_dir(practice.path())
-            .unwrap()
-            .map(|entry| {
-                let entry = entry.unwrap();
-                (entry.file_name(), std::fs::read(entry.path()).unwrap())
-            })
-            .collect::<std::collections::BTreeMap<_, _>>();
-        assert_eq!(before, after);
+        .await
+        .expect("delete_game replaces the PGN on every platform");
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(!after.contains("First"), "{after}");
+        assert!(after.contains("[Event \"Second\"]"), "{after}");
+        assert!(after.contains("1. d4"), "{after}");
     }
     use super::*;
     use std::{
@@ -6126,7 +6082,7 @@ mod tests {
         let path = directory.path().join("games.pgn");
         let original = b"[Event \"before\"]\n\n1. e4 *\n";
         std::fs::write(&path, original).expect("PGN");
-        let resolved = writable_for(&directory, &path);
+        let mut resolved = writable_for(&directory, &path);
         let snapshot = resolved.pgn_snapshot().expect("snapshot");
         let key = snapshot_key(&snapshot);
         let range = GameRange {
@@ -6140,7 +6096,7 @@ mod tests {
             cancellation: cancellation.clone(),
         }));
         let result = edit_existing(
-            &resolved,
+            &mut resolved,
             key,
             snapshot,
             range,
@@ -6156,12 +6112,11 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(unix), ignore = "unported on this platform: f-20260914-10")]
     fn edit_existing_keeps_the_replacement_and_reports_uncertain_pgn_edit() {
         let directory = tempfile::tempdir().expect("PGN directory");
         let path = directory.path().join("games.pgn");
         std::fs::write(&path, "[Event \"before\"]\n\n1. e4 *\n").expect("PGN");
-        let resolved = writable_for(&directory, &path);
+        let mut resolved = writable_for(&directory, &path);
         let snapshot = resolved.pgn_snapshot().expect("snapshot");
         let key = snapshot_key(&snapshot);
         let range = GameRange {
@@ -6172,7 +6127,7 @@ mod tests {
             crate::infra::fs::ParentSyncFault("uncertain"),
         )));
         let result = edit_existing(
-            &resolved,
+            &mut resolved,
             key,
             snapshot,
             range,
@@ -7454,7 +7409,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg_attr(not(unix), ignore = "unported on this platform: f-20260914-10")]
     async fn delete_game_succeeds_when_the_selected_snapshot_is_unchanged() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("current-delete.pgn");
@@ -8692,7 +8646,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg_attr(not(unix), ignore = "unported on this platform: f-20260914-10")]
     async fn held_accepted_write_caller_dropped_commits_and_invalidates_cache() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("write-held.pgn");
@@ -8773,7 +8726,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg_attr(not(unix), ignore = "unported on this platform: f-20260914-10")]
     async fn a_cache_invalidation_failure_after_the_replacement_reports_a_committed_write() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("invalidation.pgn");
@@ -8840,7 +8792,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg_attr(not(unix), ignore = "unported on this platform: f-20260914-10")]
     async fn held_accepted_delete_caller_dropped_commits_and_invalidates_cache() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("delete-held.pgn");
@@ -8922,7 +8873,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg_attr(not(unix), ignore = "unported on this platform: f-20260914-10")]
     async fn held_accepted_write_caller_dropped_with_uncertain_durability_invalidates_cache() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("write-uncertain.pgn");
