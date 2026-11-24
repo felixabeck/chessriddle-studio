@@ -27981,7 +27981,7 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 
 ### FileFreshnessPublication's main-thread budget test asserts wall-clock time and fails under shared-machine load
 
-* **ID:** f-20261120-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261120-01 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** f45e25ea-dbe9-473f-a401-c199e5b3579e
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (split out of f-20261115-27's 2026-11-16 recurrence note while working that finding, 2026-11-20)
@@ -27992,7 +27992,13 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Related:** f-20261115-27 (handled; same push-gate symptom family, different cause).
 * **Found by:** Claude Code drain session f45e25ea-dbe9-473f-a401-c199e5b3579e
 * **Entry revalidation (2026-11-24, drain f223941f):** build → lens (review-tests). The open question resolves from existing code: `scripts/verify-app.mjs:5859` already asserts `fileFreshnessMainThreadWithinBudget` against the real application, so the wall-clock proof has an owner and the jsdom unit test only needs to prove that apply-path work lands inside the measured interval. A virtual clock advanced only by the stall hook does that without load dependence. The ratio option was rejected because it stays partly load-dependent. Raising the timeout or budget stays rejected under d-20260901-36. Change is test-only in one file.
-<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"03ece63fbbfc85db5c033118d64f5d8a43b2c6496952ad7cceda441c94720e29","header_sha256":"4a221388b644e8eedf93ed752951599e5f0f05df56d9aaf5e355a76dc099f487","header_status":"open","input_sha256":"ec6ab986daa2fa8f83c008845b5680ee0279426d8a968fe1c380c9d2aa0fdf51","kind":"mutation-receipt","operation":"0bb0f37e26702234278d3b7090cf6f8e585052dcaa56534e30d7fbb90bbb1fab","options":{"headers":{"Entry":"lens"},"section":null},"request_id_sha256":null,"results":["f-20261120-01"],"target":"f-20261120-01","v":1} -->
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"03ece63fbbfc85db5c033118d64f5d8a43b2c6496952ad7cceda441c94720e29","header_sha256":"a45e84071c919e68558660aa6717ea163fa0c96a6d854de5364cce50c053eda9","header_status":"handled","input_sha256":"ec6ab986daa2fa8f83c008845b5680ee0279426d8a968fe1c380c9d2aa0fdf51","kind":"mutation-receipt","operation":"0bb0f37e26702234278d3b7090cf6f8e585052dcaa56534e30d7fbb90bbb1fab","options":{"headers":{"Entry":"lens"},"section":null},"request_id_sha256":null,"results":["f-20261120-01"],"target":"f-20261120-01","v":1} -->
+
+* **Handled (2026-11-24, drain f223941f, lens tier):** the main-thread budget test in `src/components/tabs/FileFreshnessPublication.test.tsx` now measures a virtual clock that only the production stall hook `__verifyAppStallFreshnessApply` advances. The clean arm is exactly 0 ms and the wedged arm exactly budget + 100 ms, so the result no longer depends on load in the coverage lane. The hook also asserts the replacement tree is already applied when it runs. This pins its position after `setState`.
+  * **Proof:** the file passes 5/5. Mutation probes: removing the hook call at `FileFreshnessGate.tsx:80` fails the test with "expected +0 to be 1100", and moving it before `setState` fails it with "expected false to be true".
+  * **Where the wall-clock proof lives:** `scripts/verify-app.mjs:5859` against the real application.
+  * **Rejected:** a wedged/clean ratio, because it stays load-dependent. Raising the budget or timeout, because of d-20260901-36. A real-clock negative arm in verify-app, because the old jsdom test never covered verify-app's measurement chain, so nothing is lost.
+<!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"0bc8a0c2dd81ecf1dff2376138784a3fbc29a200f83ffb6291cdc0d9b582258f","header_sha256":"a45e84071c919e68558660aa6717ea163fa0c96a6d854de5364cce50c053eda9","header_status":"handled","input_sha256":"45a5234dbe065f2dd12388f31615c21699836b76125393419f5e49a635b9dc18","kind":"mutation-receipt","operation":"e8f86d7361a6aaee0e9dcd8e4b1abd1446395cdf5dc9ab607df167acb0ed0b8d","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-01"],"target":"f-20261120-01","v":1} -->
 
 ### check-rust-release-surface-config-c O3.7 test times out at 5 s in the loaded frontend-coverage lane
 
