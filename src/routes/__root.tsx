@@ -199,6 +199,7 @@ function RootShell() {
     [navigate],
   );
   const openEngines = useCallback(() => openPageFromMenu({ navigate, to: "/engines" }), [navigate]);
+  const openGuide = useCallback(() => openPageFromMenu({ navigate, to: "/guide" }), [navigate]);
 
   // The board consumes the request once it is mounted, so show the workspace first. No root
   // hotkey: Ctrl+S stays bound in the board alone, so one key press never starts two saves.
@@ -301,6 +302,7 @@ function RootShell() {
         runMenu,
         about: () => setAboutOpened(true),
         sendFeedback: () => openFeedback(),
+        openGuide,
         openAssistant,
         createNewTab: newTab,
         openNewFile,
@@ -318,6 +320,7 @@ function RootShell() {
       openAssistant,
       openEngines,
       openFeedback,
+      openGuide,
       openNewFile,
       openSettings,
       requestQuit,

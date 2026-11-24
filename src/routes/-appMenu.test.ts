@@ -55,6 +55,7 @@ function callbacks(overrides: Partial<AppMenuCallbacks> = {}): AppMenuCallbacks 
     return {
         about: () => undefined,
         sendFeedback: () => undefined,
+        openGuide: () => undefined,
         createNewTab: () => undefined,
         openNewFile: () => undefined,
         saveGame: () => undefined,
@@ -107,6 +108,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         "|",
         "toggle_fullscreen",
         "|",
+        "guide",
         "send_feedback",
         "about",
         "|",
@@ -121,6 +123,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         "engines",
         "settings",
         "toggle_fullscreen",
+        "guide",
         "send_feedback",
         "about",
         "exit",
@@ -158,6 +161,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         "engines",
         "settings",
         "toggle_fullscreen",
+        "guide",
         "send_feedback",
         "about",
     ]);
@@ -184,7 +188,7 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
     expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file", "save", "save_to"]);
     expect(option(groups, "Menu.File", "save").shortcut).toBe("meta+s");
     expect(idsOf(groups, "Menu.View")).toEqual(["toggle_fullscreen"]);
-    expect(idsOf(groups, "Menu.Help")).toEqual(["send_feedback"]);
+    expect(idsOf(groups, "Menu.Help")).toEqual(["guide", "send_feedback"]);
     expect(option(groups, "Menu.Application.Menu", "about").action).toBe(actions.about);
     expect(option(groups, "Menu.Application.Menu", "settings").action).toBe(actions.openSettings);
     expect(option(groups, "Menu.File", "new_tab").action).toBe(actions.createNewTab);
@@ -215,11 +219,15 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
     expect(option(groups, "Menu.View", "toggle_fullscreen").shortcut).toBe("Ctrl+Cmd+F");
 });
 
-test("Help menu and in-app menu include Assistant only when showAssistant is true", () => {
-    let opened = 0;
+test("Help menu and in-app menu always show Guide first and include Assistant only when showAssistant is true", () => {
+    let openedAssistant = 0;
+    let openedGuide = 0;
     const actions = callbacks({
+        openGuide: () => {
+            openedGuide += 1;
+        },
         openAssistant: () => {
-            opened += 1;
+            openedAssistant += 1;
         },
     });
     const hiddenTree = buildAppMenuTree({
@@ -231,7 +239,10 @@ test("Help menu and in-app menu include Assistant only when showAssistant is tru
         saveShortcut: "meta+s",
         callbacks: actions,
     });
-    expect(idsOf(hiddenTree, "Menu.Help")).toEqual(["send_feedback"]);
+    expect(idsOf(hiddenTree, "Menu.Help")).toEqual(["guide", "send_feedback"]);
+    expect(option(hiddenTree, "Menu.Help", "guide").action).toBe(actions.openGuide);
+    option(hiddenTree, "Menu.Help", "guide").action?.();
+    expect(openedGuide).toBe(1);
 
     const shownTree = buildAppMenuTree({
         t,
@@ -242,9 +253,10 @@ test("Help menu and in-app menu include Assistant only when showAssistant is tru
         saveShortcut: "meta+s",
         callbacks: actions,
     });
-    expect(idsOf(shownTree, "Menu.Help")).toEqual(["assistant", "send_feedback"]);
+    expect(idsOf(shownTree, "Menu.Help")).toEqual(["guide", "assistant", "send_feedback"]);
+    expect(option(shownTree, "Menu.Help", "guide").action).toBe(actions.openGuide);
     option(shownTree, "Menu.Help", "assistant").action?.();
-    expect(opened).toBe(1);
+    expect(openedAssistant).toBe(1);
 
     const hiddenItems = buildInAppMenuItems({
         t,
@@ -255,7 +267,9 @@ test("Help menu and in-app menu include Assistant only when showAssistant is tru
         saveShortcut: "ctrl+s",
         callbacks: actions,
     });
-    expect(idsOfItems(hiddenItems)).not.toContain("assistant");
+    const hiddenHelpSlice = idsOfItems(hiddenItems).slice(idsOfItems(hiddenItems).indexOf("guide"));
+    expect(hiddenHelpSlice).toEqual(["guide", "send_feedback", "about", "exit"]);
+    expect(item(hiddenItems, "guide").action).toBe(actions.openGuide);
 
     const shownItems = buildInAppMenuItems({
         t,
@@ -266,9 +280,13 @@ test("Help menu and in-app menu include Assistant only when showAssistant is tru
         saveShortcut: "ctrl+s",
         callbacks: actions,
     });
-    expect(idsOfItems(shownItems)).toContain("assistant");
+    const shownHelpSlice = idsOfItems(shownItems).slice(idsOfItems(shownItems).indexOf("guide"));
+    expect(shownHelpSlice).toEqual(["guide", "assistant", "send_feedback", "about", "exit"]);
+    expect(item(shownItems, "guide").action).toBe(actions.openGuide);
     item(shownItems, "assistant").action?.();
-    expect(opened).toBe(2);
+    expect(openedAssistant).toBe(2);
+    item(shownItems, "guide").action?.();
+    expect(openedGuide).toBe(2);
 });
 
 test("changing t changes labels", () => {
@@ -342,7 +360,7 @@ test("openPgnFromMenu rejects when openFile rejects", async () => {
     ).rejects.toThrow("read failed");
 });
 
-test.each(["/settings", "/accounts", "/engines"] as const)(
+test.each(["/settings", "/accounts", "/engines", "/guide"] as const)(
     "openPageFromMenu awaits navigate to %s",
     async (to) => {
         const nav = deferred<void>();
@@ -385,6 +403,9 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
         sendFeedback: () => {
             seen.push("send-feedback");
         },
+        openGuide: async () => {
+            seen.push("guide");
+        },
         createNewTab: () => opened.promise,
         openNewFile: async () => {
             throw new Error("open failed");
@@ -426,10 +447,12 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
     await callbacks.toggleFullscreen();
     await callbacks.openAccounts();
     await callbacks.openEngines();
+    await callbacks.openGuide();
     expect(seen).toEqual([
         expect.objectContaining({ message: "open failed" }),
         "accounts",
         "engines",
+        "guide",
     ]);
 
     callbacks.about();
@@ -438,6 +461,7 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
         expect.objectContaining({ message: "open failed" }),
         "accounts",
         "engines",
+        "guide",
         "about",
         "send-feedback",
     ]);

@@ -1279,6 +1279,7 @@ export function filesWorkspaceCommands(
 type TauriEvent = { event: string; payload: unknown };
 
 const fontScaleByProject: Record<string, number> = {
+    "guide-scaled": 200,
     "chessbase-guide-scaled": 200,
     "first-engine-install-scaled": 200,
     "workspace-tabs": 100,

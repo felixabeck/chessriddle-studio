@@ -98,6 +98,7 @@ import PiecesSelect from "./PiecesSelect";
 import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
 import { DirectorySetting } from "./DirectorySetting";
 import { WorkspaceDirectorySetting } from "./WorkspaceDirectorySetting";
+import shellClasses from "../common/SidebarTabsPage.module.css";
 import classes from "./SettingsPage.module.css";
 import { SettingRow } from "./SettingsLayout";
 import {
@@ -595,7 +596,7 @@ export default function Page() {
 
     if (filteredSettings.length === 0) {
       return (
-        <Card withBorder className={`${classes.card} wrap-anywhere`} w="100%">
+        <Card withBorder className={`${shellClasses.card} ${classes.card} wrap-anywhere`} w="100%">
           <Text c="dimmed" ta="center">
             {t("Settings.Search.NoResults", { query: searchQuery })}
           </Text>
@@ -616,7 +617,7 @@ export default function Page() {
     );
 
     return (
-      <Card withBorder className={`${classes.card} wrap-anywhere`} w="100%">
+      <Card withBorder className={`${shellClasses.card} ${classes.card} wrap-anywhere`} w="100%">
         {Object.entries(groupedSettings).map(([category, categorySettings]) => (
           <div key={category}>
             <Group gap="xs" mt="md" mb="xs">
@@ -684,7 +685,7 @@ export default function Page() {
 
   return (
     <Stack ref={pageRef} h="100%" gap={0} data-compact={compactTabs || undefined}>
-      <Group px="md" pt="md" pb="sm" className={classes.searchRow}>
+      <Group px="md" pt="md" pb="sm" className={shellClasses.headerRow}>
         <Title order={1} size="h3" className="wrap-anywhere" miw={0}>
           {t("SideBar.Settings")}
         </Title>
@@ -729,8 +730,11 @@ export default function Page() {
           }}
           orientation={compactTabs ? "horizontal" : "vertical"}
           flex={1}
-          className={classes.settingsTabs}
-          classNames={{ list: classes.categoryList, tab: classes.categoryTab }}
+          className={shellClasses.tabs}
+          classNames={{
+            list: `${shellClasses.list} ${classes.categoryList}`,
+            tab: shellClasses.tab,
+          }}
           styles={{
             tabLabel: {
               textAlign: "left",
@@ -744,9 +748,13 @@ export default function Page() {
               </Tabs.Tab>
             ))}
           </Tabs.List>
-          <Stack flex={1} className={classes.settingsContent}>
-            <ScrollArea className={classes.settingsScroll}>
-              <Card withBorder className={`${classes.card} wrap-anywhere`} w="100%">
+          <Stack flex={1} className={shellClasses.content}>
+            <ScrollArea className={shellClasses.scroll}>
+              <Card
+                withBorder
+                className={`${shellClasses.card} ${classes.card} wrap-anywhere`}
+                w="100%"
+              >
                 {categories.map((category) => {
                   const title = (
                     <Text size="lg" fw={500} className={classes.title}>

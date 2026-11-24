@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   requestBoardCommand: vi.fn(),
   ask: vi.fn(),
   useIncomingGameLinks: vi.fn(),
+  navigate: vi.fn(),
 }));
 vi.mock("@/components/boards/boardCommands", () => ({
   requestBoardCommand: mocks.requestBoardCommand,
@@ -162,7 +163,7 @@ vi.mock("@mantine/notifications", () => ({ notifications: { show: vi.fn() } }));
 vi.mock("@tanstack/react-router", () => ({
   Outlet: () => mocks.outlet(),
   createRootRouteWithContext: () => (options: unknown) => options,
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mocks.navigate,
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -182,6 +183,7 @@ beforeEach(() => {
   mocks.createTab.mockReset().mockResolvedValue("created");
   mocks.pickPgnFile.mockReset().mockResolvedValue(null);
   mocks.ask.mockReset().mockResolvedValue(false);
+  mocks.navigate.mockReset().mockResolvedValue(undefined);
 });
 
 test.each([{ name: "OPEN_FILE", key: "o", action: mocks.pickPgnFile }])(
@@ -605,4 +607,21 @@ test("the root asks for a native menu only on macOS", async () => {
     await act(async () => root.unmount());
     host.remove();
   }
+});
+
+test("the Help-menu Guide action navigates to /guide", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root: Root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  await act(async () => {
+    root.render(<RootLayout />);
+  });
+  expect(mocks.lastCallbacks).not.toBeNull();
+  await act(async () => {
+    await mocks.lastCallbacks?.openGuide();
+  });
+  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/guide" });
+  await act(async () => root.unmount());
+  host.remove();
 });

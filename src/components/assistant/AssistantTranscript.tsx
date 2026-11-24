@@ -1,4 +1,3 @@
-import { ArrowUpRight } from "lucide-react";
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { AiAnswerStatus, AiRunningTurnView } from "@/components/panels/coach/AiTranscriptFrame";
@@ -10,8 +9,8 @@ import type {
   AssistantMessage,
   AssistantRunningTurn,
 } from "@/state/assistant";
+import { AssistantTargetLink } from "./AssistantTargetLink";
 import type { AssistantTargetActions, AssistantTargetEntry } from "./targets";
-import classes from "./AssistantTranscript.module.css";
 
 const Answer = memo(function Answer({
   message,
@@ -44,17 +43,12 @@ const Answer = memo(function Answer({
               return <CoachText key={index} text={segment.target} />;
             }
             return (
-              <button
+              <AssistantTargetLink
                 key={index}
-                type="button"
-                className={classes.link}
-                data-testid="assistant-link"
-                data-target-id={entry.id}
-                onClick={() => void entry.open(targetActions, message.feedbackDraft)}
-              >
-                <span>{entry.label}</span>
-                <ArrowUpRight size="0.8em" aria-hidden />
-              </button>
+                entry={entry}
+                actions={targetActions}
+                feedbackDraft={message.feedbackDraft}
+              />
             );
           })}
         </div>

@@ -1,4 +1,4 @@
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -14,7 +14,6 @@ import { AiNoticeModal } from "@/components/panels/coach/AiNoticeModal";
 import { AiTranscriptFrame } from "@/components/panels/coach/AiTranscriptFrame";
 import coachClasses from "@/components/panels/coach/CoachPanel.module.css";
 import { useAssistantErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
-import { useOpenFeedback } from "@/components/feedback/openFeedbackContext";
 import {
   assistantConversationAtom,
   assistantNoticeAcceptedAtom,
@@ -29,12 +28,8 @@ import {
 import { currentTabAtom, enginesAtom, referenceDbAtom } from "@/state/atoms";
 import { coachEnabledAtom } from "@/state/coach";
 import { AssistantTranscript } from "./AssistantTranscript";
-import {
-  assistantLinkTargets,
-  assistantSettingsPayload,
-  buildAssistantTargets,
-  type AssistantTargetActions,
-} from "./targets";
+import { assistantLinkTargets, assistantSettingsPayload, buildAssistantTargets } from "./targets";
+import { useAssistantTargetActions } from "./useAssistantTargetActions";
 
 const MAX_ASSISTANT_ENGINES = 64;
 const MAX_ASSISTANT_ENGINE_NAME_CHARS = 128;
@@ -85,10 +80,8 @@ function AssistantPanel({
 }: AssistantPanelProps) {
   const { t, i18n } = useTranslation();
   const errors = useAssistantErrorMessages();
-  const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const atoms = useAtomStore();
-  const openFeedback = useOpenFeedback();
 
   const coachEnabled = useAtomValue(coachEnabledAtom);
   const conversation = useAtomValue(assistantConversationAtom);
@@ -109,18 +102,12 @@ function AssistantPanel({
     [coachEnabled],
   );
   const targets = useMemo(() => buildAssistantTargets(t, buildFacts), [t, buildFacts]);
-  const targetActions = useMemo<AssistantTargetActions>(
-    () => ({
-      createNewTab,
-      openLibrary: () => navigate({ to: "/library" }),
-      openEngines,
-      openAccounts,
-      openSettings,
-      openFeedback,
-      store: atoms,
-    }),
-    [atoms, createNewTab, navigate, openAccounts, openEngines, openFeedback, openSettings],
-  );
+  const targetActions = useAssistantTargetActions({
+    createNewTab,
+    openAccounts,
+    openEngines,
+    openSettings,
+  });
 
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useState<string | null>(null);

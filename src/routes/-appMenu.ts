@@ -24,6 +24,7 @@ export type MenuGroup = {
 export type AppMenuCallbacks = {
     about: () => void;
     sendFeedback: () => void;
+    openGuide: () => void | Promise<void>;
     openAssistant?: () => void;
     createNewTab: () => void | Promise<void>;
     openNewFile: () => void | Promise<void>;
@@ -195,6 +196,11 @@ export function buildAppMenuTree(args: {
         {
             label: t("Menu.Help"),
             options: [
+                {
+                    label: t("Menu.Help.Guide"),
+                    id: "guide",
+                    action: callbacks.openGuide,
+                },
                 ...(showAssistant
                     ? [
                           {
@@ -282,6 +288,11 @@ export function buildInAppMenuItems(args: {
             action: callbacks.toggleFullscreen,
         },
         { kind: "separator" },
+        {
+            label: t("Menu.Help.Guide"),
+            id: "guide",
+            action: callbacks.openGuide,
+        },
         ...(showAssistant
             ? [
                   {
@@ -325,7 +336,7 @@ export async function openPgnFromMenu<File>(deps: {
     if (id !== null) await deps.navigate({ to: "/" });
 }
 
-export type MenuPagePath = "/settings" | "/accounts" | "/engines";
+export type MenuPagePath = "/settings" | "/accounts" | "/engines" | "/guide";
 
 export async function openPageFromMenu(deps: {
     navigate: (opts: { to: string }) => void | Promise<unknown>;
@@ -360,6 +371,7 @@ export type AppMenuCommandBindings = {
     runMenu: (command: () => Promise<unknown>, successMessage?: string) => Promise<void>;
     about: () => void;
     sendFeedback: () => void;
+    openGuide: () => Promise<unknown>;
     openAssistant?: () => void;
     createNewTab: () => Promise<unknown> | void;
     openNewFile: () => Promise<unknown>;
@@ -376,6 +388,7 @@ export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuC
     return {
         about: bindings.about,
         sendFeedback: bindings.sendFeedback,
+        openGuide: () => bindings.runMenu(bindings.openGuide),
         ...(bindings.openAssistant ? { openAssistant: bindings.openAssistant } : {}),
         createNewTab: () => bindings.runMenu(async () => bindings.createNewTab()),
         openNewFile: () => bindings.runMenu(bindings.openNewFile),

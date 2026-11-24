@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import rustSource from "../../../src-tauri/src/coach/mod.rs?raw";
 import {
     visibleSettingCategories,
@@ -7,7 +7,15 @@ import {
 import deDE from "@/translation/de-DE.json";
 import enUS from "@/translation/en-US.json";
 import { buildAssistantTargets } from "./targets";
-import { extractLabelRefs, extractTargetRefs, loadHelpTopics, resolveHelpTopic } from "./topics";
+import {
+    HELP_TOPIC_ORDER,
+    extractLabelRefs,
+    extractTargetRefs,
+    loadHelpTopics,
+    loadLocalizedTopicFiles,
+    resolveHelpTopic,
+    setHelpTopicsLoaderForTests,
+} from "./topics";
 import { rawHelpTopics } from "./topics/bundle";
 
 // Mirrors the `MAX_ASSISTANT_*` constants in `src-tauri/src/coach/mod.rs`.
@@ -198,5 +206,132 @@ describe("help topics", () => {
         expect(feedbackTopic!.body).toContain(deCatalogue["Menu.Help.OpenLogs"]);
         expect(feedbackTopic!.body).toContain(deCatalogue["Menu.Help.ClearSavedData"]);
         expect(deCatalogue["Menu.Help.OpenLogs"]).not.toBe(enCatalogue["Menu.Help.OpenLogs"]);
+    });
+
+    describe("locale loading and caching", () => {
+        afterEach(() => {
+            setHelpTopicsLoaderForTests(null);
+        });
+
+        test("reading order lists every shipped topic id exactly once", () => {
+            expect(new Set(HELP_TOPIC_ORDER).size).toBe(HELP_TOPIC_ORDER.length);
+            expect([...HELP_TOPIC_ORDER].sort()).toEqual(
+                rawHelpTopics.map((topic) => topic.id).sort(),
+            );
+        });
+
+        test("en-GB and en-US resolve to the English bundle", async () => {
+            const [usTopics, gbTopics] = await Promise.all([
+                loadHelpTopics(enTranslator, "en-US"),
+                loadHelpTopics(enTranslator, "en-GB"),
+            ]);
+            expect(usTopics.length).toBe(rawHelpTopics.length);
+            expect(gbTopics).toEqual(usTopics);
+            expect(usTopics.map((topic) => topic.id)).toEqual([...HELP_TOPIC_ORDER]);
+        });
+
+        test("rejected locale load rejects without English fallback, evicts cache, and retries", async () => {
+            let calls = 0;
+            const loader = vi.fn(async (locale: string) => {
+                calls += 1;
+                if (calls === 1) {
+                    throw new Error(`load failed for ${locale}`);
+                }
+                return [
+                    {
+                        id: "settings",
+                        title: `Title (${locale})`,
+                        summary: "Summary",
+                        body: "Body",
+                    },
+                ];
+            });
+            setHelpTopicsLoaderForTests(loader);
+
+            await expect(loadHelpTopics(deTranslator, "de-DE")).rejects.toThrow(
+                "load failed for de-DE",
+            );
+            expect(loader).toHaveBeenCalledTimes(1);
+            expect(loader).toHaveBeenCalledWith("de-DE");
+
+            const retried = await loadHelpTopics(deTranslator, "de-DE");
+            expect(loader).toHaveBeenCalledTimes(2);
+            expect(retried).toEqual([
+                {
+                    id: "settings",
+                    title: "Title (de-DE)",
+                    summary: "Summary",
+                    body: "Body",
+                },
+            ]);
+        });
+
+        test("per-locale caches are independent", async () => {
+            const loader = vi.fn(async (locale: string) => {
+                if (locale === "de-DE") {
+                    throw new Error("de-DE unavailable");
+                }
+                return [
+                    {
+                        id: "feedback",
+                        title: `Title ${locale}`,
+                        summary: "Summary",
+                        body: "Body",
+                    },
+                ];
+            });
+            setHelpTopicsLoaderForTests(loader);
+
+            const frFirst = await loadHelpTopics(enTranslator, "fr-FR");
+            const frSecond = await loadHelpTopics(enTranslator, "fr-FR");
+            expect(frFirst).toEqual(frSecond);
+            expect(loader).toHaveBeenCalledTimes(1);
+
+            await expect(loadHelpTopics(deTranslator, "de-DE")).rejects.toThrow(
+                "de-DE unavailable",
+            );
+            expect(loader).toHaveBeenCalledTimes(2);
+
+            const esTopics = await loadHelpTopics(enTranslator, "es-ES");
+            expect(esTopics[0]?.title).toBe("Title es-ES");
+            expect(loader).toHaveBeenCalledTimes(3);
+            expect(loader.mock.calls.map(([locale]) => locale)).toEqual([
+                "fr-FR",
+                "de-DE",
+                "es-ES",
+            ]);
+        });
+
+        test("loadLocalizedTopicFiles rejects on empty or missing locale map and filters and orders matching files", async () => {
+            await expect(loadLocalizedTopicFiles({}, "de-DE")).rejects.toThrow(
+                "Help topics are not available for locale de-DE",
+            );
+
+            await expect(
+                loadLocalizedTopicFiles(
+                    {
+                        "./topics/fr-FR/feedback.md": async () =>
+                            "---\nid: feedback\ntitle: Retour\nsummary: Sum\n---\nBody",
+                    },
+                    "de-DE",
+                ),
+            ).rejects.toThrow("Help topics are not available for locale de-DE");
+
+            const topics = await loadLocalizedTopicFiles(
+                {
+                    "./topics/de-DE/feedback.md": async () =>
+                        "---\nid: feedback\ntitle: Feedback DE\nsummary: Sum DE\n---\nBody DE",
+                    "./topics/de-DE/tabs-and-new-tab.md": async () =>
+                        "---\nid: tabs-and-new-tab\ntitle: Tabs DE\nsummary: Sum Tabs\n---\nBody Tabs",
+                    "./topics/fr-FR/settings.md": async () => {
+                        throw new Error("other locale should not be loaded");
+                    },
+                },
+                "de-DE",
+            );
+
+            expect(topics.map((topic) => topic.id)).toEqual(["tabs-and-new-tab", "feedback"]);
+            expect(topics.map((topic) => topic.title)).toEqual(["Tabs DE", "Feedback DE"]);
+        });
     });
 });
