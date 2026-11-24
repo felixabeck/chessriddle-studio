@@ -28635,3 +28635,35 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
   * **Live proof:** with the only slot held by `agent-gate sleep 240`, a frontend-only pre-review finished in 12 s; with a frontend+Rust change every light lane finished in ≤3.1 s while `windows-clippy` waited for the slot and ran green after release; `pnpm gates:push -- --rust --frontend --bindings` green with every cargo command under `agent-gate`; SIGINT during clippy ended the compiler (lane interrupted 130), no cargo/rustc left, slot lock free.
   * **Rejected:** keeping the whole run under `agent-gate`; no slot at all (Rust allocator refuses below 9 GiB usable); a no-slot mode in tuxedo-config `agent-gate`; one slot across the whole `rust-lint` lane.
 <!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"bbfaf6fe1bd9c104c5af64cab6498730953518c99435b05415173f6c8cb36210","header_sha256":"67f735013b00937caf3d67f44e173a852ad4ddd4b3e2d4cc7a486d1f2c8118f8","header_status":"handled","input_sha256":"0f56d86cb3e09a705aed1c1eb01317bce9731b438a90aa306a9aeaead79526ab","kind":"mutation-receipt","operation":"9f00b4ec620e11ad2e6b9eec9b69ede5cd27908f1080e5d9fd71b1cbf4a46128","options":{"section":null},"request_id_sha256":null,"results":["f-20261123-02"],"target":"f-20261123-02","v":1} -->
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### White glyphs on NAG-coloured fills miss contrast: active Annotate buttons and board annotation badges
+
+* **ID:** f-20261124-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 87b44464-0f90-42fc-bf1c-b8c73059c79f
+* **Impact class:** ux
+* **Spotted outside diff:** review-root-cause round 2 of f-20261122-06 (drain, 2026-11-24), which moved NAG *text* to `--cf-annotation-<hue>-text`. These two surfaces draw a white glyph on a NAG-coloured *fill* instead, so that rule does not cover them.
+* **Where:** `src/components/panels/annotation/AnnotationPanel.tsx` `SymbolButton` (`variant="filled"` with `color={ANNOTATION_INFO[annotation].color}` for the six basic marks when active; `IconAction` filled foreground); `src/components/boards/AnnotationHint.tsx` (`bg={color}`, Mantine shade 6, with every `glyphToSvg` path `fill="#fff"`).
+* **Defect:** white on Mantine shade 6 is 1.86:1 for yellow (`?!`), 2.03:1 lime (`!?`), 2.55:1 teal (`!`), 2.57:1 orange (`?`), 2.79:1 cyan (`!!`), 3.28:1 red (`??`), computed with the WCAG formula from Mantine's default palette (the palettes `theme.ts` leaves untouched). The Annotate button label is text (4.5:1 required); the board badge is a graphic, but 5 of 6 marks fall under even the 3:1 non-text minimum.
+* **Failure scenario:** annotate a move `?!` in the Annotate panel: the active `?!` button shows a white `?!` on yellow; the board badge on the destination square shows a white `?!` on yellow. Both are hard to read, most of all in light mode.
+* **Fix:** decide the foreground per fill, either a dark glyph on light hues (Mantine `autoContrast` or a per-hue foreground) or a darker fill shade that keeps the hue's board meaning (DESIGN.md: NAG colours retain board meaning). Prove it with a contrast assertion per hue, like `src/styles/theme.test.ts` → "annotation text colours".
+* **Open question:** dark glyph on the familiar hue, or darker fill with the white glyph? The board badge mirrors the common Lichess-style badge look, so the choice changes how marks read on the board.
+* **Proof:** computed ratios above; not yet measured in the container. Related: f-20261122-06 (text in NAG hues, handled).
+* **Found by:** Claude Code, drain session, 2026-11-24.
+
+### Analysis moves after the game end are dimmed to opacity 0.6, below 4.5:1 text contrast
+
+* **ID:** f-20261124-02 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 87b44464-0f90-42fc-bf1c-b8c73059c79f
+* **Impact class:** ux
+* **Spotted outside diff:** review-root-cause round 2 of f-20261122-06 (drain, 2026-11-24).
+* **Where:** `src/components/common/MoveCell.module.css` (`.cell[data-notation-analysis="true"]` sets `opacity: var(--notation-analysis-opacity)` = 0.6), set for every move after the effective game end (`buildNotationRows` → `analysisNodes` in `src/components/common/notationRows.ts`). Introduced deliberately by `46a257605` ("dim every analysis move, annotated ones included") so analysis reads apart from played moves.
+* **Defect:** 0.6 opacity composites the move text toward the background. Annotated analysis moves (`--cf-annotation-<hue>-text`, which f-20261122-06 brought to >= 4.65:1 at full opacity) drop to about 2.5–3.4:1 on the card and the inset blocks in light (computed, review lens), and unannotated ones drop with them.
+* **Failure scenario:** open a finished game, add engine analysis after the final move (or a game whose PGN continues after the result): the moves after the game-end row render at 60% opacity; axe `color-contrast` would fail on them.
+* **Fix:** keep the played/analysis distinction with a cue that does not cost contrast (italics, a muted-but-AA text colour, or the inset block treatment variations already use), or a smaller dimming that stays at 4.5:1 for every hue. Assert it with `contrastRatio` in `e2e/game-end.spec.ts`.
+* **Open question:** which cue sets analysis apart from the played game once opacity cannot carry it alone?
+* **Proof:** computed from the variable values and opacity; not yet measured in the container. Related: f-20261122-06.
+* **Found by:** Claude Code, drain session, 2026-11-24.
