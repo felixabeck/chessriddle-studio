@@ -305,7 +305,7 @@ function replacementWalks() {
   };
 }
 
-async function install() {
+async function install(now: () => number = () => performance.now()) {
   let finish!: (value: unknown) => void;
   mocks.read.mockReturnValueOnce(
     new Promise((resolve) => {
@@ -315,7 +315,7 @@ async function install() {
   await act(async () => setFileFreshness(tabId, "unverified"));
   let readFinishedAt = 0;
   await act(async () => {
-    readFinishedAt = performance.now();
+    readFinishedAt = now();
     finish({
       pgn: "replacement",
       present: true,
@@ -474,8 +474,14 @@ const { buildNotationRows: realBuildNotationRows } = await vi.importActual<
   typeof import("@/components/common/notationRows")
 >("@/components/common/notationRows");
 
-test("real install exceeds the main-thread budget with the synchronous wedge and passes after removal", async () => {
+// The wall-clock budget belongs to `pnpm verify:app`, which measures the real application. Here a
+// virtual clock that only the apply hook advances proves that apply-path work lands inside the
+// measured main-thread interval, independent of machine load in the instrumented coverage lane.
+test("real install counts apply-path work against the main-thread budget", async () => {
   const outcomes: boolean[] = [];
+  let virtualMs = 0;
+  const now = () => virtualMs;
+  let treeAppliedAtStall = false;
   for (const stalled of [true, false]) {
     let appliedAt = Number.NaN;
     let observedAt = Number.NaN;
@@ -487,7 +493,7 @@ test("real install exceeds the main-thread budget with the synchronous wedge and
           expected &&
         !Number.isFinite(observedAt)
       ) {
-        observedAt = performance.now();
+        observedAt = now();
       }
     });
     observer.observe(host, {
@@ -496,43 +502,39 @@ test("real install exceeds the main-thread budget with the synchronous wedge and
       attributeFilter: ["data-file-freshness"],
     });
     hooks.__verifyAppRecordTreeApplied = () => {
-      appliedAt = performance.now();
+      appliedAt = now();
     };
     if (stalled)
       hooks.__verifyAppStallFreshnessApply = () => {
-        const until = performance.now() + FILE_FRESHNESS_APPLY_BUDGET_MS + 100;
-        while (performance.now() < until) {
-          /* Test-only synchronous install wedge. */
-        }
+        // Test-only install wedge: the apply path costs more than the budget on the virtual clock.
+        // It must run after the tree is applied, so the measured interval covers that work.
+        treeAppliedAtStall = store.getState().root.comment === "wedged";
+        virtualMs += FILE_FRESHNESS_APPLY_BUDGET_MS + 100;
       };
     else delete hooks.__verifyAppStallFreshnessApply;
     // Each iteration installs a distinct revision and root through reconciliation.
     replacement = game(stalled ? ["d4", "d5"] : ["c4", "e5"], stalled ? "wedged" : "clean");
     try {
-      const readFinishedAt = await install();
+      const readFinishedAt = await install(now);
+      expect(Number.isFinite(observedAt)).toBe(true);
       const timing = fileFreshnessTiming(
         { readFinishedAt, appliedAt, observedAt, lexAwaitMs: 0, readTimeMs: 0 },
         FILE_FRESHNESS_POLL_INTERVAL_MS,
       );
-      const withinMainThreadBudget = fileFreshnessMainThreadWithinBudget(
-        timing,
-        FILE_FRESHNESS_APPLY_BUDGET_MS,
-      );
-      outcomes.push(withinMainThreadBudget);
+      outcomes.push(fileFreshnessMainThreadWithinBudget(timing, FILE_FRESHNESS_APPLY_BUDGET_MS));
       expect(fileFreshnessApplicationWithinBudget(timing, FILE_FRESHNESS_APPLY_BUDGET_MS)).toBe(
         true,
       );
+      expect(timing.mainThreadMs).toBe(stalled ? FILE_FRESHNESS_APPLY_BUDGET_MS + 100 : 0);
       expect(
         host.querySelector("[data-file-freshness]")!.getAttribute("data-file-freshness"),
       ).not.toBe(before);
-      console.info(
-        `freshness wedge=${stalled}: mainThreadMs=${timing.mainThreadMs.toFixed(1)}, withinBudget=${withinMainThreadBudget}`,
-      );
     } finally {
       observer.disconnect();
       delete hooks.__verifyAppStallFreshnessApply;
     }
   }
   expect(outcomes).toEqual([false, true]);
+  expect(treeAppliedAtStall).toBe(true);
   expect(hooks.__verifyAppStallFreshnessApply).toBeUndefined();
 });
