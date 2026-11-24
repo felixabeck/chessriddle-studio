@@ -29100,7 +29100,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### The backend mutation runner test reads the shim's fence-present-at-spawn marker before the shim writes it
 
-* **ID:** f-20261125-01 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-01 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 7d5901c2-a5aa-44ea-bbdf-5e629a484643
 * **Impact class:** tooling
 * **CI run:** 45504551677
@@ -29111,3 +29111,5 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Proof:** wait for the marker (`waitFor`) instead of reading it once, or have the shim write `started` last. Prove it by delaying the shim between `started` and the fence marker and seeing the old test go red and the fixed one go green.
 * **Related:** f-20261005-08 (handled; the same test raced the runner's fence write, fixed by waiting for the completed owner record).
 * **Found by:** Claude Code drain session 7d5901c2-a5aa-44ea-bbdf-5e629a484643, push of f-20261124-18, reading the job log of run 45504551677.
+* **Closed (2026-11-25, drain 02078d2a):** fixed by `2f3b77c09` (test(mutation): write the cargo shim's started marker last), made by the filing session before this pickup. The shim now writes `started` after `pid`, `cwd`, `target`, `arguments`, `core-suppression` and `fence-present-at-spawn`, so every marker a test reads after waiting on `started` is already on disk; this removes the race for all markers, not only the fence one. Rejected: a `waitFor` on the fence marker alone, which would leave the other post-`started` reads racy. Commit's proof: old ordering plus a one-second delay after `started` reproduced the CI ENOENT; the new ordering with the same delay passed. Re-checked at pickup: `node --test scripts/run-backend-mutation-tests.mjs` 59/59 pass, and CI Test run 45507833826 on `2f3b77c09` succeeded.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"16f9f7a73fcb1c9b29d209140eb1dfdba5bdf54c86caa934954544c00956f856","header_sha256":"dc0bcd40e6efcaacb14c4e07314596cd8e9ab9b5bff3965f4e9ce985a4f649fe","header_status":"handled","input_sha256":"49288940106ee8eceba520f42e2bba26cdec4998b8faf04430aa1a13238531bf","kind":"mutation-receipt","operation":"6db569f776f04e40ea9930bab62075465175501b4a0f93ed313422287de1d6b6","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-01"],"target":"f-20261125-01","v":1} -->
