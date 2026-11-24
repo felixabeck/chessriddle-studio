@@ -8,14 +8,17 @@ pub(crate) mod address;
 pub(crate) mod answer;
 pub(crate) mod attempts;
 pub(crate) mod backend;
+pub(crate) mod brackets;
 pub(crate) mod chat_completions;
 pub(crate) mod chatgpt;
 pub(crate) mod connections;
+pub(crate) mod driver;
 pub(crate) mod engine;
 pub(crate) mod error;
 pub(crate) mod grok;
 pub(crate) mod http;
 pub(crate) mod lines;
+pub(crate) mod model_loop;
 pub(crate) mod models;
 pub(crate) mod prompt;
 pub(crate) mod responses;
@@ -29,9 +32,10 @@ pub(crate) mod turn;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex, PoisonError},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_plugin_opener::OpenerExt;
@@ -41,7 +45,7 @@ use tokio_util::sync::CancellationToken;
 use self::{
     accounts::{Accounts, ConnectionBearer, HeldSignIn, SignInProvider},
     address::Address,
-    answer::Segment,
+    answer::{Answer, Segment},
     attempts::{SignInAttempts, SignInKind},
     backend::{Message, ModelBackend},
     chat_completions::ChatCompletions,
@@ -50,16 +54,18 @@ use self::{
         ApiConnectionInput, ConnectionRemoved, ConnectionSaved, ConnectionSummary, Connections,
         Secret,
     },
+    driver::{DrivenTurn, TurnOutcome, UpdateEmitter, TURN_DEADLINE},
     engine::{Analyst, EngineAnalyst},
     error::CoachError,
     grok::{Grok, GrokCode, PendingSignIn},
     http::HttpClients,
     lines::TurnPosition,
+    model_loop::ProgressSink,
     models::{ModelList, MAX_MODEL_LIST_BYTES},
     responses::{PlanProvider, Responses},
     stats::{DatabaseStatistics, Statistics},
     tools::{ToolActivity, ToolSource},
-    turn::{TurnEnd, TurnRequest, TurnSink},
+    turn::TurnRequest,
 };
 use crate::{
     credentials::{CoachConnectionHandle, CoachCredentials},
@@ -72,10 +78,6 @@ use crate::{
 
 /// Turns that may run at the same time, over all windows and tabs.
 const MAX_TURNS: usize = 4;
-/// The longest a turn may take from its first engine search to its last word.
-const TURN_DEADLINE: Duration = Duration::from_secs(300);
-/// Streamed text is passed on at most this often, so a fast stream does not flood the renderer.
-const TEXT_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 const MAX_QUESTION_CHARS: usize = 4000;
 const MAX_HISTORY_MESSAGES: usize = 40;
 const MAX_HISTORY_BYTES: usize = 96 * 1024;
@@ -322,17 +324,47 @@ pub(crate) struct CoachTurnEvent {
     pub update: TurnUpdate,
 }
 
-struct EventSink<'a, R: tauri::Runtime> {
+struct CoachUpdateEmitter<'a, R: tauri::Runtime> {
     app: &'a tauri::AppHandle<R>,
     tab: &'a str,
     turn: &'a str,
-    /// The text of the running round, for a turn that ends by its deadline.
-    text: String,
-    pending: String,
-    flushed_at: Instant,
 }
 
-impl<R: tauri::Runtime> EventSink<'_, R> {
+impl<R: tauri::Runtime> UpdateEmitter for CoachUpdateEmitter<'_, R> {
+    type Tool = ToolActivity;
+    type Answer = Answer;
+    type Update = TurnUpdate;
+
+    fn text(&self, delta: String) -> TurnUpdate {
+        TurnUpdate::Text { delta }
+    }
+
+    fn reset(&self) -> TurnUpdate {
+        TurnUpdate::Reset
+    }
+
+    fn tool(&self, activity: ToolActivity) -> TurnUpdate {
+        TurnUpdate::Tool {
+            source: activity.source,
+            line: activity.line,
+        }
+    }
+
+    fn completed(&self, answer: Answer) -> TurnUpdate {
+        TurnUpdate::Completed {
+            failed_lines: u32::try_from(answer.failed.len()).unwrap_or(u32::MAX),
+            segments: answer.segments,
+        }
+    }
+
+    fn cancelled(&self, text: String) -> TurnUpdate {
+        TurnUpdate::Cancelled { text }
+    }
+
+    fn failed(&self, error: CoachError, text: String) -> TurnUpdate {
+        TurnUpdate::Failed { error, text }
+    }
+
     fn emit(&self, update: TurnUpdate) {
         let event = CoachTurnEvent {
             tab: self.tab.to_owned(),
@@ -343,45 +375,37 @@ impl<R: tauri::Runtime> EventSink<'_, R> {
             log::warn!("coach: turn event was not delivered: {error}");
         }
     }
-
-    fn flush(&mut self) {
-        if !self.pending.is_empty() {
-            let delta = std::mem::take(&mut self.pending);
-            self.emit(TurnUpdate::Text { delta });
-        }
-        self.flushed_at = Instant::now();
-    }
 }
 
-impl<R: tauri::Runtime> TurnSink for EventSink<'_, R> {
-    fn text(&mut self, delta: &str) {
-        self.text.push_str(delta);
-        self.pending.push_str(delta);
-        if self.flushed_at.elapsed() >= TEXT_FLUSH_INTERVAL {
-            self.flush();
-        }
-    }
+struct CoachTurn<'a, 'b> {
+    backend: &'a dyn ModelBackend,
+    analyst: &'a mut dyn Analyst,
+    statistics: Option<&'a mut (dyn Statistics + 'b)>,
+    position: &'a TurnPosition,
+    request: &'a TurnRequest,
+    cancellation: &'a CancellationToken,
+}
 
-    fn reset(&mut self) {
-        self.text.clear();
-        self.pending.clear();
-        self.emit(TurnUpdate::Reset);
-    }
-
-    fn tool(&mut self, activity: &ToolActivity) {
-        self.flush();
-        self.emit(TurnUpdate::Tool {
-            source: activity.source,
-            line: activity.line.clone(),
-        });
+#[async_trait]
+impl DrivenTurn<ToolActivity, Answer> for CoachTurn<'_, '_> {
+    async fn run(self, sink: &mut dyn ProgressSink<ToolActivity>) -> TurnOutcome<Answer> {
+        turn::run_turn(
+            self.backend,
+            self.analyst,
+            self.statistics,
+            self.position,
+            self.request,
+            sink,
+            self.cancellation,
+        )
+        .await
     }
 }
 
 /// Runs an admitted turn to its end and reports it: progress while it runs, then exactly one
 /// terminal event. The terminal update is also returned, for the command's own reply.
-// One caller. The arguments are the turn's separately owned parts (where it reports, the model,
-// the engine, the database, the input, its lifetime); a struct for them would be built and taken
-// apart once.
+// Keeps `start_turn` and the turn tests free of driver wiring by packing the Coach's separately
+// owned pieces into `CoachUpdateEmitter` and `CoachTurn` and handing them to `driver::drive`.
 #[allow(clippy::too_many_arguments)]
 async fn drive_turn<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -395,49 +419,20 @@ async fn drive_turn<R: tauri::Runtime>(
     cancellation: &CancellationToken,
     deadline: Duration,
 ) -> TurnUpdate {
-    let mut sink = EventSink {
+    let emitter = CoachUpdateEmitter {
         app,
         tab,
         turn: turn_id,
-        text: String::new(),
-        pending: String::new(),
-        flushed_at: Instant::now(),
     };
-    let end = tokio::time::timeout(
-        deadline,
-        turn::run_turn(
-            backend,
-            analyst,
-            statistics,
-            position,
-            request,
-            &mut sink,
-            cancellation,
-        ),
-    )
-    .await;
-    sink.flush();
-    let update = match end {
-        Ok(TurnEnd::Completed(answer)) => TurnUpdate::Completed {
-            failed_lines: u32::try_from(answer.failed.len()).unwrap_or(u32::MAX),
-            segments: answer.segments,
-        },
-        Ok(TurnEnd::Failed {
-            error: CoachError::Cancelled,
-            text,
-        }) => TurnUpdate::Cancelled { text },
-        Ok(TurnEnd::Failed { error, text }) => TurnUpdate::Failed { error, text },
-        Err(_) => {
-            // Past the deadline the turn is over for everything that still listens to its token.
-            cancellation.cancel();
-            TurnUpdate::Failed {
-                error: CoachError::LimitExceeded,
-                text: std::mem::take(&mut sink.text),
-            }
-        }
+    let turn = CoachTurn {
+        backend,
+        analyst,
+        statistics,
+        position,
+        request,
+        cancellation,
     };
-    sink.emit(update.clone());
-    update
+    driver::drive(&emitter, turn, cancellation, deadline).await
 }
 
 impl Coach {

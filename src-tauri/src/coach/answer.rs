@@ -7,10 +7,11 @@
 use serde::Serialize;
 use specta::Type;
 
-use super::lines::{move_tokens, TurnPosition};
+use super::{
+    brackets,
+    lines::{move_tokens, TurnPosition},
+};
 
-const OPEN: &str = "[[";
-const CLOSE: &str = "]]";
 /// The most lines one answer may carry as lines; further brackets stay prose.
 pub(crate) const MAX_ANSWER_LINES: usize = 40;
 
@@ -45,54 +46,34 @@ impl Answer {
     /// Reads `text` against the turn position. A failed line stays in the answer as prose without
     /// its brackets, so nothing the model wrote is lost and nothing unchecked is offered as a move.
     pub(crate) fn parse(text: &str, turn: &TurnPosition) -> Self {
-        let mut segments = Vec::new();
         let mut failed = Vec::new();
-        let mut prose = String::new();
         let mut lines = 0;
-        let mut rest = text;
-        while let Some(open) = rest.find(OPEN) {
-            let after_open = &rest[open + OPEN.len()..];
-            let Some(close) = after_open.find(CLOSE) else {
-                break;
-            };
-            prose.push_str(&rest[..open]);
-            let written = &after_open[..close];
-            rest = &after_open[close + CLOSE.len()..];
-            let tokens = move_tokens(written);
-            if tokens.is_empty() {
-                prose.push_str(written);
-                continue;
-            }
-            if lines == MAX_ANSWER_LINES {
-                prose.push_str(written);
-                continue;
-            }
-            match turn.resolve(&tokens) {
-                Ok(line) => {
-                    lines += 1;
-                    if !prose.is_empty() {
-                        segments.push(Segment::Text {
-                            text: std::mem::take(&mut prose),
-                        });
+        let segments = brackets::split_segments(
+            text,
+            |text| Segment::Text { text },
+            |written| {
+                let tokens = move_tokens(written);
+                if tokens.is_empty() || lines == MAX_ANSWER_LINES {
+                    return None;
+                }
+                match turn.resolve(&tokens) {
+                    Ok(line) => {
+                        lines += 1;
+                        Some(Segment::Line {
+                            san: line.san,
+                            uci: line.uci,
+                        })
                     }
-                    segments.push(Segment::Line {
-                        san: line.san,
-                        uci: line.uci,
-                    });
+                    Err(error) => {
+                        failed.push(FailedLine {
+                            written: written.trim().to_owned(),
+                            reason: error.explain(),
+                        });
+                        None
+                    }
                 }
-                Err(error) => {
-                    prose.push_str(written);
-                    failed.push(FailedLine {
-                        written: written.trim().to_owned(),
-                        reason: error.explain(),
-                    });
-                }
-            }
-        }
-        prose.push_str(rest);
-        if !prose.is_empty() {
-            segments.push(Segment::Text { text: prose });
-        }
+            },
+        );
         Self { segments, failed }
     }
 }

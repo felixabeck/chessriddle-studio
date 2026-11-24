@@ -1,21 +1,27 @@
 //! One Coach turn: the engine's baseline and the database's statistics, the bounded model loop
 //! with its tools, and the checked answer.
 
+use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use super::{
     answer::Answer,
-    backend::{Message, ModelBackend, Round, RoundFailure, RoundRequest, ToolSpec},
+    backend::{Message, ModelBackend, ToolCall},
+    driver::TurnOutcome,
     engine::Analyst,
     error::CoachError,
     lines::{terminal, TurnPosition},
+    model_loop::{self, LoopOutcome, ModelRounds, ProgressSink, ToolExecutor},
     prompt::{self, Baseline, DatabaseEvidence, Evidence},
     stats::{Statistics, StatsError},
-    tools::{self, ToolActivity, ToolSource, MAX_TOOL_CALLS_PER_ROUND},
+    tools::{self, ToolActivity, ToolSource},
+};
+#[cfg(test)]
+use super::{
+    backend::{Round, RoundFailure, RoundRequest},
+    model_loop::{MAX_ROUNDS, MAX_TOOL_CALLS_PER_ROUND},
 };
 
-/// Model rounds per turn, not counting the one repair round.
-pub(crate) const MAX_ROUNDS: usize = 6;
 const BASELINE_LINES: u16 = 3;
 const BASELINE_SEARCH_MILLIS: u32 = 2000;
 
@@ -34,54 +40,31 @@ pub(crate) struct TurnRequest {
     pub repertoire_partial: bool,
 }
 
-/// What every model round of one turn is asked with.
-struct Rounds<'a> {
-    backend: &'a dyn ModelBackend,
-    request: &'a TurnRequest,
-    /// Declared in every round, because the history refers to them.
-    tools: &'a [ToolSpec],
-    cancellation: &'a CancellationToken,
+struct CoachTools<'a, 'b> {
+    turn: &'a TurnPosition,
+    analyst: &'a mut dyn Analyst,
+    statistics: Option<&'a mut (dyn Statistics + 'b)>,
 }
 
-impl Rounds<'_> {
-    async fn ask(
-        &self,
-        messages: &[Message],
-        sink: &mut dyn TurnSink,
-    ) -> Result<Round, RoundFailure> {
-        self.backend
-            .round(
-                RoundRequest {
-                    model: &self.request.model,
-                    effort: self.request.effort.as_deref(),
-                    system: prompt::SYSTEM_PROMPT,
-                    messages,
-                    tools: self.tools,
-                },
-                &mut |delta| sink.text(delta),
-                self.cancellation,
-            )
-            .await
+#[async_trait]
+impl ToolExecutor<ToolActivity> for CoachTools<'_, '_> {
+    async fn execute(
+        &mut self,
+        call: &ToolCall,
+        on_activity: &mut (dyn FnMut(ToolActivity) + Send),
+    ) -> Result<String, CoachError> {
+        tools::execute(
+            call,
+            self.turn,
+            self.analyst,
+            self.statistics.as_deref_mut(),
+            &mut |activity| on_activity(activity.clone()),
+        )
+        .await
     }
 }
 
-/// Where the progress of a turn goes while it runs.
-pub(crate) trait TurnSink: Send {
-    fn text(&mut self, delta: &str);
-    /// The text streamed so far is superseded by what follows.
-    fn reset(&mut self);
-    fn tool(&mut self, activity: &ToolActivity);
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) enum TurnEnd {
-    Completed(Answer),
-    /// Ended without a complete answer, with the text of the round that was running.
-    Failed {
-        error: CoachError,
-        text: String,
-    },
-}
+pub(crate) type TurnEnd = TurnOutcome<Answer>;
 
 fn failed(error: CoachError, text: String) -> TurnEnd {
     TurnEnd::Failed { error, text }
@@ -94,7 +77,7 @@ pub(crate) async fn run_turn(
     mut statistics: Option<&mut (dyn Statistics + '_)>,
     turn: &TurnPosition,
     request: &TurnRequest,
-    sink: &mut dyn TurnSink,
+    sink: &mut dyn ProgressSink<ToolActivity>,
     cancellation: &CancellationToken,
 ) -> TurnEnd {
     // The engine speaks first: no model round starts without evidence about the position.
@@ -118,7 +101,7 @@ pub(crate) async fn run_turn(
     }
     let mut database = None;
     if let Some(source) = statistics.as_deref_mut() {
-        sink.tool(&ToolActivity {
+        sink.tool(ToolActivity {
             source: ToolSource::Database,
             line: Vec::new(),
         });
@@ -137,65 +120,35 @@ pub(crate) async fn run_turn(
         turn, &evidence, request,
     )));
     let tools = tools::specs(statistics.is_some());
-    let rounds = Rounds {
+    let rounds = ModelRounds {
         backend,
-        request,
+        model: &request.model,
+        effort: request.effort.as_deref(),
+        system: prompt::SYSTEM_PROMPT,
         tools: &tools,
         cancellation,
     };
-    let mut last_text = String::new();
-    for round in 0..MAX_ROUNDS {
-        if cancellation.is_cancelled() {
-            return failed(CoachError::Cancelled, last_text);
+    let mut executor = CoachTools {
+        turn,
+        analyst,
+        statistics,
+    };
+    match model_loop::run(&rounds, messages, &mut executor, sink).await {
+        LoopOutcome::Answered { text, messages } => {
+            finish(&rounds, turn, messages, text, sink).await
         }
-        if round > 0 {
-            sink.reset();
-        }
-        let answered = match rounds.ask(&messages, sink).await {
-            Ok(round) => round,
-            Err(failure) => return failed(failure.error, failure.text),
-        };
-        if answered.tool_calls.is_empty() {
-            return finish(&rounds, turn, messages, answered.text, sink).await;
-        }
-        last_text.clone_from(&answered.text);
-        let calls = answered.tool_calls.clone();
-        messages.push(answered.into_message());
-        for (index, call) in calls.iter().enumerate() {
-            let content = if index < MAX_TOOL_CALLS_PER_ROUND {
-                let outcome = tools::execute(
-                    call,
-                    turn,
-                    analyst,
-                    statistics.as_deref_mut(),
-                    &mut |activity| sink.tool(activity),
-                )
-                .await;
-                match outcome {
-                    Ok(content) => content,
-                    Err(error) => return failed(error, last_text),
-                }
-            } else {
-                // Every call needs a result, so the surplus is answered instead of dropped.
-                tools::over_the_round_bound()
-            };
-            messages.push(Message::ToolResult {
-                call_id: call.id.clone(),
-                content,
-            });
-        }
+        LoopOutcome::Failed { error, text } => failed(error, text),
     }
-    failed(CoachError::LimitExceeded, last_text)
 }
 
 /// Checks the final text. Lines that are not legal get one repair round; whatever is still not
 /// legal afterwards stays in the answer as plain text.
 async fn finish(
-    rounds: &Rounds<'_>,
+    rounds: &ModelRounds<'_>,
     turn: &TurnPosition,
     mut messages: Vec<Message>,
     text: String,
-    sink: &mut dyn TurnSink,
+    sink: &mut dyn ProgressSink<ToolActivity>,
 ) -> TurnEnd {
     let answer = Answer::parse(&text, turn);
     if answer.failed.is_empty() {
@@ -209,7 +162,7 @@ async fn finish(
     messages.push(Message::User(prompt::repair_request(&answer.failed)));
     sink.reset();
     // A repair that asks for a tool instead of answering has failed.
-    match rounds.ask(&messages, sink).await {
+    match rounds.ask(&messages, &mut |delta| sink.text(delta)).await {
         Ok(round) if round.tool_calls.is_empty() => {
             let repaired = Answer::parse(&round.text, turn);
             if repaired.failed.len() <= answer.failed.len() {
@@ -240,10 +193,13 @@ pub(crate) mod tests {
 
     pub(crate) type Script = Result<Round, RoundFailure>;
 
-    struct SeenRound {
-        messages: Vec<Message>,
-        effort: Option<String>,
-        tools: Vec<&'static str>,
+    #[derive(Clone)]
+    pub(crate) struct SeenRound {
+        pub(crate) model: String,
+        pub(crate) system: String,
+        pub(crate) messages: Vec<Message>,
+        pub(crate) effort: Option<String>,
+        pub(crate) tools: Vec<&'static str>,
     }
 
     /// A model double: answers each round from a script and records what it was sent.
@@ -269,6 +225,10 @@ pub(crate) mod tests {
         fn messages(&self, round: usize) -> Vec<Message> {
             self.seen.lock().unwrap()[round].messages.clone()
         }
+
+        pub(crate) fn seen_round(&self, round: usize) -> SeenRound {
+            self.seen.lock().unwrap()[round].clone()
+        }
     }
 
     #[async_trait]
@@ -282,6 +242,8 @@ pub(crate) mod tests {
             let round = {
                 let mut seen = self.seen.lock().unwrap();
                 seen.push(SeenRound {
+                    model: request.model.to_owned(),
+                    system: request.system.to_owned(),
                     messages: request.messages.to_vec(),
                     effort: request.effort.map(str::to_owned),
                     tools: request.tools.iter().map(|tool| tool.name).collect(),
@@ -313,14 +275,14 @@ pub(crate) mod tests {
         events: Vec<String>,
     }
 
-    impl TurnSink for Recorded {
+    impl ProgressSink<ToolActivity> for Recorded {
         fn text(&mut self, delta: &str) {
             self.events.push(format!("text:{delta}"));
         }
         fn reset(&mut self) {
             self.events.push("reset".into());
         }
-        fn tool(&mut self, activity: &ToolActivity) {
+        fn tool(&mut self, activity: ToolActivity) {
             let source = match activity.source {
                 ToolSource::Engine => "tool",
                 ToolSource::Database => "database",
@@ -800,5 +762,15 @@ pub(crate) mod tests {
         ]);
         let (end, _) = play(&backend, &mut analyst, &turn()).await;
         assert_eq!(end, failed(CoachError::Cancelled, "Play [[Ke3]].".into()));
+    }
+
+    #[tokio::test]
+    async fn run_turn_forwards_the_requested_model_and_system_prompt() {
+        let backend = ScriptedBackend::new(vec![text("Fine.")]);
+        let (end, _) = play(&backend, &mut ScriptedAnalyst::default(), &turn()).await;
+        assert!(matches!(end, TurnEnd::Completed(_)));
+        let seen = backend.seen_round(0);
+        assert_eq!(seen.model, "test-model");
+        assert_eq!(seen.system, prompt::SYSTEM_PROMPT);
     }
 }

@@ -20,8 +20,6 @@ use super::{
 
 pub(crate) const ANALYSE: &str = "analyse";
 pub(crate) const OPENING_STATS: &str = "opening_stats";
-/// Tool calls executed per round; further calls of the round are answered with an error.
-pub(crate) const MAX_TOOL_CALLS_PER_ROUND: usize = 4;
 const MAX_ANALYSIS_LINES: u16 = 5;
 const TOOL_SEARCH_MILLIS: u32 = 1500;
 /// Plies of a principal variation that are passed on.
@@ -126,17 +124,6 @@ const STATISTICS_UNAVAILABLE: &str = "The reference database could not be read, 
 
 fn tool_error(message: impl Into<String>) -> String {
     json!({ "error": message.into() }).to_string()
-}
-
-/// The result for a call that is not executed because the round already used its calls.
-pub(crate) fn over_the_round_bound() -> String {
-    json!({
-        "error": format!(
-            "Not run: at most {MAX_TOOL_CALLS_PER_ROUND} tool calls are executed per step. \
-             Ask again in the next step if you still need it."
-        )
-    })
-    .to_string()
 }
 
 pub(crate) fn engine_lines(lines: &[EngineLine]) -> Value {
