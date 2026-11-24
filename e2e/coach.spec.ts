@@ -71,16 +71,28 @@ test("ask the Coach, read the streamed answer, preview a line and insert it", as
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
     await page.getByRole("tab", { name: "Coach", exact: true }).click();
 
-    // The only connection is chosen without a click; the hint names the missing model.
-    await expect(page.getByRole("textbox", { name: "Connection" })).toHaveValue("Local model");
+    // The only connection is chosen without a click; the hint names the missing model. The
+    // selectors sit behind the model button beside Send.
+    const modelButton = page.getByRole("button", { name: /^AI model: / });
+    await expect(modelButton).toHaveText("Choose a model");
+    await expect(modelButton).toHaveAccessibleName("AI model: Local model · Choose a model");
     const hint = page.getByText("Choose a model to ask a question.");
     await expect(hint).toBeVisible();
+    await modelButton.click();
+    await expect(page.getByRole("textbox", { name: "Connection" })).toHaveValue("Local model");
     await page.getByRole("textbox", { name: "Model" }).click();
     await page.getByRole("option", { name: "Coach model" }).click();
     await expect(page.getByRole("textbox", { name: "Effort" })).toHaveValue("Provider default");
     await expect(hint).toHaveCount(0);
+    await expect(modelButton).toHaveText("Coach model");
+    await expect(modelButton).toHaveAccessibleName("AI model: Local model · Coach model");
+    await waitForTransitionsSettled(page);
+    await expect(page.getByRole("dialog")).toHaveScreenshot("coach-model-popover.png");
 
     const composer = page.getByRole("textbox", { name: "Ask the Coach" });
+    // A click outside closes the popover.
+    await composer.click();
+    await expect(page.getByRole("textbox", { name: "Effort" })).toHaveCount(0);
     await composer.fill("What should Black play here?");
     await composer.press("Enter");
 
@@ -157,4 +169,38 @@ test("ask the Coach, read the streamed answer, preview a line and insert it", as
     await expect(notation).toContainText("e5");
     await expect(notation).toContainText("f3");
     await expect(notation).toContainText("c6");
+});
+
+test("Settings → AI holds the model the Coach and the Assistant answer with", async ({
+    page,
+    mockScenario,
+    assertAccessible,
+}) => {
+    await mockScenario({ commands });
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "AI", exact: true }).click();
+
+    const row = page.locator('[data-setting-id="coach-model"]');
+    await expect(row).toContainText("The Coach and the Assistant answer with this model");
+    await expect(row.getByRole("textbox", { name: "Connection" })).toHaveValue("Local model");
+    await row.getByRole("textbox", { name: "Model" }).click();
+    await page.getByRole("option", { name: "Coach model" }).click();
+    await expect(row.getByRole("textbox", { name: "Effort" })).toHaveValue("Provider default");
+
+    // The choice is the one the Coach's model button shows.
+    expect(
+        await page.evaluate(() => JSON.parse(localStorage.getItem("coach-selection") ?? "null")),
+    ).toEqual({ connection: "coach-connection", model: "coach-model", effort: null });
+
+    await waitForTransitionsSettled(page);
+    await assertAccessible();
+    await expect(row).toHaveScreenshot("settings-ai-model.png");
+
+    // An effort picked from the list is stored with the same choice.
+    await row.getByRole("textbox", { name: "Effort" }).click();
+    await page.getByRole("option", { name: "High" }).click();
+    await expect(row.getByRole("textbox", { name: "Effort" })).toHaveValue("High");
+    expect(
+        await page.evaluate(() => JSON.parse(localStorage.getItem("coach-selection") ?? "null")),
+    ).toEqual({ connection: "coach-connection", model: "coach-model", effort: "high" });
 });

@@ -77,12 +77,17 @@ test("ask the Assistant, follow a setting link, and open prefilled feedback", as
         await expect(panel).not.toHaveAttribute("data-overlay", "true");
     }
 
-    // The only connection is selected automatically; choose the model.
-    await expect(panel.getByRole("textbox", { name: "Connection" })).toHaveValue("Local model");
-    await panel.getByRole("textbox", { name: "Model" }).click();
+    // The only connection is selected automatically; choose the model behind the model button.
+    const modelButton = panel.getByRole("button", { name: /^AI model: / });
+    await modelButton.click();
+    await expect(page.getByRole("textbox", { name: "Connection" })).toHaveValue("Local model");
+    await page.getByRole("textbox", { name: "Model" }).click();
     await page.getByRole("option", { name: "Assistant model" }).click();
+    await expect(modelButton).toHaveText("Assistant model");
 
     const composer = panel.getByRole("textbox", { name: "Ask the Assistant" });
+    await composer.click();
+    await expect(page.getByRole("textbox", { name: "Effort" })).toHaveCount(0);
     await composer.fill("Where can I change the font size?");
     await composer.press("Enter");
 

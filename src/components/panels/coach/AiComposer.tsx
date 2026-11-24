@@ -1,4 +1,5 @@
 import { Button, Group, Text, Textarea } from "@mantine/core";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import classes from "./CoachPanel.module.css";
 
@@ -6,7 +7,8 @@ const MAX_QUESTION_CHARS = 4000;
 
 /**
  * Shared question composer for the Coach and the Assistant: auto-sizing text input,
- * Enter-to-send, Send/Stop action and missing-selection hint.
+ * Enter-to-send, the panel's own controls (model button, new conversation), Send/Stop action and
+ * missing-selection hint.
  */
 export function AiComposer({
   draft,
@@ -19,6 +21,7 @@ export function AiComposer({
   placeholder,
   ariaLabel,
   missingChoice,
+  controls,
 }: {
   draft: string;
   onDraftChange: (value: string) => void;
@@ -30,6 +33,7 @@ export function AiComposer({
   placeholder: string;
   ariaLabel: string;
   missingChoice: string | null;
+  controls: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -40,9 +44,9 @@ export function AiComposer({
         onSubmit();
       }}
     >
-      <Group gap="xs" align="flex-end" wrap="nowrap">
+      <Group gap="xs" align="flex-end" wrap="wrap">
         <Textarea
-          style={{ flex: 1 }}
+          className={classes.input}
           autosize
           minRows={1}
           maxRows={6}
@@ -58,12 +62,13 @@ export function AiComposer({
             }
           }}
         />
+        {controls}
         {running ? (
-          <Button variant="default" disabled={stopping} onClick={onStop}>
+          <Button className={classes.send} variant="default" disabled={stopping} onClick={onStop}>
             {t("Coach.Stop")}
           </Button>
         ) : (
-          <Button type="submit" disabled={!canSend}>
+          <Button className={classes.send} type="submit" disabled={!canSend}>
             {t("Coach.Send")}
           </Button>
         )}

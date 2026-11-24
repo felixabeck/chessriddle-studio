@@ -89,6 +89,7 @@ import { clearSavedData, openAppLogs, reloadApp } from "./advancedActions";
 import BoardSelect from "./BoardSelect";
 import { CoachConnections } from "./coach/CoachConnections";
 import { CoachEngineSelect } from "./coach/CoachEngineSelect";
+import { CoachModelSetting } from "./coach/CoachModelSetting";
 import KeybindInput from "./KeybindInput";
 import LastMoveHighlightColorInput from "./LastMoveHighlightColorInput";
 import { DrawingKeybinds } from "./DrawingKeybinds";
@@ -442,6 +443,7 @@ export default function Page() {
           onError={showDirectoryError}
         />
       ),
+      "coach-model": () => <CoachModelSetting />,
       "coach-engine": () => <CoachEngineSelect />,
       reload: () => <AdvancedActionButton label={t("Menu.View.Reload")} action={reloadApp} />,
       "clear-saved-data": () => (

@@ -427,6 +427,14 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
         },
         // Coach settings
         {
+            id: "coach-model",
+            category: "coach",
+            title: t("Settings.Coach.Model"),
+            description: t("Settings.Coach.Model.Desc"),
+            keywords: ["coach", "assistant", "ai", "model", "provider", "connection", "effort"],
+            shown: facts.coachEnabled,
+        },
+        {
             id: "coach-engine",
             category: "coach",
             title: t("Settings.Coach.Engine"),

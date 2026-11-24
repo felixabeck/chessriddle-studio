@@ -32,12 +32,14 @@ test("title-bar is shown only on Windows and Linux", () => {
     expect(shownFor(undefined)).toBe(false);
 });
 
-test("coach-engine and the coach category follow coachEnabled", () => {
+test("the coach settings and the coach category follow coachEnabled", () => {
     const withoutCoach = describeSettings(identity, { platform: "linux", coachEnabled: false });
     const withCoach = describeSettings(identity, { platform: "linux", coachEnabled: true });
 
-    expect(withoutCoach.find((setting) => setting.id === "coach-engine")?.shown).toBe(false);
-    expect(withCoach.find((setting) => setting.id === "coach-engine")?.shown).toBe(true);
+    for (const id of ["coach-model", "coach-engine"]) {
+        expect(withoutCoach.find((setting) => setting.id === id)?.shown).toBe(false);
+        expect(withCoach.find((setting) => setting.id === id)?.shown).toBe(true);
+    }
 
     expect(visibleSettingCategories({ coachEnabled: false })).not.toContain("coach");
     expect(visibleSettingCategories({ coachEnabled: true })).toContain("coach");

@@ -167,6 +167,16 @@ function button(name: string, scope: ParentNode = document) {
   )!;
 }
 
+/** Opens the model button's popover; its selectors are labelled fields. */
+async function openModelMenu() {
+  await act(async () => button("Coach.ModelSettings", host).click());
+}
+
+function field(label: string) {
+  const node = [...document.querySelectorAll("label")].find((item) => item.textContent === label)!;
+  return document.getElementById(node.htmlFor) as HTMLInputElement;
+}
+
 async function ask(text: string) {
   const field = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')!;
   await act(async () => {
@@ -239,21 +249,53 @@ test("a question needs a chosen model, and a model without reported levels sends
   await act(async () =>
     atoms.set(coachSelectionAtom, { connection: "conn-1", model: "plain", effort: null }),
   );
-  const effort = host.querySelector<HTMLInputElement>('input[aria-label="Coach.Effort"]')!;
-  expect(effort.value).toBe("Coach.Effort.Default");
+  // The model button names the model; its popover holds the effort.
+  expect(button("Coach.ModelSettings", host).textContent).toBe("Plain");
+  await openModelMenu();
+  expect(field("Coach.Effort").value).toBe("Coach.Effort.Default");
   mocks.coachTurn.mockResolvedValue(answer);
   await act(async () => button("Coach.Send").click());
   await act(async () => {});
   expect(mocks.coachTurn.mock.calls[0][2].effort).toBeUndefined();
 });
 
+test("the model button names a reported effort, and the effort chosen in its popover is sent", async () => {
+  mocks.coachModels.mockResolvedValue({
+    models: [
+      {
+        id: "deep",
+        name: "Deep",
+        effortLevels: ["low", "medium", "high"],
+        defaultEffort: null,
+        supportsTools: null,
+      },
+    ],
+    truncated: false,
+  });
+  atoms.set(coachSelectionAtom, { connection: "conn-1", model: "deep", effort: null });
+  await render({ selected: false });
+  // No stored effort: the model's default level applies and is named on the button.
+  expect(button("Coach.ModelSettings", host).textContent).toBe("Deep · Coach.Effort.Medium");
+  await openModelMenu();
+  expect(field("Coach.Effort").value).toBe("Coach.Effort.Medium");
+
+  await act(async () =>
+    atoms.set(coachSelectionAtom, { connection: "conn-1", model: "deep", effort: "high" }),
+  );
+  expect(button("Coach.ModelSettings", host).textContent).toBe("Deep · Coach.Effort.High");
+  mocks.coachTurn.mockResolvedValue(answer);
+  await ask("Plan?");
+  await act(async () => {});
+  expect(mocks.coachTurn.mock.calls[0][2].effort).toBe("high");
+});
+
 test("a sole connection is chosen without a click, and the hint names what is still missing", async () => {
   await render({ selected: false });
   // Nothing stored: the only connection is used and its models are read.
   expect(mocks.coachModels).toHaveBeenLastCalledWith("conn-1");
-  expect(host.querySelector<HTMLInputElement>('input[aria-label="Coach.Connection"]')!.value).toBe(
-    "Ollama",
-  );
+  expect(button("Coach.ModelSettings", host).textContent).toBe("Coach.ChooseModel");
+  await openModelMenu();
+  expect(field("Coach.Connection").value).toBe("Ollama");
   expect(host.textContent).toContain("Coach.Hint.ChooseModel");
   expect(host.textContent).not.toContain("Coach.Hint.ChooseConnection");
 
@@ -322,7 +364,8 @@ test("the panel keeps the repertoire index current and asks with the reference d
 test("a ChatGPT connection says whose plan is used and where its usage is managed", async () => {
   await render();
   // An address connection uses no plan and shows no such line.
-  expect(host.textContent).not.toContain("Coach.Plan.Using");
+  await openModelMenu();
+  expect(document.querySelector('[role="dialog"]')!.textContent).not.toContain("Coach.Plan.Using");
   await act(async () => root.unmount());
   root = createRoot(host);
 
@@ -331,8 +374,12 @@ test("a ChatGPT connection says whose plan is used and where its usage is manage
   ]);
   atoms = createStore();
   await render();
-  expect(host.textContent).toContain("Coach.Plan.Using");
-  await act(async () => button("Coach.Plan.ManageUsage", host).click());
+  // The plan line is part of the model popover, not of the panel.
+  expect(host.textContent).not.toContain("Coach.Plan.Using");
+  await openModelMenu();
+  const popover = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(popover.textContent).toContain("Coach.Plan.Using");
+  await act(async () => button("Coach.Plan.ManageUsage", popover).click());
   expect(mocks.coachOpenUsage).toHaveBeenCalledOnce();
 });
 
@@ -358,14 +405,19 @@ test("at the plan's limit the answer leads to the usage page, and an ended sign-
   expect(mocks.coachConnections.mock.calls.length).toBe(reads + 1);
 });
 
-test("a failed model list shows its error at the model selector", async () => {
+test("a failed model list is named under the composer and at the model selector", async () => {
   const { CoachCommandError } = await import("@/platform/coach");
   mocks.coachModels.mockRejectedValue(new CoachCommandError("keyRejected"));
   await render();
-  expect(host.textContent).toContain("Coach.Error.KeyRejected");
-  expect(button("Coach.Send").disabled).toBe(true);
-  // The selector shows the failure; the hint adds nothing.
+  // The selectors are behind the model button, so the composer's hint names the failure.
+  const hint = host.querySelector<HTMLElement>("form")!;
+  expect(hint.textContent).toContain("Coach.Error.KeyRejected");
   expect(host.textContent).not.toContain("Coach.Hint.");
+  expect(button("Coach.Send").disabled).toBe(true);
+  await openModelMenu();
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Coach.Error.KeyRejected");
+  expect(field("Coach.Model").disabled).toBe(true);
 });
 
 test("while the model list loads, no hint asks for a model yet", async () => {

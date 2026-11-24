@@ -14,5 +14,5 @@ Settings are organized into nine categories:
 - [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): customize keyboard shortcuts, reset them with {{label:Common.Reset}}, and view the {{label:Settings.Drawing}} mouse modifiers.
 - [[settings-category:directories]] ({{label:Settings.Directories}}): configure storage folders via [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]], and [[setting:puzzles-directory]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): repertoire coverage threshold and practice scheduling via [[setting:repertoire-depth]], [[setting:practice-grading]], and [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): manage AI connections for the Coach and Assistant, and choose the Coach's local engine in [[setting:coach-engine]].
+- [[settings-category:coach]] ({{label:Settings.AI}}): manage AI connections for the Coach and Assistant, choose the model they answer with in [[setting:coach-model]], and choose the Coach's local engine in [[setting:coach-engine]].
 - [[settings-category:advanced]] ({{label:Settings.Advanced}}): maintenance tools including [[setting:reload]], [[setting:clear-saved-data]], and [[setting:open-logs]].

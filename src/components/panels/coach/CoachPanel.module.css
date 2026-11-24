@@ -5,25 +5,41 @@
   min-height: 0;
 }
 
-.header {
-  flex: 0 0 auto;
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  border-bottom: 1px solid var(--cf-border);
-}
-
-.selector {
-  flex: 1 1 8rem;
+/* The question field keeps a usable width: where the row is too narrow for it and the controls,
+   the controls and Send wrap onto a line of their own under it. */
+.input {
+  flex: 1 1 14rem;
   min-width: 0;
 }
 
-.effort {
-  flex: 0 1 11rem;
-  min-width: 6rem;
+.send {
+  margin-left: auto;
 }
 
-/* Whose plan pays for the answers: a line of its own under the selectors. */
-.plan {
-  flex: 1 0 100%;
+/* Shortened only when even a line of its own, beside "New conversation" and Send, is too narrow. */
+.modelButton {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100cqi - 9rem);
+  font-weight: 400;
+}
+
+.modelLabel {
+  min-width: 0;
+}
+
+.modelName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelPopover {
+  width: 18rem;
+}
+
+.fields {
+  min-width: 14rem;
 }
 
 .transcript {
@@ -71,7 +87,9 @@
   padding-inline: var(--mantine-spacing-sm);
 }
 
+/* Measured, so the model button is shortened against the composer's own width. */
 .composer {
+  container-type: inline-size;
   flex: 0 0 auto;
   padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm) var(--mantine-spacing-sm);
   border-top: 1px solid var(--cf-border);

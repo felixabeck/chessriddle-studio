@@ -1,9 +1,10 @@
 import { Anchor, Button, Group, Select, Stack, Text } from "@mantine/core";
 import { useAtom } from "jotai";
-import { MessageSquarePlus } from "lucide-react";
+import { ChevronDown, MessageSquarePlus } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { CoachError, ConnectionSummary, ModelInfo } from "@/bindings";
+import AppPopover from "@/components/common/AppPopover";
 import { IconAction } from "@/components/common/IconAction";
 import {
   COACH_EFFORT_LEVELS,
@@ -138,24 +139,24 @@ export function AiConnectionGate({
 }
 
 /**
- * Connection, model and effort selectors with "New conversation" and the ChatGPT plan notice.
+ * The hint under the composer while Send cannot be used: what is still to be chosen, or why the
+ * model list is missing. The selectors live in a popover and in Settings, so the composer says it.
  */
-export function AiModelHeader({
-  state,
-  errors,
-  newConversationDisabled,
-  onNewConversation,
-}: {
-  state: AiModelSelectionState;
-  errors: Record<CoachError, string>;
-  newConversationDisabled: boolean;
-  onNewConversation: () => void;
-}) {
-  const { t } = useTranslation();
-  const { connections, connection, modelsState, models, chosen, selection, setSelection } = state;
+export function aiSelectionHint(
+  state: AiModelSelectionState,
+  errors: Record<CoachError, string>,
+  t: (key: string) => string,
+): string | null {
+  const { chosen, models, modelsState, connection } = state;
+  if (!chosen.connection) return t("Coach.Hint.ChooseConnection");
+  if (modelsState.status === "failed" && modelsState.connection === connection)
+    return errors[modelsState.error];
+  return models && !chosen.model ? t("Coach.Hint.ChooseModel") : null;
+}
 
-  const reportsEffort = (chosen.model?.effortLevels.length ?? 0) > 0;
-  const effortLabel = (level: string) =>
+function useEffortLabel() {
+  const { t } = useTranslation();
+  return (level: string) =>
     level === "low"
       ? t("Coach.Effort.Low")
       : level === "medium"
@@ -163,6 +164,29 @@ export function AiModelHeader({
         : level === "high"
           ? t("Coach.Effort.High")
           : level;
+}
+
+/**
+ * Connection, model and effort selectors. Settings → AI shows them as the place where the choice
+ * is made; the Coach and the Assistant show them in the popover of their model button. Both write
+ * the one persisted `coachSelectionAtom`.
+ */
+export function AiModelFields({
+  state,
+  errors,
+  inPopover = false,
+}: {
+  state: AiModelSelectionState;
+  errors: Record<CoachError, string>;
+  /** Keeps the option lists inside the popover, so choosing an option does not close it. */
+  inPopover?: boolean;
+}) {
+  const { t } = useTranslation();
+  const effortLabel = useEffortLabel();
+  const { connections, connection, modelsState, models, chosen, selection, setSelection } = state;
+  const comboboxProps = inPopover ? { withinPortal: false } : undefined;
+
+  const reportsEffort = (chosen.model?.effortLevels.length ?? 0) > 0;
   const effortOptions = [
     ...(reportsEffort ? [] : [{ value: PROVIDER_DEFAULT, label: t("Coach.Effort.Default") }]),
     ...(chosen.model ? coachEffortLevels(chosen.model) : COACH_EFFORT_LEVELS).map((level) => ({
@@ -172,22 +196,23 @@ export function AiModelHeader({
   ];
 
   return (
-    <Group className={classes.header} gap="xs" wrap="wrap">
+    <Stack className={classes.fields} gap="xs">
       <Select
-        className={classes.selector}
         size="xs"
-        aria-label={t("Coach.Connection")}
+        label={t("Coach.Connection")}
         placeholder={t("Coach.Connection")}
+        comboboxProps={comboboxProps}
         data={connections.map((item) => ({ value: item.handle, label: item.label }))}
         value={connection}
         allowDeselect={false}
+        disabled={connections.length === 0}
         onChange={(handle) => setSelection({ connection: handle, model: null, effort: null })}
       />
       <Select
-        className={classes.selector}
         size="xs"
         searchable
-        aria-label={t("Coach.Model")}
+        label={t("Coach.Model")}
+        comboboxProps={comboboxProps}
         placeholder={
           modelsState.status === "loading" ? t("Coach.ModelsLoading") : t("Coach.ChooseModel")
         }
@@ -203,9 +228,9 @@ export function AiModelHeader({
         onChange={(model) => setSelection({ connection, model, effort: null })}
       />
       <Select
-        className={classes.effort}
         size="xs"
-        aria-label={t("Coach.Effort")}
+        label={t("Coach.Effort")}
+        comboboxProps={comboboxProps}
         data={effortOptions}
         value={chosen.effort ?? (reportsEffort ? null : PROVIDER_DEFAULT)}
         allowDeselect={false}
@@ -214,24 +239,73 @@ export function AiModelHeader({
           setSelection({ ...selection, effort: level === PROVIDER_DEFAULT ? null : level })
         }
       />
+    </Stack>
+  );
+}
+
+/**
+ * The composer's model button and "New conversation". The button names the model that answers
+ * (its accessible name adds the connection); it opens the selectors, with the ChatGPT plan notice
+ * when that connection is used.
+ */
+export function AiModelControls({
+  state,
+  errors,
+  newConversationDisabled,
+  onNewConversation,
+}: {
+  state: AiModelSelectionState;
+  errors: Record<CoachError, string>;
+  newConversationDisabled: boolean;
+  onNewConversation: () => void;
+}) {
+  const { t } = useTranslation();
+  const effortLabel = useEffortLabel();
+  const { chosen } = state;
+  const shown = chosen.model
+    ? [chosen.model.name, ...(chosen.effort ? [effortLabel(chosen.effort)] : [])].join(" · ")
+    : t("Coach.ChooseModel");
+  const full = [chosen.connection?.label, shown].filter(Boolean).join(" · ");
+
+  return (
+    <>
+      <AppPopover position="top-end" shadow="md" withinPortal>
+        <AppPopover.Target>
+          <Button
+            className={classes.modelButton}
+            classNames={{ label: classes.modelLabel }}
+            variant="subtle"
+            color="gray"
+            size="compact-sm"
+            aria-label={t("Coach.ModelSettings", { model: full })}
+            rightSection={<ChevronDown size="0.875rem" aria-hidden />}
+          >
+            <span className={classes.modelName}>{shown}</span>
+          </Button>
+        </AppPopover.Target>
+        <AppPopover.Dropdown className={classes.modelPopover}>
+          <AiModelFields state={state} errors={errors} inPopover />
+          {chosen.connection?.kind === "chatGpt" && (
+            <Group gap="xs" mt="xs">
+              <Text size="xs" c="dimmed">
+                {t("Coach.Plan.Using")}
+              </Text>
+              <Anchor component="button" type="button" size="xs" onClick={openCoachUsage}>
+                {t("Coach.Plan.ManageUsage")}
+              </Anchor>
+            </Group>
+          )}
+        </AppPopover.Dropdown>
+      </AppPopover>
       <IconAction
         label={t("Coach.NewConversation")}
-        variant="default"
+        variant="subtle"
+        color="gray"
         disabled={newConversationDisabled}
         onClick={onNewConversation}
       >
         <MessageSquarePlus size="1rem" />
       </IconAction>
-      {chosen.connection?.kind === "chatGpt" && (
-        <Group className={classes.plan} gap="xs">
-          <Text size="xs" c="dimmed">
-            {t("Coach.Plan.Using")}
-          </Text>
-          <Anchor component="button" type="button" size="xs" onClick={openCoachUsage}>
-            {t("Coach.Plan.ManageUsage")}
-          </Anchor>
-        </Group>
-      )}
-    </Group>
+    </>
   );
 }

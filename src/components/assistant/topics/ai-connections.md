@@ -13,7 +13,9 @@ To add a connection, choose one of these options in [[settings-category:coach]]:
 
 Keys and sign-in credentials are stored in your computer's system keyring. Once at least one connection is saved, the Assistant appears in the {{label:Menu.Help}} menu ({{label:Menu.Help.Assistant}}) and in the navigation row ({{label:Navigation.Assistant}}).
 
-Both the Coach and the Assistant share the same selected connection, model, and reasoning effort. Use {{label:Settings.Coach.Connection.Check}} on a connection to verify it and list its available models, or {{label:Settings.Coach.Connection.Remove}} to remove it.
+Choose the connection, model, and reasoning effort in [[setting:coach-model]] ({{label:Settings.Coach.Model}}). The Coach and the Assistant both answer with that one choice. The model button beside {{label:Coach.Send}} in either panel shows which model answers and changes the same choice; {{label:Coach.NewConversation}} sits beside it.
+
+Use {{label:Settings.Coach.Connection.Check}} on a connection to verify it and list its available models, or {{label:Settings.Coach.Connection.Remove}} to remove it.
 
 To use the Coach on the analysis board:
 - Open the {{label:Board.Tabs.Coach}} tab (or press the {{label:Settings.Keybinds.Actions.COACH_TAB}} shortcut).

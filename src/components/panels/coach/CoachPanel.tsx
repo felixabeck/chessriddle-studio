@@ -18,7 +18,12 @@ import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linked
 import { refreshRepertoireIndex } from "@/state/repertoireIndex";
 import { useOwnerTabId, useTabAtom } from "@/state/tabScope";
 import { AiComposer } from "./AiComposer";
-import { AiConnectionGate, AiModelHeader, useAiModelSelection } from "./AiModelSelection";
+import {
+  AiConnectionGate,
+  AiModelControls,
+  aiSelectionHint,
+  useAiModelSelection,
+} from "./AiModelSelection";
 import { AiNoticeModal } from "./AiNoticeModal";
 import { AiTranscriptFrame } from "./AiTranscriptFrame";
 import { CoachTranscript } from "./CoachTranscript";
@@ -35,7 +40,7 @@ function CoachPanel() {
   const running = useAtomValue(useTabAtom(coachTurnFamily));
 
   const modelSelection = useAiModelSelection();
-  const { connectionsState, reloadConnections, connections, models, chosen } = modelSelection;
+  const { connectionsState, reloadConnections, connections, chosen } = modelSelection;
   const engines = useAtomValue(enginesAtom);
   const engine = effectiveCoachEngine(engines, useAtomValue(coachEngineAtom));
   const [accepted, setAccepted] = useAtom(coachNoticeAcceptedAtom);
@@ -87,13 +92,8 @@ function CoachPanel() {
     else send(question);
   };
 
-  // Send stays disabled until both are chosen; this says why. Nothing is said while the model
-  // list loads or failed: the model selector shows that state itself.
-  const missingChoice = !chosen.connection
-    ? t("Coach.Hint.ChooseConnection")
-    : models && !chosen.model
-      ? t("Coach.Hint.ChooseModel")
-      : null;
+  // Send stays disabled until both are chosen; this says why, or why the model list is missing.
+  const missingChoice = aiSelectionHint(modelSelection, errors, t);
 
   return (
     <AiConnectionGate
@@ -113,12 +113,6 @@ function CoachPanel() {
         </Stack>
       ) : (
         <div className={classes.panel}>
-          <AiModelHeader
-            state={modelSelection}
-            errors={errors}
-            newConversationDisabled={messages.length === 0 && !running}
-            onNewConversation={() => startNewCoachConversation(atoms, tab, tree)}
-          />
           <AiTranscriptFrame
             isEmpty={messages.length === 0 && !shownTurn}
             emptyText={t("Coach.Empty")}
@@ -137,6 +131,14 @@ function CoachPanel() {
             placeholder={t("Coach.Ask")}
             ariaLabel={t("Coach.Ask")}
             missingChoice={missingChoice}
+            controls={
+              <AiModelControls
+                state={modelSelection}
+                errors={errors}
+                newConversationDisabled={messages.length === 0 && !running}
+                onNewConversation={() => startNewCoachConversation(atoms, tab, tree)}
+              />
+            }
           />
           {notice !== null && chosen.connection && (
             <AiNoticeModal

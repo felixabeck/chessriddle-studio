@@ -6,7 +6,8 @@ import type { AssistantContext } from "@/bindings";
 import { AiComposer } from "@/components/panels/coach/AiComposer";
 import {
   AiConnectionGate,
-  AiModelHeader,
+  AiModelControls,
+  aiSelectionHint,
   useAiModelSelection,
 } from "@/components/panels/coach/AiModelSelection";
 import { AiNoticeModal } from "@/components/panels/coach/AiNoticeModal";
@@ -98,7 +99,7 @@ function AssistantPanel({
   const [accepted, setAccepted] = useAtom(assistantNoticeAcceptedAtom);
 
   const modelSelection = useAiModelSelection();
-  const { connectionsState, reloadConnections, connections, models, chosen } = modelSelection;
+  const { connectionsState, reloadConnections, connections, chosen } = modelSelection;
 
   const buildFacts = useMemo(
     () => ({
@@ -166,11 +167,7 @@ function AssistantPanel({
     else send(question);
   };
 
-  const missingChoice = !chosen.connection
-    ? t("Coach.Hint.ChooseConnection")
-    : models && !chosen.model
-      ? t("Coach.Hint.ChooseModel")
-      : null;
+  const missingChoice = aiSelectionHint(modelSelection, errors, t);
 
   return (
     <AiConnectionGate
@@ -182,12 +179,6 @@ function AssistantPanel({
       onOpenSettings={() => void openSettings()}
     >
       <div className={coachClasses.panel}>
-        <AiModelHeader
-          state={modelSelection}
-          errors={errors}
-          newConversationDisabled={messages.length === 0 && !running}
-          onNewConversation={() => startNewAssistantConversation(atoms)}
-        />
         <AiTranscriptFrame
           isEmpty={messages.length === 0 && !shownTurn}
           emptyText={t("Assistant.Empty")}
@@ -211,6 +202,14 @@ function AssistantPanel({
           placeholder={t("Assistant.Ask")}
           ariaLabel={t("Assistant.Ask")}
           missingChoice={missingChoice}
+          controls={
+            <AiModelControls
+              state={modelSelection}
+              errors={errors}
+              newConversationDisabled={messages.length === 0 && !running}
+              onNewConversation={() => startNewAssistantConversation(atoms)}
+            />
+          }
         />
         {notice !== null && chosen.connection && (
           <AiNoticeModal

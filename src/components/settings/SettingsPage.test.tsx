@@ -65,6 +65,7 @@ vi.mock("./coach/CoachConnections", () => ({
   CoachConnections: () => <div data-testid="coach-connections" />,
 }));
 vi.mock("./coach/CoachEngineSelect", () => ({ CoachEngineSelect: () => null }));
+vi.mock("./coach/CoachModelSetting", () => ({ CoachModelSetting: () => null }));
 vi.mock("./SettingsSwitch", () => ({ default: () => null }));
 const actionMocks = vi.hoisted(() => ({
   reloadApp: vi.fn(),
