@@ -28968,3 +28968,44 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Found by:** Claude Code (Opus 5.5), build run tasks/plans/2026-11-24-help-assistant.md, 2026-11-24
 * **Handled:** 2026-11-24, re-recorded `e2e/assistant.spec.ts-snapshots/assistant-answer-assistant.png` in the container after confirming in the diff image that only the New Tab action row (the new "Train openings" button from frequency-weighted practice) differed; the Assistant panel and the other three Assistant snapshots were unchanged. Proof: `pnpm test:e2e:container` 516 passed on the rebased tree.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a33557384e6bdb470a3b5d10de0426a9f037d85408809b0d33e7bb0b744479e6","header_sha256":"37af392d8b453c5d2be8178184e2220c5e20f23f7b4a5528b97c5fbe4bdbe954","header_status":"handled","input_sha256":"f856df507264544581df8a90c8e151b6d1b606c1fd07b78903a9f2cd38082581","kind":"mutation-receipt","operation":"b7479d4ac089fe97b218e7608f1b7e342949b9587e27b29b791de4fa5e2e61f9","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-13"],"target":"f-20261124-13","v":1} -->
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### The board-wood-texture snapshot export test exceeds its 45 s test timeout on hosted CI, after the f-20261106-49 retry
+
+* **ID:** f-20261124-15 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45399506408
+* **Filed from:** 275e9313-8f5a-48c0-9de5-747655d15940
+* **Where:** `e2e/board-wood-texture.spec.ts:316`, "board-wood-texture: the exported board snapshot carries the wood grain, and drops it when off"; `exportedBytes` at `:334-352` (two 6 s polls with one retry click per export, two exports, plus the Appearance round trip).
+* **Defect:** On hosted CI the test now fails with `Test timeout of 45000ms exceeded` (48.3 s) instead of the earlier `Expected: 2, Received: 1`. The f-20261106-49 repair bounded each export at up to 12 s plus a retry, and the whole test still has only the default 45 s budget, so a slow runner can exhaust the test timeout before any assertion fails. Which step hung is not in the job log; the uploaded `frontend-browser-audit` artifact has `test-failed-1.png`, `error-context.md` and `trace.zip` for it.
+* **Failure scenario (observed):** Test run 45399506408, job `e2e` 138464075674, on master `6450c350b` ("docs: remove donation links to the upstream author", which changes only `README.md` and `.github/FUNDING.yml`): `1 failed`, `513 passed (15.2m)`. The previous `Test` run (45395427325 on `5e9736e2e`) was green. `pnpm ci:remote:check` now refuses every code push until this job is green again or this finding is repaired.
+* **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/138464075674/logs` (copy at `/tmp/e2e-138464075674.log`), the `1) [board-wood-texture]` block. Fix: read the trace to find the slow step, then either make that wait deterministic or give this test an explicit budget covering its declared waits (`test.setTimeout`), and prove it under CPU load with `--repeat-each=10` in the container as f-20261106-49 did.
+* **Related:** f-20261106-49 (handled, same test; its closing note's known limit names an export slower than 6 s). f-20261105-07 (handled, a different load-dependent test in the same spec).
+* **Found by:** Claude Code drain session 275e9313-8f5a-48c0-9de5-747655d15940, 2026-11-24, at the pre-push remote check of the f-20261124-03 release.
+
+### The daily tree-path mutation sweep is red: three treeReducer mutants from 2026-11-24's open-variation and transposition commits survive
+
+* **ID:** f-20261124-16 · **Status:** open · **Area:** chess-tree · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45395218545
+* **Filed from:** 275e9313-8f5a-48c0-9de5-747655d15940
+* **Where:** `src/utils/treeReducer.ts` `nextOpenVariation` (`:341` `let passedCursor = cursor === root;`, `:361` `if (index >= 1) {`), added by `361d6ec63` "feat(notation): mark, count and jump to open variations"; `getMemoizedBoardStateMap` eviction (`:515` `if (oldestKey !== undefined) byStart.delete(oldestKey);`), added by `0c278a72e` "feat(notation): mark transpositions into other chapters of the same file".
+* **Defect:** the `tree-path` package's mutation score fell to 99.22 % (369 killed, 11 timeout, 3 survived) under its breaking threshold of 100. Survivors: `cursor === root` → `false` at `:341`; `index >= 1` → `true` at `:361` (both run by the 19 `goToNextOpenVariation` tests, none of which tells the cursor-at-root case or the continuation child apart); `oldestKey !== undefined` → `true` at `:515` (only the "evicts the least recently used start-path map after a third start path" test runs it, and the guard may be an equivalent mutant because `byStart` is non-empty when the size exceeds the cap).
+* **Failure scenario (observed):** scheduled `Mutation` run 45395218545 on `41bf2e516` (2026-11-24 12:36 UTC), job `frontend-mutation (tree-path)`: `Final mutation score 99.22 under breaking threshold 100`. The previous completed run, 45160185213 on `ac45297ff`, was green, so this is the first red run. `pnpm ci:remote:check` refuses every code push while the job stays red.
+* **Proof:** `gh run view 45395218545 -R felixabeck/chessriddle-studio --log-failed`, the three `[Survived] ConditionalExpression` blocks. Fix: add tests that go red under each of the first two mutants (an open variation reached from the root cursor, and a cursor on a main-line continuation whose siblings must not count as passed). For `:515`, kill it with a test or, if it is provably equivalent, remove the dead guard (it is not a Stryker disable case unless proven equivalent). Re-run `pnpm mutation:frontend` for `tree-path` and see 100.
+* **Found by:** Claude Code drain session 275e9313-8f5a-48c0-9de5-747655d15940, 2026-11-24, at the pre-push remote check of the f-20261124-03 release.
+
+### The filePositionIndex 500-chapter limit benchmark times out at 30 s on the hosted frontend job
+
+* **ID:** f-20261124-14 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45418662644
+* **Filed from:** 275e9313-8f5a-48c0-9de5-747655d15940
+* **Where:** `src/state/filePositionIndex.test.ts:659-694`, "synthetic limit benchmark: 500 chapters, ~5 MiB, 200,000 positions within budget", with its `30_000` ms test timeout. Added by `5c9178f06` "feat(transpositions): index every position of a multi-chapter file per revision" (2026-11-24).
+* **Defect:** the test builds a full 200,000-position index through `requestFilePositionIndex` under the coverage-instrumented Vitest run, and its only time bound is the 30 s test timeout. On a slow hosted runner the build takes longer, so the test fails as `Test timed out in 30000ms` although nothing is functionally wrong. The same test passed in the frontend job of the green Test runs on `59197081a`, `1c515bd3e` and `cb6dee5ac`, all of which contain `5c9178f06`, so it is timing-dependent rather than consistently broken.
+* **Failure scenario (observed):** Test run 45418662644, job `frontend` 138531790499, on master `7d91c7788` (whose own range changes only `scripts/run-push-gates*.mjs`, the push skill, the gate-tooling rule and the ledger): `1 failed | 10478 passed`, `× synthetic limit benchmark … 30013ms`, `##[error]Error: Test timed out in 30000ms.` `pnpm ci:remote:check` refuses every code push while this job stays red.
+* **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/138531790499/logs` (copy at `/tmp/fe-138531790499.log`). Fix: decide what the benchmark proves. If it proves the limits (500 chapters, 200,000 positions, byte cap, page count), shrink the work that is not needed for that or give it a measured budget that covers instrumented CI. If it proves speed, assert a measured bound with headroom instead of relying on the test timeout. Prove it with `--repeat-each` under CPU load, as f-20261106-49 did.
+* **Found by:** Claude Code drain session 275e9313-8f5a-48c0-9de5-747655d15940, 2026-11-24, in the post-push CI wait of the f-20261124-03 release.
