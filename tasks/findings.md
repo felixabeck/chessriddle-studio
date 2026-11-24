@@ -29050,3 +29050,18 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario (observed):** three user bug reports from `ChessRiddle Studio/1.1.0 (windows 11 (26200))` on 2026-11-24: "Authentifizierung fehlgeschlagen" right after ticking browser sign-in, without a browser opening; "Conflict: PGN atomic replacement is unsupported on this platform" after 1-3 board inputs, with five stacked error toasts and the board replaced by the error screen; and the same message "ständig" when clicking a move in the Database panel. A probe in another session (Vitest, real gate, `saveToFile`, `useAutoSave`, backend error payload, IPC mocked at 10 ms) measured 31 write attempts, 31 notices and 32 board remounts in one second from one edit.
 * **Proof:** fix by deleting the fourteen guards, re-enabling the six `f-20260914-10` Windows-ignored tests in `pgn.rs`, keeping the autosave last attempt and failure notice per tree store, and proving the write paths on the `rust-windows-test` runner.
 * **Found by:** Claude Code interactive session 6e4e9f65-6ab8-4aba-8e73-84f9f3ed21d9, 2026-11-24, from Felix's forwarded bug reports.
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### The over-cap revocation loopback test times out at its 3 s wall clock on the macOS runner
+
+* **ID:** f-20261124-18 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45490173290
+* **Where:** `src-tauri/src/oauth.rs` test `production_revocation_bounds_streaming_confirmation_and_distinguishes_read_failure`, the `tokio::time::timeout(Duration::from_secs(3), ...)` around the server join at about `:1259-1271`.
+* **Defect:** the final block joins a loopback server that writes a 16 MiB trailer (with its own 2 s timeout) and the production revocation, all under one 3 s wall-clock bound. On a loaded hosted macOS runner the exchange exceeded it and the test panicked with `revocation must stop reading the over-cap loopback response: Elapsed(())`. The test proves a byte cap, not speed, so the wall-clock bound makes it depend on runner load.
+* **Failure scenario (observed):** Test run 45490173290, job `rust-macos-test`, on probe commit `22cfa8b6f` (branch `probe-windows-pgn`, 2026-11-24 21:36 UTC): `3768 passed; 1 failed`. The probe's diff touched `oauth.rs` only by deleting the `off_unix_refusal` lines in `authenticate` and `migrate_legacy_lichess_token`, not the revocation path. The same test passed on Linux and Windows in that run and on master's recent runs.
+* **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/<rust-macos-test job of run 45490173290>/logs`. Fix: bound the test by the production deadline or the retained-byte counter instead of a 3 s wall clock, or raise only the outer bound with a comment saying what it guards against (a hang), and keep the byte-cap assertion.
+* **Found by:** Claude Code interactive session 6e4e9f65-6ab8-4aba-8e73-84f9f3ed21d9, 2026-11-24, on the Windows-port probe run for f-20261124-17.
