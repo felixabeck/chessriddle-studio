@@ -1310,7 +1310,7 @@ async setGameOrientation(file: FileWorkspaceHandle, n: number, orientation: Boar
     else return { status: "error", error: e  as any };
 }
 },
-async downloadFile(id: string, url: string, destination: PathRef, filename: string, totalSize: number | null, jobId: string, integrity: ArtifactIntegrity | null) : Promise<Result<null, ErrorPayload>> {
+async downloadFile(id: string, url: string, destination: PathRef, filename: string, totalSize: number | null, jobId: string, integrity: ArtifactIntegrity) : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("download_file", { id, url, destination, filename, totalSize, jobId, integrity }) };
 } catch (e) {

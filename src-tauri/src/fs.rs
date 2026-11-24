@@ -902,7 +902,7 @@ pub async fn download_file(
     state: tauri::State<'_, AppState>,
     total_size: Option<u32>,
     job_id: String,
-    integrity: Option<ArtifactIntegrity>,
+    integrity: ArtifactIntegrity,
 ) -> Result<(), ErrorPayload> {
     download_file_runtime(
         id,
@@ -915,8 +915,14 @@ pub async fn download_file(
         total_size,
         job_id,
         integrity,
+        production_integrity_validator(),
     )
     .await
+}
+
+/// The release key checks every signed artifact outside tests.
+fn production_integrity_validator() -> ArtifactIntegrityValidator {
+    Box::new(|op, url, integrity| validate_artifact_integrity(op, url, Some(integrity)))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -930,7 +936,10 @@ async fn download_file_runtime<R: tauri::Runtime>(
     state: &AppState,
     total_size: Option<u32>,
     job_id: String,
-    integrity: Option<ArtifactIntegrity>,
+    // The renderer names the URL and the leaf, so the signature is what authorises the bytes
+    // whatever class the destination grant carries; only native callers may download unsigned.
+    integrity: ArtifactIntegrity,
+    validate_integrity: ArtifactIntegrityValidator,
 ) -> Result<(), ErrorPayload> {
     let lease = state
         .operations
@@ -959,9 +968,10 @@ async fn download_file_runtime<R: tauri::Runtime>(
         job_id,
         lease,
         false,
-        integrity.as_ref(),
+        Some(&integrity),
         Some(generation.clone()),
         None,
+        validate_integrity,
     )
     .await
     .map(|_| ())
@@ -1033,6 +1043,7 @@ pub(crate) async fn download_to_destination<R: tauri::Runtime>(
         integrity,
         None,
         lichess_export,
+        production_integrity_validator(),
     )
     .await
 }
@@ -1053,6 +1064,7 @@ async fn download_to_destination_with_failure<R: tauri::Runtime>(
     integrity: Option<&ArtifactIntegrity>,
     file_generation: Option<std::sync::Arc<std::sync::OnceLock<ProgressGeneration>>>,
     lichess_export: Option<LichessExportCheck>,
+    validate_integrity: ArtifactIntegrityValidator,
 ) -> Result<DownloadPublication, Error> {
     let cancellation = lease.token();
     let commit_gate = lease.commit_gate();
@@ -1079,7 +1091,7 @@ async fn download_to_destination_with_failure<R: tauri::Runtime>(
             commit_gate,
             file_generation.as_deref(),
             lichess_export,
-            Box::new(|op, url, integrity| validate_artifact_integrity(op, url, Some(integrity))),
+            validate_integrity,
         )
         .await
         .map_err(log_and_sanitize_download_error)
@@ -2109,7 +2121,7 @@ pub(crate) async fn install_engine_workflow_runtime<R: tauri::Runtime>(
         lease,
         app,
         state.clone(),
-        Box::new(|op, url, integrity| validate_artifact_integrity(op, url, Some(integrity))),
+        production_integrity_validator(),
         owner.clone(),
     )
     .await
@@ -3693,9 +3705,7 @@ pub(crate) mod tests {
                         state.clone(),
                         cancellation,
                         commit_gate,
-                        Box::new(|op, url, integrity| {
-                            validate_artifact_integrity(op, url, Some(integrity))
-                        }),
+                        production_integrity_validator(),
                     ),
                 )
                 .await
@@ -10918,6 +10928,81 @@ pub(crate) mod tests {
         app
     }
 
+    /// Integrity whose digest matches `body`; pair it with `accept_fixture_signature`.
+    fn fixture_integrity(body: &[u8]) -> ArtifactIntegrity {
+        use sha2::Digest as _;
+        ArtifactIntegrity {
+            sha256: format!("{:x}", sha2::Sha256::digest(body)),
+            signature: "fixture signature".into(),
+        }
+    }
+
+    fn accept_fixture_signature() -> ArtifactIntegrityValidator {
+        Box::new(|_, _, _| Ok(()))
+    }
+
+    #[tokio::test]
+    async fn file_download_command_requires_release_signature_on_a_download_file_grant() {
+        // A DownloadFile-only grant is the class that may install unsigned for native account
+        // exports. The renderer-facing command must still refuse bytes the release key did not
+        // sign, before any request leaves the process or a leaf in the folder is replaced.
+        let dir = tempdir().unwrap();
+        let (authority, destination, root) = test_downloads_destination(&dir);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("notes.pdf"), b"original").unwrap();
+        let transport = Arc::new(MockTransport {
+            responses: Mutex::new(vec![]),
+            requests_seen: Mutex::new(vec![]),
+        });
+        let state = AppState {
+            http_transport: transport.clone(),
+            ..Default::default()
+        };
+        state.pgn_path_authority.install(authority).unwrap();
+        let app = test_progress_app();
+        let job = state.operations.prepare_download("test").unwrap();
+        let error = download_file_runtime(
+            "unsigned".into(),
+            "https://attacker.example/payload".into(),
+            destination,
+            "notes.pdf".into(),
+            app.handle(),
+            "test",
+            &state,
+            None,
+            job,
+            ArtifactIntegrity {
+                sha256: "ab".repeat(32),
+                signature: FIXTURE_ENTRY_SIGNATURE.into(),
+            },
+            production_integrity_validator(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            serde_json::to_value(error).unwrap()["message"],
+            "Invalid input: artifact manifest signature verification failed"
+        );
+        assert!(transport.requests_seen.lock().unwrap().is_empty());
+        assert_eq!(std::fs::read(root.join("notes.pdf")).unwrap(), b"original");
+    }
+
+    #[test]
+    fn file_download_command_takes_integrity_unconditionally() {
+        // An optional argument would let a renderer pass `null` and fall back to the unsigned
+        // DownloadFile class with a URL and leaf it chose.
+        let source = include_str!("fs.rs");
+        for signature in [
+            "pub async fn download_file(",
+            "async fn download_file_runtime<",
+        ] {
+            let start = source.find(signature).unwrap();
+            let header = &source[start..start + source[start..].find(") -> ").unwrap()];
+            assert!(header.contains("integrity: ArtifactIntegrity,"), "{header}");
+            assert!(!header.contains("Option<ArtifactIntegrity>"), "{header}");
+        }
+    }
+
     #[tokio::test]
     async fn file_download_install_error_publishes_sanitized_payload() {
         use tauri_specta::Event as _;
@@ -10966,7 +11051,8 @@ pub(crate) mod tests {
             &state,
             Some(body.len() as u32),
             job,
-            None,
+            fixture_integrity(body),
+            accept_fixture_signature(),
         )
         .await
         .unwrap_err();
@@ -11047,7 +11133,8 @@ pub(crate) mod tests {
             &state,
             Some(10),
             job,
-            None,
+            fixture_integrity(b""),
+            accept_fixture_signature(),
         )
         .await
         .unwrap_err();
@@ -11089,7 +11176,8 @@ pub(crate) mod tests {
             &state,
             None,
             job,
-            None,
+            fixture_integrity(b""),
+            accept_fixture_signature(),
         )
         .await
         .unwrap_err();
@@ -11109,7 +11197,8 @@ pub(crate) mod tests {
             &state,
             None,
             "unprepared-ticket".into(),
-            None,
+            fixture_integrity(b""),
+            accept_fixture_signature(),
         )
         .await
         .unwrap_err();
@@ -11130,7 +11219,8 @@ pub(crate) mod tests {
             &state,
             None,
             job,
-            None,
+            fixture_integrity(b""),
+            accept_fixture_signature(),
         )
         .await
         .unwrap_err();
