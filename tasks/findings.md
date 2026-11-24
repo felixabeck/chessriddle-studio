@@ -28220,7 +28220,7 @@ Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --wo
 
 ### `staged_artifact_cancels_at_real_install_precommit_without_publication` times out on the hosted Windows runner on a commit that changes only the findings ledger
 
-* **ID:** f-20261120-12 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261120-12 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Spotted outside diff:** yes (post-push CI wait of the interactive build session 221f2973-b40a-4d00-8ef4-cb6dae0ca5aa for the ledger commit that filed f-20261120-11)
 * **CI run:** 44814936985 (job `rust-windows-test` 136560699423, master `c90bf7795`, 2026-11-20). The first attempt failed, the rerun of the failed job on the same commit passed.
@@ -28232,6 +28232,11 @@ Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --wo
 * **Related:** f-20261112-08 (handled; the same race shape in a neighbouring test). No shared Root is claimed: that finding is closed and this is a different test.
 * **Note on the rerun:** the filing session reran the failed job once before any repair, because the pushed commit could not have changed Rust behaviour and the red job was blocking other sessions' pushes.
 * **Found by:** Claude Code interactive session 221f2973-b40a-4d00-8ef4-cb6dae0ca5aa
+* **Closed 2026-11-24 (drain session fccf05b2):** test-only fix in `src-tauri/src/fs.rs`, commit `9c87dcbcd`. A new tests-module constant `RENDEZVOUS_TIMEOUT` (60 s) replaces every short wall-clock bound on a rendezvous: the 2 s waits for a worker to reach a held point (the failing test plus `externally_cancelled_*`, `*_commit_gate_race_*`, `archive_copy_core_cancels_*`), the 1 s waits at the started transport and the fired staging deadline, the 5 s worker-entered waits, and the 5 s / 10 s holder release waits (`HoldSecondPrecommit`, `hold_commit_hook`, `HeldReader` and the other held hooks). A held worker can therefore neither miss the rendezvous under runner load nor be released by its own timeout before the test cancels, which was the injector's second race. A panicking test still releases its held worker at once, because the release sender drops with it.
+* **Rejected:** an unbounded wait. Some held hooks keep their sender in a registry, so an unbounded wait could hang a failing test until the CI job timeout instead of reporting it.
+* **Left unchanged:** the intentional 2 s outer bound with a fallback in the f-20261112-08 test, the 20 ms negative wait that asserts a command is still pending, and the 5 s / 10 s completion bounds that start after the test released the worker (never observed red; the review named `network_done_rx` as the likeliest if one ever is).
+* **Proof:** `cargo test --bins -- fs::` 307 passed locally, `pnpm checks:pre-review` green (incl. windows-clippy). No local red reproduction: the failure needs hosted-runner load; the CI log in the entry is the evidence. Review: `review-correctness` and `review-root-cause` approved (root-cause asked for the widened scope in round 1).
+<!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"1f2a31e6a2894bfcf5b6391739e651062e29da60f4b18b23238b285f9b9e6caa","header_sha256":"6ee7a47c97b833389d73c51c23ee35e3a92080c8bd0617b18dd0442f4bce54c8","header_status":"handled","input_sha256":"aa00ec895115e4ea8e69cb99aea019ab259fb6dd3c6f6f82e02398921b1dabd3","kind":"mutation-receipt","operation":"c9711c72c82424fa960e98234e5de21c7f6f586e9e438e01879bee383af894d0","options":{"section":null},"request_id_sha256":null,"results":["f-20261120-12"],"target":"f-20261120-12","v":1} -->
 
 ---
 
