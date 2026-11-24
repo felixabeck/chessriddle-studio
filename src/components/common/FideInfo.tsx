@@ -5,7 +5,7 @@ import useSWR from "swr/immutable";
 import { getFidePlayer } from "@/utils/lichess/api";
 import { IconAction } from "@/components/common/IconAction";
 import { inlineFailureMessage } from "@/components/files/notifyError";
-import AppModal from "../common/AppModal";
+import AppModal from "./AppModal";
 import { loadFlagpack } from "./flagpack";
 
 function FideInfo({

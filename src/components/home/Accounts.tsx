@@ -28,7 +28,7 @@ import {
   upsertChessComSession,
   upsertLichessSession,
 } from "@/utils/session";
-import AccountCards from "../common/AccountCards";
+import AccountCards from "./AccountCards";
 import GenericCard from "../common/GenericCard";
 import AppModal from "../common/AppModal";
 import { SiteLogo } from "./SiteLogo";

@@ -29,7 +29,7 @@ vi.mock("@/chessground/Chessground", () => ({
   ),
 }));
 vi.mock("@/components/common/ShowMaterial", () => ({ default: () => null }));
-vi.mock("@/components/databases/FideInfo", () => ({ default: () => null }));
+vi.mock("@/components/common/FideInfo", () => ({ default: () => null }));
 vi.mock("@/components/panels/analysis/BestMoves", () => ({ arrowColors: [] }));
 vi.mock("@/components/boards/BoardBar", () => ({
   BoardBar: ({ children }: { children: ReactNode }) => <div>{children}</div>,

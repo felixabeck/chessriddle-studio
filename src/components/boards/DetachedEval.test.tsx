@@ -17,7 +17,7 @@ import { engineIdentity, engineLineContext } from "../panels/analysis/analysisLi
 import { displayEngine, displayLines, engineDisplayHarness } from "@/tests/engineDisplay";
 import { press } from "@/tests/keyboard";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
-import { TreeStateContext } from "./TreeStateContext";
+import { TreeStateContext } from "../common/TreeStateContext";
 import DetachedEval from "./DetachedEval";
 import { analysisSearch } from "@/utils/analysisSearch";
 import scoreBubbleClasses from "../panels/analysis/ScoreBubble.module.css";

@@ -17,7 +17,7 @@ import type { PlayerGameInfo } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import type { DatabaseViewStore } from "@/state/store/database";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
-import FideInfo from "../databases/FideInfo";
+import FideInfo from "../common/FideInfo";
 import OpeningsPanel, { type AccountOpeningSource } from "./PersonalCardPanels/OpeningsPanel";
 import OverviewPanel from "./PersonalCardPanels/OverviewPanel";
 import {

@@ -9,14 +9,14 @@ import { useTranslation } from "react-i18next";
 import { sessionsAtom } from "@/state/atoms";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
 import { getChessComAccount, getStats } from "@/utils/chess.com/api";
-import { findAccountDatabase, type AccountDatabaseListing } from "../home/accountDatabase";
+import { findAccountDatabase, type AccountDatabaseListing } from "./accountDatabase";
 import { getLichessAccount } from "@/utils/lichess/api";
 import { revocationReason, revocationReasonText } from "@/utils/lichess/revocation";
 import { playerGroups, sameAccountUsername, type Session } from "@/utils/session";
 import { notifyUnlessCancelled } from "../files/notifyError";
-import { AccountCard } from "../home/AccountCard";
-import { EmptyAccounts } from "../home/EmptyAccounts";
-import IconAction from "./IconAction";
+import { AccountCard } from "./AccountCard";
+import { EmptyAccounts } from "./EmptyAccounts";
+import IconAction from "../common/IconAction";
 
 async function removeLichessCredential(handle: string | undefined, t: TFunction) {
   if (!handle) return;

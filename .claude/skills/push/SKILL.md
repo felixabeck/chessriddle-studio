@@ -298,7 +298,6 @@ src/state/**
 src/utils/lichess/**
 src/utils/session.ts
 src/components/home/Account*.tsx
-src/components/common/AccountCards.tsx
 src/routes/accounts*.tsx
 src/components/engines/**
 .github/workflows/**

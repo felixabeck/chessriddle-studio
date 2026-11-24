@@ -10,7 +10,7 @@ import type { PlayerGameInfo } from "@/bindings";
 import PersonalPlayerCard, { type OnlineStatistics } from "./PersonalCard";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("../databases/FideInfo", () => ({ default: () => null }));
+vi.mock("../common/FideInfo", () => ({ default: () => null }));
 vi.mock("./PersonalCardPanels/OpeningsPanel", () => ({
   default: () => <div data-accounts-openings />,
 }));

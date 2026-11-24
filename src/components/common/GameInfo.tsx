@@ -25,7 +25,7 @@ import {
   getEffectiveTermination,
   type GameHeaders,
 } from "@/utils/treeReducer";
-import { FidePlayerDialogs } from "../databases/FidePlayerDialogs";
+import { FidePlayerDialogs } from "./FidePlayerDialogs";
 import classes from "./GameInfo.module.css";
 import { InlineInput } from "./InlineInput";
 import { TreeStateContext } from "./TreeStateContext";

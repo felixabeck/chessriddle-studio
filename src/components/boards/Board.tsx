@@ -64,7 +64,7 @@ import {
   chooserArrows,
   continuationBrushes,
 } from "@/components/boards/continuationArrows";
-import { FidePlayerDialogs } from "../databases/FidePlayerDialogs";
+import { FidePlayerDialogs } from "../common/FidePlayerDialogs";
 import { lineTitleOf } from "@/utils/lineTitle";
 import { arrowColors } from "../panels/analysis/BestMoves";
 import AnnotationHint from "./AnnotationHint";

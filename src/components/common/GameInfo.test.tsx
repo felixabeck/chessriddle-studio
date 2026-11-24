@@ -21,7 +21,7 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => k
 const fideInfo = vi.hoisted(() =>
   vi.fn((_props: { opened: boolean; setOpened: (opened: boolean) => void; name: string }) => null),
 );
-vi.mock("../databases/FideInfo", () => ({ default: fideInfo }));
+vi.mock("./FideInfo", () => ({ default: fideInfo }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 

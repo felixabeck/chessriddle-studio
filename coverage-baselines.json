@@ -44,7 +44,6 @@
           "src/components/boards/**",
           "src/components/common/Comment.tsx",
           "src/components/common/CompleteMoveCell.tsx",
-          "src/components/common/DetachedEval.tsx",
           "src/components/common/EvalChart.tsx",
           "src/components/common/GameInfo.tsx",
           "src/components/common/GameNotation.tsx",
@@ -92,7 +91,10 @@
         "source": "frontend",
         "paths": [
           "src/components/common/EloRangeSlider.tsx",
+          "src/components/common/FideInfo.tsx",
+          "src/components/common/FidePlayerDialogs.tsx",
           "src/components/common/ResultBar.tsx",
+          "src/components/common/flagpack.ts",
           "src/components/common/gameOpen.tsx",
           "src/components/common/useOpenDatabaseGame.ts",
           "src/components/databases/**",
@@ -117,7 +119,6 @@
         "id": "accounts-remote",
         "source": "frontend",
         "paths": [
-          "src/components/common/AccountCards.tsx",
           "src/components/home/**",
           "src/utils/chess.com/**",
           "src/utils/http.ts",

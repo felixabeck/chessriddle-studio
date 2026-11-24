@@ -10,7 +10,7 @@
           {
             "name": "mantine-flagpack",
             "allowTypeImports": true,
-            "message": "mantine-flagpack is ~240 kB gzip; reach it only through the dynamic import in src/components/databases/flagpack.ts (d-20260927-22)."
+            "message": "mantine-flagpack is ~240 kB gzip; reach it only through the dynamic import in src/components/common/flagpack.ts (d-20260927-22)."
           }
         ]
       }

@@ -45,7 +45,7 @@ import { applyGameNames } from "./gameNames";
 import GameNameModal from "./GameNameModal";
 import { useBoardCommands } from "./boardCommands";
 import SaveToTargetModal from "./SaveToTargetModal";
-import DetachedEval from "../common/DetachedEval";
+import DetachedEval from "./DetachedEval";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
 import NotationColumn from "../common/NotationColumn";

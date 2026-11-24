@@ -31,7 +31,7 @@ vi.mock("../files/notifyError", () => ({
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: mocks.translate }) }));
 vi.mock("@/utils/chess.com/api", () => ({ getChessComAccount: vi.fn(), getStats: vi.fn() }));
 vi.mock("@/utils/lichess/api", () => ({ getLichessAccount: vi.fn() }));
-vi.mock("../home/AccountCard", () => ({
+vi.mock("./AccountCard", () => ({
   AccountCard: (props: { title: string; logout: () => Promise<void> }) => {
     mocks.accountCard(props);
     return (
@@ -45,10 +45,10 @@ vi.mock("../home/AccountCard", () => ({
     );
   },
 }));
-vi.mock("../home/EmptyAccounts", () => ({ EmptyAccounts: () => <div>Empty</div> }));
+vi.mock("./EmptyAccounts", () => ({ EmptyAccounts: () => <div>Empty</div> }));
 import AccountCards from "./AccountCards";
 
-vi.mock("./IconAction", () => ({
+vi.mock("../common/IconAction", () => ({
   default: ({ label, onClick }: { label: string; onClick: () => void }) => (
     <button type="button" aria-label={label} onClick={onClick} />
   ),

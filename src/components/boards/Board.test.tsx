@@ -20,7 +20,7 @@ import Board from "./Board";
 import type { Chessground } from "@/chessground/Chessground";
 import type { Config } from "@lichess-org/chessground/config";
 import type { BoardBar } from "./BoardBar";
-import type FideInfo from "../databases/FideInfo";
+import type FideInfo from "../common/FideInfo";
 import type PromotionModal from "./PromotionModal";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -114,7 +114,7 @@ vi.mock("../common/ShowMaterial", async (importOriginal) => {
 });
 vi.mock("../common/IconAction", () => ({ default: () => null }));
 const fideInfo = vi.hoisted(() => vi.fn((_props: ComponentProps<typeof FideInfo>) => null));
-vi.mock("../databases/FideInfo", () => ({ default: fideInfo }));
+vi.mock("../common/FideInfo", () => ({ default: fideInfo }));
 vi.mock("../panels/analysis/BestMoves", () => ({ arrowColors: [] }));
 
 let host: HTMLDivElement;

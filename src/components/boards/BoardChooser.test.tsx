@@ -68,7 +68,7 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/components/common/ShowMaterial", () => ({ default: () => null }));
-vi.mock("@/components/databases/FideInfo", () => ({ default: () => null }));
+vi.mock("@/components/common/FideInfo", () => ({ default: () => null }));
 vi.mock("@/components/boards/BoardBar", () => ({
   BoardBar: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));

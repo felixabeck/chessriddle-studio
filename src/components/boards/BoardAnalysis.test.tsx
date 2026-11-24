@@ -241,7 +241,7 @@ vi.mock("../panels/info/InfoPanel", () => ({
   },
 }));
 
-vi.mock("../common/DetachedEval", () => ({
+vi.mock("./DetachedEval", () => ({
   default: ({ placement }: { placement: string }) => <span data-engine-slot={placement} />,
 }));
 vi.mock("../common/GameNotation", () => ({

@@ -42,7 +42,7 @@ globalThis.ResizeObserver = MockResizeObserver;
 // cover flag-loader behavior and player-error rendering — so the shell is mocked and
 // `@mantine/core` itself is left real, because the flag components rendered by the real
 // `mantine-flagpack` need it.
-vi.mock("../common/AppModal", () => ({
+vi.mock("./AppModal", () => ({
   default: ({
     children,
     opened,
