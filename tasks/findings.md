@@ -28646,7 +28646,7 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 
 ### White glyphs on NAG-coloured fills miss contrast: active Annotate buttons and board annotation badges
 
-* **ID:** f-20261124-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261124-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 87b44464-0f90-42fc-bf1c-b8c73059c79f
 * **Impact class:** ux
 * **Spotted outside diff:** review-root-cause round 2 of f-20261122-06 (drain, 2026-11-24), which moved NAG *text* to `--cf-annotation-<hue>-text`. These two surfaces draw a white glyph on a NAG-coloured *fill* instead, so that rule does not cover them.
@@ -28657,6 +28657,9 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 * **Open question:** dark glyph on the familiar hue, or darker fill with the white glyph? The board badge mirrors the common Lichess-style badge look, so the choice changes how marks read on the board.
 * **Proof:** computed ratios above; not yet measured in the container. Related: f-20261122-06 (text in NAG hues, handled).
 * **Found by:** Claude Code, drain session, 2026-11-24.
+
+**Entry revalidation (2026-11-24, drain):** build → lens. The open question is settled by measurement and precedent, not by a plan. Filled fills are the primary shade (light 8, dark 4: `primaryShade` in `src/styles/theme.ts`), not shade 6. White on light shade 8: cyan 4.35, teal 3.95, lime 2.93, yellow 2.48, orange 3.58, red 4.51; on dark shade 4 every hue is under 2.4:1. A darker fill cannot carry the white glyph: yellow-9 stays at 3.00:1 and lime-9 at 3.69:1, the measurement d-20261124-03 already used to reject darker shades for text. Black reaches at least 4.65:1 on every hue's fill in both schemes. So the glyph turns dark on the familiar hue (the palettes stay default, d-20261029-25/-30). The change covers two components and one theme variable, with a contrast test as proof. Lens: review-tests.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"cc4b5dfc739d3488223a94e09783b1735f1479bb6364e097369ed621d7e9effa","header_sha256":"658767b4d55b3076f126feeb4cb943ed3a3910151a9dca0e80e9a4955ddd73ce","header_status":"open","input_sha256":"12c18f92715c86cb4263e3dc98c1395b5299e7b1a8d261b9b4b7508a601915bb","kind":"mutation-receipt","operation":"92451e30d6eb16ec380903566dcf6b1380cbbcaac307eda11b7ee99614105361","options":{"headers":{"Entry":"lens"},"section":null},"request_id_sha256":null,"results":["f-20261124-01"],"target":"f-20261124-01","v":1} -->
 
 ### Analysis moves after the game end are dimmed to opacity 0.6, below 4.5:1 text contrast
 
