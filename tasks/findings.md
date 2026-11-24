@@ -28646,7 +28646,7 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 
 ### White glyphs on NAG-coloured fills miss contrast: active Annotate buttons and board annotation badges
 
-* **ID:** f-20261124-01 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261124-01 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** 87b44464-0f90-42fc-bf1c-b8c73059c79f
 * **Impact class:** ux
 * **Spotted outside diff:** review-root-cause round 2 of f-20261122-06 (drain, 2026-11-24), which moved NAG *text* to `--cf-annotation-<hue>-text`. These two surfaces draw a white glyph on a NAG-coloured *fill* instead, so that rule does not cover them.
@@ -28659,7 +28659,18 @@ Handled 2026-11-23 by drain run fe4cac75 (Claude Code Opus 5.5 orchestrating, ag
 * **Found by:** Claude Code, drain session, 2026-11-24.
 
 **Entry revalidation (2026-11-24, drain):** build → lens. The open question is settled by measurement and precedent, not by a plan. Filled fills are the primary shade (light 8, dark 4: `primaryShade` in `src/styles/theme.ts`), not shade 6. White on light shade 8: cyan 4.35, teal 3.95, lime 2.93, yellow 2.48, orange 3.58, red 4.51; on dark shade 4 every hue is under 2.4:1. A darker fill cannot carry the white glyph: yellow-9 stays at 3.00:1 and lime-9 at 3.69:1, the measurement d-20261124-03 already used to reject darker shades for text. Black reaches at least 4.65:1 on every hue's fill in both schemes. So the glyph turns dark on the familiar hue (the palettes stay default, d-20261029-25/-30). The change covers two components and one theme variable, with a contrast test as proof. Lens: review-tests.
-<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"cc4b5dfc739d3488223a94e09783b1735f1479bb6364e097369ed621d7e9effa","header_sha256":"658767b4d55b3076f126feeb4cb943ed3a3910151a9dca0e80e9a4955ddd73ce","header_status":"open","input_sha256":"12c18f92715c86cb4263e3dc98c1395b5299e7b1a8d261b9b4b7508a601915bb","kind":"mutation-receipt","operation":"92451e30d6eb16ec380903566dcf6b1380cbbcaac307eda11b7ee99614105361","options":{"headers":{"Entry":"lens"},"section":null},"request_id_sha256":null,"results":["f-20261124-01"],"target":"f-20261124-01","v":1} -->
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"cc4b5dfc739d3488223a94e09783b1735f1479bb6364e097369ed621d7e9effa","header_sha256":"33dc1344345320f79868e874d2c644def9c8e18c0c78be15e7f2538a3bfddd40","header_status":"handled","input_sha256":"12c18f92715c86cb4263e3dc98c1395b5299e7b1a8d261b9b4b7508a601915bb","kind":"mutation-receipt","operation":"92451e30d6eb16ec380903566dcf6b1380cbbcaac307eda11b7ee99614105361","options":{"headers":{"Entry":"lens"},"section":null},"request_id_sha256":null,"results":["f-20261124-01"],"target":"f-20261124-01","v":1} -->
+
+**Handled (2026-11-24, drain, lens tier):** commit `8206ebb9f`, decision d-20261124-05. The fills stay at their default hues. The glyph or label on them takes `--cf-annotation-<fill>-on-fill`, which is black or white, whichever contrasts more with the filled shade. That is black on all six hues in both schemes. Gray, the badge of unhued marks, gets white in light and black in dark: it was 1.49:1 in dark, a sibling of this defect, now fixed in the same change. The board badge glyphs draw in `currentColor`. `variantColorResolver` gives filled mark hues the on-fill foreground and a 90% fill hover, because Mantine's darker hover shade dropped black to 3.76:1.
+
+Proof:
+- `src/styles/theme.test.ts` checks every fill at rest and on hover in both schemes, and pins the resolver wiring. It also fixes the test's hex parser, which had silently passed NaN ratios for Mantine's 3-digit `#fff`/`#000`.
+- The container e2e `notation-hierarchy: mark glyphs read on their fills in light/dark` measures the computed badge glyph and the active Annotate button label, at rest and hovered, for all six marks plus N.
+- That e2e test was red on the old code: light 2.48–4.35, dark 1.43–2.32. It was also red with the default hover restored: cyan 3.76, teal 4.20, red 3.85. It is green with the fix.
+- Full container suite: 511 passed. No snapshot moved.
+
+Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `autoContrast` (it keeps white on cyan-8 at 4.35:1). Lenses: review-correctness, review-root-cause and review-tests, all PASS. The tests lens's should-fix, measuring hover on the real button, was adopted.
+<!-- ledger-meta {"command":"close","effect_lines":9,"effect_sha256":"5f9b101d58e1ec0bfdfb9dc53fba898f3d6680ed5f6cd366cec9964b57b82f55","header_sha256":"33dc1344345320f79868e874d2c644def9c8e18c0c78be15e7f2538a3bfddd40","header_status":"handled","input_sha256":"f926a79e3d0ae38abeea2589c9592b786c7abc4799fff07ee2882fecf7596767","kind":"mutation-receipt","operation":"e0ed1cd3dd3dcaa3b832c17a68533c73eed5913b57812c40501d5bc934df5a9d","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-01"],"target":"f-20261124-01","v":1} -->
 
 ### Analysis moves after the game end are dimmed to opacity 0.6, below 4.5:1 text contrast
 
