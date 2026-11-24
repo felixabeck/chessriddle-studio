@@ -28899,3 +28899,20 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario:** `Test` run 45399506408 attempt 2 on 6450c350b (a README-only commit), job `rust-macos-test` 138494797288: `assertion left == right failed, left: 1, right: 0` at `src/coach/grok.rs:854`; 3740 passed, 1 failed. Attempt 1 of the same job ended with "The hosted runner lost communication with the server". While this is the newest red, `pnpm ci:remote:check` refuses every push.
 * **Fix:** queue only "authorization_pending" (repeated) before `begin`, wait for the first poll, assert nothing is stored, then append the remaining answers. Sibling of handled f-20261122-09 (same file family, the test read state before the spawned task reached it), separate mechanism.
 * **Found by:** Claude Code (Opus 5.5), 2026-11-24, post-push CI wait of the donation-link removal.
+
+---
+
+## 2026-11-24 — filed through the inbox spool
+
+### The due total says "across 1 repertoires" because the count is not pluralised
+
+* **ID:** f-20261124-07 · **Status:** open · **Area:** i18n · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes (real-app run of the timed opening training, build frequency-weighted-practice, 2026-11-24)
+* **Where:** `Home.DuePractice.Total` in every catalogue under `src/translation/` ("{{positions}} positions due across {{repertoires}} repertoires" in en-US), rendered by `src/components/tabs/NewTabHome.tsx:724` and by the Train openings popover
+* **Defect:** both counts are interpolated into one fixed plural form, so a single repertoire or a single position reads ungrammatically in English and in the other catalogues.
+* **Failure scenario:** a Library with one repertoire that has due moves → New Tab → the due line (and the Train openings popover) reads "6 positions due across 1 repertoires"; with one due position it reads "1 positions due".
+* **Fix:** give the line i18next plural forms for both counts (split into two pluralised fragments or use `count` with a nested plural), following `docs/localization.md`, in every shipped catalogue so `pnpm i18n:check` stays green.
+* **Open question:** none; the wording per locale follows the existing catalogue style.
+* **Proof:** a `NewTabHome` test with the real en-US catalogue that renders one repertoire and one position and expects "1 position due across 1 repertoire" (fails at HEAD).
+* **Found by:** Claude Code (Opus 5.5), build run frequency-weighted-practice, real-app verification, 2026-11-24
