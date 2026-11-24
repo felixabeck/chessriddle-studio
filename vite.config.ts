@@ -25,6 +25,16 @@ export function createVitestCacheKeyPlugin(configText: string, definedPlatform: 
     };
 }
 
+const HELP_TOPIC_LOCALE_PATTERN =
+    /(?:^|[/\\])components[/\\]assistant[/\\]topics[/\\]([a-z]{2}-[A-Z]{2})[/\\][^/\\]+\.md(?:\?.*)?$/;
+
+// Group each locale's translated help topic files into one chunk so gzip compresses the locale
+// as a whole (~13 KB gzip per locale vs ~19 KB gzip when each topic file is its own chunk).
+export function helpTopicChunkName(id: string): string | null {
+    const match = HELP_TOPIC_LOCALE_PATTERN.exec(id);
+    return match ? `help-topics-${match[1]}` : null;
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [
@@ -62,6 +72,19 @@ export default defineConfig({
         // The checked-in gzip graph budgets are the release gate; Vite's raw
         // per-file heuristic neither accounts for caching nor compressed transfer.
         chunkSizeWarningLimit: 1_300,
+        rollupOptions: {
+            output: {
+                codeSplitting: {
+                    // One chunk per locale compresses as a whole (~13 KB gzip vs ~19 KB per-file);
+                    // leave everything else to Vite's automatic splitting.
+                    groups: [
+                        {
+                            name: helpTopicChunkName,
+                        },
+                    ],
+                },
+            },
+        },
     },
     resolve: {
         alias: {

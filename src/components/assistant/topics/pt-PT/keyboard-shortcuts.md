@@ -1,0 +1,18 @@
+---
+id: keyboard-shortcuts
+title: Atalhos de teclado e modificadores de desenho
+summary: Veja, personalize e reponha os atalhos de teclado, e conheça os modificadores do rato para desenhar setas.
+source: ffc64b2decf8dd86
+---
+
+Veja e personalize todos os atalhos de teclado em [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) em [[page:settings]]. Clique em qualquer atalho na tabela para gravar uma nova combinação de teclas, ou clique em {{label:Common.Reset}} junto ao título para repor todas as predefinições.
+
+Atalhos predefinidos comuns (usando Ctrl no Windows/Linux e Cmd no macOS):
+- Separadores e ficheiros: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).
+- Navegação: {{label:Settings.Keybinds.Actions.NEXT_MOVE}} (`Right`), {{label:Settings.Keybinds.Actions.PREVIOUS_MOVE}} (`Left`), {{label:Settings.Keybinds.Actions.GO_TO_BRANCH_START}} (`Up`), {{label:Settings.Keybinds.Actions.GO_TO_BRANCH_END}} (`Down`), {{label:Settings.Keybinds.Actions.GO_TO_START}} (`Shift+Up`), {{label:Settings.Keybinds.Actions.GO_TO_END}} (`Shift+Down`), {{label:Settings.Keybinds.Actions.NEXT_BRANCH}} (`C`), {{label:Settings.Keybinds.Actions.PREVIOUS_BRANCH}} (`Shift+C`), {{label:Settings.Keybinds.Actions.NEXT_BRANCHING}} (`Shift+Right`), {{label:Settings.Keybinds.Actions.PREVIOUS_BRANCHING}} (`Shift+Left`), {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}} (`U`), {{label:Settings.Keybinds.Actions.PREVIOUS_GAME}} (`PageUp`), {{label:Settings.Keybinds.Actions.NEXT_GAME}} (`PageDown`).
+- Tabuleiro e edição: {{label:Settings.Keybinds.Actions.SWAP_ORIENTATION}} (`F`), {{label:Settings.Keybinds.Actions.UNDO}} (`Ctrl/Cmd+Z`), {{label:Settings.Keybinds.Actions.REDO}} (`Ctrl/Cmd+Shift+Z`), {{label:Settings.Keybinds.Actions.DELETE_MOVE}} (`Delete`), {{label:Settings.Keybinds.Actions.CLEAR_SHAPES}} (`Ctrl+L`), {{label:Settings.Keybinds.Actions.TOGGLE_BLUR}} (`Ctrl+B`).
+- Análise e painéis: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), além das teclas de painel `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) e `I` ({{label:Board.Tabs.Info}}).
+- Anotações: `1` a `6` alternam `!!`, `!`, `!?`, `?!`, `?` e `??`. Dentro do editor de comentários, `Tab` e `Shift+Tab` avançam ou recuam para o lance seguinte ou anterior.
+- Ecrã inteiro: `F11` no Windows/Linux, `Ctrl+Cmd+F` no macOS.
+
+A parte inferior de [[settings-category:keybinds]] também lista os modificadores do rato para {{label:Settings.Drawing}} ao desenhar setas e círculos coloridos no tabuleiro.

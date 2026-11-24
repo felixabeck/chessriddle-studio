@@ -1,0 +1,30 @@
+---
+id: databases
+title: Bases de données, explorateur, recherche de position, joueurs et tournois
+summary: Ajoutez ou téléchargez des bases de parties, choisissez une base de référence, recherchez des positions dans l’explorateur et parcourez parties, joueurs et tournois.
+source: 48c72137fadc1768
+---
+
+Les bases de données se trouvent dans [[page:library]] ({{label:SideBar.Library}}) aux côtés de vos fichiers PGN et sont stockées dans [[setting:databases-directory]].
+
+Pour ajouter une base de données, ouvrez [[page:library]] et cliquez sur {{label:Library.AddDatabase}} :
+- {{label:Databases.Add.Web}} : téléchargez des bases de parties sélectionnées depuis le catalogue.
+- {{label:Common.Local}} : sélectionnez un fichier PGN local (y compris `.pgn.zst` ou `.pgn.bz2`), saisissez un {{label:Common.Name}} et une {{label:Common.Description}} facultative, puis cliquez sur {{label:Databases.Add.Convert}}.
+
+Sélectionnez une base de données dans [[page:library]] pour la gérer :
+- Cochez {{label:Databases.Settings.ReferenceDatabase}} pour en faire la base de référence par défaut pour l’explorateur, le créateur de répertoire, les nouveautés du rapport de partie et le Coach.
+- Cochez {{label:Databases.Settings.Indexed}} pour créer ou supprimer les index de recherche afin d’accélérer les requêtes.
+- Cliquez sur {{label:Databases.Settings.Explore}} pour ouvrir la vue tabulaire de la base de données.
+- Sous {{label:Databases.Settings.Actions}}, utilisez {{label:Databases.Settings.AddGames}} pour ajouter des fichiers PGN, {{label:Databases.Settings.ExportPGN}} pour exporter en PGN ou {{label:Common.Delete}} pour supprimer la base de données.
+- Sous {{label:Databases.Settings.AdvancedTools}}, utilisez {{label:Databases.Settings.MergePlayers}} pour regrouper des fiches de joueurs en double, ou {{label:Databases.Settings.RemoveDup}} et {{label:Databases.Settings.RemoveEmpty}} pour nettoyer les parties.
+
+Dans la vue tabulaire de la base de données, passez de {{label:Common.Games}} à {{label:Databases.Card.Players}} et {{label:Databases.Settings.Events}} (tournois) :
+- Recherchez et triez les parties, prévisualisez une partie ou ouvrez-la sur l’échiquier d’analyse.
+- Dans {{label:Databases.Card.Players}}, sélectionnez un joueur pour consulter {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} et {{label:Home.Personal.Openings}} (un arbre d’ouvertures interactif avec un bouton {{label:Databases.OpeningTree.Prepare}}), ainsi que les informations FIDE via {{label:Databases.FIDE.Info}}.
+- Dans {{label:Databases.Settings.Events}}, recherchez les tournois par nom et triez par date, joueurs, parties ou Elo moyen.
+
+Sur l’échiquier d’analyse, ouvrez {{label:Board.Tabs.Database}} pour utiliser l’explorateur d’ouvertures :
+- Basculez entre {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} et {{label:Board.Database.LichessMaster}} (les explorateurs en ligne Lichess nécessitent un compte Lichess connecté sur [[page:accounts]]).
+- Basculez entre {{label:Board.Database.Stats}} (statistiques de coups) et {{label:Board.Database.Games}} (parties correspondantes).
+- Pour les bases locales, cliquez sur {{label:Board.Database.Compare}} afin d’afficher deux bases côte à côte, ou ouvrez {{label:Board.Database.Local.Position}} pour basculer entre la recherche de position {{label:Board.Database.Local.Exact}} et {{label:Board.Database.Local.Partial}} (y compris {{label:Board.Database.Local.SimilarStructure}} pour la recherche par structure de pions et {{label:Fen.Empty}} pour des motifs personnalisés).
+- Utilisez {{label:Board.Database.Pin}} pour épingler l’explorateur au-dessus ou en dessous de l’échiquier ou de la notation, et {{label:Board.Database.Unpin}} pour le replacer dans les onglets.

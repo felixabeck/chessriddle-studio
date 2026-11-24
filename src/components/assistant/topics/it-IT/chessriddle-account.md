@@ -1,0 +1,16 @@
+---
+id: chessriddle-account
+title: Account ChessRiddle
+summary: Collega, aggiorna o disconnetti il tuo account ChessRiddle per l’allenamento tattico online.
+source: bcfa02305ce425f9
+---
+
+Il tuo account ChessRiddle collega Studio all’allenamento tattico online di {{label:Puzzle.Source.ChessRiddle}}.
+
+Gestisci la connessione nella scheda {{label:Home.ChessRiddle.Title}} su [[page:accounts]] ({{label:SideBar.Accounts}}), oppure direttamente dal pannello dei puzzle quando apri {{label:Home.Card.Puzzle.Title}} su [[page:new-tab]].
+
+- Fai clic su {{label:Home.ChessRiddle.Connect}} per accedere tramite il browser. Le credenziali della sessione vengono salvate nel portachiavi di sistema.
+- Una volta connesso, la scheda mostra il tuo nome utente e il piano (Free o Gold).
+- Fai clic su {{label:Home.ChessRiddle.Refresh}} per verificare lo stato attuale del tuo account e il piano.
+- Se la sessione scade, fai clic su {{label:Home.ChessRiddle.Reconnect}} per accedere di nuovo.
+- Fai clic su {{label:Home.ChessRiddle.Disconnect}} per rimuovere l’account da questo computer e disconnetterti.

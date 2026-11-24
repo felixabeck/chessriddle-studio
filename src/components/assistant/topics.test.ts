@@ -4,6 +4,7 @@ import {
     visibleSettingCategories,
     type SettingsBuildFacts,
 } from "@/components/settings/settingsDescription";
+import { supportedLocales, type SupportedLocale } from "@/i18n";
 import deDE from "@/translation/de-DE.json";
 import enUS from "@/translation/en-US.json";
 import { buildAssistantTargets } from "./targets";
@@ -13,10 +14,12 @@ import {
     extractTargetRefs,
     loadHelpTopics,
     loadLocalizedTopicFiles,
+    parseHelpTopic,
     resolveHelpTopic,
     setHelpTopicsLoaderForTests,
 } from "./topics";
 import { rawHelpTopics } from "./topics/bundle";
+import { parseTopicFrontmatter } from "./topics/format";
 
 // Mirrors the `MAX_ASSISTANT_*` constants in `src-tauri/src/coach/mod.rs`.
 const NATIVE_BOUNDS = {
@@ -42,6 +45,37 @@ const deCatalogue = deDE.translation as Record<string, string>;
 
 const enTranslator = (key: string) => enCatalogue[key] ?? key;
 const deTranslator = (key: string) => deCatalogue[key] ?? key;
+
+const REQUIRED_TRANSLATED_LOCALES = supportedLocales.filter(
+    (locale): locale is Exclude<SupportedLocale, "en-US" | "en-GB"> =>
+        locale !== "en-US" && locale !== "en-GB",
+);
+
+const englishTopicSources = import.meta.glob("./topics/*.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+}) as Record<string, string>;
+
+const localizedTopicSources = import.meta.glob("./topics/*/*.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+}) as Record<string, string>;
+
+async function topicSourceHash(source: string): Promise<string> {
+    const digest = await globalThis.crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(source),
+    );
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"))
+        .join("")
+        .slice(0, 16);
+}
+
+function sortedMultiset(values: readonly string[]): string[] {
+    return [...values].sort();
+}
 
 function utf8Bytes(value: string): number {
     return new TextEncoder().encode(value).byteLength;
@@ -87,6 +121,15 @@ describe("help topics", () => {
             expect(topic.body.trim().length).toBeGreaterThan(0);
         }
         expect(duplicates).toEqual([]);
+    });
+
+    test("parseTopicFrontmatter rejects missing delimiters and colon-less frontmatter lines", () => {
+        expect(() => parseTopicFrontmatter("No frontmatter here", "broken.md")).toThrow(
+            "Help topic broken.md is missing frontmatter delimiters",
+        );
+        expect(() =>
+            parseTopicFrontmatter("---\nid: ok\ninvalid line\n---\nBody", "malformed.md"),
+        ).toThrow("Invalid frontmatter line in malformed.md: invalid line");
     });
 
     test("every topic stays within native bounds", () => {
@@ -332,6 +375,153 @@ describe("help topics", () => {
 
             expect(topics.map((topic) => topic.id)).toEqual(["tabs-and-new-tab", "feedback"]);
             expect(topics.map((topic) => topic.title)).toEqual(["Tabs DE", "Feedback DE"]);
+        });
+
+        test("real un-stubbed loader returns German topic bodies and German labels for de-DE", async () => {
+            setHelpTopicsLoaderForTests(null);
+            const deTopics = await loadHelpTopics(deTranslator, "de-DE");
+            const enTopics = await loadHelpTopics(enTranslator, "en-US");
+
+            expect(deTopics.length).toBe(rawHelpTopics.length);
+            expect(deTopics.map((topic) => topic.id)).toEqual([...HELP_TOPIC_ORDER]);
+
+            for (const deTopic of deTopics) {
+                const enTopic = enTopics.find((candidate) => candidate.id === deTopic.id);
+                expect(enTopic).toBeDefined();
+                expect(deTopic.title).not.toBe(enTopic!.title);
+                expect(deTopic.summary).not.toBe(enTopic!.summary);
+                expect(deTopic.body).not.toBe(enTopic!.body);
+                expect(deTopic.body).not.toContain("{{label:");
+                expect(
+                    extractLabelRefs(`${deTopic.title}\n${deTopic.summary}\n${deTopic.body}`),
+                ).toEqual([]);
+            }
+
+            const feedbackTopic = deTopics.find((topic) => topic.id === "feedback");
+            expect(feedbackTopic).toBeDefined();
+            expect(feedbackTopic!.title).toBe(
+                "Feedback, Protokolle, gespeicherte Daten löschen und Updates",
+            );
+            expect(feedbackTopic!.body).toContain("Fehler zu melden");
+            expect(feedbackTopic!.body).toContain(deCatalogue["Menu.Help.SendFeedback"]);
+            expect(feedbackTopic!.body).toContain(deCatalogue["Menu.Help.OpenLogs"]);
+            expect(feedbackTopic!.body).toContain(deCatalogue["Menu.Help.ClearSavedData"]);
+            expect(feedbackTopic!.body).not.toContain("report a bug");
+
+            const aiTopic = deTopics.find((topic) => topic.id === "ai-connections");
+            expect(aiTopic).toBeDefined();
+            expect(aiTopic!.body).toContain("KI-Verbindungen versorgen sowohl den Coach");
+            expect(aiTopic!.body).toContain(deCatalogue["Settings.AI"]);
+            expect(aiTopic!.body).toContain(deCatalogue["SideBar.Engines"]);
+        });
+
+        test("real un-stubbed loader loads every required locale in HELP_TOPIC_ORDER with non-empty translated content", async () => {
+            setHelpTopicsLoaderForTests(null);
+            const enTopics = await loadHelpTopics(enTranslator, "en-US");
+            const enById = new Map(enTopics.map((topic) => [topic.id, topic]));
+
+            for (const locale of REQUIRED_TRANSLATED_LOCALES) {
+                const topics = await loadHelpTopics(enTranslator, locale);
+                expect(topics.map((topic) => topic.id)).toEqual([...HELP_TOPIC_ORDER]);
+                for (const topic of topics) {
+                    const enTopic = enById.get(topic.id);
+                    expect(enTopic).toBeDefined();
+                    expect(topic.summary.trim().length).toBeGreaterThan(0);
+                    expect(topic.body.trim().length).toBeGreaterThan(0);
+                    expect({ locale, id: topic.id, body: topic.body }).not.toEqual({
+                        locale,
+                        id: topic.id,
+                        body: enTopic!.body,
+                    });
+                    expect({ locale, id: topic.id, title: topic.title }).not.toEqual({
+                        locale,
+                        id: topic.id,
+                        title: enTopic!.title,
+                    });
+                    expect({ locale, id: topic.id, summary: topic.summary }).not.toEqual({
+                        locale,
+                        id: topic.id,
+                        summary: enTopic!.summary,
+                    });
+                }
+            }
+        });
+    });
+
+    describe("localized topic translations", () => {
+        test("every required non-English locale translates every English topic with matching refs and source hash", async () => {
+            expect(REQUIRED_TRANSLATED_LOCALES.length).toBe(supportedLocales.length - 2);
+            const requiredLocaleSet = new Set<string>(REQUIRED_TRANSLATED_LOCALES);
+            const englishEntries = await Promise.all(
+                Object.entries(englishTopicSources).map(async ([filePath, raw]) => {
+                    const filename = filePath.replace("./topics/", "");
+                    const parsed = parseHelpTopic(raw, filePath);
+                    const combined = `${parsed.title}\n${parsed.summary}\n${parsed.body}`;
+                    return {
+                        filename,
+                        parsed,
+                        sourceHash: await topicSourceHash(raw),
+                        labels: sortedMultiset(extractLabelRefs(combined)),
+                        targets: sortedMultiset(extractTargetRefs(combined)),
+                    };
+                }),
+            );
+            const englishByFilename = new Map(
+                englishEntries.map((entry) => [entry.filename, entry]),
+            );
+            const problems: string[] = [];
+
+            for (const locale of REQUIRED_TRANSLATED_LOCALES) {
+                for (const english of englishEntries) {
+                    const translatedPath = `./topics/${locale}/${english.filename}`;
+                    const translatedRaw = localizedTopicSources[translatedPath];
+                    if (translatedRaw === undefined) {
+                        problems.push(`${translatedPath}: missing translation file`);
+                        continue;
+                    }
+                    const parsed = parseHelpTopic(translatedRaw, translatedPath);
+                    if (parsed.id !== english.parsed.id) {
+                        problems.push(
+                            `${translatedPath}: id ${parsed.id} does not match ${english.parsed.id}`,
+                        );
+                    }
+                    const sourceHash = parseTopicFrontmatter(
+                        translatedRaw,
+                        translatedPath,
+                    ).fields.get("source");
+                    if (sourceHash !== english.sourceHash) {
+                        problems.push(
+                            `${translatedPath}: source hash ${sourceHash ?? "<missing>"} does not match ${english.sourceHash}`,
+                        );
+                    }
+                    const combined = `${parsed.title}\n${parsed.summary}\n${parsed.body}`;
+                    const labels = sortedMultiset(extractLabelRefs(combined));
+                    const targets = sortedMultiset(extractTargetRefs(combined));
+                    if (JSON.stringify(labels) !== JSON.stringify(english.labels)) {
+                        problems.push(`${translatedPath}: label reference multiset mismatch`);
+                    }
+                    if (JSON.stringify(targets) !== JSON.stringify(english.targets)) {
+                        problems.push(`${translatedPath}: target reference multiset mismatch`);
+                    }
+                }
+            }
+
+            for (const filePath of Object.keys(localizedTopicSources)) {
+                const match = /^\.\/topics\/([^/]+)\/([^/]+\.md)$/.exec(filePath);
+                if (!match) {
+                    problems.push(`${filePath}: unexpected localized topic path`);
+                    continue;
+                }
+                const [, locale, filename] = match;
+                if (!requiredLocaleSet.has(locale)) {
+                    problems.push(`${filePath}: unexpected translation locale ${locale}`);
+                }
+                if (!englishByFilename.has(filename)) {
+                    problems.push(`${filePath}: translation exists without an English original`);
+                }
+            }
+
+            expect(problems).toEqual([]);
         });
     });
 });

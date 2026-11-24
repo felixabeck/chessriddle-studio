@@ -14,7 +14,7 @@ export const LABEL_REF_PATTERN = /\{\{label:([A-Za-z0-9._-]+)\}\}/g;
 export const TARGET_REF_PATTERN = /\[\[([^[\]\n]+)\]\]/g;
 
 /**
- * Parses a shipped help topic file.
+ * Parses frontmatter key/value pairs and the trimmed body from a shipped help topic file.
  * Format:
  * ```
  * ---
@@ -25,7 +25,10 @@ export const TARGET_REF_PATTERN = /\[\[([^[\]\n]+)\]\]/g;
  * Body text...
  * ```
  */
-export function parseHelpTopic(source: string, filename: string): RawHelpTopic {
+export function parseTopicFrontmatter(
+    source: string,
+    filename: string,
+): { readonly fields: Map<string, string>; readonly body: string } {
     const normalized = source.replace(/\r\n/g, "\n");
     const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(normalized);
     if (!match) {
@@ -44,6 +47,15 @@ export function parseHelpTopic(source: string, filename: string): RawHelpTopic {
         const value = line.slice(colon + 1).trim();
         fields.set(key, value);
     }
+    return {
+        fields,
+        body: body.trim(),
+    };
+}
+
+/** Parses a shipped help topic file into its required fields and body. */
+export function parseHelpTopic(source: string, filename: string): RawHelpTopic {
+    const { fields, body } = parseTopicFrontmatter(source, filename);
     const id = fields.get("id");
     const title = fields.get("title");
     const summary = fields.get("summary");
@@ -54,7 +66,7 @@ export function parseHelpTopic(source: string, filename: string): RawHelpTopic {
         id,
         title,
         summary,
-        body: body.trim(),
+        body,
     };
 }
 

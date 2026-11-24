@@ -1,0 +1,30 @@
+---
+id: databases
+title: Databaser, utforsker, stillingssøk, spillere og turneringer
+summary: Legg til eller last ned partidatabaser, velg en referansedatabase, søk etter stillinger i utforskeren og bla gjennom partier, spillere og turneringer.
+source: 48c72137fadc1768
+---
+
+Databaser ligger i [[page:library]] ({{label:SideBar.Library}}) sammen med PGN-filene dine, og lagres i [[setting:databases-directory]].
+
+For å legge til en database åpner du [[page:library]] og klikker {{label:Library.AddDatabase}}:
+- {{label:Databases.Add.Web}}: last ned utvalgte partidatabaser fra katalogen.
+- {{label:Common.Local}}: velg en lokal PGN-fil (inkludert `.pgn.zst` eller `.pgn.bz2`), skriv inn et {{label:Common.Name}} og en valgfri {{label:Common.Description}}, og klikk {{label:Databases.Add.Convert}}.
+
+Velg en database i [[page:library]] for å administrere den:
+- Kryss av for {{label:Databases.Settings.ReferenceDatabase}} for å gjøre den til standard referansedatabase for utforskeren, repertoarbyggeren, nyheter i partirapporten og Coach.
+- Kryss av for {{label:Databases.Settings.Indexed}} for å opprette eller fjerne søkeindekser for raskere oppslag.
+- Klikk {{label:Databases.Settings.Explore}} for å åpne tabellvisningen av databasen.
+- Under {{label:Databases.Settings.Actions}} kan du bruke {{label:Databases.Settings.AddGames}} til å legge til PGN-filer, {{label:Databases.Settings.ExportPGN}} til å eksportere til PGN, eller {{label:Common.Delete}} for å fjerne databasen.
+- Under {{label:Databases.Settings.AdvancedTools}} kan du bruke {{label:Databases.Settings.MergePlayers}} til å slå sammen dupliserte spilleroppføringer, eller {{label:Databases.Settings.RemoveDup}} og {{label:Databases.Settings.RemoveEmpty}} til å rydde opp i partier.
+
+Inne i tabellvisningen av databasen bytter du mellom {{label:Common.Games}}, {{label:Databases.Card.Players}} og {{label:Databases.Settings.Events}} (turneringer):
+- Søk og sorter partier, forhåndsvis et parti eller åpne det på analysebrettet.
+- Under {{label:Databases.Card.Players}} velger du en spiller for å se {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} og {{label:Home.Personal.Openings}} (et interaktivt åpningstre med knappen {{label:Databases.OpeningTree.Prepare}}), pluss FIDE-info via {{label:Databases.FIDE.Info}}.
+- Under {{label:Databases.Settings.Events}} kan du søke etter turneringer på navn og sortere etter dato, spillere, partier eller gjennomsnittsrating.
+
+På analysebrettet åpner du {{label:Board.Tabs.Database}} for å bruke åpningsutforskeren:
+- Bytt mellom {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} og {{label:Board.Database.LichessMaster}} (nettutforskerne for Lichess krever en innlogget Lichess-konto på [[page:accounts]]).
+- Bytt mellom {{label:Board.Database.Stats}} (trekkstatistikk) og {{label:Board.Database.Games}} (samsvarende partier).
+- For lokale databaser klikker du {{label:Board.Database.Compare}} for å vise to databaser side ved side, eller åpner {{label:Board.Database.Local.Position}} for å bytte mellom {{label:Board.Database.Local.Exact}} og {{label:Board.Database.Local.Partial}} stillingssøk (inkludert {{label:Board.Database.Local.SimilarStructure}} for bondestruktursøk og {{label:Fen.Empty}} for egendefinerte mønstre).
+- Bruk {{label:Board.Database.Pin}} for å feste utforskeren over eller under brettet eller notasjonen, og {{label:Board.Database.Unpin}} for å legge den tilbake i fanene.

@@ -1,0 +1,26 @@
+---
+id: analysis-board
+title: Дошка аналізу, варіанти, коментарі та стрілки
+summary: Введення ходів, редагування позицій, керування варіантами, написання коментарів, додавання анотацій і малювання стрілок на дошці.
+source: 14ba83ba3068d6ed
+---
+
+Відкрийте дошку аналізу зі сторінки [[page:new-tab]], натиснувши {{label:Home.Card.AnalysisBoard.Title}}, або відкривши збережену партію чи репертуар із [[page:library]].
+
+Робіть ходи перетягуванням або натисканням на фігури (налаштовується у [[setting:move-method]]). Ви також можете увімкнути [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}), щоб вводити ходи в нотації SAN. Використовуйте кнопки керування під нотацією, клавіші зі стрілками або коліщатко миші (якщо увімкнено [[setting:scroll-moves]]) для переходу між ходами.
+
+Панель інструментів біля нотації містить дії для дошки:
+- {{label:Board.Action.TakeSnapshot}}: зберегти зображення поточної дошки.
+- {{label:Board.Action.EditPosition}}: налаштувати довільну позицію, розставивши фігури або відредагувавши FEN.
+- {{label:Board.Action.PlayFromHere}}: почати партію з поточної позиції.
+- {{label:Board.Action.ClearDrawings}}: прибрати стрілки та підсвічування клітинок (відображається, якщо вимкнено [[setting:erase-drawables]]).
+- {{label:Board.Database.Save}}: зберегти партію у файл бібліотеки або базу даних.
+- Кнопки скасування, повтору, збереження та перевертання дошки.
+
+Якщо зробити інший хід із попередньої позиції, створюється варіант. Клацніть правою кнопкою миші по будь-якому ходу в нотації, щоб вибрати {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} або {{label:Notation.MarkGameEndHere}}. Кнопки в заголовку нотації перемикають {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} і {{label:Notation.HideVariations}}.
+
+Щоб додавати анотації до ходів і писати коментарі, відкрийте вкладку {{label:Board.Tabs.Annotate}}. Натисніть символ якості ходу (або клавіші від 1 до 6), щоб перемкнути `!!`, `!`, `!?`, `?!`, `?` чи `??`, або натисніть {{label:Annotate.ShowMore}} для оцінкових і позиційних символів. Під символами в текстовому редакторі можна писати форматовані коментарі та перемикати вбудовані діаграми дошки.
+
+Щоб малювати стрілки та виділяти клітинки, утримуйте праву кнопку миші й проведіть по дошці (або клацніть правою кнопкою по клітинці для кола). Утримуйте клавіші-модифікатори для різних кольорів: Shift для {{label:Settings.Drawing.Red}}, Alt для {{label:Settings.Drawing.Blue}}, Shift+Alt для {{label:Settings.Drawing.Yellow}}, Ctrl (Cmd на macOS) для {{label:Settings.Drawing.Orange}} і Ctrl+Alt (Cmd+Alt на macOS) для {{label:Settings.Drawing.Cyan}}. Повний список модифікаторів малювання дивіться у [[settings-category:keybinds]].
+
+Вкладка {{label:Board.Tabs.Info}} показує заголовки партії, FEN, текст PGN і статистику дерева варіантів, а також дає змогу перемикатися між партіями в багатопартійному файлі PGN.

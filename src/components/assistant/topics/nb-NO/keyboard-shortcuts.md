@@ -1,0 +1,18 @@
+---
+id: keyboard-shortcuts
+title: Tastaturbindinger og tegnemodifikatorer
+summary: Vis, tilpass og tilbakestill tastaturbindinger, og lær musmodifikatorene for å tegne piler.
+source: ffc64b2decf8dd86
+---
+
+Vis og tilpass alle tastaturbindinger under [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) på [[page:settings]]. Klikk på en snarvei i tabellen for å registrere en ny tastekombinasjon, eller klikk {{label:Common.Reset}} ved siden av overskriften for å gjenopprette alle standarder.
+
+Vanlige standardsnarveier (med Ctrl på Windows/Linux og Cmd på macOS):
+- Faner og filer: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).
+- Navigasjon: {{label:Settings.Keybinds.Actions.NEXT_MOVE}} (`Right`), {{label:Settings.Keybinds.Actions.PREVIOUS_MOVE}} (`Left`), {{label:Settings.Keybinds.Actions.GO_TO_BRANCH_START}} (`Up`), {{label:Settings.Keybinds.Actions.GO_TO_BRANCH_END}} (`Down`), {{label:Settings.Keybinds.Actions.GO_TO_START}} (`Shift+Up`), {{label:Settings.Keybinds.Actions.GO_TO_END}} (`Shift+Down`), {{label:Settings.Keybinds.Actions.NEXT_BRANCH}} (`C`), {{label:Settings.Keybinds.Actions.PREVIOUS_BRANCH}} (`Shift+C`), {{label:Settings.Keybinds.Actions.NEXT_BRANCHING}} (`Shift+Right`), {{label:Settings.Keybinds.Actions.PREVIOUS_BRANCHING}} (`Shift+Left`), {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}} (`U`), {{label:Settings.Keybinds.Actions.PREVIOUS_GAME}} (`PageUp`), {{label:Settings.Keybinds.Actions.NEXT_GAME}} (`PageDown`).
+- Brett og redigering: {{label:Settings.Keybinds.Actions.SWAP_ORIENTATION}} (`F`), {{label:Settings.Keybinds.Actions.UNDO}} (`Ctrl/Cmd+Z`), {{label:Settings.Keybinds.Actions.REDO}} (`Ctrl/Cmd+Shift+Z`), {{label:Settings.Keybinds.Actions.DELETE_MOVE}} (`Delete`), {{label:Settings.Keybinds.Actions.CLEAR_SHAPES}} (`Ctrl+L`), {{label:Settings.Keybinds.Actions.TOGGLE_BLUR}} (`Ctrl+B`).
+- Analyse og paneler: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), samt paneltastene `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) og `I` ({{label:Board.Tabs.Info}}).
+- Annotasjoner: `1` til `6` slår `!!`, `!`, `!?`, `?!`, `?` og `??` av/på. Inne i kommentarredigeringen flytter `Tab` og `Shift+Tab` til neste eller forrige trekk.
+- Fullskjerm: `F11` på Windows/Linux, `Ctrl+Cmd+F` på macOS.
+
+Nederst i [[settings-category:keybinds]] står også musmodifikatorene for {{label:Settings.Drawing}} til å tegne fargede piler og sirkler på brettet.

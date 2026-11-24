@@ -1,0 +1,26 @@
+---
+id: analysis-board
+title: Доска анализа, варианты, комментарии и стрелки
+summary: Ввод ходов, редактирование позиций, работа с вариантами, написание комментариев, добавление аннотаций и рисование стрелок на доске.
+source: 14ba83ba3068d6ed
+---
+
+Откройте доску анализа со страницы [[page:new-tab]], нажав {{label:Home.Card.AnalysisBoard.Title}}, или открыв сохранённую партию либо репертуар из [[page:library]].
+
+Делайте ходы перетаскиванием или нажатием на фигуры (настраивается в [[setting:move-method]]). Вы также можете включить [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}), чтобы вводить ходы в алгебраической нотации SAN. Используйте кнопки управления под нотацией, клавиши со стрелками или колесо мыши (если включён параметр [[setting:scroll-moves]]) для перехода по ходам.
+
+Панель инструментов рядом с нотацией содержит действия для доски:
+- {{label:Board.Action.TakeSnapshot}}: сохранить изображение текущей позиции на доске.
+- {{label:Board.Action.EditPosition}}: задать произвольную позицию, расставив фигуры или отредактировав FEN.
+- {{label:Board.Action.PlayFromHere}}: начать партию с текущей позиции.
+- {{label:Board.Action.ClearDrawings}}: удалить стрелки и выделение полей (отображается, если выключен параметр [[setting:erase-drawables]]).
+- {{label:Board.Database.Save}}: сохранить партию в файл библиотеки или в базу данных.
+- Кнопки отмены, повтора, сохранения и переворота доски.
+
+Если сделать другой ход из более ранней позиции, создаётся вариант. Щёлкните правой кнопкой мыши по любому ходу в нотации, чтобы выбрать {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} или {{label:Notation.MarkGameEndHere}}. Кнопки в заголовке нотации позволяют переключать {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} и {{label:Notation.HideVariations}}.
+
+Чтобы добавлять аннотации к ходам и писать комментарии, откройте вкладку {{label:Board.Tabs.Annotate}}. Нажмите на символ оценки хода (или клавиши от 1 до 6), чтобы переключить `!!`, `!`, `!?`, `?!`, `?` или `??`, либо нажмите {{label:Annotate.ShowMore}} для символов оценки позиции. Под символами расположен текстовый редактор для форматированных комментариев и добавления встроенных диаграмм доски.
+
+Чтобы рисовать стрелки и выделять поля, зажмите правую кнопку мыши и проведите по доске (или нажмите правой кнопкой по полю для кружка). Удерживайте клавиши-модификаторы для разных цветов: Shift для {{label:Settings.Drawing.Red}}, Alt для {{label:Settings.Drawing.Blue}}, Shift+Alt для {{label:Settings.Drawing.Yellow}}, Ctrl (Cmd на macOS) для {{label:Settings.Drawing.Orange}} и Ctrl+Alt (Cmd+Alt на macOS) для {{label:Settings.Drawing.Cyan}}. Полный список настроек рисования смотрите в разделе [[settings-category:keybinds]].
+
+На вкладке {{label:Board.Tabs.Info}} отображаются заголовки партии, FEN, текст PGN и статистика дерева вариантов, а также можно переключаться между партиями в многопартийном PGN-файле.
