@@ -18,14 +18,31 @@ import {
     assertButtonGlyphsUnclipped,
 } from "./fixtures";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
+import { getBoardState } from "../src/utils/treeReducer";
 import { createEmptyCard } from "ts-fsrs";
 import type { PositionStats, PracticeReviewWrite } from "../src/bindings/generated";
 import type { Locator } from "@playwright/test";
+import { Chess } from "chessops/chess";
+import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
+import { parseSan } from "chessops/san";
 
 function positionStats(move: string): PositionStats[] {
     return [
         { move, white: 100, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] },
     ];
+}
+
+/** Board-state FENs collectStatisticsFens emits for a root-to-leaf SAN path. */
+function boardStatesAlong(moves: readonly string[]): string[] {
+    const position = Chess.fromSetup(parseFen(INITIAL_FEN).unwrap()).unwrap();
+    const fens = [getBoardState(makeFen(position.toSetup()))];
+    for (const san of moves) {
+        const move = parseSan(position, san);
+        if (move === undefined) throw new Error(`illegal ${san}`);
+        position.play(move);
+        fens.push(getBoardState(makeFen(position.toSetup())));
+    }
+    return fens;
 }
 
 /**
@@ -1231,6 +1248,7 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     const startFen = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -";
     const afterBc5Fen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -";
     const afterD3Fen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R b KQkq -";
+    const markedStartPathFens = boardStatesAlong(["e4", "e5", "Nf3", "Nc6", "Bc4"]);
     const commands = filesWorkspaceCommands([[repertoireFile]], {
         ...pgnFileCommands,
         read_game: { result: game },
@@ -1293,7 +1311,7 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     expect(await queries()).toHaveLength(2);
     expect((await queries()).map(({ args }) => (args as { fens: string[] }).fens)).toEqual([
         [rootFen],
-        [startFen],
+        markedStartPathFens,
     ]);
     expect(
         (await queries("search_position")).map(
@@ -1331,7 +1349,7 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     expect(await queries()).toHaveLength(3);
     expect((await queries()).at(-1)!.args).toMatchObject({
         file: database,
-        fens: [startFen, afterBc5Fen],
+        fens: [...markedStartPathFens, afterBc5Fen],
     });
     expect(await queries("search_position")).toHaveLength(3);
     await page.evaluate(
@@ -1364,7 +1382,7 @@ test("workspace-tabs: successful Italian marked-start coverage with a missing co
     expect(await queries()).toHaveLength(4);
     expect((await queries()).at(-1)!.args).toMatchObject({
         file: database,
-        fens: [startFen, afterBc5Fen, afterD3Fen],
+        fens: [...markedStartPathFens, afterBc5Fen, afterD3Fen],
     });
     expect(
         (await queries("search_position")).map(
