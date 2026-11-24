@@ -29013,7 +29013,7 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 
 ### The filePositionIndex 500-chapter limit benchmark times out at 30 s on the hosted frontend job
 
-* **ID:** f-20261124-14 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261124-14 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45418662644
 * **Filed from:** 275e9313-8f5a-48c0-9de5-747655d15940
@@ -29022,3 +29022,10 @@ Rejected: a darker fill (yellow-9 stays at 3.00:1 under white), and Mantine `aut
 * **Failure scenario (observed):** Test run 45418662644, job `frontend` 138531790499, on master `7d91c7788` (whose own range changes only `scripts/run-push-gates*.mjs`, the push skill, the gate-tooling rule and the ledger): `1 failed | 10478 passed`, `× synthetic limit benchmark … 30013ms`, `##[error]Error: Test timed out in 30000ms.` `pnpm ci:remote:check` refuses every code push while this job stays red.
 * **Proof:** `gh api repos/felixabeck/chessriddle-studio/actions/jobs/138531790499/logs` (copy at `/tmp/fe-138531790499.log`). Fix: decide what the benchmark proves. If it proves the limits (500 chapters, 200,000 positions, byte cap, page count), shrink the work that is not needed for that or give it a measured budget that covers instrumented CI. If it proves speed, assert a measured bound with headroom instead of relying on the test timeout. Prove it with `--repeat-each` under CPU load, as f-20261106-49 did.
 * **Found by:** Claude Code drain session 275e9313-8f5a-48c0-9de5-747655d15940, 2026-11-24, in the post-push CI wait of the f-20261124-03 release.
+
+**Handled 2026-11-24 (drain, commit 68233cffb).** The benchmark never asserted time, so it proved limits, not speed. It was replaced by tests that need no runner speed: a file exactly at every limit (4 chapters, 40 bytes, 12 positions, page size 3) is built in 2 page reads under small registry bounds; the default registry accepts `MAX_FILE_INDEX_CHAPTERS` one-position chapters in 5 reads and rejects 501 unread; the default registry rejects a file over `MAX_FILE_INDEX_BYTES` before lexing. The 2026-11-24 performance measurement stays as documentation on the constants, marked as not a test.
+
+**Proof:** `vitest run src/state/filePositionIndex.test.ts` with coverage enabled, 10 consecutive runs under 20 CPU busy loops: 10 of 10 passed, about 1 s of test time per run (was >30 s for the one benchmark on CI). Mutating any of the three cap comparisons from `>` to `>=` turns the at-limit test red.
+
+**Rejected:** raising the test timeout (keeps the work tied to runner speed); asserting a wall-clock bound (the same flake with a different number). **Accepted loss:** the actual values of `MAX_FILE_INDEX_POSITIONS` and the at-cap acceptance of the default byte cap are no longer exercised at full size; the boundary semantics are, with small bounds.
+<!-- ledger-meta {"command":"close","effect_lines":5,"effect_sha256":"3537d8ba30025ebacc6bee7403fe1263512981c642126f66435b21a40b831e86","header_sha256":"b03ecb1b1c2a7c5e1ad6e08fc4dd43dc6aeb08e1608124f70c3fe9d892490498","header_status":"handled","input_sha256":"49aa0cde415606534e85f60b46f2bdffb3606dc0cf7af1e9266739b95849a1dd","kind":"mutation-receipt","operation":"de7d8d80f3adaa0b8968829660baa1fb5915d73e20a882b6d26fcdaec1924ced","options":{"section":null},"request_id_sha256":null,"results":["f-20261124-14"],"target":"f-20261124-14","v":1} -->
