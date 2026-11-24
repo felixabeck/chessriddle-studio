@@ -3306,6 +3306,14 @@ pub(crate) mod tests {
     };
     use tempfile::tempdir;
 
+    /// Bound for a test waiting on a worker to reach a point the test synchronises on (a held
+    /// fault point, a started transport, a fired deadline), and for a held worker waiting on the
+    /// test to release it. It only has to catch a real hang: a short bound races
+    /// the worker against host load and failed on the hosted Windows runner (f-20261120-12).
+    /// A held worker whose test panicked returns at once: its release sender drops, or its
+    /// release guard sends on drop.
+    const RENDEZVOUS_TIMEOUT: Duration = Duration::from_secs(60);
+
     #[test]
     fn payload_download_staging_has_no_pathname() {
         let source = include_str!("fs.rs");
@@ -3432,7 +3440,7 @@ pub(crate) mod tests {
                 if let Some(entered) = self.entered.take() {
                     let _ = entered.send(());
                 }
-                let _ = self.release.recv_timeout(Duration::from_secs(5));
+                let _ = self.release.recv_timeout(RENDEZVOUS_TIMEOUT);
                 buffer[..64].fill(3);
                 Ok(64)
             }
@@ -3458,7 +3466,7 @@ pub(crate) mod tests {
                 &worker_cancellation,
             )
         });
-        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        entered_rx.recv_timeout(RENDEZVOUS_TIMEOUT).unwrap();
         cancellation.cancel();
         release_tx.send(()).unwrap();
         assert!(matches!(worker.join().unwrap(), Err(Error::Cancellation)));
@@ -8291,7 +8299,7 @@ pub(crate) mod tests {
             );
         }
         for _ in 0..4 {
-            tokio::time::timeout(Duration::from_secs(5), started_rx.recv())
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, started_rx.recv())
                 .await
                 .unwrap()
                 .unwrap();
@@ -8367,7 +8375,7 @@ pub(crate) mod tests {
                 "installed",
                 integrity,
             );
-            tokio::time::timeout(Duration::from_secs(5), started_rx.recv())
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, started_rx.recv())
                 .await
                 .unwrap()
                 .unwrap();
@@ -8737,7 +8745,7 @@ pub(crate) mod tests {
                 cleanup_observed.store(true, Ordering::SeqCst);
                 let _ = cleanup_entered_tx.send(());
                 cleanup_release_rx
-                    .recv_timeout(Duration::from_secs(5))
+                    .recv_timeout(RENDEZVOUS_TIMEOUT)
                     .expect("terminal cleanup release");
             }),
         );
@@ -8750,7 +8758,7 @@ pub(crate) mod tests {
             "installed",
             integrity,
         );
-        tokio::time::timeout(Duration::from_secs(5), started_rx.recv())
+        tokio::time::timeout(RENDEZVOUS_TIMEOUT, started_rx.recv())
             .await
             .unwrap()
             .unwrap();
@@ -8768,11 +8776,11 @@ pub(crate) mod tests {
             holders.push(tokio::spawn(
                 crate::infra::blocking::BLOCKING_GATEWAY.spawn(move || {
                     let _ = entered_tx.send(());
-                    let _ = release_rx.recv_timeout(Duration::from_secs(5));
+                    let _ = release_rx.recv_timeout(RENDEZVOUS_TIMEOUT);
                     Ok(())
                 }),
             ));
-            tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered_rx)
                 .await
                 .unwrap()
                 .unwrap();
@@ -8821,7 +8829,7 @@ pub(crate) mod tests {
             );
         }
         drop(holder_guards);
-        tokio::time::timeout(Duration::from_secs(5), cleanup_entered_rx)
+        tokio::time::timeout(RENDEZVOUS_TIMEOUT, cleanup_entered_rx)
             .await
             .unwrap()
             .unwrap();
@@ -9537,7 +9545,7 @@ pub(crate) mod tests {
             let mut threads = Vec::new();
             for entered in starts {
                 threads.push(
-                    tokio::time::timeout(Duration::from_secs(5), entered)
+                    tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered)
                         .await
                         .unwrap()
                         .unwrap(),
@@ -9770,7 +9778,7 @@ pub(crate) mod tests {
                     set_archive_pre_install_hook(Some(Box::new(move |_| {
                         let _ = entered_tx.send(());
                         release_rx
-                            .recv_timeout(Duration::from_secs(10))
+                            .recv_timeout(RENDEZVOUS_TIMEOUT)
                             .expect("preparation release");
                     })));
                 })),
@@ -9799,7 +9807,7 @@ pub(crate) mod tests {
                     Box::new(accept_any_integrity),
                 ),
             ));
-            tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered_rx)
                 .await
                 .unwrap()
                 .unwrap();
@@ -10410,7 +10418,7 @@ pub(crate) mod tests {
             )
             .await
         });
-        tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::time::timeout(RENDEZVOUS_TIMEOUT, async {
             while !first_seen.load(Ordering::SeqCst) {
                 tokio::task::yield_now().await;
             }
@@ -10473,7 +10481,7 @@ pub(crate) mod tests {
                 Box::new(accept_any_integrity),
             ),
         ));
-        tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::time::timeout(RENDEZVOUS_TIMEOUT, async {
             while !first_seen.load(Ordering::SeqCst) {
                 tokio::task::yield_now().await;
             }
@@ -10526,7 +10534,7 @@ pub(crate) mod tests {
                 )
                 .await
             });
-            tokio::time::timeout(Duration::from_secs(2), entered)
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered)
                 .await
                 .unwrap()
                 .unwrap();
@@ -10576,7 +10584,7 @@ pub(crate) mod tests {
                 )
                 .await
             });
-            tokio::time::timeout(Duration::from_secs(2), entered)
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered)
                 .await
                 .unwrap()
                 .unwrap();
@@ -10634,7 +10642,7 @@ pub(crate) mod tests {
                     Box::new(accept_any_integrity),
                 ),
             ));
-            tokio::time::timeout(Duration::from_secs(2), entered)
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered)
                 .await
                 .unwrap()
                 .unwrap();
@@ -10686,7 +10694,7 @@ pub(crate) mod tests {
                     Box::new(accept_any_integrity),
                 ),
             ));
-            tokio::time::timeout(Duration::from_secs(2), entered)
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered)
                 .await
                 .unwrap()
                 .unwrap();
@@ -10779,7 +10787,7 @@ pub(crate) mod tests {
                     .release
                     .lock()
                     .unwrap()
-                    .recv_timeout(Duration::from_secs(5));
+                    .recv_timeout(RENDEZVOUS_TIMEOUT);
             }
             Ok(())
         }
@@ -10796,7 +10804,7 @@ pub(crate) mod tests {
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
         let hook = Box::new(move || {
             let _ = entered_tx.send(());
-            let _ = release_rx.recv_timeout(Duration::from_secs(5));
+            let _ = release_rx.recv_timeout(RENDEZVOUS_TIMEOUT);
         });
         if after {
             crate::infra::operations::arm_commit_after_hook(id, hook);
@@ -11975,7 +11983,7 @@ pub(crate) mod tests {
             )
             .await
         });
-        tokio::time::timeout(Duration::from_secs(2), entered_rx)
+        tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered_rx)
             .await
             .unwrap()
             .unwrap();
@@ -12627,7 +12635,7 @@ pub(crate) mod tests {
                 .await
             });
 
-            tokio::time::timeout(Duration::from_secs(1), started_rx)
+            tokio::time::timeout(RENDEZVOUS_TIMEOUT, started_rx)
                 .await
                 .unwrap()
                 .unwrap();
@@ -12731,7 +12739,7 @@ pub(crate) mod tests {
                     ticket,
                     Box::new(move || {
                         let _ = at_commit_tx.send(());
-                        let _ = release_rx.recv_timeout(Duration::from_secs(10));
+                        let _ = release_rx.recv_timeout(RENDEZVOUS_TIMEOUT);
                     }),
                 );
             }
@@ -12776,7 +12784,7 @@ pub(crate) mod tests {
             }
             if boundary == "publication" {
                 if !matches!(
-                    tokio::time::timeout(Duration::from_secs(5), at_commit_rx).await,
+                    tokio::time::timeout(RENDEZVOUS_TIMEOUT, at_commit_rx).await,
                     Ok(Ok(()))
                 ) {
                     panic!(
@@ -12948,7 +12956,7 @@ pub(crate) mod tests {
                 set_archive_pre_install_hook(Some(Box::new(move |_| {
                     let _ = entered_tx.send(());
                     release_rx
-                        .recv_timeout(Duration::from_secs(5))
+                        .recv_timeout(RENDEZVOUS_TIMEOUT)
                         .expect("extraction release");
                 })));
                 let pin = crate::infra::fs::open_parent_no_follow(&target)?;
@@ -12963,7 +12971,7 @@ pub(crate) mod tests {
             },
         ));
 
-        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+        tokio::time::timeout(RENDEZVOUS_TIMEOUT, entered_rx)
             .await
             .unwrap()
             .unwrap();
@@ -12984,7 +12992,7 @@ pub(crate) mod tests {
                 .await
             },
         ));
-        tokio::time::timeout(Duration::from_secs(1), deadline_observer.cancelled())
+        tokio::time::timeout(RENDEZVOUS_TIMEOUT, deadline_observer.cancelled())
             .await
             .expect("the staging deadline must signal cancellation");
         assert!(!registry.wait_for_drain(Duration::ZERO).unwrap());
