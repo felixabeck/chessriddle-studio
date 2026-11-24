@@ -1,5 +1,5 @@
 import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
-import type { DatabaseHandle, PositionStats } from "@/bindings";
+import type { DatabaseHandle, PositionStats, PositionStatsFilter } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { searchPosition } from "./db";
 import type { Position } from "./practicePosition";
@@ -105,21 +105,30 @@ function collectStatisticsFens(
     return [...fenSet];
 }
 
-async function fetchBatchStatistics(
+export async function fetchBatchStatistics(
     fenList: readonly string[],
     dbPath: DatabaseHandle,
+    filter: PositionStatsFilter | null,
     signal?: AbortSignal,
-): Promise<TreeStatistics> {
-    const cache: TreeStatistics = new Map();
+    progressId?: string,
+): Promise<Map<string, PositionStats[]>> {
+    const cache = new Map<string, PositionStats[]>();
     if (fenList.length > 0) {
         const results = await tauri.searchPositionsStats(
             dbPath,
             [...fenList],
-            `coverage-calc:${crypto.randomUUID()}`,
+            filter,
+            progressId ?? `coverage-calc:${crypto.randomUUID()}`,
             { signal },
         );
-        for (const { fen, openings } of results) cache.set(fen, positionMovesFromStats(openings));
+        for (const { fen, openings } of results) cache.set(fen, openings);
     }
+    return cache;
+}
+
+function treeStatisticsFromBatch(raw: Map<string, PositionStats[]>): TreeStatistics {
+    const cache: TreeStatistics = new Map();
+    for (const [fen, openings] of raw) cache.set(fen, positionMovesFromStats(openings));
     return cache;
 }
 
@@ -129,7 +138,14 @@ export async function fetchTreeStatistics(
     dbPath: DatabaseHandle,
     signal?: AbortSignal,
 ): Promise<TreeStatistics> {
-    return fetchBatchStatistics(collectStatisticsFens(root, startPath, signal), dbPath, signal);
+    return treeStatisticsFromBatch(
+        await fetchBatchStatistics(
+            collectStatisticsFens(root, startPath, signal),
+            dbPath,
+            null,
+            signal,
+        ),
+    );
 }
 
 /** One batch statistics request over every tree's reach positions. */
@@ -142,7 +158,7 @@ export async function fetchTreesStatistics(
     for (const tree of trees) {
         for (const fen of collectStatisticsFens(tree.root, tree.startPath, signal)) fens.add(fen);
     }
-    return fetchBatchStatistics([...fens], dbPath, signal);
+    return treeStatisticsFromBatch(await fetchBatchStatistics([...fens], dbPath, null, signal));
 }
 
 function opponentMoveFrequency(parent: TreeNode, child: TreeNode, stats: TreeStatistics): number {

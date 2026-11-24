@@ -237,7 +237,13 @@ test("Train writes weights from one batch when Build is not mounted", async () =
 test("a change of Start cancels the in-flight request and drops a late result", async () => {
   const pending: { signal: AbortSignal; resolve: (e5Games: number) => void }[] = [];
   mocks.native.searchPositionsStats.mockImplementation(
-    async (_db, fens: string[], _operation: string, { signal }: { signal: AbortSignal }) => {
+    async (
+      _db,
+      fens: string[],
+      _filter: unknown,
+      _operation: string,
+      { signal }: { signal: AbortSignal },
+    ) => {
       const e5Games = await new Promise<number>((resolve) => {
         pending.push({ signal, resolve });
       });

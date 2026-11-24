@@ -204,7 +204,7 @@ type TauriCommands = Omit<
 
 const NATIVE_READ_ARITY: Readonly<Record<NativeReadCommandName, number>> = {
     searchPosition: 3,
-    searchPositionsStats: 3,
+    searchPositionsStats: 4,
     getPlayersGameInfo: 3,
     preloadReferenceDb: 1,
     getGames: 2,

@@ -109,6 +109,41 @@ impl From<PositionSearchQuery> for GameQuery {
     }
 }
 
+/// Optional metadata filter for batch position statistics (`search_positions_stats`).
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PositionStatsFilter {
+    #[specta(optional)]
+    pub player1: Option<i32>,
+    #[specta(optional)]
+    pub player2: Option<i32>,
+    #[specta(optional)]
+    pub start_date: Option<String>,
+    #[specta(optional)]
+    pub include_unknown_results: Option<bool>,
+}
+
+impl PositionStatsFilter {
+    fn is_empty(&self) -> bool {
+        self.player1.is_none()
+            && self.player2.is_none()
+            && self.start_date.is_none()
+            && self.include_unknown_results != Some(true)
+    }
+}
+
+impl From<PositionStatsFilter> for GameQuery {
+    fn from(filter: PositionStatsFilter) -> Self {
+        Self {
+            player1: filter.player1,
+            player2: filter.player2,
+            start_date: filter.start_date,
+            include_unknown_results: filter.include_unknown_results,
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ExactData {
     pawn_home: u16,
@@ -824,7 +859,7 @@ fn recency_year(date: &str) -> Option<i32> {
     (year > 0).then_some(year)
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Type)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Type)]
 pub struct PositionStats {
     #[serde(rename = "move")]
     pub move_: String,
@@ -865,22 +900,12 @@ impl PositionStats {
     }
 }
 
-fn record_opening(
-    openings: &DashMap<String, PositionStats>,
-    continuation: String,
+fn record_opening<K: Eq + std::hash::Hash>(
+    openings: &DashMap<K, PositionStats>,
+    key: K,
     entry: SearchGameEntryRef<'_>,
 ) {
-    let mut opening = openings
-        .entry(continuation)
-        .or_insert_with(|| PositionStats {
-            black: 0,
-            white: 0,
-            draw: 0,
-            unknown: 0,
-            move_: String::new(),
-            last_played: None,
-            year_counts: Vec::new(),
-        });
+    let mut opening = openings.entry(key).or_default();
     match entry.result {
         GameResult::WhiteWin => opening.white += 1,
         GameResult::BlackWin => opening.black += 1,
@@ -1143,9 +1168,11 @@ pub struct PositionStatsForFen {
 
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub async fn search_positions_stats(
     file: DatabaseHandle,
     fens: Vec<String>,
+    filter: Option<PositionStatsFilter>,
     app: tauri::AppHandle,
     tab_id: String,
     ticket: Option<String>,
@@ -1169,6 +1196,7 @@ pub async fn search_positions_stats(
                 app,
                 file,
                 fens,
+                filter,
                 token,
             )
         },
@@ -1191,11 +1219,15 @@ fn search_positions_stats_blocking<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     file: DatabaseHandle,
     fens: Vec<String>,
+    filter: Option<PositionStatsFilter>,
     cancellation: &CancellationToken,
 ) -> Result<Vec<PositionStatsForFen>, Error> {
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
+    let effective_filter = filter.filter(|item| !item.is_empty());
+    let use_cache = effective_filter.is_none();
+    let filter_query = effective_filter.map(GameQuery::from).unwrap_or_default();
     let mut input_keys = Vec::with_capacity(fens.len());
     let mut unique = HashMap::new();
     for fen in &fens {
@@ -1228,26 +1260,26 @@ fn search_positions_stats_blocking<R: tauri::Runtime>(
         &file,
         cancellation,
         |_db, identity, index, validate| {
-            let mut results = HashMap::new();
+            let mut results: HashMap<ExactPositionIdentity, Vec<PositionStats>> = HashMap::new();
             let mut misses = Vec::new();
             let mut queries = Vec::new();
             for (position, query) in unique {
-                let key = PositionStatsKey {
-                    position: position.clone(),
-                    identity: identity.clone(),
-                };
-                if let Some(stats) = search_cache.get_position_stats(&key) {
-                    results.insert(position, stats);
-                } else {
-                    misses.push(key);
-                    queries.push(query);
+                if use_cache {
+                    let key = PositionStatsKey {
+                        position: position.clone(),
+                        identity: identity.clone(),
+                    };
+                    if let Some(stats) = search_cache.get_position_stats(&key) {
+                        results.insert(position, stats);
+                        continue;
+                    }
                 }
+                misses.push(position);
+                queries.push(query);
             }
             if !misses.is_empty() {
                 let matcher = ReplayQueries::new(&queries);
-                let openings: Vec<DashMap<String, PositionStats>> =
-                    (0..queries.len()).map(|_| DashMap::new()).collect();
-                let coverage_query = GameQuery::new();
+                let openings: DashMap<(usize, String), PositionStats> = DashMap::new();
                 let processed = AtomicUsize::new(0);
                 let progress_error_diagnosed = AtomicBool::new(false);
                 index
@@ -1283,7 +1315,7 @@ fn search_positions_stats_blocking<R: tauri::Runtime>(
                                 #[cfg(test)]
                                 None,
                             )?;
-                            if !matches_search_metadata(entry, &coverage_query, None, None, None) {
+                            if !matches_search_metadata(entry, &filter_query, None, None, None) {
                                 return Ok(());
                             }
                             let candidates = queries
@@ -1306,30 +1338,43 @@ fn search_positions_stats_blocking<R: tauri::Runtime>(
                                 #[cfg(test)]
                                 instrument,
                             )? {
-                                record_opening(&openings[i], continuation, entry);
+                                record_opening(&openings, (i, continuation), entry);
                             }
                             Ok(())
                         },
                     )
                     .try_for_each(|result| result)?;
                 validate()?;
-                for (key, openings) in misses.into_iter().zip(openings) {
-                    let stats = collect_openings(openings);
-                    search_cache.insert_position_stats(key.clone(), stats.clone());
-                    results.insert(key.position, stats);
+                let mut grouped: HashMap<usize, Vec<PositionStats>> = HashMap::new();
+                for ((query_index, move_), mut stats) in openings {
+                    stats.move_ = move_;
+                    grouped.entry(query_index).or_default().push(stats);
+                }
+                for (index, position) in misses.into_iter().enumerate() {
+                    let stats = grouped.remove(&index).unwrap_or_default();
+                    if use_cache {
+                        search_cache.insert_position_stats(
+                            PositionStatsKey {
+                                position: position.clone(),
+                                identity: identity.clone(),
+                            },
+                            stats.clone(),
+                        );
+                    }
+                    if !stats.is_empty() {
+                        results.insert(position, stats);
+                    }
                 }
             }
             validate()?;
-            fens.into_iter()
+            Ok(fens
+                .into_iter()
                 .zip(input_keys)
                 .map(|(fen, key)| {
-                    let openings = results
-                        .get(&key)
-                        .cloned()
-                        .ok_or_else(|| Error::Conflict("missing position statistics".into()))?;
-                    Ok(PositionStatsForFen { fen, openings })
+                    let openings = results.get(&key).cloned().unwrap_or_default();
+                    PositionStatsForFen { fen, openings }
                 })
-                .collect()
+                .collect())
         },
     )
 }
@@ -1503,6 +1548,7 @@ pub(crate) async fn position_stats_for_operation<R: tauri::Runtime>(
                 app,
                 file,
                 vec![fen],
+                None,
                 token,
             )
         },
@@ -3561,6 +3607,16 @@ mod batch_tests {
         fens: &[String],
         token: &CancellationToken,
     ) -> Result<Vec<PositionStatsForFen>, Error> {
+        run_batch_filtered(app, handle, fens, None, token)
+    }
+
+    fn run_batch_filtered(
+        app: &tauri::AppHandle<tauri::test::MockRuntime>,
+        handle: &DatabaseHandle,
+        fens: &[String],
+        filter: Option<PositionStatsFilter>,
+        token: &CancellationToken,
+    ) -> Result<Vec<PositionStatsForFen>, Error> {
         let state = app.state::<AppState>();
         let progress = JobProgress::new(app.clone(), "batch-test".into()).unwrap();
         let result = search_positions_stats_blocking(
@@ -3572,6 +3628,7 @@ mod batch_tests {
             app.clone(),
             handle.clone(),
             fens.to_vec(),
+            filter,
             token,
         );
         progress.complete(match &result {
@@ -3915,6 +3972,441 @@ mod batch_tests {
             .entries
             .values
             .is_empty());
+    }
+
+    #[test]
+    fn filtered_batch_equals_single_search_for_players_dates_and_unknown_results() {
+        use super::super::schema::players;
+
+        let pgn = r#"[Event "Alice White Old"]
+[White "Alice"]
+[Black "Bob"]
+[Date "2022.05.01"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 1-0
+
+[Event "Alice White Recent"]
+[White "Alice"]
+[Black "Carol"]
+[Date "2025.03.10"]
+[Result "1-0"]
+
+1. e4 c5 2. Nf3 d6 1-0
+
+[Event "Alice White Unknown Recent"]
+[White "Alice"]
+[Black "Bob"]
+[Date "2026.01.15"]
+[Result "*"]
+
+1. e4 e5 *
+
+[Event "Alice White Terminal"]
+[White "Alice"]
+[Black "Bob"]
+[Date "2026.02.20"]
+[Result "1/2-1/2"]
+
+1. e4 1/2-1/2
+
+[Event "Alice White Undated"]
+[White "Alice"]
+[Black "Carol"]
+[Date "????.??.??"]
+[Result "0-1"]
+
+1. d4 d5 0-1
+
+[Event "Carol White vs Bob Black"]
+[White "Carol"]
+[Black "Bob"]
+[Date "2025.07.04"]
+[Result "0-1"]
+
+1. e4 e5 2. Bc4 Nf6 0-1
+"#;
+        let (_dir, app, handle, path) = imported_search_tests::imported_search_database(pgn);
+        let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        let player_id = |conn: &mut SqliteConnection, name: &str| -> i32 {
+            players::table
+                .select(players::id)
+                .filter(players::name.eq(name))
+                .first::<i32>(conn)
+                .unwrap()
+        };
+        let alice = player_id(&mut connection, "Alice");
+        let bob = player_id(&mut connection, "Bob");
+
+        let fen_after = |moves: &[&str]| -> String {
+            let mut chess = Chess::default();
+            for san in moves {
+                let m = SanPlus::from_ascii(san.as_bytes())
+                    .unwrap()
+                    .san
+                    .to_move(&chess)
+                    .unwrap();
+                chess.play_unchecked(&m);
+            }
+            Fen::from_position(chess, EnPassantMode::Legal).to_string()
+        };
+        let fens = vec![
+            fen_after(&[]),
+            fen_after(&["e4"]),
+            fen_after(&["e4", "e5"]),
+            fen_after(&["h4", "h5"]),
+        ];
+
+        let filters = [
+            PositionStatsFilter {
+                player1: Some(alice),
+                ..Default::default()
+            },
+            PositionStatsFilter {
+                player2: Some(bob),
+                ..Default::default()
+            },
+            PositionStatsFilter {
+                start_date: Some("2025.01.01".into()),
+                ..Default::default()
+            },
+            PositionStatsFilter {
+                include_unknown_results: Some(true),
+                ..Default::default()
+            },
+            PositionStatsFilter {
+                player1: Some(alice),
+                start_date: Some("2025.01.01".into()),
+                include_unknown_results: Some(true),
+                ..Default::default()
+            },
+            PositionStatsFilter {
+                player2: Some(bob),
+                start_date: Some("2025.01.01".into()),
+                include_unknown_results: Some(true),
+                ..Default::default()
+            },
+        ];
+
+        let token = CancellationToken::new();
+        for (filter_index, filter) in filters.iter().enumerate() {
+            let batch =
+                run_batch_filtered(&app, &handle, &fens, Some(filter.clone()), &token).unwrap();
+            assert_eq!(batch.len(), fens.len());
+            assert!(batch[3].openings.is_empty(), "unreached FEN must be empty");
+            for (i, (fen, item)) in fens.iter().zip(batch).enumerate() {
+                assert_eq!(&item.fen, fen);
+                let mut query = GameQuery::from(filter.clone());
+                query.position = Some(PositionQueryJs {
+                    fen: fen.clone(),
+                    type_: "exact".into(),
+                });
+                let single = run_position_search(
+                    &app,
+                    &handle,
+                    query,
+                    &format!("filtered-{filter_index}-{i}"),
+                )
+                .unwrap();
+                assert_eq!(sorted(item.openings), sorted(single.0), "{filter:?} {fen}");
+            }
+        }
+
+        // Verify "*" row, unknown count, last_played and year_counts directly on the combined filter.
+        let combined = run_batch_filtered(
+            &app,
+            &handle,
+            &fens[1..2],
+            Some(PositionStatsFilter {
+                player1: Some(alice),
+                start_date: Some("2025.01.01".into()),
+                include_unknown_results: Some(true),
+                ..Default::default()
+            }),
+            &token,
+        )
+        .unwrap();
+        let after_e4 = &combined[0].openings;
+        let terminal = after_e4.iter().find(|row| row.move_ == "*").unwrap();
+        assert_eq!(terminal.draw, 1);
+        assert_eq!(terminal.last_played.as_deref(), Some("2026.02.20"));
+        assert_eq!(
+            terminal.year_counts,
+            vec![YearCount {
+                year: 2026,
+                count: 1
+            }]
+        );
+        let e5_row = after_e4.iter().find(|row| row.move_ == "e5").unwrap();
+        assert_eq!(e5_row.unknown, 1);
+        assert_eq!(e5_row.white, 0);
+        assert_eq!(e5_row.last_played.as_deref(), Some("2026.01.15"));
+        assert_eq!(
+            e5_row.year_counts,
+            vec![YearCount {
+                year: 2026,
+                count: 1
+            }]
+        );
+    }
+
+    #[test]
+    fn filtered_batch_bypasses_cache_and_empty_filter_uses_cache() {
+        let (_dir, app, handle, _path, fens) = fixture();
+        let state = app.state::<AppState>();
+        let _instrument = tests::SearchInstrument::start();
+        let token = CancellationToken::new();
+        let filtered = PositionStatsFilter {
+            start_date: Some("2026.01.01".into()),
+            ..Default::default()
+        };
+
+        // Cold cache: a filtered request scans and leaves position_stats cache empty.
+        PROCESS_ENTRY_CALLS.store(0, Ordering::SeqCst);
+        let filtered_cold =
+            run_batch_filtered(&app, &handle, &fens[..1], Some(filtered.clone()), &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
+        assert!(state
+            .search_cache
+            .position_stats
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
+
+        // Unfiltered request returns unfiltered counts and populates the cache.
+        let unfiltered_before = run_batch(&app, &handle, &fens[..1], &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
+        assert_ne!(
+            sorted(filtered_cold[0].openings.clone()),
+            sorted(unfiltered_before[0].openings.clone())
+        );
+        assert_eq!(
+            state
+                .search_cache
+                .position_stats
+                .lock()
+                .unwrap()
+                .entries
+                .values
+                .len(),
+            1
+        );
+
+        // Warm cache: a filtered request ignores the cache and returns filtered counts.
+        let filtered_warm =
+            run_batch_filtered(&app, &handle, &fens[..1], Some(filtered), &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
+        assert_eq!(
+            sorted(filtered_warm[0].openings.clone()),
+            sorted(filtered_cold[0].openings.clone())
+        );
+
+        // Unfiltered request after filtered request still gets unfiltered cached counts.
+        let unfiltered_after = run_batch(&app, &handle, &fens[..1], &token).unwrap();
+        assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            sorted(unfiltered_after[0].openings.clone()),
+            sorted(unfiltered_before[0].openings.clone())
+        );
+
+        // An all-empty filter (all None or include_unknown_results = false) behaves like no filter.
+        for empty in [
+            PositionStatsFilter::default(),
+            PositionStatsFilter {
+                include_unknown_results: Some(false),
+                ..Default::default()
+            },
+        ] {
+            let hit =
+                run_batch_filtered(&app, &handle, &fens[..1], Some(empty.clone()), &token).unwrap();
+            assert_eq!(PROCESS_ENTRY_CALLS.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                sorted(hit[0].openings.clone()),
+                sorted(unfiltered_before[0].openings.clone())
+            );
+
+            state.search_cache.clear();
+            let filled =
+                run_batch_filtered(&app, &handle, &fens[..1], Some(empty), &token).unwrap();
+            assert_eq!(PROCESS_ENTRY_CALLS.swap(0, Ordering::SeqCst), 7);
+            assert_eq!(
+                sorted(filled[0].openings.clone()),
+                sorted(unfiltered_before[0].openings.clone())
+            );
+            assert_eq!(
+                state
+                    .search_cache
+                    .position_stats
+                    .lock()
+                    .unwrap()
+                    .entries
+                    .values
+                    .len(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn filtered_batch_cancellation_stays_typed() {
+        let (_dir, app, handle, _path, fens) = fixture();
+        let state = app.state::<AppState>();
+        let filter = Some(PositionStatsFilter {
+            include_unknown_results: Some(true),
+            ..Default::default()
+        });
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        assert!(matches!(
+            run_batch_filtered(&app, &handle, &fens, filter.clone(), &cancelled),
+            Err(Error::Cancellation)
+        ));
+        BATCH_CANCEL_AFTER_ENTRY.set(Some(1));
+        assert!(matches!(
+            run_batch_filtered(&app, &handle, &fens, filter, &CancellationToken::new()),
+            Err(Error::Cancellation)
+        ));
+        assert!(state
+            .search_cache
+            .position_stats
+            .lock()
+            .unwrap()
+            .entries
+            .values
+            .is_empty());
+    }
+
+    #[test]
+    fn position_stats_filter_deserializes_camel_case_and_rejects_unknown_or_snake_case() {
+        let empty: PositionStatsFilter = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(empty.is_empty());
+
+        let false_only: PositionStatsFilter =
+            serde_json::from_value(serde_json::json!({ "includeUnknownResults": false })).unwrap();
+        assert!(false_only.is_empty());
+
+        let full: PositionStatsFilter = serde_json::from_value(serde_json::json!({
+            "player1": 7,
+            "player2": 11,
+            "startDate": "2024.01.01",
+            "includeUnknownResults": true
+        }))
+        .unwrap();
+        assert!(!full.is_empty());
+        assert_eq!(full.player1, Some(7));
+        assert_eq!(full.player2, Some(11));
+        assert_eq!(full.start_date.as_deref(), Some("2024.01.01"));
+        assert_eq!(full.include_unknown_results, Some(true));
+
+        for invalid in [
+            serde_json::json!({ "unknownField": 1 }),
+            serde_json::json!({ "endDate": "2025.01.01" }),
+            serde_json::json!({ "start_date": "2024.01.01" }),
+            serde_json::json!({ "include_unknown_results": true }),
+        ] {
+            assert!(
+                serde_json::from_value::<PositionStatsFilter>(invalid.clone()).is_err(),
+                "must refuse {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn batch_working_memory_does_not_grow_with_a_table_per_unreached_position() {
+        let (_dir, app, handle, _path, _fens) = fixture();
+        let state = app.state::<AppState>();
+        // Warm the index outside the measured scope so we only measure batch working memory.
+        let _ = load_search_index(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            &state.search_cache,
+            &handle,
+        )
+        .unwrap();
+
+        // Build 2,000 distinct legal positions that no game in the fixture reaches:
+        // kings on a1/h8 with one white pawn and one black pawn on distinct squares of ranks 3..=6.
+        let mut unreached = Vec::with_capacity(1_984);
+        for wp in 0..32usize {
+            for bp in 0..32usize {
+                if wp == bp {
+                    continue;
+                }
+                for side in ['w', 'b'] {
+                    let mut rows = String::from("7k/8/");
+                    for rank in (0..4usize).rev() {
+                        let mut empty = 0usize;
+                        for file in 0..8usize {
+                            let sq = rank * 8 + file;
+                            let piece = if sq == wp {
+                                Some('P')
+                            } else if sq == bp {
+                                Some('p')
+                            } else {
+                                None
+                            };
+                            if let Some(ch) = piece {
+                                if empty > 0 {
+                                    rows.push(char::from(b'0' + empty as u8));
+                                    empty = 0;
+                                }
+                                rows.push(ch);
+                            } else {
+                                empty += 1;
+                            }
+                        }
+                        if empty > 0 {
+                            rows.push(char::from(b'0' + empty as u8));
+                        }
+                        rows.push('/');
+                    }
+                    rows.push_str("8/K7 ");
+                    rows.push(side);
+                    rows.push_str(" - - 0 1");
+                    unreached.push(rows);
+                }
+            }
+        }
+
+        let (single_map, single_table_bytes) =
+            super::super::allocation_probe::measure(DashMap::<String, PositionStats>::new);
+        drop(single_map);
+        let per_position_table_bytes = single_table_bytes * unreached.len();
+        let threshold = per_position_table_bytes / 2;
+        super::super::allocation_probe::assert_detects_owned_collection(
+            per_position_table_bytes,
+            threshold,
+        );
+
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let token = CancellationToken::new();
+        for filter in [
+            Some(PositionStatsFilter {
+                include_unknown_results: Some(true),
+                ..Default::default()
+            }),
+            None,
+        ] {
+            state.search_cache.clear();
+            let (result, peak) = pool.install(|| {
+                super::super::allocation_probe::measure(|| {
+                    run_batch_filtered(&app, &handle, &unreached, filter.clone(), &token)
+                })
+            });
+            let result = result.unwrap();
+            assert_eq!(result.len(), unreached.len());
+            assert!(result.iter().all(|item| item.openings.is_empty()));
+            assert!(
+                peak < threshold,
+                "batch peak {peak} bytes for {} unreached positions (filter={filter:?}) exceeded half of per-position DashMap cost ({per_position_table_bytes} bytes, single={single_table_bytes})",
+                unreached.len()
+            );
+        }
     }
 
     #[tokio::test]

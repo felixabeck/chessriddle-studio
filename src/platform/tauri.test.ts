@@ -1071,10 +1071,11 @@ describe("tauri command facade", () => {
         expect(mocks.cancelNativeRead).toHaveBeenCalledWith("active-ticket");
     });
 
-    test("coverage batch routes its third argument and abort options to its own native ticket", async () => {
+    test("coverage batch routes its filter, tab id and abort options to its own native ticket", async () => {
         const controller = new AbortController();
         const database = { id: { id: "coverage-db" }, kind: "database" } as const;
         const fens = ["coverage-fen"];
+        const filter = { player1: 42, includeUnknownResults: true };
         mocks.prepareNativeRead.mockResolvedValue({ status: "ok", data: "coverage-ticket" });
         mocks.cancelNativeRead.mockResolvedValue({ status: "ok", data: null });
         let finishCommand!: (value: unknown) => void;
@@ -1083,13 +1084,14 @@ describe("tauri command facade", () => {
                 finishCommand = resolve;
             }),
         );
-        const result = tauri.searchPositionsStats(database, fens, "coverage-calc:test", {
+        const result = tauri.searchPositionsStats(database, fens, filter, "coverage-calc:test", {
             signal: controller.signal,
         });
         await Promise.resolve();
         expect(mocks.searchPositionsStats).toHaveBeenCalledExactlyOnceWith(
             database,
             fens,
+            filter,
             "coverage-calc:test",
             "coverage-ticket",
         );

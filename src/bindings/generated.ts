@@ -1434,9 +1434,9 @@ async searchPosition(file: DatabaseHandle, query: PositionSearchQuery, tabId: st
     else return { status: "error", error: e  as any };
 }
 },
-async searchPositionsStats(file: DatabaseHandle, fens: string[], tabId: string, ticket: string | null) : Promise<Result<PositionStatsForFen[], ErrorPayload>> {
+async searchPositionsStats(file: DatabaseHandle, fens: string[], filter: PositionStatsFilter | null, tabId: string, ticket: string | null) : Promise<Result<PositionStatsForFen[], ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("search_positions_stats", { file, fens, tabId, ticket }) };
+    return { status: "ok", data: await TAURI_INVOKE("search_positions_stats", { file, fens, filter, tabId, ticket }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2127,6 +2127,10 @@ export type PositionSearchQuery = { player1?: number | null; player2?: number | 
  */
 timeControls?: string[] | null }
 export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[] }
+/**
+ * Optional metadata filter for batch position statistics (`search_positions_stats`).
+ */
+export type PositionStatsFilter = { player1?: number | null; player2?: number | null; startDate?: string | null; includeUnknownResults?: boolean | null }
 export type PositionStatsForFen = { fen: string; openings: PositionStats[] }
 export type PracticeDeckIdentity = { fileId: string; game: number }
 export type PracticeDeckInventory = { decks: PracticeDeckIdentity[]; anomalies: PracticeStoreAnomaly[] }

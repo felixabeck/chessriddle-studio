@@ -189,7 +189,13 @@ async function realCoverageFixture() {
     [];
   let hold = false;
   mocks.searchPositionsStats.mockImplementation(
-    async (_database, fens: string[], _operation: string, { signal }: { signal: AbortSignal }) => {
+    async (
+      _database,
+      fens: string[],
+      _filter: unknown,
+      _operation: string,
+      { signal }: { signal: AbortSignal },
+    ) => {
       if (hold && fens.includes(getBoardState(initial.root.fen))) {
         // Hold the real algorithm at its database boundary, including late obsolete replies.
         await new Promise<void>((release, reject) => pending.push({ signal, release, reject }));
@@ -674,7 +680,7 @@ test("initial ready-reference cache reset can deliver the second native query fa
     getBoardState(fixture.initial.root.children[1].fen),
     getBoardState(fixture.initial.root.children[0].fen),
   ]);
-  expect(query.mock.calls[0][3]).not.toBe(batch.mock.calls[0][3]);
+  expect(query.mock.calls[0][3]).not.toBe(batch.mock.calls[0][4]);
   const result = await mocks.computeTreeCoverage.mock.results[0].value;
   expect(result.coverageMap.size).toBeGreaterThan(0);
   expect(host.textContent).not.toContain("Common.Retry");

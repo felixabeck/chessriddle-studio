@@ -29,6 +29,7 @@ import {
     computeReachWeights,
     reachWeightsChange,
     computeTreeCoverage,
+    fetchBatchStatistics,
     fetchPositionMoves,
     fetchTreeStatistics,
     fetchTreesStatistics,
@@ -311,6 +312,7 @@ test("a repetition line terminates coverage instead of recursing until the stack
     expect(mocks.searchPositionsStats).toHaveBeenCalledExactlyOnceWith(
         database,
         expect.arrayContaining([...nextSan.keys()]),
+        null,
         expect.stringMatching(/^coverage-calc:/),
         { signal },
     );
@@ -1175,6 +1177,47 @@ describe("computeReachWeights", () => {
         expect(weights.get(getBoardState(first.fen))).toBe(1);
         expect(roundReachWeight(1.6)).toBe(1);
     });
+});
+
+test("fetchBatchStatistics forwards the filter and keeps unknown, last_played and year_counts", async () => {
+    const startFen = getBoardState(defaultTree().root.fen);
+    const filter = { player1: 7, startDate: "2024.01.01", includeUnknownResults: true };
+    const signal = new AbortController().signal;
+    const openings = [
+        {
+            move: "e4",
+            white: 3,
+            draw: 1,
+            black: 2,
+            unknown: 4,
+            last_played: "2026.02.14",
+            year_counts: [
+                { year: 2025, count: 6 },
+                { year: 2026, count: 4 },
+            ],
+        },
+        {
+            move: "*",
+            white: 0,
+            draw: 1,
+            black: 0,
+            unknown: 1,
+            last_played: "2026.01.05",
+            year_counts: [{ year: 2026, count: 2 }],
+        },
+    ];
+    mocks.searchPositionsStats.mockResolvedValueOnce([{ fen: startFen, openings }]);
+
+    const result = await fetchBatchStatistics([startFen], database, filter, signal, "prep:test");
+
+    expect(mocks.searchPositionsStats).toHaveBeenCalledExactlyOnceWith(
+        database,
+        [startFen],
+        filter,
+        "prep:test",
+        { signal },
+    );
+    expect(result.get(startFen)).toEqual(openings);
 });
 
 test("fetchTreesStatistics issues one searchPositionsStats call over the union of two trees", async () => {
