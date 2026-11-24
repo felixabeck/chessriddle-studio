@@ -27972,6 +27972,9 @@ Fixed in d17d7872b: the strip screenshot uses e2e/scrollbar-free-screenshot.css 
 * **Rejected:** `panels/analysis/DetachedEval.tsx` beside its eight imports. It would move the file into a different coverage area, and the component is a board overlay whose only importer is the board.
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"44953ac4d6669ec284a4f095bce5608965fdf35f34d32502e273bd4fd60c0c59","header_sha256":"c5dd49ac726a07cc3ca9f362c49ce7988032085e6ed4d6e50cc9eeec7d4e01ac","header_status":"handled","input_sha256":"d8ac9962343702c99530b46333c06e5902e5fa5bd69658a4919ff0cf3c2d21a8","kind":"mutation-receipt","operation":"2eb11ed2599b0d94d724dc728f1f8df186cff1e642de572f975643f59e4b884e","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-25"],"target":"f-20261119-25","v":1} -->
 
+* **Correction (2026-11-24, same session):** the `Rejected:` line above is wrong on the coverage point. `src/components/panels/analysis/**` also maps to `boards-game-analysis`, so that placement would not have changed the area. The placement stands for the other reason: `DetachedEval` is a board overlay, and its only importer (`BoardAnalysis`) and its pinned-placement menu (`PinnedPlacementItems`) both live in `boards/`.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"50f8870b8b08727baee6336b9438e7ee341c96c3020f3386e87bf46f1a6efbbb","input_sha256":"c1a842a67d760e099527521ed33eac7c9bd16e6d421403c384b13ac3a61796b6","kind":"mutation-receipt","operation":"88a9fb4f089edbf193bd94acfac217ffee1e00c7016845b0751b194cf69878c5","options":{"section":null},"request_id_sha256":null,"results":["f-20261119-25"],"target":"f-20261119-25","v":1} -->
+
 ---
 
 ## 2026-11-20 — filed through the inbox spool
