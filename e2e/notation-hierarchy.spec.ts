@@ -6,6 +6,7 @@ import {
     expect,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
+    paintedText,
     pgnFileCommands,
     selectFilesTreeRow,
     test,
@@ -682,6 +683,84 @@ test("notation-hierarchy: annotation badges on edge squares stay inside the boar
     // a1 is the flipped top-right corner, where both edges apply.
     await expectHint("♖a1!", 7, 0);
 });
+
+for (const colorScheme of ["light", "dark"] as const) {
+    test(`notation-hierarchy: mark glyphs read on their fills in ${colorScheme}`, async ({
+        page,
+        mockScenario,
+    }) => {
+        // f-20261124-01: a white glyph on a light hue fell to 1.43:1. Each move carries one mark;
+        // N has no hue, so its badge takes the gray fill.
+        const marks = [
+            ["e4", "$3", "e4!!", "Brilliant"],
+            ["e5", "$1", "e5!", "Good"],
+            ["Nf3", "$5", "♘f3!?", "Interesting"],
+            ["Nc6", "$6", "♘c6?!", "Dubious"],
+            ["Bb5", "$2", "♗b5?", "Mistake"],
+            ["a6", "$4", "a6??", "Blunder"],
+            ["Ba4", "$146", "♗a4N", null],
+        ] as const;
+        await page.emulateMedia({ colorScheme });
+        await page.addInitScript(
+            (scheme) => localStorage.setItem("mantine-color-scheme", scheme),
+            colorScheme,
+        );
+        await mockScenario({
+            commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+                ...pgnFileCommands,
+                lex_pgn: {
+                    pgnTokens: {
+                        [filesWorkspaceFixture.pgnGame]: [
+                            { type: "Header", value: { tag: "Result", value: "*" } },
+                            ...marks.flatMap(([san, nag]) => [
+                                { type: "San" as const, value: san },
+                                { type: "Nag" as const, value: nag },
+                            ]),
+                            { type: "Outcome", value: "*" },
+                        ],
+                    },
+                },
+            }),
+        });
+        await openLibraryFile(page);
+        await page.getByRole("button", { name: "Open game", exact: true }).click();
+        await expect(page).toHaveURL("/");
+        await page.getByRole("tab", { name: "Annotate", exact: true }).click();
+        const notation = page.locator("#bottomRight");
+        const hint = page.locator("#left [data-board-annotation-hint]");
+        const below: string[] = [];
+        for (const [, nag, label, buttonName] of marks) {
+            await notation.getByRole("button", { name: label, exact: true }).click();
+            await expect(hint).toBeVisible();
+            const badge = await hint.evaluate((element) => ({
+                fill: getComputedStyle(element).backgroundColor,
+                glyph: getComputedStyle(element.querySelector("g path")!).fill,
+            }));
+            const badgeRatio = contrastRatio(badge.glyph, [badge.fill]);
+            if (badgeRatio < 4.5) below.push(`badge ${nag}: ${badgeRatio.toFixed(2)}`);
+            // Only the six move-quality marks fill the Annotate button with their hue.
+            if (buttonName === null) continue;
+            const active = page.getByRole("button", { name: buttonName, exact: true });
+            await expect(active).toHaveAttribute("aria-pressed", "true");
+            const button = await active.evaluate((element) => ({
+                fill: getComputedStyle(element).backgroundColor,
+                label: getComputedStyle(element.querySelector("p") ?? element).color,
+            }));
+            const buttonRatio = contrastRatio(button.label, [button.fill]);
+            if (buttonRatio < 4.5) below.push(`button ${nag}: ${buttonRatio.toFixed(2)}`);
+            // Hovered, the translucent fill is painted over whatever the panel sits on.
+            await active.hover();
+            await expect
+                .poll(() => active.evaluate((element) => getComputedStyle(element).backgroundColor))
+                .not.toBe(button.fill);
+            const hovered = await paintedText(active.locator("p"));
+            const hoverRatio = contrastRatio(hovered.color, hovered.layers);
+            if (hoverRatio < 4.5) below.push(`button ${nag} hover: ${hoverRatio.toFixed(2)}`);
+            await page.mouse.move(0, 0);
+        }
+        expect(below).toEqual([]);
+    });
+}
 
 test("notation-hierarchy: overflow-only stacked geometry and wheel reachability", async ({
     page,

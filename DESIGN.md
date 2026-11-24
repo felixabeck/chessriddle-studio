@@ -95,7 +95,10 @@ scale. New `danger`, `success`, `warning`, `info` palettes carry chrome feedback
 `warning` is distinct from the warm brown `chart-4` used by warning badges, and
 info badges use `chart-1` while the info palette derives from `chart-6`.
 Engine arrow hues, NAG annotation colours, drawing brushes, premove/check overlays
-and existing per-board coordinate colours retain their board meaning.
+and existing per-board coordinate colours retain their board meaning. A glyph or label drawn on a
+mark's filled hue (the board badge and the active Annotate button) takes
+`--cf-annotation-<hue>-on-fill`: black or white, whichever contrasts more with the filled shade.
+On every move-quality hue that is black in both schemes, because white falls to 1.43:1.
 
 ## Icon identities
 

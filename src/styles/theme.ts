@@ -11,7 +11,9 @@ import {
     createTheme,
     DEFAULT_THEME,
     defaultVariantColorsResolver,
+    getPrimaryShade,
     getThemeColor,
+    isLightColor,
     type Input,
     type Menu,
     type Modal,
@@ -31,6 +33,7 @@ import {
     type TextInput,
     type Tooltip,
     type MantineColorsTuple,
+    type MantineTheme,
 } from "@mantine/core";
 import "./fonts.css";
 import buttonClasses from "./Button.module.css";
@@ -182,6 +185,10 @@ export const chessRiddleTokens = {
 export const ANNOTATION_HUES = ["cyan", "teal", "lime", "yellow", "orange", "red"] as const;
 export type AnnotationHue = (typeof ANNOTATION_HUES)[number];
 
+function isAnnotationHue(color: string): color is AnnotationHue {
+    return (ANNOTATION_HUES as readonly string[]).includes(color);
+}
+
 /**
  * Text in a mark's hue keeps its meaning (DESIGN.md) but must read at WCAG AA 4.5:1 on the card,
  * the surface-inset variation blocks and the 10% gold current-move fill. In light even shade 9 of
@@ -194,7 +201,27 @@ function annotationTextShade(hue: AnnotationHue, scheme: "light" | "dark") {
         : `var(--mantine-color-${hue}-3)`;
 }
 
-function schemeVariables(scheme: "light" | "dark") {
+/** The palettes a mark's board badge or active Annotate button fills: its hue, gray without one. */
+export const ANNOTATION_FILLS = [...ANNOTATION_HUES, "gray"] as const;
+export type AnnotationFill = (typeof ANNOTATION_FILLS)[number];
+
+/**
+ * The glyph or label drawn on a mark's filled colour: black or white, whichever contrasts more with
+ * the filled shade (`primaryShade`, light 8 and dark 4). White on these light hues measured down to
+ * 1.43:1 (f-20261124-01), and no darker shade lifts yellow above 3:1 under white (d-20261124-03).
+ * `isLightColor`'s default threshold is the luminance at which black and white contrast equally.
+ */
+function annotationFillForeground(
+    theme: MantineTheme,
+    fill: AnnotationFill,
+    scheme: "light" | "dark",
+) {
+    return isLightColor(theme.colors[fill][getPrimaryShade(theme, scheme)])
+        ? "var(--mantine-color-black)"
+        : "var(--mantine-color-white)";
+}
+
+function schemeVariables(theme: MantineTheme, scheme: "light" | "dark") {
     const tokens = chessRiddleTokens[scheme];
     const variables: Record<string, string> = Object.fromEntries(
         Object.entries(tokens).map(([name, value]) => [`--cf-${name}`, value]),
@@ -240,13 +267,20 @@ function schemeVariables(scheme: "light" | "dark") {
     for (const hue of ANNOTATION_HUES) {
         variables[`--cf-annotation-${hue}-text`] = annotationTextShade(hue, scheme);
     }
+    for (const fill of ANNOTATION_FILLS) {
+        variables[`--cf-annotation-${fill}-on-fill`] = annotationFillForeground(
+            theme,
+            fill,
+            scheme,
+        );
+    }
     return variables;
 }
 
-export const appCssVariablesResolver: CSSVariablesResolver = () => ({
+export const appCssVariablesResolver: CSSVariablesResolver = (theme) => ({
     variables: {},
-    light: schemeVariables("light"),
-    dark: schemeVariables("dark"),
+    light: schemeVariables(theme, "light"),
+    dark: schemeVariables(theme, "dark"),
 });
 
 /** Media-query em uses the initial font size, so scale it with the app's root font. */
@@ -296,6 +330,17 @@ export function createAppTheme({
             }
             if (input.variant === "filled" && color === "danger") {
                 return { ...resolved, color: "var(--cf-destructive-foreground)" };
+            }
+            if (input.variant === "filled" && isAnnotationHue(color)) {
+                // Every filled control in a mark hue (today only the active Annotate button) takes
+                // the mark's on-fill foreground. The darker default hover shade drops black under
+                // 4.5:1 for cyan, teal and red in light, so the hover fades the fill toward the
+                // surface the way gold's does.
+                return {
+                    ...resolved,
+                    hover: `color-mix(in srgb, var(--mantine-color-${color}-filled) 90%, transparent)`,
+                    color: `var(--cf-annotation-${color}-on-fill)`,
+                };
             }
             return resolved;
         },

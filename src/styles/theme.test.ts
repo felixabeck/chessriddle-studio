@@ -1,7 +1,8 @@
-import { DEFAULT_THEME, mergeMantineTheme } from "@mantine/core";
+import { DEFAULT_THEME, getPrimaryShade, mergeMantineTheme } from "@mantine/core";
 import { describe, expect, test } from "vitest";
 import { ANNOTATION_INFO } from "@/utils/annotation";
 import {
+    ANNOTATION_FILLS,
     ANNOTATION_HUES,
     appCssVariablesResolver,
     chessRiddleTokens,
@@ -108,8 +109,14 @@ describe("annotation text colours", () => {
         createAppTheme({ spellCheck: false, fontSize: 100 }),
     );
     type Rgb = readonly [number, number, number];
-    const hex = (value: string): Rgb =>
-        [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16)) as unknown as Rgb;
+    const hex = (value: string): Rgb => {
+        // Mantine's black and white are the short forms #000 and #fff.
+        const full = /^#[\da-f]{3}$/i.test(value)
+            ? `#${[...value.slice(1)].map((digit) => digit + digit).join("")}`
+            : value;
+        if (!/^#[\da-f]{6}$/i.test(full)) throw new Error(`unparsed ${value}`);
+        return [1, 3, 5].map((i) => parseInt(full.slice(i, i + 2), 16)) as unknown as Rgb;
+    };
     const hsl = (value: string): Rgb => {
         const match = value.match(/^hsl\(([\d.]+) ([\d.]+)% ([\d.]+)%\)$/);
         if (!match) throw new Error(`unparsed ${value}`);
@@ -169,6 +176,44 @@ describe("annotation text colours", () => {
                 }
             }
             expect(below).toEqual([]);
+        },
+    );
+
+    const blackOrWhite = (value: string): Rgb => {
+        if (value === "var(--mantine-color-black)") return hex(theme.black);
+        if (value === "var(--mantine-color-white)") return hex(theme.white);
+        throw new Error(`unparsed ${value}`);
+    };
+
+    test.each(["light", "dark"] as const)(
+        "the glyph on every mark's fill reaches 4.5:1 at rest and on hover in %s",
+        (scheme) => {
+            const card = hsl(chessRiddleTokens[scheme].card);
+            const resolved = appCssVariablesResolver(theme)[scheme];
+            const below: string[] = [];
+            for (const fill of ANNOTATION_FILLS) {
+                const filled = hex(theme.colors[fill][getPrimaryShade(theme, scheme)]);
+                const glyph = blackOrWhite(resolved[`--cf-annotation-${fill}-on-fill`]);
+                const surfaces: Record<string, Rgb> = { filled };
+                // The active Annotate button's hover: the fill at 90% over the panel card.
+                if (fill !== "gray") surfaces.hover = mix(filled, card, 0.9);
+                for (const [name, background] of Object.entries(surfaces)) {
+                    const ratio = contrast(glyph, background);
+                    if (ratio < 4.5) below.push(`${fill} ${name}: ${ratio.toFixed(2)}`);
+                }
+            }
+            expect(below).toEqual([]);
+        },
+    );
+
+    test.each(ANNOTATION_HUES)(
+        "an active Annotate button in %s draws its label in the on-fill colour",
+        (hue) => {
+            const variant = theme.variantColorResolver({ color: hue, variant: "filled", theme });
+            expect(variant.color).toBe(`var(--cf-annotation-${hue}-on-fill)`);
+            expect(variant.hover).toBe(
+                `color-mix(in srgb, var(--mantine-color-${hue}-filled) 90%, transparent)`,
+            );
         },
     );
 
