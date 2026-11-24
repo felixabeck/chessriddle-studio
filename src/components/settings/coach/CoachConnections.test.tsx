@@ -562,3 +562,21 @@ test("a connection whose keyring entry could not be read is not called broken, a
   expect(row("ChatGPT").textContent).toContain("player@example.com");
   expect(button(row("ChatGPT"), "Common.Retry")).toBeUndefined();
 });
+
+test("the Unofficial badge of a Grok sign-in explains itself when the account name is shown", async () => {
+  mocks.coachConnections.mockResolvedValue([{ ...grok, account: "player@example.com" }]);
+  await render();
+  const badge = [...row("Grok").querySelectorAll<HTMLElement>(".mantine-Badge-root")].find(
+    (element) => element.textContent === "Settings.Coach.Grok.Unofficial",
+  )!;
+  // The account replaces the note in the row, so the badge is the only place left to read it.
+  expect(row("Grok").textContent).toContain("player@example.com");
+  expect(host.ownerDocument.body.textContent).not.toContain("Settings.Coach.Grok.Note");
+
+  await act(async () => {
+    badge.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    badge.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false }));
+    badge.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+  });
+  expect(host.ownerDocument.body.textContent).toContain("Settings.Coach.Grok.Note");
+});

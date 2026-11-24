@@ -10,6 +10,7 @@ import { tauri } from "@/platform/tauri";
 import { coachConnectionsAtom, coachPlanNoticeSeenAtom, openCoachUsage } from "@/state/coach";
 import AppModal from "../../common/AppModal";
 import ConfirmModal, { durabilityUncertainMessage } from "../../common/ConfirmModal";
+import ExplainedAction from "../../library/ExplainedAction";
 import { IconAction } from "../../common/IconAction";
 import classes from "../SettingsPage.module.css";
 import { CoachConnectionModal } from "./CoachConnectionModal";
@@ -71,7 +72,12 @@ function ConnectionRow({
           {signInAgain && (
             <Badge color="warning">{t("Settings.Coach.Connection.SignInAgain")}</Badge>
           )}
-          {grok && <Badge color="gray">{t("Settings.Coach.Grok.Unofficial")}</Badge>}
+          {grok && (
+            // The account name takes the note's place below, so the badge carries it.
+            <ExplainedAction explanation={t("Settings.Coach.Grok.Note")}>
+              <Badge color="gray">{t("Settings.Coach.Grok.Unofficial")}</Badge>
+            </ExplainedAction>
+          )}
         </Group>
         <Text size="xs" c="dimmed" className="wrap-anywhere">
           {needsRepair
