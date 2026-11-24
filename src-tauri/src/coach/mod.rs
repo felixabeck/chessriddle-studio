@@ -86,9 +86,9 @@ const MAX_EFFORT_CHARS: usize = 32;
 const MAX_TURN_PLIES: usize = 2000;
 const MAX_TAB_CHARS: usize = 128;
 
-/// Switch for release builds. The Coach stays hidden there until Felix's "release"; `.dev` builds
-/// always have it.
-pub(crate) const RELEASE_AVAILABLE: bool = false;
+/// Kill switch for the Coach in release builds. Felix released it on 2026-11-24; setting it
+/// false in a patch release hides the Coach again. `.dev` builds always have it.
+pub(crate) const RELEASE_AVAILABLE: bool = true;
 
 fn available_for(identifier: &str) -> bool {
     RELEASE_AVAILABLE || identifier.ends_with(".dev")
@@ -988,11 +988,9 @@ mod tests {
     }
 
     #[test]
-    fn only_dev_builds_have_the_coach_while_the_release_switch_is_off() {
+    fn release_and_dev_builds_have_the_coach_while_the_release_switch_is_on() {
+        assert!(available_for("com.chessriddle.studio"));
         assert!(available_for("com.chessriddle.studio.dev"));
-        // Turning the Coach on for release builds is Felix's release decision.
-        assert!(!available_for("com.chessriddle.studio"));
-        assert!(!available_for("com.chessriddle.studio.developer"));
     }
 
     #[tokio::test]

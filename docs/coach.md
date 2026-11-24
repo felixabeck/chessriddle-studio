@@ -13,7 +13,7 @@ The Coach is a chat about the position on the analysis board. The user asks a qu
 
 ## The switch
 
-`RELEASE_AVAILABLE` in `src-tauri/src/coach/mod.rs` is `false`. A release build has no Coach: no panel, no settings category, no hotkey, and every Coach command refuses with `unavailable`. A build whose identifier ends in `.dev` (`pnpm dev`, or a build made with `--config src-tauri/tauri.dev.conf.json`) always has it. Turning the switch on is a release decision and needs Felix's explicit "release".
+`RELEASE_AVAILABLE` in `src-tauri/src/coach/mod.rs` is `true` since Felix's release on 2026-11-24, so every build has the Coach. It stays as the kill switch: with it `false`, a release build has no Coach (no panel, no settings category, no hotkey, and every Coach command refuses with `unavailable`), while a build whose identifier ends in `.dev` (`pnpm dev`, or a build made with `--config src-tauri/tauri.dev.conf.json`) still has it.
 
 ## Connections
 

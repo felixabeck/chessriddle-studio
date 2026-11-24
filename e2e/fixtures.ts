@@ -1391,7 +1391,8 @@ const tauriBootstrap = () => {
         list_puzzle_databases: { result: [] },
         kill_engines: { result: null },
         kill_engine: { result: null },
-        // A release build: the Coach is off unless a scenario turns it on.
+        // The Coach is off unless a scenario turns it on. Release builds have it since 2026-11-24;
+        // the default stays off so the snapshots of every other scenario stay without it.
         coach_available: { result: false },
         get_engine_config: { result: { name: "E2E Stockfish", options: [] } },
         stop_engine: { result: false },
