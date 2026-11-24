@@ -2,7 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   CHECKOUT_FILES,
   expectCliStatus,
+  replaceExisting,
   runCheckerOver,
+  withPackageDescription,
 } from "./rust-release-surface-fixture.mjs";
 
 describe("R5 config, test-only scope, and physical source surface", () => {
@@ -44,25 +46,17 @@ describe("R5 config, test-only scope, and physical source surface", () => {
   test.each([
     [
       "ordinary description",
-      packageManifest.replace(
-        'description = "A Modern Chess Database"',
-        'description = "no lints here"',
-      ),
+      withPackageDescription(packageManifest, 'description = "no lints here"'),
     ],
-    [
-      "description value",
-      packageManifest.replace('description = "A Modern Chess Database"', 'description = "lints"'),
-    ],
+    ["description value", withPackageDescription(packageManifest, 'description = "lints"')],
     [
       "multiline description value",
-      packageManifest.replace(
-        'description = "A Modern Chess Database"',
-        'description = """\nno lints here\n"""',
-      ),
+      withPackageDescription(packageManifest, 'description = """\nno lints here\n"""'),
     ],
     [
       "keyword value",
-      packageManifest.replace(
+      replaceExisting(
+        packageManifest,
         "[build-dependencies]",
         'keywords = ["lints"]\n\n[build-dependencies]',
       ),

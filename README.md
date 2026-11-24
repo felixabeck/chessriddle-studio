@@ -7,7 +7,7 @@
 <h3 align="center">ChessRiddle Studio</h3>
 
   <p align="center">
-    The Ultimate Chess Toolkit
+    Analyse games, search databases, play against engines
     <br />
     <a href="https://github.com/felixabeck/chessriddle-studio"><strong>Source and support</strong></a>
     <br />

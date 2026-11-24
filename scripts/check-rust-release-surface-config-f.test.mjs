@@ -3,6 +3,7 @@ import {
   CHECKOUT_FILES,
   expectCliStatus,
   runCheckerOver,
+  withPackageDescription,
 } from "./rust-release-surface-fixture.mjs";
 
 describe("R5 config, test-only scope, and physical source surface", () => {
@@ -57,10 +58,7 @@ describe("R5 config, test-only scope, and physical source surface", () => {
     expect(result.output).toContain("Cargo.toml: R5: Cargo manifest path keys may add Rust code");
   });
   test("O3.15 accepts a path value and the real package manifest", async () => {
-    const withDescription = packageManifest.replace(
-      'description = "A Modern Chess Database"',
-      'description = "a path"',
-    );
+    const withDescription = withPackageDescription(packageManifest, 'description = "a path"');
     const result = await runCheckerOver([
       { path: "src-tauri/Cargo.toml", contents: withDescription },
     ]);

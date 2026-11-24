@@ -122,6 +122,20 @@ export async function runCheckerOver(
   }
 }
 
+// Replaces live manifest text, refusing when the target is absent so a fixture cannot silently
+// fall back to testing the unmodified manifest.
+export function replaceExisting(text, target, replacement) {
+  const found = typeof target === "string" ? text.includes(target) : target.test(text);
+  if (!found) {
+    throw new Error(`fixture target ${String(target)} is not in the live text`);
+  }
+  return text.replace(target, replacement);
+}
+
+export function withPackageDescription(manifest, descriptionLine) {
+  return replaceExisting(manifest, /^description = "[^"\n]*"$/mu, descriptionLine);
+}
+
 export function expectCliStatus(result, expectedStatus) {
   expect(result.status).toBe(expectedStatus);
   expect(result.error).toBeUndefined();
