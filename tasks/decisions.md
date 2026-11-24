@@ -14257,3 +14257,103 @@ Former private decision identifier: d-20261029-14
 * **Reversal:** re-add a first-statement guard per command if the Windows runner or a Windows user shows the replace path failing, and remove the Phase F row for that command.
 * **Decided by:** Claude Code, under Felix's "fix everything here, full auto" order of 2026-11-24 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"9a9075b7cc6ab30ef9b360c38607324cc45e6d8362ef9d94554bc188b819ed9f","input_sha256":"c5c98d561eaf3d4049531cf537f6625bb844d6035682d2c77212deebcda72e96","kind":"mutation-receipt","operation":"e8ad8a58a6208052c4781feff4348c695e31edecf8814ff91c75e8aa41d3a64c","options":{"section":null},"request_id_sha256":null,"results":["d-20261124-22"],"target":"decisions-ledger","v":1} -->
+
+### d-20261124-24 — Are the opponent preparation's lines a probability product or what he played?
+
+* **Question:** The Preparation tab (plan `tasks/plans/2026-11-24-opponent-preparation.md`) lists the user's lines the opponent plays. Rank them by the product of move frequencies along the line, or list what his games reached with the count?
+* **Governs:** -
+* **Chosen:** A line is listed because his selected games reached it, with the number of games and the last-played date; lists are sorted by games, then last played.
+* **Rejected:** Multiplying move frequencies along the line: tiny numbers nobody can check.
+* **Reason:** Counts are verifiable against the Openings tab. Reversal path: the matching module (`src/utils/opponentPreparation.ts` or its successor) computes another ranking.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-25 — Where do the general frequencies fill in for opponent preparation?
+
+* **Question:** Felix accepted "Where he has too few games in a position, the general Mega frequencies fill in". Where does that apply?
+* **Governs:** -
+* **Chosen:** In "Train these lines" open nodes (where his games say nothing) are ordered by the reference weight stored on the deck's cards relative to the last played node; in the notation they stay visible. The lists use no second statistics fetch.
+* **Rejected:** A second statistics fetch against the reference database for the lists.
+* **Reason:** The stored reference weights already carry the general frequencies. Reversal path: the candidate builder of the preparation run.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-26 — Which period presets does the Preparation tab offer?
+
+* **Question:** Felix accepted "a default of the last 3 years"; the Openings tab has no 3-year preset. Which presets?
+* **Governs:** -
+* **Chosen:** All games, 5 years, 3 years, 1 year, with 3 years first, the vocabulary of the opponent download (`OPPONENT_PERIODS`).
+* **Rejected:** The Openings tab's presets, which lack 3 years.
+* **Reason:** Matches the accepted default and an existing vocabulary. Reversal path: the preset list of the Preparation tab.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-27 — Does a preparation line need a minimum number of games?
+
+* **Question:** Should the Preparation tab hide lines the opponent reached fewer than N times?
+* **Governs:** -
+* **Chosen:** A line counts from his first game; no minimum-games control. Both lists are sorted by games.
+* **Rejected:** A minimum-games control: nobody asked for one. Felix may order it after using the tab (plan "Risks / open questions").
+* **Reason:** Scope of the MANDATE. Reversal path: add a minimum to the matching module and a control to the tab.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-28 — Which reader of the repertoire files serves opponent preparation?
+
+* **Question:** The preparation needs every chapter tree of the user's repertoire files. A third scanner, or the existing index?
+* **Governs:** -
+* **Chosen:** `src/state/repertoireIndex.ts` serves Coach and the preparation; it keeps per node the position key, parent, SAN, half-move count and continuation, charged to the existing bounds.
+* **Rejected:** A third scanner beside `repertoireIndex.ts` and `filePositionIndex.ts`.
+* **Reason:** One reader of one domain concept (universal rule 11). Reversal path: a separate reader in the preparation module.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-29 — How does the batch statistics command filter by player and period?
+
+* **Question:** The preparation needs per-position statistics for one player, colour and start date. A second command, or a filter on `search_positions_stats`; and how does the position-statistics cache treat filtered answers?
+* **Governs:** -
+* **Chosen:** An optional filter `{ player1?, player2?, startDate?, includeUnknownResults? }` on the existing command, tested with the same `matches_search_metadata` as the single search. Filtered answers neither read nor write the position-statistics cache.
+* **Rejected:** A second command (two facades for one operation); widening `PositionStatsKey` with the query (a preparation is asked once).
+* **Reason:** One operation, one facade. Reversal path: add the filter to `PositionStatsKey`.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-30 — Is an opponent preparation persisted?
+
+* **Question:** Keep a computed preparation across reloads?
+* **Governs:** -
+* **Chosen:** No. One preparation exists in memory; a reload asks again.
+* **Rejected:** Persisting it in storage.
+* **Reason:** An opponent is prepared once (Felix, 2026-11-22: "I just need them once"). Reversal path: persist the preparation state atom with a versioned schema.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-31 — How does the notation hide the lines the opponent does not play?
+
+* **Question:** Felix: "We can just collapse all the lines that are irrelevant." Reuse the per-parent collapse, or hide per side line?
+* **Governs:** -
+* **Chosen:** Per side line in the row model, with the hidden count on the parent's toggle row; the main continuation is never hidden.
+* **Rejected:** The per-parent collapse, which would show every sibling of a relevant side line.
+* **Reason:** The notation has no way to fold a main continuation and a file's main line is its spine. Reversal path: `notationRows.ts` hidden-side-line input.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-32 — Does "Train these lines" obey "New moves per session"?
+
+* **Question:** The preparation run may contain more unseen positions than the daily new-moves limit.
+* **Governs:** -
+* **Chosen:** The run ignores "New moves per session"; the minutes bound it.
+* **Rejected:** Capping unseen candidates.
+* **Reason:** Preparing for one opponent is not daily practice. Reversal path: cap unseen candidates in the candidate builder.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-33 — Which database is the general database on the preparation board?
+
+* **Question:** A user asked to see "the normal database" beside the opponent's OTB and online columns on the "Prepare on board" board. Which source and filters?
+* **Governs:** -
+* **Chosen:** The reference database, searched as on an ordinary board with its saved explorer filters, on by default on a preparation board and removable.
+* **Rejected:** The pinned database without the player filter (not the general database when the card was opened in a small database); stripping a saved player filter (shows something no other board shows for that database).
+* **Reason:** Same answer as every other board for that database. Reversal path: the tab-scoped reference-source flag set by "Prepare on board".
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+
+### d-20261124-34 — How does a preparation training run start?
+
+* **Question:** The timed run's leave detection cancels a run started from the Databases page while its first tab opens. Change the run, or start it like "Train openings"?
+* **Governs:** -
+* **Chosen:** The start opens a New Tab of its own and launches with it as `newTabId`, then navigates to the boards page; the run's contract is unchanged.
+* **Rejected:** Making the run's New Tab optional, which needs a second leave rule.
+* **Reason:** The timed run keeps one contract. Reversal path: the start handler of the Preparation tab.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-24 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":98,"effect_sha256":"6dd8012fe87f67125d3dccc6b44e301f3860218a2bd0586c30cbc429829ff4c9","input_sha256":"340f23a316506cf43f318902cda530244c4be91ffdd8764f888a31bef5031598","kind":"mutation-receipt","operation":"de926cf4700b9f09876c9dbfef271b45f9f6f244e766ba98bab9532dfa35a1cf","options":{"section":null},"request_id_sha256":null,"results":["d-20261124-24","d-20261124-25","d-20261124-26","d-20261124-27","d-20261124-28","d-20261124-29","d-20261124-30","d-20261124-31","d-20261124-32","d-20261124-33","d-20261124-34"],"target":"decisions-ledger","v":1} -->
