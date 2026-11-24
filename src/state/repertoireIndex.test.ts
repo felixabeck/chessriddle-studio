@@ -1,5 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest";
-import type { FileWorkspaceHandle, Token, WorkspaceEntry } from "@/bindings";
+import type { FileWorkspaceHandle, WorkspaceEntry } from "@/bindings";
+import { lex } from "./tests/lexPgn";
 
 const mocks = vi.hoisted(() => ({
     listFileWorkspace: vi.fn(),
@@ -55,19 +56,6 @@ function folder(name: string, children: WorkspaceEntry[]): WorkspaceEntry {
         gameCount: null,
         lastModified: 0n,
     };
-}
-
-/** The native lexer's tokens for the plain movetext these tests use. */
-function lex(pgn: string): Token[] {
-    const tokens: Token[] = [];
-    for (const [part] of pgn.matchAll(/\{[^}]*\}|[()*]|[^\s(){}]+/g)) {
-        if (part.startsWith("{")) tokens.push({ type: "Comment", value: part.slice(1, -1) });
-        else if (part === "(") tokens.push({ type: "ParenOpen" });
-        else if (part === ")") tokens.push({ type: "ParenClose" });
-        else if (part === "*") tokens.push({ type: "Outcome", value: "*" });
-        else if (!/^\d+\.+$/.test(part)) tokens.push({ type: "San", value: part });
-    }
-    return tokens;
 }
 
 /** The games of each file by name; `readGame` serves them by index. */

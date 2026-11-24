@@ -1,14 +1,9 @@
 import type { FileWorkspaceHandle, WorkspaceEntry } from "@/bindings";
 import { tauri } from "@/platform/tauri";
+import { scanChapterPositions } from "@/state/chapterScan";
 import { getPGN, parsePGN } from "@/utils/chess";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
-import {
-    defaultTree,
-    getBoardState,
-    locateBoardState,
-    treeIterator,
-    type TreeNode,
-} from "@/utils/treeReducer";
+import { defaultTree, getBoardState, locateBoardState, type TreeNode } from "@/utils/treeReducer";
 
 /**
  * Where each position occurs in the user's repertoire files.
@@ -127,22 +122,21 @@ async function indexFile(
             }
             budget.bytes -= bytes;
             file.bytes += bytes;
-            const tree = await parsePGN(pgn);
-            for (const { node, position } of treeIterator(tree.root)) {
+            await scanChapterPositions(pgn, (occurrence) => {
                 // The end of a line plays nothing; indexed, it would hide the same position
                 // where another line of the game goes on.
-                if (node.children.length === 0) continue;
+                if (!occurrence.hasContinuation) return true;
                 if (budget.entries === 0) {
                     file.partial = true;
-                    break;
+                    return false;
                 }
                 budget.entries--;
                 file.entries++;
-                const key = getBoardState(node.fen);
-                const occurrences = file.positions.get(key);
-                if (occurrences) occurrences.push({ game, path: position });
-                else file.positions.set(key, [{ game, path: position }]);
-            }
+                const occurrences = file.positions.get(occurrence.boardState);
+                if (occurrences) occurrences.push({ game, path: occurrence.path });
+                else file.positions.set(occurrence.boardState, [{ game, path: occurrence.path }]);
+                return true;
+            });
         } catch {
             // A game that cannot be read or parsed is left out; the rest stays usable.
             file.partial = true;
