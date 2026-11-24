@@ -28266,7 +28266,7 @@ Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --wo
 
 ### Real-app verifier NG1 and AO1–AO3 time out: the new-game save never reaches the native row and the orientation scenario cannot reach Settings
 
-* **ID:** f-20261121-01 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261121-01 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** ccc30801-d54e-4267-9ed6-f463bafa4d93
 * **Impact class:** tooling
 * **Why it matters:** with RF5 repaired (f-20261117-04), `pnpm verify:app` still exits 1 on these four checks, so no change can show a fully green real-app run.
@@ -28278,6 +28278,9 @@ Proof: `pnpm test:e2e:container --project=new-game-to-file --repeat-each=40 --wo
 
 2026-11-21 navigation-row build (Claude Code, Opus 5.5; diagnosis by a Grok fix leaf): with the verifier now driving the navigation row, NG1 still fails and AO1 now times out on the row's Application menu button, not on the rail's Settings link. Same-run renderer state for both: one open overlay, the dialog "Save game White Black Event Cancel Save", `elementFromPoint` on the menu button hits the overlay `DIV`. NG1 clicks Save PGN on a `databaseDraft`, and `src/components/boards/BoardAnalysis.tsx:143-148` opens `GameNameModal` instead of inserting, so NG1 waits for an insert that needs the dialog answered, and the dialog it leaves open blocks AO1's navigation. AO2 is not attempted and AO3 finds no Auto Save control as a consequence. This answers the open question for NG1: verifier drift behind the new-game name dialog (da23a6b41..5177789e8), not a lost aria-label. The verifier fix is to answer the dialog in NG1 (and close any overlay before AO1).
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"f2cf1f9c9444b2cccdf78d958d7e1ac0632bd3806f681b4d0fc148a62a4d9b27","input_sha256":"4922199c2fbb3311250367e0c0d04fb89ce648d3fee53fa7cdc3adb2fb396d42","kind":"mutation-receipt","operation":"304bd6ab659abd3718aafe14e95573120f2a020960a212856d92db4c1bcdf892","options":{"section":null},"request_id_sha256":null,"results":["f-20261121-01"],"target":"f-20261121-01","v":1} -->
+
+2026-11-24 Entry revalidation (Claude Code drain, Opus 5.5): build → inline. The open question is answered by the 2026-11-21 annotation: NG1's `Save PGN` on a draft opens `GameNameModal` (`src/components/boards/BoardAnalysis.tsx` `requestUserSave`, isDraftGameOrigin → setNameDialog("save")), which writes only on confirm; AO1–AO3 fail because that dialog stays open over the navigation row. The fix is decided and confined to `scripts/verify-app.mjs` (answer the dialog in NG1, leave no overlay behind), so no plan question remains.
+<!-- ledger-meta {"command":"set-header","effect_lines":1,"effect_sha256":"c53c3e836e0d41688ef47ddda302e90bf6ce9b632d562e9ab725a45ab1908410","header_sha256":"7e969737d31772f05c88ae87f02cb7b7efce302bc93e1b83d613da65ea532e55","header_status":"open","input_sha256":"85bbceb146a9f93cd6e3a11b5cb08434185d034e09063d86dbdf2ce5f5990d19","kind":"mutation-receipt","operation":"85ef7b1e5d3572be11ee168f8cfdeee9aff3490effdb37858f35328f16d5d808","options":{"headers":{"Entry":"inline"},"section":null},"request_id_sha256":null,"results":["f-20261121-01"],"target":"f-20261121-01","v":1} -->
 
 ---
 
