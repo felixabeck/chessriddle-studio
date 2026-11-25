@@ -743,6 +743,16 @@ test("clearWorkspaceAndUnsavedBeforeWipe clears both stores on success and resum
     ).rejects.toThrow(/could not be removed/);
     expect(mirror.resume).toHaveBeenCalledWith({ clearedCompletely: true });
     expect(wipe).not.toHaveBeenCalled();
+
+    // Both stores cleared, wipe throws -> the session goes on, the mirror resumes rewriting all.
+    mirror.resume.mockClear();
+    wipe.mockImplementationOnce(() => {
+        throw new DOMException("refused", "SecurityError");
+    });
+    await expect(
+        clearWorkspaceAndUnsavedBeforeWipe({ mirror, sessionNative, legacyNative, wipe }),
+    ).rejects.toThrow(/refused/);
+    expect(mirror.resume).toHaveBeenCalledWith({ clearedCompletely: true });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1233,5 +1243,169 @@ test("seeded file and database tabs are retained by collectOriginalPathOwners an
     jotai.set(pageTabsAtom, () => ["settings"]);
     await mirror.drain();
     expect(fake.leaves.get(PAGE_TABS_LEAF_KEY)).toBe(sessionStorage.getItem(PAGE_TABS_STORAGE_KEY));
+    mirror.stop();
+});
+
+test("unknown baseline learns present disk leaves before first workspace write on reload and after failed clear, and enters store-unavailable on listNames failure (C1)", async () => {
+    // 1. Reload start: 3 tabs whose leaves exist on disk and whose re-writes are held.
+    const fakeReload = fakeSessionNative();
+    const reloadIds = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+    const reloadTabs = reloadIds.map((id, i) => analysisTab(id, `Game ${i + 1}`));
+    for (const id of reloadIds) {
+        const tree = encodedTree({ dirty: true, comment: `saved-${id}` });
+        fakeReload.leaves.set(id, tree);
+        sessionStorage.setItem(id, encodedTree({ dirty: true, comment: `live-${id}` }));
+        fakeReload.holdKey(id);
+    }
+    const wsPayload = workspacePayload(reloadTabs, reloadIds[0]!);
+    fakeReload.leaves.set(WORKSPACE_LEAF_KEY, wsPayload);
+    sessionStorage.setItem(WORKSPACE_STORAGE_KEY, wsPayload);
+
+    const reloadRes = await restoreWorkspaceSessionAtStart({
+        native: fakeReload.native,
+        warn: () => undefined,
+        sampleFresh: () => ({ fresh: false, unreadable: false }),
+    });
+    expect(reloadRes).toEqual({ kind: "skipped", reason: "reload" });
+
+    const jotaiReload = createJotaiStore();
+    jotaiReload.set(tabsAtom, reloadTabs);
+    const mirrorReload = new WorkspaceSessionMirror({
+        native: fakeReload.native,
+        jotaiStore: jotaiReload,
+        notify: vi.fn(),
+        warn: () => undefined,
+        treeStoreFor: () => null,
+    });
+    mirrorReload.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // Allow listNames() + workspace write to settle while all 3 tree writes remain held.
+    for (let i = 0; i < 10; i++) {
+        await Promise.resolve();
+    }
+    expect(fakeReload.calls).toContain("listNames");
+    expect(fakeReload.calls).toContain(`write:${WORKSPACE_LEAF_KEY}`);
+    const firstReloadWs = parseStoredWorkspaceForRestore(
+        fakeReload.leaves.get(WORKSPACE_LEAF_KEY)!,
+    )!;
+    expect(firstReloadWs.tabs.map((t) => t.value)).toEqual(reloadIds);
+    // Present-on-disk eligibility does not mark tabs confirmed before their current tree is written.
+    for (const id of reloadIds) {
+        expect(mirrorReload.isConfirmed(id)).toBe(false);
+    }
+    for (const id of reloadIds) fakeReload.releaseKey(id);
+    await mirrorReload.drain();
+    for (const id of reloadIds) {
+        expect(mirrorReload.isConfirmed(id)).toBe(true);
+    }
+
+    // 2. resume({ clearedCompletely: false }): leaves remain on disk, re-writes held -> workspace keeps all 3.
+    mirrorReload.pause();
+    for (const id of reloadIds) fakeReload.holdKey(id);
+    fakeReload.calls.length = 0;
+    mirrorReload.resume({ clearedCompletely: false });
+    for (let i = 0; i < 10; i++) {
+        await Promise.resolve();
+    }
+    expect(fakeReload.calls).toContain("listNames");
+    expect(fakeReload.calls).toContain(`write:${WORKSPACE_LEAF_KEY}`);
+    const resumedWs = parseStoredWorkspaceForRestore(fakeReload.leaves.get(WORKSPACE_LEAF_KEY)!)!;
+    expect(resumedWs.tabs.map((t) => t.value)).toEqual(reloadIds);
+    for (const id of reloadIds) {
+        expect(mirrorReload.isConfirmed(id)).toBe(false);
+    }
+    for (const id of reloadIds) fakeReload.releaseKey(id);
+    await mirrorReload.drain();
+    mirrorReload.stop();
+
+    // 3. listNames failure -> enters store-unavailable mode with notice, no workspace write.
+    sessionStorage.clear();
+    resetWorkspaceSessionForTests();
+    const fakeFail = fakeSessionNative();
+    const failId = crypto.randomUUID();
+    const failTab = analysisTab(failId, "Protected");
+    const failTree = encodedTree({ dirty: true });
+    fakeFail.leaves.set(failId, failTree);
+    fakeFail.leaves.set(WORKSPACE_LEAF_KEY, workspacePayload([failTab], failId));
+    sessionStorage.setItem(failId, failTree);
+    sessionStorage.setItem(WORKSPACE_STORAGE_KEY, workspacePayload([failTab], failId));
+    fakeFail.holdKey(failId);
+
+    const failingNative: WorkspaceSessionNative = {
+        ...fakeFail.native,
+        listNames: async () => {
+            fakeFail.calls.push("listNames");
+            throw new Error("disk unreadable");
+        },
+    };
+    const jotaiFail = createJotaiStore();
+    jotaiFail.set(tabsAtom, [failTab]);
+    const notifyFail = vi.fn();
+    const mirrorFail = new WorkspaceSessionMirror({
+        native: failingNative,
+        jotaiStore: jotaiFail,
+        notify: notifyFail,
+        warn: () => undefined,
+        treeStoreFor: () => null,
+    });
+    mirrorFail.start();
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 10; i++) {
+        await Promise.resolve();
+    }
+    expect(fakeFail.calls).toContain("listNames");
+    expect(fakeFail.calls).not.toContain(`write:${WORKSPACE_LEAF_KEY}`);
+    expect(sessionStorage.getItem(WORKSPACE_SESSION_UNAVAILABLE_KEY)).toBe("1");
+    expect(notifyFail).toHaveBeenCalledTimes(1);
+    expect(notifyFail.mock.calls[0]?.[0]).toBe(
+        enUSCatalogue.translation["WorkspaceSession.WriteFailed"].replace(
+            "{{category}}",
+            errorCategoryOf(new Error("disk unreadable")),
+        ),
+    );
+    expect(mirrorFail.isConfirmed(failId)).toBe(false);
+    fakeFail.releaseKey(failId);
+    await mirrorFail.drain();
+    expect(fakeFail.calls).not.toContain(`write:${WORKSPACE_LEAF_KEY}`);
+    mirrorFail.stop();
+});
+
+test("a truncated leaf listing still counts an open tab's present leaf as durable for the first workspace write", async () => {
+    const fake = fakeSessionNative();
+    const ids = [crypto.randomUUID(), crypto.randomUUID()];
+    const tabs = ids.map((id, i) => analysisTab(id, `Game ${i + 1}`));
+    for (const id of ids) {
+        fake.leaves.set(id, encodedTree({ dirty: true, comment: `saved-${id}` }));
+        sessionStorage.setItem(id, encodedTree({ dirty: true, comment: `live-${id}` }));
+        fake.holdKey(id);
+    }
+    const payload = workspacePayload(tabs, ids[0]!);
+    fake.leaves.set(WORKSPACE_LEAF_KEY, payload);
+    sessionStorage.setItem(WORKSPACE_STORAGE_KEY, payload);
+    // The listing hides the second tab's leaf beyond its cap.
+    const native = {
+        ...fake.native,
+        listNames: async (): Promise<WorkspaceSessionNames> => {
+            fake.calls.push("listNames");
+            return { names: [ids[0]!], omitted: 1 };
+        },
+    };
+    const jotai = createJotaiStore();
+    jotai.set(tabsAtom, tabs);
+    const mirror = new WorkspaceSessionMirror({
+        native,
+        jotaiStore: jotai,
+        notify: vi.fn(),
+        warn: () => undefined,
+        treeStoreFor: () => null,
+    });
+    mirror.start();
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(fake.calls).toContain(`write:${WORKSPACE_LEAF_KEY}`);
+    const durable = parseStoredWorkspaceForRestore(fake.leaves.get(WORKSPACE_LEAF_KEY)!)!;
+    expect(durable.tabs.map((t) => t.value)).toEqual(ids);
+    for (const id of ids) fake.releaseKey(id);
+    await mirror.drain();
     mirror.stop();
 });

@@ -74,7 +74,13 @@ export async function clearWorkspaceAndUnsavedBeforeWipe(deps: {
         () => deps.mirror.resume({ clearedCompletely: true }),
     );
 
-    deps.wipe();
+    try {
+        deps.wipe();
+    } catch (error) {
+        // Both stores are empty now; the session goes on, so every key is rewritten from it.
+        deps.mirror.resume({ clearedCompletely: true });
+        throw error;
+    }
 }
 
 export type ClearSavedDataAfterConfirmationDeps = {

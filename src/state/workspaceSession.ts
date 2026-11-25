@@ -134,6 +134,7 @@ type StartupRestoreHandoff = {
     durableWorkspaceTabKeys: Set<string>;
     removalTargets: Set<string>;
     durableWorkspaceSynced: boolean;
+    diskBaselineKnown: boolean;
 };
 
 let pendingNotices: QueuedSessionNotice[] = [];
@@ -147,6 +148,7 @@ function emptyHandoff(): StartupRestoreHandoff {
         durableWorkspaceTabKeys: new Set(),
         removalTargets: new Set(),
         durableWorkspaceSynced: false,
+        diskBaselineKnown: false,
     };
 }
 
@@ -460,6 +462,7 @@ export async function restoreWorkspaceSessionAtStart(
     }
     startupHandoff.removalTargets = removalTargets;
     startupHandoff.durableWorkspaceSynced = shouldSeedWorkspace && !workspaceModified;
+    startupHandoff.diskBaselineKnown = true;
 
     return {
         kind: "restored",
@@ -506,6 +509,7 @@ export class WorkspaceSessionMirror {
     private readonly writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
     private readonly writeQueued = new Map<string, number>();
     private readonly durableValues = new Map<string, string>();
+    private readonly presentDiskLeafNames = new Set<string>();
     private readonly durableWorkspaceTabValues = new Set<string>();
     private readonly durableWorkspaceTabKeys = new Set<string>();
     private readonly knownOwnedTreeKeys = new Set<string>();
@@ -523,6 +527,9 @@ export class WorkspaceSessionMirror {
     private storeUnavailable: boolean;
     /** True once the durable `workspace` leaf on disk matches the current session's baseline. */
     private durableWorkspaceSynced = false;
+    /** True once `presentDiskLeafNames` reflects the native store for the current period. */
+    private diskBaselineKnown = false;
+    private baselineEpoch = 0;
     private readonly warn: (message: string) => void;
     private readonly session: Storage;
     private readonly treeStoreFor: (tab: Tab) => TreeStore | null;
@@ -539,7 +546,10 @@ export class WorkspaceSessionMirror {
         this.storeUnavailable =
             deps.storeUnavailable ??
             (handoff.storeUnavailable || readStoreUnavailableMarker(this.session));
-        for (const [k, v] of handoff.durableValues) this.durableValues.set(k, v);
+        for (const [k, v] of handoff.durableValues) {
+            this.durableValues.set(k, v);
+            if (isCanonicalUuid(k)) this.presentDiskLeafNames.add(k);
+        }
         for (const v of handoff.durableWorkspaceTabValues) this.durableWorkspaceTabValues.add(v);
         for (const k of handoff.durableWorkspaceTabKeys) this.durableWorkspaceTabKeys.add(k);
         for (const key of handoff.removalTargets) {
@@ -547,6 +557,7 @@ export class WorkspaceSessionMirror {
             this.removals.set(key, { key, timer: null, attempts: 0, notified: false });
         }
         this.durableWorkspaceSynced = handoff.durableWorkspaceSynced;
+        this.diskBaselineKnown = handoff.diskBaselineKnown;
     }
 
     onConfirmedChange(listener: () => void): () => void {
@@ -657,9 +668,12 @@ export class WorkspaceSessionMirror {
             }
         }
         this.durableValues.clear();
+        this.presentDiskLeafNames.clear();
         this.durableWorkspaceTabValues.clear();
         this.durableWorkspaceTabKeys.clear();
         this.durableWorkspaceSynced = false;
+        this.diskBaselineKnown = Boolean(options?.clearedCompletely);
+        this.baselineEpoch += 1;
 
         for (const tab of this.currentTabs()) {
             const treeKey = getTabTreeKey(tab);
@@ -949,7 +963,56 @@ export class WorkspaceSessionMirror {
         });
     }
 
+    private async learnDiskBaseline(): Promise<boolean> {
+        const epoch = this.baselineEpoch;
+        let names: WorkspaceSessionNames;
+        try {
+            names = await this.deps.native.listNames();
+            if (names.omitted > 0) {
+                // The listing was truncated: ask for the open tabs' own leaves directly (bounded by
+                // MAX_WORKSPACE_TABS) so a present leaf beyond the cap still counts as durable.
+                const listed = new Set(names.names);
+                const missing = [
+                    ...new Set(
+                        this.currentTabs()
+                            .map(getTabTreeKey)
+                            .filter((key) => isCanonicalUuid(key) && !listed.has(key)),
+                    ),
+                ].slice(0, MAX_WORKSPACE_TABS);
+                const entries =
+                    missing.length > 0 ? await this.deps.native.readLeaves(missing) : [];
+                const present = entries
+                    .filter((entry) => entry.state.kind !== "absent")
+                    .map((entry) => entry.key);
+                names = { names: [...names.names, ...present], omitted: names.omitted };
+            }
+        } catch (error) {
+            if (!this.started || this.baselineEpoch !== epoch) return false;
+            this.storeUnavailable = true;
+            persistStoreUnavailableMarker(this.session);
+            for (const timer of this.writeTimers.values()) clearTimeout(timer);
+            this.writeTimers.clear();
+            this.notifyConfirmedChange();
+            const category = errorCategoryOf(error);
+            this.warn(`Workspace session leaf list failed: ${normalizeError(error).message}`);
+            this.deps.notify(i18n.t("WorkspaceSession.WriteFailed", { category }));
+            return false;
+        }
+        if (!this.started || this.baselineEpoch !== epoch) return false;
+        for (const name of names.names) {
+            this.presentDiskLeafNames.add(name);
+        }
+        this.diskBaselineKnown = true;
+        return true;
+    }
+
     private async performWorkspaceWrite(generation: number): Promise<void> {
+        if (!this.diskBaselineKnown) {
+            const learned = await this.learnDiskBaseline();
+            if (!learned || !this.started || this.paused || this.storeUnavailable) return;
+            if (this.lane(WORKSPACE_LEAF_KEY).generation !== generation) return;
+        }
+
         const raw = this.readSessionItem(WORKSPACE_STORAGE_KEY);
         if (raw === null || raw === undefined) return;
         const parsed = parseStoredWorkspaceForRestore(raw);
@@ -959,7 +1022,11 @@ export class WorkspaceSessionMirror {
         for (const tab of parsed.tabs) {
             const treeKey = getTabTreeKey(tab);
             const storedTree = this.readSessionItem(treeKey);
-            if (storedTree === null || this.durableValues.has(treeKey)) {
+            if (
+                storedTree === null ||
+                this.durableValues.has(treeKey) ||
+                this.presentDiskLeafNames.has(treeKey)
+            ) {
                 eligibleTabs.push(tab);
             }
         }
@@ -1002,6 +1069,7 @@ export class WorkspaceSessionMirror {
         }
         if (this.lane(key).generation !== generation) return false;
         this.durableValues.set(key, content);
+        if (isCanonicalUuid(key)) this.presentDiskLeafNames.add(key);
         this.notifiedWriteFailure.delete(key);
         return true;
     }
@@ -1080,6 +1148,7 @@ export class WorkspaceSessionMirror {
             if (this.removals.get(removal.key) === removal) {
                 this.removals.delete(removal.key);
                 this.durableValues.delete(removal.key);
+                this.presentDiskLeafNames.delete(removal.key);
             }
         });
     }
