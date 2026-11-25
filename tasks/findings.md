@@ -29413,3 +29413,16 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 * **Handled in 8c98f9bdd:** `e2e/file-menu-save.spec.ts` polls the active tab type through a helper that catches `activeWorkspaceTab`'s assertion, because `expect.poll` does not retry a throwing callback (playwright 1.62.1 `invokePollMatcher`). Proof: a probe that withheld the workspace for 1.5 s failed with the old one-shot read and passed with the helper; `pnpm test:e2e:container --project=file-menu-save --repeat-each=10` 30/30. Review: review-tests APPROVED. The five `expect.poll(... activeWorkspaceTab ...)` sites in new-game-to-file and game-references share the non-retry flaw but run after a user action and have no observed failure, so no finding was filed.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"275edfe94572791d36fbdbf221169a9018de88fd10839f1f032f4ecef5276454","header_sha256":"b15a00d895f81f8a6159b0785cda64c44fa9d3461d196718757f16fea44b25c3","header_status":"handled","input_sha256":"39c092766ee6d8c5cd292e553ba81a34716b60f2f0e9d51965b60743f8c147de","kind":"mutation-receipt","operation":"bf7cb692827b5d7225e0890a6889ceb721c1efe1ba11a1dcb2961fbd22920cb8","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-19"],"target":"f-20261125-19","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### Adding a Chess.com account fails when one listed month has an empty archive
+
+* **ID:** f-20261125-20 · **Status:** open · **Area:** pgn-import · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Where:** `src-tauri/src/chesscom.rs:559-563` (`download_chess_com_games_core` month staging loop): `if games.games.is_empty() { return Err(Error::InvalidInput("Chess.com returned an empty requested game archive")) }`.
+* **Defect:** Chess.com lists months in `/pub/player/<name>/games/archives` whose monthly archive is `{"games":[]}`. The staging loop rejects such a month, the `Ok(Err(error))` arm returns the error for the whole download, already-staged months are discarded and nothing is published, so the account is never added.
+* **Failure scenario:** User bug report 2026-11-25 (ChessRiddle Studio 1.2.0, Windows 11 26200): Accounts → add Chess.com account fails with "Invalid input: Chess.com returned an empty requested game archive"; the user's manually downloaded PGN converts fine. Reproduced against the live API: `https://api.chess.com/pub/player/fabianocaruana/games/2018/03` is listed in that player's index and returns HTTP 200 `{"games":[]}`, so the same account would fail.
+* **Fix:** treat an empty month like a variant-only month (`d-20261108-03`): stage zero bytes and continue.
+* **Found by:** Claude Code on 2026-11-25, from a forwarded user bug report.
