@@ -13,7 +13,10 @@ import {
   BOARD_TAB_STOP_SELECTOR,
   STARTUP_RECONCILIATION_LATENCY_PHRASE,
   createSinceOpenLogReader,
+  evaluateWorkspaceRestoreSnapshot,
+  mainlineMovesFromTree,
   openAssertionSession,
+  treeNodeAtPath,
   verifyConversionCancellationContract,
   waitForStartupReconciliation,
 } from "./verify-app.mjs";
@@ -907,4 +910,107 @@ test("since-open log reader treats a missing file as empty and surfaces other re
   await rm(logFile);
   await mkdir(logFile);
   await assert.rejects(reader, (error) => error.code === "EISDIR");
+});
+
+test("workspace restore helpers extract mainline moves, resolve paths and detect each mismatch", () => {
+  const root = {
+    san: null,
+    children: [
+      {
+        san: "e4",
+        children: [
+          {
+            san: "e5",
+            children: [{ san: "d4", children: [] }],
+          },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(mainlineMovesFromTree(root), ["e4", "e5", "d4"]);
+  assert.equal(treeNodeAtPath(root, []), root);
+  assert.equal(treeNodeAtPath(root, [0, 0])?.san, "e5");
+  assert.equal(treeNodeAtPath(root, [0, 0, 0])?.san, "d4");
+  assert.equal(treeNodeAtPath(root, [0, 1]), null);
+
+  const expected = {
+    tabOrder: ["tab-1", "tab-2"],
+    tabTypes: ["analysis", "new"],
+    activeTab: "tab-1",
+    moves: ["e4", "e5", "d4"],
+    notation: "1.e4e52.d4",
+    position: [0, 0],
+    currentMoveSan: "e5",
+  };
+  const validSnapshot = {
+    tabs: [
+      { value: "tab-1", type: "analysis" },
+      { value: "tab-2", type: "new" },
+    ],
+    domTabs: [
+      { id: "tab-1", selected: true },
+      { id: "tab-2", selected: false },
+    ],
+    workspace: { activeTab: "tab-1" },
+    moves: ["e4", "e5", "d4"],
+    panelText: "Info1.e4e52.d4",
+    tree: { dirty: true },
+    position: [0, 0],
+    currentMoveSan: "e5",
+    currentMoveText: "e5",
+  };
+
+  const passing = evaluateWorkspaceRestoreSnapshot(validSnapshot, expected);
+  assert.deepEqual(
+    Object.values(passing).map((verdict) => verdict.ok),
+    [true, true, true, true],
+  );
+
+  assert.equal(
+    evaluateWorkspaceRestoreSnapshot(
+      {
+        ...validSnapshot,
+        tabs: [validSnapshot.tabs[1], validSnapshot.tabs[0]],
+        domTabs: [validSnapshot.domTabs[1], validSnapshot.domTabs[0]],
+      },
+      expected,
+    ).tabsAndOrder.ok,
+    false,
+  );
+  assert.equal(
+    evaluateWorkspaceRestoreSnapshot(
+      {
+        ...validSnapshot,
+        workspace: { activeTab: "tab-2" },
+        domTabs: [
+          { id: "tab-1", selected: false },
+          { id: "tab-2", selected: true },
+        ],
+      },
+      expected,
+    ).activeTab.ok,
+    false,
+  );
+  assert.equal(
+    evaluateWorkspaceRestoreSnapshot({ ...validSnapshot, moves: ["e4", "e5"] }, expected).moveList
+      .ok,
+    false,
+  );
+  assert.equal(
+    evaluateWorkspaceRestoreSnapshot({ ...validSnapshot, tree: { dirty: false } }, expected)
+      .moveList.ok,
+    false,
+  );
+  assert.equal(
+    evaluateWorkspaceRestoreSnapshot(
+      { ...validSnapshot, position: [0, 0, 0], currentMoveSan: "d4", currentMoveText: "d4" },
+      expected,
+    ).currentMove.ok,
+    false,
+  );
+  assert.equal(
+    evaluateWorkspaceRestoreSnapshot({ ...validSnapshot, currentMoveText: "d4" }, expected)
+      .currentMove.ok,
+    false,
+  );
 });

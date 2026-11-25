@@ -248,6 +248,7 @@ import {
   registerTemporaryProfile,
   requirePrerequisites,
   shutdown,
+  sleep,
   startCompositor,
   startDriver,
   stopLaunchedChild,
@@ -264,6 +265,7 @@ const fallbackEngineInstallOnly = process.argv.includes("--fallback-engine-insta
 // Installs the catalog engine like --fallback-engine-install, then runs a real game report.
 const gameReportOnly = process.argv.includes("--game-report");
 const timedRunOnly = process.argv.includes("--timed-run");
+const workspaceRestoreOnly = process.argv.includes("--workspace-restore");
 const expectClearRejection = process.argv.includes("--expect-clear-rejection");
 const applicationIndex = process.argv.indexOf("--application");
 const progressGenerationIndex = process.argv.indexOf("--expect-progress-generation");
@@ -288,6 +290,12 @@ const PRACTICE_MOVE_CLICK_DELAY_MS = 40;
 // Gap between the two clicks of the double-click. It must stay inside the platform double-click
 // interval, or WebKitGTK delivers two single clicks and the scenario proves nothing.
 const DOUBLE_CLICK_GAP_MS = 60;
+// Minimum wait after the last edit before SIGKILL (O7), exceeding the session mirror's ~1 s
+// capture bound (WORKSPACE_SESSION_WRITE_DELAY_MS in src/state/workspaceSession.ts).
+const WORKSPACE_RESTORE_SIGKILL_MIN_AGE_MS = 2_000;
+// Sleep target before SIGKILL: 200 ms margin over WORKSPACE_RESTORE_SIGKILL_MIN_AGE_MS and the
+// session mirror's ~1 s capture bound (WORKSPACE_SESSION_WRITE_DELAY_MS in src/state/workspaceSession.ts).
+const WORKSPACE_RESTORE_SIGKILL_WAIT_MS = 2_200;
 const filesWorkspaceId = "verify-files-workspace";
 const filesRowName = "verify-sample";
 const filesMetadataRowName = "verify-metadata-only";
@@ -907,10 +915,7 @@ async function pathAuthorityEntry(id, displayName, nativePath, purpose, operatio
   };
 }
 
-async function requestCloseThroughTitlebar(session, label) {
-  await waitFor(`${label} window controls`, () =>
-    session.execute(closeControlProbe).catch(() => false),
-  );
+function findRunningApplication(label) {
   const running = appProcesses();
   const application = running.find(({ cmd }) => cmd.includes(APP_BINARY));
   if (!application) throw new Error(`${label} application process was not running`);
@@ -920,7 +925,19 @@ async function requestCloseThroughTitlebar(session, label) {
         ppid === application.pid && /WebKitWebProcess|WebKitNetworkProcess/.test(cmd),
     )
     .map(({ pid }) => pid);
-  const trackedPids = [application.pid, ...webkitServicePids];
+  return {
+    application,
+    webkitServicePids,
+    trackedPids: [application.pid, ...webkitServicePids],
+    running,
+  };
+}
+
+async function requestCloseThroughTitlebar(session, label) {
+  await waitFor(`${label} window controls`, () =>
+    session.execute(closeControlProbe).catch(() => false),
+  );
+  const { application, webkitServicePids, trackedPids, running } = findRunningApplication(label);
   await session.execute(closeControlAction);
   return { application, webkitServicePids, trackedPids, running };
 }
@@ -953,22 +970,35 @@ const quitConfirmDialogProbe = `(() => {
   return quit ? dialog : false;
 })()`;
 
-async function readActiveTabTree(session) {
-  const observed = await session.execute(`return {
-    rawWorkspace: sessionStorage.getItem("workspace"),
-    keys: Object.keys(sessionStorage),
-  };`);
-  const workspace = observed.rawWorkspace && deserializeStorageValue(observed.rawWorkspace);
-  if (!workspace || !Array.isArray(workspace.tabs))
-    return { workspace: null, tab: null, tree: null };
+async function decodeWorkspaceActiveTabTree(session, rawWorkspace) {
+  const workspace = rawWorkspace && deserializeStorageValue(rawWorkspace);
+  if (!workspace || !Array.isArray(workspace.tabs)) {
+    return { workspace: null, tabs: [], tab: null, treeKey: null, tree: null };
+  }
   const tab = workspace.tabs.find((entry) => entry.value === workspace.activeTab) ?? null;
-  const treeKey = tab && (tab.treeKey ?? tab.value);
+  const treeKey = tab ? (tab.treeKey ?? tab.value) : null;
   const rawTree =
     typeof treeKey === "string"
       ? await session.execute("return sessionStorage.getItem(arguments[0])", [treeKey])
       : null;
   const tree = rawTree && deserializeStorageValue(rawTree)?.state;
-  return { workspace, tab, tree, treeKey, sessionKeys: observed.keys };
+  return { workspace, tabs: workspace.tabs, tab, treeKey, tree };
+}
+
+async function readActiveTabTree(session) {
+  const observed = await session.execute(`return {
+    rawWorkspace: sessionStorage.getItem("workspace"),
+    keys: Object.keys(sessionStorage),
+  };`);
+  const decoded = await decodeWorkspaceActiveTabTree(session, observed.rawWorkspace);
+  if (!decoded.workspace) return { workspace: null, tab: null, tree: null };
+  return {
+    workspace: decoded.workspace,
+    tab: decoded.tab,
+    tree: decoded.tree,
+    treeKey: decoded.treeKey,
+    sessionKeys: observed.keys,
+  };
 }
 
 /** Open the Info-tab PGN editor, replace the Event header, Update, and wait until the tree is dirty. */
@@ -1078,22 +1108,7 @@ async function dirtyActiveTreeEventHeader(
   );
 }
 
-/** Every tab in the session workspace whose stored tree carries the given Event header. */
-async function tabsWithEvent(session, event) {
-  const raw = await session.execute(`return sessionStorage.getItem("workspace")`);
-  const workspace = raw && deserializeStorageValue(raw);
-  const found = [];
-  for (const tab of Array.isArray(workspace?.tabs) ? workspace.tabs : []) {
-    const treeKey = tab.treeKey ?? tab.value;
-    const rawTree = await session.execute("return sessionStorage.getItem(arguments[0])", [treeKey]);
-    const tree = rawTree && deserializeStorageValue(rawTree)?.state;
-    if (tree?.headers?.event === event)
-      found.push({ tab, tree, active: workspace.activeTab === tab.value });
-  }
-  return found;
-}
-
-async function openRecoverySession(label) {
+async function openRestoreSession(label) {
   const session = await Session.open(APP_BINARY);
   await waitFor(`the ${label} renderer to expose Tauri`, () =>
     session.execute("return typeof window.__TAURI_INTERNALS__ === 'object'").catch(() => false),
@@ -1110,153 +1125,443 @@ async function releaseSession(session, label) {
     console.log(`  .. ${label} WebDriver session release returned: ${released.error}`);
 }
 
-/** A typed game survives a crash and a window close, and "Close without saving" really discards it. */
-async function verifyUnsavedGameRecovery(profileDirectory) {
-  const dirtyEvent = "verify:unsaved-game-recovery";
-  const store = join(profileDirectory, ".local/share/com.chessriddle.studio/unsaved-games");
-  const records = async () =>
-    (await readdir(store).catch(() => [])).filter((name) => name.endsWith(".json"));
+/** Extract the mainline SAN move list from a persisted tree root. */
+export function mainlineMovesFromTree(root) {
+  const moves = [];
+  let node = root;
+  while (node?.children?.[0]) {
+    node = node.children[0];
+    if (typeof node.san === "string") moves.push(node.san);
+  }
+  return moves;
+}
 
-  console.log("  .. recovery: typing a game, then killing the process");
-  const first = await openRecoverySession("recovery-kill");
-  const analysisOpen = await reachableStableCoordinates(
-    first,
-    "Analysis Board",
-    `[...document.querySelectorAll('button')].find((node) =>
-      node.textContent.trim() === 'Analysis Board')`,
+/** Return the node at `path` inside `root`, or `null` when absent. */
+export function treeNodeAtPath(root, path) {
+  let node = root;
+  for (const index of Array.isArray(path) ? path : []) {
+    node = node?.children?.[index];
+    if (!node) return null;
+  }
+  return node ?? null;
+}
+
+/** Compare a live workspace snapshot against the expected tabs, order, active tab, moves and current move. */
+export function evaluateWorkspaceRestoreSnapshot(snapshot, expected) {
+  const actualOrder = snapshot.tabs.map((tab) => tab.value);
+  const actualTypes = snapshot.tabs.map((tab) => tab.type);
+  const domOrder = snapshot.domTabs.map((tab) => tab.id);
+  const domSelected = snapshot.domTabs.filter((tab) => tab.selected).map((tab) => tab.id);
+  return {
+    tabsAndOrder: {
+      ok:
+        JSON.stringify(actualOrder) === JSON.stringify(expected.tabOrder) &&
+        JSON.stringify(domOrder) === JSON.stringify(expected.tabOrder) &&
+        JSON.stringify(actualTypes) === JSON.stringify(expected.tabTypes),
+      detail:
+        `expected order=${JSON.stringify(expected.tabOrder)} types=${JSON.stringify(expected.tabTypes)}; ` +
+        `got storage=${JSON.stringify(actualOrder)} dom=${JSON.stringify(domOrder)} types=${JSON.stringify(actualTypes)}`,
+    },
+    activeTab: {
+      ok:
+        snapshot.workspace?.activeTab === expected.activeTab &&
+        domSelected.length === 1 &&
+        domSelected[0] === expected.activeTab,
+      detail: `expected=${expected.activeTab}; got storage=${snapshot.workspace?.activeTab} dom=${JSON.stringify(domSelected)}`,
+    },
+    moveList: {
+      ok:
+        JSON.stringify(snapshot.moves) === JSON.stringify(expected.moves) &&
+        snapshot.panelText.includes(expected.notation) &&
+        snapshot.tree?.dirty === true,
+      detail:
+        `expected=${JSON.stringify(expected.moves)} (${expected.notation}); ` +
+        `got=${JSON.stringify(snapshot.moves)} dirty=${snapshot.tree?.dirty}`,
+    },
+    currentMove: {
+      ok:
+        JSON.stringify(snapshot.position) === JSON.stringify(expected.position) &&
+        snapshot.currentMoveSan === expected.currentMoveSan &&
+        snapshot.currentMoveText === expected.currentMoveSan,
+      detail:
+        `expected pos=${JSON.stringify(expected.position)} san=${expected.currentMoveSan}; ` +
+        `got pos=${JSON.stringify(snapshot.position)} san=${snapshot.currentMoveSan} dom=${JSON.stringify(snapshot.currentMoveText)}`,
+    },
+  };
+}
+
+async function readWorkspaceSnapshot(session) {
+  const observed = await session.execute(`
+    const tablist = document.querySelector('header [role="tablist"]');
+    const tabNodes = [...(tablist?.querySelectorAll('[role="tab"]') ?? [])];
+    const domTabs = tabNodes.map((node) => ({
+      id: node.getAttribute('data-tab-id') || node.id.replace(/^board-tab-/, ''),
+      selected: node.getAttribute('aria-selected') === 'true',
+    }));
+    const selectedDomTab = domTabs.find((entry) => entry.selected) ?? null;
+    const panel = selectedDomTab
+      ? document.getElementById('board-tab-panel-' + selectedDomTab.id)
+      : null;
+    const currentMoveCell = panel?.querySelector('[data-notation-current="true"] button[aria-current="true"]');
+    return {
+      path: location.pathname,
+      readyState: document.readyState,
+      rawWorkspace: sessionStorage.getItem('workspace'),
+      domTabs,
+      hasBoard: Boolean(panel?.querySelector('cg-board')),
+      panelText: panel ? panel.innerText.replace(/\\s+/g, '') : '',
+      currentMoveText: currentMoveCell ? currentMoveCell.textContent.trim() : null,
+    };
+  `);
+  const decoded = await decodeWorkspaceActiveTabTree(session, observed.rawWorkspace);
+  return {
+    ...observed,
+    workspace: decoded.workspace,
+    tabs: decoded.tabs,
+    activeTab: decoded.tab,
+    treeKey: decoded.treeKey,
+    tree: decoded.tree,
+    moves: decoded.tree?.root ? mainlineMovesFromTree(decoded.tree.root) : [],
+    position: Array.isArray(decoded.tree?.position) ? decoded.tree.position : null,
+    currentMoveSan: decoded.tree?.root
+      ? (treeNodeAtPath(decoded.tree.root, decoded.tree.position)?.san ?? null)
+      : null,
+  };
+}
+
+async function assertRestoredWorkspace(session, scenarioLabel, expected) {
+  const snapshot = await waitFor(
+    `${scenarioLabel} restored workspace to render`,
+    async () => {
+      const current = await readWorkspaceSnapshot(session).catch(() => null);
+      if (
+        !current ||
+        current.readyState !== "complete" ||
+        current.path !== "/" ||
+        current.domTabs.length === 0 ||
+        !current.domTabs.some((tab) => tab.selected)
+      ) {
+        return false;
+      }
+      if (
+        current.activeTab?.value === expected.activeTab &&
+        expected.currentMoveSan &&
+        (!current.hasBoard || current.currentMoveText === null)
+      ) {
+        return false;
+      }
+      return current;
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
   );
-  await clickAt(first, analysisOpen.x, analysisOpen.y);
+  const verdicts = evaluateWorkspaceRestoreSnapshot(snapshot, expected);
+  check(
+    verdicts.tabsAndOrder.ok,
+    `restore (${scenarioLabel}): restores the same tabs and tab order`,
+    verdicts.tabsAndOrder.detail,
+  );
+  check(
+    verdicts.activeTab.ok,
+    `restore (${scenarioLabel}): restores the same active tab`,
+    verdicts.activeTab.detail,
+  );
+  check(
+    verdicts.moveList.ok,
+    `restore (${scenarioLabel}): restores the same move list (still dirty)`,
+    verdicts.moveList.detail,
+  );
+  check(
+    verdicts.currentMove.ok,
+    `restore (${scenarioLabel}): restores the same current move`,
+    verdicts.currentMove.detail,
+  );
+  return snapshot;
+}
+
+async function killApplicationWithSignal(label, signal) {
+  const { application, trackedPids } = findRunningApplication(label);
+  process.kill(application.pid, signal);
+  return waitFor(
+    `${label} application and its WebKit processes to exit after ${signal}`,
+    () => trackedPids.every((pid) => !processExists(pid)),
+    { timeoutMs: 30_000 },
+  )
+    .then(() => true)
+    .catch(() => {
+      for (const pid of trackedPids.filter(processExists)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Process exited between the survival check and fallback kill.
+        }
+      }
+      return false;
+    });
+}
+
+/**
+ * Real-app workspace-restore verification against `<app_data>/workspace-session/`:
+ * (a) titlebar close with no quit dialog, (b) SIGTERM, (c) SIGKILL >= 2 s after last edit,
+ * and (discard) "Close without saving" deletes the leaf so the tab does not come back.
+ */
+async function verifyWorkspaceRestore(profileDirectory) {
+  const store = join(profileDirectory, ".local/share/com.chessriddle.studio/workspace-session");
+  const leafPath = (key) => join(store, `${key}.json`);
+  const readStoredTreeLeaf = async (key) => {
+    const raw = await readFile(leafPath(key), "utf8").catch(() => null);
+    return raw ? (deserializeStorageValue(raw)?.state ?? null) : null;
+  };
+
+  console.log(
+    "  .. restore: opening Analysis Board, playing moves, opening second tab, selecting first",
+  );
+  const first = await openRestoreSession("restore-setup");
+  await clickButton(first, "Analysis Board");
   await waitFor(
     "origin-none analysis board",
     async () => {
-      const snapshot = await readActiveTabTree(first);
+      const snapshot = await readWorkspaceSnapshot(first);
       return (
-        snapshot.tab?.type === "analysis" &&
-        snapshot.tab.gameOrigin?.kind === "none" &&
-        !!snapshot.tree
+        snapshot.activeTab?.type === "analysis" &&
+        snapshot.activeTab.gameOrigin?.kind === "none" &&
+        !!snapshot.tree &&
+        snapshot.hasBoard
       );
     },
     { timeoutMs: FILES_PROBE_TIMEOUT_MS },
   );
-  const dirtySnapshot = await dirtyActiveTreeEventHeader(first, dirtyEvent);
-  check(
-    dirtySnapshot.tree?.dirty === true,
-    "recovery: the typed game is dirty before the crash",
-    `dirty: ${dirtySnapshot.tree?.dirty}`,
-  );
-  const written = await waitFor("the recovery copy on disk", async () =>
-    (await records()).length === 1 ? true : false,
-  ).catch(() => false);
-  check(!!written, "recovery: a recovery copy is written while typing, without quitting");
-  const running = appProcesses();
-  const application = running.find(({ cmd }) => cmd.includes(APP_BINARY));
-  if (!application) throw new Error("recovery-kill application process was not running");
-  const tracked = [
-    application.pid,
-    ...running
-      .filter(({ ppid, cmd }) => ppid === application.pid && /WebKit/.test(cmd))
-      .map(({ pid }) => pid),
-  ];
-  process.kill(application.pid, "SIGKILL");
+  for (const [index, uci] of ["e2e4", "e7e5", "d2d4"].entries()) {
+    await clickBoardMove(first, uci, index + 1);
+  }
+  await clickButton(first, "Previous move", true);
   await waitFor(
-    "the killed application and its WebKit processes to exit",
-    () => tracked.every((pid) => !processExists(pid)),
-    { timeoutMs: 30_000 },
-  ).catch(() => {
-    for (const pid of tracked.filter(processExists)) process.kill(pid, "SIGKILL");
-  });
-  await releaseSession(first, "recovery-kill");
-
-  console.log("  .. recovery: restarting after the crash");
-  const second = await openRecoverySession("recovery-after-kill");
-  const afterKill = await waitFor(
-    "the typed game restored after the crash",
+    "current move stepped back to 1... e5",
     async () => {
-      const found = await tabsWithEvent(second, dirtyEvent);
-      return found.length === 1 ? found[0] : false;
+      const snapshot = await readWorkspaceSnapshot(first);
+      return (
+        JSON.stringify(snapshot.position) === JSON.stringify([0, 0]) &&
+        snapshot.currentMoveSan === "e5" &&
+        snapshot.currentMoveText === "e5"
+      );
     },
     { timeoutMs: FILES_PROBE_TIMEOUT_MS },
-  ).catch(() => null);
-  check(
-    !!afterKill && afterKill.tree.dirty === true && afterKill.tab.type === "analysis",
-    "recovery: after SIGKILL the restart restores the game, still unsaved",
-    afterKill
-      ? `tab: ${JSON.stringify(afterKill.tab)}, dirty: ${afterKill.tree.dirty}`
-      : "not restored",
   );
-  if (!afterKill) throw new Error("recovery: the game was not restored after a crash");
+  const newTabButton = await reachableStableCoordinates(
+    first,
+    "New Tab",
+    `document.querySelector('header button[aria-label="New Tab"]')`,
+  );
+  await clickAt(first, newTabButton.x, newTabButton.y);
+  const twoTabs = await waitFor(
+    "second tab opened and selected",
+    async () => {
+      const snapshot = await readWorkspaceSnapshot(first);
+      return snapshot.tabs.length === 2 &&
+        snapshot.domTabs.length === 2 &&
+        snapshot.activeTab?.value === snapshot.tabs[1].value
+        ? snapshot
+        : false;
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+  );
+  const firstTabId = twoTabs.tabs[0].value;
+  const secondTabId = twoTabs.tabs[1].value;
+  const firstTabControl = await reachableStableCoordinates(
+    first,
+    "first workspace tab",
+    `document.getElementById(${JSON.stringify(`board-tab-${firstTabId}`)})`,
+  );
+  await clickAt(first, firstTabControl.x, firstTabControl.y);
+  const setupSnapshot = await waitFor(
+    "first workspace tab selected with current move e5",
+    async () => {
+      const snapshot = await readWorkspaceSnapshot(first);
+      return snapshot.activeTab?.value === firstTabId &&
+        snapshot.hasBoard &&
+        snapshot.currentMoveText === "e5"
+        ? snapshot
+        : false;
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+  );
+  const expected = {
+    tabOrder: [firstTabId, secondTabId],
+    tabTypes: ["analysis", "new"],
+    activeTab: firstTabId,
+    firstTabTreeKey: setupSnapshot.treeKey,
+    moves: ["e4", "e5", "d4"],
+    notation: "1.e4e52.d4",
+    position: [0, 0],
+    currentMoveSan: "e5",
+  };
+  check(
+    setupSnapshot.tree?.dirty === true &&
+      JSON.stringify(setupSnapshot.moves) === JSON.stringify(expected.moves),
+    "restore (setup): Analysis Board has 3 dirty moves, 2 tabs, and first tab active at 1... e5",
+    `tabs=${JSON.stringify(expected.tabOrder)} active=${setupSnapshot.activeTab?.value} dirty=${setupSnapshot.tree?.dirty}`,
+  );
 
-  console.log("  .. recovery: closing the window with the unsaved game");
-  const requested = await requestCloseThroughTitlebar(second, "recovery-close");
+  console.log("  .. restore (a): closing through titlebar with no quit dialog");
+  const requested = await requestCloseThroughTitlebar(first, "restore-titlebar-close");
   let dialogSeen = false;
   const closed = await waitFor(
     "the window to close without a quit dialog",
     async () => {
-      if (await second.execute(`return !!${quitConfirmDialogProbe}`).catch(() => false))
+      if (await first.execute(`return !!${quitConfirmDialogProbe}`).catch(() => false)) {
         dialogSeen = true;
+      }
       return requested.trackedPids.every((pid) => !processExists(pid));
     },
     { timeoutMs: 30_000 },
   ).catch(() => false);
   check(
     !!closed && !dialogSeen,
-    "recovery: closing the window with a kept unsaved game quits without the dialog",
+    "restore (a): titlebar close with dirty workspace quits without quit dialog",
     dialogSeen ? "the quit dialog appeared" : undefined,
   );
-  await releaseSession(second, "recovery-close");
+  await releaseSession(first, "restore-titlebar-close");
+  check(
+    existsSync(join(store, "workspace.json")) && existsSync(leafPath(expected.firstTabTreeKey)),
+    "restore (a): workspace-session/ holds workspace.json and the tab tree leaf after titlebar close",
+  );
 
-  console.log("  .. recovery: restart, then Close without saving");
-  const third = await openRecoverySession("recovery-discard");
-  const afterClose = await waitFor(
-    "the game restored after the window close",
+  console.log("  .. restore (a): restarting after titlebar close");
+  const second = await openRestoreSession("restore-after-titlebar-close");
+  await assertRestoredWorkspace(second, "a: after titlebar close", expected);
+
+  console.log("  .. restore (b): sending SIGTERM to the running application");
+  check(
+    await killApplicationWithSignal("restore-sigterm", "SIGTERM"),
+    "restore (b): application and WebKit processes exit on SIGTERM",
+  );
+  await releaseSession(second, "restore-sigterm");
+
+  console.log("  .. restore (b): restarting after SIGTERM");
+  const third = await openRestoreSession("restore-after-sigterm");
+  await assertRestoredWorkspace(third, "b: after SIGTERM", expected);
+
+  console.log("  .. restore (c): making a new edit, waiting >= 2 s, then sending SIGKILL");
+  await clickButton(third, "Next move", true);
+  await waitFor(
+    "cursor moved to 2. d4 before playing 2... d5",
     async () => {
-      const found = await tabsWithEvent(third, dirtyEvent);
-      return found.length === 1 && found[0].active ? found[0] : false;
+      const snapshot = await readWorkspaceSnapshot(third);
+      return JSON.stringify(snapshot.position) === JSON.stringify([0, 0, 0]);
     },
     { timeoutMs: FILES_PROBE_TIMEOUT_MS },
-  ).catch(() => null);
-  check(
-    !!afterClose && afterClose.tree.dirty === true,
-    "recovery: after closing the window the restart restores the game, still unsaved",
   );
-  if (!afterClose) throw new Error("recovery: the game was not restored after a window close");
-  await closeSelectedWorkspaceTab(third);
+  await clickBoardMove(third, "d7d5", 4);
+  await clickButton(third, "Previous move", true);
+  const lastEditAt = Date.now();
+  await waitFor(
+    "new edit (2... d5) with current move at 2. d4 in sessionStorage and DOM",
+    async () => {
+      const snapshot = await readWorkspaceSnapshot(third);
+      return (
+        JSON.stringify(snapshot.moves) === JSON.stringify(["e4", "e5", "d4", "d5"]) &&
+        JSON.stringify(snapshot.position) === JSON.stringify([0, 0, 0]) &&
+        snapshot.currentMoveSan === "d4" &&
+        snapshot.currentMoveText === "d4"
+      );
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+  );
+  const remainingWaitMs = Math.max(
+    0,
+    WORKSPACE_RESTORE_SIGKILL_WAIT_MS - (Date.now() - lastEditAt),
+  );
+  if (remainingWaitMs > 0) await sleep(remainingWaitMs);
+  const elapsedSinceEditMs = Date.now() - lastEditAt;
+  const leafBeforeKill = await readStoredTreeLeaf(expected.firstTabTreeKey);
+  check(
+    elapsedSinceEditMs >= WORKSPACE_RESTORE_SIGKILL_MIN_AGE_MS &&
+      JSON.stringify(mainlineMovesFromTree(leafBeforeKill?.root)) ===
+        JSON.stringify(["e4", "e5", "d4", "d5"]) &&
+      JSON.stringify(leafBeforeKill?.position) === JSON.stringify([0, 0, 0]),
+    "restore (c): durable leaf on disk captured the latest edit before SIGKILL, >= 2 s after it",
+    `elapsedMs=${elapsedSinceEditMs} leafMoves=${JSON.stringify(mainlineMovesFromTree(leafBeforeKill?.root))} leafPos=${JSON.stringify(leafBeforeKill?.position)}`,
+  );
+  expected.moves = ["e4", "e5", "d4", "d5"];
+  expected.notation = "1.e4e52.d4d5";
+  expected.position = [0, 0, 0];
+  expected.currentMoveSan = "d4";
+
+  check(
+    await killApplicationWithSignal("restore-sigkill", "SIGKILL"),
+    "restore (c): application and WebKit processes exit on SIGKILL",
+  );
+  await releaseSession(third, "restore-sigkill");
+
+  console.log("  .. restore (c): restarting after SIGKILL");
+  const fourth = await openRestoreSession("restore-after-sigkill");
+  await assertRestoredWorkspace(fourth, "c: after SIGKILL", expected);
+
+  console.log("  .. restore (discard): closing dirty tab via Close without saving");
+  await closeSelectedWorkspaceTab(fourth);
   const discard = await reachableStableCoordinates(
-    third,
+    fourth,
     "Close without saving",
     `(() => {
       const dialog = [...document.querySelectorAll('[role="dialog"]')].find(node => node.innerText.includes('Unsaved changes'));
       return dialog && [...dialog.querySelectorAll('button')].find(node => node.textContent.trim() === 'Close without saving');
     })()`,
   );
-  await clickAt(third, discard.x, discard.y);
-  const removed = await waitFor(
-    "the recovery copy to be deleted",
-    async () => (await records()).length === 0,
+  await clickAt(fourth, discard.x, discard.y);
+  const leafGone = await waitFor(
+    "discarded tab leaf to be removed from workspace-session/",
+    async () => {
+      const files = await readdir(store).catch(() => []);
+      if (files.includes(`${expected.firstTabTreeKey}.json`)) return false;
+      const raw = await readFile(join(store, "workspace.json"), "utf8").catch(() => null);
+      const workspace = raw && deserializeStorageValue(raw);
+      return (
+        Array.isArray(workspace?.tabs) &&
+        !workspace.tabs.some((tab) => tab.value === expected.activeTab)
+      );
+    },
   ).catch(() => false);
-  check(!!removed, "recovery: Close without saving deletes the recovery copy");
-  const thirdClose = await closeApplicationThroughTitlebar(third, "recovery-discard");
-  if (!thirdClose.gone || thirdClose.survivors.length > 0)
-    throw new Error(
-      `recovery-discard processes survived close: ${thirdClose.survivors.join(", ")}`,
-    );
-  await releaseSession(third, "recovery-discard");
-
-  console.log("  .. recovery: final restart restores nothing");
-  const fourth = await openRecoverySession("recovery-final");
-  await waitFor("the final renderer to settle", () =>
-    fourth.execute(`return document.readyState === "complete"`).catch(() => false),
-  );
-  const leftover = await tabsWithEvent(fourth, dirtyEvent);
   check(
-    leftover.length === 0,
-    "recovery: a game closed without saving is not restored",
-    leftover.length ? JSON.stringify(leftover.map((entry) => entry.tab)) : undefined,
+    !!leafGone,
+    "restore (discard): Close without saving deletes the tab leaf and drops it from workspace.json",
   );
-  const fourthClose = await closeApplicationThroughTitlebar(fourth, "recovery-final");
-  if (!fourthClose.gone || fourthClose.survivors.length > 0)
-    throw new Error(`recovery-final processes survived close: ${fourthClose.survivors.join(", ")}`);
-  await releaseSession(fourth, "recovery-final");
+  const fourthClose = await closeApplicationThroughTitlebar(fourth, "restore-discard");
+  if (!fourthClose.gone || fourthClose.survivors.length > 0) {
+    throw new Error(
+      `restore-discard processes survived close: ${fourthClose.survivors.join(", ")}`,
+    );
+  }
+  await releaseSession(fourth, "restore-discard");
+
+  console.log("  .. restore (discard): final restart confirms discarded tab does not return");
+  const fifth = await openRestoreSession("restore-final");
+  const finalSnapshot = await waitFor(
+    "final workspace DOM to settle",
+    async () => {
+      const snapshot = await readWorkspaceSnapshot(fifth).catch(() => null);
+      return snapshot?.readyState === "complete" &&
+        snapshot.path === "/" &&
+        snapshot.domTabs.length > 0 &&
+        snapshot.domTabs.some((tab) => tab.selected)
+        ? snapshot
+        : false;
+    },
+    { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+  );
+  const finalFiles = await readdir(store).catch(() => []);
+  check(
+    !finalSnapshot.tabs.some((tab) => tab.value === expected.activeTab) &&
+      !finalSnapshot.domTabs.some((tab) => tab.id === expected.activeTab) &&
+      finalSnapshot.tabs.length === 1 &&
+      finalSnapshot.tabs[0].value === secondTabId &&
+      !finalFiles.includes(`${expected.firstTabTreeKey}.json`),
+    "restore (discard): discarded dirty tab does not return and its leaf is gone",
+    `tabs=${JSON.stringify(finalSnapshot.tabs.map((tab) => tab.value))} files=${JSON.stringify(finalFiles)}`,
+  );
+  const fifthClose = await closeApplicationThroughTitlebar(fifth, "restore-final");
+  if (!fifthClose.gone || fifthClose.survivors.length > 0) {
+    throw new Error(`restore-final processes survived close: ${fifthClose.survivors.join(", ")}`);
+  }
+  await releaseSession(fifth, "restore-final");
 }
 
 async function showLibraryOverview(session) {
@@ -5108,7 +5413,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   }
   console.log("  .. seed app and WebKit processes are gone; reusing WebDriver after session quit");
 
-  await verifyUnsavedGameRecovery(profileDirectory);
+  await verifyWorkspaceRestore(profileDirectory);
 
   const fixtureDirectory = join(profileDirectory, "path-owner-fixture");
   const ownedRoot = join(fixtureDirectory, "owned-database-root");
@@ -5741,7 +6046,9 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   const readOpenPracticeFreshness = () =>
     session
       .execute(
-        `const tab = [...document.querySelectorAll('[role="tab"]')].find((candidate) =>
+        `// An earlier verify:practice tab survives restarts through workspace restore; pick the active tab.
+         const tab = [...document.querySelectorAll('[role="tab"]')].find((candidate) =>
+           candidate.getAttribute("aria-selected") === "true" &&
            candidate.textContent?.includes("verify:practice")
          );
          const panelId = tab?.getAttribute("aria-controls");
@@ -5784,7 +6091,9 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   }
   const measurementReady = await session.execute(
     `const baselineReloadCount = arguments[0];
+     // An earlier verify:practice tab survives restarts through workspace restore; pick the active tab.
      const tab = [...document.querySelectorAll('[role="tab"]')].find((candidate) =>
+       candidate.getAttribute("aria-selected") === "true" &&
        candidate.textContent?.includes("verify:practice")
      );
      const panelId = tab?.getAttribute("aria-controls");
@@ -8273,12 +8582,16 @@ async function main() {
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, handleSignal);
   try {
     if (
-      [progressContractOnly, fallbackEngineInstallOnly, gameReportOnly, timedRunOnly].filter(
-        Boolean,
-      ).length > 1
+      [
+        progressContractOnly,
+        fallbackEngineInstallOnly,
+        gameReportOnly,
+        timedRunOnly,
+        workspaceRestoreOnly,
+      ].filter(Boolean).length > 1
     ) {
       throw new Error(
-        "--fallback-engine-install, --game-report, --progress-contract and --timed-run are mutually exclusive",
+        "--fallback-engine-install, --game-report, --progress-contract, --timed-run and --workspace-restore are mutually exclusive",
       );
     }
     if (
@@ -8338,6 +8651,8 @@ async function main() {
       await mkdir(timedRunScreenshotDirectory, { recursive: true });
       console.log(`  .. timed-run screenshots: ${timedRunScreenshotDirectory}`);
       await verifyTimedRun(profileDirectory, timedRunScreenshotDirectory);
+    } else if (workspaceRestoreOnly) {
+      await verifyWorkspaceRestore(profileDirectory);
     } else {
       await verifyFullApplication(profileDirectory, appEnvironment);
     }

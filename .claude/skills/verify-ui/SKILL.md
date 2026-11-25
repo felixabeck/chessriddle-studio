@@ -64,7 +64,10 @@ now does (proof 2 below).
 
    **What it reaches:** anything in the page, plus process-level facts — that
    the app starts, answers script, exits through its own close control, and
-   leaves no child behind.
+   leaves no child behind. In the default run it also asserts full workspace
+   restore across titlebar close (with no quit dialog), SIGTERM, and SIGKILL
+   (>= 2 s after the last edit) — same tabs, tab order, active tab, move list,
+   and current move — plus "Close without saving" leaf removal.
 
    **What it cannot reach, permanently:** native GTK chrome. The menu bar, the
    window decorations and every file dialog are drawn by GTK, not by the page,
