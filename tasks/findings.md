@@ -29152,7 +29152,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### The card's new Preparation tab moved the 320 px de-DE Openings snapshot and it was not re-recorded
 
-* **ID:** f-20261125-04 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-04 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45529959373
 * **Repair owner:** 5deefa91-5f88-4872-a94c-a87dfaec39f3 on tuxedo-atlas, 2026-11-25T02:23:37Z
@@ -29161,3 +29161,5 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario (observed):** Test run 45529959373 (first red, head `725e3384d`) and 45530194354, job `e2e`: "openings score order and merged board 320 200% de-DE", 408 pixels different in `openings-320-200-board.png`.
 * **Proof:** the snapshot differs only where the tab list shows the new tab; re-recorded in the container, the project passes.
 * **Found by:** Claude Code build run (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), post-push CI of opponent preparation, 2026-11-25.
+* **Handled (2026-11-25, Claude Code (Opus 5.5), opponent-preparation build, agy write leaf, agy lenses):** commit "fix(databases): keep the card tabs' narrow layout independent of stylesheet order" (07b2606d2). Not a snapshot move: the shared card stylesheet had changed the Openings tab's narrow layout through stylesheet order; overrides are now scoped under the tab root and the committed snapshot passes unchanged.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a80401bbb2c61cc9021036da7318fe0e7f0576ab3e03cd7c99437b48639d3701","header_sha256":"b424d8afc7e2752d096876dc71aaa23bb075e3017b7fc58ba8b0ec58603a787b","header_status":"handled","input_sha256":"d966ba30f657e0f910e319afd9777882f1e506aa6e8dc9bd019556520bc96fe1","kind":"mutation-receipt","operation":"3341e615eddeeaf02b407630bb969fcc370333efffef3da20abe2c0671dabccb","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-04"],"target":"f-20261125-04","v":1} -->
