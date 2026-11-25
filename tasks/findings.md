@@ -29179,3 +29179,17 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Found by:** Claude Code build run online-opponent (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), Phase 4 accessibility check, 2026-11-25. Introduced by the opponent-preparation build (`PlayerCardTab.module.css`, 2026-11-25) and the earlier Openings tab styles.
 * **Handled (2026-11-25, Claude Code (Opus 5.5), online-opponent build, agy lenses):** commit "fix(databases): give the player card tables' secondary text readable contrast" (aff204905). The five card-tab text rules use `--mantine-color-dimmed`; axe passes on the opened Preparation card in `e2e/online-opponent.spec.ts`, the full container suite passed (528) and no committed snapshot moved.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"dfd4abf06c3c410b12d40a24390095ea16601721fda73d58b7b892d616c42b0b","header_sha256":"9a1684c1df58d7639eb3cb37ae1e24fec242e6e742cecc04ba710b1b45b6c099","header_status":"handled","input_sha256":"6cd7db85a086069d0ad16ffe1ccddc9cb1d83e874a1aa0c9b4c34d0c8c5037ad","kind":"mutation-receipt","operation":"5dd39a265add85d0f128ecfaac6aefb978c927ef9162757eb8ee38200fde8b16","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-05"],"target":"f-20261125-05","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The cancelled ChatGPT sign-in test probes a closed ephemeral port that a parallel test can reuse
+
+* **ID:** f-20261125-06 · **Status:** open · **Area:** oauth-credentials · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `src-tauri/src/coach/chatgpt.rs` test `a_cancelled_sign_in_ends_at_once_as_cancelled`, the final assertion that `GET <redirect_uri>` fails (about `:1131-1137`); the test listener binds `ports: &[0]` (about `:278`).
+* **Defect:** after cancellation the test proves "its listener is closed" by expecting a request to the old redirect URI to fail. The listener bound an ephemeral port, so once it closes the kernel can hand the same port to another test's loopback server in the same parallel `cargo test` process, and the probe then reaches that server and succeeds. The assertion depends on what other tests run at the same moment, not on this code.
+* **Failure scenario (observed):** `pnpm gates:push -- --rust --frontend` on the v1.2.0 release commit `350905063` (2026-11-25 ~05:35 UTC, laptop), lane `related-tests`: `3867 passed; 1 failed`, `panicked at src/coach/chatgpt.rs:1134:9: assertion failed: http.get(asked.unwrap()["redirect_uri"].clone()).send().await.is_err()`. The commit only changes CHANGELOG.md and the version number. Run alone five times right after, the test passed 5/5. Log: `artifacts/gates/20261125T052840456Z-2635482/related-tests.log`.
+* **Proof:** fix by proving the closure without a port that can be reused, e.g. assert on the listener task's terminal state or an owned handle the sign-in returns/drops, or keep the port probe but treat a response that is not this listener's (no matching `state`) as closed. Keep the cancellation and timing assertions.
+* **Found by:** Claude Code interactive session 134be9f1-6a11-4d6e-a8f9-af840b560f52, 2026-11-25, on the v1.2.0 release push gates.
