@@ -14581,3 +14581,124 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Exact result with a bounded per-row cost inside the existing byte-weighted caches. Reversal path: drop `recent` from `PositionStats` and the column, line and highlight that read it.
 * **Decided by:** Claude Code (Opus 5.5) build, full auto, agy plan review r1-r3, 2026-11-25 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"39d83d5a4e15961fee8d641b74050bbe6860567dc1383cc7d053cacbf1300584","input_sha256":"0f3c20bd0e0dde37aa635b8c80d741c2041cec612a8811cec14534b7b16eaf7e","kind":"mutation-receipt","operation":"9e778e5b73f6f88cc87d614ca9f04c709c229950940dfe06ffc61da9429b0594","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-21"],"target":"decisions-ledger","v":1} -->
+
+### d-20261125-24 — How is a Lichess source stored as the app-wide second column of the board explorer?
+
+* **Question:** Lichess All and Lichess Masters become choices for the second column of an unpinned board (Felix, 2026-11-25, docs/context/PRODUCT-DECISIONS.md). Where is that choice stored?
+* **Governs:** -
+* **Extends:** d-20261118-06 point 4 (the comparison is chosen in the panel and a stored choice that cannot be shown is kept): the stored value may now also be a Lichess source, and the rule applies to it unchanged.
+* **Chosen:** The existing `comparison-database` key widens its value to a database handle, `null`, or one of the two Lichess sources; old values stay valid without a migration, and a value that does not parse becomes `null` as before.
+* **Rejected:** A second key for the Lichess choice (two keys for one choice, with a precedence rule between them).
+* **Reason:** One choice, one key. Downgrade cost: an older build reads a Lichess choice as invalid and resets it to none, losing only that choice. Reversal path: narrow the schema again; a stored Lichess choice then resets to none.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan tasks/plans/2026-11-25-lichess-explorer-source.md, decision 1), under full auto · **Superseded-by:** -
+
+### d-20261125-25 — Where does a board tab hold Lichess as its first source once the Local / Lichess switch is gone?
+
+* **Question:** The Local / Lichess All / Lichess Masters switch is removed and Lichess is picked in the first column's select. Where is that choice held, and what happens to the reference database?
+* **Governs:** -
+* **Chosen:** It stays a choice of the tab, held where the switch held it (the tab-scoped first-source atom). Choosing a local database in that select still sets the reference database; choosing Lichess changes only the tab.
+* **Rejected:** Storing Lichess as the reference database (the Library's starred reference database stays a local database, Felix 2026-11-25).
+* **Reason:** This is the present behaviour moved into a new control. Reversal path: none needed beyond restoring a switch.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 2), under full auto · **Superseded-by:** -
+
+### d-20261125-26 — How does the preparation board offer Lichess, and can Lichess be its first column?
+
+* **Question:** Felix wants the preparation board to show Lichess as a further column. What replaces the on/off reference column, and does the pinned first column offer Lichess?
+* **Governs:** -
+* **Extends:** d-20261124-33 (the reference database on the preparation board, on by default and removable) and d-20261122-23 (the tab-scoped opponent column): the reference column becomes one entry of a tab-scoped list of further columns, beside Lichess All and Lichess Masters; the opponent column is unchanged.
+* **Chosen:** A tab-scoped list of further columns (reference database, Lichess All, Lichess Masters) replaces the reference flag, shown in the order added up to three columns in total. The pinned first column stays a local database.
+* **Rejected:** Offering Lichess in the pinned first select (a preparation board is built around the pinned database; Lichess alone there would drop the opponent's database).
+* **Reason:** Consequence: Lichess alone on a preparation board, reachable through the switch until now, is gone; Lichess is a further column there. Reversal path: offer the Lichess entries in the pinned first select too.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 3), under full auto · **Superseded-by:** -
+
+### d-20261125-27 — Which columns does the board explorer's Games view offer when Lichess is a column?
+
+* **Question:** With Lichess as a column, which columns can the Games view switch to?
+* **Governs:** -
+* **Chosen:** On an unpinned board both columns, a Lichess column included (its sample games, opened without a database). On a preparation board the first column and the opponent's games, as today; further columns add no entry.
+* **Rejected:** Listing every shown column in the switch.
+* **Reason:** Keeps the present rule for the reference column. Reversal path: list every shown column in the switch.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 4), under full auto · **Superseded-by:** -
+
+### d-20261125-28 — Is a Lichess column asked while the board explorer searches a partial position?
+
+* **Question:** A partial position search applies to local databases; what does a Lichess column beside them do?
+* **Governs:** -
+* **Chosen:** With a partial search and a local column shown, Lichess is not asked and not offered in the Games view. With only Lichess columns the partial setting has no effect and the position control is hidden.
+* **Rejected:** Asking Lichess for the exact board position beside partial local results (two different questions in one view).
+* **Reason:** One view answers one question. Reversal path: ask Lichess for the board position and mark its column as exact.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 5), under full auto · **Superseded-by:** -
+
+### d-20261125-29 — What does a column's Total row count when the board explorer shows several sources?
+
+* **Question:** d-20261119-01 left the two-source table on row sums because no online source could be a column. Now Lichess can be one; what does each column's total count?
+* **Governs:** -
+* **Extends:** d-20261119-01 (its two-source clause): a column's Total row and percentage denominator are its source's position total when the source reports one (Lichess), otherwise the sum of its rows (local), in the one-, two- and three-column layouts alike.
+* **Chosen:** Per-column position total where reported, row sum otherwise.
+* **Rejected:** Row sums for a Lichess column (Lichess lists only its most common moves, so its rows undercount the position).
+* **Reason:** The total must be the same number whatever the layout. Reversal path: sum rows for every column again.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 6), under full auto · **Superseded-by:** -
+
+### d-20261125-30 — What do the cells of a board explorer column show when its source cannot answer?
+
+* **Question:** A column can fail or, for Lichess, lack a sign-in. Its cells showed the "no games" dash.
+* **Governs:** -
+* **Chosen:** Empty cells (no count, no result bar, no dash), for local columns too; the column is named in a notice above the table.
+* **Rejected:** The dash, which says "no games with this move" and is false for a source that did not answer.
+* **Reason:** A cell must not claim a fact the source did not report. Reversal path: drop the per-column flag in the table.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 7), under full auto · **Superseded-by:** -
+
+### d-20261125-31 — Are the Lichess explorer filters per column or app-wide?
+
+* **Question:** Each Lichess column gets a filter button. Do its filters belong to the column, the tab or the app?
+* **Governs:** -
+* **Chosen:** App-wide per Lichess source: the existing `lichess-all-options` and `lichess-master-options` stored atoms and their panels are reused as they are.
+* **Rejected:** A per-tab or per-column Lichess filter set (new state, not asked for).
+* **Reason:** No new filter state. Reversal path: a tab-scoped options atom per Lichess column.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 8), under full auto · **Superseded-by:** -
+
+### d-20261125-32 — Which wording names a Lichess second column in the board explorer?
+
+* **Question:** "Compare with a database" and "Remove comparison database" were written for local databases.
+* **Governs:** -
+* **Chosen:** Keep both for a Lichess column; only the online group in the drop-downs gets a new label.
+* **Rejected:** New labels for every control (16 catalogues of churn for the same meaning).
+* **Reason:** Lichess is a database in the user's sense. Reversal path: add Lichess-specific labels.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 9), under full auto · **Superseded-by:** -
+
+### d-20261125-33 — Does the Lichess column get a real-application flow in verify:app?
+
+* **Question:** The Lichess column is visible product; should `pnpm verify:app` drive it?
+* **Governs:** -
+* **Chosen:** No flow: verify:app runs on a throwaway profile without a Lichess sign-in; the Lichess answers are proven by mocked e2e and unit tests, and the report says the real answer was not driven.
+* **Rejected:** Adding a signed-in Lichess account to the harness (a real credential in an automated profile).
+* **Reason:** A flow without sign-in would only show the sign-in notice. Reversal path: a harness-owned test account with a scoped token.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 10), under full auto · **Superseded-by:** -
+
+### d-20261125-34 — How are the board explorer's columns identified for rows, totals, notices and sort?
+
+* **Question:** The three roles primary, comparison and reference cannot tell two further columns of a preparation board apart.
+* **Governs:** -
+* **Chosen:** Stable identities per column (first, second, and one per further source: reference, Lichess All, Lichess Masters); the table's rows, totals, notices and the per-tab sort are keyed by them.
+* **Rejected:** Positional identities (a sort moves to another column when one is removed) and one role for every further column (two further columns overwrite each other).
+* **Reason:** Removing a column must leave the sort on the column it named. Reversal path: return to three roles if further columns are limited to one.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 11), under full auto · **Superseded-by:** -
+
+### d-20261125-35 — Is a failed Lichess explorer request retried automatically?
+
+* **Question:** The panel's Lichess request inherited SWR's default unbounded retries with backoff. With a Lichess source stored app-wide, should a failure be retried?
+* **Governs:** -
+* **Chosen:** No automatic retry. A new position, changed filter options, a changed account or coming back to the position asks again.
+* **Rejected:** SWR's unbounded retries (`shouldRetryOnError: true`, no `errorRetryCount`), which would repeat a rate-limit or sign-in failure from every open board.
+* **Reason:** Most requests in this codebase already opt out (`FideInfo.tsx`, `usePlayerName.ts`). Reversal path: a bounded retry count on the hook.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 12), under full auto · **Superseded-by:** -
+
+### d-20261125-36 — What happens to further-column entries that are not shown when a new one is added?
+
+* **Question:** The preparation board's further-column list can hold a reference database that is unreadable now and readable later, which could produce a fourth column.
+* **Governs:** -
+* **Chosen:** Adding a further column drops the list entries not shown at that moment (in practice an unreadable reference database).
+* **Rejected:** Keeping hidden entries (a later readable reference database could exceed three columns).
+* **Reason:** Three columns stays a hard limit. Reversal path: keep hidden entries and cap the shown list instead.
+* **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 13), under full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":119,"effect_sha256":"bfbf2fbec7b36b82712b318019e167239fc892a6e9c03ece9bbf9addbf23f3be","input_sha256":"1fb0ade7bd9890483aec6009713798c6a8489160f590217df2c080f5020a3337","kind":"mutation-receipt","operation":"f17c2e7b424ce7eb31a3a7787a9f286026abd70cd8cc76393a68c753314daf9c","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-24","d-20261125-25","d-20261125-26","d-20261125-27","d-20261125-28","d-20261125-29","d-20261125-30","d-20261125-31","d-20261125-32","d-20261125-33","d-20261125-34","d-20261125-35","d-20261125-36"],"target":"decisions-ledger","v":1} -->
