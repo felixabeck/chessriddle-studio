@@ -14702,3 +14702,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Three columns stays a hard limit. Reversal path: keep hidden entries and cap the shown list instead.
 * **Decided by:** Claude Code (Opus 5.5), build lichess-explorer-source (plan decision 13), under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":119,"effect_sha256":"bfbf2fbec7b36b82712b318019e167239fc892a6e9c03ece9bbf9addbf23f3be","input_sha256":"1fb0ade7bd9890483aec6009713798c6a8489160f590217df2c080f5020a3337","kind":"mutation-receipt","operation":"f17c2e7b424ce7eb31a3a7787a9f286026abd70cd8cc76393a68c753314daf9c","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-24","d-20261125-25","d-20261125-26","d-20261125-27","d-20261125-28","d-20261125-29","d-20261125-30","d-20261125-31","d-20261125-32","d-20261125-33","d-20261125-34","d-20261125-35","d-20261125-36"],"target":"decisions-ledger","v":1} -->
+
+### d-20261125-51 — How does Chess.com account staging treat a listed month whose archive has no games?
+
+* **Question:** Chess.com lists months in a player's archive index whose monthly archive is `{"games":[]}` (observed for `fabianocaruana/games/2018/03`). Does such a month fail the account download or count as a month with no games?
+* **Governs:** f-20261125-20
+* **Chosen:** Count it as a month with no games: it stages zero bytes and the download continues, exactly like a variant-only or PGN-less month under `d-20261108-03`. An all-empty history publishes an empty PGN, as a variant-only history already does.
+* **Rejected:** Keep the `InvalidInput` (an empty month that Chess.com itself lists blocks the account permanently). Skip the month in the archive index instead (same outcome with more code; the staging loop already handles zero-game months).
+* **Reason:** There is no game to import, and the opponent export in the same file already accepts empty months. Reversal path: restore the `games.games.is_empty()` return in the staging loop of `download_chess_com_games_core`.
+* **Decided by:** Claude Code session b1d536ae, 2026-11-25 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"cfe3b64c9cd7ab1ea54eea65f8be5bfe659869b0b1bd03f54b9daff624724310","input_sha256":"f72041d68b7cf9b2d71377da643236fdaf48267daa190164d854d41cbb78a355","kind":"mutation-receipt","operation":"774d13ad7dea7b803a0f53b5ba392ed8cd76f9ac4d17cd96eb94458769fb7ffd","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-51"],"target":"decisions-ledger","v":1} -->
