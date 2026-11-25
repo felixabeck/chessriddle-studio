@@ -29408,3 +29408,5 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Repair owner:** Claude Code session 5a1dbb4f-7526-4b42-989c-e564ddabe862 on tuxedo-felix, 2026-11-25T16:20+01:00
 * **Fix:** poll the active tab type, as the sibling specs do.
 * **Found by:** Claude Code on 2026-11-25, in the CI wait after pushing the database licence credits.
+* **Repair owner:** Claude Code session 5a1dbb4f-7526-4b42-989c-e564ddabe862 on tuxedo-atlas, 2026-11-25T16:22+01:00 (corrects the host named above)
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"953884699a07380f5171e0ecadfe51242fb2984346108febaac36f139baefb80","input_sha256":"c4640015bbcb7291edf59f7855a6a4e4d9360152bb84b16528ed7bde9858620c","kind":"mutation-receipt","operation":"83030c79f84f29d6b3b9b8698421266eeff1de1b22bca3cdbb76720a99ed05a2","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-19"],"target":"f-20261125-19","v":1} -->
