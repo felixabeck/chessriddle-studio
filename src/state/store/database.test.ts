@@ -956,4 +956,18 @@ describe("database result-set state", () => {
         expect(activeDatabaseViewStore.getState().players.selectedPlayer).toBeUndefined();
         expect(activeDatabaseViewStore.getState().tournaments.selectedTournament).toBeUndefined();
     });
+
+    it("accepts and rehydrates 'preparation' as players.activeTab into a fresh store", async () => {
+        const store = await hydrate({ database: selectedDatabase });
+        store.getState().setPlayersActiveTab("preparation");
+        expect(store.getState().players.activeTab).toBe("preparation");
+
+        const persisted = sessionStorage.getItem("database-view")!;
+        const fresh = await hydrate();
+        expect(fresh.getState().players.activeTab).toBe("overview");
+
+        sessionStorage.setItem("database-view", persisted);
+        await fresh.persist.rehydrate();
+        expect(fresh.getState().players.activeTab).toBe("preparation");
+    });
 });

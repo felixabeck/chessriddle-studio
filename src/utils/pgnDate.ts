@@ -15,6 +15,15 @@ export function dateOrderKey(date: string | null | undefined): string {
     return !date || date.startsWith("?") ? "" : canonicalPgnDate(date).replaceAll("?", "0");
 }
 
+/** Formats a PGN date (`YYYY.MM.DD`) as `YYYY-MM`, `YYYY`, or `"–"` when absent. */
+export function formatPgnYearMonth(date: string | null | undefined): string {
+    if (!date) return "–";
+    const month = date.slice(5, 7);
+    return month && /^(0[1-9]|1[0-2])$/.test(month)
+        ? `${date.slice(0, 4)}-${month}`
+        : date.slice(0, 4);
+}
+
 function pad(value: number, width = 2): string {
     return String(value).padStart(width, "0");
 }

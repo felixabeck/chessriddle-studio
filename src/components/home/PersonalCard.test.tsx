@@ -30,6 +30,9 @@ vi.mock("./PersonalCardPanels/RatingsPanel", () => ({
 vi.mock("../databases/PlayerOpeningTree", () => ({
   default: () => <div data-database-openings />,
 }));
+vi.mock("../databases/PlayerPreparation", () => ({
+  default: () => <div data-database-preparation />,
+}));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
 installResizeObserverStub();
@@ -331,5 +334,49 @@ test("the Ratings tab shows the same loading and unavailable states for the onli
     await renderCard(root, "ratings", { kind: "unavailable" });
     expect(container.textContent).toContain("Databases.OpeningTree.OnlineUnavailable");
     expect(container.querySelector("[data-ratings]")).toBeNull();
+  });
+});
+
+test("database player card renders Preparation tab while account card falls back to Overview without resetting stored activeTab", async () => {
+  await withCard(async (container, root) => {
+    activeDatabaseViewStore.getState().setPlayersActiveTab("preparation");
+    // Database player card shows the Preparation tab and panel.
+    await act(async () =>
+      root.render(
+        <MantineProvider>
+          <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+            <PersonalPlayerCard
+              name="Bergmann, Thomas"
+              info={boardInfo}
+              isDatabase
+              databasePlayer={databasePlayer}
+            />
+          </DatabaseViewStateContext.Provider>
+        </MantineProvider>,
+      ),
+    );
+    expect(container.querySelector("[data-database-preparation]")).not.toBeNull();
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Home.Personal.Preparation",
+    );
+
+    // Account card has no Preparation tab: shows Overview while stored activeTab stays "preparation".
+    await act(async () =>
+      root.render(
+        <MantineProvider>
+          <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+            <PersonalPlayerCard
+              name="Account Player"
+              playerKey="lichess:account"
+              setPlayerKey={vi.fn()}
+              info={boardInfo}
+            />
+          </DatabaseViewStateContext.Provider>
+        </MantineProvider>,
+      ),
+    );
+    expect(container.querySelector("[data-database-preparation]")).toBeNull();
+    expect(container.querySelector("[data-overview]")).not.toBeNull();
+    expect(activeDatabaseViewStore.getState().players.activeTab).toBe("preparation");
   });
 });

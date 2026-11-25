@@ -1,28 +1,9 @@
-.root:global(.mantine-Stack-root) {
-  /* The shared compact preview card can be wider than its scrollport. */
-  max-width: calc(100cqw - var(--mantine-spacing-md) - 1px);
-}
-
-:global([data-database-pane="preview"]):has(.root) {
-  container-type: inline-size;
-}
-
 .root {
-  container-type: inline-size;
-  min-width: 0;
-  padding-top: var(--mantine-spacing-sm);
+  composes: root from "./PlayerCardTab.module.css";
 }
 
 .toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--mantine-spacing-xs);
-}
-
-.toolbar > * {
-  min-width: 0;
-  max-width: 100%;
+  composes: toolbar from "./PlayerCardTab.module.css";
 }
 
 .notation {
@@ -33,11 +14,7 @@
 }
 
 .since {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-xs);
-  min-width: 0;
-  max-width: 100%;
+  composes: since from "./PlayerCardTab.module.css";
 }
 
 .prepare {
@@ -72,26 +49,7 @@
 }
 
 .table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: var(--mantine-font-size-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.table th,
-.table td {
-  padding: 0.4rem 0.25rem;
-  text-align: left;
-  overflow-wrap: anywhere;
-  border-bottom: 1px solid var(--cf-border-strong);
-}
-
-.table th {
-  color: var(--cf-muted-foreground);
-  font-weight: 500;
-  overflow-wrap: normal;
-  word-break: normal;
+  composes: table from "./PlayerCardTab.module.css";
 }
 
 .table .number {
@@ -99,17 +57,11 @@
 }
 
 .row {
-  cursor: pointer;
+  composes: row from "./PlayerCardTab.module.css";
 }
 
-.row:hover,
 .row[aria-selected="true"] {
   background: var(--cf-interactive-hover);
-}
-
-.row:focus-visible {
-  outline: 2px solid var(--cf-ring);
-  outline-offset: -2px;
 }
 
 .terminal {
@@ -117,10 +69,7 @@
 }
 
 .inset {
-  min-width: 0;
-  background: var(--cf-surface-inset);
-  border-radius: var(--mantine-radius-sm);
-  padding: var(--mantine-spacing-xs);
+  composes: inset from "./PlayerCardTab.module.css";
 }
 
 .games {

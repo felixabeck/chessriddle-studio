@@ -32,6 +32,7 @@ import {
   engineRetryFamily,
   threatFamily,
   tabEngineSettingsFamily,
+  tabPreparationViewFamily,
 } from "@/state/atoms";
 import { displayEngine, displayLines } from "@/tests/engineDisplay";
 import { focusedDialogButton, press } from "@/tests/keyboard";
@@ -3577,5 +3578,122 @@ describe("BoardAnalysis file position index sync", () => {
     );
     await act(async () => root.unmount());
     expect(releases[2]).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("BoardAnalysis preparation landing", () => {
+  const tabId = "55555555-5555-4555-8555-555555555555";
+  const fileHandle = { id: { id: "prep-file-1" }, kind: "fileWorkspace" } as const;
+  const makeFileTab = (): Tab => ({
+    name: "Sicilian",
+    value: tabId,
+    type: "analysis",
+    gameOrigin: {
+      kind: "file",
+      gameNumber: 0,
+      file: {
+        type: "file",
+        handle: fileHandle,
+        name: "Black vs e4",
+        numGames: 1,
+        metadata: { type: "repertoire", tags: [] },
+        lastModified: 1,
+      },
+    },
+  });
+
+  let container: HTMLDivElement;
+  let root: Root;
+  let jotaiStore: ReturnType<typeof createJotaiStore>;
+  let treeStore: TreeStore;
+
+  beforeEach(() => {
+    mocks.showNotification.mockReset();
+    sessionStorage.clear();
+    localStorage.clear();
+    removeFileFreshness(tabId);
+    jotaiStore = createJotaiStore();
+    jotaiStore.set(tabsAtom, [makeFileTab()], tabId);
+    jotaiStore.set(activeTabAtom, tabId);
+    jotaiStore.set(autoSaveAtom, false);
+    const initial = defaultTree();
+    treeStore = createTreeStore(tabId, initial);
+    treeStore.getState().makeMove({ payload: { from: 12, to: 28 } }); // 1. e4
+    treeStore.getState().makeMove({ payload: { from: 50, to: 34 } }); // 1... c5
+    treeStore.getState().goToMove([]);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    tabStorage.flush();
+    closeTreeStore(tabId);
+    removeFileFreshness(tabId);
+  });
+
+  const renderBoard = async () => {
+    await act(async () => {
+      root.render(
+        <JotaiProvider store={jotaiStore}>
+          <WorkspaceTabScope tabId={tabId}>
+            <TreeStateContext.Provider value={treeStore}>
+              <BoardAnalysis />
+            </TreeStateContext.Provider>
+          </WorkspaceTabScope>
+        </JotaiProvider>,
+      );
+    });
+  };
+
+  test("consumes the preparation landing once and moves the cursor without touching the tree", async () => {
+    const targetBoardState = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -";
+    jotaiStore.set(tabPreparationViewFamily(tabId), {
+      preparationId: "prep-1",
+      landing: { path: [0, 0], boardState: targetBoardState },
+      showAllLines: false,
+    });
+
+    await renderBoard();
+
+    expect(treeStore.getState().position).toEqual([0, 0]);
+    expect(jotaiStore.get(tabPreparationViewFamily(tabId))).toEqual({
+      preparationId: "prep-1",
+      landing: null,
+      showAllLines: false,
+    });
+    expect(mocks.showNotification).not.toHaveBeenCalled();
+
+    // Moving away and re-rendering does not snap back: landing was consumed once.
+    await act(async () => {
+      treeStore.getState().goToMove([]);
+    });
+    await renderBoard();
+    expect(treeStore.getState().position).toEqual([]);
+  });
+
+  test("shows a notice and keeps the cursor where it is when the landing position is gone", async () => {
+    treeStore.getState().goToMove([0]);
+    jotaiStore.set(tabPreparationViewFamily(tabId), {
+      preparationId: "prep-1",
+      landing: {
+        path: [0, 0, 0],
+        boardState: "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -",
+      },
+      showAllLines: false,
+    });
+
+    await renderBoard();
+
+    expect(treeStore.getState().position).toEqual([0]);
+    expect(jotaiStore.get(tabPreparationViewFamily(tabId))?.landing).toBeNull();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        color: "warning",
+        message: "Databases.Preparation.PositionGone",
+      }),
+    );
   });
 });

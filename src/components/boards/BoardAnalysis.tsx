@@ -2,6 +2,7 @@ import { useTabAtom, useOwnerTab, useOwnerTabId } from "@/state/tabScope";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { errorUnlessCancelled } from "@/platform/errors";
 import { Paper, Portal, Stack, Tabs } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useElementSize, useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
 import { Database, Info, MessagesSquare, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
 import { parseUci, type Piece } from "chessops";
@@ -24,9 +25,11 @@ import {
   explorerDetachedAtom,
   threatFamily,
   tabEngineSettingsFamily,
+  tabPreparationViewFamily,
 } from "@/state/atoms";
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
+import { locateBoardState } from "@/utils/treeReducer";
 import { withKeyboardOwnership } from "@/utils/keyboardOwnership";
 import { readEngineLines } from "../panels/analysis/engineLines";
 import { coachEnabledAtom } from "@/state/coach";
@@ -96,6 +99,37 @@ function FilePositionIndexSync() {
     const { release } = requestFilePositionIndex(file, verifiedRevision);
     return release;
   }, [fileKey, verifiedRevision]);
+
+  return null;
+}
+
+/**
+ * Consumes a one-shot preparation landing once the chapter's tree is shown in `BoardAnalysis`.
+ * Moves the cursor to the located position without touching the tree, or shows a notice when the
+ * position is no longer in the chapter.
+ */
+function PreparationLandingConsumer() {
+  const { t } = useTranslation();
+  const [view, setView] = useAtom(useTabAtom(tabPreparationViewFamily));
+  const store = useContext(TreeStateContext)!;
+  const landing = view?.landing ?? null;
+
+  useEffect(() => {
+    if (!landing) return;
+    const state = store.getState();
+    const found = locateBoardState(state.root, landing.path, landing.boardState);
+    if (found) {
+      state.goToMove(found.position);
+    } else {
+      notifications.show({
+        color: "warning",
+        message: t("Databases.Preparation.PositionGone", {
+          defaultValue: "This position is no longer in the chapter.",
+        }),
+      });
+    }
+    setView((current) => (current ? { ...current, landing: null } : current));
+  }, [landing, setView, store, t]);
 
   return null;
 }
@@ -415,6 +449,7 @@ function BoardAnalysis() {
       />
       <EvalListener />
       <FilePositionIndexSync />
+      <PreparationLandingConsumer />
       <Portal target="#left" style={{ height: "100%" }}>
         <Stack
           h="100%"

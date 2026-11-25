@@ -18,3 +18,4 @@ export * from "./atoms/boardPanels";
 export * from "./atoms/explorer";
 export * from "./atoms/analysis";
 export * from "./atoms/practice";
+export * from "./atoms/preparation";

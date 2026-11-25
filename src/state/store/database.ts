@@ -38,7 +38,7 @@ export interface DatabaseViewStore {
     players: {
         query: PlayerQuery;
         selectedPlayer?: number;
-        activeTab: "overview" | "ratings" | "openings";
+        activeTab: "overview" | "ratings" | "openings" | "preparation";
     };
     tournaments: {
         query: TournamentQuery;
@@ -224,7 +224,7 @@ const persistedGamesSchema: z.ZodType<DatabaseViewStore["games"], z.ZodTypeDef, 
 
 const persistedPlayersSchema: z.ZodType<DatabaseViewStore["players"], z.ZodTypeDef, unknown> =
     z.object({
-        activeTab: z.enum(["overview", "ratings", "openings"]),
+        activeTab: z.enum(["overview", "ratings", "openings", "preparation"]),
         selectedPlayer: queryIntegerSchema.nullish().transform((value) => value ?? undefined),
         query: z.object({
             options: createQueryOptionsSchema(["name", "elo", "games"]),

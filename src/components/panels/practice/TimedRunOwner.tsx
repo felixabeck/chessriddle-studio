@@ -24,8 +24,7 @@ import {
 } from "@/state/atoms";
 import { getCachedTreeStore } from "@/state/store/tree";
 import { openFile } from "@/utils/openFile";
-import { fileWorkspaceKey } from "@/utils/pathCapabilities";
-import { getTabFile, getTabGameNumber, type SetTabs, type Tab } from "@/utils/tabs";
+import { findChapterTab, type SetTabs, type Tab } from "@/utils/tabs";
 import { isAbortError } from "./prepareTimedRun";
 import { planNextSegment, removeChapterCandidates, removeSegmentCandidates } from "./runPlanner";
 
@@ -38,15 +37,6 @@ export const TIMED_RUN_GATE_WAIT_MS = 60_000;
 
 function abortError(): DOMException {
   return new DOMException("Aborted", "AbortError");
-}
-
-export function findChapterTab(tabs: readonly Tab[], file: string, game: number): Tab | undefined {
-  return tabs.find((tab) => {
-    const metadata = getTabFile(tab);
-    return (
-      !!metadata && fileWorkspaceKey(metadata.handle) === file && getTabGameNumber(tab) === game
-    );
-  });
 }
 
 function subscribeUntil<T>(

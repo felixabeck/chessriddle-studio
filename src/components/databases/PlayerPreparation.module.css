@@ -1,0 +1,101 @@
+.root {
+  composes: root from "./PlayerCardTab.module.css";
+}
+
+.toolbar {
+  composes: toolbar from "./PlayerCardTab.module.css";
+}
+
+.since {
+  composes: since from "./PlayerCardTab.module.css";
+}
+
+.refresh {
+  margin-left: auto;
+}
+
+.inset {
+  composes: inset from "./PlayerCardTab.module.css";
+}
+
+.table {
+  composes: table from "./PlayerCardTab.module.css";
+}
+
+.table th,
+.table td {
+  vertical-align: top;
+}
+
+.table .number {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.row {
+  composes: row from "./PlayerCardTab.module.css";
+}
+
+.row[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.moves {
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.gapMove {
+  font-family: var(--mantine-font-family-monospace);
+  font-weight: 600;
+  color: var(--cf-foreground);
+}
+
+.chapterTitle {
+  color: var(--cf-muted-foreground);
+}
+
+.table th:nth-child(1) {
+  width: 28%;
+}
+
+.table th:nth-child(2) {
+  width: 38%;
+}
+
+.table th:nth-child(3) {
+  width: 19%;
+}
+
+.table th:nth-child(4) {
+  width: 15%;
+}
+
+@container (max-width: 30rem) {
+  .since {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.125rem;
+    padding-block: 0.35rem;
+    border-bottom: 1px solid var(--cf-border-strong);
+  }
+
+  .table tbody td {
+    border-bottom: none;
+    padding: 0 0.25rem;
+  }
+
+  .table .number {
+    text-align: left;
+    white-space: normal;
+  }
+}

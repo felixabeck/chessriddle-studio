@@ -287,6 +287,11 @@ export default defineConfig({
             testMatch: /file-wide-transpositions\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
+        {
+            name: "opponent-preparation",
+            testMatch: /opponent-preparation\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+        },
     ],
     webServer: {
         // Invoked through node_modules/.bin rather than `pnpm exec`, so the suite runs

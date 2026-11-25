@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { canonicalPgnDate, pgnDateTags } from "./pgnDate";
+import { canonicalPgnDate, formatPgnYearMonth, pgnDateTags } from "./pgnDate";
 
 const fileSystemModule = "node:fs";
 const rustSource = await (
@@ -76,4 +76,19 @@ describe("pgnDateTags", () => {
             expect(pgnDateTags(instant(utc, [...local]))).toEqual({ date, utcDate, utcTime });
         },
     );
+});
+
+describe("formatPgnYearMonth", () => {
+    test.each([
+        ["2026.09.10", "2026-09"],
+        ["2026.12.01", "2026-12"],
+        ["2026.??.??", "2026"],
+        ["2026.00.00", "2026"],
+        ["2026", "2026"],
+        [null, "–"],
+        [undefined, "–"],
+        ["", "–"],
+    ] as const)("formats %s as %s", (input, expected) => {
+        expect(formatPgnYearMonth(input)).toBe(expected);
+    });
 });

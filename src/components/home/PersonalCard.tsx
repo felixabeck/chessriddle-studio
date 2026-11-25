@@ -28,6 +28,8 @@ import {
 import RatingsPanel from "./PersonalCardPanels/RatingsPanel";
 import { PlayerSelect } from "./PlayerSelect";
 import PlayerOpeningTree from "../databases/PlayerOpeningTree";
+import PlayerPreparation from "../databases/PlayerPreparation";
+import { databaseHandleKey } from "@/utils/db";
 import type { DatabaseHandle, Player } from "@/bindings";
 
 /**
@@ -76,6 +78,9 @@ function PersonalPlayerCard({
   const store = useContext(DatabaseViewStateContext)!;
   const activeTab = useStore(store, (s) => s.players.activeTab);
   const setActiveTab = useStore(store, (s) => s.setPlayersActiveTab);
+  const hasPreparation = Boolean(isDatabase && databasePlayer);
+  // A card without a Preparation tab shows Overview while the stored tab choice stays as it is.
+  const shownTab = activeTab === "preparation" && !hasPreparation ? "overview" : activeTab;
 
   const [opened, setOpened] = useState(false);
   const [source, setSource] = useState<StatisticsSource>("overTheBoard");
@@ -136,7 +141,7 @@ function PersonalPlayerCard({
       <Tabs
         mt="xs"
         keepMounted={false}
-        value={activeTab}
+        value={shownTab}
         onChange={(v) => setActiveTab(v as DatabaseViewStore["players"]["activeTab"])}
         variant="outline"
         flex={1}
@@ -150,6 +155,11 @@ function PersonalPlayerCard({
           <Tabs.Tab value="overview">{t("Home.Personal.Overview")}</Tabs.Tab>
           <Tabs.Tab value="ratings">{t("Home.Personal.Ratings")}</Tabs.Tab>
           <Tabs.Tab value="openings">{t("Home.Personal.Openings")}</Tabs.Tab>
+          {hasPreparation && (
+            <Tabs.Tab value="preparation">
+              {t("Home.Personal.Preparation", { defaultValue: "Preparation" })}
+            </Tabs.Tab>
+          )}
         </Tabs.List>
         <Tabs.Panel value="overview" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           {sourceSwitch}
@@ -217,6 +227,23 @@ function PersonalPlayerCard({
             <RatingsPanel playerKey={playerKey ?? ""} info={info} isDatabase={isDatabase} />
           )}
         </Tabs.Panel>
+        {hasPreparation && databasePlayer && (
+          <Tabs.Panel
+            value="preparation"
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              scrollbarGutter: "stable",
+              paddingRight: "1.25rem",
+            }}
+          >
+            <PlayerPreparation
+              key={`${databaseHandleKey(databasePlayer.file)}:${databasePlayer.player.id}`}
+              {...databasePlayer}
+            />
+          </Tabs.Panel>
+        )}
       </Tabs>
     </Paper>
   );

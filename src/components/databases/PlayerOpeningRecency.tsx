@@ -1,6 +1,7 @@
 import { Tooltip } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 import type { PositionStats } from "@/bindings";
+import { formatPgnYearMonth } from "@/utils/pgnDate";
 import classes from "./PlayerOpeningTree.module.css";
 
 const VISIBLE_YEAR_COUNT = 8;
@@ -46,13 +47,7 @@ export default function PlayerOpeningRecency({ row }: { row: PositionStats }) {
           count: unplaced,
         })
       : "";
-  const date = row.last_played;
-  const month = date?.slice(5, 7);
-  const displayDate = date
-    ? month && /^(0[1-9]|1[0-2])$/.test(month)
-      ? `${date.slice(0, 4)}-${month}`
-      : date.slice(0, 4)
-    : "–";
+  const displayDate = formatPgnYearMonth(row.last_played);
 
   return (
     <div className={classes.recency} data-opening-recency>

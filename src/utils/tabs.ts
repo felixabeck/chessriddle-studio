@@ -80,6 +80,18 @@ export function getTabGameNumber(tab?: Tab | null): number {
     return isFileBackedTab(tab) ? tab.gameOrigin.gameNumber : 0;
 }
 
+/** Finds an open tab already showing the given file chapter. */
+export function findChapterTab(tabs: readonly Tab[], file: string, game: number): Tab | undefined {
+    return tabs.find((tab) => {
+        const metadata = getTabFile(tab);
+        return (
+            !!metadata &&
+            fileWorkspaceKey(metadata.handle) === file &&
+            getTabGameNumber(tab) === game
+        );
+    });
+}
+
 export function isPersistentGameOrigin(tab?: Tab | null): boolean {
     if (!tab) return false;
     return tab.gameOrigin.kind !== "none";
