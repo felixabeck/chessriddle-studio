@@ -107,6 +107,9 @@ pub(crate) struct OAuthProvider<'a> {
 pub(crate) struct AttemptRegistry {
     active: Mutex<HashMap<u64, AuthTransaction>>,
     next_generation: AtomicU64,
+    /// How many callbacks reached this registry; see `late_callback_reaches`.
+    #[cfg(test)]
+    callbacks: AtomicU64,
 }
 
 struct AuthTransaction {
@@ -169,6 +172,8 @@ impl AttemptRegistry {
         query: CallbackQuery,
         client_id: Option<String>,
     ) -> CallbackResult {
+        #[cfg(test)]
+        self.callbacks.fetch_add(1, Ordering::SeqCst);
         let (callback_tx, signal) = {
             let mut active = self.active.lock().await;
             let Some(state) = query.state.as_ref() else {
@@ -222,6 +227,27 @@ impl AttemptRegistry {
     #[cfg(test)]
     pub(crate) async fn is_idle(&self) -> bool {
         self.active.lock().await.is_empty()
+    }
+
+    /// Sends one late callback with `state` to `redirect` and reports whether this registry's
+    /// listener received it. An answered request does not show that the listener is still open:
+    /// the system may hand the freed port at once to another test's or process's listener, which
+    /// then answers. Only this registry's own count tells the two apart.
+    #[cfg(test)]
+    pub(crate) async fn late_callback_reaches(&self, redirect: &str, state: &str) -> bool {
+        let before = self.callbacks.load(Ordering::SeqCst);
+        let http = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .unwrap();
+        // Whatever answers, or fails to: a live listener counts the callback before it responds.
+        let _ = http
+            .get(redirect)
+            .query(&[("state", state), ("code", "late")])
+            .send()
+            .await;
+        self.callbacks.load(Ordering::SeqCst) != before
     }
 }
 
@@ -881,7 +907,12 @@ mod tests {
         );
         assert!(driven.registry.is_idle().await);
         // The listener is gone once the attempt is over.
-        assert!(http.get(redirect).send().await.is_err());
+        assert!(
+            !driven
+                .registry
+                .late_callback_reaches(redirect.as_str(), &state)
+                .await
+        );
     }
 
     #[tokio::test]
@@ -893,6 +924,13 @@ mod tests {
         let mut driven = drive(&SPEC);
         let authorization = driven.opened.recv().await.unwrap();
         let (redirect, state) = redirect_of(&authorization);
+        // While the attempt runs, a callback reaches its listener; a foreign state leaves it running.
+        assert!(
+            driven
+                .registry
+                .late_callback_reaches(redirect.as_str(), "not-this-attempt")
+                .await
+        );
         driven.cancellation.cancel();
         let (result, granted) = tokio::time::timeout(Duration::from_secs(3), driven.attempt)
             .await
@@ -901,14 +939,11 @@ mod tests {
         assert!(matches!(result, Err(Error::OAuthFailure(_))));
         assert_eq!(granted, None);
         assert!(driven.registry.is_idle().await);
-        let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        let late = http
-            .get(redirect)
-            .query(&[("state", state.as_str()), ("code", "late")])
-            .send()
-            .await;
         assert!(
-            late.is_err(),
+            !driven
+                .registry
+                .late_callback_reaches(redirect.as_str(), &state)
+                .await,
             "the listener of a cancelled attempt is closed"
         );
     }

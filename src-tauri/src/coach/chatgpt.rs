@@ -1130,12 +1130,14 @@ pub(crate) mod tests {
         no_connection(&fixture).await;
         assert!(fixture.chatgpt.attempts.is_idle().await);
         // Its listener is closed.
-        let http = reqwest::Client::builder().no_proxy().build().unwrap();
-        assert!(http
-            .get(asked.unwrap()["redirect_uri"].clone())
-            .send()
-            .await
-            .is_err());
+        let asked = asked.unwrap();
+        assert!(
+            !fixture
+                .chatgpt
+                .attempts
+                .late_callback_reaches(&asked["redirect_uri"], &asked["state"])
+                .await
+        );
     }
 
     #[tokio::test]

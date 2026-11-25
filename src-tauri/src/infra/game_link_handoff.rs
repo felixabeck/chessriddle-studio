@@ -774,12 +774,9 @@ mod tests {
         assert!(reads.load(Ordering::SeqCst) > 3);
         assert!(started.elapsed() >= FAST.deadline - FAST.retry_pause * 2);
 
-        // A port nobody listens on: bound and released.
-        let closed_port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        // A port nobody listens on. Not one bound and released: the system may hand a released
+        // port at once to another test's listener, and port 1 lies below every ephemeral range.
+        let closed_port = 1;
         let attempts = AtomicUsize::new(0);
         let refused = deliver(
             || {
@@ -858,19 +855,30 @@ mod tests {
         handoff_directory(root.path()).publish(&stale).unwrap();
         let directory = handoff_directory(root.path());
 
-        let owner = HandoffOwner::start(
-            handoff_directory(root.path()),
-            Arc::new(|_: &str| Intake::Queued),
-        )
+        let intakes = Arc::new(AtomicUsize::new(0));
+        let owner = HandoffOwner::start(handoff_directory(root.path()), {
+            let intakes = intakes.clone();
+            Arc::new(move |_: &str| {
+                intakes.fetch_add(1, Ordering::SeqCst);
+                Intake::Queued
+            })
+        })
         .unwrap();
         let endpoint = directory.read().unwrap().unwrap();
         assert_ne!(endpoint, stale);
         assert_eq!(deliver(|| directory.read(), LINK, FAST), Delivery::Accepted);
+        assert_eq!(intakes.load(Ordering::SeqCst), 1);
 
         tauri::async_runtime::block_on(owner.shutdown());
 
         assert_eq!(directory.read().unwrap(), None);
-        assert!(TcpStream::connect((Ipv4Addr::LOCALHOST, endpoint.port)).is_err());
+        // Its listener is closed: a link sent to the old endpoint no longer reaches its intake.
+        // The port itself proves nothing, because the system may hand it to another listener.
+        assert_ne!(
+            deliver(|| Ok(Some(endpoint.clone())), LINK, FAST),
+            Delivery::Accepted
+        );
+        assert_eq!(intakes.load(Ordering::SeqCst), 1);
         // A second shutdown has nothing left to do.
         tauri::async_runtime::block_on(owner.shutdown());
     }
@@ -921,20 +929,29 @@ mod tests {
         let fixture = owner(Intake::Queued, CONNECTION_DEADLINE);
         let port = fixture.endpoint().port;
         let Fixture {
-            owner, directory, ..
+            owner,
+            directory,
+            received,
+            ..
         } = fixture;
 
         drop(owner);
 
-        assert!(eventually(|| TcpStream::connect((
-            Ipv4Addr::LOCALHOST,
-            port
-        ))
-        .is_err()));
+        // A stopped listener no longer hands links to its intake. Whether the port still refuses
+        // proves nothing, because the system may hand it to another listener at once.
+        assert!(eventually(
+            || deliver(|| directory.read(), LINK, FAST) != Delivery::Accepted
+        ));
+        let offered = received.lock().unwrap().len();
         // The file stays for the next owner to remove; a delivery to it fails and is reported.
         assert_eq!(
-            deliver(|| directory.read(), LINK, FAST),
-            Delivery::Failed("the running instance did not accept a connection")
+            directory.read().unwrap().map(|endpoint| endpoint.port),
+            Some(port)
         );
+        assert!(matches!(
+            deliver(|| directory.read(), LINK, FAST),
+            Delivery::Failed(_)
+        ));
+        assert_eq!(received.lock().unwrap().len(), offered);
     }
 }
