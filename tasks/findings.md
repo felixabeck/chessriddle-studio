@@ -29235,3 +29235,17 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
   * **Live (tuxedo-atlas, 2026-11-25):** with both slots held, `pnpm test:e2e:container --project=game-end` printed `Waiting for heavy-gate lock slot 1/2 held by …` at 07:19:57, started no container until a slot freed, then passed 6/6 and exited 0 at 07:21:05. The push gate's related-tests log shows `$ agent-gate pnpm exec vitest related …` followed by `Waiting for heavy-gate lock slot …` lines, then passed.
   * **Reviews:** diff review on agy — correctness, root-cause, tests, error-handling, minimalism APPROVED; adopted: push SKILL.md per-commit Vitest command, three vacuous test lookups, `runPassThroughChild` unit tests (closed r2/r3). Skipped: a programmatic SIGINT does not cancel `agent-gate`'s own slot wait (existing tuxedo-config `agent-gate` behaviour shared with the Rust commands since d-20261124-02; TTY Ctrl-C and SIGTERM cancel; unobserved).
 <!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"2fd587407dc02f8e29f42e7ae6d319d72c4019e5f0497c518a235af69f9400e5","header_sha256":"e594bacf6bba1bd45b85538d730c945b51d9e0c03a0973a27780f555994da384","header_status":"handled","input_sha256":"9ebf5cc4990fc470f927396236cc8486193c43aa6594cdd598605d0573e19f41","kind":"mutation-receipt","operation":"4e09dae16b5b465f335c1710122383f54233ee6f2168f7713e6619a53010b6ab","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-07"],"target":"f-20261125-07","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The Feedback dialog clips its content at 320px and 200% font size
+
+* **ID:** f-20261125-09 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src/components/feedback/FeedbackModal.tsx` inside `src/components/common/AppModal.tsx` (Mantine `Modal`, default `size="md"`).
+* **Defect:** in a 320px-wide window at 200% font size, the Feedback dialog is narrower than its content. Single words in the type choice and the dialog body overflow, so the content is cut off horizontally.
+* **Failure scenario (observed):** e2e container run on 2026-11-25, project `font-scaled-breakpoints` (200%), viewport 320×720, locale it-IT, with the type labels as plain text (no emoji; checked to rule out the icon pass): `assertNothingClipped` reported `mantine-Stack-root: x 301px > 222px; form: x 301px > 222px; mantine-Modal-body: x 333px > 286px; mantine-Modal-content: x 333px > 286px; mantine-SegmentedControl-root: x 256px > 220px`. ru-RU fails the same way. Log: `/tmp/build-icon-pass/e2e-fb-noemoji.log` (icon-pass run).
+* **Proof:** an e2e case in `e2e/font-scaled-breakpoints.spec.ts` at 320px and 200% for it-IT and ru-RU that asserts `assertNothingClipped` on the whole dialog, red before the fix. The icon pass added the same check at 1000px/200% and 420px/100%, and left 320px/200% out because of this defect.
+* **Found by:** Claude Code (icon-pass build, session 02e161d1-0335-4944-985b-fd7ac5398d0d), 2026-11-25.
