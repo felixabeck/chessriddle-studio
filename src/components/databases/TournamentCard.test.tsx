@@ -317,6 +317,60 @@ test("TournamentCard surfaces a genuine lookup failure", async () => {
   await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith("Common.Error", failure));
 });
 
+test("TournamentCard omits the All-mode count line while games are unloaded or failed", async () => {
+  // Pending fetch (games === undefined): no count line in All mode.
+  mocks.getTournamentGames.mockReturnValueOnce(new Promise(() => {}));
+  await render(file("pending-all"));
+  await click("Common.All");
+  expect(container.textContent).not.toContain("Showing ");
+
+  // Failed fetch: keeps failure notification and omits "Showing 0 of 0".
+  const failure = new Error("tournament fetch failed");
+  mocks.getTournamentGames.mockRejectedValueOnce(failure);
+  await render(file("failed-all"));
+  await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith("Common.Error", failure));
+  expect(container.textContent).not.toContain("Showing ");
+
+  // Successful empty fetch: count is genuinely 0 -> shows "Showing 0 of 0".
+  mocks.getTournamentGames.mockResolvedValueOnce({ data: [] });
+  await render(file("empty-all"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Showing 0 of 0"));
+});
+
+test("TournamentCard omits the All-mode count line when a refresh fails over loaded games", async () => {
+  const loaded = Array.from({ length: 3 }, (_, index) => ({
+    id: index + 1,
+    white: "White",
+    white_id: 1,
+    white_elo: null,
+    black: "Black",
+    black_id: 2,
+    black_elo: null,
+    date: "2026-01-01",
+    ply_count: index + 1,
+    result: "1-0",
+    event: "Candidates",
+    event_id: tournament.id,
+    site: "Test",
+    site_id: 1,
+    fen: "",
+    moves: "",
+  }));
+  mocks.getTournamentGames.mockResolvedValueOnce({ data: loaded });
+  await render(file("stale-all"));
+  await click("Common.All");
+  await vi.waitFor(() => expect(container.textContent).toContain("Showing 3 of 3"));
+
+  // The failed revalidation keeps the stale games cached; the footer must not count them.
+  const failure = new Error("tournament refresh failed");
+  mocks.getTournamentGames.mockRejectedValueOnce(failure);
+  await act(async () => {
+    await refreshGames().catch(() => undefined);
+  });
+  await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledWith("Common.Error", failure));
+  expect(container.textContent).not.toContain("Showing ");
+});
+
 test("a linked collection generation change refetches games and a pending lookup does not fetch", async () => {
   const database = file("tournament-generation");
   mocks.pending = true;

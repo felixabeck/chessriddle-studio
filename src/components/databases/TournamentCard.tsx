@@ -263,7 +263,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                 page={page}
                 recordsPerPage={pageSize}
                 shownCount={displayedGames.length}
-                totalRecords={sortedGames.length}
+                totalRecords={games !== undefined && !error ? sortedGames.length : undefined}
                 isLoading={isLoading || revision === null}
                 boundReachedWithMore={boundReachedWithMore}
                 onPageChange={setPage}

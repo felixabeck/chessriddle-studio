@@ -490,13 +490,14 @@ test("live-DOM-offset guard prevents taller row measurements from pulling a DOM 
   expect(viewportNode!.scrollTop).toBe(1000);
 
   // Move DOM scrollTop to 0 without firing the async scroll event yet (stale scrollOffset=1000),
-  // then re-render with taller measured rows (60px) on the same resetKey.
+  // then mount fresh row nodes (new ids) that measure taller (60px) on the same resetKey so
+  // measureElement / resizeItem runs for rows above the stale cached offset.
   stubRowHeight = 60;
   await act(async () => {
     viewportNode!.scrollTo({ top: 0 });
   });
   await mount({
-    records: records.map((row) => ({ ...row })),
+    records: records.map((row, index) => ({ ...row, id: 1000 + index })),
     enabled: true,
     viewportHeight: 370,
     resetKey: "date:desc",
