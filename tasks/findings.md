@@ -29442,3 +29442,17 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Spotted outside diff:** `src-tauri/src/credentials.rs` reconcile on startup (correct behaviour, not a defect in itself).
 
 Filed from the build of the scoresheet photo import (session c4fe3a7e-d00d-4487-ac2f-31b99658a655). Related: none in the ledger (checked `related --area gate-scripts --file scripts/verify-app.mjs`).
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### Default `pnpm verify:app` on master stops at RF2 and fails the Files Repertoire-filter check
+
+* **ID:** f-20261125-22 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Failure scenario:** default `pnpm verify:app` against a release build of `origin/master` `ecba11965` (2026-11-25, tuxedo-atlas, quiet machine) and against the scoresheet build on top of it (`dcae16742`): 173 checks pass, then `FAIL the Repertoire filter lists the metadata-edited workspace file — timed out waiting for the opened File type control's Repertoire option`, and after `ok RF1` the run aborts with `verify:app could not run: timed out waiting for root permission action Puzzles`, so RF2 to RF8 and every later check never run. Both reproduce identically on both binaries, so they predate the scoresheet build. AO1/AO2 in the same runs are f-20261125-13.
+* **Open question:** are these verifier drift after the 2026-11-25 Settings regroup, the unified drop-down (`270389c34`, the File type control is now a Select) and the New Tab emoji buttons, or product regressions? f-20261008-01 (Repertoire filter) and f-20261117-04 (Puzzles permission action) were handled earlier, so the cause is new.
+* **Spotted outside diff:** `scripts/verify-app.mjs` Files metadata-edit block and the RF2 Puzzles root-permission step.
+
+Filed from the scoresheet photo import build (session c4fe3a7e-d00d-4487-ac2f-31b99658a655). Related: f-20261125-13 (AO1/AO2 in the same runs), f-20261008-01, f-20261117-04.
