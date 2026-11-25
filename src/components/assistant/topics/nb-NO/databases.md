@@ -2,7 +2,7 @@
 id: databases
 title: Databaser, utforsker, stillingssøk, spillere og turneringer
 summary: Legg til eller last ned partidatabaser, velg en referansedatabase, søk etter stillinger i utforskeren og bla gjennom partier, spillere og turneringer.
-source: 48c72137fadc1768
+source: 0273f02c8cccfcea
 ---
 
 Databaser ligger i [[page:library]] ({{label:SideBar.Library}}) sammen med PGN-filene dine, og lagres i [[setting:databases-directory]].
@@ -23,8 +23,14 @@ Inne i tabellvisningen av databasen bytter du mellom {{label:Common.Games}}, {{l
 - Under {{label:Databases.Card.Players}} velger du en spiller for å se {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} og {{label:Home.Personal.Openings}} (et interaktivt åpningstre med knappen {{label:Databases.OpeningTree.Prepare}}), pluss FIDE-info via {{label:Databases.FIDE.Info}}.
 - Under {{label:Databases.Settings.Events}} kan du søke etter turneringer på navn og sortere etter dato, spillere, partier eller gjennomsnittsrating.
 
+På spillerkortet åpner du fanen {{label:Home.Personal.Preparation}} for å sammenligne partiene med repertoarfilene dine:
+- Velg motstanderens farge, perioden {{label:Databases.OpeningTree.Since}} og (når nettkontoer er koblet til) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} eller {{label:Databases.Preparation.Both}}. Klikk {{label:Databases.Preparation.Refresh}} for å kjøre sammenligningen på nytt.
+- Gå gjennom variantene motstanderen spiller og {{label:Databases.Preparation.GapsTitle}}. Klikk en rad for å åpne repertoarfilen din i den stillingen med andre sidevarianter skjult; bytt mellom {{label:Notation.PreparationOpponentLines}} og {{label:Notation.PreparationAllLines}} i notasjonshodet.
+- Klikk {{label:Databases.Preparation.TrainLines}} for å starte en tidsbegrenset økt over disse variantene; svarene dine oppdaterer den vanlige repetisjonsplanen.
+
 På analysebrettet åpner du {{label:Board.Tabs.Database}} for å bruke åpningsutforskeren:
 - Bytt mellom {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} og {{label:Board.Database.LichessMaster}} (nettutforskerne for Lichess krever en innlogget Lichess-konto på [[page:accounts]]).
 - Bytt mellom {{label:Board.Database.Stats}} (trekkstatistikk) og {{label:Board.Database.Games}} (samsvarende partier).
 - For lokale databaser klikker du {{label:Board.Database.Compare}} for å vise to databaser side ved side, eller åpner {{label:Board.Database.Local.Position}} for å bytte mellom {{label:Board.Database.Local.Exact}} og {{label:Board.Database.Local.Partial}} stillingssøk (inkludert {{label:Board.Database.Local.SimilarStructure}} for bondestruktursøk og {{label:Fen.Empty}} for egendefinerte mønstre).
 - Bruk {{label:Board.Database.Pin}} for å feste utforskeren over eller under brettet eller notasjonen, og {{label:Board.Database.Unpin}} for å legge den tilbake i fanene.
+- Når {{label:Databases.OpeningTree.Prepare}} åpner et brett for en databasespiller, legger utforskeren til referansedatabasen din som en ekstra kolonne ved siden av motstanderens partier; klikk {{label:Board.Database.RemoveReference}} for å skjule den eller {{label:Board.Database.ShowReference}} for å hente den tilbake.

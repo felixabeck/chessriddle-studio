@@ -2,7 +2,7 @@
 id: databases
 title: Veritabanları, gezgin, konum arama, oyuncular ve turnuvalar
 summary: Oyun veritabanları ekleme veya indirme, referans veritabanı seçme, gezginde konum arama ve oyunları, oyuncuları ve turnuvaları inceleme.
-source: 48c72137fadc1768
+source: 0273f02c8cccfcea
 ---
 
 Veritabanları PGN dosyalarınızla birlikte [[page:library]] ({{label:SideBar.Library}}) içinde yer alır ve [[setting:databases-directory]] konumunda saklanır.
@@ -23,8 +23,14 @@ Veritabanı tablo görünümünde {{label:Common.Games}}, {{label:Databases.Card
 - {{label:Databases.Card.Players}} bölümünde bir oyuncu seçerek {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} ve {{label:Home.Personal.Openings}} ({{label:Databases.OpeningTree.Prepare}} düğmesine sahip etkileşimli açılış ağacı) sekmelerini ve ayrıca {{label:Databases.FIDE.Info}} üzerinden FIDE bilgilerini görüntüleyin.
 - {{label:Databases.Settings.Events}} bölümünde turnuvaları ada göre arayın ve tarihe, oyuncu sayısına, oyun sayısına veya ortalama ELO'ya göre sıralayın.
 
+Bir oyuncunun kartında oyunlarını repertuvar dosyalarınızla karşılaştırmak için {{label:Home.Personal.Preparation}} sekmesini açın:
+- Rakibin rengini, {{label:Databases.OpeningTree.Since}} dönemini ve (bağlı çevrimiçi hesaplar varsa) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} veya {{label:Databases.Preparation.Both}} seçeneğini belirleyin. Karşılaştırmayı yeniden çalıştırmak için {{label:Databases.Preparation.Refresh}} düğmesine tıklayın.
+- Rakibin oynadığı varyantları ve {{label:Databases.Preparation.GapsTitle}} listesini inceleyin. Repertuvar dosyanızı o konumda diğer yan varyantlar gizli olarak açmak için bir satıra tıklayın; notasyon başlığında {{label:Notation.PreparationOpponentLines}} ile {{label:Notation.PreparationAllLines}} arasında geçiş yapın.
+- Bu varyantlar üzerinde süreli bir alıştırma başlatmak için {{label:Databases.Preparation.TrainLines}} düğmesine tıklayın; yanıtlarınız normal aralıklı tekrar programını günceller.
+
 Analiz tahtasında açılış gezginini kullanmak için {{label:Board.Tabs.Database}} sekmesini açın:
 - {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} ve {{label:Board.Database.LichessMaster}} arasında geçiş yapın (Lichess çevrimiçi gezginleri için [[page:accounts]] sayfasında oturum açılmış bir Lichess hesabı gerekir).
 - {{label:Board.Database.Stats}} (hamle istatistikleri) ve {{label:Board.Database.Games}} (eşleşen oyunlar) görünümleri arasında geçiş yapın.
 - Yerel veritabanları için iki veritabanını yan yana görmek üzere {{label:Board.Database.Compare}} düğmesine tıklayın veya {{label:Board.Database.Local.Exact}} ve {{label:Board.Database.Local.Partial}} konum aramaları (piyon yapısı araması için {{label:Board.Database.Local.SimilarStructure}} ve özel kalıplar için {{label:Fen.Empty}} dahil) arasında geçiş yapmak üzere {{label:Board.Database.Local.Position}} menüsünü açın.
 - Gezgini tahtanın veya notasyonun üstüne ya da altına sabitlemek için {{label:Board.Database.Pin}}, sekmelere geri döndürmek için {{label:Board.Database.Unpin}} seçeneğini kullanın.
+- {{label:Databases.OpeningTree.Prepare}} bir veritabanı oyuncusu için tahta açtığında gezgin referans veritabanınızı rakibin oyunlarının yanına ek bir sütun olarak ekler; gizlemek için {{label:Board.Database.RemoveReference}}, geri getirmek için {{label:Board.Database.ShowReference}} düğmesine tıklayın.

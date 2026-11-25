@@ -2,7 +2,7 @@
 id: databases
 title: Database, esploratore, ricerca di posizione, giocatori e tornei
 summary: Aggiungi o scarica database di partite, scegli un database di riferimento, cerca posizioni nell’esploratore e sfoglia partite, giocatori e tornei.
-source: 48c72137fadc1768
+source: 0273f02c8cccfcea
 ---
 
 I database si trovano in [[page:library]] ({{label:SideBar.Library}}) insieme ai tuoi file PGN e sono archiviati in [[setting:databases-directory]].
@@ -23,8 +23,14 @@ All’interno della vista tabellare del database, passa tra {{label:Common.Games
 - In {{label:Databases.Card.Players}}, seleziona un giocatore per consultare {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (un albero delle aperture interattivo con il pulsante {{label:Databases.OpeningTree.Prepare}}), oltre alle informazioni FIDE tramite {{label:Databases.FIDE.Info}}.
 - In {{label:Databases.Settings.Events}}, cerca i tornei per nome e ordina per data, giocatori, partite o Elo medio.
 
+Nella scheda di un giocatore, apri {{label:Home.Personal.Preparation}} per confrontare le sue partite con i tuoi file di repertorio:
+- Scegli il colore dell’avversario, il periodo {{label:Databases.OpeningTree.Since}} e (con account online collegati) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} oppure {{label:Databases.Preparation.Both}}. Fai clic su {{label:Databases.Preparation.Refresh}} per ripetere il confronto.
+- Esamina le varianti giocate dall’avversario e {{label:Databases.Preparation.GapsTitle}}. Fai clic su una riga per aprire il tuo file di repertorio in quella posizione con le altre varianti secondarie nascoste; nell’intestazione della notazione passa tra {{label:Notation.PreparationOpponentLines}} e {{label:Notation.PreparationAllLines}}.
+- Fai clic su {{label:Databases.Preparation.TrainLines}} per avviare una sessione a tempo su quelle varianti; le tue risposte aggiornano la normale pianificazione a ripetizione dilazionata.
+
 Sulla scacchiera di analisi, apri {{label:Board.Tabs.Database}} per usare l’esploratore delle aperture:
 - Passa tra {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} e {{label:Board.Database.LichessMaster}} (gli esploratori online di Lichess richiedono un account Lichess connesso su [[page:accounts]]).
 - Passa tra {{label:Board.Database.Stats}} (statistiche delle mosse) e {{label:Board.Database.Games}} (partite corrispondenti).
 - Per i database locali, fai clic su {{label:Board.Database.Compare}} per affiancare due database, oppure apri {{label:Board.Database.Local.Position}} per passare dalla ricerca di posizione {{label:Board.Database.Local.Exact}} a {{label:Board.Database.Local.Partial}} (inclusa {{label:Board.Database.Local.SimilarStructure}} per la ricerca per struttura pedonale e {{label:Fen.Empty}} per schemi personalizzati).
 - Usa {{label:Board.Database.Pin}} per fissare l’esploratore sopra o sotto la scacchiera o la notazione, e {{label:Board.Database.Unpin}} per riportarlo tra le schede.
+- Quando {{label:Databases.OpeningTree.Prepare}} apre una scacchiera per un giocatore del database, l’esploratore aggiunge il tuo database di riferimento come ulteriore colonna accanto alle partite dell’avversario; fai clic su {{label:Board.Database.RemoveReference}} per nasconderla o su {{label:Board.Database.ShowReference}} per ripristinarla.

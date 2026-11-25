@@ -2,7 +2,7 @@
 id: databases
 title: Бази даних, оглядач, пошук позицій, гравці та турніри
 summary: Додавання або завантаження баз партій, вибір довідкової бази, пошук позицій в оглядачі та перегляд партій, гравців і турнірів.
-source: 48c72137fadc1768
+source: 0273f02c8cccfcea
 ---
 
 Бази даних містяться в [[page:library]] ({{label:SideBar.Library}}) поряд із вашими файлами PGN і зберігаються в [[setting:databases-directory]].
@@ -23,8 +23,14 @@ source: 48c72137fadc1768
 - У розділі {{label:Databases.Card.Players}} виберіть гравця, щоб переглянути {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} та {{label:Home.Personal.Openings}} (інтерактивне дерево дебютів із кнопкою {{label:Databases.OpeningTree.Prepare}}), а також інформацію ФІДЕ через {{label:Databases.FIDE.Info}}.
 - У розділі {{label:Databases.Settings.Events}} шукайте турніри за назвою та сортуйте за датою, кількістю гравців, партій або середнім рейтингом Ело.
 
+На картці гравця відкрийте вкладку {{label:Home.Personal.Preparation}}, щоб порівняти його партії з вашими файлами репертуару:
+- Виберіть колір суперника, період {{label:Databases.OpeningTree.Since}} та (за наявності прив’язаних онлайн-акаунтів) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} або {{label:Databases.Preparation.Both}}. Натисніть {{label:Databases.Preparation.Refresh}}, щоб запустити порівняння знову.
+- Перегляньте варіанти, які грає суперник, та {{label:Databases.Preparation.GapsTitle}}. Натисніть будь-який рядок, щоб відкрити ваш файл репертуару в цій позиції з прихованими іншими відгалуженнями; у заголовку нотації перемикайтеся між {{label:Notation.PreparationOpponentLines}} і {{label:Notation.PreparationAllLines}}.
+- Натисніть {{label:Databases.Preparation.TrainLines}}, щоб запустити тренування на час за цими варіантами; ваші відповіді оновлюють звичайний розклад інтервального повторення.
+
 На дошці аналізу відкрийте вкладку {{label:Board.Tabs.Database}}, щоб скористатися оглядачем дебютів:
 - Перемикайтеся між {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} і {{label:Board.Database.LichessMaster}} (онлайн-оглядачі Lichess вимагають авторизованого облікового запису Lichess на сторінці [[page:accounts]]).
 - Перемикайтеся між {{label:Board.Database.Stats}} (статистика ходів) і {{label:Board.Database.Games}} (відповідні партії).
 - Для локальних баз даних натисніть {{label:Board.Database.Compare}}, щоб порівняти дві бази поруч, або відкрийте {{label:Board.Database.Local.Position}} для перемикання між пошуком позиції {{label:Board.Database.Local.Exact}} і {{label:Board.Database.Local.Partial}} (включно з {{label:Board.Database.Local.SimilarStructure}} для пошуку за пішаковою структурою та {{label:Fen.Empty}} для довільних шаблонів).
 - Використовуйте {{label:Board.Database.Pin}}, щоб закріпити оглядач над чи під дошкою або нотацією, та {{label:Board.Database.Unpin}}, щоб повернути його до вкладок.
+- Коли кнопка {{label:Databases.OpeningTree.Prepare}} відкриває дошку для гравця з бази даних, оглядач додає вашу довідкову базу ще одним стовпцем поруч із партіями суперника; натисніть {{label:Board.Database.RemoveReference}}, щоб приховати її, або {{label:Board.Database.ShowReference}}, щоб повернути.

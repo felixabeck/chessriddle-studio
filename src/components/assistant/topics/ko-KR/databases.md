@@ -2,7 +2,7 @@
 id: databases
 title: 데이터베이스, 탐색기, 포지션 검색, 선수 및 토너먼트
 summary: 기보 데이터베이스 추가 또는 다운로드, 참조 데이터베이스 지정, 탐색기에서 포지션 검색, 대국·선수·토너먼트 탐색하기.
-source: 48c72137fadc1768
+source: 0273f02c8cccfcea
 ---
 
 데이터베이스는 PGN 파일과 함께 [[page:library]] ({{label:SideBar.Library}})에 표시되며 [[setting:databases-directory]]에 저장됩니다.
@@ -23,8 +23,14 @@ source: 48c72137fadc1768
 - {{label:Databases.Card.Players}}에서 선수를 선택하면 {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Openings}}({{label:Databases.OpeningTree.Prepare}} 버튼이 있는 대화형 오프닝 트리)와 {{label:Databases.FIDE.Info}}를 통한 FIDE 정보를 볼 수 있습니다.
 - {{label:Databases.Settings.Events}}에서는 이름으로 토너먼트를 검색하고 날짜, 참가자 수, 대국 수 또는 평균 Elo로 정렬할 수 있습니다.
 
+선수 카드의 {{label:Home.Personal.Preparation}} 탭에서 상대의 대국을 내 레퍼토리 파일과 비교하세요:
+- 상대의 색, {{label:Databases.OpeningTree.Since}} 기간을 고르고(온라인 계정이 연결된 경우) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} 또는 {{label:Databases.Preparation.Both}} 중 하나를 선택합니다. {{label:Databases.Preparation.Refresh}}을(를) 클릭하면 비교를 다시 실행합니다.
+- 상대가 두는 수순과 {{label:Databases.Preparation.GapsTitle}}을(를) 확인하세요. 행을 클릭하면 다른 곁가지 변화가 숨겨진 채 해당 포지션에서 레퍼토리 파일이 열리며, 기보 상단에서 {{label:Notation.PreparationOpponentLines}}와(과) {{label:Notation.PreparationAllLines}} 사이를 전환할 수 있습니다.
+- {{label:Databases.Preparation.TrainLines}}을(를) 클릭해 해당 수순만 제한 시간 동안 연습하세요. 응답 결과는 일반 간격 반복 일정에 반영됩니다.
+
 분석 보드에서 오프닝 탐색기를 사용하려면 {{label:Board.Tabs.Database}} 탭을 여세요:
 - {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}}, {{label:Board.Database.LichessMaster}} 사이를 전환할 수 있습니다(Lichess 온라인 탐색기를 사용하려면 [[page:accounts]]에서 Lichess 계정에 로그인해야 합니다).
 - {{label:Board.Database.Stats}}(수 통계)와 {{label:Board.Database.Games}}(일치하는 대국) 보기를 전환합니다.
 - 로컬 데이터베이스에서는 {{label:Board.Database.Compare}}을(를) 클릭해 두 데이터베이스를 나란히 보거나, {{label:Board.Database.Local.Position}}을 열어 {{label:Board.Database.Local.Exact}}와 {{label:Board.Database.Local.Partial}} 포지션 검색(폰 구조 검색용 {{label:Board.Database.Local.SimilarStructure}} 및 사용자 지정 패턴용 {{label:Fen.Empty}} 포함)을 전환할 수 있습니다.
 - {{label:Board.Database.Pin}}으로 탐색기를 보드나 기보 위아래에 고정하고, {{label:Board.Database.Unpin}}으로 다시 탭으로 되돌릴 수 있습니다.
+- {{label:Databases.OpeningTree.Prepare}}로 데이터베이스 선수의 보드를 열면 탐색기에 상대 대국 옆의 추가 열로 참조 데이터베이스가 표시됩니다. {{label:Board.Database.RemoveReference}}을(를) 클릭해 숨기거나 {{label:Board.Database.ShowReference}}을(를) 클릭해 다시 불러올 수 있습니다.

@@ -2,7 +2,7 @@
 id: databases
 title: Bases de données, explorateur, recherche de position, joueurs et tournois
 summary: Ajoutez ou téléchargez des bases de parties, choisissez une base de référence, recherchez des positions dans l’explorateur et parcourez parties, joueurs et tournois.
-source: 48c72137fadc1768
+source: 0273f02c8cccfcea
 ---
 
 Les bases de données se trouvent dans [[page:library]] ({{label:SideBar.Library}}) aux côtés de vos fichiers PGN et sont stockées dans [[setting:databases-directory]].
@@ -23,8 +23,14 @@ Dans la vue tabulaire de la base de données, passez de {{label:Common.Games}} �
 - Dans {{label:Databases.Card.Players}}, sélectionnez un joueur pour consulter {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} et {{label:Home.Personal.Openings}} (un arbre d’ouvertures interactif avec un bouton {{label:Databases.OpeningTree.Prepare}}), ainsi que les informations FIDE via {{label:Databases.FIDE.Info}}.
 - Dans {{label:Databases.Settings.Events}}, recherchez les tournois par nom et triez par date, joueurs, parties ou Elo moyen.
 
+Sur la fiche d’un joueur, ouvrez l’onglet {{label:Home.Personal.Preparation}} pour comparer ses parties avec vos fichiers de répertoire :
+- Choisissez la couleur de l’adversaire, la période {{label:Databases.OpeningTree.Since}} et (avec des comptes en ligne liés) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} ou {{label:Databases.Preparation.Both}}. Cliquez sur {{label:Databases.Preparation.Refresh}} pour relancer la comparaison.
+- Consultez les lignes jouées par l’adversaire et {{label:Databases.Preparation.GapsTitle}}. Cliquez sur une ligne pour ouvrir votre fichier de répertoire à cette position avec les autres variantes masquées ; basculez entre {{label:Notation.PreparationOpponentLines}} et {{label:Notation.PreparationAllLines}} dans l’en-tête de la notation.
+- Cliquez sur {{label:Databases.Preparation.TrainLines}} pour lancer une séance chronométrée sur ces lignes ; vos réponses mettent à jour le calendrier habituel de répétition espacée.
+
 Sur l’échiquier d’analyse, ouvrez {{label:Board.Tabs.Database}} pour utiliser l’explorateur d’ouvertures :
 - Basculez entre {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} et {{label:Board.Database.LichessMaster}} (les explorateurs en ligne Lichess nécessitent un compte Lichess connecté sur [[page:accounts]]).
 - Basculez entre {{label:Board.Database.Stats}} (statistiques de coups) et {{label:Board.Database.Games}} (parties correspondantes).
 - Pour les bases locales, cliquez sur {{label:Board.Database.Compare}} afin d’afficher deux bases côte à côte, ou ouvrez {{label:Board.Database.Local.Position}} pour basculer entre la recherche de position {{label:Board.Database.Local.Exact}} et {{label:Board.Database.Local.Partial}} (y compris {{label:Board.Database.Local.SimilarStructure}} pour la recherche par structure de pions et {{label:Fen.Empty}} pour des motifs personnalisés).
 - Utilisez {{label:Board.Database.Pin}} pour épingler l’explorateur au-dessus ou en dessous de l’échiquier ou de la notation, et {{label:Board.Database.Unpin}} pour le replacer dans les onglets.
+- Lorsque {{label:Databases.OpeningTree.Prepare}} ouvre un échiquier pour un joueur de la base de données, l’explorateur ajoute votre base de référence comme colonne supplémentaire à côté des parties de l’adversaire ; cliquez sur {{label:Board.Database.RemoveReference}} pour la masquer ou sur {{label:Board.Database.ShowReference}} pour la réafficher.
