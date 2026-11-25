@@ -179,6 +179,7 @@
           "src/components/common/LocalImage.tsx",
           "src/components/common/ProgressButton.tsx",
           "src/components/common/ToggleButtonGroup.tsx",
+          "src/components/common/iconCatalog.ts",
           "src/components/common/wrappingButton.ts",
           "src/components/feedback/**",
           "src/components/icons/**",

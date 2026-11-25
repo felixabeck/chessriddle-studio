@@ -5,7 +5,8 @@ import {
   libraryClasses,
 } from "@/components/library/presentation";
 import { Box, Group, Text } from "@mantine/core";
-import { Database, FileText, Folder, FolderOpen, FolderSymlink, Trash2 } from "lucide-react";
+import { FileText, Folder, FolderOpen, FolderSymlink, Trash2 } from "lucide-react";
+import { DatabaseIcon } from "@/components/common/iconCatalog";
 import { useAtom } from "jotai";
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -428,7 +429,7 @@ export default function DirectoryTree({
             {visible.slice(0, fileCount).map(render)}
           </Box>
           <Box role="presentation" className={libraryClasses.section} data-section="databases">
-            <LibrarySectionHeading count={visible.length - fileCount} icon={<Database />}>
+            <LibrarySectionHeading count={visible.length - fileCount} icon={<DatabaseIcon />}>
               {t("Databases.Title", { defaultValue: "Databases" })}
             </LibrarySectionHeading>
             {visible.length > fileCount && (

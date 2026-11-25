@@ -1,5 +1,5 @@
 import { Group, Paper, Text } from "@mantine/core";
-import { Flame } from "lucide-react";
+import { StreakIcon } from "@/components/common/iconCatalog";
 import { useTranslation } from "react-i18next";
 import { formatDecimal, formatTime } from "@/utils/format";
 import type { Puzzle } from "@/utils/puzzles";
@@ -89,7 +89,7 @@ function PuzzleSessionStats({
           <Text fw={700} size="lg">
             {currentStreak}
           </Text>
-          <Flame size={20} color="var(--cf-warning)" />
+          <StreakIcon size={20} color="var(--cf-warning)" />
         </Group>
       </Paper>
 

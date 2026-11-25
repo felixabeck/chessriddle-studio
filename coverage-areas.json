@@ -197,6 +197,7 @@
         "src/components/common/AppPopover.tsx",
         "src/components/common/DraftNumberInput.tsx",
         "src/components/common/Emoji.tsx",
+        "src/components/common/iconCatalog.ts",
         "src/components/common/FileInput.tsx",
         "src/components/common/GenericCard.tsx",
         "src/components/common/GroupedSidebarTabs.tsx",

@@ -49,7 +49,8 @@ vi.mock("react-i18next", () => ({
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
   }),
 }));
-vi.mock("lucide-react", () => ({
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
   ArrowLeft: () => null,
   ChessKnight: () => null,
   Trophy: () => null,

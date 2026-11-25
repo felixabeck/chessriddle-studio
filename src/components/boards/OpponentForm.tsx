@@ -7,7 +7,7 @@ import {
   Stack,
   TextInput,
 } from "@mantine/core";
-import { Brain, User } from "lucide-react";
+import { PersonIcon, EngineIcon } from "@/components/common/iconCatalog";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import GoModeInput from "@/components/common/GoModeInput";
@@ -52,7 +52,7 @@ export function OpponentForm({
             value: "human",
             label: (
               <Center style={{ gap: 10 }}>
-                <User size={16} />
+                <PersonIcon size={16} />
                 <span>{t("Board.Opponent.Human")}</span>
               </Center>
             ),
@@ -61,7 +61,7 @@ export function OpponentForm({
             value: "engine",
             label: (
               <Center style={{ gap: 10 }}>
-                <Brain size={16} />
+                <EngineIcon size={16} />
                 <span>{t("Common.Engine")}</span>
               </Center>
             ),

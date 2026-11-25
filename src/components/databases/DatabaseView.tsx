@@ -1,5 +1,6 @@
 import { Box, Button, Center, Group, Loader, Stack, Tabs, Text, Title } from "@mantine/core";
-import { ArrowLeft, ChessKnight, Trophy, User } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { GameIcon, TournamentIcon, PersonIcon } from "@/components/common/iconCatalog";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { useEffect, useMemo, useState } from "react";
@@ -250,13 +251,13 @@ function DatabaseView() {
               className={classes.tabs}
             >
               <Tabs.List style={{ flexShrink: 0 }}>
-                <Tabs.Tab leftSection={<ChessKnight size="1rem" />} value="games">
+                <Tabs.Tab leftSection={<GameIcon size="1rem" />} value="games">
                   {t("Common.Games")}
                 </Tabs.Tab>
-                <Tabs.Tab leftSection={<User size="1rem" />} value="players">
+                <Tabs.Tab leftSection={<PersonIcon size="1rem" />} value="players">
                   {t("Databases.Card.Players")}
                 </Tabs.Tab>
-                <Tabs.Tab leftSection={<Trophy size="1rem" />} value="tournaments">
+                <Tabs.Tab leftSection={<TournamentIcon size="1rem" />} value="tournaments">
                   {t("Databases.Settings.Events")}
                 </Tabs.Tab>
               </Tabs.List>

@@ -1,16 +1,22 @@
-import { BookOpen, ChessKnight, File, Puzzle, Trophy } from "lucide-react";
+import { File } from "lucide-react";
+import {
+  RepertoireIcon,
+  GameIcon,
+  TournamentIcon,
+  PuzzlesIcon,
+} from "@/components/common/iconCatalog";
 import type { FileType } from "./file";
 
 function getFileIcon(type: FileType) {
   switch (type) {
     case "repertoire":
-      return BookOpen;
+      return RepertoireIcon;
     case "game":
-      return ChessKnight;
+      return GameIcon;
     case "tournament":
-      return Trophy;
+      return TournamentIcon;
     case "puzzle":
-      return Puzzle;
+      return PuzzlesIcon;
     default:
       return File;
   }

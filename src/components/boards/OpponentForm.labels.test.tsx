@@ -25,7 +25,8 @@ vi.mock("@/components/panels/analysis/EngineSettingsForm", () => ({
 vi.mock("@/components/common/GoModeInput", () => ({
   default: () => null,
 }));
-vi.mock("lucide-react", () => ({
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
   Brain: () => null,
   User: () => null,
 }));

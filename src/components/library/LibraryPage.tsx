@@ -29,6 +29,7 @@ import { useTranslation } from "react-i18next";
 import DirectoryTree, { type CollectionPeer } from "@/components/files/DirectoryTree";
 import { FILE_TYPE_EMOJI, FILE_TYPES, type FileType } from "@/components/files/file";
 import { EmojiLabel } from "@/components/common/Emoji";
+import { emojiOf } from "@/components/common/iconCatalog";
 import { useFileWorkspace } from "@/components/files/useFileWorkspace";
 import { useDatabaseLibrary } from "@/components/databases/useDatabaseLibrary";
 import {
@@ -55,7 +56,7 @@ import { collectionsByFile, joinLibraryCollections } from "./libraryData";
 
 const LIBRARY_FILTER_EMOJI: Record<FileType | "database", string> = {
   ...FILE_TYPE_EMOJI,
-  database: "🗄️",
+  database: emojiOf("database"),
 };
 
 const LibrarySyncControl = lazy(() =>

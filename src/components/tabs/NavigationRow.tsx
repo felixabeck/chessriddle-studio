@@ -9,23 +9,25 @@ import {
 import { Link, useRouterState } from "@tanstack/react-router";
 import { getCurrentWebviewWindow } from "@/platform/native";
 import {
-  Brain,
   Castle,
   ChevronDown,
   Database,
   FolderOpen,
-  Info,
-  Library,
   LogOut,
   Maximize,
-  MessageSquarePlus,
-  MessagesSquare,
   Plus,
   Save,
-  Settings,
-  User,
   X,
 } from "lucide-react";
+import {
+  PersonIcon,
+  EngineIcon,
+  SettingsIcon,
+  GuideIcon,
+  LibraryIcon,
+  AiChatIcon,
+  FeedbackIcon,
+} from "@/components/common/iconCatalog";
 import cx from "clsx";
 import {
   useEffect,
@@ -110,18 +112,18 @@ function IconX() {
   );
 }
 
-const IN_APP_MENU_ICONS: Record<string, typeof Settings> = {
+const IN_APP_MENU_ICONS: Record<string, typeof SettingsIcon> = {
   new_tab: Plus,
   open_file: FolderOpen,
   save: Save,
   save_to: Database,
-  accounts: User,
-  engines: Brain,
-  settings: Settings,
+  accounts: PersonIcon,
+  engines: EngineIcon,
+  settings: SettingsIcon,
   toggle_fullscreen: Maximize,
-  guide: Info,
-  assistant: MessagesSquare,
-  send_feedback: MessageSquarePlus,
+  guide: GuideIcon,
+  assistant: AiChatIcon,
+  send_feedback: FeedbackIcon,
   about: Castle,
   exit: LogOut,
 };
@@ -343,11 +345,11 @@ export default function NavigationRow({
     if (onBoards) selectTab(nextId);
   };
 
-  const pageTabView: Record<PageTab, { icon: typeof Settings; label: string }> = {
-    accounts: { icon: User, label: t("SideBar.Accounts") },
-    engines: { icon: Brain, label: t("SideBar.Engines") },
-    settings: { icon: Settings, label: t("SideBar.Settings") },
-    guide: { icon: Info, label: t("Guide.Title") },
+  const pageTabView: Record<PageTab, { icon: typeof SettingsIcon; label: string }> = {
+    accounts: { icon: PersonIcon, label: t("SideBar.Accounts") },
+    engines: { icon: EngineIcon, label: t("SideBar.Engines") },
+    settings: { icon: SettingsIcon, label: t("SideBar.Settings") },
+    guide: { icon: GuideIcon, label: t("Guide.Title") },
   };
 
   return (
@@ -405,7 +407,7 @@ export default function NavigationRow({
             className={cx(classes.pinned, libraryCurrent && classes.current)}
             aria-current={libraryCurrent ? "page" : undefined}
           >
-            <Library size="0.875rem" aria-hidden />
+            <LibraryIcon size="0.875rem" aria-hidden />
             <span className={classes.compactLabel}>{t("SideBar.Library")}</span>
           </Link>
         </Tooltip>
@@ -556,7 +558,7 @@ export default function NavigationRow({
               data-active={assistantOpened || undefined}
               onClick={onToggleAssistant}
             >
-              <MessagesSquare size="0.875rem" aria-hidden />
+              <AiChatIcon size="0.875rem" aria-hidden />
               <span className={classes.compactLabel}>{t("Navigation.Assistant")}</span>
             </button>
           </Tooltip>
@@ -573,7 +575,7 @@ export default function NavigationRow({
             aria-label={t("Navigation.Feedback")}
             onClick={onSendFeedback}
           >
-            <MessageSquarePlus size="0.875rem" aria-hidden />
+            <FeedbackIcon size="0.875rem" aria-hidden />
             <span className={classes.compactLabel}>{t("Navigation.Feedback")}</span>
           </button>
         </Tooltip>

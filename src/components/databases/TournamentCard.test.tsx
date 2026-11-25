@@ -80,7 +80,11 @@ vi.mock("@/state/atoms", () => ({
   updateTabById: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
-vi.mock("lucide-react", () => ({ ChevronsUpDown: () => null, Eye: () => null }));
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
+  ChevronsUpDown: () => null,
+  Eye: () => null,
+}));
 // Keep the table boundary interactive and render the records supplied by TournamentCard.
 vi.mock("mantine-datatable", () => ({
   DataTable: <Record extends { id?: number; white?: string; name?: string; points?: number }>({

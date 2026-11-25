@@ -16,6 +16,7 @@ import { Trans, useTranslation } from "react-i18next";
 import type { FeedbackOutcome, FeedbackType } from "@/bindings";
 import AppModal from "@/components/common/AppModal";
 import { EmojiLabel } from "@/components/common/Emoji";
+import { emojiOf } from "@/components/common/iconCatalog";
 import { IconAction } from "@/components/common/IconAction";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import classes from "./FeedbackModal.module.css";
@@ -348,18 +349,28 @@ export default function FeedbackModal({
               value={feedbackType}
               onChange={(value) => setFeedbackType(value as FeedbackType)}
               data={[
-                { value: "bug", label: <EmojiLabel glyph="🐛" label={t("Feedback.Type.Bug")} /> },
+                {
+                  value: "bug",
+                  label: <EmojiLabel glyph={emojiOf("bug")} label={t("Feedback.Type.Bug")} />,
+                },
                 {
                   value: "suggestion",
-                  label: <EmojiLabel glyph="💡" label={t("Feedback.Type.Suggestion")} />,
+                  label: (
+                    <EmojiLabel
+                      glyph={emojiOf("suggestion")}
+                      label={t("Feedback.Type.Suggestion")}
+                    />
+                  ),
                 },
                 {
                   value: "praise",
-                  label: <EmojiLabel glyph="⭐" label={t("Feedback.Type.Praise")} />,
+                  label: <EmojiLabel glyph={emojiOf("praise")} label={t("Feedback.Type.Praise")} />,
                 },
                 {
                   value: "other",
-                  label: <EmojiLabel glyph="💬" label={t("Feedback.Type.Other")} />,
+                  label: (
+                    <EmojiLabel glyph={emojiOf("otherFeedback")} label={t("Feedback.Type.Other")} />
+                  ),
                 },
               ]}
               disabled={pending}

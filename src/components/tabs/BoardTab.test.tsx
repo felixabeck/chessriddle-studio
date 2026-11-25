@@ -120,7 +120,7 @@ test("a fileDraft analysis tab uses the file icon", async () => {
       </MantineProvider>,
     ),
   );
-  expect(container.querySelector(".lucide-book-open")).not.toBeNull();
+  expect(container.querySelector(".lucide-book-bookmark")).not.toBeNull();
   expect(container.querySelector(".lucide-database")).toBeNull();
   expect(container.querySelector(".lucide-scan-search")).toBeNull();
 });

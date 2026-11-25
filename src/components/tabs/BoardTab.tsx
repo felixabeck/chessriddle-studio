@@ -7,7 +7,8 @@ import {
   useState,
 } from "react";
 import type { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
-import { ChessKnight, Database, Puzzle, ScanSearch, X } from "lucide-react";
+import { X } from "lucide-react";
+import { AnalysisIcon, PuzzlesIcon, GameIcon, DatabaseIcon } from "@/components/common/iconCatalog";
 import cx from "clsx";
 import { getTabFile, tabLabelWithFile, type Tab } from "@/utils/tabs";
 import classes from "./BoardTab.module.css";
@@ -119,13 +120,13 @@ export function BoardTab({
 
 export function BoardTabIcon({ tab }: { tab: Tab }) {
   if (tab.type === "puzzles") {
-    return <Puzzle size="0.875rem" />;
+    return <PuzzlesIcon size="0.875rem" />;
   }
   if (tab.type === "play") {
-    return <ChessKnight size="0.875rem" />;
+    return <GameIcon size="0.875rem" />;
   }
   if (tab.gameOrigin.kind === "database" || tab.gameOrigin.kind === "databaseDraft") {
-    return <Database size="0.875rem" />;
+    return <DatabaseIcon size="0.875rem" />;
   }
   if (
     tab.gameOrigin.kind === "file" ||
@@ -135,7 +136,7 @@ export function BoardTabIcon({ tab }: { tab: Tab }) {
     return <FileIcon type={tab.gameOrigin.file.metadata.type} size="0.875rem" />;
   }
   if (tab.type === "analysis") {
-    return <ScanSearch size="0.875rem" />;
+    return <AnalysisIcon size="0.875rem" />;
   }
   return null;
 }

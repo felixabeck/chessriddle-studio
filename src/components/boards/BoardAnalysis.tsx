@@ -4,7 +4,8 @@ import { errorUnlessCancelled } from "@/platform/errors";
 import { Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useElementSize, useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
-import { Database, Info, MessagesSquare, NotebookPen, Crosshair, ScanSearch } from "lucide-react";
+import { Info, NotebookPen, Crosshair } from "lucide-react";
+import { AiChatIcon, AnalysisIcon, DatabaseIcon } from "@/components/common/iconCatalog";
 import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
@@ -530,13 +531,13 @@ function BoardAnalysis() {
                   ...(isRepertoire
                     ? [{ value: "practice", title: t("Board.Tabs.Practice"), Icon: Crosshair }]
                     : []),
-                  { value: "analysis", title: t("Board.Tabs.Analysis"), Icon: ScanSearch },
+                  { value: "analysis", title: t("Board.Tabs.Analysis"), Icon: AnalysisIcon },
                   ...(explorerDetached
                     ? []
-                    : [{ value: "database", title: t("Board.Tabs.Database"), Icon: Database }]),
+                    : [{ value: "database", title: t("Board.Tabs.Database"), Icon: DatabaseIcon }]),
                   { value: "annotate", title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
                   ...(coachEnabled
-                    ? [{ value: "coach", title: t("Board.Tabs.Coach"), Icon: MessagesSquare }]
+                    ? [{ value: "coach", title: t("Board.Tabs.Coach"), Icon: AiChatIcon }]
                     : []),
                   { value: "info", title: t("Board.Tabs.Info"), Icon: Info },
                 ].map(({ value, title, Icon }) => (

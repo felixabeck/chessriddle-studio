@@ -128,6 +128,34 @@ such as buttons, application menu items, and page tabs. New emoji slots render t
 colour-emoji font stack (`"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`)
 rather than the bundled text font.
 
+### One concept, one icon
+
+Feature and section identities, emoji and lucide alike, come from one catalogue:
+`src/components/common/iconCatalog.ts` (`EMOJI_IDENTITIES`, `LUCIDE_IDENTITIES`). Surfaces ask for
+a concept by name (`emojiOf("repertoire")` for emoji, the named export `EngineIcon` for lucide) and
+never write a glyph or import an identity icon from `lucide-react` directly. `LUCIDE_IDENTITIES` is
+read only by the test, so unused icons stay out of the entry chunk. Two rules hold, and `iconCatalog.test.ts` enforces both:
+
+* **Same concept, same icon; different concepts, different icons.** A concept shown in two places
+  (Board → Arrows & drawing and the Drawing shortcuts) is one entry used twice. Two entries never
+  share a glyph or lucide export. The only exceptions are listed in `ACCEPTED_EMOJI_OVERLAPS`:
+  🗂️ for Tabs & files and the All filter, ♟️ for Board settings and Games (kept by Felix,
+  2026-11-25).
+* **ChessRiddle meanings are kept.** A glyph or lucide export that ChessRiddle also shows must
+  mean the same thing here, and its entry names the ChessRiddle identity in `chessRiddle`. The
+  test checks this against `src/components/common/chessRiddleIconSnapshot.json`, a copy of
+  ChessRiddle's `frontend/shared/icon-catalog.json` resolved to glyph → identities. Re-copy it
+  when ChessRiddle's catalogue changes; a new clash then fails the test.
+
+The Guide topic emoji in `src/components/assistant/topics/order.ts` stay literal, because the
+website's Studio guide parses that file as text (`frontend/web/src/lib/studio/studioGuide.ts`);
+the test checks that each of them is a catalogue glyph. Puzzle motif glyphs in
+`src/components/chessriddle/motifCatalog.ts` are ChessRiddle's own content, not Studio
+identities, and stay outside the catalogue. Action and status icons (close, save, a settings gear
+on a button, an info alert) are not identities and follow the table below.
+
+### Lucide icons
+
 Every migrated icon imports from `lucide-react`, pinned exactly to `1.61.0`, the
 ChessRiddle version. The navigation row uses monochrome catalogue `ui` identities. The
 following table records the implemented mapping. Reference paths are relative to
@@ -143,7 +171,8 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Settings and engine configuration | `Settings` | `shared/icon-catalog.json:793` |
 | Privacy category | `Shield` | `shared/icon-catalog.json:676` |
 | Puzzle tabs and puzzle file icon | `Puzzle` | `shared/icon-catalog.json:757` |
-| Tournament and engine rating | `Trophy` | `shared/icon-catalog.json:721` |
+| Tournament | `Trophy` | `shared/icon-catalog.json:721` |
+| Engine rating and engine download size | `Gauge`, `HardDriveDownload` | Closest by meaning |
 | Information and help | `Info` | `shared/icon-catalog.json:697` |
 | Analysis tabs and actions | `ScanSearch` | `web/src/components/analysis/AnalyzePuzzleButton.tsx:60` |
 | First, previous, next, last move | `ChevronFirst`, `ChevronLeft`, `ChevronRight`, `ChevronLast` | `web/src/components/analysis/ControlButtons.tsx:39`, `web/src/components/analysis/ControlButtons.tsx:48`, `web/src/components/analysis/ControlButtons.tsx:57`, `web/src/components/analysis/ControlButtons.tsx:66` |
@@ -161,8 +190,8 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Back from database | `ArrowLeft` | `web/src/components/entityEditor/EntityEditorHeader.tsx:113` |
 | Next and previous database record, return to practice position | `ArrowRight`, `ArrowLeft` | `web/src/components/puzzle/ReviewActionDock.tsx:22`, `web/src/components/entityEditor/EntityEditorHeader.tsx:113` |
 | Rename and edit metadata | `Pencil` | `web/src/components/profile/ProfileHeader.tsx:71` |
-| Repertoire file and review | `BookOpen` | `web/src/components/puzzle/OpeningSelect.tsx:432` |
-| Coach panel | `MessagesSquare` | Closest by meaning |
+| Repertoire file and review | `BookBookmark` | Closest by meaning (ChessRiddle's `BookOpen` is homework) |
+| Coach panel and Assistant (both AI chats) | `MessagesSquare` | Closest by meaning |
 | Start a new Coach conversation | `MessageSquarePlus` | Closest by meaning |
 | Insert a Coach line as a variation | `ListPlus` | Closest by meaning |
 | Upload engine portrait | `ImagePlus` | `web/src/components/feedback/FeedbackModal.tsx:396` |
@@ -209,112 +238,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Warning alert | `TriangleAlert` | Closest by meaning |
 | Expand and collapse a variation | `Plus`, `Minus` | Closest by meaning, numeric stepping uses the same icons in `web/src/components/entityEditor/EntityNumericStepper.tsx:4` |
 | Add game, tab, database or engine | `Plus` | Closest by meaning |
-| Ultra-bullet, bullet, blitz, rapid, classical and correspondence | `ChevronsRight`, `ChevronRight`, `Flame`, `Hourglass`, `Clock4`, `Send` | Closest by meaning for time controls |
-| Captured bishop, rook and queen | `ChessBishop`, `ChessRook`, `ChessQueen` | Closest by meaning |
-
-### Guide topic emoji
-
-Data lives in `src/components/assistant/topics/order.ts` (`HELP_TOPIC_GROUPS`). Each group also carries a `chart-*` accent token used for the selected tab's inline-start indicator.
-
-| Topic id | Emoji | Catalogue key or fallback |
-| --- | --- | --- |
-| `tabs-and-new-tab` | 🗂️ | `filter.all` |
-| `analysis-board` | 🔍 | `insights.focus_areas` |
-| `library-and-files` | 🗃️ | `nav.library` |
-| `import-game` | 📥 | Closest by meaning |
-| `keyboard-shortcuts` | ⌨️ | `common.keyboard` |
-| `databases` | 🗄️ | Closest by meaning |
-| `chessbase-import` | 📦 | Closest by meaning |
-| `engines` | 🧠 | `insights.thinking_time` |
-| `game-report` | 📊 | `nav.statistics` |
-| `play-against-engine` | 🤺 | `nav.challenges` |
-| `repertoires` | 📖 | `puzzle_type.opening_blunder` |
-| `puzzles` | 🧩 | `nav.puzzles` |
-| `online-accounts` | 🌐 | `common.globe` |
-| `chessriddle-account` | 👤 | `nav.profile` |
-| `ai-connections` | 💬 | `common.chat` |
-| `browser-extension` | 🔗 | Closest by meaning |
-| `settings` | ⚙️ | `nav.settings` |
-| `feedback` | 🐛 | `common.bug` |
-
-### New Tab and Library emoji
-
-Data lives in `src/components/tabs/NewTabHome.tsx`, `src/components/files/file.ts` (`FILE_TYPE_EMOJI`), and `src/components/library/LibraryPage.tsx`.
-
-| ChessRiddle Studio slot | Emoji | Catalogue key or fallback |
-| --- | --- | --- |
-| New Tab action: Play | 🤺 | `nav.challenges` |
-| New Tab action: Analysis Board | 🔍 | `insights.focus_areas` |
-| New Tab action: Puzzles | 🧩 | `nav.puzzles` |
-| New Tab action: Train openings | 🏋️ | `nav.training` |
-| New Tab action: New Repertoire | 📖 | `puzzle_type.opening_blunder` |
-| New Tab action: Import | 📥 | Closest by meaning |
-| New Tab Library card heading | 🗃️ | `nav.library` |
-| New Tab Library filter: All | 🗂️ | `filter.all` |
-| New Tab Library filter: Repertoires | 📖 | `puzzle_type.opening_blunder` |
-| New Tab Library filter: Games | ♟️ | `common.pawn` |
-| New Tab Library filter: Due | 🔄 | `nav.practice_mistakes` |
-| Library file-type filter: Game (`game`) | ♟️ | `common.pawn` |
-| Library file-type filter: Repertoire (`repertoire`) | 📖 | `puzzle_type.opening_blunder` |
-| Library file-type filter: Tournament (`tournament`) | 🏆 | `insights.trophy_cabinet` |
-| Library file-type filter: Puzzle (`puzzle`) | 🧩 | `nav.puzzles` |
-| Library file-type filter: Other (`other`) | 📜 | `common.scroll` |
-| Library file-type filter: Games database (`database`) | 🗄️ | Closest by meaning |
-
-### Feedback dialog emoji
-
-Data lives in `src/components/feedback/FeedbackModal.tsx` (`SegmentedControl` type choice).
-
-| Feedback type | Emoji | Catalogue key or fallback |
-| --- | --- | --- |
-| Bug (`bug`) | 🐛 | `common.bug` |
-| Suggestion (`suggestion`) | 💡 | `common.idea` |
-| Praise (`praise`) | ⭐ | `common.star` (`filter.rated`) |
-| Other (`other`) | 💬 | `common.chat` |
-
-### Settings category emoji
-
-Data lives in `src/components/settings/settingsDescription.ts` (`SETTING_CATEGORY_EMOJI`).
-
-| Category (`SettingCategory`) | Emoji | Catalogue key or fallback |
-| --- | --- | --- |
-| `board` | ♟️ | `common.pawn` |
-| `analysis` | 🔍 | `insights.focus_areas` |
-| `repertoire` | 📖 | `puzzle_type.opening_blunder` |
-| `coach` | 💬 | `common.chat` |
-| `general` | ⚙️ | `nav.settings` |
-| `sound` | 🔊 | `common.sound_on` |
-| `keybinds` | ⌨️ | `common.keyboard` |
-| `directories` | 🗃️ | `nav.library` |
-| `advanced` | 🧪 | `common.test_tube` |
-
-### Settings content group emoji
-
-Data lives in `src/components/settings/settingsDescription.ts` (`SETTING_CONTENT_GROUP_EMOJI`).
-
-| Content group (`SettingContentGroup`) | Emoji | Catalogue key or fallback |
-| --- | --- | --- |
-| `look` | 🎨 | `common.palette` |
-| `highlights` | ✨ | `common.sparkles` |
-| `movingPieces` | 🖱️ | `common.mouse` |
-| `arrowsDrawing` | 🏹 | `puzzle_type.conversion` |
-| `notation` | 📝 | `coordinates.name_square` |
-| `navigating` | 🧭 | `puzzle_type.positional` |
-| `layoutSaving` | 📋 | `nav.training_plan` |
-
-### Keybind group emoji
-
-Data lives in `src/components/settings/keybindGroups.ts` (`KEYBIND_GROUPS` and `KEYBIND_DRAWING_EMOJI`).
-
-| Keybind group (`KeybindGroupId`) | Emoji | Catalogue key or fallback |
-| --- | --- | --- |
-| `tabsFiles` | 🗂️ | `filter.all` |
-| `navigation` | ⏩ | `puzzle_type.pre_moves` |
-| `editing` | ✏️ | `common.edit` |
-| `annotations` | ✍️ | `common.writing` |
-| `engine` | 🧠 | `insights.thinking_time` |
-| `panels` | 📋 | `nav.training_plan` |
-| Drawing (`KEYBIND_DRAWING_EMOJI`) | 🏹 | `puzzle_type.conversion` |
+| Ultra-bullet, bullet, blitz, rapid, classical and correspondence | `ChevronsRight`, `ChevronRight`, `Zap`, `Hourglass`, `Clock4`, `Send` | Closest by meaning for time controls (`Flame` is the streak) |
 
 Existing rendered sizes are retained for this import and JSX migration, including
 compact 12–14px slots. This follows Phase 2's explicit

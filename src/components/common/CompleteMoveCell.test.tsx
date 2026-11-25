@@ -76,9 +76,10 @@ vi.mock("react-i18next", () => ({
       options?.chapter === undefined ? key : `${key}(${options.chapter})`,
   }),
 }));
-vi.mock("lucide-react", () => {
+vi.mock("lucide-react", async (importOriginal) => {
   const Icon = () => null;
   return {
+    ...(await importOriginal<typeof import("lucide-react")>()),
     Merge: Icon,
     ArrowUpRight: Icon,
     Copy: Icon,

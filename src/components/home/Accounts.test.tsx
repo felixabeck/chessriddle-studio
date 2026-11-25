@@ -32,7 +32,10 @@ vi.mock("@mantine/notifications", () => ({
   notifications: { show: mocks.notificationsShow },
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("lucide-react", () => ({ Plus: () => null }));
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
+  Plus: () => null,
+}));
 vi.mock("./AccountCards", () => ({
   default: (props: {
     listingAvailable: boolean;

@@ -1,8 +1,9 @@
 import type { KeybindActionId } from "@/state/keybinds";
-import { SETTING_CONTENT_GROUP_EMOJI, type SettingsTranslator } from "./settingsDescription";
+import { emojiOf } from "@/components/common/iconCatalog";
+import type { SettingsTranslator } from "./settingsDescription";
 
-/** Drawing-on-the-board heading; same glyph as Board → Arrows & drawing. */
-export const KEYBIND_DRAWING_EMOJI = SETTING_CONTENT_GROUP_EMOJI.arrowsDrawing;
+/** Drawing-on-the-board heading; the same concept as Board → Arrows & drawing. */
+export const KEYBIND_DRAWING_EMOJI = emojiOf("arrowsDrawing");
 
 export const KEYBIND_GROUP_IDS = [
     "tabsFiles",
@@ -18,7 +19,7 @@ export type KeybindGroupId = (typeof KEYBIND_GROUP_IDS)[number];
 export const KEYBIND_GROUPS = [
     {
         id: "tabsFiles",
-        emoji: "🗂️",
+        emoji: emojiOf("tabsFiles"),
         actions: [
             "NEW_TAB",
             "CLOSE_TAB",
@@ -33,7 +34,7 @@ export const KEYBIND_GROUPS = [
     },
     {
         id: "navigation",
-        emoji: "⏩",
+        emoji: emojiOf("navigating"),
         actions: [
             "NEXT_MOVE",
             "PREVIOUS_MOVE",
@@ -50,12 +51,12 @@ export const KEYBIND_GROUPS = [
     },
     {
         id: "editing",
-        emoji: "✏️",
+        emoji: emojiOf("editing"),
         actions: ["UNDO", "REDO", "DELETE_MOVE", "CLEAR_SHAPES", "SWAP_ORIENTATION"],
     },
     {
         id: "annotations",
-        emoji: "✍️",
+        emoji: emojiOf("annotations"),
         actions: [
             "ANNOTATION_BRILLIANT",
             "ANNOTATION_GOOD",
@@ -69,7 +70,7 @@ export const KEYBIND_GROUPS = [
     },
     {
         id: "engine",
-        emoji: "🧠",
+        emoji: emojiOf("engine"),
         actions: [
             "PLAY_BEST_ENGINE_MOVE",
             "TOGGLE_THREAT_MODE",
@@ -81,7 +82,7 @@ export const KEYBIND_GROUPS = [
     },
     {
         id: "panels",
-        emoji: "📋",
+        emoji: emojiOf("panels"),
         actions: [
             "PRACTICE_TAB",
             "ANALYSIS_TAB",

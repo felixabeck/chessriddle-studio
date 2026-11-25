@@ -5,6 +5,7 @@ import type {
     WorkspaceEntry,
     WorkspaceListing,
 } from "@/bindings";
+import { emojiOf } from "@/components/common/iconCatalog";
 import { i18nKey } from "@/utils/i18nKey";
 import {
     capabilityKey,
@@ -25,11 +26,11 @@ export const FILE_TYPES = [
 ] as const satisfies readonly { translationKey: string; value: FileType }[];
 
 export const FILE_TYPE_EMOJI: Record<FileType, string> = {
-    game: "♟️",
-    repertoire: "📖",
-    tournament: "🏆",
-    puzzle: "🧩",
-    other: "📜",
+    game: emojiOf("game"),
+    repertoire: emojiOf("repertoire"),
+    tournament: emojiOf("tournament"),
+    puzzle: emojiOf("puzzles"),
+    other: emojiOf("otherFile"),
 };
 
 export const fileInfoMetadataSchema = z.object({

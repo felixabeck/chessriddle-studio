@@ -105,7 +105,8 @@ vi.mock("@mantine/core", async () => {
     Button: Wrapper,
   };
 });
-vi.mock("lucide-react", () => ({
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
   ArrowDownRight: () => null,
   ArrowRight: () => null,
   ArrowUpRight: () => null,

@@ -1,4 +1,6 @@
-/** Tab order of the settings browser; titles come from `settingCategoryTitle` below; category descriptions live in SettingsPage `categoryInfo`; emojis live in this file. */
+import { emojiOf } from "@/components/common/iconCatalog";
+
+/** Tab order of the settings browser; titles come from `settingCategoryTitle` below; category descriptions live in SettingsPage `categoryInfo`; emoji come from the icon catalogue. */
 export const SETTING_CATEGORIES = [
     "board",
     "analysis",
@@ -41,25 +43,25 @@ export const SETTING_CONTENT_GROUPS = [
 export type SettingContentGroup = (typeof SETTING_CONTENT_GROUPS)[number];
 
 export const SETTING_CATEGORY_EMOJI: Record<SettingCategory, string> = {
-    board: "♟️",
-    analysis: "🔍",
-    repertoire: "📖",
-    coach: "💬",
-    general: "⚙️",
-    sound: "🔊",
-    keybinds: "⌨️",
-    directories: "🗃️",
-    advanced: "🧪",
+    board: emojiOf("board"),
+    analysis: emojiOf("analysis"),
+    repertoire: emojiOf("repertoire"),
+    coach: emojiOf("coach"),
+    general: emojiOf("settings"),
+    sound: emojiOf("sound"),
+    keybinds: emojiOf("keyboard"),
+    directories: emojiOf("library"),
+    advanced: emojiOf("advanced"),
 };
 
 export const SETTING_CONTENT_GROUP_EMOJI: Record<SettingContentGroup, string> = {
-    look: "🎨",
-    highlights: "✨",
-    movingPieces: "🖱️",
-    arrowsDrawing: "🏹",
-    notation: "📝",
-    navigating: "🧭",
-    layoutSaving: "📋",
+    look: emojiOf("look"),
+    highlights: emojiOf("highlights"),
+    movingPieces: emojiOf("movingPieces"),
+    arrowsDrawing: emojiOf("arrowsDrawing"),
+    notation: emojiOf("notation"),
+    navigating: emojiOf("navigating"),
+    layoutSaving: emojiOf("layoutSaving"),
 };
 
 /** Last-move highlight colour and opacity nest under the highlight switch. */

@@ -84,7 +84,10 @@ vi.mock("./PersonalCard", () => ({
     );
   },
 }));
-vi.mock("lucide-react", () => ({ DatabaseX: () => null }));
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
+  DatabaseX: () => null,
+}));
 vi.mock("@mantine/core", () => ({
   Alert: ({ children, title }: { children: React.ReactNode; title?: React.ReactNode }) => (
     <div role="alert">

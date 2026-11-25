@@ -53,7 +53,8 @@ vi.mock("../common/IconAction", () => ({
     <button type="button" aria-label={label} onClick={onClick} />
   ),
 }));
-vi.mock("lucide-react", () => ({
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
   Check: () => null,
   Pencil: () => null,
   Trash2: () => null,

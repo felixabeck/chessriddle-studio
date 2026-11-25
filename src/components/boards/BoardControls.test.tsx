@@ -36,7 +36,8 @@ vi.mock("@mantine/core", () => ({
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("lucide-react", () => ({
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
   Undo2: () => null,
   Redo2: () => null,
   Camera: () => null,

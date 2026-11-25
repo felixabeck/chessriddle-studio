@@ -1,6 +1,6 @@
 import { libraryButtonProps, libraryClasses } from "@/components/library/presentation";
 import { Box, Button, Group, Loader, Rating, Stack, Text } from "@mantine/core";
-import { Database } from "lucide-react";
+import { DatabaseIcon } from "@/components/common/iconCatalog";
 import { useTranslation } from "react-i18next";
 import { databaseHandleKey, sameDatabaseHandle } from "@/utils/db";
 import { formatBytes, formatNumber } from "@/utils/format";
@@ -46,7 +46,7 @@ export function DatabaseLibraryRow({
         <div className={libraryClasses.databaseMain}>
           <div className={libraryClasses.databaseName}>
             <span className={libraryClasses.databaseIcon} aria-hidden>
-              <Database size="1.125rem" />
+              <DatabaseIcon size="1.125rem" />
             </span>
             <Box miw={0}>
               <Text fw={600} fz="sm" className="wrap-anywhere">

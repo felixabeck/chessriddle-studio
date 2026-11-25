@@ -1,5 +1,12 @@
 import { SimpleGrid, Stack, TextInput } from "@mantine/core";
-import { ChevronRight, ChevronsRight, Clock4, Flame, Hourglass, Send } from "lucide-react";
+import {
+  UltraBulletIcon,
+  BulletIcon,
+  BlitzIcon,
+  RapidIcon,
+  ClassicalIcon,
+  CorrespondenceIcon,
+} from "@/components/common/iconCatalog";
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
@@ -29,12 +36,12 @@ const LichessOptionsPanel = () => {
   function mapTimeControl(speed: LichessGameSpeed): ToggleButtonGroupOption<LichessGameSpeed> {
     const name = `${speed.charAt(0).toUpperCase()}${speed.slice(1)}`;
     const icon = match(speed)
-      .with("ultraBullet", () => <ChevronsRight />)
-      .with("bullet", () => <ChevronRight />)
-      .with("blitz", () => <Flame />)
-      .with("rapid", () => <Hourglass />)
-      .with("classical", () => <Clock4 />)
-      .with("correspondence", () => <Send />)
+      .with("ultraBullet", () => <UltraBulletIcon />)
+      .with("bullet", () => <BulletIcon />)
+      .with("blitz", () => <BlitzIcon />)
+      .with("rapid", () => <RapidIcon />)
+      .with("classical", () => <ClassicalIcon />)
+      .with("correspondence", () => <CorrespondenceIcon />)
       .exhaustive();
     return {
       content: icon,

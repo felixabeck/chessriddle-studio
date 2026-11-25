@@ -7,7 +7,8 @@ import { OpponentForm } from "./OpponentForm";
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-vi.mock("lucide-react", () => ({
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
   Brain: () => null,
   User: () => null,
 }));

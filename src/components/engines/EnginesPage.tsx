@@ -15,7 +15,8 @@ import {
   Title,
 } from "@mantine/core";
 import InstallStockfishButton from "./InstallStockfishButton";
-import { Cloud, Brain, Plus, Search } from "lucide-react";
+import { Cloud, Plus, Search } from "lucide-react";
+import { EngineIcon } from "@/components/common/iconCatalog";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useStore } from "jotai";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -151,7 +152,7 @@ export default function EnginesPage() {
               <Center h="100%">
                 <Stack align="center" gap="sm">
                   <ThemeIcon size={64} radius="100%" variant="light" color="gray">
-                    <Brain size={32} />
+                    <EngineIcon size={32} />
                   </ThemeIcon>
                   <Text c="dimmed" fw={500} ta="center">
                     {hasSearch ? t("Common.NoResults") : t("Engines.Empty.NoInstalled")}
@@ -179,7 +180,7 @@ export default function EnginesPage() {
             <Center h="100%">
               <Stack align="center" gap="sm">
                 <ThemeIcon size={80} radius="100%" variant="light" color="gray">
-                  <Brain size={40} />
+                  <EngineIcon size={40} />
                 </ThemeIcon>
                 <Text c="dimmed" fw={500} size="lg">
                   {t("Engines.Settings.NoEngine")}
@@ -310,7 +311,7 @@ export function EngineName({ engine, compact = false }: { engine: Engine; compac
       <EnginePortrait
         engine={engine}
         imageProps={{ h: "2.5rem", fit: "contain", flex: 0 }}
-        fallback={engine.type !== "local" ? <Cloud size="2.5rem" /> : <Brain size="2.5rem" />}
+        fallback={engine.type !== "local" ? <Cloud size="2.5rem" /> : <EngineIcon size="2.5rem" />}
       />
       <Stack gap={0} miw={0}>
         <Text

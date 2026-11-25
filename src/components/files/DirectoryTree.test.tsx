@@ -29,7 +29,8 @@ vi.mock("@mantine/core", () => ({
     <span {...props}>{children}</span>
   ),
 }));
-vi.mock("lucide-react", () => ({
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
   Database: () => null,
   FileText: () => null,
   Folder: () => null,

@@ -222,7 +222,8 @@ vi.mock("@mantine/core", () => ({
   Title: ({ children }: { children: React.ReactNode }) => <h1>{children}</h1>,
   UnstyledButton: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
 }));
-vi.mock("lucide-react", () => ({
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
   ChevronDown: () => null,
   ChevronRight: () => null,
   Cloud: () => <svg aria-label="cloud" />,

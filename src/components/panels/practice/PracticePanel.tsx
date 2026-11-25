@@ -14,7 +14,8 @@ import {
   ThemeIcon,
 } from "@mantine/core";
 import { useToggle } from "@mantine/hooks";
-import { Undo2, BookOpen, Check, Info, Target, X } from "lucide-react";
+import { Undo2, Check, Info, Target, X } from "lucide-react";
+import { RepertoireIcon } from "@/components/common/iconCatalog";
 import { useAtom, useAtomValue } from "jotai";
 import { useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -352,7 +353,7 @@ function PracticePanel() {
                               onClick={startFullPractice}
                               style={PRACTICE_START_BUTTON_STYLE}
                               disabled={!deckCanWrite}
-                              leftSection={<BookOpen size={20} />}
+                              leftSection={<RepertoireIcon size={20} />}
                               justify="space-between"
                               rightSection={
                                 <Badge size="sm" color="gray">

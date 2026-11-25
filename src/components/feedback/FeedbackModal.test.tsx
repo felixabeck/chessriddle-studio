@@ -988,7 +988,7 @@ test("type segments render decorative emojis beside plain translated labels", as
     { emoji: "🐛", label: "Feedback.Type.Bug" },
     { emoji: "💡", label: "Feedback.Type.Suggestion" },
     { emoji: "⭐", label: "Feedback.Type.Praise" },
-    { emoji: "💬", label: "Feedback.Type.Other" },
+    { emoji: "✉️", label: "Feedback.Type.Other" },
   ]);
 });
 

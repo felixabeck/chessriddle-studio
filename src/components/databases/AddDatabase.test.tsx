@@ -144,7 +144,11 @@ vi.mock("@mantine/core", () => ({
     </label>
   ),
 }));
-vi.mock("lucide-react", () => ({ AlertCircle: () => null, X: () => null }));
+vi.mock("lucide-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("lucide-react")>()),
+  AlertCircle: () => null,
+  X: () => null,
+}));
 
 import { TauriCommandError } from "@/platform/tauri";
 import { convertLocalDatabase } from "./AddDatabase";

@@ -243,12 +243,12 @@ vi.mock("./usePracticeStatistics", () => {
   };
 });
 vi.mock("./useDeckWeights", () => ({ useDeckWeights: vi.fn() }));
-vi.mock("lucide-react", () => {
+vi.mock("lucide-react", async (importOriginal) => {
   const Icon = () => null;
   return {
+    ...(await importOriginal<typeof import("lucide-react")>()),
     Undo2: Icon,
     ArrowRight: Icon,
-    BookOpen: Icon,
     Check: Icon,
     Flame: Icon,
     Info: Icon,

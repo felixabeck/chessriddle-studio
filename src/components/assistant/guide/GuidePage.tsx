@@ -10,6 +10,7 @@ import {
   type GroupedSidebarGroup,
   type GroupedSidebarTab,
 } from "@/components/common/GroupedSidebarTabs";
+import { emojiOf } from "@/components/common/iconCatalog";
 import shellClasses from "@/components/common/SidebarTabsPage.module.css";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import { useTabCommands } from "@/components/tabs/TabCommands";
@@ -41,7 +42,7 @@ function getTopicVisuals(topicId: string): { emoji: string; accentVar: string } 
   const entry = TOPIC_VISUALS.get(topicId);
   const accent: HelpTopicAccent = entry?.accent ?? "chart-6";
   return {
-    emoji: entry?.emoji ?? "📄",
+    emoji: entry?.emoji ?? emojiOf("guideTopic"),
     accentVar: `var(--cf-${accent})`,
   };
 }
