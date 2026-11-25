@@ -29268,3 +29268,22 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Found by:** Claude Code (orchestrator), WebKit probe during the hide-preview-moves change.
 * **Handled (2026-11-25, hide-preview-moves change):** `41566cf64` blurs the hidden rows themselves (`filter: blur(8px)`, `HIDDEN_NOTATION_FILTER` on the `data-notation-rows` container in `GameNotation.tsx`) instead of relying on the overlay's backdrop filter, which is removed; the overlay keeps pointer blocking, the tint and the preview's Show moves button. Verified in Playwright WebKit 2336 against the built renderer: Files preview, database preview and an opened analysis tab with hidden notation now show blurred moves, readable again after Show moves. Guarded by `GameNotation.test.tsx` (rows carry the filter when hidden, red without it) and the `files-preview` e2e test (computed `filter: blur(8px)` while hidden, `none` after reveal). Full container e2e green (529 passed).
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3fb040ecfe37b1eb0c2f8f43637f44598b3b98137441229307094c56b45335eb","header_sha256":"8ee1b32d0241a4226725e0410f07c7ee34c1cc0d98ae1d49ce7dc546676ee90d","header_status":"handled","input_sha256":"eb77595c93e5594310332051afbc6ff903e41f010c9a2a29c40cdacc731487fc","kind":"mutation-receipt","operation":"9dd3dee3e78c36419cefa837051149e832b41aae9fb9b24c65ef4d4255e61d56","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-10"],"target":"f-20261125-10","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The "All records per page" build-ledger row fails the ledger format check
+
+* **ID:** f-20261125-11 · **Status:** open · **Area:** docs-agent-config · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45593590523
+* **First red:** run 45593590523 on `4b106cb7a` (the push that added the row; the previous Test run 45588162516 on `8e30bfd2e` was green, and run 45593539074 on `ddc548e02` was still in progress when filed)
+* **Repair owner:** aa0c18e7-9bf2-49a4-98dd-0a9d30beb05c on tuxedo-atlas, 2026-11-25T10:25:52Z
+* **Spotted outside diff:** yes
+* **Where:** `tasks/build-ledger.md:379`, column `plan_adopted_per_round`
+* **Defect:** the row recorded by `4b106cb7a` writes `not recorded per round` in `plan_adopted_per_round`; the build-ledger check accepts only labelled counts such as `r1=6 r2=2 r3=0` or the literal `not-recorded`.
+* **Failure scenario:** job `frontend` of Test run 45593590523 and the local contract gate both fail with "tasks/build-ledger.md:379: plan_adopted_per_round cell 'not recorded per round' is not well-formed — expected 'r1=6 r2=2 r3=0' (labelled counts) or 'not-recorded'". The red `Test` run refuses every later push to master, and every local `pnpm gates:push` is red.
+* **Fix:** write `not-recorded` in that cell; the row's meaning is unchanged.
+* **Proof:** `pnpm gates:contract:check` green; the next `Test` run's `frontend` job succeeds.
+* **Found by:** Claude Code (Opus 5.5), Dim theme push, 2026-11-25
