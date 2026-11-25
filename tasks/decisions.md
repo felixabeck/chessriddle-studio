@@ -14501,3 +14501,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The growth is the feature Felix ordered, measured on an exact base. Reversal path: restore `"total": 2320000` in `bundle-budgets.json` once a smaller production build fits it.
 * **Decided by:** Claude Code (Opus 5.5) build, full auto, 2026-11-25 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"a35a416feaaff61f93204b1f4d076b4e5a378607c32a58015466479a21b26e57","input_sha256":"f64436d43607463c64ea0b084206bcdcb2568361139433110a7fffbad0cc58dc","kind":"mutation-receipt","operation":"b4a4a3cf1941d05c293ac4abf5abf3deb803dd3f7a3a6bf5862696b11b91370f","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-11"],"target":"decisions-ledger","v":1} -->
+
+### d-20261125-15 — Does "All" records per page still need a bundle ceiling change after rebasing onto the regrouped Settings?
+
+* **Question:** d-20261125-11 raised the total ceiling to 2,330,000 B for "All" records per page on base `f4fef6544`. Upstream has since raised the total ceiling to 2,380,000 B (d-20261125-12). Does the rebased change still need a ceiling change?
+* **Governs:** -
+* **Chosen:** No ceiling change. Exact base `5f8988937` measured 609,112 B entry, 580,358 B largest lazy and 2,370,371 B total; the rebased candidate `41ee4dd23` measured 609,285 B, 580,435 B and 2,376,228 B, all gzip, both with `vite build` and production `buildBundleReport`, byte-identical `package.json`, `pnpm-lock.yaml` and `vite.config.ts` and the same installed dependencies, each in a temporary detached worktree removed after measurement. Deltas +173 B entry, +77 B largest lazy, +5,857 B total; every value stays under the unchanged ceilings (610,000 B, 590,000 B, 2,380,000 B). `bundle-budgets.json` and `docs/bundle-budgets.md` stay as upstream left them. Supersedes d-20261125-11.
+* **Rejected:** Keeping d-20261125-11's 2,330,000 B: it would lower upstream's ceiling below the measured base.
+* **Reason:** The ceilings only rise when a measured build exceeds them (`docs/bundle-budgets.md`). Reversal path: none needed; a later red bundle gate follows the documented growth route.
+* **Decided by:** Claude Code (Opus 5.5) build, full auto, 2026-11-25 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"71f3fa35c792d51cb61c01bcb0929877955dedab4b3d750c2cf1da644a84d43d","input_sha256":"3a2f35607f072d5efcc32b01fd1d199464423b128d0b7b26cdcf807c048199ba","kind":"mutation-receipt","operation":"3da6bde4e7e8740a21fb12fa3d591ce89fa38f470394837ff1d6c6237370a1cb","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-15"],"target":"decisions-ledger","v":1} -->
