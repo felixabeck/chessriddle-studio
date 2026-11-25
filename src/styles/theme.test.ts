@@ -6,9 +6,22 @@ import {
     ANNOTATION_HUES,
     appCssVariablesResolver,
     chessRiddleTokens,
+    type ChessRiddleScheme,
     createAppTheme,
+    dimCssVariableOverrides,
+    dimThemeCss,
     scaleBreakpoint,
 } from "./theme";
+
+function resolvedScheme(theme: ReturnType<typeof mergeMantineTheme>, scheme: ChessRiddleScheme) {
+    if (scheme === "dim") {
+        return {
+            ...appCssVariablesResolver(theme).dark,
+            ...dimCssVariableOverrides(theme),
+        };
+    }
+    return appCssVariablesResolver(theme)[scheme];
+}
 
 describe("scaled theme breakpoints", () => {
     test("preserves Mantine's default breakpoints at 100%", () => {
@@ -70,10 +83,11 @@ describe("ChessRiddle foundation", () => {
             "hsl(30 10% 22%)",
             "hsl(40 20.7% 88.6%)",
         ],
+        ["dim", "hsl(30 6% 16%)", "hsl(30 6% 22%)", "hsl(30 6% 29%)", "hsl(30 6% 92%)"],
     ] as const)(
         "publishes all tokens and three surface tiers in %s",
         (scheme, background, card, inset, foreground) => {
-            const resolved = appCssVariablesResolver(theme)[scheme];
+            const resolved = resolvedScheme(theme, scheme);
             expect(resolved["--cf-background"]).toBe(background);
             expect(resolved["--cf-card"]).toBe(card);
             expect(resolved["--cf-surface-inset"]).toBe(inset);
@@ -87,6 +101,29 @@ describe("ChessRiddle foundation", () => {
             }
         },
     );
+
+    test("emits only dim-vs-dark variable diffs under the dim selector", () => {
+        const overrides = dimCssVariableOverrides(theme);
+        const darkResolved = appCssVariablesResolver(theme).dark;
+        const darkVars = darkResolved as Record<string, string>;
+        expect(
+            Object.entries(overrides)
+                .filter(([name]) => name in darkVars)
+                .every(([name, value]) => value !== darkVars[name]),
+        ).toBe(true);
+        expect(overrides["--cf-background"]).toBe("hsl(30 6% 16%)");
+        expect(overrides["--cf-bar-hover"]).toBe("hsl(30 6% 45%)");
+        expect(overrides["--mantine-color-dark-6"]).toBe("hsl(30 6% 22%)");
+        expect(overrides["--mantine-color-dark-7"]).toBe("hsl(30 6% 16%)");
+        const css = dimThemeCss(theme);
+        expect(
+            css.startsWith(
+                ':root[data-mantine-color-scheme="dark"][data-cf-theme-variant="dim"] {',
+            ),
+        ).toBe(true);
+        expect(css).toContain("--cf-background: hsl(30 6% 16%);");
+        expect(css).not.toContain("--cf-primary:");
+    });
 
     test("uses the self-hosted families and dimension-based radius scale", () => {
         expect(theme.fontFamily).toContain("Inter");
@@ -139,20 +176,22 @@ describe("notation mark colours", () => {
         const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
         return (high + 0.05) / (low + 0.05);
     };
-    /** Resolves the two forms the resolver publishes: a palette shade, or one mixed with black. */
+    /** Resolves a palette shade, or one mixed with black or white. */
     const resolve = (value: string): Rgb => {
         const shade = value.match(/var\(--mantine-color-(\w+)-(\d)\)/);
         if (!shade) throw new Error(`unparsed ${value}`);
         const color = hex(theme.colors[shade[1]][+shade[2]]);
         const mixed = value.match(
-            /^color-mix\(in srgb, var\(--mantine-color-\w+-\d\) (\d+)%, black\)$/,
+            /^color-mix\(in srgb, var\(--mantine-color-\w+-\d\) (\d+)%, (black|white)\)$/,
         );
-        if (mixed) return mix(color, [0, 0, 0], +mixed[1] / 100);
+        if (mixed) {
+            return mix(color, mixed[2] === "black" ? [0, 0, 0] : [255, 255, 255], +mixed[1] / 100);
+        }
         if (value === shade[0]) return color;
         throw new Error(`unparsed ${value}`);
     };
 
-    test.each(["light", "dark"] as const)(
+    test.each(["light", "dark", "dim"] as const)(
         "every mark hue reaches 4.5:1 on the card, inset blocks and the current-move fill in %s",
         (scheme) => {
             const tokens = chessRiddleTokens[scheme];
@@ -166,7 +205,7 @@ describe("notation mark colours", () => {
                 currentOnCard: mix(primary, card, 0.1),
                 currentOnInset: mix(primary, inset, 0.1),
             };
-            const resolved = appCssVariablesResolver(theme)[scheme];
+            const resolved = resolvedScheme(theme, scheme);
             const below: string[] = [];
             for (const hue of ANNOTATION_HUES) {
                 const text = resolve(resolved[`--cf-annotation-${hue}-text`]);
@@ -179,11 +218,11 @@ describe("notation mark colours", () => {
         },
     );
 
-    test.each(["light", "dark"] as const)(
+    test.each(["light", "dark", "dim"] as const)(
         "the open-variation mark reads as text on the card, the page and inset blocks in %s",
         (scheme) => {
             const tokens = chessRiddleTokens[scheme];
-            const value = appCssVariablesResolver(theme)[scheme]["--cf-open-variation"];
+            const value = resolvedScheme(theme, scheme)["--cf-open-variation"];
             const mixed = value.match(
                 /^color-mix\(in srgb, (hsl\([^)]+\)) (\d+)%, (black|white)\)$/,
             );
@@ -225,14 +264,18 @@ describe("notation mark colours", () => {
         throw new Error(`unparsed ${value}`);
     };
 
-    test.each(["light", "dark"] as const)(
+    test.each(["light", "dark", "dim"] as const)(
         "the glyph on every mark's fill reaches 4.5:1 at rest and on hover in %s",
         (scheme) => {
             const card = hsl(chessRiddleTokens[scheme].card);
-            const resolved = appCssVariablesResolver(theme)[scheme];
+            const resolved = resolvedScheme(theme, scheme);
             const below: string[] = [];
             for (const fill of ANNOTATION_FILLS) {
-                const filled = hex(theme.colors[fill][getPrimaryShade(theme, scheme)]);
+                const filled = hex(
+                    theme.colors[fill][
+                        getPrimaryShade(theme, scheme === "light" ? "light" : "dark")
+                    ],
+                );
                 const glyph = blackOrWhite(resolved[`--cf-annotation-${fill}-on-fill`]);
                 const surfaces: Record<string, Rgb> = { filled };
                 // The active Annotate button's hover: the fill at 90% over the panel card.
@@ -256,6 +299,32 @@ describe("notation mark colours", () => {
             );
         },
     );
+
+    test("dimmed secondary text reaches 4.5:1 on the dim card, page, inset and current-move fill", () => {
+        const tokens = chessRiddleTokens.dim;
+        const value = resolvedScheme(theme, "dim")["--mantine-color-dimmed"];
+        const mixed = value.match(/^color-mix\(in srgb, (hsl\([^)]+\)) (\d+)%, (hsl\([^)]+\))\)$/);
+        if (!mixed) throw new Error(`unparsed ${value}`);
+        expect(mixed[1]).toBe(tokens["muted-foreground"]);
+        expect(mixed[3]).toBe(tokens.foreground);
+        const text = mix(hsl(mixed[1]), hsl(mixed[3]), +mixed[2] / 100);
+        const card = hsl(tokens.card);
+        const inset = hsl(tokens["surface-inset"]);
+        const primary = hsl(tokens.primary);
+        const backgrounds = {
+            card,
+            page: hsl(tokens.background),
+            inset,
+            currentOnCard: mix(primary, card, 0.1),
+            currentOnInset: mix(primary, inset, 0.1),
+        };
+        const below: string[] = [];
+        for (const [name, background] of Object.entries(backgrounds)) {
+            const ratio = contrast(text, background);
+            if (ratio < 4.5) below.push(`${name}: ${ratio.toFixed(2)}`);
+        }
+        expect(below).toEqual([]);
+    });
 
     test("every hue a mark carries has a published text colour", () => {
         const hues = new Set(

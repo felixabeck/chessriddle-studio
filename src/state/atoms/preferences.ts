@@ -1,4 +1,5 @@
 /** App-wide display, board, sound and session preferences. */
+import type { MantineColorScheme } from "@mantine/core";
 import type { SetStateAction } from "react";
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
@@ -40,6 +41,21 @@ export const fontSizeAtom = atomWithStorage(
     "font-size",
     FONT_SCALE_DEFAULT,
     createZodStorage(fontScaleSchema, localStorage),
+);
+
+const THEME_VARIANTS = ["default", "dim"] as const;
+export type ThemeVariant = (typeof THEME_VARIANTS)[number];
+
+export function isDimActive(colorScheme: MantineColorScheme, variant: ThemeVariant) {
+    return colorScheme === "dark" && variant === "dim";
+}
+
+// Hydrated with the document's eager preferences, so a stored Dim applies on the first render
+// instead of painting Dark first.
+export const themeVariantAtom = documentPreferences.atomWithStorage<ThemeVariant>(
+    "theme-variant",
+    "default",
+    createZodStorage(z.enum(THEME_VARIANTS), localStorage),
 );
 
 export const pieceSizeAtom = atomWithStorage(

@@ -56,130 +56,160 @@ import modalClasses from "./Modal.module.css";
 import notificationClasses from "./Notification.module.css";
 
 /** Copied from ChessRiddle's executable globals.css. Keep values here, not at call sites. */
-export const chessRiddleTokens = {
-    light: {
-        background: "hsl(48 29% 97.1%)",
-        foreground: "hsl(0 0% 16.5%)",
-        card: "hsl(0 0% 100%)",
-        "card-foreground": "hsl(0 0% 16.5%)",
-        popover: "hsl(0 0% 100%)",
-        "popover-foreground": "hsl(0 0% 16.5%)",
-        "surface-inset": "hsl(40 25% 91%)",
-        primary: "hsl(45 76% 24%)",
-        "primary-foreground": "hsl(0 0% 100%)",
-        secondary: "hsl(40 20% 95.3%)",
-        "secondary-foreground": "hsl(30 18% 25%)",
-        muted: "hsl(40 22% 93%)",
-        "muted-foreground": "hsl(0 0% 53.3%)",
-        accent: "hsl(40 20% 95.3%)",
-        "accent-foreground": "hsl(30 18% 25%)",
-        destructive: "hsl(0 55% 50%)",
-        "destructive-foreground": "hsl(0 0% 100%)",
-        border: "hsl(42 22.2% 90.6%)",
-        "border-strong": "hsl(42 18% 79%)",
-        input: "hsl(42 25% 88.2%)",
-        ring: "hsl(45 76% 24%)",
-        radius: "0.75rem",
-        "chart-1": "hsl(42 60% 45%)",
-        "chart-2": "hsl(135 45% 40%)",
-        "move-correct": "hsl(161 94% 30%)",
-        "move-incorrect": "hsl(0 72% 51%)",
-        "chart-3": "hsl(0 55% 50%)",
-        "chart-4": "hsl(30 25.2% 50.2%)",
-        "chart-5": "hsl(43 76.5% 30.8%)",
-        "chart-6": "hsl(210 50% 50%)",
-        "chart-7": "hsl(280 55% 45%)",
-        "chart-8": "hsl(175 55% 35%)",
-        "shadow-elevated": "0 8px 24px hsl(0 0% 0% / 0.08)",
-        "resize-handle": "hsl(0 0% 0% / 0.5)",
-        warning: "hsl(30 80% 55%)",
-        "warning-foreground": "hsl(0 0% 100%)",
-        "tier-expert": "hsl(199 89% 48%)",
-        "tier-skilled": "hsl(45 93% 47%)",
-        "tier-apprentice": "hsl(215 14% 58%)",
-        "tier-novice": "hsl(26 70% 42%)",
-        "eval-bar-dark": "hsl(37 5% 23%)",
-        "eval-bar-light": "hsl(37 10% 68%)",
-        "eval-bar-center": "hsl(48 91% 44%)",
-        interactive: "hsl(40 20% 96%)",
-        "interactive-hover": "hsl(40 22% 93%)",
-        "bar-hover": "hsl(40 20% 80%)",
-        inset: "hsl(40 25% 50% / 0.08)",
-        "square-highlight-correct": "hsl(120 50% 60% / 0.6)",
-        "square-highlight-wrong": "hsl(0 80% 70% / 0.6)",
-        "square-highlight-ring": "hsl(0 0% 100% / 0.8)",
-        "shadow-card": "0 2px 8px rgba(0, 0, 0, 0.04)",
-        "shadow-card-dark": "0 2px 8px rgba(0, 0, 0, 0.2)",
-        "shadow-gold": "0 4px 12px rgba(201, 165, 78, 0.25)",
-        "radius-xs": "4px",
-        "radius-sm": "8px",
-        "radius-md": "12px",
-        "radius-lg": "16px",
-        "radius-pill": "20px",
-        "radius-full": "9999px",
-    },
-    dark: {
-        background: "hsl(20 11.1% 5.8%)",
-        foreground: "hsl(40 20.7% 88.6%)",
-        card: "hsl(30 8.5% 13.5%)",
-        "card-foreground": "hsl(40 20.7% 88.6%)",
-        popover: "hsl(30 8.5% 13.5%)",
-        "popover-foreground": "hsl(40 20.7% 88.6%)",
-        "surface-inset": "hsl(30 10% 22%)",
-        primary: "hsl(42 53.2% 54.7%)",
-        "primary-foreground": "hsl(0 0% 4%)",
-        secondary: "hsl(30 8.5% 13.5%)",
-        "secondary-foreground": "hsl(40 20.7% 88.6%)",
-        muted: "hsl(30 10% 17%)",
-        "muted-foreground": "hsl(0 0% 53.3%)",
-        accent: "hsl(30 8.5% 13.5%)",
-        "accent-foreground": "hsl(42 53.2% 54.7%)",
-        destructive: "hsl(0 46.8% 56.5%)",
-        "destructive-foreground": "hsl(40 20.7% 88.6%)",
-        border: "hsl(30 10.5% 24%)",
-        "border-strong": "hsl(30 10% 34%)",
-        input: "hsl(30 10.5% 24%)",
-        ring: "hsl(42 53.2% 54.7%)",
-        radius: "0.75rem",
-        "chart-1": "hsl(42 53.2% 54.7%)",
-        "chart-2": "hsl(135 26.8% 48.2%)",
-        "move-correct": "hsl(158 64% 52%)",
-        "move-incorrect": "hsl(0 91% 71%)",
-        "chart-3": "hsl(0 46.8% 56.5%)",
-        "chart-4": "hsl(30 25.2% 50.2%)",
-        "chart-5": "hsl(41 49.2% 36.3%)",
-        "chart-6": "hsl(210 40% 55%)",
-        "chart-7": "hsl(280 60% 65%)",
-        "chart-8": "hsl(175 50% 52%)",
-        "shadow-elevated": "0 8px 24px hsl(0 0% 0% / 0.3)",
-        "resize-handle": "hsl(0 0% 0% / 0.5)",
-        warning: "hsl(30 70% 50%)",
-        "warning-foreground": "hsl(0 0% 100%)",
-        "tier-expert": "hsl(199 89% 58%)",
-        "tier-skilled": "hsl(30 90% 55%)",
-        "tier-apprentice": "hsl(215 14% 68%)",
-        "tier-novice": "hsl(15 50% 45%)",
-        "eval-bar-dark": "hsl(37 5% 23%)",
-        "eval-bar-light": "hsl(37 10% 68%)",
-        "eval-bar-center": "hsl(48 91% 44%)",
-        interactive: "hsl(30 10% 17.5%)",
-        "interactive-hover": "hsl(30 12% 24%)",
-        "bar-hover": "hsl(30 10% 38%)",
-        inset: "hsl(40 20.7% 88.6% / 0.08)",
-        "square-highlight-correct": "hsl(120 50% 60% / 0.6)",
-        "square-highlight-wrong": "hsl(0 80% 70% / 0.6)",
-        "square-highlight-ring": "hsl(0 0% 100% / 0.8)",
-        "shadow-card": "0 2px 8px rgba(0, 0, 0, 0.04)",
-        "shadow-card-dark": "0 2px 8px rgba(0, 0, 0, 0.2)",
-        "shadow-gold": "0 4px 12px rgba(201, 165, 78, 0.25)",
-        "radius-xs": "4px",
-        "radius-sm": "8px",
-        "radius-md": "12px",
-        "radius-lg": "16px",
-        "radius-pill": "20px",
-        "radius-full": "9999px",
-    },
+const light = {
+    background: "hsl(48 29% 97.1%)",
+    foreground: "hsl(0 0% 16.5%)",
+    card: "hsl(0 0% 100%)",
+    "card-foreground": "hsl(0 0% 16.5%)",
+    popover: "hsl(0 0% 100%)",
+    "popover-foreground": "hsl(0 0% 16.5%)",
+    "surface-inset": "hsl(40 25% 91%)",
+    primary: "hsl(45 76% 24%)",
+    "primary-foreground": "hsl(0 0% 100%)",
+    secondary: "hsl(40 20% 95.3%)",
+    "secondary-foreground": "hsl(30 18% 25%)",
+    muted: "hsl(40 22% 93%)",
+    "muted-foreground": "hsl(0 0% 53.3%)",
+    accent: "hsl(40 20% 95.3%)",
+    "accent-foreground": "hsl(30 18% 25%)",
+    destructive: "hsl(0 55% 50%)",
+    "destructive-foreground": "hsl(0 0% 100%)",
+    border: "hsl(42 22.2% 90.6%)",
+    "border-strong": "hsl(42 18% 79%)",
+    input: "hsl(42 25% 88.2%)",
+    ring: "hsl(45 76% 24%)",
+    radius: "0.75rem",
+    "chart-1": "hsl(42 60% 45%)",
+    "chart-2": "hsl(135 45% 40%)",
+    "move-correct": "hsl(161 94% 30%)",
+    "move-incorrect": "hsl(0 72% 51%)",
+    "chart-3": "hsl(0 55% 50%)",
+    "chart-4": "hsl(30 25.2% 50.2%)",
+    "chart-5": "hsl(43 76.5% 30.8%)",
+    "chart-6": "hsl(210 50% 50%)",
+    "chart-7": "hsl(280 55% 45%)",
+    "chart-8": "hsl(175 55% 35%)",
+    "shadow-elevated": "0 8px 24px hsl(0 0% 0% / 0.08)",
+    "resize-handle": "hsl(0 0% 0% / 0.5)",
+    warning: "hsl(30 80% 55%)",
+    "warning-foreground": "hsl(0 0% 100%)",
+    "tier-expert": "hsl(199 89% 48%)",
+    "tier-skilled": "hsl(45 93% 47%)",
+    "tier-apprentice": "hsl(215 14% 58%)",
+    "tier-novice": "hsl(26 70% 42%)",
+    "eval-bar-dark": "hsl(37 5% 23%)",
+    "eval-bar-light": "hsl(37 10% 68%)",
+    "eval-bar-center": "hsl(48 91% 44%)",
+    interactive: "hsl(40 20% 96%)",
+    "interactive-hover": "hsl(40 22% 93%)",
+    "bar-hover": "hsl(40 20% 80%)",
+    inset: "hsl(40 25% 50% / 0.08)",
+    "square-highlight-correct": "hsl(120 50% 60% / 0.6)",
+    "square-highlight-wrong": "hsl(0 80% 70% / 0.6)",
+    "square-highlight-ring": "hsl(0 0% 100% / 0.8)",
+    "shadow-card": "0 2px 8px rgba(0, 0, 0, 0.04)",
+    "shadow-card-dark": "0 2px 8px rgba(0, 0, 0, 0.2)",
+    "shadow-gold": "0 4px 12px rgba(201, 165, 78, 0.25)",
+    "radius-xs": "4px",
+    "radius-sm": "8px",
+    "radius-md": "12px",
+    "radius-lg": "16px",
+    "radius-pill": "20px",
+    "radius-full": "9999px",
 } as const;
+
+const dark = {
+    background: "hsl(20 11.1% 5.8%)",
+    foreground: "hsl(40 20.7% 88.6%)",
+    card: "hsl(30 8.5% 13.5%)",
+    "card-foreground": "hsl(40 20.7% 88.6%)",
+    popover: "hsl(30 8.5% 13.5%)",
+    "popover-foreground": "hsl(40 20.7% 88.6%)",
+    "surface-inset": "hsl(30 10% 22%)",
+    primary: "hsl(42 53.2% 54.7%)",
+    "primary-foreground": "hsl(0 0% 4%)",
+    secondary: "hsl(30 8.5% 13.5%)",
+    "secondary-foreground": "hsl(40 20.7% 88.6%)",
+    muted: "hsl(30 10% 17%)",
+    "muted-foreground": "hsl(0 0% 53.3%)",
+    accent: "hsl(30 8.5% 13.5%)",
+    "accent-foreground": "hsl(42 53.2% 54.7%)",
+    destructive: "hsl(0 46.8% 56.5%)",
+    "destructive-foreground": "hsl(40 20.7% 88.6%)",
+    border: "hsl(30 10.5% 24%)",
+    "border-strong": "hsl(30 10% 34%)",
+    input: "hsl(30 10.5% 24%)",
+    ring: "hsl(42 53.2% 54.7%)",
+    radius: "0.75rem",
+    "chart-1": "hsl(42 53.2% 54.7%)",
+    "chart-2": "hsl(135 26.8% 48.2%)",
+    "move-correct": "hsl(158 64% 52%)",
+    "move-incorrect": "hsl(0 91% 71%)",
+    "chart-3": "hsl(0 46.8% 56.5%)",
+    "chart-4": "hsl(30 25.2% 50.2%)",
+    "chart-5": "hsl(41 49.2% 36.3%)",
+    "chart-6": "hsl(210 40% 55%)",
+    "chart-7": "hsl(280 60% 65%)",
+    "chart-8": "hsl(175 50% 52%)",
+    "shadow-elevated": "0 8px 24px hsl(0 0% 0% / 0.3)",
+    "resize-handle": "hsl(0 0% 0% / 0.5)",
+    warning: "hsl(30 70% 50%)",
+    "warning-foreground": "hsl(0 0% 100%)",
+    "tier-expert": "hsl(199 89% 58%)",
+    "tier-skilled": "hsl(30 90% 55%)",
+    "tier-apprentice": "hsl(215 14% 68%)",
+    "tier-novice": "hsl(15 50% 45%)",
+    "eval-bar-dark": "hsl(37 5% 23%)",
+    "eval-bar-light": "hsl(37 10% 68%)",
+    "eval-bar-center": "hsl(48 91% 44%)",
+    interactive: "hsl(30 10% 17.5%)",
+    "interactive-hover": "hsl(30 12% 24%)",
+    "bar-hover": "hsl(30 10% 38%)",
+    inset: "hsl(40 20.7% 88.6% / 0.08)",
+    "square-highlight-correct": "hsl(120 50% 60% / 0.6)",
+    "square-highlight-wrong": "hsl(0 80% 70% / 0.6)",
+    "square-highlight-ring": "hsl(0 0% 100% / 0.8)",
+    "shadow-card": "0 2px 8px rgba(0, 0, 0, 0.04)",
+    "shadow-card-dark": "0 2px 8px rgba(0, 0, 0, 0.2)",
+    "shadow-gold": "0 4px 12px rgba(201, 165, 78, 0.25)",
+    "radius-xs": "4px",
+    "radius-sm": "8px",
+    "radius-md": "12px",
+    "radius-lg": "16px",
+    "radius-pill": "20px",
+    "radius-full": "9999px",
+} as const;
+
+/** Dim is a variant of dark: ChessRiddle `.dark.dim` surface overrides, same accents. */
+const dim = {
+    ...dark,
+    background: "hsl(30 6% 16%)",
+    foreground: "hsl(30 6% 92%)",
+    card: "hsl(30 6% 22%)",
+    "card-foreground": "hsl(30 6% 92%)",
+    popover: "hsl(30 6% 22%)",
+    "popover-foreground": "hsl(30 6% 92%)",
+    "surface-inset": "hsl(30 6% 29%)",
+    secondary: "hsl(30 6% 22%)",
+    "secondary-foreground": "hsl(30 6% 92%)",
+    muted: "hsl(30 6% 20%)",
+    "muted-foreground": "hsl(30 6% 75%)",
+    accent: "hsl(30 6% 22%)",
+    "destructive-foreground": "hsl(30 6% 92%)",
+    border: "hsl(30 6% 33%)",
+    "border-strong": "hsl(30 6% 42%)",
+    input: "hsl(30 6% 33%)",
+    "shadow-elevated": "0 8px 24px hsl(0 0% 0% / 0.5)",
+    "eval-bar-dark": "hsl(30 5% 14%)",
+    interactive: "hsl(30 6% 25%)",
+    "interactive-hover": "hsl(30 6% 31%)",
+    // Warm step above dim surface-inset (29%), matching dark's visible lift over inset.
+    "bar-hover": "hsl(30 6% 45%)",
+    inset: "hsl(30 6% 92% / 0.08)",
+} as const;
+
+export const chessRiddleTokens = { light, dark, dim } as const;
+export type ChessRiddleScheme = keyof typeof chessRiddleTokens;
 
 /** The hues of the move-quality marks (`ANNOTATION_INFO` in `src/utils/annotation.ts`). */
 export const ANNOTATION_HUES = ["cyan", "teal", "lime", "yellow", "orange", "red"] as const;
@@ -193,12 +223,17 @@ function isAnnotationHue(color: string): color is AnnotationHue {
  * Text in a mark's hue keeps its meaning (DESIGN.md) but must read at WCAG AA 4.5:1 on the card,
  * the surface-inset variation blocks and the 10% gold current-move fill. In light even shade 9 of
  * yellow and lime stays near 3:1 on white, so the text is shade 6 half-mixed with black; in dark
- * it is shade 3.
+ * it is shade 3. Dim uses the dark shade except red, which falls below 4.5:1 on the 10% gold fill
+ * over dim inset and is mixed toward white.
  */
-function annotationTextShade(hue: AnnotationHue, scheme: "light" | "dark") {
-    return scheme === "light"
-        ? `color-mix(in srgb, var(--mantine-color-${hue}-6) 50%, black)`
-        : `var(--mantine-color-${hue}-3)`;
+function annotationTextShade(hue: AnnotationHue, scheme: ChessRiddleScheme) {
+    if (scheme === "light") {
+        return `color-mix(in srgb, var(--mantine-color-${hue}-6) 50%, black)`;
+    }
+    if (scheme === "dim" && hue === "red") {
+        return "color-mix(in srgb, var(--mantine-color-red-3) 85%, white)";
+    }
+    return `var(--mantine-color-${hue}-3)`;
 }
 
 /** The palettes a mark's board badge or active Annotate button fills: its hue, gray without one. */
@@ -214,14 +249,16 @@ export type AnnotationFill = (typeof ANNOTATION_FILLS)[number];
 function annotationFillForeground(
     theme: MantineTheme,
     fill: AnnotationFill,
-    scheme: "light" | "dark",
+    scheme: ChessRiddleScheme,
 ) {
-    return isLightColor(theme.colors[fill][getPrimaryShade(theme, scheme)])
+    return isLightColor(
+        theme.colors[fill][getPrimaryShade(theme, scheme === "light" ? "light" : "dark")],
+    )
         ? "var(--mantine-color-black)"
         : "var(--mantine-color-white)";
 }
 
-function schemeVariables(theme: MantineTheme, scheme: "light" | "dark") {
+function schemeVariables(theme: MantineTheme, scheme: ChessRiddleScheme) {
     const tokens = chessRiddleTokens[scheme];
     const variables: Record<string, string> = Object.fromEntries(
         Object.entries(tokens).map(([name, value]) => [`--cf-${name}`, value]),
@@ -269,10 +306,13 @@ function schemeVariables(theme: MantineTheme, scheme: "light" | "dark") {
     }
     // The open-variation mark and its count: the info hue, which no move-quality mark uses,
     // shaded to read as text at 4.5:1 on the card, the page and the inset variation blocks.
+    // Dim inset is lighter than dark, so the mix leans further toward white.
     variables["--cf-open-variation"] =
         scheme === "light"
             ? `color-mix(in srgb, ${tokens["chart-6"]} 80%, black)`
-            : `color-mix(in srgb, ${tokens["chart-6"]} 70%, white)`;
+            : scheme === "dim"
+              ? `color-mix(in srgb, ${tokens["chart-6"]} 55%, white)`
+              : `color-mix(in srgb, ${tokens["chart-6"]} 70%, white)`;
     for (const fill of ANNOTATION_FILLS) {
         variables[`--cf-annotation-${fill}-on-fill`] = annotationFillForeground(
             theme,
@@ -288,6 +328,60 @@ export const appCssVariablesResolver: CSSVariablesResolver = (theme) => ({
     light: schemeVariables(theme, "light"),
     dark: schemeVariables(theme, "dark"),
 });
+
+const DIM_SELECTOR = ':root[data-mantine-color-scheme="dark"][data-cf-theme-variant="dim"]';
+
+const darkMantineScale: MantineColorsTuple = [
+    dark.foreground,
+    "#c8c0b4",
+    dark["muted-foreground"],
+    dark["border-strong"],
+    dark.border,
+    dark["surface-inset"],
+    dark.card,
+    dark.background,
+    "#0d0b0a",
+    "#0a0908",
+];
+
+/** Mantine `colors.dark` rebuilt from dim surface tokens. */
+const dimMantineScale: MantineColorsTuple = [
+    dim.foreground,
+    "hsl(30 6% 84%)",
+    dim["muted-foreground"],
+    dim["border-strong"],
+    dim.border,
+    dim["surface-inset"],
+    dim.card,
+    dim.background,
+    "hsl(30 6% 12%)",
+    "hsl(30 6% 9%)",
+];
+
+/** Variables whose dim value differs from dark, including Mantine's dark scale. */
+export function dimCssVariableOverrides(theme: MantineTheme): Record<string, string> {
+    const darkVariables = schemeVariables(theme, "dark");
+    const dimVariables = schemeVariables(theme, "dim");
+    const overrides: Record<string, string> = {};
+    for (const [name, value] of Object.entries(dimVariables)) {
+        if (darkVariables[name] !== value) {
+            overrides[name] = value;
+        }
+    }
+    dimMantineScale.forEach((value, index) => {
+        if (value !== darkMantineScale[index]) {
+            overrides[`--mantine-color-dark-${index}`] = value;
+        }
+    });
+    return overrides;
+}
+
+export function dimThemeCss(theme: MantineTheme): string {
+    const declarations = Object.entries(dimCssVariableOverrides(theme))
+        .map(([name, value]) => `${name}: ${value};`)
+        .join(" ");
+    return `${DIM_SELECTOR} { ${declarations} }`;
+}
 
 /** Media-query em uses the initial font size, so scale it with the app's root font. */
 export function scaleBreakpoint(widthEm: number, fontSize: number): string {
@@ -393,18 +487,7 @@ export function createAppTheme({
             success: semanticPalette(light["chart-2"], dark["chart-2"]),
             warning: semanticPalette(light.warning, dark.warning),
             info: semanticPalette(light["chart-6"], dark["chart-6"]),
-            dark: [
-                dark.foreground,
-                "#c8c0b4",
-                dark["muted-foreground"],
-                dark["border-strong"],
-                dark.border,
-                dark["surface-inset"],
-                dark.card,
-                dark.background,
-                "#0d0b0a",
-                "#0a0908",
-            ],
+            dark: darkMantineScale,
         },
         components: {
             Button: {

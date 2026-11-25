@@ -42,6 +42,7 @@ const colorSchemeManager = localStorageColorSchemeManager({
 const notificationMaxHeight = "calc(100dvh - 2 * var(--mantine-spacing-md))";
 
 import ErrorComponent from "@/components/ErrorComponent";
+import ThemeVariantSync from "@/styles/ThemeVariantSync";
 import { useConversionProgress } from "@/hooks/useConversionProgress";
 import { useDatabaseContentValidation } from "@/hooks/useDatabaseContentValidation";
 import { useDocumentLanguage } from "@/hooks/useDocumentLanguage";
@@ -281,6 +282,7 @@ export default function App() {
         defaultColorScheme="dark"
         theme={theme}
       >
+        <ThemeVariantSync />
         <ContextMenuProvider>
           <Notifications
             classNames={{ root: fixedNoticeToastRoot, notification: "wrap-anywhere" }}

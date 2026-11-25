@@ -6,9 +6,20 @@ ChessRiddle web is the visual source of truth. Copy executable values from
 `.claude/DESIGN.md` prose. There is no shared token package or automatic sync.
 
 `src/styles/theme.ts` is the single executable home of the copied values.
-`appCssVariablesResolver` publishes `--cf-*` variables for both schemes and maps
-Mantine's body, text, border and semantic variants onto them. Use these variables
-instead of repeating colour values at call sites.
+`appCssVariablesResolver` publishes the light and dark `--cf-*` variables and maps
+Mantine's body, text, border and semantic variants onto them. `dimThemeCss` emits
+the Dim overrides for a root that carries both Mantine's
+`data-mantine-color-scheme="dark"` and `data-cf-theme-variant="dim"`;
+`ThemeVariantSync` renders that stylesheet and sets or removes only
+`data-cf-theme-variant`. Use these variables instead of repeating colour values
+at call sites.
+
+Dim is a variant of Dark, not a third Mantine colour scheme. It overrides the
+surface tokens (page, card, inset, interactive, borders, muted text, elevated
+shadow, eval-bar-dark) copied from ChessRiddle's `.dark.dim` block and inherits
+Dark's accents (gold, charts, feedback, tiers, square highlights). Dim applies
+only while the explicit scheme is Dark with the Dim variant stored; choosing Dim
+sets both. Auto follows the system light or dark scheme and never yields Dim.
 
 ## Tokens and surfaces
 
@@ -79,7 +90,7 @@ and cards lg, and switches, segments and badges use full.
 | Inputs and select triggers | Inset or interactive fill, primary focus border and ring |
 | Combobox, Menu, Popover | Card surface, quiet gold border, rounded selected options; hovered items and the application-menu button take the `--cf-primary-hover` gold tint, never a gray |
 | Data tables | Hovered rows and sortable headers take the lighter, opaque `--cf-primary-row-hover` gold tint; a selected row keeps its own fill |
-| Notation moves | A plain move takes the translucent `--cf-move-hover` (warm beige) on hover, which reads on the card and on inset variation blocks and engine lines and stays quieter than the current move; the current move takes a gold fill and quiet gold ring, and a previewed engine-line move the same gold fill; annotated moves keep their annotation hue in `--cf-annotation-<hue>-text` (Mantine shade 6 half-mixed with black in light, shade 3 in dark), which reaches 4.5:1 on the card, the inset blocks and the current-move fill; the report's move-quality table and the evaluation-chart tooltip write marks in the same variable; moves after the game end are italic, and an unannotated one takes the dimmed secondary colour `--mantine-color-dimmed` that variations use — never reduced opacity, which would pull text below 4.5:1; on the analysis board, where a file is built, an open variation (a side line one move long) takes a 1px dashed frame in `--cf-open-variation`, painted over the cell 3px inside its top and bottom so its size, text colour and fill are untouched and frames in consecutive rows stay apart, and the tree stats line writes its count in the same variable: the info hue, which no move-quality mark uses, mixed 80% with black in light and 70% with white in dark so it reads as text at 4.5:1 on the card, the page and the inset blocks |
+| Notation moves | A plain move takes the translucent `--cf-move-hover` (warm beige) on hover, which reads on the card and on inset variation blocks and engine lines and stays quieter than the current move; the current move takes a gold fill and quiet gold ring, and a previewed engine-line move the same gold fill; annotated moves keep their annotation hue in `--cf-annotation-<hue>-text` (Mantine shade 6 half-mixed with black in light, shade 3 in dark; in Dim, red annotation text is shade 3 mixed 85% with white), which reaches 4.5:1 on the card, the inset blocks and the current-move fill; the report's move-quality table and the evaluation-chart tooltip write marks in the same variable; moves after the game end are italic, and an unannotated one takes the dimmed secondary colour `--mantine-color-dimmed` that variations use — never reduced opacity, which would pull text below 4.5:1; on the analysis board, where a file is built, an open variation (a side line one move long) takes a 1px dashed frame in `--cf-open-variation`, painted over the cell 3px inside its top and bottom so its size, text colour and fill are untouched and frames in consecutive rows stay apart, and the tree stats line writes its count in the same variable: the info hue, which no move-quality mark uses, mixed 80% with black in light, 70% with white in dark and 55% with white in Dim, so it reads as text at 4.5:1 on the card, the page and the inset blocks of each scheme |
 | Checkbox, Switch | Gold checked state, square checkbox and card switch thumb |
 | Badge | Primary, muted or semantic tinted pill with inset ring |
 | Slider, RangeSlider, Progress | Primary or explicit semantic fill |
@@ -185,7 +196,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Advanced filters and log filter | `EllipsisVertical`, `ListFilter` | Closest by meaning |
 | Empty engine logs | `Terminal` | Closest by meaning |
 | Repertoire start and Anarchy category | `Flag` | Closest by meaning |
-| Automatic, dark and light theme | `Monitor`, `Moon`, `Sun` | Closest by meaning |
+| Automatic, dark, dim and light theme | `Monitor`, `Moon`, `SunDim`, `Sun` | Closest by meaning |
 | Recent file time | `Clock` | Closest by meaning |
 | Account statistic increase and decrease | `ArrowUpRight`, `ArrowDownRight` | Closest by meaning |
 | Warning alert | `TriangleAlert` | Closest by meaning |
@@ -319,10 +330,11 @@ available, and the piece-set default remains `staunty`. ChessRiddle's wood grain
 switched off under Board → Look → Wood Texture (`d-20261031-03`).
 Board corners scale with the board: 3% of its width, capped at the default lg
 radius, so a main board keeps 16px and small previews keep their corner squares.
-Light, Dark and Auto keep their existing behaviour.
+Light, Dark and Auto keep their existing behaviour; Dim is the dark variant
+described under Tokens and surfaces.
 
 No hard-coded colours, no new icon library, no accent picker. Use the existing
 semantic variables and shared controls. Board-functional colours are the explicit
 exception above. To re-sync, compare the executable ChessRiddle CSS and control
 implementations, update `theme.ts` and the relevant component modules together,
-copy changed font subsets with their notices, and verify both colour schemes.
+copy changed font subsets with their notices, and verify Light, Dark and Dim.

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     useDocumentLanguage: vi.fn(),
     sessionPersistenceNotice: vi.fn((): React.ReactNode => null),
     automaticStockfishNotice: vi.fn((): React.ReactNode => null),
+    themeVariantSync: vi.fn((): React.ReactNode => null),
     notifications: vi.fn(
       (_props: { classNames: { root?: string }; styles?: { root?: unknown } }) => null,
     ),
@@ -106,6 +107,7 @@ vi.mock("react-dnd", () => ({
 }));
 vi.mock("react-dnd-html5-backend", () => ({ HTML5Backend: {} }));
 vi.mock("@/components/ErrorComponent", () => ({ default: () => null }));
+vi.mock("@/styles/ThemeVariantSync", () => ({ default: mocks.themeVariantSync }));
 vi.mock("@/hooks/useConversionProgress", () => ({
   useConversionProgress: mocks.useConversionProgress,
 }));
@@ -201,6 +203,7 @@ beforeEach(() => {
   mocks.sessionPersistenceNotice.mockClear();
   mocks.automaticStockfishNotice.mockClear();
   mocks.notifications.mockClear();
+  mocks.themeVariantSync.mockClear();
   mocks.useAtomValue.mockReset();
 
   storeValues = { referenceDb: undefined };
@@ -841,6 +844,8 @@ describe("App", () => {
       fontSize: 120,
     });
     expect(mocks.closeSplashscreen).toHaveBeenCalledOnce();
+    // The Dim variant's attribute and stylesheet come from ThemeVariantSync inside the provider.
+    expect(mocks.themeVariantSync).toHaveBeenCalled();
   });
 
   test("applies the persisted piece size on the document root", async () => {

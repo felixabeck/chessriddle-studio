@@ -11,7 +11,19 @@ const scheme = vi.hoisted(() => ({
   current: "auto" as "auto" | "light" | "dark",
   set: vi.fn<(value: string) => void>(),
 }));
+const variant = vi.hoisted(() => ({
+  current: "default" as "default" | "dim",
+  set: vi.fn<(value: "default" | "dim") => void>(),
+}));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("jotai", () => ({
+  useAtom: () => [variant.current, variant.set],
+}));
+vi.mock("@/state/atoms", () => ({
+  themeVariantAtom: {},
+  isDimActive: (colorScheme: string, variant: string) =>
+    colorScheme === "dark" && variant === "dim",
+}));
 vi.mock("@mantine/core", async () => {
   const actual = await vi.importActual<typeof import("@mantine/core")>("@mantine/core");
   return {
@@ -34,7 +46,10 @@ afterEach(() => {
   host?.remove();
   root = undefined;
   host = undefined;
+  scheme.current = "auto";
+  variant.current = "default";
   scheme.set.mockClear();
+  variant.set.mockClear();
 });
 
 async function renderThemeButton() {
@@ -51,14 +66,61 @@ async function renderThemeButton() {
   return host;
 }
 
-test("offers the three colour schemes and selects the chosen one", async () => {
+test("offers Auto, Light, Dark and Dim in that order and selects the chosen one", async () => {
   const page = await renderThemeButton();
   const options = [...page.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
-  expect(options.map((option) => option.value)).toEqual(["auto", "light", "dark"]);
+  expect(options.map((option) => option.value)).toEqual(["auto", "light", "dark", "dim"]);
   expect(options.find((option) => option.checked)?.value).toBe("auto");
+});
 
+test("selecting dim sets the colour scheme to dark and the variant to dim", async () => {
+  const page = await renderThemeButton();
+  const options = [...page.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+  await act(async () => options[3]!.click());
+  expect(scheme.set).toHaveBeenLastCalledWith("dark");
+  expect(variant.set).toHaveBeenLastCalledWith("dim");
+});
+
+test("selecting dark sets the colour scheme to dark and resets the variant", async () => {
+  variant.current = "dim";
+  scheme.current = "dark";
+  const page = await renderThemeButton();
+  const options = [...page.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
   await act(async () => options[2]!.click());
   expect(scheme.set).toHaveBeenLastCalledWith("dark");
+  expect(variant.set).toHaveBeenLastCalledWith("default");
+});
+
+test("the checked option under dark and dim is dim", async () => {
+  scheme.current = "dark";
+  variant.current = "dim";
+  const page = await renderThemeButton();
+  const options = [...page.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+  expect(options.find((option) => option.checked)?.value).toBe("dim");
+});
+
+test("stored dim with scheme auto is checked auto", async () => {
+  scheme.current = "auto";
+  variant.current = "dim";
+  const page = await renderThemeButton();
+  const options = [...page.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+  expect(options.find((option) => option.checked)?.value).toBe("auto");
+});
+
+test("stored dim with scheme light is checked light", async () => {
+  scheme.current = "light";
+  variant.current = "dim";
+  const page = await renderThemeButton();
+  const options = [...page.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+  expect(options.find((option) => option.checked)?.value).toBe("light");
+});
+
+test("selecting light changes only the colour scheme", async () => {
+  const page = await renderThemeButton();
+  const options = [...page.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+  await act(async () => options[1]!.click());
+  expect(scheme.set).toHaveBeenLastCalledWith("light");
+  expect(variant.set).not.toHaveBeenCalled();
 });
 
 // At a large font scale the toggle is wider than a compact Settings card (f-20260829-02): it has
