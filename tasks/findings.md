@@ -29163,3 +29163,17 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Found by:** Claude Code build run (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), post-push CI of opponent preparation, 2026-11-25.
 * **Handled (2026-11-25, Claude Code (Opus 5.5), opponent-preparation build, agy write leaf, agy lenses):** commit "fix(databases): keep the card tabs' narrow layout independent of stylesheet order" (07b2606d2). Not a snapshot move: the shared card stylesheet had changed the Openings tab's narrow layout through stylesheet order; overrides are now scoped under the tab root and the committed snapshot passes unchanged.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"a80401bbb2c61cc9021036da7318fe0e7f0576ab3e03cd7c99437b48639d3701","header_sha256":"b424d8afc7e2752d096876dc71aaa23bb075e3017b7fc58ba8b0ec58603a787b","header_status":"handled","input_sha256":"d966ba30f657e0f910e319afd9777882f1e506aa6e8dc9bd019556520bc96fe1","kind":"mutation-receipt","operation":"3341e615eddeeaf02b407630bb969fcc370333efffef3da20abe2c0671dabccb","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-04"],"target":"f-20261125-04","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The player card's Preparation and Openings tables use the raw muted token for text on the inset surface
+
+* **ID:** f-20261125-05 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **Where:** `src/components/databases/PlayerCardTab.module.css:60` (`.table th`), `src/components/databases/PlayerPreparation.module.css:56` (`.chapterTitle`), `src/components/databases/PlayerOpeningTree.module.css:68`, `:157`, `:249`; colour `var(--cf-muted-foreground)` (`hsl(0 0% 53.3%)`, #888888) on `--cf-surface-inset` (#eeeae2).
+* **Defect:** the card tabs colour secondary text with the exact muted token, which DESIGN.md keeps for non-text use; secondary text is meant to use Mantine's contrast-adjusted `--mantine-color-dimmed` (`hsl(0 0% 40%)` in light mode).
+* **Failure scenario (observed):** axe `color-contrast` in the new `e2e/online-opponent.spec.ts` (`assertAccessible()` on the opened Preparation card, 1440 px, light): the column headers "Line", "Moves", "Games", "Last played", "Uncovered move" and the chapter titles measure 2.95:1 at 12 px, below the required 4.5:1.
+* **Proof:** with `--mantine-color-dimmed` for these texts axe passes on the card; the moved snapshots differ only in the text colour.
+* **Found by:** Claude Code build run online-opponent (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), Phase 4 accessibility check, 2026-11-25. Introduced by the opponent-preparation build (`PlayerCardTab.module.css`, 2026-11-25) and the earlier Openings tab styles.
