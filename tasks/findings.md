@@ -29143,3 +29143,19 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario (observed):** Test run 45529959373 (first red, head `725e3384d`) and 45530194354, jobs `rust` and `rust-macos-test`: "batch peak 3192369 bytes for 1984 unreached positions (filter=None) exceeded half of per-position DashMap cost (4063232 bytes, single=2048)".
 * **Proof:** the test passes on the CI runners and still fails against the pre-change per-position `DashMap` allocation.
 * **Found by:** Claude Code build run (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), post-push CI of opponent preparation, 2026-11-25.
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The card's new Preparation tab moved the 320 px de-DE Openings snapshot and it was not re-recorded
+
+* **ID:** f-20261125-04 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45529959373
+* **Repair owner:** 5deefa91-5f88-4872-a94c-a87dfaec39f3 on tuxedo-atlas, 2026-11-25T02:23:37Z
+* **Where:** `e2e/accounts-puzzles-engines.spec.ts:1350` snapshot `openings-320-200-board.png`; the player card's tab list gained "Vorbereitung" in `f8ec1449d` (push `725e3384d`, opponent preparation phase 3).
+* **Defect:** phase 3 re-recorded the database-files snapshots the new fourth tab moved but did not run the `accounts-puzzles-engines` project, whose de-DE 320 px / 200 % Openings snapshot also shows the card's tab list.
+* **Failure scenario (observed):** Test run 45529959373 (first red, head `725e3384d`) and 45530194354, job `e2e`: "openings score order and merged board 320 200% de-DE", 408 pixels different in `openings-320-200-board.png`.
+* **Proof:** the snapshot differs only where the tab list shows the new tab; re-recorded in the container, the project passes.
+* **Found by:** Claude Code build run (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), post-push CI of opponent preparation, 2026-11-25.
