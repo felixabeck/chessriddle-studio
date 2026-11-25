@@ -61,6 +61,9 @@ const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error
     ["coachFinishGrokSignIn", CoachCommandError],
     ["coachCancelSignIn", CoachCommandError],
     ["coachOpenUsage", CoachCommandError],
+    ["scoresheetPickPhotos", CoachCommandError],
+    ["scoresheetPastePhoto", CoachCommandError],
+    ["scoresheetTakeDroppedPhotos", CoachCommandError],
 ]);
 
 type GameCounterFields = Pick<GameState, "session" | "revision">;
@@ -599,6 +602,9 @@ export const tauriSubscriptions = {
         events.coachTurnEvent.listen(callback),
     assistantTurn: (callback: Parameters<typeof events.assistantTurnEvent.listen>[0]) =>
         events.assistantTurnEvent.listen(callback),
+    scoresheetPhotosDropped: (
+        callback: Parameters<typeof events.scoresheetPhotosDropped.listen>[0],
+    ) => events.scoresheetPhotosDropped.listen(callback),
     convertProgress: (callback: Parameters<typeof events.convertProgress.listen>[0]) =>
         events.convertProgress.listen(callback),
     databaseContentFailure: (

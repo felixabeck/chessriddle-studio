@@ -23,6 +23,7 @@ pub(crate) mod model_loop;
 pub(crate) mod models;
 pub(crate) mod prompt;
 pub(crate) mod responses;
+pub(crate) mod scoresheet_photo;
 pub(crate) mod sse;
 pub(crate) mod stats;
 #[cfg(test)]
@@ -44,6 +45,10 @@ use tauri_specta::Event;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) use self::assistant::{AssistantTurnEvent, AssistantTurnInput, AssistantTurnUpdate};
+pub(crate) use self::scoresheet_photo::{
+    clear_window_dropped_photos, handle_drop as handle_scoresheet_drop, DroppedPhotoSlots,
+    ScoresheetPhoto, ScoresheetPhotoBatch, ScoresheetPhotosDropped,
+};
 use self::{
     accounts::{Accounts, ConnectionBearer, HeldSignIn, SignInProvider},
     address::Address,
@@ -133,6 +138,8 @@ pub(crate) struct Coach {
     sign_ins: Arc<SignInAttempts>,
     /// The Grok sign-in whose result has not been fetched yet.
     grok_sign_in: Arc<PendingSignIn>,
+    /// Per-window-label pending grants for dropped scoresheet photos.
+    dropped_photos: DroppedPhotoSlots,
 }
 
 /// Active turns, keyed by `K`: one per key, `MAX` overall.
@@ -538,6 +545,7 @@ impl Coach {
             grok,
             sign_ins: Arc::default(),
             grok_sign_in: Arc::default(),
+            dropped_photos: DroppedPhotoSlots::default(),
         }
     }
 
@@ -901,6 +909,33 @@ pub(crate) async fn coach_open_usage(
     app: tauri::AppHandle,
 ) -> Result<(), CoachError> {
     open_usage(&state, &browser_opener(app))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scoresheet_pick_photos(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<ScoresheetPhotoBatch, CoachError> {
+    scoresheet_photo::pick_photos(app, &state).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scoresheet_paste_photo(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<ScoresheetPhoto, CoachError> {
+    scoresheet_photo::paste_photo(&state).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scoresheet_take_dropped_photos(
+    drop: String,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<ScoresheetPhotoBatch, CoachError> {
+    scoresheet_photo::take_dropped_photos(drop, &window, &state).await
 }
 
 fn open_usage(state: &crate::AppState, opener: &BrowserOpener) -> Result<(), CoachError> {

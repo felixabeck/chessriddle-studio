@@ -56,4 +56,8 @@ pub(crate) enum CoachError {
     UsageLimitReached,
     /// The account has no credits left: they have to be bought, or the plan upgraded.
     CreditsExhausted,
+    /// A scoresheet photo could not be read, decoded or encoded within the supported bounds.
+    PhotoUnreadable,
+    /// The system clipboard does not currently contain a readable image.
+    ClipboardEmpty,
 }

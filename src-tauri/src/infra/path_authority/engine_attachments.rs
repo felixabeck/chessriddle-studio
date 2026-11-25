@@ -968,6 +968,33 @@ impl PathAuthority {
     }
 }
 
+/// Takes the process-wide authority lock only long enough to open and bound an
+/// image descriptor. The guard is dropped before this function returns.
+pub(crate) fn image_reader_for(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    path: &PathRef,
+    max_bytes: usize,
+) -> Result<(VerifiedFile, u64), Error> {
+    authority.with_mut(|authority| authority.open_image_path(path, max_bytes))?
+}
+
+/// Consumes the no-follow descriptor. `declared` is capped before it sizes the allocation, and
+/// each read is limited to the remaining allowance plus one byte used to detect excess.
+pub(crate) fn read_verified_image_bytes(
+    file: VerifiedFile,
+    declared: u64,
+    max_bytes: usize,
+) -> Result<Vec<u8>, Error> {
+    let mut file = file.into_inner();
+    read_bounded_bytes(
+        &mut file,
+        declared,
+        max_bytes,
+        "image exceeds the supported size limit",
+        || Ok(()),
+    )
+}
+
 /// Takes the process-wide authority lock only long enough to open and bound the
 /// image descriptor. The guard is dropped before this function returns.
 pub(crate) fn engine_image_reader_for(
@@ -985,14 +1012,7 @@ pub(crate) fn read_engine_image_bytes(
     declared: u64,
     max_bytes: usize,
 ) -> Result<Vec<u8>, Error> {
-    let mut file = file.into_inner();
-    read_bounded_bytes(
-        &mut file,
-        declared,
-        max_bytes,
-        "engine image exceeds the supported size limit",
-        || Ok(()),
-    )
+    read_verified_image_bytes(file, declared, max_bytes)
 }
 
 #[cfg(target_os = "macos")]

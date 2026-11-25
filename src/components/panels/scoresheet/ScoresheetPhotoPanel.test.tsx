@@ -10,6 +10,7 @@ import {
   getScoresheetPhotos,
   setScoresheetPhotos,
 } from "@/state/scoresheetPhotos";
+import { CoachCommandError } from "@/platform/coach";
 import { closeTreeStore, createTreeStore, type TreeStore } from "@/state/store/tree";
 import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
 import ScoresheetPhotoPanel, {
@@ -34,6 +35,16 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+const mocks = vi.hoisted(() => ({
+  scoresheetPickPhotos: vi.fn(),
+}));
+
+vi.mock("@/platform/tauri", () => ({
+  tauri: {
+    scoresheetPickPhotos: () => mocks.scoresheetPickPhotos(),
+  },
+}));
+
 vi.mock("lucide-react", async (importOriginal) => {
   const Icon = () => null;
   return {
@@ -41,6 +52,7 @@ vi.mock("lucide-react", async (importOriginal) => {
     Check: Icon,
     ChevronLeft: Icon,
     ChevronRight: Icon,
+    ImagePlus: Icon,
     Maximize2: Icon,
     Minimize2: Icon,
   };
@@ -75,6 +87,7 @@ let root: Root;
 const createdTabs: string[] = [];
 
 beforeEach(() => {
+  vi.clearAllMocks();
   clearAllScoresheetPhotosForTests();
   sessionStorage.clear();
   host = document.createElement("div");
@@ -170,13 +183,13 @@ test("shows the photo fitted with a toggle to full size and switches between mul
   expect(host.querySelector('[aria-label="Scoresheet.FitToPanel"]')).not.toBeNull();
 });
 
-test("shows a no-photo-in-memory state without any dead button when no photo is loaded", async () => {
+test("shows a no-photo-in-memory state with Load photo again when no photo is loaded", async () => {
   const store = buildReviewStore("tab-empty");
   await renderPanel(store, "tab-empty");
 
   const empty = host.querySelector("[data-scoresheet-no-photo]");
   expect(empty?.textContent).toContain("Scoresheet.NoPhotoInMemory");
-  expect(empty?.querySelector("button")).toBeNull();
+  expect(empty?.querySelector("button")?.textContent).toContain("Scoresheet.LoadPhotoAgain");
   expect(host.querySelector("img")).toBeNull();
 
   // Zero unsure marks: AllMovesChecked shown and prev/next buttons disabled.
@@ -332,6 +345,131 @@ test("pure formatting and adjacent unsure path helpers handle Black starts and v
   expect(adjacentUnsurePath([], [], "next")).toBeNull();
 });
 
+test("Load photo again attaches picked photos without sending, reports failed files, and stays quiet on cancel", async () => {
+  const store = buildReviewStore("tab-reload-photo");
+  await renderPanel(store, "tab-reload-photo");
+  expect(host.querySelector("[data-scoresheet-no-photo]")).not.toBeNull();
+
+  const loadButton = () =>
+    Array.from(host.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Scoresheet.LoadPhotoAgain"),
+    )!;
+
+  // Cancelled picker shows nothing.
+  mocks.scoresheetPickPhotos.mockRejectedValueOnce(new CoachCommandError("cancelled"));
+  await act(async () => {
+    loadButton().click();
+  });
+  expect(host.querySelector("[data-scoresheet-intake-status]")).toBeNull();
+  expect(getScoresheetPhotos("tab-reload-photo")).toEqual([]);
+
+  // Failed file reported on intake line while valid photo is attached for viewing.
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce({
+    photos: [{ dataUrl: PHOTO_1 }],
+    skipped: 0,
+    failed: 1,
+  });
+  await act(async () => {
+    loadButton().click();
+  });
+  expect(mocks.scoresheetPickPhotos).toHaveBeenCalledTimes(2);
+  expect(getScoresheetPhotos("tab-reload-photo")).toEqual([PHOTO_1]);
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
+  expect(host.querySelector("[data-scoresheet-intake-status]")?.textContent).toBe(
+    "Scoresheet.Intake.Failed(count=1)",
+  );
+});
+
+test("Load photo again reports visible command errors and skipped counts on the intake line", async () => {
+  const store = buildReviewStore("tab-reload-errors");
+  await renderPanel(store, "tab-reload-errors");
+
+  const loadButton = () =>
+    Array.from(host.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Scoresheet.LoadPhotoAgain"),
+    )!;
+
+  mocks.scoresheetPickPhotos.mockRejectedValueOnce(new CoachCommandError("photoUnreadable"));
+  await act(async () => {
+    loadButton().click();
+  });
+  expect(host.querySelector("[data-scoresheet-intake-status]")?.textContent).toBe(
+    "Coach.Error.PhotoUnreadable",
+  );
+
+  mocks.scoresheetPickPhotos.mockRejectedValueOnce(new CoachCommandError("unavailable"));
+  await act(async () => {
+    loadButton().click();
+  });
+  expect(host.querySelector("[data-scoresheet-intake-status]")?.textContent).toBe(
+    "Scoresheet.Error.Unavailable",
+  );
+
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce({
+    photos: [{ dataUrl: PHOTO_1 }],
+    skipped: 2,
+    failed: 0,
+  });
+  await act(async () => {
+    loadButton().click();
+  });
+  expect(getScoresheetPhotos("tab-reload-errors")).toEqual([PHOTO_1]);
+  expect(host.querySelector("[data-scoresheet-intake-status]")?.textContent).toBe(
+    "Scoresheet.Intake.Skipped(count=2)",
+  );
+});
+
+test("Load photo again resets loading state when tabId changes mid-pick so the new tab can pick", async () => {
+  const storeA = buildReviewStore("tab-mid-a");
+  const storeB = buildReviewStore("tab-mid-b");
+  await renderPanel(storeA, "tab-mid-a");
+
+  let resolveFirst!: (value: {
+    photos: Array<{ dataUrl: string }>;
+    skipped: number;
+    failed: number;
+  }) => void;
+  mocks.scoresheetPickPhotos.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      }),
+  );
+
+  const loadButton = () =>
+    Array.from(host.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Scoresheet.LoadPhotoAgain"),
+    )!;
+
+  await act(async () => {
+    loadButton().click();
+  });
+  expect(mocks.scoresheetPickPhotos).toHaveBeenCalledTimes(1);
+
+  // Switch to tab-mid-b while tab-mid-a's pick is still in flight.
+  await renderPanel(storeB, "tab-mid-b");
+
+  // Button on tab-mid-b must work immediately (not stuck loading).
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce({
+    photos: [{ dataUrl: PHOTO_2 }],
+    skipped: 0,
+    failed: 0,
+  });
+  await act(async () => {
+    loadButton().click();
+  });
+  expect(mocks.scoresheetPickPhotos).toHaveBeenCalledTimes(2);
+  expect(getScoresheetPhotos("tab-mid-b")).toEqual([PHOTO_2]);
+
+  // Late settlement of tab-mid-a's stale pick must not attach to tab-mid-a or overwrite tab-mid-b.
+  await act(async () => {
+    resolveFirst({ photos: [{ dataUrl: PHOTO_1 }], skipped: 0, failed: 0 });
+    await Promise.resolve();
+  });
+  expect(getScoresheetPhotos("tab-mid-a")).toEqual([]);
+  expect(getScoresheetPhotos("tab-mid-b")).toEqual([PHOTO_2]);
+});
+
 test.each(Object.entries(catalogues))(
   "ships scoresheet review copy in %s with fallback disabled",
   async (path, catalogue) => {
@@ -353,6 +491,7 @@ test.each(Object.entries(catalogues))(
       ["Scoresheet.FitToPanel", undefined],
       ["Scoresheet.FullSize", undefined],
       ["Scoresheet.LoadFailed", undefined],
+      ["Scoresheet.LoadPhotoAgain", undefined],
       ["Scoresheet.MarkAsChecked", undefined],
       ["Scoresheet.MovesToCheck", { count: 1 }],
       ["Scoresheet.MovesToCheck", { count: 3 }],

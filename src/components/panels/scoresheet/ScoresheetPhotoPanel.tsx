@@ -1,11 +1,18 @@
 import { Button, Group, Text } from "@mantine/core";
-import { Check, ChevronLeft, ChevronRight, Maximize2, Minimize2 } from "lucide-react";
-import { useContext, useMemo, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, ImagePlus, Maximize2, Minimize2 } from "lucide-react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import IconAction from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
-import { useScoresheetPhotos } from "@/state/scoresheetPhotos";
+import { useScoresheetErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
+import { tauri } from "@/platform/tauri";
+import {
+  formatScoresheetIntakeCounts,
+  formatScoresheetIntakeError,
+  setScoresheetPhotos,
+  useScoresheetPhotos,
+} from "@/state/scoresheetPhotos";
 import { useOwnerTabId } from "@/state/tabScope";
 import { formatMoveNumber } from "@/utils/format";
 import {
@@ -73,6 +80,54 @@ function ScoresheetPhotoPanel() {
 
   const [fullSize, setFullSize] = useState(false);
   const [page, setPage] = useState(0);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [intakeStatus, setIntakeStatus] = useState<string | null>(null);
+  const errorMessages = useScoresheetErrorMessages();
+  const mountedRef = useRef(true);
+  const tabIdRef = useRef(tabId);
+  tabIdRef.current = tabId;
+  const pickRequestRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    pickRequestRef.current += 1;
+    setIntakeStatus(null);
+    setPage(0);
+    setLoadingPhotos(false);
+  }, [tabId]);
+
+  const handleLoadPhotoAgain = useCallback(async () => {
+    if (loadingPhotos) return;
+    const ownerTab = tabIdRef.current;
+    const requestId = ++pickRequestRef.current;
+    setLoadingPhotos(true);
+    setIntakeStatus(null);
+    try {
+      const batch = await tauri.scoresheetPickPhotos();
+      if (!mountedRef.current || pickRequestRef.current !== requestId) return;
+      if (batch.photos.length > 0) {
+        setScoresheetPhotos(
+          ownerTab,
+          batch.photos.map((photo) => photo.dataUrl),
+        );
+        setPage(0);
+      }
+      setIntakeStatus(formatScoresheetIntakeCounts(batch, t));
+    } catch (cause) {
+      if (!mountedRef.current || pickRequestRef.current !== requestId) return;
+      setIntakeStatus(formatScoresheetIntakeError(cause, errorMessages));
+    } finally {
+      if (mountedRef.current && pickRequestRef.current === requestId) {
+        setLoadingPhotos(false);
+      }
+    }
+  }, [errorMessages, loadingPhotos, t]);
 
   const safePage = photos.length > 0 ? Math.min(page, photos.length - 1) : 0;
 
@@ -157,8 +212,21 @@ function ScoresheetPhotoPanel() {
             <Text size="sm" c="dimmed">
               {t("Scoresheet.NoPhotoInMemory")}
             </Text>
-            {/* Phase 2 mounts the "Load photo again" button and its intake status line here. */}
+            <Button
+              size="xs"
+              variant="default"
+              leftSection={<ImagePlus size="0.875rem" />}
+              loading={loadingPhotos}
+              onClick={() => void handleLoadPhotoAgain()}
+            >
+              {t("Scoresheet.LoadPhotoAgain")}
+            </Button>
           </div>
+        )}
+        {intakeStatus && (
+          <Text size="xs" c="dimmed" role="status" data-scoresheet-intake-status>
+            {intakeStatus}
+          </Text>
         )}
       </div>
 

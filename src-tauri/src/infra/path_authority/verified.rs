@@ -46,6 +46,30 @@ pub(crate) use mint::VerifiedFile;
 
 impl super::PathAuthority {
     /// Opens an exact, revalidated image capability and applies the pre-read
+    /// metadata bound. The caller reads through [`super::read_verified_image_bytes`] or
+    /// [`super::read_engine_image_bytes`] after the authority guard has been dropped.
+    pub(super) fn open_image_path(
+        &mut self,
+        path: &super::PathRef,
+        max_bytes: usize,
+    ) -> Result<(VerifiedFile, u64), super::Error> {
+        let mut resolved = self.resolve(path, super::PathOperation::ImageRead, &[])?;
+        let declared = resolved
+            .file()
+            .ok_or_else(|| super::Error::InvalidInput("image capability is not a file".into()))?
+            .metadata()?
+            .len();
+        if declared > max_bytes as u64 {
+            return Err(super::Error::ResourceLimit(
+                "image exceeds the supported size limit".into(),
+            ));
+        }
+        let file = VerifiedFile::from_resolved(&mut resolved)
+            .ok_or_else(|| super::Error::InvalidInput("image capability is not a file".into()))?;
+        Ok((file, declared))
+    }
+
+    /// Opens an exact, revalidated engine image capability and applies the pre-read
     /// metadata bound. The caller reads through [`super::read_engine_image_bytes`] after the
     /// authority guard has been dropped.
     pub(super) fn open_engine_image(
@@ -53,23 +77,7 @@ impl super::PathAuthority {
         image: &super::EngineImageHandle,
         max_bytes: usize,
     ) -> Result<(VerifiedFile, u64), super::Error> {
-        let mut resolved = self.resolve(image.path_ref(), super::PathOperation::ImageRead, &[])?;
-        let declared = resolved
-            .file()
-            .ok_or_else(|| {
-                super::Error::InvalidInput("engine image capability is not a file".into())
-            })?
-            .metadata()?
-            .len();
-        if declared > max_bytes as u64 {
-            return Err(super::Error::ResourceLimit(
-                "engine image exceeds the supported size limit".into(),
-            ));
-        }
-        let file = VerifiedFile::from_resolved(&mut resolved).ok_or_else(|| {
-            super::Error::InvalidInput("engine image capability is not a file".into())
-        })?;
-        Ok((file, declared))
+        self.open_image_path(image.path_ref(), max_bytes)
     }
 
     /// Prepares exactly the artifact covered by a durable reservation after atomic replacement.

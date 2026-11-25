@@ -4,7 +4,14 @@
 //! idempotency key. The API URL, Studio marker, version and operating system are assembled here
 //! so the webview never passes a URL or a token.
 
-use crate::{error::Error, AppState};
+#[cfg(test)]
+use crate::infra::validation::{JPEG_SIGNATURE, PNG_SIGNATURE, WEBP_RIFF, WEBP_WEBP};
+use crate::{
+    error::Error,
+    infra::validation::{validate_image_data_url, RasterFormat},
+    AppState,
+};
+#[cfg(test)]
 use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE, USER_AGENT};
 use serde::{Deserialize, Serialize};
@@ -22,11 +29,10 @@ const MAX_EMAIL_LOCAL_PART_CHARS: usize = 64;
 const MAX_OS_VERSION_CHARS: usize = 64;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+#[cfg(test)]
 const MAX_IMAGE_BASE64_CHARS: usize = 4 * MAX_IMAGE_BYTES.div_ceil(3);
-const PNG_SIGNATURE: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-const JPEG_SIGNATURE: &[u8] = &[0xFF, 0xD8, 0xFF];
-const WEBP_RIFF: &[u8] = b"RIFF";
-const WEBP_WEBP: &[u8] = b"WEBP";
+const FEEDBACK_IMAGE_FORMATS: &[RasterFormat] =
+    &[RasterFormat::Png, RasterFormat::Jpeg, RasterFormat::Webp];
 const REASON_IN_PROGRESS: &str = "feedback_submission_in_progress";
 const REASON_KEY_MISMATCH: &str = "idempotency_key_request_mismatch";
 
@@ -166,32 +172,8 @@ fn invalid_feedback() -> Error {
     Error::InvalidInput("invalid feedback request".into())
 }
 
-fn image_signature_matches(mime: &str, bytes: &[u8]) -> bool {
-    match mime {
-        "png" => bytes.starts_with(PNG_SIGNATURE),
-        "jpeg" => bytes.starts_with(JPEG_SIGNATURE),
-        "webp" => bytes.len() >= 12 && bytes.starts_with(WEBP_RIFF) && &bytes[8..12] == WEBP_WEBP,
-        _ => false,
-    }
-}
-
 fn valid_feedback_image(data_url: &str) -> bool {
-    let Some(rest) = data_url.strip_prefix("data:image/") else {
-        return false;
-    };
-    let Some((mime, payload)) = rest.split_once(";base64,") else {
-        return false;
-    };
-    if !matches!(mime, "png" | "jpeg" | "webp") {
-        return false;
-    }
-    if payload.len() > MAX_IMAGE_BASE64_CHARS {
-        return false;
-    }
-    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) else {
-        return false;
-    };
-    bytes.len() <= MAX_IMAGE_BYTES && image_signature_matches(mime, &bytes)
+    validate_image_data_url(data_url, FEEDBACK_IMAGE_FORMATS, MAX_IMAGE_BYTES).is_some()
 }
 
 fn header_value(value: &str) -> Result<HeaderValue, Error> {

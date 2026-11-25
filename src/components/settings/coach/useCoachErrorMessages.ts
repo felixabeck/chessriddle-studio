@@ -35,6 +35,8 @@ export function useCoachErrorMessages(): Record<CoachError, string> {
             subscriptionNotEligible: t("Coach.Error.SubscriptionNotEligible"),
             usageLimitReached: t("Coach.Error.UsageLimitReached"),
             creditsExhausted: t("Coach.Error.CreditsExhausted"),
+            photoUnreadable: t("Coach.Error.PhotoUnreadable"),
+            clipboardEmpty: t("Coach.Error.ClipboardEmpty"),
         }),
         [t],
     );
@@ -56,6 +58,25 @@ export function useAssistantErrorMessages(): Record<CoachError, string> {
             invalidInput: t("Assistant.Error.InvalidInput"),
             noFunctionCalling: t("Assistant.Error.NoFunctionCalling"),
             engineFailed: t("Assistant.Error.EngineFailed"),
+        }),
+        [coach, t],
+    );
+}
+
+/**
+ * One sentence per native error code for scoresheet photo import. Reused codes whose Coach wording
+ * does not fit photo reading get scoresheet-specific wording; the rest inherit from the Coach.
+ */
+export function useScoresheetErrorMessages(): Record<CoachError, string> {
+    const { t } = useTranslation();
+    const coach = useCoachErrorMessages();
+    return useMemo(
+        () => ({
+            ...coach,
+            busy: t("Scoresheet.Error.Busy"),
+            limitExceeded: t("Scoresheet.Error.LimitExceeded"),
+            unavailable: t("Scoresheet.Error.Unavailable"),
+            invalidInput: t("Scoresheet.Error.InvalidInput"),
         }),
         [coach, t],
     );

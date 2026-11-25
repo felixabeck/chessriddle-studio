@@ -690,19 +690,20 @@ pub struct EngineImageData {
 }
 
 fn engine_image_mime_type(bytes: &[u8]) -> Result<&'static str, Error> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Ok("image/png")
-    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-        Ok("image/jpeg")
-    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        Ok("image/gif")
-    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        Ok("image/webp")
-    } else {
-        Err(Error::InvalidInput(
-            "engine image must be a PNG, JPEG, GIF, or WebP file".into(),
-        ))
-    }
+    use crate::infra::validation::{detect_allowed_raster_format, RasterFormat};
+    detect_allowed_raster_format(
+        bytes,
+        &[
+            RasterFormat::Png,
+            RasterFormat::Jpeg,
+            RasterFormat::Gif,
+            RasterFormat::Webp,
+        ],
+    )
+    .map(RasterFormat::mime_type)
+    .ok_or_else(|| {
+        Error::InvalidInput("engine image must be a PNG, JPEG, GIF, or WebP file".into())
+    })
 }
 
 /// Copies a picker-selected raster image into app-owned storage. The original
@@ -1596,5 +1597,35 @@ mod tests {
         assert!(matches!(error, Error::Conflict(message) if message == "registration failed"));
         assert!(!f.image_dir.path().join(&f.leaf).exists());
         f.assert_no_intent();
+    }
+
+    #[test]
+    fn engine_image_mime_type_accepts_supported_formats_and_rejects_invalid_bytes() {
+        assert_eq!(
+            engine_image_mime_type(b"\x89PNG\r\n\x1a\nbody").unwrap(),
+            "image/png"
+        );
+        assert_eq!(
+            engine_image_mime_type(&[0xff, 0xd8, 0xff, 0xe0]).unwrap(),
+            "image/jpeg"
+        );
+        assert_eq!(engine_image_mime_type(b"GIF87a...").unwrap(), "image/gif");
+        assert_eq!(engine_image_mime_type(b"GIF89a...").unwrap(), "image/gif");
+        assert_eq!(
+            engine_image_mime_type(b"RIFF\x00\x00\x00\x00WEBP").unwrap(),
+            "image/webp"
+        );
+
+        for invalid in [
+            b"".as_slice(),
+            b"not an image".as_slice(),
+            b"RIFF\x00\x00\x00\x00WAVE".as_slice(),
+        ] {
+            let err = engine_image_mime_type(invalid).unwrap_err();
+            assert!(
+                matches!(err, Error::InvalidInput(ref msg) if msg == "engine image must be a PNG, JPEG, GIF, or WebP file"),
+                "unexpected error for {invalid:?}: {err:?}"
+            );
+        }
     }
 }

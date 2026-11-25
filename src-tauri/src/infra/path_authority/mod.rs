@@ -54,7 +54,9 @@ mod shared;
 mod workspace;
 use dialogs::DialogGrant;
 use engine_attachments::ActiveImageIssuances;
-pub(crate) use engine_attachments::{engine_image_reader_for, read_engine_image_bytes};
+pub(crate) use engine_attachments::{
+    engine_image_reader_for, image_reader_for, read_engine_image_bytes, read_verified_image_bytes,
+};
 #[cfg(target_os = "macos")]
 pub(crate) use engine_attachments::{
     initialize_engine_launch_root, EngineLaunchRoot, MaterializedFile, ENGINE_EXECUTABLE_LEAF_MODE,

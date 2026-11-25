@@ -31,6 +31,9 @@ const mocks = vi.hoisted(() => ({
     coachFinishGrokSignIn: vi.fn(),
     coachCancelSignIn: vi.fn(),
     coachOpenUsage: vi.fn(),
+    scoresheetPickPhotos: vi.fn(),
+    scoresheetPastePhoto: vi.fn(),
+    scoresheetTakeDroppedPhotos: vi.fn(),
     closeSplashscreen: vi.fn(),
     releasePreviousDocumentOperations: vi.fn(),
     startGame: vi.fn(),
@@ -214,6 +217,9 @@ test.each([
     "coachFinishGrokSignIn",
     "coachCancelSignIn",
     "coachOpenUsage",
+    "scoresheetPickPhotos",
+    "scoresheetPastePhoto",
+    "scoresheetTakeDroppedPhotos",
 ] as const)("%s uses the closed Coach boundary", async (command) => {
     const { tauri } = await import("./tauri");
     const invoke = async () => {
@@ -247,6 +253,12 @@ test.each([
                 return tauri.coachCancelSignIn("attempt");
             case "coachOpenUsage":
                 return tauri.coachOpenUsage();
+            case "scoresheetPickPhotos":
+                return tauri.scoresheetPickPhotos();
+            case "scoresheetPastePhoto":
+                return tauri.scoresheetPastePhoto();
+            case "scoresheetTakeDroppedPhotos":
+                return tauri.scoresheetTakeDroppedPhotos("drop-id");
         }
     };
     mocks[command].mockResolvedValue({ status: "ok", data: "reply" });
@@ -261,6 +273,10 @@ test.each([
         "subscriptionNotEligible",
         "usageLimitReached",
         "creditsExhausted",
+        "photoUnreadable",
+        "clipboardEmpty",
+        "cancelled",
+        "notFound",
     ]) {
         mocks[command].mockResolvedValue({ status: "error", error: code });
         await expect(invoke()).rejects.toMatchObject({ name: "CoachCommandError", code });
@@ -401,6 +417,9 @@ vi.mock("@/bindings/generated", () => ({
         coachFinishGrokSignIn: mocks.coachFinishGrokSignIn,
         coachCancelSignIn: mocks.coachCancelSignIn,
         coachOpenUsage: mocks.coachOpenUsage,
+        scoresheetPickPhotos: mocks.scoresheetPickPhotos,
+        scoresheetPastePhoto: mocks.scoresheetPastePhoto,
+        scoresheetTakeDroppedPhotos: mocks.scoresheetTakeDroppedPhotos,
         closeSplashscreen: mocks.closeSplashscreen,
         releasePreviousDocumentOperations: mocks.releasePreviousDocumentOperations,
         startGame: mocks.startGame,

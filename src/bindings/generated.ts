@@ -283,6 +283,30 @@ async coachOpenUsage() : Promise<Result<null, CoachError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async scoresheetPickPhotos() : Promise<Result<ScoresheetPhotoBatch, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scoresheet_pick_photos") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async scoresheetPastePhoto() : Promise<Result<ScoresheetPhoto, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scoresheet_paste_photo") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async scoresheetTakeDroppedPhotos(drop: string) : Promise<Result<ScoresheetPhotoBatch, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scoresheet_take_dropped_photos", { drop }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async closeSplashscreen() : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
@@ -1711,7 +1735,8 @@ gameLinkPending: GameLinkPending,
 gameMoveEvent: GameMoveEvent,
 gameOverEvent: GameOverEvent,
 librarySyncChanged: LibrarySyncChanged,
-progressEvent: ProgressEvent
+progressEvent: ProgressEvent,
+scoresheetPhotosDropped: ScoresheetPhotosDropped
 }>({
 assistantTurnEvent: "assistant-turn-event",
 bestMovesPayload: "best-moves-payload",
@@ -1725,7 +1750,8 @@ gameLinkPending: "game-link-pending",
 gameMoveEvent: "game-move-event",
 gameOverEvent: "game-over-event",
 librarySyncChanged: "library-sync-changed",
-progressEvent: "progress-event"
+progressEvent: "progress-event",
+scoresheetPhotosDropped: "scoresheet-photos-dropped"
 })
 
 /** user-defined constants **/
@@ -1932,6 +1958,13 @@ export type CoachError =
  * The account has no credits left: they have to be bought, or the plan upgraded.
  */
 "creditsExhausted"
+ * A scoresheet photo could not be read, decoded or encoded within the supported bounds.
+ */
+"photoUnreadable" | 
+/**
+ * The system clipboard does not currently contain a readable image.
+ */
+"clipboardEmpty"
 /**
  * Broadcast to every window; the receiver keeps only the turn it is waiting for.
  */
@@ -2340,6 +2373,9 @@ export type ScoreValue =
  * Mate coming up in this many moves. Negative value means the engine is getting mated.
  */
 { type: "mate"; value: number }
+export type ScoresheetPhoto = { dataUrl: string }
+export type ScoresheetPhotoBatch = { photos: ScoresheetPhoto[]; skipped: number; failed: number }
+export type ScoresheetPhotosDropped = { drop: string }
 export type Segment = { type: "text"; text: string } | 
 /**
  * A line that is legal from the turn position, in the library's SAN with its engine moves.

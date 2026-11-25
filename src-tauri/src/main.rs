@@ -670,6 +670,7 @@ fn cancel_destroyed_window_operations(state: &AppState, label: &str) {
         label,
     );
     coach::cancel_window_sign_ins(state, label);
+    coach::clear_window_dropped_photos(state, label);
 }
 
 fn cancel_destroyed_window_operations_in_registry(
@@ -712,6 +713,7 @@ async fn release_previous_document_operations(
     }
     // A sign-in the replaced document started has nobody left to answer to.
     coach::cancel_window_sign_ins(&state, label);
+    coach::clear_window_dropped_photos(&state, label);
     released
 }
 
@@ -1533,6 +1535,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             coach::coach_finish_grok_sign_in,
             coach::coach_cancel_sign_in,
             coach::coach_open_usage,
+            coach::scoresheet_pick_photos,
+            coach::scoresheet_paste_photo,
+            coach::scoresheet_take_dropped_photos,
             close_splashscreen,
             verify_signed_bytes,
             prepare_native_read,
@@ -1718,6 +1723,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             infra::game_link::GameLinkPending,
             coach::CoachTurnEvent,
             coach::AssistantTurnEvent,
+            coach::ScoresheetPhotosDropped,
             library_sync::LibrarySyncChanged
         ));
 
@@ -1753,6 +1759,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let tauri::WindowEvent::DragDrop(event) = event {
                 if let Err(error) = chessbase::handle_drop(window, event) {
                     log::warn!("could not emit ChessBase selection: {error}");
+                }
+                if let Err(error) = coach::handle_scoresheet_drop(window, event) {
+                    log::warn!("could not emit scoresheet photo drop: {error}");
                 }
             }
         })
@@ -2695,14 +2704,28 @@ mod native_window_operation_wiring_tests {
         let destroy = body_at_indent(source, "fn cancel_destroyed_window_operations(");
         assert!(destroy.contains("&state.engine_supervisor"), "{destroy}");
         // A sign-in waits for a person in a browser: the window's end and the end of its
-        // document both end the ones it started.
+        // document both end the ones it started. Pending dropped-photo grants are window-owned
+        // and cleared on the same two lifecycle boundaries.
         assert!(
             destroy.contains("coach::cancel_window_sign_ins(state, label);"),
             "{destroy}"
         );
         assert!(
+            destroy.contains("coach::clear_window_dropped_photos(state, label);"),
+            "{destroy}"
+        );
+        assert!(
             command.contains("coach::cancel_window_sign_ins(&state, label);"),
             "{command}"
+        );
+        assert!(
+            command.contains("coach::clear_window_dropped_photos(&state, label);"),
+            "{command}"
+        );
+        let prod = crate::infra::blocking::source_scan::production_region(source);
+        assert!(
+            prod.contains("coach::handle_scoresheet_drop(window, event)"),
+            "main.rs production code must register coach::handle_scoresheet_drop in the window DragDrop handler"
         );
         let cancel = body_at_indent(include_str!("chess.rs"), "pub async fn cancel_analysis(");
         assert!(

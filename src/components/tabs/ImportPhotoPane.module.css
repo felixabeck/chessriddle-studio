@@ -1,0 +1,52 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+}
+
+.emptyConnection {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-md);
+  background-color: var(--cf-surface-inset);
+  border: 1px solid var(--cf-border-strong);
+  border-radius: var(--cf-radius-sm);
+}
+
+.dropHint {
+  padding: var(--mantine-spacing-sm);
+  text-align: center;
+  background-color: var(--cf-surface-inset);
+  border: 1px dashed var(--cf-border-strong);
+  border-radius: var(--cf-radius-sm);
+}
+
+.thumbnails {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: var(--mantine-spacing-xs);
+}
+
+.thumbnail {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background-color: var(--cf-surface-inset);
+  border: 1px solid var(--cf-border-strong);
+  border-radius: var(--cf-radius-sm);
+}
+
+.thumbnailImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.removeButton {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}

@@ -1,6 +1,8 @@
 // Load the atoms barrel first so `tabFamilies` initializes before its circular submodules.
 import "./atoms";
 import { useSyncExternalStore } from "react";
+import type { CoachError } from "@/bindings";
+import { coachErrorCode } from "@/platform/coach";
 import { registerTabDisposer } from "./atoms/tabFamilies";
 import { createNoticeAcceptedAtom } from "./coach";
 import { registerScoresheetReviewCleanup } from "./store/tree";
@@ -80,3 +82,33 @@ export function useScoresheetPhotos(tabId: string): readonly string[] {
  * Used from Phase 3 when sending photos to a provider.
  */
 export const scoresheetNoticeAcceptedAtom = createNoticeAcceptedAtom("scoresheet-notice-accepted");
+
+type IntakeTranslator = (key: string, options?: Record<string, unknown>) => string;
+
+/** Formats skipped/unreadable counts from a photo intake batch, or `null` when every photo succeeded. */
+export function formatScoresheetIntakeCounts(
+    counts: { skipped: number; failed: number },
+    t: IntakeTranslator,
+): string | null {
+    const parts: string[] = [];
+    if (counts.skipped > 0) {
+        parts.push(t("Scoresheet.Intake.Skipped", { count: counts.skipped }));
+    }
+    if (counts.failed > 0) {
+        parts.push(t("Scoresheet.Intake.Failed", { count: counts.failed }));
+    }
+    return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/**
+ * Formats an error from a photo intake command for the intake status line.
+ * Dismissed pickers (`cancelled`) and stale drops (`notFound`) are quiet and return `null`.
+ */
+export function formatScoresheetIntakeError(
+    cause: unknown,
+    messages: Record<CoachError, string>,
+): string | null {
+    const code = coachErrorCode(cause);
+    if (code === "cancelled" || code === "notFound") return null;
+    return messages[code];
+}
