@@ -556,11 +556,8 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                         let games: ArchiveGames = serde_json::from_slice(&bytes).map_err(|_| {
                             Error::InvalidInput("Chess.com returned an invalid game archive".into())
                         })?;
-                        if games.games.is_empty() {
-                            return Err(Error::InvalidInput(
-                                "Chess.com returned an empty requested game archive".into(),
-                            ));
-                        }
+                        // Chess.com lists months whose archive is `{"games":[]}`; such a month
+                        // stages empty like a variant-only month (d-20261125-51).
                         let mut staged = tempfile::NamedTempFile::new()?;
                         let mut month_bytes = 0usize;
                         let mut skipped_without_pgn = 0usize;
@@ -1464,6 +1461,41 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(root.join("skipped.pgn")).unwrap(),
             "[Event \"good\"]\n\n1. e4 e5 *\n\n"
+        );
+    }
+
+    // Chess.com lists months whose archive is `{"games":[]}` (observed 2026-11-25 for
+    // fabianocaruana/games/2018/03); one such month must not fail the whole account download.
+    #[tokio::test]
+    async fn staging_keeps_other_months_around_an_empty_archive() {
+        let index = br#"{"archives":["https://api.chess.com/pub/player/felix/games/2026/07","https://api.chess.com/pub/player/felix/games/2026/08","https://api.chess.com/pub/player/felix/games/2026/09"]}"#;
+        let july = br#"{"games":[{"rules":"chess","pgn":"[Event \"july\"]\n\n1. e4 e5 *\n"}]}"#;
+        let september =
+            br#"{"games":[{"rules":"chess","pgn":"[Event \"september\"]\n\n1. d4 d5 *\n"}]}"#;
+        let transport = Arc::new(ExportTransport {
+            responses: Mutex::new(VecDeque::from([
+                response(index),
+                response(july),
+                response(br#"{"games":[]}"#),
+                response(september),
+            ])),
+        });
+        let (_dir, state, destination, root, app) = export_fixture(transport);
+        let job = state.operations.prepare_download("test").unwrap();
+        let downloaded = run_owned_export(
+            destination,
+            "months.pgn".into(),
+            job,
+            app.handle().clone(),
+            state,
+            Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert!(downloaded.receipt_error.is_none());
+        assert_eq!(
+            std::fs::read_to_string(root.join("months.pgn")).unwrap(),
+            "[Event \"july\"]\n\n1. e4 e5 *\n\n[Event \"september\"]\n\n1. d4 d5 *\n\n"
         );
     }
 
