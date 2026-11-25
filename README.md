@@ -22,17 +22,26 @@
 > Modified by Felix Beck since 2026-08-09, and released under the GNU General Public License v3.0
 > with no warranty. Not affiliated with, nor endorsed by, the original project.
 
-ChessRiddle Studio is an open-source, cross-platform chess GUI that aims to be powerful, customizable and easy to use. It is Felix Beck's fork of En Croissant.
+ChessRiddle Studio is an open-source, cross-platform chess GUI that aims to be powerful, customizable and easy to use. It is Felix Beck's fork of En Croissant. Downloads and release notes are at [chessriddle.com/studio](https://chessriddle.com/studio).
+
+<img src="docs/images/analysis.webp" alt="Analysis board with Stockfish, an annotated game and the notation panel" />
 
 ## Features
 
-- Store and analyze your games from [lichess.org](https://lichess.org) and [chess.com](https://chess.com)
-- Multi-engine analysis. Supports all UCI engines
-- Prepare a repertoire and train it with spaced repetition
-- Simple engine and database installation and management
-- Absolute or partial position search in the database
+- **Coach:** ask an AI about the position on the board. It checks its answers with your own engine and can draw on your reference database and your repertoire. Sign in with ChatGPT or Grok, use an API key, or run a local model.
+- **Assistant:** an AI helper that explains Studio, takes you to the right setting and helps you write feedback.
+- **Analysis:** run several UCI engines side by side, get game reports, and undo or redo every edit on the board.
+- **Notation:** open variations are marked and counted, transpositions into other chapters are marked, and ChessBase diagram markers are shown.
+- **Databases:** store and search your games, with absolute or partial position search, side-by-side database comparison and an opening tree that merges several sources.
+- **Online games:** import your games from [Lichess](https://lichess.org) and [Chess.com](https://chess.com), and link an opponent's online accounts to their player card.
+- **Repertoire training:** build a repertoire and train it with spaced repetition, or train all repertoires for a set number of minutes, with the lines that come up most often in real games first.
+- **Browser extension:** an "Analyze in ChessRiddle Studio" button on Lichess and Chess.com opens a finished game in Studio ([Chrome](https://chromewebstore.google.com/detail/jjacoekjgdobdagnphpghaaecehnkaga), [Firefox](https://addons.mozilla.org/firefox/addon/analyze-in-chessriddle-studio/), Safari inside the Mac app).
+- **Safe saving:** unsaved games survive quitting and crashes.
+- Simple engine and database installation and management, on Windows, macOS and Linux.
 
-<img src="https://github.com/franciscoBSalgueiro/encroisssant-site/blob/master/public/showcase.webp" />
+<img src="docs/images/coach.webp" alt="The Coach explaining a rook sacrifice next to the board" />
+
+<img src="docs/images/databases.webp" alt="A game database with the game list and a preview of the selected game" />
 
 ## Building from source
 
