@@ -29198,3 +29198,17 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 **Proof:** `cargo test --bins -- oauth_pkce:: coach::chatgpt:: infra::game_link_handoff::` 32 passed; clippy `-D warnings` and `pnpm rust:windows:check` green. Review: agy lenses correctness, tests, platform-semantics; round 1 APPROVED, APPROVED, REVISE (two more handoff probes of the same class, adopted); closure round 2 all APPROVED with both items closed. Windows and macOS runner behaviour of port 1 (refusal or 100 ms connect timeout, both reported as "did not accept a connection") is confirmed by CI on push.
 <!-- ledger-meta {"command":"close","effect_lines":3,"effect_sha256":"ea3964e4051bc3fb6229497bcd99d057eff005fccefae85798d2fde1ce87f4cb","header_sha256":"1ba0ed3b405920172f2279381a3934e925d9f82b647dfd55801771bc8c3100ef","header_status":"handled","input_sha256":"f91c9cb54d039cb88f6880cd1db8b2c9c21bc609a29a67e841f4772051b868da","kind":"mutation-receipt","operation":"597e41ffed91b585365636f7f0e7cc00ab20fe816da37c79f54c5b1d6fc587de","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-06"],"target":"f-20261125-06","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The reload-completion drain helper's 10 s bound fails under a loaded parallel test run
+
+* **ID:** f-20261125-08 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `src-tauri/src/infra/reload_completion_tests.rs`, helper `reload_completion_drain` (`registry.wait_for_drain(Duration::from_secs(10))`), used by three tests.
+* **Defect:** the helper asserts that `OperationRegistry::wait_for_drain` finishes within 10 s. The bound only exists to catch a hang, but it is a wall clock, so it depends on machine load.
+* **Failure scenario (observed):** `pnpm gates:push -- --rust --frontend` on the v1.2.0 release tree (2026-11-25 ~06:15 UTC, laptop, load average about 21-35 on 24 cores), lane `related-tests`: `3871 passed; 1 failed`, `reload_completion_account_pending_batch_appends_without_transfer_before_reconnect` panicked at `src/infra/reload_completion_tests.rs:1110:5` on the drain assertion. Run alone three times right after it passed in 3.00 s, 1.49 s and 1.66 s. Log: `artifacts/gates/20261125T060800415Z-3181517/related-tests.log`.
+* **Proof:** raise the bound so it catches only a hang, with a comment saying so (precedent f-20261124-18).
+* **Found by:** Claude Code interactive session 134be9f1-6a11-4d6e-a8f9-af840b560f52, 2026-11-25, on the v1.2.0 release push gates.
