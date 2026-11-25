@@ -1,4 +1,5 @@
 import { Box, Button, Group, Progress } from "@mantine/core";
+import cx from "clsx";
 import { X } from "lucide-react";
 import { memo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -101,7 +102,8 @@ function ProgressButton({
   return (
     <Group gap="min(var(--mantine-spacing-xs), 2%)" wrap="nowrap">
       <Button
-        className="wrap-button"
+        className={cx("wrap-button", classes.button)}
+        data-running={showProgress || undefined}
         fullWidth
         onClick={() => {
           onClick(id);
@@ -121,6 +123,7 @@ function ProgressButton({
               h="100%"
               value={progress}
               className={classes.progress}
+              classNames={{ section: classes.fill }}
               radius="sm"
             />
           )}

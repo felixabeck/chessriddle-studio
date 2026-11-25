@@ -54,7 +54,7 @@ const REPORT: GameReportFixture = {
 async function openReportTab(
     page: Page,
     mockScenario: (scenario: MockScenario) => Promise<void>,
-    { engine }: { engine: boolean },
+    { engine, analyzeDelay }: { engine: boolean; analyzeDelay?: number },
 ) {
     if (engine)
         await seedAnalysisEngines(page, [
@@ -64,6 +64,7 @@ async function openReportTab(
         commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
             ...pgnFileCommands,
             ...gameReportCommands(REPORT),
+            ...(analyzeDelay ? { analyze_game: { result: REPORT, delay: analyzeDelay } } : {}),
             write_game: { result: { stamp: "e".repeat(64), revision: "e2e-pgn-revision" } },
             lex_pgn: {
                 result: [
@@ -187,4 +188,61 @@ test("game report: a run fills the Report tab from the native result", async ({
     // A key moment goes to its move.
     await moments.nth(1).click();
     await expect(page.locator('[data-notation-current="true"] button')).toContainText("f6??");
+});
+
+test("game report: the running label stays readable over the bar and its track", async ({
+    page,
+    mockScenario,
+}) => {
+    // The native run stays open for the whole test, so the button holds its running state.
+    const panel = await openReportTab(page, mockScenario, { engine: true, analyzeDelay: 600_000 });
+    await panel.getByRole("button", { name: "Generate report", exact: true }).first().click();
+    const dialog = page.getByRole("dialog", { name: "Generate report" });
+    await dialog.getByRole("button", { name: "Analyze", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await page.evaluate(() =>
+        window.__E2E_TAURI__.emit("progress-event", {
+            id: "report_e2e-tab_operation",
+            generation: "1",
+            state: "running",
+            progress: 50,
+            finished: false,
+            cleared: false,
+        }),
+    );
+    const button = panel.getByRole("button", { name: "Generating report" });
+    const fill = button.getByRole("progressbar");
+    await expect(fill).toHaveAttribute("aria-valuenow", "50");
+    // The label paints above the bar, so the bar is a layer under it, not over it.
+    const label = button.getByText("Generating report");
+    expect(
+        await label.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+            return top !== null && element.contains(top);
+        }),
+    ).toBe(true);
+    // A disabled button is dimmed as a whole, which the layers below cannot see.
+    await expect(button).toHaveCSS("opacity", "1");
+
+    // Dim is a variant of dark with a lighter track, the tightest case for the bar.
+    const variants = test.info().project.use.colorScheme === "dark" ? [null, "dim"] : [null];
+    for (const variant of variants) {
+        // The button fades its background, so measure only once the switch has settled.
+        await button.evaluate(async (element, value) => {
+            if (value) document.documentElement.setAttribute("data-cf-theme-variant", value);
+            await Promise.all(element.getAnimations().map((animation) => animation.finished));
+        }, variant);
+        const { color, layers } = await paintedText(label);
+        const fillColor = await fill.evaluate(
+            (element) => getComputedStyle(element).backgroundColor,
+        );
+        const scheme = variant ?? test.info().project.use.colorScheme;
+        expect
+            .soft(contrastRatio(color, layers), `${scheme}: label over the track`)
+            .toBeGreaterThanOrEqual(4.5);
+        expect
+            .soft(contrastRatio(color, [...layers, fillColor]), `${scheme}: label over the bar`)
+            .toBeGreaterThanOrEqual(4.5);
+    }
 });

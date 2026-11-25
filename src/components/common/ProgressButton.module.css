@@ -12,3 +12,18 @@
 .label {
   z-index: 1;
 }
+
+/* A running job disables the button, but its label must stay readable across the bar. The disabled
+   filled style would keep the gold button's on-primary text (near black in dark and dim) on the dark
+   disabled surface and halve the opacity, so the running state shows the neutral track with a
+   translucent primary fill under foreground text instead. At 30% the fill keeps foreground text
+   above 4.5:1 in light, dark and dim, where dim's lighter track is the tightest. */
+.button[data-running]:disabled {
+  opacity: 1;
+  background: var(--cf-surface-inset);
+  color: var(--cf-foreground);
+}
+
+.progress .fill {
+  background-color: color-mix(in srgb, var(--cf-primary) 30%, transparent);
+}
