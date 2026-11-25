@@ -9,7 +9,9 @@ import {
   moveHighlightAtom,
   practiceGradingAtom,
   practiceNewPerSessionAtom,
+  restoreOpenTabsAtom,
 } from "@/state/atoms";
+import { readRestoreOpenTabsPreference, RESTORE_OPEN_TABS_KEY } from "@/state/restoreOpenTabs";
 import {
   requestSettingsNavigation,
   settingsNavigationRequestAtom,
@@ -72,7 +74,6 @@ vi.mock("./coach/CoachConnections", () => ({
 }));
 vi.mock("./coach/CoachEngineSelect", () => ({ CoachEngineSelect: () => null }));
 vi.mock("./coach/CoachModelSetting", () => ({ CoachModelSetting: () => null }));
-vi.mock("./SettingsSwitch", () => ({ default: () => null }));
 const actionMocks = vi.hoisted(() => ({
   reloadApp: vi.fn(),
   clearSavedData: vi.fn(),
@@ -446,12 +447,16 @@ test("a second click cannot start an Advanced action while it is pending", async
   await act(async () => pending.resolve());
 });
 
-test("settings search finds the three Advanced rows", async () => {
+test("settings search finds the Advanced rows", async () => {
   const { host } = await renderSettingsPage();
   await searchSettings(host, "advanced");
+  expect(host.textContent).toContain("Settings.Advanced.RestoreOpenTabs");
   expect(host.textContent).toContain("Menu.View.Reload");
   expect(host.textContent).toContain("Menu.Help.ClearSavedData");
   expect(host.textContent).toContain("Menu.Help.OpenLogs");
+  await searchSettings(host, "restore");
+  expect(host.textContent).toContain("Settings.Advanced.RestoreOpenTabs");
+  expect(host.textContent).not.toContain("Menu.View.Reload");
   await searchSettings(host, "reload");
   expect(host.textContent).toContain("Menu.View.Reload");
   expect(host.textContent).not.toContain("Menu.Help.OpenLogs");
@@ -461,6 +466,40 @@ test("settings search finds the three Advanced rows", async () => {
   await searchSettings(host, "clear");
   expect(host.textContent).toContain("Menu.Help.ClearSavedData");
   expect(host.textContent).not.toContain("Menu.View.Reload");
+});
+
+test("Restore open tabs at start renders in Advanced and writes the restore preference key", async () => {
+  const { atoms, host } = await renderSettingsPage();
+  await openAdvanced(host);
+  const panel = panelFor(host, "advanced");
+  const row = panel.querySelector<HTMLElement>('[data-setting-id="restore-open-tabs"]')!;
+  expect(row).toBeTruthy();
+  expect(row.textContent).toContain("Settings.Advanced.RestoreOpenTabs");
+  expect(row.textContent).toContain("Settings.Advanced.RestoreOpenTabs.Desc");
+
+  const toggle = row.querySelector<HTMLInputElement>(
+    'input[type="checkbox"][aria-label="Settings.Advanced.RestoreOpenTabs"]',
+  )!;
+  expect(toggle).toBeTruthy();
+  expect(toggle.checked).toBe(true);
+  expect(atoms.get(restoreOpenTabsAtom)).toBe(true);
+  expect(readRestoreOpenTabsPreference()).toBe(true);
+
+  await act(async () => {
+    toggle.click();
+  });
+  expect(toggle.checked).toBe(false);
+  expect(atoms.get(restoreOpenTabsAtom)).toBe(false);
+  expect(localStorage.getItem(RESTORE_OPEN_TABS_KEY)).toBe(JSON.stringify(false));
+  expect(readRestoreOpenTabsPreference()).toBe(false);
+
+  await act(async () => {
+    toggle.click();
+  });
+  expect(toggle.checked).toBe(true);
+  expect(atoms.get(restoreOpenTabsAtom)).toBe(true);
+  expect(localStorage.getItem(RESTORE_OPEN_TABS_KEY)).toBe(JSON.stringify(true));
+  expect(readRestoreOpenTabsPreference()).toBe(true);
 });
 
 test.each([false, true])(

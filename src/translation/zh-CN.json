@@ -1425,6 +1425,8 @@
     "Settings.Advanced.Desc": "重新加载应用、清除已保存的数据或打开日志",
     "Settings.Advanced.OpenLogs.Desc": "打开包含应用程序日志的文件夹",
     "Settings.Advanced.Reload.Desc": "重新加载应用程序窗口",
+    "Settings.Advanced.RestoreOpenTabs": "启动时还原打开的标签页",
+    "Settings.Advanced.RestoreOpenTabs.Desc": "启动 ChessRiddle Studio 时重新打开你的标签页、它们的顺序以及每盘对局的局面。关闭时，仅恢复有未保存更改的对局。",
     "Settings.AI": "AI",
     "Settings.Analysis": "分析与记谱",
     "Settings.Analysis.Desc": "记谱、导航、面板布局和自动保存",

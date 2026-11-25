@@ -1,4 +1,5 @@
 import { notifications } from "@mantine/notifications";
+import { errorCategoryOf } from "@/platform/errors";
 import { createStore as createJotaiStore } from "jotai";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import i18n from "@/i18n";
@@ -597,6 +598,9 @@ test("seeding quota failure rolls back seeded keys, does not quarantine healthy 
         expect(sessionStorage.getItem(WORKSPACE_STORAGE_KEY)).toBeNull();
         expect(fake.quarantined).toEqual([]);
         expect(fake.leaves.has(id1)).toBe(true);
+        const notices: string[] = [];
+        flushWorkspaceSessionNotices((msg) => notices.push(msg));
+        expect(notices).toEqual([enUSCatalogue.translation["WorkspaceSession.SeedQuotaFailed"]]);
     } finally {
         setSpy.mockRestore();
     }
@@ -1092,7 +1096,13 @@ test("markWorkspaceSessionRestoreFailed sets storeUnavailable, persists marker, 
     expect(sessionStorage.getItem(WORKSPACE_SESSION_UNAVAILABLE_KEY)).toBeNull();
     const notices2: string[] = [];
     flushWorkspaceSessionNotices((msg) => notices2.push(msg));
-    expect(notices2).toHaveLength(1);
+    expect(notices2).toEqual([
+        enUSCatalogue.translation["WorkspaceSession.RestoreFailed"].replace(
+            "{{category}}",
+            errorCategoryOf(new Error("boom2")),
+        ),
+    ]);
+    expect(notices2[0]).not.toContain("{{");
     const mirror2 = new WorkspaceSessionMirror({
         native: fake.native,
         jotaiStore: jotai,

@@ -59,6 +59,7 @@ import {
   fileWorkspaceDisplayNameAtom,
   boardWoodTextureAtom,
   puzzleWorkspaceGenerationAtom,
+  restoreOpenTabsAtom,
 } from "@/state/atoms";
 import { coachEnabledAtom } from "@/state/coach";
 import { settingsNavigationRequestAtom } from "@/state/settingsNavigation";
@@ -452,6 +453,7 @@ export default function Page() {
       ),
       "coach-model": () => <CoachModelSetting />,
       "coach-engine": () => <CoachEngineSelect />,
+      "restore-open-tabs": () => <SettingsSwitch atom={restoreOpenTabsAtom} />,
       reload: () => <AdvancedActionButton label={t("Menu.View.Reload")} action={reloadApp} />,
       "clear-saved-data": () => (
         <AdvancedActionButton

@@ -1451,6 +1451,8 @@
     "Settings.Advanced.Desc": "Last inn appen på nytt, fjern lagrede data eller åpne loggene",
     "Settings.Advanced.OpenLogs.Desc": "Åpne mappen som inneholder programloggene",
     "Settings.Advanced.Reload.Desc": "Last inn programvinduet på nytt",
+    "Settings.Advanced.RestoreOpenTabs": "Gjenopprett åpne faner ved oppstart",
+    "Settings.Advanced.RestoreOpenTabs.Desc": "Åpner fanene dine, rekkefølgen deres og stillingen i hvert parti på nytt når ChessRiddle Studio starter. Når denne er av, kommer bare partier med ulagrede endringer tilbake.",
     "Settings.AI": "KI",
     "Settings.Analysis": "Analyse og notasjon",
     "Settings.Analysis.Desc": "Notasjon, navigasjon, panellayout og automatisk lagring",

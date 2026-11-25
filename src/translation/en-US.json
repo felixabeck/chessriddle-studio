@@ -1451,6 +1451,8 @@
     "Settings.Advanced.Desc": "Reload the app, clear saved data, or open the logs",
     "Settings.Advanced.OpenLogs.Desc": "Open the folder that contains the application logs",
     "Settings.Advanced.Reload.Desc": "Reload the application window",
+    "Settings.Advanced.RestoreOpenTabs": "Restore open tabs at start",
+    "Settings.Advanced.RestoreOpenTabs.Desc": "Reopen your tabs, their order and each game's position when ChessRiddle Studio starts. When off, only games with unsaved changes come back.",
     "Settings.AI": "AI",
     "Settings.Analysis": "Analysis & notation",
     "Settings.Analysis.Desc": "Notation, navigation, panel layout, and auto-save",

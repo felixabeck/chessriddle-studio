@@ -608,6 +608,14 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
         },
         // Advanced
         {
+            id: "restore-open-tabs",
+            category: "advanced",
+            title: t("Settings.Advanced.RestoreOpenTabs"),
+            description: t("Settings.Advanced.RestoreOpenTabs.Desc"),
+            keywords: ["restore", "tabs", "session", "start", "reopen", "workspace"],
+            shown: true,
+        },
+        {
             id: "reload",
             category: "advanced",
             title: t("Menu.View.Reload"),

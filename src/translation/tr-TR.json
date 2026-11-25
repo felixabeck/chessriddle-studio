@@ -1451,6 +1451,8 @@
     "Settings.Advanced.Desc": "Uygulamayı yeniden yükle, kaydedilmiş verileri sil veya günlükleri aç",
     "Settings.Advanced.OpenLogs.Desc": "Uygulama günlüklerini içeren klasörü aç",
     "Settings.Advanced.Reload.Desc": "Uygulama penceresini yeniden yükle",
+    "Settings.Advanced.RestoreOpenTabs": "Başlangıçta açık sekmeleri geri yükle",
+    "Settings.Advanced.RestoreOpenTabs.Desc": "ChessRiddle Studio başlatıldığında sekmelerinizi, sıralarını ve her oyunun konumunu yeniden açar. Kapalıyken yalnızca kaydedilmemiş değişiklik içeren oyunlar geri gelir.",
     "Settings.AI": "Yapay zekâ",
     "Settings.Analysis": "Analiz ve notasyon",
     "Settings.Analysis.Desc": "Notasyon, gezinme, panel düzeni ve otomatik kaydetme",

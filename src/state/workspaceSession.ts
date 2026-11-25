@@ -111,8 +111,18 @@ function clearStoreUnavailableMarker(session: Pick<Storage, "removeItem">): void
 // ---------------------------------------------------------------------------------------------
 // Startup notices & restore state shared with the mirror
 
+// Each notice text is a literal `i18n.t` call so `i18next-cli extract` keeps its catalogue keys.
+const NOTICE_TEXT = {
+    "WorkspaceSession.RestoreFailed": (options?: Record<string, unknown>) =>
+        i18n.t("WorkspaceSession.RestoreFailed", { category: String(options?.category ?? "") }),
+    "WorkspaceSession.Quarantined": () => i18n.t("WorkspaceSession.Quarantined"),
+    "WorkspaceSession.SeedQuotaFailed": () => i18n.t("WorkspaceSession.SeedQuotaFailed"),
+    "WorkspaceSession.SkippedTabs": (options?: Record<string, unknown>) =>
+        i18n.t("WorkspaceSession.SkippedTabs", { count: Number(options?.count ?? 0) }),
+} as const;
+
 export type QueuedSessionNotice = {
-    key: string;
+    key: keyof typeof NOTICE_TEXT;
     options?: Record<string, unknown>;
     color?: string;
 };
@@ -167,7 +177,7 @@ export function flushWorkspaceSessionNotices(
     const queued = pendingNotices;
     pendingNotices = [];
     for (const notice of queued) {
-        notify(i18n.t(notice.key, notice.options), notice.color);
+        notify(NOTICE_TEXT[notice.key](notice.options), notice.color);
     }
 }
 

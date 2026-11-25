@@ -1425,6 +1425,8 @@
     "Settings.Advanced.Desc": "앱을 다시 로드하거나, 저장된 데이터를 지우거나, 로그를 엽니다",
     "Settings.Advanced.OpenLogs.Desc": "애플리케이션 로그가 있는 폴더를 엽니다",
     "Settings.Advanced.Reload.Desc": "애플리케이션 창을 다시 로드합니다",
+    "Settings.Advanced.RestoreOpenTabs": "시작 시 열린 탭 복원",
+    "Settings.Advanced.RestoreOpenTabs.Desc": "ChessRiddle Studio를 시작할 때 열려 있던 탭과 순서, 각 대국의 포지션을 다시 엽니다. 끄면 저장되지 않은 변경 사항이 있는 대국만 돌아옵니다.",
     "Settings.AI": "AI",
     "Settings.Analysis": "분석 및 기보",
     "Settings.Analysis.Desc": "기보, 탐색, 패널 배치, 자동 저장",

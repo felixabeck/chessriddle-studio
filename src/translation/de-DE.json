@@ -1451,6 +1451,8 @@
     "Settings.Advanced.Desc": "Die Anwendung neu laden, gespeicherte Daten löschen oder die Protokolle öffnen",
     "Settings.Advanced.OpenLogs.Desc": "Den Ordner mit den Anwendungsprotokollen öffnen",
     "Settings.Advanced.Reload.Desc": "Das Anwendungsfenster neu laden",
+    "Settings.Advanced.RestoreOpenTabs": "Offene Tabs beim Start wiederherstellen",
+    "Settings.Advanced.RestoreOpenTabs.Desc": "Öffnet deine Tabs, ihre Reihenfolge und die aktuelle Stellung jeder Partie beim Start von ChessRiddle Studio erneut. Ist dies aus, kehren nur Partien mit ungespeicherten Änderungen zurück.",
     "Settings.AI": "KI",
     "Settings.Analysis": "Analyse & Notation",
     "Settings.Analysis.Desc": "Notation, Navigation, Bereichslayout und automatisches Speichern",

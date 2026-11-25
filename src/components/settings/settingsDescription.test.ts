@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { catalogueI18n } from "@/tests/catalogues";
+import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
+import type { SupportedLocale } from "@/i18n";
 import {
     describeSettings,
     SETTING_CATEGORIES,
@@ -137,6 +138,15 @@ test("board and analysis rows keep the specified group membership and order", ()
             .filter((setting) => setting.category === "general")
             .every((setting) => setting.group === undefined),
     ).toBe(true);
+    expect(
+        settings.filter((setting) => setting.category === "advanced").map((setting) => setting.id),
+    ).toEqual(["restore-open-tabs", "reload", "clear-saved-data", "open-logs"]);
+    expect(settings.find((setting) => setting.id === "restore-open-tabs")).toMatchObject({
+        category: "advanced",
+        title: "Settings.Advanced.RestoreOpenTabs",
+        description: "Settings.Advanced.RestoreOpenTabs.Desc",
+        shown: true,
+    });
 });
 
 test("search headings include the content group when the row has one", () => {
@@ -155,4 +165,26 @@ test("sidebar groups drop Coach when it is disabled", () => {
         "analysis",
         "repertoire",
     ]);
+});
+
+test("all 16 catalogues translate Restore open tabs at start and keep ChessRiddle Studio untranslated", async () => {
+    const enTitle = "Restore open tabs at start";
+    const enDesc =
+        "Reopen your tabs, their order and each game's position when ChessRiddle Studio starts. When off, only games with unsaved changes come back.";
+    for (const { locale } of shippedCatalogues()) {
+        const i18n = await catalogueI18n(locale as SupportedLocale);
+        const row = describeSettings((key) => i18n.t(key), {
+            platform: "linux",
+            coachEnabled: true,
+        }).find((setting) => setting.id === "restore-open-tabs");
+        expect(row).toBeDefined();
+        expect(row!.title.length).toBeGreaterThan(0);
+        expect(row!.description).toContain("ChessRiddle Studio");
+        const english = locale === "en-US" || locale === "en-GB";
+        expect({
+            locale,
+            title: row!.title === enTitle,
+            description: row!.description === enDesc,
+        }).toEqual({ locale, title: english, description: english });
+    }
 });
