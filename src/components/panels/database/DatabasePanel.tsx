@@ -315,31 +315,33 @@ function DatabasePanel() {
     source === "lch_all" ? lichessAllExplorer : lichessMasterExplorer;
 
   type StatsColumn = {
-    role: ExplorerColumnId;
+    column: ExplorerColumnId;
     name: string;
     kind: "local" | "online";
     explorer: OpeningData & { loading: boolean; error: string | undefined };
     database: DatabaseHandle | null;
   };
   const localColumn = (
-    role: ExplorerColumnId,
+    column: ExplorerColumnId,
     name: string,
     explorer: ReturnType<typeof useLocalExplorer>,
     database: DatabaseHandle,
   ): StatsColumn => ({
-    role,
+    column,
     name,
     kind: "local",
     explorer,
     database,
   });
-  const onlineColumn = (role: ExplorerColumnId, source: ExplorerOnlineSource): StatsColumn => ({
-    role,
-    name: onlineName(source),
-    kind: "online",
-    explorer: onlineExplorer(source),
-    database: null,
-  });
+  const onlineColumn = (column: ExplorerColumnId, source: ExplorerOnlineSource): StatsColumn => {
+    return {
+      column,
+      name: onlineName(source),
+      kind: "online",
+      explorer: onlineExplorer(source),
+      database: null,
+    };
+  };
 
   const primaryTitle =
     dbSelectData.find((choice) => choice.value === selectedReferenceDatabase)?.label ?? "";
@@ -355,6 +357,7 @@ function DatabasePanel() {
       : comparison.kind === "online"
         ? onlineColumn("comparison", comparison.source)
         : null;
+  // A further Lichess column's identity is the source it shows, so it is passed as both.
   const furtherColumnsStats: StatsColumn[] = furtherShown.map((column) =>
     column.id === "reference"
       ? localColumn("reference", column.title, pinnedReferenceExplorer, column.database)
@@ -379,13 +382,13 @@ function DatabasePanel() {
     return !(statsUnavailable && column.kind === "online");
   });
   const gamesSource: ExplorerGamesSourceRole = gamesColumns.some(
-    (column) => column.role === storedGamesSource,
+    (column) => column.column === storedGamesSource,
   )
     ? storedGamesSource
-    : gamesColumns[0]?.role === "comparison"
+    : gamesColumns[0]?.column === "comparison"
       ? "comparison"
       : "primary";
-  const gamesFrom = gamesColumns.find((column) => column.role === gamesSource);
+  const gamesFrom = gamesColumns.find((column) => column.column === gamesSource);
   const oneGamesColumnAmongSeveralStats = gamesColumns.length === 1 && statsSources !== null;
 
   const openingData: OpeningData | undefined = primaryColumn?.explorer;
@@ -719,7 +722,7 @@ function DatabasePanel() {
   );
 
   const sourceAlert = (source: StatsColumn) => (
-    <Alert key={source.role} color="danger" style={{ flexShrink: 0 }}>
+    <Alert key={source.column} color="danger" style={{ flexShrink: 0 }}>
       {`${source.name}: ${source.explorer.error}`}
     </Alert>
   );
@@ -758,6 +761,27 @@ function DatabasePanel() {
         </>
       )}
     </>
+  );
+  const addSourceMenu = (
+    label: string,
+    accessibleName: string,
+    local: SelectItem[],
+    online: SelectItem[],
+    choose: (value: string) => void,
+  ) => (
+    <Menu position="bottom-start" withinPortal>
+      <Menu.Target>
+        <Button
+          variant="subtle"
+          size="compact-sm"
+          leftSection={<Plus size="0.875rem" />}
+          aria-label={accessibleName}
+        >
+          {label}
+        </Button>
+      </Menu.Target>
+      <Menu.Dropdown>{groupedMenu(local, online, choose)}</Menu.Dropdown>
+    </Menu>
   );
 
   const gamesView = (source: StatsColumn) => {
@@ -807,7 +831,7 @@ function DatabasePanel() {
     setFurtherColumns((columns) => addFurtherColumn(columns, id, furtherContext));
   const furtherMenuItems = furtherChoices.flatMap((id): SelectItem[] => {
     if (id !== "reference") return [{ value: id, label: onlineName(id) }];
-    if (availableReference.kind !== "source") return [];
+    if (availableReference.kind !== "database") return [];
     return [{ value: id, label: availableReference.title }];
   });
   const furtherLocalItems = furtherMenuItems.filter((item) => item.value === "reference");
@@ -841,42 +865,22 @@ function DatabasePanel() {
           <Group justify="space-between" wrap="nowrap" gap="xs">
             <Group gap="xs">
               {showingLocalSource && <PositionSearchControl boardFen={debouncedFen} />}
-              {canCompare && (
-                <Menu position="bottom-start" withinPortal>
-                  <Menu.Target>
-                    <Button
-                      variant="subtle"
-                      size="compact-sm"
-                      leftSection={<Plus size="0.875rem" />}
-                      aria-label={t("Board.Database.CompareWith")}
-                    >
-                      {t("Board.Database.Compare")}
-                    </Button>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    {groupedMenu(comparisonLocalChoices, comparisonOnlineChoices, chooseComparison)}
-                  </Menu.Dropdown>
-                </Menu>
-              )}
-              {canAddFurther && (
-                <Menu position="bottom-start" withinPortal>
-                  <Menu.Target>
-                    <Button
-                      variant="subtle"
-                      size="compact-sm"
-                      leftSection={<Plus size="0.875rem" />}
-                      aria-label={t("Board.Database.AddColumn")}
-                    >
-                      {t("Board.Database.AddColumn")}
-                    </Button>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    {groupedMenu(furtherLocalItems, furtherOnlineItems, (value) =>
-                      addFurther(value as ExplorerFurtherColumn),
-                    )}
-                  </Menu.Dropdown>
-                </Menu>
-              )}
+              {canCompare &&
+                addSourceMenu(
+                  t("Board.Database.Compare"),
+                  t("Board.Database.CompareWith"),
+                  comparisonLocalChoices,
+                  comparisonOnlineChoices,
+                  chooseComparison,
+                )}
+              {canAddFurther &&
+                addSourceMenu(
+                  t("Board.Database.AddColumn"),
+                  t("Board.Database.AddColumn"),
+                  furtherLocalItems,
+                  furtherOnlineItems,
+                  (value) => addFurther(value as ExplorerFurtherColumn),
+                )}
             </Group>
             <Group gap={4} wrap="nowrap">
               <Tabs.List style={{ flexWrap: "nowrap" }}>
@@ -921,7 +925,7 @@ function DatabasePanel() {
                 openings={primaryColumn?.explorer.openings ?? []}
                 loading={primaryColumn?.explorer.loading ?? false}
                 sources={statsSources.map((column) => ({
-                  role: column.role,
+                  column: column.column,
                   openings: column.explorer.openings,
                   loading: column.explorer.loading,
                   total: column.explorer.total,
@@ -950,7 +954,7 @@ function DatabasePanel() {
               style={{ flexShrink: 0, alignSelf: "flex-start" }}
               size="xs"
               data={gamesColumns.map((column) => ({
-                value: column.role,
+                value: column.column,
                 label: column.name,
               }))}
               value={gamesSource}

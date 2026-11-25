@@ -8,7 +8,7 @@ import type {
 import { isDatabaseComparisonSource } from "@/utils/pathCapabilities";
 import { databaseHandleKey, type ManagedDatabaseInfo } from "@/utils/db";
 
-/** Columns a preparation board may show: first, opponent, and one further source. */
+/** Three columns in total: the first column, the opponent column when shown, and further columns. */
 export const PREPARATION_BOARD_COLUMN_LIMIT = 3;
 
 export type ComparisonState =
@@ -79,7 +79,7 @@ export function comparisonState({
 
 export type ReferenceSourceState =
     | { kind: "none" }
-    | { kind: "source"; database: DatabaseHandle; title: string };
+    | { kind: "database"; database: DatabaseHandle; title: string };
 
 /**
  * The reference database shown as a further source on a pinned tab. Unlike `comparisonState`, it
@@ -103,7 +103,7 @@ export function pinnedReferenceState({
     const key = databaseHandleKey(reference);
     const entry = databases.find((database) => databaseHandleKey(database.file) === key);
     if (!entry || entry.type !== "success") return { kind: "none" };
-    return { kind: "source", database: entry.file, title: entry.title || entry.filename };
+    return { kind: "database", database: entry.file, title: entry.title || entry.filename };
 }
 
 export type ShownFurtherColumn =
@@ -148,7 +148,7 @@ export function shownFurtherColumns({
                 reference,
                 databases,
             });
-            if (source.kind === "source") {
+            if (source.kind === "database") {
                 shown.push({
                     id: "reference",
                     database: source.database,
@@ -212,7 +212,7 @@ export function furtherColumnChoices(
                 primary: context.primary,
                 reference: context.reference,
                 databases: context.databases,
-            }).kind === "source"
+            }).kind === "database"
         );
     });
 }

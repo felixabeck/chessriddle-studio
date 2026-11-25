@@ -252,7 +252,7 @@ const pinnedRef = {
 
 test("a pinned tab shows a readable reference database", () => {
     expect(pinnedReferenceState(pinnedRef)).toEqual({
-        kind: "source",
+        kind: "database",
         database: handle("ref"),
         title: "Reference",
     });
@@ -260,7 +260,7 @@ test("a pinned tab shows a readable reference database", () => {
 
 test("a pinned tab accepts the same database as the pinned one for its reference source", () => {
     expect(pinnedReferenceState({ ...pinnedRef, reference: handle("mega") })).toEqual({
-        kind: "source",
+        kind: "database",
         database: handle("mega"),
         title: "Mega",
     });

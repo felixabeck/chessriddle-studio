@@ -90,8 +90,6 @@ export function useOnlineExplorer(
             ),
         {
             shouldRetryOnError: false,
-            revalidateOnFocus: false,
-            revalidateOnReconnect: false,
         },
     );
     return {

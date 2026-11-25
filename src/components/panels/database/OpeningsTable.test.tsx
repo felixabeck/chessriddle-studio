@@ -176,11 +176,11 @@ async function renderCompared(
                 loading={false}
                 sources={[
                   {
-                    role: "primary",
+                    column: "primary",
                     openings: props.openings ?? openings,
                     loading: props.loading ?? false,
                   },
-                  { role: "comparison", ...comparison },
+                  { column: "comparison", ...comparison },
                 ]}
                 {...props}
               />
@@ -342,9 +342,9 @@ test("three sources render three Total/Results groups and sort by reference", as
   const changes: unknown[] = [];
   await renderCompared({
     sources: [
-      { role: "primary", openings, loading: false },
-      { role: "comparison", openings: comparisonOpenings, loading: false },
-      { role: "reference", openings: referenceOpenings, loading: false },
+      { column: "primary", openings, loading: false },
+      { column: "comparison", openings: comparisonOpenings, loading: false },
+      { column: "reference", openings: referenceOpenings, loading: false },
     ],
     sort: { source: "reference", direction: "desc" },
     onSortChange: (sort) => changes.push(sort),
@@ -375,9 +375,9 @@ test("a Lichess column's position total is the Total row and percentage denomina
   const lichessTotal = { move: "", white: 30, draw: 20, black: 22 };
   await renderCompared({
     sources: [
-      { role: "primary", openings, loading: false },
+      { column: "primary", openings, loading: false },
       {
-        role: "lch_all",
+        column: "lch_all",
         openings: openings.slice(0, 2),
         loading: false,
         total: lichessTotal,
@@ -392,10 +392,10 @@ test("a Lichess column's position total is the Total row and percentage denomina
 
   await renderCompared({
     sources: [
-      { role: "primary", openings, loading: false },
-      { role: "comparison", openings: comparisonOpenings, loading: false },
+      { column: "primary", openings, loading: false },
+      { column: "comparison", openings: comparisonOpenings, loading: false },
       {
-        role: "lch_master",
+        column: "lch_master",
         openings: openings.slice(0, 2),
         loading: false,
         total: lichessTotal,
@@ -410,8 +410,8 @@ test("a Lichess column's position total is the Total row and percentage denomina
 test("a column that cannot answer has empty cells and no no-games dash", async () => {
   await renderCompared({
     sources: [
-      { role: "primary", openings, loading: false },
-      { role: "comparison", openings: comparisonOpenings, loading: false, unavailable: true },
+      { column: "primary", openings, loading: false },
+      { column: "comparison", openings: comparisonOpenings, loading: false, unavailable: true },
     ],
   });
   const [e4, , , total] = bodyRows();
@@ -427,8 +427,8 @@ test("a waiting column beside one that cannot answer shows the waiting table, no
     openings: [],
     loading: true,
     sources: [
-      { role: "primary", openings: [], loading: true },
-      { role: "comparison", openings: [], loading: false, unavailable: true },
+      { column: "primary", openings: [], loading: true },
+      { column: "comparison", openings: [], loading: false, unavailable: true },
     ],
   });
   expect(host.querySelector(".mantine-datatable-loader-fetching")).not.toBeNull();

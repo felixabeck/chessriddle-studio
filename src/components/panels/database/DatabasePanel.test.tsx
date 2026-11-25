@@ -13,6 +13,7 @@ import {
   dbTypeFamily,
   dbTabFamily,
   DEFAULT_LICHESS_OPTIONS,
+  DEFAULT_MASTER_OPTIONS,
   explorerGamesSourceFamily,
   explorerSortFamily,
   sessionsAtom,
@@ -2579,6 +2580,27 @@ describe("DatabasePanel", () => {
       expect(positionControl()).toBeUndefined();
     });
 
+    test("choosing a local database after Lichess All writes the first source back to local", async () => {
+      mockOnlineGames();
+      mocks.getDatabases.mockResolvedValue(databaseList([readable, corrInfo]));
+      const { store } = await mountLocal();
+      await act(async () => store.set(sessionsAtom, [validSession]));
+      const select = container.querySelector<HTMLInputElement>(".mantine-Select-input")!;
+      await act(async () => select.click());
+      const lichess = listedOptions(select).find(
+        (option) => option.textContent === "Board.Database.LichessAll",
+      )!;
+      await act(async () => lichess.click());
+      expect(store.get(dbTypeFamily(tabId))).toBe("lch_all");
+      await act(async () => select.click());
+      const local = listedOptions(select).find(
+        (option) => option.textContent === "Correspondence",
+      )!;
+      await act(async () => local.click());
+      expect(store.get(dbTypeFamily(tabId))).toBe("local");
+      expect(store.get(referenceDbAtom)).toEqual(corr);
+    });
+
     test("a pinned first select offers local databases only", async () => {
       await mountCompared({ pin: reference });
       const select = sources()[0].querySelector<HTMLInputElement>(".mantine-Select-input")!;
@@ -2761,6 +2783,24 @@ describe("DatabasePanel", () => {
       expect(store.get(explorerGamesSourceFamily(tabId))).toBe("primary");
     });
 
+    test("partial local options do not disable Stats once every column is Lichess", async () => {
+      const { store } = await mountMixed({ comparison: null });
+      await vi.waitFor(() => expect(sources()).toHaveLength(1));
+      await act(async () =>
+        store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
+      );
+      const statsTab = () =>
+        Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+          (tab) => tab.textContent === "Board.Database.Stats",
+        )!;
+      expect(statsTab().disabled).toBe(true);
+      expect(mocks.getLichessGames).not.toHaveBeenCalled();
+      await act(async () => store.set(dbTypeFamily(tabId), "lch_all"));
+      await vi.waitFor(() => expect(statsTab().disabled).toBe(false));
+      await vi.waitFor(() => expect(mocks.getLichessGames).toHaveBeenCalled());
+      expect(positionControl()).toBeUndefined();
+    });
+
     test("the Games switch offers a Lichess column on an unpinned board, including its notices and a game without a database", async () => {
       await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
       const { store } = await mountMixed({ rejectedIds: ["g0"] });
@@ -2849,6 +2889,41 @@ describe("DatabasePanel", () => {
         return found;
       });
       expect(items).toEqual(["Board.Database.LichessMaster"]);
+    });
+
+    test("a stored Lichess All comparison beside Lichess All is not shown, and Compare lists Masters and readable databases", async () => {
+      const { store } = await mountMixed({ first: "lch_all", comparison: "lch_all" });
+      await vi.waitFor(() => expect(sources()).toHaveLength(1));
+      expect(store.get(comparisonDbAtom)).toBe("lch_all");
+      const compare = compareButton()!;
+      expect(compare).toBeDefined();
+      await act(async () => compare.click());
+      const items = await vi.waitFor(() => {
+        const found = menuChoices();
+        expect(found).not.toHaveLength(0);
+        return found;
+      });
+      expect(items).toEqual([
+        "Saved reference",
+        "Correspondence",
+        "Third database",
+        "Board.Database.LichessMaster",
+      ]);
+    });
+
+    test("the panel passes stored Lichess and Masters options to their fetchers", async () => {
+      const { store } = await mountMixed({ first: "lch_all", comparison: "lch_master" });
+      await act(async () => {
+        store.set(lichessOptionsAtom, { ...DEFAULT_LICHESS_OPTIONS, speeds: ["blitz"] });
+        store.set(masterOptionsAtom, {
+          ...DEFAULT_MASTER_OPTIONS,
+          since: new Date("2020-01-01T00:00:00Z"),
+        });
+      });
+      await vi.waitFor(() => {
+        expect(mocks.getLichessGames.mock.lastCall?.[1]).toEqual(store.get(lichessOptionsAtom));
+        expect(mocks.getMasterGames.mock.lastCall?.[1]).toEqual(store.get(masterOptionsAtom));
+      });
     });
 
     test("a panel whose first source is already Lichess on first paint still reads the database list", async () => {

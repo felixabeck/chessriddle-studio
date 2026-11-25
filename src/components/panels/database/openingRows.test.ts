@@ -12,8 +12,8 @@ const mega = [opening("e4", 50, 10, 40), opening("d4", 30, 5, 5), opening("c4", 
 const corr = [opening("d4", 2, 9, 1), opening("h4", 1, 6, 0), opening("e4", 1, 3, 0)];
 const ref = [opening("Nf3", 200, 50, 50), opening("e4", 400, 100, 100)];
 const pair = (primary: readonly Opening[], comparison: readonly Opening[]) => [
-    { role: "primary" as const, openings: primary },
-    { role: "comparison" as const, openings: comparison },
+    { column: "primary" as const, openings: primary },
+    { column: "comparison" as const, openings: comparison },
 ];
 const moves = (rows: { move: string }[]) => rows.map((row) => row.move);
 
@@ -79,9 +79,9 @@ test("one empty source leaves the other's moves", () => {
 test("three sources union all moves, sort by reference, and break ties in displayed order", () => {
     const rows = combineOpenings(
         [
-            { role: "primary", openings: mega },
-            { role: "comparison", openings: corr },
-            { role: "reference", openings: ref },
+            { column: "primary", openings: mega },
+            { column: "comparison", openings: corr },
+            { column: "reference", openings: ref },
         ],
         { source: "reference", direction: "desc" },
     );
@@ -106,9 +106,9 @@ test("a sort naming an absent source falls back to primary while keeping the dir
 test("two further columns keep their own rows and a sort on the second stays when the first is removed", () => {
     const rows = combineOpenings(
         [
-            { role: "primary", openings: mega },
-            { role: "lch_all", openings: corr },
-            { role: "lch_master", openings: ref },
+            { column: "primary", openings: mega },
+            { column: "lch_all", openings: corr },
+            { column: "lch_master", openings: ref },
         ],
         { source: "lch_master", direction: "desc" },
     );
@@ -116,8 +116,8 @@ test("two further columns keep their own rows and a sort on the second stays whe
     expect(rows.find((row) => row.move === "Nf3")).toEqual({ move: "Nf3", lch_master: ref[0] });
     expect(rows.find((row) => row.move === "h4")).toEqual({ move: "h4", lch_all: corr[1] });
     const remaining = [
-        { role: "primary" as const, openings: mega },
-        { role: "lch_master" as const, openings: ref },
+        { column: "primary" as const, openings: mega },
+        { column: "lch_master" as const, openings: ref },
     ];
     expect(
         effectiveOpeningsSort({ source: "lch_master", direction: "desc" }, [

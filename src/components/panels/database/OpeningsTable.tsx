@@ -24,7 +24,7 @@ import {
 import classes from "./OpeningsTable.module.css";
 
 export type OpeningsTableSource = {
-  role: ExplorerColumnId;
+  column: ExplorerColumnId;
   openings: Opening[];
   loading: boolean;
   /** The source's position total when it reports one apart from its move rows. */
@@ -38,9 +38,9 @@ type StatsRow = OpeningRow & { isTotal?: true };
 const NO_GAMES = "–";
 const SOURCE_LOADING = "…";
 const DEFAULT_SORT: OpeningsSort = { source: "primary", direction: "desc" };
-const totalAccessor = (role: ExplorerColumnId) => `${role}Total`;
-const resultsAccessor = (role: ExplorerColumnId) => `${role}Results`;
-const roleFromAccessor = (
+const totalAccessor = (column: ExplorerColumnId) => `${column}Total`;
+const resultsAccessor = (column: ExplorerColumnId) => `${column}Results`;
+const columnFromAccessor = (
   accessor: string,
   shown: readonly ExplorerColumnId[],
 ): ExplorerColumnId => {
@@ -86,25 +86,25 @@ function OpeningsTable({
   const threeSources = multiSource && sources.length >= 3;
   const activeSources: readonly OpeningsTableSource[] = multiSource
     ? sources
-    : [{ role: "primary", openings, loading, total }];
-  const sourceByRole = Object.fromEntries(
-    activeSources.map((source) => [source.role, source]),
+    : [{ column: "primary", openings, loading, total }];
+  const sourceByColumn = Object.fromEntries(
+    activeSources.map((source) => [source.column, source]),
   ) as Partial<Record<ExplorerColumnId, OpeningsTableSource>>;
   const answering = activeSources.filter((source) => !source.unavailable);
   const totals = Object.fromEntries(
-    answering.map((source) => [source.role, source.total ?? openingTotals(source.openings)]),
+    answering.map((source) => [source.column, source.total ?? openingTotals(source.openings)]),
   ) as Partial<Record<ExplorerColumnId, Opening>>;
   const activeSort = multiSource
     ? effectiveOpeningsSort(
         sort,
-        activeSources.map((source) => source.role),
+        activeSources.map((source) => source.column),
       )
     : sort;
   const moves: OpeningRow[] = multiSource
     ? combineOpenings(answering, activeSort)
     : openings.map((opening) => ({ move: opening.move, primary: opening }));
   // A position whose games all ended there has no move row but still has games to total.
-  const hasAnyTotal = answering.some((source) => openingGames(totals[source.role]) > 0);
+  const hasAnyTotal = answering.some((source) => openingGames(totals[source.column]) > 0);
   const rows: StatsRow[] =
     moves.length > 0 || hasAnyTotal
       ? [
@@ -118,12 +118,12 @@ function OpeningsTable({
       : [];
   // The whole table waits only while none of the columns that can answer has answered.
   const everyLoading = answering.length > 0 && answering.every((source) => source.loading);
-  const pending = (role: ExplorerColumnId) => !everyLoading && !!sourceByRole[role]?.loading;
-  const unavailable = (role: ExplorerColumnId) => !!sourceByRole[role]?.unavailable;
+  const pending = (column: ExplorerColumnId) => !everyLoading && !!sourceByColumn[column]?.loading;
+  const unavailable = (column: ExplorerColumnId) => !!sourceByColumn[column]?.unavailable;
   const cellFontSize = threeSources ? "xs" : "sm";
 
   const totalColumn = (
-    role: ExplorerColumnId,
+    column: ExplorerColumnId,
     accessor: string,
     separator: boolean,
   ): DataTableColumn<StatsRow> => {
@@ -137,15 +137,15 @@ function OpeningsTable({
       cellsClassName: className,
       titleClassName: className,
       render: (row) => {
-        if (unavailable(role)) return null;
-        if (pending(role)) {
+        if (unavailable(column)) return null;
+        if (pending(column)) {
           return (
             <Text fz={cellFontSize} c="dimmed" ta="right">
               {SOURCE_LOADING}
             </Text>
           );
         }
-        const opening = row[role];
+        const opening = row[column];
         if (!opening) {
           return (
             <Text fz={cellFontSize} c="dimmed" ta="right" data-no-games>
@@ -154,7 +154,7 @@ function OpeningsTable({
           );
         }
         const games = openingGames(opening);
-        const sourceTotal = openingGames(totals[role]);
+        const sourceTotal = openingGames(totals[column]);
         // Games with an unknown result count for neither side: a source can total none.
         const percentage = sourceTotal > 0 ? (games / sourceTotal) * 100 : 0;
         return (
@@ -168,7 +168,7 @@ function OpeningsTable({
       },
     };
   };
-  const resultsColumn = (role: ExplorerColumnId, accessor: string): DataTableColumn<StatsRow> => {
+  const resultsColumn = (column: ExplorerColumnId, accessor: string): DataTableColumn<StatsRow> => {
     const className = cx(threeSources && classes.compactCell) || undefined;
     return {
       accessor,
@@ -176,8 +176,8 @@ function OpeningsTable({
       cellsClassName: className,
       titleClassName: className,
       render: (row) => {
-        const opening = row[role];
-        if (unavailable(role) || !opening || pending(role)) return null;
+        const opening = row[column];
+        if (unavailable(column) || !opening || pending(column)) return null;
         const games = openingGames(opening);
         if (games === 0) return null;
         const whitePercent = (opening.white / games) * 100;
@@ -270,8 +270,8 @@ function OpeningsTable({
           ? [
               moveColumn,
               ...activeSources.flatMap((source, index) => [
-                totalColumn(source.role, totalAccessor(source.role), index > 0),
-                resultsColumn(source.role, resultsAccessor(source.role)),
+                totalColumn(source.column, totalAccessor(source.column), index > 0),
+                resultsColumn(source.column, resultsAccessor(source.column)),
               ]),
             ]
           : [
@@ -287,9 +287,9 @@ function OpeningsTable({
       }}
       onSortStatusChange={({ columnAccessor, direction }) =>
         onSortChange?.({
-          source: roleFromAccessor(
+          source: columnFromAccessor(
             columnAccessor,
-            activeSources.map((source) => source.role),
+            activeSources.map((source) => source.column),
           ),
           direction,
         })

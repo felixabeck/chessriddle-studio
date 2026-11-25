@@ -9,7 +9,7 @@ export type OpeningRow = {
 } & Partial<Record<ExplorerColumnId, Opening>>;
 
 export type OpeningSourceData = {
-    role: ExplorerColumnId;
+    column: ExplorerColumnId;
     openings: readonly Opening[];
 };
 
@@ -33,9 +33,9 @@ export function openingTotals(openings: readonly Opening[]): Opening {
  */
 export function effectiveOpeningsSort(
     sort: OpeningsSort,
-    roles: readonly ExplorerColumnId[],
+    shown: readonly ExplorerColumnId[],
 ): OpeningsSort {
-    return roles.includes(sort.source) ? sort : { ...sort, source: roles[0] ?? "primary" };
+    return shown.includes(sort.source) ? sort : { ...sort, source: shown[0] ?? "primary" };
 }
 
 /**
@@ -48,22 +48,22 @@ export function combineOpenings(
     sort: OpeningsSort,
 ): OpeningRow[] {
     const rows = new Map<string, OpeningRow>();
-    for (const { role, openings } of sources) {
+    for (const { column, openings } of sources) {
         for (const opening of openings) {
             const row = rows.get(opening.move);
-            if (row) row[role] = opening;
-            else rows.set(opening.move, { move: opening.move, [role]: opening });
+            if (row) row[column] = opening;
+            else rows.set(opening.move, { move: opening.move, [column]: opening });
         }
     }
-    const roles = sources.map((source) => source.role);
-    const tieBreakers = roles.filter((role) => role !== sort.source);
+    const shown = sources.map((source) => source.column);
+    const tieBreakers = shown.filter((column) => column !== sort.source);
     const sign = sort.direction === "asc" ? 1 : -1;
     return [...rows.values()].sort((left, right) => {
         const primaryDiff =
             sign * (openingGames(left[sort.source]) - openingGames(right[sort.source]));
         if (primaryDiff !== 0) return primaryDiff;
-        for (const role of tieBreakers) {
-            const diff = openingGames(right[role]) - openingGames(left[role]);
+        for (const column of tieBreakers) {
+            const diff = openingGames(right[column]) - openingGames(left[column]);
             if (diff !== 0) return diff;
         }
         return 0;
