@@ -2,10 +2,12 @@
 
 What changed in each ChessRiddle Studio release. The release workflow copies a version's section into its GitHub release, so keep each section plain Markdown: headings, lists and links.
 
-## Unreleased
+## 1.2.0
 
 ### New
 
+- Library sync: "Sync with ChessRiddle" in the Library keeps your PGN files in your private Library on chessriddle.com. Every file is selected, also files you add later, and you can deselect single files. Saving a file updates its website copy. It needs a connected ChessRiddle account.
+- Guide: Help → Guide explains every feature of Studio, in every interface language.
 - Opponent preparation: open the new Preparation tab on a player's card to compare their over-the-board and online games with your repertoire, list the lines they play and your uncovered gaps, open a line with only their variations shown, and train those lines in a timed session.
 - Opponent preparation: a "Minimum games" choice hides lines and gaps the opponent played only rarely, in the lists, in the opened file and in the training.
 - Opponent preparation: use "Online opponent" in the Library to look up a Lichess or Chess.com account, download their games, and open their player card on the Preparation tab without needing a game in a database first; entering the same account again opens the card without downloading a second copy.
@@ -13,7 +15,14 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 
 ### Improved
 
+- Settings: the categories are grouped, and each page is divided into titled sections.
 - Databases: sort the game list by White, Black, Result, Event and Site, not only by Date and Plies.
+- Coach: choose the AI model in Settings → AI or with the model button beside Send.
+
+### Fixed
+
+- Windows: editing games in PGN files, deleting and moving them, PGN export and Lichess browser sign-in work again.
+- A refused autosave no longer repeats on every board refresh with a stack of error messages.
 
 ## 1.1.0
 
