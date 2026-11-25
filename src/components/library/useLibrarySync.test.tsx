@@ -414,7 +414,11 @@ describe("useLibrarySync", () => {
   it("keeps the last snapshot, sets error, and schedules no retry when a later snapshot fails", async () => {
     vi.useFakeTimers();
     const ws = makeWorkspace("ws-1");
-    mocks.librarySyncChanged.mockResolvedValue(vi.fn());
+    let listener: ((event: { payload: LibrarySyncChanged }) => void) | null = null;
+    mocks.librarySyncChanged.mockImplementation(async (cb) => {
+      listener = cb;
+      return vi.fn();
+    });
     mocks.librarySyncSnapshot
       .mockResolvedValueOnce(makeSnapshot(ws, 1, { status: "synced" }, true))
       .mockRejectedValueOnce(new LibrarySyncCommandError("localStorage"));
@@ -427,7 +431,7 @@ describe("useLibrarySync", () => {
     expect(latest.error).toBeNull();
 
     await act(async () => {
-      await latest.refresh();
+      listener?.({ payload: { revision: 2 } });
     });
     expect(latest.snapshot?.revision).toBe(1);
     expect(latest.snapshot?.state).toEqual({ status: "synced" });
@@ -465,10 +469,14 @@ describe("useLibrarySync", () => {
 
   it("ignores an older snapshot resolving after a newer action failed", async () => {
     const ws = makeWorkspace("ws-1");
+    let listener: ((event: { payload: LibrarySyncChanged }) => void) | null = null;
     const olderRefresh = deferred<LibrarySyncSnapshot>();
     const newerAction = deferred<LibrarySyncSnapshot>();
 
-    mocks.librarySyncChanged.mockResolvedValue(vi.fn());
+    mocks.librarySyncChanged.mockImplementation(async (cb) => {
+      listener = cb;
+      return vi.fn();
+    });
     mocks.librarySyncSnapshot
       .mockResolvedValueOnce(makeSnapshot(ws, 1, { status: "synced" }, true))
       .mockReturnValueOnce(olderRefresh.promise);
@@ -480,10 +488,9 @@ describe("useLibrarySync", () => {
     });
     expect(latest.snapshot?.revision).toBe(1);
 
-    let refreshPromise!: Promise<void>;
     let actionPromise!: Promise<void>;
     await act(async () => {
-      refreshPromise = latest.refresh();
+      listener?.({ payload: { revision: 2 } });
       actionPromise = latest.syncNow();
     });
 
@@ -498,7 +505,6 @@ describe("useLibrarySync", () => {
     // Older snapshot resolves later: must not replace the snapshot or clear the newer error.
     await act(async () => {
       olderRefresh.resolve(makeSnapshot(ws, 2, { status: "syncing", done: 1, total: 2 }, true));
-      await refreshPromise;
     });
     expect(latest.error).toBe("localStorage");
     expect(latest.snapshot?.revision).toBe(1);

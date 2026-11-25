@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
     chessriddleSaveTrainingSettings: vi.fn(),
     chessriddleTrainingMotifs: vi.fn(),
     chessriddleOpenWebsite: vi.fn(),
+    librarySyncSnapshot: vi.fn(),
+    librarySyncTurnOn: vi.fn(),
+    librarySyncTurnOff: vi.fn(),
+    librarySyncSetFileSelected: vi.fn(),
+    librarySyncNow: vi.fn(),
     coachAvailable: vi.fn(),
     coachHasConnection: vi.fn(),
     coachConnections: vi.fn(),
@@ -270,6 +275,60 @@ test.each([
     });
 });
 
+test.each([
+    "librarySyncSnapshot",
+    "librarySyncTurnOn",
+    "librarySyncTurnOff",
+    "librarySyncSetFileSelected",
+    "librarySyncNow",
+] as const)("%s uses the closed Library sync boundary", async (command) => {
+    const { tauri } = await import("./tauri");
+    const workspace = { id: { id: "ws-1" }, kind: "fileWorkspace" } as const;
+    const file = { id: { id: "file-1" }, kind: "fileWorkspace" } as const;
+    const snapshot = {
+        workspace,
+        revision: 1,
+        available: true,
+        active: false,
+        state: { status: "off" as const },
+        files: [],
+    };
+    const invoke = async () => {
+        switch (command) {
+            case "librarySyncSnapshot":
+                return tauri.librarySyncSnapshot(workspace);
+            case "librarySyncTurnOn":
+                return tauri.librarySyncTurnOn(workspace, []);
+            case "librarySyncTurnOff":
+                return tauri.librarySyncTurnOff(workspace, "keep");
+            case "librarySyncSetFileSelected":
+                return tauri.librarySyncSetFileSelected(workspace, file, true);
+            case "librarySyncNow":
+                return tauri.librarySyncNow(workspace);
+        }
+    };
+    mocks[command].mockResolvedValue({ status: "ok", data: snapshot });
+    await expect(invoke()).resolves.toEqual(snapshot);
+    for (const code of ["unavailable", "busy", "localStorage", "invalidWorkspace", "notActive"]) {
+        mocks[command].mockResolvedValue({ status: "error", error: code });
+        await expect(invoke()).rejects.toMatchObject({
+            name: "LibrarySyncCommandError",
+            code,
+        });
+    }
+    mocks[command].mockRejectedValue(new Error("private diagnostic"));
+    const rejected = await invoke().then(
+        () => null,
+        (error: unknown) => error,
+    );
+    expect(rejected).toMatchObject({
+        name: "LibrarySyncCommandError",
+        code: "unavailable",
+        message: "unavailable",
+    });
+    expect((rejected as Error).message).not.toContain("private diagnostic");
+});
+
 test("getDbGame forwards identity as the third argument and owns its abort ticket", async () => {
     const { tauri } = await import("./tauri");
     const database = { id: { id: "db" }, kind: "database" } as const;
@@ -323,6 +382,11 @@ vi.mock("@/bindings/generated", () => ({
         chessriddleSaveTrainingSettings: mocks.chessriddleSaveTrainingSettings,
         chessriddleTrainingMotifs: mocks.chessriddleTrainingMotifs,
         chessriddleOpenWebsite: mocks.chessriddleOpenWebsite,
+        librarySyncSnapshot: mocks.librarySyncSnapshot,
+        librarySyncTurnOn: mocks.librarySyncTurnOn,
+        librarySyncTurnOff: mocks.librarySyncTurnOff,
+        librarySyncSetFileSelected: mocks.librarySyncSetFileSelected,
+        librarySyncNow: mocks.librarySyncNow,
         coachAvailable: mocks.coachAvailable,
         coachHasConnection: mocks.coachHasConnection,
         coachConnections: mocks.coachConnections,

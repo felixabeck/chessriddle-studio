@@ -91,10 +91,8 @@ function makeSnapshot(
 function makeHookResult(overrides: Partial<UseLibrarySyncResult> = {}): UseLibrarySyncResult {
   return {
     snapshot: makeSnapshot({ status: "off" }),
-    loading: false,
     busy: false,
     error: null,
-    refresh: vi.fn(async () => {}),
     turnOn: vi.fn(async () => {}),
     turnOff: vi.fn(async () => {}),
     setFileSelected: vi.fn(async () => {}),
@@ -577,5 +575,22 @@ describe("LibrarySyncDialog", () => {
     await renderDialog(makeSnapshot({ status: "removing", done: 0, total: 0 }));
     expect(dialog.textContent).toContain("Removing synced files from ChessRiddle (0 of 0)…");
     expect(dialog.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("0");
+  });
+
+  it("renders no checkboxes and keeps Turn off sync and Sync now for an active pausing snapshot with no files", async () => {
+    const onSyncNow = vi.fn(async () => {});
+    const onTurnOff = vi.fn(async () => {});
+    await renderDialog(makeSnapshot({ status: "offline" }, [], { active: true }), {
+      onSyncNow,
+      onTurnOff,
+    });
+
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain(
+      "Offline. Sync will continue when ChessRiddle is reachable.",
+    );
+    expect(dialog.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    expect(findButton("Turn off sync")).toBeDefined();
+    expect(findButton("Sync now")).toBeDefined();
   });
 });

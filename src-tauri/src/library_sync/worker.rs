@@ -127,7 +127,11 @@ fn project_active_snapshot(
             available,
             active: true,
             state: overall_state,
-            files: if same_workspace { files } else { Vec::new() },
+            files: if mode == SyncMode::Removing {
+                Vec::new()
+            } else {
+                files
+            },
         }
     } else {
         LibrarySyncSnapshot {
@@ -196,6 +200,24 @@ enum WorkerMessage {
     AccountDisconnected,
 }
 
+/// Logs why a workspace scan failed. A cancelled scan is the worker shutting down and stays silent.
+fn log_scan_failure(operation: &str, error: &crate::error::Error) {
+    if !matches!(error, crate::error::Error::Cancellation) {
+        log::warn!("library sync {operation} failed: {error}");
+    }
+}
+
+fn initial_overall_state(state: &SyncState) -> LibrarySyncState {
+    match state.mode {
+        SyncMode::Off => LibrarySyncState::Off,
+        SyncMode::On => LibrarySyncState::Synced,
+        SyncMode::Removing => LibrarySyncState::Removing {
+            done: 0,
+            total: state.entries.len().min(u32::MAX as usize) as u32,
+        },
+    }
+}
+
 #[derive(Clone)]
 struct PublishedView {
     revision: u32,
@@ -209,21 +231,13 @@ struct PublishedView {
 
 impl PublishedView {
     fn from_state(state: &SyncState, account_connected: bool) -> Self {
-        let overall_state = match state.mode {
-            SyncMode::Off => LibrarySyncState::Off,
-            SyncMode::On => LibrarySyncState::Synced,
-            SyncMode::Removing => LibrarySyncState::Removing {
-                done: 0,
-                total: state.entries.len().min(u32::MAX as usize) as u32,
-            },
-        };
         Self {
             revision: 1,
             account_connected,
             account_matches: true,
             mode: state.mode,
             synced_workspace: state.workspace.clone(),
-            overall_state,
+            overall_state: initial_overall_state(state),
             files: Vec::new(),
         }
     }
@@ -362,7 +376,10 @@ impl LibrarySyncOwner {
                 LibrarySyncState::Off,
                 off_files_from_candidates(&result.candidates),
             ),
-            Err(_) => (LibrarySyncState::FolderUnavailable, Vec::new()),
+            Err(error) => {
+                log_scan_failure("snapshot workspace scan", &error);
+                (LibrarySyncState::FolderUnavailable, Vec::new())
+            }
         };
 
         Ok(project_off_snapshot(
@@ -527,14 +544,7 @@ struct SyncActor {
 impl SyncActor {
     fn new(deps: ActorDeps, initial_state: SyncState) -> Self {
         let initial_mode = initial_state.mode;
-        let overall_state = match initial_mode {
-            SyncMode::Off => LibrarySyncState::Off,
-            SyncMode::On => LibrarySyncState::Synced,
-            SyncMode::Removing => LibrarySyncState::Removing {
-                done: 0,
-                total: initial_state.entries.len().min(u32::MAX as usize) as u32,
-            },
-        };
+        let overall_state = initial_overall_state(&initial_state);
         Self {
             state_dir: deps.state_dir,
             state: initial_state,
@@ -927,10 +937,10 @@ impl SyncActor {
         deselected: Vec<FileWorkspaceHandle>,
     ) -> Result<LibrarySyncSnapshot, LibrarySyncError> {
         self.refresh_account_connected().await;
-        let scan = self
-            .scan_workspace(&workspace)
-            .await
-            .map_err(|_| LibrarySyncError::InvalidWorkspace)?;
+        let scan = self.scan_workspace(&workspace).await.map_err(|error| {
+            log_scan_failure("turn-on workspace scan", &error);
+            LibrarySyncError::InvalidWorkspace
+        })?;
 
         // Do not mint ids before the first server list so identity pass 4 can adopt matching
         // server files. Key initial deselections by both handle and locator.
@@ -1000,7 +1010,8 @@ impl SyncActor {
                         self.last_candidates = scan.candidates;
                         self.overall_state = LibrarySyncState::Off;
                     }
-                    Err(_) => {
+                    Err(error) => {
+                        log_scan_failure("turn-off workspace scan", &error);
                         self.last_candidates.clear();
                         self.overall_state = LibrarySyncState::FolderUnavailable;
                     }
@@ -1142,7 +1153,12 @@ impl SyncActor {
                 }
             }
             Err(crate::error::Error::Cancellation) => {}
-            Err(_) => {
+            Err(error) => {
+                // The check repeats every scan interval: log the failure when the folder becomes
+                // unavailable, not on every repeat while it stays so.
+                if self.overall_state != LibrarySyncState::FolderUnavailable {
+                    log_scan_failure("periodic workspace scan", &error);
+                }
                 self.overall_state = LibrarySyncState::FolderUnavailable;
                 self.publish(true);
                 self.next_scan_at = Some(Instant::now() + self.config.scan_interval);
@@ -1318,7 +1334,8 @@ impl SyncActor {
         let scan = match self.scan_workspace(&workspace).await {
             Ok(scan) => scan,
             Err(crate::error::Error::Cancellation) => return RunOutcome::Interrupted,
-            Err(_) => {
+            Err(error) => {
+                log::warn!("library sync workspace scan failed: {error}");
                 self.overall_state = LibrarySyncState::FolderUnavailable;
                 self.publish(true);
                 return RunOutcome::ScheduleBackoff;
@@ -1464,6 +1481,7 @@ impl SyncActor {
                 if self.cancel.is_cancelled()
                     || self.state.mode != SyncMode::On
                     || self.paused_until_trigger
+                    || self.run_requested
                 {
                     return RunOutcome::Interrupted;
                 }
@@ -1603,7 +1621,8 @@ impl SyncActor {
             Err(crate::error::Error::Cancellation) => {
                 return PutStepOutcome::AbortRun(RunOutcome::Interrupted);
             }
-            Err(_) => {
+            Err(error) => {
+                log::warn!("library sync candidate read failed: {error}");
                 return PutStepOutcome::FileStatus {
                     status: LibrarySyncFileStatus::Unreadable,
                     capacity: false,
@@ -1863,6 +1882,7 @@ mod tests {
         list_oversized: AtomicBool,
         on_put_success: Mutex<Option<Box<dyn FnOnce() + Send>>>,
         on_delete_success: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+        block_next_put: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
     }
 
     impl MockServerState {
@@ -1888,6 +1908,7 @@ mod tests {
                 list_oversized: AtomicBool::new(false),
                 on_put_success: Mutex::new(None),
                 on_delete_success: Mutex::new(None),
+                block_next_put: Mutex::new(None),
             })
         }
     }
@@ -1974,6 +1995,11 @@ mod tests {
                 .map(str::to_owned),
             body: body.to_vec(),
         });
+        let put_gate = s.block_next_put.lock().unwrap().take();
+        if let Some((entered_tx, release_rx)) = put_gate {
+            let _ = entered_tx.send(());
+            let _ = release_rx.await;
+        }
         if s.force_always_401.load(Ordering::SeqCst)
             || s.fail_next_put_401.swap(false, Ordering::SeqCst)
         {
@@ -3978,5 +4004,196 @@ mod tests {
         assert_eq!(kept.state, LibrarySyncState::Off);
 
         harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn deselecting_queued_file_while_first_put_is_in_flight_interrupts_stale_plan() {
+        let server = MockServerState::new("acct-1");
+        let (entered_tx, entered_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        *server.block_next_put.lock().unwrap() = Some((entered_tx, release_rx));
+        let origin = start_mock_server(Arc::clone(&server)).await;
+
+        let harness = build_harness_with_config(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN), ("Beta.pgn", BETA_PGN)],
+            fast_config(),
+        )
+        .await;
+
+        let turn_on_snap = harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+        let beta_handle = turn_on_snap
+            .files
+            .iter()
+            .find(|f| f.name == "Beta")
+            .unwrap()
+            .handle
+            .clone();
+
+        // Wait until the first PUT (Alpha) is in flight on the server.
+        entered_rx.await.expect("first PUT should enter server");
+
+        // Enqueue SetFileSelected(Beta, false) while Alpha's PUT is blocked, polling once so the
+        // message is already buffered in the actor's channel before Alpha's PUT finishes.
+        let mut deselect_fut = Box::pin(harness.owner.set_file_selected(
+            harness.workspace.clone(),
+            beta_handle,
+            false,
+        ));
+        tokio::select! {
+            biased;
+            res = &mut deselect_fut => {
+                panic!("set_file_selected unexpectedly completed while PUT was blocked: {res:?}");
+            }
+            _ = tokio::task::yield_now() => {}
+        }
+
+        let _ = release_tx.send(());
+        deselect_fut.await.unwrap();
+
+        // The interrupted run immediately triggers a fresh run (list_count >= 2) that plans from
+        // the updated state and settles at Synced without ever uploading Beta.
+        let final_snap = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced && server.list_count.load(Ordering::SeqCst) >= 2
+        })
+        .await;
+
+        let puts = server.recorded_puts.lock().unwrap().clone();
+        assert_eq!(
+            puts.len(),
+            1,
+            "expected only Alpha to be uploaded: {puts:?}"
+        );
+        let uploaded_name =
+            extract_multipart_part(&puts[0].body, "name").and_then(|b| String::from_utf8(b).ok());
+        assert_eq!(uploaded_name.as_deref(), Some("Alpha"));
+
+        let beta = final_snap.files.iter().find(|f| f.name == "Beta").unwrap();
+        assert!(!beta.selected);
+        assert_eq!(beta.status, LibrarySyncFileStatus::NotSelected);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn turn_on_second_folder_while_first_put_is_in_flight_drops_old_folder_actions() {
+        let server = MockServerState::new("acct-1");
+        let (entered_tx, entered_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        *server.block_next_put.lock().unwrap() = Some((entered_tx, release_rx));
+        let origin = start_mock_server(Arc::clone(&server)).await;
+
+        let harness = build_harness_with_config(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN), ("Beta.pgn", BETA_PGN)],
+            fast_config(),
+        )
+        .await;
+        std::fs::write(
+            harness._temp.path().join("other-library").join("Gamma.pgn"),
+            b"[Event \"G\"]\n\n1. c4 c5 *\n",
+        )
+        .unwrap();
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+
+        entered_rx.await.expect("first PUT should enter server");
+
+        let mut switch_fut = Box::pin(
+            harness
+                .owner
+                .turn_on(harness.other_workspace.clone(), vec![]),
+        );
+        tokio::select! {
+            biased;
+            res = &mut switch_fut => {
+                panic!("turn_on unexpectedly completed while PUT was blocked: {res:?}");
+            }
+            _ = tokio::task::yield_now() => {}
+        }
+
+        let _ = release_tx.send(());
+        switch_fut.await.unwrap();
+
+        let other_snap = wait_for_state(&harness.owner, &harness.other_workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files
+                    .iter()
+                    .any(|f| f.name == "Gamma" && f.status == LibrarySyncFileStatus::Synced)
+        })
+        .await;
+        assert_eq!(other_snap.files.len(), 1);
+
+        let uploaded_names: Vec<String> = server
+            .recorded_puts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|p| {
+                extract_multipart_part(&p.body, "name").and_then(|b| String::from_utf8(b).ok())
+            })
+            .collect();
+        assert_eq!(
+            uploaded_names,
+            vec!["Alpha".to_owned(), "Gamma".to_owned()],
+            "old folder's remaining Beta file must never be uploaded after TurnOn for another folder"
+        );
+
+        harness.owner.shutdown().await;
+    }
+
+    #[test]
+    fn project_active_snapshot_omits_files_in_removing_mode_and_keeps_them_when_on() {
+        let ws = FileWorkspaceHandle::new(PathRef {
+            id: "ws-1".to_owned(),
+        });
+        let file = LibrarySyncFile {
+            handle: FileWorkspaceHandle::new(PathRef {
+                id: "file-1".to_owned(),
+            }),
+            name: "Alpha".to_owned(),
+            folder_label: String::new(),
+            selected: true,
+            status: LibrarySyncFileStatus::Synced,
+        };
+
+        let paused_removing = project_active_snapshot(
+            SyncMode::Removing,
+            Some(&ws),
+            ws.clone(),
+            4,
+            true,
+            LibrarySyncState::Offline,
+            vec![file.clone()],
+        );
+        assert!(paused_removing.active);
+        assert_eq!(paused_removing.state, LibrarySyncState::Offline);
+        assert!(paused_removing.files.is_empty());
+
+        let active_on = project_active_snapshot(
+            SyncMode::On,
+            Some(&ws),
+            ws.clone(),
+            5,
+            true,
+            LibrarySyncState::Offline,
+            vec![file],
+        );
+        assert!(active_on.active);
+        assert_eq!(active_on.state, LibrarySyncState::Offline);
+        assert_eq!(active_on.files.len(), 1);
+        assert_eq!(active_on.files[0].name, "Alpha");
     }
 }
