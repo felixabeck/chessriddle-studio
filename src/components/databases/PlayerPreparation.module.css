@@ -53,7 +53,7 @@
 }
 
 .chapterTitle {
-  color: var(--cf-muted-foreground);
+  color: var(--mantine-color-dimmed);
 }
 
 .trainFooter {

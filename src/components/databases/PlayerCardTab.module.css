@@ -57,7 +57,7 @@
 }
 
 .table th {
-  color: var(--cf-muted-foreground);
+  color: var(--mantine-color-dimmed);
   font-weight: 500;
   overflow-wrap: normal;
   word-break: normal;

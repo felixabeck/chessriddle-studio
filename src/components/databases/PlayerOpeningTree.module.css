@@ -65,7 +65,7 @@
 }
 
 .terminal {
-  color: var(--cf-muted-foreground);
+  color: var(--mantine-color-dimmed);
 }
 
 .inset {
@@ -154,7 +154,7 @@
 
 .compactRecencyLabel {
   display: none;
-  color: var(--cf-muted-foreground);
+  color: var(--mantine-color-dimmed);
 }
 
 @container (max-width: 35.999rem) {
@@ -246,7 +246,7 @@
     display: block;
     overflow-wrap: normal;
     word-break: normal;
-    color: var(--cf-muted-foreground);
+    color: var(--mantine-color-dimmed);
     font-family: var(--mantine-font-family);
   }
 }
