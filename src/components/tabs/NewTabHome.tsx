@@ -40,16 +40,8 @@ import { StaleFileGameError } from "@/state/fileStructureChange";
 import CreateRepertoireModal from "./CreateRepertoireModal";
 import ImportModal from "./ImportModal";
 import classes from "./NewTabHome.module.css";
-import {
-  ChessKnight,
-  Clock,
-  FileInput as FileInputIcon,
-  Puzzle,
-  Crosshair,
-  Search,
-  ScanSearch,
-  Target,
-} from "lucide-react";
+import { Clock, Search } from "lucide-react";
+import { Emoji, EmojiLabel } from "@/components/common/Emoji";
 import { useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
@@ -543,7 +535,7 @@ export default function NewTabHome({ id }: { id: string }) {
   const actionGroups = [
     [
       {
-        icon: <ChessKnight size={18} />,
+        icon: <Emoji glyph="🤺" size="1.125rem" />,
         description: t("Home.Card.PlayChess.Desc"),
         label: t("Home.Card.PlayChess.Button"),
         onClick: () => {
@@ -555,7 +547,7 @@ export default function NewTabHome({ id }: { id: string }) {
         },
       },
       {
-        icon: <ScanSearch size={18} />,
+        icon: <Emoji glyph="🔍" size="1.125rem" />,
         description: t("Home.Card.AnalysisBoard.Desc"),
         label: t("Home.Card.AnalysisBoard.Title"),
         onClick: () => {
@@ -569,7 +561,7 @@ export default function NewTabHome({ id }: { id: string }) {
         },
       },
       {
-        icon: <Puzzle size={18} />,
+        icon: <Emoji glyph="🧩" size="1.125rem" />,
         description: t("Home.Card.Puzzle.Desc"),
         label: t("Home.Card.Puzzle.Title"),
         onClick: async () => {
@@ -601,7 +593,7 @@ export default function NewTabHome({ id }: { id: string }) {
         },
       },
       {
-        icon: <Target size={18} />,
+        icon: <Emoji glyph="🏋️" size="1.125rem" />,
         description: t("Home.Card.TrainOpenings.Desc"),
         label: t("Home.Card.TrainOpenings.Title"),
         wrap: (button: ReactNode) => (
@@ -617,7 +609,7 @@ export default function NewTabHome({ id }: { id: string }) {
     ],
     [
       {
-        icon: <Crosshair size={18} />,
+        icon: <Emoji glyph="📖" size="1.125rem" />,
         description: t("Home.Card.NewRepertoire.Desc"),
         label: t("Home.Card.NewRepertoire.Title"),
         onClick: () => {
@@ -625,7 +617,7 @@ export default function NewTabHome({ id }: { id: string }) {
         },
       },
       {
-        icon: <FileInputIcon size={18} />,
+        icon: <Emoji glyph="📥" size="1.125rem" />,
         description: t("Home.Card.ImportGame.Desc"),
         label: t("Home.Card.ImportGame.Button"),
         onClick: () => {
@@ -678,7 +670,7 @@ export default function NewTabHome({ id }: { id: string }) {
         <Card withBorder className={classes.library} data-home-library>
           <Stack gap="md" mih={0} flex={1}>
             <Text fw={600} size="lg" data-home-title>
-              {t("Library.Title")}
+              <EmojiLabel glyph="🗃️" label={t("Library.Title")} />
             </Text>
             <TextInput
               aria-label={t("Home.Library.Search")}
@@ -693,10 +685,16 @@ export default function NewTabHome({ id }: { id: string }) {
               value={filter}
               onChange={setFilter}
               data={[
-                { value: "all", label: t("Home.Library.All") },
-                { value: "repertoires", label: t("Home.Library.Repertoires") },
-                { value: "games", label: t("Home.Library.Games") },
-                { value: "due", label: t("Home.Library.Due") },
+                { value: "all", label: <EmojiLabel glyph="🗂️" label={t("Home.Library.All")} /> },
+                {
+                  value: "repertoires",
+                  label: <EmojiLabel glyph="📖" label={t("Home.Library.Repertoires")} />,
+                },
+                {
+                  value: "games",
+                  label: <EmojiLabel glyph="♟️" label={t("Home.Library.Games")} />,
+                },
+                { value: "due", label: <EmojiLabel glyph="🔄" label={t("Home.Library.Due")} /> },
               ]}
             />
             {!library.workspace && (

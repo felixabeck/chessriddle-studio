@@ -24,6 +24,14 @@ export const FILE_TYPES = [
     { translationKey: i18nKey("Files.FileType.Other"), value: "other" },
 ] as const satisfies readonly { translationKey: string; value: FileType }[];
 
+export const FILE_TYPE_EMOJI: Record<FileType, string> = {
+    game: "♟️",
+    repertoire: "📖",
+    tournament: "🏆",
+    puzzle: "🧩",
+    other: "📜",
+};
+
 export const fileInfoMetadataSchema = z.object({
     type: fileTypeSchema,
     tags: z.array(z.string()),

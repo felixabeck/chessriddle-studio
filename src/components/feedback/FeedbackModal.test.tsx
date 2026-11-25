@@ -108,7 +108,7 @@ vi.mock("@mantine/core", () => ({
     value,
     onChange,
   }: {
-    data: { value: string; label: string }[];
+    data: { value: string; label: ReactNode }[];
     value: string;
     onChange: (value: string) => void;
   }) => (
@@ -155,6 +155,7 @@ vi.mock("@mantine/core", () => ({
 }));
 
 import FeedbackModal from "./FeedbackModal";
+import { accessibleText } from "@/tests/accessibleText";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -593,7 +594,7 @@ test("selecting suggestion sends that feedback type", async () => {
   await renderModal();
   await fillMessage("A useful Studio report.");
   const suggestion = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Feedback.Type.Suggestion",
+    (button) => accessibleText(button) === "Feedback.Type.Suggestion",
   );
   await act(async () => {
     suggestion?.click();
@@ -970,10 +971,26 @@ test("passes the attached image as the fifth argument", async () => {
 
 function selectedTypeLabel(): string | undefined {
   return (
-    container.querySelector<HTMLButtonElement>("button[data-selected='true']")?.textContent ??
+    accessibleText(container.querySelector<HTMLButtonElement>("button[data-selected='true']")) ||
     undefined
   );
 }
+
+test("type segments render decorative emojis beside plain translated labels", async () => {
+  await renderModal();
+  const segments = [...container.querySelectorAll<HTMLButtonElement>("button[data-selected]")];
+  expect(
+    segments.map((segment) => ({
+      emoji: segment.querySelector('[aria-hidden="true"]')?.textContent,
+      label: accessibleText(segment),
+    })),
+  ).toEqual([
+    { emoji: "🐛", label: "Feedback.Type.Bug" },
+    { emoji: "💡", label: "Feedback.Type.Suggestion" },
+    { emoji: "⭐", label: "Feedback.Type.Praise" },
+    { emoji: "💬", label: "Feedback.Type.Other" },
+  ]);
+});
 
 test("opens empty by default with bug selected and an empty message", async () => {
   await renderModal();
@@ -1012,7 +1029,7 @@ test("allows editing a prefilled draft before submitting", async () => {
     initialMessage: "Original draft text.",
   });
   const praise = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Feedback.Type.Praise",
+    (button) => accessibleText(button) === "Feedback.Type.Praise",
   );
   await act(async () => {
     praise?.click();

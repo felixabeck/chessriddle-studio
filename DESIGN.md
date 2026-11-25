@@ -106,7 +106,7 @@ ChessRiddle Studio follows ChessRiddle web's icon split: raw system emoji (the c
 `emoji` layer in `chess-tactics-app/frontend/shared/icon-catalog.json` and
 `frontend/web/src/lib/constants/icons.ts`) identify features and sections such as nav sections,
 Guide entries, and puzzle modes, while `lucide-react` (`ui` layer) supplies actions and utilities
-such as buttons, application menu items, and page tabs. Emoji glyphs render through the system
+such as buttons, application menu items, and page tabs. New emoji slots render through the shared decorative `<Emoji>` primitive (`src/components/common/Emoji.tsx`); the Guide and Settings sidebars predate it and still style their own `aria-hidden` spans. All use the system
 colour-emoji font stack (`"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`)
 rather than the bundled text font.
 
@@ -124,7 +124,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Engines page item, local engine portraits and computer opponent | `Brain` | `web/src/components/analysis/EnginePanel.tsx:272` |
 | Settings and engine configuration | `Settings` | `shared/icon-catalog.json:793` |
 | Privacy category | `Shield` | `shared/icon-catalog.json:676` |
-| Puzzle tabs and new puzzle card | `Puzzle` | `shared/icon-catalog.json:757` |
+| Puzzle tabs and puzzle file icon | `Puzzle` | `shared/icon-catalog.json:757` |
 | Tournament and engine rating | `Trophy` | `shared/icon-catalog.json:721` |
 | Information and help | `Info` | `shared/icon-catalog.json:697` |
 | Analysis tabs and actions | `ScanSearch` | `web/src/components/analysis/AnalyzePuzzleButton.tsx:60` |
@@ -155,7 +155,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | More actions | `Ellipsis` | `web/src/components/profile/ProfileActionsMenu.tsx:71` |
 | Engine drag and resize handles | `GripVertical` | `web/src/components/entityEditor/SortableReorderList.tsx:20` |
 | Application menu button (beside the ChessRiddle logo) and the all-tabs list | `ChevronDown` | Closest by meaning |
-| Application menu items (new tab, open file, save, save to database, accounts, engines, settings, fullscreen, guide, assistant, send feedback, about, exit) | `Plus`, `FolderOpen`, `Save`, `Database`, `User`, `Brain`, `Settings`, `Maximize`, `Info`, `MessagesSquare`, `MessageSquarePlus`, `BadgeInfo`, `LogOut` | Reuses each action's slot icon in this table; About `BadgeInfo` and Fullscreen `Maximize` closest by meaning, Exit `LogOut` is `shared/icon-catalog.json:711` (`signOut`) |
+| Application menu items (new tab, open file, save, save to database, accounts, engines, settings, fullscreen, guide, assistant, send feedback, about, exit) | `Plus`, `FolderOpen`, `Save`, `Database`, `User`, `Brain`, `Settings`, `Maximize`, `Info`, `MessagesSquare`, `MessageSquarePlus`, `Castle`, `LogOut` | Reuses each action's slot icon in this table; About `Castle` and Fullscreen `Maximize` closest by meaning, Exit `LogOut` is `shared/icon-catalog.json:711` (`signOut`) |
 | Guide page tab and Guide menu item | `Info` | `shared/icon-catalog.json:714` (`guide`) |
 | Send feedback (Feedback button at the right end of the navigation row, and its menu entry) | `MessageSquarePlus` | `web/src/components/feedback/FeedbackButton.tsx:47` (`UI_ICONS.feedback`) |
 | Add an account | `UserPlus` | `shared/icon-catalog.json:700` |
@@ -169,7 +169,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Normal and table notation | `List`, `TableProperties` | Closest by meaning |
 | Annotate panel | `NotebookPen` | Closest by meaning |
 | Practice target and due badge | `Target` | Closest by meaning |
-| Threats, repertoire practice tab and new repertoire | `Crosshair` | Closest by meaning |
+| Threats and repertoire practice tab | `Crosshair` | Closest by meaning |
 | Pin and unpin engine | `Pin`, `PinOff` | Closest by meaning |
 | Stop engine | `Square` | Closest by meaning |
 | Generic engine selector | `ChevronsUpDown` | Closest by meaning |
@@ -177,7 +177,7 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Disable position editing | `PencilOff` | Closest by meaning |
 | Erase drawings, save file and flip board | `Eraser`, `Save`, `ArrowUpDown` | Closest by meaning |
 | File, PGN and game report | `File`, `FileText` | Closest by meaning |
-| Import game and export engine logs | `FileInput`, `FileOutput` | Closest by meaning |
+| Export engine logs | `FileOutput` | Closest by meaning |
 | Directory, open directory and move file | `Folder`, `FolderOpen`, `FolderSymlink` | Closest by meaning |
 | Database and empty database list | `Database`, `DatabaseX` | Closest by meaning |
 | Cloud engine | `Cloud` | Closest by meaning |
@@ -218,6 +218,85 @@ Data lives in `src/components/assistant/topics/order.ts` (`HELP_TOPIC_GROUPS`). 
 | `browser-extension` | 🔗 | Closest by meaning |
 | `settings` | ⚙️ | `nav.settings` |
 | `feedback` | 🐛 | `common.bug` |
+
+### New Tab and Library emoji
+
+Data lives in `src/components/tabs/NewTabHome.tsx`, `src/components/files/file.ts` (`FILE_TYPE_EMOJI`), and `src/components/library/LibraryPage.tsx`.
+
+| ChessRiddle Studio slot | Emoji | Catalogue key or fallback |
+| --- | --- | --- |
+| New Tab action: Play | 🤺 | `nav.challenges` |
+| New Tab action: Analysis Board | 🔍 | `insights.focus_areas` |
+| New Tab action: Puzzles | 🧩 | `nav.puzzles` |
+| New Tab action: Train openings | 🏋️ | `nav.training` |
+| New Tab action: New Repertoire | 📖 | `puzzle_type.opening_blunder` |
+| New Tab action: Import | 📥 | Closest by meaning |
+| New Tab Library card heading | 🗃️ | `nav.library` |
+| New Tab Library filter: All | 🗂️ | `filter.all` |
+| New Tab Library filter: Repertoires | 📖 | `puzzle_type.opening_blunder` |
+| New Tab Library filter: Games | ♟️ | `common.pawn` |
+| New Tab Library filter: Due | 🔄 | `nav.practice_mistakes` |
+| Library file-type filter: Game (`game`) | ♟️ | `common.pawn` |
+| Library file-type filter: Repertoire (`repertoire`) | 📖 | `puzzle_type.opening_blunder` |
+| Library file-type filter: Tournament (`tournament`) | 🏆 | `insights.trophy_cabinet` |
+| Library file-type filter: Puzzle (`puzzle`) | 🧩 | `nav.puzzles` |
+| Library file-type filter: Other (`other`) | 📜 | `common.scroll` |
+| Library file-type filter: Games database (`database`) | 🗄️ | Closest by meaning |
+
+### Feedback dialog emoji
+
+Data lives in `src/components/feedback/FeedbackModal.tsx` (`SegmentedControl` type choice).
+
+| Feedback type | Emoji | Catalogue key or fallback |
+| --- | --- | --- |
+| Bug (`bug`) | 🐛 | `common.bug` |
+| Suggestion (`suggestion`) | 💡 | `common.idea` |
+| Praise (`praise`) | ⭐ | `common.star` (`filter.rated`) |
+| Other (`other`) | 💬 | `common.chat` |
+
+### Settings category emoji
+
+Data lives in `src/components/settings/settingsDescription.ts` (`SETTING_CATEGORY_EMOJI`).
+
+| Category (`SettingCategory`) | Emoji | Catalogue key or fallback |
+| --- | --- | --- |
+| `board` | ♟️ | `common.pawn` |
+| `analysis` | 🔍 | `insights.focus_areas` |
+| `repertoire` | 📖 | `puzzle_type.opening_blunder` |
+| `coach` | 💬 | `common.chat` |
+| `general` | ⚙️ | `nav.settings` |
+| `sound` | 🔊 | `common.sound_on` |
+| `keybinds` | ⌨️ | `common.keyboard` |
+| `directories` | 🗃️ | `nav.library` |
+| `advanced` | 🧪 | `common.test_tube` |
+
+### Settings content group emoji
+
+Data lives in `src/components/settings/settingsDescription.ts` (`SETTING_CONTENT_GROUP_EMOJI`).
+
+| Content group (`SettingContentGroup`) | Emoji | Catalogue key or fallback |
+| --- | --- | --- |
+| `look` | 🎨 | `common.palette` |
+| `highlights` | ✨ | `common.sparkles` |
+| `movingPieces` | 🖱️ | `common.mouse` |
+| `arrowsDrawing` | 🏹 | `puzzle_type.conversion` |
+| `notation` | 📝 | `coordinates.name_square` |
+| `navigating` | 🧭 | `puzzle_type.positional` |
+| `layoutSaving` | 📋 | `nav.training_plan` |
+
+### Keybind group emoji
+
+Data lives in `src/components/settings/keybindGroups.ts` (`KEYBIND_GROUPS` and `KEYBIND_DRAWING_EMOJI`).
+
+| Keybind group (`KeybindGroupId`) | Emoji | Catalogue key or fallback |
+| --- | --- | --- |
+| `tabsFiles` | 🗂️ | `filter.all` |
+| `navigation` | ⏩ | `puzzle_type.pre_moves` |
+| `editing` | ✏️ | `common.edit` |
+| `annotations` | ✍️ | `common.writing` |
+| `engine` | 🧠 | `insights.thinking_time` |
+| `panels` | 📋 | `nav.training_plan` |
+| Drawing (`KEYBIND_DRAWING_EMOJI`) | 🏹 | `puzzle_type.conversion` |
 
 Existing rendered sizes are retained for this import and JSX migration, including
 compact 12–14px slots. This follows Phase 2's explicit

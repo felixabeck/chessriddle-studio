@@ -9,8 +9,8 @@ import {
 import { Link, useRouterState } from "@tanstack/react-router";
 import { getCurrentWebviewWindow } from "@/platform/native";
 import {
-  BadgeInfo,
   Brain,
+  Castle,
   ChevronDown,
   Database,
   FolderOpen,
@@ -122,7 +122,7 @@ const IN_APP_MENU_ICONS: Record<string, typeof Settings> = {
   guide: Info,
   assistant: MessagesSquare,
   send_feedback: MessageSquarePlus,
-  about: BadgeInfo,
+  about: Castle,
   exit: LogOut,
 };
 

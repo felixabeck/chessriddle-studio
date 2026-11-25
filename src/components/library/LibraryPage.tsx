@@ -27,7 +27,8 @@ import { tauri } from "@/platform/tauri";
 import { CollectionMigration, LinkedCollection, isCollectionConsumer } from "./LinkedCollection";
 import { useTranslation } from "react-i18next";
 import DirectoryTree, { type CollectionPeer } from "@/components/files/DirectoryTree";
-import { FILE_TYPES } from "@/components/files/file";
+import { FILE_TYPE_EMOJI, FILE_TYPES, type FileType } from "@/components/files/file";
+import { EmojiLabel } from "@/components/common/Emoji";
 import { useFileWorkspace } from "@/components/files/useFileWorkspace";
 import { useDatabaseLibrary } from "@/components/databases/useDatabaseLibrary";
 import {
@@ -51,6 +52,11 @@ import { databaseHandleKey } from "@/utils/db";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
 import { collectionsByFile, joinLibraryCollections } from "./libraryData";
+
+const LIBRARY_FILTER_EMOJI: Record<FileType | "database", string> = {
+  ...FILE_TYPE_EMOJI,
+  database: "🗄️",
+};
 
 const LibrarySyncControl = lazy(() =>
   import("./LibrarySyncControl").then((module) => ({ default: module.LibrarySyncControl })),
@@ -337,6 +343,10 @@ export default function LibraryPage() {
                     label: t("Library.GamesDatabase", { defaultValue: "Games database" }),
                   },
                 ]}
+                renderOption={({ option }) => {
+                  const glyph = LIBRARY_FILTER_EMOJI[option.value as FileType | "database"];
+                  return glyph ? <EmojiLabel glyph={glyph} label={option.label} /> : option.label;
+                }}
               />
             </Group>
             <FileTrashNotice files={files} />

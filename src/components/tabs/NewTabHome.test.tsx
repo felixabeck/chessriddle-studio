@@ -17,6 +17,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { chessRiddleTrainingSessions as trainingSessions } from "@/state/chessRiddleTraining";
 import { StaleFileGameError } from "@/state/fileStructureChange";
 import NewTabHome from "./NewTabHome";
+import { accessibleText } from "@/tests/accessibleText";
 
 const mocks = vi.hoisted(() => ({
   language: "en-US",
@@ -182,9 +183,10 @@ async function render() {
     ),
   );
 }
+
 async function click(label: string) {
   const button = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => item.textContent === label,
+    (item) => accessibleText(item) === label,
   )!;
   expect(button).toBeTruthy();
   await act(async () => button.click());
@@ -1000,14 +1002,36 @@ test("compact actions replace their own tab and pass import ownership", async ()
   await render();
   expect(host.querySelectorAll("[data-home-action]")).toHaveLength(6);
   expect(
-    [...host.querySelectorAll("[data-home-action]")].map((action) => action.textContent),
+    [...host.querySelectorAll("[data-home-action]")].map((action) => ({
+      emoji: action.querySelector('[aria-hidden="true"]')?.textContent,
+      label: accessibleText(action),
+    })),
   ).toEqual([
-    "Home.Card.PlayChess.Button",
-    "Home.Card.AnalysisBoard.Title",
-    "Home.Card.Puzzle.Title",
-    "Home.Card.TrainOpenings.Title",
-    "Home.Card.NewRepertoire.Title",
-    "Home.Card.ImportGame.Button",
+    { emoji: "🤺", label: "Home.Card.PlayChess.Button" },
+    { emoji: "🔍", label: "Home.Card.AnalysisBoard.Title" },
+    { emoji: "🧩", label: "Home.Card.Puzzle.Title" },
+    { emoji: "🏋️", label: "Home.Card.TrainOpenings.Title" },
+    { emoji: "📖", label: "Home.Card.NewRepertoire.Title" },
+    { emoji: "📥", label: "Home.Card.ImportGame.Button" },
+  ]);
+  const title = host.querySelector("[data-home-title]")!;
+  expect(title.querySelector('[aria-hidden="true"]')?.textContent).toBe("🗃️");
+  expect(accessibleText(title)).toBe("Library.Title");
+  const filters = [
+    ...host.querySelectorAll<HTMLLabelElement>(
+      "[data-home-library] .mantine-SegmentedControl-label",
+    ),
+  ];
+  expect(
+    filters.map((label) => ({
+      emoji: label.querySelector('[aria-hidden="true"]')?.textContent,
+      label: accessibleText(label),
+    })),
+  ).toEqual([
+    { emoji: "🗂️", label: "Home.Library.All" },
+    { emoji: "📖", label: "Home.Library.Repertoires" },
+    { emoji: "♟️", label: "Home.Library.Games" },
+    { emoji: "🔄", label: "Home.Library.Due" },
   ]);
   for (const [label, type] of [
     ["Home.Card.PlayChess.Button", "play"],

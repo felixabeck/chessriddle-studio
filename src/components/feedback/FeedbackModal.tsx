@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { FeedbackOutcome, FeedbackType } from "@/bindings";
 import AppModal from "@/components/common/AppModal";
+import { EmojiLabel } from "@/components/common/Emoji";
 import { IconAction } from "@/components/common/IconAction";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import { normalizeError } from "@/platform/errors";
@@ -345,10 +346,19 @@ export default function FeedbackModal({
               value={feedbackType}
               onChange={(value) => setFeedbackType(value as FeedbackType)}
               data={[
-                { value: "bug", label: t("Feedback.Type.Bug") },
-                { value: "suggestion", label: t("Feedback.Type.Suggestion") },
-                { value: "praise", label: t("Feedback.Type.Praise") },
-                { value: "other", label: t("Feedback.Type.Other") },
+                { value: "bug", label: <EmojiLabel glyph="🐛" label={t("Feedback.Type.Bug")} /> },
+                {
+                  value: "suggestion",
+                  label: <EmojiLabel glyph="💡" label={t("Feedback.Type.Suggestion")} />,
+                },
+                {
+                  value: "praise",
+                  label: <EmojiLabel glyph="⭐" label={t("Feedback.Type.Praise")} />,
+                },
+                {
+                  value: "other",
+                  label: <EmojiLabel glyph="💬" label={t("Feedback.Type.Other")} />,
+                },
               ]}
               disabled={pending}
             />

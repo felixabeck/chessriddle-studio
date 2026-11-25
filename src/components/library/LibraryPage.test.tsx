@@ -18,6 +18,7 @@ import LibraryPage from "./LibraryPage";
 import { libraryFilterAtom, librarySearchAtom, librarySelectionAtom } from "./memory";
 import { chessBaseGuideAtom } from "./chessBaseGuideState";
 import { onlineOpponentDownloadAtom } from "@/components/databases/onlineOpponent";
+import { accessibleText } from "@/tests/accessibleText";
 
 const mocks = vi.hoisted(() => ({
   files: [] as Entry[] | undefined,
@@ -218,6 +219,7 @@ afterEach(async () => {
   localStorage.clear();
   sessionStorage.clear();
 });
+
 function rows() {
   return [...host.querySelectorAll<HTMLElement>('[role="treeitem"]')];
 }
@@ -242,7 +244,7 @@ test.each(["file", "directory", "database", "missingCollection"] as const)(
     await click(host.querySelector<HTMLInputElement>(".mantine-Select-input")!);
     await click(
       [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-        (node) => node.textContent === "Repertoire",
+        (node) => accessibleText(node) === "Repertoire",
       )!,
     );
     await leaveLibrary();
@@ -1027,9 +1029,21 @@ test("the clearable type filter hides rows while retaining detail and exposes an
   expect(label?.textContent).toBe("File type");
   await click(rows()[1]);
   await click(host.querySelector<HTMLInputElement>(".mantine-Select-input")!);
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (node) => node.textContent === "Repertoire",
-  )!;
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  expect(
+    options.map((node) => ({
+      emoji: node.querySelector('[aria-hidden="true"]')?.textContent,
+      label: accessibleText(node),
+    })),
+  ).toEqual([
+    { emoji: "♟️", label: "Game" },
+    { emoji: "📖", label: "Repertoire" },
+    { emoji: "🏆", label: "Tournament" },
+    { emoji: "🧩", label: "Puzzle" },
+    { emoji: "📜", label: "Other" },
+    { emoji: "🗄️", label: "Games database" },
+  ]);
+  const option = options.find((node) => accessibleText(node) === "Repertoire")!;
   await click(option);
   expect(rows()).toHaveLength(1);
   expect(rows()[0].getAttribute("aria-label")).toBe("Same name");

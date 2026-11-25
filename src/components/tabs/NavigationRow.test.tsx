@@ -1000,7 +1000,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
     guide: "lucide-info",
     assistant: "lucide-messages-square",
     send_feedback: "lucide-message-square-plus",
-    about: "lucide-badge-info",
+    about: "lucide-castle",
     exit: "lucide-log-out",
   };
   expect(itemActions.map((action) => action.id).sort()).toEqual(Object.keys(expectedIcons).sort());
