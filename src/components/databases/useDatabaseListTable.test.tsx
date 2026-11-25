@@ -33,6 +33,7 @@ function Probe(props: {
   error?: unknown;
   query?: Query;
   mode?: "paged" | "all";
+  identity?: string;
   isActive?: boolean;
   records?: Row[];
   scrollViewportRef?: RefObject<HTMLDivElement | null>;
@@ -41,6 +42,7 @@ function Probe(props: {
     list: {
       records: props.records ?? records,
       recordsMode: props.mode ?? "paged",
+      identity: props.identity ?? "test-list",
       count: 30,
       error: props.error,
       isLoading: true,
@@ -248,4 +250,53 @@ test("ArrowDown and ArrowUp in All mode scroll the newly selected row into view"
   expect(setSelectedId).toHaveBeenLastCalledWith(4);
   expect(scrollTo).toHaveBeenCalled();
   expect(scrollTop).toBe(3 * DEFAULT_ROW_HEIGHT_ESTIMATE);
+});
+
+test("changing list.identity in All mode forwards the reset to the windowing owner", async () => {
+  const many = Array.from({ length: 120 }, (_, index) => ({ id: index + 1 }));
+  const viewport = document.createElement("div");
+  let scrollTop = 0;
+  const scrollTo = vi.fn((optionsOrX?: ScrollToOptions | number, y?: number) => {
+    scrollTop = typeof optionsOrX === "number" ? (y ?? 0) : (optionsOrX?.top ?? 0);
+    viewport.dispatchEvent(new Event("scroll"));
+  });
+  Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 300 });
+  Object.defineProperty(viewport, "offsetHeight", { configurable: true, value: 300 });
+  Object.defineProperty(viewport, "scrollHeight", {
+    configurable: true,
+    value: many.length * DEFAULT_ROW_HEIGHT_ESTIMATE,
+  });
+  Object.defineProperty(viewport, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      scrollTop = value;
+    },
+  });
+  viewport.getBoundingClientRect = () =>
+    ({
+      width: 600,
+      height: 300,
+      top: 0,
+      left: 0,
+      bottom: 300,
+      right: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  viewport.scrollTo = scrollTo as typeof viewport.scrollTo;
+  const scrollViewportRef = { current: viewport };
+
+  await mount({ mode: "all", records: many, identity: "initial", scrollViewportRef });
+  await act(async () => {
+    scrollTop = 1000;
+    viewport.dispatchEvent(new Event("scroll"));
+  });
+  expect(scrollTop).toBe(1000);
+  scrollTo.mockClear();
+
+  await mount({ mode: "all", records: many, identity: "sorted", scrollViewportRef });
+  expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+  expect(scrollTop).toBe(0);
 });

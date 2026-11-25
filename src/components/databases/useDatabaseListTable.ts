@@ -52,6 +52,7 @@ export function useDatabaseListTable<R extends { id: number }, Q extends ListQue
     const {
         records,
         recordsMode: mode,
+        identity,
         count,
         error,
         isLoading,
@@ -66,6 +67,7 @@ export function useDatabaseListTable<R extends { id: number }, Q extends ListQue
         records,
         enabled: mode === "all",
         scrollViewportRef,
+        resetKey: identity,
     });
 
     const step = (direction: -1 | 1) => {

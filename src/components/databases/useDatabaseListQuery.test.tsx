@@ -904,17 +904,17 @@ test("debounces query and mode together as one snapshot when debounceMs is set",
   );
 });
 
-test("resets the scroll viewport to top when query identity changes", async () => {
+test("resets the scroll viewport to top in paged mode on identity change and defers All-mode resets to the windowing owner", async () => {
   const onScrollTo = vi.fn();
   const fetchPage = vi.fn(async (_file: DatabaseHandle, query: TestQuery) => ({
-    data: makeRows(1, 100, query.filter || "a"),
+    data: makeRows(1, 25, query.filter || "a"),
     count: 200,
   }));
 
   await mount({
     fetchPage,
     query: makeQuery({ filter: "a" }),
-    mode: "all",
+    mode: "paged",
     onScrollTo,
   });
   onScrollTo.mockClear();
@@ -922,10 +922,31 @@ test("resets the scroll viewport to top when query identity changes", async () =
   await mount({
     fetchPage,
     query: makeQuery({ filter: "b" }),
-    mode: "all",
+    mode: "paged",
     onScrollTo,
   });
   expect(onScrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0 });
+
+  // In "All" mode useWindowedTableRows owns the reset via `identity`; useDatabaseListQuery
+  // exposes a new identity without issuing a duplicate raw DOM scrollTo.
+  onScrollTo.mockClear();
+  await mount({
+    fetchPage,
+    query: makeQuery({ filter: "c" }),
+    mode: "all",
+    onScrollTo,
+  });
+  const firstAllIdentity = latest.identity;
+  onScrollTo.mockClear();
+
+  await mount({
+    fetchPage,
+    query: makeQuery({ filter: "d" }),
+    mode: "all",
+    onScrollTo,
+  });
+  expect(latest.identity).not.toBe(firstAllIdentity);
+  expect(onScrollTo).not.toHaveBeenCalled();
 });
 
 test("recordsMode reflects the debounced mode that the currently held records belong to", async () => {

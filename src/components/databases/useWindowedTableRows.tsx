@@ -1,7 +1,7 @@
 import { Table } from "@mantine/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { DataTableProps } from "mantine-datatable";
-import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 /** Default estimated row height in pixels before ResizeObserver measures rendered rows. */
 export const DEFAULT_ROW_HEIGHT_ESTIMATE = 37;
@@ -47,11 +47,15 @@ export function useWindowedTableRows<R>({
   records,
   enabled,
   scrollViewportRef,
+  resetKey,
 }: {
   records: R[];
   enabled: boolean;
   scrollViewportRef: RefObject<HTMLDivElement | null>;
+  /** Changes on sort, filter, or mode resets so the virtualizer returns to offset 0 cleanly. */
+  resetKey?: string | number;
 }): WindowedTableRowsResult<R> {
+  const headerHeightRef = useRef(0);
   const virtualizer = useVirtualizer({
     count: enabled ? records.length : 0,
     getScrollElement: () => scrollViewportRef.current,
@@ -63,8 +67,19 @@ export function useWindowedTableRows<R>({
       return height > 0 ? height : DEFAULT_ROW_HEIGHT_ESTIMATE;
     },
     overscan: DEFAULT_WINDOW_OVERSCAN,
+    // Sticky thead sits in normal flow above tbody (shifting every row down by headerHeight in
+    // scroll coordinates): scrollTop = item.start already lands flush below thead (so
+    // scrollPaddingStart stays 0), while scrolling down must reserve headerHeight at the bottom.
+    scrollPaddingEnd: headerHeightRef.current,
     useFlushSync: false,
   });
+
+  // Guard against stale cached scrollOffset pulling the viewport back down when a sort/filter/mode
+  // reset has already moved the DOM to 0 before the browser's async scroll event fires.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    const actualOffset = scrollViewportRef.current?.scrollTop ?? instance.scrollOffset ?? 0;
+    return actualOffset > 0 && item.start < actualOffset;
+  };
 
   // Re-read viewport geometry and drop stale row measurements when switching back into "All" mode.
   const wasEnabledRef = useRef(enabled);
@@ -73,6 +88,37 @@ export function useWindowedTableRows<R>({
     wasEnabledRef.current = enabled;
     if (enabled && !wasEnabled) virtualizer.measure();
   }, [enabled, virtualizer]);
+
+  // Synchronously reset virtualizer scroll state, supersede any pending scrollToIndex retries via
+  // scrollToIndex(0), and drop stale row measurements when the list identity changes.
+  const prevResetKeyRef = useRef(resetKey);
+  const pendingResetRef = useRef(false);
+  useLayoutEffect(() => {
+    const keyChanged = prevResetKeyRef.current !== resetKey;
+    if (keyChanged) {
+      prevResetKeyRef.current = resetKey;
+      pendingResetRef.current = true;
+    }
+    if (!pendingResetRef.current || !enabled) return;
+
+    virtualizer.scrollOffset = 0;
+    const viewport = scrollViewportRef.current;
+    if (records.length > 0) {
+      if (viewport && typeof viewport.scrollTo === "function") {
+        virtualizer.scrollToIndex(0, { align: "start" });
+      } else if (viewport) {
+        viewport.scrollTop = 0;
+      }
+      pendingResetRef.current = false;
+    } else if (viewport) {
+      if (typeof viewport.scrollTo === "function") {
+        virtualizer.scrollToOffset(0);
+      } else {
+        viewport.scrollTop = 0;
+      }
+    }
+    virtualizer.measure();
+  }, [resetKey, enabled, records.length, scrollViewportRef, virtualizer]);
 
   const virtualItems = enabled ? virtualizer.getVirtualItems() : [];
   const rawTotalSize = enabled ? virtualizer.getTotalSize() : 0;
@@ -110,30 +156,24 @@ export function useWindowedTableRows<R>({
   const scrollToIndex = useCallback(
     (index: number) => {
       if (!enabled || index < 0 || index >= records.length) return;
+      pendingResetRef.current = false;
       const viewport = scrollViewportRef.current;
       if (!viewport) return;
       const headerHeight = viewport.querySelector("thead")?.getBoundingClientRect().height ?? 0;
-      const item = virtualizer.measurementsCache[index];
-      if (!item || viewport.clientHeight <= 0) {
-        if (typeof viewport.scrollTo === "function") {
-          virtualizer.scrollToIndex(index, { align: "auto" });
-        }
-        return;
+      headerHeightRef.current = headerHeight;
+      if (virtualizer.options.scrollPaddingEnd !== headerHeight) {
+        virtualizer.setOptions({ ...virtualizer.options, scrollPaddingEnd: headerHeight });
       }
-      const visibleBodyHeight = Math.max(0, viewport.clientHeight - headerHeight);
-      const viewTop = viewport.scrollTop;
-      const viewBottom = viewTop + visibleBodyHeight;
-      let targetOffset: number | null = null;
-      if (item.start < viewTop) {
-        targetOffset = item.start;
-      } else if (item.end > viewBottom) {
-        targetOffset = Math.max(0, item.end - visibleBodyHeight);
-      }
-      if (targetOffset !== null) {
-        if (typeof viewport.scrollTo === "function") {
-          virtualizer.scrollToOffset(targetOffset);
-        } else {
-          viewport.scrollTop = targetOffset;
+      if (typeof viewport.scrollTo === "function") {
+        virtualizer.scrollToIndex(index, { align: "auto" });
+      } else {
+        const item = virtualizer.measurementsCache[index];
+        if (!item) return;
+        const visibleBodyHeight = Math.max(0, viewport.clientHeight - headerHeight);
+        if (item.start < viewport.scrollTop) {
+          viewport.scrollTop = item.start;
+        } else if (item.end > viewport.scrollTop + visibleBodyHeight) {
+          viewport.scrollTop = Math.max(0, item.end - visibleBodyHeight);
         }
       }
     },

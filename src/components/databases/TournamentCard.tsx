@@ -151,20 +151,23 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
     records: displayedGames,
     enabled: mode === "all",
     scrollViewportRef,
+    resetKey: `${mode}:${String(sort.columnAccessor)}:${sort.direction}`,
   });
 
   const handleSortStatusChange = (nextSort: DataTableSortStatus<NormalizedGame>) => {
     setSort(nextSort);
-    scrollViewportRef.current?.scrollTo?.({ top: 0 });
+    if (mode !== "all") {
+      scrollViewportRef.current?.scrollTo?.({ top: 0 });
+    }
   };
 
   const handleRecordsPerPageChange = (choice: RecordsPerPageChoice) => {
-    scrollViewportRef.current?.scrollTo?.({ top: 0 });
     if (choice === "all") {
       setMode("all");
       setPage(1);
       return;
     }
+    scrollViewportRef.current?.scrollTo?.({ top: 0 });
     setMode("paged");
     setPageSize(choice);
     setPage(1);

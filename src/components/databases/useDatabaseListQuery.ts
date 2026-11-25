@@ -61,6 +61,8 @@ export type DatabaseListQueryResult<R> = {
     records: R[];
     /** The display mode that `records` belong to (follows the debounced snapshot when debounced). */
     recordsMode: ListDisplayMode;
+    /** Serialized identity of the active query/file/mode/generation; changes on sort/filter/mode resets. */
+    identity: string;
     count: number | null | undefined;
     isLoading: boolean;
     isLoadingMore: boolean;
@@ -201,10 +203,10 @@ export function useDatabaseListQuery<R extends { id: number }, Q extends QueryWi
         identityRef.current = identity;
         const nextEpoch = beginNewEpoch();
         clearExtraState(identity, data, nextEpoch);
-        if (identityChanged) {
+        if (identityChanged && active.mode !== "all") {
             scrollViewportRef.current?.scrollTo?.({ top: 0 });
         }
-    }, [identity, data, beginNewEpoch, clearExtraState]);
+    }, [identity, data, active.mode, beginNewEpoch, clearExtraState]);
 
     useEffect(
         () => () => {
@@ -404,6 +406,7 @@ export function useDatabaseListQuery<R extends { id: number }, Q extends QueryWi
     return {
         records,
         recordsMode: active.mode,
+        identity,
         count,
         isLoading,
         isLoadingMore,

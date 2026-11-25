@@ -153,3 +153,24 @@ test("formats paged range and All-mode counts with the active i18n locale", asyn
   );
   expect(host.textContent).toContain('Databases.List.BoundReached:{"max":"10.000"}');
 });
+
+test("every rendered pagination control button has an accessible name", async () => {
+  await renderFooter({
+    mode: "paged",
+    page: 2,
+    recordsPerPage: 25,
+    shownCount: 25,
+    totalRecords: 100,
+  });
+
+  const paginationButtons = [
+    ...host.querySelectorAll<HTMLButtonElement>(".mantine-Pagination-control"),
+  ];
+  expect(paginationButtons.length).toBeGreaterThanOrEqual(4);
+  for (const button of paginationButtons) {
+    const accessibleName = (button.getAttribute("aria-label") || button.textContent || "").trim();
+    expect(accessibleName.length).toBeGreaterThan(0);
+  }
+  expect(host.querySelector('button[aria-label="Common.Pagination.Previous"]')).not.toBeNull();
+  expect(host.querySelector('button[aria-label="Common.Pagination.Next"]')).not.toBeNull();
+});

@@ -18,7 +18,10 @@ const mocks = vi.hoisted(() => ({
   generation: null as string | null,
   pending: false,
   unavailable: false,
-  scrollTo: vi.fn(),
+  scrollTop: 0,
+  scrollTo: vi.fn((optionsOrX?: ScrollToOptions | number, y?: number) => {
+    mocks.scrollTop = typeof optionsOrX === "number" ? (y ?? 0) : (optionsOrX?.top ?? 0);
+  }),
   gamesRowFactory: undefined as unknown,
   gamesHeight: undefined as string | number | undefined,
 }));
@@ -115,7 +118,16 @@ vi.mock("mantine-datatable", () => ({
         ref={(node) => {
           if (scrollViewportRef) {
             scrollViewportRef.current = node;
-            if (node) node.scrollTo = mocks.scrollTo as typeof node.scrollTo;
+            if (node) {
+              Object.defineProperty(node, "scrollTop", {
+                configurable: true,
+                get: () => mocks.scrollTop,
+                set: (value: number) => {
+                  mocks.scrollTop = value;
+                },
+              });
+              node.scrollTo = mocks.scrollTo as typeof node.scrollTo;
+            }
           }
         }}
       >
@@ -250,6 +262,7 @@ beforeEach(() => {
   mocks.generation = null;
   mocks.pending = false;
   mocks.unavailable = false;
+  mocks.scrollTop = 0;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -463,10 +476,13 @@ test("All mode passes bounded height and windowed rows/rowFactory, scrolls to to
   await renderGames();
   expect(mocks.gamesRowFactory).toBeUndefined();
   expect(mocks.gamesHeight).toBeUndefined();
+  mocks.scrollTop = 500;
   mocks.scrollTo.mockClear();
 
   await click("Common.All");
-  expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0 });
+  expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 0 }));
+  expect(mocks.scrollTop).toBe(0);
+  expect(container.querySelector('[data-testid="games"] tbody tr')?.textContent).toBe("White 1");
   expect(mocks.gamesHeight).toBe("100%");
   expect(mocks.gamesRowFactory).toBeTypeOf("function");
   expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(
@@ -475,9 +491,11 @@ test("All mode passes bounded height and windowed rows/rowFactory, scrolls to to
   expect(container.textContent).toContain("Showing 60 of 60");
   expect(container.textContent).not.toContain("Databases.List.BoundReached");
 
+  mocks.scrollTop = 500;
   mocks.scrollTo.mockClear();
   await click("25");
   expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0 });
+  expect(mocks.scrollTop).toBe(0);
   expect(mocks.gamesHeight).toBeUndefined();
   expect(mocks.gamesRowFactory).toBeUndefined();
   expectPage(1, 25, ids(1, 25));
@@ -531,10 +549,13 @@ test("All mode passes bounded height and windowed rows/rowFactory, scrolls to to
 test("changing sort in TournamentCard resets the game list scroll viewport to the top", async () => {
   await renderGames();
   await click("Common.All");
+  mocks.scrollTop = 500;
   mocks.scrollTo.mockClear();
 
   await click("Sort plies descending");
-  expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0 });
+  expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 0 }));
+  expect(mocks.scrollTop).toBe(0);
+  expect(container.querySelector('[data-testid="games"] tbody tr')?.textContent).toBe("White 60");
 });
 
 test.each([

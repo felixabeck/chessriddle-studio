@@ -42,7 +42,16 @@ function setViewportMetrics(
     scrollHeight,
     scrollTop = 0,
     headerHeight = 0,
-  }: { clientHeight: number; scrollHeight: number; scrollTop?: number; headerHeight?: number },
+    suppressScrollEvent = false,
+    omitScrollTo = false,
+  }: {
+    clientHeight: number;
+    scrollHeight: number;
+    scrollTop?: number;
+    headerHeight?: number;
+    suppressScrollEvent?: boolean;
+    omitScrollTo?: boolean;
+  },
 ) {
   let currentScrollTop = scrollTop;
   Object.defineProperty(node, "clientHeight", {
@@ -76,11 +85,15 @@ function setViewportMetrics(
       y: 0,
       toJSON: () => ({}),
     }) as DOMRect;
-  node.scrollTo = ((optionsOrX?: ScrollToOptions | number, y?: number) => {
-    const nextTop = typeof optionsOrX === "number" ? (y ?? 0) : (optionsOrX?.top ?? 0);
-    currentScrollTop = nextTop;
-    node.dispatchEvent(new Event("scroll"));
-  }) as typeof node.scrollTo;
+  node.scrollTo = omitScrollTo
+    ? (undefined as never)
+    : (((optionsOrX?: ScrollToOptions | number, y?: number) => {
+        const nextTop = typeof optionsOrX === "number" ? (y ?? 0) : (optionsOrX?.top ?? 0);
+        currentScrollTop = nextTop;
+        if (!suppressScrollEvent) {
+          node.dispatchEvent(new Event("scroll"));
+        }
+      }) as typeof node.scrollTo);
 
   const thead = node.querySelector("thead");
   if (thead) {
@@ -104,11 +117,17 @@ function Probe({
   enabled,
   viewportHeight,
   headerHeight = 0,
+  resetKey,
+  suppressScrollEvent = false,
+  omitScrollTo = false,
 }: {
   records: Row[];
   enabled: boolean;
   viewportHeight: number;
   headerHeight?: number;
+  resetKey?: string;
+  suppressScrollEvent?: boolean;
+  omitScrollTo?: boolean;
 }) {
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
@@ -117,17 +136,21 @@ function Probe({
     if (node) {
       setViewportMetrics(node, {
         clientHeight: viewportHeight,
-        scrollHeight: headerHeight + records.length * DEFAULT_ROW_HEIGHT_ESTIMATE,
+        scrollHeight:
+          headerHeight + records.length * Math.max(DEFAULT_ROW_HEIGHT_ESTIMATE, stubRowHeight),
         scrollTop: node.scrollTop || 0,
         headerHeight,
+        suppressScrollEvent,
+        omitScrollTo,
       });
     }
-  }, [viewportHeight, headerHeight, records.length]);
+  }, [viewportHeight, headerHeight, records.length, suppressScrollEvent, omitScrollTo]);
 
   const windowing = useWindowedTableRows({
     records,
     enabled,
     scrollViewportRef,
+    ...(resetKey !== undefined ? { resetKey } : {}),
   });
   latest = windowing;
 
@@ -234,6 +257,10 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  // Let any in-flight @tanstack/virtual-core scrollToIndex rAF settle before unmount clears targetWindow.
+  await act(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
   await act(async () => root.unmount());
   host.remove();
   vi.restoreAllMocks();
@@ -298,15 +325,28 @@ test("scrollToIndex scrolls a row beyond the window into view, accounting for th
   expect(viewportNode!.scrollTop).toBe(0);
 
   // Index 100 (start=3700, end=3737) is below visible body [0, 370] -> scrolls to 3737 - 370 = 3367.
+  // Flush a re-render and rAF verification frames to ensure scrollPaddingEnd is preserved across renders.
   await act(async () => {
     latest.scrollToIndex(100);
+  });
+  await mount({ records, enabled: true, viewportHeight: 410, headerHeight: 40 });
+  await act(async () => {
+    for (let i = 0; i < 4; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
   });
   expect(viewportNode!.scrollTop).toBe(101 * rowHeight - 370);
   expect(latest.visibleRecords.some((row) => row.id === 101)).toBe(true);
 
-  // Index 10 (start=370) is above current viewTop -> scrolls up to 370.
+  // Index 10 (start=370) is above current viewTop -> scrolls up to 370 (flush under sticky thead).
   await act(async () => {
     latest.scrollToIndex(10);
+  });
+  await mount({ records, enabled: true, viewportHeight: 410, headerHeight: 40 });
+  await act(async () => {
+    for (let i = 0; i < 4; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
   });
   expect(viewportNode!.scrollTop).toBe(10 * rowHeight);
   expect(latest.visibleRecords.some((row) => row.id === 11)).toBe(true);
@@ -386,4 +426,305 @@ test("paged mode (enabled=false) passes all records through unwindowed with no r
   expect(latest.rowFactory).toBeUndefined();
   expect(host.querySelectorAll("tbody tr[data-row-id]")).toHaveLength(50);
   expect(host.querySelector("[data-virtual-spacer]")).toBeNull();
+});
+
+test("resetKey cancels a pending virtualizer scrollToIndex rAF loop to an unmeasured index", async () => {
+  const initialRecords = makeRows(250);
+  const reorderedRecords = Array.from({ length: 250 }, (_, index) => ({
+    id: 1000 + index,
+    label: `Sorted ${index + 1}`,
+  }));
+
+  // Mount with viewportHeight=0 so scrollToIndex(60) takes the virtualizer.scrollToIndex branch
+  // and schedules a rAF verification loop for index 60.
+  stubRowHeight = DEFAULT_ROW_HEIGHT_ESTIMATE;
+  await mount({
+    records: initialRecords,
+    enabled: true,
+    viewportHeight: 0,
+    resetKey: "date:desc",
+  });
+
+  await act(async () => {
+    latest.scrollToIndex(60);
+  });
+
+  // Before the rAF verification fires, the viewport becomes measurable and the list identity resets.
+  await mount({
+    records: reorderedRecords,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "plyCount:desc",
+  });
+
+  // Flush the pending rAF callbacks (verify -> scheduleRetry -> tryScroll): index-60 verification
+  // must be cancelled, leaving offset at 0.
+  await act(async () => {
+    for (let i = 0; i < 4; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+  });
+
+  expect(viewportNode!.scrollTop).toBe(0);
+  expect(host.querySelector('[data-virtual-spacer="top"]')).toBeNull();
+  const firstRow = host.querySelector<HTMLTableRowElement>("tbody tr");
+  expect(firstRow?.dataset.rowId).toBe(String(reorderedRecords[0].id));
+});
+
+test("live-DOM-offset guard prevents taller row measurements from pulling a DOM scrollTop=0 viewport back down", async () => {
+  const records = makeRows(250);
+  stubRowHeight = DEFAULT_ROW_HEIGHT_ESTIMATE;
+  await mount({
+    records,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "date:desc",
+    suppressScrollEvent: true,
+  });
+
+  // Scroll mid-list so virtualizer.scrollOffset is 1000.
+  await act(async () => {
+    viewportNode!.scrollTop = 1000;
+    viewportNode!.dispatchEvent(new Event("scroll"));
+  });
+  expect(viewportNode!.scrollTop).toBe(1000);
+
+  // Move DOM scrollTop to 0 without firing the async scroll event yet (stale scrollOffset=1000),
+  // then re-render with taller measured rows (60px) on the same resetKey.
+  stubRowHeight = 60;
+  await act(async () => {
+    viewportNode!.scrollTo({ top: 0 });
+  });
+  await mount({
+    records: records.map((row) => ({ ...row })),
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "date:desc",
+    suppressScrollEvent: true,
+  });
+
+  expect(viewportNode!.scrollTop).toBe(0);
+});
+
+test("resetKey change resets scroll offset to 0 with row 1 first even with taller measured rows and no external scrollTo", async () => {
+  const initialRecords = makeRows(250);
+  const reorderedRecords = Array.from({ length: 250 }, (_, index) => ({
+    id: 1000 + index,
+    label: `Sorted ${index + 1}`,
+  }));
+
+  stubRowHeight = DEFAULT_ROW_HEIGHT_ESTIMATE;
+  await mount({
+    records: initialRecords,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "date:desc",
+    suppressScrollEvent: true,
+  });
+
+  await act(async () => {
+    viewportNode!.scrollTop = 1000;
+    viewportNode!.dispatchEvent(new Event("scroll"));
+  });
+  expect(viewportNode!.scrollTop).toBe(1000);
+
+  // Change resetKey with taller reordered rows (no external DOM scrollTo): hook must reset to 0.
+  stubRowHeight = 60;
+  await mount({
+    records: reorderedRecords,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "plyCount:desc",
+    suppressScrollEvent: true,
+  });
+
+  expect(viewportNode!.scrollTop).toBe(0);
+  expect(host.querySelector('[data-virtual-spacer="top"]')).toBeNull();
+  const firstRow = host.querySelector<HTMLTableRowElement>("tbody tr");
+  expect(firstRow?.dataset.rowId).toBe(String(reorderedRecords[0].id));
+});
+
+test("reset arriving while records are empty completes when the new records populate", async () => {
+  const initialRecords = makeRows(250);
+  const reorderedRecords = Array.from({ length: 250 }, (_, index) => ({
+    id: 2000 + index,
+    label: `Populated ${index + 1}`,
+  }));
+
+  // Trigger a pending virtualizer scrollToIndex(60) while unmeasured.
+  stubRowHeight = DEFAULT_ROW_HEIGHT_ESTIMATE;
+  await mount({
+    records: initialRecords,
+    enabled: true,
+    viewportHeight: 0,
+    resetKey: "date:desc",
+    suppressScrollEvent: true,
+  });
+  await act(async () => {
+    latest.scrollToIndex(60);
+  });
+
+  // Uncached sort: resetKey changes while records are temporarily empty and scroll events are
+  // suppressed, so the hook must keep pendingResetRef set until records populate.
+  await mount({
+    records: [],
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "plyCount:desc",
+    suppressScrollEvent: true,
+  });
+
+  // New sorted chunk arrives: pendingResetRef runs scrollToIndex(0), superseding index 60.
+  stubRowHeight = 60;
+  await mount({
+    records: reorderedRecords,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "plyCount:desc",
+    suppressScrollEvent: true,
+  });
+
+  await act(async () => {
+    for (let i = 0; i < 4; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+  });
+
+  expect(viewportNode!.scrollTop).toBe(0);
+  expect(host.querySelector('[data-virtual-spacer="top"]')).toBeNull();
+  const firstRow = host.querySelector<HTMLTableRowElement>("tbody tr");
+  expect(firstRow?.dataset.rowId).toBe(String(reorderedRecords[0].id));
+});
+
+test("resetKey changing while disabled still resets to offset 0 once enabled", async () => {
+  const initialRecords = makeRows(250);
+  const nextRecords = Array.from({ length: 250 }, (_, index) => ({
+    id: 4000 + index,
+    label: `Re-enabled ${index + 1}`,
+  }));
+
+  await mount({
+    records: initialRecords,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "a",
+  });
+  await act(async () => {
+    viewportNode!.scrollTop = 1000;
+    viewportNode!.dispatchEvent(new Event("scroll"));
+  });
+  expect(viewportNode!.scrollTop).toBe(1000);
+
+  // Switch to paged mode (enabled=false) and change resetKey away and back while disabled.
+  await mount({
+    records: initialRecords.slice(0, 25),
+    enabled: false,
+    viewportHeight: 370,
+    resetKey: "b",
+  });
+  await mount({
+    records: initialRecords.slice(0, 25),
+    enabled: false,
+    viewportHeight: 370,
+    resetKey: "a",
+  });
+  expect(viewportNode!.scrollTop).toBe(1000);
+
+  // Re-enable All mode with resetKey "a": pending reset recorded while disabled still runs.
+  await mount({
+    records: nextRecords,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "a",
+  });
+  expect(viewportNode!.scrollTop).toBe(0);
+  expect(host.querySelector('[data-virtual-spacer="top"]')).toBeNull();
+  const firstRow = host.querySelector<HTMLTableRowElement>("tbody tr");
+  expect(firstRow?.dataset.rowId).toBe(String(nextRecords[0].id));
+});
+
+test("falls back to direct viewport.scrollTop assignment when viewport.scrollTo is absent", async () => {
+  const records = makeRows(250);
+  const rowHeight = DEFAULT_ROW_HEIGHT_ESTIMATE;
+  await mount({
+    records,
+    enabled: true,
+    viewportHeight: 410,
+    headerHeight: 40,
+    resetKey: "a",
+    omitScrollTo: true,
+  });
+  expect(viewportNode!.scrollTo).toBeUndefined();
+
+  // Scroll down beyond viewport via fallback branch.
+  await act(async () => {
+    latest.scrollToIndex(100);
+  });
+  expect(viewportNode!.scrollTop).toBe(101 * rowHeight - 370);
+
+  // Scroll up above viewport via fallback branch.
+  await act(async () => {
+    latest.scrollToIndex(10);
+  });
+  expect(viewportNode!.scrollTop).toBe(10 * rowHeight);
+
+  // Reset via resetKey while scrollTo is absent sets scrollTop to 0 (both non-empty and empty).
+  await mount({
+    records,
+    enabled: true,
+    viewportHeight: 410,
+    headerHeight: 40,
+    resetKey: "b",
+    omitScrollTo: true,
+  });
+  expect(viewportNode!.scrollTop).toBe(0);
+
+  await act(async () => {
+    viewportNode!.scrollTop = 500;
+  });
+  await mount({
+    records: [],
+    enabled: true,
+    viewportHeight: 410,
+    headerHeight: 40,
+    resetKey: "c",
+    omitScrollTo: true,
+  });
+  expect(viewportNode!.scrollTop).toBe(0);
+});
+
+test("an immediate scrollToIndex after a reset is not pulled back to 0", async () => {
+  const initialRecords = makeRows(250);
+  const reorderedRecords = Array.from({ length: 250 }, (_, index) => ({
+    id: 3000 + index,
+    label: `Next ${index + 1}`,
+  }));
+
+  stubRowHeight = DEFAULT_ROW_HEIGHT_ESTIMATE;
+  await mount({
+    records: initialRecords,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "date:desc",
+  });
+
+  await mount({
+    records: reorderedRecords,
+    enabled: true,
+    viewportHeight: 370,
+    resetKey: "plyCount:desc",
+  });
+
+  await act(async () => {
+    latest.scrollToIndex(50);
+  });
+  const targetOffset = viewportNode!.scrollTop;
+  expect(targetOffset).toBeGreaterThan(0);
+
+  await act(async () => {
+    for (let i = 0; i < 4; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+  });
+  expect(viewportNode!.scrollTop).toBe(targetOffset);
 });

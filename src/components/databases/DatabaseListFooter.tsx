@@ -157,6 +157,18 @@ export function DatabaseListFooter({
             total={totalPages}
             onChange={onPageChange}
             disabled={isLoading}
+            getControlProps={(control) => {
+              switch (control) {
+                case "first":
+                  return { "aria-label": t("Common.Pagination.First") };
+                case "previous":
+                  return { "aria-label": t("Common.Pagination.Previous") };
+                case "next":
+                  return { "aria-label": t("Common.Pagination.Next") };
+                case "last":
+                  return { "aria-label": t("Common.Pagination.Last") };
+              }
+            }}
           />
         )}
       </Group>

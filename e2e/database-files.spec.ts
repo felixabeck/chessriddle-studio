@@ -3698,21 +3698,33 @@ test("database-files: windowed All mode bounds DOM across chunks, keeps ArrowDow
     }
     const selectedRow = tablePane.locator('tbody tr[aria-selected="true"]');
     await expect(selectedRow).toContainText("Window White 31");
-    const visibility = await selectedRow.evaluate((row) => {
-        const vp = row.closest<HTMLElement>(".mantine-ScrollArea-viewport")!;
-        const thead = vp.querySelector("thead")!;
-        const rowRect = row.getBoundingClientRect();
-        const vpRect = vp.getBoundingClientRect();
-        const headRect = thead.getBoundingClientRect();
-        return {
-            scrollTop: vp.scrollTop,
-            topOk: rowRect.top >= headRect.bottom - 1,
-            bottomOk: rowRect.bottom <= vpRect.bottom + 1,
-        };
-    });
+    const readSelectedVisibility = () =>
+        selectedRow.evaluate((row) => {
+            const vp = row.closest<HTMLElement>(".mantine-ScrollArea-viewport")!;
+            const thead = vp.querySelector("thead")!;
+            const rowRect = row.getBoundingClientRect();
+            const vpRect = vp.getBoundingClientRect();
+            const headRect = thead.getBoundingClientRect();
+            return {
+                scrollTop: vp.scrollTop,
+                topOk: rowRect.top >= headRect.bottom - 1,
+                bottomOk: rowRect.bottom <= vpRect.bottom + 1,
+            };
+        });
+    const visibility = await readSelectedVisibility();
     expect(visibility.scrollTop).toBeGreaterThan(0);
     expect(visibility.topOk).toBe(true);
     expect(visibility.bottomOk).toBe(true);
+
+    // ArrowUp past the top of the visible window scrolls up and keeps the selected row below thead.
+    for (let i = 0; i < 20; i++) {
+        await page.keyboard.press("ArrowUp");
+    }
+    await expect(selectedRow).toContainText("Window White 11");
+    const visibilityAfterUp = await readSelectedVisibility();
+    expect(visibilityAfterUp.scrollTop).toBeLessThan(visibility.scrollTop);
+    expect(visibilityAfterUp.topOk).toBe(true);
+    expect(visibilityAfterUp.bottomOk).toBe(true);
 
     // Scroll to a deep row (160) and open it with Enter.
     await viewport.evaluate((node) => {
