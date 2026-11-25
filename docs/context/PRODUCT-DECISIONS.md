@@ -469,6 +469,7 @@ finding ids and date.
   have a lot of different variations in it."
 - **Agent decisions of the plan:** d-20261124-24 to d-20261124-34. "Vorbereitungsfenster" is read
   as the board "Prepare on board" opens (plan "Risks / open questions").
+- **Date:** 2026-11-24.
 
 ## 2026-11-24 — Library files sync one-way to the private Library on the ChessRiddle website
 
@@ -503,6 +504,6 @@ finding ids and date.
 - **Ruled out:** two-way sync. Syncing game databases. Changing or deleting files that were
   uploaded on the website by hand.
 - **Felix's reason:** from the brief: "so nobody has to upload PGNs by hand".
-- **Technical record:** `d-20261124-23` and `d-20261125-04` in `tasks/decisions.md`; the website's half is
+- **Technical record:** `d-20261124-23` and `d-20261125-05` in `tasks/decisions.md`; the website's half is
   `p-20261124-01`, `d-20261124-14` and `d-20261125-01` in the ChessRiddle repository.
 - **Date:** 2026-11-24.
