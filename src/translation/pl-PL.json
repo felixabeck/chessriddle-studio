@@ -1533,6 +1533,8 @@
     "RichText.Strike": "Przekreślenie",
     "RichText.Underline": "Podkreślenie",
     "Scoresheet.AllMovesChecked": "Wszystkie ruchy sprawdzone",
+    "Scoresheet.ContinueHint": "Odtwarza kolejne ruchy z blankietu po wprowadzonej poprawce.",
+    "Scoresheet.ContinueWithSheet": "Kontynuuj z resztą blankietu",
     "Scoresheet.CouldNotPlay": "Nie udało się zagrać „{{token}}”",
     "Scoresheet.Error.Busy": "Trwa już odczytywanie innego zdjęcia blankietu. Poczekaj chwilę i spróbuj ponownie.",
     "Scoresheet.Error.InvalidInput": "Nie udało się wysłać wybranych zdjęć. Dodaj od jednego do czterech zdjęć i spróbuj ponownie.",

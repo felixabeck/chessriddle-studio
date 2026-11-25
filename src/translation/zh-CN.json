@@ -1449,6 +1449,8 @@
     "RichText.Strike": "删除线",
     "RichText.Underline": "下划线",
     "Scoresheet.AllMovesChecked": "所有着法已检查",
+    "Scoresheet.ContinueHint": "在您更正后，继续重放记录纸上的后续着法。",
+    "Scoresheet.ContinueWithSheet": "继续记录纸上的其余着法",
     "Scoresheet.CouldNotPlay": "无法走子“{{token}}”",
     "Scoresheet.Error.Busy": "正在读取另一张记谱纸照片。请稍后再试。",
     "Scoresheet.Error.InvalidInput": "无法发送所选照片。请添加 1 至 4 张照片后重试。",

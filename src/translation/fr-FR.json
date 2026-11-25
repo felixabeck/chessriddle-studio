@@ -1505,6 +1505,8 @@
     "RichText.Strike": "Barré",
     "RichText.Underline": "Souligné",
     "Scoresheet.AllMovesChecked": "Tous les coups sont vérifiés",
+    "Scoresheet.ContinueHint": "Rejoue les coups suivants de la feuille après votre correction.",
+    "Scoresheet.ContinueWithSheet": "Continuer avec le reste de la feuille",
     "Scoresheet.CouldNotPlay": "Impossible de jouer « {{token}} »",
     "Scoresheet.Error.Busy": "Une autre photo de feuille de partie est déjà en cours de lecture. Patientez un instant et réessayez.",
     "Scoresheet.Error.InvalidInput": "Les photos sélectionnées n’ont pas pu être envoyées. Ajoutez entre une et quatre photos et réessayez.",

@@ -1449,6 +1449,8 @@
     "RichText.Strike": "취소선",
     "RichText.Underline": "밑줄",
     "Scoresheet.AllMovesChecked": "모든 수를 확인했습니다",
+    "Scoresheet.ContinueHint": "수정한 수 뒤로 기보지의 다음 수들을 이어서 재생합니다.",
+    "Scoresheet.ContinueWithSheet": "기보지 나머지 수 이어가기",
     "Scoresheet.CouldNotPlay": "\"{{token}}\"을(를) 둘 수 없습니다",
     "Scoresheet.Error.Busy": "다른 기보 용지 사진을 이미 읽고 있습니다. 잠시 후 다시 시도하세요.",
     "Scoresheet.Error.InvalidInput": "선택한 사진을 보낼 수 없습니다. 사진을 1~4장 추가한 뒤 다시 시도하세요.",

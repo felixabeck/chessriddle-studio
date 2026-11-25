@@ -1477,6 +1477,8 @@
     "RichText.Strike": "Strikethrough",
     "RichText.Underline": "Underline",
     "Scoresheet.AllMovesChecked": "All moves checked",
+    "Scoresheet.ContinueHint": "Replay the following moves from the sheet after your correction.",
+    "Scoresheet.ContinueWithSheet": "Continue with the rest of the sheet",
     "Scoresheet.CouldNotPlay": "Could not play \"{{token}}\"",
     "Scoresheet.Error.Busy": "Another scoresheet photo is already being read. Wait a moment and try again.",
     "Scoresheet.Error.InvalidInput": "The selected photos could not be sent. Add between one and four photos and try again.",

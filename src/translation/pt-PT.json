@@ -1505,6 +1505,8 @@
     "RichText.Strike": "Riscado",
     "RichText.Underline": "Sublinhado",
     "Scoresheet.AllMovesChecked": "Todos os lances verificados",
+    "Scoresheet.ContinueHint": "Reproduz os lances seguintes da folha após a tua correção.",
+    "Scoresheet.ContinueWithSheet": "Continuar com o resto da folha",
     "Scoresheet.CouldNotPlay": "Não foi possível jogar «{{token}}»",
     "Scoresheet.Error.Busy": "Já está a ser lida outra foto de folha de jogo. Aguarde um momento e tente novamente.",
     "Scoresheet.Error.InvalidInput": "Não foi possível enviar as fotos selecionadas. Adicione entre uma e quatro fotos e tente novamente.",

@@ -1477,6 +1477,8 @@
     "RichText.Strike": "Durchgestrichen",
     "RichText.Underline": "Unterstrichen",
     "Scoresheet.AllMovesChecked": "Alle Züge geprüft",
+    "Scoresheet.ContinueHint": "Führt die folgenden Züge vom Formular nach deiner Korrektur fort.",
+    "Scoresheet.ContinueWithSheet": "Mit dem Rest des Formulars fortfahren",
     "Scoresheet.CouldNotPlay": "„{{token}}“ ließ sich nicht ausführen",
     "Scoresheet.Error.Busy": "Es wird bereits ein anderes Partieformular gelesen. Warte kurz und versuche es erneut.",
     "Scoresheet.Error.InvalidInput": "Die gewählten Fotos konnten nicht gesendet werden. Füge ein bis vier Fotos hinzu und versuche es erneut.",

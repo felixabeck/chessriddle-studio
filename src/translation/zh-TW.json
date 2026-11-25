@@ -1449,6 +1449,8 @@
     "RichText.Strike": "刪除線",
     "RichText.Underline": "底線",
     "Scoresheet.AllMovesChecked": "所有著法已檢查",
+    "Scoresheet.ContinueHint": "在您更正後，繼續重放紀錄紙上的後續著法。",
+    "Scoresheet.ContinueWithSheet": "繼續紀錄紙上的其餘著法",
     "Scoresheet.CouldNotPlay": "無法行棋「{{token}}」",
     "Scoresheet.Error.Busy": "正在讀取另一張記譜紙照片。請稍後再試。",
     "Scoresheet.Error.InvalidInput": "無法傳送所選照片。請新增 1 至 4 張照片後重試。",

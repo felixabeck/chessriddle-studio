@@ -1505,6 +1505,8 @@
     "RichText.Strike": "Barrato",
     "RichText.Underline": "Sottolineato",
     "Scoresheet.AllMovesChecked": "Tutte le mosse controllate",
+    "Scoresheet.ContinueHint": "Riproduce le mosse seguenti del formulario dopo la tua correzione.",
+    "Scoresheet.ContinueWithSheet": "Continua con il resto del formulario",
     "Scoresheet.CouldNotPlay": "Impossibile giocare \"{{token}}\"",
     "Scoresheet.Error.Busy": "Un’altra foto del formulario è già in lettura. Attendi un momento e riprova.",
     "Scoresheet.Error.InvalidInput": "Impossibile inviare le foto selezionate. Aggiungi da una a quattro foto e riprova.",

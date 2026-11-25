@@ -8,6 +8,7 @@ import enUSCatalogue from "@/translation/en-US.json";
 import deDECatalogue from "@/translation/de-DE.json";
 import { fixtureNode } from "@/tests/treeFixtures";
 import {
+    countMainPly,
     createNode,
     defaultTree,
     deriveScoresheetRemaining,
@@ -19,6 +20,7 @@ import {
     MAX_GAME_END_TERMINATION_LENGTH,
     stripUnsureMarks,
     treeIterator,
+    treeIteratorMainLine,
     type TreeNode,
 } from "@/utils/treeReducer";
 import { newCoachSession } from "@/state/coachSession";
@@ -2574,4 +2576,313 @@ test("replacing the game or start FEN clears scoresheetReview and tab photos, wh
     } finally {
         clearAllScoresheetPhotosForTests();
     }
+});
+
+test("continueScoresheet after a stop replays tokens[L - ply] onward, stops at illegal/?, preserves stopped, and is one undo step", () => {
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    const e5 = addMove(e4, "e7e5");
+    const nf3 = addMove(e5, "g1f3");
+    // Sheet stopped at ply 3 with tokens[0] = "?". User plays 2...Nc6 (L = 4 > ply = 3).
+    const nc6 = addMove(nf3, "b8c6");
+    nc6.unsure = true; // even if marked, user's move must not remain unsure
+    initial.scoresheetReview = {
+        stopped: { ply: 3, tokens: ["?", "Bb5", "a6", "?", "Ba4"] },
+    };
+    initial.position = [0, 0, 0, 0];
+
+    const store = createTreeStore(undefined, initial);
+    store.getState().continueScoresheet();
+
+    // Appended tokens[4 - 3] = "Bb5", then "a6", stopped at "?".
+    const mainSans = Array.from(treeIteratorMainLine(store.getState().root))
+        .slice(1)
+        .map(({ node }) => node.san);
+    expect(mainSans).toEqual(["e4", "e5", "Nf3", "Nc6", "Bb5", "a6"]);
+    // User's move is not unsure, position stays on the user's move, stopped is never rewritten.
+    expect(getNodeAtPath(store.getState().root, [0, 0, 0, 0]).unsure).toBeUndefined();
+    expect(store.getState().position).toEqual([0, 0, 0, 0]);
+    expect(store.getState().scoresheetReview?.stopped).toEqual({
+        ply: 3,
+        tokens: ["?", "Bb5", "a6", "?", "Ba4"],
+    });
+    expect(store.getState().dirty).toBe(true);
+    expect(store.getState().history.past).toHaveLength(1);
+
+    // One undo step restores tree, position, and marks.
+    store.getState().undo();
+    const restoredSans = Array.from(treeIteratorMainLine(store.getState().root))
+        .slice(1)
+        .map(({ node }) => node.san);
+    expect(restoredSans).toEqual(["e4", "e5", "Nf3", "Nc6"]);
+    expect(getNodeAtPath(store.getState().root, [0, 0, 0, 0]).unsure).toBe(true);
+    expect(store.getState().position).toEqual([0, 0, 0, 0]);
+});
+
+test("continueScoresheet is a no-op for L <= ply and outside a review", () => {
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    const e5 = addMove(e4, "e7e5");
+    addMove(e5, "g1f3"); // L = 3
+    initial.scoresheetReview = { stopped: { ply: 3, tokens: ["Nc6", "Bb5"] } };
+    initial.position = [0, 0, 0];
+
+    const store = createTreeStore(undefined, initial);
+    // L === ply (3 === 3) -> disabled.
+    store.getState().continueScoresheet();
+    expect(countMainPly(store.getState().root)).toBe(3);
+    expect(store.getState().history.past).toHaveLength(0);
+
+    // L < ply (2 < 3) -> disabled.
+    store.getState().deleteMove([0, 0, 0]);
+    expect(countMainPly(store.getState().root)).toBe(2);
+    const historyAfterDelete = store.getState().history.past.length;
+    store.getState().continueScoresheet();
+    expect(countMainPly(store.getState().root)).toBe(2);
+    expect(store.getState().history.past).toHaveLength(historyAfterDelete);
+
+    // Outside a review -> disabled even on a 1-move variation beside main line.
+    const noReview = defaultTree();
+    const r1 = addMove(noReview.root, "e2e4");
+    const r2 = addMove(r1, "e7e5");
+    addMove(r2, "g1f3");
+    addMove(r1, "c7c5");
+    noReview.position = [0, 1];
+    const noReviewStore = createTreeStore(undefined, noReview);
+    noReviewStore.getState().continueScoresheet();
+    expect(noReviewStore.getState().position).toEqual([0, 1]);
+    expect(noReviewStore.getState().history.past).toHaveLength(0);
+});
+
+test("continueScoresheet replace-middle removes plain fully-replayed old line, preserves unsure by ply, appends stopped tokens, rebases paths, and is one undo step", () => {
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    const e5 = addMove(e4, "e7e5");
+    e5.unsure = true;
+    const nf3 = addMove(e5, "g1f3");
+    nf3.unsure = true; // sheet ply 2
+    addMove(nf3, "b8c6"); // sheet ply 3 -> L = 4
+    // Extra sibling variation at [0, 1] to verify path rebasing.
+    addMove(e4, "d7d5");
+    // User replaces 1...e5 with 1...c5 at [0, 2].
+    const c5 = addMove(e4, "c7c5");
+    c5.unsure = true;
+    initial.headers.start = [0, 1]; // points to 1...d5
+    initial.scoresheetReview = {
+        stopped: { ply: 4, tokens: ["Bb5", "a6"] },
+    };
+    initial.position = [0, 2];
+
+    const store = createTreeStore(undefined, initial);
+    store.getState().continueScoresheet();
+
+    // User's line (1...c5) is promoted to main line with 2.Nf3 Nc6 3.Bb5 a6 replayed.
+    const mainSans = Array.from(treeIteratorMainLine(store.getState().root))
+        .slice(1)
+        .map(({ node }) => node.san);
+    expect(mainSans).toEqual(["e4", "c5", "Nf3", "Nc6", "Bb5", "a6"]);
+
+    // Old line (1...e5 ...) was fully replayed and plain -> removed!
+    // Only [0, 0] (c5) and [0, 1] (d5) remain under e4.
+    const e4Node = getNodeAtPath(store.getState().root, [0]);
+    expect(e4Node.children.map((c) => c.san)).toEqual(["c5", "d5"]);
+
+    // Position stays on user's move (now [0, 0]), headers.start still points to 1...d5 (now [0, 1]).
+    expect(store.getState().position).toEqual([0, 0]);
+    expect(getNodeAtPath(store.getState().root, store.getState().headers.start!).san).toBe("d5");
+
+    // User's move is not unsure; replayed Nf3 (ply 2) keeps its unsure mark; Nc6, Bb5, a6 do not.
+    expect(getNodeAtPath(store.getState().root, [0, 0]).unsure).toBeUndefined();
+    expect(getNodeAtPath(store.getState().root, [0, 0, 0]).unsure).toBe(true);
+    expect(getNodeAtPath(store.getState().root, [0, 0, 0, 0]).unsure).toBeUndefined();
+    expect(getNodeAtPath(store.getState().root, [0, 0, 0, 0, 0]).unsure).toBeUndefined();
+
+    // One undo step restores the old main line, marks, position, and headers.start.
+    expect(store.getState().history.past).toHaveLength(1);
+    store.getState().undo();
+    const restoredMain = Array.from(treeIteratorMainLine(store.getState().root))
+        .slice(1)
+        .map(({ node }) => node.san);
+    expect(restoredMain).toEqual(["e4", "e5", "Nf3", "Nc6"]);
+    expect(store.getState().position).toEqual([0, 2]);
+    expect(getNodeAtPath(store.getState().root, [0, 0]).unsure).toBe(true);
+    expect(getNodeAtPath(store.getState().root, [0, 0, 0]).unsure).toBe(true);
+    expect(getNodeAtPath(store.getState().root, store.getState().headers.start!).san).toBe("d5");
+});
+
+test("continueScoresheet replace-middle keeps old line without marks when replay ends early or old line is not plain", () => {
+    // Case A: replay ends early at an illegal move.
+    // Main line: 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4. User replaces 3. Bb5 with 3. Bc4 -> 3...a6 legal, 4. Ba4 illegal.
+    const early = defaultTree();
+    const m1 = addMove(early.root, "e2e4");
+    const m2 = addMove(m1, "e7e5");
+    const m3 = addMove(m2, "g1f3");
+    const m4 = addMove(m3, "b8c6");
+    const m5 = addMove(m4, "f1b5");
+    m5.unsure = true;
+    const m6 = addMove(m5, "a7a6");
+    m6.unsure = true;
+    const m7 = addMove(m6, "b5a4");
+    m7.unsure = true;
+    addMove(m4, "f1c4"); // user variation at [0, 0, 0, 0, 1]
+    early.scoresheetReview = {};
+    early.position = [0, 0, 0, 0, 1];
+
+    const earlyStore = createTreeStore(undefined, early);
+    earlyStore.getState().continueScoresheet();
+
+    const earlyMain = Array.from(treeIteratorMainLine(earlyStore.getState().root))
+        .slice(1)
+        .map(({ node }) => node.san);
+    expect(earlyMain).toEqual(["e4", "e5", "Nf3", "Nc6", "Bc4", "a6"]);
+    expect(earlyStore.getState().position).toEqual([0, 0, 0, 0, 0]);
+    // Replayed a6 kept its unsure mark.
+    expect(getNodeAtPath(earlyStore.getState().root, [0, 0, 0, 0, 0, 0]).unsure).toBe(true);
+    // Old line (3. Bb5 a6 4. Ba4) stays as variation [0, 0, 0, 0, 1] and loses all its marks.
+    const keptOld = getNodeAtPath(earlyStore.getState().root, [0, 0, 0, 0, 1]);
+    expect(keptOld.san).toBe("Bb5");
+    expect(keptOld.unsure).toBeUndefined();
+    expect(keptOld.children[0].unsure).toBeUndefined();
+    expect(keptOld.children[0].children[0].unsure).toBeUndefined();
+
+    // Case B: fully replayed, but old line is not plain (has a comment and a sub-variation with an unsure mark).
+    const annotated = defaultTree();
+    const a1 = addMove(annotated.root, "e2e4");
+    const a2 = addMove(a1, "e7e5");
+    a2.unsure = true;
+    const a3 = addMove(a2, "g1f3");
+    a3.comment = "keep me";
+    const sub = addMove(a2, "f2f4");
+    sub.unsure = true;
+    addMove(a1, "c7c5"); // user variation at [0, 1]
+    annotated.scoresheetReview = {};
+    annotated.position = [0, 1];
+
+    const annotatedStore = createTreeStore(undefined, annotated);
+    annotatedStore.getState().continueScoresheet();
+
+    const annotatedMain = Array.from(treeIteratorMainLine(annotatedStore.getState().root))
+        .slice(1)
+        .map(({ node }) => node.san);
+    expect(annotatedMain).toEqual(["e4", "c5", "Nf3"]);
+    const keptAnnotated = getNodeAtPath(annotatedStore.getState().root, [0, 1]);
+    expect(keptAnnotated.san).toBe("e5");
+    expect(keptAnnotated.unsure).toBeUndefined();
+    expect(keptAnnotated.children[0].comment).toBe("keep me");
+    expect(keptAnnotated.children[1].unsure).toBeUndefined();
+});
+
+test("continueScoresheet moves final gameEnd marker to replayed counterpart when complete game is fully replayed, and keeps it on old variation on partial replay", () => {
+    // Complete game "1. e4 e5 2. Nf3 Nc6 1-0" with gameEnd on last move Nc6, corrected at move 1 (1. d4).
+    const complete = defaultTree();
+    complete.headers.result = "1-0";
+    const c1 = addMove(complete.root, "e2e4");
+    const c2 = addMove(c1, "e7e5");
+    const c3 = addMove(c2, "g1f3");
+    const c4 = addMove(c3, "b8c6");
+    c4.gameEnd = { termination: "Normal" };
+    addMove(complete.root, "d2d4"); // user replaces 1.e4 with 1.d4 at [1]
+    complete.scoresheetReview = {};
+    complete.position = [1];
+
+    const completeStore = createTreeStore(undefined, complete);
+    completeStore.getState().continueScoresheet();
+
+    const completeMain = Array.from(treeIteratorMainLine(completeStore.getState().root))
+        .slice(1)
+        .map(({ node }) => node.san);
+    expect(completeMain).toEqual(["d4", "e5", "Nf3", "Nc6"]);
+    // Plain old line is removed, and gameEnd moved to the replayed counterpart (new last move Nc6).
+    expect(completeStore.getState().root.children).toHaveLength(1);
+    expect(getNodeAtPath(completeStore.getState().root, [0, 0, 0, 0]).gameEnd).toEqual({
+        termination: "Normal",
+    });
+
+    // Partial replay: "1. e4 d5 2. exd5 1-0" corrected at 1...e5 -> 2.exd5 is illegal.
+    const partial = defaultTree();
+    partial.headers.result = "1-0";
+    const p1 = addMove(partial.root, "e2e4");
+    const p2 = addMove(p1, "d7d5");
+    p2.unsure = true;
+    const p3 = addMove(p2, "e4d5");
+    p3.unsure = true;
+    p3.gameEnd = {};
+    addMove(p1, "e7e5"); // user replaces 1...d5 with 1...e5 at [0, 1]
+    partial.scoresheetReview = {};
+    partial.position = [0, 1];
+
+    const partialStore = createTreeStore(undefined, partial);
+    partialStore.getState().continueScoresheet();
+
+    // New main line has no gameEnd marker; old line stays as variation with its gameEnd and without unsure marks.
+    expect(getNodeAtPath(partialStore.getState().root, [0, 0]).san).toBe("e5");
+    expect(getNodeAtPath(partialStore.getState().root, [0, 0]).gameEnd).toBeUndefined();
+    const keptOld = getNodeAtPath(partialStore.getState().root, [0, 1]);
+    expect(keptOld.san).toBe("d5");
+    expect(keptOld.unsure).toBeUndefined();
+    expect(keptOld.children[0].unsure).toBeUndefined();
+    expect(keptOld.children[0].gameEnd).toEqual({});
+
+    // Fully replayed but non-plain old line (comment on earlier move): stays as variation,
+    // and gameEnd moves to the new main line's last move and is removed from the kept variation.
+    const keptWithComment = defaultTree();
+    keptWithComment.headers.result = "1-0";
+    const k1 = addMove(keptWithComment.root, "e2e4");
+    const k2 = addMove(k1, "e7e5");
+    k2.comment = "keep variation";
+    const k3 = addMove(k2, "g1f3");
+    k3.gameEnd = { termination: "Normal" };
+    addMove(k1, "c7c5"); // user replaces 1...e5 with 1...c5 at [0, 1]
+    keptWithComment.scoresheetReview = {};
+    keptWithComment.position = [0, 1];
+
+    const keptStore = createTreeStore(undefined, keptWithComment);
+    keptStore.getState().continueScoresheet();
+
+    expect(getNodeAtPath(keptStore.getState().root, [0, 0, 0]).gameEnd).toEqual({
+        termination: "Normal",
+    });
+    const keptVar = getNodeAtPath(keptStore.getState().root, [0, 1]);
+    expect(keptVar.san).toBe("e5");
+    expect(keptVar.comment).toBe("keep variation");
+    expect(keptVar.children[0].gameEnd).toBeUndefined();
+});
+
+test("continueScoresheet removes plain old line when all old moves replay even if a later sheet token fails", () => {
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    const e5 = addMove(e4, "e7e5");
+    addMove(e5, "g1f3"); // L = 3
+    addMove(e4, "c7c5"); // user variation at [0, 1]
+    // All 1 old move (Nf3) replays, then stopped token "?" fails (replayed = 1 >= oldMainLineMoveCount = 1, < plan.moves.length = 3).
+    initial.scoresheetReview = { stopped: { ply: 3, tokens: ["?", "Bb5"] } };
+    initial.position = [0, 1];
+
+    const store = createTreeStore(undefined, initial);
+    store.getState().continueScoresheet();
+
+    const mainSans = Array.from(treeIteratorMainLine(store.getState().root))
+        .slice(1)
+        .map(({ node }) => node.san);
+    expect(mainSans).toEqual(["e4", "c5", "Nf3"]);
+    // Plain old line was removed despite the later sheet token failing.
+    expect(getNodeAtPath(store.getState().root, [0]).children).toHaveLength(1);
+});
+
+test("continueScoresheet after-stop is a no-op when first remaining token is illegal/? and user move has no mark", () => {
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    const e5 = addMove(e4, "e7e5");
+    const nf3 = addMove(e5, "g1f3");
+    addMove(nf3, "b8c6"); // L = 4, no unsure mark
+    initial.scoresheetReview = { stopped: { ply: 3, tokens: ["Nc6", "?", "a6"] } };
+    initial.position = [0, 0, 0, 0];
+
+    const store = createTreeStore(undefined, initial);
+    const rootBefore = store.getState().root;
+    store.getState().continueScoresheet();
+
+    expect(store.getState().root).toBe(rootBefore);
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(0);
 });

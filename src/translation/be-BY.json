@@ -1533,6 +1533,8 @@
     "RichText.Strike": "Закрэслены",
     "RichText.Underline": "Падкрэслены",
     "Scoresheet.AllMovesChecked": "Усе хады правераны",
+    "Scoresheet.ContinueHint": "Працягнуць наступныя хады з бланка пасля вашага выпраўлення.",
+    "Scoresheet.ContinueWithSheet": "Працягнуць з астатняй часткай бланка",
     "Scoresheet.CouldNotPlay": "Не ўдалося згуляць «{{token}}»",
     "Scoresheet.Error.Busy": "Іншае фота бланка ўжо чытаецца. Пачакайце крыху і паспрабуйце зноў.",
     "Scoresheet.Error.InvalidInput": "Не ўдалося адправіць выбраныя фота. Дадайце ад аднаго да чатырох фота і паспрабуйце зноў.",

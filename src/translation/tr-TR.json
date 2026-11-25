@@ -1477,6 +1477,8 @@
     "RichText.Strike": "Üstü çizili",
     "RichText.Underline": "Altı çizili",
     "Scoresheet.AllMovesChecked": "Tüm hamleler kontrol edildi",
+    "Scoresheet.ContinueHint": "Düzeltmenizden sonra kağıttaki sonraki hamleleri oynatır.",
+    "Scoresheet.ContinueWithSheet": "Kağıdın geri kalanıyla devam et",
     "Scoresheet.CouldNotPlay": "\"{{token}}\" oynanamadı",
     "Scoresheet.Error.Busy": "Başka bir notasyon kağıdı fotoğrafı zaten okunuyor. Biraz bekleyip tekrar deneyin.",
     "Scoresheet.Error.InvalidInput": "Seçilen fotoğraflar gönderilemedi. Bir ila dört fotoğraf ekleyip tekrar deneyin.",

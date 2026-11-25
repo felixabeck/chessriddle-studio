@@ -470,6 +470,82 @@ test("Load photo again resets loading state when tabId changes mid-pick so the n
   expect(getScoresheetPhotos("tab-mid-b")).toEqual([PHOTO_2]);
 });
 
+test("Continue with the rest of the sheet button is shown only in the two eligible situations and replays on click", async () => {
+  // Situation 1: after a stop (L > ply at last main-line move).
+  const afterStopStore = buildReviewStore("tab-continue-stop", {
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6"],
+    stopped: { ply: 3, tokens: ["?", "Bb5", "a6"] },
+  });
+  await renderPanel(afterStopStore, "tab-continue-stop");
+
+  const continueBtn = () =>
+    host.querySelector<HTMLButtonElement>("[data-scoresheet-continue-button]");
+
+  // At root -> hidden.
+  expect(continueBtn()).toBeNull();
+
+  // At ply 3 (not last move) -> hidden.
+  await act(async () => afterStopStore.getState().goToMove([0, 0, 0]));
+  expect(continueBtn()).toBeNull();
+
+  // At ply 4 (last move of main line, L = 4 > ply = 3, remaining tokens = ["Bb5", "a6"]) -> shown.
+  await act(async () => afterStopStore.getState().goToMove([0, 0, 0, 0]));
+  expect(continueBtn()).not.toBeNull();
+  expect(host.querySelector("[data-scoresheet-continue]")?.textContent).toContain(
+    "Scoresheet.ContinueHint",
+  );
+  expect(continueBtn()?.textContent).toContain("Scoresheet.ContinueWithSheet");
+
+  // Click -> appends Bb5, a6, stays on user's move [0, 0, 0, 0], notice hides (exhausted), button hides.
+  await act(async () => continueBtn()!.click());
+  expect(afterStopStore.getState().position).toEqual([0, 0, 0, 0]);
+  expect(getNodeAtPath(afterStopStore.getState().root, [0, 0, 0, 0, 0]).san).toBe("Bb5");
+  expect(getNodeAtPath(afterStopStore.getState().root, [0, 0, 0, 0, 0, 0]).san).toBe("a6");
+  expect(host.querySelector("[data-scoresheet-stop-notice]")).toBeNull();
+  expect(continueBtn()).toBeNull();
+
+  // At L === ply -> hidden.
+  const atStopStore = buildReviewStore("tab-continue-at-stop", {
+    moves: ["e2e4", "e7e5", "g1f3"],
+    stopped: { ply: 3, tokens: ["Nc6", "Bb5"] },
+  });
+  await renderPanel(atStopStore, "tab-continue-at-stop");
+  await act(async () => atStopStore.getState().goToMove([0, 0, 0]));
+  expect(continueBtn()).toBeNull();
+
+  // Situation 2: 1-move variation beside a main-line move.
+  const middleStore = buildReviewStore("tab-continue-middle", {
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6"],
+    unsurePlies: [3],
+  });
+  await renderPanel(middleStore, "tab-continue-middle");
+  await act(async () => {
+    middleStore.getState().goToMove([0]);
+    middleStore.getState().makeMove({ payload: parseUci("c7c5")! });
+  });
+  expect(middleStore.getState().position).toEqual([0, 1]);
+  expect(continueBtn()).not.toBeNull();
+
+  await act(async () => continueBtn()!.click());
+  expect(middleStore.getState().position).toEqual([0, 0]);
+  expect(getNodeAtPath(middleStore.getState().root, [0, 0]).san).toBe("c5");
+  expect(getNodeAtPath(middleStore.getState().root, [0, 0, 0]).san).toBe("Nf3");
+  expect(getNodeAtPath(middleStore.getState().root, [0, 0, 0]).unsure).toBe(true);
+  expect(continueBtn()).toBeNull();
+
+  // One-move variation beside the LAST main-line move with no remaining sheet tokens -> hidden.
+  const lastMoveStore = buildReviewStore("tab-continue-last-move", {
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6"],
+  });
+  await renderPanel(lastMoveStore, "tab-continue-last-move");
+  await act(async () => {
+    lastMoveStore.getState().goToMove([0, 0, 0]);
+    lastMoveStore.getState().makeMove({ payload: parseUci("g8f6")! });
+  });
+  expect(lastMoveStore.getState().position).toEqual([0, 0, 0, 1]);
+  expect(continueBtn()).toBeNull();
+});
+
 test.each(Object.entries(catalogues))(
   "ships scoresheet review copy in %s with fallback disabled",
   async (path, catalogue) => {
@@ -486,6 +562,8 @@ test.each(Object.entries(catalogues))(
       ["Notation.UnsureMove", undefined],
       ["Notation.UnsureMoveLabel", { move: "Nf3" }],
       ["Scoresheet.AllMovesChecked", undefined],
+      ["Scoresheet.ContinueHint", undefined],
+      ["Scoresheet.ContinueWithSheet", undefined],
       ["Scoresheet.CouldNotPlay", { token: "Nxe5" }],
       ["Scoresheet.FinishReview", undefined],
       ["Scoresheet.FitToPanel", undefined],

@@ -1505,6 +1505,8 @@
     "RichText.Strike": "Tachado",
     "RichText.Underline": "Subrayado",
     "Scoresheet.AllMovesChecked": "Todas las jugadas revisadas",
+    "Scoresheet.ContinueHint": "Reproduce las jugadas siguientes de la planilla tras tu corrección.",
+    "Scoresheet.ContinueWithSheet": "Continuar con el resto de la planilla",
     "Scoresheet.CouldNotPlay": "No se pudo jugar «{{token}}»",
     "Scoresheet.Error.Busy": "Ya se está leyendo otra foto de planilla. Espera un momento e inténtalo de nuevo.",
     "Scoresheet.Error.InvalidInput": "No se pudieron enviar las fotos seleccionadas. Añade entre una y cuatro fotos e inténtalo de nuevo.",

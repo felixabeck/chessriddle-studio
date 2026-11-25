@@ -1477,6 +1477,8 @@
     "RichText.Strike": "Gjennomstreking",
     "RichText.Underline": "Understrek",
     "Scoresheet.AllMovesChecked": "Alle trekk kontrollert",
+    "Scoresheet.ContinueHint": "Spill av de følgende trekkene fra skjemaet etter rettelsen din.",
+    "Scoresheet.ContinueWithSheet": "Fortsett med resten av skjemaet",
     "Scoresheet.CouldNotPlay": "Kunne ikke spille «{{token}}»",
     "Scoresheet.Error.Busy": "Et annet noteringsskjema blir allerede lest. Vent et øyeblikk og prøv igjen.",
     "Scoresheet.Error.InvalidInput": "De valgte bildene kunne ikke sendes. Legg til mellom ett og fire bilder og prøv igjen.",

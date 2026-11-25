@@ -30,12 +30,18 @@ import type { BoundedGoMode } from "@/utils/engines";
 import { judgeReport } from "@/utils/score";
 import { playSound } from "@/utils/sound";
 import { replacePgnCommentText } from "@/utils/pgnComment";
+import {
+    isPlainScoresheetLine,
+    planScoresheetContinuation,
+    replayScoresheetMoves,
+} from "@/utils/scoresheet";
 import { removeFileFreshness } from "@/state/fileFreshness";
 import {
     createNode,
     defaultTree,
     countMainPly,
     type GameHeaders,
+    getMainlineEndNode,
     getNodeAtPath,
     type ListNode,
     nextOpenVariation,
@@ -178,6 +184,8 @@ export interface TreeStoreState extends TreeState {
     clearUnsureMark: () => void;
     /** Ends the scoresheet review: clears every unsure mark, `scoresheetReview` and in-memory photos. Not undoable, leaves `dirty` unchanged. */
     finishScoresheetReview: () => void;
+    /** Replays remaining moves from the scoresheet after a stop or a mid-game correction. One undo step. */
+    continueScoresheet: () => void;
 
     setFen: (fen: string) => void;
 
@@ -475,6 +483,7 @@ type TreeMutationActions = Pick<
     | "deleteMove"
     | "promoteVariation"
     | "promoteToMainline"
+    | "continueScoresheet"
 >;
 
 type TreeMarkupActions = Pick<
@@ -804,6 +813,57 @@ function treeMutationActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMu
                     }
                 }),
             ),
+        continueScoresheet: () =>
+            set(
+                produce((state) => {
+                    const plan = planScoresheetContinuation(
+                        state.root,
+                        state.position,
+                        state.scoresheetReview,
+                    );
+                    if (!plan) return;
+
+                    if (plan.kind === "after-stop") {
+                        const userNode = getNodeAtPath(state.root, state.position);
+                        const replayed = replayScoresheetMoves(userNode, plan.moves);
+                        if (replayed > 0 || userNode.unsure !== undefined) {
+                            delete userNode.unsure;
+                            state.dirty = true;
+                        }
+                        return;
+                    }
+
+                    const userPath = [...state.position];
+                    const userNode = getNodeAtPath(state.root, userPath);
+                    delete userNode.unsure;
+
+                    const replayed = replayScoresheetMoves(userNode, plan.moves);
+                    const allOldReplayed = replayed >= plan.oldMainLineMoveCount;
+
+                    promoteVariation(state, userPath);
+                    const oldLinePath = [...plan.parentPath, 1];
+                    const oldLineNode = getNodeAtPath(state.root, oldLinePath);
+
+                    const oldLastNode = getMainlineEndNode(oldLineNode);
+                    if (allOldReplayed && oldLastNode.gameEnd !== undefined) {
+                        let counterpart = userNode;
+                        for (let i = 0; i < plan.oldMainLineMoveCount; i += 1) {
+                            counterpart = counterpart.children[0];
+                        }
+                        counterpart.gameEnd = { ...oldLastNode.gameEnd };
+                        delete oldLastNode.gameEnd;
+                    }
+
+                    if (allOldReplayed && isPlainScoresheetLine(oldLineNode)) {
+                        deleteMove(state, oldLinePath);
+                    } else {
+                        for (const { node } of treeIterator(oldLineNode)) {
+                            if (node.unsure !== undefined) delete node.unsure;
+                        }
+                    }
+                    state.dirty = true;
+                }),
+            ),
     };
 }
 
@@ -1051,6 +1111,7 @@ const UNDOABLE_EDITS = [
     "deleteMove",
     "promoteVariation",
     "promoteToMainline",
+    "continueScoresheet",
     "setStart",
     "setAnnotation",
     "setComment",

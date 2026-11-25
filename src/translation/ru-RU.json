@@ -1533,6 +1533,8 @@
     "RichText.Strike": "Зачёркнутый",
     "RichText.Underline": "Подчёркнутый",
     "Scoresheet.AllMovesChecked": "Все ходы проверены",
+    "Scoresheet.ContinueHint": "Воспроизводит следующие ходы с бланка после вашего исправления.",
+    "Scoresheet.ContinueWithSheet": "Продолжить с остальной частью бланка",
     "Scoresheet.CouldNotPlay": "Не удалось сыграть «{{token}}»",
     "Scoresheet.Error.Busy": "Другое фото бланка уже читается. Подождите немного и попробуйте снова.",
     "Scoresheet.Error.InvalidInput": "Не удалось отправить выбранные фото. Добавьте от одного до четырёх фото и попробуйте снова.",

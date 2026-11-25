@@ -15,6 +15,7 @@ import {
 } from "@/state/scoresheetPhotos";
 import { useOwnerTabId } from "@/state/tabScope";
 import { formatMoveNumber } from "@/utils/format";
+import { planScoresheetContinuation } from "@/utils/scoresheet";
 import {
   countMainPly,
   deriveScoresheetRemaining,
@@ -77,6 +78,7 @@ function ScoresheetPhotoPanel() {
   const goToMove = useStore(store, (s) => s.goToMove);
   const clearUnsureMark = useStore(store, (s) => s.clearUnsureMark);
   const finishScoresheetReview = useStore(store, (s) => s.finishScoresheetReview);
+  const continueScoresheet = useStore(store, (s) => s.continueScoresheet);
 
   const [fullSize, setFullSize] = useState(false);
   const [page, setPage] = useState(0);
@@ -149,6 +151,10 @@ function ScoresheetPhotoPanel() {
         ? formatScoresheetRemainingTokens(remaining.nextPly, remaining.tokens, root.halfMoves)
         : "",
     [remaining, root.halfMoves],
+  );
+  const continuationPlan = useMemo(
+    () => planScoresheetContinuation(root, position, review),
+    [root, position, review],
   );
 
   const jumpUnsure = (direction: "previous" | "next") => {
@@ -285,6 +291,22 @@ function ScoresheetPhotoPanel() {
             <Text className={classes.remainingTokens} data-scoresheet-remaining-tokens>
               {remainingText}
             </Text>
+          </div>
+        )}
+
+        {continuationPlan && (
+          <div className={classes.continueBox} data-scoresheet-continue>
+            <Text size="xs" c="dimmed">
+              {t("Scoresheet.ContinueHint")}
+            </Text>
+            <Button
+              size="xs"
+              variant="default"
+              onClick={continueScoresheet}
+              data-scoresheet-continue-button
+            >
+              {t("Scoresheet.ContinueWithSheet")}
+            </Button>
           </div>
         )}
 
