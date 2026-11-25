@@ -2,7 +2,7 @@ import { act, useEffect, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import useSWR, { SWRConfig, useSWRConfig } from "swr";
 import { getDefaultStore } from "jotai";
-import { lastOpenedAtom, referenceDbAtom } from "@/state/atoms";
+import { lastOpenedAtom, pendingPlayerCardAtom, referenceDbAtom } from "@/state/atoms";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   clearDatabase: vi.fn(),
   database: undefined as SuccessDatabaseInfo | undefined,
   realStore: false,
+  realRouter: false,
   navigate: vi.fn(),
 }));
 
@@ -24,11 +25,25 @@ vi.mock("@/utils/db", async () => {
   const actual = await vi.importActual<typeof import("@/utils/db")>("@/utils/db");
   return { ...actual, getDatabases: mocks.getDatabases };
 });
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
-  useParams: () => ({ databaseId: "db-1" }),
-  useNavigate: () => mocks.navigate,
-}));
+vi.mock("@tanstack/react-router", async () => {
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  return {
+    ...actual,
+    Link: (props: ComponentProps<typeof actual.Link>) =>
+      mocks.realRouter ? (
+        <actual.Link {...props} />
+      ) : (
+        <a href={String(props.to)}>{props.children as ReactNode}</a>
+      ),
+    useParams: ((opts?: Parameters<typeof actual.useParams>[0]) =>
+      mocks.realRouter
+        ? actual.useParams(opts as never)
+        : { databaseId: "db-1" }) as typeof actual.useParams,
+    useNavigate: (() =>
+      mocks.realRouter ? actual.useNavigate() : mocks.navigate) as typeof actual.useNavigate,
+  };
+});
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
@@ -104,6 +119,7 @@ vi.mock("@/state/store/database", async () => {
     setDatabase: mocks.setDatabase,
   };
   return {
+    defaultPlayersQueryOptions: actual.defaultPlayersQueryOptions,
     activeDatabaseViewStore: {
       getState: () => (mocks.realStore ? actual.activeDatabaseViewStore.getState() : state),
     },
@@ -166,6 +182,8 @@ beforeEach(() => {
   mocks.navigate.mockReset();
   mocks.database = undefined;
   mocks.realStore = false;
+  mocks.realRouter = false;
+  getDefaultStore().set(pendingPlayerCardAtom, null);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -575,3 +593,207 @@ test("real DatabaseView shared request cancels exactly once after sequential fin
   await render(false, false);
   await vi.waitFor(() => expect(cancelled).toHaveBeenCalledOnce());
 });
+
+const secondDatabase: SuccessDatabaseInfo = {
+  ...selectedDatabase,
+  file: { id: { id: "db-2" }, kind: "database" },
+  filename: "opponent-11111111-1111-4111-8111-111111111111-0a1b2c3d.db3",
+  title: "DrNykterstein (online)",
+};
+
+async function mountWithRouter(initialPath: string) {
+  const { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } =
+    await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const rootRoute = createRootRoute();
+  const libraryRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/library",
+    component: () => <div>library</div>,
+  });
+  const databaseRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/databases/$databaseId",
+    component: DatabaseView,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([libraryRoute, databaseRoute]),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
+  });
+  await act(async () => {
+    root.render(
+      <SWRConfig value={{ provider: () => cache, shouldRetryOnError: false }}>
+        <RouterProvider router={router} />
+      </SWRConfig>,
+    );
+  });
+  return router;
+}
+
+test("applies pendingPlayerCardAtom when opening from an unmounted view (Library)", async () => {
+  mocks.realStore = true;
+  mocks.realRouter = true;
+  const { activeDatabaseViewStore: store } =
+    await vi.importActual<typeof import("@/state/store/database")>("@/state/store/database");
+  mocks.getDatabases.mockResolvedValue({ databases: [secondDatabase], unread: [] });
+
+  const router = await mountWithRouter("/library");
+  expect(container.textContent).toContain("library");
+
+  getDefaultStore().set(pendingPlayerCardAtom, {
+    database: "db-2",
+    playerId: 7,
+    playerName: "DrNykterstein",
+  });
+  await act(async () => {
+    await router.navigate({ to: "/databases/$databaseId", params: { databaseId: "db-2" } });
+  });
+
+  await vi.waitFor(() => expect(getDefaultStore().get(pendingPlayerCardAtom)).toBeNull());
+  const state = store.getState();
+  expect(state.database?.file).toEqual(secondDatabase.file);
+  expect(state.activeTab).toBe("players");
+  expect(state.players.query).toEqual({
+    name: "DrNykterstein",
+    range: undefined,
+    options: { page: 1, pageSize: 25, sort: "games", direction: "desc", skipCount: false },
+  });
+  expect("nameMatch" in state.players.query).toBe(false);
+  expect(state.players.selectedPlayer).toBe(7);
+  expect(state.players.activeTab).toBe("preparation");
+});
+
+test("leaves pendingPlayerCardAtom for another database alone until the route commits", async () => {
+  mocks.realStore = true;
+  mocks.realRouter = true;
+  const { activeDatabaseViewStore: store } =
+    await vi.importActual<typeof import("@/state/store/database")>("@/state/store/database");
+  store.getState().setDatabase(selectedDatabase);
+  mocks.getDatabases.mockResolvedValue({
+    databases: [selectedDatabase, secondDatabase],
+    unread: [],
+  });
+
+  const router = await mountWithRouter("/databases/db-1");
+  expect(container.textContent).toContain("Selected database");
+
+  const pending = { database: "db-2", playerId: 7, playerName: "DrNykterstein" };
+  await act(async () => {
+    getDefaultStore().set(pendingPlayerCardAtom, pending);
+  });
+
+  // Still on db-1: pending card stays intact and db-1's view state is untouched.
+  expect(getDefaultStore().get(pendingPlayerCardAtom)).toEqual(pending);
+  expect(store.getState().database?.file).toEqual(selectedDatabase.file);
+  expect(store.getState().activeTab).toBe("games");
+  expect(store.getState().players.selectedPlayer).toBeUndefined();
+
+  await act(async () => {
+    await router.navigate({ to: "/databases/$databaseId", params: { databaseId: "db-2" } });
+  });
+
+  await vi.waitFor(() => expect(getDefaultStore().get(pendingPlayerCardAtom)).toBeNull());
+  const state = store.getState();
+  expect(state.database?.file).toEqual(secondDatabase.file);
+  expect(state.activeTab).toBe("players");
+  expect(state.players.query).toEqual({
+    name: "DrNykterstein",
+    range: undefined,
+    options: { page: 1, pageSize: 25, sort: "games", direction: "desc", skipCount: false },
+  });
+  expect(state.players.selectedPlayer).toBe(7);
+  expect(state.players.activeTab).toBe("preparation");
+});
+
+test("applies pendingPlayerCardAtom when navigating from a database that was just deleted", async () => {
+  mocks.realStore = true;
+  mocks.realRouter = true;
+  const { activeDatabaseViewStore: store } =
+    await vi.importActual<typeof import("@/state/store/database")>("@/state/store/database");
+  // Old route db-deleted is gone; new route db-2 is listed.
+  mocks.getDatabases.mockResolvedValue({ databases: [secondDatabase], unread: [] });
+
+  const router = await mountWithRouter("/databases/db-deleted");
+  expect(container.textContent).toContain("Databases.NoSelection");
+
+  getDefaultStore().set(pendingPlayerCardAtom, {
+    database: "db-2",
+    playerId: 7,
+    playerName: "DrNykterstein",
+  });
+  await act(async () => {
+    await router.navigate({ to: "/databases/$databaseId", params: { databaseId: "db-2" } });
+  });
+
+  await vi.waitFor(() => expect(getDefaultStore().get(pendingPlayerCardAtom)).toBeNull());
+  const state = store.getState();
+  expect(state.database?.file).toEqual(secondDatabase.file);
+  expect(state.activeTab).toBe("players");
+  expect(state.players.selectedPlayer).toBe(7);
+  expect(state.players.activeTab).toBe("preparation");
+});
+
+test.each([
+  {
+    name: "setActiveTab",
+    failOnWrite: 1,
+    expectedTab: "games",
+    expectedQueryName: undefined,
+    expectedPlayer: undefined,
+    expectedCardTab: "overview",
+  },
+  {
+    name: "setPlayersQuery",
+    failOnWrite: 2,
+    expectedTab: "players",
+    expectedQueryName: undefined,
+    expectedPlayer: undefined,
+    expectedCardTab: "overview",
+  },
+  {
+    name: "setPlayersSelectedPlayer",
+    failOnWrite: 3,
+    expectedTab: "players",
+    expectedQueryName: "DrNykterstein",
+    expectedPlayer: undefined,
+    expectedCardTab: "overview",
+  },
+] as const)(
+  "a refused $name clears the pending atom and stops the remaining setters",
+  async ({ failOnWrite, expectedTab, expectedQueryName, expectedPlayer, expectedCardTab }) => {
+    mocks.realStore = true;
+    mocks.realRouter = true;
+    const { activeDatabaseViewStore: store } =
+      await vi.importActual<typeof import("@/state/store/database")>("@/state/store/database");
+    store.getState().setDatabase(secondDatabase);
+    mocks.getDatabases.mockResolvedValue({ databases: [secondDatabase], unread: [] });
+
+    const originalSetItem = Storage.prototype.setItem;
+    let dbViewWrites = 0;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === "database-view") {
+        dbViewWrites += 1;
+        if (dbViewWrites === failOnWrite) throw new DOMException("Quota", "QuotaExceededError");
+      }
+      return originalSetItem.call(this, key, value);
+    });
+
+    getDefaultStore().set(pendingPlayerCardAtom, {
+      database: "db-2",
+      playerId: 7,
+      playerName: "DrNykterstein",
+    });
+    await mountWithRouter("/databases/db-2");
+
+    await vi.waitFor(() => expect(getDefaultStore().get(pendingPlayerCardAtom)).toBeNull());
+    const state = store.getState();
+    expect(dbViewWrites).toBe(failOnWrite);
+    expect(state.activeTab).toBe(expectedTab);
+    expect(state.players.query.name).toBe(expectedQueryName);
+    expect(state.players.selectedPlayer).toBe(expectedPlayer);
+    expect(state.players.activeTab).toBe(expectedCardTab);
+  },
+);

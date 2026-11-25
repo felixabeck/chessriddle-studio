@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { DatabaseHandle, ErrorPayload } from "@/bindings";
 import { opponentImportsAtom, opponentLinksAtom } from "@/state/atoms";
 import { defaultOpponentFilter, type OpponentLink } from "@/state/opponentLinks";
+import { activeDatabaseViewStore } from "@/state/store/database";
 import { catalogueI18n } from "@/tests/catalogues";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
@@ -31,6 +32,9 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   notifyError: vi.fn(),
   warn: vi.fn(),
+  navigate: vi.fn(),
+  pathname: "/databases/other-db",
+  openOpponentCard: vi.fn(),
 }));
 vi.mock("@/platform/errors", async (original) => ({
   ...(await original<typeof import("@/platform/errors")>()),
@@ -52,6 +56,21 @@ vi.mock("./opponentLookup", async (original) => ({
   ...(await original<typeof import("./opponentLookup")>()),
   lookupOpponentAccount: mocks.lookup,
   opponentPlayers: mocks.players,
+}));
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => mocks.navigate,
+  useRouter: () => ({
+    state: {
+      location: {
+        get pathname() {
+          return mocks.pathname;
+        },
+      },
+    },
+  }),
+}));
+vi.mock("./openOpponentCard", () => ({
+  openOpponentCard: mocks.openOpponentCard,
 }));
 vi.mock("@mantine/notifications", () => ({ notifications: { show: mocks.notify } }));
 vi.mock("@/components/files/notifyError", async (original) => ({
@@ -167,6 +186,8 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mocks.listing = { databases: [] };
   mocks.listingError = undefined;
+  mocks.pathname = "/databases/other-db";
+  mocks.openOpponentCard.mockResolvedValue(true);
   mocks.players.mockResolvedValue([{ id: 1, name: "DrNykterstein" }]);
   mocks.removeGames.mockResolvedValue(0);
   mocks.unlink.mockResolvedValue(0);
@@ -174,6 +195,8 @@ beforeEach(async () => {
   const i18n = await catalogueI18n("en-US");
   translate = (key, options) => i18n.t(key, options);
   localStorage.clear();
+  sessionStorage.clear();
+  activeDatabaseViewStore.getState().clearDatabase();
   store = createStore();
   container = document.createElement("div");
   document.body.append(container);
@@ -183,6 +206,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  activeDatabaseViewStore.getState().clearDatabase();
 });
 
 describe("opponentGames", () => {
@@ -472,16 +496,17 @@ describe("downloaded games", () => {
   test("usernames that stayed separate players are named, one merged player is not", async () => {
     store.set(opponentLinksAtom, [link({ database: DATABASE, accounts: [lichess, chesscom] })]);
     mocks.listing = listed("success", 10);
-    // The board follows the player with the lowest id, here the second linked account.
+    // The lookup answers in the order of the link's accounts, so the board follows the first
+    // linked account even though the second account's player has the lower id.
     mocks.players.mockResolvedValue([
-      { id: 3, name: "MagnusCarlsen" },
       { id: 8, name: "DrNykterstein" },
+      { id: 3, name: "MagnusCarlsen" },
     ]);
     await render();
 
     expect(mocks.players).toHaveBeenCalledWith(file, [lichess, chesscom]);
     expect(document.body.querySelector("[data-opponent-separate]")?.textContent).toBe(
-      "The linked usernames played each other, so they stay separate players. The board shows the games of MagnusCarlsen.",
+      "The linked usernames played each other, so they stay separate players. The board shows the games of DrNykterstein.",
     );
   });
 
@@ -670,5 +695,231 @@ describe("managing a link", () => {
     await click("Manage online accounts");
 
     expect(buttons("Add online account")).toHaveLength(0);
+  });
+});
+
+async function addAccountViaDialog(username: string) {
+  await click("Add online account");
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  const input = document.body.querySelector<HTMLInputElement>('[role="dialog"] input')!;
+  await act(async () => {
+    setter.call(input, username);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Look up");
+  await click("Link account");
+}
+
+describe("taking over an online-only opponent", () => {
+  const OTHER_ID = "22222222-2222-4222-8222-222222222222";
+  const OTHER_DB = `opponent-${OTHER_ID}-12345678.db3`;
+
+  beforeEach(() => {
+    mocks.lookup.mockResolvedValue({
+      kind: "found",
+      profile: { ...lichess, closed: false },
+    });
+  });
+
+  test("renames an online-only link when this player has no link, keeping accounts, filter and database", async () => {
+    const customFilter = {
+      years: 5 as const,
+      timeControls: ["rapid" as const, "classical" as const],
+    };
+    store.set(opponentLinksAtom, [
+      link({
+        id: OTHER_ID,
+        playerName: "drnykterstein",
+        accounts: [lichess, chesscom],
+        filter: customFilter,
+        database: OTHER_DB,
+      }),
+    ]);
+    await render();
+    await addAccountViaDialog("drnykterstein");
+
+    expect(store.get(opponentLinksAtom)).toEqual([
+      {
+        id: OTHER_ID,
+        playerName: NAME,
+        accounts: [lichess, chesscom],
+        filter: customFilter,
+        database: OTHER_DB,
+      },
+    ]);
+  });
+
+  test("takes over an online-only link through its second account, whose name differs", async () => {
+    mocks.lookup.mockResolvedValue({
+      kind: "found",
+      profile: { ...chesscom, closed: false },
+    });
+    store.set(opponentLinksAtom, [
+      link({
+        id: OTHER_ID,
+        playerName: "DrNykterstein",
+        accounts: [lichess, chesscom],
+        database: OTHER_DB,
+      }),
+    ]);
+    await render();
+    await addAccountViaDialog("MagnusCarlsen");
+
+    expect(store.get(opponentLinksAtom)).toEqual([
+      expect.objectContaining({
+        id: OTHER_ID,
+        playerName: NAME,
+        accounts: [lichess, chesscom],
+        database: OTHER_DB,
+      }),
+    ]);
+  });
+
+  test("does not take over a link that belongs to another database player", async () => {
+    const otherLink = link({
+      id: OTHER_ID,
+      playerName: "Nakamura, Hikaru",
+      accounts: [lichess],
+      database: OTHER_DB,
+    });
+    store.set(opponentLinksAtom, [otherLink]);
+    await render();
+    await addAccountViaDialog("drnykterstein");
+
+    const links = store.get(opponentLinksAtom);
+    expect(links).toHaveLength(2);
+    expect(links[0]).toEqual(otherLink);
+    expect(links[1]).toMatchObject({
+      playerName: NAME,
+      accounts: [lichess],
+    });
+    expect(links[1].id).not.toBe(OTHER_ID);
+    expect(links[1].database).toBeUndefined();
+  });
+
+  test("does not take over an online-only link when this player already has a link", async () => {
+    const onlineOnly = link({
+      id: OTHER_ID,
+      playerName: "DrNykterstein",
+      accounts: [lichess],
+      database: OTHER_DB,
+    });
+    const ownLink = link({
+      id: ID,
+      playerName: NAME,
+      accounts: [chesscom],
+    });
+    store.set(opponentLinksAtom, [onlineOnly, ownLink]);
+    await render();
+    await click("Manage online accounts");
+    await addAccountViaDialog("drnykterstein");
+
+    const links = store.get(opponentLinksAtom);
+    expect(links).toHaveLength(2);
+    expect(links.find((entry) => entry.id === OTHER_ID)).toEqual(onlineOnly);
+    expect(links.find((entry) => entry.id === ID)?.accounts).toEqual([chesscom, lichess]);
+  });
+});
+
+describe("reopening after updating from the online-only card", () => {
+  const ownDatabase = {
+    type: "success" as const,
+    file,
+    filename: DATABASE,
+    title: "DrNykterstein (online)",
+    description: "",
+    player_count: 1,
+    event_count: 1,
+    game_count: 10,
+    storage_size: "1024",
+    indexed: false,
+  };
+  const otherDatabase = {
+    ...ownDatabase,
+    file: { id: { id: "otb-db" }, kind: "database" as const },
+    filename: "otb.db3",
+    title: "OTB Games",
+  };
+
+  beforeEach(() => {
+    store.set(opponentLinksAtom, [link({ playerName: "DrNykterstein", database: DATABASE })]);
+    mocks.listing = listed("success", 10);
+  });
+
+  test("reopens the card on imported when viewing the link's own database and still on its route", async () => {
+    activeDatabaseViewStore.getState().setDatabase(ownDatabase);
+    mocks.pathname = "/databases/opponent-db";
+    let finish!: (value: OpponentImportResult) => void;
+    mocks.run.mockReturnValueOnce(
+      new Promise<OpponentImportResult>((resolve) => (finish = resolve)),
+    );
+
+    await render("DrNykterstein");
+    await click("Update games");
+
+    // The old database is deleted before the run settles: forgetDeletedDatabase empties the view
+    // store and the card unmounts, so the decision to reopen must have been taken at the start.
+    await act(async () => {
+      activeDatabaseViewStore.getState().clearDatabase();
+    });
+    await act(async () => root.unmount());
+    await act(async () => finish({ kind: "imported", games: 12, merged: true, leftovers: 0 }));
+
+    expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ color: "success", message: "Downloaded 12 online games." }),
+    );
+    expect(mocks.openOpponentCard).toHaveBeenCalledExactlyOnceWith(
+      store,
+      mocks.navigate,
+      expect.any(Function),
+      ID,
+    );
+  });
+
+  test.each([
+    { kind: "noGames" },
+    { kind: "accountFailed", account: lichess, reason: "notFound" },
+    { kind: "cancelled" },
+    { kind: "failed", error: new Error("disk") },
+  ] satisfies Ending[])("does not reopen on outcome %o", async (result) => {
+    activeDatabaseViewStore.getState().setDatabase(ownDatabase);
+    mocks.pathname = "/databases/opponent-db";
+    mocks.run.mockResolvedValueOnce({ leftovers: 0, ...result });
+
+    await render("DrNykterstein");
+    await click("Update games");
+
+    expect(mocks.openOpponentCard).not.toHaveBeenCalled();
+  });
+
+  test("does not reopen on a database player's card (different database)", async () => {
+    activeDatabaseViewStore.getState().setDatabase(otherDatabase);
+    mocks.pathname = "/databases/otb-db";
+    mocks.run.mockResolvedValueOnce({ kind: "imported", games: 12, merged: true, leftovers: 0 });
+
+    await render("DrNykterstein");
+    await click("Update games");
+
+    expect(mocks.openOpponentCard).not.toHaveBeenCalled();
+  });
+
+  test("does not reopen after the user navigated to another route while updating", async () => {
+    activeDatabaseViewStore.getState().setDatabase(ownDatabase);
+    mocks.pathname = "/databases/opponent-db";
+    let finish!: (value: OpponentImportResult) => void;
+    mocks.run.mockReturnValueOnce(
+      new Promise<OpponentImportResult>((resolve) => (finish = resolve)),
+    );
+
+    await render("DrNykterstein");
+    await click("Update games");
+
+    mocks.pathname = "/library";
+    await act(async () => finish({ kind: "imported", games: 12, merged: true, leftovers: 0 }));
+
+    expect(mocks.notify).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ color: "success", message: "Downloaded 12 online games." }),
+    );
+    expect(mocks.openOpponentCard).not.toHaveBeenCalled();
   });
 });

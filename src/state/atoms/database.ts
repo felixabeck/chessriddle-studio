@@ -146,6 +146,16 @@ export const opponentLinksAtom = documentPreferences.atomWithStorage<OpponentLin
 /** Running downloads of online games by link id, each with its ticket once the import has one. */
 export const opponentImportsAtom = atom<ReadonlyMap<string, string | null>>(new Map());
 
+/** One-shot target for opening a player's Preparation card once DatabaseView resolves the route. */
+export type PendingPlayerCard = {
+    database: string;
+    playerId: number;
+    playerName: string;
+};
+
+/** In-memory only: consumed by DatabaseView once the route resolves to the matching database. */
+export const pendingPlayerCardAtom = atom<PendingPlayerCard | null>(null);
+
 /**
  * The app-wide second database of the board explorer, shown beside the reference. What a panel
  * shows is derived from it on read; the stored choice is never reset by that derivation.

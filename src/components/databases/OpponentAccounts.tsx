@@ -1,5 +1,5 @@
 import { Button, Checkbox, Group, NativeSelect, Paper, Progress, Stack, Text } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore } from "jotai";
 import { Plus, Settings, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -13,21 +13,26 @@ import { useProgress } from "@/hooks/useProgress";
 import { failureUnlessCancelled } from "@/platform/errors";
 import { opponentImportsAtom, opponentLinksAtom } from "@/state/atoms";
 import {
+  findLinkWithAccount,
   findOpponentLink,
   isOpponentPlayerName,
   MAX_OPPONENT_ACCOUNTS,
+  normalizeOpponentName,
   OPPONENT_PERIODS,
   OPPONENT_TIME_CONTROLS,
   type OpponentLink,
-  opponentProviderName,
   withOpponentAccount,
   withOpponentFilter,
+  withOpponentLinkRenamed,
   withoutOpponentAccount,
 } from "@/state/opponentLinks";
+import { activeDatabaseViewStore } from "@/state/store/database";
+import { sameDatabaseHandle } from "@/utils/db";
 import ConfirmModal from "../common/ConfirmModal";
 import { IconAction } from "../common/IconAction";
 import { SiteLogo } from "../home/SiteLogo";
 import AddOpponentAccount from "./AddOpponentAccount";
+import { openOpponentCard } from "./openOpponentCard";
 import {
   opponentPeriodOptions,
   opponentPeriodToValue,
@@ -35,11 +40,11 @@ import {
 } from "./opponentPeriod";
 import {
   cancelOpponentImport,
-  type OpponentImportResult,
   removeOpponentGames,
   runOpponentImport,
   unlinkOpponent,
 } from "./opponentImport";
+import { reportOpponentImport, reportOpponentLeftover } from "./opponentImportNotice";
 import { useOpponentPlayers } from "./useOpponentPlayers";
 
 /** What the database listing says about the link's downloaded games. */
@@ -69,10 +74,20 @@ export function opponentGames(
     : { kind: "unreadable" };
 }
 
-function ImportProgress({ ticket, label }: { ticket: string; label: string }) {
+export function ImportProgress({ ticket, label }: { ticket: string; label: string }) {
   const progress = useProgress(ticket).progress;
   // A Lichess export has no known length, so the bar only moves between accounts.
   return <Progress value={progress} size="sm" mt="xs" aria-label={label} animated />;
+}
+
+/**
+ * Whether the link was made for an opponent known only online: the online-opponent entry names its
+ * link exactly like the account. A database player whose name equals one of his usernames reads the
+ * same; taking his link over only renames it, keeping accounts, filter and games.
+ */
+function isOnlineOnlyLink(link: OpponentLink): boolean {
+  const name = normalizeOpponentName(link.playerName);
+  return link.accounts.some((account) => normalizeOpponentName(account.username) === name);
 }
 
 /**
@@ -82,6 +97,8 @@ function ImportProgress({ ticket, label }: { ticket: string; label: string }) {
 function OpponentAccounts({ playerName }: { playerName: string }) {
   const { t } = useTranslation();
   const store = useStore();
+  const router = useRouter();
+  const navigate = useNavigate();
   const { mutate: mutateCache } = useSWRConfig();
   const deps = useMemo(() => ({ store, mutateCache }), [store, mutateCache]);
   const [links, setLinks] = useAtom(opponentLinksAtom);
@@ -100,79 +117,16 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
   const { data: players } = useOpponentPlayers(link, gamesFile);
 
   function linkAccount(account: OpponentAccount) {
-    setLinks((current) => withOpponentAccount(current, playerName, account, crypto.randomUUID()));
+    setLinks((current) => {
+      if (!findOpponentLink(current, playerName)) {
+        const existing = findLinkWithAccount(current, account);
+        if (existing && isOnlineOnlyLink(existing)) {
+          return withOpponentLinkRenamed(current, existing.id, playerName);
+        }
+      }
+      return withOpponentAccount(current, playerName, account, crypto.randomUUID());
+    });
     setExpanded(true);
-  }
-
-  function report(result: OpponentImportResult) {
-    announce(result);
-    // A copy that could not be deleted is named whatever the run's ending.
-    if (result.leftovers > 0) reportLeftover();
-  }
-
-  function announce(result: OpponentImportResult) {
-    if (result.kind === "cancelled") return;
-    if (result.kind === "failed") {
-      notifyUnlessCancelled(t("Common.Error"), result.error, "database");
-      return;
-    }
-    if (result.kind === "imported") {
-      notifications.show({
-        color: "success",
-        message: t("Databases.Opponent.Downloaded", {
-          defaultValue: "Downloaded {{count}} online games.",
-          count: result.games,
-        }),
-      });
-      return;
-    }
-    if (result.kind === "noGames") {
-      notifications.show({
-        color: "warning",
-        message: t("Databases.Opponent.NoMatch", {
-          defaultValue: "No game matches the period and time controls.",
-        }),
-      });
-      return;
-    }
-    const site = opponentProviderName(result.account.provider);
-    const { username } = result.account;
-    notifications.show({
-      color: "danger",
-      title: t("Common.Error"),
-      message:
-        result.reason === "notFound"
-          ? t("Databases.Opponent.Failure.NotFound", {
-              defaultValue: "{{site}} has no account named {{username}}.",
-              site,
-              username,
-            })
-          : result.reason === "rateLimited"
-            ? t("Databases.Opponent.Failure.RateLimited", {
-                defaultValue: "{{site}} is limiting requests. Try again in a minute.",
-                site,
-              })
-            : result.reason === "signIn"
-              ? t("Databases.Opponent.Failure.SignIn", {
-                  defaultValue:
-                    "Lichess rejected your sign-in. Sign in again on the Accounts page.",
-                })
-              : t("Databases.Opponent.Failure.Other", {
-                  defaultValue: "The games of {{username}} on {{site}} could not be downloaded.",
-                  site,
-                  username,
-                }),
-    });
-  }
-
-  function reportLeftover() {
-    notifications.show({
-      color: "warning",
-      message: t("Databases.Opponent.LeftOver", {
-        defaultValue:
-          "An older copy of the online games could not be deleted. You can delete it in the Library.",
-      }),
-    });
   }
 
   // A name that cannot be stored cannot carry a link, so there is nothing to offer.
@@ -284,7 +238,12 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
             <Button
               size="xs"
               variant={games.kind === "games" ? "light" : "filled"}
-              onClick={() =>
+              onClick={() => {
+                const cardDatabase = activeDatabaseViewStore.getState().database;
+                const reopenRoute =
+                  games.kind === "games" && sameDatabaseHandle(cardDatabase?.file, games.file)
+                    ? router.state.location.pathname
+                    : null;
                 void runOpponentImport(
                   deps,
                   link.id,
@@ -292,8 +251,17 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
                     defaultValue: "{{name}} (online)",
                     name: link.playerName,
                   }),
-                ).then(report)
-              }
+                ).then((result) => {
+                  reportOpponentImport(t, result);
+                  if (
+                    result.kind === "imported" &&
+                    reopenRoute !== null &&
+                    router.state.location.pathname === reopenRoute
+                  ) {
+                    void openOpponentCard(store, navigate, mutateCache, link.id);
+                  }
+                });
+              }}
             >
               {games.kind === "games"
                 ? t("Databases.Opponent.Update", { defaultValue: "Update games" })
@@ -427,7 +395,7 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
         opened={confirming === "games"}
         onClose={() => setConfirming(null)}
         onConfirm={async () => {
-          if ((await removeOpponentGames(deps, link.id)) > 0) reportLeftover();
+          if ((await removeOpponentGames(deps, link.id)) > 0) reportOpponentLeftover(t);
         }}
       />
       <ConfirmModal
@@ -440,7 +408,7 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
         opened={confirming === "unlink"}
         onClose={() => setConfirming(null)}
         onConfirm={async () => {
-          if ((await unlinkOpponent(deps, link.id)) > 0) reportLeftover();
+          if ((await unlinkOpponent(deps, link.id)) > 0) reportOpponentLeftover(t);
         }}
       />
     </Paper>

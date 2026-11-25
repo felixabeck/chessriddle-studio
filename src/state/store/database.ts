@@ -71,7 +71,7 @@ const defaultGamesQueryOptions: QueryOptions<GameSort> = {
     skipCount: false,
 };
 
-const defaultPlayersQueryOptions: QueryOptions<PlayerSort> = {
+export const defaultPlayersQueryOptions: QueryOptions<PlayerSort> = {
     page: 1,
     pageSize: 25,
     sort: "name",

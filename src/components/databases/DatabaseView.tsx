@@ -3,8 +3,8 @@ import { ArrowLeft, ChessKnight, Trophy, User } from "lucide-react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCollectionCurrency } from "@/state/linkedCollections";
 import { useEffect, useMemo, useState } from "react";
-import { useSetAtom } from "jotai";
-import { recordLastOpenedAtom } from "@/state/atoms";
+import { useAtom, useSetAtom } from "jotai";
+import { pendingPlayerCardAtom, recordLastOpenedAtom } from "@/state/atoms";
 import { useTranslation } from "react-i18next";
 import GameTable from "@/components/databases/GameTable";
 import { IconAction } from "@/components/common/IconAction";
@@ -12,6 +12,7 @@ import PlayerTable from "@/components/databases/PlayerTable";
 import {
   activeDatabaseViewStore,
   type DatabaseViewStore,
+  defaultPlayersQueryOptions,
   useActiveDatabaseViewStore,
 } from "@/state/store/database";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
@@ -104,6 +105,8 @@ function DatabaseView() {
     if (shownDatabaseKey !== null) recordLastOpened([shownDatabaseKey]);
   }, [shownDatabaseKey, recordLastOpened]);
 
+  const [pendingPlayerCard, setPendingPlayerCard] = useAtom(pendingPlayerCardAtom);
+
   useEffect(() => {
     if (resolution.status === "synchronizing") {
       activeDatabaseViewStore.getState().setDatabase(resolution.database);
@@ -116,6 +119,31 @@ function DatabaseView() {
       activeDatabaseViewStore.getState().clearDatabase();
     }
   }, [database, resolution, preserveUnread]);
+
+  useEffect(() => {
+    if (!pendingPlayerCard) return;
+    // "ready" means the store already holds the route's database.
+    if (resolution.status !== "ready") return;
+    if (resolution.database.collection?.generation !== database?.collection?.generation) return;
+    if (databaseHandleKey(resolution.database.file) !== pendingPlayerCard.database) return;
+
+    setPendingPlayerCard(null);
+    const view = activeDatabaseViewStore.getState();
+    if (!view.setActiveTab("players")) return;
+    if (
+      !view.setPlayersQuery({
+        name: pendingPlayerCard.playerName,
+        range: undefined,
+        // The opponent plays in every game of his own database, so sorted by games he is on the
+        // first page, where the table resolves the selection.
+        options: { ...defaultPlayersQueryOptions, sort: "games", direction: "desc" },
+      })
+    ) {
+      return;
+    }
+    if (!view.setPlayersSelectedPlayer(pendingPlayerCard.playerId)) return;
+    view.setPlayersActiveTab("preparation");
+  }, [pendingPlayerCard, setPendingPlayerCard, resolution, database]);
 
   if (resolution.status === "loading" || resolution.status === "synchronizing") {
     return (
