@@ -1,18 +1,15 @@
-import type { ExplorerSourceRole } from "@/state/atoms";
+import type { ExplorerColumnId } from "@/state/atoms";
 import type { Opening } from "@/utils/db";
 
-export type OpeningsSort = { source: ExplorerSourceRole; direction: "asc" | "desc" };
+export type OpeningsSort = { source: ExplorerColumnId; direction: "asc" | "desc" };
 
 /** One move of the multi-source table; a source is absent when it has no game with it. */
 export type OpeningRow = {
     move: string;
-    primary?: Opening;
-    comparison?: Opening;
-    reference?: Opening;
-};
+} & Partial<Record<ExplorerColumnId, Opening>>;
 
 export type OpeningSourceData = {
-    role: ExplorerSourceRole;
+    role: ExplorerColumnId;
     openings: readonly Opening[];
 };
 
@@ -31,13 +28,14 @@ export function openingTotals(openings: readonly Opening[]): Opening {
 
 /**
  * Derives the active sort for the shown sources: a stored sort naming a source that is not shown
- * falls back to the primary source while keeping the direction and leaving the stored choice alone.
+ * falls back to the first shown source while keeping the direction and leaving the stored choice
+ * alone.
  */
 export function effectiveOpeningsSort(
     sort: OpeningsSort,
-    roles: readonly ExplorerSourceRole[],
+    roles: readonly ExplorerColumnId[],
 ): OpeningsSort {
-    return roles.includes(sort.source) ? sort : { ...sort, source: "primary" };
+    return roles.includes(sort.source) ? sort : { ...sort, source: roles[0] ?? "primary" };
 }
 
 /**

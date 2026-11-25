@@ -21,7 +21,7 @@ import {
   opponentLinksAtom,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
-  pinnedExplorerReferenceFamily,
+  pinnedExplorerFurtherColumnsFamily,
   referenceDbAtom,
   tabFamily,
   tabsAtom,
@@ -701,7 +701,7 @@ test("Prepare pins the player's downloaded online games as the board's second co
   expect(mocks.showNotification).not.toHaveBeenCalled();
   const tab = store.get(tabsAtom).at(-1)!;
   expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toEqual(file);
-  expect(store.get(pinnedExplorerReferenceFamily(tab.value))).toBe(true);
+  expect(store.get(pinnedExplorerFurtherColumnsFamily(tab.value))).toEqual(["reference"]);
   // Usernames that stayed separate players: the board follows the first one.
   expect(store.get(pinnedExplorerComparisonFamily(tab.value))).toEqual({
     database: online,
@@ -1283,7 +1283,7 @@ test("a time-control filter reaches the search, stays off the board and clears t
   await click(button("Analyze on board"));
   const id = store.get(tabsAtom).at(-1)!.value;
   expect(store.get(pinnedExplorerDatabaseFamily(id))).toEqual(file);
-  expect(store.get(pinnedExplorerReferenceFamily(id))).toBe(false);
+  expect(store.get(pinnedExplorerFurtherColumnsFamily(id))).toEqual([]);
   expect(store.get(localOptionsFamily(id))).toEqual({
     path: file,
     player: 42,

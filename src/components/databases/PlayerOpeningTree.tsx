@@ -37,7 +37,7 @@ import {
   localOptionsFamily,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
-  pinnedExplorerReferenceFamily,
+  pinnedExplorerFurtherColumnsFamily,
   tabFamily,
   tabsAtom,
 } from "@/state/atoms";
@@ -330,7 +330,7 @@ function OpeningTree({
               });
             }
             if (variant === "database") {
-              atoms.set(pinnedExplorerReferenceFamily(id), true);
+              atoms.set(pinnedExplorerFurtherColumnsFamily(id), ["reference"]);
             }
             atoms.set(dbTypeFamily(id), "local");
             atoms.set(dbTabFamily(id), "stats");

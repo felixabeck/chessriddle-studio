@@ -37,6 +37,24 @@ export const databaseHandleSchema: z.ZodType<DatabaseHandle> = z.object({
     id: pathRefSchema,
     kind: z.literal("database"),
 });
+
+/** A Lichess source stored as the board explorer's app-wide second column. */
+export const explorerOnlineSourceSchema = z.enum(["lch_all", "lch_master"]);
+
+/**
+ * The stored second source of the board explorer: a local database handle, a Lichess source, or
+ * none. A handle and `null` keep their present shape.
+ */
+export const comparisonSourceSchema = z
+    .union([databaseHandleSchema, explorerOnlineSourceSchema])
+    .nullable();
+
+export type ComparisonSource = z.infer<typeof comparisonSourceSchema>;
+
+export function isDatabaseComparisonSource(value: ComparisonSource): value is DatabaseHandle {
+    return typeof value === "object" && value !== null;
+}
+
 export const linkedGameLocatorSchema = z.object({
     collection: z.string().uuid(),
     generation: z.string().min(1).max(256),

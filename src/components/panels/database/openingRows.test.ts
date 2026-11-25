@@ -102,3 +102,38 @@ test("a sort naming an absent source falls back to primary while keeping the dir
     ]);
     expect(moves(combineOpenings(pair(mega, corr), fallback))).toEqual(["e4", "d4", "c4", "h4"]);
 });
+
+test("two further columns keep their own rows and a sort on the second stays when the first is removed", () => {
+    const rows = combineOpenings(
+        [
+            { role: "primary", openings: mega },
+            { role: "lch_all", openings: corr },
+            { role: "lch_master", openings: ref },
+        ],
+        { source: "lch_master", direction: "desc" },
+    );
+    expect(moves(rows)).toEqual(["e4", "Nf3", "d4", "c4", "h4"]);
+    expect(rows.find((row) => row.move === "Nf3")).toEqual({ move: "Nf3", lch_master: ref[0] });
+    expect(rows.find((row) => row.move === "h4")).toEqual({ move: "h4", lch_all: corr[1] });
+    const remaining = [
+        { role: "primary" as const, openings: mega },
+        { role: "lch_master" as const, openings: ref },
+    ];
+    expect(
+        effectiveOpeningsSort({ source: "lch_master", direction: "desc" }, [
+            "primary",
+            "lch_master",
+        ]),
+    ).toEqual({
+        source: "lch_master",
+        direction: "desc",
+    });
+    expect(
+        moves(
+            combineOpenings(remaining, {
+                source: "lch_master",
+                direction: "desc",
+            }),
+        ),
+    ).toEqual(["e4", "Nf3", "d4", "c4"]);
+});

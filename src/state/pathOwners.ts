@@ -14,9 +14,11 @@ import { tabSchema } from "./workspaceTypes";
 import { reportPreferenceStorageFailure } from "./utils";
 import { reportPersistError } from "./persistError";
 import {
+    comparisonSourceSchema,
     databaseHandleSchema,
     fileWorkspaceHandleSchema,
     fileWorkspaceKey,
+    isDatabaseComparisonSource,
     pathRefKey,
     pathRefSchema,
 } from "@/utils/pathCapabilities";
@@ -133,8 +135,10 @@ function collectOriginalSnapshots(local?: Storage, session?: Storage): OriginalO
     );
     const comparisonReadable = collectOne(
         readJson(local, "comparison-database"),
-        databaseHandleSchema.nullable(),
-        (value) => value && ids.add(pathRefKey(value.id)),
+        comparisonSourceSchema,
+        (value) => {
+            if (isDatabaseComparisonSource(value)) ids.add(pathRefKey(value.id));
+        },
     );
     trust("referenceDatabase", referenceReadable && comparisonReadable && explorerFiltersReadable);
     trust(

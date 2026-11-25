@@ -19,8 +19,6 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Pin, PinOff, Plus, Settings, X } from "lucide-react";
 import { memo, type ReactNode, useCallback, useContext, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import useSWR from "swr/immutable";
-import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
@@ -28,7 +26,6 @@ import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import { PinnedPlacementItems } from "@/components/boards/PinnedPlacementItems";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
-import { inlineFailureMessage } from "@/components/files/notifyError";
 import {
   comparisonDbAtom,
   dbTabFamily,
@@ -38,11 +35,12 @@ import {
   explorerPlacementAtom,
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
-  type ExplorerSourceRole,
+  type ExplorerColumnId,
+  isDatabaseComparisonSource,
   localOptionsFamily,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
-  pinnedExplorerReferenceFamily,
+  pinnedExplorerFurtherColumnsFamily,
   lichessOptionsAtom,
   masterOptionsAtom,
   referenceDbAtom,
@@ -50,19 +48,7 @@ import {
   sessionsAtom,
   tabFamily,
 } from "@/state/atoms";
-import {
-  databaseHandleFromKey,
-  databaseHandleKey,
-  type Opening,
-  type LocalOptions,
-} from "@/utils/db";
-import {
-  convertToNormalized,
-  getLichessGames,
-  getMasterGames,
-  type PositionData,
-} from "@/utils/lichess/api";
-import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/explorer";
+import { databaseHandleFromKey, databaseHandleKey, type Opening } from "@/utils/db";
 import classes from "./DatabasePanel.module.css";
 import { comparisonState, pinnedReferenceState } from "./explorerComparison";
 import ExplorerSourceHeader, { ExplorerSourceCaption } from "./ExplorerSourceHeader";
@@ -79,24 +65,10 @@ import MasterOptionsPanel from "./options/MastersOptionsPanel";
 import PositionSearchControl from "./PositionSearchControl";
 import { useExplorerFilters } from "./useExplorerFilters";
 import { usePlayerName } from "./usePlayerName";
-import { fetchLocalOpening, useLocalExplorer } from "./useLocalExplorer";
+import { useLocalExplorer } from "./useLocalExplorer";
+import { type OnlineExplorerResult, useOnlineExplorer } from "./useOnlineExplorer";
 
 export type { LocalOptions } from "@/utils/db";
-
-export type DBType =
-  | { type: "local"; options: LocalOptions }
-  | {
-      type: "lch_all";
-      options: LichessGamesOptions;
-      fen: string;
-      handle: string;
-    }
-  | {
-      type: "lch_master";
-      options: MasterGamesOptions;
-      fen: string;
-      handle: string;
-    };
 
 type OpeningData = {
   openings: Opening[];
@@ -107,55 +79,8 @@ type OpeningData = {
    */
   total?: Opening;
   games: NormalizedGame[];
-  gameFailures?: Awaited<ReturnType<typeof convertToNormalized>>["failures"];
+  gameFailures?: OnlineExplorerResult["gameFailures"];
 };
-
-export async function fetchOnlineOpening<T>(
-  fetcher: (fen: string, options: T, handle: string) => Promise<PositionData>,
-  fen: string,
-  options: T,
-  handle: string,
-  signal?: AbortSignal,
-) {
-  const data = await fetcher(fen, options, handle);
-  if (signal?.aborted) {
-    throw new DOMException("Cancellation", "AbortError");
-  }
-  const seen = new Set<string>();
-  const games = [...(data.topGames ?? []), ...(data.recentGames ?? [])].filter((game) => {
-    if (seen.has(game.id)) return false;
-    seen.add(game.id);
-    return true;
-  });
-  const normalized = await convertToNormalized(games, { signal });
-  return {
-    openings: data.moves.map((move) => ({
-      move: move.san,
-      white: move.white,
-      black: move.black,
-      draw: move.draws,
-    })),
-    total: { move: "", white: data.white, black: data.black, draw: data.draws },
-    games: normalized.games,
-    gameFailures: normalized.failures,
-  };
-}
-
-export async function fetchOpening(
-  db: DBType,
-  tab: string,
-  signal?: AbortSignal,
-): Promise<OpeningData> {
-  return match(db)
-    .with({ type: "lch_all" }, async ({ fen, options, handle }) =>
-      fetchOnlineOpening(getLichessGames, fen, options, handle, signal),
-    )
-    .with({ type: "lch_master" }, async ({ fen, options, handle }) =>
-      fetchOnlineOpening(getMasterGames, fen, options, handle, signal),
-    )
-    .with({ type: "local" }, ({ options }) => fetchLocalOpening(options, tab, signal))
-    .exhaustive();
-}
 
 /** The height of the sources' size "sm" select, so a titled source lines up with a selectable one. */
 const SOURCE_SELECT_HEIGHT = 36;
@@ -195,14 +120,14 @@ function DatabasePanel() {
       pinned ? setPinnedDatabase(to) : replaceExplorerDatabase({ from, to }),
     [pinned, setPinnedDatabase, replaceExplorerDatabase],
   );
-  const currency = useCollectionDatabase(selectedDatabase, replacePrimary);
+  useCollectionDatabase(selectedDatabase, replacePrimary);
   const [storedComparison, setStoredComparison] = useAtom(comparisonDbAtom);
   // A pinned tab's second column is the tab's own; the app-wide choice is not its concern.
   const [pinnedComparison, setPinnedComparison] = useAtom(
     useTabAtom(pinnedExplorerComparisonFamily),
   );
-  const [showPinnedReference, setShowPinnedReference] = useAtom(
-    useTabAtom(pinnedExplorerReferenceFamily),
+  const [furtherColumns, setFurtherColumns] = useAtom(
+    useTabAtom(pinnedExplorerFurtherColumnsFamily),
   );
   const removeComparison = () => (pinned ? setPinnedComparison(null) : setStoredComparison(null));
   const sessions = useAtomValue(sessionsAtom);
@@ -232,6 +157,27 @@ function DatabasePanel() {
     ? databaseHandleKey(effectiveReferenceDatabase)
     : null;
 
+  const comparison = comparisonState({
+    first: db,
+    pinned,
+    primary: effectiveReferenceDatabase,
+    stored: storedComparison,
+    pinnedComparison: pinnedComparison?.database ?? null,
+    databases: databasesFailure ? undefined : databases?.databases,
+  });
+  const comparisonDatabase = comparison.kind === "database" ? comparison.database : null;
+  const availableReference = pinnedReferenceState({
+    local: db === "local",
+    pinned,
+    primary: effectiveReferenceDatabase,
+    reference: referenceDatabase,
+    databases: databasesFailure ? undefined : databases?.databases,
+  });
+  // Phase 1 shows only the reference entry of the further-column list.
+  const referenceSource = furtherColumns.includes("reference")
+    ? availableReference
+    : { kind: "none" as const };
+
   useEffect(() => {
     if (db === "local") {
       setLocalOptions((q) => (q.type === "exact" ? { ...q, fen: debouncedFen } : q));
@@ -250,30 +196,18 @@ function DatabasePanel() {
     options: effectiveLocalOptions,
   } = useExplorerFilters(effectiveReferenceDatabase);
 
-  const comparison = comparisonState({
-    local: db === "local",
-    pinned,
-    primary: effectiveReferenceDatabase,
-    stored: storedComparison,
-    pinnedComparison: pinnedComparison?.database ?? null,
-    databases: databasesFailure ? undefined : databases?.databases,
-  });
-  const comparisonDatabase = comparison.kind === "source" ? comparison.database : null;
   // The pinned second column searches for its own player and shares the tab's other filters.
   const comparisonPlayer = pinned ? (pinnedComparison?.player ?? null) : null;
   // The stored choice is followed, not the shown one: a database its collection already replaced
   // is no longer in the list, and only its collection still knows the successor.
-  useCollectionDatabase(db === "local" && !pinned ? storedComparison : null, replaceStored);
+  useCollectionDatabase(
+    db === "local" && !pinned && isDatabaseComparisonSource(storedComparison)
+      ? storedComparison
+      : null,
+    replaceStored,
+  );
   useCollectionDatabase(db === "local" && pinned ? referenceDatabase : null, replaceStored);
   const comparisonFilters = useExplorerFilters(comparisonDatabase, comparisonPlayer);
-  const availableReference = pinnedReferenceState({
-    local: db === "local",
-    pinned,
-    primary: effectiveReferenceDatabase,
-    reference: referenceDatabase,
-    databases: databasesFailure ? undefined : databases?.databases,
-  });
-  const referenceSource = showPinnedReference ? availableReference : { kind: "none" as const };
   const pinnedReferenceDatabase =
     referenceSource.kind === "source" ? referenceSource.database : null;
   const pinnedReferenceFilters = useExplorerFilters(pinnedReferenceDatabase, null, { saved: true });
@@ -284,30 +218,11 @@ function DatabasePanel() {
     pinnedReferenceDatabase,
     pinnedReferenceFilters.filters.player,
   );
-  const dbType: DBType = match(db)
-    .with("local", (v) => ({
-      type: v,
-      options: effectiveLocalOptions,
-    }))
-    .with("lch_all", (v) => ({
-      type: v,
-      options: lichessOptions,
-      fen: debouncedFen,
-      handle: explorerHandle ?? "",
-    }))
-    .with("lch_master", (v) => ({
-      type: v,
-      options: masterOptions,
-      fen: debouncedFen,
-      handle: explorerHandle ?? "",
-    }))
-    .exhaustive();
-
   const [tab] = useOwnerTab();
   const [storedView, setStoredView] = useAtom(useTabAtom(dbTabFamily));
   // A partial position has no move statistics. The view is derived, so the stored choice returns
   // with the exact position.
-  const statsUnavailable = dbType.type === "local" && dbType.options.type === "partial";
+  const statsUnavailable = db === "local" && effectiveLocalOptions.type === "partial";
   const view = statsUnavailable || storedView === "games" ? "games" : "stats";
   // A partial search is a pattern, not one position, so its games open at the start.
   const gamesTargetFen = statsUnavailable ? undefined : debouncedFen;
@@ -331,27 +246,25 @@ function DatabasePanel() {
   const gamesSource =
     comparisonDatabase && storedGamesSource === "comparison" ? "comparison" : "primary";
   const [sort, setSort] = useAtom(useTabAtom(explorerSortFamily));
-  const openingKey =
-    !missingExplorerAuthentication && db !== "local"
-      ? currency.collection
-        ? ([dbType, currency.collection.generation] as const)
-        : dbType
-      : null;
-  const openingOwner = useNativeRequestOwner(openingKey);
-
-  const {
-    data: onlineData,
-    isLoading: onlineLoading,
-    error: openingError,
-  } = useSWR(openingKey, () =>
-    openingOwner!.run((signal) => fetchOpening(dbType, tab?.value || "", signal)),
+  const lichessAllExplorer = useOnlineExplorer(
+    "lch_all",
+    debouncedFen,
+    lichessOptions,
+    explorerHandle,
+    db === "lch_all",
   );
-  const openingData: OpeningData | undefined = db === "local" ? localExplorer : onlineData;
-  const isLoading = db === "local" ? localExplorer.loading : onlineLoading;
+  const lichessMasterExplorer = useOnlineExplorer(
+    "lch_master",
+    debouncedFen,
+    masterOptions,
+    explorerHandle,
+    db === "lch_master",
+  );
+  const onlineExplorer = db === "lch_master" ? lichessMasterExplorer : lichessAllExplorer;
+  const openingData: OpeningData | undefined = db === "local" ? localExplorer : onlineExplorer;
+  const isLoading = db === "local" ? localExplorer.loading : onlineExplorer.loading;
   const errorMessage: string | undefined =
-    db === "local"
-      ? localExplorer.error
-      : inlineFailureMessage(openingError, undefined, t("Board.Database.ExplorerLoadError"));
+    db === "local" ? localExplorer.error : onlineExplorer.error;
 
   const failedGames = openingData?.gameFailures
     ?.map(({ item }) => {
@@ -381,7 +294,10 @@ function DatabasePanel() {
     comparison.kind === "none" &&
     comparisonChoices.length > 0;
   const canRestoreReference =
-    db === "local" && pinned && !showPinnedReference && availableReference.kind === "source";
+    db === "local" &&
+    pinned &&
+    !furtherColumns.includes("reference") &&
+    availableReference.kind === "source";
 
   /** A local source's cell: each source differs only in its database, title, and filter binding. */
   const localSourceHeader = (source: {
@@ -460,7 +376,7 @@ function DatabasePanel() {
     ))
     .exhaustive();
   const comparisonHeader =
-    comparison.kind === "source" &&
+    comparison.kind === "database" &&
     localSourceHeader({
       key: "comparison",
       choices: comparisonChoices,
@@ -496,7 +412,9 @@ function DatabasePanel() {
           label={t("Board.Database.RemoveReference")}
           variant="subtle"
           size="sm"
-          onClick={() => setShowPinnedReference(false)}
+          onClick={() =>
+            setFurtherColumns((columns) => columns.filter((column) => column !== "reference"))
+          }
         >
           <X size="0.875rem" />
         </IconAction>
@@ -550,7 +468,7 @@ function DatabasePanel() {
         filters: localFilters,
         playerName: primaryPlayerName,
       }),
-      comparison.kind === "source" &&
+      comparison.kind === "database" &&
         localCaption({
           key: "comparison",
           name: comparison.title,
@@ -629,24 +547,33 @@ function DatabasePanel() {
 
   // With multiple sources a failure belongs to its source: it is named, and the others stay.
   type LocalSourceEntry = {
-    role: ExplorerSourceRole;
+    role: ExplorerColumnId;
     name: string;
     explorer: typeof localExplorer;
   };
-  const extraStatsSources: LocalSourceEntry[] = [
-    ...(comparison.kind === "source"
-      ? [{ role: "comparison" as const, name: comparison.title, explorer: comparisonExplorer }]
-      : []),
-    ...(referenceSource.kind === "source"
+  const extraStatsSources: LocalSourceEntry[] =
+    db === "local"
       ? [
-          {
-            role: "reference" as const,
-            name: referenceSource.title,
-            explorer: pinnedReferenceExplorer,
-          },
+          ...(comparison.kind === "database"
+            ? [
+                {
+                  role: "comparison" as const,
+                  name: comparison.title,
+                  explorer: comparisonExplorer,
+                },
+              ]
+            : []),
+          ...(referenceSource.kind === "source"
+            ? [
+                {
+                  role: "reference" as const,
+                  name: referenceSource.title,
+                  explorer: pinnedReferenceExplorer,
+                },
+              ]
+            : []),
         ]
-      : []),
-  ];
+      : [];
   const statsSources: LocalSourceEntry[] | null =
     extraStatsSources.length > 0
       ? [{ role: "primary", name: primaryTitle, explorer: localExplorer }, ...extraStatsSources]
@@ -660,7 +587,7 @@ function DatabasePanel() {
   // The games view keeps the primary and optional comparison source; the reference source adds
   // no games list and no entry to that switch.
   const gamesSources =
-    comparison.kind === "source"
+    db === "local" && comparison.kind === "database"
       ? ([
           { role: "primary", name: primaryTitle, explorer: localExplorer },
           { role: "comparison", name: comparison.title, explorer: comparisonExplorer },
@@ -745,7 +672,11 @@ function DatabasePanel() {
                   variant="subtle"
                   size="compact-sm"
                   leftSection={<Plus size="0.875rem" />}
-                  onClick={() => setShowPinnedReference(true)}
+                  onClick={() =>
+                    setFurtherColumns((columns) =>
+                      columns.includes("reference") ? columns : [...columns, "reference"],
+                    )
+                  }
                 >
                   {t("Board.Database.ShowReference")}
                 </Button>
@@ -796,6 +727,7 @@ function DatabasePanel() {
                   role,
                   openings: explorer.openings,
                   loading: explorer.loading,
+                  unavailable: explorer.error !== undefined,
                 }))}
                 sort={sort}
                 onSortChange={setSort}
@@ -856,7 +788,7 @@ function DatabasePanel() {
                 <GamesTable
                   games={openingData?.games || []}
                   loading={isLoading}
-                  databasePath={dbType.type === "local" ? dbType.options.path : null}
+                  databasePath={db === "local" ? effectiveLocalOptions.path : null}
                   targetFen={gamesTargetFen}
                 />
               )}

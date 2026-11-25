@@ -503,6 +503,17 @@ describe("collectOriginalPathOwners", () => {
         expect(owners.trustedFamilies).toContain("referenceDatabase");
     });
 
+    test.each(["lch_all", "lch_master"] as const)(
+        "a stored %s comparison source is readable and adds no database id",
+        (source) => {
+            setJson(localStorage, "reference-database", databaseHandle("reference"));
+            setJson(localStorage, "comparison-database", source);
+            const owners = collectOriginalPathOwners(localStorage, sessionStorage);
+            expect(owners.trustedFamilies).toContain("referenceDatabase");
+            expect(owners.retainedIds).toEqual([path("reference")]);
+        },
+    );
+
     test("a malformed reference withholds trust although the explorer filters are readable", () => {
         localStorage.setItem("reference-database", "{malformed");
         setJson(localStorage, "explorer-database-filters", []);

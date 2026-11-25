@@ -1,7 +1,14 @@
 import { expect, test } from "vitest";
 import type { DatabaseHandle } from "@/bindings";
+import type { ComparisonSource } from "@/state/atoms";
 import type { ManagedDatabaseInfo as DatabaseInfo } from "@/utils/db";
-import { comparisonState, pinnedReferenceState } from "./explorerComparison";
+import {
+    addFurtherColumn,
+    comparisonState,
+    furtherColumnChoices,
+    pinnedReferenceState,
+    shownFurtherColumns,
+} from "./explorerComparison";
 
 const handle = (id: string): DatabaseHandle => ({ id: { id }, kind: "database" });
 const readable = (id: string, title = id): DatabaseInfo => ({
@@ -24,10 +31,10 @@ const unreadable = (id: string): DatabaseInfo => ({
     error: "unreadable",
 });
 const shown = {
-    local: true,
+    first: "local" as const,
     pinned: false,
     primary: handle("mega"),
-    stored: handle("corr"),
+    stored: handle("corr") as ComparisonSource,
     pinnedComparison: null as DatabaseHandle | null,
     databases: [readable("mega"), readable("corr", "Correspondence")],
 };
@@ -41,7 +48,7 @@ const pinnedPair = {
 
 test("a readable stored database beside another primary is the second source", () => {
     expect(comparisonState(shown)).toEqual({
-        kind: "source",
+        kind: "database",
         database: handle("corr"),
         title: "Correspondence",
     });
@@ -51,7 +58,7 @@ test("a source without a title is named by its file", () => {
     expect(
         comparisonState({ ...shown, databases: [readable("mega"), readable("corr", "")] }),
     ).toEqual({
-        kind: "source",
+        kind: "database",
         database: handle("corr"),
         title: "corr.db3",
     });
@@ -60,7 +67,7 @@ test("a source without a title is named by its file", () => {
 test("the list's own handle is used, not the stored copy", () => {
     const listed = readable("corr");
     const state = comparisonState({ ...shown, databases: [readable("mega"), listed] });
-    expect(state.kind === "source" && state.database).toBe(listed.file);
+    expect(state.kind === "database" && state.database).toBe(listed.file);
 });
 
 test("a listed but unreadable stored database is reported as unreadable", () => {
@@ -70,10 +77,9 @@ test("a listed but unreadable stored database is reported as unreadable", () => 
 });
 
 test.each<[string, Partial<typeof shown> & { databases?: DatabaseInfo[] | undefined }]>([
-    ["a Lichess source", { local: false }],
     ["a pinned tab", { pinned: true }],
     ["no primary database", { primary: null as unknown as DatabaseHandle }],
-    ["no stored choice", { stored: null as unknown as DatabaseHandle }],
+    ["no stored choice", { stored: null }],
     ["a pending or failed list", { databases: undefined }],
     ["a stored database missing from the list", { databases: [readable("mega")] }],
     ["the primary database itself", { stored: handle("mega") }],
@@ -92,12 +98,17 @@ test.each<[string, Partial<typeof shown>]>([
 
 test("a pinned tab compares against its own second database, not the app-wide choice", () => {
     expect(comparisonState(pinnedPair)).toEqual({
-        kind: "source",
+        kind: "database",
         database: handle("online"),
         title: "Online games",
     });
     expect(comparisonState({ ...pinnedPair, stored: null })).toEqual({
-        kind: "source",
+        kind: "database",
+        database: handle("online"),
+        title: "Online games",
+    });
+    expect(comparisonState({ ...pinnedPair, stored: "lch_all" })).toEqual({
+        kind: "database",
         database: handle("online"),
         title: "Online games",
     });
@@ -116,20 +127,119 @@ test.each<[string, Partial<typeof pinnedPair>]>([
     ["a second database missing from the list", { databases: shown.databases }],
     ["a second database equal to the pinned one", { pinnedComparison: handle("mega") }],
     ["no second database of its own", { pinnedComparison: null }],
-    ["a Lichess source", { local: false }],
     ["a pending or failed list", { databases: undefined }],
 ])("a pinned tab with %s shows no comparison", (_name, change) => {
     expect(comparisonState({ ...pinnedPair, ...change })).toEqual({ kind: "none" });
 });
 
+test("a pinned tab with a Lichess first source shows no comparison", () => {
+    expect(comparisonState({ ...pinnedPair, first: "lch_all" })).toEqual({ kind: "none" });
+});
+
 test("an unpinned tab ignores a pinned second database", () => {
     expect(comparisonState({ ...pinnedPair, pinned: false })).toEqual({
-        kind: "source",
+        kind: "database",
         database: handle("corr"),
         title: "Correspondence",
     });
     expect(comparisonState({ ...pinnedPair, pinned: false, stored: null })).toEqual({
         kind: "none",
+    });
+});
+
+test.each(["lch_all", "lch_master"] as const)(
+    "a stored %s source is the second column beside a local first source",
+    (stored) => {
+        expect(comparisonState({ ...shown, stored })).toEqual({ kind: "online", source: stored });
+        expect(comparisonState({ ...shown, stored, databases: undefined })).toEqual({
+            kind: "online",
+            source: stored,
+        });
+    },
+);
+
+test("no second column while the first source is unset, even with a Lichess choice stored", () => {
+    expect(
+        comparisonState({
+            ...shown,
+            primary: null,
+            stored: "lch_all",
+            databases: undefined,
+        }),
+    ).toEqual({ kind: "none" });
+    expect(comparisonState({ ...shown, primary: null, stored: "lch_master" })).toEqual({
+        kind: "none",
+    });
+});
+
+test("a stored choice equal to a Lichess first source shows no second column", () => {
+    expect(
+        comparisonState({
+            ...shown,
+            first: "lch_all",
+            primary: null,
+            stored: "lch_all",
+            databases: undefined,
+        }),
+    ).toEqual({ kind: "none" });
+});
+
+test("Lichess beside Lichess is shown while the database list is pending", () => {
+    expect(
+        comparisonState({
+            ...shown,
+            first: "lch_all",
+            primary: null,
+            stored: "lch_master",
+            databases: undefined,
+        }),
+    ).toEqual({ kind: "online", source: "lch_master" });
+    expect(
+        comparisonState({
+            ...shown,
+            first: "lch_master",
+            primary: null,
+            stored: "lch_all",
+            databases: [readable("mega")],
+        }),
+    ).toEqual({ kind: "online", source: "lch_all" });
+});
+
+test("a local second source beside a Lichess first source needs the list", () => {
+    expect(
+        comparisonState({
+            ...shown,
+            first: "lch_all",
+            primary: null,
+            stored: handle("corr"),
+            databases: undefined,
+        }),
+    ).toEqual({ kind: "none" });
+    expect(
+        comparisonState({
+            ...shown,
+            first: "lch_all",
+            primary: null,
+            stored: handle("corr"),
+        }),
+    ).toEqual({
+        kind: "database",
+        database: handle("corr"),
+        title: "Correspondence",
+    });
+});
+
+test("a Lichess first source beside a local first-column database does not hide that local comparison", () => {
+    expect(
+        comparisonState({
+            ...shown,
+            first: "lch_master",
+            stored: handle("mega"),
+        }),
+    ).toEqual({
+        kind: "database",
+        database: handle("mega"),
+        title: "mega",
     });
 });
 
@@ -167,4 +277,61 @@ test.each<[string, Partial<typeof pinnedRef> & { databases?: DatabaseInfo[] | un
     ["a pending or failed list", { databases: undefined }],
 ])("pinnedReferenceState stays absent without error for %s", (_name, change) => {
     expect(pinnedReferenceState({ ...pinnedRef, ...change })).toEqual({ kind: "none" });
+});
+
+const furtherContext = {
+    pinned: true,
+    primary: handle("mega"),
+    comparisonShown: true,
+    reference: handle("ref"),
+    databases: [readable("mega", "Mega"), readable("ref", "Reference")],
+};
+
+test("the further-column list shows the reference over the pinned database itself", () => {
+    expect(
+        shownFurtherColumns({
+            ...furtherContext,
+            comparisonShown: false,
+            columns: ["reference"],
+            reference: handle("mega"),
+            databases: [readable("mega", "Mega")],
+        }),
+    ).toEqual([{ id: "reference", database: handle("mega"), title: "Mega" }]);
+});
+
+test("the further-column list keeps order, offers what is not yet shown, and stops at three columns", () => {
+    expect(
+        shownFurtherColumns({
+            ...furtherContext,
+            comparisonShown: false,
+            columns: ["lch_master", "reference"],
+        }),
+    ).toEqual([
+        { id: "lch_master" },
+        { id: "reference", database: handle("ref"), title: "Reference" },
+    ]);
+    expect(
+        furtherColumnChoices(["reference"], { ...furtherContext, comparisonShown: false }),
+    ).toEqual(["lch_all", "lch_master"]);
+    expect(furtherColumnChoices(["reference"], furtherContext)).toEqual([]);
+    expect(furtherColumnChoices(["reference", "lch_all"], furtherContext)).toEqual([]);
+    expect(addFurtherColumn(["reference"], "lch_all", furtherContext)).toEqual(["reference"]);
+    expect(
+        shownFurtherColumns({ ...furtherContext, columns: ["lch_master", "reference"] }),
+    ).toEqual([{ id: "lch_master" }]);
+});
+
+test("adding a further column drops an unreadable reference so it cannot return as a fourth column", () => {
+    const unreadableRef = {
+        ...furtherContext,
+        databases: [readable("mega", "Mega"), unreadable("ref")],
+    };
+    expect(shownFurtherColumns({ ...unreadableRef, columns: ["reference"] })).toEqual([]);
+    expect(furtherColumnChoices(["reference"], unreadableRef)).toEqual(["lch_all", "lch_master"]);
+    const afterAdd = addFurtherColumn(["reference"], "lch_all", unreadableRef);
+    expect(afterAdd).toEqual(["lch_all"]);
+    expect(shownFurtherColumns({ ...furtherContext, columns: afterAdd })).toEqual([
+        { id: "lch_all" },
+    ]);
+    expect(furtherColumnChoices(afterAdd, furtherContext)).toEqual([]);
 });

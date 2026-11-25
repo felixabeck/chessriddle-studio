@@ -41,14 +41,32 @@ export const pinnedExplorerComparisonFamily = tabAtomFamily((_tab: string) =>
     atom<PinnedExplorerComparison | null>(null),
 );
 
-/**
- * Whether a tab pinned to a database also shows the reference database as a further source,
- * searched with that database's saved explorer filters. Set by "Prepare on board", disposed with
- * the tab.
- */
-export const pinnedExplorerReferenceFamily = tabAtomFamily((_tab: string) => atom<boolean>(false));
+/** A Lichess explorer source, stored or chosen as a column of the board's Database panel. */
+export type ExplorerOnlineSource = "lch_all" | "lch_master";
 
-export type ExplorerSourceRole = "primary" | "comparison" | "reference";
+/** The tab's first source: a local database, Lichess All, or Lichess Masters. */
+export type ExplorerFirstSource = "local" | ExplorerOnlineSource;
+
+/**
+ * A further column of a preparation board: the reference database and each Lichess source.
+ * The list lives and ends with the tab; it is never stored.
+ */
+export type ExplorerFurtherColumn = "reference" | ExplorerOnlineSource;
+
+/**
+ * Stable identity of a statistics column. It does not depend on which other columns are shown:
+ * the first column, the second column, and one identity per further source.
+ */
+export type ExplorerColumnId = "primary" | "comparison" | ExplorerFurtherColumn;
+
+/**
+ * Further columns of a tab pinned to a database, in the order they were added. "Prepare on board"
+ * starts it with the reference database; disposed with the tab.
+ */
+export const pinnedExplorerFurtherColumnsFamily = tabAtomFamily((_tab: string) =>
+    atom<ExplorerFurtherColumn[]>([]),
+);
+
 export type ExplorerGamesSourceRole = "primary" | "comparison";
 
 /** Whose sample games the Games view lists while two local sources are shown. */
@@ -58,7 +76,7 @@ export const explorerGamesSourceFamily = tabAtomFamily((_tab: string) =>
 
 /** The multi-source move table's sort: which source's game count, in which direction. */
 export const explorerSortFamily = tabAtomFamily((_tab: string) =>
-    atom<{ source: ExplorerSourceRole; direction: "asc" | "desc" }>({
+    atom<{ source: ExplorerColumnId; direction: "asc" | "desc" }>({
         source: "primary",
         direction: "desc",
     }),
@@ -137,8 +155,6 @@ export const explorerStripHeightsAtom = atomWithStorage<Partial<Record<PinnedPla
     ),
 );
 
-export const dbTypeFamily = tabAtomFamily((_tab: string) =>
-    atom<"local" | "lch_all" | "lch_master">("local"),
-);
+export const dbTypeFamily = tabAtomFamily((_tab: string) => atom<ExplorerFirstSource>("local"));
 
 export const dbTabFamily = tabAtomFamily((_tab: string) => atom("stats"));

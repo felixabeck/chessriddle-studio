@@ -22,6 +22,9 @@ import { type OpponentLink, opponentLinksSchema } from "../opponentLinks";
 import {
     fileWorkspaceHandleSchema,
     databaseHandleSchema,
+    comparisonSourceSchema,
+    type ComparisonSource,
+    isDatabaseComparisonSource,
     fileWorkspaceKey,
     capabilityKey,
     pathRefSchema,
@@ -156,14 +159,18 @@ export type PendingPlayerCard = {
 /** In-memory only: consumed by DatabaseView once the route resolves to the matching database. */
 export const pendingPlayerCardAtom = atom<PendingPlayerCard | null>(null);
 
+export type { ComparisonSource };
+export { comparisonSourceSchema, isDatabaseComparisonSource };
+
 /**
- * The app-wide second database of the board explorer, shown beside the reference. What a panel
- * shows is derived from it on read; the stored choice is never reset by that derivation.
+ * The app-wide second source of the board explorer, shown beside the first column. What a panel
+ * shows is derived from it on read; the stored choice is never reset by that derivation. A handle
+ * and `null` keep their present shape; a value that does not parse becomes `null`.
  */
-export const comparisonDbAtom = documentPreferences.atomWithStorage<DatabaseHandle | null>(
+export const comparisonDbAtom = documentPreferences.atomWithStorage<ComparisonSource>(
     "comparison-database",
     null,
-    createZodStorage(databaseHandleSchema.nullable(), localStorage),
+    createZodStorage(comparisonSourceSchema, localStorage),
 );
 
 export const setExplorerFiltersAtom = atom(
@@ -193,7 +200,9 @@ export const replaceExplorerDatabaseAtom = atom(
         const reference = get(referenceDbAtom);
         if (reference && capabilityKey(reference) === from) set(referenceDbAtom, change.to);
         const comparison = get(comparisonDbAtom);
-        if (comparison && capabilityKey(comparison) === from) set(comparisonDbAtom, change.to);
+        if (isDatabaseComparisonSource(comparison) && capabilityKey(comparison) === from) {
+            set(comparisonDbAtom, change.to);
+        }
     },
 );
 
@@ -205,7 +214,9 @@ export const forgetExplorerDatabaseAtom = atom(null, (get, set, database: Databa
         set(explorerDatabaseFiltersAtom, withoutExplorerFilters(entries, key));
     }
     const comparison = get(comparisonDbAtom);
-    if (comparison && capabilityKey(comparison) === key) set(comparisonDbAtom, null);
+    if (isDatabaseComparisonSource(comparison) && capabilityKey(comparison) === key) {
+        set(comparisonDbAtom, null);
+    }
 });
 
 export const selectedPuzzleDbAtom = initializeBeforeUse(

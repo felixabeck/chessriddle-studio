@@ -13,8 +13,10 @@ vi.mock("@/platform/native", () => ({
 }));
 import {
     comparisonDbAtom,
+    dbTypeFamily,
     explorerDatabaseFiltersAtom,
     forgetExplorerDatabaseAtom,
+    pinnedExplorerFurtherColumnsFamily,
     referenceDbAtom,
     replaceExplorerDatabaseAtom,
     setExplorerFiltersAtom,
@@ -211,4 +213,35 @@ test("a corrupt stored comparison database reads as none", () => {
     expect(store.get(comparisonDbAtom)).toBeNull();
     expect(native.warn).toHaveBeenCalledWith("Invalid persisted value for comparison-database");
     expect(localStorage.getItem("comparison-database")).toBe("null");
+});
+
+test.each(["lch_all", "lch_master"] as const)(
+    "a stored %s comparison source persists and is left alone when a database is replaced or deleted",
+    (source) => {
+        const store = createStore();
+        store.set(comparisonDbAtom, source);
+        expect(JSON.parse(localStorage.getItem("comparison-database")!)).toBe(source);
+        store.set(replaceExplorerDatabaseAtom, { from: handle("old"), to: handle("new") });
+        expect(store.get(comparisonDbAtom)).toBe(source);
+        store.set(forgetExplorerDatabaseAtom, handle("old"));
+        expect(store.get(comparisonDbAtom)).toBe(source);
+
+        const reloaded = createStore();
+        reloaded.sub(comparisonDbAtom, () => {});
+        expect(reloaded.get(comparisonDbAtom)).toBe(source);
+    },
+);
+
+test("a tab's first source and further columns write no storage key", () => {
+    const localKeys = () =>
+        Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
+    const sessionKeys = () =>
+        Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i));
+    const beforeLocal = localKeys();
+    const beforeSession = sessionKeys();
+    const store = createStore();
+    store.set(dbTypeFamily("tab-1"), "lch_all");
+    store.set(pinnedExplorerFurtherColumnsFamily("tab-1"), ["reference", "lch_master"]);
+    expect(localKeys()).toEqual(beforeLocal);
+    expect(sessionKeys()).toEqual(beforeSession);
 });

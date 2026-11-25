@@ -25,7 +25,7 @@ import {
   masterOptionsAtom,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
-  pinnedExplorerReferenceFamily,
+  pinnedExplorerFurtherColumnsFamily,
   referenceDbAtom,
 } from "@/state/atoms";
 import { explorerFiltersFor } from "@/state/explorerFilters";
@@ -37,7 +37,7 @@ import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { formatNumber } from "@/utils/format";
-import type { PositionData } from "@/utils/lichess/api";
+import { getLichessGames, getMasterGames, type PositionData } from "@/utils/lichess/api";
 
 const mocks = vi.hoisted(() => ({
   logError: vi.fn(),
@@ -116,7 +116,8 @@ vi.mock("@/chessground/Chessground", () => ({ Chessground: () => null }));
 vi.mock("@/components/boards/PiecesGrid", () => ({ default: () => null }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
-import DatabasePanel, { fetchOpening } from "./DatabasePanel";
+import DatabasePanel from "./DatabasePanel";
+import { fetchOnlineOpening } from "./useOnlineExplorer";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 class MockResizeObserver {
@@ -293,9 +294,11 @@ describe("DatabasePanel", () => {
       })),
     );
 
-    const result = await fetchOpening(
-      { type: "lch_all", fen: "startpos", options: { color: "white" }, handle: "token-1" },
-      "tab-1",
+    const result = await fetchOnlineOpening(
+      getLichessGames,
+      "startpos",
+      { color: "white" },
+      "token-1",
     );
 
     expect(result.games.map(({ id, white, black }) => ({ id, white, black }))).toEqual(
@@ -314,9 +317,11 @@ describe("DatabasePanel", () => {
       return mockExplorerData;
     });
 
-    const promise = fetchOpening(
-      { type: "lch_all", fen: "startpos", options: {} as any, handle: "token-1" },
-      "tab-1",
+    const promise = fetchOnlineOpening(
+      getLichessGames,
+      "startpos",
+      {} as any,
+      "token-1",
       controller.signal,
     );
 
@@ -336,9 +341,11 @@ describe("DatabasePanel", () => {
       throw cancellationError();
     });
 
-    const promise = fetchOpening(
-      { type: "lch_all", fen: "startpos", options: {} as any, handle: "token-1" },
-      "tab-1",
+    const promise = fetchOnlineOpening(
+      getLichessGames,
+      "startpos",
+      {} as any,
+      "token-1",
       controller.signal,
     );
 
@@ -353,9 +360,11 @@ describe("DatabasePanel", () => {
       return mockExplorerData;
     });
 
-    const promise = fetchOpening(
-      { type: "lch_master", fen: "startpos", options: {} as any, handle: "token-1" },
-      "tab-1",
+    const promise = fetchOnlineOpening(
+      getMasterGames,
+      "startpos",
+      {} as any,
+      "token-1",
       controller.signal,
     );
 
@@ -375,9 +384,11 @@ describe("DatabasePanel", () => {
       throw cancellationError();
     });
 
-    const promise = fetchOpening(
-      { type: "lch_master", fen: "startpos", options: {} as any, handle: "token-1" },
-      "tab-1",
+    const promise = fetchOnlineOpening(
+      getMasterGames,
+      "startpos",
+      {} as any,
+      "token-1",
       controller.signal,
     );
 
@@ -388,17 +399,20 @@ describe("DatabasePanel", () => {
   test.each(["lch_all", "lch_master"] as const)(
     "%s: ordinary failure retains siblings, openings and failure metadata",
     async (type) => {
-      const fetcher = type === "lch_all" ? mocks.getLichessGames : mocks.getMasterGames;
-      fetcher.mockResolvedValue(mockExplorerData);
+      (type === "lch_all" ? mocks.getLichessGames : mocks.getMasterGames).mockResolvedValue(
+        mockExplorerData,
+      );
       mocks.getPublicLichessJson.mockImplementation(async ({ game_id }: { game_id: string }) => {
         if (game_id === "g0") throw new Error("Connection failed");
         return `[White "W1"]\n[Black "B1"]\n\n1. d4 d5 *`;
       });
       mocks.lexPgn.mockResolvedValue([]);
 
-      const result = await fetchOpening(
-        { type, fen: "startpos", options: {} as any, handle: "token-1" },
-        "tab-1",
+      const result = await fetchOnlineOpening(
+        type === "lch_all" ? getLichessGames : getMasterGames,
+        "startpos",
+        {} as any,
+        "token-1",
       );
 
       expect(result.openings).toEqual([{ move: "e4", white: 50, black: 40, draw: 10 }]);
@@ -1671,14 +1685,14 @@ describe("DatabasePanel", () => {
           ).toEqual(
             failedIsPrimary
               ? [
-                  ["d4", "–", "60%12"],
-                  ["h4", "–", "40%8"],
-                  ["Board.Database.StatsTable.Total", "0", "20"],
+                  ["d4", "", "60%12"],
+                  ["h4", "", "40%8"],
+                  ["Board.Database.StatsTable.Total", "", "20"],
                 ]
               : [
-                  ["e4", "71%100", "–"],
-                  ["d4", "29%40", "–"],
-                  ["Board.Database.StatsTable.Total", "140", "0"],
+                  ["e4", "71%100", ""],
+                  ["d4", "29%40", ""],
+                  ["Board.Database.StatsTable.Total", "140", ""],
                 ],
           ),
         );
@@ -1926,7 +1940,7 @@ describe("DatabasePanel", () => {
                 player: 7,
               });
             }
-            mounted.store.set(pinnedExplorerReferenceFamily(tabId), true);
+            mounted.store.set(pinnedExplorerFurtherColumnsFamily(tabId), ["reference"]);
           });
           await act(async () => {});
           return mounted;
@@ -1981,7 +1995,7 @@ describe("DatabasePanel", () => {
             'button[aria-label="Board.Database.RemoveReference"]',
           )!;
           await act(async () => removeRef.click());
-          expect(store.get(pinnedExplorerReferenceFamily(tabId))).toBe(false);
+          expect(store.get(pinnedExplorerFurtherColumnsFamily(tabId))).toEqual([]);
           expect(sources()).toHaveLength(2);
           expect(store.get(explorerSortFamily(tabId)).source).toBe("reference");
           expect(rowsSortedByRef()[0]).not.toBe("c4");
@@ -2125,7 +2139,7 @@ describe("DatabasePanel", () => {
           const { store } = await mountLocal(reference, 42);
           await act(async () => {
             store.set(referenceDbAtom, third.file);
-            store.set(pinnedExplorerReferenceFamily(tabId), false);
+            store.set(pinnedExplorerFurtherColumnsFamily(tabId), []);
           });
           await vi.waitFor(() => expect(store.get(referenceDbAtom)).toEqual(successor));
           const restore = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(

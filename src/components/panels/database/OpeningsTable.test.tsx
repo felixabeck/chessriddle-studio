@@ -371,6 +371,70 @@ test("three sources render three Total/Results groups and sort by reference", as
   expect(changes).toEqual([{ source: "reference", direction: "asc" }]);
 });
 
+test("a Lichess column's position total is the Total row and percentage denominator with two and three columns", async () => {
+  const lichessTotal = { move: "", white: 30, draw: 20, black: 22 };
+  await renderCompared({
+    sources: [
+      { role: "primary", openings, loading: false },
+      {
+        role: "lch_all",
+        openings: openings.slice(0, 2),
+        loading: false,
+        total: lichessTotal,
+      },
+    ],
+  });
+  const two = bodyRows();
+  expect(cells(two.at(-1)!)[1]).toBe("38");
+  expect(cells(two.at(-1)!)[3]).toBe("72");
+  expect(cells(two[0])[3]).toContain("28%");
+  expect(cells(two[0])[3]).toContain("20");
+
+  await renderCompared({
+    sources: [
+      { role: "primary", openings, loading: false },
+      { role: "comparison", openings: comparisonOpenings, loading: false },
+      {
+        role: "lch_master",
+        openings: openings.slice(0, 2),
+        loading: false,
+        total: lichessTotal,
+      },
+    ],
+  });
+  const three = bodyRows();
+  expect(cells(three.at(-1)!)[5]).toBe("72");
+  expect(cells(three[0])[5]).toContain("28%");
+});
+
+test("a column that cannot answer has empty cells and no no-games dash", async () => {
+  await renderCompared({
+    sources: [
+      { role: "primary", openings, loading: false },
+      { role: "comparison", openings: comparisonOpenings, loading: false, unavailable: true },
+    ],
+  });
+  const [e4, , , total] = bodyRows();
+  expect(cells(e4)[1]).toBe("53%20");
+  expect(cells(e4)[3]).toBe("");
+  expect(e4.querySelectorAll("td")[4].querySelector(".mantine-Progress-root")).toBeNull();
+  expect(cells(total)[3]).toBe("");
+  expect(host.querySelectorAll("[data-no-games]")).toHaveLength(0);
+});
+
+test("a waiting column beside one that cannot answer shows the waiting table, not no games found", async () => {
+  await renderCompared({
+    openings: [],
+    loading: true,
+    sources: [
+      { role: "primary", openings: [], loading: true },
+      { role: "comparison", openings: [], loading: false, unavailable: true },
+    ],
+  });
+  expect(host.querySelector(".mantine-datatable-loader-fetching")).not.toBeNull();
+  expect(host.textContent).not.toContain("No games found");
+});
+
 test("a stored sort naming an absent source falls back to primary and marks primary sorted", async () => {
   await renderCompared({
     sort: { source: "reference", direction: "asc" },
