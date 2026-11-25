@@ -29393,3 +29393,18 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Constraint:** the contract gate deliberately forbids `opener:allow-open-url` in the renderer capability, so granting the plugin permission would reverse that decision. A shape that keeps the gate's intent is a Specta command that accepts only an `https` URL (parsed in Rust) and opens it through `app.opener()`, plus one shared renderer link component that calls it and prevents the default. All seven link sites route through that component. Needs `review-ipc-contract` and `review-tauri-security`. The proof is a real-app click (`pnpm verify:app`), because the e2e suite mocks IPC.
 * **Open question:** should external links go through a dedicated https-only Specta command, which keeps the gate's ban on renderer opener authority, or through a scoped `opener:allow-open-url` grant that reverses the gate and needs a recorded decision? Which URL schemes beyond https (mailto for the PGN Comment links?) must be supported?
 * **Found by:** Claude Code on 2026-11-25, while adding the database licence credits. The `review-tauri-security` lens raised it and the real-app probe confirmed it.
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### file-menu-save e2e reads the workspace before it is persisted and fails intermittently
+
+* **ID:** f-20261125-19 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Where:** `e2e/file-menu-save.spec.ts:36`, "File → Save to file or database… does nothing without an analysis tab": `expect((await activeWorkspaceTab(page))?.type).toBe("new")` immediately after `page.goto("/")`. `activeWorkspaceTab` (`e2e/fixtures.ts:859-862`) reads `sessionStorage.workspace` once and asserts it is truthy.
+* **Defect:** the test reads the persisted workspace once, without waiting for the app to write it. On a loaded runner the read happens first and the helper fails with `expect(received).toBeTruthy()`, `Received: null` (`fixtures.ts:861`). Sibling specs avoid this with `expect.poll(... activeWorkspaceTab(page))`.
+* **CI run:** 45638982168
+* **Failure scenario:** job `e2e` of Test run 45638982168 on `5a9b413f8` failed only this test (1 failed, 539 passed). The five previous Test runs (`945d909b9` through `0e81e1123`) passed it on the same spec and fixture. The pushed range `0e81e1123..5a9b413f8` (database licence credits) touches neither the workspace, the File menu nor `e2e/fixtures.ts`.
+* **Repair owner:** Claude Code session 5a1dbb4f-7526-4b42-989c-e564ddabe862 on tuxedo-felix, 2026-11-25T16:20+01:00
+* **Fix:** poll the active tab type, as the sibling specs do.
+* **Found by:** Claude Code on 2026-11-25, in the CI wait after pushing the database licence credits.
