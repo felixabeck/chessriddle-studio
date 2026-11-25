@@ -18,6 +18,7 @@ import {
     computePreparationView,
     computePreparationViews,
     INITIAL_BOARD_STATE,
+    parsePreparationMinGames,
     type NodeClassification,
     type PreparationColor,
     preparationViewForSource,
@@ -406,7 +407,7 @@ describe("lines, gaps, ordering, and transpositions across chapters", () => {
             [boardAfter(["e4", "c5"]), [statRow("*", { white: 3 }, "2026.04.01")]],
         ]);
 
-        const view = computePreparationView(files, "black", stats);
+        const view = computePreparationView(files, "black", stats, 1);
         expect(view.total).toBe(10);
         // posAfterNc6 is a leaf in ch0 but continues with played Bb5 in ch1 -> NOT a line.
         expect(
@@ -474,7 +475,7 @@ describe("lines, gaps, ordering, and transpositions across chapters", () => {
         const stats = new Map<string, PositionStats[]>([
             [target, [statRow("*", { white: 2, draw: 1, unknown: 1 }, "2026.06.20")]],
         ]);
-        const view = computePreparationView([makeFile("QGD", [ch.chapter])], "black", stats);
+        const view = computePreparationView([makeFile("QGD", [ch.chapter])], "black", stats, 1);
         expect(view.total).toBe(0);
         expect(view.lines).toHaveLength(1);
         expect(view.lines[0]).toMatchObject({
@@ -524,7 +525,7 @@ describe("lines, gaps, ordering, and transpositions across chapters", () => {
             ],
         ]);
 
-        const view = computePreparationView(files, "black", stats);
+        const view = computePreparationView(files, "black", stats, 1);
         expect(view.lines.map((l) => `${l.file.name}:${l.moves.join(" ")}`)).toEqual([
             "Alpha:e4 c5", // 5 games, 2026.01.10
             "Alpha:e4 e5", // 5 games, 2025.05.01, file 0, earlier in tree
@@ -588,7 +589,7 @@ describe("sources: OTB, Online, and Both", () => {
             ]),
         ]);
 
-        const views = computePreparationViews(files, "black", otbStats, onlineStats);
+        const views = computePreparationViews(files, "black", otbStats, onlineStats, 1);
         expect(views.otb.total).toBe(3);
         expect(views.online?.total).toBe(5);
         expect(views.both?.total).toBe(8);
@@ -603,7 +604,7 @@ describe("sources: OTB, Online, and Both", () => {
             lastPlayed: "2026.03.15",
         });
 
-        const otbOnly = computePreparationViews(files, "black", otbStats, null);
+        const otbOnly = computePreparationViews(files, "black", otbStats, null, 1);
         expect(otbOnly.otb.total).toBe(3);
         expect(otbOnly.online).toBeNull();
         expect(otbOnly.both).toBeNull();
@@ -665,7 +666,7 @@ describe("sources: OTB, Online, and Both", () => {
         expect(combined.get(posE4E5)).toEqual([statRow("*", { white: 2 }, "2026.08.01")]);
         expect(combined.get(posD4)).toEqual([statRow("*", { white: 3 }, "2026.07.01")]);
 
-        const views = computePreparationViews(files, "black", otbStats, onlineStats);
+        const views = computePreparationViews(files, "black", otbStats, onlineStats, 1);
         expect(
             views.both?.lines.map((line) => ({
                 moves: line.moves,
@@ -701,7 +702,7 @@ describe("edge cases for gaps, lines, orientation filtering, and date ordering",
             ],
             [posE4, [statRow("c5", { black: 3 }, "2026.01.01")]],
         ]);
-        const view = computePreparationView([makeFile("White", [ch.chapter])], "black", stats);
+        const view = computePreparationView([makeFile("White", [ch.chapter])], "black", stats, 1);
         expect(view.gaps.map((g) => ({ moves: g.moves, move: g.move }))).toEqual([
             { moves: ["e4"], move: "c5" },
         ]);
@@ -747,7 +748,7 @@ describe("edge cases for gaps, lines, orientation filtering, and date ordering",
             [boardAfter(["d4"]), [statRow("d5", { white: 2 }, "2026.02.01")]],
             [boardAfter(["d4", "d5"]), [statRow("*", { white: 2 }, "2026.02.01")]],
         ]);
-        const view = computePreparationView(files, "white", stats);
+        const view = computePreparationView(files, "white", stats, 1);
         expect(view.lines.map((l) => l.moves)).toEqual([["e4", "c5"]]);
         expect(view.gaps.map((g) => g.move)).toEqual(["d4"]);
     });
@@ -786,7 +787,7 @@ describe("edge cases for gaps, lines, orientation filtering, and date ordering",
                 ],
             ],
         ]);
-        const view = computePreparationView(files, "black", stats);
+        const view = computePreparationView(files, "black", stats, 1);
         expect(view.lines.map((l) => [l.moves[0], l.lastPlayed])).toEqual([
             ["b3", "2026.10.01"],
             ["g3", "2026.10.01"],
@@ -821,5 +822,124 @@ describe("edge cases for gaps, lines, orientation filtering, and date ordering",
         expect(preparationViewForSource({ otb, online, both }, "both")).toBe(both);
         expect(preparationViewForSource({ otb, online: null, both: null }, "online")).toBe(otb);
         expect(preparationViewForSource({ otb, online: null, both: null }, "both")).toBe(otb);
+    });
+});
+
+describe("minimum games", () => {
+    // Black repertoire (opponent = white): 1. e4 e5 2. Nf3 Nc6 and 2. Bc4 Nf6.
+    const { chapter } = buildChapter({
+        headers: { black: "Open Games", orientation: "black" },
+        moves: [
+            {
+                san: "e4",
+                children: [
+                    {
+                        san: "e5",
+                        children: [
+                            { san: "Nf3", children: [{ san: "Nc6" }] },
+                            { san: "Bc4", children: [{ san: "Nf6" }] },
+                        ],
+                    },
+                ],
+            },
+        ],
+    });
+    const files = [makeFile("Open Games", [chapter])];
+    const posE4E5 = boardAfter(["e4", "e5"]);
+    const posBc4 = boardAfter(["e4", "e5", "Bc4"]);
+    const stats = new Map<string, PositionStats[]>([
+        [INITIAL_BOARD_STATE, [statRow("e4", { white: 4, black: 2 }, "2026.01.01")]],
+        [boardAfter(["e4"]), [statRow("e5", { white: 4, black: 2 }, "2026.01.01")]],
+        [
+            posE4E5,
+            [
+                statRow("Nf3", { white: 3 }, "2026.01.01"),
+                statRow("Bc4", { black: 1 }, "2026.02.01"),
+                statRow("Nc3", { white: 2 }, "2026.03.01"),
+            ],
+        ],
+        [boardAfter(["e4", "e5", "Nf3"]), [statRow("Nc6", { white: 3 }, "2026.01.01")]],
+        [boardAfter(["e4", "e5", "Nf3", "Nc6"]), [statRow("Bb5", { white: 3 }, "2026.01.01")]],
+        [posBc4, [statRow("Nf6", { black: 1 }, "2026.02.01")]],
+        [boardAfter(["e4", "e5", "Bc4", "Nf6"]), [statRow("d3", { black: 1 }, "2026.02.01")]],
+    ]);
+
+    function summary(minGames: 1 | 2 | 3 | 5) {
+        const view = computePreparationView(files, "white", stats, minGames);
+        return {
+            total: view.total,
+            lines: view.lines.map((line) => ({ moves: line.moves.join(" "), games: line.games })),
+            gaps: view.gaps.map((gap) => `${gap.moves.join(" ")} ${gap.move}:${gap.games}`),
+            bc4Played: view.playedPositions.has(posBc4),
+            bc4Counted: view.positionGames.has(posBc4),
+        };
+    }
+
+    test("a line and a gap count from the opponent's first game by default", () => {
+        expect(summary(1)).toEqual({
+            total: 6,
+            lines: [
+                { moves: "e4 e5 Nf3 Nc6", games: 3 },
+                { moves: "e4 e5 Bc4 Nf6", games: 1 },
+            ],
+            gaps: ["e4 e5 Nf3 Nc6 Bb5:3", "e4 e5 Nc3:2", "e4 e5 Bc4 Nf6 d3:1"],
+            bc4Played: true,
+            bc4Counted: true,
+        });
+    });
+
+    test("raising the minimum drops rarer lines and gaps but keeps the total", () => {
+        expect(summary(2)).toEqual({
+            total: 6,
+            lines: [{ moves: "e4 e5 Nf3 Nc6", games: 3 }],
+            gaps: ["e4 e5 Nf3 Nc6 Bb5:3", "e4 e5 Nc3:2"],
+            bc4Played: false,
+            bc4Counted: false,
+        });
+        expect(summary(3).gaps).toEqual(["e4 e5 Nf3 Nc6 Bb5:3"]);
+    });
+
+    test("a line ends where every continuation falls below the minimum", () => {
+        expect(summary(5)).toEqual({
+            total: 6,
+            lines: [{ moves: "e4 e5", games: 6 }],
+            gaps: [],
+            bc4Played: false,
+            bc4Counted: false,
+        });
+    });
+
+    test("the folding classification follows the thresholded played positions", () => {
+        const view = computePreparationView(files, "white", stats, 2);
+        const classification = classifyChapterNodes(chapter, "white", view.playedPositions);
+        const bc4Index = chapter.nodes.findIndex((node) => node.boardState === posBc4);
+        expect(classification.nodes[bc4Index]).toEqual({ status: "excluded", relevant: false });
+    });
+
+    test("the online and Both views apply the same minimum to their own counts", () => {
+        const onlineStats = new Map<string, PositionStats[]>([
+            [INITIAL_BOARD_STATE, [statRow("e4", { white: 2 }, "2026.05.01")]],
+            [boardAfter(["e4"]), [statRow("e5", { white: 2 }, "2026.05.01")]],
+            [posE4E5, [statRow("Bc4", { white: 2 }, "2026.05.01")]],
+            [posBc4, [statRow("Nf6", { white: 2 }, "2026.05.01")]],
+        ]);
+        const played = (minGames: 1 | 2 | 3 | 5) => {
+            const views = computePreparationViews(files, "white", stats, onlineStats, minGames);
+            return {
+                otb: views.otb.playedPositions.has(posBc4),
+                online: views.online?.playedPositions.has(posBc4),
+                both: views.both?.playedPositions.has(posBc4),
+            };
+        };
+        // Bc4: 1 game over the board, 2 online, 3 together.
+        expect(played(2)).toEqual({ otb: false, online: true, both: true });
+        expect(played(3)).toEqual({ otb: false, online: false, both: true });
+        expect(played(5)).toEqual({ otb: false, online: false, both: false });
+    });
+
+    test("parsePreparationMinGames accepts only the offered choices", () => {
+        expect(parsePreparationMinGames("3")).toBe(3);
+        expect(parsePreparationMinGames("4")).toBe(1);
+        expect(parsePreparationMinGames("")).toBe(1);
     });
 });

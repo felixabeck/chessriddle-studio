@@ -24,6 +24,7 @@ Inside the database table view, switch between {{label:Common.Games}}, {{label:D
 
 In a player's {{label:Home.Personal.Preparation}} tab, compare their games with your repertoire files:
 - Choose the opponent's color, the {{label:Databases.OpeningTree.Since}} period, and (with linked online accounts) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}}, or {{label:Databases.Preparation.Both}}. Click {{label:Databases.Preparation.Refresh}} to run the comparison again.
+- Raise {{label:Databases.Preparation.MinGames}} to hide lines and gaps the opponent played only rarely; your file folds those lines away and the training leaves them out.
 - Review the lines the opponent plays and {{label:Databases.Preparation.GapsTitle}}. Click any row to open your repertoire file at that position with other side lines hidden; switch between {{label:Notation.PreparationOpponentLines}} and {{label:Notation.PreparationAllLines}} in the notation header.
 - Click {{label:Databases.Preparation.TrainLines}} to start a timed practice run over those lines; your answers update the normal spaced-repetition schedule.
 

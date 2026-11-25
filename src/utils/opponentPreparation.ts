@@ -15,6 +15,21 @@ import { getBoardState, type TreeNode } from "@/utils/treeReducer";
 export type PreparationColor = "white" | "black";
 export type PreparationSource = "otb" | "online" | "both";
 
+/** Minimum-games choices of the Preparation tab, in display order. */
+export const PREPARATION_MIN_GAMES_OPTIONS = [1, 2, 3, 5] as const;
+export type PreparationMinGames = (typeof PREPARATION_MIN_GAMES_OPTIONS)[number];
+/** A line counts from the opponent's first game unless the user raises the minimum. */
+export const DEFAULT_PREPARATION_MIN_GAMES: PreparationMinGames = 1;
+
+/** Parses a select value back to a minimum-games choice, falling back to the default. */
+export function parsePreparationMinGames(value: string): PreparationMinGames {
+    const parsed = Number(value);
+    return (
+        PREPARATION_MIN_GAMES_OPTIONS.find((option) => option === parsed) ??
+        DEFAULT_PREPARATION_MIN_GAMES
+    );
+}
+
 /** `getBoardState` key of the standard chess starting position. */
 export const INITIAL_BOARD_STATE = getBoardState(INITIAL_FEN);
 
@@ -51,9 +66,9 @@ export type PreparationView = {
     gaps: readonly PreparationGap[];
     /** Selected games that reached the standard starting position; 0 when none. */
     total: number;
-    /** Positions reached by at least one selected game (`games >= 1`). */
+    /** Positions reached by at least `minGames` selected games. */
     playedPositions: ReadonlySet<string>;
-    /** Selected games reaching each played position. */
+    /** Selected games reaching each played position (only positions in `playedPositions`). */
     positionGames: ReadonlyMap<string, number>;
 };
 
@@ -206,12 +221,15 @@ function comparePreparationOrder(a: SortKey, b: SortKey): number {
 
 /**
  * Computes one preparation view (lines, gaps, total, played positions) from the indexed
- * repertoire files and one batch statistics map.
+ * repertoire files and one batch statistics map. A position counts as played, and an uncovered
+ * move as a gap, only when at least `minGames` selected games reached it; `total` always counts
+ * every selected game.
  */
 export function computePreparationView(
     files: readonly IndexedRepertoireFile[],
     opponentColor: PreparationColor,
     stats: ReadonlyMap<string, readonly PositionStats[]>,
+    minGames: PreparationMinGames,
 ): PreparationView {
     const userColor = userColorForOpponent(opponentColor);
     const playedPositions = new Set<string>();
@@ -220,14 +238,14 @@ export function computePreparationView(
 
     for (const [fen, rows] of stats) {
         const games = positionStatsGames(rows);
-        if (games >= 1) {
+        if (games >= minGames) {
             playedPositions.add(fen);
             positionGames.set(fen, games);
             positionLastPlayed.set(fen, positionStatsLastPlayed(rows));
         }
     }
 
-    const total = positionGames.get(INITIAL_BOARD_STATE) ?? 0;
+    const total = positionStatsGames(stats.get(INITIAL_BOARD_STATE));
 
     // First occurrence per position in file, chapter and tree order, plus global child/move sets
     // across every indexed chapter of the user's colour.
@@ -313,7 +331,7 @@ export function computePreparationView(
             for (const row of stats.get(boardState) ?? []) {
                 if (row.move === "*") continue;
                 const moveGames = rowGames(row);
-                if (moveGames < 1) continue;
+                if (moveGames < minGames) continue;
                 if (covered?.has(row.move)) continue;
                 rawGaps.push({
                     workspaceKey: occ.workspaceKey,
@@ -361,17 +379,19 @@ export function computePreparationViews(
     files: readonly IndexedRepertoireFile[],
     opponentColor: PreparationColor,
     otbStats: ReadonlyMap<string, readonly PositionStats[]>,
-    onlineStats?: ReadonlyMap<string, readonly PositionStats[]> | null,
+    onlineStats: ReadonlyMap<string, readonly PositionStats[]> | null,
+    minGames: PreparationMinGames,
 ): PreparationViews {
-    const otb = computePreparationView(files, opponentColor, otbStats);
+    const otb = computePreparationView(files, opponentColor, otbStats, minGames);
     if (!onlineStats) {
         return { otb, online: null, both: null };
     }
-    const online = computePreparationView(files, opponentColor, onlineStats);
+    const online = computePreparationView(files, opponentColor, onlineStats, minGames);
     const both = computePreparationView(
         files,
         opponentColor,
         combinePreparationStats(otbStats, onlineStats),
+        minGames,
     );
     return { otb, online, both };
 }

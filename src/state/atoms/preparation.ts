@@ -1,9 +1,11 @@
 /** In-memory opponent preparation state and per-tab preparation views. */
 import { atom } from "jotai";
+import type { PositionStats } from "@/bindings";
 import type { OpponentPeriod } from "@/state/opponentLinks";
 import type { IndexedRepertoireFile } from "@/state/repertoireIndex";
 import type {
     PreparationColor,
+    PreparationMinGames,
     PreparationSource,
     PreparationViews,
 } from "@/utils/opponentPreparation";
@@ -48,7 +50,18 @@ export type StoredOpponentPreparation = {
     opponentColor: PreparationColor;
     period: OpponentPeriod;
     source: PreparationSource;
+    minGames: PreparationMinGames;
+    /** Derived from `stats`, `files` and `minGames`; recomputed when the minimum changes. */
     views: PreparationViews;
+    /**
+     * The fetched statistics the views were derived from, kept so a new minimum needs no new
+     * search. Bounded by the request: one entry per requested position, replaced with the
+     * preparation.
+     */
+    stats: {
+        otb: ReadonlyMap<string, readonly PositionStats[]>;
+        online: ReadonlyMap<string, readonly PositionStats[]> | null;
+    };
     /** Repertoire snapshot files this preparation was matched against (reference, not a copy). */
     files: readonly IndexedRepertoireFile[];
     partial: boolean;

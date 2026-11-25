@@ -2,7 +2,7 @@
 id: databases
 title: Базы дадзеных, аглядальнік, пошук пазіцый, гульцы і турніры
 summary: Даданне або спампоўка баз партый, выбар даведачнай базы, пошук пазіцый у аглядальніку, а таксама прагляд партый, гульцоў і турніраў.
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 Базы дадзеных знаходзяцца ў [[page:library]] ({{label:SideBar.Library}}) побач з вашымі файламі PGN і захоўваюцца ў [[setting:databases-directory]].
@@ -25,6 +25,7 @@ source: 0273f02c8cccfcea
 
 На картцы гульца адкрыйце ўкладку {{label:Home.Personal.Preparation}}, каб параўнаць яго партыі з вашымі файламі рэпертуару:
 - Выберыце колер саперніка, перыяд {{label:Databases.OpeningTree.Since}} і (пры падлучаных анлайн-акаўнтах) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} або {{label:Databases.Preparation.Both}}. Націсніце {{label:Databases.Preparation.Refresh}}, каб запусціць параўнанне зноў.
+- Павялічце {{label:Databases.Preparation.MinGames}}, каб схаваць варыянты і прабелы, якія сапернік гуляў толькі зрэдку; файл згорне гэтыя варыянты, а трэніроўка іх прапусціць.
 - Праглядзіце варыянты, якія гуляе сапернік, і {{label:Databases.Preparation.GapsTitle}}. Націсніце любы радок, каб адкрыць свой файл рэпертуару на гэтай пазіцыі са схаванымі іншымі адгалінаваннямі; у загалоўку натацыі пераключайцеся паміж {{label:Notation.PreparationOpponentLines}} і {{label:Notation.PreparationAllLines}}.
 - Націсніце {{label:Databases.Preparation.TrainLines}}, каб запусціць трэніроўку на час па гэтых варыянтах; вашы адказы абнаўляюць звычайны расклад інтэрвальных паўтораў.
 

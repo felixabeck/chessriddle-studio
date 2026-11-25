@@ -2,7 +2,7 @@
 id: databases
 title: Database, esploratore, ricerca di posizione, giocatori e tornei
 summary: Aggiungi o scarica database di partite, scegli un database di riferimento, cerca posizioni nell’esploratore e sfoglia partite, giocatori e tornei.
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 I database si trovano in [[page:library]] ({{label:SideBar.Library}}) insieme ai tuoi file PGN e sono archiviati in [[setting:databases-directory]].
@@ -25,6 +25,7 @@ All’interno della vista tabellare del database, passa tra {{label:Common.Games
 
 Nella scheda di un giocatore, apri {{label:Home.Personal.Preparation}} per confrontare le sue partite con i tuoi file di repertorio:
 - Scegli il colore dell’avversario, il periodo {{label:Databases.OpeningTree.Since}} e (con account online collegati) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} oppure {{label:Databases.Preparation.Both}}. Fai clic su {{label:Databases.Preparation.Refresh}} per ripetere il confronto.
+- Aumenta {{label:Databases.Preparation.MinGames}} per nascondere le linee e le lacune che l’avversario ha giocato solo raramente; il tuo file comprime quelle linee e l'allenamento le esclude.
 - Esamina le varianti giocate dall’avversario e {{label:Databases.Preparation.GapsTitle}}. Fai clic su una riga per aprire il tuo file di repertorio in quella posizione con le altre varianti secondarie nascoste; nell’intestazione della notazione passa tra {{label:Notation.PreparationOpponentLines}} e {{label:Notation.PreparationAllLines}}.
 - Fai clic su {{label:Databases.Preparation.TrainLines}} per avviare una sessione a tempo su quelle varianti; le tue risposte aggiornano la normale pianificazione a ripetizione dilazionata.
 

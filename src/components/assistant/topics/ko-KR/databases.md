@@ -2,7 +2,7 @@
 id: databases
 title: 데이터베이스, 탐색기, 포지션 검색, 선수 및 토너먼트
 summary: 기보 데이터베이스 추가 또는 다운로드, 참조 데이터베이스 지정, 탐색기에서 포지션 검색, 대국·선수·토너먼트 탐색하기.
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 데이터베이스는 PGN 파일과 함께 [[page:library]] ({{label:SideBar.Library}})에 표시되며 [[setting:databases-directory]]에 저장됩니다.
@@ -25,6 +25,7 @@ source: 0273f02c8cccfcea
 
 선수 카드의 {{label:Home.Personal.Preparation}} 탭에서 상대의 대국을 내 레퍼토리 파일과 비교하세요:
 - 상대의 색, {{label:Databases.OpeningTree.Since}} 기간을 고르고(온라인 계정이 연결된 경우) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} 또는 {{label:Databases.Preparation.Both}} 중 하나를 선택합니다. {{label:Databases.Preparation.Refresh}}을(를) 클릭하면 비교를 다시 실행합니다.
+- 상대가 드물게만 둔 라인과 빈틈을 숨기려면 {{label:Databases.Preparation.MinGames}} 값을 높이세요. 파일에서 해당 라인이 접히고 훈련에서도 제외됩니다.
 - 상대가 두는 수순과 {{label:Databases.Preparation.GapsTitle}}을(를) 확인하세요. 행을 클릭하면 다른 곁가지 변화가 숨겨진 채 해당 포지션에서 레퍼토리 파일이 열리며, 기보 상단에서 {{label:Notation.PreparationOpponentLines}}와(과) {{label:Notation.PreparationAllLines}} 사이를 전환할 수 있습니다.
 - {{label:Databases.Preparation.TrainLines}}을(를) 클릭해 해당 수순만 제한 시간 동안 연습하세요. 응답 결과는 일반 간격 반복 일정에 반영됩니다.
 

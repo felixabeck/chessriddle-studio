@@ -32,11 +32,14 @@ import { databaseHandleKey } from "@/utils/db";
 import type { LineTitle } from "@/utils/lineTitle";
 import { openFile } from "@/utils/openFile";
 import {
+  PREPARATION_MIN_GAMES_OPTIONS,
   type PreparationColor,
   type PreparationGap,
   type PreparationLine,
+  type PreparationMinGames,
   type PreparationSource,
   type PreparationView,
+  parsePreparationMinGames,
   preparationViewForSource,
   userColorForOpponent,
 } from "@/utils/opponentPreparation";
@@ -118,7 +121,7 @@ export default function PlayerPreparation({
   const trainAbortRef = useRef<AbortController | null>(null);
 
   const online = useOnlineGames(player, file);
-  const { state, restart, setSource } = useOpponentPreparation({
+  const { state, restart, setSource, minGames, setMinGames } = useOpponentPreparation({
     player,
     file,
     opponentName: shortName,
@@ -142,23 +145,18 @@ export default function PlayerPreparation({
   const effectiveSource: PreparationSource =
     state.kind === "ready" && onlineAvailable ? state.preparation.source : "otb";
 
-  const handleSourceChange = (next: PreparationSource) => {
-    setSource(next);
-    setShowAllLines(false);
-    setShowAllGaps(false);
-  };
-
-  const handleColorChange = (next: PreparationColor) => {
-    setOpponentColor(next);
-    setShowAllLines(false);
-    setShowAllGaps(false);
-  };
-
-  const handlePeriodChange = (next: OpponentPeriod) => {
-    setPeriod(next);
-    setShowAllLines(false);
-    setShowAllGaps(false);
-  };
+  /** Every selection change shows the lists from their first rows again. */
+  const collapsingLists =
+    <Value,>(change: (next: Value) => void) =>
+    (next: Value) => {
+      change(next);
+      setShowAllLines(false);
+      setShowAllGaps(false);
+    };
+  const handleSourceChange = collapsingLists<PreparationSource>(setSource);
+  const handleColorChange = collapsingLists<PreparationColor>(setOpponentColor);
+  const handlePeriodChange = collapsingLists<OpponentPeriod>(setPeriod);
+  const handleMinGamesChange = collapsingLists<PreparationMinGames>(setMinGames);
 
   const openRow = useCallback(
     async (row: PreparationRow) => {
@@ -251,7 +249,7 @@ export default function PlayerPreparation({
       trainAbortRef.current = null;
       setStartingRun(false);
     };
-  }, [preparationId, effectiveSource]);
+  }, [preparationId, effectiveSource, minGames]);
 
   const candidateChapters = useMemo(() => {
     if (!preparationId || !activeView || !preparationFiles) return [];
@@ -376,12 +374,23 @@ export default function PlayerPreparation({
           ]}
         />
         <NativeSelect
-          className={classes.since}
+          className={classes.toolbarSelect}
           size="xs"
           label={t("Databases.OpeningTree.Since", { defaultValue: "Since" })}
           value={opponentPeriodToValue(period)}
           onChange={(event) => handlePeriodChange(valueToOpponentPeriod(event.currentTarget.value))}
           data={opponentPeriodOptions(PERIOD_OPTIONS, t)}
+        />
+        <NativeSelect
+          className={classes.toolbarSelect}
+          size="xs"
+          label={t("Databases.Preparation.MinGames", { defaultValue: "Minimum games" })}
+          value={String(minGames)}
+          onChange={(event) =>
+            handleMinGamesChange(parsePreparationMinGames(event.currentTarget.value))
+          }
+          data={PREPARATION_MIN_GAMES_OPTIONS.map((option) => String(option))}
+          data-preparation-min-games
         />
         <Button
           size="xs"
@@ -566,9 +575,16 @@ export default function PlayerPreparation({
                         defaultValue: "Start position",
                       })
                 }
-                emptyText={t("Databases.Preparation.LinesEmpty", {
-                  defaultValue: "None of your repertoire lines appeared in these games.",
-                })}
+                emptyText={
+                  minGames > 1
+                    ? t("Databases.Preparation.LinesBelowMinimum", {
+                        defaultValue:
+                          "None of your repertoire lines was played often enough for this minimum.",
+                      })
+                    : t("Databases.Preparation.LinesEmpty", {
+                        defaultValue: "None of your repertoire lines appeared in these games.",
+                      })
+                }
                 rowKey={(line) => `${line.workspaceKey}:${line.chapter}:${line.boardState}`}
                 listAttr="data-preparation-lines"
                 rowAttr="data-preparation-line-row"
@@ -593,9 +609,15 @@ export default function PlayerPreparation({
                     <span className={classes.gapMove}>{gap.move}</span>
                   </>
                 )}
-                emptyText={t("Databases.Preparation.GapsEmpty", {
-                  defaultValue: "No uncovered moves found.",
-                })}
+                emptyText={
+                  minGames > 1
+                    ? t("Databases.Preparation.GapsBelowMinimum", {
+                        defaultValue: "No uncovered move was played often enough for this minimum.",
+                      })
+                    : t("Databases.Preparation.GapsEmpty", {
+                        defaultValue: "No uncovered moves found.",
+                      })
+                }
                 rowKey={(gap) => `${gap.workspaceKey}:${gap.chapter}:${gap.boardState}:${gap.move}`}
                 listAttr="data-preparation-gaps"
                 rowAttr="data-preparation-gap-row"

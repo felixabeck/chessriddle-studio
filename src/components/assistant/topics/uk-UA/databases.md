@@ -2,7 +2,7 @@
 id: databases
 title: Бази даних, оглядач, пошук позицій, гравці та турніри
 summary: Додавання або завантаження баз партій, вибір довідкової бази, пошук позицій в оглядачі та перегляд партій, гравців і турнірів.
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 Бази даних містяться в [[page:library]] ({{label:SideBar.Library}}) поряд із вашими файлами PGN і зберігаються в [[setting:databases-directory]].
@@ -25,6 +25,7 @@ source: 0273f02c8cccfcea
 
 На картці гравця відкрийте вкладку {{label:Home.Personal.Preparation}}, щоб порівняти його партії з вашими файлами репертуару:
 - Виберіть колір суперника, період {{label:Databases.OpeningTree.Since}} та (за наявності прив’язаних онлайн-акаунтів) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} або {{label:Databases.Preparation.Both}}. Натисніть {{label:Databases.Preparation.Refresh}}, щоб запустити порівняння знову.
+- Збільште {{label:Databases.Preparation.MinGames}}, щоб приховати варіанти й прогалини, які суперник грав лише зрідка; файл згорне ці варіанти, а тренування їх пропустить.
 - Перегляньте варіанти, які грає суперник, та {{label:Databases.Preparation.GapsTitle}}. Натисніть будь-який рядок, щоб відкрити ваш файл репертуару в цій позиції з прихованими іншими відгалуженнями; у заголовку нотації перемикайтеся між {{label:Notation.PreparationOpponentLines}} і {{label:Notation.PreparationAllLines}}.
 - Натисніть {{label:Databases.Preparation.TrainLines}}, щоб запустити тренування на час за цими варіантами; ваші відповіді оновлюють звичайний розклад інтервального повторення.
 

@@ -15,7 +15,9 @@ import {
     chapterOrientation,
     collectPreparationFens,
     computePreparationViews,
+    DEFAULT_PREPARATION_MIN_GAMES,
     type PreparationColor,
+    type PreparationMinGames,
     type PreparationSource,
     userColorForOpponent,
 } from "@/utils/opponentPreparation";
@@ -54,6 +56,28 @@ function buildFilter(
 }
 
 /**
+ * The stored preparation recomputed for another minimum from its kept statistics, under the same
+ * id so open notation tabs and the training follow it; unchanged when it already has that minimum.
+ */
+function withMinGames(
+    preparation: StoredOpponentPreparation,
+    minGames: PreparationMinGames,
+): StoredOpponentPreparation {
+    if (preparation.minGames === minGames) return preparation;
+    return {
+        ...preparation,
+        minGames,
+        views: computePreparationViews(
+            preparation.files,
+            preparation.opponentColor,
+            preparation.stats.otb,
+            preparation.stats.online,
+            minGames,
+        ),
+    };
+}
+
+/**
  * Owns the opponent preparation job for the Preparation tab.
  *
  * Every run carries a monotonic run id and its own AbortController. Results and failures apply
@@ -79,6 +103,8 @@ export function useOpponentPreparation({
     state: PreparationJobState;
     restart: () => void;
     setSource: (source: PreparationSource) => void;
+    minGames: PreparationMinGames;
+    setMinGames: (minGames: PreparationMinGames) => void;
 } {
     const atoms = useStore();
     const workspace = useAtomValue(fileWorkspaceAtom);
@@ -123,11 +149,16 @@ export function useOpponentPreparation({
 
     const runIdRef = useRef(0);
     const abortControllerRef = useRef<AbortController | null>(null);
-    const preferredSourceRef = useRef<PreparationSource>(
+    const storedForPlayer =
         stored && stored.cardDatabaseKey === cardDatabaseKey && stored.playerId === player.id
-            ? stored.source
-            : "otb",
+            ? stored
+            : null;
+    const preferredSourceRef = useRef<PreparationSource>(storedForPlayer?.source ?? "otb");
+    const [minGames, setMinGamesState] = useState<PreparationMinGames>(
+        () => storedForPlayer?.minGames ?? DEFAULT_PREPARATION_MIN_GAMES,
     );
+    const minGamesRef = useRef(minGames);
+    minGamesRef.current = minGames;
 
     const fileRef = useRef(file);
     fileRef.current = file;
@@ -142,6 +173,9 @@ export function useOpponentPreparation({
         const existing = atoms.get(opponentPreparationAtom);
         if (existing && existing.identityKey === identityKey) {
             preferredSourceRef.current = existing.source;
+            // The minimum may have changed while another identity was shown.
+            const reconciled = withMinGames(existing, minGamesRef.current);
+            if (reconciled !== existing) atoms.set(opponentPreparationAtom, reconciled);
             setInternalState({ kind: "idle" });
             return;
         }
@@ -278,11 +312,13 @@ export function useOpponentPreparation({
             runController.signal.removeEventListener("abort", onRunAbort);
             if (!isCurrent()) return;
 
+            const runMinGames = minGamesRef.current;
             const views = computePreparationViews(
                 snapshot.files,
                 opponentColor,
                 otbStats,
                 onlineStats,
+                runMinGames,
             );
             const nextSource: PreparationSource =
                 onlineStats !== null && !onlineFailed ? preferredSourceRef.current : "otb";
@@ -296,7 +332,9 @@ export function useOpponentPreparation({
                 opponentColor,
                 period,
                 source: nextSource,
+                minGames: runMinGames,
                 views,
+                stats: { otb: otbStats, online: onlineStats },
                 files: snapshot.files,
                 partial: snapshot.partial,
                 onlineFailed,
@@ -346,6 +384,19 @@ export function useOpponentPreparation({
         [atoms, identityKey],
     );
 
+    const setMinGames = useCallback(
+        (next: PreparationMinGames) => {
+            // A run that finishes before the next render reads the new minimum.
+            minGamesRef.current = next;
+            setMinGamesState(next);
+            const current = atoms.get(opponentPreparationAtom);
+            if (current && current.identityKey === identityKey) {
+                atoms.set(opponentPreparationAtom, withMinGames(current, next));
+            }
+        },
+        [atoms, identityKey],
+    );
+
     const state: PreparationJobState =
         stored && stored.identityKey === identityKey
             ? { kind: "ready", preparation: stored }
@@ -357,5 +408,7 @@ export function useOpponentPreparation({
         state,
         restart,
         setSource,
+        minGames,
+        setMinGames,
     };
 }

@@ -2,7 +2,7 @@
 id: databases
 title: 資料庫、開局探索器、局面搜尋、棋手與賽事
 summary: 新增或下載棋局資料庫、選取參考資料庫、在探索器中搜尋局面，以及瀏覽對局、棋手與賽事。
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 資料庫與您的 PGN 檔案一同位在 [[page:library]] ({{label:SideBar.Library}}) 中，並儲存於 [[setting:databases-directory]]。
@@ -25,6 +25,7 @@ source: 0273f02c8cccfcea
 
 在棋手卡片中開啟 {{label:Home.Personal.Preparation}} 分頁，將對手的對局與您的開局庫檔案進行比較：
 - 選擇對手的執棋顏色、{{label:Databases.OpeningTree.Since}} 期間，以及（在連結線上帳戶時）{{label:Databases.OpeningTree.OverTheBoard}}、{{label:Databases.OpeningTree.Online}} 或 {{label:Databases.Preparation.Both}}。點擊 {{label:Databases.Preparation.Refresh}} 可重新執行比較。
+- 提高 {{label:Databases.Preparation.MinGames}} 可隱藏對手很少下過的變化和漏洞；你的檔案會摺疊這些變化，訓練也會略過它們。
 - 檢視對手常下的變化以及 {{label:Databases.Preparation.GapsTitle}}。點擊任一列即可在該局面開啟您的開局庫檔案並隱藏其他旁枝；在記譜標頭可在 {{label:Notation.PreparationOpponentLines}} 與 {{label:Notation.PreparationAllLines}} 之間切換。
 - 點擊 {{label:Databases.Preparation.TrainLines}} 開始這些變化的計時練習；您的作答會更新正常的間隔重複排程。
 

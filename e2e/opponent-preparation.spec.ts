@@ -104,7 +104,7 @@ function preparationCommands() {
                     fen: AFTER_E4_C5,
                     openings: [
                         stat("Nf3", 5, 1, 1, "2026.09.10"),
-                        stat("Nc3", 3, 1, 1, "2026.08.15"),
+                        stat("Nc3", 2, 1, 1, "2026.08.15"),
                     ],
                 },
                 {
@@ -162,6 +162,15 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     await page.mouse.move(0, 0);
     await expect(preview).toHaveScreenshot("opponent-preparation-tab.png");
 
+    // Raising the minimum drops the gap played in only 4 games, without a new search.
+    const minGames = prep.getByRole("combobox", { name: "Minimum games", exact: true });
+    await minGames.selectOption("5");
+    await expect(prep.locator("[data-preparation-gaps]")).not.toContainText("Nc3");
+    await expect(prep.locator("[data-preparation-gaps]")).toContainText("Bb5+");
+    await expect(prep.locator("[data-preparation-lines]")).toContainText("6 of 26 games");
+    await minGames.selectOption("1");
+    await expect(prep.locator("[data-preparation-gaps]")).toContainText("Nc3");
+
     // Activating a line opens the repertoire chapter at the matched position (2...d6).
     await prep.locator("[data-preparation-line-row]").first().click();
     await expect(page).toHaveURL("/");
@@ -212,7 +221,7 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
 
-test("opponent-preparation: narrow card stacks Since control and compacts list cells without overflow", async ({
+test("opponent-preparation: narrow card stacks Since and Minimum games controls and compacts list cells without overflow", async ({
     page,
     mockScenario,
     assertNoHorizontalOverflow,
@@ -243,21 +252,24 @@ test("opponent-preparation: narrow card stacks Since control and compacts list c
     const prep = preview.locator("[data-player-preparation]");
     await expect(prep.locator("[data-preparation-lines]")).toContainText("Sicilian Najdorf");
 
-    const sinceSelect = prep.getByRole("combobox", { name: "Since", exact: true });
-    const sinceLayout = await sinceSelect.evaluate((select) => {
-        const root = select.closest(".mantine-NativeSelect-root")!;
-        const label = root.querySelector("label")!;
-        const style = getComputedStyle(root);
-        return {
-            flexDirection: style.flexDirection,
-            alignItems: style.alignItems,
-            labelLeft: label.getBoundingClientRect().left,
-            selectLeft: select.getBoundingClientRect().left,
-        };
-    });
-    expect(sinceLayout.flexDirection).toBe("column");
-    expect(sinceLayout.alignItems).toBe("start");
-    expect(Math.abs(sinceLayout.labelLeft - sinceLayout.selectLeft)).toBeLessThanOrEqual(1);
+    for (const name of ["Since", "Minimum games"]) {
+        const layout = await prep
+            .getByRole("combobox", { name, exact: true })
+            .evaluate((select) => {
+                const root = select.closest(".mantine-NativeSelect-root")!;
+                const label = root.querySelector("label")!;
+                const style = getComputedStyle(root);
+                return {
+                    flexDirection: style.flexDirection,
+                    alignItems: style.alignItems,
+                    labelLeft: label.getBoundingClientRect().left,
+                    selectLeft: select.getBoundingClientRect().left,
+                };
+            });
+        expect(layout.flexDirection, name).toBe("column");
+        expect(layout.alignItems, name).toBe("start");
+        expect(Math.abs(layout.labelLeft - layout.selectLeft), name).toBeLessThanOrEqual(1);
+    }
 
     const cellStyle = await prep
         .locator("[data-preparation-lines] tbody td")

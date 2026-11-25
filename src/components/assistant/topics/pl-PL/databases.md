@@ -2,7 +2,7 @@
 id: databases
 title: Bazy danych, eksplorator, wyszukiwanie pozycji, gracze i turnieje
 summary: Dodawaj lub pobieraj bazy partii, wybieraj bazę odniesienia, wyszukuj pozycje w eksploratorze i przeglądaj partie, graczy oraz turnieje.
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 Bazy danych znajdują się w [[page:library]] ({{label:SideBar.Library}}) obok plików PGN i są przechowywane w [[setting:databases-directory]].
@@ -25,6 +25,7 @@ W widoku tabeli bazy danych przełączaj się między {{label:Common.Games}}, {{
 
 Na karcie gracza otwórz kartę {{label:Home.Personal.Preparation}}, aby porównać jego partie z twoimi plikami repertuaru:
 - Wybierz kolor przeciwnika, okres {{label:Databases.OpeningTree.Since}} oraz (przy powiązanych kontach internetowych) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} lub {{label:Databases.Preparation.Both}}. Kliknij {{label:Databases.Preparation.Refresh}}, aby uruchomić porównanie ponownie.
+- Zwiększ {{label:Databases.Preparation.MinGames}}, aby ukryć warianty i luki, które przeciwnik grał tylko rzadko; Twój plik zwija te warianty, a trening je pomija.
 - Przejrzyj warianty grane przez przeciwnika oraz {{label:Databases.Preparation.GapsTitle}}. Kliknij dowolny wiersz, aby otworzyć swój plik repertuaru w tej pozycji z ukrytymi pozostałymi wariantami pobocznymi; w nagłówku notacji przełączaj się między {{label:Notation.PreparationOpponentLines}} a {{label:Notation.PreparationAllLines}}.
 - Kliknij {{label:Databases.Preparation.TrainLines}}, aby rozpocząć sesję treningową na czas dla tych wariantów; twoje odpowiedzi aktualizują zwykły harmonogram powtórek.
 

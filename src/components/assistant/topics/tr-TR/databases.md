@@ -2,7 +2,7 @@
 id: databases
 title: Veritabanları, gezgin, konum arama, oyuncular ve turnuvalar
 summary: Oyun veritabanları ekleme veya indirme, referans veritabanı seçme, gezginde konum arama ve oyunları, oyuncuları ve turnuvaları inceleme.
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 Veritabanları PGN dosyalarınızla birlikte [[page:library]] ({{label:SideBar.Library}}) içinde yer alır ve [[setting:databases-directory]] konumunda saklanır.
@@ -25,6 +25,7 @@ Veritabanı tablo görünümünde {{label:Common.Games}}, {{label:Databases.Card
 
 Bir oyuncunun kartında oyunlarını repertuvar dosyalarınızla karşılaştırmak için {{label:Home.Personal.Preparation}} sekmesini açın:
 - Rakibin rengini, {{label:Databases.OpeningTree.Since}} dönemini ve (bağlı çevrimiçi hesaplar varsa) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} veya {{label:Databases.Preparation.Both}} seçeneğini belirleyin. Karşılaştırmayı yeniden çalıştırmak için {{label:Databases.Preparation.Refresh}} düğmesine tıklayın.
+- Rakibin yalnızca nadiren oynadığı varyantları ve boşlukları gizlemek için {{label:Databases.Preparation.MinGames}} değerini artırın; dosyanız bu varyantları katlar ve antrenman onları dışarıda bırakır.
 - Rakibin oynadığı varyantları ve {{label:Databases.Preparation.GapsTitle}} listesini inceleyin. Repertuvar dosyanızı o konumda diğer yan varyantlar gizli olarak açmak için bir satıra tıklayın; notasyon başlığında {{label:Notation.PreparationOpponentLines}} ile {{label:Notation.PreparationAllLines}} arasında geçiş yapın.
 - Bu varyantlar üzerinde süreli bir alıştırma başlatmak için {{label:Databases.Preparation.TrainLines}} düğmesine tıklayın; yanıtlarınız normal aralıklı tekrar programını günceller.
 

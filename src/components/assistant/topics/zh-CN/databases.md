@@ -2,7 +2,7 @@
 id: databases
 title: 数据库、开局探索器、局面搜索、棋手与赛事
 summary: 添加或下载棋局数据库、选择参考数据库、在探索器中搜索局面，以及浏览对局、棋手和赛事。
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 数据库与您的 PGN 文件一起位于 [[page:library]] ({{label:SideBar.Library}}) 中，并保存在 [[setting:databases-directory]]。
@@ -25,6 +25,7 @@ source: 0273f02c8cccfcea
 
 在棋手卡片中打开 {{label:Home.Personal.Preparation}} 标签页，将其对局与您的开局库文件进行比较：
 - 选择对手的执棋颜色、{{label:Databases.OpeningTree.Since}} 时间范围，以及（在关联了在线账户时）{{label:Databases.OpeningTree.OverTheBoard}}、{{label:Databases.OpeningTree.Online}} 或 {{label:Databases.Preparation.Both}}。点击 {{label:Databases.Preparation.Refresh}} 可重新运行比较。
+- 提高 {{label:Databases.Preparation.MinGames}} 可隐藏对手很少下过的变化和漏洞；你的文件会折叠这些变化，训练也会跳过它们。
 - 查看对手常下的变化以及 {{label:Databases.Preparation.GapsTitle}}。点击任意一行即可在该局面打开您的开局库文件，并隐藏其他分支；在记谱栏顶部可在 {{label:Notation.PreparationOpponentLines}} 与 {{label:Notation.PreparationAllLines}} 之间切换。
 - 点击 {{label:Databases.Preparation.TrainLines}} 开始针对这些变化的计时训练；您的作答会更新常规间隔重复计划。
 

@@ -507,3 +507,21 @@ finding ids and date.
 - **Technical record:** `d-20261124-23` and `d-20261125-05` in `tasks/decisions.md`; the website's half is
   `p-20261124-01`, `d-20261124-14` and `d-20261125-01` in the ChessRiddle repository.
 - **Date:** 2026-11-24.
+
+## 2026-11-25 — Minimum games in the Preparation tab and an entry for online-only opponents
+
+- **Question:** The two points the opponent preparation plan left open: should the Preparation
+  tab get a minimum number of games per line, and how does a user prepare against an opponent who
+  has only an online account and no game in a database?
+- **Choice:** Felix ordered both as recommended: "Do all of those now. Full auto execute
+  anti-gravity. Everything that you think needs to be built, build this now. You can build one
+  after the other, but don't stop when the first one is done. Just build everything."
+- **Agent proposals Felix confirmed, not his wording:**
+  - A "Minimum games" choice with 1, 2, 3 and 5, starting at 1, which limits the lines, the gaps,
+    the folding in the opened file and the training run together. Rejected: a minimum that adapts
+    to the number of games.
+  - An "Online opponent" entry: choose Lichess or Chess.com, type the username, the games are
+    downloaded the way the player card downloads them today, and the opponent's card opens with
+    its Preparation tab. Finding accounts by a person's name stays out (his decision of
+    2026-11-22).
+- **Date:** 2026-11-25.

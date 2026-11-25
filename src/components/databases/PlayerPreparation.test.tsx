@@ -817,6 +817,156 @@ describe("PlayerPreparation", () => {
     expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(2);
   });
 
+  test("raising the minimum games filters lines and gaps without a new search and carries into the next run", async () => {
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-lines]")).not.toBeNull();
+    });
+    const gapMoves = () =>
+      Array.from(container.querySelectorAll("[data-preparation-gap-row] td:nth-child(2)")).map(
+        (cell) => cell.textContent?.trim(),
+      );
+    expect(gapMoves()).toEqual(["e4 c5 Nf3", "d4"]);
+    expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(1);
+
+    const minGames = container.querySelector<HTMLSelectElement>(
+      "select[data-preparation-min-games]",
+    )!;
+    expect(minGames.value).toBe("1");
+    const preparationId = store.get(opponentPreparationAtom)?.id;
+    await act(async () => {
+      minGames.value = "5";
+      minGames.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(gapMoves()).toEqual(["e4 c5 Nf3"]);
+    expect(container.querySelectorAll("[data-preparation-line-row]")).toHaveLength(1);
+    expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(1);
+    const stored = store.get(opponentPreparationAtom)!;
+    expect(stored.minGames).toBe(5);
+    // Open notation tabs follow the same preparation.
+    expect(stored.id).toBe(preparationId);
+    expect(stored.views.otb.total).toBe(14);
+
+    // A minimum above every count empties the lists with the minimum's own wording.
+    mocks.fetchBatchStatistics.mockResolvedValue(
+      new Map([
+        [INITIAL_BOARD_STATE, [statRow("e4", 3)]],
+        [AFTER_E4, [statRow("c5", 3)]],
+      ]),
+    );
+    const period = container.querySelector<HTMLSelectElement>("[data-preparation-toolbar] select")!;
+    await act(async () => {
+      period.value = "1";
+      period.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() => {
+      expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(2);
+      expect(store.get(opponentPreparationAtom)?.period).toBe(1);
+    });
+    expect(store.get(opponentPreparationAtom)?.minGames).toBe(5);
+    expect(container.querySelector("[data-preparation-lines]")?.textContent).toContain(
+      "Databases.Preparation.LinesBelowMinimum",
+    );
+    expect(container.querySelector("[data-preparation-gaps]")?.textContent).toContain(
+      "Databases.Preparation.GapsBelowMinimum",
+    );
+    expect(
+      container.querySelector("[data-preparation-train-start]")?.hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  const selectMinGames = async (value: string) => {
+    const select = container.querySelector<HTMLSelectElement>(
+      "select[data-preparation-min-games]",
+    )!;
+    await act(async () => {
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  };
+
+  test("a minimum changed in place reaches the training, the online view and a remount", async () => {
+    const otbStats = new Map([
+      [INITIAL_BOARD_STATE, [statRow("e4", 3)]],
+      [AFTER_E4, [statRow("c5", 3)]],
+    ]);
+    const onlineStats = new Map([
+      [INITIAL_BOARD_STATE, [statRow("e4", 6)]],
+      [AFTER_E4, [statRow("c5", 6)]],
+    ]);
+    mocks.fetchBatchStatistics.mockImplementation((_fens: string[], db: DatabaseHandle) =>
+      Promise.resolve(db.id.id === onlineDb.id.id ? onlineStats : otbStats),
+    );
+    const online: OnlineGames = {
+      file: onlineDb,
+      accounts: [{ provider: "lichess", username: "DrNykterstein" }],
+      lookup: { kind: "found", player: 99 },
+    };
+    await renderTab(online);
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-lines]")).not.toBeNull();
+    });
+    const trainStart = () => container.querySelector("[data-preparation-train-start]");
+    // At the default minimum an empty list keeps its ordinary wording.
+    expect(container.querySelector("[data-preparation-gaps]")?.textContent).toContain(
+      "Databases.Preparation.GapsEmpty",
+    );
+    expect(trainStart()?.hasAttribute("disabled")).toBe(false);
+    const preparationId = store.get(opponentPreparationAtom)?.id;
+
+    await selectMinGames("5");
+
+    const stored = store.get(opponentPreparationAtom)!;
+    expect(stored.id).toBe(preparationId);
+    expect(stored.views.otb.lines).toHaveLength(0);
+    expect(stored.views.online?.lines).toHaveLength(1);
+    expect(stored.views.both?.lines).toHaveLength(1);
+    expect(container.querySelector("[data-preparation-lines]")?.textContent).toContain(
+      "Databases.Preparation.LinesBelowMinimum",
+    );
+    expect(trainStart()?.hasAttribute("disabled")).toBe(true);
+    expect(container.querySelector("[data-preparation-train-disabled-reason]")).not.toBeNull();
+
+    // Back on the tab, the stored preparation and its minimum come back without a search.
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await renderTab(online);
+    expect(
+      container.querySelector<HTMLSelectElement>("select[data-preparation-min-games]")?.value,
+    ).toBe("5");
+    expect(container.querySelector("[data-preparation-lines]")?.textContent).toContain(
+      "Databases.Preparation.LinesBelowMinimum",
+    );
+    expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(2);
+  });
+
+  test("returning to a stored preparation applies a minimum chosen while another colour was shown", async () => {
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll("[data-preparation-gap-row]")).toHaveLength(2);
+    });
+    const colour = (value: "white" | "black") =>
+      container.querySelector<HTMLInputElement>(
+        `[data-preparation-toolbar] input[value="${value}"]`,
+      )!;
+
+    // The repertoire has no White chapters, so Black as opponent ends without a search.
+    await act(async () => colour("black").click());
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-empty-repertoire]")).not.toBeNull();
+    });
+    await selectMinGames("5");
+    expect(store.get(opponentPreparationAtom)?.minGames).toBe(1);
+
+    await act(async () => colour("white").click());
+    await vi.waitFor(() => {
+      expect(store.get(opponentPreparationAtom)?.minGames).toBe(5);
+    });
+    expect(container.querySelectorAll("[data-preparation-gap-row]")).toHaveLength(1);
+    expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(1);
+  });
+
   test("stored preparation matching identity is reused on remount without refetching and restores selection", async () => {
     await renderTab();
     await vi.waitFor(() => {

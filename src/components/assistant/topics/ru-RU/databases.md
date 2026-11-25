@@ -2,7 +2,7 @@
 id: databases
 title: Базы данных, обозреватель, поиск позиций, игроки и турниры
 summary: Добавление и загрузка баз партий, выбор справочной базы, поиск позиций в обозревателе, а также просмотр партий, игроков и турниров.
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 Базы данных находятся в [[page:library]] ({{label:SideBar.Library}}) рядом с вашими PGN-файлами и хранятся в каталоге [[setting:databases-directory]].
@@ -25,6 +25,7 @@ source: 0273f02c8cccfcea
 
 На карточке игрока откройте вкладку {{label:Home.Personal.Preparation}}, чтобы сравнить его партии с вашими файлами репертуара:
 - Выберите цвет соперника, период {{label:Databases.OpeningTree.Since}} и (при привязанных онлайн-аккаунтах) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} или {{label:Databases.Preparation.Both}}. Нажмите {{label:Databases.Preparation.Refresh}}, чтобы повторить сравнение.
+- Увеличьте {{label:Databases.Preparation.MinGames}}, чтобы скрыть варианты и пробелы, которые соперник играл лишь изредка; файл свернёт эти варианты, а тренировка их пропустит.
 - Просмотрите варианты, которые играет соперник, и {{label:Databases.Preparation.GapsTitle}}. Нажмите любую строку, чтобы открыть свой файл репертуара в этой позиции со скрытыми остальными ответвлениями; в заголовке нотации переключайтесь между {{label:Notation.PreparationOpponentLines}} и {{label:Notation.PreparationAllLines}}.
 - Нажмите {{label:Databases.Preparation.TrainLines}}, чтобы запустить тренировку на время по этим вариантам; ваши ответы обновляют обычное расписание интервальных повторений.
 

@@ -2,7 +2,7 @@
 id: databases
 title: Bases de données, explorateur, recherche de position, joueurs et tournois
 summary: Ajoutez ou téléchargez des bases de parties, choisissez une base de référence, recherchez des positions dans l’explorateur et parcourez parties, joueurs et tournois.
-source: 0273f02c8cccfcea
+source: 3bb4014ea8eab046
 ---
 
 Les bases de données se trouvent dans [[page:library]] ({{label:SideBar.Library}}) aux côtés de vos fichiers PGN et sont stockées dans [[setting:databases-directory]].
@@ -25,6 +25,7 @@ Dans la vue tabulaire de la base de données, passez de {{label:Common.Games}} �
 
 Sur la fiche d’un joueur, ouvrez l’onglet {{label:Home.Personal.Preparation}} pour comparer ses parties avec vos fichiers de répertoire :
 - Choisissez la couleur de l’adversaire, la période {{label:Databases.OpeningTree.Since}} et (avec des comptes en ligne liés) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} ou {{label:Databases.Preparation.Both}}. Cliquez sur {{label:Databases.Preparation.Refresh}} pour relancer la comparaison.
+- Augmentez {{label:Databases.Preparation.MinGames}} pour masquer les lignes et lacunes que l’adversaire n’a jouées que rarement ; votre fichier replie ces lignes et l’entraînement les laisse de côté.
 - Consultez les lignes jouées par l’adversaire et {{label:Databases.Preparation.GapsTitle}}. Cliquez sur une ligne pour ouvrir votre fichier de répertoire à cette position avec les autres variantes masquées ; basculez entre {{label:Notation.PreparationOpponentLines}} et {{label:Notation.PreparationAllLines}} dans l’en-tête de la notation.
 - Cliquez sur {{label:Databases.Preparation.TrainLines}} pour lancer une séance chronométrée sur ces lignes ; vos réponses mettent à jour le calendrier habituel de répétition espacée.
 

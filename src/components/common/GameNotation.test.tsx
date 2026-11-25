@@ -1238,6 +1238,8 @@ describe("opponent preparation notation filtering", () => {
       opponentColor: "white",
       period: 3,
       source: "otb",
+      minGames: 1,
+      stats: { otb: new Map(), online: null },
       views: { otb: emptyView, online: null, both: null },
       files: [],
       partial: false,
