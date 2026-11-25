@@ -2245,7 +2245,7 @@ export type PositionSearchQuery = { player1?: number | null; player2?: number | 
  * Allow-list of verbatim `TimeControl` values; see `GameQuery::time_controls`.
  */
 timeControls?: string[] | null }
-export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[] }
+export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number; last_played: string | null; year_counts: YearCount[]; recent: RecentGame[] }
 /**
  * Optional metadata filter for batch position statistics (`search_positions_stats`).
  */
@@ -2307,6 +2307,7 @@ export type PuzzleRootHandle = { id: PathRef; kind: PuzzleRootHandleKind }
 export type PuzzleRootHandleKind = "puzzleRoot"
 export type QueryOptions<SortT> = { skipCount: boolean; page?: number | null; pageSize?: number | null; sort: SortT; direction: SortDirection }
 export type QueryResponse<T> = { data: T; count: number | null }
+export type RecentGame = { date: string; game_id: number }
 export type RemoteHttpRejection = { status: number; authorizationSent: boolean }
 /**
  * One mainline position of a report: entry `i` of [`GameAnalysis::positions`] is the position

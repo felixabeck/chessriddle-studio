@@ -1221,6 +1221,7 @@ describe("DatabasePanel", () => {
       unknown: 0,
       last_played: null,
       year_counts: [],
+      recent: [],
     });
     const game = (id: number, white: string) => ({
       id,

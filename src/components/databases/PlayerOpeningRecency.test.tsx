@@ -21,6 +21,7 @@ const base: PositionStats = {
   unknown: 0,
   last_played: "2026.11.08",
   year_counts: [],
+  recent: [],
 };
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });

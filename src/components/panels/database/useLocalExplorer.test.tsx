@@ -125,6 +125,7 @@ test("replacement aborts the old request and discards its late result", async ()
           unknown: 0,
           last_played: null,
           year_counts: [],
+          recent: [],
         },
       ],
       [],
@@ -141,6 +142,7 @@ test("replacement aborts the old request and discards its late result", async ()
           unknown: 0,
           last_played: null,
           year_counts: [],
+          recent: [],
         },
       ],
       [],
@@ -165,8 +167,26 @@ test("a surviving subscriber retains the shared native request and its sorted un
   await act(async () =>
     pending.resolve([
       [
-        { move: "e4", white: 1, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] },
-        { move: "d4", white: 0, draw: 0, black: 0, unknown: 5, last_played: null, year_counts: [] },
+        {
+          move: "e4",
+          white: 1,
+          draw: 0,
+          black: 0,
+          unknown: 0,
+          last_played: null,
+          year_counts: [],
+          recent: [],
+        },
+        {
+          move: "d4",
+          white: 0,
+          draw: 0,
+          black: 0,
+          unknown: 5,
+          last_played: null,
+          year_counts: [],
+          recent: [],
+        },
       ],
       [],
     ]),
@@ -241,6 +261,7 @@ function opening(white: number): PositionStats {
     unknown: 0,
     last_played: null,
     year_counts: [],
+    recent: [],
   };
 }
 
@@ -279,6 +300,7 @@ const stats = (move: string, overrides: Partial<PositionStats> = {}): PositionSt
   unknown: 0,
   last_played: null,
   year_counts: [],
+  recent: [],
   ...overrides,
 });
 const sample = (id: number, date: string | null) => ({ id, date }) as unknown as NormalizedGame;

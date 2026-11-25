@@ -169,6 +169,7 @@ function statRow(move: string, white: number): PositionStats {
     unknown: 0,
     last_played: "2026.05.10",
     year_counts: [],
+    recent: [],
   };
 }
 

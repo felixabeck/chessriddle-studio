@@ -114,6 +114,7 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
             { year: 2026, count: 3 },
             { year: 2027, count: 1 },
         ],
+        recent: [],
     };
     await mockScenario({
         commands: {
@@ -131,6 +132,7 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
                             unknown: 2,
                             last_played: null,
                             year_counts: [],
+                            recent: [],
                         },
                         {
                             move: "*",
@@ -140,6 +142,7 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
                             unknown: 0,
                             last_played: "2024.??.??",
                             year_counts: [{ year: 2024, count: 1 }],
+                            recent: [],
                         },
                     ],
                     [game],
@@ -282,6 +285,7 @@ for (const width of [1920, 320]) {
                                     unknown: 1,
                                     last_played: null,
                                     year_counts: [],
+                                    recent: [],
                                 },
                             ],
                             [game],
@@ -296,6 +300,7 @@ for (const width of [1920, 320]) {
                                     unknown: 1,
                                     last_played: null,
                                     year_counts: [],
+                                    recent: [],
                                 },
                             ],
                             [game],
@@ -311,6 +316,7 @@ for (const width of [1920, 320]) {
                                 unknown: 1,
                                 last_played: null,
                                 year_counts: [],
+                                recent: [],
                             },
                         ],
                         [game],
@@ -527,6 +533,7 @@ test("database-files: unreadable saved reference stays unselected and resumes se
                         unknown: 0,
                         last_played: null,
                         year_counts: [],
+                        recent: [],
                     },
                 ],
                 [],
@@ -3840,6 +3847,7 @@ async function openBoardOverTwoDatabases(
             unknown: 0,
             last_played: null,
             year_counts: [],
+            recent: [],
         });
         internals.invoke = async (command, args = {}) => {
             const reply = await invoke(command, args);
@@ -4694,6 +4702,7 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board,
         unknown: 0,
         last_played: null,
         year_counts: [],
+        recent: [],
     });
     const [game] = gameOpeningFixture.games;
     const baseEntries = (

@@ -1,5 +1,5 @@
 import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
-import type { DatabaseHandle, PositionStats, PositionStatsFilter } from "@/bindings";
+import type { DatabaseHandle, PositionStats, PositionStatsFilter, RecentGame } from "@/bindings";
 import { tauri } from "@/platform/tauri";
 import { searchPosition } from "./db";
 import { dateOrderKey } from "./pgnDate";
@@ -67,9 +67,19 @@ function positionMovesFromStats(openings: PositionStats[]) {
     return { moves, total: gamesEndingHere + gamesContinuing };
 }
 
+export const RECENT_GAMES_LIMIT = 10;
+
+export function compareRecentGames(a: RecentGame, b: RecentGame): number {
+    const dateA = dateOrderKey(a.date);
+    const dateB = dateOrderKey(b.date);
+    if (dateA !== dateB) return dateB > dateA ? 1 : -1;
+    return b.game_id - a.game_id;
+}
+
 /**
  * Merges `PositionStats` rows across multiple sources by move SAN: counts (`white`, `draw`,
- * `black`, `unknown`) and `year_counts` are summed and the later `last_played` wins.
+ * `black`, `unknown`) and `year_counts` are summed, the later `last_played` wins, and `recent`
+ * keeps the newest `RECENT_GAMES_LIMIT` entries.
  */
 export function mergePositionStats(
     lists: Iterable<readonly PositionStats[] | undefined>,
@@ -83,6 +93,10 @@ export function mergePositionStats(
                 moves.set(row.move, {
                     ...row,
                     year_counts: row.year_counts.map((y) => ({ ...y })),
+                    recent: row.recent
+                        .map((game) => ({ ...game }))
+                        .sort(compareRecentGames)
+                        .slice(0, RECENT_GAMES_LIMIT),
                 });
                 continue;
             }
@@ -99,6 +113,11 @@ export function mergePositionStats(
                 else merged.year_counts.push({ year, count });
             }
             merged.year_counts.sort((a, b) => a.year - b.year);
+            merged.recent.push(...row.recent.map((game) => ({ ...game })));
+            merged.recent.sort(compareRecentGames);
+            if (merged.recent.length > RECENT_GAMES_LIMIT) {
+                merged.recent.length = RECENT_GAMES_LIMIT;
+            }
         }
     }
     return [...moves.values()];

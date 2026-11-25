@@ -1413,6 +1413,7 @@ for (const corner of [
                                     { year: 2023, count: 2 },
                                     { year: 2026, count: 7 },
                                 ],
+                                recent: [],
                             },
                             {
                                 move: "d4",
@@ -1422,6 +1423,7 @@ for (const corner of [
                                 unknown: 0,
                                 last_played: "2025.03.02",
                                 year_counts: [{ year: 2025, count: 3 }],
+                                recent: [],
                             },
                         ],
                         [gameOpeningFixture.games[0]],

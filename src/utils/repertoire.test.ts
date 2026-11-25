@@ -26,7 +26,10 @@ vi.mock("@/platform/tauri", () => ({
 
 import {
     applyReachWeights,
+    compareRecentGames,
     computeReachWeights,
+    mergePositionStats,
+    RECENT_GAMES_LIMIT,
     reachWeightsChange,
     computeTreeCoverage,
     fetchBatchStatistics,
@@ -166,7 +169,7 @@ test.each(["forward", "reverse"] as const)(
         const secondMove = { move: "d4", white: 4, draw: 5, black: 6 };
         const firstData: SearchResult = [
             [
-                { ...firstMove, unknown: 0, last_played: null, year_counts: [] },
+                { ...firstMove, unknown: 0, last_played: null, year_counts: [], recent: [] },
                 {
                     move: "*",
                     white: 1,
@@ -175,12 +178,13 @@ test.each(["forward", "reverse"] as const)(
                     unknown: 0,
                     last_played: null,
                     year_counts: [],
+                    recent: [],
                 },
             ],
             [],
         ];
         const secondData: SearchResult = [
-            [{ ...secondMove, unknown: 0, last_played: null, year_counts: [] }],
+            [{ ...secondMove, unknown: 0, last_played: null, year_counts: [], recent: [] }],
             [],
         ];
         const firstOperation = {
@@ -1195,6 +1199,7 @@ test("fetchBatchStatistics forwards the filter and keeps unknown, last_played an
                 { year: 2025, count: 6 },
                 { year: 2026, count: 4 },
             ],
+            recent: [{ date: "2026.02.14", game_id: 9 }],
         },
         {
             move: "*",
@@ -1204,6 +1209,7 @@ test("fetchBatchStatistics forwards the filter and keeps unknown, last_played an
             unknown: 1,
             last_played: "2026.01.05",
             year_counts: [{ year: 2026, count: 2 }],
+            recent: [{ date: "2026.01.05", game_id: 4 }],
         },
     ];
     mocks.searchPositionsStats.mockResolvedValueOnce([{ fen: startFen, openings }]);
@@ -1218,6 +1224,70 @@ test("fetchBatchStatistics forwards the filter and keeps unknown, last_played an
         { signal },
     );
     expect(result.get(startFen)).toEqual(openings);
+});
+
+test("mergePositionStats merges 8 + 8 recent entries to the 10 newest using compareRecentGames", () => {
+    const sourceA = [
+        { date: "2026.05.01", game_id: 10 },
+        { date: "2026.04.10", game_id: 20 },
+        { date: "2025.12.01", game_id: 50 },
+        { date: "2025.09.30", game_id: 60 },
+        { date: "2025.02.??", game_id: 70 },
+        { date: "2024.06.01", game_id: 80 },
+        { date: "2024.01.01", game_id: 81 },
+        { date: "2023.01.01", game_id: 82 },
+    ];
+    const sourceB = [
+        { date: "2026.05.01", game_id: 15 },
+        { date: "2026.04.25", game_id: 5 },
+        { date: "2025.10.01", game_id: 11 },
+        { date: "2025.9.30", game_id: 65 },
+        { date: "2025.02.01", game_id: 75 },
+        { date: "2024.05.01", game_id: 90 },
+        { date: "2023.06.01", game_id: 91 },
+        { date: "2022.01.01", game_id: 92 },
+    ];
+    const rowA = {
+        move: "c5",
+        white: 4,
+        draw: 2,
+        black: 2,
+        unknown: 0,
+        last_played: "2026.05.01",
+        year_counts: [{ year: 2026, count: 4 }],
+        recent: sourceA,
+    };
+    const rowB = {
+        move: "c5",
+        white: 3,
+        draw: 1,
+        black: 4,
+        unknown: 0,
+        last_played: "2026.05.01",
+        year_counts: [{ year: 2026, count: 4 }],
+        recent: sourceB,
+    };
+
+    const [merged] = mergePositionStats([[rowA], [rowB]]);
+
+    expect(RECENT_GAMES_LIMIT).toBe(10);
+    expect(
+        compareRecentGames({ date: "2025.10.01", game_id: 1 }, { date: "2025.9.30", game_id: 2 }),
+    ).toBeLessThan(0);
+    expect(merged.recent).toEqual([
+        { date: "2026.05.01", game_id: 15 },
+        { date: "2026.05.01", game_id: 10 },
+        { date: "2026.04.25", game_id: 5 },
+        { date: "2026.04.10", game_id: 20 },
+        { date: "2025.12.01", game_id: 50 },
+        { date: "2025.10.01", game_id: 11 },
+        { date: "2025.9.30", game_id: 65 },
+        { date: "2025.09.30", game_id: 60 },
+        { date: "2025.02.01", game_id: 75 },
+        { date: "2025.02.??", game_id: 70 },
+    ]);
+    expect(rowA.recent).toHaveLength(8);
+    expect(rowB.recent).toHaveLength(8);
 });
 
 test("fetchTreesStatistics issues one searchPositionsStats call over the union of two trees", async () => {

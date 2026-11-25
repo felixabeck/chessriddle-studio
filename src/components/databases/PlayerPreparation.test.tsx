@@ -164,6 +164,7 @@ function statRow(move: string, white: number, last_played = "2026.05.10"): Posit
     unknown: 0,
     last_played,
     year_counts: [],
+    recent: [],
   };
 }
 

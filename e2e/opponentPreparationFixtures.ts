@@ -65,6 +65,7 @@ export function stat(
         unknown: 0,
         last_played,
         year_counts: [],
+        recent: [],
     };
 }
 

@@ -834,16 +834,35 @@ fn matches_search_metadata(
         && time_control_game_ids.is_none_or(|ids| ids.contains(&entry.id))
 }
 
+const RECENT_GAMES_PER_MOVE: usize = 10;
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Type)]
 pub struct YearCount {
     pub year: i32,
     pub count: i32,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Type)]
+pub struct RecentGame {
+    pub date: String,
+    pub game_id: i32,
+}
+
 // PGN unknown components sort below known components, as in the SQL sample order.
 fn date_order_components(date: &str) -> impl Iterator<Item = char> + '_ {
     date.chars()
         .map(|value| if value == '?' { '0' } else { value })
+}
+
+fn compare_recent_game(
+    a_date: &str,
+    a_game_id: i32,
+    b_date: &str,
+    b_game_id: i32,
+) -> std::cmp::Ordering {
+    date_order_components(b_date)
+        .cmp(date_order_components(a_date))
+        .then_with(|| b_game_id.cmp(&a_game_id))
 }
 
 fn recency_year(date: &str) -> Option<i32> {
@@ -869,15 +888,22 @@ pub struct PositionStats {
     pub unknown: i32,
     pub last_played: Option<String>,
     pub year_counts: Vec<YearCount>,
+    pub recent: Vec<RecentGame>,
 }
 
 impl PositionStats {
     pub(crate) fn recency_heap_bytes(&self) -> usize {
         self.last_played.as_ref().map_or(0, String::capacity)
             + self.year_counts.capacity() * std::mem::size_of::<YearCount>()
+            + self.recent.capacity() * std::mem::size_of::<RecentGame>()
+            + self
+                .recent
+                .iter()
+                .map(|game| game.date.capacity())
+                .sum::<usize>()
     }
 
-    fn record_date(&mut self, date: Option<&str>) {
+    fn record_date(&mut self, date: Option<&str>, game_id: i32) {
         let Some((date, year)) = date.and_then(|date| recency_year(date).map(|year| (date, year)))
         else {
             return;
@@ -895,8 +921,26 @@ impl PositionStats {
                 .cmp(date_order_components(last))
                 .is_gt()
         }) {
-            self.last_played = Some(date.into_owned());
+            self.last_played = Some(date.as_ref().to_owned());
         }
+        if self.recent.len() == RECENT_GAMES_PER_MOVE {
+            if self.recent.last().is_some_and(|oldest| {
+                compare_recent_game(&oldest.date, oldest.game_id, &date, game_id).is_le()
+            }) {
+                return;
+            }
+            self.recent.pop();
+        }
+        let insert_at = self.recent.partition_point(|existing| {
+            compare_recent_game(&existing.date, existing.game_id, &date, game_id).is_le()
+        });
+        self.recent.insert(
+            insert_at,
+            RecentGame {
+                date: date.into_owned(),
+                game_id,
+            },
+        );
     }
 }
 
@@ -912,7 +956,7 @@ fn record_opening<K: Eq + std::hash::Hash>(
         GameResult::Draw => opening.draw += 1,
         GameResult::Other | GameResult::None => opening.unknown += 1,
     }
-    opening.record_date(entry.date);
+    opening.record_date(entry.date, entry.id);
 }
 
 fn collect_openings(openings: DashMap<String, PositionStats>) -> Vec<PositionStats> {
@@ -3601,7 +3645,7 @@ mod batch_tests {
         (dir, app, handle, path, fens)
     }
 
-    fn run_batch(
+    pub(super) fn run_batch(
         app: &tauri::AppHandle<tauri::test::MockRuntime>,
         handle: &DatabaseHandle,
         fens: &[String],
@@ -4527,6 +4571,7 @@ mod batch_tests {
                 unknown: 0,
                 last_played: None,
                 year_counts: vec![],
+                recent: vec![],
             }]
         };
         state
@@ -7109,12 +7154,20 @@ mod tests {
             .iter()
             .find(|row| row.move_ == "*")
             .ok_or("missing terminal")?;
+        let terminal_id = games::table.select(games::id).first::<i32>(&mut db)?;
         assert_eq!(terminal.last_played.as_deref(), Some("2018"));
         assert_eq!(
             terminal.year_counts,
             vec![YearCount {
                 year: 2018,
                 count: 1
+            }]
+        );
+        assert_eq!(
+            terminal.recent,
+            vec![RecentGame {
+                date: "2018".into(),
+                game_id: terminal_id,
             }]
         );
 
@@ -7126,18 +7179,23 @@ mod tests {
             unknown: 1,
             last_played: None,
             year_counts: vec![],
+            recent: vec![],
         };
-        for date in [
+        for (index, date) in [
             None,
             Some("????.??.??"),
             Some("2024x"),
             Some("0000"),
             Some("éé"),
-        ] {
-            unknown.record_date(date);
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            unknown.record_date(date, index as i32 + 1);
         }
         assert!(unknown.last_played.is_none());
         assert!(unknown.year_counts.is_empty());
+        assert!(unknown.recent.is_empty());
         Ok(())
     }
 
@@ -7151,11 +7209,12 @@ mod tests {
             unknown: 0,
             last_played: None,
             year_counts: Vec::new(),
+            recent: Vec::new(),
         };
-        stats.record_date(Some("2026.9.30"));
+        stats.record_date(Some("2026.9.30"), 10);
         assert_eq!(stats.last_played.as_deref(), Some("2026.09.30"));
-        stats.record_date(Some("2026.10.01"));
-        stats.record_date(Some("2026.9.30"));
+        stats.record_date(Some("2026.10.01"), 5);
+        stats.record_date(Some("2026.9.30"), 20);
         assert_eq!(stats.last_played.as_deref(), Some("2026.10.01"));
         assert_eq!(
             stats.year_counts,
@@ -7163,6 +7222,234 @@ mod tests {
                 year: 2026,
                 count: 3
             }]
+        );
+        assert_eq!(
+            stats.recent,
+            vec![
+                RecentGame {
+                    date: "2026.10.01".into(),
+                    game_id: 5,
+                },
+                RecentGame {
+                    date: "2026.09.30".into(),
+                    game_id: 20,
+                },
+                RecentGame {
+                    date: "2026.09.30".into(),
+                    game_id: 10,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn position_recent_keeps_ten_newest_per_move_across_search_and_batch(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (_dir, app, handle, database) = filter_search_database(&[]);
+        let mut db = SqliteConnection::establish(database.to_str().ok_or("non-UTF-8 test path")?)?;
+        let terminal_id = games::table.select(games::id).first::<i32>(&mut db)?;
+        diesel::update(games::table.find(terminal_id))
+            .set((
+                games::date.eq("2021.05.04"),
+                games::moves.eq(Vec::<u8>::new()),
+            ))
+            .execute(&mut db)?;
+
+        let mut insert_e4 = |date: Option<&str>| -> Result<i32, Error> {
+            let id = insert_white_win_e4_e5(&mut db);
+            diesel::update(games::table.find(id))
+                .set(games::date.eq(date))
+                .execute(&mut db)?;
+            Ok(id)
+        };
+        for old in ["2020.01.01", "2021.01.01", "2022.01.01", "2023.01.01"] {
+            insert_e4(Some(old))?;
+        }
+        let id_2024_a = insert_e4(Some("2024.06.01"))?;
+        let id_2024_b = insert_e4(Some("2024.06.01"))?;
+        let id_2025_jan = insert_e4(Some("2025.01.10"))?;
+        let id_2025_feb_partial = insert_e4(Some("2025.02.??"))?;
+        let id_2025_feb = insert_e4(Some("2025.02.01"))?;
+        let id_2025_sep = insert_e4(Some("2025.9.30"))?;
+        let id_2025_oct = insert_e4(Some("2025.10.01"))?;
+        let id_2026_a = insert_e4(Some("2026.01.05"))?;
+        let id_2026_b = insert_e4(Some("2026.01.05"))?;
+        let id_2026_c = insert_e4(Some("2026.01.05"))?;
+        for bad_date in [None, Some("????.??.??"), Some("2026x"), Some("0000.01.01")] {
+            insert_e4(bad_date)?;
+        }
+
+        let expected_e4 = vec![
+            RecentGame {
+                date: "2026.01.05".into(),
+                game_id: id_2026_c,
+            },
+            RecentGame {
+                date: "2026.01.05".into(),
+                game_id: id_2026_b,
+            },
+            RecentGame {
+                date: "2026.01.05".into(),
+                game_id: id_2026_a,
+            },
+            RecentGame {
+                date: "2025.10.01".into(),
+                game_id: id_2025_oct,
+            },
+            RecentGame {
+                date: "2025.09.30".into(),
+                game_id: id_2025_sep,
+            },
+            RecentGame {
+                date: "2025.02.01".into(),
+                game_id: id_2025_feb,
+            },
+            RecentGame {
+                date: "2025.02.??".into(),
+                game_id: id_2025_feb_partial,
+            },
+            RecentGame {
+                date: "2025.01.10".into(),
+                game_id: id_2025_jan,
+            },
+            RecentGame {
+                date: "2024.06.01".into(),
+                game_id: id_2024_b,
+            },
+            RecentGame {
+                date: "2024.06.01".into(),
+                game_id: id_2024_a,
+            },
+        ];
+        let expected_terminal = vec![RecentGame {
+            date: "2021.05.04".into(),
+            game_id: terminal_id,
+        }];
+
+        let search_result = run_position_search(
+            &app,
+            &handle,
+            exact_position_query(STARTING_FEN),
+            "recent-search",
+        )?;
+        let batch_result = super::batch_tests::run_batch(
+            &app,
+            &handle,
+            &[STARTING_FEN.to_string()],
+            &CancellationToken::new(),
+        )?;
+
+        for openings in [&search_result.0, &batch_result[0].openings] {
+            let e4 = openings
+                .iter()
+                .find(|row| row.move_ == "e4")
+                .ok_or("missing e4")?;
+            assert_eq!(e4.recent.len(), RECENT_GAMES_PER_MOVE);
+            assert_eq!(e4.recent, expected_e4);
+            let terminal = openings
+                .iter()
+                .find(|row| row.move_ == "*")
+                .ok_or("missing terminal")?;
+            assert_eq!(terminal.recent, expected_terminal);
+        }
+
+        let e4 = search_result
+            .0
+            .iter()
+            .find(|row| row.move_ == "e4")
+            .ok_or("missing e4")?;
+        let mut without_recent = e4.clone();
+        without_recent.recent = Vec::new();
+        assert!(e4.recency_heap_bytes() > without_recent.recency_heap_bytes());
+        Ok(())
+    }
+
+    #[test]
+    fn record_date_at_capacity_drops_older_inserts_middle_and_orders_equal_date_ties() {
+        let mut stats = PositionStats::default();
+        for (date, id) in [
+            ("2026.10.01", 100),
+            ("2026.09.01", 90),
+            ("2026.08.01", 80),
+            ("2026.07.01", 70),
+            ("2026.06.01", 60),
+            ("2026.05.01", 50),
+            ("2026.04.01", 40),
+            ("2026.03.01", 30),
+            ("2026.02.01", 20),
+            ("2026.01.01", 10),
+        ] {
+            stats.record_date(Some(date), id);
+        }
+        // Older than the 10th: dropped by early return.
+        stats.record_date(Some("2025.12.31"), 999);
+        assert_eq!(
+            stats.recent[9],
+            RecentGame {
+                date: "2026.01.01".into(),
+                game_id: 10,
+            }
+        );
+        // Middle of the 10: inserted and oldest ("2026.01.01", 10) popped.
+        stats.record_date(Some("2026.06.15"), 65);
+        // Equal to the new 10th ("2026.02.01", 20): lower id dropped, higher id replaces it.
+        stats.record_date(Some("2026.02.01"), 15);
+        assert_eq!(
+            stats.recent[9],
+            RecentGame {
+                date: "2026.02.01".into(),
+                game_id: 20,
+            }
+        );
+        stats.record_date(Some("2026.02.01"), 25);
+        // Equal to a middle date ("2026.06.01", 60): lower and higher ids order around it.
+        stats.record_date(Some("2026.06.01"), 55);
+        stats.record_date(Some("2026.06.01"), 65);
+
+        assert_eq!(
+            stats.recent,
+            vec![
+                RecentGame {
+                    date: "2026.10.01".into(),
+                    game_id: 100,
+                },
+                RecentGame {
+                    date: "2026.09.01".into(),
+                    game_id: 90,
+                },
+                RecentGame {
+                    date: "2026.08.01".into(),
+                    game_id: 80,
+                },
+                RecentGame {
+                    date: "2026.07.01".into(),
+                    game_id: 70,
+                },
+                RecentGame {
+                    date: "2026.06.15".into(),
+                    game_id: 65,
+                },
+                RecentGame {
+                    date: "2026.06.01".into(),
+                    game_id: 65,
+                },
+                RecentGame {
+                    date: "2026.06.01".into(),
+                    game_id: 60,
+                },
+                RecentGame {
+                    date: "2026.06.01".into(),
+                    game_id: 55,
+                },
+                RecentGame {
+                    date: "2026.05.01".into(),
+                    game_id: 50,
+                },
+                RecentGame {
+                    date: "2026.04.01".into(),
+                    game_id: 40,
+                },
+            ]
         );
     }
 

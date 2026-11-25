@@ -630,7 +630,18 @@ test("initial ready-reference cache reset can deliver the second native query fa
   const stats = (
     move: string,
   ): [import("@/bindings").PositionStats[], import("@/bindings").NormalizedGame[]] => [
-    [{ move, white: 100, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] }],
+    [
+      {
+        move,
+        white: 100,
+        draw: 0,
+        black: 0,
+        unknown: 0,
+        last_played: null,
+        year_counts: [],
+        recent: [],
+      },
+    ],
     [],
   ];
   const query = vi
@@ -766,6 +777,7 @@ test.each(["success", "error"] as const)(
             unknown: 0,
             last_played: null,
             year_counts: [],
+            recent: [],
           })),
           [],
         ],
@@ -784,6 +796,7 @@ test.each(["success", "error"] as const)(
             unknown: 0,
             last_played: null,
             year_counts: [],
+            recent: [],
           })),
         })),
       }));

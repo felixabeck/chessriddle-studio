@@ -2910,6 +2910,7 @@ mod tests {
                 unknown: 0,
                 last_played: None,
                 year_counts: vec![],
+                recent: vec![],
             }],
             vec![],
         );
@@ -2925,6 +2926,15 @@ mod tests {
         assert_eq!(
             estimated_search_result_bytes(&result),
             empty_recency + 32 + year_bytes
+        );
+        result.0[0].recent = serde_json::from_str(r#"[{"date":"2026.11.08","game_id":7}]"#)?;
+        result.0[0].recent.reserve(4);
+        let recent_bytes = result.0[0].recent.capacity()
+            * std::mem::size_of_val(&result.0[0].recent[0])
+            + result.0[0].recent[0].date.capacity();
+        assert_eq!(
+            estimated_search_result_bytes(&result),
+            empty_recency + 32 + year_bytes + recent_bytes
         );
         Ok(())
     }

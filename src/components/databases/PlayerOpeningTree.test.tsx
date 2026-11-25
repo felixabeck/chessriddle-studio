@@ -172,9 +172,36 @@ const first: NormalizedGame = {
 };
 const next: NormalizedGame = { ...first, id: 2, black: "Next opponent", date: "2026.11.02" };
 const startRows: PositionStats[] = [
-  { move: "e4", white: 3, draw: 1, black: 1, unknown: 1, last_played: null, year_counts: [] },
-  { move: "d4", white: 0, draw: 0, black: 0, unknown: 2, last_played: null, year_counts: [] },
-  { move: "*", white: 0, draw: 1, black: 0, unknown: 0, last_played: null, year_counts: [] },
+  {
+    move: "e4",
+    white: 3,
+    draw: 1,
+    black: 1,
+    unknown: 1,
+    last_played: null,
+    year_counts: [],
+    recent: [],
+  },
+  {
+    move: "d4",
+    white: 0,
+    draw: 0,
+    black: 0,
+    unknown: 2,
+    last_played: null,
+    year_counts: [],
+    recent: [],
+  },
+  {
+    move: "*",
+    white: 0,
+    draw: 1,
+    black: 0,
+    unknown: 0,
+    last_played: null,
+    year_counts: [],
+    recent: [],
+  },
 ];
 const e4Fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
 const endFen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
@@ -230,6 +257,7 @@ beforeEach(async () => {
                 unknown: 1,
                 last_played: null,
                 year_counts: [],
+                recent: [],
               },
             ],
             [next],
@@ -808,8 +836,26 @@ const onlineGame: NormalizedGame = {
   date: "2026.10.30",
 };
 const onlineRows: PositionStats[] = [
-  { move: "e4", white: 20, draw: 5, black: 10, unknown: 0, last_played: null, year_counts: [] },
-  { move: "c4", white: 4, draw: 0, black: 1, unknown: 0, last_played: null, year_counts: [] },
+  {
+    move: "e4",
+    white: 20,
+    draw: 5,
+    black: 10,
+    unknown: 0,
+    last_played: null,
+    year_counts: [],
+    recent: [],
+  },
+  {
+    move: "c4",
+    white: 4,
+    draw: 0,
+    black: 1,
+    unknown: 0,
+    last_played: null,
+    year_counts: [],
+    recent: [],
+  },
 ];
 /** The online database answers with its own moves and games; every other database as before. */
 function answerOnline() {
@@ -1015,7 +1061,18 @@ test("loading, empty, failure and truncated samples retain in-card feedback", as
   );
   expect(container.textContent).not.toContain("unavailable");
   mocks.searchPosition.mockResolvedValueOnce([
-    [{ move: "e4", white: 501, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] }],
+    [
+      {
+        move: "e4",
+        white: 501,
+        draw: 0,
+        black: 0,
+        unknown: 0,
+        last_played: null,
+        year_counts: [],
+        recent: [],
+      },
+    ],
     Array.from({ length: 500 }, (_, index) => ({ ...first, id: index })),
   ]);
   await render({ ...player, id: 45 });
@@ -1044,6 +1101,7 @@ const lichessRows: PositionStats[] = [
     unknown: 0,
     last_played: "2026.11.01",
     year_counts: [],
+    recent: [],
   },
 ];
 const chessComRows: PositionStats[] = [
@@ -1055,6 +1113,7 @@ const chessComRows: PositionStats[] = [
     unknown: 0,
     last_played: "2026.11.03",
     year_counts: [],
+    recent: [],
   },
   {
     move: "d4",
@@ -1064,6 +1123,7 @@ const chessComRows: PositionStats[] = [
     unknown: 0,
     last_played: "2026.11.03",
     year_counts: [],
+    recent: [],
   },
 ];
 function answerPerDatabase() {

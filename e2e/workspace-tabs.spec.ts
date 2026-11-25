@@ -28,7 +28,16 @@ import { parseSan } from "chessops/san";
 
 function positionStats(move: string): PositionStats[] {
     return [
-        { move, white: 100, draw: 0, black: 0, unknown: 0, last_played: null, year_counts: [] },
+        {
+            move,
+            white: 100,
+            draw: 0,
+            black: 0,
+            unknown: 0,
+            last_played: null,
+            year_counts: [],
+            recent: [],
+        },
     ];
 }
 

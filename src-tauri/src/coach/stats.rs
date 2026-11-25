@@ -182,6 +182,7 @@ pub(crate) mod tests {
             unknown: 4,
             last_played: None,
             year_counts: Vec::new(),
+            recent: Vec::new(),
         });
         assert_eq!(
             stats,

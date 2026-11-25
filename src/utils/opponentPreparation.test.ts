@@ -126,6 +126,7 @@ function statRow(
         unknown: counts.unknown ?? 0,
         last_played: lastPlayed,
         year_counts: yearCounts,
+        recent: [],
     };
 }
 
