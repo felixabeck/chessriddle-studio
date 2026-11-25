@@ -10,6 +10,7 @@ import {
     buildPracticeQueue,
     buildPracticeReplay,
     canSubmitPracticeMove,
+    compareUnseenByWeight,
     getAutomaticPracticeGrade,
     idlePracticeSession,
     isPracticePhase,
@@ -860,4 +861,14 @@ describe("line-training reducer phases", () => {
             ).toBe(ended);
         },
     );
+});
+
+describe("unseen-line ordering", () => {
+    it("orders weighted lines by descending weight and unweighted lines last", () => {
+        expect(compareUnseenByWeight({}, {})).toBe(0);
+        expect(compareUnseenByWeight({}, { weight: 0.5 })).toBe(1);
+        expect(compareUnseenByWeight({ weight: 0.5 }, {})).toBe(-1);
+        expect(compareUnseenByWeight({ weight: 0.25 }, { weight: 0.75 })).toBe(0.5);
+        expect(compareUnseenByWeight({ weight: 0.5 }, { weight: 0.5 })).toBe(0);
+    });
 });

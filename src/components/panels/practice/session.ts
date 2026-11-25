@@ -47,10 +47,9 @@ export function buildPracticeQueue(
     for (let index = 0; index < scoped.length; index++) {
         if (scoped[index].card.reps === 0) unseenIndices.push(index);
     }
-    unseenIndices.sort((left, right) => {
-        const byWeight = compareUnseenByWeight(scoped[left], scoped[right]);
-        return byWeight !== 0 ? byWeight : left - right;
-    });
+    // unseenIndices is ascending and Array.prototype.sort is stable, so equal weights keep their
+    // file order without an index tie-break.
+    unseenIndices.sort((left, right) => compareUnseenByWeight(scoped[left], scoped[right]));
     const selectedUnseen = new Set(unseenIndices.slice(0, newPerSession));
 
     const remainingPositionKeys = scoped
