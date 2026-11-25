@@ -2,7 +2,7 @@
 id: databases
 title: Databaser, utforsker, stillingssøk, spillere og turneringer
 summary: Legg til eller last ned partidatabaser, velg en referansedatabase, søk etter stillinger i utforskeren og bla gjennom partier, spillere og turneringer.
-source: 3bb4014ea8eab046
+source: a32dc09e8451de84
 ---
 
 Databaser ligger i [[page:library]] ({{label:SideBar.Library}}) sammen med PGN-filene dine, og lagres i [[setting:databases-directory]].
@@ -28,6 +28,7 @@ På spillerkortet åpner du fanen {{label:Home.Personal.Preparation}} for å sam
 - Øk {{label:Databases.Preparation.MinGames}} for å skjule linjer og hull motstanderen bare sjelden har spilt; filen din folder disse linjene sammen, og treningen utelater dem.
 - Gå gjennom variantene motstanderen spiller og {{label:Databases.Preparation.GapsTitle}}. Klikk en rad for å åpne repertoarfilen din i den stillingen med andre sidevarianter skjult; bytt mellom {{label:Notation.PreparationOpponentLines}} og {{label:Notation.PreparationAllLines}} i notasjonshodet.
 - Klikk {{label:Databases.Preparation.TrainLines}} for å starte en tidsbegrenset økt over disse variantene; svarene dine oppdaterer den vanlige repetisjonsplanen.
+- For å forberede deg mot en motstander som bare har en Lichess- eller Chess.com-konto, klikker du {{label:Library.OnlineOpponent}} i [[page:library]] for å slå opp kontoen, laste ned partiene og åpne kortet direkte på fanen {{label:Home.Personal.Preparation}} (skriver du inn den samme kontoen igjen, åpnes det på nytt uten ny nedlasting).
 
 På analysebrettet åpner du {{label:Board.Tabs.Database}} for å bruke åpningsutforskeren:
 - Bytt mellom {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} og {{label:Board.Database.LichessMaster}} (nettutforskerne for Lichess krever en innlogget Lichess-konto på [[page:accounts]]).

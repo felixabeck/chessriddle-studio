@@ -2,7 +2,7 @@
 id: databases
 title: Datenbanken, Explorer, Stellungssuche, Spieler und Turniere
 summary: Partiedatenbanken hinzufügen oder herunterladen, Referenzdatenbank wählen, Stellungen im Explorer suchen sowie Partien, Spieler und Turniere durchsuchen.
-source: 3bb4014ea8eab046
+source: a32dc09e8451de84
 ---
 
 Datenbanken befinden sich neben deinen PGN-Dateien in [[page:library]] ({{label:SideBar.Library}}) und werden unter [[setting:databases-directory]] gespeichert.
@@ -28,6 +28,7 @@ Wechsle in der Tabellenansicht der Datenbank zwischen {{label:Common.Games}}, {{
 - Erhöhe {{label:Databases.Preparation.MinGames}}, um Varianten und Lücken auszublenden, die der Gegner nur selten gespielt hat; deine Datei klappt diese Varianten ein und das Training lässt sie aus.
 - Sieh dir die Varianten an, die der Gegner spielt, sowie {{label:Databases.Preparation.GapsTitle}}. Klicke auf eine Zeile, um deine Repertoire-Datei an dieser Stellung mit ausgeblendeten Nebenvarianten zu öffnen; im Notationskopf wechselst du zwischen {{label:Notation.PreparationOpponentLines}} und {{label:Notation.PreparationAllLines}}.
 - Klicke auf {{label:Databases.Preparation.TrainLines}}, um eine zeitbegrenzte Übungseinheit über genau diese Varianten zu starten; deine Antworten zählen für den normalen Lernplan.
+- Um dich auf einen Gegner vorzubereiten, der nur ein Lichess- oder Chess.com-Konto hat, klicke in [[page:library]] auf {{label:Library.OnlineOpponent}}, suche sein Konto, lade seine Partien herunter und öffne seine Karte direkt im Tab {{label:Home.Personal.Preparation}} (bei erneuter Eingabe desselben Kontos öffnet sich die Karte ohne erneuten Download).
 
 Öffne auf dem Analysebrett {{label:Board.Tabs.Database}}, um den Eröffnungs-Explorer zu nutzen:
 - Wechsle zwischen {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} und {{label:Board.Database.LichessMaster}} (die Online-Explorer von Lichess erfordern ein angemeldetes Lichess-Konto unter [[page:accounts]]).

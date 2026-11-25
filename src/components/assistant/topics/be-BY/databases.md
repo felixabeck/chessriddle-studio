@@ -2,7 +2,7 @@
 id: databases
 title: Базы дадзеных, аглядальнік, пошук пазіцый, гульцы і турніры
 summary: Даданне або спампоўка баз партый, выбар даведачнай базы, пошук пазіцый у аглядальніку, а таксама прагляд партый, гульцоў і турніраў.
-source: 3bb4014ea8eab046
+source: a32dc09e8451de84
 ---
 
 Базы дадзеных знаходзяцца ў [[page:library]] ({{label:SideBar.Library}}) побач з вашымі файламі PGN і захоўваюцца ў [[setting:databases-directory]].
@@ -28,6 +28,7 @@ source: 3bb4014ea8eab046
 - Павялічце {{label:Databases.Preparation.MinGames}}, каб схаваць варыянты і прабелы, якія сапернік гуляў толькі зрэдку; файл згорне гэтыя варыянты, а трэніроўка іх прапусціць.
 - Праглядзіце варыянты, якія гуляе сапернік, і {{label:Databases.Preparation.GapsTitle}}. Націсніце любы радок, каб адкрыць свой файл рэпертуару на гэтай пазіцыі са схаванымі іншымі адгалінаваннямі; у загалоўку натацыі пераключайцеся паміж {{label:Notation.PreparationOpponentLines}} і {{label:Notation.PreparationAllLines}}.
 - Націсніце {{label:Databases.Preparation.TrainLines}}, каб запусціць трэніроўку на час па гэтых варыянтах; вашы адказы абнаўляюць звычайны расклад інтэрвальных паўтораў.
+- Каб падрыхтавацца да саперніка, які мае толькі акаўнт на Lichess або Chess.com, націсніце {{label:Library.OnlineOpponent}} у [[page:library]], каб знайсці яго акаўнт, спампаваць партыі і адкрыць картку адразу на ўкладцы {{label:Home.Personal.Preparation}} (паўторны ўвод таго ж акаўнта адкрые картку без паўторнай спампоўкі).
 
 На дошцы аналізу адкрыйце ўкладку {{label:Board.Tabs.Database}}, каб карыстацца дэбютным аглядальнікам:
 - Пераключайцеся паміж {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} і {{label:Board.Database.LichessMaster}} (анлайн-аглядальнікі Lichess патрабуюць уваходу ў акаўнт Lichess на старонцы [[page:accounts]]).

@@ -304,6 +304,16 @@ export default defineConfig({
             grep: /dialog fits narrow/,
             use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "dark" },
         },
+        {
+            name: "online-opponent",
+            testMatch: /online-opponent\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "online-opponent-narrow",
+            testMatch: /online-opponent\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
+        },
     ],
     webServer: {
         // Invoked through node_modules/.bin rather than `pnpm exec`, so the suite runs

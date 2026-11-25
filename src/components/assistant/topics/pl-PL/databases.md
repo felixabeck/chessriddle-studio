@@ -2,7 +2,7 @@
 id: databases
 title: Bazy danych, eksplorator, wyszukiwanie pozycji, gracze i turnieje
 summary: Dodawaj lub pobieraj bazy partii, wybieraj bazę odniesienia, wyszukuj pozycje w eksploratorze i przeglądaj partie, graczy oraz turnieje.
-source: 3bb4014ea8eab046
+source: a32dc09e8451de84
 ---
 
 Bazy danych znajdują się w [[page:library]] ({{label:SideBar.Library}}) obok plików PGN i są przechowywane w [[setting:databases-directory]].
@@ -28,6 +28,7 @@ Na karcie gracza otwórz kartę {{label:Home.Personal.Preparation}}, aby porówn
 - Zwiększ {{label:Databases.Preparation.MinGames}}, aby ukryć warianty i luki, które przeciwnik grał tylko rzadko; Twój plik zwija te warianty, a trening je pomija.
 - Przejrzyj warianty grane przez przeciwnika oraz {{label:Databases.Preparation.GapsTitle}}. Kliknij dowolny wiersz, aby otworzyć swój plik repertuaru w tej pozycji z ukrytymi pozostałymi wariantami pobocznymi; w nagłówku notacji przełączaj się między {{label:Notation.PreparationOpponentLines}} a {{label:Notation.PreparationAllLines}}.
 - Kliknij {{label:Databases.Preparation.TrainLines}}, aby rozpocząć sesję treningową na czas dla tych wariantów; twoje odpowiedzi aktualizują zwykły harmonogram powtórek.
+- Aby przygotować się na przeciwnika, który ma tylko konto na Lichess lub Chess.com, kliknij {{label:Library.OnlineOpponent}} w [[page:library]], aby wyszukać jego konto, pobrać partie i otworzyć jego kartę od razu na karcie {{label:Home.Personal.Preparation}} (ponowne wpisanie tego samego konta otwiera ją bez kolejnego pobierania).
 
 Na tablicy analizy otwórz {{label:Board.Tabs.Database}}, aby korzystać z eksploratora debiutów:
 - Przełączaj się między {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} i {{label:Board.Database.LichessMaster}} (internetowe eksploratory Lichess wymagają zalogowanego konta Lichess w [[page:accounts]]).

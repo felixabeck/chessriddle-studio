@@ -2,7 +2,7 @@
 id: databases
 title: Database, esploratore, ricerca di posizione, giocatori e tornei
 summary: Aggiungi o scarica database di partite, scegli un database di riferimento, cerca posizioni nell’esploratore e sfoglia partite, giocatori e tornei.
-source: 3bb4014ea8eab046
+source: a32dc09e8451de84
 ---
 
 I database si trovano in [[page:library]] ({{label:SideBar.Library}}) insieme ai tuoi file PGN e sono archiviati in [[setting:databases-directory]].
@@ -28,6 +28,7 @@ Nella scheda di un giocatore, apri {{label:Home.Personal.Preparation}} per confr
 - Aumenta {{label:Databases.Preparation.MinGames}} per nascondere le linee e le lacune che l’avversario ha giocato solo raramente; il tuo file comprime quelle linee e l'allenamento le esclude.
 - Esamina le varianti giocate dall’avversario e {{label:Databases.Preparation.GapsTitle}}. Fai clic su una riga per aprire il tuo file di repertorio in quella posizione con le altre varianti secondarie nascoste; nell’intestazione della notazione passa tra {{label:Notation.PreparationOpponentLines}} e {{label:Notation.PreparationAllLines}}.
 - Fai clic su {{label:Databases.Preparation.TrainLines}} per avviare una sessione a tempo su quelle varianti; le tue risposte aggiornano la normale pianificazione a ripetizione dilazionata.
+- Per prepararti contro un avversario che ha solo un account Lichess o Chess.com, fai clic su {{label:Library.OnlineOpponent}} in [[page:library]] per cercare il suo account, scaricare le sue partite e aprire la sua scheda direttamente nella scheda {{label:Home.Personal.Preparation}} (inserendo di nuovo lo stesso account si riapre senza scaricare nuovamente).
 
 Sulla scacchiera di analisi, apri {{label:Board.Tabs.Database}} per usare l’esploratore delle aperture:
 - Passa tra {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} e {{label:Board.Database.LichessMaster}} (gli esploratori online di Lichess richiedono un account Lichess connesso su [[page:accounts]]).

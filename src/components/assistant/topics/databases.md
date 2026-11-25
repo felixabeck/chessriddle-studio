@@ -27,6 +27,7 @@ In a player's {{label:Home.Personal.Preparation}} tab, compare their games with 
 - Raise {{label:Databases.Preparation.MinGames}} to hide lines and gaps the opponent played only rarely; your file folds those lines away and the training leaves them out.
 - Review the lines the opponent plays and {{label:Databases.Preparation.GapsTitle}}. Click any row to open your repertoire file at that position with other side lines hidden; switch between {{label:Notation.PreparationOpponentLines}} and {{label:Notation.PreparationAllLines}} in the notation header.
 - Click {{label:Databases.Preparation.TrainLines}} to start a timed practice run over those lines; your answers update the normal spaced-repetition schedule.
+- To prepare against an opponent who only has a Lichess or Chess.com account, click {{label:Library.OnlineOpponent}} in [[page:library]] to look up their account, download their games, and open their card directly on the {{label:Home.Personal.Preparation}} tab (entering the same account again reopens it without downloading again).
 
 On the analysis board, open {{label:Board.Tabs.Database}} to use the opening explorer:
 - Switch between {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}}, and {{label:Board.Database.LichessMaster}} (the Lichess online explorers require a signed-in Lichess account on [[page:accounts]]).

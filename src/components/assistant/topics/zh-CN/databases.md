@@ -2,7 +2,7 @@
 id: databases
 title: 数据库、开局探索器、局面搜索、棋手与赛事
 summary: 添加或下载棋局数据库、选择参考数据库、在探索器中搜索局面，以及浏览对局、棋手和赛事。
-source: 3bb4014ea8eab046
+source: a32dc09e8451de84
 ---
 
 数据库与您的 PGN 文件一起位于 [[page:library]] ({{label:SideBar.Library}}) 中，并保存在 [[setting:databases-directory]]。
@@ -28,6 +28,7 @@ source: 3bb4014ea8eab046
 - 提高 {{label:Databases.Preparation.MinGames}} 可隐藏对手很少下过的变化和漏洞；你的文件会折叠这些变化，训练也会跳过它们。
 - 查看对手常下的变化以及 {{label:Databases.Preparation.GapsTitle}}。点击任意一行即可在该局面打开您的开局库文件，并隐藏其他分支；在记谱栏顶部可在 {{label:Notation.PreparationOpponentLines}} 与 {{label:Notation.PreparationAllLines}} 之间切换。
 - 点击 {{label:Databases.Preparation.TrainLines}} 开始针对这些变化的计时训练；您的作答会更新常规间隔重复计划。
+- 如需针对仅有 Lichess 或 Chess.com 账户的对手进行准备，请在 [[page:library]] 中点击 {{label:Library.OnlineOpponent}}，查找并确认其账户、下载对局，并直接在 {{label:Home.Personal.Preparation}} 标签页打开棋手卡片（再次输入同一账户时将直接打开而不会重复下载）。
 
 在分析棋盘上，打开 {{label:Board.Tabs.Database}} 标签页以使用开局探索器：
 - 在 {{label:Board.Database.Local}}、{{label:Board.Database.LichessAll}} 和 {{label:Board.Database.LichessMaster}} 之间切换（Lichess 在线探索器需要在 [[page:accounts]] 中登录 Lichess 账户）。

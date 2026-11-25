@@ -2,7 +2,7 @@
 id: databases
 title: 데이터베이스, 탐색기, 포지션 검색, 선수 및 토너먼트
 summary: 기보 데이터베이스 추가 또는 다운로드, 참조 데이터베이스 지정, 탐색기에서 포지션 검색, 대국·선수·토너먼트 탐색하기.
-source: 3bb4014ea8eab046
+source: a32dc09e8451de84
 ---
 
 데이터베이스는 PGN 파일과 함께 [[page:library]] ({{label:SideBar.Library}})에 표시되며 [[setting:databases-directory]]에 저장됩니다.
@@ -28,6 +28,7 @@ source: 3bb4014ea8eab046
 - 상대가 드물게만 둔 라인과 빈틈을 숨기려면 {{label:Databases.Preparation.MinGames}} 값을 높이세요. 파일에서 해당 라인이 접히고 훈련에서도 제외됩니다.
 - 상대가 두는 수순과 {{label:Databases.Preparation.GapsTitle}}을(를) 확인하세요. 행을 클릭하면 다른 곁가지 변화가 숨겨진 채 해당 포지션에서 레퍼토리 파일이 열리며, 기보 상단에서 {{label:Notation.PreparationOpponentLines}}와(과) {{label:Notation.PreparationAllLines}} 사이를 전환할 수 있습니다.
 - {{label:Databases.Preparation.TrainLines}}을(를) 클릭해 해당 수순만 제한 시간 동안 연습하세요. 응답 결과는 일반 간격 반복 일정에 반영됩니다.
+- Lichess 또는 Chess.com 계정만 있는 상대를 대비하려면 [[page:library]]에서 {{label:Library.OnlineOpponent}}을(를) 클릭해 계정을 조회하고 대국을 다운로드한 뒤 {{label:Home.Personal.Preparation}} 탭에서 바로 선수 카드를 여세요(같은 계정을 다시 입력하면 다시 다운로드하지 않고 바로 열립니다).
 
 분석 보드에서 오프닝 탐색기를 사용하려면 {{label:Board.Tabs.Database}} 탭을 여세요:
 - {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}}, {{label:Board.Database.LichessMaster}} 사이를 전환할 수 있습니다(Lichess 온라인 탐색기를 사용하려면 [[page:accounts]]에서 Lichess 계정에 로그인해야 합니다).

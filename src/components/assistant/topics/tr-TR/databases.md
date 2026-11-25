@@ -2,7 +2,7 @@
 id: databases
 title: Veritabanları, gezgin, konum arama, oyuncular ve turnuvalar
 summary: Oyun veritabanları ekleme veya indirme, referans veritabanı seçme, gezginde konum arama ve oyunları, oyuncuları ve turnuvaları inceleme.
-source: 3bb4014ea8eab046
+source: a32dc09e8451de84
 ---
 
 Veritabanları PGN dosyalarınızla birlikte [[page:library]] ({{label:SideBar.Library}}) içinde yer alır ve [[setting:databases-directory]] konumunda saklanır.
@@ -28,6 +28,7 @@ Bir oyuncunun kartında oyunlarını repertuvar dosyalarınızla karşılaştır
 - Rakibin yalnızca nadiren oynadığı varyantları ve boşlukları gizlemek için {{label:Databases.Preparation.MinGames}} değerini artırın; dosyanız bu varyantları katlar ve antrenman onları dışarıda bırakır.
 - Rakibin oynadığı varyantları ve {{label:Databases.Preparation.GapsTitle}} listesini inceleyin. Repertuvar dosyanızı o konumda diğer yan varyantlar gizli olarak açmak için bir satıra tıklayın; notasyon başlığında {{label:Notation.PreparationOpponentLines}} ile {{label:Notation.PreparationAllLines}} arasında geçiş yapın.
 - Bu varyantlar üzerinde süreli bir alıştırma başlatmak için {{label:Databases.Preparation.TrainLines}} düğmesine tıklayın; yanıtlarınız normal aralıklı tekrar programını günceller.
+- Yalnızca Lichess veya Chess.com hesabı olan bir rakibe hazırlanmak için [[page:library]] içinde {{label:Library.OnlineOpponent}} düğmesine tıklayarak hesabını arayın, oyunlarını indirin ve kartını doğrudan {{label:Home.Personal.Preparation}} sekmesinde açın (aynı hesabı tekrar girdiğinizde yeniden indirmeden açılır).
 
 Analiz tahtasında açılış gezginini kullanmak için {{label:Board.Tabs.Database}} sekmesini açın:
 - {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} ve {{label:Board.Database.LichessMaster}} arasında geçiş yapın (Lichess çevrimiçi gezginleri için [[page:accounts]] sayfasında oturum açılmış bir Lichess hesabı gerekir).
