@@ -74,6 +74,8 @@ import {
   LAST_MOVE_HIGHLIGHT_OPACITY_STEP,
 } from "@/state/lastMoveHighlight";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { ensureFileWorkspace } from "@/utils/files";
+import type { FileWorkspaceHandle } from "@/bindings";
 import type { RootFailureDomain } from "@/components/files/listingFailure";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import DraftNumberInput from "../common/DraftNumberInput";
@@ -159,6 +161,12 @@ function AdvancedActionButton({
       {label}
     </Button>
   );
+}
+
+export async function loadPgnDirectoryStatus(fileWorkspace: FileWorkspaceHandle | null) {
+  const workspace = fileWorkspace ?? (await ensureFileWorkspace());
+  if (!workspace) throw new Error("no workspace");
+  return tauri.getFileFolderStatus(workspace);
 }
 
 export default function Page() {
@@ -431,10 +439,8 @@ export default function Page() {
       "sound-collection": () => <SoundSelect />,
       "files-directory": () => (
         <WorkspaceDirectorySetting
-          load={async () => {
-            if (!fileWorkspace) throw new Error("no workspace");
-            return tauri.getFileFolderStatus(fileWorkspace);
-          }}
+          load={() => loadPgnDirectoryStatus(fileWorkspace)}
+          reportLoadError
           issue={async () => {
             const workspace = await tauri.issueFileWorkspace(fileWorkspace);
             setFileWorkspace(workspace.handle);

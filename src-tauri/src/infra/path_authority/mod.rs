@@ -6,6 +6,8 @@
 //! authority to the object that happened to appear at the old location. The exception is an
 //! app-owned default root (`db` / `engines` / `puzzles`) recovered with a matching live
 //! `VerifiedIdentity`: that path re-registers the new inode rather than staying wedged.
+//! Visible defaults live under the OS home (`ChessRiddle Studio` / `ChessRiddle Studio Dev`);
+//! the app-data leaves remain the legacy fallback when home cannot be used.
 
 use crate::infra::fs::{
     assert_entry_identity, open_directory_at, open_regular_at, probe_regular_file_at,
@@ -1155,9 +1157,8 @@ pub(crate) fn selected_root_display_name(path: &Path, fallback: &str) -> String 
 }
 
 /// Folder row status for Settings. Display names are folder leaves; no filesystem path
-/// is included. For databases, engines, and puzzles, `is_default` is decided by stored/live
-/// identity, never by path spelling. PGN has no default until phase 2, so `is_default` is
-/// always false.
+/// is included. `is_default` is decided by stored/live identity against the visible-default
+/// resolver, never by path spelling.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderStatus {
@@ -2393,6 +2394,70 @@ impl AppOwnedDefaultRoot {
     }
 }
 
+/// One of the visible per-user default folders under the OS home directory.
+/// English leaves are fixed so a language switch never moves data (d-20261125-23).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum VisibleDefaultKind {
+    Databases,
+    Puzzles,
+    Engines,
+    Pgn,
+}
+
+impl VisibleDefaultKind {
+    pub(crate) fn leaf(self) -> &'static str {
+        match self {
+            Self::Databases => "Databases",
+            Self::Puzzles => "Puzzles",
+            Self::Engines => "Engines",
+            Self::Pgn => "PGN",
+        }
+    }
+
+    pub(crate) fn legacy(self) -> Option<AppOwnedDefaultRoot> {
+        match self {
+            Self::Databases => Some(AppOwnedDefaultRoot::Databases),
+            Self::Puzzles => Some(AppOwnedDefaultRoot::Puzzles),
+            Self::Engines => Some(AppOwnedDefaultRoot::Engines),
+            Self::Pgn => None,
+        }
+    }
+}
+
+/// Lookups for the visible-default resolver: the closed home parent and the
+/// legacy app-data parent. Callers pass closures so idle status can skip both.
+pub(crate) struct DefaultDirLookups<'a> {
+    pub home: &'a dyn Fn() -> Result<HomeDir, Error>,
+    pub app_data: &'a dyn Fn() -> Result<AppDataDir, Error>,
+}
+
+impl<'a> DefaultDirLookups<'a> {
+    pub(crate) fn new(
+        home: &'a dyn Fn() -> Result<HomeDir, Error>,
+        app_data: &'a dyn Fn() -> Result<AppDataDir, Error>,
+    ) -> Self {
+        Self { home, app_data }
+    }
+}
+
+pub(crate) fn with_app_default_lookups<R, T, F>(app: &tauri::AppHandle<R>, f: F) -> Result<T, Error>
+where
+    R: tauri::Runtime,
+    F: FnOnce(&DefaultDirLookups<'_>) -> Result<T, Error>,
+{
+    let home = || HomeDir::for_app(app);
+    let app_data = || AppDataDir::for_app(app);
+    f(&DefaultDirLookups::new(&home, &app_data))
+}
+
+fn studio_leaf_for_identifier(identifier: &str) -> &'static str {
+    if identifier.ends_with(".dev") {
+        "ChessRiddle Studio Dev"
+    } else {
+        "ChessRiddle Studio"
+    }
+}
+
 /// The application's own app-data directory: the only parent an [`AppOwnedDefaultRoot`] may
 /// be materialised under. The type is opaque and its only production constructor derives the
 /// path from the Tauri app handle, so no in-crate caller can produce one from a user-picked or
@@ -2514,7 +2579,9 @@ fn admit_instance_with_lock(
                     files.push(file);
                 }
                 Err(AdvisoryLockError::HeldElsewhere(_)) => {
-                    log::warn!("another ChessRiddle Studio process holds the application data directory; this launch exits");
+                    log::warn!(
+                        "another ChessRiddle Studio process holds the application data directory; this launch exits"
+                    );
                     return Ok(InstanceAdmission::HeldElsewhere);
                 }
                 Err(AdvisoryLockError::Io(error))
@@ -2522,7 +2589,9 @@ fn admit_instance_with_lock(
                         .raw_os_error()
                         .is_some_and(|code| advisory_lock_is_unsupported(code, platform)) =>
                 {
-                    log::warn!("the {role} directory's filesystem does not support advisory locking. ChessRiddle Studio starts without an instance lock there: {error}");
+                    log::warn!(
+                        "the {role} directory's filesystem does not support advisory locking. ChessRiddle Studio starts without an instance lock there: {error}"
+                    );
                 }
                 Err(AdvisoryLockError::Io(error)) => return Err(error.into()),
             }
@@ -2560,6 +2629,66 @@ fn app_data_acquisition_failure(error: Error) -> Error {
     )
 }
 
+fn home_acquisition_failure(error: Error) -> Error {
+    startup_acquisition_failure(
+        error,
+        "home directory acquisition failed",
+        "home directory could not be acquired",
+    )
+}
+
+/// Which closed parent is being acquired. Only [`ClosedParentKind::AppData`] runs
+/// the test pre-open hook.
+enum ClosedParentKind {
+    AppData,
+    Home,
+}
+
+/// Canonicalise the longest existing prefix of `requested` and create any missing
+/// components no-follow relative to that held descriptor. `AppDataDir` and `HomeDir`
+/// share this body; only the app-data constructor runs the pre-open test hook.
+fn acquire_closed_parent(
+    requested: &Path,
+    kind: ClosedParentKind,
+) -> Result<(PathBuf, PathBuf, fs::File), Error> {
+    let mut prefix = requested.to_path_buf();
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(&prefix) {
+            Ok(_) => break,
+            Err(error) if crate::error::is_missing_entry_io(&error) => {
+                if !has_normal_leaf(&prefix) {
+                    return Err(error.into());
+                }
+                let (Some(name), Some(parent)) = (prefix.file_name(), prefix.parent()) else {
+                    return Err(error.into());
+                };
+                missing.push(name.to_os_string());
+                prefix = parent.to_path_buf();
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    // Ancestors of the requested path may legitimately be symlinks (`/var -> /private/var`);
+    // they are followed exactly once, here, and never again after the descriptor is held.
+    let mut path = fs::canonicalize(&prefix)?;
+    let id = identity(&path)?;
+    #[cfg(all(test, unix))]
+    if matches!(kind, ClosedParentKind::AppData) {
+        if let Some(hook) = APP_DATA_PRE_OPEN_HOOK.with(|slot| slot.borrow_mut().take()) {
+            hook();
+        }
+    }
+    #[cfg(not(all(test, unix)))]
+    let _ = kind;
+    let mut directory = crate::infra::fs::open_verified_directory(&path, (id.a, id.b))?.into_file();
+    for name in missing.iter().rev() {
+        directory = crate::infra::fs::ensure_directory_at(&directory, name)?;
+        path.push(name);
+    }
+    Ok((path, requested.to_path_buf(), directory))
+}
+
 impl AppDataDir {
     /// The production constructor, and the only one outside tests. Generic over
     /// `R: tauri::Runtime`, matching how `puzzle.rs` and `db/mod.rs` spell that bound, so the
@@ -2593,41 +2722,11 @@ impl AppDataDir {
     }
 
     fn acquire_canonical(requested: &Path) -> Result<Self, Error> {
-        let mut prefix = requested.to_path_buf();
-        let mut missing = Vec::new();
-        loop {
-            match fs::symlink_metadata(&prefix) {
-                Ok(_) => break,
-                Err(error) if crate::error::is_missing_entry_io(&error) => {
-                    if !has_normal_leaf(&prefix) {
-                        return Err(error.into());
-                    }
-                    let (Some(name), Some(parent)) = (prefix.file_name(), prefix.parent()) else {
-                        return Err(error.into());
-                    };
-                    missing.push(name.to_os_string());
-                    prefix = parent.to_path_buf();
-                }
-                Err(error) => return Err(error.into()),
-            }
-        }
-        // Ancestors of the requested path may legitimately be symlinks (`/var -> /private/var`);
-        // they are followed exactly once, here, and never again after the descriptor is held.
-        let mut path = fs::canonicalize(&prefix)?;
-        let id = identity(&path)?;
-        #[cfg(all(test, unix))]
-        if let Some(hook) = APP_DATA_PRE_OPEN_HOOK.with(|slot| slot.borrow_mut().take()) {
-            hook();
-        }
-        let mut directory =
-            crate::infra::fs::open_verified_directory(&path, (id.a, id.b))?.into_file();
-        for name in missing.iter().rev() {
-            directory = crate::infra::fs::ensure_directory_at(&directory, name)?;
-            path.push(name);
-        }
+        let (path, requested, directory) =
+            acquire_closed_parent(requested, ClosedParentKind::AppData)?;
         Ok(Self {
             path,
-            requested: requested.to_path_buf(),
+            requested,
             directory,
         })
     }
@@ -2642,6 +2741,58 @@ impl AppDataDir {
             requested_app_data: self.requested.clone(),
             root,
         }
+    }
+}
+
+/// The OS user home directory: the only parent a [`VisibleDefaultKind`] may be
+/// materialised under. Production construction resolves home natively and bakes the
+/// studio folder name from the app identifier (`.dev` → `ChessRiddle Studio Dev`).
+/// There is no arbitrary-path constructor in the shipped binary.
+pub(crate) struct HomeDir {
+    path: PathBuf,
+    directory: fs::File,
+    studio_leaf: &'static str,
+}
+
+#[cfg(test)]
+pub(crate) const RELEASE_APP_IDENTIFIER: &str = "com.chessriddle.studio";
+
+impl HomeDir {
+    pub(crate) fn for_app<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<Self, Error> {
+        use tauri::Manager as _;
+        let home = app
+            .path()
+            .home_dir()
+            .map_err(|error| home_acquisition_failure(error.into()))?;
+        Self::acquire(&home, studio_leaf_for_identifier(&app.config().identifier))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(path: &Path, identifier: &str) -> Self {
+        Self::try_for_test(path, identifier).expect("test home directory is acquirable")
+    }
+
+    #[cfg(test)]
+    pub(crate) fn try_for_test(path: &Path, identifier: &str) -> Result<Self, Error> {
+        Self::acquire(path, studio_leaf_for_identifier(identifier))
+    }
+
+    fn acquire(requested: &Path, studio_leaf: &'static str) -> Result<Self, Error> {
+        let (path, _, directory) = acquire_closed_parent(requested, ClosedParentKind::Home)
+            .map_err(home_acquisition_failure)?;
+        Ok(Self {
+            path,
+            directory,
+            studio_leaf,
+        })
+    }
+
+    fn as_path(&self) -> &Path {
+        &self.path
+    }
+
+    fn studio_leaf(&self) -> &'static str {
+        self.studio_leaf
     }
 }
 
@@ -2740,6 +2891,122 @@ pub(crate) fn ensure_app_owned_default_dir(
         identity,
         path,
     })
+}
+
+/// Materialise one visible default folder under the OS home: first the studio folder
+/// (`ChessRiddle Studio` or `ChessRiddle Studio Dev`), then the kind leaf. Both levels
+/// are created and opened no-follow. A link-like or non-directory component is refused
+/// with the same path-free `Error::Io` text as [`ensure_app_owned_default_dir`].
+pub(crate) fn ensure_home_owned_default_dir(
+    home: &HomeDir,
+    kind: VisibleDefaultKind,
+) -> Result<AuthorizedDir, Error> {
+    let studio_name = OsStr::new(home.studio_leaf());
+    let studio_path = home.as_path().join(studio_name);
+    let studio = crate::infra::fs::ensure_directory_at(&home.directory, studio_name)
+        .map_err(|error| default_root_refusal(&studio_path, error))?;
+    let leaf = OsStr::new(kind.leaf());
+    let path = studio_path.join(leaf);
+    let opened = crate::infra::fs::ensure_directory_at(&studio, leaf)
+        .map_err(|error| default_root_refusal(&path, error))?;
+    let identity = opened_file_identity(&opened)?;
+    let directory = VerifiedDir::new(opened, identity)?;
+    Ok(AuthorizedDir {
+        directory,
+        identity,
+        path,
+    })
+}
+
+fn log_visible_home_default_fallback(kind: VisibleDefaultKind, error: &Error) {
+    fn once_for(kind: VisibleDefaultKind) -> &'static std::sync::Once {
+        static DATABASES: std::sync::Once = std::sync::Once::new();
+        static PUZZLES: std::sync::Once = std::sync::Once::new();
+        static ENGINES: std::sync::Once = std::sync::Once::new();
+        static PGN: std::sync::Once = std::sync::Once::new();
+        match kind {
+            VisibleDefaultKind::Databases => &DATABASES,
+            VisibleDefaultKind::Puzzles => &PUZZLES,
+            VisibleDefaultKind::Engines => &ENGINES,
+            VisibleDefaultKind::Pgn => &PGN,
+        }
+    }
+    once_for(kind).call_once(|| {
+        log::warn!(
+            "visible home default for {} is unusable ({}: {}); using the legacy application-data default",
+            kind.leaf(),
+            error.category(),
+            error.diagnostic(),
+        );
+    });
+}
+
+/// The one default-location resolver: home producer first; if home cannot be resolved or
+/// the producer refuses, kinds that have a legacy app-data leaf fall back to it (logged
+/// once per kind). PGN has no legacy leaf.
+pub(crate) fn resolve_visible_default_dir(
+    lookups: &DefaultDirLookups<'_>,
+    kind: VisibleDefaultKind,
+) -> Result<AuthorizedDir, Error> {
+    match (lookups.home)().and_then(|home| ensure_home_owned_default_dir(&home, kind)) {
+        Ok(directory) => Ok(directory),
+        Err(error) => match kind.legacy() {
+            Some(legacy) => {
+                log_visible_home_default_fallback(kind, &error);
+                ensure_app_owned_default_dir(&(lookups.app_data)()?, legacy)
+            }
+            None => Err(error),
+        },
+    }
+}
+
+fn probe_plain_dir_identity(path: &Path) -> Result<Option<Identity>, Error> {
+    match fs::symlink_metadata(path) {
+        Err(error) if crate::error::is_missing_entry_io(&error) => Ok(None),
+        Err(error) => Err(error.into()),
+        Ok(metadata) if is_link_like(&metadata) => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "app-owned default root is a reparse point",
+        )
+        .into()),
+        Ok(metadata) if !metadata.is_dir() => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "app-owned default root is not a directory",
+        )
+        .into()),
+        Ok(_) => identity(path).map(Some),
+    }
+}
+
+fn live_home_default_identity(
+    home: &HomeDir,
+    kind: VisibleDefaultKind,
+) -> Result<Option<Identity>, Error> {
+    let studio = home.as_path().join(home.studio_leaf());
+    match probe_plain_dir_identity(&studio)? {
+        None => Ok(None),
+        Some(_) => probe_plain_dir_identity(&studio.join(kind.leaf())),
+    }
+}
+
+/// Live identity of the resolver's current default, without creating it. Home is the
+/// default whenever it can be acquired; a missing studio or leaf is not a match and
+/// is not a fallback. Producer-unusable home (or an unresolvable home) falls back to
+/// the legacy leaf identity when that kind has one.
+pub(crate) fn live_visible_default_identity(
+    lookups: &DefaultDirLookups<'_>,
+    kind: VisibleDefaultKind,
+) -> Option<Identity> {
+    match (lookups.home)().and_then(|home| live_home_default_identity(&home, kind)) {
+        Ok(identity) => identity,
+        Err(_) => {
+            let legacy = kind.legacy()?;
+            let app_data = (lookups.app_data)().ok()?;
+            probe_plain_dir_identity(&app_data.as_path().join(legacy.leaf()))
+                .ok()
+                .flatten()
+        }
+    }
 }
 
 /// Names why a default-root leaf could not be opened as a directory. The descriptor open has
@@ -4591,14 +4858,78 @@ impl PathAuthority {
         )?))
     }
 
-    /// The one registration body behind the three root methods above: reuse the
-    /// persisted entry for this directory when its operations match, recover a
-    /// replaced app-owned default root when its verified expected identity is
-    /// current, refuse every other replacement, and otherwise register it.
+    pub(crate) fn get_or_create_file_workspace_root(
+        &mut self,
+        path: &Path,
+        display_name: impl Into<String>,
+        expected_identity: Option<VerifiedIdentity>,
+    ) -> Result<FileWorkspaceHandle, Error> {
+        Ok(FileWorkspaceHandle::new(self.get_or_create_root(
+            path,
+            display_name,
+            canonical_operations(EntryPurpose::PgnWorkspace),
+            "file",
+            expected_identity,
+        )?))
+    }
+
+    fn persistent_root_entry(
+        &self,
+        purpose: Option<EntryPurpose>,
+        operations: &[PathOperation],
+        matches: impl Fn(&Entry) -> bool,
+    ) -> Option<Entry> {
+        self.persistent
+            .values()
+            .find(|entry| {
+                entry.stored.class == PathClass::PersistentCustomRoot
+                    && entry.stored.target_is_dir
+                    && match purpose {
+                        Some(purpose) => entry.stored.purpose == Some(purpose),
+                        None => {
+                            entry.stored.purpose.is_none() && entry.stored.operations == operations
+                        }
+                    }
+                    && matches(entry)
+            })
+            .cloned()
+    }
+
+    fn finish_root_reuse(
+        &mut self,
+        entry: Entry,
+        purpose: Option<EntryPurpose>,
+    ) -> Result<PathRef, Error> {
+        let id = entry.stored.id.clone();
+        if let Some(purpose) = purpose {
+            let canonical = canonical_operations(purpose);
+            if entry.stored.operations != canonical {
+                let mut candidate = self.persistent.clone();
+                if let Some(candidate_entry) = candidate.get_mut(&id.id) {
+                    candidate_entry.stored.operations = canonical;
+                }
+                require_durable(self.commit_candidate(candidate, None)?)?;
+            }
+        }
+        self.session_protected_ids.insert(id.id.clone());
+        Ok(id)
+    }
+
+    /// The one registration body behind the four root wrappers above
+    /// (`get_or_create_database_root`, `get_or_create_puzzle_root`,
+    /// `get_or_create_engine_root`, `get_or_create_file_workspace_root`): reuse
+    /// the persisted entry for this directory when its operations match, recover
+    /// a replaced default root — including visible home defaults — when its
+    /// verified expected identity is current, refuse every other replacement,
+    /// and otherwise register it.
     /// `changed_noun` names the root in that refusal, so each caller keeps
     /// telling the renderer which root to select again. A `None` expected
     /// identity always refuses a replaced directory; recovery is limited to a
     /// default caller whose expected token matches the live directory.
+    /// Default callers (`expected_identity` is `Some`) reuse by live identity
+    /// first when the stored spelling still names that identity, so Windows
+    /// `\\?\` / 8.3 of the same live directory keep one `PathRef`. A renamed
+    /// directory whose stored spelling is gone is a new registration.
     fn get_or_create_root(
         &mut self,
         path: &Path,
@@ -4623,26 +4954,28 @@ impl PathAuthority {
                 error
             }
         })?;
-        if let Some(entry) = self
-            .persistent
-            .values()
-            .find(|entry| {
-                entry.stored.class == PathClass::PersistentCustomRoot
-                    && entry.stored.target_is_dir
-                    && match purpose {
-                        Some(purpose) => entry.stored.purpose == Some(purpose),
-                        None => {
-                            entry.stored.purpose.is_none() && entry.stored.operations == operations
-                        }
-                    }
+        if expected_identity.is_some() {
+            if let Some(entry) = self.persistent_root_entry(purpose, &operations, |entry| {
+                entry.availability == PathAvailability::Available
+                    && entry.stored.identity == binding.identity
                     && entry
                         .stored
                         .path
                         .to_path()
-                        .is_ok_and(|stored| stored == path)
-            })
-            .cloned()
-        {
+                        .ok()
+                        .and_then(|stored| probe_plain_dir_identity(&stored).ok().flatten())
+                        .is_some_and(|live| live == binding.identity)
+            }) {
+                return self.finish_root_reuse(entry, purpose);
+            }
+        }
+        if let Some(entry) = self.persistent_root_entry(purpose, &operations, |entry| {
+            entry
+                .stored
+                .path
+                .to_path()
+                .is_ok_and(|stored| stored == path)
+        }) {
             if binding.identity != entry.stored.identity {
                 if expected_identity.is_some() {
                     let stale_root = entry.stored.id.clone();
@@ -4701,19 +5034,7 @@ impl PathAuthority {
                     error
                 });
             }
-            let id = entry.stored.id.clone();
-            if let Some(purpose) = purpose {
-                let canonical = canonical_operations(purpose);
-                if entry.stored.operations != canonical {
-                    let mut candidate = self.persistent.clone();
-                    if let Some(candidate_entry) = candidate.get_mut(&id.id) {
-                        candidate_entry.stored.operations = canonical;
-                    }
-                    require_durable(self.commit_candidate(candidate, None)?)?;
-                }
-            }
-            self.session_protected_ids.insert(id.id.clone());
-            return Ok(id);
+            return self.finish_root_reuse(entry, purpose);
         }
         if expected_identity.is_some() {
             if let Some(id) =

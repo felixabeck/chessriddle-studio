@@ -129,6 +129,7 @@ export async function seedAnalysisEngines(
 
 export const filesWorkspaceFixture = {
     workspace: { id: { id: "files-workspace" }, kind: "fileWorkspace" },
+    defaultWorkspace: { id: { id: "file-root" }, kind: "fileWorkspace" },
     openingDirectory: {
         handle: { id: { id: "opening-directory" }, kind: "fileWorkspace" },
         kind: "directory",
@@ -1275,6 +1276,13 @@ export function filesWorkspaceCommands(
                 availability: "available",
             },
         },
+        get_default_file_workspace: {
+            result: {
+                handle: filesWorkspaceFixture.defaultWorkspace,
+                displayName: "PGN",
+                availability: "available",
+            },
+        },
         list_file_workspace: { results: listResults.map((entries) => ({ entries, unread: [] })) },
         list_workspace_trash: { result: { items: [], olderCount: 0, cursor: null } },
         ...overrides,
@@ -1306,7 +1314,7 @@ const localeByProject: Record<string, string> = {
     "async-errors": "de-DE",
 };
 
-const tauriBootstrap = () => {
+const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defaultWorkspace) => {
     type Response = MockCommand;
     type Listener = { event: string; callback: number };
     type Actor = {
@@ -1454,8 +1462,17 @@ const tauriBootstrap = () => {
             result: { displayName: "E2E puzzles", isDefault: true },
         },
         get_file_folder_status: {
-            result: { displayName: "PGN", isDefault: false },
+            result: { displayName: "PGN", isDefault: true },
         },
+        get_default_file_workspace: {
+            result: {
+                handle: defaultFileWorkspace,
+                displayName: "PGN",
+                availability: "available",
+            },
+        },
+        list_file_workspace: { result: { entries: [], unread: [] } },
+        list_workspace_trash: { result: { items: [], olderCount: 0, cursor: null } },
         open_database_workspace: { result: null },
         open_engine_workspace: { result: null },
         open_puzzle_workspace: { result: null },
@@ -1824,7 +1841,7 @@ export const test = base.extend<{
         const colorScheme = testInfo.project.use.colorScheme ?? "light";
         const locale = appLocale ?? localeByProject[testInfo.project.name] ?? "en-US";
 
-        await page.addInitScript(tauriBootstrap);
+        await page.addInitScript(tauriBootstrap, filesWorkspaceFixture.defaultWorkspace);
         await page.addInitScript(
             ({ scale, scheme, locale, preserveKey }) => {
                 const preserveStorageOnce = sessionStorage.getItem(preserveKey) === "1";

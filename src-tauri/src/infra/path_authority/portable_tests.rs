@@ -58,9 +58,9 @@ fn instance_lock_refuses_competitor_and_keeps_leaf_after_drop() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].level, log::Level::Warn);
     assert_eq!(
-            records[0].message,
-            "another ChessRiddle Studio process holds the application data directory; this launch exits"
-        );
+        records[0].message,
+        "another ChessRiddle Studio process holds the application data directory; this launch exits"
+    );
     drop(guard);
     assert!(temp.path().join("instance.lock").is_file());
     assert_eq!(
@@ -221,7 +221,9 @@ fn instance_lock_classifies_per_root_outcomes() {
                 assert_eq!(guard._files.len(), 2);
                 assert_eq!(records.len(), 1);
                 assert_eq!(records[0].level, log::Level::Warn);
-                assert!(records[0].message.starts_with("the application data directory's filesystem does not support advisory locking."));
+                assert!(records[0].message.starts_with(
+                    "the application data directory's filesystem does not support advisory locking."
+                ));
             }
             [Some(_), Some(_), Some(_)] => {
                 assert!(matches!(result.unwrap(), InstanceAdmission::Unguarded));
@@ -1371,8 +1373,8 @@ pub(super) fn get_or_create_app_owned_test_root(
         | AppOwnedDefaultRoot::WorkspaceSession
         | AppOwnedDefaultRoot::LibrarySync => {
             panic!(
-                    "engine images, credentials, practice and unsaved games do not have a persistent root entry"
-                )
+                "engine images, credentials, practice and unsaved games do not have a persistent root entry"
+            )
         }
         #[cfg(target_os = "macos")]
         AppOwnedDefaultRoot::EngineLaunch => {
@@ -1404,8 +1406,8 @@ pub(super) fn set_active_app_owned_test_root(
         | AppOwnedDefaultRoot::WorkspaceSession
         | AppOwnedDefaultRoot::LibrarySync => {
             panic!(
-                    "engine images, credentials, practice and unsaved games do not have a persistent root entry"
-                )
+                "engine images, credentials, practice and unsaved games do not have a persistent root entry"
+            )
         }
         #[cfg(target_os = "macos")]
         AppOwnedDefaultRoot::EngineLaunch => {
@@ -1436,8 +1438,8 @@ pub(super) fn active_app_owned_test_root(
         | AppOwnedDefaultRoot::WorkspaceSession
         | AppOwnedDefaultRoot::LibrarySync => {
             panic!(
-                    "engine images, credentials, practice and unsaved games do not have a persistent root entry"
-                )
+                "engine images, credentials, practice and unsaved games do not have a persistent root entry"
+            )
         }
         #[cfg(target_os = "macos")]
         AppOwnedDefaultRoot::EngineLaunch => {
@@ -1450,7 +1452,7 @@ pub(crate) fn assert_workspace_body_refuses_unusable_selections_without_defaults
     domain: AppOwnedDefaultRoot,
     body: impl Fn(
         &crate::infra::path_authority::SharedPathAuthority,
-        &dyn Fn() -> Result<AppDataDir, Error>,
+        &DefaultDirLookups<'_>,
     ) -> Result<PathRef, Error>,
 ) {
     use crate::error::RootFailure;
@@ -1502,10 +1504,15 @@ pub(crate) fn assert_workspace_body_refuses_unusable_selections_without_defaults
         let before = fs::read(&registry).unwrap();
         let authority = crate::infra::path_authority::SharedPathAuthority::installed(authority);
         let looked_up = std::cell::Cell::new(false);
-        let lookup = || {
+        let home = || {
+            looked_up.set(true);
+            Err(Error::Conflict("unexpected home lookup".into()))
+        };
+        let app_data = || {
             looked_up.set(true);
             Ok(AppDataDir::for_test(&app_path))
         };
+        let lookup = DefaultDirLookups::new(&home, &app_data);
         let error = body(&authority, &lookup).unwrap_err();
         assert_eq!(error.root_failure(), Some(reason), "{domain:?}: {reason:?}");
         assert!(!looked_up.get(), "{domain:?}: {reason:?}");
@@ -1522,22 +1529,53 @@ pub(crate) fn assert_workspace_body_defaults_only_without_a_selection(
     domain: AppOwnedDefaultRoot,
     body: impl FnOnce(
         &crate::infra::path_authority::SharedPathAuthority,
-        &dyn Fn() -> Result<AppDataDir, Error>,
+        &DefaultDirLookups<'_>,
     ) -> Result<PathRef, Error>,
 ) {
     let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
     let app_path = dir.path().join("app-data");
+    fs::create_dir(&home_path).unwrap();
     fs::create_dir(&app_path).unwrap();
     let authority = crate::infra::path_authority::SharedPathAuthority::installed(
         PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap(),
     );
-    let id = body(&authority, &|| Ok(AppDataDir::for_test(&app_path))).unwrap();
-    let leaf = APP_OWNED_DEFAULT_ROOT_LEAVES
+    let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+    let app_data = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    let id = body(&authority, &lookups).unwrap();
+    let kind = match domain {
+        AppOwnedDefaultRoot::Databases => VisibleDefaultKind::Databases,
+        AppOwnedDefaultRoot::Engines => VisibleDefaultKind::Engines,
+        AppOwnedDefaultRoot::Puzzles => VisibleDefaultKind::Puzzles,
+        _ => unreachable!("{domain:?}"),
+    };
+    let live = live_visible_default_identity(&lookups, kind).expect("live default identity");
+    let stored = authority
+        .raw_for_test()
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .persistent[&id.id]
+        .stored
+        .identity
+        .clone();
+    assert_eq!(stored, live, "{domain:?}");
+    let studio = home_path.join("ChessRiddle Studio");
+    let leaf = match kind {
+        VisibleDefaultKind::Databases => "Databases",
+        VisibleDefaultKind::Engines => "Engines",
+        VisibleDefaultKind::Puzzles => "Puzzles",
+        VisibleDefaultKind::Pgn => "PGN",
+    };
+    assert!(studio.join(leaf).is_dir(), "{domain:?}");
+    let legacy = APP_OWNED_DEFAULT_ROOT_LEAVES
         .iter()
         .find(|(root, _)| *root == domain)
         .unwrap()
         .1;
-    assert!(app_path.join(leaf).is_dir(), "{domain:?}");
+    assert!(!app_path.join(legacy).exists(), "{domain:?}");
     let selected = active_app_owned_test_root(
         authority.raw_for_test().lock().unwrap().as_mut().unwrap(),
         domain,
@@ -2175,8 +2213,10 @@ fn root_failure_default_registry_persistence_and_capacity_are_unlabelled() {
     let (_directory, mut registry, workspace, _root) = directory_listing_bound_fixture().unwrap();
     directory_listing_bound_fill(&mut registry, workspace.path_ref(), MAX_AUTHORITY_IDS).unwrap();
     let directory = tempfile::tempdir().unwrap();
-    let app_data = AppDataDir::for_test(directory.path());
-    let error = crate::workspace_commands::get_default_database_workspace(&mut registry, &app_data)
+    let home = || Ok(HomeDir::for_test(directory.path(), RELEASE_APP_IDENTIFIER));
+    let app_data = || Ok(AppDataDir::for_test(directory.path()));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    let error = crate::workspace_commands::get_default_database_workspace(&mut registry, &lookups)
         .unwrap_err();
     assert_eq!(error.root_failure(), None);
     assert_eq!(error.category(), crate::error::ErrorCategory::ResourceLimit);
@@ -4679,29 +4719,59 @@ fn promote_dialog_mints_a_fresh_capability_for_a_replaced_pgn_file() {
 #[test]
 fn folder_status_compares_default_by_identity_and_keeps_unusable_selection() {
     let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
     let app_path = dir.path().join("app-data");
+    fs::create_dir(&home_path).unwrap();
     fs::create_dir(&app_path).unwrap();
     let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
-    let lookup = || Ok(AppDataDir::for_test(&app_path));
-    let idle = authority.database_folder_status(&lookup).unwrap();
+    let looked_up = std::cell::Cell::new(false);
+    let idle_home = || {
+        looked_up.set(true);
+        Err(Error::Conflict("unexpected home lookup".into()))
+    };
+    let idle_app = || {
+        looked_up.set(true);
+        Err(Error::Conflict("unexpected app-data lookup".into()))
+    };
+    let idle_lookups = DefaultDirLookups::new(&idle_home, &idle_app);
+    let idle = authority.database_folder_status(&idle_lookups).unwrap();
     assert_eq!(idle.display_name, "Databases");
     assert!(idle.is_default);
     assert_eq!(idle.root_failure, None);
+    assert!(!looked_up.get());
+    assert!(!home_path.join("ChessRiddle Studio").exists());
     assert!(!app_path.join("db").exists());
 
-    let authorized = ensure_app_owned_default_dir(
-        &AppDataDir::for_test(&app_path),
-        AppOwnedDefaultRoot::Databases,
+    let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+    let app_data = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    let authorized = ensure_home_owned_default_dir(
+        &HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER),
+        VisibleDefaultKind::Databases,
     )
     .unwrap();
     let root = authority
         .get_or_create_database_root(authorized.path(), "Databases", Some(authorized.identity()))
         .unwrap();
     authority.set_active_database_root(&root).unwrap();
-    let default = authority.database_folder_status(&lookup).unwrap();
+    let default = authority.database_folder_status(&lookups).unwrap();
     assert_eq!(default.display_name, "Databases");
     assert!(default.is_default);
     assert_eq!(default.root_failure, None);
+
+    let legacy = ensure_app_owned_default_dir(
+        &AppDataDir::for_test(&app_path),
+        AppOwnedDefaultRoot::Databases,
+    )
+    .unwrap();
+    let legacy_root = authority
+        .get_or_create_database_root(legacy.path(), "Databases", Some(legacy.identity()))
+        .unwrap();
+    authority.set_active_database_root(&legacy_root).unwrap();
+    let legacy_status = authority.database_folder_status(&lookups).unwrap();
+    assert_eq!(legacy_status.display_name, "Databases");
+    assert!(!legacy_status.is_default);
+    assert_eq!(legacy_status.root_failure, None);
 
     let custom_path = dir.path().join("CustomDBs");
     fs::create_dir(&custom_path).unwrap();
@@ -4709,18 +4779,325 @@ fn folder_status_compares_default_by_identity_and_keeps_unusable_selection() {
         .get_or_create_database_root(&custom_path, "a/b\\c", None)
         .unwrap();
     authority.set_active_database_root(&custom).unwrap();
-    let custom_status = authority.database_folder_status(&lookup).unwrap();
+    let custom_status = authority.database_folder_status(&lookups).unwrap();
     assert_eq!(custom_status.display_name, "CustomDBs");
     assert!(!custom_status.is_default);
     assert_eq!(custom_status.root_failure, None);
 
     fs::remove_dir(&custom_path).unwrap();
-    let missing = authority.database_folder_status(&lookup).unwrap();
+    let missing = authority.database_folder_status(&lookups).unwrap();
     assert_eq!(missing.display_name, "CustomDBs");
     assert!(!missing.is_default);
     assert_eq!(
         missing.root_failure,
         Some(crate::error::RootFailure::Missing)
+    );
+}
+
+const VISIBLE_DEFAULT_KIND_LEAVES: &[(VisibleDefaultKind, &str)] = &[
+    (VisibleDefaultKind::Databases, "Databases"),
+    (VisibleDefaultKind::Puzzles, "Puzzles"),
+    (VisibleDefaultKind::Engines, "Engines"),
+    (VisibleDefaultKind::Pgn, "PGN"),
+];
+
+fn assert_path_free_io(error: &Error, path: &Path, reason: &str) {
+    assert!(
+        matches!(error, Error::Io(inner) if inner.to_string() == reason),
+        "must be Error::Io with fixed text {reason:?}: {error:?}"
+    );
+    let payload = serde_json::to_value(error).unwrap();
+    assert_eq!(payload["message"], "I/O failure");
+    let rendered = payload.to_string();
+    assert!(
+        !rendered.contains(&path.display().to_string()),
+        "renderer payload must not name {path:?}: {rendered}"
+    );
+}
+
+#[test]
+fn ensure_home_owned_default_dir_creates_each_kind_under_the_studio_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = HomeDir::for_test(dir.path(), RELEASE_APP_IDENTIFIER);
+    for &(kind, leaf) in VISIBLE_DEFAULT_KIND_LEAVES {
+        let created = ensure_home_owned_default_dir(&home, kind).unwrap();
+        assert_eq!(
+            created.path(),
+            canonical_binding(&dir.path().join("ChessRiddle Studio").join(leaf)).unwrap()
+        );
+        assert!(created.path().is_dir(), "{kind:?} must create {leaf}");
+    }
+}
+
+#[test]
+fn ensure_home_owned_default_dir_uses_a_dev_studio_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let release = ensure_home_owned_default_dir(
+        &HomeDir::for_test(dir.path(), RELEASE_APP_IDENTIFIER),
+        VisibleDefaultKind::Databases,
+    )
+    .unwrap();
+    let dev = ensure_home_owned_default_dir(
+        &HomeDir::for_test(dir.path(), "com.chessriddle.studio.dev"),
+        VisibleDefaultKind::Databases,
+    )
+    .unwrap();
+    assert_eq!(
+        release.path(),
+        canonical_binding(&dir.path().join("ChessRiddle Studio").join("Databases")).unwrap()
+    );
+    assert_eq!(
+        dev.path(),
+        canonical_binding(&dir.path().join("ChessRiddle Studio Dev").join("Databases")).unwrap()
+    );
+    assert_ne!(release.identity(), dev.identity());
+}
+
+#[test]
+fn ensure_home_owned_default_dir_rejects_a_regular_file_as_io() {
+    for &(kind, leaf) in VISIBLE_DEFAULT_KIND_LEAVES {
+        let dir = tempfile::tempdir().unwrap();
+        let studio = dir.path().join("ChessRiddle Studio");
+        fs::create_dir(&studio).unwrap();
+        let path = studio.join(leaf);
+        fs::write(&path, b"not a directory").unwrap();
+        let error = ensure_home_owned_default_dir(
+            &HomeDir::for_test(dir.path(), RELEASE_APP_IDENTIFIER),
+            kind,
+        )
+        .expect_err("a regular file at the leaf must be refused");
+        assert_path_free_io(&error, &path, "app-owned default root is not a directory");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ensure_home_owned_default_dir_refuses_a_symlinked_component() {
+    for &(kind, leaf) in VISIBLE_DEFAULT_KIND_LEAVES {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, dir.path().join("ChessRiddle Studio")).unwrap();
+        let studio_link = dir.path().join("ChessRiddle Studio");
+        let error = ensure_home_owned_default_dir(
+            &HomeDir::for_test(dir.path(), RELEASE_APP_IDENTIFIER),
+            kind,
+        )
+        .expect_err("a symlinked studio folder must be refused");
+        assert_path_free_io(
+            &error,
+            &studio_link,
+            "app-owned default root is a reparse point",
+        );
+        assert_eq!(fs::read_dir(&elsewhere).unwrap().count(), 0);
+
+        let dir = tempfile::tempdir().unwrap();
+        let studio = dir.path().join("ChessRiddle Studio");
+        fs::create_dir(&studio).unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        let leaf_link = studio.join(leaf);
+        std::os::unix::fs::symlink(&elsewhere, &leaf_link).unwrap();
+        let error = ensure_home_owned_default_dir(
+            &HomeDir::for_test(dir.path(), RELEASE_APP_IDENTIFIER),
+            kind,
+        )
+        .expect_err("a symlinked leaf must be refused");
+        assert_path_free_io(
+            &error,
+            &leaf_link,
+            "app-owned default root is a reparse point",
+        );
+        assert_eq!(fs::read_dir(&elsewhere).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn resolve_visible_default_dir_falls_back_to_legacy_when_home_is_unresolvable() {
+    let dir = tempfile::tempdir().unwrap();
+    let app_path = dir.path().join("app-data");
+    fs::create_dir(&app_path).unwrap();
+    let home = || Err(Error::Conflict("home missing".into()));
+    let app_data = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    let databases = resolve_visible_default_dir(&lookups, VisibleDefaultKind::Databases).unwrap();
+    assert_eq!(
+        databases.path(),
+        canonical_binding(&app_path.join("db")).unwrap()
+    );
+    let pgn = resolve_visible_default_dir(&lookups, VisibleDefaultKind::Pgn).unwrap_err();
+    assert!(
+        matches!(pgn, Error::Conflict(ref message) if message == "home missing"),
+        "PGN has no legacy leaf: {pgn:?}"
+    );
+}
+
+#[test]
+fn resolve_visible_default_dir_falls_back_to_legacy_when_home_producer_refuses() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    let app_path = dir.path().join("app-data");
+    fs::create_dir(&home_path).unwrap();
+    fs::create_dir(&app_path).unwrap();
+    fs::write(home_path.join("ChessRiddle Studio"), b"not a directory").unwrap();
+    let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+    let app_data = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    for kind in [
+        VisibleDefaultKind::Databases,
+        VisibleDefaultKind::Puzzles,
+        VisibleDefaultKind::Engines,
+    ] {
+        let authorized = resolve_visible_default_dir(&lookups, kind).unwrap();
+        let legacy = kind.legacy().expect("kind has a legacy leaf");
+        assert_eq!(
+            authorized.path(),
+            canonical_binding(&app_path.join(legacy.leaf())).unwrap()
+        );
+    }
+    let pgn = resolve_visible_default_dir(&lookups, VisibleDefaultKind::Pgn).unwrap_err();
+    assert_eq!(pgn.to_string(), "I/O failure");
+    assert_eq!(
+        pgn.diagnostic(),
+        "I/O failure: app-owned default root is not a directory"
+    );
+}
+
+#[test]
+fn selected_legacy_is_default_when_home_lookup_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let app_path = dir.path().join("app-data");
+    fs::create_dir(&app_path).unwrap();
+    let home = || Err(Error::Conflict("home missing".into()));
+    let app_data = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    let legacy = ensure_app_owned_default_dir(
+        &AppDataDir::for_test(&app_path),
+        AppOwnedDefaultRoot::Databases,
+    )
+    .unwrap();
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let root = authority
+        .get_or_create_database_root(legacy.path(), "Databases", Some(legacy.identity()))
+        .unwrap();
+    authority.set_active_database_root(&root).unwrap();
+    let status = authority.database_folder_status(&lookups).unwrap();
+    assert!(status.is_default);
+}
+
+#[test]
+fn selected_legacy_is_default_when_home_producer_refuses() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    let app_path = dir.path().join("app-data");
+    fs::create_dir(&home_path).unwrap();
+    fs::create_dir(&app_path).unwrap();
+    fs::write(home_path.join("ChessRiddle Studio"), b"not a directory").unwrap();
+    let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+    let app_data = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    let legacy = ensure_app_owned_default_dir(
+        &AppDataDir::for_test(&app_path),
+        AppOwnedDefaultRoot::Databases,
+    )
+    .unwrap();
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let root = authority
+        .get_or_create_database_root(legacy.path(), "Databases", Some(legacy.identity()))
+        .unwrap();
+    authority.set_active_database_root(&root).unwrap();
+    let status = authority.database_folder_status(&lookups).unwrap();
+    assert!(status.is_default);
+}
+
+#[test]
+fn live_visible_default_identity_does_not_treat_missing_home_leaf_as_legacy() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    let app_path = dir.path().join("app-data");
+    fs::create_dir(&home_path).unwrap();
+    fs::create_dir(&app_path).unwrap();
+    let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+    let app_data = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    let legacy = ensure_app_owned_default_dir(
+        &AppDataDir::for_test(&app_path),
+        AppOwnedDefaultRoot::Databases,
+    )
+    .unwrap();
+    assert!(live_visible_default_identity(&lookups, VisibleDefaultKind::Databases).is_none());
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let root = authority
+        .get_or_create_database_root(legacy.path(), "Databases", Some(legacy.identity()))
+        .unwrap();
+    authority.set_active_database_root(&root).unwrap();
+    let status = authority.database_folder_status(&lookups).unwrap();
+    assert!(!status.is_default);
+    assert!(!home_path.join("ChessRiddle Studio").exists());
+}
+
+#[test]
+fn default_get_or_create_reuses_by_live_identity_across_spellings() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    fs::create_dir(&home_path).unwrap();
+    let authorized = ensure_home_owned_default_dir(
+        &HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER),
+        VisibleDefaultKind::Databases,
+    )
+    .unwrap();
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let first = authority
+        .get_or_create_database_root(authorized.path(), "Databases", Some(authorized.identity()))
+        .unwrap();
+    // `Path::join(".")` is a no-op on Windows verbatim paths, so the second
+    // spelling is unix-only here; windows_tests covers `\\?\` / 8.3 instead.
+    #[cfg(unix)]
+    {
+        let alternate = authorized.path().join(".");
+        let second = authority
+            .get_or_create_database_root(&alternate, "Databases", Some(authorized.identity()))
+            .unwrap();
+        assert_eq!(first.path_ref(), second.path_ref());
+    }
+    let again = authority
+        .get_or_create_database_root(authorized.path(), "Databases", Some(authorized.identity()))
+        .unwrap();
+    assert_eq!(first.path_ref(), again.path_ref());
+}
+
+#[test]
+fn default_get_or_create_recovers_a_deleted_home_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    fs::create_dir(&home_path).unwrap();
+    let home = HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER);
+    let initial = ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases).unwrap();
+    let old_identity = initial.identity();
+    let old_path = initial.path().to_path_buf();
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let old_id = authority
+        .get_or_create_database_root(initial.path(), "Databases", Some(old_identity))
+        .unwrap();
+    authority.set_active_database_root(&old_id).unwrap();
+    fs::remove_dir_all(&old_path).unwrap();
+    let replacement = ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases).unwrap();
+    assert_ne!(replacement.identity(), old_identity);
+    let new_id = authority
+        .get_or_create_database_root(
+            replacement.path(),
+            "Databases",
+            Some(replacement.identity()),
+        )
+        .unwrap();
+    assert_ne!(new_id.path_ref(), old_id.path_ref());
+    assert!(!authority.persistent.contains_key(&old_id.path_ref().id));
+    assert_eq!(
+        authority.persistent[&new_id.path_ref().id].stored.identity,
+        Identity {
+            a: replacement.identity().pair().0,
+            b: replacement.identity().pair().1,
+        }
     );
 }
 

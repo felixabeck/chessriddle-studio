@@ -10,9 +10,10 @@ use crate::{
     infra::cancellable_lock::lock_std_cancellable,
     infra::path_authority::{
         equivalent_sibling_leaves, workspace_sidecar_leaf as sidecar_leaf, AppDataDir,
-        FileWorkspaceDescriptor, FileWorkspaceHandle, FolderStatus, IdentityBinding, NativePath,
-        PathAuthority, PathClass, PathOperation, PathRef, SharedPathAuthority,
-        WorkspaceMutationTarget, WorkspaceRemovalStatus, PICKER_DIALOG_GRANT_TTL,
+        DefaultDirLookups, FileWorkspaceDescriptor, FileWorkspaceHandle, FolderStatus,
+        IdentityBinding, NativePath, PathAuthority, PathClass, PathOperation, PathRef,
+        SharedPathAuthority, WorkspaceMutationTarget, WorkspaceRemovalStatus,
+        PICKER_DIALOG_GRANT_TTL,
     },
     pgn, AppState,
 };
@@ -272,7 +273,7 @@ fn list_trash(
                     }
                 }
                 Err(Error::InvalidInput(message)) if message == "trash bucket is empty" => {
-                    return Ok(())
+                    return Ok(());
                 }
                 Err(Error::Cancellation) => return Err(Error::Cancellation),
                 Err(error) => row.category = Some(error.category()),
@@ -1153,10 +1154,14 @@ pub(crate) fn apply_folder_picker_start<B: FolderPickerStart>(
 pub(crate) fn resolve_folder_picker_start<R: tauri::Runtime>(
     authority: &SharedPathAuthority,
     app: &tauri::AppHandle<R>,
-    resolve: impl FnOnce(&mut PathAuthority, &dyn Fn() -> Result<AppDataDir, Error>) -> Option<PathBuf>,
+    resolve: impl FnOnce(&mut PathAuthority, &DefaultDirLookups<'_>) -> Option<PathBuf>,
 ) -> Option<PathBuf> {
     authority
-        .with_mut(|authority| resolve(authority, &|| AppDataDir::for_app(app)))
+        .with_mut(|authority| {
+            let home = || crate::infra::path_authority::HomeDir::for_app(app);
+            let app_data = || AppDataDir::for_app(app);
+            resolve(authority, &DefaultDirLookups::new(&home, &app_data))
+        })
         .ok()
         .flatten()
 }
@@ -1166,7 +1171,7 @@ pub(crate) fn seed_folder_picker<B: FolderPickerStart, R: tauri::Runtime>(
     builder: B,
     authority: &SharedPathAuthority,
     app: &tauri::AppHandle<R>,
-    resolve: impl FnOnce(&mut PathAuthority, &dyn Fn() -> Result<AppDataDir, Error>) -> Option<PathBuf>,
+    resolve: impl FnOnce(&mut PathAuthority, &DefaultDirLookups<'_>) -> Option<PathBuf>,
 ) -> B {
     apply_folder_picker_start(
         builder,
@@ -1273,7 +1278,10 @@ mod folder_shell_tests {
             PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
         );
         let issued = issue_file_workspace_blocking(&authority, selected.clone()).unwrap();
-        let status = get_file_folder_status_blocking(&authority, &issued.handle).unwrap();
+        let no_home = || Err(Error::Conflict("unexpected home lookup".into()));
+        let no_app = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let lookups = DefaultDirLookups::new(&no_home, &no_app);
+        let status = get_file_folder_status_blocking(&authority, &issued.handle, &lookups).unwrap();
         assert_eq!(status.display_name, "MyPGN");
         assert!(!status.is_default);
         assert_eq!(status.root_failure, None);
@@ -1306,10 +1314,56 @@ mod folder_shell_tests {
             .any(|message| message.contains(&cause)));
 
         std::fs::remove_dir(&selected).unwrap();
-        let missing = get_file_folder_status_blocking(&authority, &issued.handle).unwrap();
+        let missing =
+            get_file_folder_status_blocking(&authority, &issued.handle, &lookups).unwrap();
         assert_eq!(missing.display_name, "MyPGN");
         assert!(!missing.is_default);
         assert_eq!(missing.root_failure, Some(RootFailure::Missing));
+    }
+
+    #[test]
+    fn root_failure_default_pgn_non_directory_is_unusable() {
+        use crate::error::RootFailure;
+        use crate::infra::path_authority::HomeDir;
+        let directory = tempfile::tempdir().unwrap();
+        let (authority, home_path, app_path) = idle_default_parents(&directory);
+        std::fs::create_dir(home_path.join("ChessRiddle Studio")).unwrap();
+        std::fs::write(
+            home_path.join("ChessRiddle Studio").join("PGN"),
+            b"not a directory",
+        )
+        .unwrap();
+        let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+        let app_data = || Ok(AppDataDir::for_test(&app_path));
+        let lookups = DefaultDirLookups::new(&home, &app_data);
+        let error = get_default_file_workspace_blocking(&authority, &lookups).unwrap_err();
+        assert_eq!(error.root_failure(), Some(RootFailure::Unusable));
+        assert_eq!(error.category(), crate::error::ErrorCategory::Io);
+        assert_eq!(error.to_string(), "I/O failure");
+        assert_eq!(
+            error.diagnostic(),
+            "I/O failure: app-owned default root is not a directory"
+        );
+    }
+
+    #[test]
+    fn two_default_pgn_seeds_reuse_one_path_ref() {
+        use crate::infra::path_authority::HomeDir;
+        let directory = tempfile::tempdir().unwrap();
+        let (authority, home_path, app_path) = idle_default_parents(&directory);
+        let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+        let app_data = || Ok(AppDataDir::for_test(&app_path));
+        let lookups = DefaultDirLookups::new(&home, &app_data);
+        let first = get_default_file_workspace_blocking(&authority, &lookups).unwrap();
+        let second = get_default_file_workspace_blocking(&authority, &lookups).unwrap();
+        assert_eq!(first.handle, second.handle);
+        assert_eq!(first.display_name, "PGN");
+        assert_eq!(second.display_name, "PGN");
+        let status = get_file_folder_status_blocking(&authority, &first.handle, &lookups).unwrap();
+        assert_eq!(status.display_name, "PGN");
+        assert!(status.is_default);
+        assert!(home_path.join("ChessRiddle Studio").join("PGN").is_dir());
+        assert!(!app_path.join("db").exists());
     }
 
     #[test]
@@ -1356,13 +1410,21 @@ pub(crate) fn canonical_shell_path(path: &Path) -> PathBuf {
 }
 
 #[cfg(test)]
-pub(crate) fn idle_app_data(directory: &tempfile::TempDir) -> (SharedPathAuthority, PathBuf) {
+pub(crate) use crate::infra::path_authority::RELEASE_APP_IDENTIFIER;
+
+#[cfg(test)]
+pub(crate) fn idle_default_parents(
+    directory: &tempfile::TempDir,
+) -> (SharedPathAuthority, PathBuf, PathBuf) {
+    let home_path = directory.path().join("home");
     let app_path = directory.path().join("app-data");
+    std::fs::create_dir(&home_path).unwrap();
     std::fs::create_dir(&app_path).unwrap();
     (
         SharedPathAuthority::installed(
             PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
         ),
+        home_path,
         app_path,
     )
 }
@@ -1370,25 +1432,31 @@ pub(crate) fn idle_app_data(directory: &tempfile::TempDir) -> (SharedPathAuthori
 #[cfg(test)]
 pub(crate) fn assert_kind_folder_open_path_identity(
     authority: &SharedPathAuthority,
+    home_path: &Path,
     app_path: &Path,
     selected: &Path,
-    default_kind: crate::infra::path_authority::AppOwnedDefaultRoot,
-    open_path: impl Fn(&SharedPathAuthority, &dyn Fn() -> Result<AppDataDir, Error>) -> Option<PathBuf>,
+    default_kind: crate::infra::path_authority::VisibleDefaultKind,
+    open_path: impl Fn(&SharedPathAuthority, &DefaultDirLookups<'_>) -> Option<PathBuf>,
     issue: impl FnOnce(&SharedPathAuthority, PathBuf),
 ) {
-    use crate::infra::path_authority::{ensure_app_owned_default_dir, AppDataDir};
-    let lookup = || Ok(AppDataDir::for_test(app_path));
-    let idle = open_path(authority, &lookup);
+    use crate::infra::path_authority::{ensure_home_owned_default_dir, HomeDir};
+    let home = || Ok(HomeDir::for_test(home_path, RELEASE_APP_IDENTIFIER));
+    let app_data = || Ok(AppDataDir::for_test(app_path));
+    let lookups = DefaultDirLookups::new(&home, &app_data);
+    let idle = open_path(authority, &lookups);
     let expected_default = canonical_shell_path(
-        ensure_app_owned_default_dir(&AppDataDir::for_test(app_path), default_kind)
-            .unwrap()
-            .path(),
+        ensure_home_owned_default_dir(
+            &HomeDir::for_test(home_path, RELEASE_APP_IDENTIFIER),
+            default_kind,
+        )
+        .unwrap()
+        .path(),
     );
     assert_eq!(idle.as_deref(), Some(expected_default.as_path()));
 
     std::fs::create_dir(selected).unwrap();
     issue(authority, selected.to_path_buf());
-    let custom = open_path(authority, &lookup);
+    let custom = open_path(authority, &lookups);
     assert_eq!(
         custom.as_deref(),
         Some(canonical_shell_path(selected).as_path())
@@ -1401,9 +1469,9 @@ pub(crate) fn assert_kind_folder_open_path_identity(
             selected.file_name().unwrap().to_string_lossy()
         ));
         std::fs::rename(selected, &displaced).unwrap();
-        assert_eq!(open_path(authority, &lookup), None);
+        assert_eq!(open_path(authority, &lookups), None);
         std::fs::create_dir(selected).unwrap();
-        assert_eq!(open_path(authority, &lookup), None);
+        assert_eq!(open_path(authority, &lookups), None);
     }
 }
 
@@ -1878,6 +1946,7 @@ fn listing_count_error(error: Error) -> Result<ErrorCategory, Error> {
 #[tauri::command]
 #[specta::specta]
 pub async fn get_file_folder_status(
+    app: tauri::AppHandle,
     workspace: FileWorkspaceHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<FolderStatus, Error> {
@@ -1885,7 +1954,11 @@ pub async fn get_file_folder_status(
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
         "get_file_folder_status",
-        move || get_file_folder_status_blocking(&pgn_path_authority, &workspace),
+        move || {
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                get_file_folder_status_blocking(&pgn_path_authority, &workspace, lookups)
+            })
+        },
     )
     .await
 }
@@ -1893,8 +1966,49 @@ pub async fn get_file_folder_status(
 fn get_file_folder_status_blocking(
     pgn_path_authority: &SharedPathAuthority,
     workspace: &FileWorkspaceHandle,
+    lookups: &DefaultDirLookups<'_>,
 ) -> Result<FolderStatus, Error> {
-    pgn_path_authority.with_mut(|authority| authority.file_folder_status(workspace))?
+    pgn_path_authority.with_mut(|authority| authority.file_folder_status(workspace, lookups))?
+}
+
+/// Native get-or-create of the default PGN collection folder. The renderer writer is the
+/// only caller that persists the resulting handle.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_default_file_workspace(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<FileWorkspaceDescriptor, Error> {
+    let pgn_path_authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "get_default_file_workspace",
+        move || {
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                get_default_file_workspace_blocking(&pgn_path_authority, lookups)
+            })
+        },
+    )
+    .await
+}
+
+fn get_default_file_workspace_blocking(
+    pgn_path_authority: &SharedPathAuthority,
+    lookups: &DefaultDirLookups<'_>,
+) -> Result<FileWorkspaceDescriptor, Error> {
+    pgn_path_authority.with_mut(|authority| {
+        let authorized_dir = crate::infra::path_authority::resolve_visible_default_dir(
+            lookups,
+            crate::infra::path_authority::VisibleDefaultKind::Pgn,
+        )
+        .map_err(Error::label_root_failure)?;
+        let root = authority.get_or_create_file_workspace_root(
+            authorized_dir.path(),
+            "PGN",
+            Some(authorized_dir.identity()),
+        )?;
+        authority.file_workspace_descriptor(root)
+    })?
 }
 
 #[tauri::command]
@@ -8774,11 +8888,13 @@ mod tests {
                         }
                         assert!(registry_has_display_name(&directory, "before"));
                     }
-                    assert!(fs::read_dir(&root).unwrap().all(|entry| !entry
-                        .unwrap()
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with(".atomic-")));
+                    assert!(fs::read_dir(&root).unwrap().all(|entry| {
+                        !entry
+                            .unwrap()
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with(".atomic-")
+                    }));
                 }
             }
         }
@@ -10183,8 +10299,9 @@ mod tests {
                 assert!(root.join("after.pgn").is_file());
                 assert!(root.join("after.info").is_file());
             }
-            assert!(capture.messages().iter().any(|line| line
-                .contains("workspace completion failed after uncertainty at workspace rename")));
+            assert!(capture.messages().iter().any(|line| {
+                line.contains("workspace completion failed after uncertainty at workspace rename")
+            }));
         }
     }
 
@@ -11141,7 +11258,11 @@ mod tests {
                     )
                     .unwrap();
                     let records = registry["records"].as_array().unwrap();
-                    assert_eq!(records.len(), 2, "committed rename must complete collection reconciliation: {command:?} directory={directory} sync={sync}");
+                    assert_eq!(
+                        records.len(),
+                        2,
+                        "committed rename must complete collection reconciliation: {command:?} directory={directory} sync={sync}"
+                    );
                     let record = records
                         .iter()
                         .find(|record| record["id"] == collection_id)
@@ -12562,7 +12683,9 @@ mod tests {
             Ok(Ok(())) => copy,
             Ok(Err(signal_error)) => {
                 let copy_result = copy.await;
-                panic!("{description}: chunk signal closed ({signal_error}); copy task result: {copy_result:?}");
+                panic!(
+                    "{description}: chunk signal closed ({signal_error}); copy task result: {copy_result:?}"
+                );
             }
             Err(timeout_error) => {
                 let copy_result = copy.await;
@@ -13852,9 +13975,13 @@ mod root_failure_tests {
             assert_eq!(
                 error.to_string(),
                 if depth {
-                    format!("Resource limit: workspace listing exceeded {MAX_WORKSPACE_LISTING_DEPTH} levels")
+                    format!(
+                        "Resource limit: workspace listing exceeded {MAX_WORKSPACE_LISTING_DEPTH} levels"
+                    )
                 } else {
-                    format!("Resource limit: directory listing exceeded {MAX_DIRECTORY_LISTING_ENTRIES} entries")
+                    format!(
+                        "Resource limit: directory listing exceeded {MAX_DIRECTORY_LISTING_ENTRIES} entries"
+                    )
                 }
             );
         }

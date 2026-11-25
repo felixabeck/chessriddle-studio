@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     setGameSection: vi.fn(),
     setGameOrientation: vi.fn(),
     issueFileWorkspace: vi.fn(),
+    getDefaultFileWorkspace: vi.fn(),
     parsePGN: vi.fn(),
     storeGet: vi.fn(),
     storeSet: vi.fn(),
@@ -58,6 +59,7 @@ import {
     pickPgnFile,
     sameGameIdentity,
     setFileGameOrientation,
+    writeDefaultFileWorkspace,
     writeFileGame,
 } from "./files";
 
@@ -667,32 +669,76 @@ test.each(["success", "rejection"] as const)(
 
 describe("ensureFileWorkspace", () => {
     const handle = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
+    const other = { id: { id: "custom" }, kind: "fileWorkspace" } as const;
 
     beforeEach(() => {
         mocks.storeGet.mockReturnValue(null);
+        mocks.getDefaultFileWorkspace.mockReset();
     });
 
     test("returns null on Cancellation without storing a handle", async () => {
-        mocks.issueFileWorkspace.mockRejectedValueOnce(new Error("Cancellation"));
+        mocks.getDefaultFileWorkspace.mockRejectedValueOnce(new Error("Cancellation"));
         await expect(ensureFileWorkspace()).resolves.toBeNull();
         expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
-    test("rejects a permission-denied picker failure", async () => {
+    test("rejects a permission-denied default failure", async () => {
         const error = new Error("permission denied");
-        mocks.issueFileWorkspace.mockRejectedValueOnce(error);
+        mocks.getDefaultFileWorkspace.mockRejectedValueOnce(error);
         await expect(ensureFileWorkspace()).rejects.toBe(error);
         expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
-    test("stores the issued handle on success", async () => {
-        mocks.issueFileWorkspace.mockResolvedValueOnce({
+    test("stores handle and display name together on success", async () => {
+        mocks.getDefaultFileWorkspace.mockResolvedValueOnce({
             handle,
-            displayName: "My Files",
+            displayName: "PGN",
         });
         await expect(ensureFileWorkspace()).resolves.toBe(handle);
-        expect(mocks.issueFileWorkspace).toHaveBeenCalledWith(null);
+        expect(mocks.getDefaultFileWorkspace).toHaveBeenCalledOnce();
+        expect(mocks.issueFileWorkspace).not.toHaveBeenCalled();
         expect(mocks.storeSet).toHaveBeenCalledWith(fileWorkspaceAtom, handle);
-        expect(mocks.storeSet).toHaveBeenCalledWith(fileWorkspaceDisplayNameAtom, "My Files");
+        expect(mocks.storeSet).toHaveBeenCalledWith(fileWorkspaceDisplayNameAtom, "PGN");
+    });
+
+    test("returns a hydrated selection without fetching the default", async () => {
+        mocks.storeGet.mockImplementation((atom) => {
+            if (atom === fileWorkspaceAtom) return other;
+            throw new Error("display name must not be consulted");
+        });
+        await expect(ensureFileWorkspace()).resolves.toBe(other);
+        expect(mocks.getDefaultFileWorkspace).not.toHaveBeenCalled();
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+    });
+});
+
+describe("writeDefaultFileWorkspace", () => {
+    const handle = { id: { id: "default-pgn" }, kind: "fileWorkspace" } as const;
+    const custom = { id: { id: "custom-pgn" }, kind: "fileWorkspace" } as const;
+
+    beforeEach(() => {
+        mocks.storeGet.mockReturnValue(null);
+        mocks.getDefaultFileWorkspace.mockReset();
+        mocks.storeSet.mockReset();
+    });
+
+    test("always fetches the default and writes both keys", async () => {
+        mocks.storeGet.mockReturnValue(custom);
+        mocks.getDefaultFileWorkspace.mockResolvedValueOnce({
+            handle,
+            displayName: "PGN",
+        });
+        await expect(writeDefaultFileWorkspace()).resolves.toBe(handle);
+        expect(mocks.getDefaultFileWorkspace).toHaveBeenCalledOnce();
+        expect(mocks.storeSet).toHaveBeenCalledWith(fileWorkspaceAtom, handle);
+        expect(mocks.storeSet).toHaveBeenCalledWith(fileWorkspaceDisplayNameAtom, "PGN");
+    });
+
+    test("keeps the current keys when the default get-or-create fails", async () => {
+        mocks.storeGet.mockReturnValue(custom);
+        const error = new Error("permission denied");
+        mocks.getDefaultFileWorkspace.mockRejectedValueOnce(error);
+        await expect(writeDefaultFileWorkspace()).rejects.toBe(error);
+        expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 });

@@ -1,11 +1,12 @@
 import { MantineProvider, VisuallyHidden } from "@mantine/core";
-import { createStore, Provider } from "jotai";
+import { createStore, getDefaultStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   defaultPanelTabAtom,
   fileWorkspaceAtom,
+  fileWorkspaceDisplayNameAtom,
   materialDisplayAtom,
   moveHighlightAtom,
   practiceGradingAtom,
@@ -22,7 +23,8 @@ import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { describeSettings } from "./settingsDescription";
-import Page from "./SettingsPage";
+import Page, { loadPgnDirectoryStatus } from "./SettingsPage";
+import { ensureFileWorkspace } from "@/utils/files";
 import classes from "./SettingsPage.module.css";
 
 vi.mock("@/platform/native", () => ({
@@ -60,17 +62,15 @@ vi.mock("./RepertoireMinGamesSetting", () => ({ default: () => null }));
 vi.mock("./DirectorySetting", () => ({ DirectorySetting: () => null }));
 const directoryRows = vi.hoisted(() => ({
   current: [] as Array<{
+    load: () => Promise<{ displayName: string }>;
     issue: () => Promise<{ displayName: string }>;
     onShowInFolder?: () => Promise<void> | void;
     onError: (error: unknown) => void;
+    reportLoadError?: boolean;
   }>,
 }));
 vi.mock("./WorkspaceDirectorySetting", () => ({
-  WorkspaceDirectorySetting: (props: {
-    issue: () => Promise<{ displayName: string }>;
-    onShowInFolder?: () => Promise<void> | void;
-    onError: (error: unknown) => void;
-  }) => {
+  WorkspaceDirectorySetting: (props: (typeof directoryRows.current)[number]) => {
     directoryRows.current.push(props);
     return null;
   },
@@ -81,6 +81,8 @@ const tauriMocks = vi.hoisted(() => ({
   openDatabaseWorkspace: vi.fn(),
   openEngineWorkspace: vi.fn(),
   openPuzzleWorkspace: vi.fn(),
+  getDefaultFileWorkspace: vi.fn(),
+  getFileFolderStatus: vi.fn(),
 }));
 vi.mock("@/platform/tauri", async (original) => {
   const actual = await original<typeof import("@/platform/tauri")>();
@@ -93,6 +95,8 @@ vi.mock("@/platform/tauri", async (original) => {
       openDatabaseWorkspace: (...args: unknown[]) => tauriMocks.openDatabaseWorkspace(...args),
       openEngineWorkspace: (...args: unknown[]) => tauriMocks.openEngineWorkspace(...args),
       openPuzzleWorkspace: (...args: unknown[]) => tauriMocks.openPuzzleWorkspace(...args),
+      getDefaultFileWorkspace: (...args: unknown[]) => tauriMocks.getDefaultFileWorkspace(...args),
+      getFileFolderStatus: (...args: unknown[]) => tauriMocks.getFileFolderStatus(...args),
     },
   };
 });
@@ -161,6 +165,10 @@ afterEach(async () => {
   tauriMocks.openDatabaseWorkspace.mockReset();
   tauriMocks.openEngineWorkspace.mockReset();
   tauriMocks.openPuzzleWorkspace.mockReset();
+  tauriMocks.getDefaultFileWorkspace.mockReset();
+  tauriMocks.getFileFolderStatus.mockReset();
+  getDefaultStore().set(fileWorkspaceAtom, null);
+  getDefaultStore().set(fileWorkspaceDisplayNameAtom, "");
   root = undefined;
   if (originalScroll) Object.defineProperty(Element.prototype, "scrollIntoView", originalScroll);
   else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
@@ -1020,4 +1028,51 @@ test("Files & folders errors notify with the row's root-failure domain", async (
     error,
     "puzzle",
   );
+});
+
+test("PGN load uses the stored file workspace and reports load errors only on that row", async () => {
+  const workspace = { id: { id: "pgn-workspace" }, kind: "fileWorkspace" as const };
+  tauriMocks.getFileFolderStatus.mockResolvedValue({ displayName: "MyPGN", isDefault: false });
+  const atoms = createStore();
+  atoms.set(fileWorkspaceAtom, workspace);
+  const { rows } = await openDirectoryRows(atoms);
+  expect(rows[0]?.reportLoadError).toBe(true);
+  expect(rows[1]?.reportLoadError).toBeFalsy();
+  expect(rows[2]?.reportLoadError).toBeFalsy();
+  expect(rows[3]?.reportLoadError).toBeFalsy();
+  await expect(rows[0]?.load()).resolves.toEqual({ displayName: "MyPGN", isDefault: false });
+  expect(tauriMocks.getFileFolderStatus).toHaveBeenCalledExactlyOnceWith(workspace);
+  expect(tauriMocks.getDefaultFileWorkspace).not.toHaveBeenCalled();
+  expect(atoms.get(fileWorkspaceAtom)).toEqual(workspace);
+});
+
+test("PGN load seeds through ensureFileWorkspace only when the handle is null", async () => {
+  const handle = { id: { id: "default-pgn" }, kind: "fileWorkspace" as const };
+  tauriMocks.getDefaultFileWorkspace.mockResolvedValue({
+    handle,
+    displayName: "PGN",
+  });
+  tauriMocks.getFileFolderStatus.mockResolvedValue({ displayName: "PGN", isDefault: true });
+  const status = await loadPgnDirectoryStatus(null);
+  expect(status).toEqual({ displayName: "PGN", isDefault: true });
+  expect(tauriMocks.getDefaultFileWorkspace).toHaveBeenCalledOnce();
+  expect(tauriMocks.getFileFolderStatus).toHaveBeenCalledExactlyOnceWith(handle);
+  expect(getDefaultStore().get(fileWorkspaceAtom)).toEqual(handle);
+  expect(getDefaultStore().get(fileWorkspaceDisplayNameAtom)).toBe("PGN");
+});
+
+test("Import then Settings PGN seed keep one file-workspace handle", async () => {
+  const handle = { id: { id: "default-pgn" }, kind: "fileWorkspace" as const };
+  tauriMocks.getDefaultFileWorkspace.mockResolvedValue({
+    handle,
+    displayName: "PGN",
+  });
+  tauriMocks.getFileFolderStatus.mockResolvedValue({ displayName: "PGN", isDefault: true });
+  const imported = await ensureFileWorkspace();
+  const { rows } = await openDirectoryRows();
+  await expect(rows[0]?.load()).resolves.toEqual({ displayName: "PGN", isDefault: true });
+  expect(imported).toEqual(handle);
+  expect(tauriMocks.getDefaultFileWorkspace).toHaveBeenCalledOnce();
+  expect(tauriMocks.getFileFolderStatus).toHaveBeenCalledExactlyOnceWith(handle);
+  expect(getDefaultStore().get(fileWorkspaceAtom)).toEqual(handle);
 });

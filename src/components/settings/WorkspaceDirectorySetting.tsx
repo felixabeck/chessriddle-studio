@@ -7,6 +7,8 @@ type WorkspaceDirectorySettingProps = {
   onShowInFolder?: () => Promise<void> | void;
   onSelected?: (name: string) => void;
   onError: (error: unknown) => void;
+  /** Forward a rejection from the initial `load` call to `onError` instead of swallowing it. */
+  reportLoadError?: boolean;
 };
 
 export function WorkspaceDirectorySetting({
@@ -15,11 +17,16 @@ export function WorkspaceDirectorySetting({
   onShowInFolder,
   onSelected,
   onError,
+  reportLoadError = false,
 }: WorkspaceDirectorySettingProps) {
   const [name, setName] = useState<string | null | undefined>(undefined);
   const initialLoad = useRef(load);
+  const reportLoadErrorRef = useRef(reportLoadError);
+  const onErrorRef = useRef(onError);
   const generation = useRef(0);
   const mounted = useRef(false);
+  reportLoadErrorRef.current = reportLoadError;
+  onErrorRef.current = onError;
 
   useEffect(() => {
     mounted.current = true;
@@ -28,8 +35,10 @@ export function WorkspaceDirectorySetting({
       (workspace) => {
         if (generation.current === current) setName(workspace.displayName);
       },
-      () => {
-        if (generation.current === current) setName(null);
+      (error: unknown) => {
+        if (generation.current !== current) return;
+        setName(null);
+        if (reportLoadErrorRef.current) onErrorRef.current(error);
       },
     );
     return () => {

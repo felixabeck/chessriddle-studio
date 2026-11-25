@@ -360,16 +360,16 @@ pub struct PuzzleDatabaseInfo {
 
 /// Refuses an unusable selected root; creates and activates the default only without a selection.
 fn active_or_default_puzzle_workspace(
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
     authority: &crate::infra::path_authority::SharedPathAuthority,
 ) -> Result<crate::infra::path_authority::PuzzleRootDescriptor, Error> {
     authority.with_mut(|authority| {
         if let Some(workspace) = authority.active_puzzle_root()? {
             return Ok(workspace);
         }
-        let authorized_dir = crate::infra::path_authority::ensure_app_owned_default_dir(
-            &app_data()?,
-            crate::infra::path_authority::AppOwnedDefaultRoot::Puzzles,
+        let authorized_dir = crate::infra::path_authority::resolve_visible_default_dir(
+            lookups,
+            crate::infra::path_authority::VisibleDefaultKind::Puzzles,
         )?;
         let root = authority.get_or_create_puzzle_root(
             authorized_dir.path(),
@@ -429,7 +429,7 @@ fn issue_puzzle_workspace_blocking(
 }
 
 /// Returns the selected puzzle workspace or refuses an unusable selection. With no selection,
-/// creates and activates the app-owned default.
+/// creates and activates the visible default.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_puzzle_workspace(
@@ -443,10 +443,9 @@ pub async fn get_puzzle_workspace(
         &state.operations,
         "get_puzzle_workspace",
         move || {
-            active_or_default_puzzle_workspace(
-                &|| crate::infra::path_authority::AppDataDir::for_app(&app),
-                &authority,
-            )
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                active_or_default_puzzle_workspace(lookups, &authority)
+            })
         },
     )
     .await
@@ -463,8 +462,8 @@ pub async fn get_puzzle_folder_status(
         &state.operations,
         "get_puzzle_folder_status",
         move || {
-            get_puzzle_folder_status_blocking(&authority, &|| {
-                crate::infra::path_authority::AppDataDir::for_app(&app)
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                get_puzzle_folder_status_blocking(&authority, lookups)
             })
         },
     )
@@ -473,9 +472,9 @@ pub async fn get_puzzle_folder_status(
 
 fn get_puzzle_folder_status_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
 ) -> Result<crate::infra::path_authority::FolderStatus, Error> {
-    authority.with_mut(|authority| authority.puzzle_folder_status(app_data))?
+    authority.with_mut(|authority| authority.puzzle_folder_status(lookups))?
 }
 
 #[tauri::command]
@@ -491,11 +490,11 @@ pub async fn open_puzzle_workspace(
         &state.operations,
         "open_puzzle_workspace",
         move || {
-            open_puzzle_workspace_blocking(
-                &authority,
-                &|| crate::infra::path_authority::AppDataDir::for_app(&lookup_app),
-                |path| app.opener().open_path(path.to_string_lossy(), None::<&str>),
-            )
+            crate::infra::path_authority::with_app_default_lookups(&lookup_app, |lookups| {
+                open_puzzle_workspace_blocking(&authority, lookups, |path| {
+                    app.opener().open_path(path.to_string_lossy(), None::<&str>)
+                })
+            })
         },
     )
     .await
@@ -503,10 +502,10 @@ pub async fn open_puzzle_workspace(
 
 fn open_puzzle_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
     opener: impl FnOnce(&Path) -> Result<(), tauri_plugin_opener::Error>,
 ) -> Result<(), Error> {
-    let path = authority.with_mut(|authority| authority.puzzle_folder_open_path(app_data))??;
+    let path = authority.with_mut(|authority| authority.puzzle_folder_open_path(lookups))??;
     open_resolved_folder(&path, opener)
 }
 
@@ -529,10 +528,9 @@ fn issue_puzzle_download_destination_blocking<R: tauri::Runtime>(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     app: tauri::AppHandle<R>,
 ) -> Result<crate::infra::path_authority::PathRef, Error> {
-    let workspace = active_or_default_puzzle_workspace(
-        &|| crate::infra::path_authority::AppDataDir::for_app(&app),
-        authority,
-    )?;
+    let workspace = crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+        active_or_default_puzzle_workspace(lookups, authority)
+    })?;
     authority.with_mut(|authority| authority.puzzle_download_destination(&workspace.root))?
 }
 
@@ -590,10 +588,9 @@ fn list_puzzle_databases_blocking<R: tauri::Runtime>(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     cancellation: &CancellationToken,
 ) -> Result<Vec<crate::infra::path_authority::PuzzleDatabaseDescriptor>, Error> {
-    let workspace = active_or_default_puzzle_workspace(
-        &|| crate::infra::path_authority::AppDataDir::for_app(app),
-        authority,
-    )?;
+    let workspace = crate::infra::path_authority::with_app_default_lookups(app, |lookups| {
+        active_or_default_puzzle_workspace(lookups, authority)
+    })?;
     let result = authority.with_mut(|authority| {
         authority.list_puzzle_children_cancellable(&workspace.root, cancellation)
     })?;
@@ -817,9 +814,9 @@ mod workspace_tests {
 
     fn puzzle_workspace_body(
         authority: &crate::infra::path_authority::SharedPathAuthority,
-        lookup: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+        lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
     ) -> Result<crate::infra::path_authority::PathRef, Error> {
-        active_or_default_puzzle_workspace(lookup, authority)
+        active_or_default_puzzle_workspace(lookups, authority)
             .map(|workspace| workspace.root.path_ref().clone())
     }
 
@@ -876,10 +873,15 @@ mod workspace_tests {
         );
         std::fs::remove_dir(&path_a).unwrap();
         let looked_up = std::cell::Cell::new(false);
-        let lookup = || {
+        let no_home = || {
+            looked_up.set(true);
+            Err(Error::Conflict("unexpected home lookup".into()))
+        };
+        let no_app = || {
             looked_up.set(true);
             Err(Error::Conflict("unexpected app-data lookup".into()))
         };
+        let lookup = crate::infra::path_authority::DefaultDirLookups::new(&no_home, &no_app);
         let error = active_or_default_puzzle_workspace(&lookup, &authority).unwrap_err();
         assert_eq!(error.root_failure(), Some(RootFailure::Missing));
         assert!(!looked_up.get());
@@ -921,16 +923,17 @@ mod workspace_tests {
 
     #[test]
     fn puzzle_folder_open_path_follows_identity_checked_resolution() {
-        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_app_data};
-        use crate::infra::path_authority::AppOwnedDefaultRoot;
+        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_default_parents};
+        use crate::infra::path_authority::VisibleDefaultKind;
         let directory = tempfile::tempdir().unwrap();
-        let (authority, app_path) = idle_app_data(&directory);
+        let (authority, home_path, app_path) = idle_default_parents(&directory);
         let selected = directory.path().join("MyPuzzles");
         assert_kind_folder_open_path_identity(
             &authority,
+            &home_path,
             &app_path,
             &selected,
-            AppOwnedDefaultRoot::Puzzles,
+            VisibleDefaultKind::Puzzles,
             |authority, lookup| {
                 authority
                     .with_mut(|authority| authority.puzzle_folder_open_path(lookup).ok())
@@ -944,17 +947,22 @@ mod workspace_tests {
 
     #[test]
     fn idle_puzzle_open_reaches_the_default_directory() {
-        use crate::file_workspace::{canonical_shell_path, idle_app_data};
+        use crate::file_workspace::{
+            canonical_shell_path, idle_default_parents, RELEASE_APP_IDENTIFIER,
+        };
         use crate::infra::path_authority::{
-            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot,
+            ensure_home_owned_default_dir, AppDataDir, DefaultDirLookups, HomeDir,
+            VisibleDefaultKind,
         };
         let directory = tempfile::tempdir().unwrap();
-        let (authority, app_path) = idle_app_data(&directory);
-        let lookup = || Ok(AppDataDir::for_test(&app_path));
+        let (authority, home_path, app_path) = idle_default_parents(&directory);
+        let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+        let app_data = || Ok(AppDataDir::for_test(&app_path));
+        let lookup = DefaultDirLookups::new(&home, &app_data);
         let expected = canonical_shell_path(
-            ensure_app_owned_default_dir(
-                &AppDataDir::for_test(&app_path),
-                AppOwnedDefaultRoot::Puzzles,
+            ensure_home_owned_default_dir(
+                &HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER),
+                VisibleDefaultKind::Puzzles,
             )
             .unwrap()
             .path(),
@@ -1221,8 +1229,15 @@ mod deletion_tests {
         );
         assert!(!directory_path.exists());
         for (dimension, mismatched, matching_alias, exhausted) in observations {
-            assert!(mismatched.is_none(), "GL2_CAPTURED_ISOLATION_{dimension}: a different request must not consume a cached puzzle: {mismatched:?}");
-            assert_eq!(matching_alias.map(|puzzle| (puzzle.id, puzzle.rating)), Some((1, 1200)), "a refused request must preserve the puzzle for matching identity and filters regardless of diagnostic path");
+            assert!(
+                mismatched.is_none(),
+                "GL2_CAPTURED_ISOLATION_{dimension}: a different request must not consume a cached puzzle: {mismatched:?}"
+            );
+            assert_eq!(
+                matching_alias.map(|puzzle| (puzzle.id, puzzle.rating)),
+                Some((1, 1200)),
+                "a refused request must preserve the puzzle for matching identity and filters regardless of diagnostic path"
+            );
             assert!(exhausted.is_none());
         }
         assert_eq!(
@@ -1285,13 +1300,20 @@ mod deletion_tests {
             directory.close().unwrap();
             unrelated_directory.close().unwrap();
 
-            eprintln!("GL2_CAPTURED_DELETION_CLEANUP: cached_deleted={cache_deleted_database}, result={result:?}, deleted={deleted}, authority_removed={authority_removed}, removed={}/{}", !directory_path.exists(), !unrelated_directory_path.exists());
+            eprintln!(
+                "GL2_CAPTURED_DELETION_CLEANUP: cached_deleted={cache_deleted_database}, result={result:?}, deleted={deleted}, authority_removed={authority_removed}, removed={}/{}",
+                !directory_path.exists(),
+                !unrelated_directory_path.exists()
+            );
             assert!(!directory_path.exists() && !unrelated_directory_path.exists());
             assert!(result.is_ok(), "committed deletion completion: {result:?}");
             assert!(deleted && authority_removed);
             assert_eq!(unrelated_before, unrelated_after);
             if cache_deleted_database {
-                assert!(remaining.is_none(), "GL2_CAPTURED_CACHE_INVALIDATION: committed deletion must retire the captured object's cached puzzle: {remaining:?}");
+                assert!(
+                    remaining.is_none(),
+                    "GL2_CAPTURED_CACHE_INVALIDATION: committed deletion must retire the captured object's cached puzzle: {remaining:?}"
+                );
             } else {
                 assert!(
                     matches!(other_database_request, Some(None)),
@@ -1593,14 +1615,16 @@ mod tests {
             .key
             .is_none());
         assert!(authority_contains(&fixture.authority, &fixture.handle));
-        assert!(records.iter().any(|record| record.level == log::Level::Warn
-            && record
-                .message
-                .contains("puzzle database registry cleanup failed after durability uncertainty")
-            && record.message.contains("kept category: Durability")
-            && record
-                .message
-                .contains("Conflict: path authority lock was poisoned")));
+        assert!(records.iter().any(|record| {
+            record.level == log::Level::Warn
+                && record.message.contains(
+                    "puzzle database registry cleanup failed after durability uncertainty",
+                )
+                && record.message.contains("kept category: Durability")
+                && record
+                    .message
+                    .contains("Conflict: path authority lock was poisoned")
+        }));
     }
 
     #[test]
@@ -1621,14 +1645,16 @@ mod tests {
             .key
             .is_none());
         assert!(!authority_contains(&fixture.authority, &fixture.handle));
-        assert!(records.iter().any(|record| record.level == log::Level::Warn
-            && record
-                .message
-                .contains("puzzle database lease release failed after durability uncertainty")
-            && record.message.contains("kept category: Durability")
-            && record
-                .message
-                .contains("Conflict: injected database deletion release failure")));
+        assert!(records.iter().any(|record| {
+            record.level == log::Level::Warn
+                && record
+                    .message
+                    .contains("puzzle database lease release failed after durability uncertainty")
+                && record.message.contains("kept category: Durability")
+                && record
+                    .message
+                    .contains("Conflict: injected database deletion release failure")
+        }));
     }
 
     #[test]
@@ -2934,10 +2960,15 @@ mod tests {
             PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
         );
         let looked_up = std::cell::Cell::new(false);
-        let no_lookup = || {
+        let no_home = || {
+            looked_up.set(true);
+            Err(Error::Conflict("unexpected home lookup".into()))
+        };
+        let no_app = || {
             looked_up.set(true);
             Err(Error::Conflict("unexpected app-data lookup".into()))
         };
+        let no_lookup = crate::infra::path_authority::DefaultDirLookups::new(&no_home, &no_app);
         let idle = get_puzzle_folder_status_blocking(&authority, &no_lookup).unwrap();
         assert_eq!(
             idle,

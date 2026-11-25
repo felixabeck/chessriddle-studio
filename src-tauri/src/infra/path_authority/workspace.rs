@@ -86,7 +86,7 @@ impl PathAuthority {
                 Err(Error::InvalidInput(_)) => {
                     return Err(Error::InvalidInput(
                         "PGN export destination must be a regular file".into(),
-                    ))
+                    ));
                 }
                 Err(error) => return Err(error),
             };
@@ -771,59 +771,73 @@ impl PathAuthority {
 
     pub(crate) fn database_folder_status(
         &mut self,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<FolderStatus, Error> {
         self.kind_folder_status(
             self.active_database_root.clone(),
             PathOperation::DatabaseRead,
-            AppOwnedDefaultRoot::Databases,
-            "Databases",
-            app_data,
+            VisibleDefaultKind::Databases,
+            lookups,
         )
     }
 
     pub(crate) fn engine_folder_status(
         &mut self,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<FolderStatus, Error> {
         self.kind_folder_status(
             self.active_engine_root.clone(),
             PathOperation::EngineInstall,
-            AppOwnedDefaultRoot::Engines,
-            "Engines",
-            app_data,
+            VisibleDefaultKind::Engines,
+            lookups,
         )
     }
 
     pub(crate) fn puzzle_folder_status(
         &mut self,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<FolderStatus, Error> {
         self.kind_folder_status(
             self.active_puzzle_root.clone(),
             PathOperation::PuzzleRead,
-            AppOwnedDefaultRoot::Puzzles,
-            "Puzzles",
-            app_data,
+            VisibleDefaultKind::Puzzles,
+            lookups,
         )
+    }
+
+    pub(crate) fn file_workspace_descriptor(
+        &self,
+        workspace: FileWorkspaceHandle,
+    ) -> Result<FileWorkspaceDescriptor, Error> {
+        let entry = self
+            .persistent
+            .get(&workspace.path_ref().id)
+            .ok_or_else(|| Error::Conflict("file workspace disappeared".into()))?;
+        Ok(FileWorkspaceDescriptor {
+            handle: workspace,
+            display_name: entry.stored.display_name.clone(),
+            availability: entry.availability,
+        })
     }
 
     pub(crate) fn file_folder_status(
         &mut self,
         workspace: &FileWorkspaceHandle,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<FolderStatus, Error> {
         let id = workspace.path_ref();
         let Some(entry) = self.persistent.get(&id.id) else {
             return Err(Error::InvalidInput("workspace is not persistent".into()));
         };
         let display_name = folder_leaf_display_name(&entry.stored);
+        let is_default = self.root_matches_default(id, VisibleDefaultKind::Pgn, lookups);
         let root_failure = match self.workspace_root(workspace, PathOperation::ReadPgn) {
             Ok(_) => None,
             Err(error) => error.label_root_failure().root_failure(),
         };
         Ok(FolderStatus {
             display_name,
-            is_default: false,
+            is_default,
             root_failure,
         })
     }
@@ -832,10 +846,10 @@ impl PathAuthority {
         &mut self,
         active: Option<PathRef>,
         operation: PathOperation,
-        default_kind: AppOwnedDefaultRoot,
-        default_display: &'static str,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        default_kind: VisibleDefaultKind,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<FolderStatus, Error> {
+        let default_display = default_kind.leaf();
         let Some(id) = active else {
             return Ok(FolderStatus {
                 display_name: default_display.to_string(),
@@ -848,7 +862,7 @@ impl PathAuthority {
             .get(&id.id)
             .map(|entry| folder_leaf_display_name(&entry.stored))
             .unwrap_or_else(|| default_display.to_string());
-        let is_default = self.root_matches_default(&id, default_kind, app_data);
+        let is_default = self.root_matches_default(&id, default_kind, lookups);
         let root_failure = match self.resolve_active_root(Some(id), operation) {
             Ok(_) => None,
             Err(error) => error.label_root_failure().root_failure(),
@@ -863,55 +877,49 @@ impl PathAuthority {
     fn root_matches_default(
         &self,
         id: &PathRef,
-        default_kind: AppOwnedDefaultRoot,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        default_kind: VisibleDefaultKind,
+        lookups: &DefaultDirLookups<'_>,
     ) -> bool {
         let Some(entry) = self.persistent.get(&id.id) else {
             return false;
         };
-        let Ok(app_data) = app_data() else {
-            return false;
-        };
-        let default_path = app_data.as_path().join(default_kind.leaf());
-        let Ok(live) = identity(&default_path) else {
-            return false;
-        };
-        live == entry.stored.identity
+        live_visible_default_identity(lookups, default_kind)
+            .is_some_and(|live| live == entry.stored.identity)
     }
 
     pub(crate) fn database_folder_open_path(
         &mut self,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<PathBuf, Error> {
         self.kind_folder_open_path(
             self.active_database_root.clone(),
             PathOperation::DatabaseRead,
-            AppOwnedDefaultRoot::Databases,
-            app_data,
+            VisibleDefaultKind::Databases,
+            lookups,
         )
     }
 
     pub(crate) fn engine_folder_open_path(
         &mut self,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<PathBuf, Error> {
         self.kind_folder_open_path(
             self.active_engine_root.clone(),
             PathOperation::EngineInstall,
-            AppOwnedDefaultRoot::Engines,
-            app_data,
+            VisibleDefaultKind::Engines,
+            lookups,
         )
     }
 
     pub(crate) fn puzzle_folder_open_path(
         &mut self,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<PathBuf, Error> {
         self.kind_folder_open_path(
             self.active_puzzle_root.clone(),
             PathOperation::PuzzleRead,
-            AppOwnedDefaultRoot::Puzzles,
-            app_data,
+            VisibleDefaultKind::Puzzles,
+            lookups,
         )
     }
 
@@ -924,14 +932,14 @@ impl PathAuthority {
             .map_err(|error| error.label_root_failure())
     }
 
-    /// Idle (no active root) materialises the app-owned default so Show in folder and
+    /// Idle (no active root) materialises the resolver default so Show in folder and
     /// the next picker both land on the same directory the rest of the app will use.
     fn kind_folder_open_path(
         &mut self,
         active: Option<PathRef>,
         operation: PathOperation,
-        default_kind: AppOwnedDefaultRoot,
-        app_data: &dyn Fn() -> Result<AppDataDir, Error>,
+        default_kind: VisibleDefaultKind,
+        lookups: &DefaultDirLookups<'_>,
     ) -> Result<PathBuf, Error> {
         if let Some(id) = active {
             return self
@@ -939,7 +947,7 @@ impl PathAuthority {
                 .map(|path| native_shell_path(&path))
                 .map_err(|error| error.label_root_failure());
         }
-        let authorized = ensure_app_owned_default_dir(&app_data()?, default_kind)?;
+        let authorized = resolve_visible_default_dir(lookups, default_kind)?;
         Ok(native_shell_path(authorized.path()))
     }
 }

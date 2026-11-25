@@ -604,3 +604,103 @@ fn native_shell_path_strips_verbatim_and_unc_prefixes() {
         PathBuf::from(r"C:\Users\studio\Engines")
     );
 }
+
+fn windows_verbatim_spelling(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(stripped) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        PathBuf::from(format!(r"\\?\{text}"))
+    }
+}
+
+fn windows_short_path(path: &Path) -> Option<PathBuf> {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut buffer = vec![0u16; 1024];
+    let len = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetShortPathNameW(
+            wide.as_ptr(),
+            buffer.as_mut_ptr(),
+            buffer.len() as u32,
+        )
+    };
+    if len == 0 || (len as usize) >= buffer.len() {
+        return None;
+    }
+    buffer.truncate(len as usize);
+    let short = PathBuf::from(std::ffi::OsString::from_wide(&buffer));
+    (short != path).then_some(short)
+}
+
+#[test]
+fn home_owned_default_root_junction_component_is_refused_as_io() {
+    for (kind, leaf) in [
+        (VisibleDefaultKind::Databases, "Databases"),
+        (VisibleDefaultKind::Puzzles, "Puzzles"),
+        (VisibleDefaultKind::Engines, "Engines"),
+        (VisibleDefaultKind::Pgn, "PGN"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        let studio = dir.path().join("ChessRiddle Studio");
+        windows_test_junction(&studio, &elsewhere);
+        let error = ensure_home_owned_default_dir(
+            &HomeDir::for_test(dir.path(), RELEASE_APP_IDENTIFIER),
+            kind,
+        )
+        .expect_err("a junction studio folder must be refused");
+        assert!(
+            matches!(error, Error::Io(ref inner) if inner.to_string().contains("reparse point")),
+            "{kind:?} studio must be refused as Error::Io mentioning a reparse point: {error:?}"
+        );
+        assert_eq!(fs::read_dir(&elsewhere).unwrap().count(), 0);
+
+        let dir = tempfile::tempdir().unwrap();
+        let studio = dir.path().join("ChessRiddle Studio");
+        fs::create_dir(&studio).unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        let leaf_path = studio.join(leaf);
+        windows_test_junction(&leaf_path, &elsewhere);
+        let error = ensure_home_owned_default_dir(
+            &HomeDir::for_test(dir.path(), RELEASE_APP_IDENTIFIER),
+            kind,
+        )
+        .expect_err("a junction leaf must be refused");
+        assert!(
+            matches!(error, Error::Io(ref inner) if inner.to_string().contains("reparse point")),
+            "{kind:?} leaf must be refused as Error::Io mentioning a reparse point: {error:?}"
+        );
+        assert_eq!(fs::read_dir(&elsewhere).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn default_get_or_create_reuses_by_live_identity_for_verbatim_and_8_3_spellings() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    fs::create_dir(&home_path).unwrap();
+    let authorized = ensure_home_owned_default_dir(
+        &HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER),
+        VisibleDefaultKind::Databases,
+    )
+    .unwrap();
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let first = authority
+        .get_or_create_database_root(authorized.path(), "Databases", Some(authorized.identity()))
+        .unwrap();
+    let verbatim = windows_verbatim_spelling(authorized.path());
+    assert_ne!(verbatim, authorized.path());
+    let second = authority
+        .get_or_create_database_root(&verbatim, "Databases", Some(authorized.identity()))
+        .unwrap();
+    assert_eq!(first.path_ref(), second.path_ref());
+    if let Some(short) = windows_short_path(authorized.path()) {
+        let third = authority
+            .get_or_create_database_root(&short, "Databases", Some(authorized.identity()))
+            .unwrap();
+        assert_eq!(first.path_ref(), third.path_ref());
+    }
+}

@@ -102,15 +102,20 @@ export async function pickPgnFile(
     };
 }
 
-export async function ensureFileWorkspace(): Promise<FileWorkspaceHandle | null> {
+/** Native get-or-create of the default PGN folder, writing handle and display name together. */
+export async function writeDefaultFileWorkspace(): Promise<FileWorkspaceHandle> {
+    const result = await tauri.getDefaultFileWorkspace();
     const store = getDefaultStore();
-    const existing = store.get(fileWorkspaceAtom);
+    store.set(fileWorkspaceAtom, result.handle);
+    store.set(fileWorkspaceDisplayNameAtom, result.displayName);
+    return result.handle;
+}
+
+export async function ensureFileWorkspace(): Promise<FileWorkspaceHandle | null> {
+    const existing = getDefaultStore().get(fileWorkspaceAtom);
     if (existing) return existing;
     try {
-        const result = await tauri.issueFileWorkspace(null);
-        store.set(fileWorkspaceAtom, result.handle);
-        store.set(fileWorkspaceDisplayNameAtom, result.displayName);
-        return result.handle;
+        return await writeDefaultFileWorkspace();
     } catch (error) {
         if (errorUnlessCancelled(error) === null) return null;
         throw error;

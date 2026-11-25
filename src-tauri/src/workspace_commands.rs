@@ -350,7 +350,7 @@ fn issue_database_workspace_blocking(
 }
 
 /// Returns the active database root or refuses an unusable selection. With no selection,
-/// it acquires, registers and activates the app-owned default root without a renderer path.
+/// it acquires, registers and activates the visible default root without a renderer path.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_database_workspace(
@@ -362,8 +362,8 @@ pub async fn get_database_workspace(
         &state.operations,
         "get_database_workspace",
         move || {
-            get_database_workspace_blocking(&authority, &|| {
-                crate::infra::path_authority::AppDataDir::for_app(&app)
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                get_database_workspace_blocking(&authority, lookups)
             })
         },
     )
@@ -372,25 +372,24 @@ pub async fn get_database_workspace(
 
 fn get_database_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
 ) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
     authority.with_mut(|authority| {
         if let Some(root) = authority.active_database_root()? {
             return authority.database_root_descriptor(root);
         }
-        let app_data = app_data()?;
-        let root = get_default_database_workspace(authority, &app_data)?;
+        let root = get_default_database_workspace(authority, lookups)?;
         authority.database_root_descriptor(root)
     })?
 }
 
 pub(crate) fn get_default_database_workspace(
     authority: &mut crate::infra::path_authority::PathAuthority,
-    app_data: &crate::infra::path_authority::AppDataDir,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
 ) -> Result<crate::infra::path_authority::DatabaseRootHandle, Error> {
-    let authorized_dir = crate::infra::path_authority::ensure_app_owned_default_dir(
-        app_data,
-        crate::infra::path_authority::AppOwnedDefaultRoot::Databases,
+    let authorized_dir = crate::infra::path_authority::resolve_visible_default_dir(
+        lookups,
+        crate::infra::path_authority::VisibleDefaultKind::Databases,
     )
     .map_err(Error::label_root_failure)?;
     let root = authority.get_or_create_database_root(
@@ -549,7 +548,7 @@ fn issue_engine_workspace_blocking(
     })?
 }
 
-/// Returns the active engine root or refuses an unusable selection. The app-owned default
+/// Returns the active engine root or refuses an unusable selection. The visible default
 /// is created and activated only when no selection exists.
 #[tauri::command]
 #[specta::specta]
@@ -562,8 +561,8 @@ pub async fn get_engine_workspace(
         &state.operations,
         "get_engine_workspace",
         move || {
-            get_engine_workspace_blocking(&authority, &|| {
-                crate::infra::path_authority::AppDataDir::for_app(&app)
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                get_engine_workspace_blocking(&authority, lookups)
             })
         },
     )
@@ -572,15 +571,15 @@ pub async fn get_engine_workspace(
 
 fn get_engine_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
 ) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
     authority.with_mut(|authority| {
         if let Some(root) = authority.active_engine_root()? {
             return authority.engine_root_descriptor(root);
         }
-        let authorized_dir = crate::infra::path_authority::ensure_app_owned_default_dir(
-            &app_data()?,
-            crate::infra::path_authority::AppOwnedDefaultRoot::Engines,
+        let authorized_dir = crate::infra::path_authority::resolve_visible_default_dir(
+            lookups,
+            crate::infra::path_authority::VisibleDefaultKind::Engines,
         )?;
         let root = authority.get_or_create_engine_root(
             authorized_dir.path(),
@@ -998,8 +997,8 @@ pub async fn get_database_folder_status(
         &state.operations,
         "get_database_folder_status",
         move || {
-            get_database_folder_status_blocking(&authority, &|| {
-                crate::infra::path_authority::AppDataDir::for_app(&app)
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                get_database_folder_status_blocking(&authority, lookups)
             })
         },
     )
@@ -1008,9 +1007,9 @@ pub async fn get_database_folder_status(
 
 fn get_database_folder_status_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
 ) -> Result<crate::infra::path_authority::FolderStatus, Error> {
-    authority.with_mut(|authority| authority.database_folder_status(app_data))?
+    authority.with_mut(|authority| authority.database_folder_status(lookups))?
 }
 
 #[tauri::command]
@@ -1024,8 +1023,8 @@ pub async fn get_engine_folder_status(
         &state.operations,
         "get_engine_folder_status",
         move || {
-            get_engine_folder_status_blocking(&authority, &|| {
-                crate::infra::path_authority::AppDataDir::for_app(&app)
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                get_engine_folder_status_blocking(&authority, lookups)
             })
         },
     )
@@ -1034,9 +1033,9 @@ pub async fn get_engine_folder_status(
 
 fn get_engine_folder_status_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
 ) -> Result<crate::infra::path_authority::FolderStatus, Error> {
-    authority.with_mut(|authority| authority.engine_folder_status(app_data))?
+    authority.with_mut(|authority| authority.engine_folder_status(lookups))?
 }
 
 #[tauri::command]
@@ -1052,11 +1051,11 @@ pub async fn open_database_workspace(
         &state.operations,
         "open_database_workspace",
         move || {
-            open_database_workspace_blocking(
-                &authority,
-                &|| crate::infra::path_authority::AppDataDir::for_app(&lookup_app),
-                |path| app.opener().open_path(path.to_string_lossy(), None::<&str>),
-            )
+            crate::infra::path_authority::with_app_default_lookups(&lookup_app, |lookups| {
+                open_database_workspace_blocking(&authority, lookups, |path| {
+                    app.opener().open_path(path.to_string_lossy(), None::<&str>)
+                })
+            })
         },
     )
     .await
@@ -1064,10 +1063,10 @@ pub async fn open_database_workspace(
 
 fn open_database_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
     opener: impl FnOnce(&std::path::Path) -> Result<(), tauri_plugin_opener::Error>,
 ) -> Result<(), Error> {
-    let path = authority.with_mut(|authority| authority.database_folder_open_path(app_data))??;
+    let path = authority.with_mut(|authority| authority.database_folder_open_path(lookups))??;
     open_resolved_folder(&path, opener)
 }
 
@@ -1084,11 +1083,11 @@ pub async fn open_engine_workspace(
         &state.operations,
         "open_engine_workspace",
         move || {
-            open_engine_workspace_blocking(
-                &authority,
-                &|| crate::infra::path_authority::AppDataDir::for_app(&lookup_app),
-                |path| app.opener().open_path(path.to_string_lossy(), None::<&str>),
-            )
+            crate::infra::path_authority::with_app_default_lookups(&lookup_app, |lookups| {
+                open_engine_workspace_blocking(&authority, lookups, |path| {
+                    app.opener().open_path(path.to_string_lossy(), None::<&str>)
+                })
+            })
         },
     )
     .await
@@ -1096,10 +1095,10 @@ pub async fn open_engine_workspace(
 
 fn open_engine_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
     opener: impl FnOnce(&std::path::Path) -> Result<(), tauri_plugin_opener::Error>,
 ) -> Result<(), Error> {
-    let path = authority.with_mut(|authority| authority.engine_folder_open_path(app_data))??;
+    let path = authority.with_mut(|authority| authority.engine_folder_open_path(lookups))??;
     open_resolved_folder(&path, opener)
 }
 
@@ -1122,7 +1121,9 @@ mod tests {
         let authority = SharedPathAuthority::installed(
             PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
         );
-        let no_default = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let no_home = || Err(Error::Conflict("unexpected home lookup".into()));
+        let no_app = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let no_default = crate::infra::path_authority::DefaultDirLookups::new(&no_home, &no_app);
 
         let database = issue_database_workspace_blocking(&authority, databases).unwrap();
         assert_eq!(database.display_name, "MyChessDBs");
@@ -1191,10 +1192,29 @@ mod tests {
 
     #[test]
     fn root_failure_default_database_non_directory_is_unusable() {
-        use crate::infra::path_authority::{AppDataDir, PathAuthority, SystemClock};
+        use crate::infra::path_authority::{
+            AppDataDir, DefaultDirLookups, HomeDir, PathAuthority, SystemClock,
+        };
         let directory = tempfile::tempdir().unwrap();
-        let app_data = AppDataDir::for_test(directory.path());
-        std::fs::write(directory.path().join("db"), b"not a directory").unwrap();
+        let home_path = directory.path().join("home");
+        let app_path = directory.path().join("app-data");
+        std::fs::create_dir(&home_path).unwrap();
+        std::fs::create_dir(&app_path).unwrap();
+        std::fs::create_dir(home_path.join("ChessRiddle Studio")).unwrap();
+        std::fs::write(
+            home_path.join("ChessRiddle Studio").join("Databases"),
+            b"not a directory",
+        )
+        .unwrap();
+        std::fs::write(app_path.join("db"), b"not a directory").unwrap();
+        let home = || {
+            Ok(HomeDir::for_test(
+                &home_path,
+                crate::file_workspace::RELEASE_APP_IDENTIFIER,
+            ))
+        };
+        let app_data = || Ok(AppDataDir::for_test(&app_path));
+        let lookups = DefaultDirLookups::new(&home, &app_data);
         let mut authority = PathAuthority::open_with_clock(
             directory.path().join("registry.json"),
             vec![],
@@ -1202,7 +1222,7 @@ mod tests {
             2,
         )
         .unwrap();
-        let error = get_default_database_workspace(&mut authority, &app_data).unwrap_err();
+        let error = get_default_database_workspace(&mut authority, &lookups).unwrap_err();
         assert_eq!(
             error.root_failure(),
             Some(crate::error::RootFailure::Unusable)
@@ -1228,7 +1248,9 @@ mod tests {
         let authority = SharedPathAuthority::installed(authority);
         let capture = crate::error::LogCaptureScope::start();
         let cause = format!("opener rejected private path {}", fixture_path.display());
-        let no_default = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let no_home = || Err(Error::Conflict("unexpected home lookup".into()));
+        let no_app = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let no_default = crate::infra::path_authority::DefaultDirLookups::new(&no_home, &no_app);
         let error = open_engine_workspace_blocking(&authority, &no_default, |path| {
             assert_eq!(path, canonical_shell_path(&fixture_path).as_path());
             Err(tauri_plugin_opener::Error::Io(std::io::Error::other(
@@ -1260,10 +1282,15 @@ mod tests {
             PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
         );
         let looked_up = std::cell::Cell::new(false);
-        let no_lookup = || {
+        let no_home = || {
+            looked_up.set(true);
+            Err(Error::Conflict("unexpected home lookup".into()))
+        };
+        let no_app = || {
             looked_up.set(true);
             Err(Error::Conflict("unexpected app-data lookup".into()))
         };
+        let no_lookup = crate::infra::path_authority::DefaultDirLookups::new(&no_home, &no_app);
         let idle = get_database_folder_status_blocking(&authority, &no_lookup).unwrap();
         assert_eq!(
             idle,
@@ -1332,7 +1359,9 @@ mod tests {
         let authority = SharedPathAuthority::installed(
             PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
         );
-        let no_lookup = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let no_home = || Err(Error::Conflict("unexpected home lookup".into()));
+        let no_app = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let no_lookup = crate::infra::path_authority::DefaultDirLookups::new(&no_home, &no_app);
         let idle = get_engine_folder_status_blocking(&authority, &no_lookup).unwrap();
         assert_eq!(
             idle,
@@ -1357,16 +1386,17 @@ mod tests {
 
     #[test]
     fn database_folder_open_path_follows_identity_checked_resolution() {
-        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_app_data};
-        use crate::infra::path_authority::AppOwnedDefaultRoot;
+        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_default_parents};
+        use crate::infra::path_authority::VisibleDefaultKind;
         let directory = tempfile::tempdir().unwrap();
-        let (authority, app_path) = idle_app_data(&directory);
+        let (authority, home_path, app_path) = idle_default_parents(&directory);
         let selected = directory.path().join("MyChessDBs");
         assert_kind_folder_open_path_identity(
             &authority,
+            &home_path,
             &app_path,
             &selected,
-            AppOwnedDefaultRoot::Databases,
+            VisibleDefaultKind::Databases,
             |authority, lookup| {
                 authority
                     .with_mut(|authority| authority.database_folder_open_path(lookup).ok())
@@ -1380,16 +1410,17 @@ mod tests {
 
     #[test]
     fn engine_folder_open_path_follows_identity_checked_resolution() {
-        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_app_data};
-        use crate::infra::path_authority::AppOwnedDefaultRoot;
+        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_default_parents};
+        use crate::infra::path_authority::VisibleDefaultKind;
         let directory = tempfile::tempdir().unwrap();
-        let (authority, app_path) = idle_app_data(&directory);
+        let (authority, home_path, app_path) = idle_default_parents(&directory);
         let selected = directory.path().join("MyChessEngines");
         assert_kind_folder_open_path_identity(
             &authority,
+            &home_path,
             &app_path,
             &selected,
-            AppOwnedDefaultRoot::Engines,
+            VisibleDefaultKind::Engines,
             |authority, lookup| {
                 authority
                     .with_mut(|authority| authority.engine_folder_open_path(lookup).ok())
@@ -1403,35 +1434,40 @@ mod tests {
 
     #[test]
     fn idle_database_and_engine_open_reach_the_default_directory() {
-        use crate::file_workspace::{canonical_shell_path, idle_app_data};
+        use crate::file_workspace::{
+            canonical_shell_path, idle_default_parents, RELEASE_APP_IDENTIFIER,
+        };
         use crate::infra::path_authority::{
-            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot,
+            ensure_home_owned_default_dir, AppDataDir, DefaultDirLookups, HomeDir,
+            VisibleDefaultKind,
         };
         let directory = tempfile::tempdir().unwrap();
-        let (authority, app_path) = idle_app_data(&directory);
-        let lookup = || Ok(AppDataDir::for_test(&app_path));
+        let (authority, home_path, app_path) = idle_default_parents(&directory);
+        let home = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+        let app_data = || Ok(AppDataDir::for_test(&app_path));
+        let lookups = DefaultDirLookups::new(&home, &app_data);
         let databases = canonical_shell_path(
-            ensure_app_owned_default_dir(
-                &AppDataDir::for_test(&app_path),
-                AppOwnedDefaultRoot::Databases,
+            ensure_home_owned_default_dir(
+                &HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER),
+                VisibleDefaultKind::Databases,
             )
             .unwrap()
             .path(),
         );
-        open_database_workspace_blocking(&authority, &lookup, |path| {
+        open_database_workspace_blocking(&authority, &lookups, |path| {
             assert_eq!(path, databases.as_path());
             Ok(())
         })
         .unwrap();
         let engines = canonical_shell_path(
-            ensure_app_owned_default_dir(
-                &AppDataDir::for_test(&app_path),
-                AppOwnedDefaultRoot::Engines,
+            ensure_home_owned_default_dir(
+                &HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER),
+                VisibleDefaultKind::Engines,
             )
             .unwrap()
             .path(),
         );
-        open_engine_workspace_blocking(&authority, &lookup, |path| {
+        open_engine_workspace_blocking(&authority, &lookups, |path| {
             assert_eq!(path, engines.as_path());
             Ok(())
         })

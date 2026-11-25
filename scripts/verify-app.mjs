@@ -3315,6 +3315,33 @@ async function openFilesEntry(session, name, timeoutMs = FILES_PROBE_TIMEOUT_MS)
 }
 
 async function selectPracticeTab(session, timeoutMs = FILES_PROBE_TIMEOUT_MS) {
+  // Workaround for f-20261125-23 (remount on reopening a restored file); remove this settle wait when fixed.
+  let stableId = null;
+  let stableSince = 0;
+  await waitFor(
+    "the Practice tab to settle",
+    async () => {
+      const id = await session
+        .execute(
+          `const tab = [...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent.trim() === 'Practice');
+           return tab?.id || null;`,
+        )
+        .catch(() => null);
+      if (!id) {
+        stableId = null;
+        stableSince = 0;
+        return false;
+      }
+      const now = Date.now();
+      if (id !== stableId) {
+        stableId = id;
+        stableSince = now;
+        return false;
+      }
+      return now - stableSince >= 1000;
+    },
+    { timeoutMs },
+  );
   const tab = await reachableStableCoordinates(
     session,
     "the Practice tab",
@@ -3910,7 +3937,10 @@ async function verifyDatabaseOrientation(session) {
     const checked = await wait("orientation Auto Save control", () =>
       session.execute(`
       const input = document.querySelector('input[aria-label="Auto Save"]');
-      return input ? { checked: input.checked } : false;
+      if (!input) return false;
+      const panel = input.closest('[role="tabpanel"]');
+      if (panel && (panel.hidden || getComputedStyle(panel).display === 'none')) return false;
+      return { checked: input.checked };
     `),
     );
     previousAutoSave ??= checked.checked;
@@ -7687,6 +7717,11 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
     const appDataDirectory = join(profileDirectory, ".local/share/com.chessriddle.studio");
     await mkdir(appDataDirectory, { recursive: true });
     await mkdir(join(profileDirectory, ".config/com.chessriddle.studio"), { recursive: true });
+    await mkdir(join(profileDirectory, "ChessRiddle Studio"), { recursive: true });
+    await writeFile(
+      join(profileDirectory, "ChessRiddle Studio/Databases"),
+      "home default database root is a regular file\n",
+    );
     await writeFile(join(appDataDirectory, "db"), "default database root is a regular file\n");
     session = await Session.open(APP_BINARY);
     const alert = await databaseAlert(session, "the unusable default database root alert");
@@ -7704,7 +7739,12 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
   // while the app is stopped. Relaunching re-proves the persisted selection without a cached list.
   const selectedRootCheck =
     "selected-root-missing: the Databases alert offers a visible folder chooser without recreating db";
-  const selectedDatabaseRoot = join(profileDirectory, ".local/share/com.chessriddle.studio/db");
+  const selectedDatabaseRoot = join(profileDirectory, "ChessRiddle Studio/Databases");
+  const defaultLocationCheck =
+    "fresh profile Databases default is HOME/ChessRiddle Studio/Databases";
+  const pgnControlCheck = "PGN row folder control shows the leaf PGN";
+  let defaultLocationSeen = false;
+  let pgnControlSeen = false;
   try {
     const closed = await closeApplicationThroughTitlebar(session, "default-root-unusable");
     if (!closed.gone || closed.survivors.length > 0)
@@ -7740,6 +7780,34 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       },
       { timeoutMs: FILES_PROBE_TIMEOUT_MS },
     );
+    check(existsSync(selectedDatabaseRoot), defaultLocationCheck);
+    defaultLocationSeen = true;
+    try {
+      await goToSettings(session);
+      const tab = await reachableStableCoordinates(
+        session,
+        "Directories settings tab",
+        `document.querySelector('[role="tab"][data-settings-category="directories"]')`,
+      );
+      await clickAt(session, tab.x, tab.y);
+      await waitFor(
+        "PGN folder control leaf",
+        async () => {
+          const text = await session.execute(`
+            const row = document.querySelector('[data-setting-id="files-directory"]');
+            const button = row && row.querySelector('button[aria-label="Select directory"]');
+            return button ? button.textContent.trim() : "";
+          `);
+          return text === "PGN";
+        },
+        { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+      );
+      check(true, pgnControlCheck);
+      pgnControlSeen = true;
+    } catch (error) {
+      check(false, pgnControlCheck, error.message);
+      pgnControlSeen = true;
+    }
     const activatedClose = await closeApplicationThroughTitlebar(
       session,
       "activated database root",
@@ -7761,6 +7829,8 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       `observed Databases alert: ${JSON.stringify({ ...alert, dbExists })}`,
     );
   } catch (error) {
+    if (!defaultLocationSeen) check(false, defaultLocationCheck, error.message);
+    if (!pgnControlSeen) check(false, pgnControlCheck, error.message);
     check(
       false,
       selectedRootCheck,

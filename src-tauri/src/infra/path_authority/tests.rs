@@ -7731,6 +7731,8 @@ fn authorized_dir_has_no_arbitrary_path_constructor() {
         [
             "reacquire",
             "ensure_app_owned_default_dir",
+            "ensure_home_owned_default_dir",
+            "resolve_visible_default_dir",
             "open_app_owned_resource_dir"
         ]
     );

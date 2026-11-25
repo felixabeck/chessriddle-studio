@@ -92,6 +92,25 @@ test("failed hydration offers selection without reporting a picker error", async
   expect(onError).not.toHaveBeenCalled();
 });
 
+test("failed PGN hydration reports the load error through onError", async () => {
+  const error = new Error("workspace unavailable");
+  load.mockRejectedValue(error);
+  await act(async () =>
+    root.render(
+      <WorkspaceDirectorySetting
+        load={load}
+        issue={issue}
+        onShowInFolder={onShowInFolder}
+        onSelected={onSelected}
+        onError={onError}
+        reportLoadError
+      />,
+    ),
+  );
+  expect(host.textContent).toContain("Settings.Directories.Select");
+  expect(onError).toHaveBeenCalledExactlyOnceWith(error);
+});
+
 test("late hydration cannot overwrite a successfully selected name", async () => {
   let resolve!: (workspace: { displayName: string }) => void;
   load.mockReturnValue(new Promise((done) => (resolve = done)));
@@ -110,6 +129,27 @@ test("late hydration failure cannot overwrite a successfully selected name", asy
   await act(async () => reject(new Error("stale")));
   expect(host.textContent).toContain("NewFolder");
   expect(host.textContent).not.toContain("Settings.Directories.Select");
+});
+
+test("late hydration failure after a newer pick does not report a stale error", async () => {
+  let reject!: (error: Error) => void;
+  load.mockReturnValue(new Promise((_, fail) => (reject = fail)));
+  await act(async () =>
+    root.render(
+      <WorkspaceDirectorySetting
+        load={load}
+        issue={issue}
+        onShowInFolder={onShowInFolder}
+        onSelected={onSelected}
+        onError={onError}
+        reportLoadError
+      />,
+    ),
+  );
+  await act(async () => pickerButton().click());
+  await act(async () => reject(new Error("stale")));
+  expect(host.textContent).toContain("NewFolder");
+  expect(onError).not.toHaveBeenCalled();
 });
 
 test("shows loading until hydration settles", async () => {

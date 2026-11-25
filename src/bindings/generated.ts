@@ -472,7 +472,7 @@ async issueDatabaseWorkspace() : Promise<Result<DatabaseRootDescriptor, ErrorPay
 },
 /**
  * Returns the active database root or refuses an unusable selection. With no selection,
- * it acquires, registers and activates the app-owned default root without a renderer path.
+ * it acquires, registers and activates the visible default root without a renderer path.
  */
 async getDatabaseWorkspace() : Promise<Result<DatabaseRootDescriptor, ErrorPayload>> {
     try {
@@ -523,7 +523,7 @@ async issueEngineWorkspace() : Promise<Result<EngineRootDescriptor, ErrorPayload
 }
 },
 /**
- * Returns the active engine root or refuses an unusable selection. The app-owned default
+ * Returns the active engine root or refuses an unusable selection. The visible default
  * is created and activated only when no selection exists.
  */
 async getEngineWorkspace() : Promise<Result<EngineRootDescriptor, ErrorPayload>> {
@@ -609,6 +609,18 @@ async openDatabaseWorkspace() : Promise<Result<null, ErrorPayload>> {
 async issueFileWorkspace(workspace: FileWorkspaceHandle | null) : Promise<Result<FileWorkspaceDescriptor, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("issue_file_workspace", { workspace }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Native get-or-create of the default PGN collection folder. The renderer writer is the
+ * only caller that persists the resulting handle.
+ */
+async getDefaultFileWorkspace() : Promise<Result<FileWorkspaceDescriptor, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_default_file_workspace") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -827,7 +839,7 @@ async issuePuzzleWorkspace() : Promise<Result<PuzzleRootDescriptor, ErrorPayload
 },
 /**
  * Returns the selected puzzle workspace or refuses an unusable selection. With no selection,
- * creates and activates the app-owned default.
+ * creates and activates the visible default.
  */
 async getPuzzleWorkspace() : Promise<Result<PuzzleRootDescriptor, ErrorPayload>> {
     try {
@@ -2207,9 +2219,8 @@ export type FileWorkspaceHandle = { id: PathRef; kind: FileWorkspaceHandleKind }
 export type FileWorkspaceHandleKind = "fileWorkspace"
 /**
  * Folder row status for Settings. Display names are folder leaves; no filesystem path
- * is included. For databases, engines, and puzzles, `is_default` is decided by stored/live
- * identity, never by path spelling. PGN has no default until phase 2, so `is_default` is
- * always false.
+ * is included. `is_default` is decided by stored/live identity against the visible-default
+ * resolver, never by path spelling.
  */
 export type FolderStatus = { displayName: string; isDefault: boolean; rootFailure?: RootFailure | null }
 export type GameAnalysis = { positions: ReportPosition[]; novelty: NoveltyOutcome }

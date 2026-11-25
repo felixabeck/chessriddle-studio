@@ -95,9 +95,10 @@ use crate::infra::operations::{OperationLease, OperationRegistry};
 use crate::feedback::submit_feedback;
 use crate::file_workspace::{
     create_workspace_directory, create_workspace_file, delete_workspace_trash_item,
-    empty_workspace_trash, get_file_folder_status, issue_file_workspace, list_file_workspace,
-    list_workspace_trash, move_workspace_entry, open_file_workspace, rename_workspace_file,
-    restore_workspace_trash_item, trash_workspace_entry, write_workspace_file_metadata,
+    empty_workspace_trash, get_default_file_workspace, get_file_folder_status,
+    issue_file_workspace, list_file_workspace, list_workspace_trash, move_workspace_entry,
+    open_file_workspace, rename_workspace_file, restore_workspace_trash_item,
+    trash_workspace_entry, write_workspace_file_metadata,
 };
 use crate::lexer::lex_pgn;
 use crate::lichess::{
@@ -1572,6 +1573,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             open_engine_workspace,
             open_database_workspace,
             issue_file_workspace,
+            get_default_file_workspace,
             get_file_folder_status,
             open_file_workspace,
             list_file_workspace,
@@ -3214,9 +3216,11 @@ mod tests {
         .expect("pending clear cannot prevent exit");
         assert!(!success);
         assert!(token.borrow().as_ref().unwrap().is_cancelled());
-        assert!(capture.records().iter().any(|record| record
-            .message
-            .contains("catalog install session clear exceeded")));
+        assert!(capture.records().iter().any(|record| {
+            record
+                .message
+                .contains("catalog install session clear exceeded")
+        }));
     }
 
     #[tokio::test]
@@ -3312,7 +3316,10 @@ mod tests {
         )
         .await
         .expect("retained failed game cannot extend process shutdown budget");
-        assert!(!result, "native shutdown must report the production loop's retained failure after supervisor recovery");
+        assert!(
+            !result,
+            "native shutdown must report the production loop's retained failure after supervisor recovery"
+        );
         let key =
             game::game_side_engine_key("retained-native-shutdown", 1, "white", "failed-shutdown")
                 .unwrap();
@@ -4403,7 +4410,10 @@ mod blocking_offload_scans {
             matched,
             "                crate::infra::path_authority::InstanceAdmission::Owned(guard) => {",
         );
-        assert_eq!(owned.trim(), "crate::infra::path_authority::InstanceAdmission::Owned(guard) => {\n                    let app_data_locked = guard.app_data_locked();\n                    app.manage(guard);\n                    app_data_locked");
+        assert_eq!(
+            owned.trim(),
+            "crate::infra::path_authority::InstanceAdmission::Owned(guard) => {\n                    let app_data_locked = guard.app_data_locked();\n                    app.manage(guard);\n                    app_data_locked"
+        );
         let held = body_at_indent(
             matched,
             "                crate::infra::path_authority::InstanceAdmission::HeldElsewhere => {",
@@ -4514,7 +4524,10 @@ mod blocking_offload_scans {
         assert_eq!(setup.matches("MainWindowReveal").count(), 1);
         // The reveal fallback is armed only after the window exists, and before setup reports
         // success; nothing else may slip in between.
-        assert_eq!(setup[window..].trim(), "tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;\n            arm_main_window_reveal_fallback(app.handle().clone());\n\n            log::info!(\"Finished rust initialization\");\n\n            Ok(())");
+        assert_eq!(
+            setup[window..].trim(),
+            "tauri::WebviewWindowBuilder::from_config(app.handle(), main_window)?.build()?;\n            arm_main_window_reveal_fallback(app.handle().clone());\n\n            log::info!(\"Finished rust initialization\");\n\n            Ok(())"
+        );
         assert_eq!(setup.matches("arm_main_window_reveal_fallback(").count(), 1);
     }
 
@@ -4751,6 +4764,10 @@ mod blocking_offload_scans {
             (
                 "pub async fn issue_file_workspace(",
                 "issue_file_workspace_blocking",
+            ),
+            (
+                "pub async fn get_default_file_workspace(",
+                "get_default_file_workspace_blocking",
             ),
             (
                 "pub async fn get_file_folder_status(",
@@ -5077,9 +5094,7 @@ mod blocking_offload_scans {
             "get_players_game_info must diagnose optional progress initialization without failing data delivery: {players_wrapper}"
         );
         assert!(
-            players_wrapper.contains(
-                "get_players_game_info_blocking("
-            ),
+            players_wrapper.contains("get_players_game_info_blocking("),
             "get_players_game_info must forward the JobProgress lease into the blocking call: {players_wrapper}"
         );
         assert!(
@@ -5563,47 +5578,28 @@ mod blocking_offload_scans {
         }
     }
 
-    /// A one-directional "who calls `ensure_app_owned_default_dir`" scan cannot see the swap
-    /// that matters: exchanging `Databases` and `Engines` between the two workspace helpers
-    /// leaves the surface counts unchanged and registers the database root under `engines`.
-    /// So each call site is pinned to its own variant, to the exact parent argument
-    /// it passes (the lazily resolved app-data directory: a residual `.join("db")` would yield
-    /// `<app_data>/db/db`), and to no longer joining its own leaf. The argument is spelled out
-    /// per site. The needle is the fully-qualified variant: three of these bodies already
-    /// contain the bare word as a `display_name` argument.
+    /// Visible defaults go through one resolver. Exchanging `Databases` and `Engines` between
+    /// helpers would still compile, so each call site is pinned to its own
+    /// `VisibleDefaultKind` (or, for engine images, `AppOwnedDefaultRoot::EngineImages`).
     #[test]
     fn app_owned_default_roots_are_pinned_to_their_call_sites() {
         let workspace_commands = include_str!("workspace_commands.rs");
         let puzzle = include_str!("puzzle.rs");
+        let file_workspace = include_str!("file_workspace.rs");
         let workspace_authority = include_str!("infra/path_authority/workspace.rs");
-        let lazy = "&app_data()?,";
-        for (source, name, lookup) in [
-            (
-                workspace_commands,
-                "get_database_workspace",
-                "AppDataDir::for_app(&app)",
-            ),
-            (
-                workspace_commands,
-                "get_engine_workspace",
-                "AppDataDir::for_app(&app)",
-            ),
-            (puzzle, "get_puzzle_workspace", "AppDataDir::for_app(&app)"),
-            (
-                puzzle,
-                "issue_puzzle_download_destination_blocking",
-                "AppDataDir::for_app(&app)",
-            ),
-            (
-                puzzle,
-                "list_puzzle_databases_blocking",
-                "AppDataDir::for_app(app)",
-            ),
+        for (source, name) in [
+            (workspace_commands, "get_database_workspace"),
+            (workspace_commands, "get_engine_workspace"),
+            (puzzle, "get_puzzle_workspace"),
+            (puzzle, "issue_puzzle_download_destination_blocking"),
+            (puzzle, "list_puzzle_databases_blocking"),
+            (file_workspace, "get_default_file_workspace"),
+            (file_workspace, "get_file_folder_status"),
         ] {
             let body = body_at_indent(source, &fn_signature(source, name));
             assert!(
-                body.contains(lookup),
-                "{name} must supply its own app-data lookup: {body}"
+                body.contains("with_app_default_lookups("),
+                "{name} must supply default lookups: {body}"
             );
             assert!(
                 !body.contains(".join("),
@@ -5612,106 +5608,88 @@ mod blocking_offload_scans {
         }
         let bootstrap = body_at_indent(workspace_commands, "fn get_database_workspace_blocking(");
         assert!(
-            bootstrap.contains("let app_data = app_data()?;"),
+            bootstrap.contains("get_default_database_workspace(authority, lookups)"),
             "{bootstrap}"
         );
-        assert!(
-            bootstrap.contains("get_default_database_workspace(authority, &app_data)"),
-            "{bootstrap}"
-        );
-        for (file, source, name, variant, parent, leaf) in [
+        for (file, source, name, variant, leaf) in [
             (
                 "workspace_commands.rs",
                 workspace_commands,
                 "get_default_database_workspace",
-                "AppOwnedDefaultRoot::Databases",
-                "app_data,",
+                "VisibleDefaultKind::Databases",
                 "db",
             ),
             (
                 "workspace_commands.rs",
                 workspace_commands,
                 "get_engine_workspace_blocking",
-                "AppOwnedDefaultRoot::Engines",
-                lazy,
+                "VisibleDefaultKind::Engines",
                 "engines",
-            ),
-            (
-                "workspace_commands.rs",
-                workspace_commands,
-                "issue_engine_image_blocking",
-                "AppOwnedDefaultRoot::EngineImages",
-                "&app_data,",
-                "engine-images",
             ),
             (
                 "puzzle.rs",
                 puzzle,
                 "active_or_default_puzzle_workspace",
-                "AppOwnedDefaultRoot::Puzzles",
-                lazy,
+                "VisibleDefaultKind::Puzzles",
                 "puzzles",
+            ),
+            (
+                "file_workspace.rs",
+                file_workspace,
+                "get_default_file_workspace_blocking",
+                "VisibleDefaultKind::Pgn",
+                "PGN",
             ),
         ] {
             let body = body_at_indent(source, &fn_signature(source, name));
-            let call = "ensure_app_owned_default_dir(";
+            let call = "resolve_visible_default_dir(";
             let call_at = body.find(call).unwrap_or_else(|| {
                 panic!("{file}::{name} must materialise its root through {call}: {body}")
             });
-            let variant_at = body[call_at..]
-                .find(variant)
-                .map(|offset| call_at + offset)
-                .unwrap_or_else(|| panic!("{file}::{name} must pass {variant}: {body}"));
-            // The variant is written path-qualified at the call sites, so the argument ends at
-            // the last comma before it rather than at the needle itself.
-            let between = &body[call_at + call.len()..variant_at];
-            let comma = between
-                .rfind(',')
-                .unwrap_or_else(|| panic!("{file}::{name} must pass {variant} second: {body}"));
-            let argument: String = between[..=comma].split_whitespace().collect();
-            assert_eq!(
-                argument, parent,
-                "{file}::{name} must pass its app-data directory as {parent}: {body}"
+            assert!(
+                body[call_at..].contains(variant),
+                "{file}::{name} must pass {variant}: {body}"
             );
             let quoted = format!("{leaf:?}");
-            assert!(
-                !body.contains(&quoted),
-                "{file}::{name} must not join {quoted} itself: {body}"
-            );
+            // PGN passes "PGN" as the display-name argument (it has no legacy app-data leaf to join).
+            if name != "get_default_file_workspace_blocking" {
+                assert!(
+                    !body.contains(&quoted),
+                    "{file}::{name} must not join {quoted} itself: {body}"
+                );
+            }
         }
 
+        let image = body_at_indent(
+            workspace_commands,
+            &fn_signature(workspace_commands, "issue_engine_image_blocking"),
+        );
+        let image_call = "ensure_app_owned_default_dir(";
+        let image_at = image.find(image_call).unwrap_or_else(|| {
+            panic!("issue_engine_image_blocking must materialise engine images through {image_call}: {image}")
+        });
+        assert!(
+            image[image_at..].contains("AppOwnedDefaultRoot::EngineImages"),
+            "issue_engine_image_blocking must pass EngineImages: {image}"
+        );
+        assert!(
+            !image.contains("\"engine-images\""),
+            "issue_engine_image_blocking must not join engine-images itself: {image}"
+        );
+
         let open_default = body_at_indent(workspace_authority, "fn kind_folder_open_path(");
-        let open_call = "ensure_app_owned_default_dir(";
+        let open_call = "resolve_visible_default_dir(";
         let open_at = open_default.find(open_call).unwrap_or_else(|| {
             panic!("kind_folder_open_path must materialise its root through {open_call}: {open_default}")
         });
         assert!(
             open_default[open_at..].contains("default_kind"),
-            "kind_folder_open_path must pass the kind parameter to ensure: {open_default}"
-        );
-        let open_between = {
-            let variant_at = open_default[open_at..]
-                .find("default_kind")
-                .map(|offset| open_at + offset)
-                .unwrap();
-            &open_default[open_at + open_call.len()..variant_at]
-        };
-        let open_argument: String = open_between[..=open_between
-            .rfind(',')
-            .expect("kind_folder_open_path parent argument")]
-            .split_whitespace()
-            .collect();
-        assert_eq!(
-            open_argument, lazy,
-            "kind_folder_open_path must pass its app-data directory as {lazy}: {open_default}"
+            "kind_folder_open_path must pass the kind parameter to the resolver: {open_default}"
         );
         for (name, variant) in [
-            (
-                "database_folder_open_path",
-                "AppOwnedDefaultRoot::Databases",
-            ),
-            ("engine_folder_open_path", "AppOwnedDefaultRoot::Engines"),
-            ("puzzle_folder_open_path", "AppOwnedDefaultRoot::Puzzles"),
+            ("database_folder_open_path", "VisibleDefaultKind::Databases"),
+            ("engine_folder_open_path", "VisibleDefaultKind::Engines"),
+            ("puzzle_folder_open_path", "VisibleDefaultKind::Puzzles"),
         ] {
             let body = body_at_indent(workspace_authority, &format!("fn {name}("));
             assert!(body.contains(variant), "{name} must pass {variant}: {body}");
@@ -5738,6 +5716,12 @@ mod blocking_offload_scans {
                 puzzle,
                 "active_or_default_puzzle_workspace",
                 "get_or_create_puzzle_root(",
+            ),
+            (
+                "file_workspace.rs",
+                file_workspace,
+                "get_default_file_workspace_blocking",
+                "get_or_create_file_workspace_root(",
             ),
         ] {
             let body = body_at_indent(source, &fn_signature(source, name));
