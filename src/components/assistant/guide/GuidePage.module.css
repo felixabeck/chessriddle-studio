@@ -2,13 +2,15 @@
   padding-bottom: var(--mantine-spacing-md);
 }
 
-/* The card hugs the capped reading column instead of stretching across wide windows. */
+/* The card hugs the capped reading column and sits centred in the free space instead of
+   stretching across wide windows. 80ch of digits is about 95 characters of running text. */
 .guideCard {
-  max-width: calc(72ch + 2 * var(--mantine-spacing-lg) + 2px);
+  max-width: calc(80ch + 2 * var(--mantine-spacing-lg) + 2px);
+  margin-inline: auto;
 }
 
 .panelInner {
-  max-width: 72ch;
+  max-width: 80ch;
   width: 100%;
 }
 

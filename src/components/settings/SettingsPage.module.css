@@ -1,3 +1,10 @@
+/* A setting's label and its control stay within one glance: the page column is capped and
+   centred in the free space instead of spreading rows across wide windows. */
+.panel {
+  max-width: 56rem;
+  margin-inline: auto;
+}
+
 .card input {
   text-overflow: ellipsis;
 }
@@ -54,7 +61,8 @@
   font-weight: 500;
 }
 
-/* Wide Shortcuts cards are separate tables; a shared 50% first column lines the Key column up. */
+/* Wide Shortcuts cards are separate tables; a shared 50% first column lines them up. The key
+   sits at the right edge like every other setting's control. */
 .keybindTable {
   table-layout: fixed;
   width: 100%;
@@ -63,6 +71,16 @@
 .keybindTable th:first-child,
 .keybindTable td:first-child {
   width: 50%;
+}
+
+.keybindTable th:last-child,
+.keybindTable td:last-child {
+  text-align: end;
+}
+
+/* The drawing table's keycaps are a flex row, which text-align does not move. */
+.keybindTable td:last-child > :global(.mantine-Group-root) {
+  justify-content: flex-end;
 }
 
 .title {
@@ -123,6 +141,16 @@
   .keybindTable th:first-child,
   .keybindTable td:first-child {
     width: 100%;
+  }
+
+  /* Stacked keycaps start under their label, like every other compact row. */
+  .keybindTable th:last-child,
+  .keybindTable td:last-child {
+    text-align: start;
+  }
+
+  .keybindTable td:last-child > :global(.mantine-Group-root) {
+    justify-content: flex-start;
   }
 
   :global(.mantine-Table-tr) {

@@ -855,7 +855,7 @@ export default function Page() {
       </Group>
       {filteredSettings ? (
         <ScrollArea flex={1} px="md">
-          {renderSearchResults()}
+          <div className={classes.panel}>{renderSearchResults()}</div>
           <Text size="xs" c="dimmed" ta="right" py="md">
             {t("Settings.Version", { version })}
           </Text>
@@ -894,7 +894,7 @@ export default function Page() {
                 );
                 const isKeybinds = category === "keybinds";
                 return (
-                  <Tabs.Panel key={category} value={category}>
+                  <Tabs.Panel key={category} value={category} className={classes.panel}>
                     {isKeybinds ? (
                       <Group>
                         {title}
