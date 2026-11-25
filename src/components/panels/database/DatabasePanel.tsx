@@ -101,6 +101,11 @@ function isOnlineSource(value: string | null): value is ExplorerOnlineSource {
 
 /** The height of the sources' size "sm" select, so a titled source lines up with a selectable one. */
 const SOURCE_SELECT_HEIGHT = 36;
+/**
+ * The cap on the open source list: room for a handful of databases plus the two Lichess sources
+ * below them, which Mantine's 220 px default cut off; a longer list still scrolls.
+ */
+const SOURCE_LIST_MAX_HEIGHT = 420;
 
 /** Follows a linked collection that publishes a new database in place of `selected`. */
 function useCollectionDatabase(
@@ -466,6 +471,7 @@ function DatabasePanel() {
       flex={1}
       miw={0}
       allowDeselect={false}
+      maxDropdownHeight={SOURCE_LIST_MAX_HEIGHT}
     />
   );
 
