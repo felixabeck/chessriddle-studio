@@ -7,9 +7,16 @@
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
+  /* One centred column: the page column (global.css), widened to fit the action row in one
+     line when its labels are longer (German), and never wider than the tab. */
+  display: grid;
+  grid-template-columns: minmax(min(100%, var(--cf-page-column)), max-content);
+  /* The Card clips its overflow, so a bare 1fr row could shrink it below its content. */
+  grid-template-rows: auto minmax(min-content, 1fr);
+  justify-content: center;
+  row-gap: var(--mantine-spacing-md);
 }
 .actions {
-  flex-shrink: 0;
   column-gap: calc(2 * var(--mantine-spacing-md));
 }
 .actions > div {
@@ -27,11 +34,12 @@
   text-align: start;
 }
 .library {
+  /* Only the action row sizes the column; long file names wrap or truncate inside it. */
+  contain: inline-size;
   padding: var(--mantine-spacing-md);
   overflow-wrap: anywhere;
   min-width: 0;
   min-height: 20rem;
-  flex: 1 0 auto;
 }
 .list {
   flex: 1;

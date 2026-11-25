@@ -59,6 +59,13 @@ line up. Card pages keep the same `md` margin to the window edge, and neighbouri
 columns start at the same height. Compact tiles inside a panel or card, and the
 resizable board and database workspaces, may use a smaller gap.
 
+Single-column pages whose rows pair a label with a value or control (Settings, New Tab) centre
+their content in a column of `--cf-page-column` (60rem, `src/styles/global.css`), so the two ends
+of a row stay within one glance on wide windows. New Tab widens that column only as far as its
+action row needs to stay on one line (longer labels, such as German). The Guide caps its prose
+by line length (80ch) instead. Two-pane pages (Library, Engines) and the board keep the full
+width.
+
 ## Typography and radii
 
 Inter is the sans and heading family. JetBrains Mono is for notation, logs and

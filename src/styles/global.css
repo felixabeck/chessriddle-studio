@@ -96,8 +96,11 @@ cg-board square.oc.move-dest:hover {
   text-align: center;
 }
 
-/* The ring reaches width + offset beyond its box; clipping containers reserve that extent. */
 :root {
+  /* Width of the centred content column on full pages (Settings, New Tab), so a row's label
+     and its value stay within one glance on wide windows. */
+  --cf-page-column: 60rem;
+  /* The ring reaches width + offset beyond its box; clipping containers reserve that extent. */
   --cf-focus-ring-width: 3px;
   --cf-focus-ring-offset: 3px;
   /* Gold hover tint for menu items, options and the application-menu button. A selected

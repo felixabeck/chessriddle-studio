@@ -636,7 +636,7 @@ export default function NewTabHome({ id }: { id: string }) {
         setTabs={setTabs}
       />
       <CreateRepertoireModal opened={openRepertoireModal} setOpened={setOpenRepertoireModal} />
-      <Stack gap="md" className={classes.home}>
+      <Box className={classes.home}>
         <Group gap="md" className={classes.actions} data-home-actions>
           {actionGroups.map((group, index) => (
             <Group gap="md" key={index}>
@@ -828,7 +828,7 @@ export default function NewTabHome({ id }: { id: string }) {
             </Button>
           </Stack>
         </Card>
-      </Stack>
+      </Box>
     </>
   );
 }

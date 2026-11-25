@@ -1,7 +1,7 @@
 /* A setting's label and its control stay within one glance: the page column is capped and
    centred in the free space instead of spreading rows across wide windows. */
 .panel {
-  max-width: 56rem;
+  max-width: var(--cf-page-column);
   margin-inline: auto;
 }
 
