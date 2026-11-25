@@ -29275,7 +29275,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### The "All records per page" build-ledger row fails the ledger format check
 
-* **ID:** f-20261125-11 · **Status:** open · **Area:** docs-agent-config · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-11 · **Status:** handled · **Area:** docs-agent-config · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45593590523
 * **First red:** run 45593590523 on `4b106cb7a` (the push that added the row; the previous Test run 45588162516 on `8e30bfd2e` was green, and run 45593539074 on `ddc548e02` was still in progress when filed)
@@ -29287,3 +29287,6 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Fix:** write `not-recorded` in that cell; the row's meaning is unchanged.
 * **Proof:** `pnpm gates:contract:check` green; the next `Test` run's `frontend` job succeeds.
 * **Found by:** Claude Code (Opus 5.5), Dim theme push, 2026-11-25
+
+2026-11-25, `bc5d2b801` writes `not-recorded` in `plan_adopted_per_round` of `tasks/build-ledger.md:379`; the rest of the row is unchanged. Proof: `./scripts/findings.py check` ok and `pnpm gates:push -- --frontend` contract lane green on the tree that carries the repair; CI confirmation comes with the next Test run.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"9cc74c4ee1e6ab77b77eb44a0b13186b9bec6d9e73d5d47a98b48fb33c0705c1","header_sha256":"c381a9bbf9a5daff9bc3b841f6a1dc116f1747d92c48e4a6e09ed6472c4c35fc","header_status":"handled","input_sha256":"0922a350ef41263d44d01aa0e0164579ffb0ea4cb46cbdc5b7113f0d4d5b1d44","kind":"mutation-receipt","operation":"a961a8f52f36da3d227c9bb8d828af7622c933334b00e950834b72f166c3c9f6","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-11"],"target":"f-20261125-11","v":1} -->
