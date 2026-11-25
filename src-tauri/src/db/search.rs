@@ -4370,13 +4370,22 @@ mod batch_tests {
             }
         }
 
+        // Measured legitimate working memory for 1,984 unreached positions is 1,557,104 B
+        // (~785 B/position, filtered) and 1,622,183 B (~818 B/position, unfiltered) for
+        // fens, input_keys, unique, misses, queries and ReplayQueries.
+        const LEGIT_BATCH_BYTES_PER_POSITION: usize = 1_024;
+        // Measured live_at_end for 1,984 unreached filtered positions is 157,792 B
+        // (~80 B/position for PositionStatsForFen { fen, openings: Vec::new() }).
+        const RESULT_BYTES_PER_POSITION: usize = 256;
+
         let (single_map, single_table_bytes) =
             super::super::allocation_probe::measure(DashMap::<String, PositionStats>::new);
         drop(single_map);
-        let per_position_table_bytes = single_table_bytes * unreached.len();
-        let threshold = per_position_table_bytes / 2;
+        let pre_change_bytes =
+            unreached.len() * (LEGIT_BATCH_BYTES_PER_POSITION + single_table_bytes);
+        let threshold = unreached.len() * (LEGIT_BATCH_BYTES_PER_POSITION + single_table_bytes / 2);
         super::super::allocation_probe::assert_detects_owned_collection(
-            per_position_table_bytes,
+            pre_change_bytes,
             threshold,
         );
 
@@ -4393,19 +4402,31 @@ mod batch_tests {
             None,
         ] {
             state.search_cache.clear();
-            let (result, peak) = pool.install(|| {
-                super::super::allocation_probe::measure(|| {
+            let (result, measurement) = pool.install(|| {
+                super::super::allocation_probe::measure_with_live(|| {
                     run_batch_filtered(&app, &handle, &unreached, filter.clone(), &token)
                 })
             });
             let result = result.unwrap();
             assert_eq!(result.len(), unreached.len());
             assert!(result.iter().all(|item| item.openings.is_empty()));
+            let working_memory = measurement.working_memory();
             assert!(
-                peak < threshold,
-                "batch peak {peak} bytes for {} unreached positions (filter={filter:?}) exceeded half of per-position DashMap cost ({per_position_table_bytes} bytes, single={single_table_bytes})",
+                working_memory < threshold,
+                "batch working memory {working_memory} bytes (peak {}, live_at_end {}) for {} unreached positions (filter={filter:?}) exceeded threshold {threshold} (single={single_table_bytes})",
+                measurement.peak,
+                measurement.live_at_end,
                 unreached.len()
             );
+            if filter.is_some() {
+                let retained_bound = unreached.len() * RESULT_BYTES_PER_POSITION;
+                assert!(
+                    measurement.live_at_end < retained_bound,
+                    "filtered batch retained {} bytes for {} unreached positions, exceeding {retained_bound}",
+                    measurement.live_at_end,
+                    unreached.len()
+                );
+            }
         }
     }
 

@@ -95,7 +95,19 @@ impl Drop for ResetOnDrop {
     }
 }
 
-pub(crate) fn measure<R>(operation: impl FnOnce() -> R) -> (R, usize) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AllocationMeasurement {
+    pub peak: usize,
+    pub live_at_end: usize,
+}
+
+impl AllocationMeasurement {
+    pub(crate) fn working_memory(self) -> usize {
+        self.peak.saturating_sub(self.live_at_end)
+    }
+}
+
+pub(crate) fn measure_with_live<R>(operation: impl FnOnce() -> R) -> (R, AllocationMeasurement) {
     ENABLED.with(|enabled| {
         assert!(!enabled.replace(true), "allocation probe cannot be nested");
     });
@@ -104,9 +116,17 @@ pub(crate) fn measure<R>(operation: impl FnOnce() -> R) -> (R, usize) {
     let reset = ResetOnDrop;
     let result = operation();
     ENABLED.with(|enabled| enabled.set(false));
-    let peak = PEAK.with(Cell::get);
+    let measurement = AllocationMeasurement {
+        peak: PEAK.with(Cell::get),
+        live_at_end: CURRENT.with(Cell::get),
+    };
     drop(reset);
-    (result, peak)
+    (result, measurement)
+}
+
+pub(crate) fn measure<R>(operation: impl FnOnce() -> R) -> (R, usize) {
+    let (result, measurement) = measure_with_live(operation);
+    (result, measurement.peak)
 }
 
 pub(crate) fn assert_detects_owned_collection(bytes: usize, threshold: usize) -> usize {
@@ -117,4 +137,49 @@ pub(crate) fn assert_detects_owned_collection(bytes: usize, threshold: usize) ->
         "probe sanity check peak {peak} did not exceed threshold {threshold}"
     );
     peak
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn measure_with_live_separates_retained_bytes_from_working_memory() {
+        const RETAINED: usize = 256 * 1024;
+        const TRANSIENT: usize = 64 * 1024;
+
+        let (kept, measurement) = measure_with_live(|| {
+            let retained = std::hint::black_box(vec![1_u8; RETAINED]);
+            let transient = std::hint::black_box(vec![2_u8; TRANSIENT]);
+            drop(transient);
+            retained
+        });
+        assert_eq!(kept.len(), RETAINED);
+        assert!(
+            measurement.live_at_end >= RETAINED,
+            "live_at_end {} should include retained {RETAINED}",
+            measurement.live_at_end
+        );
+        assert!(
+            measurement.live_at_end < RETAINED + TRANSIENT,
+            "live_at_end {} should exclude dropped transient {TRANSIENT}",
+            measurement.live_at_end
+        );
+        assert!(
+            measurement.peak >= RETAINED + TRANSIENT,
+            "peak {} should include retained + transient",
+            measurement.peak
+        );
+        assert!(
+            measurement.working_memory() >= TRANSIENT,
+            "working_memory {} should include transient {TRANSIENT}",
+            measurement.working_memory()
+        );
+        assert!(
+            measurement.working_memory() < RETAINED,
+            "working_memory {} should exclude retained {RETAINED} (peak {})",
+            measurement.working_memory(),
+            measurement.peak
+        );
+    }
 }
