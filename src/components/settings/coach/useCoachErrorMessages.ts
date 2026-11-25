@@ -34,6 +34,7 @@ export function useCoachErrorMessages(): Record<CoachError, string> {
             signInFailed: t("Coach.Error.SignInFailed"),
             subscriptionNotEligible: t("Coach.Error.SubscriptionNotEligible"),
             usageLimitReached: t("Coach.Error.UsageLimitReached"),
+            creditsExhausted: t("Coach.Error.CreditsExhausted"),
         }),
         [t],
     );

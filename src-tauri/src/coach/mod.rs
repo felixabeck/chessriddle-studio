@@ -751,7 +751,9 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<Coach, CoachError> {
             worker_credentials.initialize(&data)
         },
     ))
-    .map_err(|_| CoachError::Storage)?;
+    .map_err(connections::storage_failure(
+        "opening the connection registry",
+    ))?;
     Coach::new(available_for(&identifier), credentials)
 }
 

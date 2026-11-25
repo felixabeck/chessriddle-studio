@@ -68,7 +68,27 @@ pub(crate) struct ChatGptSecret {
     pub email: Option<String>,
 }
 
+/// A keyring or registry failure. Its cause goes to the native log; the renderer sees `Storage`.
+pub(crate) fn storage_failure(
+    action: &'static str,
+) -> impl FnOnce(crate::error::Error) -> CoachError {
+    move |error| {
+        // `Debug`, not `Display`: the display text of a credential failure leaves its cause out.
+        log::warn!("coach: {action} failed: {error:?}");
+        CoachError::Storage
+    }
+}
+
 impl Secret {
+    /// The connection kind, for the native log.
+    fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Api { .. } => "address",
+            Self::ChatGpt(_) => "ChatGPT",
+            Self::Grok(_) => "Grok",
+        }
+    }
+
     /// The refresh token of a sign-in; `None` for an address, and for a sign-in that has ended.
     fn refresh_token_mut(&mut self) -> Option<&mut Option<String>> {
         match self {
@@ -79,8 +99,16 @@ impl Secret {
     }
 
     fn encode(&self) -> Result<String, CoachError> {
-        let encoded = serde_json::to_string(self).map_err(|_| CoachError::Storage)?;
-        if encoded.encode_utf16().count() > MAX_KEYRING_SECRET_UTF16_UNITS {
+        let encoded = serde_json::to_string(self).map_err(|error| {
+            log::warn!("coach: a connection's secret could not be encoded: {error}");
+            CoachError::Storage
+        })?;
+        let units = encoded.encode_utf16().count();
+        if units > MAX_KEYRING_SECRET_UTF16_UNITS {
+            log::warn!(
+                "coach: a {} secret of {units} UTF-16 units exceeds the keyring limit of {MAX_KEYRING_SECRET_UTF16_UNITS}",
+                self.kind_name()
+            );
             return Err(CoachError::Storage);
         }
         Ok(encoded)
@@ -260,7 +288,7 @@ impl Connections {
             .credentials
             .list()
             .await
-            .map_err(|_| CoachError::Storage)?
+            .map_err(storage_failure("reading the connection registry"))?
             .into_iter()
             .any(|account| account.handle == handle);
         if !known {
@@ -280,7 +308,7 @@ impl Connections {
         match self.credentials.token(handle).await {
             Ok(stored) => Ok(stored.as_deref().and_then(Secret::decode)),
             Err(error) => {
-                log::warn!("coach: a connection's keyring entry could not be read: {error}");
+                log::warn!("coach: a connection's keyring entry could not be read: {error:?}");
                 Err(CoachError::Storage)
             }
         }
@@ -292,7 +320,7 @@ impl Connections {
             .credentials
             .list()
             .await
-            .map_err(|_| CoachError::Storage)?;
+            .map_err(storage_failure("reading the connection registry"))?;
         Ok(!accounts.is_empty())
     }
 
@@ -301,7 +329,7 @@ impl Connections {
             .credentials
             .list()
             .await
-            .map_err(|_| CoachError::Storage)?;
+            .map_err(storage_failure("reading the connection registry"))?;
         let mut connections = Vec::with_capacity(accounts.len());
         for account in accounts {
             // One connection that cannot be read must not hide the others: it is listed by its
@@ -335,7 +363,7 @@ impl Connections {
                     .credentials
                     .list()
                     .await
-                    .map_err(|_| CoachError::Storage)?;
+                    .map_err(storage_failure("reading the connection registry"))?;
                 if existing.len() >= MAX_CONNECTIONS {
                     return Err(CoachError::TooManyConnections);
                 }
@@ -347,7 +375,7 @@ impl Connections {
                     .credentials
                     .store(label, secret.encode()?)
                     .await
-                    .map_err(|_| CoachError::Storage)?;
+                    .map_err(storage_failure("storing a new connection in the keyring"))?;
                 Ok(ConnectionSaved {
                     connection: summary(account.handle, account.username, &secret),
                     durability_uncertain,
@@ -389,7 +417,7 @@ impl Connections {
                     .credentials
                     .update(handle.clone(), label.clone(), secret.encode()?)
                     .await
-                    .map_err(|_| CoachError::Storage)?;
+                    .map_err(storage_failure("updating a connection in the keyring"))?;
                 Ok(ConnectionSaved {
                     connection: summary(handle, label, &secret),
                     durability_uncertain,
@@ -406,7 +434,7 @@ impl Connections {
             .credentials
             .remove(handle)
             .await
-            .map_err(|_| CoachError::Storage)?
+            .map_err(storage_failure("removing a connection"))?
             .ok_or(CoachError::NotFound)?;
         Ok(ConnectionRemoved {
             durability_uncertain: removed.durability_uncertain,
@@ -425,7 +453,7 @@ impl Connections {
             .credentials
             .list()
             .await
-            .map_err(|_| CoachError::Storage)?;
+            .map_err(storage_failure("reading the connection registry"))?;
         for account in accounts {
             let found = self
                 .stored_secret(account.handle.clone())
@@ -475,7 +503,7 @@ impl Connections {
                     .credentials
                     .update(handle.clone(), label.to_owned(), encoded)
                     .await
-                    .map_err(|_| CoachError::Storage)?;
+                    .map_err(storage_failure("updating a sign-in in the keyring"))?;
                 (handle, uncertain)
             }
             None => {
@@ -483,7 +511,7 @@ impl Connections {
                     .credentials
                     .list()
                     .await
-                    .map_err(|_| CoachError::Storage)?
+                    .map_err(storage_failure("reading the connection registry"))?
                     .len();
                 if count >= MAX_CONNECTIONS {
                     return Err(CoachError::TooManyConnections);
@@ -492,7 +520,7 @@ impl Connections {
                     .credentials
                     .store(label.to_owned(), encoded)
                     .await
-                    .map_err(|_| CoachError::Storage)?;
+                    .map_err(storage_failure("storing a new sign-in in the keyring"))?;
                 (account.handle, uncertain)
             }
         };
@@ -535,7 +563,7 @@ impl Connections {
         self.credentials
             .replace(handle, secret.encode()?)
             .await
-            .map_err(|_| CoachError::Storage)
+            .map_err(storage_failure("replacing a refresh token in the keyring"))
     }
 }
 
@@ -543,6 +571,30 @@ impl Connections {
 mod tests {
     use super::*;
     use crate::credentials::{CredentialStore, MemoryCredentialStore};
+
+    #[test]
+    fn a_storage_failure_logs_its_cause() {
+        let capture = crate::error::LogCaptureScope::start();
+        let error = storage_failure("storing a new sign-in in the keyring")(
+            crate::error::Error::CredentialFailure("org.freedesktop.Secret: locked".into()),
+        );
+        assert_eq!(error, CoachError::Storage);
+        let oversized = Secret::Grok(GrokSecret {
+            token_endpoint: "https://auth.x.ai/token".into(),
+            refresh_token: Some("r".repeat(MAX_KEYRING_SECRET_UTF16_UNITS)),
+            email: None,
+        });
+        assert_eq!(oversized.encode().err(), Some(CoachError::Storage));
+        let messages = capture.messages();
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("storing a new sign-in")
+                && message.contains("org.freedesktop.Secret: locked")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("Grok secret")
+                && message.contains("exceeds the keyring limit")));
+    }
 
     fn connections() -> (Connections, Arc<MemoryCredentialStore>, tempfile::TempDir) {
         let store = Arc::new(MemoryCredentialStore::default());

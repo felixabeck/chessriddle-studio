@@ -428,6 +428,7 @@
     "Coach.Error.Busy": "Il Coach è ancora occupato. Riprova tra un momento.",
     "Coach.Error.Cancelled": "Interrotto.",
     "Coach.Error.ContentFiltered": "Il servizio ha trattenuto la risposta.",
+    "Coach.Error.CreditsExhausted": "Questo account ha esaurito i crediti. Aggiungi crediti o passa a un piano superiore sul sito del fornitore.",
     "Coach.Error.EffortRejected": "Il servizio non accetta questo livello di impegno per il modello. Scegli un altro livello.",
     "Coach.Error.EngineFailed": "Il motore non ha dato un risultato. Controlla nelle impostazioni il motore scelto per il Coach.",
     "Coach.Error.InvalidAddressCredentials": "L’indirizzo non deve contenere nome utente o password.",

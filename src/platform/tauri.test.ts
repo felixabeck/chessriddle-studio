@@ -260,6 +260,7 @@ test.each([
         "signInFailed",
         "subscriptionNotEligible",
         "usageLimitReached",
+        "creditsExhausted",
     ]) {
         mocks[command].mockResolvedValue({ status: "error", error: code });
         await expect(invoke()).rejects.toMatchObject({ name: "CoachCommandError", code });

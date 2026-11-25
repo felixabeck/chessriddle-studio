@@ -44,7 +44,7 @@ const TOOL_NAMESPACE: &str = "chess";
 pub(crate) enum PlanProvider {
     /// Tools grouped in one namespace; a refusal names what it is about by its code.
     ChatGpt,
-    /// Each tool on its own, at the top level; every 403 is about the subscription.
+    /// Each tool on its own, at the top level; every 403 is about the subscription or its credits.
     Grok,
 }
 
@@ -211,6 +211,10 @@ pub(crate) fn classify_plan_refusal(
     let error = classify_code(code).unwrap_or_else(|| match status {
         // The token itself was accepted as fresh a moment ago: this is no "sign in again".
         401 => CoachError::ProviderFailure,
+        // Grok answers an account without credits with the same 403 and only says so in words.
+        403 if provider == PlanProvider::Grok && message.to_lowercase().contains("credits") => {
+            CoachError::CreditsExhausted
+        }
         // Signed in, but this account, plan or region may not use the plan from other apps.
         403 if code.is_empty() || provider == PlanProvider::Grok => {
             CoachError::SubscriptionNotEligible
@@ -672,7 +676,7 @@ mod tests {
         assert_eq!(body["store"], false);
         assert!(body.get("reasoning").is_none());
 
-        // Whatever a 403 names, on this route it is about the subscription.
+        // Whatever a 403 names, on this route it is about the subscription or its credits.
         for body in [
             json!({ "code": "permission_denied", "error": "no access" }),
             json!({ "error": { "code": "forbidden", "message": "no access" } }),
@@ -958,6 +962,25 @@ mod tests {
             RoundFailure::new(CoachError::SignInAgain)
         );
         assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_grok_account_without_credits_is_told_apart_from_an_ineligible_one() {
+        let refusal = |message: &str| {
+            let body = json!({ "error": message }).to_string();
+            classify_plan_refusal(PlanProvider::Grok, 403, body.as_bytes(), false).0
+        };
+        assert_eq!(
+            refusal("You have run out of credits or need a Grok subscription. Add credits at https://grok.com/?_s=usage or upgrade at https://grok.com/supergrok."),
+            CoachError::CreditsExhausted
+        );
+        assert_eq!(refusal("forbidden"), CoachError::SubscriptionNotEligible);
+        // Only Grok says it in words; another provider's 403 keeps its meaning.
+        let body = json!({ "error": "You have run out of credits" }).to_string();
+        assert_eq!(
+            classify_plan_refusal(PlanProvider::ChatGpt, 403, body.as_bytes(), false).0,
+            CoachError::SubscriptionNotEligible
+        );
     }
 
     #[tokio::test]

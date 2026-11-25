@@ -432,6 +432,7 @@
     "Coach.Error.Busy": "Coach ещё занят. Повторите попытку через мгновение.",
     "Coach.Error.Cancelled": "Остановлено.",
     "Coach.Error.ContentFiltered": "Сервис не выдал ответ.",
+    "Coach.Error.CreditsExhausted": "На этом аккаунте закончились кредиты. Пополните кредиты или повысьте тариф на сайте провайдера.",
     "Coach.Error.EffortRejected": "Сервис не принимает этот уровень усилий для модели. Выберите другой уровень.",
     "Coach.Error.EngineFailed": "Движок не дал результата. Проверьте в настройках движок, выбранный для Coach.",
     "Coach.Error.InvalidAddressCredentials": "Адрес не должен содержать имя пользователя или пароль.",

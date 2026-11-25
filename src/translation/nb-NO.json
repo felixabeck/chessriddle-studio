@@ -424,6 +424,7 @@
     "Coach.Error.Busy": "Coach er fortsatt opptatt. Prøv igjen om et øyeblikk.",
     "Coach.Error.Cancelled": "Stoppet.",
     "Coach.Error.ContentFiltered": "Tjenesten holdt tilbake svaret.",
+    "Coach.Error.CreditsExhausted": "Denne kontoen er tom for kreditter. Kjøp flere kreditter eller oppgrader abonnementet på leverandørens nettsted.",
     "Coach.Error.EffortRejected": "Tjenesten godtar ikke dette innsatsnivået for modellen. Velg et annet nivå.",
     "Coach.Error.EngineFailed": "Motoren ga ikke noe resultat. Kontroller motoren som er valgt for Coach i innstillingene.",
     "Coach.Error.InvalidAddressCredentials": "Adressen kan ikke inneholde brukernavn eller passord.",

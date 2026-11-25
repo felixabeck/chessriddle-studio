@@ -424,6 +424,7 @@
     "Coach.Error.Busy": "The Coach is still busy. Try again in a moment.",
     "Coach.Error.Cancelled": "Stopped.",
     "Coach.Error.ContentFiltered": "The service withheld the answer.",
+    "Coach.Error.CreditsExhausted": "This account has run out of credits. Add credits or upgrade the plan on the provider's website.",
     "Coach.Error.EffortRejected": "The service does not accept this effort level for the model. Choose another level.",
     "Coach.Error.EngineFailed": "The engine did not give a result. Check the engine chosen for the Coach in the settings.",
     "Coach.Error.InvalidAddressCredentials": "The address must not contain a user name or password.",

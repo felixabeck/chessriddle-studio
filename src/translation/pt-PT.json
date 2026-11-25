@@ -428,6 +428,7 @@
     "Coach.Error.Busy": "O Coach ainda está ocupado. Tente novamente dentro de momentos.",
     "Coach.Error.Cancelled": "Parado.",
     "Coach.Error.ContentFiltered": "O serviço reteve a resposta.",
+    "Coach.Error.CreditsExhausted": "Esta conta ficou sem créditos. Adicione créditos ou melhore o plano no site do fornecedor.",
     "Coach.Error.EffortRejected": "O serviço não aceita este nível de esforço para o modelo. Escolha outro nível.",
     "Coach.Error.EngineFailed": "O motor não deu nenhum resultado. Verifique nas definições o motor escolhido para o Coach.",
     "Coach.Error.InvalidAddressCredentials": "O endereço não pode conter nome de utilizador nem palavra-passe.",

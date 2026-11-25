@@ -428,6 +428,7 @@
     "Coach.Error.Busy": "Le Coach est encore occupé. Réessayez dans un instant.",
     "Coach.Error.Cancelled": "Arrêté.",
     "Coach.Error.ContentFiltered": "Le service a retenu la réponse.",
+    "Coach.Error.CreditsExhausted": "Ce compte n’a plus de crédits. Ajoutez des crédits ou passez à une offre supérieure sur le site du fournisseur.",
     "Coach.Error.EffortRejected": "Le service n’accepte pas ce niveau d’effort pour le modèle. Choisissez un autre niveau.",
     "Coach.Error.EngineFailed": "Le moteur n’a donné aucun résultat. Vérifiez dans les paramètres le moteur choisi pour le Coach.",
     "Coach.Error.InvalidAddressCredentials": "L’adresse ne doit contenir ni nom d’utilisateur ni mot de passe.",

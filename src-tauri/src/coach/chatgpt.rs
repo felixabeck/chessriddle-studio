@@ -377,10 +377,9 @@ impl ChatGpt {
             .chatgpt()
             .await?
             .map(|(_, secret)| secret.client_id);
-        let host = credentials
-            .installation_id(HOST_ID_FILE)
-            .await
-            .map_err(|_| CoachError::Storage)?;
+        let host = credentials.installation_id(HOST_ID_FILE).await.map_err(
+            super::connections::storage_failure("reading the installation id"),
+        )?;
         let host = format!("urn:uuid:{host}");
         let nonce = CsrfToken::new_random().secret().clone();
         let mut extra_params = vec![

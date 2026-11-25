@@ -424,6 +424,7 @@
     "Coach.Error.Busy": "Der Coach ist noch beschäftigt. Versuche es gleich noch einmal.",
     "Coach.Error.Cancelled": "Gestoppt.",
     "Coach.Error.ContentFiltered": "Der Dienst hat die Antwort zurückgehalten.",
+    "Coach.Error.CreditsExhausted": "Dieses Konto hat kein Guthaben mehr. Lade Guthaben auf oder erweitere den Tarif auf der Website des Anbieters.",
     "Coach.Error.EffortRejected": "Der Dienst akzeptiert diese Aufwandsstufe für das Modell nicht. Wähle eine andere Stufe.",
     "Coach.Error.EngineFailed": "Die Engine hat kein Ergebnis geliefert. Prüfe in den Einstellungen die Engine, die für den Coach gewählt ist.",
     "Coach.Error.InvalidAddressCredentials": "Die Adresse darf keinen Benutzernamen und kein Passwort enthalten.",

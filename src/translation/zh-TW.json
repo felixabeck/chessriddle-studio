@@ -420,6 +420,7 @@
     "Coach.Error.Busy": "Coach 仍在忙碌。請稍後重試。",
     "Coach.Error.Cancelled": "已停止。",
     "Coach.Error.ContentFiltered": "服務攔截了該回答。",
+    "Coach.Error.CreditsExhausted": "此帳戶的額度已用完。請在服務商網站上加值額度或升級方案。",
     "Coach.Error.EffortRejected": "該服務不接受此模型使用這個推理強度。請選擇其他等級。",
     "Coach.Error.EngineFailed": "引擎沒有給出結果。請在設定中檢查為 Coach 選擇的引擎。",
     "Coach.Error.InvalidAddressCredentials": "位址不能包含使用者名稱或密碼。",

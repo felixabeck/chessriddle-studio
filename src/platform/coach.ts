@@ -28,6 +28,7 @@ const coachErrors: Record<CoachError, true> = {
     signInFailed: true,
     subscriptionNotEligible: true,
     usageLimitReached: true,
+    creditsExhausted: true,
 };
 
 export function isCoachError(value: unknown): value is CoachError {

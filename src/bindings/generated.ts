@@ -1927,7 +1927,11 @@ export type CoachError =
 /**
  * The subscription's usage limit is reached.
  */
-"usageLimitReached"
+"usageLimitReached" | 
+/**
+ * The account has no credits left: they have to be bought, or the plan upgraded.
+ */
+"creditsExhausted"
 /**
  * Broadcast to every window; the receiver keeps only the turn it is waiting for.
  */

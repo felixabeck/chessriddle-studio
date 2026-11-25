@@ -878,7 +878,8 @@ impl CredentialManager {
             }
         }
 
-        if set_result.is_err() {
+        if let Err(error) = &set_result {
+            log::warn!("credential {operation} could not write the OS keyring: {error:?}");
             // A write-then-error may have stored the secret. Keep an add's PendingAdd intent so
             // startup can reconcile it instead of dropping its only journal record.
             return Err(Error::CredentialRecoveryRequired);
@@ -1211,7 +1212,9 @@ impl CredentialManager {
         self.persistence
             .write(&binding.directory, filename, bytes)
             .map(|_| ())
-            .map_err(|_| Error::CredentialFailure("credential note update failed".into()))
+            .map_err(|source| {
+                Error::CredentialFailure(format!("credential note update failed: {source:?}"))
+            })
     }
 
     fn persist_locked(&self, registry: &RegistryFile) -> Result<RegistryCommit, Error> {
@@ -1223,7 +1226,9 @@ impl CredentialManager {
             .map_err(|source| Error::CredentialFailure(source.to_string()))?;
         self.persistence
             .write(&binding.directory, self.provider.registry_file(), &bytes)
-            .map_err(|_| Error::CredentialFailure("credential registry update failed".into()))
+            .map_err(|source| {
+                Error::CredentialFailure(format!("credential registry update failed: {source:?}"))
+            })
     }
 }
 
@@ -1253,7 +1258,8 @@ fn log_uncertain_commit(commit: RegistryCommit, operation: &str) {
 }
 
 fn credential_failure(error: Error) -> Error {
-    Error::CredentialFailure(error.to_string())
+    // `Debug`, not `Display`: the display text of a wrapped failure leaves its cause out.
+    Error::CredentialFailure(format!("{error:?}"))
 }
 
 #[cfg(all(test, unix))]
@@ -2008,9 +2014,15 @@ mod tests {
         manager
             .initialize(&AppDataDir::for_test(temp.path()))
             .unwrap();
+        let capture = crate::error::LogCaptureScope::start();
         assert!(manager
             .store_lichess_token("a".into(), "secret".into())
             .is_err());
+        // The keyring's own cause reaches the native log, not only "requires recovery".
+        assert!(capture
+            .messages()
+            .iter()
+            .any(|message| message.contains("injected")));
         assert!(manager.list().unwrap().is_empty());
         let after_restart = CredentialManager::new(store);
         after_restart
@@ -2107,9 +2119,13 @@ mod tests {
         manager
             .initialize(&AppDataDir::for_test(temp.path()))
             .unwrap();
-        assert!(manager
-            .store_lichess_token("a".into(), "secret".into())
-            .is_err());
+        // The failed write's own cause stays in the error, for the native log.
+        assert!(matches!(
+            manager.store_lichess_token("a".into(), "secret".into()),
+            Err(Error::CredentialFailure(message))
+                if message.starts_with("credential registry update failed: ")
+                    && message.contains("injected")
+        ));
         assert!(manager.list().unwrap().is_empty());
         let after_restart = CredentialManager::new(store);
         after_restart

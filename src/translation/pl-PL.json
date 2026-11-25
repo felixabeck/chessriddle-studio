@@ -432,6 +432,7 @@
     "Coach.Error.Busy": "Coach jest jeszcze zajęty. Spróbuj ponownie za chwilę.",
     "Coach.Error.Cancelled": "Zatrzymano.",
     "Coach.Error.ContentFiltered": "Usługa wstrzymała odpowiedź.",
+    "Coach.Error.CreditsExhausted": "Na tym koncie skończyły się kredyty. Dokup kredyty lub zmień plan na wyższy na stronie dostawcy.",
     "Coach.Error.EffortRejected": "Usługa nie akceptuje tego poziomu wysiłku dla tego modelu. Wybierz inny poziom.",
     "Coach.Error.EngineFailed": "Silnik nie zwrócił wyniku. Sprawdź w ustawieniach silnik wybrany dla Coacha.",
     "Coach.Error.InvalidAddressCredentials": "Adres nie może zawierać nazwy użytkownika ani hasła.",

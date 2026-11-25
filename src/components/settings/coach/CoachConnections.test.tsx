@@ -460,6 +460,11 @@ test("a sign-in can be cancelled by its id, and only a real failure leaves a mes
     "Coach.Error.SubscriptionNotEligible",
   );
   expect(dialog()).toBeNull();
+
+  // An account without credits is told so, not that its plan is not eligible.
+  mocks.coachSignInChatgpt.mockRejectedValue(new CoachCommandError("creditsExhausted"));
+  await click(button(host, "Settings.Coach.SignIn.ChatGpt"));
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Coach.Error.CreditsExhausted");
 });
 
 test("leaving the page cancels a sign-in that still waits and ignores its late answer", async () => {

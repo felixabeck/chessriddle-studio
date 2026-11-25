@@ -54,4 +54,6 @@ pub(crate) enum CoachError {
     SubscriptionNotEligible,
     /// The subscription's usage limit is reached.
     UsageLimitReached,
+    /// The account has no credits left: they have to be bought, or the plan upgraded.
+    CreditsExhausted,
 }

@@ -424,6 +424,7 @@
     "Coach.Error.Busy": "Coach hâlâ meşgul. Birazdan yeniden deneyin.",
     "Coach.Error.Cancelled": "Durduruldu.",
     "Coach.Error.ContentFiltered": "Hizmet yanıtı alıkoydu.",
+    "Coach.Error.CreditsExhausted": "Bu hesabın kredisi bitti. Sağlayıcının web sitesinden kredi ekleyin veya planınızı yükseltin.",
     "Coach.Error.EffortRejected": "Hizmet bu model için bu çaba düzeyini kabul etmiyor. Başka bir düzey seçin.",
     "Coach.Error.EngineFailed": "Motor sonuç vermedi. Ayarlarda Coach için seçilen motoru kontrol edin.",
     "Coach.Error.InvalidAddressCredentials": "Adres kullanıcı adı veya parola içermemelidir.",

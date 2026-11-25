@@ -432,6 +432,7 @@
     "Coach.Error.Busy": "Coach яшчэ заняты. Паспрабуйце яшчэ раз праз імгненне.",
     "Coach.Error.Cancelled": "Спынена.",
     "Coach.Error.ContentFiltered": "Сэрвіс не выдаў адказ.",
+    "Coach.Error.CreditsExhausted": "На гэтым уліковым запісе скончыліся крэдыты. Папоўніце крэдыты або павысьце тарыф на сайце пастаўшчыка.",
     "Coach.Error.EffortRejected": "Сэрвіс не прымае гэты ўзровень намаганняў для мадэлі. Выберыце іншы ўзровень.",
     "Coach.Error.EngineFailed": "Рухавік не даў выніку. Праверце ў наладах рухавік, выбраны для Coach.",
     "Coach.Error.InvalidAddressCredentials": "Адрас не павінен змяшчаць імя карыстальніка або пароль.",

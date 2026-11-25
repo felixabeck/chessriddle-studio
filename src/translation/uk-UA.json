@@ -432,6 +432,7 @@
     "Coach.Error.Busy": "Coach ще зайнятий. Спробуйте ще раз за мить.",
     "Coach.Error.Cancelled": "Зупинено.",
     "Coach.Error.ContentFiltered": "Сервіс не видав відповідь.",
+    "Coach.Error.CreditsExhausted": "На цьому обліковому записі закінчилися кредити. Поповніть кредити або підвищте тариф на сайті постачальника.",
     "Coach.Error.EffortRejected": "Сервіс не приймає цей рівень зусиль для моделі. Виберіть інший рівень.",
     "Coach.Error.EngineFailed": "Рушій не дав результату. Перевірте в налаштуваннях рушій, вибраний для Coach.",
     "Coach.Error.InvalidAddressCredentials": "Адреса не може містити ім’я користувача або пароль.",
