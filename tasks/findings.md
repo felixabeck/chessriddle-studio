@@ -29134,7 +29134,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### The batch allocation test's threshold depends on the runner's CPU count and fails on CI
 
-* **ID:** f-20261125-03 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-03 · **Status:** handled · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45529959373
 * **Repair owner:** 5deefa91-5f88-4872-a94c-a87dfaec39f3 on tuxedo-atlas, 2026-11-25T02:23:37Z
@@ -29143,6 +29143,8 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario (observed):** Test run 45529959373 (first red, head `725e3384d`) and 45530194354, jobs `rust` and `rust-macos-test`: "batch peak 3192369 bytes for 1984 unreached positions (filter=None) exceeded half of per-position DashMap cost (4063232 bytes, single=2048)".
 * **Proof:** the test passes on the CI runners and still fails against the pre-change per-position `DashMap` allocation.
 * **Found by:** Claude Code build run (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), post-push CI of opponent preparation, 2026-11-25.
+* **Handled (2026-11-25, Claude Code (Opus 5.5), opponent-preparation build, agy write leaf, agy lenses):** commit "test(search): bound the batch's working memory independently of the CPU count" (4ef9ae880). The bound is N x (1,024 B + half a table) on peak minus live-at-end, plus a retention bound on the filtered call; shown passing for the real batch and failing for the pre-change shape at 4, 8, 16 and default shards.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"cbdf902be895cd580c86610c3b899917a8fcbebc1fbc6447e02b5b170827352f","header_sha256":"f54a2897e1abcd69923b29be6c4a77002b4844101cd2f7f365c02791b51d4473","header_status":"handled","input_sha256":"737a24709008ff775d6f6bff9a7e4dec502a15aa6d435c4f7b5cc190037740b8","kind":"mutation-receipt","operation":"ebc4a21207ac347a5516f32542d1f551dacff579a916e811acf6cda8da4ff05c","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-03"],"target":"f-20261125-03","v":1} -->
 
 ---
 
