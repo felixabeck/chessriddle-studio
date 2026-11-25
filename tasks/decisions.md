@@ -14742,3 +14742,94 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Feature growth ordered by Felix, measured with the procedure of d-20261117-04 and d-20261125-38 within the same unpublished build. Reversal path: tighten total against a future smaller production build.
 * **Decided by:** Claude Code (Opus 5.5) interactive session c4fe3a7e-d00d-4487-ac2f-31b99658a655, build scoresheet-photo-import, under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"956425a3641b33184c9d7a522b635f5c66df22129fc50532dc78aadfb9a7d796","input_sha256":"0de6d028c5e1730d1a382c796a15263e48f64f0c655386301c142b27b3797607","kind":"mutation-receipt","operation":"fae77e8d7eccde9817d95a7e260005ea54a4dcc7d3546266eabccac967598c99","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-39"],"target":"decisions-ledger","v":1} -->
+
+### d-20261125-40 — Where are scoresheet photos decoded and processed?
+
+* **Question:** Photos come from a file picker, a drop and the clipboard. Where are they decoded, oriented, scaled and re-encoded?
+* **Governs:** -
+* **Chosen:** Natively, with the `image` crate (jpeg, png, webp; default features off) and `arboard` for the clipboard (`wayland-data-control` on Linux only), in `src-tauri/src/coach/scoresheet_photo.rs`, through the path authority's verified reader and the blocking gateway.
+* **Rejected:** Decoding in the renderer with a canvas: a WebKitGTK `paste` event receives no image from an `image/png` clipboard (measured 2026-11-24, plan M1), so the clipboard read must be native anyway, and `arboard` already brings `image` into the dependency tree (M3).
+* **Reason:** One native processor for all three producers, bounded and without trusting renderer bytes. Plan `tasks/plans/2026-11-24-scoresheet-photo-import.md`, DA1. Reversal path: move decoding to the renderer and keep only the clipboard read native.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-41 — How do processed scoresheet photos travel between native code and the renderer?
+
+* **Question:** After processing, where do the photos live until a reading sends them?
+* **Governs:** -
+* **Chosen:** As `data:image/jpeg;base64,` URLs returned to the renderer, which shows them and sends them back with the read; the native side validates them again (prefix, size, JPEG signature) before sending them to the provider. No native photo registry.
+* **Rejected:** A native store keyed by id: more lifecycle to own (windows, reloads, expiry) for no measured gain at 4 photos of at most 1.5 MiB.
+* **Reason:** Plan DA2; the CSP allows `data:` images (T16). Reversal path: a native store keyed by id if the IPC size ever matters.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-42 — Does a scoresheet reading stream progress to the renderer?
+
+* **Question:** Should `scoresheet_read` emit progress events while the model reads?
+* **Governs:** -
+* **Chosen:** No event; the command returns the result. The reply is never shown while it streams, and the pane shows a pending state with Cancel.
+* **Rejected:** A progress event: nothing in the reply is useful to the user before it has been checked against the rules.
+* **Reason:** Plan DA3. Reversal path: an event type in `collect_events!` carrying the read's id.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-43 — Who drives the correction rounds of a scoresheet reading?
+
+* **Question:** When a read move is illegal, how is the model asked again?
+* **Governs:** -
+* **Chosen:** The native side drives up to four rounds without tools: at the first illegal token it sends the move number, colour, token, position (FEN) and legal moves and asks for the rows again.
+* **Rejected:** A legality tool on the shared model loop: a model without function calling could not read a sheet.
+* **Reason:** Plan DA4. Reversal path: a legality tool on the shared model loop.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-44 — Is an image detail level sent with scoresheet photos?
+
+* **Question:** Should the request set the providers' image `detail` field?
+* **Governs:** -
+* **Chosen:** No `detail` field in either wire format; the provider's default applies.
+* **Rejected:** Sending `high` everywhere: not every compatible provider accepts the field, and the photos are already limited to 2,048 px.
+* **Reason:** Plan DA5. Reversal path: send it per wire format if readings prove too coarse.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-45 — How does Studio learn that a model cannot read images?
+
+* **Question:** Should Studio check a model's image capability before sending photos?
+* **Governs:** -
+* **Chosen:** No capability gate before sending. A 400, 404 or 422 refusal of a request with images whose message names images, vision or modalities is `imagesUnsupported`, and a `no_image` status in the reply means the same.
+* **Rejected:** Reading `architecture.input_modalities` before sending: only some providers list it, and a wrong list would block a model that can read images.
+* **Reason:** Plan DA6. Reversal path: read `architecture.input_modalities` where a provider lists it.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-46 — Who turns a scoresheet reading into a game tree?
+
+* **Question:** Does the native side return PGN text or moves?
+* **Governs:** -
+* **Chosen:** The native side returns headers and legal SAN moves with their unsure flags; the renderer composes PGN with `headersToPGN` and parses it with the existing lexer (`src/utils/scoresheet.ts`), checking that the main line has exactly the returned number of moves.
+* **Rejected:** Native PGN text: a second PGN writer beside the renderer's.
+* **Reason:** Plan DA7. Reversal path: return PGN text natively if the renderer's builder ever diverges.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-47 — How many scoresheet readings may run at once?
+
+* **Question:** How many concurrent readings does Studio admit?
+* **Governs:** -
+* **Chosen:** One per window and two overall, from a slot pool like the Assistant's; more answers `busy`.
+* **Rejected:** Unbounded readings: each holds up to four large requests to a provider for minutes.
+* **Reason:** Plan DA8. Reversal path: raise the pool limits in `src-tauri/src/coach/mod.rs`.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-48 — What happens when one round of a scoresheet reading fails?
+
+* **Question:** A provider, transport or deadline failure in a correction round: return what was read so far, or fail?
+* **Governs:** -
+* **Chosen:** A failed round fails the whole read with that error and no game.
+* **Rejected:** Returning the legal prefix as a stop: it would mix a provider failure with a reading result the user then reviews as if complete up to there.
+* **Reason:** Plan DA9. Reversal path: return the legal prefix as a stop with its cause, if late failures turn out to cost users finished readings.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+
+### d-20261125-49 — How does a review tab remember the sheet's remaining moves?
+
+* **Question:** Where reading stopped, the sheet's remaining tokens matter after the user edits the game. How are they stored so undo and redo stay right?
+* **Governs:** -
+* **Chosen:** `scoresheetReview.stopped = { ply, tokens }` is written once when the tab is created and never rewritten; what remains is derived from it and the main-line length (`deriveScoresheetRemaining`).
+* **Rejected:** A stored cursor updated on every edit: undo snapshots do not carry review state, so it would drift from the tree.
+* **Reason:** Plan DA10. Reversal path: none needed for undo; a stored cursor only if derivation proves confusing.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-24 for the scoresheet photo import, reviewed by the Antigravity plan lenses; recorded in session c4fe3a7e-d00d-4487-ac2f-31b99658a655 (build scoresheet-photo-import, full auto) · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":89,"effect_sha256":"4d486eafc56913366c09e2e12f87e58af11d87e8263d202a6f98c65546a217a3","input_sha256":"f40658a68efffd7fb85a9482bbfb048a0132697df3eaa5a6e90d2a4c0c4d213c","kind":"mutation-receipt","operation":"b8b5c17f5b692ebc45bdb94928bba153df272fbdefe1cae40754d2d2e6f0d8fc","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-40","d-20261125-41","d-20261125-42","d-20261125-43","d-20261125-44","d-20261125-45","d-20261125-46","d-20261125-47","d-20261125-48","d-20261125-49"],"target":"decisions-ledger","v":1} -->
