@@ -61,6 +61,8 @@ vi.mock("@/components/common/AppModal", () => ({
     opened ? <div role="dialog">{children}</div> : null,
 }));
 vi.mock("./PlayerSearchInput", () => ({ PlayerSearchInput: () => null }));
+// The catalog credit verifies the signed catalog natively; it has its own tests.
+vi.mock("./DatabaseCredit", () => ({ InstalledDatabaseCredit: () => null }));
 vi.mock("./AddDatabase", () => ({
   default: (props: { workspaceFilenames: readonly string[] }) => {
     mocks.addDatabaseProps(props);

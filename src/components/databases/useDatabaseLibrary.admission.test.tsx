@@ -107,6 +107,8 @@ vi.mock("@/components/common/GenericCard", () => ({
     </div>
   ),
 }));
+// The catalog credit verifies the signed catalog natively; it has its own tests.
+vi.mock("./DatabaseCredit", () => ({ InstalledDatabaseCredit: () => null }));
 vi.mock("./AddDatabase", () => ({ default: () => null }));
 vi.mock("./PlayerSearchInput", () => ({ PlayerSearchInput: () => null }));
 

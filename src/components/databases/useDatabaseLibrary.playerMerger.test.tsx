@@ -33,6 +33,8 @@ vi.mock("react-i18next", () => {
   const t = (key: string) => key;
   return { useTranslation: () => ({ t }) };
 });
+// The catalog credit verifies the signed catalog natively; it has its own tests.
+vi.mock("./DatabaseCredit", () => ({ InstalledDatabaseCredit: () => null }));
 vi.mock("./AddDatabase", () => ({ default: () => null }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
