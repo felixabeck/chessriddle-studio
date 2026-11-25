@@ -240,6 +240,8 @@
     "Board.Database.Stats": "Estadísticas",
     "Board.Database.StatsTable.Move": "Jugada",
     "Board.Database.StatsTable.Results": "Resultados",
+    "Board.Database.StatsTable.Score": "Puntos",
+    "Board.Database.StatsTable.ScoreHint": "Puntuación de las blancas: victorias más la mitad de las tablas",
     "Board.Database.StatsTable.Total": "Total",
     "Board.Database.Target": "Archivo o base de datos",
     "Board.Database.TimeControl": "Control de tiempo",

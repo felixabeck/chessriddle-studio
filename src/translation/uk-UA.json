@@ -241,6 +241,8 @@
     "Board.Database.Stats": "Статистика",
     "Board.Database.StatsTable.Move": "Хід",
     "Board.Database.StatsTable.Results": "Результати",
+    "Board.Database.StatsTable.Score": "Очки",
+    "Board.Database.StatsTable.ScoreHint": "Результат білих: перемоги плюс половина нічиїх",
     "Board.Database.StatsTable.Total": "Усього",
     "Board.Database.Target": "Файл або база даних",
     "Board.Database.TimeControl": "Контроль часу",

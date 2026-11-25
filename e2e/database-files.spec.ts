@@ -4089,7 +4089,7 @@ async function expectExplorerSourcesAligned(page: Page, columns: number) {
         };
     });
     for (let index = 0; index < columns; index++) {
-        expect(Math.abs(edges.cells[index]! - edges.headers[1 + index * 2]!)).toBeLessThanOrEqual(
+        expect(Math.abs(edges.cells[index]! - edges.headers[1 + index * 3]!)).toBeLessThanOrEqual(
             2,
         );
     }
@@ -4128,7 +4128,7 @@ test("database-files: the board explorer compares two databases side by side", a
             };
         });
         expect(Math.abs(edges.cells[0] - edges.headers[1])).toBeLessThanOrEqual(2);
-        expect(Math.abs(edges.cells[1] - edges.headers[3])).toBeLessThanOrEqual(2);
+        expect(Math.abs(edges.cells[1] - edges.headers[4])).toBeLessThanOrEqual(2);
     };
     await expectSourcesAligned();
     await expect(databasePanel).toHaveScreenshot("explorer-two-databases-collapsed.png");
@@ -4351,19 +4351,23 @@ test("database-files: the board explorer compares two databases side by side", a
     expect(await rows.nth(0).locator("td").allTextContents()).toEqual([
         "e4",
         "62%1,200",
+        expect.stringMatching(/^\d+%$/),
         expect.any(String),
         "15%35",
+        expect.stringMatching(/^\d+%$/),
         expect.any(String),
     ]);
     // A move one database never saw shows a dash on that side.
-    expect(await rows.nth(2).locator("td").nth(3).textContent()).toBe("–");
+    expect(await rows.nth(2).locator("td").nth(4).textContent()).toBe("–");
     expect(await rows.nth(3).locator("td").nth(1).textContent()).toBe("–");
     await expect(stats.locator("[data-no-games]")).toHaveCount(2);
     expect(await rows.nth(4).locator("td").allTextContents()).toEqual([
         "Total",
         "1,940",
+        expect.stringMatching(/^\d+%$/),
         expect.any(String),
         "230",
+        expect.stringMatching(/^\d+%$/),
         expect.any(String),
     ]);
 
@@ -4374,7 +4378,7 @@ test("database-files: the board explorer compares two databases side by side", a
     );
 
     // Sorting by the second database's Total reorders the same rows.
-    await stats.locator("thead th").nth(3).click();
+    await stats.locator("thead th").nth(4).click();
     await expect.poll(moves).toEqual(["d4", "h4", "e4", "c4", "Total"]);
 
     // A date picked in the comparison's filters keeps them open and is saved for it alone.
@@ -4447,15 +4451,15 @@ test("database-files: a local database sits beside Lichess All with Lichess tota
         "c4",
         "Total",
     ]);
-    expect(await rows.nth(2).locator("td").nth(3).textContent()).toBe("–");
+    expect(await rows.nth(2).locator("td").nth(4).textContent()).toBe("–");
     const totals = await rows.nth(3).locator("td").allTextContents();
     expect(totals[1]).toBe("1,940");
-    expect(totals[3]).toBe("200");
+    expect(totals[4]).toBe("200");
     const listedLichess = lichessExplorerPosition.moves.reduce(
         (sum, move) => sum + move.white + move.black + move.draws,
         0,
     );
-    expect(Number(totals[3]!.replaceAll(",", ""))).toBeGreaterThan(listedLichess);
+    expect(Number(totals[4]!.replaceAll(",", ""))).toBeGreaterThan(listedLichess);
     await expectExplorerSourcesAligned(page, 2);
     await waitForFontsSettled(page);
     await page.mouse.move(0, 0);
@@ -4483,7 +4487,7 @@ test("database-files: Lichess All beside a local database without an account sho
     const rows = stats.locator("tbody tr");
     await expect(rows).toHaveCount(4);
     expect(await rows.nth(3).locator("td").nth(1).textContent()).toBe("1,940");
-    expect(await rows.nth(3).locator("td").nth(3).textContent()).toBe("");
+    expect(await rows.nth(3).locator("td").nth(4).textContent()).toBe("");
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
 
@@ -5298,7 +5302,7 @@ test("database-files: Prepare on board replaces the reference column with Liches
 
     const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
     const totals = stats.locator("tbody tr").last().locator("td");
-    await expect(totals.nth(5)).toHaveText("200");
+    await expect(totals.nth(7)).toHaveText("200");
     await expect(page.locator('[data-sources="3"]')).toBeVisible();
     await expectExplorerSourcesAligned(page, 3);
     await assertNoHorizontalOverflow();

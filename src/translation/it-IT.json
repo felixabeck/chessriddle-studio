@@ -240,6 +240,8 @@
     "Board.Database.Stats": "Statistiche",
     "Board.Database.StatsTable.Move": "Mossa",
     "Board.Database.StatsTable.Results": "Risultati",
+    "Board.Database.StatsTable.Score": "Punti",
+    "Board.Database.StatsTable.ScoreHint": "Punteggio del Bianco: vittorie più metà delle patte",
     "Board.Database.StatsTable.Total": "Totale",
     "Board.Database.Target": "File o database",
     "Board.Database.TimeControl": "Cadenza",

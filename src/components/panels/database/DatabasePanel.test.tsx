@@ -1588,7 +1588,7 @@ describe("DatabasePanel", () => {
       ]);
       await vi.waitFor(() =>
         expect(
-          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+          moveRows().map(([move, primary, , , comparison]) => [move, primary, comparison]),
         ).toEqual([
           ["e4", "71%100", "–"],
           ["d4", "29%40", "60%12"],
@@ -1711,7 +1711,7 @@ describe("DatabasePanel", () => {
         const failedIsPrimary = failing === reference;
         await vi.waitFor(() =>
           expect(
-            moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+            moveRows().map(([move, primary, , , comparison]) => [move, primary, comparison]),
           ).toEqual(
             failedIsPrimary
               ? [
@@ -2011,8 +2011,8 @@ describe("DatabasePanel", () => {
           await vi.waitFor(() => expect(sources()).toHaveLength(3));
 
           const headers = () => Array.from(container.querySelectorAll<HTMLElement>("thead th"));
-          // Click the reference source's Total header (column index 5).
-          await act(async () => headers()[5].click());
+          // Click the reference source's Total header (column index 7).
+          await act(async () => headers()[7].click());
           expect(store.get(explorerSortFamily(tabId)).source).toBe("reference");
           const rowsSortedByRef = () =>
             Array.from(container.querySelectorAll<HTMLTableRowElement>("tbody tr")).map(
@@ -2625,7 +2625,7 @@ describe("DatabasePanel", () => {
       expect(positionControl()).toBeDefined();
       await vi.waitFor(() =>
         expect(
-          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+          moveRows().map(([move, primary, , , comparison]) => [move, primary, comparison]),
         ).toEqual([
           ["e4", "71%100", "50%100"],
           ["d4", "29%40", "–"],
@@ -2656,7 +2656,7 @@ describe("DatabasePanel", () => {
       expect(treeStore.getState().currentNode().fen).toBe(afterE4);
       await vi.waitFor(() =>
         expect(
-          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+          moveRows().map(([move, primary, , , comparison]) => [move, primary, comparison]),
         ).toEqual([
           ["e4", "50%100", "71%100"],
           ["d4", "–", "29%40"],
@@ -2693,7 +2693,7 @@ describe("DatabasePanel", () => {
       expect(positionControl()).toBeUndefined();
       await vi.waitFor(() =>
         expect(
-          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+          moveRows().map(([move, primary, , , comparison]) => [move, primary, comparison]),
         ).toEqual([
           ["e4", "50%100", "–"],
           ["d4", "–", "50%10"],
@@ -2721,7 +2721,7 @@ describe("DatabasePanel", () => {
       expect(panel.querySelector("table")).not.toBeNull();
       await vi.waitFor(() =>
         expect(
-          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+          moveRows().map(([move, primary, , , comparison]) => [move, primary, comparison]),
         ).toEqual([
           ["e4", "71%100", ""],
           ["d4", "29%40", ""],

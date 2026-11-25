@@ -240,6 +240,8 @@
     "Board.Database.Stats": "Statistiques",
     "Board.Database.StatsTable.Move": "Coup",
     "Board.Database.StatsTable.Results": "Résultats",
+    "Board.Database.StatsTable.Score": "Score",
+    "Board.Database.StatsTable.ScoreHint": "Score des Blancs : victoires plus la moitié des nulles",
     "Board.Database.StatsTable.Total": "Total",
     "Board.Database.Target": "Fichier ou base de données",
     "Board.Database.TimeControl": "Contrôle du temps",

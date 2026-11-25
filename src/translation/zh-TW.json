@@ -238,6 +238,8 @@
     "Board.Database.Stats": "統計",
     "Board.Database.StatsTable.Move": "著法",
     "Board.Database.StatsTable.Results": "結果",
+    "Board.Database.StatsTable.Score": "得分",
+    "Board.Database.StatsTable.ScoreHint": "白方得分：勝局加上一半和局",
     "Board.Database.StatsTable.Total": "總計",
     "Board.Database.Target": "檔案或資料庫",
     "Board.Database.TimeControl": "時限",

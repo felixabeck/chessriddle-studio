@@ -1,4 +1,4 @@
-import { Group, Text } from "@mantine/core";
+import { Group, Text, Tooltip } from "@mantine/core";
 import cx from "clsx";
 import { useAtom } from "jotai";
 import { ChevronUp, ChevronsUpDown } from "lucide-react";
@@ -19,6 +19,7 @@ import {
   type OpeningRow,
   type OpeningsSort,
   openingGames,
+  openingScore,
   openingTotals,
 } from "./openingRows";
 import classes from "./OpeningsTable.module.css";
@@ -39,6 +40,7 @@ const NO_GAMES = "–";
 const SOURCE_LOADING = "…";
 const DEFAULT_SORT: OpeningsSort = { source: "primary", direction: "desc" };
 const totalAccessor = (column: ExplorerColumnId) => `${column}Total`;
+const scoreAccessor = (column: ExplorerColumnId) => `${column}Score`;
 const resultsAccessor = (column: ExplorerColumnId) => `${column}Results`;
 const columnFromAccessor = (
   accessor: string,
@@ -54,10 +56,17 @@ const columnFromAccessor = (
 const MOVE_COLUMN_WIDTH = 100;
 /** Compact Move column width for three sources; lines up with `.sources[data-sources="3"]` in `DatabasePanel.module.css`. */
 const COMPACT_MOVE_COLUMN_WIDTH = 72;
+/** Total column widths for one and two sources; they fit a share beside a seven-digit count. */
+const TOTAL_COLUMN_WIDTH = 140;
+const MULTI_TOTAL_COLUMN_WIDTH = 130;
+/** White-score column widths for one, two and three sources. */
+const SCORE_COLUMN_WIDTH = 76;
+const MULTI_SCORE_COLUMN_WIDTH = 64;
+const COMPACT_SCORE_COLUMN_WIDTH = 56;
 
 /**
- * The explorer's move statistics. One source renders the three plain columns; with `sources`
- * (two or three) the rows are the union of all sources' moves and each source has its own two
+ * The explorer's move statistics. One source renders the four plain columns; with `sources`
+ * (two or three) the rows are the union of all sources' moves and each source has its own three
  * columns.
  */
 function OpeningsTable({
@@ -132,7 +141,7 @@ function OpeningsTable({
     return {
       accessor,
       title: t("Board.Database.StatsTable.Total"),
-      width: threeSources ? undefined : multiSource ? 150 : 180,
+      width: threeSources ? undefined : multiSource ? MULTI_TOTAL_COLUMN_WIDTH : TOTAL_COLUMN_WIDTH,
       sortable: multiSource,
       cellsClassName: className,
       titleClassName: className,
@@ -168,6 +177,35 @@ function OpeningsTable({
       },
     };
   };
+  const scoreColumn = (column: ExplorerColumnId, accessor: string): DataTableColumn<StatsRow> => {
+    const className = cx(threeSources && classes.compactCell) || undefined;
+    return {
+      accessor,
+      title: (
+        <Tooltip label={t("Board.Database.StatsTable.ScoreHint")}>
+          <span>{t("Board.Database.StatsTable.Score")}</span>
+        </Tooltip>
+      ),
+      width: threeSources
+        ? COMPACT_SCORE_COLUMN_WIDTH
+        : multiSource
+          ? MULTI_SCORE_COLUMN_WIDTH
+          : SCORE_COLUMN_WIDTH,
+      textAlign: "right",
+      cellsClassName: className,
+      titleClassName: className,
+      render: (row) => {
+        if (unavailable(column) || pending(column)) return null;
+        const score = openingScore(row[column]);
+        if (score === null) return null;
+        return (
+          <Text fz={cellFontSize} ta="right">
+            {score.toFixed(0)}%
+          </Text>
+        );
+      },
+    };
+  };
   const resultsColumn = (column: ExplorerColumnId, accessor: string): DataTableColumn<StatsRow> => {
     const className = cx(threeSources && classes.compactCell) || undefined;
     return {
@@ -183,19 +221,10 @@ function OpeningsTable({
         const whitePercent = (opening.white / games) * 100;
         const drawPercent = (opening.draw / games) * 100;
         const blackPercent = (opening.black / games) * 100;
-        // Multiple sources narrow each bar: label only the wider sections, in whole percent.
+        // Multiple sources narrow each bar below a readable label; their Score column carries
+        // the number instead.
         const label = (percent: number) =>
-          threeSources
-            ? percent >= 45
-              ? `${percent.toFixed(0)}%`
-              : ""
-            : multiSource
-              ? percent >= 33
-                ? `${percent.toFixed(0)}%`
-                : ""
-              : percent > 10
-                ? `${percent.toFixed(1)}%`
-                : "";
+          !multiSource && percent > 10 ? `${percent.toFixed(1)}%` : "";
         return (
           <ResultBar
             size="xl"
@@ -271,12 +300,14 @@ function OpeningsTable({
               moveColumn,
               ...activeSources.flatMap((source, index) => [
                 totalColumn(source.column, totalAccessor(source.column), index > 0),
+                scoreColumn(source.column, scoreAccessor(source.column)),
                 resultsColumn(source.column, resultsAccessor(source.column)),
               ]),
             ]
           : [
               moveColumn,
               totalColumn("primary", "total", false),
+              scoreColumn("primary", "score"),
               resultsColumn("primary", "results"),
             ]
       }

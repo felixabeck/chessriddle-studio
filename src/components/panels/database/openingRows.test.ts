@@ -1,6 +1,12 @@
 import { expect, test } from "vitest";
 import type { Opening } from "@/utils/db";
-import { combineOpenings, effectiveOpeningsSort, openingGames, openingTotals } from "./openingRows";
+import {
+    combineOpenings,
+    effectiveOpeningsSort,
+    openingGames,
+    openingScore,
+    openingTotals,
+} from "./openingRows";
 
 const opening = (move: string, white: number, draw = 0, black = 0): Opening => ({
     move,
@@ -20,6 +26,17 @@ const moves = (rows: { move: string }[]) => rows.map((row) => row.move);
 test("a move's games are its three results, and an absent move has none", () => {
     expect(openingGames(opening("e4", 50, 10, 40))).toBe(100);
     expect(openingGames(undefined)).toBe(0);
+});
+
+test("White's score counts a win as one point and a draw as half", () => {
+    expect(openingScore({ move: "e4", white: 38, draw: 27, black: 35 })).toBeCloseTo(51.5);
+    expect(openingScore({ move: "a3", white: 0, draw: 0, black: 4 })).toBe(0);
+    expect(openingScore({ move: "b3", white: 0, draw: 2, black: 0 })).toBe(50);
+});
+
+test("a move without a counted game has no score", () => {
+    expect(openingScore(undefined)).toBeNull();
+    expect(openingScore({ move: "a3", white: 0, draw: 0, black: 0, unknown: 4 })).toBeNull();
 });
 
 test("totals add each result separately", () => {

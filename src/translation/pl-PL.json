@@ -241,6 +241,8 @@
     "Board.Database.Stats": "Statystyki",
     "Board.Database.StatsTable.Move": "Ruch",
     "Board.Database.StatsTable.Results": "Wyniki",
+    "Board.Database.StatsTable.Score": "Wynik",
+    "Board.Database.StatsTable.ScoreHint": "Wynik białych: wygrane plus połowa remisów",
     "Board.Database.StatsTable.Total": "Łącznie",
     "Board.Database.Target": "Plik lub baza danych",
     "Board.Database.TimeControl": "Kontrola czasu",

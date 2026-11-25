@@ -239,6 +239,8 @@
     "Board.Database.Stats": "Statestikk",
     "Board.Database.StatsTable.Move": "Trekk",
     "Board.Database.StatsTable.Results": "Resultater",
+    "Board.Database.StatsTable.Score": "Poeng",
+    "Board.Database.StatsTable.ScoreHint": "Hvits poengsum: seire pluss halvparten av remisene",
     "Board.Database.StatsTable.Total": "Totalt",
     "Board.Database.Target": "Fil eller database",
     "Board.Database.TimeControl": "Tidskontroll",

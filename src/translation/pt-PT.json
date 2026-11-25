@@ -240,6 +240,8 @@
     "Board.Database.Stats": "Estatísticas",
     "Board.Database.StatsTable.Move": "Lance",
     "Board.Database.StatsTable.Results": "Resultados",
+    "Board.Database.StatsTable.Score": "Pontos",
+    "Board.Database.StatsTable.ScoreHint": "Pontuação das brancas: vitórias mais metade dos empates",
     "Board.Database.StatsTable.Total": "Total",
     "Board.Database.Target": "Ficheiro ou base de dados",
     "Board.Database.TimeControl": "Controlo de tempo",

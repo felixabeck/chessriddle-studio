@@ -17,6 +17,16 @@ export function openingGames(opening: Opening | undefined): number {
     return opening ? opening.white + opening.draw + opening.black : 0;
 }
 
+/**
+ * White's score in percent, as in ChessBase: wins plus half the draws over the games with a
+ * known result. `null` when there is no such game.
+ */
+export function openingScore(opening: Opening | undefined): number | null {
+    const games = openingGames(opening);
+    if (!opening || games === 0) return null;
+    return ((opening.white + opening.draw / 2) / games) * 100;
+}
+
 export function openingTotals(openings: readonly Opening[]): Opening {
     return {
         move: "",

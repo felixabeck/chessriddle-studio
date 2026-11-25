@@ -239,6 +239,8 @@
     "Board.Database.Stats": "Statistiken",
     "Board.Database.StatsTable.Move": "Zug",
     "Board.Database.StatsTable.Results": "Ergebnisse",
+    "Board.Database.StatsTable.Score": "Weiß %",
+    "Board.Database.StatsTable.ScoreHint": "Punkte für Weiß: Siege plus die Hälfte der Remis",
     "Board.Database.StatsTable.Total": "Gesamt",
     "Board.Database.Target": "Datei oder Datenbank",
     "Board.Database.TimeControl": "Bedenkzeit",

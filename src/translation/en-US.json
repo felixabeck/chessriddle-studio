@@ -239,6 +239,8 @@
     "Board.Database.Stats": "Stats",
     "Board.Database.StatsTable.Move": "Move",
     "Board.Database.StatsTable.Results": "Results",
+    "Board.Database.StatsTable.Score": "Score",
+    "Board.Database.StatsTable.ScoreHint": "White's score: wins plus half the draws",
     "Board.Database.StatsTable.Total": "Total",
     "Board.Database.Target": "File or database",
     "Board.Database.TimeControl": "Time control",

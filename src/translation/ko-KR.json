@@ -238,6 +238,8 @@
     "Board.Database.Stats": "통계",
     "Board.Database.StatsTable.Move": "수",
     "Board.Database.StatsTable.Results": "결과",
+    "Board.Database.StatsTable.Score": "점수",
+    "Board.Database.StatsTable.ScoreHint": "백의 점수: 승리에 무승부의 절반을 더한 값",
     "Board.Database.StatsTable.Total": "합계",
     "Board.Database.Target": "파일 또는 데이터베이스",
     "Board.Database.TimeControl": "타임 컨트롤",

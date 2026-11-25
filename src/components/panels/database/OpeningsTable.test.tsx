@@ -9,6 +9,7 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { catalogueI18n } from "@/tests/catalogues";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { expectHoverTooltip } from "@/tests/tooltip";
 import type { Opening } from "@/utils/db";
 import OpeningsTable from "./OpeningsTable";
 
@@ -132,6 +133,25 @@ test("total row omits percentage while move rows show percentage and count", asy
   expect(sumCell).toBe("38");
 });
 
+test("each move and the Total row show White's score in whole percent", async () => {
+  await renderTable();
+  const scores = bodyRows().map((row) => row.querySelectorAll("td")[2].textContent);
+  // e4 10/5/5, d4 8/4/4, game over 1/0/1, total 19/9/10.
+  expect(scores).toEqual(["63%", "63%", "50%", "62%"]);
+});
+
+test("the Score header explains that it is White's score", async () => {
+  await renderTable();
+  const header = host.querySelectorAll("thead th")[2].querySelector("span")!;
+  expect(header.textContent).toBe("Score");
+  await expectHoverTooltip(header, "White's score: wins plus half the draws");
+});
+
+test("a move with only unknown results shows no score", async () => {
+  await renderTable([{ move: "a3", white: 0, draw: 0, black: 0, unknown: 4 }]);
+  expect(bodyRows()[0].querySelectorAll("td")[2].textContent).toBe("");
+});
+
 test("a source's position total is the Total row and every percentage's denominator", async () => {
   // The online explorers list only the common moves: 36 listed games of a 72-game position.
   await renderTable(openings.slice(0, 2), { move: "", white: 30, draw: 20, black: 22 });
@@ -195,19 +215,22 @@ async function renderCompared(
 const cells = (row: HTMLTableRowElement) =>
   [...row.querySelectorAll("td")].map((cell) => cell.textContent);
 
-test("two sources render a Total and a Results column each, and one source keeps three", async () => {
+test("two sources render a Total, a Score and a Results column each, and one source keeps four", async () => {
   await renderCompared();
   expect([...host.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
     "Move",
     "Total",
+    "Score",
     "Results",
     "Total",
+    "Score",
     "Results",
   ]);
   await renderTable();
   expect([...host.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
     "Move",
     "Total",
+    "Score",
     "Results",
   ]);
   expect(host.querySelector("thead button, thead [role='button']")).toBeNull();
@@ -226,19 +249,25 @@ test("rows are the union of both sources, with a dash and no bar where a source 
   const [e4, d4, , h4, total] = rows;
   // e4: 20 of the primary's 38 games, none in the comparison.
   expect(cells(e4).slice(1, 2)).toEqual(["53%20"]);
-  expect(cells(e4)[3]).toBe("–");
-  expect(e4.querySelectorAll("td")[4].querySelector(".mantine-Progress-root")).toBeNull();
-  expect(e4.querySelectorAll("td")[2].querySelector(".mantine-Progress-root")).not.toBeNull();
+  expect(cells(e4)[4]).toBe("–");
+  expect(e4.querySelectorAll("td")[6].querySelector(".mantine-Progress-root")).toBeNull();
+  expect(e4.querySelectorAll("td")[3].querySelector(".mantine-Progress-root")).not.toBeNull();
   // d4 is in both; each share is of its own source's total.
   expect(cells(d4)[1]).toBe("42%16");
-  expect(cells(d4)[3]).toBe("60%12");
+  expect(cells(d4)[4]).toBe("60%12");
+  // Each source scores its own games: 8/4/4 and 2/9/1.
+  expect(cells(d4)[2]).toBe("63%");
+  expect(cells(d4)[5]).toBe("54%");
+  expect(cells(e4)[5]).toBe("");
   // h4 only in the comparison.
   expect(cells(h4)[1]).toBe("–");
-  expect(cells(h4)[3]).toBe("40%8");
-  expect(h4.querySelectorAll("td")[2].querySelector(".mantine-Progress-root")).toBeNull();
-  // Each source's total, without a share.
+  expect(cells(h4)[4]).toBe("40%8");
+  expect(h4.querySelectorAll("td")[3].querySelector(".mantine-Progress-root")).toBeNull();
+  // Each source's total, without a share, and its own score: 19/9/10 and 3/15/2.
   expect(cells(total)[1]).toBe("38");
-  expect(cells(total)[3]).toBe("20");
+  expect(cells(total)[4]).toBe("20");
+  expect(cells(total)[2]).toBe("62%");
+  expect(cells(total)[5]).toBe("53%");
   expect(host.querySelectorAll("[data-no-games]")).toHaveLength(3);
 });
 
@@ -263,8 +292,8 @@ test("the sort follows the chosen source and a header click reports the next sor
       : th.querySelector(".mantine-datatable-header-cell-sortable-unsorted-icon")
         ? "unsorted"
         : null;
-  expect(headers.map(indicator)).toEqual([null, "unsorted", null, "sorted", null]);
-  await act(async () => headers[3].click());
+  expect(headers.map(indicator)).toEqual([null, "unsorted", null, null, "sorted", null, null]);
+  await act(async () => headers[4].click());
   await act(async () => headers[1].click());
   expect(changes).toEqual([
     // The sorted column flips; another column takes over with the direction in use.
@@ -277,8 +306,9 @@ test("a source still searching marks its own cells while the other one is shown"
   await renderCompared({}, { openings: [], loading: true });
   const [e4, , , total] = bodyRows();
   expect(cells(e4)[1]).toBe("53%20");
-  expect(cells(e4)[3]).toBe("…");
-  expect(cells(total)[3]).toBe("…");
+  expect(cells(e4)[4]).toBe("…");
+  expect(cells(e4)[5]).toBe("");
+  expect(cells(total)[4]).toBe("…");
   expect(host.querySelectorAll("[data-no-games]")).toHaveLength(0);
   expect(host.querySelector(".mantine-datatable-loader-fetching")).toBeNull();
 });
@@ -295,27 +325,32 @@ test("the table-wide overlay shows only while every source is searching", async 
   expect(host.querySelector(".mantine-datatable-loader-fetching")).not.toBeNull();
   await renderCompared({ loading: true });
   expect(host.querySelector(".mantine-datatable-loader-fetching")).toBeNull();
+  // The searching primary still holds its old rows, and shows no score from them.
+  const d4 = bodyRows().find((row) => row.querySelector("td")?.textContent === "d4")!;
+  expect(cells(d4)[2]).toBe("");
+  expect(cells(d4)[5]).toBe("54%");
+  expect(cells(bodyRows().at(-1)!)[2]).toBe("");
 });
 
-test("two-source result bars label only their wider sections, in whole percent", async () => {
+test("multi-source result bars carry no labels, and one source labels its wider sections", async () => {
   await renderCompared();
   const [e4, d4] = bodyRows();
   const labels = (cell: Element) =>
     [...cell.querySelectorAll(".mantine-Progress-label")].map((label) => label.textContent);
-  // e4 primary: 10 / 5 / 5 of 20.
-  expect(labels(e4.querySelectorAll("td")[2])).toEqual(["50%", "", ""]);
-  // d4 comparison: 2 / 9 / 1 of 12; the narrow sections stay unlabelled.
-  expect(labels(d4.querySelectorAll("td")[4])).toEqual(["", "75%", ""]);
+  // e4 primary: 10 / 5 / 5 of 20; d4 comparison: 2 / 9 / 1 of 12.
+  expect(labels(e4.querySelectorAll("td")[3])).toEqual(["", "", ""]);
+  expect(labels(d4.querySelectorAll("td")[6])).toEqual(["", "", ""]);
   await renderTable();
-  expect(labels(bodyRows()[0].querySelectorAll("td")[2])).toEqual(["50.0%", "25.0%", "25.0%"]);
+  expect(labels(bodyRows()[0].querySelectorAll("td")[3])).toEqual(["50.0%", "25.0%", "25.0%"]);
 });
 
 test("a source without a single counted game shows a zero total and no bar or NaN", async () => {
   await renderCompared({}, { openings: [], loading: false });
   const total = bodyRows().at(-1)!;
   expect(cells(total)[1]).toBe("38");
-  expect(cells(total)[3]).toBe("0");
-  expect(total.querySelectorAll("td")[4].querySelector(".mantine-Progress-root")).toBeNull();
+  expect(cells(total)[4]).toBe("0");
+  expect(cells(total)[5]).toBe("");
+  expect(total.querySelectorAll("td")[6].querySelector(".mantine-Progress-root")).toBeNull();
   expect(host.textContent).not.toContain("NaN");
 
   // Only games with an unknown result: the move exists, but no side has a counted game.
@@ -334,7 +369,7 @@ test("a move row of the two-source table plays its move", async () => {
   expect(treeStore.getState().currentNode().san).toBe("h4");
 });
 
-test("three sources render three Total/Results groups and sort by reference", async () => {
+test("three sources render three Total/Score/Results groups and sort by reference", async () => {
   const referenceOpenings: Opening[] = [
     { move: "Nf3", white: 50, draw: 30, black: 20 },
     { move: "e4", white: 100, draw: 50, black: 50 },
@@ -352,10 +387,13 @@ test("three sources render three Total/Results groups and sort by reference", as
   expect([...host.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
     "Move",
     "Total",
+    "Score",
     "Results",
     "Total",
+    "Score",
     "Results",
     "Total",
+    "Score",
     "Results",
   ]);
   expect(bodyRows().map((row) => row.querySelector("td")?.textContent)).toEqual([
@@ -367,8 +405,12 @@ test("three sources render three Total/Results groups and sort by reference", as
     "Total",
   ]);
   const headers = [...host.querySelectorAll<HTMLElement>("thead th")];
-  await act(async () => headers[5].click());
+  await act(async () => headers[7].click());
   expect(changes).toEqual([{ source: "reference", direction: "asc" }]);
+  // Every source scores its own rows; the reference's e4 is 100/50/50 of its 150/80/70.
+  const e4 = bodyRows()[0];
+  expect([cells(e4)[2], cells(e4)[5], cells(e4)[8]]).toEqual(["63%", "", "63%"]);
+  expect(cells(bodyRows().at(-1)!)[8]).toBe("63%");
 });
 
 test("a Lichess column's position total is the Total row and percentage denominator with two and three columns", async () => {
@@ -386,9 +428,11 @@ test("a Lichess column's position total is the Total row and percentage denomina
   });
   const two = bodyRows();
   expect(cells(two.at(-1)!)[1]).toBe("38");
-  expect(cells(two.at(-1)!)[3]).toBe("72");
-  expect(cells(two[0])[3]).toContain("28%");
-  expect(cells(two[0])[3]).toContain("20");
+  expect(cells(two.at(-1)!)[4]).toBe("72");
+  // The reported position total scores 30/20/22.
+  expect(cells(two.at(-1)!)[5]).toBe("56%");
+  expect(cells(two[0])[4]).toContain("28%");
+  expect(cells(two[0])[4]).toContain("20");
 
   await renderCompared({
     sources: [
@@ -403,8 +447,9 @@ test("a Lichess column's position total is the Total row and percentage denomina
     ],
   });
   const three = bodyRows();
-  expect(cells(three.at(-1)!)[5]).toBe("72");
-  expect(cells(three[0])[5]).toContain("28%");
+  expect(cells(three.at(-1)!)[7]).toBe("72");
+  expect(cells(three.at(-1)!)[8]).toBe("56%");
+  expect(cells(three[0])[7]).toContain("28%");
 });
 
 test("a column that cannot answer has empty cells and no no-games dash", async () => {
@@ -416,9 +461,10 @@ test("a column that cannot answer has empty cells and no no-games dash", async (
   });
   const [e4, , , total] = bodyRows();
   expect(cells(e4)[1]).toBe("53%20");
-  expect(cells(e4)[3]).toBe("");
-  expect(e4.querySelectorAll("td")[4].querySelector(".mantine-Progress-root")).toBeNull();
-  expect(cells(total)[3]).toBe("");
+  expect(cells(e4)[4]).toBe("");
+  expect(cells(e4)[5]).toBe("");
+  expect(e4.querySelectorAll("td")[6].querySelector(".mantine-Progress-root")).toBeNull();
+  expect(cells(total)[4]).toBe("");
   expect(host.querySelectorAll("[data-no-games]")).toHaveLength(0);
 });
 
@@ -453,5 +499,5 @@ test("a stored sort naming an absent source falls back to primary and marks prim
       : th.querySelector(".mantine-datatable-header-cell-sortable-unsorted-icon")
         ? "unsorted"
         : null;
-  expect(headers.map(indicator)).toEqual([null, "sorted", null, "unsorted", null]);
+  expect(headers.map(indicator)).toEqual([null, "sorted", null, null, "unsorted", null, null]);
 });

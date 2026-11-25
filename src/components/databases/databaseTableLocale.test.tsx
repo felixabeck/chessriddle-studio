@@ -373,7 +373,7 @@ test("OpeningsTable renders German column headers", async () => {
       loading={false}
     />,
   );
-  expect(headers()).toEqual(["Zug", "Gesamt", "Ergebnisse"]);
+  expect(headers()).toEqual(["Zug", "Gesamt", "Weiß %", "Ergebnisse"]);
 });
 
 test("OpeningsTable renders the German total row label in the last row", async () => {

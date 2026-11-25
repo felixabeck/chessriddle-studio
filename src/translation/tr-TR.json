@@ -239,6 +239,8 @@
     "Board.Database.Stats": "İstatistik",
     "Board.Database.StatsTable.Move": "Hamle",
     "Board.Database.StatsTable.Results": "Sonuçlar",
+    "Board.Database.StatsTable.Score": "Puan",
+    "Board.Database.StatsTable.ScoreHint": "Beyazın puanı: galibiyetler artı beraberliklerin yarısı",
     "Board.Database.StatsTable.Total": "Toplam",
     "Board.Database.Target": "Dosya veya veritabanı",
     "Board.Database.TimeControl": "Zaman temposu",
