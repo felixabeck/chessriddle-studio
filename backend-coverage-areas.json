@@ -35,7 +35,9 @@
       "minimumCoverage": { "lines": 81, "functions": 73, "branches": 47 },
       "paths": [
         "src-tauri/src/main.rs",
+        "src-tauri/src/keyed_leaf_store.rs",
         "src-tauri/src/workspace_commands.rs",
+        "src-tauri/src/workspace_session.rs",
         "src-tauri/src/chessbase.rs",
         "src-tauri/src/error.rs",
         "src-tauri/src/infra/**",

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     ask: vi.fn(),
     openAppLog: vi.fn(),
     nativeClear: vi.fn(),
+    sessionClear: vi.fn(),
 }));
 
 vi.mock("@/state/pathOwners", () => ({
@@ -30,8 +31,12 @@ vi.mock("@/state/practiceStorage", () => ({
 }));
 vi.mock("@/i18n", () => ({
     default: {
-        t: (key: string, options?: { decks?: string }) =>
-            typeof options?.decks === "string" ? `${key} ${options.decks}` : key,
+        t: (key: string, options?: Record<string, unknown>) =>
+            typeof options?.decks === "string"
+                ? `${key} ${options.decks}`
+                : i18n.isInitialized
+                  ? i18n.t(key, options)
+                  : key,
     },
 }));
 vi.mock("@/platform/native", () => ({
@@ -47,10 +52,19 @@ vi.mock("@/state/unsavedGames", async (original) => {
     return {
         ...actual,
         nativeUnsavedGames: {
-            write: vi.fn(),
             list: vi.fn(),
             remove: vi.fn(),
             clear: mocks.nativeClear,
+        },
+    };
+});
+vi.mock("@/state/workspaceSession", async (original) => {
+    const actual = await original<typeof import("@/state/workspaceSession")>();
+    return {
+        ...actual,
+        nativeWorkspaceSession: {
+            ...actual.nativeWorkspaceSession,
+            clear: mocks.sessionClear,
         },
     };
 });
@@ -86,6 +100,7 @@ beforeEach(() => {
     mocks.ask.mockReset();
     mocks.openAppLog.mockReset().mockResolvedValue(undefined);
     mocks.nativeClear.mockReset().mockResolvedValue([]);
+    mocks.sessionClear.mockReset().mockResolvedValue([]);
     localStorage.clear();
     sessionStorage.clear();
 });
@@ -350,6 +365,7 @@ test("clearSavedData clears through the supplied unsaved-games mirror after conf
     try {
         await clearSavedData({ mirror });
         expect(mirror.pause).toHaveBeenCalledOnce();
+        expect(mocks.sessionClear).toHaveBeenCalledOnce();
         expect(mocks.nativeClear).toHaveBeenCalledOnce();
         expect(localStorage.getItem("keep")).toBeNull();
         expect(sessionStorage.getItem("keep")).toBeNull();

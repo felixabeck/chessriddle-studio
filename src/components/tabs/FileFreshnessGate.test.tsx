@@ -13,6 +13,12 @@ import {
 } from "@/state/store/tree";
 import { tabStorage, TabStorageRepository } from "@/state/store/tabStorage";
 import { loadWorkspace, WORKSPACE_STORAGE_KEY } from "@/state/workspace";
+import { serializeStorageValue } from "@/state/store/debouncedStorage";
+import {
+  resetWorkspaceSessionForTests,
+  restoreWorkspaceSessionAtStart,
+  type WorkspaceSessionNative,
+} from "@/state/workspaceSession";
 import {
   getFileFreshness,
   removeFileFreshness,
@@ -2279,3 +2285,89 @@ test("shared gate ownership keeps recovery's effective-key fallback and file-kin
   expect(getFileFreshness(tabId).state).toBe("verified");
   expect(host.querySelector('[data-testid="board-and-panels"]')).not.toBeNull();
 });
+
+test.each([
+  ["equal", originalStamp, "verified"],
+  ["differing", changedStamp, "conflict"],
+] as const)(
+  "a file tab seeded by restoreWorkspaceSessionAtStart reaches %s gate state (%s) through real reconciliation",
+  async (_label, diskStamp, expectedState) => {
+    sessionStorage.clear();
+    resetWorkspaceSessionForTests();
+    const seededId = crypto.randomUUID();
+    const seededTab: Tab = {
+      value: seededId,
+      name: file.name,
+      type: "analysis",
+      gameOrigin: { kind: "file", file, gameNumber: 0 },
+    };
+    const tree = defaultTree();
+    tree.dirty = true;
+    tree.sourceStamp = originalStamp;
+    const rawTree = serializeStorageValue({ version: 1, state: tree });
+    const rawWs = serializeStorageValue({
+      version: 1,
+      tabs: [seededTab],
+      activeTab: seededId,
+    });
+    const fakeNative: WorkspaceSessionNative = {
+      writeLeaf: vi.fn().mockResolvedValue(null),
+      readFixed: vi.fn().mockResolvedValue({
+        workspace: { kind: "record", content: rawWs },
+        pageTabs: { kind: "absent" },
+      }),
+      readLeaves: vi
+        .fn()
+        .mockResolvedValue([{ key: seededId, state: { kind: "record", content: rawTree } }]),
+      listNames: vi.fn().mockResolvedValue({ names: [seededId], omitted: 0 }),
+      removeLeaf: vi.fn().mockResolvedValue(null),
+      quarantine: vi.fn().mockResolvedValue({ bucket: null, moved: [], failed: [] }),
+      clear: vi.fn().mockResolvedValue([]),
+    };
+
+    const restored = await restoreWorkspaceSessionAtStart({
+      native: fakeNative,
+      warn: () => undefined,
+      sampleFresh: () => ({ fresh: true, unreadable: false }),
+      readRestorePreference: () => true,
+    });
+    expect(restored).toEqual({ kind: "restored", tabCount: 1, skippedCount: 0 });
+
+    const loaded = loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY);
+    expect(loaded.tabs.map((t) => t.value)).toEqual([seededId]);
+    const seededStore = createTreeStore(seededId);
+    jotaiStore.set(tabsAtom, loaded.tabs);
+    jotaiStore.set(activeTabAtom, loaded.activeTab);
+    removeFileFreshness(seededId);
+    mocks.readFileGame.mockResolvedValueOnce(stampedGame(diskStamp));
+
+    const localHost = document.createElement("div");
+    document.body.appendChild(localHost);
+    const localRoot = createRoot(localHost);
+    try {
+      await act(async () => {
+        localRoot.render(
+          <Provider store={jotaiStore}>
+            <TreeStateContext.Provider value={seededStore}>
+              <FileFreshnessGate tab={loaded.tabs[0]!} closeTab={() => undefined}>
+                <div data-testid="board-and-panels" />
+              </FileFreshnessGate>
+            </TreeStateContext.Provider>
+          </Provider>,
+        );
+      });
+      await vi.waitFor(() => expect(getFileFreshness(seededId).state).toBe(expectedState));
+      expect(localHost.querySelector('[data-testid="board-and-panels"]') !== null).toBe(
+        expectedState === "verified",
+      );
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localHost.remove();
+      closeTreeStore(seededId);
+      removeFileFreshness(seededId);
+      resetWorkspaceSessionForTests();
+    }
+  },
+);

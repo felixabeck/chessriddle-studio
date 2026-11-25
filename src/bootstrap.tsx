@@ -54,18 +54,35 @@ export function startApplication(): Promise<void> {
   } catch {
     // The retired appearance preference must never block startup when storage is refused.
   }
-  let workspaceReadFailure = false;
-  try {
-    initializeWorkspace();
-  } catch (error) {
-    if (!(error instanceof WorkspaceReadError)) throw error;
-    workspaceReadFailure = true;
-  }
   dayjs.extend(customParseFormat);
   setAutoFreeze(false);
-  const container = document.getElementById("app");
-  const root = createRoot(container!);
   applicationStartup = (async () => {
+    const workspaceSession = await import("./state/workspaceSession");
+    try {
+      await workspaceSession.restoreWorkspaceSessionAtStart();
+    } catch (error) {
+      workspaceSession.markWorkspaceSessionRestoreFailed(error);
+      await logFailureSafely(
+        "StartupWorkspaceSessionRestoreError",
+        {
+          operation: "restoreWorkspaceSessionAtStart",
+          primaryFailure: safeFailureContext(error),
+        },
+        "Workspace session restore failed",
+      );
+    }
+    let workspaceReadFailure = false;
+    try {
+      initializeWorkspace();
+    } catch (error) {
+      if (!(error instanceof WorkspaceReadError)) {
+        applicationStartup = undefined;
+        throw error;
+      }
+      workspaceReadFailure = true;
+    }
+    const container = document.getElementById("app");
+    const root = createRoot(container!);
     if (workspaceReadFailure) {
       try {
         await initializeI18n();

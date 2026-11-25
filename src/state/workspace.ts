@@ -117,6 +117,18 @@ export function defaultWorkspace(): Workspace {
     return { version: WORKSPACE_VERSION, tabs: [first], activeTab: first.value };
 }
 
+/**
+ * Validates a durable workspace leaf using the live workspace schema before seeding it into
+ * `sessionStorage`. Returns `null` when the payload cannot be decoded or is not a valid workspace.
+ */
+export function parseStoredWorkspaceForRestore(raw: string): Workspace | null {
+    const decoded = decodeCompressedOrJson(raw);
+    if (decoded === null) return null;
+    const { workspaceLiveSchema } = createWorkspaceLoadSchemas();
+    const parsed = workspaceLiveSchema.safeParse(decoded);
+    return parsed.success ? parsed.data : null;
+}
+
 type WorkspaceRepairPlan = {
     workspace: Workspace;
     unrepairedWorkspace: Workspace;

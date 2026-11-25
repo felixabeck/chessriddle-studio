@@ -30,6 +30,7 @@ import {
     type PieceSet,
 } from "../artworkCatalog";
 import { documentPreferences } from "./rendererState";
+import { RESTORE_OPEN_TABS_KEY } from "../restoreOpenTabs";
 
 export const tableViewAtom = atomWithStorage<boolean>(
     "table-view",
@@ -253,4 +254,10 @@ export const nativeBarAtom = atomWithStorage<boolean>(
     "native-bar",
     false,
     createPreferenceStorage(false),
+);
+
+export const restoreOpenTabsAtom = atomWithStorage<boolean>(
+    RESTORE_OPEN_TABS_KEY,
+    true,
+    createPreferenceStorage(true),
 );

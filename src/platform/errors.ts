@@ -456,3 +456,9 @@ export async function runWithAppliedRecovery<T>(
         throw cause;
     }
 }
+
+/** The native error category when an error came from a command, otherwise the renderer category. */
+export function errorCategoryOf(error: unknown): string {
+    const normalized = normalizeError(error);
+    return normalized.backendCategory ?? normalized.category;
+}

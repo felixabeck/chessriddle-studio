@@ -21,13 +21,36 @@ import { disposeTabAtoms } from "./tabFamilies";
 
 let initialWorkspace: Workspace | undefined;
 let startedFresh = false;
+let freshProcessSampled = false;
 
-function storedWorkspaceAbsent(): boolean {
+function storedWorkspaceAbsent(storage: Pick<Storage, "getItem"> = sessionStorage): boolean {
     try {
-        return sessionStorage.getItem(WORKSPACE_STORAGE_KEY) === null;
+        return storage.getItem(WORKSPACE_STORAGE_KEY) === null;
     } catch {
         // An unreadable session store is not proof of a fresh start; restore stays off.
         return false;
+    }
+}
+
+/**
+ * Samples whether this renderer started without a stored workspace before startup seeding writes
+ * `"workspace"` into `sessionStorage`.
+ */
+export function sampleFreshProcess(storage: Pick<Storage, "getItem"> = sessionStorage): {
+    fresh: boolean;
+    unreadable: boolean;
+} {
+    if (freshProcessSampled) {
+        return { fresh: startedFresh, unreadable: false };
+    }
+    freshProcessSampled = true;
+    try {
+        const fresh = storage.getItem(WORKSPACE_STORAGE_KEY) === null;
+        startedFresh = fresh;
+        return { fresh, unreadable: false };
+    } catch {
+        startedFresh = false;
+        return { fresh: false, unreadable: true };
     }
 }
 
@@ -35,8 +58,12 @@ function storedWorkspaceAbsent(): boolean {
 export function initializeWorkspace(): Workspace {
     initializeRendererState();
     if (initialWorkspace === undefined) {
-        // Sampled before `loadWorkspace` writes the default workspace for an absent key.
-        startedFresh = storedWorkspaceAbsent();
+        // Sampled before `loadWorkspace` writes the default workspace for an absent key, unless
+        // startup restore already sampled before seeding.
+        if (!freshProcessSampled) {
+            startedFresh = storedWorkspaceAbsent();
+            freshProcessSampled = true;
+        }
         initialWorkspace = loadWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY);
     }
     return initialWorkspace;

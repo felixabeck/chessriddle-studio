@@ -900,18 +900,33 @@ test("a thrown recovery drain fails closed", async () => {
     expect(gate.destroyWindow).not.toHaveBeenCalled();
 });
 
-test("a confirmed dirty file tab in conflict still blocks the quit, and file guards still see it dirty", () => {
-    const id = uuid();
-    seedStoredTree(id, true);
-    setFileFreshness(id, "conflict");
-    const tabs = [tab({ value: id, type: "analysis", gameOrigin: fileOrigin() })];
-    expect(scanQuitBlockingTabs(tabs, recovery([id])).map((item) => item.value)).toEqual([id]);
+test("a confirmed file tab in conflict or unavailable does not block quitting, while file guards and unconfirmed tabs still block", () => {
+    const conflictId = uuid();
+    seedStoredTree(conflictId, true);
+    setFileFreshness(conflictId, "conflict");
+    const conflictTabs = [tab({ value: conflictId, type: "analysis", gameOrigin: fileOrigin() })];
+    expect(scanQuitBlockingTabs(conflictTabs, recovery([conflictId]))).toEqual([]);
+    expect(scanQuitBlockingTabs(conflictTabs, recovery([])).map((item) => item.value)).toEqual([
+        conflictId,
+    ]);
+    // Line-section edits, reorders and the updater depend on the unchanged meaning.
+    expect(scanBlockingTabs(conflictTabs).map((item) => item.value)).toEqual([conflictId]);
+
+    const unavailableId = uuid();
+    seedStoredTree(unavailableId, false);
+    setFileFreshness(unavailableId, "unavailable");
+    const unavailableTabs = [
+        tab({ value: unavailableId, type: "analysis", gameOrigin: fileOrigin() }),
+    ];
+    expect(scanQuitBlockingTabs(unavailableTabs, recovery([unavailableId]))).toEqual([]);
+    expect(scanQuitBlockingTabs(unavailableTabs, recovery([])).map((item) => item.value)).toEqual([
+        unavailableId,
+    ]);
 
     const clean = uuid();
     seedStoredTree(clean, true);
     const plain = [tab({ value: clean, type: "analysis" })];
     expect(scanQuitBlockingTabs(plain, recovery([clean]))).toEqual([]);
-    // Line-section edits, reorders and the updater depend on the unchanged meaning.
     expect(scanBlockingTabs(plain).map((item) => item.value)).toEqual([clean]);
 });
 

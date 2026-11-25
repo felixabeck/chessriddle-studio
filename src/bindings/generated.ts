@@ -853,14 +853,6 @@ async listPracticeDecks() : Promise<Result<PracticeDeckInventory, ErrorPayload>>
     else return { status: "error", error: e  as any };
 }
 },
-async writeUnsavedGame(id: string, document: string) : Promise<Result<null, ErrorPayload>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("write_unsaved_game", { id, document }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async listUnsavedGames() : Promise<Result<UnsavedGameInventory, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_unsaved_games") };
@@ -880,6 +872,62 @@ async removeUnsavedGame(id: string) : Promise<Result<null, ErrorPayload>> {
 async clearUnsavedGames() : Promise<Result<string[], ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_unsaved_games") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async writeWorkspaceSessionLeaf(key: string, content: string) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("write_workspace_session_leaf", { key, content }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async readWorkspaceSessionFixed() : Promise<Result<WorkspaceSessionFixedLeaves, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_workspace_session_fixed") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async readWorkspaceSessionLeaves(keys: string[]) : Promise<Result<WorkspaceSessionReadEntry[], ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_workspace_session_leaves", { keys }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listWorkspaceSessionNames() : Promise<Result<WorkspaceSessionNames, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_workspace_session_names") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async removeWorkspaceSessionLeaf(key: string) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_workspace_session_leaf", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async quarantineWorkspaceSessionLeaves(keys: string[] | null) : Promise<Result<WorkspaceSessionQuarantineResult, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("quarantine_workspace_session_leaves", { keys }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearWorkspaceSession() : Promise<Result<string[], ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_workspace_session") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1974,7 +2022,7 @@ export type DatabaseUpgradeFailureReason = "disk-full" | "other"
 export type DbGameLookup = { kind: "found"; game: NormalizedGame } | { kind: "missing" }
 export type DisconnectOutcome = { status: "notFound" } | { status: "removed"; revocation_pending: boolean; durability_uncertain: boolean }
 export type DrawReason = "stalemate" | "insufficientMaterial" | "threefoldRepetition" | "fiftyMoveRule" | "agreement"
-export type DurabilityStage = "ArchiveCommitMarker" | "ArchiveReservationJournal" | "DatabasePgnReplacement" | "DirectoryInstall" | "DownloadTargetReplacement" | "NativeExport" | "OldDirectoryCleanup" | "OldDirectoryCleanupSync" | "PgnEdit" | "PgnCacheInvalidation" | "CollectionIndexRefresh" | "PgnCapabilityRebind" | "RegistryReplacement" | "SearchIndexReplacement" | "WorkspaceDirectoryCreation" | "WorkspacePgnCreation" | "WorkspaceRemoval" | "WorkspaceRename" | "WorkspaceSidecarCreation" | "WorkspaceSidecarReplacement" | "PracticePositions" | "PracticeReviewShard" | "PracticeState" | "UnsavedGame"
+export type DurabilityStage = "ArchiveCommitMarker" | "ArchiveReservationJournal" | "DatabasePgnReplacement" | "DirectoryInstall" | "DownloadTargetReplacement" | "NativeExport" | "OldDirectoryCleanup" | "OldDirectoryCleanupSync" | "PgnEdit" | "PgnCacheInvalidation" | "CollectionIndexRefresh" | "PgnCapabilityRebind" | "RegistryReplacement" | "SearchIndexReplacement" | "WorkspaceDirectoryCreation" | "WorkspacePgnCreation" | "WorkspaceRemoval" | "WorkspaceRename" | "WorkspaceSidecarCreation" | "WorkspaceSidecarReplacement" | "PracticePositions" | "PracticeReviewShard" | "PracticeState" | "UnsavedGame" | "WorkspaceSession"
 /**
  * Prepare marks the supplied current-session attachments as prepared without retiring omitted
  * IDs; an empty list is an explicit prepare with no retained attachments.
@@ -2448,6 +2496,12 @@ export type WorkspaceFileContent = { kind: "text"; pgn: string } | { kind: "copy
 export type WorkspaceFileType = "repertoire" | "game" | "tournament" | "puzzle" | "other"
 export type WorkspaceListing = { entries: WorkspaceEntry[]; unread: WorkspaceUnread[] }
 export type WorkspaceMetadata = { type: WorkspaceFileType; tags: string[] }
+export type WorkspaceSessionFixedLeaves = { workspace: WorkspaceSessionLeafState; pageTabs: WorkspaceSessionLeafState }
+export type WorkspaceSessionLeafState = { kind: "record"; content: string } | { kind: "skipped"; reason: string } | { kind: "absent" }
+export type WorkspaceSessionNames = { names: string[]; omitted: number }
+export type WorkspaceSessionQuarantineFailure = { key: string; reason: string }
+export type WorkspaceSessionQuarantineResult = { bucket: string | null; moved: string[]; failed: WorkspaceSessionQuarantineFailure[] }
+export type WorkspaceSessionReadEntry = { key: string; state: WorkspaceSessionLeafState }
 export type WorkspaceTrashItem = { item: TrashItemId; kind: WorkspaceEntryKind | null; name: string; originalFolder: string; trashedSeconds: bigint; category: ErrorCategory | null }
 export type WorkspaceTrashPage = { items: WorkspaceTrashItem[]; olderCount: bigint; cursor: TrashCursor | null }
 export type WorkspaceUnread = { name: string; kind: WorkspaceEntryKind | null; category: ErrorCategory; parent: FileWorkspaceHandle | null }

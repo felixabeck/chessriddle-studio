@@ -160,11 +160,11 @@ async function expectImmediateDestroy(page: Page) {
 }
 
 /**
- * Holds every recovery-copy write past the quit gate's drain, so a dirty game has no durable
+ * Holds every session-store write past the quit gate's drain, so a dirty game has no durable
  * copy and the gate must still ask before quitting.
  */
 const recoveryCopyPending = {
-    write_unsaved_game: { result: null, delay: 600_000 },
+    write_workspace_session_leaf: { result: null, delay: 600_000 },
 };
 
 const gestures = [
@@ -195,7 +195,19 @@ for (const gesture of gestures) {
         page,
     }) => {
         await openOriginNoneAnalysis(page);
-        await expect.poll(() => ipcCount(page, "write_unsaved_game")).toBeGreaterThan(0);
+        const tab = (await activeWorkspaceTab(page))!;
+        const treeKey = tab.treeKey ?? tab.value;
+        await expect
+            .poll(() =>
+                page.evaluate((key) => {
+                    const writes = window.__E2E_TAURI__
+                        .invocations()
+                        .filter((entry) => entry.command === "write_workspace_session_leaf")
+                        .map((entry) => (entry.args as { key?: string } | undefined)?.key);
+                    return writes.includes(key) && writes.includes("workspace");
+                }, treeKey),
+            )
+            .toBe(true);
         await gesture.run(page);
         await expectImmediateDestroy(page);
     });

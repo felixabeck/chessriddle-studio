@@ -13,6 +13,8 @@ const {
   closeSplashscreen,
   initializeI18n,
   releasePreviousDocumentOperations,
+  restoreWorkspaceSessionAtStart,
+  markWorkspaceSessionRestoreFailed,
   initializeWorkspace,
   initializeDownloadFailures,
   initializeEngineCompletions,
@@ -26,6 +28,8 @@ const {
     closeSplashscreen: vi.fn().mockResolvedValue(undefined),
     initializeI18n: vi.fn().mockResolvedValue(undefined),
     releasePreviousDocumentOperations: vi.fn().mockResolvedValue(null),
+    restoreWorkspaceSessionAtStart: vi.fn().mockResolvedValue({ kind: "empty" }),
+    markWorkspaceSessionRestoreFailed: vi.fn(),
     initializeWorkspace: vi.fn(),
     initializeDownloadFailures: vi.fn().mockResolvedValue(undefined),
     initializeEngineCompletions: vi.fn().mockResolvedValue(undefined),
@@ -35,6 +39,10 @@ const {
 
 vi.mock("react-dom/client", () => ({ createRoot }));
 vi.mock("./App", () => ({ default: () => null }));
+vi.mock("./state/workspaceSession", () => ({
+  restoreWorkspaceSessionAtStart,
+  markWorkspaceSessionRestoreFailed,
+}));
 vi.mock("./state/pathOwners", () => ({
   initializePathOwners,
 }));
@@ -71,6 +79,8 @@ beforeEach(() => {
   logFailureSafely.mockClear();
   closeSplashscreen.mockClear();
   releasePreviousDocumentOperations.mockReset().mockResolvedValue(null);
+  restoreWorkspaceSessionAtStart.mockReset().mockResolvedValue({ kind: "empty" });
+  markWorkspaceSessionRestoreFailed.mockReset();
   initializeWorkspace.mockReset();
   initializeDownloadFailures.mockReset().mockResolvedValue(undefined);
   initializeEngineCompletions.mockReset().mockResolvedValue(undefined);
@@ -141,7 +151,12 @@ test("awaits the previous-document sweep before sessions, i18n and rendering", a
   );
   const { startApplication } = await import("./bootstrap");
   const applicationStartup = startApplication();
+  await vi.waitFor(() => expect(releasePreviousDocumentOperations).toHaveBeenCalledOnce());
+  expect(restoreWorkspaceSessionAtStart).toHaveBeenCalledExactlyOnceWith();
   expect(initializeWorkspace).toHaveBeenCalledExactlyOnceWith();
+  expect(restoreWorkspaceSessionAtStart.mock.invocationCallOrder[0]).toBeLessThan(
+    initializeWorkspace.mock.invocationCallOrder[0] ?? 0,
+  );
   expect(initializeWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
     releasePreviousDocumentOperations.mock.invocationCallOrder[0] ?? 0,
   );
@@ -156,7 +171,7 @@ test("awaits the previous-document sweep before sessions, i18n and rendering", a
   expect(renderedChild().type).toBe(App);
 });
 
-test("an unexpected synchronous workspace exception propagates without caching startup", async () => {
+test("an unexpected workspace exception propagates without caching startup", async () => {
   const failure = new DOMException("workspace read refused", "SecurityError");
   initializeWorkspace.mockImplementationOnce(() => {
     throw failure;
@@ -165,7 +180,7 @@ test("an unexpected synchronous workspace exception propagates without caching s
   vi.mocked(sessions.initializePersistedSessions).mockClear();
 
   const { startApplication } = await import("./bootstrap");
-  expect(() => startApplication()).toThrow(failure);
+  await expect(startApplication()).rejects.toThrow(failure);
 
   expect(releasePreviousDocumentOperations).not.toHaveBeenCalled();
   expect(sessions.initializePersistedSessions).not.toHaveBeenCalled();
@@ -480,4 +495,14 @@ test("refused obsolete-accent removal never blocks startup", async () => {
   } finally {
     remove.mockRestore();
   }
+});
+
+test("an unexpected restoreWorkspaceSessionAtStart throw fails closed into store-unavailable mode", async () => {
+  const error = new Error("unexpected restore crash");
+  restoreWorkspaceSessionAtStart.mockRejectedValueOnce(error);
+  const { startApplication } = await import("./bootstrap");
+  await expect(startApplication()).resolves.toBeUndefined();
+  expect(markWorkspaceSessionRestoreFailed).toHaveBeenCalledExactlyOnceWith(error);
+  expect(logFailureSafely).toHaveBeenCalledOnce();
+  expect(renderedChild().type).toBe(App);
 });

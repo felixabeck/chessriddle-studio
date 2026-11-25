@@ -1875,7 +1875,6 @@
     "UnsavedGames.RemoveFailed": "無法刪除「{{name}}」的復原副本（{{category}}）。重新啟動後可能會再次出現。",
     "UnsavedGames.Restored_other": "已復原 {{count}} 個未儲存的對局。",
     "UnsavedGames.RestoreFailed": "無法復原未儲存的對局（{{category}}）。",
-    "UnsavedGames.WriteFailed": "無法儲存「{{name}}」的復原副本（{{category}}）。請儲存對局以免遺失。",
     "Updater.Available": "有新版本（{{version}}）可用。現在下載並安裝嗎？安裝完成後應用會重新啟動，除非某個分頁有未儲存的變更。",
     "Updater.Installed": "更新已安裝",
     "Updater.InstallFailed": "無法安裝更新",
@@ -1886,6 +1885,11 @@
     "Window.Close": "關閉視窗",
     "Window.Maximize": "最大化視窗",
     "Window.Minimize": "最小化",
-    "Window.Restore": "還原視窗"
+    "Window.Restore": "還原視窗",
+    "WorkspaceSession.Quarantined": "無法還原上次工作階段中開啟的分頁。已將其保留在磁碟上。",
+    "WorkspaceSession.RestoreFailed": "無法還原上次工作階段中開啟的分頁（{{category}}）。",
+    "WorkspaceSession.SeedQuotaFailed": "由於瀏覽器儲存空間已滿，無法還原上次開啟的分頁。已將儲存的工作階段保留在磁碟上。",
+    "WorkspaceSession.SkippedTabs_other": "無法還原上次工作階段中的 {{count}} 個分頁。其複本已保留在磁碟上。",
+    "WorkspaceSession.WriteFailed": "無法儲存開啟的分頁以供重新啟動還原（{{category}}）。請儲存您的對局以確保安全。"
   }
 }

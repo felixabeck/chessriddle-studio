@@ -1903,7 +1903,6 @@
     "UnsavedGames.Restored_one": "Gjenopprettede ulagrede partier: {{count}}.",
     "UnsavedGames.Restored_other": "Gjenopprettede ulagrede partier: {{count}}.",
     "UnsavedGames.RestoreFailed": "Ulagrede partier kunne ikke gjenopprettes ({{category}}).",
-    "UnsavedGames.WriteFailed": "En gjenopprettingskopi av «{{name}}» kunne ikke lagres ({{category}}). Lagre partiet for å beholde det.",
     "Updater.Available": "En ny versjon ({{version}}) er tilgjengelig. Vil du laste ned og installere den nå? Appen starter på nytt når installasjonen er ferdig, med mindre en fane har ulagrede endringer.",
     "Updater.Installed": "Oppdatering installert",
     "Updater.InstallFailed": "Oppdateringen kunne ikke installeres",
@@ -1914,6 +1913,12 @@
     "Window.Close": "Lukk vindu",
     "Window.Maximize": "Maksimer vindu",
     "Window.Minimize": "Minimer",
-    "Window.Restore": "Gjenopprett vindu"
+    "Window.Restore": "Gjenopprett vindu",
+    "WorkspaceSession.Quarantined": "Kunne ikke gjenopprette åpne faner fra forrige økt. De ble beholdt på disken.",
+    "WorkspaceSession.RestoreFailed": "Kunne ikke gjenopprette åpne faner fra forrige økt ({{category}}).",
+    "WorkspaceSession.SeedQuotaFailed": "Kunne ikke gjenopprette tidligere åpne faner fordi nettleserlagringen er full. Den lagrede økten ble beholdt på disken.",
+    "WorkspaceSession.SkippedTabs_one": "Kunne ikke gjenopprette {{count}} fane fra forrige økt. Kopien ble beholdt på disken.",
+    "WorkspaceSession.SkippedTabs_other": "Kunne ikke gjenopprette {{count}} faner fra forrige økt. Kopiene ble beholdt på disken.",
+    "WorkspaceSession.WriteFailed": "Kunne ikke lagre åpne faner for omstart ({{category}}). Lagre partiene dine for å sikre dem."
   }
 }

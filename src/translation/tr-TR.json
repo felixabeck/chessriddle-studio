@@ -1903,7 +1903,6 @@
     "UnsavedGames.Restored_one": "Geri yüklenen kaydedilmemiş oyunlar: {{count}}.",
     "UnsavedGames.Restored_other": "Geri yüklenen kaydedilmemiş oyunlar: {{count}}.",
     "UnsavedGames.RestoreFailed": "Kaydedilmemiş oyunlar geri yüklenemedi ({{category}}).",
-    "UnsavedGames.WriteFailed": "“{{name}}” için kurtarma kopyası kaydedilemedi ({{category}}). Kaybolmaması için oyunu kaydedin.",
     "Updater.Available": "Yeni bir sürüm ({{version}}) mevcut. Şimdi indirilip kurulsun mu? Kurulum bittiğinde uygulama yeniden başlar; kaydedilmemiş değişiklikleri olan bir sekme varsa başlamaz.",
     "Updater.Installed": "Güncelleme kuruldu",
     "Updater.InstallFailed": "Güncelleme kurulamadı",
@@ -1914,6 +1913,12 @@
     "Window.Close": "Pencereyi kapat",
     "Window.Maximize": "Pencereyi büyüt",
     "Window.Minimize": "Küçült",
-    "Window.Restore": "Pencereyi geri yükle"
+    "Window.Restore": "Pencereyi geri yükle",
+    "WorkspaceSession.Quarantined": "Önceki oturumdaki açık sekmeler geri yüklenemedi. Diskte saklandı.",
+    "WorkspaceSession.RestoreFailed": "Önceki oturumdaki açık sekmeler geri yüklenemedi ({{category}}).",
+    "WorkspaceSession.SeedQuotaFailed": "Tarayıcı depolaması dolu olduğu için önceki açık sekmeler geri yüklenemedi. Kayıtlı oturumunuz diskte saklandı.",
+    "WorkspaceSession.SkippedTabs_one": "Önceki oturumdan {{count}} sekme geri yüklenemedi. Kopyası diskte saklandı.",
+    "WorkspaceSession.SkippedTabs_other": "Önceki oturumdan {{count}} sekme geri yüklenemedi. Kopyaları diskte saklandı.",
+    "WorkspaceSession.WriteFailed": "Açık sekmeleriniz yeniden başlatma için kaydedilemedi ({{category}}). Güvende tutmak için oyunlarınızı kaydedin."
   }
 }

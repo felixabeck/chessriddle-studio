@@ -1875,7 +1875,6 @@
     "UnsavedGames.RemoveFailed": "无法删除“{{name}}”的恢复副本（{{category}}）。重启后它可能再次出现。",
     "UnsavedGames.Restored_other": "已恢复 {{count}} 个未保存的对局。",
     "UnsavedGames.RestoreFailed": "无法恢复未保存的对局（{{category}}）。",
-    "UnsavedGames.WriteFailed": "无法保存“{{name}}”的恢复副本（{{category}}）。请保存对局以免丢失。",
     "Updater.Available": "有新版本（{{version}}）可用。现在下载并安装吗？安装完成后应用会重启，除非某个标签页有未保存的更改。",
     "Updater.Installed": "更新已安装",
     "Updater.InstallFailed": "无法安装更新",
@@ -1886,6 +1885,11 @@
     "Window.Close": "关闭窗口",
     "Window.Maximize": "最大化窗口",
     "Window.Minimize": "最小化",
-    "Window.Restore": "还原窗口"
+    "Window.Restore": "还原窗口",
+    "WorkspaceSession.Quarantined": "无法恢复上次会话中打开的标签页。已将其保留在磁盘上。",
+    "WorkspaceSession.RestoreFailed": "无法恢复上次会话中打开的标签页（{{category}}）。",
+    "WorkspaceSession.SeedQuotaFailed": "由于浏览器存储空间已满，无法恢复上次打开的标签页。已将保存的会话保留在磁盘上。",
+    "WorkspaceSession.SkippedTabs_other": "无法恢复上次会话中的 {{count}} 个标签页。其副本已保留在磁盘上。",
+    "WorkspaceSession.WriteFailed": "无法保存打开的标签页以供重启恢复（{{category}}）。请保存您的对局以防丢失。"
   }
 }

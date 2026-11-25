@@ -1903,7 +1903,6 @@
     "UnsavedGames.Restored_one": "{{count}} ungespeicherte Partie wurde wiederhergestellt.",
     "UnsavedGames.Restored_other": "{{count}} ungespeicherte Partien wurden wiederhergestellt.",
     "UnsavedGames.RestoreFailed": "Ungespeicherte Partien konnten nicht wiederhergestellt werden ({{category}}).",
-    "UnsavedGames.WriteFailed": "Eine Sicherungskopie von „{{name}}“ konnte nicht gespeichert werden ({{category}}). Speichere die Partie, damit sie sicher ist.",
     "Updater.Available": "Eine neue Version ({{version}}) ist verfügbar. Jetzt herunterladen und installieren? Die App startet nach der Installation neu, außer ein Tab hat ungespeicherte Änderungen.",
     "Updater.Installed": "Update installiert",
     "Updater.InstallFailed": "Das Update konnte nicht installiert werden",
@@ -1914,6 +1913,12 @@
     "Window.Close": "Fenster schließen",
     "Window.Maximize": "Fenster maximieren",
     "Window.Minimize": "Fenster minimieren",
-    "Window.Restore": "Fenster wiederherstellen"
+    "Window.Restore": "Fenster wiederherstellen",
+    "WorkspaceSession.Quarantined": "Offene Tabs aus der vorherigen Sitzung konnten nicht wiederhergestellt werden. Sie wurden auf der Festplatte behalten.",
+    "WorkspaceSession.RestoreFailed": "Offene Tabs aus der vorherigen Sitzung konnten nicht wiederhergestellt werden ({{category}}).",
+    "WorkspaceSession.SeedQuotaFailed": "Offene Tabs aus der vorherigen Sitzung konnten nicht wiederhergestellt werden, da der Browserspeicher voll ist. Die gespeicherte Sitzung wurde auf der Festplatte behalten.",
+    "WorkspaceSession.SkippedTabs_one": "{{count}} Tab aus der vorherigen Sitzung konnte nicht wiederhergestellt werden. Seine Kopie wurde auf der Festplatte behalten.",
+    "WorkspaceSession.SkippedTabs_other": "{{count}} Tabs aus der vorherigen Sitzung konnten nicht wiederhergestellt werden. Ihre Kopien wurden auf der Festplatte behalten.",
+    "WorkspaceSession.WriteFailed": "Deine offenen Tabs konnten nicht für den Neustart gespeichert werden ({{category}}). Speichere deine Partien, um sie zu sichern."
   }
 }

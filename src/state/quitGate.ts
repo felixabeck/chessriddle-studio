@@ -55,8 +55,9 @@ export type QuitGateHost = {
     log: (message: string) => Promise<void>;
     warn: (message: string) => void;
     /**
-     * Recovery copies of unsaved games. A dirty tab whose copy is durable for its current content
-     * does not block quitting; it comes back on the next start.
+     * Durable workspace session mirror. A tab whose current content is confirmed does not block
+     * quitting, whether dirty, in conflict or unavailable; unconfirmed and uninspectable tabs
+     * still block.
      */
     recovery?: QuitRecovery;
 };
@@ -149,8 +150,12 @@ function inspectBlockingTabs(
 
         if (!asksBeforeDiscardingChanges(tab)) continue;
 
-        // A dirty tab with a durable copy is not blocking for being dirty; a conflict still is.
-        if (dirty && !hasConfirmedCopy(tab.value)) {
+        // A tab whose current content is confirmed in the durable workspace session does not block
+        // quitting, whether dirty, in conflict or unavailable: its tree and baseline come back and
+        // any conflict is detected again at the next start (O5, d-20261125-14).
+        if (hasConfirmedCopy(tab.value)) continue;
+
+        if (dirty) {
             blocking.push({ tab, uninspectable: false, dirty: true });
             continue;
         }
@@ -177,7 +182,10 @@ export function scanBlockingTabs(
     return inspectBlockingTabs(tabs, inspection).map(toBlockingTab);
 }
 
-/** The quit decision: like `scanBlockingTabs`, minus dirty tabs with a durable recovery copy. */
+/**
+ * The quit decision: like `scanBlockingTabs`, minus inspectable tabs whose current content is
+ * confirmed in the durable workspace session (including dirty, conflict, or unavailable tabs).
+ */
 export function scanQuitBlockingTabs(
     tabs: readonly Tab[],
     recovery: QuitRecovery | undefined,

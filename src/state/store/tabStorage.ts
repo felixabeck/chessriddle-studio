@@ -30,6 +30,7 @@ const NON_TREE_SESSION_KEYS = new Set([
     "activeTab",
     "database-view",
     "expanded-directories",
+    "workspace-session-unavailable",
 ]);
 const MAX_TREE_NODES = 100_000;
 // Plies from the root. 2,048 = 1,024 moves, about four times the longest tournament game
@@ -587,13 +588,29 @@ export function decodeLegacyOrCompressed(value: string): ValidatedStoredTree | n
 }
 
 /**
+ * Classifies a raw persisted tree string for startup restore filtering when "Restore open tabs at
+ * start" is off: dirty, append-outstanding, clean, or undecodable.
+ */
+export function inspectRawTreeForRestore(
+    raw: string,
+): "dirty" | "append-outstanding" | "clean" | "undecodable" {
+    const decoded = decodeLegacyOrCompressed(raw);
+    if (decoded === null) return "undecodable";
+    if (decoded.state.dirty === true) return "dirty";
+    if (decoded.state.appendAttempted === true) return "append-outstanding";
+    return "clean";
+}
+
+/**
  * The sole owner of tab-tree storage. In particular, callers never read
  * sessionStorage directly: a clone or close observes not-yet-flushed edits.
  */
 export class TabStorageRepository {
     private readonly pending = new Map<string, StoredTree>();
+    private readonly failedWrites = new Set<string>();
     private readonly readStatuses = new Map<string, TabTreeStorageStatus>();
     private readonly statusListeners = new Map<string, Set<() => void>>();
+    private readonly writeListeners = new Set<(tabId: string) => void>();
     private readonly notifiedLimitTabs = new Set<string>();
     private flushTimeout: ReturnType<typeof setTimeout> | null = null;
     private handlersBound = false;
@@ -737,6 +754,7 @@ export class TabStorageRepository {
             throw reported;
         }
         this.pending.delete(tabId);
+        this.failedWrites.delete(tabId);
         this.notifiedLimitTabs.delete(tabId);
         this.setReadStatus(tabId, { kind: "absent" });
         return true;
@@ -765,8 +783,10 @@ export class TabStorageRepository {
             sessionStorage.setItem(tabId, serializeStorageValue(value));
             // This complete durable frame supersedes every older debounced frame for this key.
             this.pending.delete(tabId);
+            this.failedWrites.delete(tabId);
             this.notifiedLimitTabs.delete(tabId);
             this.setReadStatus(tabId, { kind: "available" });
+            this.notifyCommittedWrite(tabId);
         } catch (error) {
             throw persistStorageWriteError(error);
         }
@@ -819,6 +839,7 @@ export class TabStorageRepository {
                 throw new Error("Could not verify the copied unreadable tree value.");
             }
             this.setReadStatus(targetTabId, { kind: "unreadable", rawValue });
+            this.notifyCommittedWrite(targetTabId);
         } catch (error) {
             // The target was verified absent immediately before this write. Remove only bytes
             // produced by this copy; the original source remains the workspace's owner.
@@ -867,6 +888,7 @@ export class TabStorageRepository {
 
     remove(tabId: string) {
         this.pending.delete(tabId);
+        this.failedWrites.delete(tabId);
         this.notifiedLimitTabs.delete(tabId);
         sessionStorage.removeItem(tabId);
         this.setReadStatus(tabId, NOT_READ_STATUS);
@@ -1062,9 +1084,12 @@ export class TabStorageRepository {
                 if ("limit" in parsed) refuseFlush(parsed.limit);
                 sessionStorage.setItem(tabId, serializeStorageValue(value));
                 this.pending.delete(tabId);
+                this.failedWrites.delete(tabId);
                 this.notifiedLimitTabs.delete(tabId);
                 this.setReadStatus(tabId, { kind: "available" });
+                this.notifyCommittedWrite(tabId);
             } catch (error) {
+                this.failedWrites.add(tabId);
                 failedTabIds.push(tabId);
                 warnSafely(`Could not persist tree storage ${tabId}: ${String(error)}`);
                 if (!notify) continue;
@@ -1083,6 +1108,21 @@ export class TabStorageRepository {
 
     pendingCount() {
         return this.pending.size;
+    }
+
+    hasPendingOrFailedWrite(tabId: string): boolean {
+        return this.pending.has(tabId) || this.failedWrites.has(tabId);
+    }
+
+    subscribeCommittedWrite(listener: (tabId: string) => void): () => void {
+        this.writeListeners.add(listener);
+        return () => {
+            this.writeListeners.delete(listener);
+        };
+    }
+
+    private notifyCommittedWrite(tabId: string) {
+        for (const listener of this.writeListeners) listener(tabId);
     }
 
     private scheduleFlush() {

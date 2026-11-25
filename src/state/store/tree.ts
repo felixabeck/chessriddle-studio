@@ -227,7 +227,18 @@ type PersistedTreeStore = TreeStore & {
 
 const reportOwners = new Map<string, object>();
 const treeStores = new Map<string, PersistedTreeStore>();
+const treeStoreCreatedListeners = new Set<(id: string, store: TreeStore) => void>();
 const closingReportOwners = new Map<string, ReportOwnerInvalidation>();
+
+/** Notifies subscribers whenever a persisted per-tab tree store is created and cached. */
+export function subscribeTreeStoreCreated(
+    listener: (id: string, store: TreeStore) => void,
+): () => void {
+    treeStoreCreatedListeners.add(listener);
+    return () => {
+        treeStoreCreatedListeners.delete(listener);
+    };
+}
 
 export function getCachedTreeStore(tab: string): TreeStore | undefined {
     return treeStores.get(tab);
@@ -1247,6 +1258,7 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
             [installAdmittedTree]: install,
         });
         treeStores.set(id, ownedStore);
+        for (const listener of treeStoreCreatedListeners) listener(id, ownedStore);
         isCurrent = () => treeStores.get(id) === ownedStore;
         persistenceKey = () => ownedStore.persist.getOptions().name;
         return ownedStore;

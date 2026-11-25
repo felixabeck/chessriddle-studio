@@ -23,9 +23,11 @@
           "src-tauri/src/chessbase.rs",
           "src-tauri/src/error.rs",
           "src-tauri/src/infra/**",
+          "src-tauri/src/keyed_leaf_store.rs",
           "src-tauri/src/main.rs",
           "src-tauri/src/system_appearance.rs",
-          "src-tauri/src/workspace_commands.rs"
+          "src-tauri/src/workspace_commands.rs",
+          "src-tauri/src/workspace_session.rs"
         ]
       },
       {

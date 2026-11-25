@@ -49,11 +49,7 @@ import { pickPgnFile } from "@/utils/files";
 import { openFile } from "@/utils/openFile";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { createQuitTabSaver } from "@/state/quitSave";
-import {
-  getUnsavedGameMirror,
-  nativeUnsavedGames,
-  restoreUnsavedGames,
-} from "@/state/unsavedGames";
+import type { WorkspaceSessionMirror } from "@/state/workspaceSession";
 import type { Tab } from "@/utils/tabs";
 import {
   assembleNativeMenuResources,
@@ -138,26 +134,46 @@ function RootShell() {
   useIncomingGameLinks();
 
   const [, setTabs] = useAtom(tabsAtom);
-  const unsavedGames = getUnsavedGameMirror(() => ({
-    native: nativeUnsavedGames,
-    jotaiStore,
-    notify: (message) => notifications.show({ color: "red", message }),
-  }));
+  const sessionMirrorRef = useRef<WorkspaceSessionMirror | null>(null);
 
   useEffect(() => {
-    unsavedGames.start();
-    restoreUnsavedGames({
-      native: nativeUnsavedGames,
-      jotaiStore,
-      setTabs: (...args) => jotaiStore.set(tabsAtom, ...args),
-      notify: (message) => notifications.show({ message }),
-    }).catch((error: unknown) =>
-      warnSafely(
-        `Unsaved game restore stopped: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
-    return () => unsavedGames.stop();
-  }, [jotaiStore, unsavedGames]);
+    let disposed = false;
+    let activeMirror: WorkspaceSessionMirror | null = null;
+    void import("@/state/workspaceSession")
+      .then(
+        ({ flushWorkspaceSessionNotices, getWorkspaceSessionMirror, nativeWorkspaceSession }) => {
+          if (disposed) return;
+          flushWorkspaceSessionNotices((message, color) => notifications.show({ color, message }));
+          const mirror = getWorkspaceSessionMirror(() => ({
+            native: nativeWorkspaceSession,
+            jotaiStore,
+            notify: (message) => notifications.show({ color: "red", message }),
+          }));
+          activeMirror = mirror;
+          sessionMirrorRef.current = mirror;
+          mirror.start();
+          return import("@/state/unsavedGames").then(
+            ({ nativeUnsavedGames, restoreUnsavedGames }) =>
+              restoreUnsavedGames({
+                native: nativeUnsavedGames,
+                jotaiStore,
+                setTabs: (...args) => jotaiStore.set(tabsAtom, ...args),
+                notify: (message) => notifications.show({ message }),
+                sessionMirror: mirror,
+              }),
+          );
+        },
+      )
+      .catch((error: unknown) =>
+        warnSafely(
+          `Workspace session startup stopped: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    return () => {
+      disposed = true;
+      activeMirror?.stop();
+    };
+  }, [jotaiStore]);
 
   const { t } = useTranslation();
   const windowPlatform = menuWindowPlatform(String(import.meta.env.VITE_PLATFORM));
@@ -259,8 +275,8 @@ function RootShell() {
     exitProcess: (code) => exit(code),
     saveTab: createQuitTabSaver(jotaiStore, () => void navigate({ to: "/" })),
     recovery: {
-      drain: () => unsavedGames.drain(),
-      isConfirmed: (tabId) => unsavedGames.isConfirmed(tabId),
+      drain: () => sessionMirrorRef.current?.drain() ?? Promise.resolve({ finished: false }),
+      isConfirmed: (tabId) => sessionMirrorRef.current?.isConfirmed(tabId) ?? false,
     },
     notify: notifyQuitError,
     log: (message) =>

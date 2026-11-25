@@ -1415,10 +1415,18 @@ const tauriBootstrap = () => {
         acknowledge_practice_orphans: { result: null },
         repair_practice_deck: { result: null },
         list_practice_decks: { result: { decks: [], anomalies: [] } },
-        write_unsaved_game: { result: null },
         list_unsaved_games: { result: { records: [], skipped: [], omitted: 0 } },
         remove_unsaved_game: { result: null },
         clear_unsaved_games: { result: [] },
+        write_workspace_session_leaf: { result: null },
+        read_workspace_session_fixed: {
+            result: { workspace: { kind: "absent" }, pageTabs: { kind: "absent" } },
+        },
+        read_workspace_session_leaves: { result: [] },
+        list_workspace_session_names: { result: { names: [], omitted: 0 } },
+        remove_workspace_session_leaf: { result: null },
+        quarantine_workspace_session_leaves: { result: { bucket: null, moved: [], failed: [] } },
+        clear_workspace_session: { result: [] },
         get_database_workspace: {
             result: {
                 root: { id: { id: "database-root" }, kind: "databaseRoot" },

@@ -30,6 +30,7 @@ pub enum DurabilityStage {
     PracticeReviewShard,
     PracticeState,
     UnsavedGame,
+    WorkspaceSession,
 }
 
 impl std::fmt::Display for DurabilityStage {
@@ -63,6 +64,7 @@ impl std::fmt::Display for DurabilityStage {
             Self::PracticeReviewShard => "practice review-shard replacement",
             Self::PracticeState => "practice migration-state replacement",
             Self::UnsavedGame => "unsaved game replacement",
+            Self::WorkspaceSession => "workspace session replacement",
         })
     }
 }
@@ -2026,6 +2028,7 @@ mod tests {
             PracticeReviewShard,
             PracticeState,
             UnsavedGame,
+            WorkspaceSession,
         ];
         for stage in stages {
             let error = Error::CommittedDurabilityUncertain(stage);

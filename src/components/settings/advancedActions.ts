@@ -1,4 +1,5 @@
 import { ask } from "@/platform/native";
+import { errorCategoryOf } from "@/platform/errors";
 import { tauri } from "@/platform/tauri";
 import i18n from "@/i18n";
 import { initializePathOwners, startupLegacyDeckScanComplete } from "@/state/pathOwners";
@@ -8,12 +9,73 @@ import {
     runPracticeMigrationPass,
     type PracticeMigrationPassResult,
 } from "@/state/practiceStorage";
+import { nativeUnsavedGames } from "@/state/unsavedGames";
 import {
-    clearUnsavedGamesBeforeWipe,
-    getUnsavedGameMirror,
-    nativeUnsavedGames,
-    type UnsavedGameMirror,
-} from "@/state/unsavedGames";
+    getWorkspaceSessionMirror,
+    nativeWorkspaceSession,
+    type DrainResult,
+    type WorkspaceSessionMirror,
+    type WorkspaceSessionNative,
+} from "@/state/workspaceSession";
+
+async function clearNativeStoreOrResume(
+    clear: () => Promise<string[]>,
+    resume: () => void,
+): Promise<void> {
+    let leftover: string[];
+    try {
+        leftover = await clear();
+    } catch (error) {
+        resume();
+        throw new Error(
+            i18n.t("Menu.Help.ClearSavedData.UnsavedFailed", { category: errorCategoryOf(error) }),
+        );
+    }
+    if (leftover.length > 0) {
+        resume();
+        throw new Error(
+            i18n.t("Menu.Help.ClearSavedData.UnsavedLeftover", { count: leftover.length }),
+        );
+    }
+}
+
+/**
+ * Drains the session mirror, clears both the durable session store and the legacy unsaved-games
+ * store, and wipes web storage. On any failure keeps the session and resumes the mirror (clearing
+ * store-unavailable mode only if the session store itself was cleared completely).
+ */
+export async function clearWorkspaceAndUnsavedBeforeWipe(deps: {
+    mirror: Pick<WorkspaceSessionMirror, "pause" | "resume" | "drain">;
+    sessionNative: Pick<WorkspaceSessionNative, "clear">;
+    legacyNative: { clear: () => Promise<string[]> };
+    wipe: () => void;
+}): Promise<void> {
+    deps.mirror.pause();
+    let drained: DrainResult;
+    try {
+        drained = await deps.mirror.drain();
+    } catch (error) {
+        deps.mirror.resume({ clearedCompletely: false });
+        throw new Error(
+            i18n.t("Menu.Help.ClearSavedData.UnsavedFailed", { category: errorCategoryOf(error) }),
+        );
+    }
+    if (!drained.finished) {
+        deps.mirror.resume({ clearedCompletely: false });
+        throw new Error(i18n.t("Menu.Help.ClearSavedData.UnsavedPending"));
+    }
+
+    await clearNativeStoreOrResume(
+        () => deps.sessionNative.clear(),
+        () => deps.mirror.resume({ clearedCompletely: false }),
+    );
+    await clearNativeStoreOrResume(
+        () => deps.legacyNative.clear(),
+        () => deps.mirror.resume({ clearedCompletely: true }),
+    );
+
+    deps.wipe();
+}
 
 export type ClearSavedDataAfterConfirmationDeps = {
     blockedMessage: (decks: string[]) => string;
@@ -69,15 +131,15 @@ export async function openAppLogs(): Promise<void> {
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-/** Confirms, then clears saved data through the window's unsaved-games mirror. */
+/** Confirms, then clears saved data through the window's workspace session mirror. */
 export async function clearSavedData(options?: {
-    mirror?: Pick<UnsavedGameMirror, "pause" | "resume" | "drain">;
+    mirror?: Pick<WorkspaceSessionMirror, "pause" | "resume" | "drain">;
     t?: Translate;
 }): Promise<void> {
     const mirror =
         options?.mirror ??
-        getUnsavedGameMirror(() => {
-            throw new Error("Unsaved-game mirror was not started");
+        getWorkspaceSessionMirror(() => {
+            throw new Error("Workspace session mirror was not started");
         });
     const t = options?.t ?? ((key, vars) => i18n.t(key, vars));
     if (
@@ -95,9 +157,10 @@ export async function clearSavedData(options?: {
                 practiceData: t("Board.Practice.Data"),
             }),
         clear: () =>
-            clearUnsavedGamesBeforeWipe({
+            clearWorkspaceAndUnsavedBeforeWipe({
                 mirror,
-                native: nativeUnsavedGames,
+                sessionNative: nativeWorkspaceSession,
+                legacyNative: nativeUnsavedGames,
                 wipe: () => {
                     localStorage.clear();
                     sessionStorage.clear();

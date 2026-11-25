@@ -998,6 +998,35 @@ impl AuthorizedDir {
         self.remove_leaf_identified(leaf, VerifiedIdentity::from_pair(identity))
     }
 
+    pub(crate) fn remove_dir_identified_pair(
+        &self,
+        leaf: &OsStr,
+        identity: (u64, u64),
+    ) -> Result<(), Error> {
+        crate::infra::fs::single_leaf(leaf)?;
+        crate::infra::fs::remove_entry_at(self.directory.as_file(), leaf, identity, true)
+    }
+
+    pub(crate) fn rename_entry_into_child(
+        &self,
+        source: &OsStr,
+        expected: (u64, u64),
+        source_is_dir: bool,
+        target_dir: &AuthorizedDir,
+        target: &OsStr,
+    ) -> Result<crate::infra::fs::AtomicFileOutcome, Error> {
+        crate::infra::fs::single_leaf(source)?;
+        crate::infra::fs::single_leaf(target)?;
+        crate::infra::fs::rename_entry_at(
+            self.directory.as_file(),
+            source,
+            expected,
+            source_is_dir,
+            target_dir.directory.as_file(),
+            target,
+        )
+    }
+
     pub(crate) fn open_regular_relative(&self, relative: &Path) -> Result<OwnedFile, Error> {
         let components = relative_components(relative);
         validate_components(&components)?;
@@ -2253,6 +2282,7 @@ pub(crate) enum AppOwnedDefaultRoot {
     Credentials,
     Practice,
     UnsavedGames,
+    WorkspaceSession,
     LibrarySync,
     #[cfg(target_os = "macos")]
     EngineLaunch,
@@ -2269,6 +2299,7 @@ impl AppOwnedDefaultRoot {
         Self::Credentials,
         Self::Practice,
         Self::UnsavedGames,
+        Self::WorkspaceSession,
         Self::LibrarySync,
         #[cfg(target_os = "macos")]
         Self::EngineLaunch,
@@ -2284,6 +2315,7 @@ impl AppOwnedDefaultRoot {
             Self::Credentials => "credentials",
             Self::Practice => "practice",
             Self::UnsavedGames => "unsaved-games",
+            Self::WorkspaceSession => "workspace-session",
             Self::LibrarySync => "library-sync",
             #[cfg(target_os = "macos")]
             Self::EngineLaunch => "engine-launch",
@@ -2296,6 +2328,7 @@ impl AppOwnedDefaultRoot {
             Self::Collections => Some(0o700),
             Self::Credentials => Some(0o700),
             Self::UnsavedGames => Some(0o700),
+            Self::WorkspaceSession => Some(0o700),
             Self::LibrarySync => Some(0o700),
             #[cfg(target_os = "macos")]
             Self::EngineLaunch => Some(0o700),
@@ -5783,6 +5816,7 @@ const APP_OWNED_DEFAULT_ROOT_LEAVES: &[(AppOwnedDefaultRoot, &str)] = &[
     (AppOwnedDefaultRoot::Credentials, "credentials"),
     (AppOwnedDefaultRoot::Practice, "practice"),
     (AppOwnedDefaultRoot::UnsavedGames, "unsaved-games"),
+    (AppOwnedDefaultRoot::WorkspaceSession, "workspace-session"),
     (AppOwnedDefaultRoot::LibrarySync, "library-sync"),
     #[cfg(target_os = "macos")]
     (AppOwnedDefaultRoot::EngineLaunch, "engine-launch"),

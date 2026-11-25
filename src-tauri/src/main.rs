@@ -21,6 +21,7 @@ mod game;
 mod infra;
 
 mod fs;
+mod keyed_leaf_store;
 mod lexer;
 mod library_sync;
 mod lichess;
@@ -35,6 +36,7 @@ mod sound;
 mod system_appearance;
 mod unsaved_games;
 mod workspace_commands;
+mod workspace_session;
 
 #[cfg(test)]
 use std::io::Write;
@@ -120,9 +122,7 @@ use crate::puzzle::{
     list_puzzle_databases,
 };
 use crate::sound::get_sound_server_port;
-use crate::unsaved_games::{
-    clear_unsaved_games, list_unsaved_games, remove_unsaved_game, write_unsaved_game,
-};
+use crate::unsaved_games::{clear_unsaved_games, list_unsaved_games, remove_unsaved_game};
 use crate::workspace_commands::{
     create_workspace_database, database_download_destination, download_destination_is_known,
     get_database_workspace, get_engine_workspace, issue_database_workspace,
@@ -130,6 +130,11 @@ use crate::workspace_commands::{
     issue_engine_workspace, issue_opening_book, issue_pgn_export_destination, issue_pgn_workspace,
     list_workspace_databases, open_engine_workspace, read_engine_image, save_board_snapshot,
     save_engine_logs,
+};
+use crate::workspace_session::{
+    clear_workspace_session, list_workspace_session_names, quarantine_workspace_session_leaves,
+    read_workspace_session_fixed, read_workspace_session_leaves, remove_workspace_session_leaf,
+    write_workspace_session_leaf,
 };
 use crate::{
     chess::get_best_moves,
@@ -1594,10 +1599,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             acknowledge_practice_orphans,
             repair_practice_deck,
             list_practice_decks,
-            write_unsaved_game,
             list_unsaved_games,
             remove_unsaved_game,
             clear_unsaved_games,
+            write_workspace_session_leaf,
+            read_workspace_session_fixed,
+            read_workspace_session_leaves,
+            list_workspace_session_names,
+            remove_workspace_session_leaf,
+            quarantine_workspace_session_leaves,
+            clear_workspace_session,
             search_opening_name,
             get_opening_from_fens,
             get_opening_from_name,

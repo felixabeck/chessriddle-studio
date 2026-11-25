@@ -1903,7 +1903,6 @@
     "UnsavedGames.Restored_one": "{{count}} unsaved game was restored.",
     "UnsavedGames.Restored_other": "{{count}} unsaved games were restored.",
     "UnsavedGames.RestoreFailed": "Unsaved games could not be restored ({{category}}).",
-    "UnsavedGames.WriteFailed": "A recovery copy of “{{name}}” could not be stored ({{category}}). Save the game to keep it safe.",
     "Updater.Available": "A new version ({{version}}) is available. Download and install it now? The app restarts when the installation finishes, unless a tab has unsaved changes.",
     "Updater.Installed": "Update installed",
     "Updater.InstallFailed": "The update could not be installed",
@@ -1914,6 +1913,12 @@
     "Window.Close": "Close window",
     "Window.Maximize": "Maximise window",
     "Window.Minimize": "Minimize",
-    "Window.Restore": "Restore window"
+    "Window.Restore": "Restore window",
+    "WorkspaceSession.Quarantined": "Previous open tabs could not be restored. They were kept on disk.",
+    "WorkspaceSession.RestoreFailed": "Open tabs from the previous session could not be restored ({{category}}).",
+    "WorkspaceSession.SeedQuotaFailed": "Previous open tabs could not be restored because browser storage is full. Your saved session was kept on disk.",
+    "WorkspaceSession.SkippedTabs_one": "{{count}} tab from the previous session could not be restored. Its copy was kept on disk.",
+    "WorkspaceSession.SkippedTabs_other": "{{count}} tabs from the previous session could not be restored. Their copies were kept on disk.",
+    "WorkspaceSession.WriteFailed": "Your open tabs could not be saved for restart ({{category}}). Save your games to keep them safe."
   }
 }
