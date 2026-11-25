@@ -29527,3 +29527,20 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Spotted outside diff:** yes, while running the full e2e suite for the hide-tab-strip build (2026-11-26).
 * **Closed as duplicate:** the same CI red was filed in parallel as f-20261126-04 and fixed by `05c541843` (test dismisses the move menu with a click on a move it does not cover); f-20261126-04 is closed. Nothing left to do here.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"23ef744e569a1c6581b6be8a049c13af1e2f48897489c13edb40a77c8cd9309c","header_sha256":"1a717dcd2d602b7225235e05a0db92470236d466b04dbef4cffbd75f61e85f1b","header_status":"handled","input_sha256":"f79e7638ca03ac14d8d93ee2a61fcf2dded52a08a43b81a0088affc54315e335","kind":"mutation-receipt","operation":"e7090ced2f82664b13615401eaf3b92669d82b649d6e40b2806f70c0a1007a42","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-03"],"target":"f-20261126-03","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### Opening a file that a restored tab already shows remounts the board about 300 ms later and resets the side panel to Info
+
+* **ID:** f-20261125-23 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes
+* **Where:** the open-file path from the Library/Files page into an analysis tab while workspace restore has already restored a tab of the same file (`src/utils/tabs.ts`, `src/components/tabs/**`, the board panel tabs in `src/components/boards/**`); exact component not yet identified.
+* **Defect:** after a restart that restores a tab showing a repertoire, opening the same repertoire again from the Library leaves two tabs with the same title, and roughly 300 ms after the new board appears the board's side panel remounts (new Mantine tab ids) and falls back to the Info panel. A panel tab the user selected in that window is lost.
+* **Failure scenario:** `pnpm verify:app`, session "large-deck extension" (`scripts/verify-app.mjs` `selectPracticeTab`) on the folder-settings phase-2 build, 2026-11-25: a 150 ms trace after the click on Practice showed `["verify:practice","Practice","Train"]` selected with Practice tab id `mantine-fyybs0i65-tab-practice` at 6 ms, then `["verify:practice","Info"]` with tab id `mantine-dz3ons57q-tab-practice` from 311 ms on, never recovering; "Start Practice" never appeared. A user who clicks Practice right after opening the file sees the click undone.
+* **Open question:** is the remount the dedupe/activation of the already-restored tab (the new tab replaced by or swapped with the restored one), a second load of the same file, or a workspace-restore write that re-keys the board; and should opening an already-open file activate the existing tab instead of creating a second one?
+* **Fix:** identify the remount trigger and make opening an already-open file keep a stable board (or activate the existing tab), so the panel selection survives; then remove the settle wait the verify harness needs for this race.
+* **Proof:** a renderer test that opens a file already present in a restored tab, selects Practice, and still has Practice selected after the open completes; `pnpm verify:app` "large-deck extension" passes without a settle wait.
+* **Found by:** Claude Code (Opus 5.5), build run tasks/plans/2026-11-25-folder-settings.md, 2026-11-25
