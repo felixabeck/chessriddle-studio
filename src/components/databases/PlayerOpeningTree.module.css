@@ -54,6 +54,7 @@
 
 .table .number {
   text-align: right;
+  white-space: nowrap;
 }
 
 .row {
@@ -100,20 +101,55 @@
 }
 
 .movesTable th:nth-child(1) {
-  width: 14%;
+  width: 11%;
 }
 
-.movesTable th:nth-child(2),
+.movesTable th:nth-child(2) {
+  width: 13%;
+}
+
 .movesTable th:nth-child(3) {
-  width: 12%;
+  width: 25%;
 }
 
 .movesTable th:nth-child(4) {
-  width: 38%;
+  width: 13%;
 }
 
 .movesTable th:nth-child(5) {
-  width: 24%;
+  width: 17%;
+}
+
+.movesTable th:nth-child(5),
+.movesTable td:nth-child(5) {
+  padding-left: 0.5rem;
+}
+
+.movesTable th:nth-child(6) {
+  width: 21%;
+}
+
+.recentHeader {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.recentHeaderSince {
+  font-weight: 400;
+}
+
+.recentSummary {
+  overflow-wrap: anywhere;
+}
+
+.summaryMove {
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.recentLeader {
+  color: var(--cf-primary);
+  font-weight: 600;
 }
 
 .results :global(.mantine-Progress-section) {
@@ -161,13 +197,14 @@
   .movesTable thead tr,
   .movesTable tbody tr {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1.1fr);
   }
 
   .movesTable th:nth-child(n),
   .movesTable td {
     min-width: 0;
     width: auto;
+    padding-inline: 0.1875rem;
   }
 
   .movesTable thead .recencyColumn {
@@ -178,9 +215,10 @@
     grid-column: 1 / -1;
   }
 
-  .movesTable th:nth-child(4),
-  .movesTable td:nth-child(4) {
+  .movesTable th:nth-child(5),
+  .movesTable td:nth-child(5) {
     grid-column: 1 / -1;
+    padding-left: 0.1875rem;
   }
 
   /* Scoped under `.root` so overrides of composed `PlayerCardTab` base classes win regardless of CSS load order. */
@@ -240,6 +278,7 @@
 
   .compactColumnLabel {
     display: block;
+    white-space: normal;
     overflow-wrap: normal;
     word-break: normal;
     color: var(--mantine-color-dimmed);

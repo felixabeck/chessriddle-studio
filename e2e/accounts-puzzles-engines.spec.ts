@@ -16,6 +16,7 @@ import {
     goToLibrary,
     closeSelectedWorkspaceTab,
     openWorkspaceTabActions,
+    splitTextWords,
 } from "./fixtures";
 import {
     decodeCompressedOrJson,
@@ -1413,7 +1414,12 @@ for (const corner of [
                                     { year: 2023, count: 2 },
                                     { year: 2026, count: 7 },
                                 ],
-                                recent: [],
+                                recent: [
+                                    { date: "2026.11.01", game_id: 24 },
+                                    { date: "2026.10.20", game_id: 23 },
+                                    { date: "2026.09.15", game_id: 22 },
+                                    { date: "2026.08.01", game_id: 21 },
+                                ],
                             },
                             {
                                 move: "d4",
@@ -1423,7 +1429,7 @@ for (const corner of [
                                 unknown: 0,
                                 last_played: "2025.03.02",
                                 year_counts: [{ year: 2025, count: 3 }],
-                                recent: [],
+                                recent: [{ date: "2025.03.02", game_id: 10 }],
                             },
                         ],
                         [gameOpeningFixture.games[0]],
@@ -1464,6 +1470,9 @@ for (const corner of [
         await expect(firstMove).toContainText("e4");
         // One search per account database, merged into one row.
         await expect(firstMove).toContainText("18");
+        await expect(firstMove.locator('[data-recent-leader="true"]')).toHaveCount(1);
+        await expect(tree.locator("[data-opening-recent-summary]")).toContainText("e4");
+        expect(await splitTextWords(tree.locator("th, [data-opening-column-label]"))).toEqual([]);
         await expect(panel.locator("[data-opening-figures]")).toHaveCount(0);
         await expect(
             tree.getByRole("button", { name: copy["Databases.OpeningTree.Analyse"], exact: true }),

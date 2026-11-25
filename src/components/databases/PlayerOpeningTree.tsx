@@ -7,6 +7,7 @@ import {
   Skeleton,
   Stack,
   Text,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useNavigate } from "@tanstack/react-router";
@@ -14,8 +15,8 @@ import type { Color } from "chessops";
 import dayjs from "dayjs";
 import { useSetAtom, useStore } from "jotai";
 import { ChevronLeft, RotateCcw } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import type { DatabaseHandle, NormalizedGame, Player, PositionStats } from "@/bindings";
 import { Chessground } from "@/chessground/Chessground";
 import { fitSelectProps } from "@/components/common/fitSelectProps";
@@ -43,8 +44,10 @@ import {
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
 import { databaseGameHeaders } from "@/utils/databaseGameTree";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
+import { formatPgnYearMonth } from "@/utils/pgnDate";
 import { createTab, runTabCreation } from "@/utils/tabs";
 import GamePreview from "./GamePreview";
+import { sectionYearTotals, summarizeRecentGames, type RecentGamesSummary } from "./openingRecency";
 import { opponentPlayers } from "./opponentLookup";
 import { type OnlineGames, useOnlineGames } from "./useOnlineGames";
 import PlayerOpeningRecency from "./PlayerOpeningRecency";
@@ -469,6 +472,13 @@ function OpeningTree({
           }
           const isSelected = (source: OpeningTreeSource, game: NormalizedGame) =>
             selected?.source.key === source.key && selected.game.id === game.id;
+          const sectionRecentGames = sections.map((section) => ({
+            section,
+            recent: summarizeRecentGames(section.combined.openings),
+          }));
+          const summaryParts = sectionRecentGames
+            .map(({ section, recent }) => renderRecentGamesSummaryPart(section, recent))
+            .filter((part): part is ReactNode => part !== null);
           return (
             <>
               {!primary.loading && !primary.failed && primary.failures.length > 0 && (
@@ -497,10 +507,19 @@ function OpeningTree({
                   />
                 </div>
                 <Stack gap="sm" miw={0}>
-                  {sections.map((section) => (
+                  {summaryParts.length > 0 && (
+                    <Text size="sm" className={classes.recentSummary} data-opening-recent-summary>
+                      <Trans
+                        i18nKey="Databases.OpeningTree.Recent.Summary"
+                        components={{ parts: <SummaryParts parts={summaryParts} /> }}
+                      />
+                    </Text>
+                  )}
+                  {sectionRecentGames.map(({ section, recent }) => (
                     <MovesPanel
                       key={section.key}
                       section={section}
+                      recent={recent}
                       name={name}
                       color={color}
                       onMove={advance}
@@ -575,21 +594,87 @@ function SectionTitle({ title }: { title?: string }) {
   ) : null;
 }
 
+function SummaryParts({ parts }: { parts: ReactNode[] }) {
+  return (
+    <>
+      {parts.map((part, index) => (
+        <Fragment key={index}>
+          {index > 0 ? " · " : null}
+          {part}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+function renderRecentGamesSummaryPart(
+  section: OpeningSection,
+  recent: RecentGamesSummary,
+): ReactNode | null {
+  if (section.combined.loading || section.combined.failed || recent.windowSize === 0) {
+    return null;
+  }
+  const move = recent.leaders.join(" / ");
+  const played = recent.leaderCount;
+  const total = recent.windowSize;
+  const tie = recent.leaders.length > 1;
+  const key = section.title
+    ? tie
+      ? "Databases.OpeningTree.Recent.SummarySourceTie"
+      : "Databases.OpeningTree.Recent.SummarySourceMove"
+    : tie
+      ? "Databases.OpeningTree.Recent.SummaryTie"
+      : "Databases.OpeningTree.Recent.SummaryMove";
+  return (
+    <Trans
+      i18nKey={key}
+      values={{ ...(section.title ? { source: section.title } : {}), move, played, total }}
+      components={{ move: <span className={classes.summaryMove} /> }}
+    />
+  );
+}
+
 /** The moves a section's games continue with from the shown position. */
 function MovesPanel({
   section: { key, title, combined },
+  recent,
   name,
   color,
   onMove,
 }: {
   section: OpeningSection;
+  recent: RecentGamesSummary;
   name: string;
   color: Color;
   onMove: (san: string) => void;
 }) {
+  // The compiler otherwise caches Date construction for the lifetime of this mount.
+  "use no memo";
+
   const { t } = useTranslation();
   const { openings, loading, progressId, failures, failed } = combined;
   const total = positionTotal(openings);
+  const currentYear = new Date().getFullYear();
+  const sectionTotals = sectionYearTotals(openings, currentYear);
+  const recentCountLabel =
+    recent.windowSize > 0
+      ? t("Databases.OpeningTree.Recent.HeaderCount", {
+          defaultValue: "Last {{count}} games",
+          count: recent.windowSize,
+        })
+      : t("Databases.OpeningTree.Recent.HeaderEmpty", {
+          defaultValue: "Recently",
+        });
+  const recentSinceLabel =
+    recent.windowSize > 0
+      ? t("Databases.OpeningTree.Recent.HeaderSince", {
+          defaultValue: "since {{date}}",
+          date: formatPgnYearMonth(recent.oldestDate),
+        })
+      : null;
+  const compactRecentLabel = recentSinceLabel
+    ? `${recentCountLabel} ${recentSinceLabel}`
+    : recentCountLabel;
   return (
     <div className={classes.inset} data-opening-section={key}>
       <SectionTitle title={title} />
@@ -639,6 +724,16 @@ function MovesPanel({
                     <th>{t("Databases.OpeningTree.Move", { defaultValue: "Move" })}</th>
                     <th className={classes.number}>{t("Common.Games")}</th>
                     <th className={classes.number}>
+                      {recentSinceLabel ? (
+                        <span className={classes.recentHeader}>
+                          <span>{recentCountLabel} </span>
+                          <span className={classes.recentHeaderSince}>{recentSinceLabel}</span>
+                        </span>
+                      ) : (
+                        recentCountLabel
+                      )}
+                    </th>
+                    <th className={classes.number}>
                       {t("Databases.OpeningTree.Score", { defaultValue: "Score" })}
                     </th>
                     <th>{t("Databases.OpeningTree.WDL", { defaultValue: "W/D/L" })}</th>
@@ -655,6 +750,8 @@ function MovesPanel({
                     const lost = color === "white" ? row.black : row.white;
                     const scored = won + row.draw + lost;
                     const terminal = row.move === "*";
+                    const recentCount = recent.counts.get(row.move) ?? 0;
+                    const isRecentLeader = !terminal && recent.uniqueLeader === row.move;
                     return (
                       <tr
                         key={row.move}
@@ -691,6 +788,40 @@ function MovesPanel({
                           </span>
                           {scored + row.unknown}
                         </td>
+                        <td
+                          className={`${classes.number} ${isRecentLeader ? classes.recentLeader : ""}`}
+                          data-recent-leader={isRecentLeader ? "true" : undefined}
+                        >
+                          {!terminal && (
+                            <>
+                              <span
+                                className={classes.compactColumnLabel}
+                                data-opening-column-label
+                              >
+                                {compactRecentLabel}
+                              </span>
+                              {recent.windowSize === 0 ? (
+                                "–"
+                              ) : (
+                                <Tooltip
+                                  label={t("Databases.OpeningTree.Recent.Tooltip", {
+                                    defaultValue: "{{percent}}% of the last {{count}} games here",
+                                    percent: Math.round((recentCount / recent.windowSize) * 100),
+                                    count: recent.windowSize,
+                                  })}
+                                >
+                                  <span data-opening-recent-count>
+                                    {t("Databases.OpeningTree.Recent.Cell", {
+                                      defaultValue: "{{played}} of {{total}}",
+                                      played: recentCount,
+                                      total: recent.windowSize,
+                                    })}
+                                  </span>
+                                </Tooltip>
+                              )}
+                            </>
+                          )}
+                        </td>
                         <td className={classes.number}>
                           <span className={classes.compactColumnLabel} data-opening-column-label>
                             {t("Databases.OpeningTree.Score", {
@@ -712,7 +843,11 @@ function MovesPanel({
                           />
                         </td>
                         <td className={classes.recencyColumn}>
-                          <PlayerOpeningRecency row={row} />
+                          <PlayerOpeningRecency
+                            row={row}
+                            currentYear={currentYear}
+                            sectionTotals={sectionTotals}
+                          />
                         </td>
                       </tr>
                     );

@@ -31,6 +31,64 @@ import {
 } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 
+async function openingHeaderOverlaps(tree: Locator): Promise<string[]> {
+    return tree.evaluate((element) => {
+        const overlaps: string[] = [];
+        for (const table of element.querySelectorAll("[data-opening-moves]")) {
+            const boxes: {
+                text: string;
+                left: number;
+                right: number;
+                top: number;
+                bottom: number;
+            }[] = [];
+            for (const th of table.querySelectorAll("thead th")) {
+                const cellRect = th.getBoundingClientRect();
+                if (cellRect.width <= 0 || cellRect.height <= 0) continue;
+                let left = Infinity;
+                let right = -Infinity;
+                let top = Infinity;
+                let bottom = -Infinity;
+                const walker = document.createTreeWalker(th, NodeFilter.SHOW_TEXT);
+                while (walker.nextNode()) {
+                    const node = walker.currentNode;
+                    if (!node.textContent?.trim()) continue;
+                    const range = document.createRange();
+                    range.selectNodeContents(node);
+                    for (const rect of range.getClientRects()) {
+                        if (rect.width <= 0 || rect.height <= 0) continue;
+                        left = Math.min(left, rect.left);
+                        right = Math.max(right, rect.right);
+                        top = Math.min(top, rect.top);
+                        bottom = Math.max(bottom, rect.bottom);
+                    }
+                }
+                if (left < right) {
+                    boxes.push({
+                        text: th.textContent?.trim() ?? "",
+                        left,
+                        right,
+                        top,
+                        bottom,
+                    });
+                }
+            }
+            for (let i = 1; i < boxes.length; i += 1) {
+                const prev = boxes[i - 1];
+                const curr = boxes[i];
+                const sameRow =
+                    Math.min(prev.bottom, curr.bottom) > Math.max(prev.top, curr.top) + 1;
+                if (sameRow && prev.right > curr.left + 0.5) {
+                    overlaps.push(
+                        `"${prev.text}" (right=${prev.right.toFixed(1)}) overlaps "${curr.text}" (left=${curr.left.toFixed(1)})`,
+                    );
+                }
+            }
+        }
+        return overlaps;
+    });
+}
+
 async function openingLayout(tree: Locator) {
     const layout = await tree.evaluate((element) => {
         const bounds = (node: Element) => {
@@ -53,7 +111,7 @@ async function openingLayout(tree: Locator) {
         const targets = [
             element,
             ...element.querySelectorAll(
-                'table, .mantine-Progress-root, [data-opening-recency] [role="img"]',
+                '[data-opening-recent-summary], table, .mantine-Progress-root, [data-opening-recency] [role="img"]',
             ),
         ];
         for (const node of targets) {
@@ -82,6 +140,28 @@ async function openingLayout(tree: Locator) {
             if (text.left < section.left - 1 || text.right > section.right + 1)
                 clippedLabels.push(label.textContent);
         }
+        const brokenNumericValues: string[] = [];
+        let numericValueCount = 0;
+        for (const cell of element.querySelectorAll(
+            "[data-opening-moves] tbody tr td:nth-child(2), [data-opening-moves] tbody tr td:nth-child(3), [data-opening-moves] tbody tr td:nth-child(4)",
+        )) {
+            const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                const text = node.textContent?.trim();
+                if (!text) continue;
+                if (node.parentElement?.closest("[data-opening-column-label]")) continue;
+                numericValueCount += 1;
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const rects = [...range.getClientRects()].filter(
+                    (rect) => rect.width > 0 && rect.height > 0,
+                );
+                if (rects.length !== 1) {
+                    brokenNumericValues.push(`${text} (${rects.length} lines)`);
+                }
+            }
+        }
         return {
             viewport: innerWidth,
             tree: bounds(element),
@@ -89,11 +169,14 @@ async function openingLayout(tree: Locator) {
             ancestors,
             outside,
             clippedLabels,
+            brokenNumericValues,
+            numericValueCount,
         };
     });
     return {
         ...layout,
         brokenWords: await splitTextWords(tree.locator("th, [data-opening-column-label]")),
+        headerOverlaps: await openingHeaderOverlaps(tree),
     };
 }
 
@@ -114,7 +197,12 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
             { year: 2026, count: 3 },
             { year: 2027, count: 1 },
         ],
-        recent: [],
+        recent: [
+            { date: "2026.11.01", game_id: 10 },
+            { date: "2026.10.12", game_id: 9 },
+            { date: "2026.06.05", game_id: 8 },
+            { date: "2025.09.20", game_id: 7 },
+        ],
     };
     await mockScenario({
         commands: {
@@ -142,7 +230,7 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
                             unknown: 0,
                             last_played: "2024.??.??",
                             year_counts: [{ year: 2024, count: 1 }],
-                            recent: [],
+                            recent: [{ date: "2026.11.07", game_id: 99 }],
                         },
                     ],
                     [game],
@@ -183,11 +271,28 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
             surface.scheme,
         );
         await expect(moves.locator("[data-opening-recency]")).toHaveCount(3);
+        await expect(tree.locator("[data-opening-recent-summary]")).toHaveText(
+            "Recently: e4 (4 of 4)",
+        );
         const e4 = moves.locator("tbody tr").filter({ hasText: "e4" });
+        await expect(e4.locator("[data-opening-recent-count]")).toHaveText("4 of 4");
+        await expect(e4.locator('[data-recent-leader="true"]')).toHaveCount(1);
+        await expect(
+            moves
+                .locator("tbody tr")
+                .filter({ hasText: "d4" })
+                .locator("[data-opening-recent-count]"),
+        ).toHaveText("0 of 4");
+        await expect(
+            moves
+                .locator("tbody tr")
+                .filter({ hasText: "Game ended here" })
+                .locator("[data-opening-recent-count]"),
+        ).toHaveCount(0);
         await expect(e4.locator("[data-opening-last-played]")).toContainText("2026-11");
         await expect(e4.getByRole("img")).toHaveAttribute(
             "aria-label",
-            /Before 2019: 1 game.*2026: 3 games, 2 without a usable year/,
+            /Before 2019: 1 of 1 game \(100%\).*2026: 3 of 3 games \(100%\), 2 without a usable year/,
         );
         await expect(e4.locator("[data-count]")).toHaveCount(9);
         await tree.evaluate((element) => {
@@ -196,8 +301,13 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
         });
         const beforeHover = await openingLayout(tree);
         await e4.locator("[data-count]").last().hover();
-        await expect(page.getByRole("tooltip")).toHaveText("2026: 3 games");
+        await expect(page.getByRole("tooltip")).toHaveText("2026: 3 of 3 games (100%)");
         await page.mouse.move(0, 0);
+        await expect(page.getByRole("tooltip")).toHaveCount(0);
+        await e4.locator("[data-opening-recent-count]").hover();
+        await expect(page.getByRole("tooltip")).toHaveText("100% of the last 4 games here");
+        await page.mouse.move(0, 0);
+        await expect(page.getByRole("tooltip")).toHaveCount(0);
         const afterHover = await openingLayout(tree);
         await tree.evaluate((element) => {
             for (let node: HTMLElement | null = element; node; node = node.parentElement)
@@ -224,8 +334,11 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
                 "all horizontal scroll offsets reset after hover",
             )
             .toBe(true);
+        expect(origin.numericValueCount, JSON.stringify(surface)).toBeGreaterThan(0);
+        expect.soft(origin.brokenNumericValues, JSON.stringify(surface)).toEqual([]);
         expect.soft(origin.outside, JSON.stringify(surface)).toEqual([]);
         expect.soft(origin.brokenWords, JSON.stringify(surface)).toEqual([]);
+        expect.soft(origin.headerOverlaps, JSON.stringify(surface)).toEqual([]);
         expect.soft(origin.clippedLabels, JSON.stringify(surface)).toEqual([]);
         await expect(
             moves
@@ -4694,15 +4807,25 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board,
     );
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
-    const row = (move: string, white: number, draw: number, black: number) => ({
+    const row = (
+        move: string,
+        white: number,
+        draw: number,
+        black: number,
+        extras: {
+            last_played?: string | null;
+            year_counts?: { year: number; count: number }[];
+            recent?: { date: string; game_id: number }[];
+        } = {},
+    ) => ({
         move,
         white,
         draw,
         black,
         unknown: 0,
-        last_played: null,
-        year_counts: [],
-        recent: [],
+        last_played: extras.last_played ?? null,
+        year_counts: extras.year_counts ?? [],
+        recent: extras.recent ?? [],
     });
     const [game] = gameOpeningFixture.games;
     const baseEntries = (
@@ -4752,10 +4875,72 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board,
             get_progress: { result: null },
             get_player: { result: { id: 1, name: "First White", elo: 1500, game_count: 12 } },
             search_position: {
-                result: [[row("e4", 5, 2, 1), row("d4", 2, 1, 1)], [game]],
+                result: [
+                    [
+                        row("e4", 5, 2, 1, {
+                            last_played: "2026.10.15",
+                            year_counts: [
+                                { year: 2024, count: 2 },
+                                { year: 2025, count: 3 },
+                                { year: 2026, count: 3 },
+                            ],
+                            recent: [
+                                { date: "2026.10.15", game_id: 12 },
+                                { date: "2026.05.12", game_id: 11 },
+                                { date: "2025.11.02", game_id: 9 },
+                            ],
+                        }),
+                        row("d4", 2, 1, 1, {
+                            last_played: "2026.02.18",
+                            year_counts: [
+                                { year: 2025, count: 2 },
+                                { year: 2026, count: 2 },
+                            ],
+                            recent: [{ date: "2026.02.18", game_id: 10 }],
+                        }),
+                    ],
+                    [game],
+                ],
                 byDatabase: {
                     "opponent-online-db": [
-                        [row("e4", 310, 40, 250), row("b3", 120, 10, 95), row("d4", 4, 0, 5)],
+                        [
+                            row("e4", 310, 40, 250, {
+                                last_played: "2026.09.20",
+                                year_counts: [
+                                    { year: 2024, count: 200 },
+                                    { year: 2025, count: 250 },
+                                    { year: 2026, count: 150 },
+                                ],
+                                recent: [
+                                    { date: "2026.09.20", game_id: 95 },
+                                    { date: "2026.08.11", game_id: 94 },
+                                ],
+                            }),
+                            row("b3", 120, 10, 95, {
+                                last_played: "2026.11.06",
+                                year_counts: [
+                                    { year: 2025, count: 40 },
+                                    { year: 2026, count: 185 },
+                                ],
+                                recent: [
+                                    { date: "2026.11.06", game_id: 106 },
+                                    { date: "2026.11.04", game_id: 105 },
+                                    { date: "2026.10.28", game_id: 104 },
+                                    { date: "2026.10.21", game_id: 103 },
+                                    { date: "2026.10.14", game_id: 102 },
+                                    { date: "2026.10.07", game_id: 101 },
+                                    { date: "2026.10.01", game_id: 100 },
+                                ],
+                            }),
+                            row("d4", 4, 0, 5, {
+                                last_played: "2026.07.01",
+                                year_counts: [
+                                    { year: 2024, count: 5 },
+                                    { year: 2026, count: 4 },
+                                ],
+                                recent: [{ date: "2026.07.01", game_id: 90 }],
+                            }),
+                        ],
                         [{ ...game, id: 900, black: "online_rival", event: "Rated Blitz game" }],
                     ],
                     "reference-mega-db": [
@@ -4781,10 +4966,28 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board,
     await expect(overTheBoard.locator("[data-opening-moves]")).not.toContainText("b3");
     await expect(online).toContainText("Online");
     await expect(online.locator("[data-opening-moves]")).toContainText("b3");
+    await expect(tree.locator("[data-opening-recent-summary]")).toHaveText(
+        "Recently: Over the board e4 (3 of 4) · Online b3 (7 of 10)",
+    );
+    expect(await splitTextWords(tree.locator("th, [data-opening-column-label]"))).toEqual([]);
+    expect(await openingHeaderOverlaps(tree)).toEqual([]);
     await expect(tree.locator('[data-opening-games-section="online"]')).toContainText(
         "online_rival",
     );
     await waitForFontsSettled(page);
+    const summaryFonts = await tree.locator("[data-opening-recent-summary]").evaluate((summary) => {
+        const moveSpans = [...summary.querySelectorAll("span")].filter(
+            (span) => span.textContent === "e4" || span.textContent === "b3",
+        );
+        return {
+            summary: getComputedStyle(summary).fontFamily,
+            moves: moveSpans.map((span) => getComputedStyle(span).fontFamily),
+        };
+    });
+    expect(summaryFonts.moves).toHaveLength(2);
+    for (const moveFont of summaryFonts.moves) {
+        expect(moveFont).not.toBe(summaryFonts.summary);
+    }
     // The board beside both move tables, as the card lays out the two sections.
     await expect(tree.locator("[data-opening-body]")).toHaveScreenshot(
         "opponent-card-sections.png",

@@ -33,6 +33,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { chooseSelectOption } from "@/tests/select";
 import { stubScrollIntoView } from "@/tests/scrollIntoView";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
+import { expectHoverTooltip } from "@/tests/tooltip";
 import type { SupportedLocale } from "@/i18n";
 import { getNodeAtPath } from "@/utils/treeReducer";
 import { databaseHandleKey } from "@/utils/db";
@@ -41,6 +42,7 @@ import PlayerOpeningTree, {
   formatOpponentRating,
   type OpeningTreeSource,
 } from "./PlayerOpeningTree";
+import classes from "./PlayerOpeningTree.module.css";
 
 const mocks = vi.hoisted(() => ({
   searchPosition: vi.fn(),
@@ -143,13 +145,19 @@ vi.mock("@/components/panels/database/DatabaseLoader", () => ({
   ),
 }));
 
-// Use real catalogue interpolation for totals, scores and accessible controls.
-let translate: (key: string, options?: Record<string, unknown>) => string;
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: Record<string, unknown>) => translate(key, options),
-  }),
-}));
+// Use real catalogue interpolation and <Trans> rendering for totals, scores and accessible controls.
+let i18nInstance: Awaited<ReturnType<typeof catalogueI18n>>;
+const translate = (key: string, options?: Record<string, unknown>) => i18nInstance.t(key, options);
+vi.mock("react-i18next", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-i18next")>();
+  return {
+    ...actual,
+    useTranslation: () => ({ t: translate, i18n: i18nInstance }),
+    Trans: (props: Parameters<typeof actual.Trans>[0]) => (
+      <actual.Trans {...props} t={props.t ?? i18nInstance.t} i18n={props.i18n ?? i18nInstance} />
+    ),
+  };
+});
 
 const file: DatabaseHandle = { kind: "database", id: { id: "card-A" } };
 const reference: DatabaseHandle = { kind: "database", id: { id: "global-B" } };
@@ -230,8 +238,7 @@ beforeEach(async () => {
   mocks.unavailable.clear();
   mocks.listedToo = [];
   mocks.onlinePlayers.mockReset().mockResolvedValue([]);
-  const i18n = await catalogueI18n("en-US");
-  translate = (key, options) => i18n.t(key, options);
+  i18nInstance = await catalogueI18n("en-US");
   localStorage.clear();
   // The explorer's filter button is reached below; its header is collapsed by default.
   localStorage.setItem("explorer-header-collapsed", "false");
@@ -365,7 +372,7 @@ test("the tree enlarges W/D/L labels, shows 25% and hides 15%", async () => {
     [first],
   ]);
   await render();
-  const chart = row("e4").cells[3].querySelector<HTMLElement>(".mantine-Progress-root")!;
+  const chart = row("e4").cells[4].querySelector<HTMLElement>(".mantine-Progress-root")!;
   expect(chart.style.getPropertyValue("--progress-size")).toBe("1.125rem");
   expect(
     [...chart.querySelectorAll(".mantine-Progress-label")].map((label) => label.textContent),
@@ -394,7 +401,7 @@ test("moves and the terminal row show their own last played date and year strip"
   expect(terminal.querySelector("[data-opening-last-played]")?.textContent).toContain("2024");
   expect(terminal.querySelectorAll("[data-count]")).toHaveLength(9);
   expect(terminal.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain(
-    "2024: 1 game",
+    "2024: 1 of 1 game (100%)",
   );
 });
 
@@ -468,10 +475,10 @@ test("native query, scores, terminal row and navigation follow the player's exac
   );
   expect(container.textContent).toContain("9 games in this position");
   expect(row("e4").cells[1].lastChild?.textContent).toBe("6");
-  expect(row("e4").cells[2].lastChild?.textContent).toBe("70.0%");
+  expect(row("e4").cells[3].lastChild?.textContent).toBe("70.0%");
   expect(row("e4").querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("60");
   expect(row("d4").cells[1].lastChild?.textContent).toBe("2");
-  expect(row("d4").cells[2].lastChild?.textContent).toBe("–");
+  expect(row("d4").cells[3].lastChild?.textContent).toBe("–");
   expect(row("d4").querySelectorAll('[role="progressbar"]')).toHaveLength(0);
   const terminal = row("Game ended here");
   expect(terminal.hasAttribute("tabindex")).toBe(false);
@@ -482,7 +489,7 @@ test("native query, scores, terminal row and navigation follow the player's exac
     player1: undefined,
     player2: 42,
   });
-  expect(row("e4").cells[2].lastChild?.textContent).toBe("30.0%");
+  expect(row("e4").cells[3].lastChild?.textContent).toBe("30.0%");
   expect(row("e4").querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("20");
   expect(container.querySelector("[data-board-fen]")?.getAttribute("data-orientation")).toBe(
     "black",
@@ -1329,3 +1336,302 @@ test.each(shippedCatalogues())(
     }
   },
 );
+
+function datedGames(dates: string[], startId = 1) {
+  return dates.map((date, index) => ({ date, game_id: startId + index }));
+}
+
+test("Recently column shows two-line span header, counts, absent-move 0, hover percentage, empty state, and unique-leader highlight gate", async () => {
+  mocks.searchPosition.mockResolvedValueOnce([
+    [
+      {
+        ...startRows[0],
+        move: "e4",
+        recent: datedGames([
+          "2026.11.10",
+          "2026.11.09",
+          "2026.11.08",
+          "2026.11.07",
+          "2026.11.06",
+          "2026.11.05",
+          "2026.11.04",
+          "2026.11.03",
+          "2026.11.02",
+        ]),
+      },
+      {
+        ...startRows[1],
+        move: "d4",
+        recent: datedGames(["2023.09.15"], 20),
+      },
+      {
+        ...startRows[1],
+        move: "c4",
+        recent: [],
+      },
+      {
+        ...startRows[2],
+        move: "*",
+        recent: datedGames(["2026.11.11", "2026.11.12"], 30),
+      },
+    ],
+    [first],
+  ]);
+  await render();
+
+  const headerCells = [...container.querySelectorAll("[data-opening-moves] thead th")];
+  expect(headerCells[2].textContent).toBe("Last 10 games since 2023-09");
+  expect(
+    [...headerCells[2].querySelectorAll("span > span")].map((span) => span.textContent?.trim()),
+  ).toEqual(["Last 10 games", "since 2023-09"]);
+  expect(row("e4").cells[2].querySelector("[data-opening-recent-count]")?.textContent).toBe(
+    "9 of 10",
+  );
+  expect(row("d4").cells[2].querySelector("[data-opening-recent-count]")?.textContent).toBe(
+    "1 of 10",
+  );
+  expect(row("c4").cells[2].querySelector("[data-opening-recent-count]")?.textContent).toBe(
+    "0 of 10",
+  );
+  expect(row("Game ended here").cells[2].textContent).toBe("");
+  expect(row("e4").cells[2].getAttribute("data-recent-leader")).toBe("true");
+  expect(row("d4").cells[2].getAttribute("data-recent-leader")).toBeNull();
+  expect(row("c4").cells[2].getAttribute("data-recent-leader")).toBeNull();
+
+  await expectHoverTooltip(
+    row("e4").cells[2].querySelector("[data-opening-recent-count]")!,
+    "90% of the last 10 games here",
+  );
+  await expectHoverTooltip(
+    row("c4").cells[2].querySelector("[data-opening-recent-count]")!,
+    "0% of the last 10 games here",
+  );
+});
+
+test("Recently column shows 'Recently' header and '–' cells when n = 0", async () => {
+  mocks.searchPosition.mockResolvedValueOnce([startRows, [first]]);
+  await render();
+  expect(container.querySelectorAll("[data-opening-moves] thead th")[2].textContent).toBe(
+    "Recently",
+  );
+  expect(row("e4").cells[2].lastChild?.textContent).toBe("–");
+  expect(row("d4").cells[2].lastChild?.textContent).toBe("–");
+  expect(row("Game ended here").cells[2].textContent).toBe("");
+  expect(container.querySelector("[data-opening-recent-summary]")).toBeNull();
+});
+
+test("Recently column gates highlight on ties (2 vs 2)", async () => {
+  mocks.searchPosition.mockResolvedValueOnce([
+    [
+      { ...startRows[0], move: "e4", recent: datedGames(["2026.11.04", "2026.11.02"], 1) },
+      { ...startRows[1], move: "d4", recent: datedGames(["2026.11.03", "2026.11.01"], 3) },
+    ],
+    [first],
+  ]);
+  await render();
+  expect(row("e4").cells[2].querySelector("[data-opening-recent-count]")?.textContent).toBe(
+    "2 of 4",
+  );
+  expect(row("e4").cells[2].getAttribute("data-recent-leader")).toBeNull();
+  expect(row("d4").cells[2].getAttribute("data-recent-leader")).toBeNull();
+  expect(container.querySelector("[data-opening-recent-summary]")?.textContent).toBe(
+    "Recently: e4 / d4 (2 of 4 each)",
+  );
+});
+
+test("Recently column gates highlight on n >= 3", async () => {
+  mocks.searchPosition.mockResolvedValueOnce([
+    [{ ...startRows[0], move: "e4", recent: datedGames(["2026.11.02", "2026.11.01"], 1) }],
+    [first],
+  ]);
+  await render();
+  expect(row("e4").cells[2].querySelector("[data-opening-recent-count]")?.textContent).toBe(
+    "2 of 2",
+  );
+  expect(row("e4").cells[2].getAttribute("data-recent-leader")).toBeNull();
+});
+
+test("MovesPanel shades year strips by share of section games and rolls over across New Year", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 11, 31, 23, 59, 59));
+  const sharedYearRows: PositionStats[] = [
+    {
+      ...startRows[0],
+      move: "e4",
+      white: 1,
+      draw: 0,
+      black: 0,
+      unknown: 0,
+      year_counts: [
+        { year: 2018, count: 1 },
+        { year: 2026, count: 1 },
+        { year: 2027, count: 2 },
+      ],
+    },
+    {
+      ...startRows[1],
+      move: "d4",
+      white: 10,
+      year_counts: [{ year: 2026, count: 10 }],
+    },
+    {
+      ...startRows[2],
+      move: "*",
+      white: 3,
+      draw: 0,
+      year_counts: [{ year: 2026, count: 3 }],
+    },
+  ];
+  mocks.searchPosition.mockResolvedValue([sharedYearRows, [first]]);
+  await render();
+
+  const e4Cells2026 = row("e4").querySelectorAll<HTMLElement>("[data-count]");
+  expect(e4Cells2026[8].style.background).toContain(`var(--cf-primary) ${25 + (1 / 14) * 75}%`);
+  expect(row("e4").querySelector('[role="img"]')?.getAttribute("aria-label")).toContain(
+    "2026: 1 of 14 games (7%)",
+  );
+  expect(row("e4").querySelector('[role="img"]')?.getAttribute("aria-label")).toContain(
+    "Before 2019: 1 of 1 game (100%)",
+  );
+
+  // Cross midnight on the same mounted MovesPanel with unchanged row references.
+  vi.setSystemTime(new Date(2027, 0, 1, 0, 0, 0));
+  await render();
+  const e4Label2027 = row("e4").querySelector('[role="img"]')?.getAttribute("aria-label");
+  expect(e4Label2027).toContain("Before 2020: 1 of 1 game (100%)");
+  expect(e4Label2027).toContain("2026: 1 of 14 games (7%)");
+  expect(e4Label2027).toContain("2027: 2 of 2 games (100%)");
+});
+
+const otbSummaryRows: PositionStats[] = [
+  { ...startRows[0], move: "c5", recent: datedGames(["2026.11.04", "2026.11.03", "2026.11.02"]) },
+  { ...startRows[1], move: "e5", recent: datedGames(["2026.11.01"], 10) },
+];
+
+test("summary line omits 'Over the board' in single-source cards and styles only moves in monospace", async () => {
+  mocks.searchPosition.mockResolvedValueOnce([otbSummaryRows, [first]]);
+  await render();
+  const summary = container.querySelector<HTMLElement>("[data-opening-recent-summary]")!;
+  expect(summary.textContent).toBe("Recently: c5 (3 of 4)");
+  expect(classes.summaryMove).toBeTruthy();
+  expect(summary.classList.contains(classes.summaryMove)).toBe(false);
+  const moveSpans = [...summary.querySelectorAll("span")].filter(
+    (span) => span.textContent === "c5",
+  );
+  expect(moveSpans).toHaveLength(1);
+  expect(moveSpans[0].classList.contains(classes.summaryMove)).toBe(true);
+});
+
+test("summary line shows separate per-source leaders when both sections have recent games", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers.mockResolvedValue([{ id: 5, name: "selected_online" }]);
+  const onlineRecentRows: PositionStats[] = [
+    {
+      ...onlineRows[0],
+      move: "c5",
+      recent: datedGames(
+        [
+          "2026.11.10",
+          "2026.11.09",
+          "2026.11.08",
+          "2026.11.07",
+          "2026.11.06",
+          "2026.11.05",
+          "2026.11.04",
+          "2026.11.03",
+          "2026.11.02",
+        ],
+        20,
+      ),
+    },
+    { ...onlineRows[1], move: "e5", recent: datedGames(["2026.11.01"], 40) },
+  ];
+  mocks.searchPosition.mockImplementation(async (path: DatabaseHandle) =>
+    path === online ? [onlineRecentRows, [onlineGame]] : [otbSummaryRows, [first]],
+  );
+  await render();
+  await vi.waitFor(() =>
+    expect(container.querySelector("[data-opening-recent-summary]")?.textContent).toBe(
+      "Recently: Over the board c5 (3 of 4) · Online c5 (9 of 10)",
+    ),
+  );
+});
+
+test("summary line formats ties with 'each'", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers.mockResolvedValue([{ id: 5, name: "selected_online" }]);
+  const tiedOnlineRows: PositionStats[] = [
+    {
+      ...onlineRows[0],
+      move: "c5",
+      recent: datedGames(["2026.11.10", "2026.11.08", "2026.11.06", "2026.11.04"], 20),
+    },
+    {
+      ...onlineRows[1],
+      move: "e4",
+      recent: datedGames(["2026.11.09", "2026.11.07", "2026.11.05", "2026.11.03"], 30),
+    },
+    {
+      ...onlineRows[1],
+      move: "d4",
+      recent: datedGames(["2026.11.02", "2026.11.01"], 40),
+    },
+  ];
+  mocks.searchPosition.mockImplementation(async (path: DatabaseHandle) =>
+    path === online ? [tiedOnlineRows, [onlineGame]] : [otbSummaryRows, [first]],
+  );
+  await render();
+  await vi.waitFor(() =>
+    expect(container.querySelector("[data-opening-recent-summary]")?.textContent).toBe(
+      "Recently: Over the board c5 (3 of 4) · Online c5 / e4 (4 of 10 each)",
+    ),
+  );
+});
+
+test("summary line omits loading and empty online section", async () => {
+  linkOnlineGames("readable");
+  let resolveLookup!: (players: { id: number; name: string }[]) => void;
+  mocks.onlinePlayers.mockReturnValue(new Promise((done) => (resolveLookup = done)));
+  mocks.searchPosition.mockImplementation(async (path: DatabaseHandle) =>
+    path === online ? [onlineRows, [onlineGame]] : [otbSummaryRows, [first]],
+  );
+  await render();
+  await vi.waitFor(() =>
+    expect(section("primary").querySelector("[data-opening-moves]")).toBeTruthy(),
+  );
+  expect(container.querySelector("[data-opening-recent-summary]")?.textContent).toBe(
+    "Recently: Over the board c5 (3 of 4)",
+  );
+
+  await act(async () => resolveLookup([{ id: 5, name: "selected_online" }]));
+  await vi.waitFor(() =>
+    expect(section("online").querySelector("[data-opening-moves]")).toBeTruthy(),
+  );
+  expect(container.querySelector("[data-opening-recent-summary]")?.textContent).toBe(
+    "Recently: Over the board c5 (3 of 4)",
+  );
+});
+
+test("summary line omits failed online section", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers.mockRejectedValue(new Error("boom"));
+  mocks.searchPosition.mockResolvedValue([otbSummaryRows, [first]]);
+  await render();
+  await vi.waitFor(() =>
+    expect(section("online").textContent).toContain("The online games could not be read."),
+  );
+  expect(container.querySelector("[data-opening-recent-summary]")?.textContent).toBe(
+    "Recently: Over the board c5 (3 of 4)",
+  );
+});
+
+test("summary line is absent when no section has recent games", async () => {
+  linkOnlineGames("readable");
+  mocks.onlinePlayers.mockResolvedValue([{ id: 5, name: "selected_online" }]);
+  mocks.searchPosition.mockResolvedValue([startRows, [first]]);
+  await render();
+  await vi.waitFor(() =>
+    expect(section("online").textContent).toContain("9 games in this position"),
+  );
+  expect(container.querySelector("[data-opening-recent-summary]")).toBeNull();
+});
