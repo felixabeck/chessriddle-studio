@@ -24,6 +24,7 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { databaseHandleKey, type SuccessDatabaseInfo } from "@/utils/db";
 import { formatNumber } from "@/utils/format";
 import { PlayerSearchInput } from "./PlayerSearchInput";
+import { InstalledDatabaseCredit } from "./DatabaseCredit";
 import { databaseRouteTarget, type DatabaseRouteTarget } from "./databaseRoute";
 import type { DatabaseLibrary } from "./useDatabaseLibrary";
 
@@ -122,6 +123,7 @@ export function DatabaseLibraryDetail({ library }: { library: DatabaseLibrary })
               </Text>
             </Stack>
           </Group>
+          <InstalledDatabaseCredit database={selectedDatabase} />
 
           <div>
             {selectedDatabase.type === "success" && (

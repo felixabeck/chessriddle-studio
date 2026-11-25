@@ -41,6 +41,7 @@ import { refreshAfterDatabaseConversion } from "./databaseMutation";
 import AppModal from "../common/AppModal";
 import FileInput from "../common/FileInput";
 import CatalogDownloadCard from "../common/CatalogDownloadCard";
+import { DatabaseCredit } from "./DatabaseCredit";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 
 interface AddDatabaseFormValues {
@@ -220,6 +221,7 @@ function AddDatabase({
                       { label: t("Databases.Card.Games"), value: formatNumber(db.game_count) },
                       { label: t("Databases.Card.Players"), value: formatNumber(db.player_count) },
                     ]}
+                    credit={db.credit && <DatabaseCredit credit={db.credit} />}
                     progressId={card.progressId}
                     initInstalled={card.initInstalled}
                     resolveDestination={async () =>

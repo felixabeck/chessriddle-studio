@@ -51,6 +51,8 @@ import {
     getDefaultPuzzleDatabases,
     getDatabases,
     catalogDatabaseFilename,
+    catalogEntryForInstalledDatabase,
+    downloadableDatabaseManifestSchema,
     manifestDatabaseInstallCard,
     manifestPuzzleDatabaseInstallCard,
     sameDatabaseHandle,
@@ -971,6 +973,22 @@ describe("manifest install-card identity", () => {
         );
     });
 
+    it("finds the catalog entry of an installed download by the same leaf", () => {
+        const catalog = [{ title: "Lumbra's Gigabase" }, { title: "MillionBase" }];
+        expect(
+            catalogEntryForInstalledDatabase(catalog, { filename: "Lumbra's Gigabase.db3" }),
+        ).toBe(catalog[0]);
+        expect(catalogEntryForInstalledDatabase(catalog, { filename: "Lumbra's Gigabase" })).toBe(
+            undefined,
+        );
+        expect(
+            catalogEntryForInstalledDatabase(catalog, {
+                filename: "Lumbra's Gigabase.db3",
+                collection: {} as NonNullable<ManagedDatabaseInfo["collection"]>,
+            }),
+        ).toBe(undefined);
+    });
+
     it("keys puzzle-database progress by download URL, not array index", () => {
         const card = manifestPuzzleDatabaseInstallCard([{ title: "Lichess.db3" }], {
             downloadLink: puzzleManifestEntry.downloadLink,
@@ -1013,6 +1031,72 @@ describe("bundled default catalogs", () => {
         ).toBe(true);
         expect(fetch).not.toHaveBeenCalled();
         expect(mocks.remoteGet).not.toHaveBeenCalled();
+    });
+
+    it("credits Lumbra's Gigabase as its CC BY-NC-SA licence requires", async () => {
+        mocks.verifySignedBytes.mockResolvedValue(null);
+
+        const lumbra = (await getDefaultDatabases()).find((db) => db.title === "Lumbra's Gigabase");
+
+        // The June 2025 file stays until the author answers about newer releases.
+        expect(lumbra?.downloadLink).toBe("https://db.encroissant.org/LumbrasGigaBase2025-06.db3");
+        expect(lumbra?.credit).toEqual({
+            author: "Michael Jansen",
+            website: "https://lumbrasgigabase.com",
+            license: {
+                name: "CC BY-NC-SA 4.0",
+                url: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+            },
+            release: "2025-06",
+            convertedBy: "En Croissant",
+        });
+    });
+
+    it("credits Caissabase under CC BY-NC and invents no licence for the other sources", async () => {
+        mocks.verifySignedBytes.mockResolvedValue(null);
+
+        const databases = await getDefaultDatabases();
+        const credit = (title: string) => databases.find((db) => db.title === title)?.credit;
+
+        // caissabase.co.uk now redirects elsewhere; the archived page carries the licence footer.
+        expect(credit("Caissabase 2024")).toEqual({
+            author: "Caissabase",
+            website: "https://web.archive.org/web/20241007103203/http://caissabase.co.uk/",
+            license: {
+                name: "CC BY-NC 4.0",
+                url: "https://creativecommons.org/licenses/by-nc/4.0/",
+            },
+            convertedBy: "En Croissant",
+        });
+        // No licence could be established for these sources (2026-11-25).
+        for (const title of [
+            "Ajedrez Data - Correspondence",
+            "Ajedrez Data - OTB",
+            "MillionBase",
+        ]) {
+            expect(databases.some((db) => db.title === title)).toBe(true);
+            expect(credit(title)).toBeUndefined();
+        }
+    });
+
+    it("rejects a credit with a non-https link, a malformed release or an unknown field", () => {
+        const entry = JSON.parse(databaseCatalogDocument)[0];
+        const credit = entry.credit;
+        const parse = (override: object) =>
+            downloadableDatabaseManifestSchema.safeParse([
+                { ...entry, credit: { ...credit, ...override } },
+            ]).success;
+
+        expect(parse({})).toBe(true);
+        expect(parse({ website: "http://lumbrasgigabase.com" })).toBe(false);
+        expect(parse({ website: "javascript:alert(1)" })).toBe(false);
+        expect(parse({ license: { ...credit.license, url: "ftp://example.org" } })).toBe(false);
+        expect(parse({ release: "2025-13" })).toBe(false);
+        expect(parse({ release: "June 2025" })).toBe(false);
+        expect(parse({ author: "" })).toBe(false);
+        expect(parse({ note: "unexpected" })).toBe(false);
+        const { credit: _credit, ...withoutCredit } = entry;
+        expect(downloadableDatabaseManifestSchema.safeParse([withoutCredit]).success).toBe(true);
     });
 
     it("verifies the exact bundled puzzle catalog bytes without any HTTP request", async () => {

@@ -61,6 +61,17 @@ export async function collectSWRKeys(
 /** Error::InvalidInput from src-tauri/src/db/migrations.rs validate_existing_database. */
 export const DATABASE_NOT_INITIALIZED = "Invalid input: Database has not been initialized yet";
 
+/** Who made a catalog database and under which licence Studio redistributes it. */
+export type DatabaseCredit = {
+    author: string;
+    website: string;
+    license: { name: string; url: string };
+    /** Release the hosted file was made from, as `YYYY-MM`. */
+    release?: string;
+    /** Project that converted the source into the hosted `.db3`. */
+    convertedBy?: string;
+};
+
 export type DownloadableDatabaseInfo = {
     title: string;
     description: string;
@@ -70,6 +81,7 @@ export type DownloadableDatabaseInfo = {
     downloadLink: string;
     sha256: string;
     signature: string;
+    credit?: DatabaseCredit;
 };
 
 /** A puzzle database advertised by the bundled signed catalog.
@@ -89,6 +101,24 @@ export type DownloadablePuzzleDatabase = Pick<
     signature: string;
 };
 
+const httpsUrlSchema = z
+    .string()
+    .url()
+    .refine((value) => value.startsWith("https://"), "credit links must be https");
+
+const databaseCreditSchema: z.ZodType<DatabaseCredit> = z
+    .object({
+        author: z.string().min(1),
+        website: httpsUrlSchema,
+        license: z.object({ name: z.string().min(1), url: httpsUrlSchema }).strict(),
+        release: z
+            .string()
+            .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+            .optional(),
+        convertedBy: z.string().min(1).optional(),
+    })
+    .strict();
+
 const downloadableDatabaseSchema: z.ZodType<DownloadableDatabaseInfo, z.ZodTypeDef, unknown> = z
     .object({
         title: z.string().min(1),
@@ -99,9 +129,10 @@ const downloadableDatabaseSchema: z.ZodType<DownloadableDatabaseInfo, z.ZodTypeD
         downloadLink: z.string().url(),
         sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
         signature: z.string().min(1),
+        credit: databaseCreditSchema.optional(),
     })
     .passthrough();
-const downloadableDatabaseManifestSchema: z.ZodType<
+export const downloadableDatabaseManifestSchema: z.ZodType<
     DownloadableDatabaseInfo[],
     z.ZodTypeDef,
     unknown
@@ -181,6 +212,19 @@ export function manifestDatabaseInstallCard(
         progressId: defaultDatabaseProgressId(manifest.downloadLink),
         initInstalled: workspaceFilenames.includes(catalogDatabaseFilename(manifest.title)),
     };
+}
+
+/**
+ * The catalog entry an installed workspace database was downloaded from, by the
+ * same download-leaf identity `manifestDatabaseInstallCard` uses. Collections
+ * are never catalog downloads, whatever their name.
+ */
+export function catalogEntryForInstalledDatabase<T extends { title: string }>(
+    catalog: readonly T[],
+    database: Pick<ManagedDatabaseInfo, "filename" | "collection">,
+): T | undefined {
+    if (database.collection) return undefined;
+    return catalog.find((entry) => catalogDatabaseFilename(entry.title) === database.filename);
 }
 
 export function manifestPuzzleDatabaseInstallCard(

@@ -1,6 +1,6 @@
 import { tauri } from "@/platform/tauri";
 import { Box, Divider, Group, Paper, Stack, Text } from "@mantine/core";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PathRef } from "@/bindings";
 import { runUnlessCancelled } from "@/components/files/notifyError";
@@ -25,6 +25,7 @@ export default function CatalogDownloadCard({
   item,
   kindLabel,
   stats,
+  credit,
   progressId,
   initInstalled,
   resolveDestination,
@@ -35,6 +36,8 @@ export default function CatalogDownloadCard({
   item: CatalogDownloadItem;
   kindLabel: string;
   stats: readonly { label: string; value: string }[];
+  /** Attribution the source's licence requires, shown under the description. */
+  credit?: ReactNode;
   progressId: string;
   initInstalled: boolean;
   resolveDestination: () => Promise<PathRef>;
@@ -89,6 +92,7 @@ export default function CatalogDownloadCard({
           <Text size="xs" c="dimmed">
             {item.description}
           </Text>
+          {credit && <Box mb="xs">{credit}</Box>}
           <Divider />
           <Group wrap="nowrap" grow my="md">
             {stats.map((stat) => (

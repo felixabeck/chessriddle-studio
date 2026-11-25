@@ -27,8 +27,8 @@ as a distinct error, not as an empty list. The renderer no longer fetches any ca
 document signature, not by the entry signature. The backend's `register_installed_engine`
 `Component::Normal` check and `validate_components` in `src-tauri/src/infra/path_authority.rs`
 remain the containment boundary.
-For databases and puzzle databases, `title`, `description`, and the count and size fields are
-likewise covered only by the catalog document signature, not by the entry signature. The native
+For databases and puzzle databases, `title`, `description`, `credit`, and the count and size
+fields are likewise covered only by the catalog document signature, not by the entry signature. The native
 filename is `${title}.db3`, so it is document-signed in the same way the engine `path` is.
 
 Every downloadable entry must contain:
@@ -56,7 +56,7 @@ redirect behaviors do not change the signed payload or require existing catalogs
 Existing manifest fields remain required by their consumers. In addition to `sha256` and `signature`:
 
 - Engines require `type: "local"`, `name`, `version`, `path`, `downloadLink`, `os`, and `bmi2`.
-- Databases require `title`, `player_count`, `game_count`, `storage_size`, and `downloadLink`; `description` is optional and defaults to an empty string.
+- Databases require `title`, `player_count`, `game_count`, `storage_size`, and `downloadLink`; `description` is optional and defaults to an empty string. The optional `credit` object is the attribution the source's licence requires: `author`, `website` (https), `license` (`name`, https `url`), and optionally `release` (`YYYY-MM`) and `convertedBy`; unknown keys are rejected. The Add Database card and the Library detail of the installed copy (matched by its `${title}.db3` leaf) show it with translated labels.
 - Puzzle databases require `title`, `description`, `puzzleCount`, `storageSize`, and `downloadLink`.
 
 Release automation must calculate the digest from the final hosted artifact, construct the exact payload, sign it with the protected release private key, JSON-escape the complete Minisign signature, and publish the manifest only after the artifact is immutable and reachable. The private key must never enter this repository or CI logs. For the engine, database, and puzzle catalogs, the signed entries and the detached document signature are committed together. Unsigned legacy entries are deliberately rejected rather than downloaded.

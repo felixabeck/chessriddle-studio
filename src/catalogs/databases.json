@@ -7,7 +7,17 @@
         "storage_size": 2789040128,
         "downloadLink": "https://db.encroissant.org/LumbrasGigaBase2025-06.db3",
         "sha256": "8ab16592d4072ae2a1af5356cd83b6fd92de8bee0ad05f0e2be0f0f05f5431a5",
-        "signature": "untrusted comment: signature from tauri secret key\nRUTseHvqA5TNjueAp93+ENwwTphBuTQwzjl3Yw59MmBqXF5yObt90kvEHKcLs/moVvQMic3kqBtmh0omI5esu2wxLR4q26kM6g0=\ntrusted comment: timestamp:1789777664\tfile:payload-8ab16592d4072ae2a1af5356cd83b6fd92de8bee0ad05f0e2be0f0f05f5431a5.txt\npdZVBRRIr+6KDPkgt2nzgxjuw1BfpZBiSLyGj07kgPXxl4fDNwp6+61zPF31KWBH5RsI5yi2hyx4qps/v+KiCg==\n"
+        "signature": "untrusted comment: signature from tauri secret key\nRUTseHvqA5TNjueAp93+ENwwTphBuTQwzjl3Yw59MmBqXF5yObt90kvEHKcLs/moVvQMic3kqBtmh0omI5esu2wxLR4q26kM6g0=\ntrusted comment: timestamp:1789777664\tfile:payload-8ab16592d4072ae2a1af5356cd83b6fd92de8bee0ad05f0e2be0f0f05f5431a5.txt\npdZVBRRIr+6KDPkgt2nzgxjuw1BfpZBiSLyGj07kgPXxl4fDNwp6+61zPF31KWBH5RsI5yi2hyx4qps/v+KiCg==\n",
+        "credit": {
+            "author": "Michael Jansen",
+            "website": "https://lumbrasgigabase.com",
+            "license": {
+                "name": "CC BY-NC-SA 4.0",
+                "url": "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+            },
+            "release": "2025-06",
+            "convertedBy": "En Croissant"
+        }
     },
     {
         "title": "Caissabase 2024",
@@ -17,7 +27,16 @@
         "storage_size": 1318744064,
         "downloadLink": "https://db.encroissant.org/caissabase_2024.db3",
         "sha256": "70b619a1161326ca0b525df187b10efd119a3b03acc7c75c0c75f673c3af58e6",
-        "signature": "untrusted comment: signature from tauri secret key\nRUTseHvqA5TNjrOO1EsstExtAHsO0YJBZ274nWwQBYZmIL0i15lXwftVokEJ6/Gy6OmNTZIO4TcFM9KkWASNC/M861DNTQr1jgA=\ntrusted comment: timestamp:1789777665\tfile:payload-70b619a1161326ca0b525df187b10efd119a3b03acc7c75c0c75f673c3af58e6.txt\n75kfwSP/LcRF9HKv4KXnHJncgGab1P9odJtNoZu79WNucN1JrPW8VxnssyXw2IeA3O0OKZdlhLGJmutQYU92BA==\n"
+        "signature": "untrusted comment: signature from tauri secret key\nRUTseHvqA5TNjrOO1EsstExtAHsO0YJBZ274nWwQBYZmIL0i15lXwftVokEJ6/Gy6OmNTZIO4TcFM9KkWASNC/M861DNTQr1jgA=\ntrusted comment: timestamp:1789777665\tfile:payload-70b619a1161326ca0b525df187b10efd119a3b03acc7c75c0c75f673c3af58e6.txt\n75kfwSP/LcRF9HKv4KXnHJncgGab1P9odJtNoZu79WNucN1JrPW8VxnssyXw2IeA3O0OKZdlhLGJmutQYU92BA==\n",
+        "credit": {
+            "author": "Caissabase",
+            "website": "https://web.archive.org/web/20241007103203/http://caissabase.co.uk/",
+            "license": {
+                "name": "CC BY-NC 4.0",
+                "url": "https://creativecommons.org/licenses/by-nc/4.0/"
+            },
+            "convertedBy": "En Croissant"
+        }
     },
     {
         "title": "Ajedrez Data - Correspondence",
