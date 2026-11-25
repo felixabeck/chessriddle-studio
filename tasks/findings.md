@@ -29205,10 +29205,13 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### The reload-completion drain helper's 10 s bound fails under a loaded parallel test run
 
-* **ID:** f-20261125-08 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-08 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Where:** `src-tauri/src/infra/reload_completion_tests.rs`, helper `reload_completion_drain` (`registry.wait_for_drain(Duration::from_secs(10))`), used by three tests.
 * **Defect:** the helper asserts that `OperationRegistry::wait_for_drain` finishes within 10 s. The bound only exists to catch a hang, but it is a wall clock, so it depends on machine load.
 * **Failure scenario (observed):** `pnpm gates:push -- --rust --frontend` on the v1.2.0 release tree (2026-11-25 ~06:15 UTC, laptop, load average about 21-35 on 24 cores), lane `related-tests`: `3871 passed; 1 failed`, `reload_completion_account_pending_batch_appends_without_transfer_before_reconnect` panicked at `src/infra/reload_completion_tests.rs:1110:5` on the drain assertion. Run alone three times right after it passed in 3.00 s, 1.49 s and 1.66 s. Log: `artifacts/gates/20261125T060800415Z-3181517/related-tests.log`.
 * **Proof:** raise the bound so it catches only a hang, with a comment saying so (precedent f-20261124-18).
 * **Found by:** Claude Code interactive session 134be9f1-6a11-4d6e-a8f9-af840b560f52, 2026-11-25, on the v1.2.0 release push gates.
+
+**Handled 2026-11-25 (Claude Code interactive session 134be9f1, commit "test(reload): let the drain helper's bound catch only a hang").** `reload_completion_drain` waits up to 60 s, with a comment that the bound only catches a hang. A lease that is never released still turns every caller red at the bound. **Proof:** `cargo test --bins -- infra::reload_completion_tests::` 25 passed; the failing test passed alone three times (3.00 s, 1.49 s, 1.66 s). Review: agy tests lens APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d11f06acf79fdc995c8e9ed6340ecbce4bbfd26f9e4ba426d5b1367dc66c1b10","header_sha256":"87412060a98c4b0feb8b1aea3b866296625972f3919dca6791d4c9ebc89b34d5","header_status":"handled","input_sha256":"c4cfdcbe0e5ed5013a1dc42fecc20388ece674d25df0a83682352f25bff5fb8e","kind":"mutation-receipt","operation":"1740b75a8c31f86496be6c8838c1dcfff7b95ebd0dfd7ba17bcd35afcd3db197","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-08"],"target":"f-20261125-08","v":1} -->
