@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   formatNestedError,
   installMultiChildSignalForwarding,
+  runPassThroughChild,
   signalExitCode,
   superviseChild,
 } from "./child-supervisor.mjs";
@@ -113,4 +114,60 @@ test("nested errors share traversal while callers choose their formatting", () =
     ),
     "root failure\n  child failure\n  aggregate cause\n  root cause",
   );
+});
+
+function makeStderr() {
+  const chunks = [];
+  return { chunks, write: (chunk) => chunks.push(chunk) };
+}
+
+test("pass-through runner reports spawn failures with exit 127 and the error code", async () => {
+  const stderr = makeStderr();
+  const thrown = await runPassThroughChild("agent-gate", [], {
+    stderr,
+    spawnProcess() {
+      throw Object.assign(new Error("sync spawn refusal"), { code: "EACCES" });
+    },
+  });
+  assert.deepEqual(thrown, { exitCode: 127, spawnErrorCode: "EACCES" });
+  assert.match(stderr.chunks.join(""), /spawn agent-gate failed: sync spawn refusal/u);
+
+  const child = makeChild();
+  const pending = runPassThroughChild("agent-gate", [], {
+    stderr,
+    spawnProcess: () => child,
+    signalTarget: new EventEmitter(),
+  });
+  child.emit("error", Object.assign(new Error("spawn agent-gate ENOENT"), { code: "ENOENT" }));
+  assert.deepEqual(await pending, { exitCode: 127, spawnErrorCode: "ENOENT" });
+});
+
+test("pass-through runner forwards signals unchanged, reports only non-ESRCH kill failures, and detaches", async () => {
+  const stderr = makeStderr();
+  const signalTarget = new EventEmitter();
+  const kills = [];
+  const child = makeChild((signal) => {
+    kills.push(signal);
+    if (signal === "SIGHUP") throw Object.assign(new Error("gone"), { code: "ESRCH" });
+    if (signal === "SIGTERM") throw Object.assign(new Error("denied"), { code: "EPERM" });
+    return true;
+  });
+  const pending = runPassThroughChild("agent-gate", ["node"], {
+    stderr,
+    spawnProcess: () => child,
+    signalTarget,
+  });
+  for (const signal of ["SIGINT", "SIGHUP", "SIGTERM"]) signalTarget.emit(signal);
+  assert.deepEqual(kills, ["SIGINT", "SIGHUP", "SIGTERM"]);
+  assert.equal(stderr.chunks.join(""), "Failed to forward SIGTERM to agent-gate: denied\n");
+
+  // Exited but not yet closed: the guard, not listener removal, must hold the signal back.
+  child.signalCode = "SIGINT";
+  signalTarget.emit("SIGTERM");
+  assert.equal(kills.length, 3, "an exited child receives no further signals");
+  child.emit("close", null, "SIGINT");
+  assert.deepEqual(await pending, { exitCode: 130, spawnErrorCode: undefined });
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    assert.equal(signalTarget.listenerCount(signal), 0, `${signal} listener must be removed`);
+  }
 });

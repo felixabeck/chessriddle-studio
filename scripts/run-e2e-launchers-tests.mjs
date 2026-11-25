@@ -8,7 +8,9 @@ import {
   DOCKER_INFO_TIMEOUT_MS,
   E2E_CONTAINER_MEMORY,
   E2E_CONTAINER_MEMORY_BYTES,
+  E2E_GATE_SLOT_MARKER,
   playwrightArguments,
+  takesGateSlot,
 } from "./run-e2e-container.mjs";
 
 const scripts = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +66,11 @@ if (action === "info") {
   if (process.env.FAKE_DOCKER_RM_MODE === "fail") {
     process.stderr.write("injected cleanup refusal\n");
     process.exit(23);
+  } else if (process.env.FAKE_DOCKER_RM_MODE === "slow") {
+    setTimeout(() => {
+      record({ action: "rm-done" });
+      process.exit(0);
+    }, Number(process.env.FAKE_DOCKER_RM_DELAY_MS));
   } else if (process.env.FAKE_DOCKER_RM_MODE === "hold") {
     process.on("SIGTERM", () => {});
     process.on("SIGINT", () => {});
@@ -89,9 +96,52 @@ async function makeHarness(t, overrides = {}) {
       ...process.env,
       PATH: `${bin}${delimiter}${process.env.PATH}`,
       FAKE_DOCKER_RECORD: record,
+      // Every launcher test runs the container in place unless it opts into the slot re-run, so
+      // the light contract lane (which runs this file) never reaches a real `agent-gate`.
+      [E2E_GATE_SLOT_MARKER]: "1",
       ...overrides,
     },
   };
+}
+
+// Stands in for `agent-gate`: records the marker and its argv, then either refuses like the real
+// launcher (exit 125, nothing started) or execs the command, as `agent-gate` does after placement.
+const FAKE_GATE = String.raw`#!/bin/sh
+{ printf 'marker=%s\n' "$CHESSFABLE_E2E_GATE_SLOT"; for arg in "$@"; do printf 'arg=%s\n' "$arg"; done; } > "$FAKE_GATE_RECORD"
+if [ -n "$FAKE_GATE_EXIT" ]; then
+  echo "agent-gate: REFUSED — injected" >&2
+  exit "$FAKE_GATE_EXIT"
+fi
+exec "$@"
+`;
+
+/** A harness whose entrypoint takes the slot path through a fake `agent-gate` (or none at all). */
+async function makeSlotHarness(t, { gate = true, ...overrides } = {}) {
+  const harness = await makeHarness(t, overrides);
+  const gateRecord = join(harness.root, "gate.txt");
+  const bin = join(harness.root, "bin");
+  if (gate) {
+    await writeFile(join(bin, "agent-gate"), FAKE_GATE);
+    await chmod(join(bin, "agent-gate"), 0o755);
+  }
+  const env = { ...harness.env, FAKE_GATE_RECORD: gateRecord };
+  delete env[E2E_GATE_SLOT_MARKER];
+  delete env.CI;
+  // Without a gate, PATH holds only the fake Docker and node, so no real `agent-gate` is found.
+  if (!gate) env.PATH = `${bin}${delimiter}${dirname(process.execPath)}`;
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete env[key];
+  }
+  return { ...harness, env, gateRecord };
+}
+
+async function readGateRecord(harness) {
+  try {
+    return (await readFile(harness.gateRecord, "utf8")).split("\n").filter(Boolean);
+  } catch (error) {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  }
 }
 
 function startNode(args, env) {
@@ -808,4 +858,105 @@ test("the native e2e command still selects only the named test through pnpm's se
     /\[async-errors\] › async-errors\.spec\.ts:\d+:\d+ › async-errors: localizes directory-trash/u,
   );
   assert.match(run.stdout, /Total: 1 test in 1 file/u);
+});
+
+test("only a local unmarked run takes a gate slot", () => {
+  assert.equal(takesGateSlot({}), true);
+  assert.equal(takesGateSlot({ CI: "" }), true);
+  assert.equal(takesGateSlot({ CI: "true" }), false);
+  assert.equal(takesGateSlot({ [E2E_GATE_SLOT_MARKER]: "1" }), false);
+});
+
+test("a local run re-runs itself under agent-gate with the marker, its node options and its args", async (t) => {
+  const harness = await makeSlotHarness(t);
+  const running = startNode(["--no-warnings", launcherPath, "--project=async-errors"], harness.env);
+  const result = await running.done;
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.deepEqual(await readGateRecord(harness), [
+    "marker=1",
+    `arg=${process.execPath}`,
+    "arg=--no-warnings",
+    `arg=${launcherPath}`,
+    "arg=--project=async-errors",
+  ]);
+  const events = await readEvents(harness);
+  assert.deepEqual(
+    events.map(({ action }) => action),
+    ["info", "run"],
+  );
+  assert.deepEqual(events[1].args.slice(events[1].args.indexOf("test")), [
+    "test",
+    "--project=async-errors",
+  ]);
+});
+
+test("a run with the launcher's exit code propagates and an agent-gate refusal starts nothing", async (t) => {
+  await t.test("container failure exit code", async (subtest) => {
+    const harness = await makeSlotHarness(subtest, {
+      FAKE_DOCKER_RUN_MODE: "fail",
+      FAKE_DOCKER_RUN_EXIT: "17",
+    });
+    const result = await startNode([launcherPath], harness.env).done;
+    assert.equal(result.code, 17, `${result.stdout}\n${result.stderr}`);
+    assert.ok(await readGateRecord(harness), "the run must go through agent-gate");
+  });
+  await t.test("refusal 125", async (subtest) => {
+    const harness = await makeSlotHarness(subtest, { FAKE_GATE_EXIT: "125" });
+    const result = await startNode([launcherPath], harness.env).done;
+    assert.equal(result.code, 125, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stderr, /agent-gate: REFUSED/u);
+    assert.deepEqual(await readEvents(harness), []);
+  });
+});
+
+test("CI runs the container in place without agent-gate", async (t) => {
+  const harness = await makeSlotHarness(t);
+  const result = await startNode([launcherPath], { ...harness.env, CI: "true" }).done;
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(await readGateRecord(harness), undefined);
+  assert.deepEqual(
+    (await readEvents(harness)).map(({ action }) => action),
+    ["info", "run"],
+  );
+});
+
+test("without agent-gate on PATH the container runs in place and says no slot was taken", async (t) => {
+  const harness = await makeSlotHarness(t, { gate: false });
+  const result = await startNode([launcherPath], harness.env).done;
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(
+    result.stderr,
+    /agent-gate is not on PATH: running the e2e container without a heavy-gate slot/u,
+  );
+  assert.deepEqual(
+    (await readEvents(harness)).map(({ action }) => action),
+    ["info", "run"],
+  );
+});
+
+test("SIGINT and SIGTERM reach the run inside the slot, which finishes its container cleanup", async (t) => {
+  for (const [signal, expectedCode] of [
+    ["SIGINT", 130],
+    ["SIGTERM", 143],
+  ]) {
+    await t.test(signal, async (subtest) => {
+      // Removal outlasts CHILD_TERMINATION_TIMEOUT_MS, so an outer SIGKILL escalation would cut it.
+      const harness = await makeSlotHarness(subtest, {
+        FAKE_DOCKER_RUN_MODE: "hold",
+        FAKE_DOCKER_RM_MODE: "slow",
+        FAKE_DOCKER_RM_DELAY_MS: "2500",
+      });
+      const running = startNode([launcherPath], harness.env);
+      await waitForEvent(harness, (event) => event.action === "run");
+      running.child.kill(signal);
+      const result = await running.done;
+      assert.equal(result.code, expectedCode, `${result.stdout}\n${result.stderr}`);
+      const events = await readEvents(harness);
+      assert.deepEqual(
+        events.map(({ action }) => action),
+        ["info", "run", "rm", "rm-done"],
+      );
+      assert.ok(await readGateRecord(harness), "the run must go through agent-gate");
+    });
+  }
 });

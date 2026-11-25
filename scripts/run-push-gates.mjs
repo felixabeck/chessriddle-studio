@@ -12,6 +12,7 @@ import {
   CHILD_TERMINATION_TIMEOUT_MS,
   formatNestedError,
   installMultiChildSignalForwarding,
+  runPassThroughChild,
   signalExitCode,
   superviseChild as defaultSuperviseChild,
 } from "./child-supervisor.mjs";
@@ -28,7 +29,6 @@ import { listWorkingTreeFiles } from "./working-tree-files.mjs";
 export const GATE_LAUNCHER = "agent-gate";
 export const RUST_SIZING_MODE_FLAG = "--run-rust-command";
 const RUNNER_SCRIPT_PATH = fileURLToPath(import.meta.url);
-const RUST_COMMAND_FORWARDED_SIGNALS = Object.freeze(["SIGINT", "SIGTERM", "SIGHUP"]);
 
 function commandDisplay(executable, args) {
   return [executable, ...args]
@@ -36,12 +36,18 @@ function commandDisplay(executable, args) {
     .join(" ");
 }
 
-function commandSpec(executable, args, { heavyGateSlot = false } = {}) {
+/**
+ * `heavyGateSlot` commands run through `agent-gate`. `rustSizing` (the default for them) runs the
+ * command through the in-scope sizing mode, which sizes `CARGO_BUILD_JOBS` inside the gate scope;
+ * a self-sizing command such as Vitest (`vitestMaxWorkers`) runs under `agent-gate` directly.
+ */
+function commandSpec(executable, args, { heavyGateSlot = false, rustSizing = heavyGateSlot } = {}) {
   return Object.freeze({
     executable,
     args: Object.freeze([...args]),
     display: commandDisplay(executable, args),
     heavyGateSlot,
+    rustSizing,
   });
 }
 
@@ -401,14 +407,13 @@ export function buildRelatedTestCommands(changedPaths, { root = process.cwd() } 
   const vitestPaths = existingPaths.filter(isVitestCoveredPath);
   if (vitestPaths.length > 0) {
     commands.push(
-      commandSpec("pnpm", [
-        "exec",
-        "vitest",
-        "related",
-        "--run",
-        "--passWithNoTests",
-        ...vitestPaths,
-      ]),
+      // Vitest loads every core (one worker per two logical CPUs), so it queues for a slot like
+      // the Rust commands instead of oversubscribing the host beside them (f-20261125-07).
+      commandSpec(
+        "pnpm",
+        ["exec", "vitest", "related", "--run", "--passWithNoTests", ...vitestPaths],
+        { heavyGateSlot: true, rustSizing: false },
+      ),
     );
   }
 
@@ -544,9 +549,18 @@ function isHeavyGateCommand(command) {
   return typeof command !== "string" && command.heavyGateSlot === true;
 }
 
-/** Wrap a Rust-compiling command so `agent-gate` acquires one heavy-gate slot and sizes inside that scope. */
+/**
+ * Wrap a slot-taking command so `agent-gate` acquires one heavy-gate slot; a Rust-compiling command
+ * also sizes `CARGO_BUILD_JOBS` inside that scope.
+ */
 export function wrapHeavyGateCommand(command) {
   const { executable, args } = commandArgv(command);
+  if (command.rustSizing === false) {
+    return commandSpec(GATE_LAUNCHER, [executable, ...args], {
+      heavyGateSlot: true,
+      rustSizing: false,
+    });
+  }
   return commandSpec(
     GATE_LAUNCHER,
     [process.execPath, RUNNER_SCRIPT_PATH, RUST_SIZING_MODE_FLAG, "--", executable, ...args],
@@ -611,62 +625,14 @@ export async function runRustCommand(
     return 1;
   }
 
-  let child;
-  try {
-    child = spawnProcess(executable, commandArgs, {
-      cwd,
-      env: rustEnv,
-      stdio: "inherit",
-      detached: false,
-    });
-  } catch (error) {
-    stderr.write(`spawn ${executable} failed: ${oneLineMessage(error)}\n`);
-    return 127;
-  }
-
-  const forwardSignal = (signal) => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    try {
-      child.kill(signal);
-    } catch (error) {
-      if (error?.code !== "ESRCH") {
-        stderr.write(`Failed to forward ${signal} to ${executable}: ${oneLineMessage(error)}\n`);
-      }
-    }
-  };
-  const signalListeners = RUST_COMMAND_FORWARDED_SIGNALS.map((signal) => {
-    const listener = () => forwardSignal(signal);
-    signalTarget.on(signal, listener);
-    return [signal, listener];
+  const { exitCode } = await runPassThroughChild(executable, commandArgs, {
+    cwd,
+    env: rustEnv,
+    stderr,
+    spawnProcess,
+    signalTarget,
   });
-
-  try {
-    return await new Promise((resolveExit) => {
-      let settled = false;
-      const finish = (code) => {
-        if (settled) return;
-        settled = true;
-        resolveExit(code);
-      };
-      child.once("error", (error) => {
-        stderr.write(`spawn ${executable} failed: ${oneLineMessage(error)}\n`);
-        finish(127);
-      });
-      child.once("close", (code, signal) => {
-        if (signal !== null) {
-          const exitCode = signalExitCode(signal);
-          stderr.write(`${executable} terminated by signal ${signal} (exit ${exitCode})\n`);
-          finish(exitCode);
-          return;
-        }
-        finish(code ?? 1);
-      });
-    });
-  } finally {
-    for (const [signal, listener] of signalListeners) {
-      signalTarget.off(signal, listener);
-    }
-  }
+  return exitCode;
 }
 
 function createTaskResult(logDirectory, name, kind, fields = {}) {

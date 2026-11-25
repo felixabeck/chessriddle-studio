@@ -89,9 +89,10 @@ ChessRiddle Studio does not use the push lock; a rejected push means rebase, rer
 
 `pnpm gates:push` and `pnpm checks:pre-review` run in the caller's scope (`d-20261124-02`); only
 Rust-compiling commands — P1 `bindings-check`, `rust-lint`'s `cargo clippy` and
-`pnpm rust:windows:check`, pre-review `windows-clippy`, and `related-tests` `cargo test` — are
-spawned through `agent-gate`, serialised run-wide so one run never has two `agent-gate` calls alive
-at once, with `CARGO_BUILD_JOBS` sized inside each gate scope. Non-Rust lanes were measured below
+`pnpm rust:windows:check`, pre-review `windows-clippy`, and `related-tests` `cargo test` — and the
+`related-tests` Vitest command (`d-20261125-13`) are spawned through `agent-gate`, serialised
+run-wide so one run never has two `agent-gate` calls alive at once, with `CARGO_BUILD_JOBS` or the
+Vitest workers sized inside each gate scope. Non-Rust lanes were measured below
 the 6 GiB session-scope threshold on 2026-11-24 on `tuxedo-felix` at `bb9d374f6` (2.25 GiB
 pre-review, 1.51 GiB push `--frontend` light part, 3.97 GiB `vitest related` over 246 files;
 0 OOM kills, 0 swap). Read `.claude/rules/gate-tooling.md` "Scheduling and placement" before
@@ -232,7 +233,7 @@ runs every `scripts/*-tests.mjs`.
 
 The lane, every pre-commit check (git skill) and build phase proofs (agent-kit build skill) use the same two commands:
 
-- `src/**` and `scripts/**/*.mjs` other than `*-tests.mjs`: `pnpm exec vitest related --run --passWithNoTests <paths>`.
+- `src/**` and `scripts/**/*.mjs` other than `*-tests.mjs`: `agent-gate pnpm exec vitest related --run --passWithNoTests <paths>`. Vitest loads every core, so it waits for a machine-wide heavy-gate slot like the lane's own Vitest command (`d-20261125-13`); a wait behind other sessions' gates is expected, and exit 125 means nothing ran.
 - `src-tauri/src/**/*.rs`: one `cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- <module>:: ...` command with one filter per changed module (`src-tauri/src/a/b.rs` → `a::b::`, `mod.rs` → its directory module), under the shared Rust allocator. A changed `src-tauri/src/main.rs`, `src-tauri/src/lib.rs`, `src-tauri/build.rs`, `Cargo.toml` or `Cargo.lock` runs the whole `--bins` suite without filters. The crate has only a binary target, so `--lib` does not apply. If `cargo` is missing, prefix with `PATH="$HOME/.cargo/bin:$PATH"`.
 
 Pre-commit checks and build phase proofs additionally run, for a changed `scripts/<name>.mjs`, `node --test` on every matching `scripts/*-tests.mjs` file (`git grep -l <name> -- 'scripts/*-tests.mjs'`) plus changed `*-tests.mjs` files themselves; at push the contract lane covers these.

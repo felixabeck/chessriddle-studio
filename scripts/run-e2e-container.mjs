@@ -24,6 +24,7 @@ import { isEntrypoint } from "./entrypoint.mjs";
 import {
   formatNestedError,
   installMultiChildSignalForwarding,
+  runPassThroughChild,
   signalExitCode,
   superviseChild,
 } from "./child-supervisor.mjs";
@@ -45,6 +46,18 @@ export const DOCKER_INFO_TIMEOUT_MS = 10_000;
 // headroom above the measured anon + kernel peak while fitting comfortably inside a 7 GiB usable
 // fallback scope.
 export const E2E_CONTAINER_MEMORY = "5g";
+
+// A local run loads every core (six Playwright workers plus headless Chromium), so it queues for
+// one machine-wide heavy-gate slot like the Rust gate commands instead of oversubscribing the host
+// beside them (f-20261125-07). The entrypoint re-runs itself under `agent-gate` with this marker
+// set; the marked inner run starts the container in place. CI has no slots and no launcher.
+export const E2E_GATE_LAUNCHER = "agent-gate";
+export const E2E_GATE_SLOT_MARKER = "CHESSFABLE_E2E_GATE_SLOT";
+
+/** Whether this entrypoint run should take a heavy-gate slot before starting the container. */
+export function takesGateSlot(env = process.env) {
+  return !env.CI && !env[E2E_GATE_SLOT_MARKER];
+}
 export const E2E_CONTAINER_MEMORY_BYTES = 5 * 1024 ** 3;
 
 /**
@@ -402,7 +415,38 @@ export async function runE2eContainer(
   }
 }
 
+/**
+ * Re-run this entrypoint under `agent-gate` and resolve its exit code, or `undefined` when the
+ * launcher is not installed (a contributor machine), where the caller runs in place without a slot.
+ */
+async function runInGateSlot() {
+  const { exitCode, spawnErrorCode } = await runPassThroughChild(
+    E2E_GATE_LAUNCHER,
+    [
+      process.execPath,
+      ...process.execArgv,
+      fileURLToPath(import.meta.url),
+      ...process.argv.slice(2),
+    ],
+    { env: { ...process.env, [E2E_GATE_SLOT_MARKER]: "1" } },
+  );
+  if (spawnErrorCode === "ENOENT") {
+    process.stderr.write(
+      `${E2E_GATE_LAUNCHER} is not on PATH: running the e2e container without a heavy-gate slot.\n`,
+    );
+    return undefined;
+  }
+  return exitCode;
+}
+
 async function main() {
+  if (takesGateSlot()) {
+    const slotExitCode = await runInGateSlot();
+    if (slotExitCode !== undefined) {
+      process.exitCode = slotExitCode;
+      return;
+    }
+  }
   const options = {};
   const testTimeout = process.env.E2E_TEST_DOCKER_INFO_TIMEOUT_MS;
   if (testTimeout !== undefined) {

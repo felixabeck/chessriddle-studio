@@ -35,6 +35,9 @@ now does (proof 2 below).
    see `tasks/decisions.md`, `d-20260829-01`. `scripts/run-e2e-container.mjs`
    derives the image tag from the installed `@playwright/test` version, runs
    as the invoking user so nothing lands root-owned, and needs docker.
+   Locally it first waits for a free machine-wide heavy-gate slot through
+   `agent-gate` (`d-20261125-13`), so a wait behind other sessions' gates is
+   expected, not a hang; exit 125 means the slot was refused and nothing ran.
 
    Snapshots are re-recorded with `pnpm test:e2e:update`, which runs inside
    the same image — there is deliberately no script that re-records them on

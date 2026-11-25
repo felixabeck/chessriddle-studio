@@ -1,3 +1,4 @@
+import { spawn as defaultSpawn } from "node:child_process";
 import { constants as osConstants } from "node:os";
 
 const PROCESS_GROUP_POLL_MS = 10;
@@ -19,6 +20,82 @@ export function formatNestedError(error, format, depth = 0) {
 export function signalExitCode(signal, unknownSignalCode = 128) {
   const number = osConstants.signals[signal];
   return typeof number === "number" ? 128 + number : unknownSignalCode;
+}
+
+const PASS_THROUGH_FORWARDED_SIGNALS = Object.freeze(["SIGINT", "SIGTERM", "SIGHUP"]);
+
+function oneLineMessage(error) {
+  return (error instanceof Error ? error.message : String(error)).replaceAll(/[\r\n]+/gu, " ");
+}
+
+/**
+ * Run one child with inherited stdio as a transparent stand-in for this process: forward
+ * SIGINT/SIGTERM/SIGHUP to it unchanged (never escalating to SIGKILL, so the child finishes its
+ * own cleanup), wait for it to close, and resolve `{ exitCode, spawnErrorCode }`. A signal death
+ * maps through `signalExitCode`; a spawn failure resolves exit 127 with the error's `code`.
+ */
+export async function runPassThroughChild(
+  executable,
+  args,
+  {
+    cwd = process.cwd(),
+    env = process.env,
+    stderr = process.stderr,
+    spawnProcess = defaultSpawn,
+    signalTarget = process,
+  } = {},
+) {
+  let child;
+  try {
+    child = spawnProcess(executable, args, { cwd, env, stdio: "inherit", detached: false });
+  } catch (error) {
+    stderr.write(`spawn ${executable} failed: ${oneLineMessage(error)}\n`);
+    return { exitCode: 127, spawnErrorCode: error?.code };
+  }
+
+  const forwardSignal = (signal) => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    try {
+      child.kill(signal);
+    } catch (error) {
+      if (error?.code !== "ESRCH") {
+        stderr.write(`Failed to forward ${signal} to ${executable}: ${oneLineMessage(error)}\n`);
+      }
+    }
+  };
+  const signalListeners = PASS_THROUGH_FORWARDED_SIGNALS.map((signal) => {
+    const listener = () => forwardSignal(signal);
+    signalTarget.on(signal, listener);
+    return [signal, listener];
+  });
+
+  try {
+    return await new Promise((resolveExit) => {
+      let settled = false;
+      const finish = (outcome) => {
+        if (settled) return;
+        settled = true;
+        resolveExit(outcome);
+      };
+      child.once("error", (error) => {
+        stderr.write(`spawn ${executable} failed: ${oneLineMessage(error)}\n`);
+        finish({ exitCode: 127, spawnErrorCode: error?.code });
+      });
+      child.once("close", (code, signal) => {
+        if (signal !== null) {
+          const exitCode = signalExitCode(signal);
+          stderr.write(`${executable} terminated by signal ${signal} (exit ${exitCode})\n`);
+          finish({ exitCode, spawnErrorCode: undefined });
+          return;
+        }
+        finish({ exitCode: code ?? 1, spawnErrorCode: undefined });
+      });
+    });
+  } finally {
+    for (const [signal, listener] of signalListeners) {
+      signalTarget.off(signal, listener);
+    }
+  }
 }
 
 function childIsRunning(child) {

@@ -15,9 +15,10 @@ const PACKAGE_JSON = "package.json";
 const TEST_WORKFLOW = ".github/workflows/test.yml";
 const VITE_CONFIG = "vite.config.ts";
 const CONTRACT_GATE = "gates:contract:check";
-// The runner and non-compiling commands run in the caller's scope; only Rust-compiling commands
-// are spawned through `agent-gate` by scripts/run-push-gates.mjs (d-20261124-02, superseding
-// d-20261002-01's placement clause for gates:push and checks:pre-review).
+// The runner and light commands run in the caller's scope; only Rust-compiling commands and the
+// related-tests Vitest command are spawned through `agent-gate` by scripts/run-push-gates.mjs
+// (d-20261124-02, superseding d-20261002-01's placement clause for gates:push and
+// checks:pre-review; d-20261125-13 adds the Vitest command).
 const GATE_RUNNER_SCRIPTS = Object.freeze({
   "gates:push": "node scripts/run-push-gates.mjs",
   "checks:pre-review": "node scripts/run-push-gates.mjs --pre-review",

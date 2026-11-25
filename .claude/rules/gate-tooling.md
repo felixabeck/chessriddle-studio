@@ -18,9 +18,9 @@ paths:
 ## Scheduling and placement
 
 `pnpm gates:push` and `pnpm checks:pre-review` run `node scripts/run-push-gates.mjs` in the
-caller's scope; only Rust-compiling commands take a machine-wide heavy-gate slot through
-`agent-gate` (`d-20261124-02`, superseding `d-20261002-01`'s placement clause for those two
-scripts).
+caller's scope; only Rust-compiling commands and the `related-tests` Vitest command take a
+machine-wide heavy-gate slot through `agent-gate` (`d-20261124-02`, superseding `d-20261002-01`'s
+placement clause for those two scripts; `d-20261125-13` adds the Vitest command).
 
 The push skill's §2 runs every final local gate through one command,
 `pnpm gates:push -- [--rust] [--frontend] [--bindings] [--base <commit>]`
@@ -48,10 +48,15 @@ The shared [gate-performance reference](~/.claude/references/gate-performance.md
 slot admission and scope caps. The slot-taking set is declared per command and is exactly the
 Rust-compiling commands: P1 `bindings-check` (`pnpm bindings:check`), `rust-lint`'s `cargo clippy`
 and `pnpm rust:windows:check`, pre-review `windows-clippy` (`pnpm rust:windows:check`), and the
-`related-tests` `cargo test` command. Each slot-taking command is spawned through `agent-gate` via
-the in-scope sizing mode (`node scripts/run-push-gates.mjs --run-rust-command -- <cmd>`), so it
-takes one shared slot, runs in its own `agents.slice/agent-gate-*.scope`, computes
-`CARGO_BUILD_JOBS` from that scope's cgroup chain, and releases the slot when it exits. The runner
+`related-tests` `cargo test` command, plus the `related-tests` Vitest command, which loads every
+core (one worker per two logical CPUs) and so queues instead of oversubscribing the host beside
+the Rust commands (`f-20261125-07`, `d-20261125-13`). Each Rust slot-taking command is spawned
+through `agent-gate` via the in-scope sizing mode (`node scripts/run-push-gates.mjs
+--run-rust-command -- <cmd>`), so it takes one shared slot, runs in its own
+`agents.slice/agent-gate-*.scope`, computes `CARGO_BUILD_JOBS` from that scope's cgroup chain, and
+releases the slot when it exits. The Vitest command runs as `agent-gate pnpm exec vitest related …`
+without the sizing mode (`commandSpec` option `rustSizing: false`): `vitestMaxWorkers` sizes it
+inside the same kind of scope. The runner
 serialises slot-taking commands run-wide so one run never has two `agent-gate` calls alive at once;
 non-slot lanes continue running concurrently in the caller's scope. `agent-gate` fails closed: exit
 125 (`agent-gate: REFUSED — …`) means nothing started and a retry is safe; a missing launcher fails
@@ -92,8 +97,12 @@ insufficient-budget refusal, without omitting proof. Replace the exclusive admis
 costs only after comparable cold measurements support the replacement with identical proof and
 containment, and delete this operative prose with the replaced mechanism.
 
-The e2e container (`pnpm test:e2e:container`, CI-only for pushes and manual for `$verify-ui`) runs
-with a 5 GiB limit (`E2E_CONTAINER_MEMORY_BYTES`), sized 2026-11-22 at 1.2x the measured anon +
+The e2e container (`pnpm test:e2e:container`, CI-only for pushes and manual for `$verify-ui`)
+takes a heavy-gate slot when run locally: with `CI` empty, its entrypoint re-runs itself under
+`agent-gate` with `CHESSFABLE_E2E_GATE_SLOT` set, so the marked inner run starts the container in
+place, and signals pass through unchanged so the container cleanup finishes. Without `agent-gate`
+on PATH (a contributor machine) it runs in place and says so; exit 125 propagates. CI takes no
+slot (`d-20261125-13`). It runs with a 5 GiB limit (`E2E_CONTAINER_MEMORY_BYTES`), sized 2026-11-22 at 1.2x the measured anon +
 kernel peak (f-20261122-01, d-20261122-05). The placement and reserve constants are
 `d-20260930-03`, `d-20261124-02` (per-Rust-command placement, superseding `d-20261002-01`'s
 placement clause for `gates:push` and `checks:pre-review`), and `d-20261002-03` (reserve). This

@@ -328,6 +328,11 @@ function wrappedHeavyCommand(command) {
   return wrapHeavyGateCommand(command).display;
 }
 
+/** The related-tests Vitest command as it starts: directly under `agent-gate`, no sizing mode. */
+function slotVitestRelated(...paths) {
+  return `${GATE_LAUNCHER} pnpm exec vitest related --run --passWithNoTests ${paths.join(" ")}`;
+}
+
 function makeMockSpawner({
   exits = {},
   events = [],
@@ -1624,7 +1629,7 @@ test("buildRelatedTestCommands returns exact vitest and cargo commands for chang
     [
       {
         display: "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
-        heavyGateSlot: false,
+        heavyGateSlot: true,
       },
       {
         display: "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- db:: lexer::",
@@ -1642,7 +1647,7 @@ test("buildRelatedTestCommands returns exact vitest and cargo commands for chang
       {
         display:
           "pnpm exec vitest related --run --passWithNoTests scripts/check-untranslated-jsx.mjs",
-        heavyGateSlot: false,
+        heavyGateSlot: true,
       },
     ],
   );
@@ -1662,7 +1667,7 @@ test("buildRelatedTestCommands returns exact vitest and cargo commands for chang
     [
       {
         display: "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
-        heavyGateSlot: false,
+        heavyGateSlot: true,
       },
       {
         display: "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins",
@@ -1689,7 +1694,7 @@ test("buildRelatedTestCommands returns exact vitest and cargo commands for chang
   assert.deepEqual(buildRelatedTestCommands(["src/utils/deleted.ts", "README.md"], { root }), []);
 });
 
-test("related-tests wraps only Cargo commands with agent-gate and sizing mode, not Vitest", async (t) => {
+test("related-tests runs Cargo through agent-gate with sizing mode and Vitest through agent-gate without it (f-20261125-07)", async (t) => {
   const cwd = await temporarySchedulerRoot(t);
   for (const path of ["src/utils/annotation.ts", "src-tauri/src/lexer.rs"]) {
     await mkdir(dirname(join(cwd, path)), { recursive: true });
@@ -1709,16 +1714,33 @@ test("related-tests wraps only Cargo commands with agent-gate and sizing mode, n
     "cargo test --manifest-path src-tauri/Cargo.toml --locked --bins -- lexer::",
   );
   const cargoStart = cliCommandStart(events, expectedCargo);
-  const vitestStart = cliCommandStart(
-    events,
-    "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
-  );
+  const vitestStart = cliCommandStart(events, slotVitestRelated("src/utils/annotation.ts"));
   assert.ok(cargoStart, "related-tests cargo command must run through agent-gate");
-  assert.ok(vitestStart, "related-tests vitest command must run directly");
+  assert.ok(vitestStart, "related-tests vitest command must take a slot through agent-gate");
   assert.equal(cargoStart.executable, GATE_LAUNCHER);
   assert.equal(cargoStart.env.CARGO_BUILD_JOBS, undefined);
-  assert.equal(vitestStart.executable, "pnpm");
+  assert.equal(vitestStart.executable, GATE_LAUNCHER);
+  assert.deepEqual(vitestStart.args, [
+    "pnpm",
+    "exec",
+    "vitest",
+    "related",
+    "--run",
+    "--passWithNoTests",
+    "src/utils/annotation.ts",
+  ]);
+  assert.ok(!vitestStart.args.includes(RUST_SIZING_MODE_FLAG));
   assert.equal(vitestStart.env.CARGO_BUILD_JOBS, undefined);
+  const starts = events.filter((event) => event.type === "start");
+  assert.ok(
+    starts.indexOf(vitestStart) < starts.indexOf(cargoStart),
+    "related-tests runs its slot-taking commands one after the other",
+  );
+  assert.ok(
+    events.findIndex((event) => event.type === "finish" && event.command === vitestStart.command) <
+      events.indexOf(cargoStart),
+    "the Cargo command must not start before the Vitest command released its slot",
+  );
 });
 
 test("related-tests reports missing upstream separately from other git failures", async (t) => {
@@ -1783,7 +1805,7 @@ test("a published range (HEAD = @{u}) selects its paths for related-tests only w
     git(cwd, ["rev-parse", "@{u}"]).stdout,
     "fixture must be fully published",
   );
-  const vitest = `pnpm exec vitest related --run --passWithNoTests ${sourcePath}`;
+  const vitest = slotVitestRelated(sourcePath);
 
   const withoutBase = [];
   const unscoped = await runPushGates(["--frontend"], {
@@ -1969,13 +1991,7 @@ test("rust-lint clippy red skips related-tests with its reason (R1)", async (t) 
   const related = result.results.find((task) => task.name === "related-tests");
   assert.equal(related.status, "skipped");
   assert.match(related.reason, /rust-lint failed/u);
-  assert.equal(
-    cliCommandStart(
-      events,
-      "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
-    ),
-    undefined,
-  );
+  assert.equal(cliCommandStart(events, slotVitestRelated("src/utils/annotation.ts")), undefined);
   assert.equal(cliCommandStart(events, wrappedHeavyCommand("pnpm rust:windows:check")), undefined);
 });
 
@@ -2005,13 +2021,7 @@ test("a running contract command completes after rust-lint red and related-tests
   assert.equal(result.results.find(({ name }) => name === "contract").status, "passed");
   assert.ok(cliCommandFinish(events, contractLast));
   assert.equal(result.results.find((task) => task.name === "related-tests").status, "skipped");
-  assert.equal(
-    cliCommandStart(
-      events,
-      "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
-    ),
-    undefined,
-  );
+  assert.equal(cliCommandStart(events, slotVitestRelated("src/utils/annotation.ts")), undefined);
 });
 
 test("a running multi-command lane stops at its next boundary without an exit code (R4)", async (t) => {
@@ -2054,8 +2064,7 @@ test("light stage waits for held contract after rust-lint passes before related-
         await writeFile(join(cwd, "src/utils/annotation.ts"), "export const a = 1;\n");
         const events = [];
         const contractLast = "env -u KIT_ROOT pnpm findings:kit:check";
-        const relatedCommand =
-          "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts";
+        const relatedCommand = slotVitestRelated("src/utils/annotation.ts");
         let startedWhileHeld;
         const result = await runPushGates(flags, {
           cwd,
@@ -2427,7 +2436,7 @@ test("per-command heavy-gate placement wraps only Rust-compiling commands and ne
   const sizingPrefix = [process.execPath, runnerPath, RUST_SIZING_MODE_FLAG, "--"];
 
   await t.test(
-    "push mode wraps exact Rust-compiling set and leaves every other command direct",
+    "push mode wraps exact Rust-compiling set plus related Vitest and leaves every other command direct",
     async (subtest) => {
       const cwd = await temporarySchedulerRoot(subtest);
       for (const path of ["src/utils/annotation.ts", "src-tauri/src/lexer.rs"]) {
@@ -2445,9 +2454,17 @@ test("per-command heavy-gate placement wraps only Rust-compiling commands and ne
       });
       assert.equal(result.exitCode, 0);
       const starts = events.filter((event) => event.type === "start");
-      const wrappedStarts = starts.filter((event) => event.executable === GATE_LAUNCHER);
+      const launcherStarts = starts.filter((event) => event.executable === GATE_LAUNCHER);
+      const selfSizedStarts = launcherStarts.filter(
+        (event) => !event.args.includes(RUST_SIZING_MODE_FLAG),
+      );
+      const wrappedStarts = launcherStarts.filter((event) => !selfSizedStarts.includes(event));
       const directStarts = starts.filter((event) => event.executable !== GATE_LAUNCHER);
 
+      assert.deepEqual(
+        selfSizedStarts.map((event) => event.command),
+        [slotVitestRelated("src/utils/annotation.ts")],
+      );
       for (const event of wrappedStarts) {
         assert.deepEqual(event.args.slice(0, sizingPrefix.length), sizingPrefix);
         assert.equal(
@@ -2475,7 +2492,6 @@ test("per-command heavy-gate placement wraps only Rust-compiling commands and ne
         "env -u KIT_ROOT pnpm findings:kit:check",
         "pnpm build-vite",
         "pnpm bundle:check",
-        "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
         "pnpm gates:contract:check",
         "pnpm mutation:guard:check",
         "pnpm rust:target:evict",
@@ -2559,10 +2575,7 @@ test("agent-gate exit 125 refusal and missing launcher fail the lane and latch w
         undefined,
       );
       assert.equal(
-        cliCommandStart(
-          events,
-          "pnpm exec vitest related --run --passWithNoTests src/utils/annotation.ts",
-        ),
+        cliCommandStart(events, slotVitestRelated("src/utils/annotation.ts")),
         undefined,
       );
     },
