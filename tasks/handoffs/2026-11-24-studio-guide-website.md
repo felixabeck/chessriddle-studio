@@ -20,6 +20,13 @@ Studio repository `felixabeck/chessriddle-studio` (public), branch `master`:
 
 * English source: `src/components/assistant/topics/<id>.md`, 18 topics. Fixed reading order:
   `src/components/assistant/topics/order.ts` (`HELP_TOPIC_ORDER`).
+* Structure and look (added 2026-11-25): the same `order.ts` holds `HELP_TOPIC_GROUPS` (group id,
+  accent token name such as `chart-6`, and member `{ id, emoji }` entries whose flattened ids
+  equal `HELP_TOPIC_ORDER`). Guide entries use the `emoji` field per topic in `HELP_TOPIC_GROUPS`
+  (same emoji as the ChessRiddle catalogue where one exists). Studio's Guide shows a grouped
+  sidebar with uppercase group headings, the selected entry marked in its group's accent, and a
+  "Next: <topic>" button. The website reads the same data so both guides share groups, emoji, and
+  colours. Group labels are Studio i18n keys `Guide.Group.<Id>` in `src/translation/<locale>.json`.
 * Translations: `src/components/assistant/topics/<locale>/<id>.md` for every Studio locale except
   `en-US`/`en-GB` (de-DE, es-ES, fr-FR, it-IT, pt-PT, pl-PL, nb-NO, ru-RU, uk-UA, be-BY, tr-TR,
   ko-KR, zh-CN, zh-TW).

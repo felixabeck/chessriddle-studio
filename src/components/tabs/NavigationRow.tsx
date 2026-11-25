@@ -9,12 +9,19 @@ import {
 import { Link, useRouterState } from "@tanstack/react-router";
 import { getCurrentWebviewWindow } from "@/platform/native";
 import {
+  BadgeInfo,
   Brain,
   ChevronDown,
+  Database,
+  FolderOpen,
+  Info,
   Library,
+  LogOut,
+  Maximize,
   MessageSquarePlus,
   MessagesSquare,
   Plus,
+  Save,
   Settings,
   User,
   X,
@@ -103,15 +110,36 @@ function IconX() {
   );
 }
 
+const IN_APP_MENU_ICONS: Record<string, typeof Settings> = {
+  new_tab: Plus,
+  open_file: FolderOpen,
+  save: Save,
+  save_to: Database,
+  accounts: User,
+  engines: Brain,
+  settings: Settings,
+  toggle_fullscreen: Maximize,
+  guide: Info,
+  assistant: MessagesSquare,
+  send_feedback: MessageSquarePlus,
+  about: BadgeInfo,
+  exit: LogOut,
+};
+
 function MenuItems({ options }: { options: MenuAction[] }) {
-  return options.map((option, i) =>
-    option.kind === "separator" ? (
-      <Menu.Divider key={i} />
-    ) : (
+  return options.map((option, i) => {
+    if (option.kind === "separator") return <Menu.Divider key={i} />;
+    const Icon = option.id ? IN_APP_MENU_ICONS[option.id] : undefined;
+    return (
       <Menu.Item
         fz="0.8rem"
         key={option.id ?? option.label}
         aria-label={option.label}
+        leftSection={
+          Icon ? (
+            <Icon size="0.875rem" color="var(--mantine-color-dimmed)" aria-hidden />
+          ) : undefined
+        }
         rightSection={
           option.shortcut && (
             <Text size="xs" c="dimmed">
@@ -123,8 +151,8 @@ function MenuItems({ options }: { options: MenuAction[] }) {
       >
         {option.label}
       </Menu.Item>
-    ),
-  );
+    );
+  });
 }
 
 export default function NavigationRow({
@@ -319,6 +347,7 @@ export default function NavigationRow({
     accounts: { icon: User, label: t("SideBar.Accounts") },
     engines: { icon: Brain, label: t("SideBar.Engines") },
     settings: { icon: Settings, label: t("SideBar.Settings") },
+    guide: { icon: Info, label: t("Guide.Title") },
   };
 
   return (

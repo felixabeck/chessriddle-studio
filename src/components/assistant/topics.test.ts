@@ -9,6 +9,7 @@ import deDE from "@/translation/de-DE.json";
 import enUS from "@/translation/en-US.json";
 import { buildAssistantTargets } from "./targets";
 import {
+    HELP_TOPIC_GROUPS,
     HELP_TOPIC_ORDER,
     extractLabelRefs,
     extractTargetRefs,
@@ -261,6 +262,15 @@ describe("help topics", () => {
             expect([...HELP_TOPIC_ORDER].sort()).toEqual(
                 rawHelpTopics.map((topic) => topic.id).sort(),
             );
+        });
+
+        test("flattened topic groups equal HELP_TOPIC_ORDER and every topic has a unique non-empty emoji", () => {
+            const entries = HELP_TOPIC_GROUPS.flatMap((group) => [...group.topics]);
+            expect(entries.map((entry) => entry.id)).toEqual([...HELP_TOPIC_ORDER]);
+
+            const emojis = entries.map((entry) => entry.emoji);
+            expect(emojis.every((emoji) => emoji.trim().length > 0)).toBe(true);
+            expect(new Set(emojis).size).toBe(emojis.length);
         });
 
         test("en-GB and en-US resolve to the English bundle", async () => {

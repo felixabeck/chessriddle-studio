@@ -7,24 +7,97 @@
   flex-wrap: nowrap;
 }
 
+.groupHeading {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mantine-color-dimmed);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm) 2px;
+  user-select: none;
+}
+
+.groupHeading:not(:first-child) {
+  margin-top: var(--mantine-spacing-xs);
+}
+
 .topicTab {
+  position: relative;
   white-space: normal;
   height: auto;
   padding-block: var(--mantine-spacing-xs);
+  padding-inline-start: calc(var(--mantine-spacing-sm) + 3px);
   line-height: 1.35;
+  border-radius: var(--cf-radius-md);
+}
+
+.topicTab[data-active]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 4px;
+  width: 3px;
+  border-radius: var(--cf-radius-full);
+  background: var(--guide-accent, var(--cf-primary));
+}
+
+.tabEmoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 1.05rem;
+  line-height: 1;
+  width: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .guideContent {
   padding-bottom: var(--mantine-spacing-md);
 }
 
+/* The card hugs the capped reading column instead of stretching across wide windows. */
+.guideCard {
+  max-width: calc(72ch + 2 * var(--mantine-spacing-lg) + 2px);
+}
+
+.panelInner {
+  max-width: 72ch;
+  width: 100%;
+}
+
+.topicEmoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .topicTitle {
   line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.topicSummary {
+  overflow-wrap: anywhere;
 }
 
 .topicBody {
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+
+.nextRow {
+  margin-top: var(--mantine-spacing-lg);
+  padding-top: var(--mantine-spacing-md);
+  border-top: 1px solid var(--cf-border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.nextArrow {
+  flex-shrink: 0;
 }
 
 .paragraph {
@@ -60,10 +133,22 @@
 [data-compact] {
   .topicList {
     width: 100%;
+    max-width: 100%;
     overflow-y: hidden;
   }
 
   .topicTab {
     white-space: nowrap;
+    border-radius: var(--cf-radius-full);
+    padding-inline-start: var(--mantine-spacing-sm);
+  }
+
+  .topicTab[data-active]::before {
+    inset-inline-start: 10px;
+    inset-inline-end: 10px;
+    inset-block-start: auto;
+    inset-block-end: 0;
+    width: auto;
+    height: 2px;
   }
 }

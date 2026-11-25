@@ -384,6 +384,20 @@ test("turn context passes undefined installedEngines when unread, page kind, and
     installedEngines: undefined,
     referenceDatabase: false,
   });
+
+  // On the Guide page, page kind is "guide".
+  mocks.pathname = "/guide";
+  mocks.prepareNativeRead.mockResolvedValue("ticket-3");
+  await renderPanel();
+  await ask("What is on this page?");
+  await vi.waitFor(() => expect(mocks.assistantTurn).toHaveBeenCalledTimes(3));
+  expect(mocks.assistantTurn.mock.calls[2][2].context).toEqual({
+    page: "guide",
+    boardTabKind: null,
+    language: "en-US",
+    installedEngines: undefined,
+    referenceDatabase: false,
+  });
 });
 
 test("transcript renders Assistant.Error.TopicsLoadFailed when help topics fail to load", async () => {

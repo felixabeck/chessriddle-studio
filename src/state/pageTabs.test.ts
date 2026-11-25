@@ -28,20 +28,34 @@ test("a fresh store restores the page tabs a previous load saved", () => {
     expect(createStore().get(pageTabsAtom)).toEqual(["accounts"]);
 });
 
-test("absent, corrupt and older-shape values restore no page tabs", () => {
+test("absent, corrupt and invalid values restore no page tabs while older and guide values restore", () => {
     expect(readPageTabs(sessionStorage)).toEqual([]);
     for (const stored of [
         "not json",
         '["accounts","accounts"]',
+        '["guide","guide"]',
         '["boards"]',
         '{"accounts":true}',
         serializeStorageValue(["accounts", "engines", "settings", "accounts"]),
+        serializeStorageValue(["accounts", "engines", "settings", "guide", "accounts"]),
     ]) {
         sessionStorage.setItem(PAGE_TABS_STORAGE_KEY, stored);
         expect(readPageTabs(sessionStorage)).toEqual([]);
     }
     sessionStorage.setItem(PAGE_TABS_STORAGE_KEY, serializeStorageValue(["engines"]));
     expect(readPageTabs(sessionStorage)).toEqual(["engines"]);
+    sessionStorage.setItem(
+        PAGE_TABS_STORAGE_KEY,
+        serializeStorageValue(["accounts", "engines", "settings"]),
+    );
+    expect(readPageTabs(sessionStorage)).toEqual(["accounts", "engines", "settings"]);
+    sessionStorage.setItem(PAGE_TABS_STORAGE_KEY, serializeStorageValue(["guide"]));
+    expect(readPageTabs(sessionStorage)).toEqual(["guide"]);
+    sessionStorage.setItem(
+        PAGE_TABS_STORAGE_KEY,
+        serializeStorageValue(["accounts", "engines", "settings", "guide"]),
+    );
+    expect(readPageTabs(sessionStorage)).toEqual(["accounts", "engines", "settings", "guide"]);
     expect(reportPreferenceStorageFailure).not.toHaveBeenCalled();
 });
 

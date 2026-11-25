@@ -18,6 +18,7 @@ export function pageTabOf(pathname: string): PageTab | null {
     if (path === "/settings" || path.startsWith("/settings/")) return "settings";
     if (path === "/accounts" || path.startsWith("/accounts/")) return "accounts";
     if (path === "/engines" || path.startsWith("/engines/")) return "engines";
+    if (path === "/guide" || path.startsWith("/guide/")) return "guide";
     return null;
 }
 

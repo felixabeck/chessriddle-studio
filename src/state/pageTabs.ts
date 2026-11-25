@@ -4,7 +4,7 @@ import { decodeCompressedOrJson, serializeStorageValue } from "./store/debounced
 import { reportPreferenceStorageFailure } from "./utils";
 
 /** App pages that open as closable tabs at the front of the navigation row. */
-export const PAGE_TABS = ["accounts", "engines", "settings"] as const;
+export const PAGE_TABS = ["accounts", "engines", "settings", "guide"] as const;
 export type PageTab = (typeof PAGE_TABS)[number];
 
 /** Its own sessionStorage key, so page tabs share the board tabs' storage and lifetime. */

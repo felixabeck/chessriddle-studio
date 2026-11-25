@@ -1,10 +1,20 @@
-import { Button, Card, Group, ScrollArea, Stack, Tabs, Text, Title } from "@mantine/core";
+import { Button, Card, Divider, Group, ScrollArea, Stack, Tabs, Text, Title } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight } from "lucide-react";
+import {
+  type CSSProperties,
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { AssistantTopic } from "@/bindings";
 import shellClasses from "@/components/common/SidebarTabsPage.module.css";
+import { wrappingButton } from "@/components/common/wrappingButton";
 import { useTabCommands } from "@/components/tabs/TabCommands";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import { resolveSupportedLocale } from "@/i18n";
@@ -12,12 +22,47 @@ import { logFailureSafely, safeFailureContext } from "@/platform/errors";
 import { openPageFromMenu } from "@/routes/-appMenu";
 import { coachEnabledAtom } from "@/state/coach";
 import { buildAssistantTargets } from "../targets";
-import { loadHelpTopics } from "../topics";
+import {
+  HELP_TOPIC_GROUPS,
+  loadHelpTopics,
+  type HelpTopicAccent,
+  type HelpTopicGroupId,
+} from "../topics";
 import { useAssistantTargetActions } from "../useAssistantTargetActions";
 import classes from "./GuidePage.module.css";
 import { GuideTopicBody } from "./GuideTopicBody";
 
 const COMPACT_GUIDE_WIDTH_EM = 50;
+
+const TOPIC_VISUALS = new Map<string, { emoji: string; accent: HelpTopicAccent }>(
+  HELP_TOPIC_GROUPS.flatMap((group) =>
+    group.topics.map((topic) => [topic.id, { emoji: topic.emoji, accent: group.accent }] as const),
+  ),
+);
+
+function getTopicVisuals(topicId: string): { emoji: string; accentVar: string } {
+  const entry = TOPIC_VISUALS.get(topicId);
+  const accent: HelpTopicAccent = entry?.accent ?? "chart-6";
+  return {
+    emoji: entry?.emoji ?? "📄",
+    accentVar: `var(--cf-${accent})`,
+  };
+}
+
+function groupTitle(t: (key: string) => string, groupId: HelpTopicGroupId): string {
+  switch (groupId) {
+    case "basics":
+      return t("Guide.Group.Basics");
+    case "databases":
+      return t("Guide.Group.Databases");
+    case "training":
+      return t("Guide.Group.Training");
+    case "accounts":
+      return t("Guide.Group.Accounts");
+    case "app":
+      return t("Guide.Group.App");
+  }
+}
 
 type GuideLoadState =
   | { status: "loading" }
@@ -40,6 +85,7 @@ export default function GuidePage() {
   const tRef = useRef(t);
   tRef.current = t;
   const requestCounterRef = useRef(0);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<GuideLoadState>({ status: "loading" });
@@ -102,8 +148,52 @@ export default function GuidePage() {
     openSettings,
   });
 
-  const topics = loadState.status === "loaded" ? loadState.topics : [];
+  const topics = useMemo(
+    () => (loadState.status === "loaded" ? loadState.topics : []),
+    [loadState],
+  );
   const effectiveTopic = topics.find((topic) => topic.id === selectedTopicId) ?? topics[0] ?? null;
+
+  const groupedTopics = useMemo(() => {
+    const byId = new Map(topics.map((topic) => [topic.id, topic]));
+    return HELP_TOPIC_GROUPS.map((group) => ({
+      group,
+      items: group.topics
+        .map(({ id }) => byId.get(id))
+        .filter((topic): topic is AssistantTopic => topic !== undefined),
+    })).filter(({ items }) => items.length > 0);
+  }, [topics]);
+
+  const ungroupedTopics = useMemo(
+    () => topics.filter((topic) => !TOPIC_VISUALS.has(topic.id)),
+    [topics],
+  );
+
+  const selectTopic = useCallback((topicId: string) => {
+    setSelectedTopicId(topicId);
+    if (scrollViewportRef.current) {
+      scrollViewportRef.current.scrollTop = 0;
+    }
+  }, []);
+
+  const renderTopicTab = (topic: AssistantTopic) => {
+    const { emoji, accentVar } = getTopicVisuals(topic.id);
+    return (
+      <Tabs.Tab
+        key={topic.id}
+        value={topic.id}
+        data-topic-id={topic.id}
+        style={{ "--guide-accent": accentVar } as CSSProperties}
+        leftSection={
+          <span aria-hidden="true" className={classes.tabEmoji}>
+            {emoji}
+          </span>
+        }
+      >
+        {topic.title}
+      </Tabs.Tab>
+    );
+  };
 
   return (
     <Stack h="100%" gap={0} data-compact={compact || undefined}>
@@ -132,7 +222,7 @@ export default function GuidePage() {
         <Tabs
           value={effectiveTopic.id}
           onChange={(value) => {
-            if (value) setSelectedTopicId(value);
+            if (value) selectTopic(value);
           }}
           orientation={compact ? "horizontal" : "vertical"}
           flex={1}
@@ -148,31 +238,81 @@ export default function GuidePage() {
           }}
         >
           <Tabs.List h={compact ? undefined : "100%"} aria-label={t("Guide.Topics")}>
-            {topics.map((topic) => (
-              <Tabs.Tab key={topic.id} value={topic.id} data-topic-id={topic.id}>
-                {topic.title}
-              </Tabs.Tab>
-            ))}
+            {compact ? (
+              topics.map((topic) => renderTopicTab(topic))
+            ) : (
+              <>
+                {groupedTopics.map(({ group, items }) => (
+                  <Fragment key={group.id}>
+                    <div
+                      role="presentation"
+                      aria-hidden="true"
+                      data-guide-group={group.id}
+                      className={classes.groupHeading}
+                    >
+                      {groupTitle(t, group.id)}
+                    </div>
+                    {items.map((topic) => renderTopicTab(topic))}
+                  </Fragment>
+                ))}
+                {ungroupedTopics.map((topic) => renderTopicTab(topic))}
+              </>
+            )}
           </Tabs.List>
           <Stack flex={1} className={`${shellClasses.content} ${classes.guideContent}`}>
-            <ScrollArea className={shellClasses.scroll}>
-              <Card withBorder className={`${shellClasses.card} wrap-anywhere`} w="100%">
-                {topics.map((topic) => (
-                  <Tabs.Panel key={topic.id} value={topic.id} data-topic-panel={topic.id}>
-                    <Title order={2} size="h4" className={classes.topicTitle}>
-                      {topic.title}
-                    </Title>
-                    <Text size="sm" c="dimmed" mt={4} mb="md">
-                      {topic.summary}
-                    </Text>
-                    <GuideTopicBody
-                      body={topic.body}
-                      targets={targets}
-                      fallbackTargets={fallbackTargets}
-                      targetActions={targetActions}
-                    />
-                  </Tabs.Panel>
-                ))}
+            <ScrollArea className={shellClasses.scroll} viewportRef={scrollViewportRef}>
+              <Card
+                withBorder
+                className={`${shellClasses.card} ${classes.guideCard} wrap-anywhere`}
+                w="100%"
+              >
+                {topics.map((topic, index) => {
+                  const { emoji } = getTopicVisuals(topic.id);
+                  const nextTopic = index < topics.length - 1 ? topics[index + 1] : null;
+                  return (
+                    <Tabs.Panel key={topic.id} value={topic.id} data-topic-panel={topic.id}>
+                      <div className={classes.panelInner}>
+                        <Group gap="md" align="center" wrap="nowrap">
+                          <span aria-hidden="true" className={classes.topicEmoji}>
+                            {emoji}
+                          </span>
+                          <Title order={2} size="h4" className={classes.topicTitle}>
+                            {topic.title}
+                          </Title>
+                        </Group>
+                        <Text size="md" c="dimmed" mt="sm" className={classes.topicSummary}>
+                          {topic.summary}
+                        </Text>
+                        <Divider my="md" color="var(--cf-border)" />
+                        <GuideTopicBody
+                          body={topic.body}
+                          targets={targets}
+                          fallbackTargets={fallbackTargets}
+                          targetActions={targetActions}
+                        />
+                        {nextTopic && (
+                          <div className={classes.nextRow}>
+                            <Button
+                              variant="light"
+                              rightSection={
+                                <ArrowRight
+                                  size="1rem"
+                                  strokeWidth={2}
+                                  aria-hidden="true"
+                                  className={classes.nextArrow}
+                                />
+                              }
+                              styles={wrappingButton}
+                              onClick={() => selectTopic(nextTopic.id)}
+                            >
+                              {t("Guide.Next", { topic: nextTopic.title })}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </Tabs.Panel>
+                  );
+                })}
               </Card>
             </ScrollArea>
           </Stack>

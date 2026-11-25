@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { buildAssistantTargets } from "@/components/assistant/targets";
 import {
+  HELP_TOPIC_GROUPS,
   HELP_TOPIC_ORDER,
   setHelpTopicsLoaderForTests,
   type TopicBundleLoader,
@@ -26,7 +27,7 @@ const mocks = vi.hoisted(() => ({
   logFailureSafely: vi.fn(),
   coachEnabled: true,
   language: "en-US",
-  t: (key: string) => key,
+  t: (key: string, _options?: Record<string, string>) => key,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -58,7 +59,7 @@ vi.mock("@/platform/errors", async (original) => {
 });
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => mocks.t(key),
+    t: (key: string, options?: Record<string, string>) => mocks.t(key, options),
     i18n: {
       language: mocks.language,
       resolvedLanguage: mocks.language,
@@ -108,7 +109,11 @@ beforeEach(() => {
   setHelpTopicsLoaderForTests(null);
   mocks.coachEnabled = true;
   mocks.language = "en-US";
-  mocks.t = (key: string) => enCatalogue[key] ?? key;
+  mocks.t = (key: string, options?: Record<string, string>) => {
+    const template = enCatalogue[key] ?? key;
+    if (!options) return template;
+    return template.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => options[name] ?? "");
+  };
   mocks.navigate.mockResolvedValue(undefined);
   mocks.logError.mockResolvedValue(undefined);
   atoms = createStore();
@@ -145,6 +150,73 @@ test("reading order covers every shipped topic once and topic switching changes 
   });
   expect(activePanel()?.dataset.topicPanel).toBe("feedback");
   expect(activePanel()?.textContent).toContain("Feedback, logs, clearing saved data, and updates");
+});
+
+test("sidebar renders group headings in order, each tab has an emoji, and Next navigates sequentially", async () => {
+  await renderGuide();
+
+  const groupHeadings = [...host.querySelectorAll<HTMLElement>("[data-guide-group]")];
+  expect(groupHeadings.map((heading) => heading.dataset.guideGroup)).toEqual(
+    HELP_TOPIC_GROUPS.map((group) => group.id),
+  );
+  expect(groupHeadings.map((heading) => heading.textContent)).toEqual([
+    enCatalogue["Guide.Group.Basics"],
+    enCatalogue["Guide.Group.Databases"],
+    enCatalogue["Guide.Group.Training"],
+    enCatalogue["Guide.Group.Accounts"],
+    enCatalogue["Guide.Group.App"],
+  ]);
+
+  // Headings and tabs interleave: each group heading is followed by exactly its own topics.
+  const sidebarSequence = [
+    ...host.querySelectorAll<HTMLElement>('[data-guide-group], [role="tab"][data-topic-id]'),
+  ].map((node) => node.dataset.guideGroup ?? node.dataset.topicId);
+  expect(sidebarSequence).toEqual(
+    HELP_TOPIC_GROUPS.flatMap((group) => [group.id, ...group.topics.map(({ id }) => id)]),
+  );
+
+  const tabs = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"][data-topic-id]')];
+  expect(tabs).toHaveLength(HELP_TOPIC_ORDER.length);
+  const tabsMissingEmoji = tabs
+    .filter((tab) => {
+      const emojiText = tab.querySelector("[aria-hidden='true']")?.textContent?.trim() ?? "";
+      return emojiText.length === 0;
+    })
+    .map((tab) => tab.dataset.topicId);
+  expect(tabsMissingEmoji).toEqual([]);
+
+  const activePanel = () =>
+    host.querySelector<HTMLElement>('[role="tabpanel"]:not([style*="display: none"])');
+
+  // Verify the Next button on every topic except the last, and click through sequentially.
+  for (let index = 0; index < HELP_TOPIC_ORDER.length - 1; index++) {
+    const currentId = HELP_TOPIC_ORDER[index];
+    expect(activePanel()?.dataset.topicPanel).toBe(currentId);
+    const panel = activePanel()!;
+    const nextTabId = HELP_TOPIC_ORDER[index + 1];
+    const nextButton = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((btn) =>
+      btn.textContent?.startsWith("Next:"),
+    );
+
+    const nextTabTitle = host.querySelector<HTMLElement>(
+      `[role="tab"][data-topic-id="${nextTabId}"] .mantine-Tabs-tabLabel`,
+    )!.textContent!;
+    expect(nextButton?.textContent).toBe(`Next: ${nextTabTitle}`);
+
+    await act(async () => {
+      nextButton!.click();
+    });
+    expect(activePanel()?.dataset.topicPanel).toBe(nextTabId);
+    expect(activePanel()?.querySelector("h2")?.textContent).toBe(nextTabTitle);
+  }
+
+  // Last topic has no Next button.
+  const lastPanel = activePanel()!;
+  expect(lastPanel.dataset.topicPanel).toBe(HELP_TOPIC_ORDER[HELP_TOPIC_ORDER.length - 1]);
+  const lastNextButton = [...lastPanel.querySelectorAll<HTMLButtonElement>("button")].find((btn) =>
+    btn.textContent?.startsWith("Next:"),
+  );
+  expect(lastNextButton).toBeUndefined();
 });
 
 test.each([true, false])(
@@ -431,4 +503,68 @@ test("stale resolutions and stale rejections are discarded without state change 
   });
   expect(mocks.logFailureSafely).not.toHaveBeenCalled();
   expect(mocks.logError).not.toHaveBeenCalled();
+});
+
+test("each tab and panel header shows its topic emoji and each tab carries its group accent", async () => {
+  await renderGuide();
+
+  const observed = HELP_TOPIC_GROUPS.flatMap((group) =>
+    group.topics.map(({ id }) => {
+      const tab = host.querySelector<HTMLButtonElement>(`[role="tab"][data-topic-id="${id}"]`)!;
+      const tabEmoji = tab.querySelector<HTMLElement>('[aria-hidden="true"]')?.textContent ?? null;
+      const tabAccent = tab.style.getPropertyValue("--guide-accent");
+      const panelHeading = host.querySelector<HTMLElement>(
+        `[role="tabpanel"][data-topic-panel="${id}"] h2`,
+      );
+      const headerEmojiEl = panelHeading?.previousElementSibling;
+      const panelEmoji =
+        headerEmojiEl?.getAttribute("aria-hidden") === "true" ? headerEmojiEl.textContent : null;
+      return {
+        id,
+        tabEmoji,
+        tabAccent,
+        panelEmoji,
+      };
+    }),
+  );
+
+  const expected = HELP_TOPIC_GROUPS.flatMap((group) =>
+    group.topics.map(({ id, emoji }) => ({
+      id,
+      tabEmoji: emoji,
+      tabAccent: `var(--cf-${group.accent})`,
+      panelEmoji: emoji,
+    })),
+  );
+
+  expect(observed).toEqual(expected);
+});
+
+test("switching topics scrolls the content back to the top", async () => {
+  await renderGuide();
+
+  const viewport = host.querySelector<HTMLElement>(".mantine-ScrollArea-viewport")!;
+  expect(viewport).not.toBeNull();
+  let scrollTop = 600;
+  Object.defineProperty(viewport, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      scrollTop = value;
+    },
+  });
+
+  const nextButton = [...host.querySelectorAll<HTMLButtonElement>("button")].find((btn) =>
+    btn.textContent?.startsWith("Next:"),
+  )!;
+  await act(async () => {
+    nextButton.click();
+  });
+  expect(scrollTop).toBe(0);
+
+  scrollTop = 450;
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[role="tab"][data-topic-id="feedback"]')!.click();
+  });
+  expect(scrollTop).toBe(0);
 });

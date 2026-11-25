@@ -30,6 +30,10 @@ test("page tabs are derived from the route", () => {
     expect(pageTabOf("/settings")).toBe("settings");
     expect(pageTabOf("/accounts")).toBe("accounts");
     expect(pageTabOf("/engines")).toBe("engines");
+    expect(pageTabOf("/guide")).toBe("guide");
+    expect(pageTabOf("/guide/")).toBe("guide");
+    expect(pageTabOf("/guide/topics")).toBe("guide");
+    expect(pageTabOf("/guideX")).toBeNull();
     expect(pageTabOf("/library")).toBeNull();
     expect(pageTabOf("/")).toBeNull();
 });

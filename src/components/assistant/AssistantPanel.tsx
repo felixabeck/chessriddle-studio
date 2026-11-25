@@ -69,6 +69,7 @@ function pageKindOf(pathname: string): string {
   if (pathname === "/engines") return "engines";
   if (pathname === "/accounts") return "accounts";
   if (pathname === "/settings") return "settings";
+  if (pathname === "/guide" || pathname.startsWith("/guide/")) return "guide";
   return "other";
 }
 

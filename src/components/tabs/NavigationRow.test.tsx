@@ -18,7 +18,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { boardTabId, boardTabPanelId } from "./boardTabDom";
 import classes from "./NavigationRow.module.css";
-import type { MenuAction } from "@/routes/-appMenu";
+import { buildInAppMenuItems, type MenuAction } from "@/routes/-appMenu";
 import { TabCommandsProvider, useTabCommands } from "./TabCommands";
 import NavigationRow from "./NavigationRow";
 
@@ -282,6 +282,7 @@ async function renderRow({
     "/databasesX",
     "/engines",
     "/settings",
+    "/guide",
   ];
   const routes = routePaths.map((path) =>
     createRoute({ getParentRoute: () => rootRoute, path, component: () => null }),
@@ -920,5 +921,105 @@ test("marks all database routes current independently of the resume target", asy
     expect(libraryLink().getAttribute("href")).toBe("/databases/database-A");
     expect(libraryLink().getAttribute("aria-current")).toBe(current ? "page" : null);
     expect(libraryLink().classList.contains(classes.current)).toBe(current);
+  }
+});
+
+test("the guide page tab shows with its label and closing it returns to the previous place", async () => {
+  const router = await renderRow({ path: "/library" });
+  await act(async () => {
+    await router.navigate({ to: "/guide" });
+  });
+  expect(pageTabOrder()).toEqual(["guide"]);
+  const guideButton = pageTab("Guide.Title")!;
+  expect(guideButton).not.toBeNull();
+  expect(guideButton.getAttribute("aria-current")).toBe("page");
+  expect(guideButton.querySelector("svg.lucide-info")).not.toBeNull();
+  expect(readPageTabs(sessionStorage)).toEqual(["guide"]);
+
+  await act(async () => {
+    host!.querySelector<HTMLButtonElement>('[aria-label="Tab.CloseNamed:Guide.Title"]')!.click();
+  });
+  expect(router.state.location.pathname).toBe("/library");
+  expect(pageTabOrder()).toEqual([]);
+  expect(readPageTabs(sessionStorage)).toEqual([]);
+});
+
+test("every in-app menu item has a muted 14px aria-hidden icon and keeps its accessible name", async () => {
+  const actions = buildInAppMenuItems({
+    t: (key) => key,
+    isMacOS: false,
+    showAssistant: true,
+    newTabShortcut: "Ctrl+T",
+    openFileShortcut: "Ctrl+O",
+    saveShortcut: "Ctrl+S",
+    callbacks: {
+      about: () => undefined,
+      sendFeedback: () => undefined,
+      openGuide: () => undefined,
+      openAssistant: () => undefined,
+      createNewTab: () => undefined,
+      openNewFile: () => undefined,
+      saveGame: () => undefined,
+      saveGameTo: () => undefined,
+      openAccounts: () => undefined,
+      openEngines: () => undefined,
+      openSettings: () => undefined,
+      exit: () => undefined,
+      toggleFullscreen: () => undefined,
+    },
+  });
+
+  const itemActions = actions.filter(
+    (action): action is Exclude<MenuAction, { kind: "separator" }> => !("kind" in action),
+  );
+  for (const action of itemActions) {
+    expect(action.id).toBeTruthy();
+  }
+
+  await renderRow({ menuActions: actions });
+  await act(async () => {
+    host!.querySelector<HTMLButtonElement>('[aria-label="Menu.Application.Menu"]')!.click();
+  });
+  await vi.waitFor(() => {
+    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(itemActions.length);
+  });
+
+  const rendered = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+  expect(rendered.map((node) => node.getAttribute("aria-label"))).toEqual(
+    itemActions.map((action) => action.label),
+  );
+  const expectedIcons: Record<string, string> = {
+    new_tab: "lucide-plus",
+    open_file: "lucide-folder-open",
+    save: "lucide-save",
+    save_to: "lucide-database",
+    accounts: "lucide-user",
+    engines: "lucide-brain",
+    settings: "lucide-settings",
+    toggle_fullscreen: "lucide-maximize",
+    guide: "lucide-info",
+    assistant: "lucide-messages-square",
+    send_feedback: "lucide-message-square-plus",
+    about: "lucide-badge-info",
+    exit: "lucide-log-out",
+  };
+  expect(itemActions.map((action) => action.id).sort()).toEqual(Object.keys(expectedIcons).sort());
+  rendered.forEach((menuItem, index) => {
+    const id = itemActions[index].id!;
+    expect({
+      id,
+      icon: menuItem.querySelector("svg")?.classList.contains(expectedIcons[id]),
+    }).toEqual({
+      id,
+      icon: true,
+    });
+  });
+  for (const menuItem of rendered) {
+    const icon = menuItem.querySelector("svg");
+    expect(icon).not.toBeNull();
+    expect(icon!.getAttribute("aria-hidden")).toBe("true");
+    expect(icon!.getAttribute("width")).toBe("0.875rem");
+    expect(icon!.getAttribute("height")).toBe("0.875rem");
+    expect(icon!.getAttribute("stroke")).toBe("var(--mantine-color-dimmed)");
   }
 });

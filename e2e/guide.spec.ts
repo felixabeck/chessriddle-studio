@@ -1,4 +1,5 @@
 import { expect, scrollbarFreeScreenshot, test, waitForTransitionsSettled } from "./fixtures";
+import { HELP_TOPIC_ORDER } from "../src/components/assistant/topics/order";
 
 test("Help menu opens the Guide without an AI connection, switches topics, and follows links", async ({
     page,
@@ -32,6 +33,13 @@ test("Help menu opens the Guide without an AI connection, switches topics, and f
 
     await expect(page.getByRole("heading", { name: "Guide", exact: true })).toBeVisible();
 
+    const nav = page.getByRole("navigation");
+    const guideTab = nav
+        .locator('[data-page-tab="guide"]')
+        .getByRole("button", { name: "Guide", exact: true });
+    await expect(guideTab).toBeVisible();
+    await expect(guideTab).toHaveAttribute("aria-current", "page");
+
     const firstTopicHeading = page.getByRole("heading", {
         name: "Tabs and the New tab page",
         exact: true,
@@ -44,6 +52,19 @@ test("Help menu opens the Guide without an AI connection, switches topics, and f
     await expect(page).toHaveScreenshot("guide-overview.png", {
         stylePath: scrollbarFreeScreenshot,
     });
+
+    // Clicking the Next button advances to the second topic in HELP_TOPIC_ORDER.
+    const secondTopicId = HELP_TOPIC_ORDER[1];
+    const secondTopicTab = page.locator(`[role="tab"][data-topic-id="${secondTopicId}"]`);
+    const secondTopicTitle = (await secondTopicTab
+        .locator(".mantine-Tabs-tabLabel")
+        .textContent())!;
+    const nextButton = page
+        .getByRole("tabpanel")
+        .getByRole("button", { name: `Next: ${secondTopicTitle}`, exact: true });
+    await nextButton.scrollIntoViewIfNeeded();
+    await nextButton.click();
+    await expect(page.getByRole("heading", { name: secondTopicTitle, exact: true })).toBeVisible();
 
     // Switching to another topic renders its body, suppresses unavailable target links to plain
     // text, and leaves available targets clickable.
@@ -70,4 +91,11 @@ test("Help menu opens the Guide without an AI connection, switches topics, and f
 
     await enginesLink.click();
     await expect(page).toHaveURL(/\/engines$/);
+
+    await guideTab.click();
+    await expect(page).toHaveURL(/\/guide$/);
+    await nav.getByRole("button", { name: "Close Guide", exact: true }).click();
+    await expect(page).not.toHaveURL(/\/guide$/);
+    await expect(page.getByRole("heading", { name: "Guide", exact: true })).toHaveCount(0);
+    await expect(guideTab).toHaveCount(0);
 });

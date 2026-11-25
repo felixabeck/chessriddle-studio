@@ -102,6 +102,14 @@ On every move-quality hue that is black in both schemes, because white falls to 
 
 ## Icon identities
 
+ChessRiddle Studio follows ChessRiddle web's icon split: raw system emoji (the catalogue
+`emoji` layer in `chess-tactics-app/frontend/shared/icon-catalog.json` and
+`frontend/web/src/lib/constants/icons.ts`) identify features and sections such as nav sections,
+Guide entries, and puzzle modes, while `lucide-react` (`ui` layer) supplies actions and utilities
+such as buttons, application menu items, and page tabs. Emoji glyphs render through the system
+colour-emoji font stack (`"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`)
+rather than the bundled text font.
+
 Every migrated icon imports from `lucide-react`, pinned exactly to `1.61.0`, the
 ChessRiddle version. The navigation row uses monochrome catalogue `ui` identities. The
 following table records the implemented mapping. Reference paths are relative to
@@ -150,6 +158,8 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | More actions | `Ellipsis` | `web/src/components/profile/ProfileActionsMenu.tsx:71` |
 | Engine drag and resize handles | `GripVertical` | `web/src/components/entityEditor/SortableReorderList.tsx:20` |
 | Application menu button (beside the ChessRiddle logo) and the all-tabs list | `ChevronDown` | Closest by meaning |
+| Application menu items (new tab, open file, save, save to database, accounts, engines, settings, fullscreen, guide, assistant, send feedback, about, exit) | `Plus`, `FolderOpen`, `Save`, `Database`, `User`, `Brain`, `Settings`, `Maximize`, `Info`, `MessagesSquare`, `MessageSquarePlus`, `BadgeInfo`, `LogOut` | Reuses each action's slot icon in this table; About `BadgeInfo` and Fullscreen `Maximize` closest by meaning, Exit `LogOut` is `shared/icon-catalog.json:711` (`signOut`) |
+| Guide page tab and Guide menu item | `Info` | `shared/icon-catalog.json:714` (`guide`) |
 | Send feedback (Feedback button at the right end of the navigation row, and its menu entry) | `MessageSquarePlus` | `web/src/components/feedback/FeedbackButton.tsx:47` (`UI_ICONS.feedback`) |
 | Add an account | `UserPlus` | `shared/icon-catalog.json:700` |
 | Download account games | `Download` | `web/src/components/legal/WithdrawalFormLink.tsx:1` |
@@ -187,6 +197,31 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Add game, tab, database or engine | `Plus` | Closest by meaning |
 | Ultra-bullet, bullet, blitz, rapid, classical and correspondence | `ChevronsRight`, `ChevronRight`, `Flame`, `Hourglass`, `Clock4`, `Send` | Closest by meaning for time controls |
 | Captured bishop, rook and queen | `ChessBishop`, `ChessRook`, `ChessQueen` | Closest by meaning |
+
+### Guide topic emoji
+
+Data lives in `src/components/assistant/topics/order.ts` (`HELP_TOPIC_GROUPS`). Each group also carries a `chart-*` accent token used for the selected tab's inline-start indicator.
+
+| Topic id | Emoji | Catalogue key or fallback |
+| --- | --- | --- |
+| `tabs-and-new-tab` | 🗂️ | `filter.all` |
+| `analysis-board` | 🔍 | `insights.focus_areas` |
+| `library-and-files` | 🗃️ | `nav.library` |
+| `import-game` | 📥 | Closest by meaning |
+| `keyboard-shortcuts` | ⌨️ | `common.keyboard` |
+| `databases` | 🗄️ | Closest by meaning |
+| `chessbase-import` | 📦 | Closest by meaning |
+| `engines` | 🧠 | `insights.thinking_time` |
+| `game-report` | 📊 | `nav.statistics` |
+| `play-against-engine` | 🤺 | `nav.challenges` |
+| `repertoires` | 📖 | `puzzle_type.opening_blunder` |
+| `puzzles` | 🧩 | `nav.puzzles` |
+| `online-accounts` | 🌐 | `common.globe` |
+| `chessriddle-account` | 👤 | `nav.profile` |
+| `ai-connections` | 💬 | `common.chat` |
+| `browser-extension` | 🔗 | Closest by meaning |
+| `settings` | ⚙️ | `nav.settings` |
+| `feedback` | 🐛 | `common.bug` |
 
 Existing rendered sizes are retained for this import and JSX migration, including
 compact 12–14px slots. This follows Phase 2's explicit

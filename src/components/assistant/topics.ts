@@ -12,7 +12,14 @@ export {
     resolveHelpTopic,
     type RawHelpTopic,
 } from "./topics/format";
-export { HELP_TOPIC_ORDER, orderHelpTopics } from "./topics/order";
+export {
+    HELP_TOPIC_GROUPS,
+    HELP_TOPIC_ORDER,
+    orderHelpTopics,
+    type HelpTopicAccent,
+    type HelpTopicGroupId,
+    type HelpTopicId,
+} from "./topics/order";
 
 export type TopicBundleLoader = (locale: SupportedLocale) => Promise<readonly RawHelpTopic[]>;
 export type LocalizedTopicFileMap = Record<string, () => Promise<string>>;
