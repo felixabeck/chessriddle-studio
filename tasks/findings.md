@@ -29428,3 +29428,17 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Found by:** Claude Code on 2026-11-25, from a forwarded user bug report.
 * **Handled in 0ba89aeca:** the staging loop of `download_chess_com_games_core` no longer rejects a month whose archive is `{"games":[]}`; it stages zero bytes and the download continues, like a variant-only month (`d-20261125-51`). Proof: new test `staging_keeps_other_months_around_an_empty_archive` (July and September games published around an empty August, receipt recorded) failed with `InvalidInput("Chess.com returned an empty requested game archive")` with the check restored and passes with the fix; `cargo test --bins chesscom` 34 passed. Review: one agy lens (correctness, root-cause and tests bodies, google low tier) APPROVED with no findings; it traced the zero-byte publication through the receipt, unlinked and linked imports and the Accounts card. Family separation: present (Claude orchestrator wrote, agy reviewed).
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"61826b58e998e94b4feb820154530f62cce02955a92ae38839e2dfc541e3fc24","header_sha256":"970e993fb05a10ef5d2e07ff1350a3f1a6a846c7f942e1214b909b51ef60b9bd","header_status":"handled","input_sha256":"994319eb97137862f77c937e42c2891f2fd948fe38ee4f4aea96250d88ea2eb3","kind":"mutation-receipt","operation":"7e191f94048db05b22754283d2e9795b2ff34a86fd051dde50ca44fa172debbd","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-20"],"target":"f-20261125-20","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The real application cannot prove the "From photo" pane, because a test profile cannot hold an AI connection
+
+* **ID:** f-20261125-21 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Failure scenario:** `pnpm verify:app --scoresheet-paste` seeds one registry entry in the throwaway profile's `credentials/coach-connections.json`, as the plan's O12 prescribes (the keyring is never touched). Measured 2026-11-25 on a release build of `66dd3755c`: `coach_available` is `true` but `coach_has_connection` is `false`, because `CredentialManager::initialize` runs `reconcile` (`src-tauri/src/credentials.rs`), which drops every Active entry without an OS keyring secret. The pane therefore shows only the "needs an AI connection" hint, and "Paste from clipboard" can never be clicked in the real app. `window.__TAURI_INTERNALS__.invoke` is non-writable, so the renderer's check cannot be stubbed either. The mode now proves the native route (clipboard read, processing, `data:` image under the real CSP) and reports the pane route as NOT PROVEN.
+* **Open question:** which isolated way gives the driven app a connection without touching the user's keyring: a private D-Bus session with its own Secret Service for the driven app, or a build-time test credential store for the release-like binary? Either must keep production credential behaviour unchanged.
+* **Spotted outside diff:** `src-tauri/src/credentials.rs` reconcile on startup (correct behaviour, not a defect in itself).
+
+Filed from the build of the scoresheet photo import (session c4fe3a7e-d00d-4487-ac2f-31b99658a655). Related: none in the ledger (checked `related --area gate-scripts --file scripts/verify-app.mjs`).
