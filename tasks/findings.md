@@ -29312,7 +29312,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### A refused New Tab creation sometimes reports "session storage is full" twice since the workspace restore (e2e workspace-tabs red on CI)
 
-* **ID:** f-20261125-15 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-15 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** ux
 * **CI run:** 45609033856
 * **Repair owner:** ee439b95-8204-44ff-b74f-b24e6916f3dc on tuxedo-atlas, 2026-11-25T12:21:27Z
@@ -29322,6 +29322,9 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario:** a user whose session storage is full clicks New Tab and gets the refusal notice twice; the e2e gate on master is red about one run in eight.
 * **Fix direction:** find which restore/mirror path causes the second report (e.g. a deferred flush or store-creation subscription re-entering tab creation or workspace commit) and remove the cause; the test stays unchanged.
 * **Found by:** Claude Code (Opus 5.5), session ee439b95-8204-44ff-b74f-b24e6916f3dc, build workspace-restore, 2026-11-25.
+* **Handled (2026-11-25, Claude Code (Opus 5.5), session ee439b95-8204-44ff-b74f-b24e6916f3dc, build workspace-restore):** commit `45eb69e75`. Mechanism: the workspace restore awaits the native session read before `initializeWorkspace()`, so `page.goto`'s load event no longer means the first workspace write is done; the test installed its "workspace" write refusal in that gap, the startup write was refused too and reported the quota notice a second time. Product behaviour is correct (the UI renders only after that write). The test now waits for the rendered tab before refusing writes, like its sibling tests. A first candidate (static imports to restore the old timing) was withdrawn after root-cause review: it only shifted timing and held only with zero-delay mocks.
+  * **Proof:** `pnpm test:e2e:container --project=workspace-tabs --repeat-each=30 -g "refuses failed creation"` 30/30 (before: 26/30; base `952b7cbbb` 30/30); full workspace-tabs project 28/28. Review on agy: root-cause and correctness APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"a58ff749554a6b1e5676d7d18e7d207eb09c9c0e24b29c1f534048c859bf43b6","header_sha256":"a4e482d46240f661450b118da03f0742cbb11e907955bb33d774fd7247b338a5","header_status":"handled","input_sha256":"50cd3b60a398454e552cf89d79aceaca04dcd40c95689995940ae3d2cfa4846f","kind":"mutation-receipt","operation":"3dd59ccf1395f4c27f34c1e72c819397ff670a72228e3bd1d7abd47a1f96e7a8","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-15"],"target":"f-20261125-15","v":1} -->
 
 ---
 
