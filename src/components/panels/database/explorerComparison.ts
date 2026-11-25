@@ -38,3 +38,34 @@ export function comparisonState({
         ? { kind: "source", database: entry.file, title: entry.title || entry.filename }
         : { kind: "unreadable", name: entry.filename };
 }
+
+export type ReferenceSourceState =
+    | { kind: "none" }
+    | { kind: "source"; database: DatabaseHandle; title: string };
+
+/**
+ * The reference database shown as a further source on a pinned tab. Unlike `comparisonState`, it
+ * may be the same database as the primary one, and a missing or unreadable reference database
+ * stays absent without an error.
+ */
+export function pinnedReferenceState({
+    local,
+    pinned,
+    primary,
+    reference,
+    databases,
+}: {
+    local: boolean;
+    pinned: boolean;
+    primary: DatabaseHandle | null;
+    reference: DatabaseHandle | null;
+    databases: readonly ManagedDatabaseInfo[] | undefined;
+}): ReferenceSourceState {
+    if (!local || !pinned || !primary || !reference || !databases) {
+        return { kind: "none" };
+    }
+    const key = databaseHandleKey(reference);
+    const entry = databases.find((database) => databaseHandleKey(database.file) === key);
+    if (!entry || entry.type !== "success") return { kind: "none" };
+    return { kind: "source", database: entry.file, title: entry.title || entry.filename };
+}

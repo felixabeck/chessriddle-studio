@@ -1,4 +1,5 @@
 import { Group, Text } from "@mantine/core";
+import cx from "clsx";
 import { useAtom } from "jotai";
 import { ChevronUp, ChevronsUpDown } from "lucide-react";
 import { DataTable, type DataTableColumn } from "mantine-datatable";
@@ -8,12 +9,13 @@ import { useStore } from "zustand";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { ResultBar } from "@/components/common/ResultBar";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
-import { moveNotationTypeAtom } from "@/state/atoms";
+import { type ExplorerSourceRole, moveNotationTypeAtom } from "@/state/atoms";
 import { addPieceSymbol } from "@/utils/annotation";
 import type { Opening } from "@/utils/db";
 import { formatNumber } from "@/utils/format";
 import {
   combineOpenings,
+  effectiveOpeningsSort,
   type OpeningRow,
   type OpeningsSort,
   openingGames,
@@ -21,23 +23,48 @@ import {
 } from "./openingRows";
 import classes from "./OpeningsTable.module.css";
 
-type Role = "primary" | "comparison";
+export type OpeningsTableSource = {
+  role: ExplorerSourceRole;
+  openings: Opening[];
+  loading: boolean;
+};
+
 type StatsRow = OpeningRow & { isTotal?: true };
 
 const NO_GAMES = "–";
 const SOURCE_LOADING = "…";
 const DEFAULT_SORT: OpeningsSort = { source: "primary", direction: "desc" };
-const TOTAL_ACCESSOR = { primary: "primaryTotal", comparison: "comparisonTotal" } as const;
+const TOTAL_ACCESSOR: Record<ExplorerSourceRole, string> = {
+  primary: "primaryTotal",
+  comparison: "comparisonTotal",
+  reference: "referenceTotal",
+};
+const RESULTS_ACCESSOR: Record<ExplorerSourceRole, string> = {
+  primary: "primaryResults",
+  comparison: "comparisonResults",
+  reference: "referenceResults",
+};
+const ROLE_BY_ACCESSOR: Record<string, ExplorerSourceRole> = {
+  primaryTotal: "primary",
+  comparisonTotal: "comparison",
+  referenceTotal: "reference",
+};
+
+/** Move column width for one or two sources; lines up with `.sources[data-sources="2"]` in `DatabasePanel.module.css`. */
+const MOVE_COLUMN_WIDTH = 100;
+/** Compact Move column width for three sources; lines up with `.sources[data-sources="3"]` in `DatabasePanel.module.css`. */
+const COMPACT_MOVE_COLUMN_WIDTH = 72;
 
 /**
- * The explorer's move statistics. One source renders the three plain columns; with `comparison`
- * the rows are the union of both sources' moves and each source has its own two columns.
+ * The explorer's move statistics. One source renders the three plain columns; with `sources`
+ * (two or three) the rows are the union of all sources' moves and each source has its own two
+ * columns.
  */
 function OpeningsTable({
   openings,
   total,
   loading,
-  comparison,
+  sources,
   sort = DEFAULT_SORT,
   onSortChange,
 }: {
@@ -45,7 +72,7 @@ function OpeningsTable({
   /** The primary source's position total when its move rows do not add up to it. */
   total?: Opening;
   loading: boolean;
-  comparison?: { openings: Opening[]; loading: boolean };
+  sources?: readonly OpeningsTableSource[];
   sort?: OpeningsSort;
   onSortChange?: (sort: OpeningsSort) => void;
 }) {
@@ -55,132 +82,169 @@ function OpeningsTable({
   const [moveNotationType] = useAtom(moveNotationTypeAtom);
   const playMove = (move: string) => makeMove({ payload: move });
 
-  const sources: Record<Role, { openings: Opening[]; loading: boolean } | undefined> = {
-    primary: { openings, loading },
-    comparison,
-  };
-  const totals: Record<Role, Opening> = {
-    primary: total ?? openingTotals(openings),
-    comparison: openingTotals(comparison?.openings ?? []),
-  };
-  const moves: OpeningRow[] = comparison
-    ? combineOpenings(openings, comparison.openings, sort)
+  const multiSource = !!sources && sources.length > 1;
+  const threeSources = multiSource && sources.length >= 3;
+  const activeSources: readonly OpeningsTableSource[] = multiSource
+    ? sources
+    : [{ role: "primary", openings, loading }];
+  const sourceByRole = Object.fromEntries(
+    activeSources.map((source) => [source.role, source]),
+  ) as Partial<Record<ExplorerSourceRole, OpeningsTableSource>>;
+  const totals = Object.fromEntries(
+    activeSources.map((source) => [
+      source.role,
+      source.role === "primary" && !multiSource && total ? total : openingTotals(source.openings),
+    ]),
+  ) as Partial<Record<ExplorerSourceRole, Opening>>;
+  const activeSort = multiSource
+    ? effectiveOpeningsSort(
+        sort,
+        activeSources.map((source) => source.role),
+      )
+    : sort;
+  const moves: OpeningRow[] = multiSource
+    ? combineOpenings(activeSources, activeSort)
     : openings.map((opening) => ({ move: opening.move, primary: opening }));
   // A position whose games all ended there has no move row but still has games to total.
+  const hasAnyTotal = activeSources.some((source) => openingGames(totals[source.role]) > 0);
   const rows: StatsRow[] =
-    moves.length > 0 || openingGames(totals.primary) > 0
+    moves.length > 0 || hasAnyTotal
       ? [
           ...moves,
           {
             move: "",
-            primary: totals.primary,
-            comparison: comparison ? totals.comparison : undefined,
+            ...totals,
             isTotal: true,
           },
         ]
       : [];
   // The whole table waits only while no shown source has answered; otherwise the source that is
   // still searching marks its own cells.
-  const everyLoading = loading && (comparison?.loading ?? true);
-  const pending = (role: Role) => !everyLoading && !!sources[role]?.loading;
+  const everyLoading = activeSources.every((source) => source.loading);
+  const pending = (role: ExplorerSourceRole) => !everyLoading && !!sourceByRole[role]?.loading;
+  const cellFontSize = threeSources ? "xs" : "sm";
 
-  const totalColumn = (role: Role, accessor: string): DataTableColumn<StatsRow> => ({
-    accessor,
-    title: t("Board.Database.StatsTable.Total"),
-    width: comparison ? 150 : 180,
-    sortable: !!comparison,
-    cellsClassName: role === "comparison" ? classes.sourceStart : undefined,
-    titleClassName: role === "comparison" ? classes.sourceStart : undefined,
-    render: (row) => {
-      if (pending(role)) {
+  const totalColumn = (
+    role: ExplorerSourceRole,
+    accessor: string,
+    separator: boolean,
+  ): DataTableColumn<StatsRow> => {
+    const className =
+      cx(separator && classes.sourceStart, threeSources && classes.compactCell) || undefined;
+    return {
+      accessor,
+      title: t("Board.Database.StatsTable.Total"),
+      width: threeSources ? undefined : multiSource ? 150 : 180,
+      sortable: multiSource,
+      cellsClassName: className,
+      titleClassName: className,
+      render: (row) => {
+        if (pending(role)) {
+          return (
+            <Text fz={cellFontSize} c="dimmed" ta="right">
+              {SOURCE_LOADING}
+            </Text>
+          );
+        }
+        const opening = row[role];
+        if (!opening) {
+          return (
+            <Text fz={cellFontSize} c="dimmed" ta="right" data-no-games>
+              {NO_GAMES}
+            </Text>
+          );
+        }
+        const games = openingGames(opening);
+        const sourceTotal = openingGames(totals[role]);
+        // Games with an unknown result count for neither side: a source can total none.
+        const percentage = sourceTotal > 0 ? (games / sourceTotal) * 100 : 0;
         return (
-          <Text fz="sm" c="dimmed" ta="right">
-            {SOURCE_LOADING}
-          </Text>
+          <Group wrap="nowrap" gap={threeSources ? 4 : undefined}>
+            {!row.isTotal && <Text fz={cellFontSize}>{percentage.toFixed(0)}%</Text>}
+            <Text fz={cellFontSize} flex={1} ta="right">
+              {formatNumber(games)}
+            </Text>
+          </Group>
         );
-      }
-      const opening = row[role];
-      if (!opening) {
+      },
+    };
+  };
+  const resultsColumn = (role: ExplorerSourceRole, accessor: string): DataTableColumn<StatsRow> => {
+    const className = cx(threeSources && classes.compactCell) || undefined;
+    return {
+      accessor,
+      title: t("Board.Database.StatsTable.Results"),
+      cellsClassName: className,
+      titleClassName: className,
+      render: (row) => {
+        const opening = row[role];
+        if (!opening || pending(role)) return null;
+        const games = openingGames(opening);
+        if (games === 0) return null;
+        const whitePercent = (opening.white / games) * 100;
+        const drawPercent = (opening.draw / games) * 100;
+        const blackPercent = (opening.black / games) * 100;
+        // Multiple sources narrow each bar: label only the wider sections, in whole percent.
+        const label = (percent: number) =>
+          threeSources
+            ? percent >= 45
+              ? `${percent.toFixed(0)}%`
+              : ""
+            : multiSource
+              ? percent >= 33
+                ? `${percent.toFixed(0)}%`
+                : ""
+              : percent > 10
+                ? `${percent.toFixed(1)}%`
+                : "";
         return (
-          <Text fz="sm" c="dimmed" ta="right" data-no-games>
-            {NO_GAMES}
-          </Text>
+          <ResultBar
+            size="xl"
+            className={classes.result}
+            segments={[
+              {
+                value: whitePercent,
+                className: classes.whiteResultsSection,
+                label: label(whitePercent),
+                labelColor: "var(--cf-eval-bar-dark)",
+              },
+              {
+                value: drawPercent,
+                color: "var(--cf-chart-4)",
+                label: label(drawPercent),
+              },
+              {
+                value: blackPercent,
+                color: "var(--cf-eval-bar-dark)",
+                label: label(blackPercent),
+              },
+            ]}
+          />
         );
-      }
-      const games = openingGames(opening);
-      const sourceTotal = openingGames(totals[role]);
-      // Games with an unknown result count for neither side: a source can total none.
-      const percentage = sourceTotal > 0 ? (games / sourceTotal) * 100 : 0;
-      return (
-        <Group wrap="nowrap">
-          {!row.isTotal && <Text fz="sm">{percentage.toFixed(0)}%</Text>}
-          <Text fz="sm" flex={1} ta="right">
-            {formatNumber(games)}
-          </Text>
-        </Group>
-      );
-    },
-  });
-  const resultsColumn = (role: Role, accessor: string): DataTableColumn<StatsRow> => ({
-    accessor,
-    title: t("Board.Database.StatsTable.Results"),
-    render: (row) => {
-      const opening = row[role];
-      if (!opening || pending(role)) return null;
-      const games = openingGames(opening);
-      if (games === 0) return null;
-      const whitePercent = (opening.white / games) * 100;
-      const drawPercent = (opening.draw / games) * 100;
-      const blackPercent = (opening.black / games) * 100;
-      // Two sources halve the bar: label only the wider sections, in whole percent.
-      const label = (percent: number) =>
-        comparison
-          ? percent >= 33
-            ? `${percent.toFixed(0)}%`
-            : ""
-          : percent > 10
-            ? `${percent.toFixed(1)}%`
-            : "";
-      return (
-        <ResultBar
-          size="xl"
-          className={classes.result}
-          segments={[
-            {
-              value: whitePercent,
-              className: classes.whiteResultsSection,
-              label: label(whitePercent),
-              labelColor: "var(--cf-eval-bar-dark)",
-            },
-            {
-              value: drawPercent,
-              color: "var(--cf-chart-4)",
-              label: label(drawPercent),
-            },
-            {
-              value: blackPercent,
-              color: "var(--cf-eval-bar-dark)",
-              label: label(blackPercent),
-            },
-          ]}
-        />
-      );
-    },
-  });
+      },
+    };
+  };
 
+  const moveClassName = cx(threeSources && classes.compactCell) || undefined;
   const moveColumn: DataTableColumn<StatsRow> = {
     accessor: "move",
     title: t("Board.Database.StatsTable.Move"),
-    width: 100,
+    width: threeSources ? COMPACT_MOVE_COLUMN_WIDTH : MOVE_COLUMN_WIDTH,
+    cellsClassName: moveClassName,
+    titleClassName: moveClassName,
     render: ({ move, isTotal }) => {
-      if (isTotal) return <Text fz="sm">{t("Board.Database.StatsTable.Total")}</Text>;
+      if (isTotal) return <Text fz={cellFontSize}>{t("Board.Database.StatsTable.Total")}</Text>;
       if (move === "*")
         return (
-          <Text fz="sm" fs="italic">
+          <Text fz={cellFontSize} fs="italic" truncate={threeSources}>
             {t("Board.Analysis.GameOver")}
           </Text>
         );
-      return <Text fz="sm">{moveNotationType === "symbols" ? addPieceSymbol(move) : move}</Text>;
+      return (
+        <Text fz={cellFontSize} truncate={threeSources}>
+          {moveNotationType === "symbols" ? addPieceSymbol(move) : move}
+        </Text>
+      );
     },
   };
 
@@ -190,8 +254,8 @@ function OpeningsTable({
       highlightOnHover
       records={rows}
       fetching={everyLoading || openings === null}
-      // Two equal source groups: the sources bar above lines up with them.
-      styles={comparison ? { table: { tableLayout: "fixed" } } : undefined}
+      // Equal source groups: the sources bar above lines up with them.
+      styles={multiSource ? { table: { tableLayout: "fixed" } } : undefined}
       rowStyle={(_row, i) => {
         if (i === rows.length - 1)
           return {
@@ -203,21 +267,28 @@ function OpeningsTable({
         return {};
       }}
       columns={
-        comparison
+        multiSource
           ? [
               moveColumn,
-              totalColumn("primary", TOTAL_ACCESSOR.primary),
-              resultsColumn("primary", "primaryResults"),
-              totalColumn("comparison", TOTAL_ACCESSOR.comparison),
-              resultsColumn("comparison", "comparisonResults"),
+              ...activeSources.flatMap((source, index) => [
+                totalColumn(source.role, TOTAL_ACCESSOR[source.role], index > 0),
+                resultsColumn(source.role, RESULTS_ACCESSOR[source.role]),
+              ]),
             ]
-          : [moveColumn, totalColumn("primary", "total"), resultsColumn("primary", "results")]
+          : [
+              moveColumn,
+              totalColumn("primary", "total", false),
+              resultsColumn("primary", "results"),
+            ]
       }
-      // Only the two-source columns are sortable, so one source shows no sort control.
-      sortStatus={{ columnAccessor: TOTAL_ACCESSOR[sort.source], direction: sort.direction }}
+      // Only the multi-source columns are sortable, so one source shows no sort control.
+      sortStatus={{
+        columnAccessor: TOTAL_ACCESSOR[activeSort.source],
+        direction: activeSort.direction,
+      }}
       onSortStatusChange={({ columnAccessor, direction }) =>
         onSortChange?.({
-          source: columnAccessor === TOTAL_ACCESSOR.comparison ? "comparison" : "primary",
+          source: ROLE_BY_ACCESSOR[columnAccessor] ?? "primary",
           direction,
         })
       }

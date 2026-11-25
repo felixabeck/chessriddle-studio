@@ -41,14 +41,22 @@ export const pinnedExplorerComparisonFamily = tabAtomFamily((_tab: string) =>
     atom<PinnedExplorerComparison | null>(null),
 );
 
-export type ExplorerSourceRole = "primary" | "comparison";
+/**
+ * Whether a tab pinned to a database also shows the reference database as a further source,
+ * searched with that database's saved explorer filters. Set by "Prepare on board", disposed with
+ * the tab.
+ */
+export const pinnedExplorerReferenceFamily = tabAtomFamily((_tab: string) => atom<boolean>(false));
+
+export type ExplorerSourceRole = "primary" | "comparison" | "reference";
+export type ExplorerGamesSourceRole = "primary" | "comparison";
 
 /** Whose sample games the Games view lists while two local sources are shown. */
 export const explorerGamesSourceFamily = tabAtomFamily((_tab: string) =>
-    atom<ExplorerSourceRole>("primary"),
+    atom<ExplorerGamesSourceRole>("primary"),
 );
 
-/** The two-source move table's sort: which source's game count, in which direction. */
+/** The multi-source move table's sort: which source's game count, in which direction. */
 export const explorerSortFamily = tabAtomFamily((_tab: string) =>
     atom<{ source: ExplorerSourceRole; direction: "asc" | "desc" }>({
         source: "primary",

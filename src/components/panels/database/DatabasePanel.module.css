@@ -5,17 +5,22 @@
   margin-top: var(--mantine-spacing-xs);
 }
 
-/* Two sources sit above the move table's two column groups: its Move column is 100px wide and
-   the groups share the rest equally. */
-.sources[data-two-sources] {
+/* Multiple sources sit above the move table's column groups: the Move column matches
+   `MOVE_COLUMN_WIDTH` (100px, two sources) and `COMPACT_MOVE_COLUMN_WIDTH` (72px, three sources)
+   in `OpeningsTable.tsx`, and the groups share the rest equally. */
+.sources[data-sources="2"] {
   grid-template-columns: 100px repeat(2, minmax(0, 1fr));
 }
 
-.sources[data-two-sources] > [data-explorer-source] {
+.sources[data-sources="3"] {
+  grid-template-columns: 72px repeat(3, minmax(0, 1fr));
+}
+
+.sources[data-sources] > [data-explorer-source] {
   padding-inline-end: var(--mantine-spacing-xs);
 }
 
-.sources[data-two-sources] > [data-explorer-source]:first-of-type {
+.sources[data-sources] > [data-explorer-source]:first-of-type {
   grid-column-start: 2;
 }
 

@@ -1,9 +1,20 @@
+import type { ExplorerSourceRole } from "@/state/atoms";
 import type { Opening } from "@/utils/db";
 
-export type OpeningsSort = { source: "primary" | "comparison"; direction: "asc" | "desc" };
+export type OpeningsSort = { source: ExplorerSourceRole; direction: "asc" | "desc" };
 
-/** One move of the two-source table; a side is absent when its source has no game with it. */
-export type OpeningRow = { move: string; primary?: Opening; comparison?: Opening };
+/** One move of the multi-source table; a source is absent when it has no game with it. */
+export type OpeningRow = {
+    move: string;
+    primary?: Opening;
+    comparison?: Opening;
+    reference?: Opening;
+};
+
+export type OpeningSourceData = {
+    role: ExplorerSourceRole;
+    openings: readonly Opening[];
+};
 
 export function openingGames(opening: Opening | undefined): number {
     return opening ? opening.white + opening.draw + opening.black : 0;
@@ -19,26 +30,44 @@ export function openingTotals(openings: readonly Opening[]): Opening {
 }
 
 /**
- * The union of two sources' moves, ordered by the chosen source's game count. Ties fall to the
- * other source's count, most games first, and then keep the sources' own order.
+ * Derives the active sort for the shown sources: a stored sort naming a source that is not shown
+ * falls back to the primary source while keeping the direction and leaving the stored choice alone.
+ */
+export function effectiveOpeningsSort(
+    sort: OpeningsSort,
+    roles: readonly ExplorerSourceRole[],
+): OpeningsSort {
+    return roles.includes(sort.source) ? sort : { ...sort, source: "primary" };
+}
+
+/**
+ * The union of the given sources' moves, ordered by the chosen source's game count. Ties fall to
+ * the remaining sources in their displayed order, most games first, and then keep the sources'
+ * own order.
  */
 export function combineOpenings(
-    primary: readonly Opening[],
-    comparison: readonly Opening[],
+    sources: readonly OpeningSourceData[],
     sort: OpeningsSort,
 ): OpeningRow[] {
     const rows = new Map<string, OpeningRow>();
-    for (const opening of primary) rows.set(opening.move, { move: opening.move, primary: opening });
-    for (const opening of comparison) {
-        const row = rows.get(opening.move);
-        if (row) row.comparison = opening;
-        else rows.set(opening.move, { move: opening.move, comparison: opening });
+    for (const { role, openings } of sources) {
+        for (const opening of openings) {
+            const row = rows.get(opening.move);
+            if (row) row[role] = opening;
+            else rows.set(opening.move, { move: opening.move, [role]: opening });
+        }
     }
-    const other = sort.source === "primary" ? "comparison" : "primary";
+    const roles = sources.map((source) => source.role);
+    const tieBreakers = roles.filter((role) => role !== sort.source);
     const sign = sort.direction === "asc" ? 1 : -1;
-    return [...rows.values()].sort(
-        (left, right) =>
-            sign * (openingGames(left[sort.source]) - openingGames(right[sort.source])) ||
-            openingGames(right[other]) - openingGames(left[other]),
-    );
+    return [...rows.values()].sort((left, right) => {
+        const primaryDiff =
+            sign * (openingGames(left[sort.source]) - openingGames(right[sort.source]));
+        if (primaryDiff !== 0) return primaryDiff;
+        for (const role of tieBreakers) {
+            const diff = openingGames(right[role]) - openingGames(left[role]);
+            if (diff !== 0) return diff;
+        }
+        return 0;
+    });
 }

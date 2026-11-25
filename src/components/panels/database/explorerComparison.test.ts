@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import type { DatabaseHandle } from "@/bindings";
 import type { ManagedDatabaseInfo as DatabaseInfo } from "@/utils/db";
-import { comparisonState } from "./explorerComparison";
+import { comparisonState, pinnedReferenceState } from "./explorerComparison";
 
 const handle = (id: string): DatabaseHandle => ({ id: { id }, kind: "database" });
 const readable = (id: string, title = id): DatabaseInfo => ({
@@ -131,4 +131,40 @@ test("an unpinned tab ignores a pinned second database", () => {
     expect(comparisonState({ ...pinnedPair, pinned: false, stored: null })).toEqual({
         kind: "none",
     });
+});
+
+const pinnedRef = {
+    local: true,
+    pinned: true,
+    primary: handle("mega"),
+    reference: handle("ref"),
+    databases: [readable("mega", "Mega"), readable("ref", "Reference")],
+};
+
+test("a pinned tab shows a readable reference database", () => {
+    expect(pinnedReferenceState(pinnedRef)).toEqual({
+        kind: "source",
+        database: handle("ref"),
+        title: "Reference",
+    });
+});
+
+test("a pinned tab accepts the same database as the pinned one for its reference source", () => {
+    expect(pinnedReferenceState({ ...pinnedRef, reference: handle("mega") })).toEqual({
+        kind: "source",
+        database: handle("mega"),
+        title: "Mega",
+    });
+});
+
+test.each<[string, Partial<typeof pinnedRef> & { databases?: DatabaseInfo[] | undefined }]>([
+    ["an unpinned tab", { pinned: false }],
+    ["a Lichess source", { local: false }],
+    ["no primary database", { primary: null as unknown as DatabaseHandle }],
+    ["no reference database selected", { reference: null as unknown as DatabaseHandle }],
+    ["a missing reference database", { databases: [readable("mega")] }],
+    ["an unreadable reference database", { databases: [readable("mega"), unreadable("ref")] }],
+    ["a pending or failed list", { databases: undefined }],
+])("pinnedReferenceState stays absent without error for %s", (_name, change) => {
+    expect(pinnedReferenceState({ ...pinnedRef, ...change })).toEqual({ kind: "none" });
 });

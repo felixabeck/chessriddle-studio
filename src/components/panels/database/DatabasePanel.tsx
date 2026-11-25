@@ -38,9 +38,11 @@ import {
   explorerPlacementAtom,
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
+  type ExplorerSourceRole,
   localOptionsFamily,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
+  pinnedExplorerReferenceFamily,
   lichessOptionsAtom,
   masterOptionsAtom,
   referenceDbAtom,
@@ -62,7 +64,7 @@ import {
 } from "@/utils/lichess/api";
 import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/explorer";
 import classes from "./DatabasePanel.module.css";
-import { comparisonState } from "./explorerComparison";
+import { comparisonState, pinnedReferenceState } from "./explorerComparison";
 import ExplorerSourceHeader, { ExplorerSourceCaption } from "./ExplorerSourceHeader";
 import { lichessFiltersActive, localFilterSummary, masterFiltersActive } from "./filterSummary";
 import GamesTable from "./GamesTable";
@@ -199,6 +201,9 @@ function DatabasePanel() {
   const [pinnedComparison, setPinnedComparison] = useAtom(
     useTabAtom(pinnedExplorerComparisonFamily),
   );
+  const [showPinnedReference, setShowPinnedReference] = useAtom(
+    useTabAtom(pinnedExplorerReferenceFamily),
+  );
   const removeComparison = () => (pinned ? setPinnedComparison(null) : setStoredComparison(null));
   const sessions = useAtomValue(sessionsAtom);
   const [debouncedFen] = useDebouncedValue(fen, 50);
@@ -259,10 +264,26 @@ function DatabasePanel() {
   // The stored choice is followed, not the shown one: a database its collection already replaced
   // is no longer in the list, and only its collection still knows the successor.
   useCollectionDatabase(db === "local" && !pinned ? storedComparison : null, replaceStored);
+  useCollectionDatabase(db === "local" && pinned ? referenceDatabase : null, replaceStored);
   const comparisonFilters = useExplorerFilters(comparisonDatabase, comparisonPlayer);
+  const availableReference = pinnedReferenceState({
+    local: db === "local",
+    pinned,
+    primary: effectiveReferenceDatabase,
+    reference: referenceDatabase,
+    databases: databasesFailure ? undefined : databases?.databases,
+  });
+  const referenceSource = showPinnedReference ? availableReference : { kind: "none" as const };
+  const pinnedReferenceDatabase =
+    referenceSource.kind === "source" ? referenceSource.database : null;
+  const pinnedReferenceFilters = useExplorerFilters(pinnedReferenceDatabase, null, { saved: true });
   // A player filter is named in each header, so a board says whose games it shows.
   const primaryPlayerName = usePlayerName(effectiveReferenceDatabase, localFilters.player);
   const comparisonPlayerName = usePlayerName(comparisonDatabase, comparisonFilters.filters.player);
+  const pinnedReferencePlayerName = usePlayerName(
+    pinnedReferenceDatabase,
+    pinnedReferenceFilters.filters.player,
+  );
   const dbType: DBType = match(db)
     .with("local", (v) => ({
       type: v,
@@ -300,6 +321,11 @@ function DatabasePanel() {
     comparisonFilters.options,
     db === "local" && comparisonDatabase !== null,
     tab?.value ? `${tab.value}:comparison` : undefined,
+  );
+  const pinnedReferenceExplorer = useLocalExplorer(
+    pinnedReferenceFilters.options,
+    db === "local" && pinnedReferenceDatabase !== null,
+    tab?.value ? `${tab.value}:reference` : undefined,
   );
   const [storedGamesSource, setGamesSource] = useAtom(useTabAtom(explorerGamesSourceFamily));
   const gamesSource =
@@ -354,8 +380,10 @@ function DatabasePanel() {
     !!effectiveReferenceDatabase &&
     comparison.kind === "none" &&
     comparisonChoices.length > 0;
+  const canRestoreReference =
+    db === "local" && pinned && !showPinnedReference && availableReference.kind === "source";
 
-  /** A local source's cell: the two differ only in their database and filters. */
+  /** A local source's cell: each source differs only in its database, title, and filter binding. */
   const localSourceHeader = (source: {
     key: string;
     choices: typeof dbSelectData;
@@ -453,6 +481,27 @@ function DatabasePanel() {
         </IconAction>
       ),
     });
+  const pinnedReferenceHeader =
+    referenceSource.kind === "source" &&
+    localSourceHeader({
+      key: "reference",
+      choices: [],
+      database: referenceSource.database,
+      choose: () => undefined,
+      fixedTitle: referenceSource.title,
+      binding: pinnedReferenceFilters,
+      playerName: pinnedReferencePlayerName,
+      action: (
+        <IconAction
+          label={t("Board.Database.RemoveReference")}
+          variant="subtle"
+          size="sm"
+          onClick={() => setShowPinnedReference(false)}
+        >
+          <X size="0.875rem" />
+        </IconAction>
+      ),
+    });
 
   const [storedCollapsed, setStoredCollapsed] = useAtom(explorerHeaderCollapsedAtom);
   // The panel asks for a database through its select, so the controls stay open until the list
@@ -507,6 +556,13 @@ function DatabasePanel() {
           name: comparison.title,
           filters: comparisonFilters.filters,
           playerName: comparisonPlayerName,
+        }),
+      referenceSource.kind === "source" &&
+        localCaption({
+          key: "reference",
+          name: referenceSource.title,
+          filters: pinnedReferenceFilters.filters,
+          playerName: pinnedReferencePlayerName,
         }),
     ])
     .with("lch_all", () =>
@@ -571,21 +627,46 @@ function DatabasePanel() {
     </>
   );
 
-  // With two sources a failure belongs to its source: it is named, and the other one stays.
-  const twoSources =
+  // With multiple sources a failure belongs to its source: it is named, and the others stay.
+  type LocalSourceEntry = {
+    role: ExplorerSourceRole;
+    name: string;
+    explorer: typeof localExplorer;
+  };
+  const extraStatsSources: LocalSourceEntry[] = [
+    ...(comparison.kind === "source"
+      ? [{ role: "comparison" as const, name: comparison.title, explorer: comparisonExplorer }]
+      : []),
+    ...(referenceSource.kind === "source"
+      ? [
+          {
+            role: "reference" as const,
+            name: referenceSource.title,
+            explorer: pinnedReferenceExplorer,
+          },
+        ]
+      : []),
+  ];
+  const statsSources: LocalSourceEntry[] | null =
+    extraStatsSources.length > 0
+      ? [{ role: "primary", name: primaryTitle, explorer: localExplorer }, ...extraStatsSources]
+      : null;
+  const sourceAlert = (source: LocalSourceEntry) => (
+    <Alert key={source.role} color="danger" style={{ flexShrink: 0 }}>
+      {`${source.name}: ${source.explorer.error}`}
+    </Alert>
+  );
+  const failedSources = statsSources?.filter((source) => source.explorer.error !== undefined) ?? [];
+  // The games view keeps the primary and optional comparison source; the reference source adds
+  // no games list and no entry to that switch.
+  const gamesSources =
     comparison.kind === "source"
       ? ([
           { role: "primary", name: primaryTitle, explorer: localExplorer },
           { role: "comparison", name: comparison.title, explorer: comparisonExplorer },
         ] as const)
       : null;
-  const sourceAlert = (source: NonNullable<typeof twoSources>[number]) => (
-    <Alert key={source.role} color="danger" style={{ flexShrink: 0 }}>
-      {`${source.name}: ${source.explorer.error}`}
-    </Alert>
-  );
-  const failedSources = twoSources?.filter((source) => source.explorer.error !== undefined) ?? [];
-  const gamesFrom = twoSources?.find((source) => source.role === gamesSource);
+  const gamesFrom = gamesSources?.find((source) => source.role === gamesSource);
 
   /** What a view shows instead of its table while the source cannot answer. */
   const unavailable: ReactNode | null =
@@ -615,7 +696,7 @@ function DatabasePanel() {
         <div className={classes.captions}>
           <div
             className={classes.sources}
-            data-two-sources={twoSources ? true : undefined}
+            data-sources={statsSources ? String(statsSources.length) : undefined}
             data-collapsed
           >
             {sourceCaptions}
@@ -659,6 +740,16 @@ function DatabasePanel() {
                   </Menu.Dropdown>
                 </Menu>
               )}
+              {canRestoreReference && (
+                <Button
+                  variant="subtle"
+                  size="compact-sm"
+                  leftSection={<Plus size="0.875rem" />}
+                  onClick={() => setShowPinnedReference(true)}
+                >
+                  {t("Board.Database.ShowReference")}
+                </Button>
+              )}
             </Group>
             <Group gap={4} wrap="nowrap">
               <Tabs.List style={{ flexWrap: "nowrap" }}>
@@ -670,9 +761,13 @@ function DatabasePanel() {
               {headerActions}
             </Group>
           </Group>
-          <div className={classes.sources} data-two-sources={twoSources ? true : undefined}>
+          <div
+            className={classes.sources}
+            data-sources={statsSources ? String(statsSources.length) : undefined}
+          >
             {sourceHeader}
             {comparisonHeader}
+            {pinnedReferenceHeader}
           </div>
         </>
       )}
@@ -690,17 +785,18 @@ function DatabasePanel() {
       )}
 
       <ViewPanel value="stats" view={view} plain={collapsed}>
-        {twoSources ? (
+        {statsSources ? (
           <>
             {failedSources.map(sourceAlert)}
-            {failedSources.length < twoSources.length && (
+            {failedSources.length < statsSources.length && (
               <OpeningsTable
                 openings={localExplorer.openings}
                 loading={localExplorer.loading}
-                comparison={{
-                  openings: comparisonExplorer.openings,
-                  loading: comparisonExplorer.loading,
-                }}
+                sources={statsSources.map(({ role, explorer }) => ({
+                  role,
+                  openings: explorer.openings,
+                  loading: explorer.loading,
+                }))}
                 sort={sort}
                 onSortChange={setSort}
               />
@@ -717,13 +813,13 @@ function DatabasePanel() {
         )}
       </ViewPanel>
       <ViewPanel value="games" view={view} plain={collapsed}>
-        {twoSources && gamesFrom ? (
+        {gamesSources && gamesFrom ? (
           <Stack gap="xs" flex={1} style={{ overflow: "hidden" }}>
             <SegmentedControl
               aria-label={t("Board.Database.GamesSource")}
               style={{ flexShrink: 0, alignSelf: "flex-start" }}
               size="xs"
-              data={twoSources.map((source) => ({ value: source.role, label: source.name }))}
+              data={gamesSources.map((source) => ({ value: source.role, label: source.name }))}
               value={gamesSource}
               onChange={(value) => setGamesSource(value as typeof gamesSource)}
             />

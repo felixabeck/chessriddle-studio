@@ -25,6 +25,7 @@ import {
   masterOptionsAtom,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
+  pinnedExplorerReferenceFamily,
   referenceDbAtom,
 } from "@/state/atoms";
 import { explorerFiltersFor } from "@/state/explorerFilters";
@@ -1880,6 +1881,256 @@ describe("DatabasePanel", () => {
         expect(store.get(pinnedExplorerComparisonFamily(tabId))).toEqual({
           database: corr,
           player: 7,
+        });
+      });
+
+      describe("with the reference database enabled", () => {
+        const refOpenings = [
+          { move: "c4", white: 400, draw: 100, black: 100 },
+          { move: "e4", white: 200, draw: 50, black: 50 },
+        ];
+        const mountPrepBoard = async ({
+          withOnline = true,
+          refHandle = third.file as DatabaseHandle | null,
+          list = [readable, corrInfo, third] as ManagedDatabaseInfo[],
+          savedRefFilters,
+        }: {
+          withOnline?: boolean;
+          refHandle?: DatabaseHandle | null;
+          list?: ManagedDatabaseInfo[];
+          savedRefFilters?: Record<string, unknown>;
+        } = {}) => {
+          mocks.getDatabases.mockResolvedValue(databaseList(list));
+          mocks.searchPosition.mockImplementation(async (file: DatabaseHandle, query) => {
+            const key = databaseHandleKey(file);
+            if (refHandle && key === databaseHandleKey(refHandle) && query.player1 !== 42) {
+              return [refOpenings, []];
+            }
+            return answers[key] ?? [[], []];
+          });
+          const mounted = await mountLocal(reference, 42);
+          await act(async () => {
+            mounted.store.set(referenceDbAtom, refHandle);
+            if (savedRefFilters && refHandle) {
+              mounted.store.set(explorerDatabaseFiltersAtom, [
+                {
+                  database: databaseHandleKey(refHandle),
+                  filters: savedRefFilters as ReturnType<typeof explorerFiltersFor>,
+                },
+              ]);
+            }
+            if (withOnline) {
+              mounted.store.set(pinnedExplorerComparisonFamily(tabId), {
+                database: corr,
+                player: 7,
+              });
+            }
+            mounted.store.set(pinnedExplorerReferenceFamily(tabId), true);
+          });
+          await act(async () => {});
+          return mounted;
+        };
+
+        test("appears with online games (3 columns) and without online games (2 columns)", async () => {
+          await mountPrepBoard({ withOnline: true });
+          await vi.waitFor(() => expect(sources()).toHaveLength(3));
+          expect(sources()[2].textContent).toContain("Third");
+          expect(container.textContent).toContain("c4");
+          expect(searchesOf(third.file).at(-1)?.[2]).toBe(`${tabId}:reference`);
+
+          // Games view keeps only primary and comparison — no third entry for the reference source.
+          const gamesTab = container.querySelector<HTMLButtonElement>(
+            'button[role="tab"][aria-controls]',
+          );
+          const allTabs = Array.from(
+            container.querySelectorAll<HTMLButtonElement>('button[role="tab"]'),
+          );
+          const games = allTabs.find((el) => el.textContent === "Board.Database.Games") ?? gamesTab;
+          await act(async () => games?.click());
+          const gamesSwitch = Array.from(
+            container.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+          ).map((r) => r.value);
+          expect(gamesSwitch).toContain("primary");
+          expect(gamesSwitch).toContain("comparison");
+          expect(gamesSwitch).not.toContain("reference");
+
+          // Without online games: 2 columns (pinned + reference).
+          await mountPrepBoard({ withOnline: false });
+          await vi.waitFor(() => expect(sources()).toHaveLength(2));
+          expect(sources()[1].textContent).toContain("Third");
+          expect(container.textContent).toContain("c4");
+        });
+
+        test("sorts by reference, removes and brings back, and falls back sort when removed", async () => {
+          const { store } = await mountPrepBoard({ withOnline: true });
+          await vi.waitFor(() => expect(sources()).toHaveLength(3));
+
+          const headers = () => Array.from(container.querySelectorAll<HTMLElement>("thead th"));
+          // Click the reference source's Total header (column index 5).
+          await act(async () => headers()[5].click());
+          expect(store.get(explorerSortFamily(tabId)).source).toBe("reference");
+          const rowsSortedByRef = () =>
+            Array.from(container.querySelectorAll<HTMLTableRowElement>("tbody tr")).map(
+              (tr) => tr.querySelector("td")?.textContent,
+            );
+          expect(rowsSortedByRef()[0]).toBe("c4");
+
+          // Remove reference source: sort falls back to primary while stored sort is kept.
+          const removeRef = sources()[2].querySelector<HTMLButtonElement>(
+            'button[aria-label="Board.Database.RemoveReference"]',
+          )!;
+          await act(async () => removeRef.click());
+          expect(store.get(pinnedExplorerReferenceFamily(tabId))).toBe(false);
+          expect(sources()).toHaveLength(2);
+          expect(store.get(explorerSortFamily(tabId)).source).toBe("reference");
+          expect(rowsSortedByRef()[0]).not.toBe("c4");
+
+          // Restore reference source from the header button: stored reference sort applies again.
+          const restore = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+            (b) => b.textContent?.includes("Board.Database.ShowReference"),
+          )!;
+          expect(restore).toBeDefined();
+          await act(async () => restore.click());
+          await vi.waitFor(() => expect(sources()).toHaveLength(3));
+          expect(rowsSortedByRef()[0]).toBe("c4");
+        });
+
+        test("is absent without a reference database", async () => {
+          await mountPrepBoard({ withOnline: false, refHandle: null });
+          await vi.waitFor(() => expect(searchesOf(reference)).not.toHaveLength(0));
+          expect(sources()).toHaveLength(1);
+          expect(container.querySelector('[role="alert"]')).toBeNull();
+        });
+
+        test("is absent without error when the reference database is unreadable", async () => {
+          await mountPrepBoard({
+            withOnline: false,
+            refHandle: third.file,
+            list: [readable, { ...unreadable, file: third.file }],
+          });
+          await vi.waitFor(() => expect(searchesOf(reference)).not.toHaveLength(0));
+          expect(sources()).toHaveLength(1);
+          expect(container.querySelector('[role="alert"]')).toBeNull();
+        });
+
+        test("accepts the same database as the pinned one", async () => {
+          await mountPrepBoard({ withOnline: false, refHandle: reference });
+          await vi.waitFor(() => expect(sources()).toHaveLength(2));
+          expect(sources()[1].textContent).toContain("Saved reference");
+          // Both the pinned search (player 42) and the reference search (no player) ran.
+          const refSearches = searchesOf(reference);
+          expect(refSearches.some(([, q]) => q.player1 === 42)).toBe(true);
+          expect(
+            refSearches.some(([, q, p]) => q.player1 == null && p === `${tabId}:reference`),
+          ).toBe(true);
+        });
+
+        test("keeps a saved player filter and writes filter edits to saved filters only", async () => {
+          const { store } = await mountPrepBoard({
+            withOnline: false,
+            refHandle: third.file,
+            savedRefFilters: {
+              player: 99,
+              color: "white",
+              result: "any",
+            },
+          });
+          await vi.waitFor(() => expect(sources()).toHaveLength(2));
+          await vi.waitFor(() =>
+            expect(searchesOf(third.file).at(-1)?.[1]).toMatchObject({ player1: 99 }),
+          );
+          expect(store.get(localOptionsFamily(tabId)).color).toBe("white");
+
+          // Edit color in the reference source's filter popover away from the tab's colour:
+          // updates saved filters only.
+          const filters = await sourceFilters(1);
+          const black = Array.from(
+            filters.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+          ).find((radio) => radio.value === "black")!;
+          await act(async () => black.click());
+
+          expect(
+            explorerFiltersFor(
+              store.get(explorerDatabaseFiltersAtom),
+              databaseHandleKey(third.file),
+            ),
+          ).toMatchObject({ player: 99, color: "black" });
+          // Tab's own options, colour and opponent player are untouched.
+          expect(store.get(localOptionsFamily(tabId))).toMatchObject({
+            color: "white",
+            player: 42,
+            player_database: databaseHandleKey(reference),
+          });
+        });
+
+        test("collapsing the header shows a caption for the reference source", async () => {
+          await mountPrepBoard({ withOnline: true });
+          await vi.waitFor(() => expect(sources()).toHaveLength(3));
+
+          const hide = container.querySelector<HTMLButtonElement>(
+            'button[aria-label="Board.Database.HideSettings"]',
+          )!;
+          await act(async () => hide.click());
+
+          const captions = sources().map((el) => el.textContent);
+          expect(captions).toHaveLength(3);
+          expect(captions[2]).toContain("Third");
+        });
+
+        const mockReferenceReplacement = () => {
+          const successor: DatabaseHandle = { id: { id: "third-successor" }, kind: "database" };
+          const successorInfo: ManagedDatabaseInfo = {
+            ...third,
+            file: successor,
+            title: "Third v2",
+          };
+          mocks.collectionForDatabase.mockImplementation(async (file: DatabaseHandle) =>
+            databaseHandleKey(file) === databaseHandleKey(third.file)
+              ? {
+                  id: "66666666-6666-4666-8666-666666666666",
+                  name: "Reference collection",
+                  file: { id: { id: "library" }, kind: "fileWorkspace" },
+                  database: successor,
+                  account: null,
+                  status: "ready",
+                  generation: "g2",
+                  omitted: 0,
+                  retiredDatabase: third.file,
+                  fetchSinceMs: null,
+                }
+              : null,
+          );
+          return { successor, successorInfo };
+        };
+
+        test("follows a linked-collection replacement of the reference database while shown", async () => {
+          const { successor, successorInfo } = mockReferenceReplacement();
+          const { store } = await mountPrepBoard({
+            withOnline: false,
+            refHandle: third.file,
+            list: [readable, successorInfo],
+          });
+          await vi.waitFor(() => expect(store.get(referenceDbAtom)).toEqual(successor));
+          await vi.waitFor(() => expect(sources()).toHaveLength(2));
+          expect(sources()[1].textContent).toContain("Third v2");
+        });
+
+        test("follows a linked-collection replacement of the reference database while the column is removed so restore stays available", async () => {
+          const { successor, successorInfo } = mockReferenceReplacement();
+          mocks.getDatabases.mockResolvedValue(databaseList([readable, successorInfo]));
+          mocks.searchPosition.mockImplementation(
+            async (file: DatabaseHandle) => answers[databaseHandleKey(file)] ?? [[], []],
+          );
+          const { store } = await mountLocal(reference, 42);
+          await act(async () => {
+            store.set(referenceDbAtom, third.file);
+            store.set(pinnedExplorerReferenceFamily(tabId), false);
+          });
+          await vi.waitFor(() => expect(store.get(referenceDbAtom)).toEqual(successor));
+          const restore = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+            (b) => b.textContent?.includes("Board.Database.ShowReference"),
+          );
+          expect(restore).toBeDefined();
         });
       });
     });

@@ -24,8 +24,9 @@ function tabFilters(options: LocalOptions, database: DatabaseHandle | null): Exp
 }
 
 /**
- * The options one local source is searched with. A pinned tab searches with its own options; any
- * other tab combines the database's saved filters with the tab's position and match mode.
+ * The options one local source is searched with. A pinned tab searches its own source with the
+ * tab's options; an unpinned tab — and the reference source on a pinned tab — combines the
+ * database's saved filters with the tab's position and match mode.
  */
 function localSourceOptions(
     tabOptions: LocalOptions,
@@ -55,10 +56,14 @@ function localSourceOptions(
  * `fixedPlayer` is the player of a pinned tab's second column. That column shares every other
  * filter with the tab, searches `database` for its own player, and never changes the tab's
  * player.
+ *
+ * `saved` forces the database's saved filters even on a pinned tab (the reference source on a
+ * preparation board), editing only those saved filters and never the tab's own options.
  */
 export function useExplorerFilters(
     database: DatabaseHandle | null,
     fixedPlayer: number | null = null,
+    { saved = false }: { saved?: boolean } = {},
 ): {
     filters: ExplorerFilters;
     setFilters: (update: (current: ExplorerFilters) => ExplorerFilters) => void;
@@ -71,7 +76,7 @@ export function useExplorerFilters(
     const saveFilters = useSetAtom(setExplorerFiltersAtom);
     const key = database ? databaseHandleKey(database) : null;
 
-    if (pinned && fixedPlayer !== null) {
+    if (!saved && pinned && fixedPlayer !== null) {
         const shared = (options: LocalOptions): ExplorerFilters => ({
             ...tabFilters(options, database),
             player: fixedPlayer,
@@ -91,7 +96,7 @@ export function useExplorerFilters(
             },
         };
     }
-    if (pinned) {
+    if (!saved && pinned) {
         return {
             filters: tabFilters(tabOptions, database),
             setFilters: (update) =>

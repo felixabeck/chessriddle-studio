@@ -174,7 +174,14 @@ async function renderCompared(
               <OpeningsTable
                 openings={openings}
                 loading={false}
-                comparison={comparison}
+                sources={[
+                  {
+                    role: "primary",
+                    openings: props.openings ?? openings,
+                    loading: props.loading ?? false,
+                  },
+                  { role: "comparison", ...comparison },
+                ]}
                 {...props}
               />
             </TreeStateContext.Provider>
@@ -325,4 +332,62 @@ test("a move row of the two-source table plays its move", async () => {
   const h4 = bodyRows().find((row) => row.querySelector("td")?.textContent === "h4")!;
   await act(async () => h4.click());
   expect(treeStore.getState().currentNode().san).toBe("h4");
+});
+
+test("three sources render three Total/Results groups and sort by reference", async () => {
+  const referenceOpenings: Opening[] = [
+    { move: "Nf3", white: 50, draw: 30, black: 20 },
+    { move: "e4", white: 100, draw: 50, black: 50 },
+  ];
+  const changes: unknown[] = [];
+  await renderCompared({
+    sources: [
+      { role: "primary", openings, loading: false },
+      { role: "comparison", openings: comparisonOpenings, loading: false },
+      { role: "reference", openings: referenceOpenings, loading: false },
+    ],
+    sort: { source: "reference", direction: "desc" },
+    onSortChange: (sort) => changes.push(sort),
+  });
+  expect([...host.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual([
+    "Move",
+    "Total",
+    "Results",
+    "Total",
+    "Results",
+    "Total",
+    "Results",
+  ]);
+  expect(bodyRows().map((row) => row.querySelector("td")?.textContent)).toEqual([
+    "e4",
+    "♘f3",
+    "d4",
+    "Game is over",
+    "h4",
+    "Total",
+  ]);
+  const headers = [...host.querySelectorAll<HTMLElement>("thead th")];
+  await act(async () => headers[5].click());
+  expect(changes).toEqual([{ source: "reference", direction: "asc" }]);
+});
+
+test("a stored sort naming an absent source falls back to primary and marks primary sorted", async () => {
+  await renderCompared({
+    sort: { source: "reference", direction: "asc" },
+  });
+  expect(bodyRows().map((row) => row.querySelector("td")?.textContent)).toEqual([
+    "h4",
+    "Game is over",
+    "d4",
+    "e4",
+    "Total",
+  ]);
+  const headers = [...host.querySelectorAll<HTMLElement>("thead th")];
+  const indicator = (th: HTMLElement) =>
+    th.querySelector(".mantine-datatable-header-cell-sortable-icon")
+      ? "sorted"
+      : th.querySelector(".mantine-datatable-header-cell-sortable-unsorted-icon")
+        ? "unsorted"
+        : null;
+  expect(headers.map(indicator)).toEqual([null, "sorted", null, "unsorted", null]);
 });

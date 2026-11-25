@@ -4370,19 +4370,26 @@ test("database-files: the card's Overview and Ratings switch to a linked opponen
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
 
-test("database-files: Prepare on board shows a linked opponent's over-the-board and online games side by side", async ({
+test("database-files: Prepare on board shows a linked opponent's over-the-board, online, and reference databases side by side", async ({
     page,
     mockScenario,
     assertNoHorizontalOverflow,
 }) => {
+    const referenceDbHandle = { id: { id: "reference-mega-db" }, kind: "database" as const };
     await page.addInitScript(
-        ([key, value]) => {
+        ([linkKey, linkValue, refKey, refValue]) => {
             localStorage.setItem("font-size", "100");
             // The explorer opens on its controls, where each column names its database.
             localStorage.setItem("explorer-header-collapsed", "false");
-            localStorage.setItem(key, value);
+            localStorage.setItem(linkKey, linkValue);
+            localStorage.setItem(refKey, refValue);
         },
-        ["opponent-links", JSON.stringify([opponentLink])] as const,
+        [
+            "opponent-links",
+            JSON.stringify([opponentLink]),
+            "reference-database",
+            JSON.stringify(referenceDbHandle),
+        ] as const,
     );
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
@@ -4396,10 +4403,50 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
         year_counts: [],
     });
     const [game] = gameOpeningFixture.games;
+    const baseEntries = (
+        opponentDatabaseCommands.list_workspace_databases as {
+            result: { entries: unknown[]; unread: unknown[] };
+        }
+    ).result.entries;
+    const baseDbInfoByDb = (
+        opponentDatabaseCommands.get_db_info as {
+            byDatabase: Record<string, unknown>;
+        }
+    ).byDatabase;
     await mockScenario({
         commands: {
             ...databaseLayoutCommands,
             ...opponentDatabaseCommands,
+            list_workspace_databases: {
+                result: {
+                    entries: [
+                        ...baseEntries,
+                        {
+                            handle: referenceDbHandle,
+                            filename: "mega-reference.db3",
+                            availability: "available",
+                        },
+                    ],
+                    unread: [],
+                },
+            },
+            get_db_info: {
+                ...opponentDatabaseCommands.get_db_info,
+                byDatabase: {
+                    ...baseDbInfoByDb,
+                    "reference-mega-db": {
+                        status: "ready",
+                        filename: "mega-reference.db3",
+                        title: "Mega Reference",
+                        description: "",
+                        game_count: 50000,
+                        player_count: 10000,
+                        event_count: 500,
+                        storage_size: "65536",
+                        indexed: true,
+                    },
+                },
+            },
             get_progress: { result: null },
             get_player: { result: { id: 1, name: "First White", elo: 1500, game_count: 12 } },
             search_position: {
@@ -4408,6 +4455,14 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
                     "opponent-online-db": [
                         [row("e4", 310, 40, 250), row("b3", 120, 10, 95), row("d4", 4, 0, 5)],
                         [{ ...game, id: 900, black: "online_rival", event: "Rated Blitz game" }],
+                    ],
+                    "reference-mega-db": [
+                        [
+                            row("e4", 12000, 8000, 9000),
+                            row("d4", 10000, 7500, 6500),
+                            row("c4", 3200, 2100, 1800),
+                        ],
+                        [game],
                     ],
                 },
             },
@@ -4436,16 +4491,22 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
     await expect(page).toHaveURL("/");
 
     const sources = page.locator("[data-explorer-source]");
-    await expect(sources).toHaveCount(2);
-    // The first column can be exchanged; the online games are fixed to this board.
+    await expect(sources).toHaveCount(3);
+    // The first column can be exchanged; online games and reference database are fixed titles.
     await expect(sources.nth(0).getByRole("textbox")).toHaveValue(gameOpeningFixture.databaseTitle);
     await expect(sources.nth(1)).toContainText("First White (online)");
     await expect(sources.nth(1).getByRole("textbox")).toHaveCount(0);
     await expect(
         sources.nth(1).getByRole("button", { name: "Remove comparison database", exact: true }),
     ).toBeVisible();
+    await expect(sources.nth(2)).toContainText("Mega Reference");
+    await expect(sources.nth(2).getByRole("textbox")).toHaveCount(0);
+    await expect(
+        sources.nth(2).getByRole("button", { name: "Remove reference database", exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole("cell", { name: "b3", exact: true })).toBeVisible();
-    // Each database is searched for its own player.
+    await expect(page.getByRole("cell", { name: "c4", exact: true })).toBeVisible();
+    // Each database is searched with its own player filter (none for the reference database).
     const searches = await page.evaluate(() =>
         window.__E2E_TAURI__
             .invocations()
@@ -4455,11 +4516,12 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
                     file: { id: { id: string } };
                     query: { player1?: number };
                 };
-                return `${file.id.id}:${query.player1}`;
+                return `${file.id.id}:${query.player1 ?? "none"}`;
             }),
     );
     expect(searches).toContain(`${gameOpeningFixture.databaseId}:1`);
     expect(searches).toContain("opponent-online-db:1");
+    expect(searches).toContain("reference-mega-db:none");
     const lookups = await page.evaluate(() =>
         window.__E2E_TAURI__
             .invocations()
@@ -4483,15 +4545,39 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board 
     await page.keyboard.press("Escape");
     await expect(filters).toHaveCount(0);
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
-    // Both headers end on one line: the titled column is as tall as the selectable one.
+    // All three headers end on one line: the titled columns are as tall as the selectable one.
     const bottoms = await sources.evaluateAll((cells) =>
         cells.map((cell) => Math.round(cell.getBoundingClientRect().bottom)),
     );
     expect(bottoms[1]).toBe(bottoms[0]);
+    expect(bottoms[2]).toBe(bottoms[0]);
+    const assertTableFitsPanel = async () => {
+        const overflow = await page.evaluate(() => {
+            const table = document.querySelector<HTMLElement>(".mantine-datatable-table");
+            const scroll =
+                table?.closest<HTMLElement>(".mantine-ScrollArea-viewport") ?? table?.parentElement;
+            if (!table || !scroll) return { ok: false, tableWidth: 0, containerWidth: 0 };
+            return {
+                ok: table.scrollWidth <= scroll.clientWidth + 1,
+                tableWidth: table.scrollWidth,
+                containerWidth: scroll.clientWidth,
+            };
+        });
+        expect(
+            overflow.ok,
+            `table overflows panel: ${overflow.tableWidth}px > ${overflow.containerWidth}px`,
+        ).toBe(true);
+    };
     await assertNoHorizontalOverflow();
+    await assertTableFitsPanel();
     await waitForFontsSettled(page);
     // The filter button keeps the focus the closed popover returned to it.
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.mouse.move(0, 0);
     await expect(page).toHaveScreenshot("opponent-board-columns.png");
+
+    // Also fits without horizontal overflow at 800 x 720.
+    await page.setViewportSize({ width: 800, height: 720 });
+    await assertNoHorizontalOverflow();
+    await assertTableFitsPanel();
 });

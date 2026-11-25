@@ -6,7 +6,12 @@
   background-color: var(--cf-eval-bar-light);
 }
 
-/* The second source's columns start at a rule, so the two groups read apart. */
+/* Later sources' columns start at a rule, so the groups read apart. */
 [data-mantine-color-scheme] .sourceStart {
   border-inline-start: 1px solid var(--cf-border-strong);
+}
+
+/* Three sources share the panel width without horizontal overflow. */
+[data-mantine-color-scheme] .compactCell {
+  padding-inline: 4px;
 }

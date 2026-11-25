@@ -35,6 +35,7 @@ import {
   localOptionsFamily,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
+  pinnedExplorerReferenceFamily,
   tabFamily,
   tabsAtom,
 } from "@/state/atoms";
@@ -310,6 +311,9 @@ function OpeningTree({
                 database: online.file,
                 player: onlinePlayer,
               });
+            }
+            if (variant === "database") {
+              atoms.set(pinnedExplorerReferenceFamily(id), true);
             }
             atoms.set(dbTypeFamily(id), "local");
             atoms.set(dbTabFamily(id), "stats");
