@@ -178,7 +178,10 @@ pub(super) fn needs_upgrade(conn: &mut SqliteConnection) -> Result<bool, Error> 
         return Err(uninitialized_database_error());
     }
     match schema_version(conn)? {
-        SchemaVersion::Current => validate_schema(conn).map(|()| false),
+        SchemaVersion::Current => {
+            validate_schema(conn)?;
+            super::later_added_required_indexes_need_repair(conn)
+        }
         _ => Ok(true),
     }
 }
@@ -201,9 +204,11 @@ pub(super) fn uninitialized_database_error() -> Error {
 /// Creation is intentionally excluded: only the import command has the title
 /// and description required to initialize a new database.
 /// Returns true only when migration ran both content pragmas; false means only
-/// the cheap schema contract was checked. Edition upgrades from 2.x
-/// return false and leave content to the background scan
-/// (`content_validation::schedule` from `get_db_info`; f-20261107-02).
+/// the cheap schema contract was checked (including repairing missing or
+/// malformed later-added required indexes on an otherwise current indexed
+/// database). Edition upgrades from 2.x return false and leave content to the
+/// background scan (`content_validation::schedule` from `get_db_info`;
+/// f-20261107-02).
 pub fn validate_existing_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
     if non_internal_table_count(conn)? == 0 {
         return Err(uninitialized_database_error());
@@ -237,9 +242,43 @@ fn initialize_database(
     })
 }
 
+fn repair_later_added_required_indexes(conn: &mut SqliteConnection) -> Result<(), Error> {
+    let to_repair = super::later_added_indexes_needing_repair(conn)?;
+    if to_repair.is_empty() {
+        return Ok(());
+    }
+    for (index_name, expected_columns) in &to_repair {
+        // `index_name` and `expected_columns` come from the static `REQUIRED_GAME_INDEXES` table.
+        conn.batch_execute(&format!("DROP INDEX IF EXISTS {index_name};"))?;
+        #[cfg(test)]
+        AFTER_FIRST_WRITE.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().take() {
+                hook(conn)?;
+            }
+            Ok::<(), Error>(())
+        })?;
+        conn.batch_execute(&format!(
+            "CREATE INDEX {index_name} ON Games({});",
+            expected_columns.join(", ")
+        ))?;
+    }
+    if super::later_added_required_indexes_need_repair(conn)? {
+        return Err(Error::InvalidInput(
+            "Required Games indexes were not repaired with their expected definitions".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn migrate_database(conn: &mut SqliteConnection) -> Result<bool, Error> {
     match schema_version(conn)? {
-        SchemaVersion::Current => validate_schema(conn).map(|()| false),
+        SchemaVersion::Current => {
+            validate_schema(conn)?;
+            if super::later_added_required_indexes_need_repair(conn)? {
+                conn.transaction::<_, Error, _>(repair_later_added_required_indexes)?;
+            }
+            Ok(false)
+        }
         SchemaVersion::Legacy => migrate_legacy_database(conn).map(|()| true),
         SchemaVersion::BeforeEventEditions => upgrade_to_event_editions(
             conn,
@@ -332,6 +371,7 @@ fn upgrade_to_event_editions(
         validate_sentinel_records_and_triggers_version(conn, false)?;
         migrate_prerequisites(conn)?;
         migrate_event_editions(conn)?;
+        repair_later_added_required_indexes(conn)?;
         insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
         // Commit on the schema contract only. get_db_info finds no
         // content stamp and schedules content_validation (f-20261107-02).
@@ -405,6 +445,7 @@ fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
         migrate_event_editions(conn)?;
         if restore_required_indexes {
             conn.batch_execute(super::INDEXES_SQL)?;
+            repair_later_added_required_indexes(conn)?;
         }
         insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
         validate_database(conn)
@@ -897,7 +938,7 @@ fn validate_single_column_unique(
     Ok(())
 }
 
-fn normalize_sql(sql: &str) -> String {
+pub(super) fn normalize_sql(sql: &str) -> String {
     sql.chars()
         .filter(|character| !character.is_whitespace())
         .collect::<String>()
@@ -1137,6 +1178,10 @@ mod tests {
             assert_eq!(
                 info_value(&mut conn, "Version").unwrap().as_deref(),
                 Some(CURRENT_DATABASE_VERSION)
+            );
+            assert!(
+                !super::super::has_any_required_index(&mut conn).unwrap(),
+                "unindexed {version} database must not gain required indexes during upgrade"
             );
             use super::super::{models::Event, schema::events};
             let editions = events::table
@@ -1548,6 +1593,10 @@ mod tests {
                 info_value(&mut conn, "Version").unwrap().as_deref(),
                 Some(CURRENT_DATABASE_VERSION)
             );
+            assert!(
+                !super::super::has_any_required_index(&mut conn).unwrap(),
+                "unindexed {version} database must not gain required indexes during upgrade"
+            );
             assert!(games_schema_is_canonical(&mut conn).unwrap());
             super::super::player_game_count_tests::assert_player_counts(&mut conn);
             super::super::event_summary_tests::assert_event_summaries(&mut conn);
@@ -1784,5 +1833,315 @@ mod tests {
             validate_games_schema(&mut conn),
             Err(Error::InvalidInput(message)) if message.contains("AUTOINCREMENT")
         ));
+    }
+
+    fn index_master_rowid(conn: &mut SqliteConnection, name: &str) -> i64 {
+        sql_query("SELECT rowid AS count FROM sqlite_master WHERE type = 'index' AND name = ?")
+            .bind::<Text, _>(name)
+            .get_result::<CountRow>(conn)
+            .unwrap()
+            .count
+    }
+
+    #[test]
+    fn current_indexed_database_repairs_missing_or_malformed_later_added_indexes_without_rebuilding_valid_ones(
+    ) {
+        struct RepairCase {
+            label: &'static str,
+            drop_names: &'static [&'static str],
+            malformed_sql: Option<&'static str>,
+            preserved_names: &'static [&'static str],
+        }
+        let cases = [
+            RepairCase {
+                label: "missing games_site_idx only",
+                drop_names: &["games_site_idx"],
+                malformed_sql: None,
+                preserved_names: &["games_date_idx", "games_date_time_idx"],
+            },
+            RepairCase {
+                label: "missing games_date_time_idx only",
+                drop_names: &["games_date_time_idx"],
+                malformed_sql: None,
+                preserved_names: &["games_date_idx", "games_site_idx"],
+            },
+            RepairCase {
+                label: "missing both later-added indexes",
+                drop_names: &["games_site_idx", "games_date_time_idx"],
+                malformed_sql: None,
+                preserved_names: &["games_date_idx", "games_plycount_idx"],
+            },
+            RepairCase {
+                label: "malformed games_site_idx wrong column",
+                drop_names: &["games_site_idx"],
+                malformed_sql: Some("CREATE INDEX games_site_idx ON Games(Date);"),
+                preserved_names: &["games_date_time_idx"],
+            },
+            RepairCase {
+                label: "malformed games_site_idx unique",
+                drop_names: &["games_site_idx"],
+                malformed_sql: Some("CREATE UNIQUE INDEX games_site_idx ON Games(SiteID);"),
+                preserved_names: &["games_date_time_idx"],
+            },
+            RepairCase {
+                label: "malformed games_site_idx partial",
+                drop_names: &["games_site_idx"],
+                malformed_sql: Some("CREATE INDEX games_site_idx ON Games(SiteID) WHERE SiteID != 0;"),
+                preserved_names: &["games_date_time_idx"],
+            },
+            RepairCase {
+                label: "malformed games_site_idx expression",
+                drop_names: &["games_site_idx"],
+                malformed_sql: Some("CREATE INDEX games_site_idx ON Games(abs(SiteID));"),
+                preserved_names: &["games_date_time_idx"],
+            },
+            RepairCase {
+                label: "malformed games_date_time_idx single column",
+                drop_names: &["games_date_time_idx"],
+                malformed_sql: Some("CREATE INDEX games_date_time_idx ON Games(Date);"),
+                preserved_names: &["games_site_idx"],
+            },
+            RepairCase {
+                label: "malformed games_date_time_idx swapped columns",
+                drop_names: &["games_date_time_idx"],
+                malformed_sql: Some("CREATE INDEX games_date_time_idx ON Games(UTCTime, Date);"),
+                preserved_names: &["games_site_idx"],
+            },
+            RepairCase {
+                label: "malformed games_date_time_idx unique",
+                drop_names: &["games_date_time_idx"],
+                malformed_sql: Some("CREATE UNIQUE INDEX games_date_time_idx ON Games(Date, UTCTime);"),
+                preserved_names: &["games_site_idx"],
+            },
+            RepairCase {
+                label: "malformed games_date_time_idx partial",
+                drop_names: &["games_date_time_idx"],
+                malformed_sql: Some(
+                    "CREATE INDEX games_date_time_idx ON Games(Date, UTCTime) WHERE Date IS NOT NULL;",
+                ),
+                preserved_names: &["games_site_idx"],
+            },
+            RepairCase {
+                label: "malformed games_date_time_idx desc",
+                drop_names: &["games_date_time_idx"],
+                malformed_sql: Some("CREATE INDEX games_date_time_idx ON Games(Date DESC, UTCTime DESC);"),
+                preserved_names: &["games_site_idx"],
+            },
+            RepairCase {
+                label: "malformed games_date_time_idx expression",
+                drop_names: &["games_date_time_idx"],
+                malformed_sql: Some("CREATE INDEX games_date_time_idx ON Games(Date, lower(UTCTime));"),
+                preserved_names: &["games_site_idx"],
+            },
+        ];
+
+        for RepairCase {
+            label,
+            drop_names,
+            malformed_sql,
+            preserved_names,
+        } in cases
+        {
+            let mut conn = connection();
+            prepare_database(&mut conn, "title", "description").unwrap();
+            conn.batch_execute(super::super::INDEXES_SQL).unwrap();
+            // Anchor a higher sqlite_master rowid so any dropped+recreated index gets a new rowid.
+            conn.batch_execute("CREATE INDEX rowid_anchor_idx ON Games(ECO);")
+                .unwrap();
+            for name in drop_names {
+                conn.batch_execute(&format!("DROP INDEX {name};")).unwrap();
+            }
+            if let Some(sql) = malformed_sql {
+                conn.batch_execute(sql).unwrap();
+            }
+            let preserved_before: Vec<(&str, i64)> = preserved_names
+                .iter()
+                .map(|&name| (name, index_master_rowid(&mut conn, name)))
+                .collect();
+
+            assert!(
+                !super::super::check_index_exists(&mut conn).unwrap(),
+                "{label}"
+            );
+            assert!(needs_upgrade(&mut conn).unwrap(), "{label}");
+            assert!(check_current_database(&mut conn).is_err(), "{label}");
+
+            take_content_pragma_counts();
+            assert!(!validate_existing_database(&mut conn).unwrap(), "{label}");
+            assert_eq!(take_content_pragma_counts(), (0, 0), "{label}");
+            assert_eq!(
+                info_value(&mut conn, "Version").unwrap().as_deref(),
+                Some(CURRENT_DATABASE_VERSION),
+                "{label}"
+            );
+            assert!(
+                super::super::check_index_exists(&mut conn).unwrap(),
+                "{label}"
+            );
+            assert!(!needs_upgrade(&mut conn).unwrap(), "{label}");
+            check_current_database(&mut conn).unwrap();
+            for (name, rowid_before) in preserved_before {
+                assert_eq!(
+                    index_master_rowid(&mut conn, name),
+                    rowid_before,
+                    "{label}: valid index {name} must not be rebuilt"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unindexed_and_malformed_original_index_databases_are_not_auto_repaired() {
+        let mut conn = connection();
+        prepare_database(&mut conn, "title", "description").unwrap();
+        assert!(!super::super::check_index_exists(&mut conn).unwrap());
+        assert!(!needs_upgrade(&mut conn).unwrap());
+        check_current_database(&mut conn).unwrap();
+        take_content_pragma_counts();
+        assert!(!validate_existing_database(&mut conn).unwrap());
+        assert_eq!(take_content_pragma_counts(), (0, 0));
+        assert!(!super::super::has_any_required_index(&mut conn).unwrap());
+
+        // Partial original seven-index set is left alone.
+        conn.batch_execute("CREATE INDEX games_date_idx ON Games(Date);")
+            .unwrap();
+        assert!(!needs_upgrade(&mut conn).unwrap());
+        check_current_database(&mut conn).unwrap();
+        assert!(!validate_existing_database(&mut conn).unwrap());
+        assert!(!super::super::check_index_exists(&mut conn).unwrap());
+
+        // A malformed original index prevents auto-repair even when all other original
+        // indexes are valid and later-added indexes are missing.
+        for malformed in [
+            "CREATE INDEX games_date_idx ON Games(Result);",
+            "CREATE INDEX games_date_idx ON Games(lower(Date));",
+        ] {
+            let mut malformed_conn = connection();
+            prepare_database(&mut malformed_conn, "title", "description").unwrap();
+            malformed_conn
+                .batch_execute(super::super::INDEXES_SQL)
+                .unwrap();
+            malformed_conn
+                .batch_execute(
+                    "DROP INDEX games_site_idx;
+                     DROP INDEX games_date_time_idx;
+                     DROP INDEX games_date_idx;",
+                )
+                .unwrap();
+            malformed_conn.batch_execute(malformed).unwrap();
+
+            assert!(!needs_upgrade(&mut malformed_conn).unwrap(), "{malformed}");
+            check_current_database(&mut malformed_conn).unwrap();
+            assert!(!validate_existing_database(&mut malformed_conn).unwrap());
+            assert!(!super::super::check_index_exists(&mut malformed_conn).unwrap());
+        }
+    }
+
+    #[test]
+    fn indexed_legacy_and_version_two_databases_upgrade_with_all_required_indexes() {
+        for version in [
+            LEGACY_DATABASE_VERSION,
+            PRE_ORIENTATION_DATABASE_VERSION,
+            PRE_GAME_COUNT_DATABASE_VERSION,
+            PRE_EVENT_SUMMARY_DATABASE_VERSION,
+            PRE_EVENT_EDITION_DATABASE_VERSION,
+        ] {
+            let mut conn = connection();
+            seed_editions(&mut conn, version);
+            conn.batch_execute(super::super::INDEXES_SQL).unwrap();
+            conn.batch_execute(
+                "DROP INDEX games_site_idx;
+                 DROP INDEX games_date_time_idx;",
+            )
+            .unwrap();
+            assert!(!super::super::check_index_exists(&mut conn).unwrap());
+
+            validate_existing_database(&mut conn).unwrap();
+
+            assert_eq!(
+                info_value(&mut conn, "Version").unwrap().as_deref(),
+                Some(CURRENT_DATABASE_VERSION),
+                "{version}"
+            );
+            assert!(
+                super::super::check_index_exists(&mut conn).unwrap(),
+                "{version}"
+            );
+            let index_count = sql_query(
+                "SELECT COUNT(*) AS count FROM sqlite_master \
+                 WHERE type = 'index' AND name LIKE 'games_%_idx' AND name != 'games_event_idx'",
+            )
+            .get_result::<CountRow>(&mut conn)
+            .unwrap()
+            .count;
+            assert_eq!(
+                index_count as usize,
+                super::super::REQUIRED_GAME_INDEXES.len(),
+                "{version}"
+            );
+            assert!(!needs_upgrade(&mut conn).unwrap(), "{version}");
+            check_current_database(&mut conn).unwrap();
+        }
+    }
+
+    #[test]
+    fn failed_later_added_index_repair_rolls_back() {
+        let mut conn = connection();
+        prepare_database(&mut conn, "title", "description").unwrap();
+        conn.batch_execute(super::super::INDEXES_SQL).unwrap();
+        conn.batch_execute(
+            "DROP INDEX games_date_time_idx;
+             CREATE INDEX games_date_time_idx ON Games(Date);",
+        )
+        .unwrap();
+
+        let _hook = after_first_write_hook(|conn| {
+            let remaining = sql_query(
+                "SELECT COUNT(*) AS count FROM sqlite_master \
+                 WHERE type = 'index' AND name = 'games_date_time_idx'",
+            )
+            .get_result::<CountRow>(conn)?
+            .count;
+            assert_eq!(remaining, 0);
+            Err(Error::InvalidInput("injected index repair failure".into()))
+        });
+        let error = validate_existing_database(&mut conn).unwrap_err();
+        assert!(format!("{error:?}").contains("injected index repair failure"));
+        drop(_hook);
+
+        let restored_sql: super::super::IndexSqlInfo = sql_query(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'games_date_time_idx'",
+        )
+        .get_result(&mut conn)
+        .unwrap();
+        assert_eq!(
+            normalize_sql(&restored_sql.sql),
+            "CREATEINDEXGAMES_DATE_TIME_IDXONGAMES(DATE)"
+        );
+        assert!(needs_upgrade(&mut conn).unwrap());
+
+        assert!(!validate_existing_database(&mut conn).unwrap());
+        check_current_database(&mut conn).unwrap();
+
+        // Failing later in a 2.x upgrade also rolls back repaired indexes and Version.
+        let mut older = connection();
+        seed_editions(&mut older, PRE_EVENT_EDITION_DATABASE_VERSION);
+        older.batch_execute(super::super::INDEXES_SQL).unwrap();
+        older
+            .batch_execute(
+                "DROP INDEX games_site_idx;
+                 DROP INDEX games_date_time_idx;
+                 CREATE TEMP TRIGGER reject_edition_version BEFORE INSERT ON Info
+                 WHEN NEW.Name = 'Version'
+                 BEGIN SELECT RAISE(ABORT, 'injected edition write failure'); END;",
+            )
+            .unwrap();
+        let error = validate_existing_database(&mut older).unwrap_err();
+        assert!(format!("{error:?}").contains("injected edition write failure"));
+        assert_eq!(
+            info_value(&mut older, "Version").unwrap().as_deref(),
+            Some(PRE_EVENT_EDITION_DATABASE_VERSION)
+        );
+        assert!(!super::super::check_index_exists(&mut older).unwrap());
     }
 }

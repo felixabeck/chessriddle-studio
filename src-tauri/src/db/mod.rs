@@ -1249,6 +1249,8 @@ mod event_edition_tests;
 mod insert_db_game_tests;
 #[cfg(test)]
 mod player_game_count_tests;
+#[cfg(test)]
+mod query_sort_tests;
 
 #[cfg(test)]
 static CONVERSION_BEFORE_REVISION: crate::infra::test_hooks::KeyedTestHooks<String> =
@@ -1482,10 +1484,17 @@ pub enum DatabaseInfoResult {
     },
 }
 
+#[cfg(test)]
 #[derive(QueryableByName, Debug, Serialize)]
 struct IndexInfo {
     #[diesel(sql_type = Text, column_name = "name")]
     _name: String,
+}
+
+#[derive(QueryableByName)]
+struct IndexColumnInfo {
+    #[diesel(sql_type = Nullable<Text>)]
+    name: Option<String>,
 }
 
 #[derive(QueryableByName)]
@@ -1504,15 +1513,21 @@ struct IndexSqlInfo {
     sql: String,
 }
 
-const REQUIRED_GAME_INDEXES: [(&str, &str); 8] = [
-    ("games_date_idx", "Date"),
-    ("games_white_idx", "WhiteID"),
-    ("games_black_idx", "BlackID"),
-    ("games_result_idx", "Result"),
-    ("games_white_elo_idx", "WhiteElo"),
-    ("games_black_elo_idx", "BlackElo"),
-    ("games_plycount_idx", "PlyCount"),
-    ("games_site_idx", "SiteID"),
+// The first seven entries form the original indexed-database contract; any
+// subsequent entries were added later and are repaired on upgrade for
+// databases that already have the original seven.
+const ORIGINAL_REQUIRED_GAME_INDEX_COUNT: usize = 7;
+
+const REQUIRED_GAME_INDEXES: [(&str, &[&str]); 9] = [
+    ("games_date_idx", &["Date"]),
+    ("games_white_idx", &["WhiteID"]),
+    ("games_black_idx", &["BlackID"]),
+    ("games_result_idx", &["Result"]),
+    ("games_white_elo_idx", &["WhiteElo"]),
+    ("games_black_elo_idx", &["BlackElo"]),
+    ("games_plycount_idx", &["PlyCount"]),
+    ("games_site_idx", &["SiteID"]),
+    ("games_date_time_idx", &["Date", "UTCTime"]),
 ];
 
 /// Whether any required game index exists, valid or not.
@@ -1531,45 +1546,88 @@ fn has_any_required_index(conn: &mut SqliteConnection) -> Result<bool, Error> {
     Ok(false)
 }
 
-fn check_index_exists(conn: &mut SqliteConnection) -> Result<bool, Error> {
-    for (index_name, expected_column) in REQUIRED_GAME_INDEXES {
-        let definitions: Vec<IndexListInfo> = sql_query(
-            "SELECT name, \"unique\" AS unique_value, partial
-             FROM pragma_index_list('Games') WHERE name = ?",
-        )
-        .bind::<Text, _>(index_name)
-        .load(conn)?;
-        if definitions.len() != 1
-            || definitions[0].name != index_name
-            || definitions[0].unique_value != 0
-            || definitions[0].partial != 0
-        {
-            return Ok(false);
-        }
-        let indexes: Vec<IndexInfo> = sql_query("SELECT name FROM pragma_index_info(?)")
+fn games_index_matches(
+    conn: &mut SqliteConnection,
+    index_name: &str,
+    expected_columns: &[&str],
+) -> Result<bool, Error> {
+    let definitions: Vec<IndexListInfo> = sql_query(
+        "SELECT name, \"unique\" AS unique_value, partial
+         FROM pragma_index_list('Games') WHERE name = ?",
+    )
+    .bind::<Text, _>(index_name)
+    .load(conn)?;
+    if definitions.len() != 1
+        || definitions[0].name != index_name
+        || definitions[0].unique_value != 0
+        || definitions[0].partial != 0
+    {
+        return Ok(false);
+    }
+    let columns: Vec<IndexColumnInfo> =
+        sql_query("SELECT name FROM pragma_index_info(?) ORDER BY seqno")
             .bind::<Text, _>(index_name)
             .load(conn)?;
-        if indexes.len() != 1 || indexes[0]._name != expected_column {
-            return Ok(false);
-        }
-        let stored: IndexSqlInfo = sql_query(
-            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ? AND tbl_name = 'Games'",
-        )
-        .bind::<Text, _>(index_name)
-        .get_result(conn)?;
-        let normalize = |sql: &str| {
-            sql.chars()
-                .filter(|character| !character.is_whitespace())
-                .collect::<String>()
-                .to_ascii_uppercase()
-        };
-        if normalize(&stored.sql)
-            != format!("CREATEINDEX{index_name}ONGAMES({expected_column})").to_ascii_uppercase()
-        {
+    if columns.len() != expected_columns.len()
+        || !columns
+            .iter()
+            .zip(expected_columns)
+            .all(|(column, expected)| column.name.as_deref() == Some(*expected))
+    {
+        return Ok(false);
+    }
+    let stored: IndexSqlInfo = sql_query(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ? AND tbl_name = 'Games'",
+    )
+    .bind::<Text, _>(index_name)
+    .get_result(conn)?;
+    let expected_sql = format!(
+        "CREATEINDEX{index_name}ONGAMES({})",
+        expected_columns.join(",")
+    )
+    .to_ascii_uppercase();
+    Ok(migrations::normalize_sql(&stored.sql) == expected_sql)
+}
+
+fn check_index_exists(conn: &mut SqliteConnection) -> Result<bool, Error> {
+    for (index_name, expected_columns) in REQUIRED_GAME_INDEXES {
+        if !games_index_matches(conn, index_name, expected_columns)? {
             return Ok(false);
         }
     }
     Ok(true)
+}
+
+/// Later-added required indexes that are missing or malformed on a database
+/// whose original seven-index contract is intact.
+pub(super) fn later_added_indexes_needing_repair(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<(&'static str, &'static [&'static str])>, Error> {
+    for (index_name, expected_columns) in
+        &REQUIRED_GAME_INDEXES[..ORIGINAL_REQUIRED_GAME_INDEX_COUNT]
+    {
+        if !games_index_matches(conn, index_name, expected_columns)? {
+            return Ok(Vec::new());
+        }
+    }
+    let mut missing = Vec::new();
+    for &(index_name, expected_columns) in
+        &REQUIRED_GAME_INDEXES[ORIGINAL_REQUIRED_GAME_INDEX_COUNT..]
+    {
+        if !games_index_matches(conn, index_name, expected_columns)? {
+            missing.push((index_name, expected_columns));
+        }
+    }
+    Ok(missing)
+}
+
+/// Whether the original seven-index contract is intact and at least one
+/// later-added required index (`games_site_idx`, `games_date_time_idx`) is
+/// missing or malformed.
+pub(super) fn later_added_required_indexes_need_repair(
+    conn: &mut SqliteConnection,
+) -> Result<bool, Error> {
+    Ok(!later_added_indexes_needing_repair(conn)?.is_empty())
 }
 
 fn create_required_indexes(conn: &mut SqliteConnection) -> Result<(), Error> {
@@ -1593,7 +1651,7 @@ fn create_required_indexes_body(conn: &mut SqliteConnection) -> Result<(), Error
 
 fn drop_required_indexes_body(conn: &mut SqliteConnection) -> Result<(), Error> {
     conn.batch_execute(DELETE_INDEXES_SQL)?;
-    if check_index_exists(conn)? {
+    if has_any_required_index(conn)? {
         return Err(Error::InvalidInput(
             "Required Games indexes remain after deletion".into(),
         ));
@@ -3709,6 +3767,13 @@ mod tests {
 
         db.batch_execute("CREATE INDEX games_date_idx ON Games(Result);")
             .unwrap();
+        assert!(!check_index_exists(db).unwrap());
+
+        db.batch_execute(
+            "DROP INDEX games_date_idx;
+             CREATE INDEX games_date_idx ON Games(lower(Date));",
+        )
+        .unwrap();
         assert!(!check_index_exists(db).unwrap());
 
         create_required_indexes(db).unwrap();
@@ -15576,6 +15641,40 @@ mod index_cancellation_tests {
     #[test]
     fn delete_ddl_cancel_restores_complete_indexes_and_recovers() {
         ddl_cancel_case(false, false);
+    }
+
+    #[test]
+    fn delete_indexes_on_seven_index_database_removes_all_required_indexes() {
+        let (_directory, app, handle, path) = blocking_database_case();
+        let mut raw = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        raw.batch_execute(INDEXES_SQL).unwrap();
+        raw.batch_execute(
+            "DROP INDEX games_site_idx;
+             DROP INDEX games_date_time_idx;",
+        )
+        .unwrap();
+        assert!(later_added_required_indexes_need_repair(&mut raw).unwrap());
+        drop(raw);
+
+        let state = app.state::<AppState>();
+        run(&state, handle.clone(), false, &CancellationToken::new()).unwrap();
+
+        let target = resolve_database(
+            &state.pgn_path_authority,
+            &handle,
+            PathOperation::DatabaseRead,
+        )
+        .unwrap();
+        let mut connection = get_db_or_create(
+            &state.database_repository,
+            &target,
+            None,
+            &state.pgn_path_authority,
+            &handle,
+        )
+        .unwrap();
+        assert!(!check_index_exists(&mut connection).unwrap());
+        assert!(!has_any_required_index(&mut connection).unwrap());
     }
 
     fn lock_cancel_case(create: bool) {

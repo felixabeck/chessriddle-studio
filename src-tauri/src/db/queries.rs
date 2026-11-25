@@ -785,9 +785,9 @@ pub(super) fn load_games(
             sql_query = sql_query.offset(offset);
         }
 
-        // Name sorts order by the joined table's index key, then the game ID, so the plain sort
-        // and the index walk return the same rows in the same order.
-        macro_rules! order_by_name {
+        // Order by the requested key(s), then the game ID in the same direction so pages
+        // partition ties deterministically and index walks match plain sorts.
+        macro_rules! order_by_then_id {
             ($($column:expr),+) => {
                 match query_options.direction {
                     SortDirection::Asc => sql_query.order(($($column.asc(),)+ games::id.asc())),
@@ -800,10 +800,7 @@ pub(super) fn load_games(
                 SortDirection::Asc => sql_query.order(games::id.asc()),
                 SortDirection::Desc => sql_query.order(games::id.desc()),
             },
-            GameSort::Date => match query_options.direction {
-                SortDirection::Asc => sql_query.order((games::date.asc(), games::time.asc())),
-                SortDirection::Desc => sql_query.order((games::date.desc(), games::time.desc())),
-            },
+            GameSort::Date => order_by_then_id!(games::date, games::time),
             // This sort is always newest first, independently of the legacy direction option.
             GameSort::Newest => sql_query.order((
                 diesel::dsl::sql::<Text>(&format!(
@@ -814,30 +811,21 @@ pub(super) fn load_games(
                 games::time.desc(),
                 games::id.desc(),
             )),
-            GameSort::WhiteElo => match query_options.direction {
-                SortDirection::Asc => sql_query.order(games::white_elo.asc()),
-                SortDirection::Desc => sql_query.order(games::white_elo.desc()),
-            },
-            GameSort::BlackElo => match query_options.direction {
-                SortDirection::Asc => sql_query.order(games::black_elo.asc()),
-                SortDirection::Desc => sql_query.order(games::black_elo.desc()),
-            },
-            GameSort::PlyCount => match query_options.direction {
-                SortDirection::Asc => sql_query.order(games::ply_count.asc()),
-                SortDirection::Desc => sql_query.order(games::ply_count.desc()),
-            },
+            GameSort::WhiteElo => order_by_then_id!(games::white_elo),
+            GameSort::BlackElo => order_by_then_id!(games::black_elo),
+            GameSort::PlyCount => order_by_then_id!(games::ply_count),
             // games_result_idx already holds (Result, ID) in order.
-            GameSort::Result => order_by_name!(games::result),
-            GameSort::White => order_by_name!(
+            GameSort::Result => order_by_then_id!(games::result),
+            GameSort::White => order_by_then_id!(
                 white_players.field(players::name),
                 white_players.field(players::id)
             ),
-            GameSort::Black => order_by_name!(
+            GameSort::Black => order_by_then_id!(
                 black_players.field(players::name),
                 black_players.field(players::id)
             ),
-            GameSort::Event => order_by_name!(events::name, events::year, events::id),
-            GameSort::Site => order_by_name!(sites::name, sites::id),
+            GameSort::Event => order_by_then_id!(events::name, events::year, events::id),
+            GameSort::Site => order_by_then_id!(sites::name, sites::id),
         };
         let count = matches.filter(|_| !query_options.skip_count);
         #[cfg(all(test, unix))]
@@ -1258,12 +1246,12 @@ pub(super) fn get_players_blocking(
                 SortDirection::Desc => sql_query.order(players::id.desc()),
             },
             PlayerSort::Name => match query.options.direction {
-                SortDirection::Asc => sql_query.order(players::name.asc()),
-                SortDirection::Desc => sql_query.order(players::name.desc()),
+                SortDirection::Asc => sql_query.order((players::name.asc(), players::id.asc())),
+                SortDirection::Desc => sql_query.order((players::name.desc(), players::id.desc())),
             },
             PlayerSort::Elo => match query.options.direction {
-                SortDirection::Asc => sql_query.order(players::elo.asc()),
-                SortDirection::Desc => sql_query.order(players::elo.desc()),
+                SortDirection::Asc => sql_query.order((players::elo.asc(), players::id.asc())),
+                SortDirection::Desc => sql_query.order((players::elo.desc(), players::id.desc())),
             },
             PlayerSort::Games => match query.options.direction {
                 SortDirection::Asc => sql_query.order((
