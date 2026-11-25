@@ -1504,7 +1504,7 @@ struct IndexSqlInfo {
     sql: String,
 }
 
-const REQUIRED_GAME_INDEXES: [(&str, &str); 7] = [
+const REQUIRED_GAME_INDEXES: [(&str, &str); 8] = [
     ("games_date_idx", "Date"),
     ("games_white_idx", "WhiteID"),
     ("games_black_idx", "BlackID"),
@@ -1512,7 +1512,24 @@ const REQUIRED_GAME_INDEXES: [(&str, &str); 7] = [
     ("games_white_elo_idx", "WhiteElo"),
     ("games_black_elo_idx", "BlackElo"),
     ("games_plycount_idx", "PlyCount"),
+    ("games_site_idx", "SiteID"),
 ];
+
+/// Whether any required game index exists, valid or not.
+fn has_any_required_index(conn: &mut SqliteConnection) -> Result<bool, Error> {
+    for (index_name, _) in REQUIRED_GAME_INDEXES {
+        let definitions: Vec<IndexListInfo> = sql_query(
+            "SELECT name, \"unique\" AS unique_value, partial
+             FROM pragma_index_list('Games') WHERE name = ?",
+        )
+        .bind::<Text, _>(index_name)
+        .load(conn)?;
+        if !definitions.is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 fn check_index_exists(conn: &mut SqliteConnection) -> Result<bool, Error> {
     for (index_name, expected_column) in REQUIRED_GAME_INDEXES {
@@ -9256,6 +9273,274 @@ mod tests {
         let ascending = query(GameSort::Date, SortDirection::Asc, None);
         assert_eq!(&ascending[..3], &[ids[10], ids[9], ids[0]]);
         assert_eq!(&ascending[ascending.len() - 3..], &[ids[2], ids[1], ids[8]]);
+    }
+
+    #[test]
+    fn name_sort_walk_is_refused_when_a_filter_fixes_the_sorted_key() {
+        let filtered = |sides, player1, player2, tournament_id| GameQuery {
+            sides,
+            player1,
+            player2,
+            tournament_id,
+            ..GameQuery::new()
+        };
+        let white_first = filtered(Some(Sides::WhiteBlack), Some(1), None, None);
+        let white_second = filtered(Some(Sides::BlackWhite), None, Some(1), None);
+        let black_second = filtered(Some(Sides::WhiteBlack), None, Some(1), None);
+        let black_first = filtered(Some(Sides::BlackWhite), Some(1), None, None);
+        let either_side = filtered(Some(Sides::Any), Some(1), None, None);
+        let tournament = filtered(None, None, None, Some(1));
+        for (sort, pinned, free) in [
+            (
+                GameSort::White,
+                vec![&white_first, &white_second],
+                vec![&black_second, &black_first, &either_side, &tournament],
+            ),
+            (
+                GameSort::Black,
+                vec![&black_second, &black_first],
+                vec![&white_first, &white_second, &either_side, &tournament],
+            ),
+            (
+                GameSort::Event,
+                vec![&tournament],
+                vec![&white_first, &black_first, &either_side],
+            ),
+            (
+                GameSort::Site,
+                vec![],
+                vec![&white_first, &black_first, &tournament],
+            ),
+        ] {
+            for query in pinned {
+                assert!(queries::pins_sorted_key(&sort, query), "{sort:?} {query:?}");
+            }
+            for query in free {
+                assert!(
+                    !queries::pins_sorted_key(&sort, query),
+                    "{sort:?} {query:?}"
+                );
+            }
+        }
+    }
+
+    #[derive(QueryableByName)]
+    struct QueryPlanRow {
+        #[diesel(sql_type = Text)]
+        detail: String,
+    }
+
+    #[test]
+    fn game_name_sorts_return_the_same_pages_from_the_sort_and_the_index_walk() {
+        let (_dir, app, handle, database) = blocking_database_case();
+        let mut db = SqliteConnection::establish(&database.to_string_lossy()).unwrap();
+        // Unnamed games link to the "Unknown" placeholder rows, which sort by that name.
+        let fixtures = [
+            (Some("Zukertort"), Some("1-0")),
+            (None, None),
+            (Some("Chapter 1"), Some("0-1")),
+            (Some("Anand"), Some("1/2-1/2")),
+            (Some("Chapter 1puz"), Some("*")),
+        ];
+        // Three copies make ties span pages and give the index walk enough matches to win.
+        let ids = (0..3)
+            .flat_map(|_| fixtures)
+            .map(|(name, result)| {
+                TempGame {
+                    white_name: name.map(str::to_owned),
+                    black_name: name.map(str::to_owned),
+                    event_name: name.map(str::to_owned),
+                    site_name: name.map(str::to_owned),
+                    result: result.map(str::to_owned),
+                    ..Default::default()
+                }
+                .insert_to_db(&mut db)
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let state = app.state::<AppState>();
+        let query = |sort: GameSort, direction: SortDirection, page: Option<i32>| {
+            get_games_blocking(
+                &state.pgn_path_authority,
+                &state.database_repository,
+                handle.clone(),
+                GameQuery {
+                    options: Some(QueryOptions {
+                        sort,
+                        direction,
+                        page,
+                        page_size: page.map(|_| 2),
+                        skip_count: true,
+                    }),
+                    ..GameQuery::new()
+                },
+                &CancellationToken::new(),
+            )
+            .unwrap()
+        };
+        let by_name = ["Anand", "Chapter 1", "Chapter 1puz", "Unknown", "Zukertort"];
+        let fixture_of = |name: &str| match name {
+            "Zukertort" => 0,
+            "Unknown" => 1,
+            "Chapter 1" => 2,
+            "Anand" => 3,
+            _ => 4,
+        };
+        let ascending = by_name
+            .iter()
+            .flat_map(|name| {
+                (0..3)
+                    .map(|copy| ids[copy * 5 + fixture_of(name)])
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let descending = ascending.iter().rev().copied().collect::<Vec<_>>();
+        let name_sorts = [
+            GameSort::White,
+            GameSort::Black,
+            GameSort::Event,
+            GameSort::Site,
+        ];
+        let check_all = |indexed: bool| {
+            for sort in name_sorts.clone() {
+                for (direction, expected) in [
+                    (SortDirection::Asc, &ascending),
+                    (SortDirection::Desc, &descending),
+                ] {
+                    let whole = query(sort.clone(), direction.clone(), None);
+                    assert_eq!(whole.count, None, "{sort:?}");
+                    let whole = whole
+                        .data
+                        .into_iter()
+                        .map(|game| game.id)
+                        .collect::<Vec<_>>();
+                    assert_eq!(&whole, expected, "{sort:?} {direction:?} indexed={indexed}");
+                    let paged = (1..=8)
+                        .flat_map(|page| query(sort.clone(), direction.clone(), Some(page)).data)
+                        .map(|game| game.id)
+                        .collect::<Vec<_>>();
+                    assert_eq!(&paged, expected, "{sort:?} {direction:?} indexed={indexed}");
+                }
+            }
+        };
+        let walks = |db: &mut SqliteConnection, sort: &GameSort| {
+            let index = queries::name_sort_index(sort).unwrap();
+            queries::name_index_walk_is_cheaper(
+                db,
+                index,
+                15,
+                Some(2),
+                Some(0),
+                &CancellationToken::new(),
+            )
+            .unwrap()
+        };
+
+        // Without the optional indexes only Event walks: games_event_idx belongs to the schema.
+        for sort in &name_sorts {
+            assert_eq!(walks(&mut db, sort), *sort == GameSort::Event, "{sort:?}");
+        }
+        check_all(false);
+        // With them, the first pages walk the name index and the last ones sort.
+        db.batch_execute(INDEXES_SQL).unwrap();
+        for sort in &name_sorts {
+            assert!(walks(&mut db, sort), "{sort:?}");
+        }
+        // The walk puts the unary plus on the sorted name table's join only, and SQLite then
+        // reads that table's name index in order instead of sorting every game.
+        let hinted_joins = ["+white.ID", "+black.ID", "+Events.ID", "+Sites.ID"];
+        let walked_tables = ["white", "black", "Events", "Sites"];
+        for (position, sort) in name_sorts.iter().enumerate() {
+            for (plain_page, page) in [(false, Some(1)), (true, None)] {
+                query(sort.clone(), SortDirection::Asc, page);
+                let sql = queries::take_last_game_page_sql().unwrap();
+                for (join, hinted) in hinted_joins.iter().enumerate() {
+                    let expected = join == position && !plain_page;
+                    assert_eq!(sql.contains(hinted), expected, "{sort:?} {page:?}: {sql}");
+                }
+                if plain_page {
+                    continue;
+                }
+                let sql = sql
+                    .split(" -- binds")
+                    .next()
+                    .unwrap()
+                    .replace("LIMIT ? OFFSET ?", "LIMIT 2 OFFSET 0");
+                let plan = sql_query(format!("EXPLAIN QUERY PLAN {sql}"))
+                    .load::<QueryPlanRow>(&mut db)
+                    .unwrap()
+                    .into_iter()
+                    .map(|row| row.detail)
+                    .collect::<Vec<_>>();
+                assert!(
+                    plan.first().is_some_and(|step| {
+                        step.starts_with(&format!("SCAN {} USING ", walked_tables[position]))
+                            && step.contains("INDEX sqlite_autoindex_")
+                    }),
+                    "{sort:?}: {plan:?}"
+                );
+                assert!(
+                    !plan.iter().any(|step| step.contains("TEMP B-TREE")),
+                    "{sort:?}: {plan:?}"
+                );
+            }
+        }
+        // A filter narrows the count and the page alike, and narrow matches sort plainly.
+        let anand = get_games_blocking(
+            &state.pgn_path_authority,
+            &state.database_repository,
+            handle.clone(),
+            GameQuery {
+                player_name: Some("Anand".into()),
+                options: Some(QueryOptions {
+                    sort: GameSort::White,
+                    direction: SortDirection::Desc,
+                    page: Some(1),
+                    page_size: Some(2),
+                    skip_count: false,
+                }),
+                ..GameQuery::new()
+            },
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(anand.count, Some(3));
+        assert_eq!(
+            anand.data.iter().map(|game| game.id).collect::<Vec<_>>(),
+            [ids[13], ids[8]]
+        );
+        assert!(!queries::take_last_game_page_sql()
+            .unwrap()
+            .contains("+white.ID"));
+        let deep_page = queries::name_index_walk_is_cheaper(
+            &mut db,
+            "games_white_idx",
+            15,
+            Some(2),
+            Some(12),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(!deep_page);
+        check_all(true);
+        drop(db);
+
+        let results = query(GameSort::Result, SortDirection::Asc, None)
+            .data
+            .into_iter()
+            .map(|game| game.id)
+            .collect::<Vec<_>>();
+        // SQLite sorts a missing result first; ties keep game order.
+        let result_order = [1, 4, 2, 0, 3];
+        let expected = result_order
+            .iter()
+            .flat_map(|fixture| {
+                (0..3)
+                    .map(|copy| ids[copy * 5 + fixture])
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(results, expected);
     }
 
     #[test]

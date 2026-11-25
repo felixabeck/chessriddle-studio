@@ -11,6 +11,10 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 - Opponent preparation: use "Online opponent" in the Library to look up a Lichess or Chess.com account, download their games, and open their player card on the Preparation tab without needing a game in a database first; entering the same account again opens the card without downloading a second copy.
 - Explorer: when you open a board from a database player's "Prepare on board" button, your reference database appears as an extra column beside the opponent's games and can be removed and restored.
 
+### Improved
+
+- Databases: sort the game list by White, Black, Result, Event and Site, not only by Date and Plies.
+
 ## 1.1.0
 
 ### New

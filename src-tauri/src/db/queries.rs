@@ -24,6 +24,16 @@ pub enum GameSort {
     BlackElo,
     #[serde(rename = "plyCount")]
     PlyCount,
+    #[serde(rename = "white")]
+    White,
+    #[serde(rename = "black")]
+    Black,
+    #[serde(rename = "result")]
+    Result,
+    #[serde(rename = "event")]
+    Event,
+    #[serde(rename = "site")]
+    Site,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Type)]
@@ -544,6 +554,88 @@ pub(super) fn get_games_blocking(
     load_games(db, authority, &file, query, None, cancellation)
 }
 
+// Read only by the Unix-gated `db::tests`.
+#[cfg(all(test, unix))]
+thread_local! {
+    /// The last game page query `load_games` built on this thread, so tests can check its plan.
+    static LAST_GAME_PAGE_SQL: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(all(test, unix))]
+pub(super) fn take_last_game_page_sql() -> Option<String> {
+    LAST_GAME_PAGE_SQL.with(|last| last.borrow_mut().take())
+}
+
+/// The game index a name sort can walk in name order, joined from its name table.
+pub(super) fn name_sort_index(sort: &GameSort) -> Option<&'static str> {
+    match sort {
+        GameSort::White => Some("games_white_idx"),
+        GameSort::Black => Some("games_black_idx"),
+        GameSort::Event => Some("games_event_idx"),
+        GameSort::Site => Some("games_site_idx"),
+        _ => None,
+    }
+}
+
+/// Whether a filter fixes the sorted key, which puts every match at one name, where a walk
+/// would pass every game sorted before it.
+pub(super) fn pins_sorted_key(sort: &GameSort, query: &GameQuery) -> bool {
+    match (sort, &query.sides) {
+        (GameSort::White, Some(Sides::WhiteBlack)) => query.player1.is_some(),
+        (GameSort::White, Some(Sides::BlackWhite)) => query.player2.is_some(),
+        (GameSort::Black, Some(Sides::WhiteBlack)) => query.player2.is_some(),
+        (GameSort::Black, Some(Sides::BlackWhite)) => query.player1.is_some(),
+        (GameSort::Event, _) => query.tournament_id.is_some(),
+        _ => false,
+    }
+}
+
+/// Measured on 12.4M games: sorting all matches costs 0.8 µs (0.7M date-window matches) to
+/// 2.8 µs (every game) per match, while walking a name index costs about 4 µs per game it
+/// passes. The walk passes roughly `(offset + limit) * games / matches` games before it fills
+/// the page and assumes matches spread over the names. A wrong walk costs far more than a wrong
+/// sort, so the ratio takes the cheapest measured sort.
+const NAME_INDEX_WALK_COST_RATIO: f64 = 5.0;
+
+/// Whether walking the name index beats sorting every match for this page. Without a page
+/// limit or without the index, the sort always runs.
+pub(super) fn name_index_walk_is_cheaper(
+    db: &mut SqliteConnection,
+    index: &str,
+    matches: i64,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    cancellation: &CancellationToken,
+) -> Result<bool, Error> {
+    #[derive(QueryableByName)]
+    struct WalkInputs {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        indexed: i64,
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        games: i64,
+    }
+    let Some(limit) = limit else {
+        return Ok(false);
+    };
+    if matches == 0 {
+        return Ok(false);
+    }
+    let inputs = sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+        diesel::sql_query(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?)
+                 AS indexed,
+             COALESCE((SELECT MAX(ID) FROM Games), 0) AS games",
+        )
+        .bind::<Text, _>(index)
+        .get_result::<WalkInputs>(db)
+    })?;
+    if inputs.indexed == 0 {
+        return Ok(false);
+    }
+    let passed = (offset.unwrap_or(0) + limit) as f64 * inputs.games as f64 / matches as f64;
+    Ok(passed * NAME_INDEX_WALK_COST_RATIO < matches as f64)
+}
+
 pub(super) fn load_games(
     db: &mut SqliteConnection,
     authority: &crate::infra::path_authority::SharedPathAuthority,
@@ -553,140 +645,156 @@ pub(super) fn load_games(
     cancellation: &CancellationToken,
 ) -> Result<QueryResponse<Vec<NormalizedGame>>, Error> {
     db.transaction::<_, Error, _>(|db| {
-        let mut count: Option<i64> = None;
-        let query_options = query.options.unwrap_or_default();
+        let query_options = query.options.clone().unwrap_or_default();
+        let name_patterns = query
+            .player_name
+            .as_deref()
+            .map(player_name_patterns)
+            .transpose()?;
 
-        let (white_players, black_players) = diesel::alias!(players as white, players as black);
-        let mut sql_query = games::table
-            .inner_join(white_players.on(games::white_id.eq(white_players.field(players::id))))
-            .inner_join(black_players.on(games::black_id.eq(black_players.field(players::id))))
-            .inner_join(events::table.on(games::event_id.eq(events::id)))
-            .inner_join(sites::table.on(games::site_id.eq(sites::id)))
-            .into_boxed();
-        let mut count_query = games::table.into_boxed();
-
-        if let Some(id) = game_id {
-            sql_query = sql_query.filter(games::id.eq(id));
-            count_query = count_query.filter(games::id.eq(id));
-        }
-
-        if let Some(name) = query.player_name {
-            for pattern in player_name_patterns(&name)? {
-                let matching_players = players::table
-                    .filter(
-                        name_identity::normalized_name(players::name)
-                            .like(pattern)
-                            .escape('\\'),
-                    )
-                    .select(players::id);
-                let predicate = games::white_id
-                    .eq_any(matching_players.clone())
-                    .or(games::black_id.eq_any(matching_players));
-                sql_query = sql_query.filter(predicate.clone());
-                count_query = count_query.filter(predicate);
-            }
-        }
-
-        if let Some(outcome) = query.outcome {
-            sql_query = sql_query.filter(games::result.eq(outcome.clone()));
-            count_query = count_query.filter(games::result.eq(outcome));
-        }
-
-        if let Some(start_date) = query.start_date {
-            let date_filter = search::date_interval_endpoint_sql(false).ge(start_date);
-            sql_query = sql_query.filter(date_filter.clone());
-            count_query = count_query.filter(date_filter);
-        }
-
-        if let Some(end_date) = query.end_date {
-            let date_filter = search::date_interval_endpoint_sql(true).le(end_date);
-            sql_query = sql_query.filter(date_filter.clone());
-            count_query = count_query.filter(date_filter);
-        }
-
-        if let Some(tournament_id) = query.tournament_id {
-            sql_query = sql_query.filter(games::event_id.eq(tournament_id));
-            count_query = count_query.filter(games::event_id.eq(tournament_id));
+        // The count and the page share one filter set.
+        macro_rules! filter_games {
+            ($games:expr) => {{
+                let mut filtered = $games;
+                if let Some(id) = game_id {
+                    filtered = filtered.filter(games::id.eq(id));
+                }
+                for pattern in name_patterns.iter().flatten() {
+                    let matching_players = players::table
+                        .filter(
+                            name_identity::normalized_name(players::name)
+                                .like(pattern.clone())
+                                .escape('\\'),
+                        )
+                        .select(players::id);
+                    filtered = filtered.filter(
+                        games::white_id
+                            .eq_any(matching_players.clone())
+                            .or(games::black_id.eq_any(matching_players)),
+                    );
+                }
+                if let Some(outcome) = &query.outcome {
+                    filtered = filtered.filter(games::result.eq(outcome.clone()));
+                }
+                if let Some(start_date) = &query.start_date {
+                    filtered = filtered
+                        .filter(search::date_interval_endpoint_sql(false).ge(start_date.clone()));
+                }
+                if let Some(end_date) = &query.end_date {
+                    filtered = filtered
+                        .filter(search::date_interval_endpoint_sql(true).le(end_date.clone()));
+                }
+                if let Some(tournament_id) = query.tournament_id {
+                    filtered = filtered.filter(games::event_id.eq(tournament_id));
+                }
+                match query.sides {
+                    Some(Sides::BlackWhite) => {
+                        if let Some(player1) = query.player1 {
+                            filtered = filtered.filter(games::black_id.eq(player1));
+                        }
+                        if let Some(player2) = query.player2 {
+                            filtered = filtered.filter(games::white_id.eq(player2));
+                        }
+                        if let Some(range1) = query.range1 {
+                            filtered = filtered.filter(elo_band(games::black_elo, range1));
+                        }
+                        if let Some(range2) = query.range2 {
+                            filtered = filtered.filter(elo_band(games::white_elo, range2));
+                        }
+                    }
+                    Some(Sides::WhiteBlack) => {
+                        if let Some(player1) = query.player1 {
+                            filtered = filtered.filter(games::white_id.eq(player1));
+                        }
+                        if let Some(player2) = query.player2 {
+                            filtered = filtered.filter(games::black_id.eq(player2));
+                        }
+                        if let Some(range1) = query.range1 {
+                            filtered = filtered.filter(elo_band(games::white_elo, range1));
+                        }
+                        if let Some(range2) = query.range2 {
+                            filtered = filtered.filter(elo_band(games::black_elo, range2));
+                        }
+                    }
+                    Some(Sides::Any) => {
+                        if let Some(player1) = query.player1 {
+                            filtered = filtered.filter(
+                                games::white_id.eq(player1).or(games::black_id.eq(player1)),
+                            );
+                        }
+                        if let Some(player2) = query.player2 {
+                            filtered = filtered.filter(
+                                games::white_id.eq(player2).or(games::black_id.eq(player2)),
+                            );
+                        }
+                        if let Some(predicate) =
+                            sides_any_elo_band_predicate(query.player1, query.range1, query.range2)
+                        {
+                            filtered = filtered.filter(predicate);
+                        }
+                    }
+                    None => {}
+                }
+                filtered
+            }};
         }
 
         let (limit, offset) = pagination_limit_offset(query_options.page, query_options.page_size)?;
+        let name_index = name_sort_index(&query_options.sort);
+        // A name sort needs the match count to choose its plan, even when the caller skips it.
+        let matches = if !query_options.skip_count || name_index.is_some() {
+            let count_query = filter_games!(games::table.into_boxed());
+            Some(sqlite_cancellation::with_sqlite_cancellation(
+                cancellation,
+                || {
+                    count_query
+                        .select(diesel::dsl::count(games::id))
+                        .first::<i64>(db)
+                },
+            )?)
+        } else {
+            None
+        };
+        let walk_name_index = match (name_index, matches) {
+            (Some(index), Some(matches)) if !pins_sorted_key(&query_options.sort, &query) => {
+                name_index_walk_is_cheaper(db, index, matches, limit, offset, cancellation)?
+            }
+            _ => false,
+        };
+        // A unary plus on the name table's key stops SQLite from looking that row up per game,
+        // so it walks the name index in order and stops after the page instead of sorting every
+        // match. Only the joined table of the requested sort gets it.
+        let join_key = |sort: GameSort, key: &str| {
+            let walk = walk_name_index && query_options.sort == sort;
+            diesel::dsl::sql::<Integer>(&format!("{}{key}", if walk { "+" } else { "" }))
+        };
+
+        let (white_players, black_players) = diesel::alias!(players as white, players as black);
+        let mut sql_query = filter_games!(games::table
+            .inner_join(white_players.on(games::white_id.eq(join_key(GameSort::White, "white.ID"))))
+            .inner_join(black_players.on(games::black_id.eq(join_key(GameSort::Black, "black.ID"))))
+            .inner_join(
+                events::table.on(games::event_id.eq(join_key(GameSort::Event, "Events.ID")))
+            )
+            .inner_join(sites::table.on(games::site_id.eq(join_key(GameSort::Site, "Sites.ID"))))
+            .into_boxed());
         if let Some(limit) = limit {
             sql_query = sql_query.limit(limit);
         }
-
         if let Some(offset) = offset {
             sql_query = sql_query.offset(offset);
         }
 
-        match query.sides {
-            Some(Sides::BlackWhite) => {
-                if let Some(player1) = query.player1 {
-                    sql_query = sql_query.filter(games::black_id.eq(player1));
-                    count_query = count_query.filter(games::black_id.eq(player1));
+        // Name sorts order by the joined table's index key, then the game ID, so the plain sort
+        // and the index walk return the same rows in the same order.
+        macro_rules! order_by_name {
+            ($($column:expr),+) => {
+                match query_options.direction {
+                    SortDirection::Asc => sql_query.order(($($column.asc(),)+ games::id.asc())),
+                    SortDirection::Desc => sql_query.order(($($column.desc(),)+ games::id.desc())),
                 }
-                if let Some(player2) = query.player2 {
-                    sql_query = sql_query.filter(games::white_id.eq(player2));
-                    count_query = count_query.filter(games::white_id.eq(player2));
-                }
-
-                if let Some(range1) = query.range1 {
-                    sql_query = sql_query.filter(elo_band(games::black_elo, range1));
-                    count_query = count_query.filter(elo_band(games::black_elo, range1));
-                }
-
-                if let Some(range2) = query.range2 {
-                    sql_query = sql_query.filter(elo_band(games::white_elo, range2));
-                    count_query = count_query.filter(elo_band(games::white_elo, range2));
-                }
-            }
-            Some(Sides::WhiteBlack) => {
-                if let Some(player1) = query.player1 {
-                    sql_query = sql_query.filter(games::white_id.eq(player1));
-                    count_query = count_query.filter(games::white_id.eq(player1));
-                }
-                if let Some(player2) = query.player2 {
-                    sql_query = sql_query.filter(games::black_id.eq(player2));
-                    count_query = count_query.filter(games::black_id.eq(player2));
-                }
-
-                if let Some(range1) = query.range1 {
-                    sql_query = sql_query.filter(elo_band(games::white_elo, range1));
-                    count_query = count_query.filter(elo_band(games::white_elo, range1));
-                }
-
-                if let Some(range2) = query.range2 {
-                    sql_query = sql_query.filter(elo_band(games::black_elo, range2));
-                    count_query = count_query.filter(elo_band(games::black_elo, range2));
-                }
-            }
-            Some(Sides::Any) => {
-                if let Some(player1) = query.player1 {
-                    sql_query = sql_query
-                        .filter(games::white_id.eq(player1).or(games::black_id.eq(player1)));
-                    count_query = count_query
-                        .filter(games::white_id.eq(player1).or(games::black_id.eq(player1)));
-                }
-                if let Some(player2) = query.player2 {
-                    sql_query = sql_query
-                        .filter(games::white_id.eq(player2).or(games::black_id.eq(player2)));
-                    count_query = count_query
-                        .filter(games::white_id.eq(player2).or(games::black_id.eq(player2)));
-                }
-
-                if let Some(predicate) =
-                    sides_any_elo_band_predicate(query.player1, query.range1, query.range2)
-                {
-                    sql_query = sql_query.filter(predicate);
-                }
-                if let Some(predicate) =
-                    sides_any_elo_band_predicate(query.player1, query.range1, query.range2)
-                {
-                    count_query = count_query.filter(predicate);
-                }
-            }
-            None => {}
+            };
         }
-
         sql_query = match query_options.sort {
             GameSort::Id => match query_options.direction {
                 SortDirection::Asc => sql_query.order(games::id.asc()),
@@ -718,14 +826,25 @@ pub(super) fn load_games(
                 SortDirection::Asc => sql_query.order(games::ply_count.asc()),
                 SortDirection::Desc => sql_query.order(games::ply_count.desc()),
             },
+            // games_result_idx already holds (Result, ID) in order.
+            GameSort::Result => order_by_name!(games::result),
+            GameSort::White => order_by_name!(
+                white_players.field(players::name),
+                white_players.field(players::id)
+            ),
+            GameSort::Black => order_by_name!(
+                black_players.field(players::name),
+                black_players.field(players::id)
+            ),
+            GameSort::Event => order_by_name!(events::name, events::year, events::id),
+            GameSort::Site => order_by_name!(sites::name, sites::id),
         };
-
-        if !query_options.skip_count {
-            count = Some(sqlite_cancellation::with_sqlite_cancellation(
-                cancellation,
-                || count_query.select(diesel::dsl::count(games::id)).first(db),
-            )?);
-        }
+        let count = matches.filter(|_| !query_options.skip_count);
+        #[cfg(all(test, unix))]
+        LAST_GAME_PAGE_SQL.with(|last| {
+            *last.borrow_mut() =
+                Some(diesel::debug_query::<diesel::sqlite::Sqlite, _>(&sql_query).to_string())
+        });
 
         // println!(
         //     "{:?}\n",

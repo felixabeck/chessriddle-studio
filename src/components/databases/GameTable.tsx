@@ -25,18 +25,22 @@ import { SideInput } from "./SideInput";
 import sideInputClasses from "./SideInput.module.css";
 import { useDatabaseListTable } from "./useDatabaseListTable";
 
-type GameSortAccessor = "date" | "ply_count";
-const gameSortAccessors: Partial<Record<GameSort, GameSortAccessor>> = {
+const gameSortByAccessor = {
+  white: "white",
+  black: "black",
   date: "date",
-  plyCount: "ply_count",
-};
-const gameSortByAccessor: Record<GameSortAccessor, GameSort> = {
-  date: "date",
+  result: "result",
   ply_count: "plyCount",
-};
+  event: "event",
+  site: "site",
+} as const satisfies Partial<Record<keyof NormalizedGame, GameSort>>;
+type GameSortAccessor = keyof typeof gameSortByAccessor;
+const gameSortAccessors = Object.fromEntries(
+  Object.entries(gameSortByAccessor).map(([accessor, sort]) => [sort, accessor]),
+) as Partial<Record<GameSort, GameSortAccessor>>;
 
 function isGameSortAccessor(accessor: string): accessor is GameSortAccessor {
-  return accessor === "date" || accessor === "ply_count";
+  return Object.hasOwn(gameSortByAccessor, accessor);
 }
 
 function GameTable() {
@@ -203,17 +207,20 @@ function GameTable() {
             {
               accessor: "white",
               title: t("Fen.White"),
+              sortable: true,
               render: ({ white, white_elo }) => <PlayerRatingCell name={white} elo={white_elo} />,
             },
             {
               accessor: "black",
               title: t("Fen.Black"),
+              sortable: true,
               render: ({ black, black_elo }) => <PlayerRatingCell name={black} elo={black_elo} />,
             },
             { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
             {
               accessor: "result",
               title: t("Board.Database.Local.Result"),
+              sortable: true,
               render: ({ result }) => result?.replaceAll("1/2", "½"),
             },
             {
@@ -226,11 +233,13 @@ function GameTable() {
               ...truncatedTextColumn<NormalizedGame>((game) => game.event),
               accessor: "event",
               title: t("Databases.Game.Event"),
+              sortable: true,
             },
             {
               ...truncatedTextColumn<NormalizedGame>((game) => game.site),
               accessor: "site",
               title: t("Databases.Game.Site"),
+              sortable: true,
             },
           ]}
         />

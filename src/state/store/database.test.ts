@@ -449,21 +449,29 @@ describe("database-view panel hydration", () => {
         },
     );
 
-    it.each(["id", "date", "whiteElo", "blackElo", "plyCount"])(
-        "preserves the supported game sort %s",
-        async (sort) => {
-            const games = {
-                ...validGames,
-                selectedGameId: 0,
-                query: {
-                    ...validGames.query,
-                    options: { ...validGames.query.options, page: 1, pageSize: 1, sort },
-                },
-            };
-            const store = await hydrate({ games });
-            expect(store.getState().games).toEqual(games);
-        },
-    );
+    it.each([
+        "id",
+        "date",
+        "whiteElo",
+        "blackElo",
+        "plyCount",
+        "white",
+        "black",
+        "result",
+        "event",
+        "site",
+    ])("preserves the supported game sort %s", async (sort) => {
+        const games = {
+            ...validGames,
+            selectedGameId: 0,
+            query: {
+                ...validGames.query,
+                options: { ...validGames.query.options, page: 1, pageSize: 1, sort },
+            },
+        };
+        const store = await hydrate({ games });
+        expect(store.getState().games).toEqual(games);
+    });
 
     it.each(["name", "elo", "games"])("preserves the supported player sort %s", async (sort) => {
         const players = {

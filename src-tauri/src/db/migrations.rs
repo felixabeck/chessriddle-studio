@@ -341,7 +341,8 @@ fn upgrade_to_event_editions(
 }
 
 fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
-    let restore_required_indexes = super::check_index_exists(conn)?;
+    // A database indexed before a required index was added still had the set turned on.
+    let restore_required_indexes = super::has_any_required_index(conn)?;
     conn.transaction::<_, Error, _>(|conn| {
         // Ensure legacy nullable foreign keys can be normalized to the sentinel.
         conn.batch_execute(
@@ -1387,6 +1388,39 @@ mod tests {
         );
         assert!(games_schema_is_canonical(&mut conn).unwrap());
         assert!(table_exists(&mut conn, "Games").unwrap());
+    }
+
+    #[test]
+    fn legacy_database_indexed_before_the_site_index_keeps_its_indexes_after_migration() {
+        let mut conn = connection();
+        conn.batch_execute(
+            "CREATE TABLE Info (Name TEXT UNIQUE NOT NULL, Value TEXT);
+             CREATE TABLE Players (ID INTEGER PRIMARY KEY, Name TEXT UNIQUE, Elo INTEGER);
+             CREATE TABLE Events (ID INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT UNIQUE);
+             CREATE TABLE Sites (ID INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT UNIQUE);
+             CREATE TABLE Games (
+                 ID INTEGER PRIMARY KEY AUTOINCREMENT, EventID INTEGER, SiteID INTEGER,
+                 Date TEXT, UTCTime TEXT, Round INTEGER, WhiteID INTEGER, WhiteElo INTEGER,
+                 BlackID INTEGER, BlackElo INTEGER, WhiteMaterial INTEGER, BlackMaterial INTEGER,
+                 Result INTEGER, TimeControl TEXT, ECO TEXT, PlyCount INTEGER, FEN TEXT,
+                 Moves BLOB, PawnHome BLOB
+             );
+             INSERT INTO Players VALUES (0, 'Unknown', NULL);
+             INSERT INTO Events VALUES (0, 'Unknown');
+             INSERT INTO Sites VALUES (0, 'Unknown');
+             INSERT INTO Info VALUES ('Version', '1.0.0');
+             CREATE INDEX games_date_idx ON Games(Date);
+             CREATE INDEX games_white_idx ON Games(WhiteID);
+             CREATE INDEX games_black_idx ON Games(BlackID);
+             CREATE INDEX games_result_idx ON Games(Result);
+             CREATE INDEX games_white_elo_idx ON Games(WhiteElo);
+             CREATE INDEX games_black_elo_idx ON Games(BlackElo);
+             CREATE INDEX games_plycount_idx ON Games(PlyCount);",
+        )
+        .unwrap();
+        assert!(!super::super::check_index_exists(&mut conn).unwrap());
+        validate_existing_database(&mut conn).unwrap();
+        assert!(super::super::check_index_exists(&mut conn).unwrap());
     }
 
     #[test]

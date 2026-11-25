@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     | {
         records: NormalizedGame[];
         totalRecords?: number;
+        columns: { accessor: string; sortable?: boolean }[];
         sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
         onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
       }
@@ -289,6 +290,22 @@ test("plies sorting maps the native tag to the row accessor in both directions",
   );
   expect(activeDatabaseViewStore.getState().games.query.options?.sort).toBe("date");
   expect(mocks.table!.sortStatus).toEqual({ columnAccessor: "date", direction: "desc" });
+});
+
+test.each([
+  ["white", "white"],
+  ["black", "black"],
+  ["result", "result"],
+  ["event", "event"],
+  ["site", "site"],
+] as const)("%s column sorting requests the native %s sort", async (accessor, sort) => {
+  await render();
+  expect(mocks.table!.columns.find((column) => column.accessor === accessor)?.sortable).toBe(true);
+  for (const direction of ["asc", "desc"] as const) {
+    await act(async () => mocks.table!.onSortStatusChange({ columnAccessor: accessor, direction }));
+    expect(activeDatabaseViewStore.getState().games.query.options?.sort).toBe(sort);
+    expect(mocks.table!.sortStatus).toEqual({ columnAccessor: accessor, direction });
+  }
 });
 
 test("confirmed deletion clears the selected preview before the next game occupies its row", async () => {
