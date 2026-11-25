@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
     defaultOpponentFilter,
+    findLinkWithAccount,
     findOpponentLink,
     isOpponentPlayerName,
     MAX_OPPONENT_ACCOUNTS,
@@ -13,6 +14,7 @@ import {
     withOpponentAccount,
     withOpponentDatabase,
     withOpponentFilter,
+    withOpponentLinkRenamed,
     withoutOpponentAccount,
     withoutOpponentLink,
 } from "./opponentLinks";
@@ -141,6 +143,44 @@ describe("findOpponentLink", () => {
         for (const name of ["Carlsen, M", "", "   ", null, undefined]) {
             expect(findOpponentLink(links, name)).toBeUndefined();
         }
+    });
+});
+
+describe("findLinkWithAccount", () => {
+    test("matches by provider and username case-insensitively", () => {
+        const first = link();
+        const second = link({
+            id: OTHER_ID,
+            playerName: "Caruana, Fabiano",
+            accounts: [{ provider: "chesscom", username: "FabianoCaruana" }],
+        });
+        const links = [first, second];
+
+        expect(
+            findLinkWithAccount(links, { provider: "lichess", username: "drnykterstein" }),
+        ).toEqual(first);
+        expect(
+            findLinkWithAccount(links, { provider: "chesscom", username: "fabianocaruana" }),
+        ).toEqual(second);
+        expect(
+            findLinkWithAccount(links, { provider: "chesscom", username: "DrNykterstein" }),
+        ).toBeUndefined();
+        expect(
+            findLinkWithAccount(links, { provider: "lichess", username: "nobody" }),
+        ).toBeUndefined();
+    });
+
+    test("matches an account after the first one of a link", () => {
+        const several = link({
+            accounts: [
+                { provider: "lichess", username: "DrNykterstein" },
+                { provider: "chesscom", username: "MagnusCarlsen" },
+            ],
+        });
+
+        expect(
+            findLinkWithAccount([several], { provider: "chesscom", username: "magnuscarlsen" }),
+        ).toEqual(several);
     });
 });
 
@@ -285,6 +325,35 @@ describe("link changes", () => {
         });
 
         expect(links.map((entry) => entry.id)).toEqual([OTHER_ID, ID]);
+    });
+
+    test("renaming trims the name, keeps everything else, and makes the link most recently changed", () => {
+        const first = link({
+            playerName: "DrNykterstein",
+            database: `opponent-${ID}-0a1b2c3d.db3`,
+        });
+        const second = link({ id: OTHER_ID, playerName: "Caruana, Fabiano" });
+
+        const renamed = withOpponentLinkRenamed([first, second], ID, "  Carlsen, Magnus  ");
+
+        expect(renamed).toEqual([second, { ...first, playerName: "Carlsen, Magnus" }]);
+    });
+
+    test("renaming refuses an unknown id, an invalid name and another link's name, but takes its own name in another spelling", () => {
+        const first = link({ playerName: "José Capablanca" });
+        const second = link({ id: OTHER_ID, playerName: "Caruana, Fabiano" });
+        const before = [first, second];
+
+        expect(
+            withOpponentLinkRenamed(before, "33333333-3333-4333-8333-333333333333", "New"),
+        ).toEqual(before);
+        for (const badName of ["", "   ", "x".repeat(201)]) {
+            expect(withOpponentLinkRenamed(before, ID, badName)).toEqual(before);
+        }
+        expect(withOpponentLinkRenamed(before, ID, "  CARUANA, FABIANO ")).toEqual(before);
+
+        const respelled = withOpponentLinkRenamed(before, ID, "  JOSE\u0301 CAPABLANCA  ");
+        expect(respelled).toEqual([second, { ...first, playerName: "JOSE\u0301 CAPABLANCA" }]);
     });
 });
 

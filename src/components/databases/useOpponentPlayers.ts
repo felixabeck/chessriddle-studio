@@ -5,8 +5,9 @@ import type { OpponentLink } from "@/state/opponentLinks";
 import { opponentPlayers } from "./opponentLookup";
 
 /**
- * The SWR answer for the players the link's usernames name in its online games database, lowest id
- * first. The accounts box and the opening tree read the same cached answer; nothing is asked
+ * The SWR answer for the players the link's usernames name in its online games database, in the
+ * order of the link's accounts and then lowest id first, so the first is the one the import merged
+ * the others into. The accounts box and the opening tree read the same cached answer; nothing is asked
  * without a link or without a games database.
  */
 export function useOpponentPlayers(link: OpponentLink | undefined, file: DatabaseHandle | null) {

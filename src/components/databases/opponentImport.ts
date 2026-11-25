@@ -75,6 +75,11 @@ export function opponentAccountFailure(error: ErrorPayload): OpponentAccountFail
 
 const running = new Map<string, Promise<OpponentImportResult>>();
 
+/** Whether an import for the link is currently running. */
+export function isOpponentImportRunning(linkId: string): boolean {
+    return running.has(linkId);
+}
+
 function setInFlight(store: Store, linkId: string, ticket: string | null | undefined): void {
     const next = new Map(store.get(opponentImportsAtom));
     if (ticket === undefined) next.delete(linkId);

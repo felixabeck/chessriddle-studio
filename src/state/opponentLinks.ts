@@ -142,6 +142,13 @@ export function findOpponentLink(
         : links.find((link) => normalizeOpponentName(link.playerName) === name);
 }
 
+export function findLinkWithAccount(
+    links: readonly OpponentLink[],
+    account: OpponentAccount,
+): OpponentLink | undefined {
+    return links.find((link) => link.accounts.some((other) => sameOpponentAccount(other, account)));
+}
+
 /** Whether a link can be kept under this player name; what is stored must read back. */
 export function isOpponentPlayerName(playerName: string | null | undefined): playerName is string {
     const name = playerName?.trim() ?? "";
@@ -218,6 +225,29 @@ export function withOpponentDatabase(
     if (!link) return [...links];
     const { database: _previous, ...rest } = link;
     return withLink(links, database === undefined ? rest : { ...rest, database });
+}
+
+/**
+ * Renames the link, keeping its id, accounts, filter and database. An unknown id, a name that
+ * cannot be stored, or a name another link already carries changes nothing.
+ */
+export function withOpponentLinkRenamed(
+    links: readonly OpponentLink[],
+    id: string,
+    playerName: string,
+): OpponentLink[] {
+    if (!isOpponentPlayerName(playerName)) return [...links];
+    const link = links.find((other) => other.id === id);
+    if (!link) return [...links];
+    const normalized = normalizeOpponentName(playerName);
+    if (
+        links.some(
+            (other) => other.id !== id && normalizeOpponentName(other.playerName) === normalized,
+        )
+    ) {
+        return [...links];
+    }
+    return withLink(links, { ...link, playerName: playerName.trim() });
 }
 
 export function withoutOpponentLink(links: readonly OpponentLink[], id: string): OpponentLink[] {

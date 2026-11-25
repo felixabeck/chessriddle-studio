@@ -220,7 +220,7 @@ describe("lookupOpponentAccount on Chess.com", () => {
 describe("opponentPlayers", () => {
     const file: DatabaseHandle = { id: { id: "opponent" }, kind: "database" };
 
-    test("asks for each username by exact name and returns the distinct players, lowest id first", async () => {
+    test("asks for each username by exact name and orders distinct players by earliest account, then id", async () => {
         mocks.queryPlayers
             .mockResolvedValueOnce({
                 data: [
@@ -242,9 +242,9 @@ describe("opponentPlayers", () => {
 
         // The first one is the player the board follows; a nameless row is named by its username.
         expect(players).toEqual([
-            { id: 2, name: "Nameless" },
             { id: 4, name: "drnykterstein" },
             { id: 9, name: "DrNykterstein" },
+            { id: 2, name: "Nameless" },
         ]);
         expect(
             mocks.queryPlayers.mock.calls.map(([handle, query]) => [handle, query.name]),
@@ -257,5 +257,30 @@ describe("opponentPlayers", () => {
         for (const [, query] of mocks.queryPlayers.mock.calls) {
             expect(query.nameMatch).toBe("exact");
         }
+    });
+
+    test("keeps a repeated username's first account rank and matches names normalized", async () => {
+        mocks.queryPlayers
+            .mockResolvedValueOnce({ data: [{ id: 12, name: "  FIRST_ACC  " }], count: null })
+            .mockResolvedValueOnce({ data: [{ id: 1, name: "SecondAcc" }], count: null })
+            .mockResolvedValueOnce({
+                data: [
+                    { id: 12, name: "  FIRST_ACC  " },
+                    { id: 5, name: "first_acc" },
+                ],
+                count: null,
+            });
+
+        const players = await opponentPlayers(file, [
+            { provider: "lichess", username: "First_Acc" },
+            { provider: "chesscom", username: "SecondAcc" },
+            { provider: "chesscom", username: "first_acc" },
+        ]);
+
+        expect(players).toEqual([
+            { id: 5, name: "first_acc" },
+            { id: 12, name: "  FIRST_ACC  " },
+            { id: 1, name: "SecondAcc" },
+        ]);
     });
 });

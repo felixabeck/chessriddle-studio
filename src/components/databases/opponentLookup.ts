@@ -1,5 +1,6 @@
 import type { DatabaseHandle, OpponentAccount, OpponentProvider } from "@/bindings";
 import { errorUnlessCancelled } from "@/platform/errors";
+import { normalizeOpponentName } from "@/state/opponentLinks";
 import { getChessComProfile, getChessComStats } from "@/utils/chess.com/api";
 import { query_players } from "@/utils/db";
 import { getLichessAccount } from "@/utils/lichess/api";
@@ -119,22 +120,37 @@ export async function lookupOpponentAccount(
 export type OpponentPlayer = { id: number; name: string };
 
 /**
- * Every player the linked usernames name in the opponent's database, lowest id first. After a
- * complete merge that is one player; usernames that met each other keep one each. The first one
- * is the player the board follows.
+ * Every player the linked usernames name in the opponent's database, ordered by the earliest
+ * matching account and then lowest id. After a complete merge that is one player; usernames that
+ * met each other keep one each. The first one is the player the board follows.
  */
 export async function opponentPlayers(
     file: DatabaseHandle,
     accounts: readonly OpponentAccount[],
 ): Promise<OpponentPlayer[]> {
-    const found = new Map<number, string>();
-    for (const account of accounts) {
+    const accountRank = new Map<string, number>();
+    for (const [index, account] of accounts.entries()) {
+        const normalized = normalizeOpponentName(account.username);
+        if (!accountRank.has(normalized)) accountRank.set(normalized, index);
+    }
+    const found = new Map<number, { name: string; rank: number }>();
+    for (const [index, account] of accounts.entries()) {
         const players = await query_players(file, {
             name: account.username,
             nameMatch: "exact",
             options: { direction: "asc", sort: "id", skipCount: true },
         });
-        for (const player of players.data) found.set(player.id, player.name ?? account.username);
+        for (const player of players.data) {
+            const name = player.name ?? account.username;
+            const rank =
+                (player.name !== null
+                    ? accountRank.get(normalizeOpponentName(player.name))
+                    : undefined) ?? index;
+            const existing = found.get(player.id);
+            if (!existing || rank < existing.rank) found.set(player.id, { name, rank });
+        }
     }
-    return [...found].map(([id, name]) => ({ id, name })).sort((a, b) => a.id - b.id);
+    return [...found]
+        .sort(([idA, a], [idB, b]) => a.rank - b.rank || idA - idB)
+        .map(([id, { name }]) => ({ id, name }));
 }

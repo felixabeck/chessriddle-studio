@@ -2232,34 +2232,38 @@ fn merge_players_blocking(
 }
 
 /// Merges every player whose name equals one of `names` (compared as exact-name search compares
-/// them) into the one with the lowest id. Players who met each other stay separate. Returns
-/// whether the names ended as at most one player.
+/// them) into the matching player whose normalized name appears earliest in `names` (lowest id
+/// among ties). Players who met each other stay separate. Returns whether the names ended as at
+/// most one player.
 pub(crate) fn merge_players_named(
     db: &mut SqliteConnection,
     names: &[String],
 ) -> Result<bool, Error> {
-    let wanted: std::collections::HashSet<String> = names
-        .iter()
-        .map(|name| name_identity::normalize_name(name))
-        .collect();
-    let mut matching: Vec<i32> = players::table
+    let mut rank: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::with_capacity(names.len());
+    for (index, name) in names.iter().enumerate() {
+        rank.entry(name_identity::normalize_name(name))
+            .or_insert(index);
+    }
+    let mut matching: Vec<(usize, i32)> = players::table
         .select((players::id, players::name))
         .load::<(i32, Option<String>)>(db)?
         .into_iter()
-        .filter(|(id, name)| {
-            *id != 0
-                && name
-                    .as_deref()
-                    .is_some_and(|name| wanted.contains(&name_identity::normalize_name(name)))
+        .filter_map(|(id, name)| {
+            if id == 0 {
+                return None;
+            }
+            let name = name.as_deref()?;
+            let order = *rank.get(&name_identity::normalize_name(name))?;
+            Some((order, id))
         })
-        .map(|(id, _)| id)
         .collect();
     matching.sort_unstable();
-    let Some((target, others)) = matching.split_first() else {
+    let Some(((_, target), others)) = matching.split_first() else {
         return Ok(true);
     };
     let mut merged = true;
-    for source in others {
+    for (_, source) in others {
         match merge_players_transaction(db, *source, *target) {
             Ok(()) => {}
             Err(Error::NotDistinctPlayers) => merged = false,
@@ -4779,6 +4783,203 @@ mod tests {
         );
         assert_eq!(database_state(db).1, 3);
         assert_info_counts_match_tables(db);
+    }
+
+    #[test]
+    fn merge_players_named_prefers_earliest_name_over_lowest_id() {
+        let db = &mut setup_test_db();
+        let second = create_player(db, "Second").unwrap();
+        let first = create_player(db, "First").unwrap();
+        let opponent = create_player(db, "Opponent").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
+        let site = create_site(db, "Site").unwrap();
+        assert!(second.id < first.id);
+        let second_game = insert_test_game(db, second.id, opponent.id, event.id, site.id);
+        let first_game = insert_test_game(db, first.id, opponent.id, event.id, site.id);
+
+        let merged = merge_players_named(db, &["First".to_string(), "Second".to_string()]).unwrap();
+
+        assert!(merged);
+        assert_eq!(
+            players::table
+                .find(first.id)
+                .select(players::name)
+                .first::<Option<String>>(db)
+                .unwrap()
+                .as_deref(),
+            Some("First")
+        );
+        assert_eq!(
+            players::table
+                .find(second.id)
+                .count()
+                .get_result::<i64>(db)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            games::table
+                .find(second_game.id)
+                .select(games::white_id)
+                .first::<i32>(db)
+                .unwrap(),
+            first.id
+        );
+        assert_eq!(
+            games::table
+                .find(first_game.id)
+                .select(games::white_id)
+                .first::<i32>(db)
+                .unwrap(),
+            first.id
+        );
+    }
+
+    #[test]
+    fn merge_players_named_merges_two_spellings_into_lowest_id() {
+        let db = &mut setup_test_db();
+        let lower = create_player(db, "DrNykterstein").unwrap();
+        let higher = create_player(db, "drnykterstein").unwrap();
+        let opponent = create_player(db, "Opponent").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
+        let site = create_site(db, "Site").unwrap();
+        assert!(lower.id < higher.id);
+        insert_test_game(db, lower.id, opponent.id, event.id, site.id);
+        let higher_game = insert_test_game(db, higher.id, opponent.id, event.id, site.id);
+
+        let merged = merge_players_named(db, &["drnykterstein".to_string()]).unwrap();
+
+        assert!(merged);
+        assert_eq!(
+            players::table
+                .find(lower.id)
+                .count()
+                .get_result::<i64>(db)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            players::table
+                .find(higher.id)
+                .count()
+                .get_result::<i64>(db)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            games::table
+                .find(higher_game.id)
+                .select(games::white_id)
+                .first::<i32>(db)
+                .unwrap(),
+            lower.id
+        );
+    }
+
+    #[test]
+    fn merge_players_named_repeated_username_keeps_first_rank() {
+        let db = &mut setup_test_db();
+        let second = create_player(db, "Second").unwrap();
+        let first = create_player(db, "First").unwrap();
+        let opponent = create_player(db, "Opponent").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
+        let site = create_site(db, "Site").unwrap();
+        assert!(second.id < first.id);
+        let second_game = insert_test_game(db, second.id, opponent.id, event.id, site.id);
+        insert_test_game(db, first.id, opponent.id, event.id, site.id);
+
+        let merged = merge_players_named(
+            db,
+            &[
+                "First".to_string(),
+                "Second".to_string(),
+                "first".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert!(merged);
+        assert_eq!(
+            players::table
+                .find(first.id)
+                .count()
+                .get_result::<i64>(db)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            players::table
+                .find(second.id)
+                .count()
+                .get_result::<i64>(db)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            games::table
+                .find(second_game.id)
+                .select(games::white_id)
+                .first::<i32>(db)
+                .unwrap(),
+            first.id
+        );
+    }
+
+    #[test]
+    fn merge_players_named_returns_false_when_players_met_each_other() {
+        let db = &mut setup_test_db();
+        let second = create_player(db, "Second").unwrap();
+        let first = create_player(db, "First").unwrap();
+        let third = create_player(db, "Third").unwrap();
+        let opponent = create_player(db, "Opponent").unwrap();
+        let event = create_event(db, "Event", None).unwrap();
+        let site = create_site(db, "Site").unwrap();
+        insert_test_game(db, first.id, second.id, event.id, site.id);
+        let third_game = insert_test_game(db, third.id, opponent.id, event.id, site.id);
+
+        let merged = merge_players_named(
+            db,
+            &[
+                "First".to_string(),
+                "Second".to_string(),
+                "Third".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert!(!merged);
+        assert_eq!(
+            players::table
+                .find(first.id)
+                .count()
+                .get_result::<i64>(db)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            players::table
+                .find(second.id)
+                .count()
+                .get_result::<i64>(db)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            players::table
+                .find(third.id)
+                .count()
+                .get_result::<i64>(db)
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            games::table
+                .find(third_game.id)
+                .select(games::white_id)
+                .first::<i32>(db)
+                .unwrap(),
+            first.id
+        );
     }
 
     #[cfg(unix)]

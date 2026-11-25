@@ -52,6 +52,7 @@ import { defaultOpponentFilter, type OpponentLink } from "@/state/opponentLinks"
 import {
     cancelOpponentImport,
     importOpponentGames,
+    isOpponentImportRunning,
     opponentAccountFailure,
     removeOpponentGames,
     runOpponentImport,
@@ -483,6 +484,50 @@ describe("runOpponentImport", () => {
         expect(result.kind).toBe("failed");
         expect(mocks.importOpponentGames).not.toHaveBeenCalled();
     });
+
+    test.each([
+        [
+            "success",
+            (resolve: (o: OpponentImportOutcome) => void) => resolve(imported(1)),
+            "imported",
+        ],
+        [
+            "cancel",
+            (_: (o: OpponentImportOutcome) => void, reject: (e: unknown) => void) =>
+                reject(payload({ category: "cancellation", message: "Cancellation" })),
+            "cancelled",
+        ],
+        [
+            "failure",
+            (_: (o: OpponentImportOutcome) => void, reject: (e: unknown) => void) =>
+                reject(payload({ category: "database", message: "disk I/O error" })),
+            "failed",
+        ],
+    ] as const)(
+        "isOpponentImportRunning is false before, true while running, and false after %s",
+        async (_, settle, expectedKind) => {
+            const { deps } = setup();
+            let resolveImport: (outcome: OpponentImportOutcome) => void = () => {};
+            let rejectImport: (error: unknown) => void = () => {};
+            mocks.importOpponentGames.mockReturnValue(
+                new Promise<OpponentImportOutcome>((resolve, reject) => {
+                    resolveImport = resolve;
+                    rejectImport = reject;
+                }),
+            );
+
+            expect(isOpponentImportRunning(ID)).toBe(false);
+            const run = runOpponentImport(deps, ID, "title");
+            expect(isOpponentImportRunning(ID)).toBe(true);
+            expect(isOpponentImportRunning("22222222-2222-4222-8222-222222222222")).toBe(false);
+            await vi.waitFor(() => expect(mocks.importOpponentGames).toHaveBeenCalledOnce());
+            expect(isOpponentImportRunning(ID)).toBe(true);
+
+            settle(resolveImport, rejectImport);
+            await expect(run).resolves.toMatchObject({ kind: expectedKind });
+            expect(isOpponentImportRunning(ID)).toBe(false);
+        },
+    );
 });
 
 describe("removing online games and unlinking", () => {
