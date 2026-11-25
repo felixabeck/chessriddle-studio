@@ -8,19 +8,24 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { RefreshCw } from "lucide-react";
-import { type ReactNode, useCallback, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DatabaseHandle, Player } from "@/bindings";
 import { inlineFailureMessage, notifyUnlessCancelled } from "@/components/files/notifyError";
 import DatabaseLoader from "@/components/panels/database/DatabaseLoader";
+import { isAbortError } from "@/components/panels/practice/prepareTimedRun";
+import TrainMinutesControl from "@/components/panels/practice/TrainMinutesControl";
 import {
   activeTabAtom,
   opponentPreparationAtom,
+  practiceTrainMinutesAtom,
   tabPreparationViewFamily,
   tabsAtom,
+  timedRunLaunchAtom,
 } from "@/state/atoms";
 import { OPPONENT_PERIODS, type OpponentPeriod } from "@/state/opponentLinks";
 import { databaseHandleKey } from "@/utils/db";
@@ -36,7 +41,12 @@ import {
   userColorForOpponent,
 } from "@/utils/opponentPreparation";
 import { formatPgnYearMonth } from "@/utils/pgnDate";
-import { findChapterTab, runTabCreation } from "@/utils/tabs";
+import {
+  buildPreparationRunCandidates,
+  collectPreparationCandidateChapters,
+  readPreparationDecks,
+} from "@/utils/preparationRun";
+import { createTab, findChapterTab, runTabCreation } from "@/utils/tabs";
 import { useOnlineGames } from "./useOnlineGames";
 import { useOpponentPreparation } from "./useOpponentPreparation";
 import classes from "./PlayerPreparation.module.css";
@@ -85,6 +95,7 @@ export default function PlayerPreparation({
   const navigate = useNavigate();
   const setTabs = useSetAtom(tabsAtom);
   const stored = useAtomValue(opponentPreparationAtom);
+  const minutes = useAtomValue(practiceTrainMinutesAtom);
   const cardDatabaseKey = databaseHandleKey(file);
 
   const shortName =
@@ -103,6 +114,9 @@ export default function PlayerPreparation({
   const [showAllGaps, setShowAllGaps] = useState(false);
   const [opening, setOpening] = useState(false);
   const openingRef = useRef(false);
+  const [startingRun, setStartingRun] = useState(false);
+  const [trainError, setTrainError] = useState<"practice-unreadable" | null>(null);
+  const trainAbortRef = useRef<AbortController | null>(null);
 
   const online = useOnlineGames(player, file);
   const { state, refresh, retry, setSource } = useOpponentPreparation({
@@ -212,9 +226,121 @@ export default function PlayerPreparation({
     userColorForOpponent(opponentColor) === "white" ? t("Fen.White") : t("Fen.Black");
 
   const readyViews = state.kind === "ready" ? state.preparation.views : null;
+  const preparationId = state.kind === "ready" ? state.preparation.id : null;
+  const preparationFiles = state.kind === "ready" ? state.preparation.files : undefined;
   const activeView: PreparationView | null = readyViews
     ? preparationViewForSource(readyViews, effectiveSource)
     : null;
+
+  useEffect(() => {
+    setTrainError(null);
+    return () => {
+      trainAbortRef.current?.abort();
+      trainAbortRef.current = null;
+      setStartingRun(false);
+    };
+  }, [preparationId, effectiveSource]);
+
+  const candidateChapters = useMemo(() => {
+    if (!preparationId || !activeView || !preparationFiles) return [];
+    return collectPreparationCandidateChapters(
+      preparationFiles,
+      opponentColor,
+      activeView.playedPositions,
+    );
+  }, [preparationId, preparationFiles, opponentColor, activeView]);
+
+  const hasCandidates = candidateChapters.length > 0;
+
+  const startTrainingRun = useCallback(async () => {
+    if (
+      trainAbortRef.current !== null ||
+      state.kind !== "ready" ||
+      !activeView ||
+      candidateChapters.length === 0
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    trainAbortRef.current = controller;
+    setStartingRun(true);
+    setTrainError(null);
+    try {
+      const decks = await readPreparationDecks(
+        atoms,
+        candidateChapters.map((chapter) => ({
+          file: chapter.workspaceKey,
+          game: chapter.chapter,
+        })),
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+
+      const { candidates, chapters, skippedChapters } = buildPreparationRunCandidates(
+        candidateChapters,
+        activeView,
+        decks,
+      );
+      if (candidates.length === 0) {
+        setTrainError("practice-unreadable");
+        return;
+      }
+
+      await runTabCreation({
+        create: () =>
+          createTab({
+            tab: { name: t("Tab.NewTab"), type: "new" },
+            setTabs,
+            signal: controller.signal,
+          }),
+        onSuccess: async (newTabId) => {
+          if (controller.signal.aborted) return;
+          if (skippedChapters > 0) {
+            notifications.show({
+              color: "warning",
+              message: t("Databases.Preparation.ChaptersSkipped", {
+                count: skippedChapters,
+                defaultValue:
+                  "{{count}} chapters were left out because their practice data could not be read.",
+              }),
+            });
+          }
+          const launchId = crypto.randomUUID();
+          const startedAt = Date.now();
+          atoms.set(timedRunLaunchAtom, {
+            id: launchId,
+            deadline: startedAt + minutes * 60 * 1000,
+            startedAt,
+            newTabId,
+            candidates,
+            chapters,
+          });
+          try {
+            await navigate({ to: "/" });
+          } catch (error) {
+            if (atoms.get(timedRunLaunchAtom)?.id === launchId) {
+              atoms.set(timedRunLaunchAtom, null);
+            }
+            throw error;
+          }
+        },
+        onError: (error) => {
+          if (!controller.signal.aborted) {
+            notifyUnlessCancelled(t("Common.Error"), error);
+          }
+        },
+      });
+    } catch (error) {
+      if (!controller.signal.aborted && !isAbortError(error)) {
+        notifyUnlessCancelled(t("Common.Error"), error);
+      }
+    } finally {
+      if (trainAbortRef.current === controller) {
+        trainAbortRef.current = null;
+        setStartingRun(false);
+      }
+    }
+  }, [activeView, atoms, candidateChapters, minutes, navigate, setTabs, state.kind, t]);
 
   const otbLabel = t("Databases.OpeningTree.OverTheBoard", {
     defaultValue: "Over the board",
@@ -468,6 +594,46 @@ export default function PlayerPreparation({
               />
             </>
           )}
+
+          <div className={classes.inset} data-preparation-train>
+            <Stack gap="xs">
+              <div className={classes.trainFooter}>
+                <TrainMinutesControl
+                  disabled={startingRun}
+                  ariaLabel={t("Databases.Preparation.TrainDuration", {
+                    defaultValue: "Training duration",
+                  })}
+                />
+                <Button
+                  size="xs"
+                  loading={startingRun}
+                  disabled={!hasCandidates || startingRun}
+                  onClick={() => void startTrainingRun()}
+                  data-preparation-train-start
+                >
+                  {t("Databases.Preparation.TrainLines", {
+                    defaultValue: "Train these lines",
+                  })}
+                </Button>
+              </div>
+              {!hasCandidates && (
+                <Text size="sm" c="dimmed" data-preparation-train-disabled-reason>
+                  {t("Databases.Preparation.NoTrainableLines", {
+                    defaultValue: "No repertoire lines to train in this selection.",
+                  })}
+                </Text>
+              )}
+              {trainError === "practice-unreadable" && (
+                <Alert color="danger" role="alert" data-preparation-train-error>
+                  <Text size="sm">
+                    {t("Databases.Preparation.PracticeDataUnreadable", {
+                      defaultValue: "Practice data could not be read.",
+                    })}
+                  </Text>
+                </Alert>
+              )}
+            </Stack>
+          </div>
         </>
       )}
     </Stack>

@@ -1,6 +1,7 @@
 /** In-memory opponent preparation state and per-tab preparation views. */
 import { atom } from "jotai";
 import type { OpponentPeriod } from "@/state/opponentLinks";
+import type { IndexedRepertoireFile } from "@/state/repertoireIndex";
 import type {
     PreparationColor,
     PreparationSource,
@@ -48,6 +49,8 @@ export type StoredOpponentPreparation = {
     period: OpponentPeriod;
     source: PreparationSource;
     views: PreparationViews;
+    /** Repertoire snapshot files this preparation was matched against (reference, not a copy). */
+    files: readonly IndexedRepertoireFile[];
     partial: boolean;
     onlineFailed: boolean;
 };

@@ -55,6 +55,14 @@
   color: var(--cf-muted-foreground);
 }
 
+.trainFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+}
+
 .table th:nth-child(1) {
   width: 28%;
 }

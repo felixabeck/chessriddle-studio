@@ -1,10 +1,9 @@
-import { Button, SegmentedControl, Stack, Text } from "@mantine/core";
-import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
+import { Button, Stack, Text } from "@mantine/core";
+import { useAtomValue, useSetAtom, useStore } from "jotai";
 import {
   cloneElement,
   isValidElement,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -19,15 +18,14 @@ import AppPopover from "@/components/common/AppPopover";
 import {
   deckAtomFamily,
   practiceNewPerSessionAtom,
-  PRACTICE_TRAIN_MINUTES,
   practiceTrainMinutesAtom,
   timedRunLaunchAtom,
-  type PracticeTrainMinutes,
   type TimedRunChapter,
 } from "@/state/atoms";
 import type { PracticeDeckValue } from "@/state/practiceStorage";
 import { prepareTimedRunWeights } from "./prepareTimedRun";
 import { collectRunCandidates } from "./runPlanner";
+import TrainMinutesControl from "./TrainMinutesControl";
 import { useReferenceResolution } from "./useReferenceResolution";
 
 type FileRow = Extract<LibraryRow, { kind: "file" }>;
@@ -74,7 +72,7 @@ export default function TrainOpeningsPopover({
 }) {
   const { t } = useTranslation();
   const jotaiStore = useStore();
-  const [minutes, setMinutes] = useAtom(practiceTrainMinutesAtom);
+  const minutes = useAtomValue(practiceTrainMinutesAtom);
   const newPerSession = useAtomValue(practiceNewPerSessionAtom);
   const setLaunch = useSetAtom(timedRunLaunchAtom);
   const resolution = useReferenceResolution();
@@ -102,15 +100,6 @@ export default function TrainOpeningsPopover({
   const incomplete = due.incomplete || discoveryFailed;
   const noReference = !resolution.selectedReference;
   const referenceUnusable = !!resolution.selectedReference && !resolution.referenceDb;
-
-  const minuteData = useMemo(
-    () =>
-      PRACTICE_TRAIN_MINUTES.map((value) => ({
-        value: String(value),
-        label: t("Home.TrainOpenings.Minutes", { minutes: value }),
-      })),
-    [t],
-  );
 
   const start = async () => {
     if (startDisabled) return;
@@ -224,13 +213,7 @@ export default function TrainOpeningsPopover({
       </AppPopover.Target>
       <AppPopover.Dropdown>
         <Stack gap="sm" data-train-openings>
-          <SegmentedControl
-            fullWidth
-            size="xs"
-            value={String(minutes)}
-            onChange={(value) => setMinutes(Number(value) as PracticeTrainMinutes)}
-            data={minuteData}
-          />
+          <TrainMinutesControl fullWidth />
           <Text size="sm" c="dimmed">
             {dueTotalLabel(t, due.total, due.rows.filter((row) => row.count !== null).length)}
             {incomplete && <> · {t("Home.DuePractice.Incomplete")}</>}

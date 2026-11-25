@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { warnSafely } from "@/platform/errors";
 import { getFileFreshness, subscribeFileFreshness } from "@/state/fileFreshness";
+import { abortError, subscribeUntil } from "@/state/subscribeUntil";
 import { tabStorage } from "@/state/store/tabStorage";
 import { getTabTreeKey } from "@/state/workspaceTypes";
 import { useTabCommands } from "@/components/tabs/TabCommands";
@@ -34,44 +35,6 @@ import { planNextSegment, removeChapterCandidates, removeSegmentCandidates } fro
  *  is a hydrate or reconcile in progress; 60s is long enough for a slow deck
  *  read and short enough that a stuck panel cannot hang the run. */
 export const TIMED_RUN_GATE_WAIT_MS = 60_000;
-
-function abortError(): DOMException {
-  return new DOMException("Aborted", "AbortError");
-}
-
-function subscribeUntil<T>(
-  signal: AbortSignal,
-  subscribe: (check: () => void) => () => void,
-  read: () => T | undefined,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const onAbort = () => {
-      cleanup();
-      reject(signal.reason ?? abortError());
-    };
-    const check = () => {
-      const value = read();
-      if (value === undefined || settled) return;
-      cleanup();
-      resolve(value);
-    };
-    const unsubscribe = subscribe(check);
-    function cleanup() {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener("abort", onAbort);
-      unsubscribe();
-    }
-    if (signal.aborted) {
-      cleanup();
-      reject(signal.reason ?? abortError());
-      return;
-    }
-    signal.addEventListener("abort", onAbort);
-    check();
-  });
-}
 
 function settle<T>(
   promise: Promise<T>,

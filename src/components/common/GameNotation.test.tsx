@@ -1239,6 +1239,7 @@ describe("opponent preparation notation filtering", () => {
       period: 3,
       source: "otb",
       views: { otb: emptyView, online: null, both: null },
+      files: [],
       partial: false,
       onlineFailed: false,
       ...overrides,

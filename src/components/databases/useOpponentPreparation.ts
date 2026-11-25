@@ -298,6 +298,7 @@ export function useOpponentPreparation({
                 period,
                 source: nextSource,
                 views,
+                files: snapshot.files,
                 partial: snapshot.partial,
                 onlineFailed,
             });

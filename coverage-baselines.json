@@ -114,6 +114,7 @@
           "src/utils/pgnDate.ts",
           "src/utils/practicePosition.ts",
           "src/utils/practiceScope.ts",
+          "src/utils/preparationRun.ts",
           "src/utils/workspaceListing.ts"
         ]
       },

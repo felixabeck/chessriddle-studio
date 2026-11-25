@@ -55,6 +55,11 @@ function compareUnseenCandidates(left: TimedRunCandidate, right: TimedRunCandida
     return left.treeIndex - right.treeIndex;
 }
 
+export function sortRunCandidates(due: TimedRunCandidate[], unseen: TimedRunCandidate[]): void {
+    due.sort(compareDue);
+    unseen.sort(compareUnseenCandidates);
+}
+
 export function collectRunCandidates(
     chapters: readonly TimedRunChapterPositions[],
     now: Date,
@@ -81,8 +86,7 @@ export function collectRunCandidates(
             }
         });
     }
-    due.sort(compareDue);
-    unseen.sort(compareUnseenCandidates);
+    sortRunCandidates(due, unseen);
     const selectedUnseen = unseen.slice(0, Math.max(0, newPerSession));
     return [...due, ...selectedUnseen];
 }
