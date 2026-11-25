@@ -216,7 +216,9 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Normal and table notation | `List`, `TableProperties` | Closest by meaning |
 | Annotate panel | `NotebookPen` | Closest by meaning |
 | Practice target and due badge | `Target` | Closest by meaning |
-| Threats and repertoire practice tab | `Crosshair` | Closest by meaning |
+| Threats | `Crosshair` | Closest by meaning |
+| Repertoire practice tab | `Dumbbell` | `shared/icon-catalog.json` `ui.training` |
+| Game Info tab | `Tags` | Closest by meaning (`Info` is the Guide) |
 | Pin and unpin engine | `Pin`, `PinOff` | Closest by meaning |
 | Stop engine | `Square` | Closest by meaning |
 | Generic engine selector | `ChevronsUpDown` | Closest by meaning |

@@ -162,9 +162,9 @@ vi.mock("@mantine/core", async (importOriginal) => {
 vi.mock("lucide-react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("lucide-react")>()),
   Database: () => null,
-  Info: () => null,
+  Tags: () => <svg data-icon="Tags" />,
   NotebookPen: () => null,
-  Crosshair: () => null,
+  Dumbbell: () => <svg data-icon="Dumbbell" />,
   ScanSearch: () => null,
   MessagesSquare: () => null,
 }));
@@ -1248,6 +1248,14 @@ describe("BoardAnalysis", () => {
         "Board.Tabs.Annotate",
         "Board.Tabs.Info",
       ]);
+      const tabIcon = (label: string) =>
+        Array.from(container.querySelectorAll('[role="tab"]'))
+          .find((tab) => tab.textContent === label)
+          ?.querySelector("[data-icon]")
+          ?.getAttribute("data-icon");
+      // Practice and Info have their own identities: Crosshair is the threat icon, Info the Guide's.
+      expect(tabIcon("Board.Tabs.Practice")).toBe("Dumbbell");
+      expect(tabIcon("Board.Tabs.Info")).toBe("Tags");
       await shortcut(keys.PRACTICE_TAB.keys);
       expect(jotaiStore.get(tabFamily(tabId))).toBe("practice");
       expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(5);

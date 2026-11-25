@@ -6,6 +6,7 @@ import {
     ChevronsRight,
     Clock4,
     Database,
+    Dumbbell,
     Flame,
     Hourglass,
     Info,
@@ -16,6 +17,7 @@ import {
     ScanSearch,
     Send,
     Settings,
+    Tags,
     Trophy,
     User,
     Zap,
@@ -124,6 +126,10 @@ export const AiChatIcon: LucideIcon = MessagesSquare;
 export const AnalysisIcon: LucideIcon = ScanSearch;
 export const FeedbackIcon: LucideIcon = MessageSquarePlus;
 export const StreakIcon: LucideIcon = Flame;
+/** Repertoire practice: the board panel's Practice tab. */
+export const PracticeIcon: LucideIcon = Dumbbell;
+/** A game's details and PGN tags: the board panel's Info tab. */
+export const GameInfoIcon: LucideIcon = Tags;
 export const UltraBulletIcon: LucideIcon = ChevronsRight;
 export const BulletIcon: LucideIcon = ChevronRight;
 export const BlitzIcon: LucideIcon = Zap;
@@ -147,6 +153,8 @@ export const LUCIDE_IDENTITIES = {
     analysis: { icon: AnalysisIcon },
     feedback: { icon: FeedbackIcon, chessRiddle: "feedback" },
     streak: { icon: StreakIcon, chessRiddle: "streak" },
+    practice: { icon: PracticeIcon, chessRiddle: "training" },
+    gameInfo: { icon: GameInfoIcon },
     ultraBullet: { icon: UltraBulletIcon },
     bullet: { icon: BulletIcon },
     blitz: { icon: BlitzIcon },
