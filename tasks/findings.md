@@ -29305,3 +29305,20 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario:** any default `pnpm verify:app` run since `fecfa6daa` ends red at AO1/AO2, so a lifecycle change verified there reports two failures that are not its own and the orientation autosave behaviour goes unverified in the real app.
 * **Fix direction:** Optimal: `setAutoSave` selects the setting's category through the existing Settings navigation (or the settings-navigation request the app already uses to jump to a setting) before waiting for the switch; no longer timeout, no visibility workaround.
 * **Found by:** Claude Code (Opus 5.5), session ee439b95-8204-44ff-b74f-b24e6916f3dc, build workspace-restore phase 3, 2026-11-25.
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### A refused New Tab creation sometimes reports "session storage is full" twice since the workspace restore (e2e workspace-tabs red on CI)
+
+* **ID:** f-20261125-15 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** ux
+* **CI run:** 45609033856
+* **Repair owner:** ee439b95-8204-44ff-b74f-b24e6916f3dc on tuxedo-atlas, 2026-11-25T12:21:27Z
+* **Where:** `e2e/workspace-tabs.spec.ts:1737` ("refuses failed creation and close until durable retry"); the workspace-restore commits `61c4b3954`..`ae8de0546` (`src/state/workspaceSession.ts`, `src/state/store/tabStorage.ts`, `src/state/store/tree.ts`, `src/bootstrap.tsx`, `src/routes/__root.tsx`).
+* **Defect:** when sessionStorage refuses the `workspace` key, one New Tab click shows the "Could not open the game: the browser's session storage is full" notice twice, so a second refused workspace write (or a second report of one) happens that did not happen before the workspace restore.
+* **Observed:** CI `Test` run 45609033856 on `3a69d17e0`, job e2e: strict-mode violation, `getByText(/session storage is full/i)` resolved to 2 notifications. Local container, `pnpm test:e2e:container --project=workspace-tabs --repeat-each=30 -g "refuses failed creation"`: 4 of 30 failed on `ae8de0546`, 30 of 30 passed on base `952b7cbbb`. The same code passed CI once (run 45608759591 on `ae8de0546`): timing-dependent.
+* **Failure scenario:** a user whose session storage is full clicks New Tab and gets the refusal notice twice; the e2e gate on master is red about one run in eight.
+* **Fix direction:** find which restore/mirror path causes the second report (e.g. a deferred flush or store-creation subscription re-entering tab creation or workspace commit) and remove the cause; the test stays unchanged.
+* **Found by:** Claude Code (Opus 5.5), session ee439b95-8204-44ff-b74f-b24e6916f3dc, build workspace-restore, 2026-11-25.
