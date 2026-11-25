@@ -19,19 +19,36 @@ const query: Query = {
 
 let host: HTMLDivElement;
 let root: Root;
-let table: ReturnType<typeof useDatabaseListTable<Row, Query>>;
+let result: ReturnType<typeof useDatabaseListTable<Row, Query>>;
 const setQuery = vi.fn();
+const setRecordsPerPage = vi.fn();
 const setSelectedId = vi.fn();
 const activate = vi.fn();
+const onLoadMore = vi.fn();
+const onRetry = vi.fn();
 
-function Probe(props: { selectedId?: number; error?: unknown; query?: Query }) {
-  table = useDatabaseListTable({
-    records,
-    count: 30,
-    error: props.error,
-    isLoading: true,
+function Probe(props: {
+  selectedId?: number;
+  error?: unknown;
+  query?: Query;
+  mode?: "paged" | "all";
+}) {
+  result = useDatabaseListTable({
+    list: {
+      records,
+      count: 30,
+      error: props.error,
+      isLoading: true,
+      isLoadingMore: false,
+      boundReachedWithMore: false,
+      scrollViewportRef: { current: null },
+      loadMore: onLoadMore,
+      retry: onRetry,
+    },
+    mode: props.mode ?? "paged",
     query: props.query ?? query,
     setQuery,
+    setRecordsPerPage,
     selectedId: props.selectedId,
     setSelectedId,
     sortAccessor: (sort) => (sort === "games" ? "game_count" : "name"),
@@ -67,60 +84,69 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-test("paging and page size come from the query and write back into its options", async () => {
+test("paging and page size come from the query and write back through setQuery / setRecordsPerPage", async () => {
   await mount();
-  expect(table).toMatchObject({
+  expect(result.tableProps).toMatchObject({
     records,
     fetching: true,
-    totalRecords: 30,
+    height: undefined,
+    onScrollToBottom: undefined,
+  });
+  expect(result.footerProps).toMatchObject({
+    mode: "paged",
     page: 2,
     recordsPerPage: 10,
-    recordsPerPageLabel: "Common.RecordsPerPage",
-    recordsPerPageOptions: [10, 25, 50],
+    shownCount: 3,
+    totalRecords: 30,
   });
-  table.onPageChange(3);
+  result.footerProps.onPageChange(3);
   expect(setQuery).toHaveBeenLastCalledWith({ ...query, options: { ...query.options, page: 3 } });
-  table.onRecordsPerPageChange(50);
-  expect(setQuery).toHaveBeenLastCalledWith({
-    ...query,
-    options: { ...query.options, pageSize: 50 },
-  });
+  result.footerProps.onRecordsPerPageChange(50);
+  expect(setRecordsPerPage).toHaveBeenLastCalledWith(50);
+  result.footerProps.onRecordsPerPageChange("all");
+  expect(setRecordsPerPage).toHaveBeenLastCalledWith("all");
+});
+
+test("in All mode onScrollToBottom forwards to onLoadMore and height is bounded", async () => {
+  await mount({ mode: "all" });
+  expect(result.tableProps.onScrollToBottom).toBe(onLoadMore);
+  expect(result.tableProps.height).toBe("100%");
 });
 
 test("a query without page or size starts on page one with 25 rows", async () => {
   await mount({
     query: { name: "", options: { skipCount: false, sort: "name", direction: "desc" } },
   });
-  expect(table).toMatchObject({ page: 1, recordsPerPage: 25 });
+  expect(result.footerProps).toMatchObject({ page: 1, recordsPerPage: 25 });
 });
 
 test("sort status round-trips through the table's mapping and ignores unsortable columns", async () => {
   await mount();
-  expect(table.sortStatus).toEqual({ columnAccessor: "game_count", direction: "asc" });
-  table.onSortStatusChange({ columnAccessor: "name", direction: "desc" });
+  expect(result.tableProps.sortStatus).toEqual({ columnAccessor: "game_count", direction: "asc" });
+  result.tableProps.onSortStatusChange({ columnAccessor: "name", direction: "desc" });
   expect(setQuery).toHaveBeenLastCalledWith({
     ...query,
     options: { ...query.options, sort: "name", direction: "desc" },
   });
   setQuery.mockClear();
-  table.onSortStatusChange({ columnAccessor: "site", direction: "desc" });
+  result.tableProps.onSortStatusChange({ columnAccessor: "site", direction: "desc" });
   expect(setQuery).not.toHaveBeenCalled();
 });
 
 test("the selected row is marked and a row click selects its record", async () => {
   await mount({ selectedId: 2 });
-  expect(table.rowClassName(records[1])).toBe(classes.selected);
-  expect(table.rowClassName(records[0])).toBe("");
-  expect(table.customRowAttributes(records[1])["aria-selected"]).toBe(true);
-  expect(table.customRowAttributes(records[0])["aria-selected"]).toBe(false);
-  table.onRowClick({ record: records[2] });
+  expect(result.tableProps.rowClassName(records[1])).toBe(classes.selected);
+  expect(result.tableProps.rowClassName(records[0])).toBe("");
+  expect(result.tableProps.customRowAttributes(records[1])["aria-selected"]).toBe(true);
+  expect(result.tableProps.customRowAttributes(records[0])["aria-selected"]).toBe(false);
+  result.tableProps.onRowClick({ record: records[2] });
   expect(setSelectedId).toHaveBeenLastCalledWith(3);
 });
 
 test("Enter on a row activates that record", async () => {
   await mount();
   const row = document.createElement("tr");
-  const { onKeyDown } = table.customRowAttributes(records[0]);
+  const { onKeyDown } = result.tableProps.customRowAttributes(records[0]);
   onKeyDown({
     key: "Enter",
     repeat: false,
@@ -133,9 +159,9 @@ test("Enter on a row activates that record", async () => {
 
 test("a load failure replaces the empty text, otherwise the table's own empty text shows", async () => {
   await mount();
-  expect(table.noRecordsText).toBe("Nothing here");
+  expect(result.tableProps.noRecordsText).toBe("Nothing here");
   await mount({ error: { category: "unexpected", message: "boom" } });
-  expect(table.noRecordsText).not.toBe("Nothing here");
+  expect(result.tableProps.noRecordsText).not.toBe("Nothing here");
 });
 
 test("document arrow keys move the selection, typing in a field does not", async () => {

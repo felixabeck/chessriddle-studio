@@ -167,6 +167,7 @@ describe("database-view durable admission", () => {
             (store) =>
                 store.getState().setGamesQuery({ ...store.getState().games.query, player1: 7 }),
         ],
+        ["setGamesRecordsPerPage", (store) => store.getState().setGamesRecordsPerPage("all")],
         ["setGamesSelectedGameId", (store) => store.getState().setGamesSelectedGameId(43)],
         ["toggleGamesOpenedSettings", (store) => store.getState().toggleGamesOpenedSettings()],
         [
@@ -176,6 +177,7 @@ describe("database-view durable admission", () => {
                     .getState()
                     .setPlayersQuery({ ...store.getState().players.query, name: "Next" }),
         ],
+        ["setPlayersRecordsPerPage", (store) => store.getState().setPlayersRecordsPerPage("all")],
         ["setPlayersSelectedPlayer", (store) => store.getState().setPlayersSelectedPlayer(8)],
         ["setPlayersActiveTab", (store) => store.getState().setPlayersActiveTab("ratings")],
         [
@@ -184,6 +186,10 @@ describe("database-view durable admission", () => {
                 store
                     .getState()
                     .setTournamentsQuery({ ...store.getState().tournaments.query, name: "Next" }),
+        ],
+        [
+            "setTournamentsRecordsPerPage",
+            (store) => store.getState().setTournamentsRecordsPerPage("all"),
         ],
         [
             "setTournamentsSelectedTournament",
@@ -334,6 +340,7 @@ describe("database-view durable admission", () => {
 const defaults = activeDatabaseViewStore.getInitialState();
 const validGames = {
     isFilterExpanded: true,
+    listMode: "paged" as const,
     selectedGameId: 42,
     query: {
         ...defaults.games.query,
@@ -358,6 +365,7 @@ const validGames = {
 };
 const validPlayers = {
     activeTab: "ratings",
+    listMode: "paged" as const,
     selectedPlayer: -7,
     query: {
         name: "Carlsen",
@@ -367,6 +375,7 @@ const validPlayers = {
 };
 const validTournaments = {
     activeTab: "leaderboard",
+    listMode: "paged" as const,
     selectedTournament: 9,
     query: { name: null, options: { skipCount: true, sort: "name", direction: "asc" } },
 };
@@ -977,5 +986,142 @@ describe("database result-set state", () => {
         sessionStorage.setItem("database-view", persisted);
         await fresh.persist.rehydrate();
         expect(fresh.getState().players.activeTab).toBe("preparation");
+    });
+
+    it("round-trips 'all' listMode per list through sessionStorage without adding it to QueryOptions", async () => {
+        const store = await hydrate({ database: selectedDatabase });
+        expect(store.getState().setGamesRecordsPerPage("all")).toBe(true);
+        expect(store.getState().setPlayersRecordsPerPage("all")).toBe(true);
+        expect(store.getState().setTournamentsRecordsPerPage("all")).toBe(true);
+
+        expect(store.getState().games.listMode).toBe("all");
+        expect(store.getState().players.listMode).toBe("all");
+        expect(store.getState().tournaments.listMode).toBe("all");
+        expect(store.getState().games.query.options).not.toHaveProperty("listMode");
+        expect(store.getState().games.query.options).not.toHaveProperty("mode");
+        expect(store.getState().players.query.options).not.toHaveProperty("listMode");
+        expect(store.getState().tournaments.query.options).not.toHaveProperty("listMode");
+
+        const persisted = sessionStorage.getItem("database-view")!;
+        const reloaded = await hydrate();
+        sessionStorage.setItem("database-view", persisted);
+        await reloaded.persist.rehydrate();
+        expect(reloaded.getState().games.listMode).toBe("all");
+        expect(reloaded.getState().players.listMode).toBe("all");
+        expect(reloaded.getState().tournaments.listMode).toBe("all");
+    });
+
+    it.each([undefined, null, "infinite", "", 42, {}, []])(
+        "hydrates absent or malformed listMode %j to paged while preserving the slice",
+        async (listMode) => {
+            const store = await hydrate({
+                games: { ...validGames, listMode },
+                players: { ...validPlayers, listMode },
+                tournaments: { ...validTournaments, listMode },
+            });
+            expect(store.getState().games).toEqual({ ...validGames, listMode: "paged" });
+            expect(store.getState().players).toEqual({ ...validPlayers, listMode: "paged" });
+            expect(store.getState().tournaments).toEqual({
+                ...validTournaments,
+                listMode: "paged",
+            });
+        },
+    );
+
+    it("switching to 'all' and back to a page size resets page to 1 and clears selection across all lists", async () => {
+        const pagedStore = await hydrate({
+            database: selectedDatabase,
+            games: {
+                ...validGames,
+                listMode: "paged",
+                selectedGameId: 42,
+                query: {
+                    ...validGames.query,
+                    options: { ...validGames.query.options, page: 5, pageSize: 50 },
+                },
+            },
+            players: {
+                ...validPlayers,
+                listMode: "paged",
+                selectedPlayer: 7,
+                query: {
+                    ...validPlayers.query,
+                    options: { ...validPlayers.query.options, page: 5, pageSize: 50 },
+                },
+            },
+            tournaments: {
+                ...validTournaments,
+                listMode: "paged",
+                selectedTournament: 9,
+                query: {
+                    ...validTournaments.query,
+                    options: { ...validTournaments.query.options, page: 4, pageSize: 50 },
+                },
+            },
+        });
+
+        expect(pagedStore.getState().setGamesRecordsPerPage("all")).toBe(true);
+        expect(pagedStore.getState().games.listMode).toBe("all");
+        expect(pagedStore.getState().games.query.options?.page).toBe(1);
+        expect(pagedStore.getState().games.selectedGameId).toBeUndefined();
+
+        expect(pagedStore.getState().setPlayersRecordsPerPage("all")).toBe(true);
+        expect(pagedStore.getState().players.listMode).toBe("all");
+        expect(pagedStore.getState().players.query.options.page).toBe(1);
+        expect(pagedStore.getState().players.selectedPlayer).toBeUndefined();
+
+        expect(pagedStore.getState().setTournamentsRecordsPerPage("all")).toBe(true);
+        expect(pagedStore.getState().tournaments.listMode).toBe("all");
+        expect(pagedStore.getState().tournaments.query.options.page).toBe(1);
+        expect(pagedStore.getState().tournaments.selectedTournament).toBeUndefined();
+
+        const store = await hydrate({
+            database: selectedDatabase,
+            games: {
+                ...validGames,
+                listMode: "all",
+                selectedGameId: 42,
+                query: {
+                    ...validGames.query,
+                    options: { ...validGames.query.options, page: 5, pageSize: 50 },
+                },
+            },
+            players: {
+                ...validPlayers,
+                listMode: "all",
+                selectedPlayer: 7,
+                query: {
+                    ...validPlayers.query,
+                    options: { ...validPlayers.query.options, page: 5, pageSize: 50 },
+                },
+            },
+            tournaments: {
+                ...validTournaments,
+                listMode: "all",
+                selectedTournament: 9,
+                query: {
+                    ...validTournaments.query,
+                    options: { ...validTournaments.query.options, page: 4, pageSize: 50 },
+                },
+            },
+        });
+
+        expect(store.getState().setGamesRecordsPerPage(25)).toBe(true);
+        expect(store.getState().games.listMode).toBe("paged");
+        expect(store.getState().games.query.options?.pageSize).toBe(25);
+        expect(store.getState().games.query.options?.page).toBe(1);
+        expect(store.getState().games.selectedGameId).toBeUndefined();
+
+        expect(store.getState().setPlayersRecordsPerPage(10)).toBe(true);
+        expect(store.getState().players.listMode).toBe("paged");
+        expect(store.getState().players.query.options.pageSize).toBe(10);
+        expect(store.getState().players.query.options.page).toBe(1);
+        expect(store.getState().players.selectedPlayer).toBeUndefined();
+
+        expect(store.getState().setTournamentsRecordsPerPage(50)).toBe(true);
+        expect(store.getState().tournaments.listMode).toBe("paged");
+        expect(store.getState().tournaments.query.options.pageSize).toBe(50);
+        expect(store.getState().tournaments.query.options.page).toBe(1);
+        expect(store.getState().tournaments.selectedTournament).toBeUndefined();
     });
 });

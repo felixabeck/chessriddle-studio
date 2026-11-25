@@ -1,15 +1,13 @@
 import { tauri } from "@/platform/tauri";
-import { Center, Flex, Text, TextInput } from "@mantine/core";
-import { useDebouncedValue } from "@mantine/hooks";
+import { Box, Center, Flex, Text, TextInput } from "@mantine/core";
 import { Search } from "lucide-react";
 import { DataTable } from "mantine-datatable";
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
-import useSWR from "swr";
 import { useStore } from "zustand";
 import type { Event, TournamentSort } from "@/bindings";
-import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { NAME_SEARCH_DEBOUNCE_MS } from "@/utils/db";
+import { DatabaseListFooter } from "./DatabaseListFooter";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import {
   dateColumn,
@@ -18,6 +16,8 @@ import {
   truncatedTextColumn,
 } from "./databaseColumns";
 import GridLayout from "./GridLayout";
+import layoutClasses from "./GridLayout.module.css";
+import { useDatabaseListQuery } from "./useDatabaseListQuery";
 import { useDatabaseListTable } from "./useDatabaseListTable";
 import TournamentCard from "./TournamentCard";
 
@@ -38,27 +38,30 @@ function TournamentTable() {
 
   const file = useStore(store, (s) => s.database?.file)!;
   const query = useStore(store, (s) => s.tournaments.query);
-  const [debouncedQuery] = useDebouncedValue(query, NAME_SEARCH_DEBOUNCE_MS);
+  const listMode = useStore(store, (s) => s.tournaments.listMode);
   const selected = useStore(store, (s) => s.tournaments.selectedTournament);
   const setQuery = useStore(store, (s) => s.setTournamentsQuery);
+  const setRecordsPerPage = useStore(store, (s) => s.setTournamentsRecordsPerPage);
   const setSelected = useStore(store, (s) => s.setTournamentsSelectedTournament);
+  const generation = useStore(store, (s) => s.database?.collection?.generation);
 
-  const requestKey = ["tournaments", file, debouncedQuery] as const;
-  const requestOwner = useNativeRequestOwner(requestKey);
-  const { data, error, isLoading } = useSWR(requestKey, () =>
-    requestOwner!.run((signal) => tauri.getTournaments(file, debouncedQuery, { signal })),
-  );
-  const tournaments = data?.data ?? [];
-  const count = data?.count;
-  const tournament = tournaments.find((t) => t.id === selected);
+  const list = useDatabaseListQuery({
+    kind: "tournaments",
+    file,
+    query,
+    mode: listMode,
+    generation,
+    debounceMs: NAME_SEARCH_DEBOUNCE_MS,
+    fetchPage: tauri.getTournaments,
+  });
+  const tournament = list.records.find((row) => row.id === selected);
 
-  const table = useDatabaseListTable({
-    records: tournaments,
-    count,
-    error,
-    isLoading,
+  const { tableProps, footerProps } = useDatabaseListTable({
+    list,
+    mode: listMode,
     query,
     setQuery,
+    setRecordsPerPage,
     selectedId: selected,
     setSelectedId: setSelected,
     sortAccessor: (sort) => tournamentSortAccessors[sort ?? "date"],
@@ -87,42 +90,47 @@ function TournamentTable() {
         </Flex>
       }
       table={
-        <DataTable<Event>
-          {...table}
-          columns={[
-            { accessor: "name", title: t("Common.Name"), sortable: true },
-            {
-              ...dateColumn,
-              accessor: "start_date",
-              title: t("Common.Date"),
-              sortable: true,
-              render: ({ start_date, end_date }) => formatEventDateRange(start_date, end_date),
-            },
-            {
-              ...truncatedTextColumn<Event>((event) => event.site),
-              accessor: "site",
-              title: t("Databases.Game.Site"),
-            },
-            {
-              ...numericColumn,
-              accessor: "player_count",
-              title: t("Databases.Card.Players"),
-              sortable: true,
-            },
-            {
-              ...numericColumn,
-              accessor: "game_count",
-              title: t("Common.Games"),
-              sortable: true,
-            },
-            {
-              ...numericColumn,
-              accessor: "avg_elo",
-              title: t("Databases.Tournament.AvgElo"),
-              sortable: true,
-            },
-          ]}
-        />
+        <>
+          <Box className={layoutClasses.tableViewport}>
+            <DataTable<Event>
+              {...tableProps}
+              columns={[
+                { accessor: "name", title: t("Common.Name"), sortable: true },
+                {
+                  ...dateColumn,
+                  accessor: "start_date",
+                  title: t("Common.Date"),
+                  sortable: true,
+                  render: ({ start_date, end_date }) => formatEventDateRange(start_date, end_date),
+                },
+                {
+                  ...truncatedTextColumn<Event>((event) => event.site),
+                  accessor: "site",
+                  title: t("Databases.Game.Site"),
+                },
+                {
+                  ...numericColumn,
+                  accessor: "player_count",
+                  title: t("Databases.Card.Players"),
+                  sortable: true,
+                },
+                {
+                  ...numericColumn,
+                  accessor: "game_count",
+                  title: t("Common.Games"),
+                  sortable: true,
+                },
+                {
+                  ...numericColumn,
+                  accessor: "avg_elo",
+                  title: t("Databases.Tournament.AvgElo"),
+                  sortable: true,
+                },
+              ]}
+            />
+          </Box>
+          <DatabaseListFooter {...footerProps} />
+        </>
       }
       preview={
         tournament != null ? (

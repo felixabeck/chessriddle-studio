@@ -1,0 +1,23 @@
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+  flex-shrink: 0;
+  padding: var(--mantine-spacing-xs);
+}
+
+.pageSizeButton,
+.pageSizeItem {
+  height: 1.625rem;
+}
+
+.pageSizeButton {
+  font-weight: normal;
+  padding-inline: var(--mantine-spacing-xs);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

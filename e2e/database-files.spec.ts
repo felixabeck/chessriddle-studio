@@ -3485,6 +3485,111 @@ for (const scheme of ["dark", "light"] as const) {
     });
 }
 
+test("database-files: games list All mode loads chunks on scroll, keeps footer with zero rows, and switches back to page 1", async ({
+    page,
+    mockScenario,
+}) => {
+    await page.addInitScript(() => {
+        localStorage.setItem("font-size", "100");
+        localStorage.setItem("mantine-color-scheme", "dark");
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockScenario({ commands: databaseLayoutCommands });
+    await page.addInitScript(() => {
+        type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+        const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
+            .__TAURI_INTERNALS__;
+        const invoke = internals.invoke;
+        const allGames = Array.from({ length: 150 }, (_, index) => {
+            const id = index + 1;
+            return {
+                id,
+                white: `Scroll White ${id}`,
+                white_id: id,
+                white_elo: 2500,
+                black: `Scroll Black ${id}`,
+                black_id: id + 1000,
+                black_elo: 2450,
+                date: "2026.01.01",
+                result: "1-0",
+                ply_count: 40,
+                event: "Scroll Cup",
+                event_id: 1,
+                site: "Berlin",
+                site_id: 1,
+                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                moves: "1. e4 e5 1-0",
+            };
+        });
+        internals.invoke = async (command, args = {}) => {
+            if (command === "get_games") {
+                const query = args.query as {
+                    outcome?: string | null;
+                    options?: { page?: number; pageSize?: number; skipCount?: boolean };
+                };
+                if (query?.outcome === "0-1") {
+                    return { data: [], count: 0 };
+                }
+                const page = query?.options?.page ?? 1;
+                const pageSize = query?.options?.pageSize ?? 25;
+                const start = (page - 1) * pageSize;
+                return {
+                    data: allGames.slice(start, start + pageSize),
+                    count: query?.options?.skipCount ? null : allGames.length,
+                };
+            }
+            return invoke(command, args);
+        };
+    });
+
+    await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+    const gamesPanel = page.getByRole("tabpanel", { name: "Games", exact: true });
+    const tablePane = gamesPanel.locator('[data-database-pane="table"]');
+    const footer = tablePane.locator("[data-database-list-footer]");
+
+    await expect(tablePane.locator("tbody tr")).toHaveCount(25);
+    await expect(footer).toContainText("1 - 25 / 150");
+
+    // Switch to "All": first 100-row chunk loads.
+    await footer.getByRole("button", { name: "25", exact: true }).click();
+    await page.getByRole("menuitem", { name: "All", exact: true }).click();
+    await expect(tablePane.locator("tbody tr")).toHaveCount(100);
+    await expect(footer).toContainText("Showing 100 of 150");
+
+    await waitForFontsSettled(page);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.mouse.move(0, 0);
+    await expect(tablePane).toHaveScreenshot("games-list-all-mode.png", {
+        stylePath: scrollbarFreeScreenshot,
+    });
+
+    // Scroll the table viewport to the bottom: second chunk loads (150 total).
+    const viewport = tablePane.locator(".mantine-ScrollArea-viewport").first();
+    await viewport.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+    });
+    await expect(tablePane.locator("tbody tr")).toHaveCount(150);
+    await expect(footer).toContainText("Showing 150 of 150");
+
+    // Filter matching zero rows: footer stays mounted in All mode.
+    await tablePane.getByRole("button", { name: "More options", exact: true }).click();
+    await tablePane.getByRole("textbox", { name: "Result", exact: true }).click();
+    await page.getByRole("option", { name: "Black wins", exact: true }).click();
+    await expect(tablePane.getByText("No games found", { exact: true })).toBeVisible();
+    await expect(footer).toBeVisible();
+    await expect(footer).toContainText("Showing 0 of 0");
+    await expect(footer.getByRole("button", { name: "All", exact: true })).toBeVisible();
+
+    // Clear filter and switch back to 25 -> returns to page 1.
+    await tablePane.locator(".mantine-Select-root button").first().click();
+    await expect(tablePane.locator("tbody tr")).toHaveCount(100);
+    await footer.getByRole("button", { name: "All", exact: true }).click();
+    await page.getByRole("menuitem", { name: "25", exact: true }).click();
+    await expect(tablePane.locator("tbody tr")).toHaveCount(25);
+    await expect(footer).toContainText("1 - 25 / 150");
+    await expect(tablePane.locator("tbody tr").first()).toContainText("Scroll White 1");
+});
+
 /**
  * An analysis board over two local databases that answer the start position differently.
  * `stored` seeds further `localStorage` values before the first load.

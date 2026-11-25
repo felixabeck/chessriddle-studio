@@ -25,7 +25,8 @@ vi.mock("@mantine/hooks", async (original) => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-vi.mock("swr", () => ({
+vi.mock("swr", async (original) => ({
+  ...(await original<typeof import("swr")>()),
   default: () => ({ data: { data: records, count: 100 }, isLoading: false }),
 }));
 vi.mock("@/hooks/useNativeRequestOwner", () => ({ useNativeRequestOwner: () => null }));

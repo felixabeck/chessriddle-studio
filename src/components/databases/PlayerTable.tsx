@@ -1,20 +1,20 @@
-import { Center, Collapse, Flex, Group, Text, TextInput } from "@mantine/core";
-import { useDebouncedValue } from "@mantine/hooks";
+import { Box, Center, Collapse, Flex, Group, Text, TextInput } from "@mantine/core";
 import { EllipsisVertical, Search } from "lucide-react";
 import { DataTable } from "mantine-datatable";
 import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
-import useSWR from "swr";
 import { useStore } from "zustand";
 import type { Player, PlayerSort } from "@/bindings";
 import DraftNumberInput from "@/components/common/DraftNumberInput";
 import { IconAction } from "@/components/common/IconAction";
-import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { ELO_FILTER_MAX, NAME_SEARCH_DEBOUNCE_MS, query_players } from "@/utils/db";
+import { DatabaseListFooter } from "./DatabaseListFooter";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { numericColumn } from "./databaseColumns";
 import GridLayout from "./GridLayout";
+import layoutClasses from "./GridLayout.module.css";
 import PlayerCard from "./PlayerCard";
+import { useDatabaseListQuery } from "./useDatabaseListQuery";
 import { useDatabaseListTable } from "./useDatabaseListTable";
 
 // The native query takes whole-number bounds; a fraction or an out-of-range number is not stored.
@@ -28,30 +28,33 @@ function PlayerTable() {
 
   const file = useStore(store, (s) => s.database?.file)!;
   const query = useStore(store, (s) => s.players.query);
-  const [debouncedQuery] = useDebouncedValue(query, NAME_SEARCH_DEBOUNCE_MS);
+  const listMode = useStore(store, (s) => s.players.listMode);
   const setQuery = useStore(store, (s) => s.setPlayersQuery);
+  const setRecordsPerPage = useStore(store, (s) => s.setPlayersRecordsPerPage);
 
   const selectedPlayer = useStore(store, (s) => s.players.selectedPlayer);
   const setSelectedPlayer = useStore(store, (s) => s.setPlayersSelectedPlayer);
+  const generation = useStore(store, (s) => s.database?.collection?.generation);
 
-  const requestKey = ["players", file, debouncedQuery] as const;
-  const requestOwner = useNativeRequestOwner(requestKey);
-  const { data, error, isLoading } = useSWR(requestKey, () =>
-    requestOwner!.run((signal) => query_players(file, debouncedQuery, { signal })),
-  );
-  const players = data?.data ?? [];
-  const count = data?.count;
-  const player = players.find((p) => p.id === selectedPlayer);
+  const list = useDatabaseListQuery({
+    kind: "players",
+    file,
+    query,
+    mode: listMode,
+    generation,
+    debounceMs: NAME_SEARCH_DEBOUNCE_MS,
+    fetchPage: query_players,
+  });
+  const player = list.records.find((p) => p.id === selectedPlayer);
 
   const [open, setOpen] = useState(false);
 
-  const table = useDatabaseListTable({
-    records: players,
-    count,
-    error,
-    isLoading,
+  const { tableProps, footerProps } = useDatabaseListTable({
+    list,
+    mode: listMode,
     query,
     setQuery,
+    setRecordsPerPage,
     selectedId: selectedPlayer,
     setSelectedId: setSelectedPlayer,
     sortAccessor: (sort) => (sort === "games" ? "game_count" : sort || "name"),
@@ -130,24 +133,29 @@ function PlayerTable() {
         </>
       }
       table={
-        <DataTable<Player>
-          {...table}
-          columns={[
-            { accessor: "name", title: t("Common.Name"), sortable: true },
-            {
-              ...numericColumn,
-              accessor: "elo",
-              title: t("Board.Database.Local.Elo"),
-              sortable: true,
-            },
-            {
-              ...numericColumn,
-              accessor: "game_count",
-              title: t("Board.Database.Games"),
-              sortable: true,
-            },
-          ]}
-        />
+        <>
+          <Box className={layoutClasses.tableViewport}>
+            <DataTable<Player>
+              {...tableProps}
+              columns={[
+                { accessor: "name", title: t("Common.Name"), sortable: true },
+                {
+                  ...numericColumn,
+                  accessor: "elo",
+                  title: t("Board.Database.Local.Elo"),
+                  sortable: true,
+                },
+                {
+                  ...numericColumn,
+                  accessor: "game_count",
+                  title: t("Board.Database.Games"),
+                  sortable: true,
+                },
+              ]}
+            />
+          </Box>
+          <DatabaseListFooter {...footerProps} />
+        </>
       }
       preview={
         player != null ? (

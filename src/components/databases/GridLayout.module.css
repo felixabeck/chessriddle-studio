@@ -137,8 +137,17 @@
 }
 
 .table {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 12rem;
+  min-width: 0;
+}
+
+.tableViewport {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
 
 .view[data-compact] {
@@ -214,7 +223,8 @@
   .table {
     /* Reserve font-scaled space for readable rows above the wrapped pagination controls. */
     --compact-table-viewport-height: 24rem;
-    display: block;
+    display: flex;
+    flex-direction: column;
     flex: none;
     height: var(--compact-table-viewport-height);
     min-width: 0;

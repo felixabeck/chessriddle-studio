@@ -5,15 +5,13 @@ import dayjs from "dayjs";
 import { DataTable } from "mantine-datatable";
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
-import useSWR from "swr";
 import { useStore } from "zustand";
 import type { GameSort, NormalizedGame, Outcome } from "@/bindings";
 import { EloRangeSlider } from "@/components/common/EloRangeSlider";
 import { IconAction } from "@/components/common/IconAction";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
-import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { query_games, sameDatabaseHandle } from "@/utils/db";
-import { failureUnlessCancelled } from "@/platform/errors";
+import { DatabaseListFooter } from "./DatabaseListFooter";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { dateColumn, numericColumn, truncatedTextColumn } from "./databaseColumns";
 import GameCard from "./GameCard";
@@ -23,6 +21,7 @@ import { PlayerSearchInput } from "./PlayerSearchInput";
 import PlayerRatingCell from "./PlayerRatingCell";
 import { SideInput } from "./SideInput";
 import sideInputClasses from "./SideInput.module.css";
+import { useDatabaseListQuery } from "./useDatabaseListQuery";
 import { useDatabaseListTable } from "./useDatabaseListTable";
 
 const gameSortByAccessor = {
@@ -49,7 +48,9 @@ function GameTable() {
 
   const file = useStore(store, (s) => s.database?.file)!;
   const query = useStore(store, (s) => s.games.query);
+  const listMode = useStore(store, (s) => s.games.listMode);
   const setQuery = useStore(store, (s) => s.setGamesQuery);
+  const setRecordsPerPage = useStore(store, (s) => s.setGamesRecordsPerPage);
   const openedSettings = useStore(store, (s) => s.games.isFilterExpanded);
   const toggleOpenedSettings = useStore(store, (s) => s.toggleGamesOpenedSettings);
 
@@ -57,18 +58,16 @@ function GameTable() {
   const setSelectedGameId = useStore(store, (s) => s.setGamesSelectedGameId);
   const generation = useStore(store, (s) => s.database?.collection?.generation);
 
-  const requestKey = generation
-    ? (["games", file, query, generation] as const)
-    : (["games", file, query] as const);
-  const requestOwner = useNativeRequestOwner(requestKey);
-  const { data, error, isLoading } = useSWR(requestKey, () =>
-    requestOwner!.run((signal) => query_games(file, query, { signal })),
-  );
+  const list = useDatabaseListQuery({
+    kind: "games",
+    file,
+    query,
+    mode: listMode,
+    generation,
+    fetchPage: query_games,
+  });
 
-  const failure = failureUnlessCancelled(error);
-  const games = failure ? [] : (data?.data ?? []);
-  const game = games.find((game) => game.id === selectedGameId);
-  const count = failure ? undefined : data?.count;
+  const game = list.records.find((row) => row.id === selectedGameId);
   const gameOpen = useOpenDatabaseGame(
     (record: NormalizedGame) => ({
       game: record,
@@ -77,13 +76,12 @@ function GameTable() {
     { fromPreview: true },
   );
 
-  const table = useDatabaseListTable({
-    records: games,
-    count,
-    error,
-    isLoading,
+  const { tableProps, footerProps } = useDatabaseListTable({
+    list,
+    mode: listMode,
     query,
     setQuery,
+    setRecordsPerPage,
     selectedId: selectedGameId,
     setSelectedId: setSelectedGameId,
     sortAccessor: (sort) => gameSortAccessors[sort ?? "date"] ?? "date",
@@ -204,48 +202,57 @@ function GameTable() {
         </Flex>
       }
       table={
-        <DataTable<NormalizedGame>
-          {...table}
-          columns={[
-            {
-              accessor: "white",
-              title: t("Fen.White"),
-              sortable: true,
-              render: ({ white, white_elo }) => <PlayerRatingCell name={white} elo={white_elo} />,
-            },
-            {
-              accessor: "black",
-              title: t("Fen.Black"),
-              sortable: true,
-              render: ({ black, black_elo }) => <PlayerRatingCell name={black} elo={black_elo} />,
-            },
-            { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
-            {
-              accessor: "result",
-              title: t("Board.Database.Local.Result"),
-              sortable: true,
-              render: ({ result }) => result?.replaceAll("1/2", "½"),
-            },
-            {
-              ...numericColumn,
-              accessor: "ply_count",
-              title: t("Databases.Game.Plies"),
-              sortable: true,
-            },
-            {
-              ...truncatedTextColumn<NormalizedGame>((game) => game.event),
-              accessor: "event",
-              title: t("Databases.Game.Event"),
-              sortable: true,
-            },
-            {
-              ...truncatedTextColumn<NormalizedGame>((game) => game.site),
-              accessor: "site",
-              title: t("Databases.Game.Site"),
-              sortable: true,
-            },
-          ]}
-        />
+        <>
+          <Box className={layoutClasses.tableViewport}>
+            <DataTable<NormalizedGame>
+              {...tableProps}
+              columns={[
+                {
+                  accessor: "white",
+                  title: t("Fen.White"),
+                  sortable: true,
+                  render: ({ white, white_elo }) => (
+                    <PlayerRatingCell name={white} elo={white_elo} />
+                  ),
+                },
+                {
+                  accessor: "black",
+                  title: t("Fen.Black"),
+                  sortable: true,
+                  render: ({ black, black_elo }) => (
+                    <PlayerRatingCell name={black} elo={black_elo} />
+                  ),
+                },
+                { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
+                {
+                  accessor: "result",
+                  title: t("Board.Database.Local.Result"),
+                  sortable: true,
+                  render: ({ result }) => result?.replaceAll("1/2", "½"),
+                },
+                {
+                  ...numericColumn,
+                  accessor: "ply_count",
+                  title: t("Databases.Game.Plies"),
+                  sortable: true,
+                },
+                {
+                  ...truncatedTextColumn<NormalizedGame>((game) => game.event),
+                  accessor: "event",
+                  title: t("Databases.Game.Event"),
+                  sortable: true,
+                },
+                {
+                  ...truncatedTextColumn<NormalizedGame>((game) => game.site),
+                  accessor: "site",
+                  title: t("Databases.Game.Site"),
+                  sortable: true,
+                },
+              ]}
+            />
+          </Box>
+          <DatabaseListFooter {...footerProps} />
+        </>
       }
       preview={
         <GameCard

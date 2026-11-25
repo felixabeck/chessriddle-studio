@@ -17,9 +17,44 @@ vi.mock("@/i18n", async (original) => ({
 }));
 vi.mock("@mantine/core", () => {
   const Wrapper = ({ children }: { children: ReactNode }) => <div>{children}</div>;
+  const Menu = Object.assign(Wrapper, {
+    Target: Wrapper,
+    Dropdown: Wrapper,
+    Item: ({
+      children,
+      disabled,
+      onClick,
+    }: {
+      children: ReactNode;
+      disabled?: boolean;
+      onClick?: () => void;
+    }) => (
+      <button type="button" role="menuitem" disabled={disabled} onClick={onClick}>
+        {children}
+      </button>
+    ),
+  });
   return {
+    Box: Wrapper,
+    Button: ({
+      children,
+      onClick,
+      disabled,
+    }: {
+      children: ReactNode;
+      onClick?: () => void;
+      disabled?: boolean;
+    }) => (
+      <button type="button" disabled={disabled} onClick={onClick}>
+        {children}
+      </button>
+    ),
     Center: Wrapper,
     Flex: Wrapper,
+    Group: Wrapper,
+    Loader: () => null,
+    Menu,
+    Pagination: () => null,
     Text: Wrapper,
     TextInput: ({
       value,
@@ -130,3 +165,60 @@ test.each([
     expect(container.textContent).not.toContain(message);
   },
 );
+
+test("switching to All issues one first-chunk request and switching back returns to paged page 1", async () => {
+  activeDatabaseViewStore.getState().setTournamentsQuery({
+    ...activeDatabaseViewStore.getState().tournaments.query,
+    options: {
+      ...activeDatabaseViewStore.getState().tournaments.query.options,
+      page: 2,
+      pageSize: 50,
+    },
+  });
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <TournamentTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+  mocks.getTournaments.mockClear();
+
+  const allItem = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "Common.All",
+  )!;
+  await act(async () => allItem.click());
+  expect(mocks.getTournaments).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+
+  expect(activeDatabaseViewStore.getState().tournaments.listMode).toBe("all");
+  expect(mocks.getTournaments).toHaveBeenCalledTimes(1);
+  expect(mocks.getTournaments).toHaveBeenLastCalledWith(
+    file,
+    expect.objectContaining({
+      options: expect.objectContaining({ page: 1, pageSize: 100, skipCount: false }),
+    }),
+    { signal: expect.any(AbortSignal) },
+  );
+
+  mocks.getTournaments.mockClear();
+  const size25 = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "25",
+  )!;
+  await act(async () => size25.click());
+  expect(mocks.getTournaments).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+  expect(activeDatabaseViewStore.getState().tournaments.listMode).toBe("paged");
+  expect(activeDatabaseViewStore.getState().tournaments.query.options.page).toBe(1);
+  expect(activeDatabaseViewStore.getState().tournaments.query.options.pageSize).toBe(25);
+  expect(mocks.getTournaments).toHaveBeenCalledTimes(1);
+  expect(mocks.getTournaments).toHaveBeenLastCalledWith(
+    file,
+    expect.objectContaining({
+      options: expect.objectContaining({ page: 1, pageSize: 25, skipCount: false }),
+    }),
+    { signal: expect.any(AbortSignal) },
+  );
+});

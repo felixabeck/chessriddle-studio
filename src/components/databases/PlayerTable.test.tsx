@@ -24,11 +24,45 @@ vi.mock("@/i18n", async (original) => ({
 }));
 vi.mock("@mantine/core", () => {
   const Wrapper = ({ children }: { children: ReactNode }) => <div>{children}</div>;
+  const Menu = Object.assign(Wrapper, {
+    Target: Wrapper,
+    Dropdown: Wrapper,
+    Item: ({
+      children,
+      disabled,
+      onClick,
+    }: {
+      children: ReactNode;
+      disabled?: boolean;
+      onClick?: () => void;
+    }) => (
+      <button type="button" role="menuitem" disabled={disabled} onClick={onClick}>
+        {children}
+      </button>
+    ),
+  });
   return {
+    Box: Wrapper,
+    Button: ({
+      children,
+      onClick,
+      disabled,
+    }: {
+      children: ReactNode;
+      onClick?: () => void;
+      disabled?: boolean;
+    }) => (
+      <button type="button" disabled={disabled} onClick={onClick}>
+        {children}
+      </button>
+    ),
     Center: Wrapper,
     Collapse: Wrapper,
     Flex: Wrapper,
     Group: Wrapper,
+    Loader: () => null,
+    Menu,
+    Pagination: () => null,
     Text: Wrapper,
     TextInput: ({
       value,
@@ -380,4 +414,61 @@ test.each([
     field().blur();
   });
   expect(field().value).toBe(bound);
+});
+
+test("switching to All issues one first-chunk request and switching back returns to paged page 1", async () => {
+  activeDatabaseViewStore.getState().setPlayersQuery({
+    ...activeDatabaseViewStore.getState().players.query,
+    options: {
+      ...activeDatabaseViewStore.getState().players.query.options,
+      page: 2,
+      pageSize: 50,
+    },
+  });
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <PlayerTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+  vi.mocked(query_players).mockClear();
+
+  const allItem = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "Common.All",
+  )!;
+  await act(async () => allItem.click());
+  expect(query_players).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+
+  expect(activeDatabaseViewStore.getState().players.listMode).toBe("all");
+  expect(query_players).toHaveBeenCalledTimes(1);
+  expect(query_players).toHaveBeenLastCalledWith(
+    file,
+    expect.objectContaining({
+      options: expect.objectContaining({ page: 1, pageSize: 100, skipCount: false }),
+    }),
+    { signal: expect.any(AbortSignal) },
+  );
+
+  vi.mocked(query_players).mockClear();
+  const size25 = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "25",
+  )!;
+  await act(async () => size25.click());
+  expect(query_players).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+  expect(activeDatabaseViewStore.getState().players.listMode).toBe("paged");
+  expect(activeDatabaseViewStore.getState().players.query.options.page).toBe(1);
+  expect(activeDatabaseViewStore.getState().players.query.options.pageSize).toBe(25);
+  expect(query_players).toHaveBeenCalledTimes(1);
+  expect(query_players).toHaveBeenLastCalledWith(
+    file,
+    expect.objectContaining({
+      options: expect.objectContaining({ page: 1, pageSize: 25, skipCount: false }),
+    }),
+    { signal: expect.any(AbortSignal) },
+  );
 });

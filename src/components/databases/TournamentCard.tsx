@@ -1,4 +1,4 @@
-import { Paper, Stack, Tabs, Text, useMantineTheme } from "@mantine/core";
+import { Box, Paper, Stack, Tabs, Text, useMantineTheme } from "@mantine/core";
 import { Eye } from "lucide-react";
 import { DataTable, type DataTableSortStatus } from "mantine-datatable";
 import { useContext, useEffect, useState } from "react";
@@ -12,11 +12,17 @@ import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { useDatabaseContentRevision } from "@/state/linkedCollections";
-import type { DatabaseViewStore } from "@/state/store/database";
+import type {
+  DatabaseViewStore,
+  ListDisplayMode,
+  RecordsPerPageChoice,
+} from "@/state/store/database";
 import { getTournamentGames } from "@/utils/db";
+import { DatabaseListFooter, DEFAULT_PAGE_SIZE } from "./DatabaseListFooter";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { dateColumn, numericColumn } from "./databaseColumns";
 import PlayerRatingCell from "./PlayerRatingCell";
+import { ALL_RECORDS_MAX_ROWS } from "./useDatabaseListQuery";
 
 type TournamentGameSortKey = "date" | "ply_count";
 
@@ -63,8 +69,9 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
     game: record,
     database: file,
   }));
+  const [mode, setMode] = useState<ListDisplayMode>("paged");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const { revision, unavailable } = useDatabaseContentRevision(file);
   const requestKey =
     revision && !unavailable
@@ -133,11 +140,26 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
     setPage((currentPage) => Math.min(currentPage, lastPage));
   }, [lastPage]);
 
-  const paginatedGames = sortedGames.slice((page - 1) * pageSize, page * pageSize);
+  const displayedGames =
+    mode === "all"
+      ? sortedGames.slice(0, ALL_RECORDS_MAX_ROWS)
+      : sortedGames.slice((page - 1) * pageSize, page * pageSize);
+  const boundReachedWithMore = mode === "all" && sortedGames.length > ALL_RECORDS_MAX_ROWS;
+
+  const handleRecordsPerPageChange = (choice: RecordsPerPageChoice) => {
+    if (choice === "all") {
+      setMode("all");
+      setPage(1);
+      return;
+    }
+    setMode("paged");
+    setPageSize(choice);
+    setPage(1);
+  };
 
   return (
     <Paper shadow="sm" p="sm" withBorder h="100%">
-      <Stack h="100%">
+      <Stack h="100%" style={{ minHeight: 0 }}>
         <Text fz="lg" fw={500}>
           {tournament.name}
         </Text>
@@ -155,7 +177,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
             onChange={(tab) =>
               setTournamentsActiveTab(tab as DatabaseViewStore["tournaments"]["activeTab"])
             }
-            style={{ flexDirection: "column", overflow: "hidden" }}
+            style={{ flexDirection: "column", overflow: "hidden", flex: 1, minHeight: 0 }}
             display="flex"
             h="100%"
           >
@@ -163,63 +185,71 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
               <Tabs.Tab value="games">{t("Common.Games")}</Tabs.Tab>
               <Tabs.Tab value="leaderboard">{t("Databases.Tournament.Leaderboard")}</Tabs.Tab>
             </Tabs.List>
-            <Tabs.Panel value="games" flex={1} style={{ overflow: "hidden" }}>
-              <DataTable<NormalizedGame>
-                fetching={isLoading || revision === null}
-                withTableBorder
-                highlightOnHover
-                records={paginatedGames}
-                totalRecords={sortedGames.length}
-                recordsPerPage={pageSize}
-                onRecordsPerPageChange={(size) => {
-                  setPageSize(size);
-                  setPage(1);
-                }}
-                recordsPerPageLabel={t("Common.RecordsPerPage")}
-                recordsPerPageOptions={[10, 25, 50]}
+            <Tabs.Panel
+              value="games"
+              flex={1}
+              style={{ overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}
+            >
+              <Box style={{ flex: 1, minHeight: 0 }}>
+                <DataTable<NormalizedGame>
+                  height={mode === "all" ? "100%" : undefined}
+                  fetching={isLoading || revision === null}
+                  withTableBorder
+                  highlightOnHover
+                  records={displayedGames}
+                  sortStatus={sort}
+                  onSortStatusChange={setSort}
+                  columns={[
+                    {
+                      accessor: "actions",
+                      title: "",
+                      render: (game) => (
+                        <IconAction
+                          label={t("Common.Open")}
+                          variant="filled"
+                          color={theme.primaryColor}
+                          onClick={() => void gameOpen.activate(game)}
+                        >
+                          <Eye size="1rem" strokeWidth={2} />
+                        </IconAction>
+                      ),
+                    },
+                    {
+                      accessor: "white",
+                      title: t("Fen.White"),
+                      render: ({ white, white_elo }) => (
+                        <PlayerRatingCell name={white} elo={white_elo} />
+                      ),
+                    },
+                    {
+                      accessor: "black",
+                      title: t("Fen.Black"),
+                      render: ({ black, black_elo }) => (
+                        <PlayerRatingCell name={black} elo={black_elo} />
+                      ),
+                    },
+                    { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
+                    { accessor: "result", title: t("Board.Database.Local.Result") },
+                    {
+                      ...numericColumn,
+                      accessor: "ply_count",
+                      title: t("Databases.Game.Plies"),
+                      sortable: true,
+                    },
+                  ]}
+                  noRecordsText={t("Databases.Game.NoGamesFound")}
+                />
+              </Box>
+              <DatabaseListFooter
+                mode={mode}
                 page={page}
+                recordsPerPage={pageSize}
+                shownCount={displayedGames.length}
+                totalRecords={sortedGames.length}
+                isLoading={isLoading || revision === null}
+                boundReachedWithMore={boundReachedWithMore}
                 onPageChange={setPage}
-                sortStatus={sort}
-                onSortStatusChange={setSort}
-                columns={[
-                  {
-                    accessor: "actions",
-                    title: "",
-                    render: (game) => (
-                      <IconAction
-                        label={t("Common.Open")}
-                        variant="filled"
-                        color={theme.primaryColor}
-                        onClick={() => void gameOpen.activate(game)}
-                      >
-                        <Eye size="1rem" strokeWidth={2} />
-                      </IconAction>
-                    ),
-                  },
-                  {
-                    accessor: "white",
-                    title: t("Fen.White"),
-                    render: ({ white, white_elo }) => (
-                      <PlayerRatingCell name={white} elo={white_elo} />
-                    ),
-                  },
-                  {
-                    accessor: "black",
-                    title: t("Fen.Black"),
-                    render: ({ black, black_elo }) => (
-                      <PlayerRatingCell name={black} elo={black_elo} />
-                    ),
-                  },
-                  { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
-                  { accessor: "result", title: t("Board.Database.Local.Result") },
-                  {
-                    ...numericColumn,
-                    accessor: "ply_count",
-                    title: t("Databases.Game.Plies"),
-                    sortable: true,
-                  },
-                ]}
-                noRecordsText={t("Databases.Game.NoGamesFound")}
+                onRecordsPerPageChange={handleRecordsPerPageChange}
               />
             </Tabs.Panel>
             <Tabs.Panel value="leaderboard" flex={1} style={{ overflow: "hidden" }}>

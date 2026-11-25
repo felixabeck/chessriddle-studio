@@ -158,9 +158,9 @@ test.each(["synchronizing", "ready"] as const)(
         host.querySelector("[data-game-table], [data-player-table], [data-tournament-table]") !==
           null,
       ).toBe(status === "ready");
-      expect(host.querySelector("[data-game-table]")?.textContent).toBe(
-        status === "ready" ? "games table" : undefined,
-      );
+      expect(
+        host.querySelector("[data-game-table]")?.textContent?.includes("games table") ?? false,
+      ).toBe(status === "ready");
       expect(mocks.requestKeys.mock.calls.length > 0).toBe(status === "ready");
       for (const [key] of mocks.requestKeys.mock.calls) {
         expect(key).toEqual(["games", previous.file, before.games.query, "admitted-generation"]);

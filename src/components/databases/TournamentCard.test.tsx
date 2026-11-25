@@ -35,7 +35,10 @@ vi.mock("@/utils/db", async (original) => ({
   ...(await original<typeof import("@/utils/db")>()),
   getTournamentGames: mocks.getTournamentGames,
 }));
-vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
+vi.mock("@/components/files/notifyError", async (original) => ({
+  ...(await original<typeof import("@/components/files/notifyError")>()),
+  notifyUnlessCancelled: mocks.notify,
+}));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("zustand", () => ({
   useStore: (_store: unknown, selector: (state: unknown) => unknown) =>
@@ -60,31 +63,19 @@ vi.mock("@/state/atoms", () => ({
   updateTabById: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
-vi.mock("lucide-react", () => ({ Eye: () => null }));
+vi.mock("lucide-react", () => ({ ChevronsUpDown: () => null, Eye: () => null }));
 // Keep the table boundary interactive and render the records supplied by TournamentCard.
 vi.mock("mantine-datatable", () => ({
   DataTable: <Record extends { id?: number; white?: string; name?: string; points?: number }>({
     records,
     columns,
-    page,
-    totalRecords,
-    recordsPerPage,
-    recordsPerPageOptions,
-    onRecordsPerPageChange,
-    onPageChange,
     onSortStatusChange,
   }: {
     records: Record[];
     columns?: { accessor: string; render?: (game: Record) => ReactNode }[];
-    page?: number;
-    totalRecords: number;
-    recordsPerPage: number;
-    recordsPerPageOptions: number[];
-    onRecordsPerPageChange: (size: number) => void;
-    onPageChange: (page: number) => void;
-    onSortStatusChange: (sort: { columnAccessor: string; direction: "asc" | "desc" }) => void;
+    onSortStatusChange?: (sort: { columnAccessor: string; direction: "asc" | "desc" }) => void;
   }) =>
-    page === undefined ? (
+    onSortStatusChange === undefined ? (
       <table data-testid="leaderboard">
         <tbody>
           {records.map((player, index) => (
@@ -107,19 +98,6 @@ vi.mock("mantine-datatable", () => ({
             ))}
           </tbody>
         </table>
-        <output>{`Page ${page} of ${Math.max(1, Math.ceil(totalRecords / recordsPerPage))}, size ${recordsPerPage}, total ${totalRecords}`}</output>
-        {recordsPerPageOptions.map((size) => (
-          <button key={size} type="button" onClick={() => onRecordsPerPageChange(size)}>
-            {`Size ${size}`}
-          </button>
-        ))}
-        <button
-          type="button"
-          disabled={page >= Math.ceil(totalRecords / recordsPerPage)}
-          onClick={() => onPageChange(page + 1)}
-        >
-          Next page
-        </button>
         <button
           type="button"
           onClick={() => onSortStatusChange({ columnAccessor: "date", direction: "asc" })}
@@ -144,17 +122,70 @@ vi.mock("@/utils/tabs", async (original) => ({
   ...(await original<typeof import("@/utils/tabs")>()),
   createTab: mocks.createTab,
 }));
-vi.mock("@mantine/core", () => ({
-  Paper: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  useMantineTheme: () => ({ primaryColor: "blue" }),
-  Tabs: Object.assign(({ children }: { children: ReactNode }) => <div>{children}</div>, {
-    List: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-    Tab: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-    Panel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  }),
-}));
+vi.mock("@mantine/core", () => {
+  const Wrapper = ({ children }: { children: ReactNode }) => <div>{children}</div>;
+  const Menu = Object.assign(Wrapper, {
+    Target: Wrapper,
+    Dropdown: Wrapper,
+    Item: ({
+      children,
+      disabled,
+      onClick,
+    }: {
+      children: ReactNode;
+      disabled?: boolean;
+      onClick?: () => void;
+    }) => (
+      <button type="button" role="menuitem" disabled={disabled} onClick={onClick}>
+        {children}
+      </button>
+    ),
+  });
+  return {
+    Box: Wrapper,
+    Button: ({
+      children,
+      onClick,
+      disabled,
+    }: {
+      children: ReactNode;
+      onClick?: () => void;
+      disabled?: boolean;
+    }) => (
+      <button type="button" disabled={disabled} onClick={onClick}>
+        {children}
+      </button>
+    ),
+    Group: Wrapper,
+    Loader: () => null,
+    Menu,
+    Pagination: ({
+      value,
+      total,
+      onChange,
+    }: {
+      value: number;
+      total: number;
+      onChange: (page: number) => void;
+    }) => (
+      <div>
+        <output data-testid="pagination">{`Page ${value} of ${total}`}</output>
+        <button type="button" disabled={value >= total} onClick={() => onChange(value + 1)}>
+          Next page
+        </button>
+      </div>
+    ),
+    Paper: Wrapper,
+    Stack: Wrapper,
+    Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+    useMantineTheme: () => ({ primaryColor: "blue" }),
+    Tabs: Object.assign(Wrapper, {
+      List: Wrapper,
+      Tab: Wrapper,
+      Panel: Wrapper,
+    }),
+  };
+});
 
 import TournamentCard from "./TournamentCard";
 
@@ -325,8 +356,9 @@ function expectPage(page: number, size: number, ids: number[], total = 60) {
       (row) => row.textContent,
     ),
   ).toEqual(ids.map((id) => `White ${id}`));
-  expect(container.querySelector("output")?.textContent).toBe(
-    `Page ${page} of ${Math.max(1, Math.ceil(total / size))}, size ${size}, total ${total}`,
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  expect(container.querySelector('[data-testid="pagination"]')?.textContent ?? null).toBe(
+    total > 0 ? `Page ${page} of ${totalPages}` : null,
   );
 }
 
@@ -362,14 +394,14 @@ test.each([
 
 test("page size 10 displays games 11–20 on the second page", async () => {
   await renderGames();
-  await click("Size 10");
+  await click("10");
   await click("Next page");
   expectPage(2, 10, ids(11, 20));
 });
 
 test("page size 50 displays 50 games and the remaining games on page two", async () => {
   await renderGames();
-  await click("Size 50");
+  await click("50");
   expectPage(1, 50, ids(1, 50));
   await click("Next page");
   expectPage(2, 50, ids(51, 60));
@@ -380,19 +412,64 @@ test("changing page size on a later page resets the paginator and displayed reco
   await click("Next page");
   await click("Next page");
   expectPage(3, 25, ids(51, 60));
-  await click("Size 50");
+  await click("50");
   expectPage(1, 50, ids(1, 50));
   await click("Next page");
-  await click("Size 10");
+  await click("10");
   expectPage(1, 10, ids(1, 10));
 });
 
 test("sorting orders the games before selecting the displayed page", async () => {
   await renderGames();
-  await click("Size 10");
+  await click("10");
   await click("Next page");
   await click("Sort plies descending");
   expectPage(2, 10, ids(41, 50).reverse());
+});
+
+test("All mode shows all games, switches back to page 1, and caps at 10,000 with notice only when rows exceed the bound", async () => {
+  await renderGames();
+  await click("Common.All");
+  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(60);
+  expect(container.textContent).not.toContain("Databases.List.BoundReached");
+
+  await click("25");
+  expectPage(1, 25, ids(1, 25));
+
+  const manyGames = (count: number): NormalizedGame[] =>
+    Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      white: "Alice",
+      white_id: 1,
+      black: "Bob",
+      black_id: 2,
+      date: "2026-01-01",
+      ply_count: index + 1,
+      result: "1-0",
+      event: "Candidates",
+      event_id: tournament.id,
+      site: "Test",
+      site_id: 1,
+      fen: "",
+      moves: "",
+    }));
+
+  // Exact bound (10,000 rows): no bound notice.
+  mocks.getTournamentGames.mockResolvedValue({ data: manyGames(10_000) });
+  await act(async () => {
+    await refreshGames();
+  });
+  await click("Common.All");
+  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(10_000);
+  expect(container.textContent).not.toContain("Databases.List.BoundReached");
+
+  // Exceeding bound (10,001 rows): capped at 10,000 and shows bound notice.
+  mocks.getTournamentGames.mockResolvedValue({ data: manyGames(10_001) });
+  await act(async () => {
+    await refreshGames();
+  });
+  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(10_000);
+  expect(container.textContent).toContain("Databases.List.BoundReached");
 });
 
 test.each([

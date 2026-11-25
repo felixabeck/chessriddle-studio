@@ -27,21 +27,27 @@ const persistedDatabaseSchema = z
     })
     .passthrough();
 
+export type ListDisplayMode = "paged" | "all";
+export type RecordsPerPageChoice = number | "all";
+
 export interface DatabaseViewStore {
     database?: SuccessDatabaseInfo;
     activeTab: "games" | "players" | "tournaments";
     games: {
         isFilterExpanded: boolean;
         query: GameListQuery;
+        listMode: ListDisplayMode;
         selectedGameId?: number;
     };
     players: {
         query: PlayerQuery;
+        listMode: ListDisplayMode;
         selectedPlayer?: number;
         activeTab: "overview" | "ratings" | "openings" | "preparation";
     };
     tournaments: {
         query: TournamentQuery;
+        listMode: ListDisplayMode;
         selectedTournament?: number;
         activeTab: "games" | "leaderboard";
     };
@@ -51,14 +57,17 @@ export interface DatabaseViewStore {
     setActiveTab: (mode: DatabaseViewStore["activeTab"]) => boolean;
 
     setGamesQuery: (filter: GameListQuery) => boolean;
+    setGamesRecordsPerPage: (choice: RecordsPerPageChoice) => boolean;
     setGamesSelectedGameId: (gameId?: number) => boolean;
     toggleGamesOpenedSettings: () => boolean;
 
     setPlayersQuery: (filter: PlayerQuery) => boolean;
+    setPlayersRecordsPerPage: (choice: RecordsPerPageChoice) => boolean;
     setPlayersSelectedPlayer: (player?: number) => boolean;
     setPlayersActiveTab: (value: DatabaseViewStore["players"]["activeTab"]) => boolean;
 
     setTournamentsQuery: (query: TournamentQuery) => boolean;
+    setTournamentsRecordsPerPage: (choice: RecordsPerPageChoice) => boolean;
     setTournamentsSelectedTournament: (tournament?: number) => boolean;
     setTournamentsActiveTab: (value: DatabaseViewStore["tournaments"]["activeTab"]) => boolean;
 }
@@ -89,6 +98,7 @@ const defaultTournamentsQueryOptions: QueryOptions<TournamentSort> = {
 
 const defaultGamesState: DatabaseViewStore["games"] = {
     isFilterExpanded: false,
+    listMode: "paged",
     selectedGameId: undefined,
     query: {
         player1: undefined,
@@ -132,8 +142,24 @@ function queryWithoutPage<Q extends { options?: { page?: number | null } | null 
     return { ...query, options: optionsWithoutPage as Q["options"] };
 }
 
+function applyRecordsPerPage<S>(
+    slice: { listMode: ListDisplayMode; query: { options?: QueryOptions<S> | null } },
+    defaultOptions: QueryOptions<S>,
+    choice: RecordsPerPageChoice,
+) {
+    const options = slice.query.options ?? defaultOptions;
+    if (choice === "all") {
+        slice.listMode = "all";
+        slice.query.options = { ...options, page: 1 };
+    } else {
+        slice.listMode = "paged";
+        slice.query.options = { ...options, pageSize: choice, page: 1 };
+    }
+}
+
 const defaultPlayersState: DatabaseViewStore["players"] = {
     activeTab: "overview",
+    listMode: "paged",
     query: {
         name: undefined,
         range: undefined,
@@ -143,6 +169,7 @@ const defaultPlayersState: DatabaseViewStore["players"] = {
 
 const defaultTournamentState: DatabaseViewStore["tournaments"] = {
     activeTab: "games",
+    listMode: "paged",
     query: {
         name: "",
         options: defaultTournamentsQueryOptions,
@@ -167,6 +194,10 @@ function createQueryOptionsSchema<Sort extends string>(sorts: [Sort, ...Sort[]])
 }
 
 const activeTabSchema = z.enum(["games", "players", "tournaments"]);
+const persistedListModeSchema: z.ZodType<ListDisplayMode, z.ZodTypeDef, unknown> = z.preprocess(
+    (value) => (value === "paged" || value === "all" ? value : "paged"),
+    z.enum(["paged", "all"]),
+);
 
 function migrateGamesQuery(value: unknown): unknown {
     if (!value || typeof value !== "object" || Array.isArray(value)) return value;
@@ -196,6 +227,7 @@ function migrateGamesQuery(value: unknown): unknown {
 const persistedGamesSchema: z.ZodType<DatabaseViewStore["games"], z.ZodTypeDef, unknown> = z.object(
     {
         isFilterExpanded: z.boolean(),
+        listMode: persistedListModeSchema,
         selectedGameId: queryIntegerSchema.nullish().transform((value) => value ?? undefined),
         query: z.preprocess(
             migrateGamesQuery,
@@ -230,6 +262,7 @@ const persistedGamesSchema: z.ZodType<DatabaseViewStore["games"], z.ZodTypeDef, 
 const persistedPlayersSchema: z.ZodType<DatabaseViewStore["players"], z.ZodTypeDef, unknown> =
     z.object({
         activeTab: z.enum(["overview", "ratings", "openings", "preparation"]),
+        listMode: persistedListModeSchema,
         selectedPlayer: queryIntegerSchema.nullish().transform((value) => value ?? undefined),
         query: z.object({
             options: createQueryOptionsSchema(["name", "elo", "games"]),
@@ -244,6 +277,7 @@ const persistedTournamentsSchema: z.ZodType<
     unknown
 > = z.object({
     activeTab: z.enum(["games", "leaderboard"]),
+    listMode: persistedListModeSchema,
     selectedTournament: queryIntegerSchema.nullish().transform((value) => value ?? undefined),
     query: z.object({
         options: createQueryOptionsSchema(["name", "date", "players", "games", "avgElo"]),
@@ -348,6 +382,14 @@ const databaseViewStore = createStore<DatabaseViewStore>()<[["zustand/persist", 
                     }),
                 );
             },
+            setGamesRecordsPerPage: (choice) => {
+                return admit(
+                    produce((state: Draft<DatabaseViewStore>) => {
+                        applyRecordsPerPage(state.games, defaultGamesQueryOptions, choice);
+                        state.games.selectedGameId = undefined;
+                    }),
+                );
+            },
             setGamesSelectedGameId: (gameId) => {
                 return admit(
                     produce((state: Draft<DatabaseViewStore>) => {
@@ -375,6 +417,14 @@ const databaseViewStore = createStore<DatabaseViewStore>()<[["zustand/persist", 
                     }),
                 );
             },
+            setPlayersRecordsPerPage: (choice) => {
+                return admit(
+                    produce((state: Draft<DatabaseViewStore>) => {
+                        applyRecordsPerPage(state.players, defaultPlayersQueryOptions, choice);
+                        state.players.selectedPlayer = undefined;
+                    }),
+                );
+            },
             setPlayersActiveTab: (value: DatabaseViewStore["players"]["activeTab"]) => {
                 return admit(
                     produce((state: Draft<DatabaseViewStore>) => {
@@ -397,6 +447,18 @@ const databaseViewStore = createStore<DatabaseViewStore>()<[["zustand/persist", 
                             state.tournaments.query,
                             query,
                             defaultTournamentsQueryOptions,
+                        );
+                        state.tournaments.selectedTournament = undefined;
+                    }),
+                );
+            },
+            setTournamentsRecordsPerPage: (choice) => {
+                return admit(
+                    produce((state: Draft<DatabaseViewStore>) => {
+                        applyRecordsPerPage(
+                            state.tournaments,
+                            defaultTournamentsQueryOptions,
+                            choice,
                         );
                         state.tournaments.selectedTournament = undefined;
                     }),

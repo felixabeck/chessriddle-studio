@@ -264,14 +264,41 @@ test("cancellation with cached rows keeps rendering the rows and count while rea
   expect(row(0).textContent).toContain(games[0].white);
   expect(row(1).textContent).toContain(games[1].white);
   expect(host.textContent).not.toContain("Databases.Game.NoGamesFound");
-  expect(mocks.table?.totalRecords).toBe(games.length);
+  expect(host.textContent).toContain(`1 - ${games.length} / ${games.length}`);
 
   mocks.queryError = new Error("disk failed");
   mocks.queryLoading = false;
   await render();
   expect(host.querySelectorAll("tbody tr input")).toHaveLength(0);
   expect(host.querySelector("tbody")?.textContent).toBe("Databases.LoadError.Title");
-  expect(mocks.table?.totalRecords).toBeUndefined();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Databases.LoadError.Title");
+});
+
+test("records-per-page menu offers All and switches back to a paged size on page 1", async () => {
+  await render();
+  const trigger = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "25",
+  )!;
+  await act(async () => trigger.click());
+  const allItem = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "Common.All",
+  )!;
+  expect(allItem).toBeDefined();
+  await act(async () => allItem.click());
+  expect(activeDatabaseViewStore.getState().games.listMode).toBe("all");
+  expect(activeDatabaseViewStore.getState().games.query.options?.page).toBe(1);
+
+  const allTrigger = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Common.All",
+  )!;
+  await act(async () => allTrigger.click());
+  const size25 = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "25",
+  )!;
+  await act(async () => size25.click());
+  expect(activeDatabaseViewStore.getState().games.listMode).toBe("paged");
+  expect(activeDatabaseViewStore.getState().games.query.options?.pageSize).toBe(25);
+  expect(activeDatabaseViewStore.getState().games.query.options?.page).toBe(1);
 });
 
 test("plies sorting maps the native tag to the row accessor in both directions", async () => {
