@@ -29290,3 +29290,18 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 2026-11-25, `bc5d2b801` writes `not-recorded` in `plan_adopted_per_round` of `tasks/build-ledger.md:379`; the rest of the row is unchanged. Proof: `./scripts/findings.py check` ok and `pnpm gates:push -- --frontend` contract lane green on the tree that carries the repair; CI confirmation comes with the next Test run.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"9cc74c4ee1e6ab77b77eb44a0b13186b9bec6d9e73d5d47a98b48fb33c0705c1","header_sha256":"c381a9bbf9a5daff9bc3b841f6a1dc116f1747d92c48e4a6e09ed6472c4c35fc","header_status":"handled","input_sha256":"0922a350ef41263d44d01aa0e0164579ffb0ea4cb46cbdc5b7113f0d4d5b1d44","kind":"mutation-receipt","operation":"a961a8f52f36da3d227c9bb8d828af7622c933334b00e950834b72f166c3c9f6","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-11"],"target":"f-20261125-11","v":1} -->
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### verify:app AO1/AO2 time out on the Auto Save switch since the Settings regroup moved it into the Analysis & notation category
+
+* **ID:** f-20261125-13 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `scripts/verify-app.mjs` `verifyDatabaseOrientation` → `setAutoSave` (the "orientation Auto Save switch" wait), `src/components/settings/settingsDescription.ts` (`auto-save` in category `analysis`, group `layoutSaving`, since `fecfa6daa`).
+* **Defect:** `fecfa6daa` (Settings regroup, 2026-11-25) moved Auto Save from the default Board category to Analysis & notation. `setAutoSave` still goes to Settings and waits for `input[aria-label="Auto Save"]` to become clickable without selecting that category; Mantine keeps the inactive panel mounted with `display: none`, so the input is found but never visible and the wait times out. The harness code is unchanged between `5f8988937` and the workspace-restore branch.
+* **Observed:** default `pnpm verify:app` on the workspace-restore branch (release build, 2026-11-25, tuxedo-atlas): `FAIL AO1 an owner's Black game opens Black without dirtying or writing the native row — timed out waiting for orientation Auto Save switch`; `FAIL AO2 … not attempted: AO1 fixture setup failed`; every other check passed.
+* **Failure scenario:** any default `pnpm verify:app` run since `fecfa6daa` ends red at AO1/AO2, so a lifecycle change verified there reports two failures that are not its own and the orientation autosave behaviour goes unverified in the real app.
+* **Fix direction:** Optimal: `setAutoSave` selects the setting's category through the existing Settings navigation (or the settings-navigation request the app already uses to jump to a setting) before waiting for the switch; no longer timeout, no visibility workaround.
+* **Found by:** Claude Code (Opus 5.5), session ee439b95-8204-44ff-b74f-b24e6916f3dc, build workspace-restore phase 3, 2026-11-25.
