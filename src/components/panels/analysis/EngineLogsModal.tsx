@@ -1,51 +1,50 @@
 import { useOwnerTabId } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
-import { Select, Stack, Text } from "@mantine/core";
+import { Box, Stack, Text } from "@mantine/core";
 import { useAtomValue } from "jotai";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr";
+import AppModal from "@/components/common/AppModal";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import {
-  engineTerminalFamily,
-  engineRetryFamily,
-  enginesAtom,
-  tabEngineSettingsFamily,
-} from "@/state/atoms";
+import { engineTerminalFamily, engineRetryFamily, tabEngineSettingsFamily } from "@/state/atoms";
 import type { LocalEngine } from "@/utils/engines";
 import { engineLineContext } from "./analysisLineContext";
 import { engineTerminalLogs } from "./engineFailure";
 import { matchingEngineTerminal } from "./engineLines";
 import EngineLogsView from "../../common/EngineLogsView";
 
-export default function LogsPanel() {
-  const { t } = useTranslation();
-  const engines = useAtomValue(enginesAtom);
-  const localEngines = (engines ?? [])
-    .filter((e): e is LocalEngine => e.type === "local")
-    .filter((e) => e.loaded);
-  const [engineId, setEngineId] = useState<string | undefined>(localEngines[0]?.id);
-  const engine = localEngines.find((engine) => engine.id === engineId) ?? localEngines[0];
-  const selection = (
-    <Select
-      aria-label={t("Common.Engine")}
-      allowDeselect={false}
-      value={engine?.id ?? ""}
-      onChange={(id) => setEngineId(id ?? undefined)}
-      data={localEngines.map((e) => ({ value: e.id, label: e.name }))}
-    />
-  );
-
-  return engine ? <SelectedEngineLogs engine={engine} selection={selection} /> : null;
-}
-
-function SelectedEngineLogs({
+/**
+ * Raw engine traffic is a diagnostic, not part of everyday analysis, so it lives behind the
+ * engine card's Logs buttons instead of a permanent panel tab. The body mounts only while open,
+ * so a closed dialog never fetches.
+ */
+export default function EngineLogsModal({
   engine,
-  selection,
+  opened,
+  onClose,
 }: {
   engine: LocalEngine;
-  selection: React.ReactNode;
+  opened: boolean;
+  onClose: () => void;
 }) {
+  const { t } = useTranslation();
+  return (
+    <AppModal
+      opened={opened}
+      onClose={onClose}
+      size="xl"
+      title={`${t("Board.Analysis.Logs")} · ${engine.name}`}
+    >
+      {opened && (
+        <Box h="70vh" style={{ display: "flex" }}>
+          <EngineLogs engine={engine} />
+        </Box>
+      )}
+    </AppModal>
+  );
+}
+
+function EngineLogs({ engine }: { engine: LocalEngine }) {
   const { t } = useTranslation();
   const ownerTabId = useOwnerTabId();
   const terminal = useAtomValue(engineTerminalFamily({ tab: ownerTabId, engine: engine.id }));
@@ -87,7 +86,6 @@ function SelectedEngineLogs({
         <EngineLogsView
           logs={failure ? (terminalLogs ?? []) : data!}
           onRefresh={failure ? undefined : () => mutate()}
-          additionalControls={selection}
         />
       )}
     </Stack>

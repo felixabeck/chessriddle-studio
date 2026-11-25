@@ -6,7 +6,7 @@ import { SWRConfig } from "swr";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { engineTerminalFamily, enginesAtom, tabEngineSettingsFamily } from "@/state/atoms";
 import { engineIdentity, engineLineContext } from "./analysisLineContext";
-import LogsPanel from "./LogsPanel";
+import EngineLogsModal from "./EngineLogsModal";
 
 const mocks = vi.hoisted(() => ({
   getEngineLogs: vi.fn(),
@@ -24,26 +24,23 @@ vi.mock("@/platform/tauri", () => ({
     reconcileEngineAttachments: vi.fn().mockResolvedValue(null),
   },
 }));
+vi.mock("@/components/common/AppModal", () => ({
+  // Children render even while closed, so the dialog's own guard is what keeps a closed one idle.
+  default: ({ opened, title, children }: { opened: boolean; title: string; children: any }) => (
+    <section aria-label={title} hidden={!opened}>
+      {children}
+    </section>
+  ),
+}));
 vi.mock("@mantine/core", () => ({
-  Select: ({ "aria-label": label }: { "aria-label"?: string }) => <select aria-label={label} />,
+  Box: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("../../common/EngineLogsView", () => ({
-  default: ({
-    logs,
-    additionalControls,
-  }: {
-    logs: Array<{ value: string }>;
-    additionalControls: React.ReactNode;
-  }) => {
+  default: ({ logs }: { logs: Array<{ value: string }> }) => {
     mocks.renderLogs(logs);
-    return (
-      <>
-        {additionalControls}
-        <div data-testid="engine-logs">{logs.map((log) => log.value).join("\n")}</div>
-      </>
-    );
+    return <div data-testid="engine-logs">{logs.map((log) => log.value).join("\n")}</div>;
   },
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -74,13 +71,13 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-async function render(tab = "tab-1") {
+async function render(tab = "tab-1", opened = true) {
   await act(async () =>
     root.render(
       <Provider store={store}>
         <SWRConfig value={{ provider: () => new Map() }}>
           <WorkspaceTabScope tabId={tab}>
-            <LogsPanel />
+            <EngineLogsModal engine={engine} opened={opened} onClose={() => {}} />
           </WorkspaceTabScope>
         </SWRConfig>
       </Provider>,
@@ -108,10 +105,20 @@ function fail(tab = "tab-1", engineId = engine.id) {
     },
   });
 }
-test("the engine selector has a translated accessible name", async () => {
-  mocks.getEngineLogs.mockResolvedValue([]);
-  await render();
-  expect(host.querySelector("select")?.getAttribute("aria-label")).toBe("Common.Engine");
+test("the dialog is titled with the engine and fetches nothing while closed", async () => {
+  mocks.getEngineLogs.mockResolvedValue([{ type: "gui", value: "go infinite" }]);
+  await render("tab-1", false);
+  expect(host.querySelector("section")?.hidden).toBe(true);
+  expect(mocks.getEngineLogs).not.toHaveBeenCalled();
+  expect(mocks.renderLogs).not.toHaveBeenCalled();
+  await render("tab-1", true);
+  expect(host.querySelector("section")?.getAttribute("aria-label")).toBe(
+    "Board.Analysis.Logs · Stockfish",
+  );
+  await vi.waitFor(() => expect(host.textContent).toContain("go infinite"));
+  expect(mocks.getEngineLogs).toHaveBeenCalledWith(engine.id, "tab-1");
+  await render("tab-1", false);
+  expect(host.querySelector('[data-testid="engine-logs"]')).toBeNull();
 });
 test("a rejected log fetch notifies once and is not rendered as empty success", async () => {
   const failure = new Error("engine disconnected");

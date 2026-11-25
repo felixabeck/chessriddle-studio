@@ -2,7 +2,7 @@
 id: engines
 title: Шахові рушії та панель аналізу
 summary: Встановлення й додавання локальних та хмарних рушіїв, налаштування параметрів UCI і живий аналіз на дошці.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Керуйте своїми шаховими рушіями на сторінці [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ source: e18a17e22622746d
 - Натисніть {{label:Board.Analysis.CheckThreat}} (або комбінацію клавіш {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}), щоб проаналізувати загрозу суперника.
 - Натисніть {{label:Board.Analysis.Pin}}, щоб закріпити шкалу оцінки рушія поза межами вкладки, або {{label:Board.Analysis.EngineSettings}}, щоб змінити параметри для вкладки, як-от межу пошуку та кількість ліній.
 - Перетягуйте картки рушіїв за {{label:Board.Analysis.ReorderEngine}}, щоб змінити їхній порядок.
-- Відкрийте {{label:Board.Analysis.Logs}} усередині {{label:Board.Tabs.Analysis}}, щоб переглянути обмін повідомленнями з UCI-рушієм.
+- Якщо рушій дав збій, натисніть {{label:Board.Analysis.Logs}} поруч із {{label:Board.Analysis.RetryEngine}}, щоб переглянути його обмін через UCI. Для робочого рушія та сама кнопка є в {{label:Board.Analysis.EngineSettings}} на його картці.
 
 Керуйте стрілками рушія на дошці за допомогою [[setting:arrows]] ({{label:Settings.Arrows}}). Локальні рушії зберігаються в теці, заданій у [[setting:engines-directory]].

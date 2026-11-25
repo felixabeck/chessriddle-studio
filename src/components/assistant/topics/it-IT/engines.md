@@ -2,7 +2,7 @@
 id: engines
 title: Motori scacchistici e pannello di analisi
 summary: Installa o aggiungi motori locali e cloud, configura le opzioni UCI e usa l’analisi in tempo reale sulla scacchiera.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Gestisci i tuoi motori scacchistici su [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ Sulla scacchiera di analisi, apri la scheda {{label:Board.Tabs.Analysis}} e sele
 - Fai clic su {{label:Board.Analysis.CheckThreat}} (o premi la scorciatoia {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}) per analizzare la minaccia dell’avversario.
 - Fai clic su {{label:Board.Analysis.Pin}} per fissare la barra di valutazione di un motore fuori dalla scheda, oppure su {{label:Board.Analysis.EngineSettings}} per regolare le impostazioni per scheda come limite di ricerca e varianti.
 - Trascina le schede motore tramite {{label:Board.Analysis.ReorderEngine}} per cambiarne l’ordine.
-- Apri {{label:Board.Analysis.Logs}} dentro {{label:Board.Tabs.Analysis}} per esaminare la comunicazione UCI del motore.
+- Se un motore si interrompe, fai clic su {{label:Board.Analysis.Logs}} accanto a {{label:Board.Analysis.RetryEngine}} per consultare la sua comunicazione UCI. Per un motore in funzione, lo stesso pulsante si trova in {{label:Board.Analysis.EngineSettings}} sulla sua scheda.
 
 Controlla le frecce del motore sulla scacchiera con [[setting:arrows]] ({{label:Settings.Arrows}}). I motori locali sono archiviati nella cartella impostata in [[setting:engines-directory]].

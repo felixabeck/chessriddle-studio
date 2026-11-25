@@ -38,7 +38,6 @@ import type { Engine } from "@/utils/engines";
 import { getInitials } from "@/utils/format";
 import BestMoves, { arrowColors } from "./BestMoves";
 import EngineSelection from "./EngineSelection";
-import LogsPanel from "./LogsPanel";
 import ReportPanel from "./ReportPanel";
 import { EngineScoreBubble } from "./ScoreBubble";
 import { ThreatBadge } from "./ThreatBadge";
@@ -109,9 +108,6 @@ function AnalysisPanel() {
         <Tabs.List>
           <Tabs.Tab value="engines">{t("Board.Analysis.Engines")}</Tabs.Tab>
           <Tabs.Tab value="report">{t("Board.Analysis.Report")}</Tabs.Tab>
-          <Tabs.Tab value="logs" disabled={loadedEngines.length === 0}>
-            {t("Board.Analysis.Logs")}
-          </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel
           value="engines"
@@ -277,17 +273,6 @@ function AnalysisPanel() {
           }}
         >
           <ReportPanel />
-        </Tabs.Panel>
-        <Tabs.Panel
-          value="logs"
-          pt="xs"
-          style={{
-            overflow: "hidden",
-            display: tab === "logs" ? "flex" : "none",
-            flexDirection: "column",
-          }}
-        >
-          <LogsPanel />
         </Tabs.Panel>
       </Tabs>
     </Stack>

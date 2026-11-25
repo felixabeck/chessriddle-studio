@@ -2,7 +2,7 @@
 id: engines
 title: 国际象棋引擎与分析面板
 summary: 安装或添加本地与云端引擎、配置 UCI 选项，并在棋盘上使用实时分析。
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 在 [[page:engines]] ({{label:SideBar.Engines}}) 页面管理您的国际象棋引擎。
@@ -20,6 +20,6 @@ source: e18a17e22622746d
 - 点击 {{label:Board.Analysis.CheckThreat}}（或按 {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} 快捷键）分析对手的威胁。
 - 点击 {{label:Board.Analysis.Pin}} 将引擎评估条固定在标签页外部，或点击 {{label:Board.Analysis.EngineSettings}} 调整当前标签页的搜索限制和变化数量等设置。
 - 按住 {{label:Board.Analysis.ReorderEngine}} 拖动引擎卡片以调整顺序。
-- 打开 {{label:Board.Tabs.Analysis}} 中的 {{label:Board.Analysis.Logs}} 查看 UCI 引擎通信日志。
+- 引擎出错时，点击 {{label:Board.Analysis.RetryEngine}} 旁边的 {{label:Board.Analysis.Logs}} 查看其 UCI 通信日志。对于正在运行的引擎，同一按钮位于其卡片的 {{label:Board.Analysis.EngineSettings}} 中。
 
 通过 [[setting:arrows]] ({{label:Settings.Arrows}}) 控制棋盘上的引擎箭头。本地引擎存储在 [[setting:engines-directory]] 所设定的文件夹中。

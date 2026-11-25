@@ -52,6 +52,23 @@ vi.mock("./EngineSettingsForm", async (importOriginal) => {
     },
   };
 });
+vi.mock("./EngineLogsModal", () => ({
+  default: ({
+    engine,
+    opened,
+    onClose,
+  }: {
+    engine: Engine;
+    opened: boolean;
+    onClose: () => void;
+  }) =>
+    opened ? (
+      <div data-testid="engine-logs-dialog">
+        {engine.id}
+        <button onClick={onClose}>close-logs</button>
+      </div>
+    ) : null,
+}));
 vi.mock("./AnalysisRow", () => ({
   default: ({ moves, inert, fen, halfMoves, chessdb }: any) => (
     <tr
@@ -663,6 +680,27 @@ test("failed BestMoves shows the reason and the cleanup warning", async () => {
   );
 });
 
+test("a failed local engine opens its logs from the failure state", async () => {
+  await h.render(panel());
+  await act(async () =>
+    h.store.set(engineTerminalFamily({ tab: "display-tab", engine: displayEngine.id }), {
+      ...terminal(),
+      type: "failed",
+      snapshot: { kind: "process-exit", exitStatus: null, reason: "Safe reason", entries: [] },
+    }),
+  );
+  expect(h.host.querySelector('[data-testid="engine-logs-dialog"]')).toBeNull();
+  const status = h.host.querySelector('[role="status"]')!;
+  await act(async () =>
+    [...status.querySelectorAll("button")]
+      .find((b) => b.textContent === "Board.Analysis.Logs")!
+      .click(),
+  );
+  expect(h.host.querySelector('[data-testid="engine-logs-dialog"]')?.textContent).toContain(
+    displayEngine.id,
+  );
+});
+
 test("a failure without a snapshot renders its retained safe message once", async () => {
   const raw = "Cannot launch /home/felixb/engines/stockfish token=secret";
   const message = "Cannot launch [path] token=[redacted]";
@@ -817,5 +855,47 @@ test.each([
     expect(
       h.host.querySelector('[aria-label="Engines.Settings.OpenEngineSettings"]') !== null,
     ).toBe(opensEnginePage);
+    expect(
+      [...h.host.querySelectorAll("button")].some((b) => b.textContent === "Board.Analysis.Logs"),
+    ).toBe(opensEnginePage);
   },
 );
+
+test("the Settings gear's Logs button opens and closes the local engine's log dialog", async () => {
+  await h.render(panel());
+  await act(async () =>
+    h.host
+      .querySelector<HTMLButtonElement>('[aria-label="Board.Analysis.EngineSettings"]')!
+      .click(),
+  );
+  const button = (label: string) =>
+    [...h.host.querySelectorAll("button")].find((b) => b.textContent === label)!;
+  const dialog = () => h.host.querySelector('[data-testid="engine-logs-dialog"]');
+  expect(dialog()).toBeNull();
+  await act(async () => button("Board.Analysis.Logs").click());
+  expect(dialog()?.textContent).toContain(displayEngine.id);
+  await act(async () => button("close-logs").click());
+  expect(dialog()).toBeNull();
+});
+
+test("a failed cloud engine offers Retry but no logs", async () => {
+  const engine: Engine = {
+    type: "chessdb",
+    id: displayEngine.id,
+    name: "ChessDB",
+    url: "",
+    loaded: true,
+  };
+  await h.render(panel([], INITIAL_FEN, 0, engine));
+  await act(async () =>
+    h.store.set(engineTerminalFamily({ tab: "display-tab", engine: engine.id }), {
+      ...terminal([], engine),
+      type: "failed",
+      message: "Cloud engine failed",
+    }),
+  );
+  const status = h.host.querySelector('[role="status"]')!;
+  const labels = [...status.querySelectorAll("button")].map((b) => b.textContent);
+  expect(labels).toContain("Board.Analysis.RetryEngine");
+  expect(labels).not.toContain("Board.Analysis.Logs");
+});

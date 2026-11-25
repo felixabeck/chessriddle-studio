@@ -2,7 +2,7 @@
 id: engines
 title: Motores de xadrez e o painel de análise
 summary: Instale ou adicione motores locais e na nuvem, configure opções UCI e utilize a análise em direto no tabuleiro.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Faça a gestão dos seus motores de xadrez em [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ No tabuleiro de análise, abra o separador {{label:Board.Tabs.Analysis}} e selec
 - Clique em {{label:Board.Analysis.CheckThreat}} (ou prima o atalho {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}) para analisar a ameaça do adversário.
 - Clique em {{label:Board.Analysis.Pin}} para fixar a barra de avaliação de um motor fora do separador, ou em {{label:Board.Analysis.EngineSettings}} para ajustar definições por separador como limite de pesquisa e número de linhas.
 - Arraste os cartões dos motores por {{label:Board.Analysis.ReorderEngine}} para alterar a respetiva ordem.
-- Abra {{label:Board.Analysis.Logs}} dentro de {{label:Board.Tabs.Analysis}} para consultar a comunicação UCI do motor.
+- Quando um motor falha, clique em {{label:Board.Analysis.Logs}} junto a {{label:Board.Analysis.RetryEngine}} para consultar a comunicação UCI. Com um motor em execução, o mesmo botão está em {{label:Board.Analysis.EngineSettings}} no respetivo cartão.
 
 Controle as setas do motor no tabuleiro através de [[setting:arrows]] ({{label:Settings.Arrows}}). Os motores locais são guardados na pasta definida em [[setting:engines-directory]].

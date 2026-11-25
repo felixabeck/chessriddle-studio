@@ -1095,7 +1095,12 @@ for (const partial of [false, true]) {
             { fullPage: true },
         );
         if (partial) {
-            await page.getByRole("tab", { name: "Logs", exact: true }).click();
+            await panel
+                .getByRole("status")
+                .getByRole("button", { name: "Logs", exact: true })
+                .click();
+            // The dialog opens in animation frames, which the paused clock holds.
+            await page.clock.runFor(500);
             await expect(page.getByText("Terminal diagnostics", { exact: true })).toBeVisible();
             await expect(
                 page.getByText("<b>Safe terminal stderr</b>", { exact: true }),
@@ -1103,7 +1108,9 @@ for (const partial of [false, true]) {
             await expect(page).toHaveScreenshot("engine-failure-terminal-logs.png", {
                 fullPage: true,
             });
-            await page.getByRole("tab", { name: "Engines", exact: true }).click();
+            await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+            await page.clock.runFor(500);
+            await expect(page.getByRole("dialog")).toHaveCount(0);
         }
         await panel.getByRole("button", { name: "Retry", exact: true }).click();
         await expect.poll(async () => (await searches()).length).toBe(2);
@@ -1118,7 +1125,12 @@ for (const partial of [false, true]) {
         });
         await expect(panel.locator("tr[inert]")).toHaveCount(0);
         await expect(panel.getByRole("button", { name: "e4", exact: true })).toBeVisible();
-        await page.getByRole("tab", { name: "Logs", exact: true }).click();
+        await expect(panel.getByRole("button", { name: "Logs", exact: true })).toHaveCount(0);
+        await panel.getByRole("button", { name: "Settings", exact: true }).click();
+        // The settings collapse opens in animation frames, which the paused clock holds.
+        await page.clock.runFor(500);
+        await panel.getByRole("button", { name: "Logs", exact: true }).click();
+        await page.clock.runFor(500);
         await expect(page.getByText("Terminal diagnostics", { exact: true })).toHaveCount(0);
         await expect(page.getByText("No logs available yet", { exact: true })).toBeVisible();
     });

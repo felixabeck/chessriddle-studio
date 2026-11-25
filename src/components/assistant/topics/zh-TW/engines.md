@@ -2,7 +2,7 @@
 id: engines
 title: 西洋棋引擎與分析面板
 summary: 安裝或新增本機與雲端引擎、設定 UCI 選項，並在棋盤上使用即時分析。
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 在 [[page:engines]] ({{label:SideBar.Engines}}) 管理您的西洋棋引擎。
@@ -20,6 +20,6 @@ source: e18a17e22622746d
 - 點擊 {{label:Board.Analysis.CheckThreat}}（或按 {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} 快捷鍵）分析對手的威脅。
 - 點擊 {{label:Board.Analysis.Pin}} 將引擎評估條釘選在分頁外部，或點擊 {{label:Board.Analysis.EngineSettings}} 調整各分頁專屬設定，如搜尋上限與變例數。
 - 透過 {{label:Board.Analysis.ReorderEngine}} 拖曳引擎卡片以調整順序。
-- 開啟 {{label:Board.Tabs.Analysis}} 內的 {{label:Board.Analysis.Logs}} 檢視 UCI 引擎通訊紀錄。
+- 引擎發生錯誤時，點擊 {{label:Board.Analysis.RetryEngine}} 旁的 {{label:Board.Analysis.Logs}} 檢視其 UCI 通訊紀錄。對於執行中的引擎，相同按鈕位於其卡片的 {{label:Board.Analysis.EngineSettings}} 中。
 
 透過 [[setting:arrows]] ({{label:Settings.Arrows}}) 控制棋盤上的引擎箭頭。本機引擎儲存在 [[setting:engines-directory]] 所設定的資料夾中。

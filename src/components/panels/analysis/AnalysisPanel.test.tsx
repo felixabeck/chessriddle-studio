@@ -39,7 +39,6 @@ vi.mock("./BestMoves", () => ({
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("./EngineSelection", () => ({ default: () => null }));
-vi.mock("./LogsPanel", () => ({ default: () => null }));
 vi.mock("./ReportPanel", () => ({ default: () => null }));
 vi.mock("./TablebaseInfo", () => ({ default: () => null }));
 let h: ReturnType<typeof engineDisplayHarness>;
@@ -102,6 +101,21 @@ test("real-store drag intent cannot resurrect a queued removal or overwrite newe
       { ...added, legacyAssessment: null },
     ]),
   );
+});
+
+test("the side tabs are Engines and Report only; engine logs live on the engine card", async () => {
+  installResizeObserverStub();
+  h = engineDisplayHarness();
+  await h.store.set(enginesAtom, [displayEngine]);
+  await h.render(
+    <TreeStateContext.Provider value={createTreeStore()}>
+      <AnalysisPanel />
+    </TreeStateContext.Provider>,
+  );
+  expect([...h.host.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+    "Board.Analysis.Engines",
+    "Board.Analysis.Report",
+  ]);
 });
 
 test("refused routed drag rolls its presentation back to committed order", async () => {

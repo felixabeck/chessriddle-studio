@@ -2,7 +2,7 @@
 id: engines
 title: Silniki szachowe i panel analizy
 summary: Instaluj lub dodawaj silniki lokalne i w chmurze, konfiguruj opcje UCI oraz korzystaj z analizy na żywo na szachownicy.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Zarządzaj swoimi silnikami szachowymi w [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ Na tablicy analizy otwórz kartę {{label:Board.Tabs.Analysis}} i wybierz {{labe
 - Kliknij {{label:Board.Analysis.CheckThreat}} (lub naciśnij skrót {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}), aby przeanalizować groźbę przeciwnika.
 - Kliknij {{label:Board.Analysis.Pin}}, aby przypiąć pasek oceny silnika poza kartą, lub {{label:Board.Analysis.EngineSettings}}, aby dostosować ustawienia danej karty, takie jak limit przeszukiwania i liczba linii.
 - Przeciągaj karty silników za {{label:Board.Analysis.ReorderEngine}}, aby zmienić ich kolejność.
-- Otwórz {{label:Board.Analysis.Logs}} w {{label:Board.Tabs.Analysis}}, aby podejrzeć komunikację UCI silnika.
+- Gdy silnik ulegnie awarii, kliknij {{label:Board.Analysis.Logs}} obok {{label:Board.Analysis.RetryEngine}}, aby sprawdzić jego komunikację UCI. W przypadku działającego silnika ten sam przycisk znajduje się w {{label:Board.Analysis.EngineSettings}} na jego karcie.
 
 Steruj strzałkami silnika na szachownicy za pomocą [[setting:arrows]] ({{label:Settings.Arrows}}). Lokalne silniki są przechowywane w katalogu ustawionym w [[setting:engines-directory]].

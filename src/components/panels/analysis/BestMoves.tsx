@@ -23,10 +23,11 @@ import {
   Play,
   Settings as SettingsIcon,
   Crosshair,
+  ScrollText,
 } from "lucide-react";
 import equal from "fast-deep-equal";
 import { useAtom, useAtomValue } from "jotai";
-import { memo, startTransition } from "react";
+import { memo, startTransition, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BestMoves } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
@@ -44,6 +45,7 @@ import { formatScore } from "@/utils/score";
 import AnalysisRow from "./AnalysisRow";
 import AssessmentSymbol from "./AssessmentSymbol";
 import classes from "./BestMoves.module.css";
+import EngineLogsModal from "./EngineLogsModal";
 import EngineSettingsForm from "./EngineSettingsForm";
 import { ThreatBadge } from "./ThreatBadge";
 import { engineFailureMessage } from "./engineFailure";
@@ -84,6 +86,18 @@ function BestMovesComponent({
   const { settings, setSettings } = useTabEngineSettings(engine);
 
   const [settingsOn, toggleSettingsOn] = useToggle();
+  const [logsOpen, setLogsOpen] = useState(false);
+  const localEngine = engine.type === "local" ? engine : null;
+  const logsButton = localEngine && (
+    <Button
+      size="xs"
+      variant="default"
+      leftSection={<ScrollText size="0.875rem" />}
+      onClick={() => setLogsOpen(true)}
+    >
+      {t("Board.Analysis.Logs")}
+    </Button>
+  );
   const [threat, setThreat] = useAtom(useTabAtom(threatFamily));
   const [detachedEngineId, setDetachedEngineId] = useAtom(currentDetachedEngineAtom);
   const isDetached = detachedEngineId === engine.id;
@@ -211,7 +225,19 @@ function BestMovesComponent({
           setSettings={setSettings}
           remote={engine.type !== "local"}
         />
+        {logsButton && (
+          <Group justify="flex-end" mt="sm">
+            {logsButton}
+          </Group>
+        )}
       </Collapse>
+      {localEngine && (
+        <EngineLogsModal
+          engine={localEngine}
+          opened={logsOpen}
+          onClose={() => setLogsOpen(false)}
+        />
+      )}
 
       <Accordion.Panel pos="relative">
         <Table>
@@ -231,13 +257,16 @@ function BestMovesComponent({
                         failure.cleanupFailed,
                       )}
                     </Text>
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => setRetry((value) => value + 1)}
-                    >
-                      {t("Board.Analysis.RetryEngine")}
-                    </Button>
+                    <Group gap="xs" grow>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        onClick={() => setRetry((value) => value + 1)}
+                      >
+                        {t("Board.Analysis.RetryEngine")}
+                      </Button>
+                      {logsButton}
+                    </Group>
                   </Stack>
                 </Table.Td>
               </Table.Tr>

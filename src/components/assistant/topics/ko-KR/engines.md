@@ -2,7 +2,7 @@
 id: engines
 title: 체스 엔진과 분석 패널
 summary: 로컬 및 클라우드 엔진 설치·추가, UCI 옵션 구성, 보드에서 실시간 분석 사용하기.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 [[page:engines]] ({{label:SideBar.Engines}}) 페이지에서 체스 엔진을 관리하세요.
@@ -20,6 +20,6 @@ source: e18a17e22622746d
 - 상대의 위협을 분석하려면 {{label:Board.Analysis.CheckThreat}}을(를) 클릭하거나 {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} 단축키를 누르세요.
 - 탭 바깥에 엔진 평가 막대를 고정하려면 {{label:Board.Analysis.Pin}}을(를), 탐색 제한과 수순 개수 같은 탭별 설정을 조정하려면 {{label:Board.Analysis.EngineSettings}}을(를) 클릭하세요.
 - {{label:Board.Analysis.ReorderEngine}}을(를) 드래그해 엔진 카드의 순서를 바꿉니다.
-- UCI 엔진 통신 내용을 확인하려면 {{label:Board.Tabs.Analysis}} 안의 {{label:Board.Analysis.Logs}}을(를) 여세요.
+- 엔진이 실패하면 {{label:Board.Analysis.RetryEngine}} 옆의 {{label:Board.Analysis.Logs}}을(를) 클릭해 UCI 통신 내용을 확인하세요. 실행 중인 엔진은 엔진 카드의 {{label:Board.Analysis.EngineSettings}} 안에 같은 버튼이 있습니다.
 
 보드에 표시되는 엔진 화살표는 [[setting:arrows]] ({{label:Settings.Arrows}})에서 제어할 수 있습니다. 로컬 엔진은 [[setting:engines-directory]]에 지정된 폴더에 저장됩니다.

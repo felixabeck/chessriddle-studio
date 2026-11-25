@@ -2,7 +2,7 @@
 id: engines
 title: Sjakkcomputere og analysepanelet
 summary: Installer eller legg til lokale motorer og skymotorer, konfigurer UCI-valg og bruk sanntidsanalyse på brettet.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Administrer sjakkmotorene dine på [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ På analysebrettet åpner du fanen {{label:Board.Tabs.Analysis}} og velger {{lab
 - Klikk {{label:Board.Analysis.CheckThreat}} (eller trykk hurtigtasten {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}) for å analysere motstanderens trussel.
 - Klikk {{label:Board.Analysis.Pin}} for å feste en motors evalueringsstolpe utenfor fanen, eller {{label:Board.Analysis.EngineSettings}} for å justere innstillinger per fane som søkegrense og antall varianter.
 - Dra motorkort etter {{label:Board.Analysis.ReorderEngine}} for å endre rekkefølgen.
-- Åpne {{label:Board.Analysis.Logs}} inne i {{label:Board.Tabs.Analysis}} for å se motorens UCI-kommunikasjon.
+- Når en motor feiler, klikker du {{label:Board.Analysis.Logs}} ved siden av {{label:Board.Analysis.RetryEngine}} for å se motorens UCI-kommunikasjon. For en motor som kjører, finner du samme knapp under {{label:Board.Analysis.EngineSettings}} på kortet.
 
 Styr motorpiler på brettet med [[setting:arrows]] ({{label:Settings.Arrows}}). Lokale motorer lagres i mappen som er valgt i [[setting:engines-directory]].

@@ -2,7 +2,7 @@
 id: engines
 title: Moteurs d’échecs et panneau d’analyse
 summary: Installez ou ajoutez des moteurs locaux et cloud, configurez les options UCI et utilisez l’analyse en direct sur l’échiquier.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Gérez vos moteurs d’échecs sur [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ Sur l’échiquier d’analyse, ouvrez l’onglet {{label:Board.Tabs.Analysis}} 
 - Cliquez sur {{label:Board.Analysis.CheckThreat}} (ou appuyez sur le raccourci {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}) pour analyser la menace de l’adversaire.
 - Cliquez sur {{label:Board.Analysis.Pin}} pour épingler la barre d’évaluation d’un moteur hors de l’onglet, ou sur {{label:Board.Analysis.EngineSettings}} pour ajuster les réglages propres à l’onglet tels que la limite de recherche et le nombre de lignes.
 - Faites glisser les cartes de moteur par {{label:Board.Analysis.ReorderEngine}} pour modifier leur ordre.
-- Ouvrez {{label:Board.Analysis.Logs}} dans {{label:Board.Tabs.Analysis}} pour inspecter les échanges UCI du moteur.
+- Si un moteur échoue, cliquez sur {{label:Board.Analysis.Logs}} à côté de {{label:Board.Analysis.RetryEngine}} pour consulter sa communication UCI. Pour un moteur en cours, le même bouton se trouve sous {{label:Board.Analysis.EngineSettings}} sur sa carte.
 
 Réglez les flèches du moteur sur l’échiquier avec [[setting:arrows]] ({{label:Settings.Arrows}}). Les moteurs locaux sont enregistrés dans le dossier défini dans [[setting:engines-directory]].

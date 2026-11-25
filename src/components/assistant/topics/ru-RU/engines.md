@@ -2,7 +2,7 @@
 id: engines
 title: Шахматные движки и панель анализа
 summary: Установка и добавление локальных и облачных движков, настройка параметров UCI и живой анализ на доске.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Управляйте шахматными движками на странице [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ source: e18a17e22622746d
 - Нажмите {{label:Board.Analysis.CheckThreat}} (или сочетание клавиш {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}), чтобы проанализировать угрозу соперника.
 - Нажмите {{label:Board.Analysis.Pin}}, чтобы закрепить шкалу оценки движка вне вкладки, или {{label:Board.Analysis.EngineSettings}}, чтобы задать настройки для текущей вкладки, например лимит поиска и число вариантов.
 - Перетаскивайте карточки движков за {{label:Board.Analysis.ReorderEngine}}, чтобы изменить их порядок.
-- Откройте {{label:Board.Analysis.Logs}} внутри {{label:Board.Tabs.Analysis}}, чтобы просмотреть обмен сообщениями с UCI-движком.
+- Если движок дал сбой, нажмите {{label:Board.Analysis.Logs}} рядом с {{label:Board.Analysis.RetryEngine}}, чтобы посмотреть его обмен по UCI. У работающего движка та же кнопка находится в {{label:Board.Analysis.EngineSettings}} на его карточке.
 
 Управляйте стрелками движка на доске в настройке [[setting:arrows]] ({{label:Settings.Arrows}}). Локальные движки хранятся в папке, указанной в [[setting:engines-directory]].

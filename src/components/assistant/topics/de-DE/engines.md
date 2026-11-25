@@ -2,7 +2,7 @@
 id: engines
 title: Schach-Engines und das Analysepanel
 summary: Lokale und Cloud-Engines installieren oder hinzufügen, UCI-Optionen konfigurieren und Live-Analyse auf dem Brett nutzen.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Verwalte deine Schach-Engines auf [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ Wähle eine Engine auf [[page:engines]] aus, um sie einzurichten. Bei lokalen En
 - Klicke auf {{label:Board.Analysis.CheckThreat}} (oder drücke das Tastenkürzel {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}), um die gegnerische Drohung zu analysieren.
 - Klicke auf {{label:Board.Analysis.Pin}}, um die Bewertungsleiste einer Engine außerhalb des Tabs anzuheften, oder auf {{label:Board.Analysis.EngineSettings}}, um tab-spezifische Einstellungen wie Suchlimit und Variantenanzahl anzupassen.
 - Ziehe Engine-Karten an {{label:Board.Analysis.ReorderEngine}}, um ihre Reihenfolge zu ändern.
-- Öffne {{label:Board.Analysis.Logs}} in {{label:Board.Tabs.Analysis}}, um die UCI-Kommunikation der Engine einzusehen.
+- Wenn eine Engine ausfällt, klicke neben {{label:Board.Analysis.RetryEngine}} auf {{label:Board.Analysis.Logs}}, um ihre UCI-Kommunikation anzusehen. Bei einer laufenden Engine findest du denselben Button unter {{label:Board.Analysis.EngineSettings}} auf ihrer Karte.
 
 Steuere Engine-Pfeile auf dem Brett unter [[setting:arrows]] ({{label:Settings.Arrows}}). Lokale Engines werden in dem unter [[setting:engines-directory]] festgelegten Ordner gespeichert.

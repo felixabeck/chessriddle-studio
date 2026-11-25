@@ -19,6 +19,6 @@ On the analysis board, open the {{label:Board.Tabs.Analysis}} tab and select {{l
 - Click {{label:Board.Analysis.CheckThreat}} (or press the {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} shortcut) to analyze the opponent's threat.
 - Click {{label:Board.Analysis.Pin}} to pin an engine evaluation bar outside the tab, or {{label:Board.Analysis.EngineSettings}} to adjust per-tab settings like search limit and lines.
 - Drag engine cards by {{label:Board.Analysis.ReorderEngine}} to change their order.
-- Open {{label:Board.Analysis.Logs}} inside {{label:Board.Tabs.Analysis}} to inspect UCI engine communication.
+- When an engine fails, click {{label:Board.Analysis.Logs}} beside {{label:Board.Analysis.RetryEngine}} to inspect its UCI communication. For a running engine, the same button is under {{label:Board.Analysis.EngineSettings}} on its card.
 
 Control engine arrows on the board with [[setting:arrows]] ({{label:Settings.Arrows}}). Local engines are stored in the folder set at [[setting:engines-directory]].

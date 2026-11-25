@@ -2,7 +2,7 @@
 id: engines
 title: Motores de ajedrez y el panel de análisis
 summary: Instala o añade motores locales y en la nube, configura opciones UCI y usa el análisis en vivo en el tablero.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Gestiona tus motores de ajedrez en [[page:engines]] ({{label:SideBar.Engines}}).
@@ -20,6 +20,6 @@ En el tablero de análisis, abre la pestaña {{label:Board.Tabs.Analysis}} y sel
 - Haz clic en {{label:Board.Analysis.CheckThreat}} (o pulsa el atajo {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}) para analizar la amenaza del rival.
 - Haz clic en {{label:Board.Analysis.Pin}} para fijar la barra de evaluación de un motor fuera de la pestaña, o en {{label:Board.Analysis.EngineSettings}} para ajustar opciones por pestaña como el límite de búsqueda y las líneas.
 - Arrastra las tarjetas de motor desde {{label:Board.Analysis.ReorderEngine}} para cambiar su orden.
-- Abre {{label:Board.Analysis.Logs}} dentro de {{label:Board.Tabs.Analysis}} para revisar la comunicación UCI del motor.
+- Si un motor falla, haz clic en {{label:Board.Analysis.Logs}} junto a {{label:Board.Analysis.RetryEngine}} para revisar su comunicación UCI. Con un motor en marcha, el mismo botón está en {{label:Board.Analysis.EngineSettings}} de su tarjeta.
 
 Controla las flechas del motor en el tablero con [[setting:arrows]] ({{label:Settings.Arrows}}). Los motores locales se guardan en la carpeta configurada en [[setting:engines-directory]].

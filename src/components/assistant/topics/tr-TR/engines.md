@@ -2,7 +2,7 @@
 id: engines
 title: Satranç motorları ve analiz paneli
 summary: Yerel ve bulut motorları yükleme veya ekleme, UCI seçeneklerini yapılandırma ve tahta üzerinde canlı analiz kullanma.
-source: e18a17e22622746d
+source: 0e9ac8bab01e58b5
 ---
 
 Satranç motorlarınızı [[page:engines]] ({{label:SideBar.Engines}}) sayfasından yönetin.
@@ -20,6 +20,6 @@ Analiz tahtasında {{label:Board.Tabs.Analysis}} sekmesini açın ve {{label:Boa
 - Rakibin tehdidini analiz etmek için {{label:Board.Analysis.CheckThreat}} düğmesine tıklayın (veya {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} kısayoluna basın).
 - Sekme dışında bir motor değerlendirme çubuğu sabitlemek için {{label:Board.Analysis.Pin}} düğmesine veya arama sınırı ve varyant sayısı gibi sekmeye özel ayarları düzenlemek için {{label:Board.Analysis.EngineSettings}} düğmesine tıklayın.
 - Sıralarını değiştirmek için motor kartlarını {{label:Board.Analysis.ReorderEngine}} tutamacından sürükleyin.
-- UCI motor iletişimini incelemek için {{label:Board.Tabs.Analysis}} içindeki {{label:Board.Analysis.Logs}} bölümünü açın.
+- Bir motor hata verdiğinde, UCI iletişimini incelemek için {{label:Board.Analysis.RetryEngine}} yanındaki {{label:Board.Analysis.Logs}} düğmesine tıklayın. Çalışan bir motorda aynı düğme kartındaki {{label:Board.Analysis.EngineSettings}} altında bulunur.
 
 Tahta üzerindeki motor oklarını [[setting:arrows]] ({{label:Settings.Arrows}}) ile denetleyin. Yerel motorlar [[setting:engines-directory]] konumunda ayarlanan klasörde saklanır.
