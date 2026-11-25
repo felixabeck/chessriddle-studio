@@ -6,6 +6,7 @@ import {
   Overlay,
   Paper,
   ScrollArea,
+  SegmentedControl,
   Stack,
   Table,
   Text,
@@ -40,11 +41,14 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   invisibleFamily,
   moveHighlightAtom,
+  opponentPreparationAtom,
   showCommentsFamily,
   showDiagramsFamily,
   showVariationsFamily,
+  tabPreparationViewFamily,
   tableViewAtom,
 } from "@/state/atoms";
+import { classifyTreeNodes, preparationViewForSource } from "@/utils/opponentPreparation";
 import { lastMoveSquares, positionFromFen } from "@/utils/chessops";
 import { keyMapAtom } from "@/state/keybinds";
 import { nagGlyphs } from "@/utils/annotation";
@@ -63,6 +67,7 @@ import CompleteMoveCell, {
 import {
   buildNotationRows,
   collapseKeysOnPath,
+  collapseMoveToken,
   pathForNotationNode,
   variationCollapseKey,
   type NotationMove,
@@ -136,6 +141,12 @@ function getResultText(result: string, t: TFunction): string | undefined {
   }
 }
 
+type PreparationHeaderState = {
+  opponentName: string;
+  showAllLines: boolean;
+  onShowAllLinesChange: (showAllLines: boolean) => void;
+};
+
 function GameNotation({
   topBar,
   controls,
@@ -170,10 +181,70 @@ function GameNotation({
   const showDiagrams = useAtomValue(useTabAtom(showDiagramsFamily));
   const [tableView] = useAtom(tableViewAtom);
   const [collapsedVariations, setCollapsedVariations] = useState<Set<string>>(() => new Set());
+  const [revealedVariations, setRevealedVariations] = useState<Set<string>>(() => new Set());
+  const storedPreparation = useAtomValue(opponentPreparationAtom);
+  const [preparationView, setPreparationView] = useAtom(useTabAtom(tabPreparationViewFamily));
   const viewport = useRef<HTMLDivElement>(null);
   const [invisibleValue, setInvisible] = useAtom(useTabAtom(invisibleFamily));
   const invisible = topBar && invisibleValue;
   const keyMap = useAtomValue(keyMapAtom);
+
+  const activePreparation =
+    storedPreparation !== null &&
+    preparationView !== null &&
+    preparationView.preparationId === storedPreparation.id
+      ? storedPreparation
+      : null;
+
+  useEffect(() => {
+    setRevealedVariations((previous) => (previous.size > 0 ? new Set() : previous));
+  }, [activePreparation?.id]);
+
+  const activePreparationView = activePreparation
+    ? preparationViewForSource(activePreparation.views, activePreparation.source)
+    : null;
+
+  const treeClassification = useMemo(() => {
+    if (!activePreparation || !activePreparationView || isTreeViewDeferred(store)) {
+      return null;
+    }
+    return classifyTreeNodes(
+      root,
+      headers.orientation,
+      activePreparation.opponentColor,
+      activePreparationView.playedPositions,
+    );
+  }, [activePreparation, activePreparationView, headers.orientation, root, store]);
+
+  const preparationInChapter = treeClassification?.inPreparation === true;
+
+  const hiddenVariations = useMemo(() => {
+    if (!preparationInChapter || !treeClassification || preparationView?.showAllLines) {
+      return undefined;
+    }
+    const hidden = new Set<TreeNode>();
+    const stack: { node: TreeNode; key: string }[] = [{ node: root, key: "" }];
+    while (stack.length > 0) {
+      const { node, key } = stack.pop()!;
+      const parentRevealed = node.children.length > 1 && revealedVariations.has(key);
+      for (let i = 0; i < node.children.length; i += 1) {
+        const child = node.children[i];
+        if (i >= 1 && !parentRevealed && !treeClassification.nodes.get(child)?.relevant) {
+          hidden.add(child);
+        }
+        const token = collapseMoveToken(child);
+        const childKey = key ? `${key} ${token}` : token;
+        stack.push({ node: child, key: childKey });
+      }
+    }
+    return hidden.size > 0 ? hidden : undefined;
+  }, [
+    preparationInChapter,
+    treeClassification,
+    preparationView?.showAllLines,
+    root,
+    revealedVariations,
+  ]);
 
   const model = useMemo<NotationRows>(() => {
     // A remount while deferred has no previous rows. Skipping avoids walking either tree.
@@ -187,6 +258,7 @@ function GameNotation({
       showDiagrams,
       tableView: moveActions === undefined ? tableView : false,
       collapsedVariations,
+      hiddenVariations,
       markOpenVariations,
     });
   }, [
@@ -196,27 +268,40 @@ function GameNotation({
     showDiagrams,
     tableView,
     collapsedVariations,
+    hiddenVariations,
     markOpenVariations,
     store,
     moveActions,
   ]);
   const startNode = useMemo(() => getNodeAtPath(root, headers.start || []), [root, headers.start]);
 
-  // A cursor that lands inside a collapsed variation opens it, so the current move is never
-  // hidden. Keyed on the path, not the node: editing the current move replaces its node, and that
-  // must not reopen a variation the user has just collapsed around it.
+  // A cursor that lands inside a collapsed or preparation-hidden variation opens it, so the
+  // current move is never hidden. Keyed on the path, not the node: editing the current move
+  // replaces its node, and that must not reopen a variation the user has just collapsed around it.
   const revealedPosition = useRef<string | null>(null);
   useEffect(() => {
     const positionKey = position.join(",");
-    if (revealedPosition.current === positionKey) return;
-    revealedPosition.current = positionKey;
-    const hiding = collapseKeysOnPath(root, position);
-    setCollapsedVariations((previous) =>
-      hiding.some((key) => previous.has(key))
-        ? new Set([...previous].filter((key) => !hiding.includes(key)))
-        : previous,
-    );
-  }, [position, root]);
+    if (revealedPosition.current !== positionKey) {
+      revealedPosition.current = positionKey;
+      const hiding = collapseKeysOnPath(root, position);
+      setCollapsedVariations((previous) =>
+        hiding.some((key) => previous.has(key))
+          ? new Set([...previous].filter((key) => !hiding.includes(key)))
+          : previous,
+      );
+    }
+    const hiddenHiding = hiddenVariations
+      ? collapseKeysOnPath(root, position, hiddenVariations)
+      : [];
+    if (hiddenHiding.length > 0) {
+      setRevealedVariations((previous) => {
+        if (hiddenHiding.every((key) => previous.has(key))) return previous;
+        const next = new Set(previous);
+        for (const key of hiddenHiding) next.add(key);
+        return next;
+      });
+    }
+  }, [position, root, hiddenVariations]);
 
   const rowVirtualizer = useVirtualizer({
     count: model.rows.length,
@@ -305,6 +390,16 @@ function GameNotation({
   useHotkeys(keyMap.TOGGLE_BLUR.keys, () => setInvisible((value) => !value));
   useHotkeys(keyMap.COPY_PGN.keys, () => copyPgn());
 
+  const preparationHeader: PreparationHeaderState | null =
+    preparationInChapter && activePreparation && preparationView
+      ? {
+          opponentName: activePreparation.opponentName,
+          showAllLines: preparationView.showAllLines,
+          onShowAllLinesChange: (showAllLines) =>
+            setPreparationView((current) => (current ? { ...current, showAllLines } : current)),
+        }
+      : null;
+
   const content = (
     <Paper
       withBorder
@@ -325,7 +420,7 @@ function GameNotation({
           </Box>
         )}
         <Stack h="100%" gap={0} style={{ flex: 1, minWidth: 0 }}>
-          {topBar && <NotationHeader />}
+          {topBar && <NotationHeader preparation={preparationHeader} />}
           <ScrollArea
             flex={topBar ? "1 1 0px" : 1}
             mih={topBar ? NOTATION_MIN_HEIGHT_REM : undefined}
@@ -373,6 +468,17 @@ function GameNotation({
                           return next;
                         });
                       }}
+                      onRevealVariation={(parent) => {
+                        const path = pathForNotationNode(model.index, parent);
+                        if (path === undefined) return;
+                        const key = variationCollapseKey(root, path);
+                        setRevealedVariations((previous) => {
+                          if (previous.has(key)) return previous;
+                          const next = new Set(previous);
+                          next.add(key);
+                          return next;
+                        });
+                      }}
                       measureRef={rowVirtualizer.measureElement}
                       style={{
                         position: "absolute",
@@ -410,7 +516,7 @@ function GameNotation({
   );
 }
 
-function NotationHeader() {
+function NotationHeader({ preparation }: { preparation: PreparationHeaderState | null }) {
   const { t } = useTranslation();
   const [invisible, setInvisible] = useAtom(useTabAtom(invisibleFamily));
   const [showComments, setShowComments] = useAtom(useTabAtom(showCommentsFamily));
@@ -459,6 +565,45 @@ function NotationHeader() {
           </IconAction>
         </Group>
       </Group>
+      {preparation && (
+        <Group
+          justify="space-between"
+          align="center"
+          gap="xs"
+          px="sm"
+          wrap="wrap"
+          data-notation-preparation-header
+        >
+          <Text size="xs" c="dimmed" className="wrap-anywhere">
+            {t("Notation.PreparationFor", {
+              defaultValue: "Preparing for {{name}}",
+              name: preparation.opponentName,
+            })}
+          </Text>
+          <SegmentedControl
+            size="xs"
+            aria-label={t("Notation.PreparationLinesFilter", {
+              defaultValue: "Preparation lines",
+            })}
+            value={preparation.showAllLines ? "all" : "relevant"}
+            onChange={(value) => preparation.onShowAllLinesChange(value === "all")}
+            data={[
+              {
+                value: "relevant",
+                label: t("Notation.PreparationOpponentLines", {
+                  defaultValue: "Opponent's lines",
+                }),
+              },
+              {
+                value: "all",
+                label: t("Notation.PreparationAllLines", {
+                  defaultValue: "All lines",
+                }),
+              },
+            ]}
+          />
+        </Group>
+      )}
       <Divider />
     </Stack>
   );
@@ -476,6 +621,7 @@ function NotationVirtualRow({
   tableView,
   orientation,
   onToggleVariation,
+  onRevealVariation,
   measureRef,
   style,
   dataIndex,
@@ -491,6 +637,7 @@ function NotationVirtualRow({
   tableView: boolean;
   orientation: "white" | "black";
   onToggleVariation: (parent: TreeNode) => void;
+  onRevealVariation: (parent: TreeNode) => void;
   measureRef: (element: Element | null) => void;
   style: React.CSSProperties;
   dataIndex: number;
@@ -505,7 +652,11 @@ function NotationVirtualRow({
         <DiagramRow row={row} index={index} root={root} orientation={orientation} />
       )}
       {row.type === "variation" && (
-        <VariationRow row={row} onToggle={() => onToggleVariation(row.parent)} />
+        <VariationRow
+          row={row}
+          onToggle={() => onToggleVariation(row.parent)}
+          onReveal={() => onRevealVariation(row.parent)}
+        />
       )}
       {row.type === "moves" && (
         <InlineRow
@@ -716,11 +867,17 @@ function DiagramRow({
 function VariationRow({
   row,
   onToggle,
+  onReveal,
 }: {
   row: Extract<NotationRow, { type: "variation" }>;
   onToggle: () => void;
+  onReveal: () => void;
 }) {
   const { t } = useTranslation();
+  const hiddenCount = row.hiddenCount ?? 0;
+  const hasVisibleVariations = row.parent.children.length - 1 > hiddenCount;
+  const showCollapseToggle = row.collapsed || hasVisibleVariations;
+  const showReveal = !row.collapsed && hiddenCount > 0;
   return (
     <Box
       className={`${styles.variationBlock} ${styles.variationToggle}`}
@@ -728,14 +885,32 @@ function VariationRow({
       // depth + 1, so the toggle shares their first guide line.
       style={variationBlockStyle(row.depth + 1)}
     >
-      <IconAction
-        label={t("Notation.ToggleVariation")}
-        size="xs"
-        onClick={onToggle}
-        pressed={!row.collapsed}
-      >
-        {row.collapsed ? <Plus size="0.5rem" /> : <Minus size="0.5rem" />}
-      </IconAction>
+      {showCollapseToggle && (
+        <IconAction
+          label={t("Notation.ToggleVariation")}
+          size="xs"
+          onClick={onToggle}
+          pressed={!row.collapsed}
+        >
+          {row.collapsed ? <Plus size="0.5rem" /> : <Minus size="0.5rem" />}
+        </IconAction>
+      )}
+      {showReveal && (
+        <UnstyledButton
+          type="button"
+          className={styles.revealVariations}
+          data-notation-reveal-variations={hiddenCount}
+          onClick={onReveal}
+        >
+          <Plus size="0.65rem" aria-hidden />
+          <span>
+            {t("Notation.HiddenVariations", {
+              count: hiddenCount,
+              defaultValue: "{{count}} hidden lines",
+            })}
+          </span>
+        </UnstyledButton>
+      )}
     </Box>
   );
 }

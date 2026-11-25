@@ -909,3 +909,123 @@ describe("open variations", () => {
         for (const key of keys) expect(rowsWith([key]).rowForNode.has(nc3)).toBe(false);
     });
 });
+
+describe("hiddenVariations filtering", () => {
+    const baseOptions = {
+        showVariations: true,
+        showComments: false,
+        showDiagrams: false,
+    };
+
+    test.each([false, true])(
+        "hides specified side lines per sibling, reports hiddenCount, and keeps relevant siblings (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            const c4 = fixtureNode("c4");
+            const e6 = fixtureNode("e6", { halfMoves: 2 });
+            tree.root.children.push(c4);
+            tree.e4.children.push(e6);
+
+            const model = buildNotationRows(tree.root, {
+                ...baseOptions,
+                tableView,
+                hiddenVariations: new Set([tree.d4, c4, e6]),
+            });
+
+            const variations = model.rows.filter((row) => row.type === "variation");
+            expect(variations).toEqual([
+                expect.objectContaining({
+                    type: "variation",
+                    parent: tree.root,
+                    collapsed: false,
+                    hiddenCount: 2,
+                }),
+                expect.objectContaining({
+                    type: "variation",
+                    parent: tree.e4,
+                    collapsed: false,
+                    hiddenCount: 1,
+                }),
+            ]);
+            expect(moveNames(model.rows)).toEqual(["e4", "e5", "c5", "Nf3", "Nc6", "Bb5", "a6"]);
+            expect(model.rowForNode.has(tree.d4)).toBe(false);
+            expect(model.rowForNode.has(c4)).toBe(false);
+            expect(model.rowForNode.has(e6)).toBe(false);
+            expect(model.rowForNode.has(tree.c5)).toBe(true);
+        },
+    );
+
+    test.each([false, true])(
+        "never hides the main continuation even when named or along an excluded line (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            const bc4 = fixtureNode("Bc4", { halfMoves: 3 });
+            tree.e5.children.push(bc4);
+
+            const model = buildNotationRows(tree.root, {
+                ...baseOptions,
+                tableView,
+                hiddenVariations: new Set([tree.e4, tree.e5, tree.nf3, tree.d4, tree.c5, bc4]),
+            });
+
+            expect(moveNames(model.rows)).toEqual(["e4", "e5", "Nf3", "Nc6", "Bb5", "a6"]);
+            expect(model.rows.filter((row) => row.type === "variation")).toEqual([
+                expect.objectContaining({ parent: tree.root, hiddenCount: 1 }),
+                expect.objectContaining({ parent: tree.e4, hiddenCount: 1 }),
+                expect.objectContaining({ parent: tree.e5, hiddenCount: 1 }),
+            ]);
+        },
+    );
+
+    test.each([false, true])(
+        "user collapse still wins when a parent has visible and hidden side lines (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            const e6 = fixtureNode("e6", { halfMoves: 2 });
+            tree.e4.children.push(e6);
+
+            const model = buildNotationRows(tree.root, {
+                ...baseOptions,
+                tableView,
+                collapsedVariations: new Set([variationCollapseKey(tree.root, [0])]),
+                hiddenVariations: new Set([e6]),
+            });
+
+            expect(model.rowForNode.has(tree.c5)).toBe(false);
+            expect(model.rowForNode.has(e6)).toBe(false);
+            const e4Var = model.rows.find(
+                (row) => row.type === "variation" && row.parent === tree.e4,
+            );
+            expect(e4Var).toMatchObject({ type: "variation", collapsed: true, hiddenCount: 1 });
+        },
+    );
+
+    test.each([false, true])(
+        "leaves row output identical without hiddenVariations (tableView: %s)",
+        (tableView) => {
+            const tree = variedTree();
+            const baseline = buildNotationRows(tree.root, { ...baseOptions, tableView });
+            const withEmpty = buildNotationRows(tree.root, {
+                ...baseOptions,
+                tableView,
+                hiddenVariations: new Set(),
+            });
+
+            expect(baseline.rows).toEqual(withEmpty.rows);
+            const variations = baseline.rows.filter((row) => row.type === "variation");
+            expect(variations.every((row) => !Object.hasOwn(row, "hiddenCount"))).toBe(true);
+        },
+    );
+
+    test("collapseKeysOnPath filters to side-line roots present in onlyNodes when provided", () => {
+        const tree = variedTree();
+        const nc3 = fixtureNode("Nc3", { halfMoves: 3 });
+        tree.c5.children = [fixtureNode("Nf3", { halfMoves: 3, fen: "sicilian w - - 0 1" }), nc3];
+        const path = [0, 1, 1];
+
+        expect(collapseKeysOnPath(tree.root, path, new Set([nc3]))).toEqual([
+            variationCollapseKey(tree.root, [0, 1]),
+        ]);
+        expect(collapseKeysOnPath(tree.root, path, new Set())).toEqual([]);
+    });
+});

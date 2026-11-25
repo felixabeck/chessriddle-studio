@@ -3,10 +3,10 @@ import { parseUci } from "chessops";
 import { createInstance } from "i18next";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { TreeStateContext } from "./TreeStateContext";
-import { createNode, defaultTree, type TreeNode } from "@/utils/treeReducer";
+import { createNode, defaultTree, getBoardState, type TreeNode } from "@/utils/treeReducer";
 import {
   buildNotationRows,
   NOTATION_ROW_MAX_MOVES,
@@ -21,9 +21,32 @@ const atoms = vi.hoisted(() => ({
   variations: Symbol("variations"),
   diagrams: Symbol("diagrams"),
   moveHighlight: Symbol("move-highlight"),
+  opponentPreparation: Symbol("opponent-preparation"),
+  preparationView: Symbol("preparation-view"),
   table: Symbol("table"),
   keyMap: Symbol("key-map"),
 }));
+const prepState = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const state = {
+    preparation: null as import("@/state/atoms/preparation").StoredOpponentPreparation | null,
+    view: null as import("@/state/atoms/preparation").TabPreparationView | null,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    notify: () => {
+      for (const listener of listeners) listener();
+    },
+    setView: vi.fn((updater: any) => {
+      state.view = typeof updater === "function" ? updater(state.view) : updater;
+      state.notify();
+    }),
+  };
+  return state;
+});
 const virtualizerMock = vi.hoisted(() => ({
   current: null as null | { count: number },
   scrollCalls: [] as { index: number; options: unknown }[],
@@ -41,24 +64,33 @@ vi.mock("@/state/atoms", () => ({
   showVariationsFamily: () => atoms.variations,
   showDiagramsFamily: () => atoms.diagrams,
   moveHighlightAtom: atoms.moveHighlight,
+  opponentPreparationAtom: atoms.opponentPreparation,
+  tabPreparationViewFamily: () => atoms.preparationView,
   tableViewAtom: atoms.table,
 }));
 vi.mock("@/state/keybinds", () => ({ keyMapAtom: atoms.keyMap }));
-vi.mock("jotai", () => ({
-  useAtom: (atom: symbol) => {
-    if (atom === atoms.table) return [notationSettings.tableView, vi.fn()];
-    if (atom === atoms.invisible) return [notationSettings.invisible, vi.fn()];
-    return [false, vi.fn()];
-  },
-  useAtomValue: (atom: symbol) => {
-    if (atom === atoms.variations || atom === atoms.diagrams) return true;
-    if (atom === atoms.comments) return notationSettings.showComments;
-    if (atom === atoms.keyMap) {
-      return { TOGGLE_BLUR: { keys: "ctrl+b" }, COPY_PGN: { keys: "ctrl+k" } };
-    }
-    return false;
-  },
-}));
+vi.mock("jotai", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useAtom: (atom: symbol) => {
+      const prepView = useSyncExternalStore(prepState.subscribe, () => prepState.view);
+      if (atom === atoms.table) return [notationSettings.tableView, vi.fn()];
+      if (atom === atoms.invisible) return [notationSettings.invisible, vi.fn()];
+      if (atom === atoms.preparationView) return [prepView, prepState.setView];
+      return [false, vi.fn()];
+    },
+    useAtomValue: (atom: symbol) => {
+      const prep = useSyncExternalStore(prepState.subscribe, () => prepState.preparation);
+      if (atom === atoms.variations || atom === atoms.diagrams) return true;
+      if (atom === atoms.comments) return notationSettings.showComments;
+      if (atom === atoms.opponentPreparation) return prep;
+      if (atom === atoms.keyMap) {
+        return { TOGGLE_BLUR: { keys: "ctrl+b" }, COPY_PGN: { keys: "ctrl+k" } };
+      }
+      return false;
+    },
+  };
+});
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -133,6 +165,21 @@ vi.mock("@mantine/core", () => {
     Overlay: element,
     Paper: element,
     ScrollArea: ({ children, viewportRef }: any) => <div ref={viewportRef}>{children}</div>,
+    SegmentedControl: ({ data, value, onChange, "aria-label": ariaLabel }: any) => (
+      <div role="radiogroup" aria-label={ariaLabel}>
+        {data.map((item: any) => (
+          <button
+            key={item.value}
+            type="button"
+            role="radio"
+            aria-checked={value === item.value}
+            onClick={() => onChange(item.value)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    ),
     Stack: element,
     Table: table,
     Text: ({ children, ...props }: any) => <span {...props}>{children}</span>,
@@ -196,6 +243,9 @@ beforeEach(() => {
   notationSettings.showComments = false;
   notationSettings.tableView = false;
   notationSettings.invisible = false;
+  prepState.preparation = null;
+  prepState.view = null;
+  prepState.setView.mockClear();
 });
 
 test.each([false, true])(
@@ -1165,4 +1215,425 @@ test("a variation collapsed around the current move stays closed while that move
   expect(host.querySelector('[data-node="d4"]')).toBeNull();
   await act(async () => store.getState().goToMove([1]));
   expect(cellAttribute("d4", "data-current")).toBe("true");
+});
+
+describe("opponent preparation notation filtering", () => {
+  function makePrep(
+    played: string[],
+    overrides: Partial<import("@/state/atoms/preparation").StoredOpponentPreparation> = {},
+  ): import("@/state/atoms/preparation").StoredOpponentPreparation {
+    const emptyView = {
+      lines: [],
+      gaps: [],
+      total: 10,
+      playedPositions: new Set(played),
+      positionGames: new Map(played.map((fen) => [fen, 1])),
+    };
+    return {
+      id: "prep-1",
+      identityKey: "id-1",
+      cardDatabaseKey: "db-1",
+      playerId: 1,
+      opponentName: "Karpov",
+      opponentColor: "white",
+      period: 3,
+      source: "otb",
+      views: { otb: emptyView, online: null, both: null },
+      partial: false,
+      onlineFailed: false,
+      ...overrides,
+    };
+  }
+
+  function setupVariedTree() {
+    // Black repertoire against White: 1. e4 (1. d4, 1. c4) c5 (1... e5) 2. Nf3 d6
+    store.getState().makeMoves({ payload: ["e4", "c5", "Nf3", "d6"] });
+    store.getState().goToStart();
+    store.getState().makeMove({ payload: "d4" });
+    store.getState().goToStart();
+    store.getState().makeMove({ payload: "c4" });
+    store.getState().goToMove([0]);
+    store.getState().makeMove({ payload: "e5" });
+    store.getState().goToMove([0]);
+    store.getState().setHeaders({
+      ...store.getState().headers,
+      orientation: "black",
+    });
+
+    const s = store.getState().root;
+    const e4 = s.children[0];
+    const c5 = e4.children[0];
+    const e5 = e4.children[1];
+    const nf3 = c5.children[0];
+    const d6 = nf3.children[0];
+    const d4 = s.children[1];
+    const c4 = s.children[2];
+    return { root: s, e4, c5, e5, nf3, d6, d4, c4 };
+  }
+
+  const renderTopBar = () =>
+    act(async () => {
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="notation-test">
+            <GameNotation topBar />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      );
+    });
+
+  test("shows unfiltered notation and no header control without matching preparation or chapter", async () => {
+    const { e4, c5 } = setupVariedTree();
+    const played = [e4, c5].map((n) => getBoardState(n.fen));
+
+    // No preparation view
+    await renderTopBar();
+    expect(host.querySelector("[data-notation-preparation-header]")).toBeNull();
+    expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+
+    // View names a different preparation id
+    prepState.preparation = makePrep(played, { id: "prep-2" });
+    prepState.view = { preparationId: "prep-1", landing: null, showAllLines: false };
+    await renderTopBar();
+    expect(host.querySelector("[data-notation-preparation-header]")).toBeNull();
+    expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+
+    // Matching id, wrong chapter orientation (white instead of black)
+    prepState.preparation = makePrep(played, { id: "prep-1", opponentColor: "white" });
+    await act(async () => {
+      store.getState().setHeaders({ ...store.getState().headers, orientation: "white" });
+    });
+    expect(host.querySelector("[data-notation-preparation-header]")).toBeNull();
+    expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+
+    // Matching orientation, but chapter has no played node
+    await act(async () => {
+      store.getState().setHeaders({ ...store.getState().headers, orientation: "black" });
+      prepState.preparation = makePrep(["nonexistent/fen w - -"], { id: "prep-1" });
+      prepState.notify();
+    });
+    expect(host.querySelector("[data-notation-preparation-header]")).toBeNull();
+    expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+  });
+
+  test("hides irrelevant side lines with count on toggle row, reveals by toggle and cursor, and user collapse wins", async () => {
+    const { e4, c5 } = setupVariedTree();
+    // Played: e4, c5 -> d4 & c4 are irrelevant (2 hidden at root); after c5 (Black), White is to move,
+    // so 2. Nc3 (irrelevant) and 2. Bc4 (relevant) test mixed siblings under c5.
+    store.getState().goToMove([0, 0]); // c5
+    store.getState().makeMove({ payload: "Nc3" });
+    store.getState().goToMove([0, 0]);
+    store.getState().makeMove({ payload: "Bc4" });
+    store.getState().goToMove([0]);
+    const bc4 = store.getState().root.children[0].children[0].children[2];
+
+    prepState.preparation = makePrep([
+      getBoardState(e4.fen),
+      getBoardState(c5.fen),
+      getBoardState(bc4.fen),
+    ]);
+    prepState.view = { preparationId: "prep-1", landing: null, showAllLines: false };
+
+    await renderTopBar();
+
+    // Root has 2 irrelevant side lines (d4, c4); c5 has 1 irrelevant side line (Nc3) and 1 relevant side line (Bc4).
+    expect(host.querySelector('[data-node="d4"]')).toBeNull();
+    expect(host.querySelector('[data-node="c4"]')).toBeNull();
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+    expect(host.querySelector('[data-node="Bc4"]')).not.toBeNull();
+
+    const rootReveal = host.querySelector<HTMLButtonElement>(
+      '[data-notation-reveal-variations="2"]',
+    );
+    const c5Reveal = host.querySelector<HTMLButtonElement>('[data-notation-reveal-variations="1"]');
+    expect(rootReveal).not.toBeNull();
+    expect(c5Reveal).not.toBeNull();
+    // Every side line of root is hidden, so root shows no collapse toggle yet (only e4 and c5 do).
+    expect(host.querySelectorAll('[aria-label="Notation.ToggleVariation"]')).toHaveLength(2);
+
+    // Clicking root's reveal button reveals only root's hidden side lines (d4, c4), leaving Nc3 hidden.
+    await act(async () => rootReveal!.click());
+    expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+    expect(host.querySelector('[data-node="c4"]')).not.toBeNull();
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+
+    // User collapse on c5 hides BOTH relevant (Bc4) and hidden (Nc3) side lines; user collapse wins.
+    const toggles = [
+      ...host.querySelectorAll<HTMLButtonElement>('[aria-label="Notation.ToggleVariation"]'),
+    ];
+    // toggles: [0]=root, [1]=e4, [2]=c5
+    await act(async () => toggles[2].click());
+    expect(host.querySelector('[data-node="Bc4"]')).toBeNull();
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+    // Uncollapse c5 again -> Bc4 returns, Nc3 still hidden until revealed.
+    const expandC5 = host.querySelectorAll<HTMLButtonElement>(
+      '[aria-label="Notation.ToggleVariation"]',
+    )[2];
+    await act(async () => expandC5.click());
+    expect(host.querySelector('[data-node="Bc4"]')).not.toBeNull();
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+
+    // Cursor landing inside already-relevant Bc4 ([0, 0, 2]) does NOT reveal sibling Nc3.
+    await act(async () => {
+      store.getState().goToMove([0, 0, 2]);
+    });
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+
+    // Cursor landing inside hidden Nc3 ([0, 0, 1]) reveals c5's hidden side lines.
+    await act(async () => {
+      store.getState().goToMove([0, 0, 1]);
+    });
+    expect(host.querySelector('[data-node="Nc3"]')).not.toBeNull();
+    expect(host.querySelector("[data-notation-reveal-variations]")).toBeNull();
+  });
+
+  test.each([false, true])(
+    "keeps an excluded main line visible as one thread while hiding its side lines (tableView: %s)",
+    async (tableView) => {
+      notationSettings.tableView = tableView;
+      const { e4, c5 } = setupVariedTree();
+      // Continue main line with 3. d4 and add an irrelevant side line 3. Bb5+ off d6 (excluded).
+      store.getState().goToMove([0, 0, 0, 0]); // d6
+      store.getState().makeMove({ payload: "d4" });
+      store.getState().goToMove([0, 0, 0, 0]);
+      store.getState().makeMove({ payload: "Bb5+" });
+      store.getState().goToMove([0]);
+
+      // Only e4 and c5 are played; after c5 (White/opponent to move), Nf3 -> d6 -> d4 is excluded,
+      // and side line Bb5+ is excluded.
+      prepState.preparation = makePrep([getBoardState(e4.fen), getBoardState(c5.fen)]);
+      prepState.view = { preparationId: "prep-1", landing: null, showAllLines: false };
+
+      await renderTopBar();
+
+      // Main continuation e4 -> c5 -> Nf3 -> d6 -> d4 stays visible as one thread, while Bb5+ is hidden.
+      expect(host.querySelector('[data-node="e4"]')).not.toBeNull();
+      expect(host.querySelector('[data-node="c5"]')).not.toBeNull();
+      expect(host.querySelector('[data-node="Nf3"]')).not.toBeNull();
+      expect(host.querySelector('[data-node="d6"]')).not.toBeNull();
+      expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+      expect(host.querySelector('[data-node="Bb5+"]')).toBeNull();
+      expect(host.querySelector('[data-notation-reveal-variations="1"]')).not.toBeNull();
+    },
+  );
+
+  test("follows live tree edits without a new search", async () => {
+    const { e4, c5 } = setupVariedTree();
+    prepState.preparation = makePrep([getBoardState(e4.fen), getBoardState(c5.fen)]);
+    prepState.view = { preparationId: "prep-1", landing: null, showAllLines: false };
+
+    await renderTopBar();
+    expect(host.querySelector('[data-node="d4"]')).toBeNull();
+
+    // Edit the tree so 1. d4 gains a move reaching the already-played 1. e4 c5 position (e.g. a played FEN).
+    const nextRoot = structuredClone(store.getState().root);
+    nextRoot.children[1].children.push(
+      createNode({
+        fen: c5.fen,
+        move: parseUci("c7c5")!,
+        san: "c5",
+        halfMoves: 2,
+      }),
+    );
+    await act(async () => {
+      store.getState().setState({
+        ...defaultTree(),
+        root: nextRoot,
+        position: store.getState().position,
+        headers: store.getState().headers,
+      });
+    });
+
+    // Now d4 has a relevant descendant and becomes visible immediately without clicking reveal.
+    expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+    expect(host.querySelector('[data-notation-reveal-variations="2"]')).toBeNull();
+    expect(host.querySelector('[data-notation-reveal-variations="1"]')).not.toBeNull();
+  });
+
+  test("header names the opponent, switches between opponent lines and all lines, and persists showAllLines on the tab", async () => {
+    const { e4, c5 } = setupVariedTree();
+    prepState.preparation = makePrep([getBoardState(e4.fen), getBoardState(c5.fen)]);
+    prepState.view = { preparationId: "prep-1", landing: null, showAllLines: false };
+
+    await renderTopBar();
+
+    const header = host.querySelector("[data-notation-preparation-header]")!;
+    expect(header.textContent).toContain("Notation.PreparationFor");
+    expect(host.querySelector('[data-node="d4"]')).toBeNull();
+
+    const allButton = [...header.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (btn) => btn.textContent === "Notation.PreparationAllLines",
+    )!;
+    await act(async () => allButton.click());
+    expect(prepState.view?.showAllLines).toBe(true);
+
+    // Re-render / remount keeps showAllLines from tabPreparationViewFamily.
+    await act(async () => root.render(null));
+    await renderTopBar();
+    expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+
+    const relevantButton = [
+      ...host
+        .querySelector("[data-notation-preparation-header]")!
+        .querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    ].find((btn) => btn.textContent === "Notation.PreparationOpponentLines")!;
+    await act(async () => relevantButton.click());
+    expect(prepState.view?.showAllLines).toBe(false);
+    await renderTopBar();
+    expect(host.querySelector('[data-node="d4"]')).toBeNull();
+  });
+
+  test("filters by online or both view playedPositions and falls back to otb when that view is null", async () => {
+    const { e4, c5 } = setupVariedTree();
+    store.getState().goToMove([0, 0]);
+    store.getState().makeMove({ payload: "Nc3" });
+    store.getState().goToMove([0, 0]);
+    store.getState().makeMove({ payload: "Bc4" });
+    store.getState().goToMove([0]);
+    const nc3 = store.getState().root.children[0].children[0].children[1];
+    const bc4 = store.getState().root.children[0].children[0].children[2];
+
+    const viewOf = (nodes: TreeNode[]) => {
+      const keys = nodes.map((n) => getBoardState(n.fen));
+      return {
+        lines: [],
+        gaps: [],
+        total: 10,
+        playedPositions: new Set(keys),
+        positionGames: new Map(keys.map((k) => [k, 1])),
+      };
+    };
+
+    const otbView = viewOf([e4, c5]);
+    const onlineView = viewOf([e4, c5, bc4]);
+    const bothView = viewOf([e4, c5, nc3]);
+
+    prepState.preparation = makePrep([], {
+      source: "online",
+      views: { otb: otbView, online: onlineView, both: bothView },
+    });
+    prepState.view = { preparationId: "prep-1", landing: null, showAllLines: false };
+    await renderTopBar();
+    expect(host.querySelector('[data-node="Bc4"]')).not.toBeNull();
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+
+    await act(async () => {
+      prepState.preparation = makePrep([], {
+        source: "both",
+        views: { otb: otbView, online: onlineView, both: bothView },
+      });
+      prepState.notify();
+    });
+    expect(host.querySelector('[data-node="Nc3"]')).not.toBeNull();
+    expect(host.querySelector('[data-node="Bc4"]')).toBeNull();
+
+    await act(async () => {
+      prepState.preparation = makePrep([], {
+        source: "online",
+        views: { otb: otbView, online: null, both: null },
+      });
+      prepState.notify();
+    });
+    expect(host.querySelector('[data-node="Bc4"]')).toBeNull();
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+
+    await act(async () => {
+      prepState.preparation = makePrep([], {
+        source: "both",
+        views: { otb: otbView, online: null, both: null },
+      });
+      prepState.notify();
+    });
+    expect(host.querySelector('[data-node="Bc4"]')).toBeNull();
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+  });
+
+  test("hides the reveal control while a parent with hidden side lines is collapsed by the user", async () => {
+    store.getState().makeMoves({ payload: ["e4", "c5", "Nf3"] });
+    store.getState().goToMove([0, 0]);
+    store.getState().makeMove({ payload: "Nc3" });
+    store.getState().goToMove([0, 0]);
+    store.getState().makeMove({ payload: "Bc4" });
+    store.getState().goToMove([0]);
+    store.getState().setHeaders({ ...store.getState().headers, orientation: "black" });
+
+    const rootNode = store.getState().root;
+    const e4 = rootNode.children[0];
+    const c5 = e4.children[0];
+    const bc4 = c5.children[2];
+
+    prepState.preparation = makePrep([
+      getBoardState(e4.fen),
+      getBoardState(c5.fen),
+      getBoardState(bc4.fen),
+    ]);
+    prepState.view = { preparationId: "prep-1", landing: null, showAllLines: false };
+    await renderTopBar();
+
+    expect(host.querySelector('[data-notation-reveal-variations="1"]')).not.toBeNull();
+
+    const toggle = host.querySelector<HTMLButtonElement>(
+      '[aria-label="Notation.ToggleVariation"]',
+    )!;
+    await act(async () => toggle.click());
+
+    expect(host.querySelector('[data-node="Bc4"]')).toBeNull();
+    expect(host.querySelector('[data-node="Nc3"]')).toBeNull();
+    expect(host.querySelector("[data-notation-reveal-variations]")).toBeNull();
+
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Notation.ToggleVariation"]')!.click(),
+    );
+    expect(host.querySelector('[data-node="Bc4"]')).not.toBeNull();
+    expect(host.querySelector('[data-notation-reveal-variations="1"]')).not.toBeNull();
+  });
+
+  test("re-hides previously revealed side lines when a new preparation becomes current", async () => {
+    const { e4, c5 } = setupVariedTree();
+    const played = [getBoardState(e4.fen), getBoardState(c5.fen)];
+    prepState.preparation = makePrep(played, { id: "prep-1" });
+    prepState.view = { preparationId: "prep-1", landing: null, showAllLines: false };
+    await renderTopBar();
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-notation-reveal-variations="2"]')!.click();
+    });
+    expect(host.querySelector('[data-node="d4"]')).not.toBeNull();
+    expect(host.querySelector('[data-node="c4"]')).not.toBeNull();
+
+    await act(async () => {
+      prepState.preparation = makePrep(played, { id: "prep-2" });
+      prepState.view = { preparationId: "prep-2", landing: null, showAllLines: false };
+      prepState.notify();
+    });
+    expect(host.querySelector('[data-node="d4"]')).toBeNull();
+    expect(host.querySelector('[data-node="c4"]')).toBeNull();
+    expect(host.querySelector('[data-notation-reveal-variations="2"]')).not.toBeNull();
+  });
+
+  test.each(Object.entries(catalogues))(
+    "ships preparation notation copy in %s with fallback disabled",
+    async (path, catalogue) => {
+      const locale = path.split("/").at(-1)!.replace(".json", "");
+      const i18n = createInstance();
+      await i18n.init({
+        lng: locale,
+        fallbackLng: false,
+        keySeparator: false,
+        resources: { [locale]: catalogue },
+      });
+      for (const [key, opts] of [
+        ["Notation.PreparationFor", { name: "Karpov" }],
+        ["Notation.PreparationLinesFilter", undefined],
+        ["Notation.PreparationOpponentLines", undefined],
+        ["Notation.PreparationAllLines", undefined],
+        ["Notation.HiddenVariations", { count: 1 }],
+        ["Notation.HiddenVariations", { count: 2 }],
+      ] as const) {
+        const value = String(i18n.t(key, opts as any));
+        expect(value.trim()).toBeTruthy();
+        expect(value).not.toBe(key);
+      }
+    },
+  );
 });

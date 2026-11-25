@@ -47,6 +47,8 @@ export type VariationNotationRow = {
     depth: number;
     parent: TreeNode;
     collapsed: boolean;
+    /** Side lines of `parent` hidden by a filter (e.g. opponent preparation). */
+    hiddenCount?: number;
 };
 
 /** The small board of a move that carries a diagram marker, with that move's comment below. */
@@ -96,11 +98,13 @@ export type NotationRowOptions = {
     showDiagrams: boolean;
     tableView: boolean;
     collapsedVariations?: ReadonlySet<string>;
+    /** Side-line root nodes (`parent.children[1..n]`) hidden by a filter. */
+    hiddenVariations?: ReadonlySet<TreeNode>;
     /** Flag side lines one move long: for the notation of a tree that is being built. */
     markOpenVariations?: boolean;
 };
 
-function collapseMoveToken(node: TreeNode): string {
+export function collapseMoveToken(node: TreeNode): string {
     return node.san ?? (node.move ? makeUci(node.move) : "");
 }
 
@@ -123,11 +127,23 @@ export function variationCollapseKey(root: TreeNode, path: number[]): string {
 /**
  * The collapse keys of every variation toggle that can hide the move at `path`: one per side line
  * the path enters, keyed by the node that side line branches from, as `queueVariationTasks` keys it.
+ * When `onlyNodes` is given, only side-line roots present in `onlyNodes` are included.
  */
-export function collapseKeysOnPath(root: TreeNode, path: number[]): string[] {
+export function collapseKeysOnPath(
+    root: TreeNode,
+    path: number[],
+    onlyNodes?: ReadonlySet<TreeNode>,
+): string[] {
+    if (onlyNodes && onlyNodes.size === 0) return [];
     const keys: string[] = [];
+    let node: TreeNode | undefined = root;
     for (let depth = 0; depth < path.length; depth += 1) {
-        if (path[depth] >= 1) keys.push(variationCollapseKey(root, path.slice(0, depth)));
+        const childIndex = path[depth];
+        const child: TreeNode | undefined = node?.children[childIndex];
+        if (childIndex >= 1 && (!onlyNodes || (child !== undefined && onlyNodes.has(child)))) {
+            keys.push(variationCollapseKey(root, path.slice(0, depth)));
+        }
+        node = child;
     }
     return keys;
 }
@@ -282,17 +298,29 @@ function queueVariationTasks(
         }
     }
     const collapsed = key !== undefined && (options.collapsedVariations?.has(key) ?? false);
-    addRow(rows, rowForNode, {
+    const hiddenVariations = options.hiddenVariations;
+    let hiddenCount = 0;
+    const visibleChildren: number[] = [];
+    for (let childIndex = 1; childIndex < parent.children.length; childIndex += 1) {
+        if (hiddenVariations?.has(parent.children[childIndex])) {
+            hiddenCount += 1;
+        } else {
+            visibleChildren.push(childIndex);
+        }
+    }
+    const row: VariationNotationRow = {
         type: "variation",
         depth,
         parent,
         collapsed,
-    });
+    };
+    if (hiddenCount > 0) row.hiddenCount = hiddenCount;
+    addRow(rows, rowForNode, row);
     if (collapsed) return;
-    for (let childIndex = parent.children.length - 1; childIndex >= 1; childIndex -= 1) {
+    for (let index = visibleChildren.length - 1; index >= 0; index -= 1) {
         stack.push({
             parent,
-            childIndex,
+            childIndex: visibleChildren[index],
             depth: depth + 1,
             first: true,
             variationParent: parent,

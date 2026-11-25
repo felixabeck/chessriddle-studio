@@ -32,6 +32,7 @@ import {
   type PreparationLine,
   type PreparationSource,
   type PreparationView,
+  preparationViewForSource,
   userColorForOpponent,
 } from "@/utils/opponentPreparation";
 import { formatPgnYearMonth } from "@/utils/pgnDate";
@@ -212,11 +213,7 @@ export default function PlayerPreparation({
 
   const readyViews = state.kind === "ready" ? state.preparation.views : null;
   const activeView: PreparationView | null = readyViews
-    ? effectiveSource === "online"
-      ? (readyViews.online ?? readyViews.otb)
-      : effectiveSource === "both"
-        ? (readyViews.both ?? readyViews.otb)
-        : readyViews.otb
+    ? preparationViewForSource(readyViews, effectiveSource)
     : null;
 
   const otbLabel = t("Databases.OpeningTree.OverTheBoard", {

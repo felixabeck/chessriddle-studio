@@ -95,6 +95,16 @@ export function preparationShare(games: number, total: number): number | null {
     return total > 0 ? games / total : null;
 }
 
+/** Resolves the active `PreparationView` for a source, falling back to `otb` when absent. */
+export function preparationViewForSource(
+    views: PreparationViews,
+    source: PreparationSource,
+): PreparationView {
+    if (source === "online") return views.online ?? views.otb;
+    if (source === "both") return views.both ?? views.otb;
+    return views.otb;
+}
+
 function rowGames(row: PositionStats): number {
     return row.white + row.draw + row.black + row.unknown;
 }

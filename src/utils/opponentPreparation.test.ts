@@ -21,6 +21,7 @@ import {
     type NodeClassification,
     type PreparationColor,
     preparationShare,
+    preparationViewForSource,
 } from "@/utils/opponentPreparation";
 import { defaultTree, getBoardState, type TreeNode } from "@/utils/treeReducer";
 
@@ -804,5 +805,24 @@ describe("edge cases for gaps, lines, orientation filtering, and date ordering",
             ["e5", "????.??.??"],
             ["c6", null],
         ]);
+    });
+
+    test("preparationViewForSource selects the matching source view and falls back to otb when absent", () => {
+        const view = (total: number) => ({
+            lines: [],
+            gaps: [],
+            total,
+            playedPositions: new Set<string>(),
+            positionGames: new Map<string, number>(),
+        });
+        const otb = view(1);
+        const online = view(2);
+        const both = view(3);
+
+        expect(preparationViewForSource({ otb, online, both }, "otb")).toBe(otb);
+        expect(preparationViewForSource({ otb, online, both }, "online")).toBe(online);
+        expect(preparationViewForSource({ otb, online, both }, "both")).toBe(both);
+        expect(preparationViewForSource({ otb, online: null, both: null }, "online")).toBe(otb);
+        expect(preparationViewForSource({ otb, online: null, both: null }, "both")).toBe(otb);
     });
 });

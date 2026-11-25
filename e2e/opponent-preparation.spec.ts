@@ -23,7 +23,7 @@ const repertoireFile = {
 };
 
 const chapter0Pgn =
-    '[Event "?"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n[White "Sicilian Najdorf"]\n[Black "Mainline"]\n[Orientation "black"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 *';
+    '[Event "?"]\n[Site "?"]\n[Date "????.??.??"]\n[Round "?"]\n[White "Sicilian Najdorf"]\n[Black "Mainline"]\n[Orientation "black"]\n[Result "*"]\n\n1. e4 (1. c4 e5) (1. b3) c5 2. Nf3 (2. Be2 Nf6) d6 3. d4 cxd4 4. Nxd4 *';
 
 const chapters = [{ pgn: chapter0Pgn, stamp: "a".repeat(64), revision: REVISION, present: true }];
 
@@ -33,8 +33,19 @@ const chapter0Tokens: Token[] = [
     { type: "Header", value: { tag: "Orientation", value: "black" } },
     { type: "Header", value: { tag: "Result", value: "*" } },
     { type: "San", value: "e4" },
+    { type: "ParenOpen" },
+    { type: "San", value: "c4" },
+    { type: "San", value: "e5" },
+    { type: "ParenClose" },
+    { type: "ParenOpen" },
+    { type: "San", value: "b3" },
+    { type: "ParenClose" },
     { type: "San", value: "c5" },
     { type: "San", value: "Nf3" },
+    { type: "ParenOpen" },
+    { type: "San", value: "Be2" },
+    { type: "San", value: "Nf6" },
+    { type: "ParenClose" },
     { type: "San", value: "d6" },
     { type: "San", value: "d4" },
     { type: "San", value: "cxd4" },
@@ -161,8 +172,40 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
         "aria-current",
         "true",
     );
+    await expect(notation.locator("[data-notation-preparation-header]")).toContainText(
+        "Preparing for First White",
+    );
+    await expect(notation.getByRole("button", { name: "c4", exact: true })).toHaveCount(0);
+    await expect(notation.getByRole("button", { name: "b3", exact: true })).toHaveCount(0);
+    await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toHaveCount(0);
+    await expect(notation.locator('[data-notation-reveal-variations="2"]')).toContainText(
+        "2 hidden lines",
+    );
+    await expect(notation.locator('[data-notation-reveal-variations="1"]')).toContainText(
+        "1 hidden line",
+    );
     await waitForFontsSettled(page);
     await page.mouse.move(0, 0);
     await expect(notation).toHaveScreenshot("opponent-preparation-opened-line.png");
+
+    // Revealing by toggle opens only that parent's hidden side lines.
+    await notation.locator('[data-notation-reveal-variations="2"]').click();
+    await expect(notation.getByRole("button", { name: "c4", exact: true })).toBeVisible();
+    await expect(notation.getByRole("button", { name: "b3", exact: true })).toBeVisible();
+    await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toHaveCount(0);
+
+    // Switching to "All lines" shows the remaining side lines; switching back restores the filter.
+    await notation.getByText("All lines", { exact: true }).click();
+    await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toBeVisible();
+    await notation.getByText("Opponent's lines", { exact: true }).click();
+    await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toHaveCount(0);
+
+    // Table view also follows the filter.
+    await page.getByRole("button", { name: "Table view", exact: true }).click();
+    await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toHaveCount(0);
+    await expect(notation.locator('[data-notation-reveal-variations="1"]')).toBeVisible();
+    await notation.getByText("All lines", { exact: true }).click();
+    await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toBeVisible();
+
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
