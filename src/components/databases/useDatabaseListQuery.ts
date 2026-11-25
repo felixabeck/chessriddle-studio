@@ -59,6 +59,8 @@ function buildChunkQuery<Q extends QueryWithOptions>(
 
 export type DatabaseListQueryResult<R> = {
     records: R[];
+    /** The display mode that `records` belong to (follows the debounced snapshot when debounced). */
+    recordsMode: ListDisplayMode;
     count: number | null | undefined;
     isLoading: boolean;
     isLoadingMore: boolean;
@@ -401,6 +403,7 @@ export function useDatabaseListQuery<R extends { id: number }, Q extends QueryWi
 
     return {
         records,
+        recordsMode: active.mode,
         count,
         isLoading,
         isLoadingMore,

@@ -141,6 +141,7 @@ test("TournamentTable maps summary accessors to API sorts and defaults to date d
 describe.each([
   {
     name: "PlayerTable",
+    tab: "players" as const,
     Component: PlayerTable,
     select: (id?: number) => activeDatabaseViewStore.getState().setPlayersSelectedPlayer(id),
     selected: () => activeDatabaseViewStore.getState().players.selectedPlayer,
@@ -148,14 +149,16 @@ describe.each([
   },
   {
     name: "TournamentTable",
+    tab: "tournaments" as const,
     Component: TournamentTable,
     select: (id?: number) =>
       activeDatabaseViewStore.getState().setTournamentsSelectedTournament(id),
     selected: () => activeDatabaseViewStore.getState().tournaments.selectedTournament,
     query: () => activeDatabaseViewStore.getState().tournaments.query,
   },
-])("$name page-local navigation", ({ Component, select, selected, query }) => {
+])("$name page-local navigation", ({ tab, Component, select, selected, query }) => {
   async function render() {
+    activeDatabaseViewStore.getState().setActiveTab(tab);
     await act(async () =>
       root.render(
         <MantineProvider>

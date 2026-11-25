@@ -5,10 +5,13 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { DatabaseListFooter, type DatabaseListFooterProps } from "./DatabaseListFooter";
 
+const i18nState = vi.hoisted(() => ({ language: "en-US" }));
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
       params ? `${key}:${JSON.stringify(params)}` : key,
+    i18n: { resolvedLanguage: i18nState.language, language: i18nState.language },
   }),
 }));
 
@@ -24,6 +27,7 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  i18nState.language = "en-US";
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -84,7 +88,7 @@ test("renders count line, bound notice only when set, and Retry for failures in 
     error: new Error("chunk failed"),
     onRetry,
   });
-  expect(host.textContent).toContain('Databases.List.ShowingOf:{"shown":100,"total":250}');
+  expect(host.textContent).toContain('Databases.List.ShowingOf:{"shown":"100","total":"250"}');
   expect(host.textContent).not.toContain("Databases.List.BoundReached");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("Databases.LoadError.Title");
 
@@ -97,20 +101,55 @@ test("renders count line, bound notice only when set, and Retry for failures in 
   await renderFooter({
     mode: "all",
     shownCount: 10_000,
-    totalRecords: 12_000,
+    totalRecords: 12_442_675,
     boundReachedWithMore: true,
     error: undefined,
   });
-  expect(host.textContent).toContain('Databases.List.BoundReached:{"max":10000}');
+  expect(host.textContent).toContain(
+    'Databases.List.ShowingOf:{"shown":"10,000","total":"12,442,675"}',
+  );
+  expect(host.textContent).toContain('Databases.List.BoundReached:{"max":"10,000"}');
 });
 
 test("renders ShowingCount in All mode when totalRecords is null and rows are shown", async () => {
   await renderFooter({
     mode: "all",
-    shownCount: 42,
+    shownCount: 1_234,
     totalRecords: null,
     error: undefined,
   });
-  expect(host.textContent).toContain('Databases.List.ShowingCount:{"shown":42}');
+  expect(host.textContent).toContain('Databases.List.ShowingCount:{"shown":"1,234"}');
   expect(host.textContent).not.toContain("Databases.List.ShowingOf");
+});
+
+test("formats paged range and All-mode counts with the active i18n locale", async () => {
+  await renderFooter({
+    mode: "paged",
+    page: 41,
+    recordsPerPage: 25,
+    shownCount: 25,
+    totalRecords: 12_442_675,
+  });
+  expect(host.textContent).toContain("1,001 - 1,025 / 12,442,675");
+
+  i18nState.language = "de-DE";
+  await renderFooter({
+    mode: "paged",
+    page: 41,
+    recordsPerPage: 25,
+    shownCount: 25,
+    totalRecords: 12_442_675,
+  });
+  expect(host.textContent).toContain("1.001 - 1.025 / 12.442.675");
+
+  await renderFooter({
+    mode: "all",
+    shownCount: 10_000,
+    totalRecords: 12_442_675,
+    boundReachedWithMore: true,
+  });
+  expect(host.textContent).toContain(
+    'Databases.List.ShowingOf:{"shown":"10.000","total":"12.442.675"}',
+  );
+  expect(host.textContent).toContain('Databases.List.BoundReached:{"max":"10.000"}');
 });

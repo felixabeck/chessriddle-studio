@@ -7,8 +7,18 @@ import { activeDatabaseViewStore } from "@/state/store/database";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import TournamentTable from "./TournamentTable";
+import { INITIAL_WINDOW_ROWS } from "./useWindowedTableRows";
 
-const mocks = vi.hoisted(() => ({ getTournaments: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getTournaments: vi.fn(),
+  tableProps: undefined as
+    | {
+        records: import("@/bindings").Event[];
+        rowFactory?: unknown;
+        onScrollToBottom?: () => void;
+      }
+    | undefined,
+}));
 vi.mock("@/platform/tauri", () => ({ tauri: { getTournaments: mocks.getTournaments } }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@/i18n", async (original) => ({
@@ -68,9 +78,33 @@ vi.mock("@mantine/core", () => {
   };
 });
 vi.mock("mantine-datatable", () => ({
-  DataTable: ({ noRecordsText }: { noRecordsText: string }) => (
-    <div role="status">{noRecordsText}</div>
-  ),
+  DataTable: ({
+    records,
+    noRecordsText,
+    rowFactory,
+    onScrollToBottom,
+  }: {
+    records: import("@/bindings").Event[];
+    noRecordsText: string;
+    rowFactory?: unknown;
+    onScrollToBottom?: () => void;
+  }) => {
+    mocks.tableProps = { records, rowFactory, onScrollToBottom };
+    return (
+      <div>
+        <div role="status">{noRecordsText}</div>
+        <table>
+          <tbody>
+            {records.map((event) => (
+              <tr key={event.id}>
+                <td>{event.name}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  },
 }));
 vi.mock("./TournamentCard", () => ({ default: () => null }));
 vi.mock("./GridLayout", () => ({
@@ -221,4 +255,87 @@ test("switching to All issues one first-chunk request and switching back returns
     }),
     { signal: expect.any(AbortSignal) },
   );
+});
+
+test("held-records mode: switching from All to 25 keeps accumulated rows windowed during the debounce window", async () => {
+  const makeEvents = (startId: number, length: number) =>
+    Array.from({ length }, (_, index) => ({
+      id: startId + index,
+      name: `Event ${startId + index}`,
+      start_date: "2026.01.01",
+      end_date: "2026.01.10",
+      site: "Berlin",
+      player_count: 10,
+      game_count: 50,
+      avg_elo: 2500,
+    }));
+  mocks.getTournaments.mockImplementation(async (_file, query) => {
+    const page = query.options?.page ?? 1;
+    const size = query.options?.pageSize ?? 25;
+    return {
+      data: makeEvents((page - 1) * size + 1, size),
+      count: query.options?.skipCount ? null : 300,
+    };
+  });
+
+  activeDatabaseViewStore.getState().setTournamentsRecordsPerPage("all");
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <TournamentTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+
+  await act(async () => {
+    mocks.tableProps?.onScrollToBottom?.();
+  });
+  expect(mocks.tableProps?.rowFactory).toBeTypeOf("function");
+  expect(container.querySelectorAll("tbody tr")).toHaveLength(INITIAL_WINDOW_ROWS);
+
+  const size25 = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "25",
+  )!;
+  await act(async () => size25.click());
+  expect(activeDatabaseViewStore.getState().tournaments.listMode).toBe("paged");
+  expect(mocks.tableProps?.rowFactory).toBeTypeOf("function");
+  expect(container.querySelectorAll("tbody tr")).toHaveLength(INITIAL_WINDOW_ROWS);
+
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+  expect(mocks.tableProps?.rowFactory).toBeUndefined();
+  expect(container.querySelectorAll("tbody tr")).toHaveLength(25);
+});
+
+test("ignores arrow keys when Tournaments tab is hidden", async () => {
+  mocks.getTournaments.mockResolvedValue({
+    data: [
+      {
+        id: 1,
+        name: "Event 1",
+        start_date: null,
+        end_date: null,
+        site: null,
+        player_count: 4,
+        game_count: 6,
+        avg_elo: null,
+      },
+    ],
+    count: 1,
+  });
+  activeDatabaseViewStore.getState().setActiveTab("games");
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <TournamentTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  expect(activeDatabaseViewStore.getState().tournaments.selectedTournament).toBeUndefined();
 });

@@ -7,10 +7,18 @@ import { activeDatabaseViewStore } from "@/state/store/database";
 import { ELO_FILTER_MAX, query_players, type SuccessDatabaseInfo } from "@/utils/db";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import PlayerTable from "./PlayerTable";
+import { INITIAL_WINDOW_ROWS } from "./useWindowedTableRows";
 
 const mocks = vi.hoisted(() => ({
   getPlayers: vi.fn(),
   inputs: new Map<string, (value: number | string) => void>(),
+  tableProps: undefined as
+    | {
+        records: import("@/bindings").Player[];
+        rowFactory?: unknown;
+        onScrollToBottom?: () => void;
+      }
+    | undefined,
 }));
 vi.mock("@/platform/tauri", () => ({ tauri: { getPlayers: mocks.getPlayers } }));
 vi.mock("@/utils/db", async (original) => {
@@ -115,60 +123,67 @@ vi.mock("mantine-datatable", () => ({
     sortStatus,
     onSortStatusChange,
     noRecordsText,
+    rowFactory,
+    onScrollToBottom,
   }: {
     records: import("@/bindings").Player[];
     columns: { accessor: string; title: string; sortable?: boolean }[];
     sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
     onSortStatusChange: (value: { columnAccessor: string; direction: "asc" | "desc" }) => void;
     noRecordsText: string;
-  }) => (
-    <table>
-      <thead>
-        <tr>
-          {columns.map((column) => (
-            <th
-              key={column.accessor}
-              data-sortable={column.sortable || undefined}
-              aria-sort={
-                sortStatus.columnAccessor === column.accessor
-                  ? sortStatus.direction === "asc"
-                    ? "ascending"
-                    : "descending"
-                  : undefined
-              }
-              onClick={
-                column.sortable
-                  ? () =>
-                      onSortStatusChange({
-                        columnAccessor: column.accessor,
-                        direction:
-                          sortStatus.columnAccessor === column.accessor &&
-                          sortStatus.direction === "asc"
-                            ? "desc"
-                            : "asc",
-                      })
-                  : undefined
-              }
-            >
-              {column.title}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {records.length === 0 && (
+    rowFactory?: unknown;
+    onScrollToBottom?: () => void;
+  }) => {
+    mocks.tableProps = { records, rowFactory, onScrollToBottom };
+    return (
+      <table>
+        <thead>
           <tr>
-            <td>{noRecordsText}</td>
+            {columns.map((column) => (
+              <th
+                key={column.accessor}
+                data-sortable={column.sortable || undefined}
+                aria-sort={
+                  sortStatus.columnAccessor === column.accessor
+                    ? sortStatus.direction === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
+                onClick={
+                  column.sortable
+                    ? () =>
+                        onSortStatusChange({
+                          columnAccessor: column.accessor,
+                          direction:
+                            sortStatus.columnAccessor === column.accessor &&
+                            sortStatus.direction === "asc"
+                              ? "desc"
+                              : "asc",
+                        })
+                    : undefined
+                }
+              >
+                {column.title}
+              </th>
+            ))}
           </tr>
-        )}
-        {records.map((record) => (
-          <tr key={record.id}>
-            <td>{record.game_count}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  ),
+        </thead>
+        <tbody>
+          {records.length === 0 && (
+            <tr>
+              <td>{noRecordsText}</td>
+            </tr>
+          )}
+          {records.map((record) => (
+            <tr key={record.id}>
+              <td>{record.game_count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  },
 }));
 vi.mock("@/components/common/IconAction", () => ({ IconAction: () => null }));
 vi.mock("./PlayerCard", () => ({ default: () => null }));
@@ -471,4 +486,76 @@ test("switching to All issues one first-chunk request and switching back returns
     }),
     { signal: expect.any(AbortSignal) },
   );
+});
+
+test("held-records mode: switching from All to 25 keeps accumulated rows windowed during the debounce window", async () => {
+  const makePlayers = (startId: number, length: number) =>
+    Array.from({ length }, (_, index) => ({
+      id: startId + index,
+      name: `Player ${startId + index}`,
+      elo: 2400,
+      game_count: 10,
+    }));
+  mocks.getPlayers.mockImplementation(async (_file, query) => {
+    const page = query.options?.page ?? 1;
+    const size = query.options?.pageSize ?? 25;
+    return {
+      data: makePlayers((page - 1) * size + 1, size),
+      count: query.options?.skipCount ? null : 300,
+    };
+  });
+
+  activeDatabaseViewStore.getState().setPlayersRecordsPerPage("all");
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <PlayerTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+
+  // Load a second 100-row chunk so 200 rows are held in memory.
+  await act(async () => {
+    mocks.tableProps?.onScrollToBottom?.();
+  });
+  expect(mocks.tableProps?.rowFactory).toBeTypeOf("function");
+  expect(container.querySelectorAll("tbody tr")).toHaveLength(INITIAL_WINDOW_ROWS);
+
+  // Switch to 25: store listMode flips immediately, but during the 250ms debounce window the held
+  // 200 rows must stay windowed (bounded to INITIAL_WINDOW_ROWS, never unwindowed to 200).
+  const size25 = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "25",
+  )!;
+  await act(async () => size25.click());
+  expect(activeDatabaseViewStore.getState().players.listMode).toBe("paged");
+  expect(mocks.tableProps?.rowFactory).toBeTypeOf("function");
+  expect(container.querySelectorAll("tbody tr")).toHaveLength(INITIAL_WINDOW_ROWS);
+
+  // Once debounce settles, paged mode renders all 25 rows without windowing.
+  await act(async () => vi.advanceTimersByTimeAsync(250));
+  expect(mocks.tableProps?.rowFactory).toBeUndefined();
+  expect(container.querySelectorAll("tbody tr")).toHaveLength(25);
+});
+
+test("ignores arrow keys when Players tab is hidden", async () => {
+  mocks.getPlayers.mockResolvedValue({
+    data: [{ id: 1, name: "Player 1", elo: 2400, game_count: 10 }],
+    count: 1,
+  });
+  activeDatabaseViewStore.getState().setActiveTab("games");
+  await act(async () =>
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+          <PlayerTable />
+        </DatabaseViewStateContext.Provider>
+      </SWRConfig>,
+    ),
+  );
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  expect(activeDatabaseViewStore.getState().players.selectedPlayer).toBeUndefined();
 });

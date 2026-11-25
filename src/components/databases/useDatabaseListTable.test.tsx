@@ -1,9 +1,10 @@
-import { act } from "react";
+import { act, type RefObject } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { QueryOptions } from "@/bindings";
 import classes from "./styles.module.css";
 import { useDatabaseListTable } from "./useDatabaseListTable";
+import { DEFAULT_ROW_HEIGHT_ESTIMATE, INITIAL_WINDOW_ROWS } from "./useWindowedTableRows";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -32,20 +33,24 @@ function Probe(props: {
   error?: unknown;
   query?: Query;
   mode?: "paged" | "all";
+  isActive?: boolean;
+  records?: Row[];
+  scrollViewportRef?: RefObject<HTMLDivElement | null>;
 }) {
   result = useDatabaseListTable({
     list: {
-      records,
+      records: props.records ?? records,
+      recordsMode: props.mode ?? "paged",
       count: 30,
       error: props.error,
       isLoading: true,
       isLoadingMore: false,
       boundReachedWithMore: false,
-      scrollViewportRef: { current: null },
+      scrollViewportRef: props.scrollViewportRef ?? { current: null },
       loadMore: onLoadMore,
       retry: onRetry,
     },
-    mode: props.mode ?? "paged",
+    isActive: props.isActive,
     query: props.query ?? query,
     setQuery,
     setRecordsPerPage,
@@ -164,7 +169,7 @@ test("a load failure replaces the empty text, otherwise the table's own empty te
   expect(result.tableProps.noRecordsText).not.toBe("Nothing here");
 });
 
-test("document arrow keys move the selection, typing in a field does not", async () => {
+test("document arrow keys move the selection, typing in a field does not, and hidden tabs ignore them", async () => {
   await mount({ selectedId: 2 });
   press("ArrowDown");
   expect(setSelectedId).toHaveBeenLastCalledWith(3);
@@ -173,4 +178,74 @@ test("document arrow keys move the selection, typing in a field does not", async
   setSelectedId.mockClear();
   press("ArrowDown", host.querySelector("input")!);
   expect(setSelectedId).not.toHaveBeenCalled();
+
+  // Hidden tab (isActive=false) ignores arrow keys.
+  await mount({ selectedId: 2, isActive: false });
+  press("ArrowDown");
+  press("ArrowUp");
+  expect(setSelectedId).not.toHaveBeenCalled();
+});
+
+test("in All mode records are windowed with rowFactory while footer shownCount reflects all loaded rows", async () => {
+  const many = Array.from({ length: 120 }, (_, index) => ({ id: index + 1 }));
+  await mount({ mode: "all", records: many });
+  expect(result.tableProps.rowFactory).toBeTypeOf("function");
+  expect(result.tableProps.records).toHaveLength(INITIAL_WINDOW_ROWS);
+  expect(result.footerProps.shownCount).toBe(120);
+
+  await mount({ mode: "paged", records: many });
+  expect(result.tableProps.rowFactory).toBeUndefined();
+  expect(result.tableProps.records).toBe(many);
+});
+
+test("ArrowDown and ArrowUp in All mode scroll the newly selected row into view", async () => {
+  const many = Array.from({ length: 120 }, (_, index) => ({ id: index + 1 }));
+  const viewport = document.createElement("div");
+  let scrollTop = 0;
+  const scrollTo = vi.fn((optionsOrX?: ScrollToOptions | number, y?: number) => {
+    scrollTop = typeof optionsOrX === "number" ? (y ?? 0) : (optionsOrX?.top ?? 0);
+    viewport.dispatchEvent(new Event("scroll"));
+  });
+  Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 300 });
+  Object.defineProperty(viewport, "offsetHeight", { configurable: true, value: 300 });
+  Object.defineProperty(viewport, "scrollHeight", {
+    configurable: true,
+    value: many.length * DEFAULT_ROW_HEIGHT_ESTIMATE,
+  });
+  Object.defineProperty(viewport, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      scrollTop = value;
+    },
+  });
+  viewport.getBoundingClientRect = () =>
+    ({
+      width: 600,
+      height: 300,
+      top: 0,
+      left: 0,
+      bottom: 300,
+      right: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  viewport.scrollTo = scrollTo as typeof viewport.scrollTo;
+  const scrollViewportRef = { current: viewport };
+
+  // Selected row 50 (index 49): ArrowDown selects row 51 (index 50, well below the 300px viewport).
+  await mount({ mode: "all", records: many, selectedId: 50, scrollViewportRef });
+  press("ArrowDown");
+  expect(setSelectedId).toHaveBeenLastCalledWith(51);
+  expect(scrollTo).toHaveBeenCalled();
+  expect(scrollTop).toBe(51 * DEFAULT_ROW_HEIGHT_ESTIMATE - 300);
+
+  // Selected row 5 (index 4) while scrolled down: ArrowUp selects row 4 (index 3) and scrolls up.
+  scrollTo.mockClear();
+  await mount({ mode: "all", records: many, selectedId: 5, scrollViewportRef });
+  press("ArrowUp");
+  expect(setSelectedId).toHaveBeenLastCalledWith(4);
+  expect(scrollTo).toHaveBeenCalled();
+  expect(scrollTop).toBe(3 * DEFAULT_ROW_HEIGHT_ESTIMATE);
 });

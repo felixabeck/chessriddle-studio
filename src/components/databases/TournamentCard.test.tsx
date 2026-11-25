@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DatabaseHandle, NormalizedGame, Event as Tournament } from "@/bindings";
 import { recordDatabaseWrite } from "@/platform/databaseWrites";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
+import { INITIAL_WINDOW_ROWS } from "./useWindowedTableRows";
+import { formatNumber } from "@/utils/format";
 
 const mocks = vi.hoisted(() => ({
   getTournamentGames: vi.fn(),
@@ -16,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   generation: null as string | null,
   pending: false,
   unavailable: false,
+  scrollTo: vi.fn(),
+  gamesRowFactory: undefined as unknown,
+  gamesHeight: undefined as string | number | undefined,
 }));
 vi.mock("@/state/linkedCollections", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/state/linkedCollections")>();
@@ -39,7 +44,16 @@ vi.mock("@/components/files/notifyError", async (original) => ({
   ...(await original<typeof import("@/components/files/notifyError")>()),
   notifyUnlessCancelled: mocks.notify,
 }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      if (key === "Databases.List.ShowingOf" && options) {
+        return `Showing ${options.shown} of ${options.total}`;
+      }
+      return key;
+    },
+  }),
+}));
 vi.mock("zustand", () => ({
   useStore: (_store: unknown, selector: (state: unknown) => unknown) =>
     selector({
@@ -70,12 +84,22 @@ vi.mock("mantine-datatable", () => ({
     records,
     columns,
     onSortStatusChange,
+    scrollViewportRef,
+    rowFactory,
+    height,
   }: {
     records: Record[];
     columns?: { accessor: string; render?: (game: Record) => ReactNode }[];
     onSortStatusChange?: (sort: { columnAccessor: string; direction: "asc" | "desc" }) => void;
-  }) =>
-    onSortStatusChange === undefined ? (
+    scrollViewportRef?: { current: HTMLDivElement | null };
+    rowFactory?: unknown;
+    height?: string | number;
+  }) => {
+    if (onSortStatusChange !== undefined) {
+      mocks.gamesRowFactory = rowFactory;
+      mocks.gamesHeight = height;
+    }
+    return onSortStatusChange === undefined ? (
       <table data-testid="leaderboard">
         <tbody>
           {records.map((player, index) => (
@@ -87,7 +111,14 @@ vi.mock("mantine-datatable", () => ({
         </tbody>
       </table>
     ) : (
-      <div>
+      <div
+        ref={(node) => {
+          if (scrollViewportRef) {
+            scrollViewportRef.current = node;
+            if (node) node.scrollTo = mocks.scrollTo as typeof node.scrollTo;
+          }
+        }}
+      >
         <table data-testid="games">
           <tbody>
             {records.map((game) => (
@@ -111,7 +142,8 @@ vi.mock("mantine-datatable", () => ({
           Sort plies descending
         </button>
       </div>
-    ),
+    );
+  },
 }));
 vi.mock("@/components/common/IconAction", () => ({
   IconAction: ({ label, onClick }: { label: string; onClick?: () => void }) => (
@@ -427,13 +459,27 @@ test("sorting orders the games before selecting the displayed page", async () =>
   expectPage(2, 10, ids(41, 50).reverse());
 });
 
-test("All mode shows all games, switches back to page 1, and caps at 10,000 with notice only when rows exceed the bound", async () => {
+test("All mode passes bounded height and windowed rows/rowFactory, scrolls to top on mode change, and caps at 10,000 with notice only when rows exceed the bound", async () => {
   await renderGames();
+  expect(mocks.gamesRowFactory).toBeUndefined();
+  expect(mocks.gamesHeight).toBeUndefined();
+  mocks.scrollTo.mockClear();
+
   await click("Common.All");
-  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(60);
+  expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0 });
+  expect(mocks.gamesHeight).toBe("100%");
+  expect(mocks.gamesRowFactory).toBeTypeOf("function");
+  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(
+    INITIAL_WINDOW_ROWS,
+  );
+  expect(container.textContent).toContain("Showing 60 of 60");
   expect(container.textContent).not.toContain("Databases.List.BoundReached");
 
+  mocks.scrollTo.mockClear();
   await click("25");
+  expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0 });
+  expect(mocks.gamesHeight).toBeUndefined();
+  expect(mocks.gamesRowFactory).toBeUndefined();
   expectPage(1, 25, ids(1, 25));
 
   const manyGames = (count: number): NormalizedGame[] =>
@@ -454,13 +500,18 @@ test("All mode shows all games, switches back to page 1, and caps at 10,000 with
       moves: "",
     }));
 
-  // Exact bound (10,000 rows): no bound notice.
+  // Exact bound (10,000 rows): windowed DOM, footer reports 10,000, no bound notice.
   mocks.getTournamentGames.mockResolvedValue({ data: manyGames(10_000) });
   await act(async () => {
     await refreshGames();
   });
   await click("Common.All");
-  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(10_000);
+  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(
+    INITIAL_WINDOW_ROWS,
+  );
+  expect(container.textContent).toContain(
+    `Showing ${formatNumber(10_000)} of ${formatNumber(10_000)}`,
+  );
   expect(container.textContent).not.toContain("Databases.List.BoundReached");
 
   // Exceeding bound (10,001 rows): capped at 10,000 and shows bound notice.
@@ -468,8 +519,22 @@ test("All mode shows all games, switches back to page 1, and caps at 10,000 with
   await act(async () => {
     await refreshGames();
   });
-  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(10_000);
+  expect(container.querySelectorAll('[data-testid="games"] tbody tr')).toHaveLength(
+    INITIAL_WINDOW_ROWS,
+  );
+  expect(container.textContent).toContain(
+    `Showing ${formatNumber(10_000)} of ${formatNumber(10_001)}`,
+  );
   expect(container.textContent).toContain("Databases.List.BoundReached");
+});
+
+test("changing sort in TournamentCard resets the game list scroll viewport to the top", async () => {
+  await renderGames();
+  await click("Common.All");
+  mocks.scrollTo.mockClear();
+
+  await click("Sort plies descending");
+  expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0 });
 });
 
 test.each([

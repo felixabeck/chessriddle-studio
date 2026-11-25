@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   table: undefined as
     | {
         records: NormalizedGame[];
+        rowFactory?: unknown;
         totalRecords?: number;
         columns: { accessor: string; sortable?: boolean }[];
         sortStatus: { columnAccessor: string; direction: "asc" | "desc" };
@@ -773,3 +774,26 @@ test.each([
     expect(activeDatabaseViewStore.getState().games.query[otherField]).toEqual([0, ELO_FILTER_MAX]);
   },
 );
+
+test("uses row windowing only in All mode and ignores arrow keys when Games tab is hidden", async () => {
+  await render();
+  expect(mocks.table?.rowFactory).toBeUndefined();
+
+  await act(async () => {
+    activeDatabaseViewStore.getState().setGamesRecordsPerPage("all");
+  });
+  expect(mocks.table?.rowFactory).toBeTypeOf("function");
+
+  await act(async () => {
+    activeDatabaseViewStore.getState().setGamesRecordsPerPage(25);
+  });
+  expect(mocks.table?.rowFactory).toBeUndefined();
+
+  activeDatabaseViewStore.getState().setActiveTab("players");
+  activeDatabaseViewStore.getState().setGamesSelectedGameId(undefined);
+  await render();
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  expect(activeDatabaseViewStore.getState().games.selectedGameId).toBeUndefined();
+});

@@ -44,6 +44,7 @@ function TournamentTable() {
   const setRecordsPerPage = useStore(store, (s) => s.setTournamentsRecordsPerPage);
   const setSelected = useStore(store, (s) => s.setTournamentsSelectedTournament);
   const generation = useStore(store, (s) => s.database?.collection?.generation);
+  const isActive = useStore(store, (s) => s.activeTab === "tournaments");
 
   const list = useDatabaseListQuery({
     kind: "tournaments",
@@ -58,7 +59,7 @@ function TournamentTable() {
 
   const { tableProps, footerProps } = useDatabaseListTable({
     list,
-    mode: listMode,
+    isActive,
     query,
     setQuery,
     setRecordsPerPage,

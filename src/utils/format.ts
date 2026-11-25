@@ -1,6 +1,6 @@
-export function formatNumber(value?: number): string {
+export function formatNumber(value?: number, locale?: string): string {
     if (!value) return "0";
-    return Intl.NumberFormat().format(value);
+    return new Intl.NumberFormat(locale).format(value);
 }
 
 const MILLISECONDS_PER_SECOND = 1000;

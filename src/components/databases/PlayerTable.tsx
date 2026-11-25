@@ -35,6 +35,7 @@ function PlayerTable() {
   const selectedPlayer = useStore(store, (s) => s.players.selectedPlayer);
   const setSelectedPlayer = useStore(store, (s) => s.setPlayersSelectedPlayer);
   const generation = useStore(store, (s) => s.database?.collection?.generation);
+  const isActive = useStore(store, (s) => s.activeTab === "players");
 
   const list = useDatabaseListQuery({
     kind: "players",
@@ -51,7 +52,7 @@ function PlayerTable() {
 
   const { tableProps, footerProps } = useDatabaseListTable({
     list,
-    mode: listMode,
+    isActive,
     query,
     setQuery,
     setRecordsPerPage,

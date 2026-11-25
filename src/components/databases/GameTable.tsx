@@ -57,6 +57,7 @@ function GameTable() {
   const selectedGameId = useStore(store, (s) => s.games.selectedGameId);
   const setSelectedGameId = useStore(store, (s) => s.setGamesSelectedGameId);
   const generation = useStore(store, (s) => s.database?.collection?.generation);
+  const isActive = useStore(store, (s) => s.activeTab === "games");
 
   const list = useDatabaseListQuery({
     kind: "games",
@@ -78,7 +79,7 @@ function GameTable() {
 
   const { tableProps, footerProps } = useDatabaseListTable({
     list,
-    mode: listMode,
+    isActive,
     query,
     setQuery,
     setRecordsPerPage,

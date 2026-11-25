@@ -3485,6 +3485,85 @@ for (const scheme of ["dark", "light"] as const) {
     });
 }
 
+async function installAllModeGamesMock(
+    page: Page,
+    options: {
+        count: number;
+        prefix: string;
+        event: string;
+        moves: string;
+        distinctPlies?: boolean;
+        emptyOnBlackWin?: boolean;
+        handleGetDbGame?: boolean;
+    },
+) {
+    await page.addInitScript((opts) => {
+        type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+        const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
+            .__TAURI_INTERNALS__;
+        const invoke = internals.invoke;
+        const allGames = Array.from({ length: opts.count }, (_, index) => {
+            const id = index + 1;
+            return {
+                id,
+                stamp: String(id).padStart(64, "a"),
+                white: `${opts.prefix} White ${id}`,
+                white_id: id,
+                white_elo: 2500,
+                black: `${opts.prefix} Black ${id}`,
+                black_id: id + 1000,
+                black_elo: 2450,
+                date: "2026.01.01",
+                result: "1-0",
+                ply_count: opts.distinctPlies ? id * 2 : 40,
+                event: opts.event,
+                event_id: 1,
+                site: "Berlin",
+                site_id: 1,
+                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                moves: opts.moves,
+            };
+        });
+        internals.invoke = async (command, args = {}) => {
+            if (command === "get_games") {
+                const query = args.query as {
+                    outcome?: string | null;
+                    options?: {
+                        page?: number;
+                        pageSize?: number;
+                        skipCount?: boolean;
+                        sort?: string;
+                        direction?: "asc" | "desc";
+                    };
+                };
+                if (opts.emptyOnBlackWin && query?.outcome === "0-1") {
+                    return { data: [], count: 0 };
+                }
+                const ordered = [...allGames];
+                if (query?.options?.sort === "plyCount") {
+                    ordered.sort((a, b) =>
+                        query.options?.direction === "desc"
+                            ? b.ply_count - a.ply_count
+                            : a.ply_count - b.ply_count,
+                    );
+                }
+                const page = query?.options?.page ?? 1;
+                const pageSize = query?.options?.pageSize ?? 25;
+                const start = (page - 1) * pageSize;
+                return {
+                    data: ordered.slice(start, start + pageSize),
+                    count: query?.options?.skipCount ? null : ordered.length,
+                };
+            }
+            if (opts.handleGetDbGame && command === "get_db_game") {
+                const game = allGames.find((row) => row.id === args.gameId);
+                return game ? { kind: "found", game } : { kind: "missing" };
+            }
+            return invoke(command, args);
+        };
+    }, options);
+}
+
 test("database-files: games list All mode loads chunks on scroll, keeps footer with zero rows, and switches back to page 1", async ({
     page,
     mockScenario,
@@ -3495,51 +3574,12 @@ test("database-files: games list All mode loads chunks on scroll, keeps footer w
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await mockScenario({ commands: databaseLayoutCommands });
-    await page.addInitScript(() => {
-        type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
-        const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
-            .__TAURI_INTERNALS__;
-        const invoke = internals.invoke;
-        const allGames = Array.from({ length: 150 }, (_, index) => {
-            const id = index + 1;
-            return {
-                id,
-                white: `Scroll White ${id}`,
-                white_id: id,
-                white_elo: 2500,
-                black: `Scroll Black ${id}`,
-                black_id: id + 1000,
-                black_elo: 2450,
-                date: "2026.01.01",
-                result: "1-0",
-                ply_count: 40,
-                event: "Scroll Cup",
-                event_id: 1,
-                site: "Berlin",
-                site_id: 1,
-                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                moves: "1. e4 e5 1-0",
-            };
-        });
-        internals.invoke = async (command, args = {}) => {
-            if (command === "get_games") {
-                const query = args.query as {
-                    outcome?: string | null;
-                    options?: { page?: number; pageSize?: number; skipCount?: boolean };
-                };
-                if (query?.outcome === "0-1") {
-                    return { data: [], count: 0 };
-                }
-                const page = query?.options?.page ?? 1;
-                const pageSize = query?.options?.pageSize ?? 25;
-                const start = (page - 1) * pageSize;
-                return {
-                    data: allGames.slice(start, start + pageSize),
-                    count: query?.options?.skipCount ? null : allGames.length,
-                };
-            }
-            return invoke(command, args);
-        };
+    await installAllModeGamesMock(page, {
+        count: 150,
+        prefix: "Scroll",
+        event: "Scroll Cup",
+        moves: "1. e4 e5 1-0",
+        emptyOnBlackWin: true,
     });
 
     await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
@@ -3550,11 +3590,13 @@ test("database-files: games list All mode loads chunks on scroll, keeps footer w
     await expect(tablePane.locator("tbody tr")).toHaveCount(25);
     await expect(footer).toContainText("1 - 25 / 150");
 
-    // Switch to "All": first 100-row chunk loads.
+    // Switch to "All": first 100-row chunk loads, DOM stays windowed below the loaded count.
     await footer.getByRole("button", { name: "25", exact: true }).click();
     await page.getByRole("menuitem", { name: "All", exact: true }).click();
-    await expect(tablePane.locator("tbody tr")).toHaveCount(100);
     await expect(footer).toContainText("Showing 100 of 150");
+    const firstChunkRows = await tablePane.locator("tbody tr").count();
+    expect(firstChunkRows).toBeGreaterThan(0);
+    expect(firstChunkRows).toBeLessThan(100);
 
     await waitForFontsSettled(page);
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -3563,13 +3605,15 @@ test("database-files: games list All mode loads chunks on scroll, keeps footer w
         stylePath: scrollbarFreeScreenshot,
     });
 
-    // Scroll the table viewport to the bottom: second chunk loads (150 total).
+    // Scroll the table viewport to the bottom: second chunk loads (150 total) while DOM stays windowed.
     const viewport = tablePane.locator(".mantine-ScrollArea-viewport").first();
     await viewport.evaluate((node) => {
         node.scrollTop = node.scrollHeight;
     });
-    await expect(tablePane.locator("tbody tr")).toHaveCount(150);
     await expect(footer).toContainText("Showing 150 of 150");
+    const secondChunkRows = await tablePane.locator("tbody tr").count();
+    expect(secondChunkRows).toBeGreaterThan(0);
+    expect(secondChunkRows).toBeLessThan(100);
 
     // Filter matching zero rows: footer stays mounted in All mode.
     await tablePane.getByRole("button", { name: "More options", exact: true }).click();
@@ -3580,14 +3624,146 @@ test("database-files: games list All mode loads chunks on scroll, keeps footer w
     await expect(footer).toContainText("Showing 0 of 0");
     await expect(footer.getByRole("button", { name: "All", exact: true })).toBeVisible();
 
-    // Clear filter and switch back to 25 -> returns to page 1.
+    // Clear filter and switch back to 25 -> returns to page 1 with all 25 rows rendered.
     await tablePane.locator(".mantine-Select-root button").first().click();
-    await expect(tablePane.locator("tbody tr")).toHaveCount(100);
+    await expect(footer).toContainText("Showing 100 of 150");
     await footer.getByRole("button", { name: "All", exact: true }).click();
     await page.getByRole("menuitem", { name: "25", exact: true }).click();
     await expect(tablePane.locator("tbody tr")).toHaveCount(25);
     await expect(footer).toContainText("1 - 25 / 150");
     await expect(tablePane.locator("tbody tr").first()).toContainText("Scroll White 1");
+});
+
+test("database-files: windowed All mode bounds DOM across chunks, keeps ArrowDown selection visible, opens scrolled rows via Enter and double-click, and resets scroll on sort", async ({
+    page,
+    mockScenario,
+}) => {
+    await page.addInitScript(() => {
+        localStorage.setItem("font-size", "100");
+        localStorage.setItem("mantine-color-scheme", "dark");
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockScenario({
+        commands: filesWorkspaceCommands([[]], {
+            ...databaseLayoutCommands,
+            infer_game_orientation: { result: null },
+        }),
+    });
+    await installAllModeGamesMock(page, {
+        count: 250,
+        prefix: "Window",
+        event: "Window Cup",
+        moves: gameOpeningFixture.games[0].moves,
+        distinctPlies: true,
+        handleGetDbGame: true,
+    });
+
+    await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+    const gamesPanel = page.getByRole("tabpanel", { name: "Games", exact: true });
+    const tablePane = gamesPanel.locator('[data-database-pane="table"]');
+    const footer = tablePane.locator("[data-database-list-footer]");
+    const viewport = tablePane.locator(".mantine-ScrollArea-viewport").first();
+
+    // Paged mode renders all 25 rows.
+    await expect(tablePane.locator("tbody tr")).toHaveCount(25);
+
+    // Switch to "All" and scroll to the bottom twice to load 3 chunks (250 rows).
+    await footer.getByRole("button", { name: "25", exact: true }).click();
+    await page.getByRole("menuitem", { name: "All", exact: true }).click();
+    await expect(footer).toContainText("Showing 100 of 250");
+
+    await viewport.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+    });
+    await expect(footer).toContainText("Showing 200 of 250");
+
+    await viewport.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+    });
+    await expect(footer).toContainText("Showing 250 of 250");
+
+    // Rendered tbody tr stays far below the 250 loaded rows.
+    const renderedRows = await tablePane.locator("tbody tr").count();
+    expect(renderedRows).toBeGreaterThan(0);
+    expect(renderedRows).toBeLessThan(100);
+
+    // ArrowDown past the visible viewport scrolls the selected row into view.
+    await viewport.evaluate((node) => {
+        node.scrollTop = 0;
+    });
+    const firstRow = tablePane.locator("tbody tr").filter({ hasText: "Window White 1" }).first();
+    await firstRow.click();
+    for (let i = 0; i < 30; i++) {
+        await page.keyboard.press("ArrowDown");
+    }
+    const selectedRow = tablePane.locator('tbody tr[aria-selected="true"]');
+    await expect(selectedRow).toContainText("Window White 31");
+    const visibility = await selectedRow.evaluate((row) => {
+        const vp = row.closest<HTMLElement>(".mantine-ScrollArea-viewport")!;
+        const thead = vp.querySelector("thead")!;
+        const rowRect = row.getBoundingClientRect();
+        const vpRect = vp.getBoundingClientRect();
+        const headRect = thead.getBoundingClientRect();
+        return {
+            scrollTop: vp.scrollTop,
+            topOk: rowRect.top >= headRect.bottom - 1,
+            bottomOk: rowRect.bottom <= vpRect.bottom + 1,
+        };
+    });
+    expect(visibility.scrollTop).toBeGreaterThan(0);
+    expect(visibility.topOk).toBe(true);
+    expect(visibility.bottomOk).toBe(true);
+
+    // Scroll to a deep row (160) and open it with Enter.
+    await viewport.evaluate((node) => {
+        node.scrollTop = Math.floor(node.scrollHeight * 0.62);
+    });
+    const enterTarget = tablePane
+        .locator("tbody tr")
+        .filter({ hasText: "Window White 160" })
+        .first();
+    await expect(enterTarget).toBeVisible();
+    await enterTarget.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL("/");
+    const tabAfterEnter = await activeWorkspaceTab(page);
+    expect(tabAfterEnter.name).toBe("Window White 160 - Window Black 160");
+
+    // Return to the database, scroll down to another row (180), and open it with double-click.
+    await page.locator("nav").getByRole("link", { name: "Library", exact: true }).click();
+    await expect(page).toHaveURL(`/databases/${gameOpeningFixture.databaseId}`);
+    await expect(footer).toContainText("Showing 100 of 250");
+    await viewport.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+    });
+    await expect(footer).toContainText("Showing 200 of 250");
+    await viewport.evaluate((node) => {
+        node.scrollTop = Math.floor(node.scrollHeight * 0.85);
+    });
+    const dblClickTarget = tablePane
+        .locator("tbody tr")
+        .filter({ hasText: "Window White 180" })
+        .first();
+    await expect(dblClickTarget).toBeVisible();
+    await dblClickTarget.dblclick();
+    await expect(page).toHaveURL("/");
+    const tabAfterDblClick = await activeWorkspaceTab(page);
+    expect(tabAfterDblClick.name).toBe("Window White 180 - Window Black 180");
+
+    // Return, scroll down, then sort by Plies: restarts at top (scrollTop = 0) with the new order.
+    await page.locator("nav").getByRole("link", { name: "Library", exact: true }).click();
+    await expect(page).toHaveURL(`/databases/${gameOpeningFixture.databaseId}`);
+    await expect(footer).toContainText("Showing 100 of 250");
+    await viewport.evaluate((node) => {
+        node.scrollTop = 1000;
+    });
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await tablePane
+        .locator("thead")
+        .getByRole("button", { name: /^Plies(\s|$)/ })
+        .click();
+    await expect(tablePane.locator("tbody tr").first()).toContainText("Window White 250");
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
 });
 
 /**

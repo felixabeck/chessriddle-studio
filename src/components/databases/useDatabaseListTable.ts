@@ -4,11 +4,12 @@ import { useTranslation } from "react-i18next";
 import type { QueryOptions } from "@/bindings";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { inlineFailureMessage } from "@/components/files/notifyError";
-import type { ListDisplayMode, RecordsPerPageChoice } from "@/state/store/database";
+import type { RecordsPerPageChoice } from "@/state/store/database";
 import { type DatabaseListFooterProps, DEFAULT_PAGE_SIZE } from "./DatabaseListFooter";
 import { getAdjacentRecordId } from "./pageSelection";
 import classes from "./styles.module.css";
 import type { DatabaseListQueryResult } from "./useDatabaseListQuery";
+import { useWindowedTableRows } from "./useWindowedTableRows";
 
 type ListQuery = { options?: QueryOptions<unknown> | null };
 type SortOf<Q extends ListQuery> = NonNullable<Q["options"]>["sort"];
@@ -16,11 +17,11 @@ type SortOf<Q extends ListQuery> = NonNullable<Q["options"]>["sort"];
 /**
  * The list contract the Library's game, player and tournament tables share: arrow-key and
  * row selection, row activation, the load-failure empty state, sorting, scroll-to-bottom
- * chunk loading, and the shared list footer props.
+ * chunk loading, windowed row rendering in "All" mode, and the shared list footer props.
  */
 export function useDatabaseListTable<R extends { id: number }, Q extends ListQuery>({
     list,
-    mode = "paged",
+    isActive = true,
     query,
     setQuery,
     setRecordsPerPage,
@@ -32,7 +33,8 @@ export function useDatabaseListTable<R extends { id: number }, Q extends ListQue
     activate,
 }: {
     list: DatabaseListQueryResult<R>;
-    mode?: ListDisplayMode;
+    /** Whether this list's tab is currently visible; hidden keepMounted tabs ignore arrow keys. */
+    isActive?: boolean;
     query: Q;
     setQuery: (query: Q) => unknown;
     setRecordsPerPage: (choice: RecordsPerPageChoice) => unknown;
@@ -49,6 +51,7 @@ export function useDatabaseListTable<R extends { id: number }, Q extends ListQue
     const { t } = useTranslation();
     const {
         records,
+        recordsMode: mode,
         count,
         error,
         isLoading,
@@ -59,9 +62,20 @@ export function useDatabaseListTable<R extends { id: number }, Q extends ListQue
         retry,
     } = list;
 
+    const windowing = useWindowedTableRows({
+        records,
+        enabled: mode === "all",
+        scrollViewportRef,
+    });
+
     const step = (direction: -1 | 1) => {
+        if (!isActive) return;
         const id = getAdjacentRecordId(records, selectedId ?? undefined, direction);
-        if (id != null) setSelectedId(id);
+        if (id != null) {
+            setSelectedId(id);
+            const nextIndex = records.findIndex((record) => record.id === id);
+            if (nextIndex >= 0) windowing.scrollToIndex(nextIndex);
+        }
     };
     useHotkeys([
         ["ArrowUp", () => step(-1)],
@@ -74,7 +88,8 @@ export function useDatabaseListTable<R extends { id: number }, Q extends ListQue
         withTableBorder: true,
         highlightOnHover: true,
         height: mode === "all" ? ("100%" as const) : undefined,
-        records,
+        records: windowing.visibleRecords,
+        rowFactory: windowing.rowFactory,
         fetching: isLoading,
         scrollViewportRef,
         onScrollToBottom: mode === "all" ? loadMore : undefined,

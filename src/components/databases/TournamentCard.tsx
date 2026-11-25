@@ -1,7 +1,7 @@
 import { Box, Paper, Stack, Tabs, Text, useMantineTheme } from "@mantine/core";
 import { Eye } from "lucide-react";
 import { DataTable, type DataTableSortStatus } from "mantine-datatable";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWRImmutable from "swr/immutable";
 import { match } from "ts-pattern";
@@ -23,6 +23,7 @@ import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { dateColumn, numericColumn } from "./databaseColumns";
 import PlayerRatingCell from "./PlayerRatingCell";
 import { ALL_RECORDS_MAX_ROWS } from "./useDatabaseListQuery";
+import { useWindowedTableRows } from "./useWindowedTableRows";
 
 type TournamentGameSortKey = "date" | "ply_count";
 
@@ -72,6 +73,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
   const [mode, setMode] = useState<ListDisplayMode>("paged");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const { revision, unavailable } = useDatabaseContentRevision(file);
   const requestKey =
     revision && !unavailable
@@ -145,8 +147,19 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
       ? sortedGames.slice(0, ALL_RECORDS_MAX_ROWS)
       : sortedGames.slice((page - 1) * pageSize, page * pageSize);
   const boundReachedWithMore = mode === "all" && sortedGames.length > ALL_RECORDS_MAX_ROWS;
+  const windowing = useWindowedTableRows({
+    records: displayedGames,
+    enabled: mode === "all",
+    scrollViewportRef,
+  });
+
+  const handleSortStatusChange = (nextSort: DataTableSortStatus<NormalizedGame>) => {
+    setSort(nextSort);
+    scrollViewportRef.current?.scrollTo?.({ top: 0 });
+  };
 
   const handleRecordsPerPageChange = (choice: RecordsPerPageChoice) => {
+    scrollViewportRef.current?.scrollTo?.({ top: 0 });
     if (choice === "all") {
       setMode("all");
       setPage(1);
@@ -196,9 +209,11 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                   fetching={isLoading || revision === null}
                   withTableBorder
                   highlightOnHover
-                  records={displayedGames}
+                  scrollViewportRef={scrollViewportRef}
+                  records={windowing.visibleRecords}
+                  rowFactory={windowing.rowFactory}
                   sortStatus={sort}
-                  onSortStatusChange={setSort}
+                  onSortStatusChange={handleSortStatusChange}
                   columns={[
                     {
                       accessor: "actions",

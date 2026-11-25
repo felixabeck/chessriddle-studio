@@ -3,6 +3,7 @@ import { ChevronsUpDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import type { ListDisplayMode, RecordsPerPageChoice } from "@/state/store/database";
+import { formatNumber } from "@/utils/format";
 import { ALL_RECORDS_MAX_ROWS } from "./useDatabaseListQuery";
 import classes from "./DatabaseListFooter.module.css";
 
@@ -45,7 +46,9 @@ export function DatabaseListFooter({
   onRecordsPerPageChange,
   onRetry,
 }: DatabaseListFooterProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n?.resolvedLanguage || i18n?.language;
+  const formatCount = (value: number) => formatNumber(value, locale);
   const failureMessage = inlineFailureMessage(error, "database", t("Databases.LoadError.Title"));
 
   const totalPages =
@@ -66,22 +69,22 @@ export function DatabaseListFooter({
           totalRecords > 0 &&
           shownCount > 0 && (
             <Text size="sm" className={classes.tabular}>
-              {`${rangeFrom} - ${rangeTo} / ${totalRecords}`}
+              {`${formatCount(rangeFrom)} - ${formatCount(rangeTo)} / ${formatCount(totalRecords)}`}
             </Text>
           )}
 
         {mode === "all" && typeof totalRecords === "number" && (
           <Text size="sm" c="dimmed" className={classes.tabular}>
             {t("Databases.List.ShowingOf", {
-              shown: shownCount,
-              total: totalRecords,
+              shown: formatCount(shownCount),
+              total: formatCount(totalRecords),
             })}
           </Text>
         )}
 
         {mode === "all" && totalRecords == null && shownCount > 0 && (
           <Text size="sm" c="dimmed" className={classes.tabular}>
-            {t("Databases.List.ShowingCount", { shown: shownCount })}
+            {t("Databases.List.ShowingCount", { shown: formatCount(shownCount) })}
           </Text>
         )}
 
@@ -89,7 +92,7 @@ export function DatabaseListFooter({
 
         {mode === "all" && boundReachedWithMore && (
           <Text size="sm" c="dimmed">
-            {t("Databases.List.BoundReached", { max: ALL_RECORDS_MAX_ROWS })}
+            {t("Databases.List.BoundReached", { max: formatCount(ALL_RECORDS_MAX_ROWS) })}
           </Text>
         )}
       </Group>

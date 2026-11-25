@@ -927,3 +927,38 @@ test("resets the scroll viewport to top when query identity changes", async () =
   });
   expect(onScrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0 });
 });
+
+test("recordsMode reflects the debounced mode that the currently held records belong to", async () => {
+  vi.useFakeTimers();
+  const fetchPage = vi.fn(async (_file: DatabaseHandle, query: TestQuery) => {
+    const page = query.options.page ?? 1;
+    const size = query.options.pageSize ?? 25;
+    return {
+      data: makeRows((page - 1) * size + 1, size),
+      count: page === 1 ? 300 : null,
+    };
+  });
+
+  await mount({ fetchPage, mode: "all", debounceMs: 250 });
+  expect(latest.recordsMode).toBe("all");
+  expect(latest.records).toHaveLength(100);
+  await act(async () => latest.loadMore());
+  expect(latest.records).toHaveLength(200);
+
+  // Switch mode to paged: during the 250ms debounce window, records still hold the 200 "all" rows
+  // so recordsMode stays "all" until the debounced snapshot settles.
+  await mount({
+    fetchPage,
+    query: makeQuery({ options: { page: 1, pageSize: 25 } }),
+    mode: "paged",
+    debounceMs: 250,
+  });
+  expect(latest.records).toHaveLength(200);
+  expect(latest.recordsMode).toBe("all");
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(250);
+  });
+  expect(latest.recordsMode).toBe("paged");
+  expect(latest.records).toHaveLength(25);
+});
