@@ -14853,3 +14853,130 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Proves everything the real binary can prove without a connection, and keeps the gap visible in f-20261125-21. Reversal path: when f-20261125-21 provides an isolated connection, the pane part runs and the mode exits 0.
 * **Decided by:** Claude Code (Opus 5.5) interactive session c4fe3a7e-d00d-4487-ac2f-31b99658a655, build scoresheet-photo-import, under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"162bcf0a748c65fe4a49c1404dbb35a5fa04e0e8e946c2f373cb98120bc63364","input_sha256":"abe2487a5798a8411f8a8423514592558edb3cbd342be363f9d8162414020606","kind":"mutation-receipt","operation":"ed372c3970f4d65953dea3d25cc476faaa86729a15bcee801a85233f5a7c4ea5","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-52"],"target":"decisions-ledger","v":1} -->
+
+### d-20261125-53 — How does the analysis board's drag-to-arrange move areas?
+
+* **Question:** Arranging the analysis board (plan `tasks/plans/2026-11-25-board-layout-arrange.md`) needs a drag mechanism. The layout library (`react-mosaic-component`) has its own tile dragging through react-dnd's HTML5 backend, and Tauri's native file drop is enabled (default `dragDropEnabled: true`, used by the ChessBase file drop), which per the Tauri schema blocks HTML5 drag-and-drop in the page on Windows.
+* **Governs:** -
+* **Chosen:** Pointer events with pointer capture, following the pinned explorer strip's height handle; `src-tauri/tauri.conf.json` and the capabilities stay unchanged.
+* **Rejected:** Turning native file drop off (breaks the ChessBase drop, a `tauri.conf.json` change); a second drag library; `@hello-pangea/dnd` (a list reorderer).
+* **Reason:** Plan agent decision 1. Reversal path: if native file drop is ever dropped, the library's own dragging could replace the pointer code.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses (rounds 1-3); recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-54 — Does the board itself get a grip on the arranged analysis board?
+
+* **Question:** Which areas of the analysis board can be moved by the user?
+* **Governs:** -
+* **Chosen:** The board is the anchor and has no grip; every other area can be placed on any side of any area, so arrangements with the board on the right or in the middle are reachable without moving it.
+* **Rejected:** A title bar on the board (costs height on the one area that needs it most).
+* **Reason:** Plan agent decision 2. Reversal path: add a grip to the board's area.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-55 — Is the analysis board arrangement stored per tab or once for all tabs?
+
+* **Question:** Where does the arranged layout of the analysis board live?
+* **Governs:** -
+* **Chosen:** One app-wide arrangement for all analysis tabs (localStorage key `analysis-board-layout`), like the dividers and pins before it.
+* **Rejected:** Per tab (every new tab would start unarranged); named presets (not asked for).
+* **Reason:** Plan agent decision 3. Reversal path: key the stored value by a preset name.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-56 — Can Practice be taken out of the tab strip as its own area?
+
+* **Question:** Which panels may become areas of their own on the analysis board?
+* **Governs:** -
+* **Chosen:** Practice stays in the tabs. Training mode is defined by Practice being the selected panel, also for code outside the board (`TimedRunOwner.tsx`, `openFile.ts`).
+* **Rejected:** Practice as a panel area.
+* **Reason:** Plan agent decision 4. Reversal path: redefine training mode first.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-57 — Can every panel leave the tab strip so the strip disappears?
+
+* **Question:** What happens when the user takes every panel out of the tab strip?
+* **Governs:** -
+* **Chosen:** The strip rule: not all four of Analysis, Database, Annotate and Info may be areas, so the strip always keeps a panel every analysis tab has, and the three base areas (board, notation, tab strip) are always present for the engine bar's places and the fallbacks.
+* **Rejected:** Hiding an empty strip.
+* **Reason:** Plan agent decision 5. Reversal path: allow an empty strip once the engine bar's "Above the tabs" place and the selection fallback have another home.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-58 — What does an arranged analysis board show in a window too narrow for it?
+
+* **Question:** An arrangement needs a minimum width in panes. What does the board show when the window (or the Assistant dock) leaves less room?
+* **Governs:** -
+* **Chosen:** The shared three-area layout from `windowsState` with every panel in the tabs; the stored arrangement is kept and returns with the room. Below two pane floors the stacked layout as before.
+* **Rejected:** A squeezed arrangement below the pane floor.
+* **Reason:** Plan agent decision 6, following the 2026-11-22 narrow-window rule Felix confirmed for the beside arrangement. Reversal path: let areas shrink or scroll below the pane floor.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-59 — Which drop targets does arranging offer?
+
+* **Question:** Where can a dragged area land?
+* **Governs:** -
+* **Chosen:** The four sides of single areas. Docking across a whole group in one gesture is not offered; such arrangements take two moves, and the carry-over builds the one existing users have (Database across notation and tabs).
+* **Rejected:** Group targets in the first step.
+* **Reason:** Plan agent decision 7. Reversal path: add group targets as a follow-up.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-60 — How is a pinned Database strip carried over into the arrangement?
+
+* **Question:** Users with a pinned explorer strip (`detached-explorer`, its placement and dragged pixel heights) get an arrangement on first start. What share does the Database area get?
+* **Governs:** -
+* **Chosen:** A 30 % share at the place the strip had; the dragged strip heights (`detached-explorer-heights`) are not carried over.
+* **Rejected:** Converting pixel heights to percentages (depends on the window size at conversion time).
+* **Reason:** Plan agent decision 8; Felix's answer 1 named this loss ("a dragged Database strip height resets once"). Reversal path: none needed; the user drags the divider once.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-61 — Where does "Reset layout" for the analysis board live?
+
+* **Question:** Where can the user restore the default arrangement?
+* **Governs:** -
+* **Chosen:** Settings, Analysis (group "Analysis & notation", category `analysis`, group `layoutSaving`), row "Board layout" (setting id `board-layout`) with a "Reset layout" button, in place of the removed switch "Panels beside the notation", so the settings search and the Assistant can point to it. The plan said Settings, Board; the switch had moved to Analysis since the plan's base (drift round 4, I-25).
+* **Rejected:** A native View menu entry (GTK chrome that neither automated proof reaches).
+* **Reason:** Plan agent decision 9. Reversal path: add a menu entry beside the settings row.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-62 — What are the limits of the Assistant dock's draggable width?
+
+* **Question:** The Assistant dock gets a draggable, remembered width. What are its bounds and default?
+* **Governs:** -
+* **Chosen:** Between 20rem and 42vw, default 24rem, stored in rem under `assistant-dock-width`; the stored value is limited when used and not rewritten.
+* **Rejected:** A floor below 20rem (the shared `AiComposer` is only proven at the 20rem pane floor).
+* **Reason:** Plan agent decision 10. Reversal path: lower the floor after proving the composer at that width.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-63 — When are the legacy layout keys removed during the carry-over?
+
+* **Question:** The carry-over reads `panels-beside-notation`, `board-beside-splits`, `detached-explorer`, `detached-explorer-placement` and `detached-explorer-heights`. When are they deleted?
+* **Governs:** -
+* **Chosen:** Only after the new value `analysis-board-layout` was written successfully, with the carry-over's own write whose outcome it sees; every removal is attempted and failures are reported once. A storage that throws on reading is not carried over at all (default for the session, nothing written or removed).
+* **Rejected:** Removing first; writing through `createZodStorage.setItem`, which hides a failed write.
+* **Reason:** Plan agent decision 11: an interrupted carry-over repeats instead of losing the user's arrangement. Reversal path: none needed.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-64 — Are arranging moves that would not fit the current width offered?
+
+* **Question:** A move can produce an arrangement wider than the window, which the narrow-window rule would then hide together with the arranging controls.
+* **Governs:** -
+* **Chosen:** A target is offered (as preview or placing button) only when the resulting arrangement fits the board's current width.
+* **Rejected:** Applying such moves and showing a notice.
+* **Reason:** Plan agent decision 12. Reversal path: offer them with a warning once areas can scroll or shrink below the pane floor.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-65 — How is the arranging drag proven in the real application window?
+
+* **Question:** `pnpm verify:app` has no arranging check. How is the drag proven in WebKitGTK?
+* **Governs:** -
+* **Chosen:** A one-off driver script in the session's scratch directory (not committed) that imports `scripts/app-driver.mjs`, drives the release build in a throwaway profile with WebDriver pointer actions and asserts the stored arrangement and the rendered Database area.
+* **Rejected:** A new `pnpm verify:app` suite, which needs a staged-failure row per assertion.
+* **Reason:** Plan agent decision 13. Reversal path: add the suite if arranging regresses in the real window.
+* **Decided by:** Claude Code (Opus 5.5), plan session of 2026-11-25 for board-layout-arrange, reviewed by the Antigravity plan lenses; recorded in the build session of 2026-11-25 (full auto) · **Superseded-by:** -
+
+### d-20261125-66 — Can the scoresheet Photo tab become an area of the arranged analysis board?
+
+* **Question:** Since the arranging plan's base, the analysis board gained a conditional Photo tab (scoresheet review, `BoardAnalysis.tsx`), shown only while the tab has a review. Is it a movable panel like Database, or fixed in the tab strip like Practice?
+* **Governs:** -
+* **Chosen:** Photo stays in the tab strip like Practice: never a leaf of `analysis-board-layout`, no drag start, no placing entry. The strip's selection fallback skips Practice and Photo, so a fallback never loads the photo panel.
+* **Rejected:** A sixth conditional panel area (a per-review, short-lived panel in an app-wide arrangement would leave a hidden leaf in every other tab's arrangement).
+* **Reason:** Drift round 4 (I-24) of the board-layout-arrange plan. Reversal path: add `photo` to the panel-area set with the Coach's "hidden while not offered" rule.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-25 for board-layout-arrange (full auto), reviewed by the Antigravity drift lenses · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":125,"effect_sha256":"ee8d712efb802c5c1593f23b4597ed0f078ade88aa57629e8524383325db301e","input_sha256":"820946b56d653f89220621c10370c5f078f182aa8f8fc5ba94849818eb42a9f4","kind":"mutation-receipt","operation":"a446a19ee3acc961904e4adf405cbbaa9fe6f1d6a9fa300fde70a5292299d0a5","options":{"section":null},"request_id_sha256":null,"results":["d-20261125-53","d-20261125-54","d-20261125-55","d-20261125-56","d-20261125-57","d-20261125-58","d-20261125-59","d-20261125-60","d-20261125-61","d-20261125-62","d-20261125-63","d-20261125-64","d-20261125-65","d-20261125-66"],"target":"decisions-ledger","v":1} -->
