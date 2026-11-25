@@ -71,6 +71,55 @@ function stat(move: string, white: number, draw: number, black: number, last_pla
     };
 }
 
+function preparationCommands() {
+    return {
+        ...databaseLayoutCommands,
+        ...filesWorkspaceCommands([[repertoireFile]], {
+            list_file_workspace: { result: { entries: [repertoireFile], unread: [] } },
+            count_pgn_games: { result: 1 },
+            read_games: { pgnGames: chapters },
+            read_game: { pgnGames: chapters },
+            file_revision: { result: REVISION },
+            lex_pgn: {
+                pgnTokens: {
+                    [chapter0Pgn]: chapter0Tokens,
+                },
+            },
+        }),
+        get_progress: { result: null },
+        search_positions_stats: {
+            result: [
+                {
+                    fen: START,
+                    openings: [
+                        stat("e4", 12, 4, 3, "2026.09.10"),
+                        stat("d4", 4, 2, 1, "2026.06.05"),
+                    ],
+                },
+                {
+                    fen: AFTER_E4,
+                    openings: [stat("c5", 8, 2, 2, "2026.09.10")],
+                },
+                {
+                    fen: AFTER_E4_C5,
+                    openings: [
+                        stat("Nf3", 5, 1, 1, "2026.09.10"),
+                        stat("Nc3", 3, 1, 1, "2026.08.15"),
+                    ],
+                },
+                {
+                    fen: AFTER_NF3,
+                    openings: [stat("d6", 4, 1, 1, "2026.09.10")],
+                },
+                {
+                    fen: AFTER_D6,
+                    openings: [stat("Bb5+", 4, 1, 1, "2026.09.10")],
+                },
+            ],
+        },
+    };
+}
+
 test("opponent-preparation: lists lines and gaps and opens a line at its position", async ({
     page,
     mockScenario,
@@ -83,54 +132,7 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     });
     await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
 
-    await mockScenario({
-        commands: {
-            ...databaseLayoutCommands,
-            ...filesWorkspaceCommands([[repertoireFile]], {
-                list_file_workspace: { result: { entries: [repertoireFile], unread: [] } },
-                count_pgn_games: { result: 1 },
-                read_games: { pgnGames: chapters },
-                read_game: { pgnGames: chapters },
-                file_revision: { result: REVISION },
-                lex_pgn: {
-                    pgnTokens: {
-                        [chapter0Pgn]: chapter0Tokens,
-                    },
-                },
-            }),
-            get_progress: { result: null },
-            search_positions_stats: {
-                result: [
-                    {
-                        fen: START,
-                        openings: [
-                            stat("e4", 12, 4, 3, "2026.09.10"),
-                            stat("d4", 4, 2, 1, "2026.06.05"),
-                        ],
-                    },
-                    {
-                        fen: AFTER_E4,
-                        openings: [stat("c5", 8, 2, 2, "2026.09.10")],
-                    },
-                    {
-                        fen: AFTER_E4_C5,
-                        openings: [
-                            stat("Nf3", 5, 1, 1, "2026.09.10"),
-                            stat("Nc3", 3, 1, 1, "2026.08.15"),
-                        ],
-                    },
-                    {
-                        fen: AFTER_NF3,
-                        openings: [stat("d6", 4, 1, 1, "2026.09.10")],
-                    },
-                    {
-                        fen: AFTER_D6,
-                        openings: [stat("Bb5+", 4, 1, 1, "2026.09.10")],
-                    },
-                ],
-            },
-        },
-    });
+    await mockScenario({ commands: preparationCommands() });
 
     // Establish the library workspace through the normal Library flow.
     await page.goto("/library");
@@ -208,4 +210,71 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toBeVisible();
 
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
+
+test("opponent-preparation: narrow card stacks Since control and compacts list cells without overflow", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    await page.addInitScript(() => {
+        localStorage.setItem("mantine-color-scheme", "light");
+        localStorage.setItem("font-size", "100");
+        localStorage.setItem("auto-save", "false");
+    });
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+    await mockScenario({ commands: preparationCommands() });
+
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await expect(page.getByText("Black vs e4")).toBeVisible();
+
+    await gotoPreservingStorage(page, `/databases/${gameOpeningFixture.databaseId}`);
+    await page.getByRole("tab", { name: "Players", exact: true }).click();
+    const players = page.getByRole("tabpanel", { name: "Players", exact: true });
+    await players
+        .locator('[data-database-pane="table"] tbody tr')
+        .filter({ hasText: "First White" })
+        .click();
+    const preview = players.locator('[data-database-pane="preview"]');
+    await preview.getByRole("tab", { name: "Preparation", exact: true }).click();
+
+    const prep = preview.locator("[data-player-preparation]");
+    await expect(prep.locator("[data-preparation-lines]")).toContainText("Sicilian Najdorf");
+
+    const sinceSelect = prep.getByRole("combobox", { name: "Since", exact: true });
+    const sinceLayout = await sinceSelect.evaluate((select) => {
+        const root = select.closest(".mantine-NativeSelect-root")!;
+        const label = root.querySelector("label")!;
+        const style = getComputedStyle(root);
+        return {
+            flexDirection: style.flexDirection,
+            alignItems: style.alignItems,
+            labelLeft: label.getBoundingClientRect().left,
+            selectLeft: select.getBoundingClientRect().left,
+        };
+    });
+    expect(sinceLayout.flexDirection).toBe("column");
+    expect(sinceLayout.alignItems).toBe("start");
+    expect(Math.abs(sinceLayout.labelLeft - sinceLayout.selectLeft)).toBeLessThanOrEqual(1);
+
+    const cellStyle = await prep
+        .locator("[data-preparation-lines] tbody td")
+        .first()
+        .evaluate((td) => {
+            const style = getComputedStyle(td);
+            return {
+                paddingTop: style.paddingTop,
+                paddingBottom: style.paddingBottom,
+                borderBottomStyle: style.borderBottomStyle,
+            };
+        });
+    expect(cellStyle).toEqual({
+        paddingTop: "0px",
+        paddingBottom: "0px",
+        borderBottomStyle: "none",
+    });
+
+    await assertNoHorizontalOverflow();
 });

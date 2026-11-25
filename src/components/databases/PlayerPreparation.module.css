@@ -80,7 +80,8 @@
 }
 
 @container (max-width: 30rem) {
-  .since {
+  /* Scoped under `.root` so overrides of composed `PlayerCardTab` base classes win regardless of CSS load order. */
+  .root .since {
     flex-direction: column;
     align-items: start;
   }
@@ -97,7 +98,7 @@
     border-bottom: 1px solid var(--cf-border-strong);
   }
 
-  .table tbody td {
+  .root .table tbody td {
     border-bottom: none;
     padding: 0 0.25rem;
   }

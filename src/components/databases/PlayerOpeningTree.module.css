@@ -183,7 +183,8 @@
     grid-column: 1 / -1;
   }
 
-  .since {
+  /* Scoped under `.root` so overrides of composed `PlayerCardTab` base classes win regardless of CSS load order. */
+  .root .since {
     flex-direction: column;
     align-items: start;
   }
@@ -214,7 +215,7 @@
     --sc-padding: var(--sc-padding-xs);
   }
 
-  .inset {
+  .root .inset {
     padding-inline: 0;
   }
 
