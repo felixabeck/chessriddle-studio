@@ -1294,6 +1294,7 @@ const fontScaleByProject: Record<string, number> = {
     "files-preview": 100,
     "tree-recovery": 100,
     "notation-hierarchy-scaled": 200,
+    "library-sync-narrow": 200,
 };
 
 const localeByProject: Record<string, string> = {
@@ -1342,45 +1343,50 @@ const tauriBootstrap = () => {
         chessriddle_open_website: { result: null },
         library_sync_snapshot: {
             result: {
-                workspace: filesWorkspaceFixture.workspace,
+                workspace: { id: { id: "files-workspace" }, kind: "fileWorkspace" },
                 revision: 1,
                 available: false,
+                active: false,
                 state: { status: "off" },
                 files: [],
             },
         },
         library_sync_turn_on: {
             result: {
-                workspace: filesWorkspaceFixture.workspace,
+                workspace: { id: { id: "files-workspace" }, kind: "fileWorkspace" },
                 revision: 2,
                 available: true,
+                active: true,
                 state: { status: "syncing", done: 0, total: 0 },
                 files: [],
             },
         },
         library_sync_turn_off: {
             result: {
-                workspace: filesWorkspaceFixture.workspace,
+                workspace: { id: { id: "files-workspace" }, kind: "fileWorkspace" },
                 revision: 3,
                 available: false,
+                active: false,
                 state: { status: "off" },
                 files: [],
             },
         },
         library_sync_set_file_selected: {
             result: {
-                workspace: filesWorkspaceFixture.workspace,
+                workspace: { id: { id: "files-workspace" }, kind: "fileWorkspace" },
                 revision: 4,
                 available: true,
+                active: true,
                 state: { status: "synced" },
                 files: [],
             },
         },
         library_sync_now: {
             result: {
-                workspace: filesWorkspaceFixture.workspace,
+                workspace: { id: { id: "files-workspace" }, kind: "fileWorkspace" },
                 revision: 5,
                 available: true,
+                active: true,
                 state: { status: "synced" },
                 files: [],
             },
@@ -1951,5 +1957,24 @@ export function gameReportCommands(
         prepare_analysis: { result: "report_e2e-tab_operation" },
         analyze_game: { result },
         get_progress: { result: null },
+    };
+}
+
+/** State-specific mock builders for the five Library sync native commands. */
+export function librarySyncCommands(overrides: {
+    snapshot?: MockCommand;
+    turnOn?: MockCommand;
+    turnOff?: MockCommand;
+    setFileSelected?: MockCommand;
+    syncNow?: MockCommand;
+}): NonNullable<MockScenario["commands"]> {
+    return {
+        ...(overrides.snapshot ? { library_sync_snapshot: overrides.snapshot } : {}),
+        ...(overrides.turnOn ? { library_sync_turn_on: overrides.turnOn } : {}),
+        ...(overrides.turnOff ? { library_sync_turn_off: overrides.turnOff } : {}),
+        ...(overrides.setFileSelected
+            ? { library_sync_set_file_selected: overrides.setFileSelected }
+            : {}),
+        ...(overrides.syncNow ? { library_sync_now: overrides.syncNow } : {}),
     };
 }

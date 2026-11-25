@@ -19,3 +19,5 @@ While editing a file on the analysis board:
 - Use {{label:Menu.File}} -> {{label:Board.Database.Save}} (or the {{label:Board.Database.Save}} toolbar button) to save the current game into another library file or database.
 
 Moving a file to {{label:Files.Trash}} does not delete it permanently right away. You can immediately click {{label:Common.Undo}} in the notice, or scroll to the {{label:Files.Trash}} section in [[page:library]] to {{label:Files.Restore}} a file, {{label:Files.DeletePermanently}}, or {{label:Files.EmptyTrash}}.
+
+When your ChessRiddle account is connected, click {{label:Library.Sync.Action}} on [[page:library]] to sync selected PGN files to your private Library on ChessRiddle (up to 100 files, 5 MB and 40,000 moves per file). Edits, renames, deselections, and removals update automatically; downloaded game histories and game databases stay local. Turning sync off lets you keep or remove the synced files on ChessRiddle.

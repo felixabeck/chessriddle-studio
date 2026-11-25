@@ -2,7 +2,7 @@
 id: library-and-files
 title: 文件与资料库
 summary: 设置工作区文件夹、创建和整理 PGN 文件、打开和保存对局，以及管理回收站。
-source: 984717132dfb14c1
+source: 2c064b437ded0b67
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) 将您的工作区 PGN 文件（对局、开局库、赛事、谜题和其他文件）以及棋局数据库集中在一起。
@@ -20,3 +20,5 @@ source: 984717132dfb14c1
 - 使用 {{label:Menu.File}} -> {{label:Board.Database.Save}}（或工具栏上的 {{label:Board.Database.Save}} 按钮）将当前对局保存到另一个资料库文件或数据库中。
 
 将文件移至 {{label:Files.Trash}} 不会立即永久删除。您可以立即点击提示中的 {{label:Common.Undo}}，或滚动到 [[page:library]] 中的 {{label:Files.Trash}} 区域以执行 {{label:Files.Restore}}、{{label:Files.DeletePermanently}} 或 {{label:Files.EmptyTrash}}。
+
+连接您的 ChessRiddle 账户后，请在 [[page:library]] 中点击 {{label:Library.Sync.Action}}，将选中的 PGN 文件同步到您的 ChessRiddle 私人棋库（最多 100 个文件，每个文件最大 5 MB、最多 40,000 步着法）。编辑、重命名、取消选择和删除会自动更新；已下载的对局历史和棋局数据库仍保留在本地。关闭同步时，您可以选择在 ChessRiddle 上保留或移除已同步的文件。

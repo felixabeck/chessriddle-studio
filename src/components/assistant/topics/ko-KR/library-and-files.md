@@ -2,7 +2,7 @@
 id: library-and-files
 title: 파일 및 라이브러리
 summary: 작업 폴더 설정, PGN 파일 생성 및 정리, 대국 열기와 저장, 휴지통 관리.
-source: 984717132dfb14c1
+source: 2c064b437ded0b67
 ---
 
 [[page:library]] ({{label:SideBar.Library}})에는 작업 공간의 PGN 파일(대국, 레퍼토리, 토너먼트, 퍼즐 및 기타 파일)과 기보 데이터베이스가 함께 모여 있습니다.
@@ -20,3 +20,5 @@ source: 984717132dfb14c1
 - 현재 대국을 다른 라이브러리 파일이나 데이터베이스에 저장하려면 {{label:Menu.File}} -> {{label:Board.Database.Save}}(또는 도구 모음의 {{label:Board.Database.Save}} 버튼)을 사용하세요.
 
 파일을 {{label:Files.Trash}}로 옮겨도 즉시 영구 삭제되지는 않습니다. 알림에서 바로 {{label:Common.Undo}}을(를) 클릭하거나, [[page:library]]의 {{label:Files.Trash}} 섹션으로 스크롤하여 {{label:Files.Restore}}, {{label:Files.DeletePermanently}} 또는 {{label:Files.EmptyTrash}}을(를) 실행할 수 있습니다.
+
+ChessRiddle 계정이 연결되어 있으면 [[page:library]]에서 {{label:Library.Sync.Action}}을(를) 클릭하여 선택한 PGN 파일을 ChessRiddle의 비공개 라이브러리에 동기화할 수 있습니다(파일당 최대 100개 파일, 5 MB, 40,000수). 수정, 이름 변경, 선택 해제, 삭제는 자동으로 반영되며, 다운로드한 대국 기록과 기보 데이터베이스는 로컬에만 남습니다. 동기화를 끌 때는 ChessRiddle에 동기화된 파일을 유지하거나 제거할 수 있습니다.

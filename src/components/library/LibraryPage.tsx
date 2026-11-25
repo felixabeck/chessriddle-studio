@@ -18,7 +18,7 @@ import {
   VisuallyHidden,
 } from "@mantine/core";
 import { TriangleAlert, ChevronRight, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { fileWorkspaceDisplayNameAtom } from "@/state/atoms";
 import useSWR, { useSWRConfig } from "swr";
@@ -47,6 +47,10 @@ import { databaseHandleKey } from "@/utils/db";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { useCollectionCurrencies } from "@/state/linkedCollections";
 import { collectionsByFile, joinLibraryCollections } from "./libraryData";
+
+const LibrarySyncControl = lazy(() =>
+  import("./LibrarySyncControl").then((module) => ({ default: module.LibrarySyncControl })),
+);
 
 export default function LibraryPage() {
   const { t } = useTranslation();
@@ -256,6 +260,9 @@ export default function LibraryPage() {
         >
           {t("Library.AddDatabase", { defaultValue: "Import or download database" })}
         </Button>
+        <Suspense fallback={null}>
+          <LibrarySyncControl workspace={files.workspace} />
+        </Suspense>
       </Group>
       <SimpleGrid
         cols={split ? 2 : 1}

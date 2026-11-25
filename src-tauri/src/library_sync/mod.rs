@@ -118,6 +118,7 @@ pub(crate) struct LibrarySyncSnapshot {
     pub workspace: FileWorkspaceHandle,
     pub revision: u32,
     pub available: bool,
+    pub active: bool,
     pub state: LibrarySyncState,
     pub files: Vec<LibrarySyncFile>,
 }

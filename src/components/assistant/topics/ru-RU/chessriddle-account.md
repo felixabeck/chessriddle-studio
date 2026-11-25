@@ -2,7 +2,7 @@
 id: chessriddle-account
 title: Аккаунт ChessRiddle
 summary: Подключение, обновление или отключение аккаунта ChessRiddle для онлайн-тренировки тактических задач.
-source: bcfa02305ce425f9
+source: bfd90b50baa25512
 ---
 
 Ваш аккаунт ChessRiddle подключает Studio к онлайн-тренировке задач {{label:Puzzle.Source.ChessRiddle}}.
@@ -14,3 +14,4 @@ source: bcfa02305ce425f9
 - Нажмите {{label:Home.ChessRiddle.Refresh}}, чтобы проверить текущий статус аккаунта и тариф.
 - Если срок действия сеанса истёк, нажмите {{label:Home.ChessRiddle.Reconnect}}, чтобы войти снова.
 - Нажмите {{label:Home.ChessRiddle.Disconnect}}, чтобы удалить аккаунт с этого компьютера и выйти.
+- После подключения нажмите {{label:Library.Sync.Action}} на странице [[page:library]], чтобы синхронизировать выбранные PGN-файлы с вашей личной библиотекой ChessRiddle (в одну сторону, на сайте только для чтения).

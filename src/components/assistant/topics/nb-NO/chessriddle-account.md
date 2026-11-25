@@ -2,7 +2,7 @@
 id: chessriddle-account
 title: ChessRiddle-konto
 summary: Koble til, oppdater eller koble fra ChessRiddle-kontoen din for nettbasert taktikktrening.
-source: bcfa02305ce425f9
+source: bfd90b50baa25512
 ---
 
 ChessRiddle-kontoen din kobler Studio til nettbasert oppgavetrening fra {{label:Puzzle.Source.ChessRiddle}}.
@@ -14,3 +14,4 @@ Administrer tilkoblingen i kortet {{label:Home.ChessRiddle.Title}} på [[page:ac
 - Klikk {{label:Home.ChessRiddle.Refresh}} for å kontrollere gjeldende kontostatus og abonnement.
 - Hvis økten utløper, klikker du {{label:Home.ChessRiddle.Reconnect}} for å logge inn på nytt.
 - Klikk {{label:Home.ChessRiddle.Disconnect}} for å fjerne kontoen fra denne datamaskinen og logge ut.
+- Når du er koblet til, klikker du {{label:Library.Sync.Action}} på [[page:library]] for å synkronisere valgte PGN-filer til ditt private ChessRiddle-bibliotek (én vei, skrivebeskyttet på nettstedet).

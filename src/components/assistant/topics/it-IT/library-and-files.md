@@ -2,7 +2,7 @@
 id: library-and-files
 title: File e Biblioteca
 summary: Configura una cartella di lavoro, crea e organizza file PGN, apri e salva partite e gestisci il cestino.
-source: 984717132dfb14c1
+source: 2c064b437ded0b67
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) riunisce i file PGN del tuo spazio di lavoro (partite, repertori, tornei, puzzle e altri file) e i tuoi database di partite.
@@ -20,3 +20,5 @@ Mentre modifichi un file sulla scacchiera di analisi:
 - Usa {{label:Menu.File}} -> {{label:Board.Database.Save}} (o il pulsante {{label:Board.Database.Save}} nella barra degli strumenti) per salvare la partita corrente in un altro file della libreria o database.
 
 Spostare un file in {{label:Files.Trash}} non lo elimina subito in modo definitivo. Puoi fare subito clic su {{label:Common.Undo}} nell’avviso, oppure scorrere fino alla sezione {{label:Files.Trash}} in [[page:library]] per usare {{label:Files.Restore}}, {{label:Files.DeletePermanently}} o {{label:Files.EmptyTrash}}.
+
+Quando il tuo account ChessRiddle è collegato, fai clic su {{label:Library.Sync.Action}} su [[page:library]] per sincronizzare i file PGN selezionati con la tua libreria privata su ChessRiddle (fino a 100 file, 5 MB e 40.000 mosse per file). Modifiche, rinomine, deselezioni ed eliminazioni si aggiornano automaticamente; le cronologie delle partite scaricate e i database di partite restano in locale. Disattivando la sincronizzazione puoi scegliere se mantenere o rimuovere i file sincronizzati su ChessRiddle.

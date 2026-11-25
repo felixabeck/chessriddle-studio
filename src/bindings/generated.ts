@@ -2113,7 +2113,7 @@ export type LibrarySyncFileStatus = { kind: "synced" } | { kind: "pending" } | {
 /**
  * Full Library sync snapshot for one workspace.
  */
-export type LibrarySyncSnapshot = { workspace: FileWorkspaceHandle; revision: number; available: boolean; state: LibrarySyncState; files: LibrarySyncFile[] }
+export type LibrarySyncSnapshot = { workspace: FileWorkspaceHandle; revision: number; available: boolean; active: boolean; state: LibrarySyncState; files: LibrarySyncFile[] }
 /**
  * Closed overall Library sync state vocabulary exposed to the renderer.
  */

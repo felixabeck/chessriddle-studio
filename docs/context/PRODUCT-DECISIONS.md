@@ -469,4 +469,40 @@ finding ids and date.
   have a lot of different variations in it."
 - **Agent decisions of the plan:** d-20261124-24 to d-20261124-34. "Vorbereitungsfenster" is read
   as the board "Prepare on board" opens (plan "Risks / open questions").
+
+## 2026-11-24 — Library files sync one-way to the private Library on the ChessRiddle website
+
+- **Question:** How do Studio's PGN files reach the private Library on the ChessRiddle website,
+  so that nobody has to upload PGN files by hand?
+- **Choice:** Felix's decisions, relayed on 2026-11-24 in a handover brief written in a
+  chess-tactics-app chat (the brief's summary wording, not verbatim quotes):
+  - Sync is one-way, from Studio to the website. The website Library only reads files and never
+    writes back.
+  - The Library gets one "Sync with ChessRiddle" action, available once the ChessRiddle account is
+    connected.
+  - Every PGN file is selected by default, including files created later. Single files can be
+    deselected.
+  - After sync is turned on, saving a selected file updates its website copy automatically. A
+    manual "sync now" stays available.
+  - Only PGN files sync (repertoires, annotated games). Game databases (downloaded Lichess and
+    Chess.com histories) do not.
+- **Answers Felix picked from agent-proposed options on 2026-11-24 (option labels, not his
+  wording):**
+  - `"Yes, remove it"`: a synced file that is deselected, moved to the trash or removed from the
+    Library folder is removed from the website. Restoring or reselecting it uploads it again.
+    Files uploaded by hand on the website are never touched.
+  - `"Marked, delete only"`: on the website a synced file is labelled "Synced from ChessRiddle
+    Studio", cannot be replaced or edited there, and can be deleted with a note that it comes back
+    at the next sync unless it is deselected in Studio.
+  - `"Ask: keep or remove"`: turning sync off asks whether the synced files stay on the website or
+    are removed, with "keep" preselected.
+- **Agent decisions inside that frame, not Felix's wording:** a file over the website's limits is
+  shown per file with its reason and never fails silently. A changed Library folder pauses sync
+  and offers only turning it off. Sync belongs to the connected ChessRiddle account; another
+  account starts with sync off.
+- **Ruled out:** two-way sync. Syncing game databases. Changing or deleting files that were
+  uploaded on the website by hand.
+- **Felix's reason:** from the brief: "so nobody has to upload PGNs by hand".
+- **Technical record:** `d-20261124-23` and `d-20261125-04` in `tasks/decisions.md`; the website's half is
+  `p-20261124-01`, `d-20261124-14` and `d-20261125-01` in the ChessRiddle repository.
 - **Date:** 2026-11-24.

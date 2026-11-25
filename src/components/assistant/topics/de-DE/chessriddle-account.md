@@ -2,7 +2,7 @@
 id: chessriddle-account
 title: ChessRiddle-Konto
 summary: Verbinde, aktualisiere oder trenne dein ChessRiddle-Konto für das Online-Taktiktraining.
-source: bcfa02305ce425f9
+source: bfd90b50baa25512
 ---
 
 Dein ChessRiddle-Konto verbindet Studio mit dem Online-Aufgabentraining von {{label:Puzzle.Source.ChessRiddle}}.
@@ -14,3 +14,4 @@ Verwalte die Verbindung in der Karte {{label:Home.ChessRiddle.Title}} auf [[page
 - Klicke auf {{label:Home.ChessRiddle.Refresh}}, um deinen aktuellen Kontostatus und Tarif zu prüfen.
 - Wenn deine Sitzung abläuft, klicke auf {{label:Home.ChessRiddle.Reconnect}}, um dich erneut anzumelden.
 - Klicke auf {{label:Home.ChessRiddle.Disconnect}}, um das Konto von diesem Computer zu entfernen und dich abzumelden.
+- Sobald eine Verbindung besteht, klicke in [[page:library]] auf {{label:Library.Sync.Action}}, um ausgewählte PGN-Dateien in deine private ChessRiddle-Bibliothek zu synchronisieren (einseitig, auf der Website schreibgeschützt).

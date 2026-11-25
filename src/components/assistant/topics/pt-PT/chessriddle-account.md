@@ -2,7 +2,7 @@
 id: chessriddle-account
 title: Conta ChessRiddle
 summary: Ligue, atualize ou desligue a sua conta ChessRiddle para o treino tático em linha.
-source: bcfa02305ce425f9
+source: bfd90b50baa25512
 ---
 
 A sua conta ChessRiddle liga o Studio ao treino tático em linha de {{label:Puzzle.Source.ChessRiddle}}.
@@ -14,3 +14,4 @@ Faça a gestão da ligação no cartão {{label:Home.ChessRiddle.Title}} em [[pa
 - Clique em {{label:Home.ChessRiddle.Refresh}} para verificar o estado atual da conta e o plano.
 - Se a sessão expirar, clique em {{label:Home.ChessRiddle.Reconnect}} para iniciar sessão novamente.
 - Clique em {{label:Home.ChessRiddle.Disconnect}} para remover a conta deste computador e terminar sessão.
+- Depois de ligada, clique em {{label:Library.Sync.Action}} em [[page:library]] para sincronizar os ficheiros PGN selecionados com a sua biblioteca privada do ChessRiddle (num único sentido, só de leitura no site).

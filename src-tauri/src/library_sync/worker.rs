@@ -125,6 +125,7 @@ fn project_active_snapshot(
             workspace,
             revision,
             available,
+            active: true,
             state: overall_state,
             files: if same_workspace { files } else { Vec::new() },
         }
@@ -133,9 +134,27 @@ fn project_active_snapshot(
             workspace,
             revision,
             available: true,
+            active: true,
             state: LibrarySyncState::OtherFolder,
             files: Vec::new(),
         }
+    }
+}
+
+fn project_off_snapshot(
+    workspace: FileWorkspaceHandle,
+    revision: u32,
+    available: bool,
+    state: LibrarySyncState,
+    files: Vec<LibrarySyncFile>,
+) -> LibrarySyncSnapshot {
+    LibrarySyncSnapshot {
+        workspace,
+        revision,
+        available,
+        active: false,
+        state,
+        files,
     }
 }
 
@@ -346,13 +365,13 @@ impl LibrarySyncOwner {
             Err(_) => (LibrarySyncState::FolderUnavailable, Vec::new()),
         };
 
-        Ok(LibrarySyncSnapshot {
+        Ok(project_off_snapshot(
             workspace,
-            revision: view.revision,
-            available: account_connected,
+            view.revision,
+            account_connected,
             state,
             files,
-        })
+        ))
     }
 
     async fn send_command(
@@ -753,13 +772,13 @@ impl SyncActor {
                 self.build_files_view(),
             );
         }
-        LibrarySyncSnapshot {
+        project_off_snapshot(
             workspace,
-            revision: self.revision,
-            available: self.account_connected,
-            state: self.overall_state.clone(),
-            files: self.build_files_view(),
-        }
+            self.revision,
+            self.account_connected,
+            self.overall_state.clone(),
+            self.build_files_view(),
+        )
     }
 
     fn publish(&mut self, emit_change: bool) {
@@ -990,6 +1009,9 @@ impl SyncActor {
                 Ok(self.current_snapshot_for(workspace))
             }
             LibrarySyncTurnOffMode::Remove => {
+                if self.state.mode == SyncMode::Off || !self.account_matches {
+                    return Err(LibrarySyncError::NotActive);
+                }
                 let mut next_state = self.state.clone();
                 next_state.mode = SyncMode::Removing;
                 self.persist_state(next_state.clone()).await?;
@@ -3830,5 +3852,131 @@ mod tests {
             Err(AccountError::NotConnected),
             true
         ));
+    }
+
+    #[tokio::test]
+    async fn turn_off_remove_while_off_returns_not_active() {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let harness = build_harness(&origin, SyncState::off(), true).await;
+
+        let err = harness
+            .owner
+            .turn_off(harness.workspace.clone(), LibrarySyncTurnOffMode::Remove)
+            .await
+            .unwrap_err();
+        assert_eq!(err, LibrarySyncError::NotActive);
+
+        let snap = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        assert!(!snap.active);
+        assert_eq!(snap.state, LibrarySyncState::Off);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn turn_off_remove_when_account_mismatches_returns_not_active() {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let harness = build_harness(&origin, SyncState::off(), true).await;
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), Vec::new())
+            .await
+            .unwrap();
+        wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+        })
+        .await;
+
+        *server.account_id.lock().unwrap() = "acct-2".into();
+        harness
+            .owner
+            .sync_now(harness.workspace.clone())
+            .await
+            .unwrap();
+        let off_snap = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Off
+        })
+        .await;
+        assert!(!off_snap.active);
+
+        let err = harness
+            .owner
+            .turn_off(harness.workspace.clone(), LibrarySyncTurnOffMode::Remove)
+            .await
+            .unwrap_err();
+        assert_eq!(err, LibrarySyncError::NotActive);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn snapshot_active_flag_covers_every_snapshot_kind() {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let harness = build_harness(&origin, SyncState::off(), true).await;
+
+        // Off snapshot (normal and folderUnavailable) reports active == false.
+        let off_snap = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        assert!(!off_snap.active);
+        assert_eq!(off_snap.state, LibrarySyncState::Off);
+
+        let invalid = FileWorkspaceHandle::new(PathRef {
+            id: "missing-workspace".to_owned(),
+        });
+        let off_missing = harness.owner.snapshot(invalid).await.unwrap();
+        assert!(!off_missing.active);
+        assert_eq!(off_missing.state, LibrarySyncState::FolderUnavailable);
+
+        // Turn on -> synced snapshot and otherFolder snapshot both report active == true.
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), Vec::new())
+            .await
+            .unwrap();
+        let synced = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+        })
+        .await;
+        assert!(synced.active);
+
+        let other = harness
+            .owner
+            .snapshot(harness.other_workspace.clone())
+            .await
+            .unwrap();
+        assert!(other.active);
+        assert_eq!(other.state, LibrarySyncState::OtherFolder);
+
+        // Removing mode reports active == true until finished.
+        server.fail_all_500.store(true, Ordering::SeqCst);
+        let removing = harness
+            .owner
+            .turn_off(harness.workspace.clone(), LibrarySyncTurnOffMode::Remove)
+            .await
+            .unwrap();
+        assert!(removing.active);
+        assert!(matches!(removing.state, LibrarySyncState::Removing { .. }));
+
+        // Keep turns sync off and reports active == false.
+        let kept = harness
+            .owner
+            .turn_off(harness.workspace.clone(), LibrarySyncTurnOffMode::Keep)
+            .await
+            .unwrap();
+        assert!(!kept.active);
+        assert_eq!(kept.state, LibrarySyncState::Off);
+
+        harness.owner.shutdown().await;
     }
 }

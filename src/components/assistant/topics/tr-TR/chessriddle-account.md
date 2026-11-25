@@ -2,7 +2,7 @@
 id: chessriddle-account
 title: ChessRiddle hesabı
 summary: Çevrimiçi taktik bulmaca antrenmanı için ChessRiddle hesabınızı bağlayın, yenileyin veya bağlantısını kesin.
-source: bcfa02305ce425f9
+source: bfd90b50baa25512
 ---
 
 ChessRiddle hesabınız, Studio'yu {{label:Puzzle.Source.ChessRiddle}} çevrimiçi bulmaca antrenmanına bağlar.
@@ -14,3 +14,4 @@ Bağlantıyı [[page:accounts]] ({{label:SideBar.Accounts}}) sayfasındaki {{lab
 - Geçerli hesap durumunuzu ve planınızı kontrol etmek için {{label:Home.ChessRiddle.Refresh}} düğmesine tıklayın.
 - Oturumunuzun süresi dolarsa yeniden oturum açmak için {{label:Home.ChessRiddle.Reconnect}} düğmesine tıklayın.
 - Hesabı bu bilgisayardan kaldırmak ve oturumu kapatmak için {{label:Home.ChessRiddle.Disconnect}} düğmesine tıklayın.
+- Bağlandıktan sonra seçili PGN dosyalarını özel ChessRiddle Kütüphanenize senkronize etmek için [[page:library]] sayfasında {{label:Library.Sync.Action}} düğmesine tıklayın (tek yönlü, web sitesinde salt okunur).

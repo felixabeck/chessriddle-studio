@@ -2,7 +2,7 @@
 id: chessriddle-account
 title: ChessRiddle 账户
 summary: 连接、刷新或断开您的 ChessRiddle 账户，以进行在线战术谜题训练。
-source: bcfa02305ce425f9
+source: bfd90b50baa25512
 ---
 
 您的 ChessRiddle 账户可将 Studio 连接到 {{label:Puzzle.Source.ChessRiddle}} 在线谜题训练。
@@ -14,3 +14,4 @@ source: bcfa02305ce425f9
 - 点击 {{label:Home.ChessRiddle.Refresh}} 检查您当前的账户状态和方案。
 - 如果会话过期，请点击 {{label:Home.ChessRiddle.Reconnect}} 重新登录。
 - 点击 {{label:Home.ChessRiddle.Disconnect}} 从此电脑移除账户并退出登录。
+- 连接后，在 [[page:library]] 中点击 {{label:Library.Sync.Action}} 即可将选中的 PGN 文件同步到您的私人 ChessRiddle 棋库（单向同步，网站端只读）。

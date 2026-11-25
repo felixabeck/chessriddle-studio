@@ -292,6 +292,18 @@ export default defineConfig({
             testMatch: /opponent-preparation\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
+        {
+            name: "library-sync",
+            testMatch: /library-sync\.spec\.ts/,
+            grepInvert: /dialog fits narrow/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "library-sync-narrow",
+            testMatch: /library-sync\.spec\.ts/,
+            grep: /dialog fits narrow/,
+            use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "dark" },
+        },
     ],
     webServer: {
         // Invoked through node_modules/.bin rather than `pnpm exec`, so the suite runs

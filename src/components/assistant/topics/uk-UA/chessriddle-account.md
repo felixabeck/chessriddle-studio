@@ -2,7 +2,7 @@
 id: chessriddle-account
 title: Обліковий запис ChessRiddle
 summary: Підключення, оновлення або відключення облікового запису ChessRiddle для онлайн-тренування тактичних задач.
-source: bcfa02305ce425f9
+source: bfd90b50baa25512
 ---
 
 Ваш обліковий запис ChessRiddle підключає Studio до онлайн-тренування задач {{label:Puzzle.Source.ChessRiddle}}.
@@ -14,3 +14,4 @@ source: bcfa02305ce425f9
 - Натисніть {{label:Home.ChessRiddle.Refresh}}, щоб перевірити поточний статус облікового запису та тариф.
 - Якщо термін дії сеансу минув, натисніть {{label:Home.ChessRiddle.Reconnect}}, щоб увійти знову.
 - Натисніть {{label:Home.ChessRiddle.Disconnect}}, щоб видалити обліковий запис із цього комп’ютера та вийти.
+- Після підключення натисніть {{label:Library.Sync.Action}} на сторінці [[page:library]], щоб синхронізувати вибрані файли PGN із вашою приватною бібліотекою ChessRiddle (однобічно, на сайті лише для читання).
