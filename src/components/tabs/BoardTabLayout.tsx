@@ -1,81 +1,50 @@
 import { useAtom, useAtomValue } from "jotai";
-import { atomWithStorage } from "jotai/utils";
-import { type ReactNode, useCallback, useState } from "react";
-import { Mosaic, MosaicWithoutDragDropContext, type MosaicNode } from "react-mosaic-component";
+import { createContext, type ReactNode, useCallback, useMemo, useState } from "react";
+import { Mosaic } from "react-mosaic-component";
 import { useRootFontPx } from "@/hooks/useRootFontPx";
 import { useElementWidth } from "@/hooks/useElementWidth";
 import {
-  besideSplitsAtom,
-  createWindowsStateStorage,
-  defaultWindowsState,
-  panelsBesideNotationAtom,
-  type ViewId,
-} from "@/state/layoutStorage";
-import {
-  besideSplitPositions,
-  type BoardLayoutMode,
-  BoardLayoutModeContext,
-  fitsThreePanes,
-  needsTwoPaneStack,
-} from "@/state/paneLayout";
+  applyShownSplits,
+  arrangementLeaves,
+  arrangementPanelAreas,
+  BASE_AREA_IDS,
+  BOARD_AREA_IDS,
+  type BoardAreaId,
+  isPanelArea,
+  type PanelAreaId,
+  returnPanelArea,
+  shownArrangement,
+} from "@/state/boardArrangement";
+import { coachEnabledAtom } from "@/state/coach";
+import { boardArrangementAtom, type ViewId, windowsStateAtom } from "@/state/layoutStorage";
+import { arrangementFitsWidth, needsTwoPaneStack } from "@/state/paneLayout";
 import classes from "./BoardsPage.module.css";
 
-/**
- * A portal destination. The three tiles keep the names of where the panels-above layout puts them:
- * `left` is the board, `topRight` the panels, `bottomRight` the notation. `rightSpan` is the slot
- * across the notation and the panels in the beside arrangement; it holds what is pinned above both.
- */
-type TargetId = ViewId | "rightSpan";
-/** The two tiles of the outer split in the beside arrangement. */
-type BesideTile = "left" | "right";
-/** The split inside the right side in the beside arrangement: the notation, then the panels. */
-type RightTile = "bottomRight" | "topRight";
-
-const viewIds: ViewId[] = ["left", "topRight", "bottomRight"];
-const targetIds: TargetId[] = [...viewIds, "rightSpan"];
 const resize = { minimumPaneSizePercentage: 0 };
-const windowsStateAtom = atomWithStorage(
-  "windowsState",
-  defaultWindowsState(),
-  createWindowsStateStorage(localStorage),
-  { getOnInit: true },
-);
+const EMPTY_PANEL_SET: ReadonlySet<PanelAreaId> = new Set();
+const COACH_HIDDEN_SET: ReadonlySet<PanelAreaId> = new Set(["coach"]);
 
-function leaves(node: MosaicNode<ViewId> | null): ViewId[] {
-  return node === null
-    ? []
-    : typeof node === "string"
-      ? [node]
-      : [...leaves(node.first), ...leaves(node.second)];
+/** DOM id of the portal destination for a board area. Base areas keep their existing ids. */
+export function boardAreaTargetId(area: BoardAreaId): string {
+  return isPanelArea(area) ? `board-area-${area}` : area;
 }
 
-/** A split's divider position, when the node is a split that has one. */
-function splitOf(node: MosaicNode<string> | null) {
-  return node !== null && typeof node !== "string" ? node.splitPercentage : undefined;
+export interface BoardArrangementContextValue {
+  /** Panel areas currently shown as their own tiles on the board. */
+  shownPanelAreas: ReadonlySet<PanelAreaId>;
+  /** Whether the analysis board's own arrangement is currently displayed and arrangeable. */
+  arrangingAvailable: boolean;
+  /** Returns a panel area back to the tab strip. */
+  returnPanel: (panel: PanelAreaId) => void;
 }
 
-/**
- * Where the board's edge sits in the panels-above layout, when that layout has the board first in
- * a row. The beside arrangement starts from it, so switching does not resize the board.
- */
-function classicBoardSplit(node: MosaicNode<ViewId> | null) {
-  return node !== null &&
-    typeof node !== "string" &&
-    node.direction === "row" &&
-    node.first === "left"
-    ? node.splitPercentage
-    : undefined;
-}
+export const BoardArrangementContext = createContext<BoardArrangementContextValue>({
+  shownPanelAreas: EMPTY_PANEL_SET,
+  arrangingAvailable: false,
+  returnPanel: () => undefined,
+});
 
-function TargetHost({
-  target,
-  direct = false,
-  className = `mosaic-tile ${classes.targetHost}`,
-}: {
-  target: HTMLDivElement;
-  direct?: boolean;
-  className?: string;
-}) {
+function TargetHost({ target, direct = false }: { target: HTMLDivElement; direct?: boolean }) {
   const attach = useCallback(
     (host: HTMLElement | null) => {
       if (host) (direct ? host.parentElement : host)?.appendChild(target);
@@ -86,99 +55,99 @@ function TargetHost({
   return direct ? (
     <span hidden ref={attach} />
   ) : (
-    <div ref={attach} className={className} data-board-slot={target.id} />
+    <div ref={attach} className={`mosaic-tile ${classes.targetHost}`} data-board-slot={target.id} />
   );
 }
 
 export default function BoardTabLayout({
   children,
-  besideCapable = false,
+  arrangeable = false,
 }: {
   children: ReactNode;
-  /** Whether this tab's board can show its panels beside the notation (the analysis board). */
-  besideCapable?: boolean;
+  /** Whether this tab uses the analysis board's stored arrangement. */
+  arrangeable?: boolean;
 }) {
   const [windowsState, setWindowsState] = useAtom(windowsStateAtom);
-  const wantsPanelsBeside = useAtomValue(panelsBesideNotationAtom);
-  const [besideSplits, setBesideSplits] = useAtom(besideSplitsAtom);
+  const [storedArrangement, setStoredArrangement] = useAtom(boardArrangementAtom);
+  const coachEnabled = useAtomValue(coachEnabledAtom);
   const { ref, width } = useElementWidth();
   const rootFont = useRootFontPx();
-  // The stored choice is kept while the window is too narrow for it; the layout only falls back.
-  const mode: BoardLayoutMode = needsTwoPaneStack(width, rootFont)
-    ? "stacked"
-    : besideCapable && wantsPanelsBeside && fitsThreePanes(width, rootFont)
-      ? "beside"
-      : "mosaic";
+
+  const hiddenPanels = coachEnabled ? EMPTY_PANEL_SET : COACH_HIDDEN_SET;
+  const displayedArrangement = useMemo(
+    () => shownArrangement(storedArrangement, hiddenPanels),
+    [storedArrangement, hiddenPanels],
+  );
+
+  const stacked = needsTwoPaneStack(width, rootFont);
+  // Three cases for an analysis tab: stacked below two pane floors, the shown arrangement when it
+  // fits, or the shared three-area layout from `windowsState` while the window is too narrow.
+  const useArrangement =
+    arrangeable && !stacked && arrangementFitsWidth(displayedArrangement, width, rootFont);
+  const mode: "stacked" | "mosaic" = stacked ? "stacked" : "mosaic";
+
   // React owns the hosts, while this mount owns the portal destinations.
   // Moving destinations preserves Mantine's one-time target lookup and child state.
   const [targets] = useState(
     () =>
       Object.fromEntries(
-        targetIds.map((id) => {
+        BOARD_AREA_IDS.map((id) => {
           const element = document.createElement("div");
-          element.id = id;
-          element.className = id === "rightSpan" ? classes.spanTarget : classes.portalTarget;
+          element.id = boardAreaTargetId(id);
+          element.dataset.boardArea = id;
+          element.className = classes.portalTarget;
           return [id, element];
         }),
-      ) as Record<TargetId, HTMLDivElement>,
+      ) as Record<BoardAreaId, HTMLDivElement>,
   );
-  // The stored positions are what the user dragged; a window too narrow for them only moves the
-  // dividers shown, and a drag stores the position it could actually reach.
-  const splits = besideSplitPositions(width, rootFont, {
-    board: besideSplits.board ?? classicBoardSplit(windowsState.currentNode),
-    notation: besideSplits.notation,
-  });
-  const storeSplit = (divider: "board" | "notation", node: MosaicNode<string> | null) => {
-    const dragged = splitOf(node);
-    if (dragged === undefined) return;
-    const reached = besideSplitPositions(width, rootFont, { ...splits, [divider]: dragged });
-    setBesideSplits((previous) => ({ ...previous, [divider]: reached[divider] }));
-  };
-  const shown: TargetId[] =
-    mode === "stacked" ? viewIds : mode === "beside" ? targetIds : leaves(windowsState.currentNode);
+
+  const returnPanel = useCallback(
+    (panel: PanelAreaId) => {
+      setStoredArrangement((stored) => returnPanelArea(stored, panel));
+    },
+    [setStoredArrangement],
+  );
+
+  const shownPanelAreas = useMemo<ReadonlySet<PanelAreaId>>(
+    () => (useArrangement ? new Set(arrangementPanelAreas(displayedArrangement)) : EMPTY_PANEL_SET),
+    [useArrangement, displayedArrangement],
+  );
+
+  const arrangementContext = useMemo<BoardArrangementContextValue>(
+    () => ({
+      shownPanelAreas,
+      arrangingAvailable: useArrangement,
+      returnPanel,
+    }),
+    [shownPanelAreas, useArrangement, returnPanel],
+  );
+
+  const shown: readonly BoardAreaId[] = stacked
+    ? BASE_AREA_IDS
+    : useArrangement
+      ? arrangementLeaves(displayedArrangement)
+      : windowsState.currentNode
+        ? arrangementLeaves(windowsState.currentNode)
+        : [];
 
   return (
     <>
       <div ref={ref} className={classes.boardLayout} data-board-layout={mode}>
-        {mode === "stacked" ? (
+        {stacked ? (
           <div className={classes.boardStack}>
-            {viewIds.map((id) => (
+            {BASE_AREA_IDS.map((id) => (
               <TargetHost key={id} target={targets[id]} />
             ))}
           </div>
-        ) : mode === "beside" ? (
-          <Mosaic<BesideTile>
-            key="beside"
-            renderTile={(id) =>
-              id === "left" ? (
-                <TargetHost target={targets.left} direct />
-              ) : (
-                // One pane for what is pinned across the top: it measures against the whole side.
-                <div className={classes.besideRegion} data-pinned-pane>
-                  <TargetHost target={targets.rightSpan} className={classes.spanHost} />
-                  <div className={classes.besideSplit}>
-                    <MosaicWithoutDragDropContext<RightTile>
-                      renderTile={(tile) => <TargetHost target={targets[tile]} direct />}
-                      value={{
-                        direction: "row",
-                        first: "bottomRight",
-                        second: "topRight",
-                        splitPercentage: splits.notation,
-                      }}
-                      onChange={(node) => storeSplit("notation", node)}
-                      resize={resize}
-                    />
-                  </div>
-                </div>
-              )
-            }
-            value={{
-              direction: "row",
-              first: "left",
-              second: "right",
-              splitPercentage: splits.board,
+        ) : useArrangement ? (
+          <Mosaic<BoardAreaId>
+            key="arrangement"
+            renderTile={(id) => <TargetHost target={targets[id]} direct />}
+            value={displayedArrangement}
+            onChange={(next) => {
+              if (next === null) return;
+              setStoredArrangement((stored) => applyShownSplits(stored, next, hiddenPanels));
             }}
-            onChange={(node) => storeSplit("board", node)}
             resize={resize}
           />
         ) : (
@@ -191,14 +160,14 @@ export default function BoardTabLayout({
           />
         )}
         <div hidden>
-          {targetIds
-            .filter((id) => !shown.includes(id))
-            .map((id) => (
-              <TargetHost key={id} target={targets[id]} />
-            ))}
+          {BOARD_AREA_IDS.filter((id) => !shown.includes(id)).map((id) => (
+            <TargetHost key={id} target={targets[id]} />
+          ))}
         </div>
       </div>
-      <BoardLayoutModeContext.Provider value={mode}>{children}</BoardLayoutModeContext.Provider>
+      <BoardArrangementContext.Provider value={arrangementContext}>
+        {children}
+      </BoardArrangementContext.Provider>
     </>
   );
 }

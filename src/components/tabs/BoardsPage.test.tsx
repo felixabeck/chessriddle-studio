@@ -303,10 +303,10 @@ vi.mock("./NewTabHome", () => ({
 }));
 vi.mock("react-mosaic-component", () => ({ Mosaic: () => null }));
 vi.mock("./BoardTabLayout", () => ({
-  // The stand-in records whether the page lets this tab show its panels beside the notation.
-  default: ({ children, besideCapable }: { children: ReactNode; besideCapable?: boolean }) => (
+  // The stand-in records whether the page gives this tab the analysis board's arrangement.
+  default: ({ children, arrangeable }: { children: ReactNode; arrangeable?: boolean }) => (
     <>
-      <span hidden data-beside-capable={String(besideCapable === true)} />
+      <span hidden data-arrangeable={String(arrangeable === true)} />
       {children}
     </>
   ),
@@ -1470,14 +1470,14 @@ const recoveryRoutes = [
 ] as const;
 
 test.each(recoveryRoutes)(
-  "only an analysis board may show its panels beside the notation: $type",
+  "only an analysis board uses the arrangeable board layout: $type",
   async ({ type, child }) => {
     store.set(tabsAtom, [{ ...fixtures.tabs[0]!, type }]);
     await renderPage();
     expect(container.querySelector(`[data-testid="${child}"]`)).not.toBeNull();
     expect(
-      [...container.querySelectorAll("[data-beside-capable]")].map((layout) =>
-        layout.getAttribute("data-beside-capable"),
+      [...container.querySelectorAll("[data-arrangeable]")].map((layout) =>
+        layout.getAttribute("data-arrangeable"),
       ),
     ).toEqual([String(type === "analysis")]);
   },

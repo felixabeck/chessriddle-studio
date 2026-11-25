@@ -2,7 +2,7 @@
 id: databases
 title: Бази даних, оглядач, пошук позицій, гравці та турніри
 summary: Додавання або завантаження баз партій, вибір довідкової бази, пошук позицій в оглядачі та перегляд партій, гравців і турнірів.
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 Бази даних містяться в [[page:library]] ({{label:SideBar.Library}}) поряд із вашими файлами PGN і зберігаються в [[setting:databases-directory]].
@@ -34,5 +34,5 @@ source: d1a9092c9321c351
 - Виберіть {{label:Board.Database.LichessAll}} або {{label:Board.Database.LichessMaster}} у меню джерел і в {{label:Board.Database.Compare}} (онлайн-оглядачі Lichess вимагають авторизованого облікового запису Lichess на сторінці [[page:accounts]]).
 - Перемикайтеся між {{label:Board.Database.Stats}} (статистика ходів) і {{label:Board.Database.Games}} (відповідні партії).
 - Натисніть {{label:Board.Database.Compare}}, щоб порівняти два джерела поруч, або відкрийте {{label:Board.Database.Local.Position}} для перемикання між пошуком позиції {{label:Board.Database.Local.Exact}} і {{label:Board.Database.Local.Partial}} (включно з {{label:Board.Database.Local.SimilarStructure}} для пошуку за пішаковою структурою та {{label:Fen.Empty}} для довільних шаблонів).
-- Використовуйте {{label:Board.Database.Pin}}, щоб закріпити оглядач над чи під дошкою або нотацією, та {{label:Board.Database.Unpin}}, щоб повернути його до вкладок.
+- Ви також можете показати {{label:Board.Tabs.Database}} як окрему область на дошці аналізу та скористатися {{label:Board.Area.ReturnToTabs}}, щоб повернути її до вкладок.
 - Коли кнопка {{label:Databases.OpeningTree.Prepare}} відкриває дошку для гравця з бази даних, оглядач починає з довідкової бази як додаткового стовпця поруч із партіями суперника; натисніть {{label:Board.Database.RemoveReference}}, щоб приховати стовпець, або {{label:Board.Database.AddColumn}}, щоб додати ще один.

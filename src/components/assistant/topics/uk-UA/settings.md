@@ -2,7 +2,7 @@
 id: settings
 title: Огляд налаштувань
 summary: Шукайте налаштування в розділах Дошка, Аналіз і нотація, Тренування репертуару, ШІ, Загальні, Звук, Сполучення клавіш, Файли та папки й Додатково.
-source: 283ae23a831eb807
+source: 93abc6a025ea2804
 ---
 
 Відкрийте [[page:settings]] ({{label:SideBar.Settings}}) з меню програми (або натисніть Cmd+, у macOS). Скористайтеся рядком {{label:Common.Search}} угорі [[page:settings]], щоб фільтрувати всі налаштування за назвою, описом, групою чи ключовим словом, і натисніть Escape, щоб очистити пошук.
@@ -11,7 +11,7 @@ source: 283ae23a831eb807
 
 Шахи:
 - [[settings-category:board]] ({{label:Settings.Board}}): вигляд дошки та як ви ходите фігурами, зокрема [[setting:board-image]], [[setting:board-wood-texture]], [[setting:piece-set]], [[setting:piece-size]], [[setting:coordinates]], [[setting:animation-speed]], [[setting:piece-dest]], [[setting:move-highlight]], [[setting:move-highlight-color]], [[setting:move-highlight-opacity]], [[setting:move-method]], [[setting:text-input]], [[setting:auto-promote]], [[setting:flip-board-after-move]], [[setting:arrows]], [[setting:variation-arrows]], [[setting:snap-arrows]], [[setting:consecutive-arrows]] і [[setting:erase-drawables]].
-- [[settings-category:analysis]] ({{label:Settings.Analysis}}): нотація, навігація, розташування панелей і автозбереження через [[setting:move-notation]], [[setting:material-display]], [[setting:scroll-moves]], [[setting:choose-variation]], [[setting:preview-board]], [[setting:default-panel-tab]], [[setting:panels-beside-notation]] і [[setting:auto-save]].
+- [[settings-category:analysis]] ({{label:Settings.Analysis}}): нотація, навігація, розташування панелей і автозбереження через [[setting:move-notation]], [[setting:material-display]], [[setting:scroll-moves]], [[setting:choose-variation]], [[setting:preview-board]], [[setting:default-panel-tab]], [[setting:board-layout]] і [[setting:auto-save]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): поріг покриття репертуару та розклад практики через [[setting:repertoire-depth]], [[setting:practice-grading]] і [[setting:practice-new-per-session]].
 - [[settings-category:coach]] ({{label:Settings.AI}}): керуйте ШІ-підключеннями Coach і Assistant, оберіть модель відповідей у [[setting:coach-model]] і локальний рушій Coach у [[setting:coach-engine]].
 

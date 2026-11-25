@@ -53,7 +53,7 @@ function TabSwitch({ tab, closeTab }: { tab: Tab; closeTab: (tabId: string) => v
         <TreeRecoveryGate tabId={tab.value} treeKey={getTabTreeKey(tab)}>
           {tab.type === "analysis" ? (
             <FileFreshnessGate tab={tab} closeTab={closeTab}>
-              <BoardTabLayout besideCapable>
+              <BoardTabLayout arrangeable>
                 <BoardAnalysis />
               </BoardTabLayout>
             </FileFreshnessGate>

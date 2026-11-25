@@ -2,7 +2,7 @@
 id: databases
 title: Bases de données, explorateur, recherche de position, joueurs et tournois
 summary: Ajoutez ou téléchargez des bases de parties, choisissez une base de référence, recherchez des positions dans l’explorateur et parcourez parties, joueurs et tournois.
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 Les bases de données se trouvent dans [[page:library]] ({{label:SideBar.Library}}) aux côtés de vos fichiers PGN et sont stockées dans [[setting:databases-directory]].
@@ -34,5 +34,5 @@ Sur l’échiquier d’analyse, ouvrez {{label:Board.Tabs.Database}} pour utilis
 - Choisissez {{label:Board.Database.LichessAll}} ou {{label:Board.Database.LichessMaster}} dans le menu des sources et dans {{label:Board.Database.Compare}} (les explorateurs en ligne Lichess nécessitent un compte Lichess connecté sur [[page:accounts]]).
 - Basculez entre {{label:Board.Database.Stats}} (statistiques de coups) et {{label:Board.Database.Games}} (parties correspondantes).
 - Cliquez sur {{label:Board.Database.Compare}} afin d’afficher deux sources côte à côte, ou ouvrez {{label:Board.Database.Local.Position}} pour basculer entre la recherche de position {{label:Board.Database.Local.Exact}} et {{label:Board.Database.Local.Partial}} (y compris {{label:Board.Database.Local.SimilarStructure}} pour la recherche par structure de pions et {{label:Fen.Empty}} pour des motifs personnalisés).
-- Utilisez {{label:Board.Database.Pin}} pour épingler l’explorateur au-dessus ou en dessous de l’échiquier ou de la notation, et {{label:Board.Database.Unpin}} pour le replacer dans les onglets.
+- Vous pouvez aussi afficher {{label:Board.Tabs.Database}} dans sa propre zone sur l’échiquier d’analyse et utiliser {{label:Board.Area.ReturnToTabs}} pour le replacer dans les onglets.
 - Lorsque {{label:Databases.OpeningTree.Prepare}} ouvre un échiquier pour un joueur de la base de données, l’explorateur commence avec votre base de référence comme colonne supplémentaire à côté des parties de l’adversaire ; cliquez sur {{label:Board.Database.RemoveReference}} pour masquer une colonne ou sur {{label:Board.Database.AddColumn}} pour en ajouter une autre.

@@ -1,0 +1,39 @@
+.area {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.header {
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 4px var(--mantine-spacing-xs);
+  border-bottom: 1px solid var(--cf-border);
+}
+
+.titleGroup {
+  flex: 1;
+  min-width: 0;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.title {
+  min-width: 0;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}

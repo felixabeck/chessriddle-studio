@@ -2,7 +2,7 @@
 id: databases
 title: 資料庫、開局探索器、局面搜尋、棋手與賽事
 summary: 新增或下載棋局資料庫、選取參考資料庫、在探索器中搜尋局面，以及瀏覽對局、棋手與賽事。
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 資料庫與您的 PGN 檔案一同位在 [[page:library]] ({{label:SideBar.Library}}) 中，並儲存於 [[setting:databases-directory]]。
@@ -34,5 +34,5 @@ source: d1a9092c9321c351
 - 在來源下拉選單和 {{label:Board.Database.Compare}} 中選擇 {{label:Board.Database.LichessAll}} 或 {{label:Board.Database.LichessMaster}}（Lichess 線上探索器需要在 [[page:accounts]] 登入 Lichess 帳戶）。
 - 在 {{label:Board.Database.Stats}}（著法統計）與 {{label:Board.Database.Games}}（相符對局）之間切換。
 - 點擊 {{label:Board.Database.Compare}} 可並排檢視兩個來源，或開啟 {{label:Board.Database.Local.Position}} 在 {{label:Board.Database.Local.Exact}} 與 {{label:Board.Database.Local.Partial}} 局面搜尋之間切換（包括用於兵型結構搜尋的 {{label:Board.Database.Local.SimilarStructure}} 與用於自訂樣式的 {{label:Fen.Empty}}）。
-- 使用 {{label:Board.Database.Pin}} 將探索器釘選在棋盤或記譜上方或下方，並使用 {{label:Board.Database.Unpin}} 將其放回分頁中。
+- 你也可以在分析棋盤上將 {{label:Board.Tabs.Database}} 顯示為獨立區域，並使用 {{label:Board.Area.ReturnToTabs}} 將其放回分頁中。
 - 當透過 {{label:Databases.OpeningTree.Prepare}} 為資料庫棋手開啟棋盤時，探索器會先把參考資料庫作為額外一欄顯示在對手對局旁；點擊 {{label:Board.Database.RemoveReference}} 可隱藏一欄，點擊 {{label:Board.Database.AddColumn}} 可再新增一欄。

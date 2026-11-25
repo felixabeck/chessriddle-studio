@@ -867,3 +867,48 @@ test("compact Shortcuts stack each action above its key instead of a two-column 
   ]);
   expect(panel.textContent).toContain("Settings.Keybinds.Actions.NEW_TAB");
 });
+
+test("Reset layout in Analysis / Layout & Saving restores default arrangement without touching windowsState, engine bar or tab selection", async () => {
+  const { ANALYSIS_BOARD_LAYOUT_KEY, WINDOWS_STATE_KEY } = await import("@/state/layoutStorage");
+  const { defaultBoardArrangement } = await import("@/state/boardArrangement");
+  const { tabFamily } = await import("@/state/atoms");
+
+  const customWindows = JSON.stringify({ currentNode: "left" });
+  localStorage.setItem(
+    ANALYSIS_BOARD_LAYOUT_KEY,
+    JSON.stringify({
+      direction: "row",
+      first: "left",
+      second: { direction: "row", first: "bottomRight", second: "topRight" },
+    }),
+  );
+  localStorage.setItem(WINDOWS_STATE_KEY, customWindows);
+  localStorage.setItem("detached-engine", JSON.stringify("eng-1"));
+  localStorage.setItem("detached-engine-lines", JSON.stringify(2));
+  localStorage.setItem("detached-engine-placement", JSON.stringify("board"));
+
+  const { host, atoms } = await renderSettingsPage();
+  atoms.set(tabFamily("tab-1"), "database");
+
+  await act(async () => settingsTab(host, "analysis").click());
+  const section = panelFor(host, "analysis").querySelector(
+    '[data-settings-section="layoutSaving"]',
+  )!;
+  const row = section.querySelector('[data-setting-id="board-layout"]')!;
+  expect(row).not.toBeNull();
+  const resetButton = [...row.querySelectorAll<HTMLButtonElement>("button")].find(
+    (btn) => btn.textContent === "Settings.BoardLayout.Reset",
+  )!;
+  expect(resetButton).not.toBeUndefined();
+
+  await act(async () => resetButton.click());
+
+  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!)).toEqual(
+    defaultBoardArrangement(),
+  );
+  expect(localStorage.getItem(WINDOWS_STATE_KEY)).toBe(customWindows);
+  expect(localStorage.getItem("detached-engine")).toBe(JSON.stringify("eng-1"));
+  expect(localStorage.getItem("detached-engine-lines")).toBe(JSON.stringify(2));
+  expect(localStorage.getItem("detached-engine-placement")).toBe(JSON.stringify("board"));
+  expect(atoms.get(tabFamily("tab-1"))).toBe("database");
+});

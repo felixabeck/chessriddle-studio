@@ -38,8 +38,6 @@ const KEY_HANDLING_WIDGETS: { selector: string; keys: readonly string[] }[] = [
     { selector: '[role="slider"]', keys: [...ARROW_KEYS, "Home", "End"] },
     // the board's keyboard move grid (Board.tsx keyboardMove)
     { selector: '[role="grid"]', keys: [...ARROW_KEYS] },
-    // the pinned explorer strip's resize divider (PinnedExplorer.tsx)
-    { selector: '[role="separator"]', keys: ["ArrowUp", "ArrowDown"] },
 ];
 
 /** True when the event target is inside a widget that handles this key itself (keydown targets the focused element). */

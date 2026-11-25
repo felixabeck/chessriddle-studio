@@ -2,7 +2,7 @@
 id: databases
 title: Bases de datos, explorador, búsqueda de posición, jugadores y torneos
 summary: Añade o descarga bases de datos de partidas, elige una base de referencia, busca posiciones en el explorador y consulta partidas, jugadores y torneos.
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 Las bases de datos viven en [[page:library]] ({{label:SideBar.Library}}) junto a tus archivos PGN y se guardan en [[setting:databases-directory]].
@@ -34,5 +34,5 @@ En el tablero de análisis, abre {{label:Board.Tabs.Database}} para usar el expl
 - Elige {{label:Board.Database.LichessAll}} o {{label:Board.Database.LichessMaster}} en el menú de fuentes y en {{label:Board.Database.Compare}} (los exploradores en línea de Lichess requieren una cuenta de Lichess con sesión iniciada en [[page:accounts]]).
 - Cambia entre {{label:Board.Database.Stats}} (estadísticas de jugadas) y {{label:Board.Database.Games}} (partidas coincidentes).
 - Haz clic en {{label:Board.Database.Compare}} para ver dos fuentes lado a lado, o abre {{label:Board.Database.Local.Position}} para alternar entre búsqueda de posición {{label:Board.Database.Local.Exact}} y {{label:Board.Database.Local.Partial}} (incluida {{label:Board.Database.Local.SimilarStructure}} para buscar por estructura de peones y {{label:Fen.Empty}} para patrones personalizados).
-- Usa {{label:Board.Database.Pin}} para fijar el explorador encima o debajo del tablero o la notación, y {{label:Board.Database.Unpin}} para devolverlo a las pestañas.
+- También puedes mostrar {{label:Board.Tabs.Database}} como su propia área en el tablero de análisis y usar {{label:Board.Area.ReturnToTabs}} para devolverla a las pestañas.
 - Cuando {{label:Databases.OpeningTree.Prepare}} abre un tablero para un jugador de la base de datos, el explorador empieza con tu base de referencia como columna adicional junto a las partidas del rival; haz clic en {{label:Board.Database.RemoveReference}} para ocultar una columna o en {{label:Board.Database.AddColumn}} para añadir otra.

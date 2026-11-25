@@ -16,22 +16,19 @@ import {
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Pin, PinOff, Plus, Settings, X } from "lucide-react";
+import { Plus, Settings, X } from "lucide-react";
 import { memo, type ReactNode, useCallback, useContext, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { useStore } from "zustand";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
-import { PinnedPlacementItems } from "@/components/boards/PinnedPlacementItems";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   comparisonDbAtom,
   dbTabFamily,
   dbTypeFamily,
   explorerGamesSourceFamily,
-  explorerDetachedAtom,
-  explorerPlacementAtom,
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
   type ExplorerColumnId,
@@ -48,7 +45,6 @@ import {
   referenceDbAtom,
   replaceExplorerDatabaseAtom,
   sessionsAtom,
-  tabFamily,
 } from "@/state/atoms";
 import { databaseHandleFromKey, databaseHandleKey, type Opening } from "@/utils/db";
 import classes from "./DatabasePanel.module.css";
@@ -672,59 +668,17 @@ function DatabasePanel() {
         : onlineCaption(column.id, column.id),
     ),
   ];
-  const [detached, setDetached] = useAtom(explorerDetachedAtom);
-  const [placement, setPlacement] = useAtom(explorerPlacementAtom);
-  const setBoardPanel = useSetAtom(useTabAtom(tabFamily));
   const headerActions = (
-    <>
-      <IconAction
-        label={collapsed ? t("Board.Database.ShowSettings") : t("Board.Database.HideSettings")}
-        variant="subtle"
-        size="sm"
-        pressed={!collapsed}
-        disabled={needsDatabase}
-        onClick={() => setStoredCollapsed(!storedCollapsed)}
-      >
-        <Settings size="0.875rem" />
-      </IconAction>
-      {/* One menu pins the panel to a place, moves it, or unpins it. */}
-      <Menu position="bottom-end" shadow="md" withinPortal>
-        <Menu.Target>
-          <IconAction
-            label={detached ? t("Board.Database.Position") : t("Board.Database.Pin")}
-            variant="subtle"
-            size="sm"
-            pressed={detached}
-          >
-            <Pin size="0.875rem" />
-          </IconAction>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <PinnedPlacementItems
-            current={detached ? placement : null}
-            onChoose={(next) => {
-              setPlacement(next);
-              setDetached(true);
-            }}
-          />
-          {detached && (
-            <>
-              <Menu.Divider />
-              <Menu.Item
-                leftSection={<PinOff size="0.875rem" />}
-                onClick={() => {
-                  // Unpinned, the panel goes back to being a tab, and that tab is the one shown.
-                  setBoardPanel("database");
-                  setDetached(false);
-                }}
-              >
-                {t("Board.Database.Unpin")}
-              </Menu.Item>
-            </>
-          )}
-        </Menu.Dropdown>
-      </Menu>
-    </>
+    <IconAction
+      label={collapsed ? t("Board.Database.ShowSettings") : t("Board.Database.HideSettings")}
+      variant="subtle"
+      size="sm"
+      pressed={!collapsed}
+      disabled={needsDatabase}
+      onClick={() => setStoredCollapsed(!storedCollapsed)}
+    >
+      <Settings size="0.875rem" />
+    </IconAction>
   );
 
   const sourceAlert = (source: StatsColumn) => (

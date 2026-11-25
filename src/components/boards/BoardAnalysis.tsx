@@ -15,7 +15,7 @@ import {
 } from "@/components/common/iconCatalog";
 import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type StoreApi, useStore } from "zustand";
 import type { TreeStoreState } from "@/state/store/tree";
@@ -30,11 +30,11 @@ import {
   practiceMoveControllerFamily,
   practiceStateFamily,
   enginesAtom,
-  explorerDetachedAtom,
   threatFamily,
   tabEngineSettingsFamily,
   tabPreparationViewFamily,
 } from "@/state/atoms";
+import { PANEL_AREA_IDS, type PanelAreaId } from "@/state/boardArrangement";
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import { locateBoardState } from "@/utils/treeReducer";
@@ -61,7 +61,7 @@ import DetachedEval from "./DetachedEval";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
 import NotationColumn from "../common/NotationColumn";
-import PinnedExplorer from "./PinnedExplorer";
+import PanelArea from "./PanelArea";
 import { TreeStateContext } from "../common/TreeStateContext";
 import AnalysisPanel from "../panels/analysis/AnalysisPanel";
 import AnnotationPanel from "../panels/annotation/AnnotationPanel";
@@ -84,7 +84,7 @@ import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
 import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
-import { BoardLayoutModeContext } from "@/state/paneLayout";
+import { BoardArrangementContext, boardAreaTargetId } from "../tabs/BoardTabLayout";
 
 /** Testable seam for the Photo panel's lazy chunk loader. */
 export const scoresheetPhotoPanelLoader = {
@@ -151,14 +151,7 @@ function PreparationLandingConsumer() {
 function BoardAnalysis() {
   const { t } = useTranslation();
   const compactTabs = useScaledMaxWidth(COMPACT_PANE_TABS_WIDTH_EM);
-  // With the panels beside the notation, what is pinned above the tabs spans both.
-  const panelsBeside = useContext(BoardLayoutModeContext) === "beside";
-  const aboveTabs = (
-    <>
-      <DetachedEval placement="tabs" />
-      <PinnedExplorer placement="tabs" />
-    </>
-  );
+  const { shownPanelAreas, returnPanel } = useContext(BoardArrangementContext);
 
   const [editingMode, toggleEditingMode] = useToggle();
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
@@ -171,7 +164,7 @@ function BoardAnalysis() {
   const [saveToModal, setSaveToModal] = useState(false);
   const autoSave = useAtomValue(autoSaveAtom);
   const boardRef = useRef(null);
-  // The explorer strip and engine bar below the board: the board gives up their rendered height.
+  // The engine bar below the board: the board gives up its rendered height.
   const { ref: belowBoardRef, height: belowBoardHeight } = useElementSize<HTMLDivElement>();
 
   const store = useContext(TreeStateContext)!;
@@ -263,22 +256,43 @@ function BoardAnalysis() {
 
   const [, setAnalysisTab] = useAtom(useTabAtom(analysisTabFamily));
   const [currentTabSelected, setCurrentTabSelected] = useAtom(useTabAtom(tabFamily));
-  // Pinned, the explorer is a strip in its chosen place and no longer one of the tabs. A tab whose stored
-  // choice is the explorer shows Annotate meanwhile; the stored choice is left alone.
-  const explorerDetached = useAtomValue(explorerDetachedAtom);
-  // A build without the Coach has no Coach tab, hotkey or panel; a stored choice of it shows
-  // Annotate, like the pinned explorer's. The Photo tab exists only while a scoresheet review is active.
+  // A build without the Coach has no Coach tab, hotkey or panel. The Photo tab exists only while a
+  // scoresheet review is active. Detached panel areas leave the tab strip and render in their own tiles.
   const coachEnabled = useAtomValue(coachEnabledAtom);
   const hasScoresheetReview = useStore(store, (s) => s.scoresheetReview !== undefined);
-  const shownTab =
-    (explorerDetached && currentTabSelected === "database") ||
-    (!coachEnabled && currentTabSelected === "coach") ||
-    (!hasScoresheetReview && currentTabSelected === "photo")
+  const isRepertoire = isRepertoireTab(currentTab);
+  const panelMeta: Record<PanelAreaId, { title: string; Icon: typeof AnalysisIcon }> = {
+    analysis: { title: t("Board.Tabs.Analysis"), Icon: AnalysisIcon },
+    database: { title: t("Board.Tabs.Database"), Icon: DatabaseIcon },
+    annotate: { title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
+    coach: { title: t("Board.Tabs.Coach"), Icon: AiChatIcon },
+    info: { title: t("Board.Tabs.Info"), Icon: GameInfoIcon },
+  };
+  const stripTabs = [
+    ...(isRepertoire
+      ? [{ value: "practice", title: t("Board.Tabs.Practice"), Icon: PracticeIcon }]
+      : []),
+    ...(!shownPanelAreas.has("analysis") ? [{ value: "analysis", ...panelMeta.analysis }] : []),
+    ...(!shownPanelAreas.has("database") ? [{ value: "database", ...panelMeta.database }] : []),
+    ...(!shownPanelAreas.has("annotate") ? [{ value: "annotate", ...panelMeta.annotate }] : []),
+    ...(coachEnabled && !shownPanelAreas.has("coach")
+      ? [{ value: "coach", ...panelMeta.coach }]
+      : []),
+    ...(hasScoresheetReview
+      ? [{ value: "photo", title: t("Board.Tabs.Photo"), Icon: ScoresheetPhotoIcon }]
+      : []),
+    ...(!shownPanelAreas.has("info") ? [{ value: "info", ...panelMeta.info }] : []),
+  ];
+  const stripTabIds = stripTabs.map((item) => item.value);
+  // Fallback never shows Practice (keeps training mode aligned with the stored selection) and never
+  // shows Photo (avoids loading the lazy scoresheet panel on fallback); stored selection is not rewritten.
+  const shownTab = stripTabIds.includes(currentTabSelected)
+    ? currentTabSelected
+    : stripTabIds.includes("annotate")
       ? "annotate"
-      : currentTabSelected;
+      : (stripTabIds.find((id) => id !== "practice" && id !== "photo") ?? "annotate");
   const [, setReportModalOpen] = useAtom(useTabAtom(reportModalOpenFamily));
   const practiceTabSelected = useAtomValue(useTabAtom(practiceTabFamily));
-  const isRepertoire = isRepertoireTab(currentTab);
   const destinationFile = getTabDestinationFile(currentTab);
   const headers = useStore(store, (s) => s.headers);
   const practicing = currentTabSelected === "practice" && practiceTabSelected === "train";
@@ -376,11 +390,16 @@ function BoardAnalysis() {
           if (isRepertoire) setCurrentTabSelected("practice");
         },
       ],
-      [keyMap.ANALYSIS_TAB.keys, () => setCurrentTabSelected("analysis")],
+      [
+        keyMap.ANALYSIS_TAB.keys,
+        () => {
+          if (!shownPanelAreas.has("analysis")) setCurrentTabSelected("analysis");
+        },
+      ],
       [
         keyMap.GENERATE_REPORT.keys,
         (e) => {
-          setCurrentTabSelected("analysis");
+          if (!shownPanelAreas.has("analysis")) setCurrentTabSelected("analysis");
           setAnalysisTab("report");
           // Without moves, or while this tab runs a report, the shortcut only shows the tab.
           const { root, report } = store.getState();
@@ -397,12 +416,19 @@ function BoardAnalysis() {
       ).map<HotkeyItem>(([keys, panel]) => [
         keys,
         () => {
-          if (panel === "database" && explorerDetached) return;
+          if (shownPanelAreas.has(panel)) return;
           setCurrentTabSelected(panel);
         },
       ]),
       ...(coachEnabled
-        ? [[keyMap.COACH_TAB.keys, () => setCurrentTabSelected("coach")] satisfies HotkeyItem]
+        ? [
+            [
+              keyMap.COACH_TAB.keys,
+              () => {
+                if (!shownPanelAreas.has("coach")) setCurrentTabSelected("coach");
+              },
+            ] satisfies HotkeyItem,
+          ]
         : []),
       [
         keyMap.TOGGLE_ALL_ENGINES.keys,
@@ -413,6 +439,14 @@ function BoardAnalysis() {
       ],
     ]),
   );
+
+  const panelContent: Record<PanelAreaId, () => ReactNode> = {
+    analysis: () => <AnalysisPanel />,
+    database: () => <DatabasePanel />,
+    annotate: () => <AnnotationPanel />,
+    coach: () => <CoachPanel />,
+    info: () => <InfoPanel addGame={addGame} />,
+  };
 
   return (
     <FileChapterSwitchProvider>
@@ -470,8 +504,6 @@ function BoardAnalysis() {
         <Stack
           h="100%"
           gap="xs"
-          data-pinned-pane
-          data-pinned-pane-grows
           style={{
             "--board-below-height":
               belowBoardHeight > 0
@@ -490,20 +522,13 @@ function BoardAnalysis() {
             />
           </Paper>
           <div ref={belowBoardRef} className={classes.belowBoard} data-slot="below-board">
-            <PinnedExplorer placement="board" />
             <DetachedEval placement="board" />
           </div>
         </Stack>
       </Portal>
-      {/* `#rightSpan` is the slot across the notation and the panels, `#topRight` the panels. */}
-      {panelsBeside && (
-        <Portal target="#rightSpan" className={classes.spanSlot}>
-          {aboveTabs}
-        </Portal>
-      )}
       <Portal target="#topRight" className={paneClasses.root} style={{ height: "100%" }}>
-        <Stack h="100%" gap="xs" className={paneClasses.root} data-pinned-pane>
-          {!panelsBeside && aboveTabs}
+        <Stack h="100%" gap="xs" className={paneClasses.root}>
+          <DetachedEval placement="tabs" />
           <Paper
             withBorder
             className={paneClasses.root}
@@ -542,23 +567,7 @@ function BoardAnalysis() {
               }}
             >
               <Tabs.List grow={!compactTabs}>
-                {[
-                  ...(isRepertoire
-                    ? [{ value: "practice", title: t("Board.Tabs.Practice"), Icon: PracticeIcon }]
-                    : []),
-                  { value: "analysis", title: t("Board.Tabs.Analysis"), Icon: AnalysisIcon },
-                  ...(explorerDetached
-                    ? []
-                    : [{ value: "database", title: t("Board.Tabs.Database"), Icon: DatabaseIcon }]),
-                  { value: "annotate", title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
-                  ...(coachEnabled
-                    ? [{ value: "coach", title: t("Board.Tabs.Coach"), Icon: AiChatIcon }]
-                    : []),
-                  ...(hasScoresheetReview
-                    ? [{ value: "photo", title: t("Board.Tabs.Photo"), Icon: ScoresheetPhotoIcon }]
-                    : []),
-                  { value: "info", title: t("Board.Tabs.Info"), Icon: GameInfoIcon },
-                ].map(({ value, title, Icon }) => (
+                {stripTabs.map(({ value, title, Icon }) => (
                   <Tabs.Tab key={value} value={value} leftSection={<Icon size="1rem" />}>
                     {title}
                   </Tabs.Tab>
@@ -567,22 +576,6 @@ function BoardAnalysis() {
               {isRepertoire && (
                 <Tabs.Panel value="practice">
                   <PracticePanel />
-                </Tabs.Panel>
-              )}
-              <Tabs.Panel value="info">
-                <InfoPanel addGame={addGame} />
-              </Tabs.Panel>
-              {!explorerDetached && (
-                <Tabs.Panel value="database">
-                  <DatabasePanel />
-                </Tabs.Panel>
-              )}
-              <Tabs.Panel value="annotate">
-                <AnnotationPanel />
-              </Tabs.Panel>
-              {coachEnabled && (
-                <Tabs.Panel value="coach">
-                  <CoachPanel />
                 </Tabs.Panel>
               )}
               {hasScoresheetReview && (
@@ -597,13 +590,37 @@ function BoardAnalysis() {
                   />
                 </Tabs.Panel>
               )}
-              <Tabs.Panel value="analysis">
-                <AnalysisPanel />
-              </Tabs.Panel>
+              {PANEL_AREA_IDS.filter(
+                (panel) => !shownPanelAreas.has(panel) && (panel !== "coach" || coachEnabled),
+              ).map((panel) => (
+                <Tabs.Panel key={panel} value={panel}>
+                  {panelContent[panel]()}
+                </Tabs.Panel>
+              ))}
             </Tabs>
           </Paper>
         </Stack>
       </Portal>
+      {PANEL_AREA_IDS.filter(
+        (panel) => shownPanelAreas.has(panel) && (panel !== "coach" || coachEnabled),
+      ).map((panel) => {
+        const { title, Icon } = panelMeta[panel];
+        return (
+          <Portal key={panel} target={`#${boardAreaTargetId(panel)}`} style={{ height: "100%" }}>
+            <PanelArea
+              panel={panel}
+              title={title}
+              icon={<Icon size="1rem" />}
+              onReturn={() => {
+                setCurrentTabSelected(panel);
+                returnPanel(panel);
+              }}
+            >
+              {panelContent[panel]()}
+            </PanelArea>
+          </Portal>
+        );
+      })}
       <Portal target="#bottomRight" style={{ height: "100%" }}>
         {editingMode ? (
           <EditingCard
@@ -615,7 +632,6 @@ function BoardAnalysis() {
         ) : (
           <NotationColumn>
             <DetachedEval placement="notation" />
-            <PinnedExplorer placement="notation" />
             <GameNotation
               topBar
               markOpenVariations
@@ -632,7 +648,6 @@ function BoardAnalysis() {
               }
             />
             <MoveControls />
-            <PinnedExplorer placement="belowNotation" />
             <DetachedEval placement="belowNotation" />
           </NotationColumn>
         )}

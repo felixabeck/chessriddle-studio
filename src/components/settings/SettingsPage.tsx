@@ -16,7 +16,7 @@ import { notifications } from "@mantine/notifications";
 import { useHotkeys } from "@mantine/hooks";
 import { RotateCcw, Search } from "lucide-react";
 import { useLoaderData } from "@tanstack/react-router";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { RESET } from "jotai/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -64,7 +64,8 @@ import {
 import { coachEnabledAtom } from "@/state/coach";
 import { settingsNavigationRequestAtom } from "@/state/settingsNavigation";
 import { keybindLabel, keyMapAtom } from "@/state/keybinds";
-import { panelsBesideNotationAtom } from "@/state/layoutStorage";
+import { defaultBoardArrangement } from "@/state/boardArrangement";
+import { boardArrangementAtom } from "@/state/layoutStorage";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
 import { PIECE_SCALE_MAX, PIECE_SCALE_MIN, PIECE_SCALE_STEP } from "@/state/pieceScale";
 import {
@@ -191,6 +192,7 @@ export default function Page() {
   const [animationSpeed, setAnimationSpeed] = useAtom(boardAnimationSpeedAtom);
   const [materialDisplay, setMaterialDisplay] = useAtom(materialDisplayAtom);
   const [defaultPanelTab, setDefaultPanelTab] = useAtom(defaultPanelTabAtom);
+  const setBoardArrangement = useSetAtom(boardArrangementAtom);
   const [practiceGrading, setPracticeGrading] = useAtom(practiceGradingAtom);
   const [practiceNewPerSession, setPracticeNewPerSession] = useAtom(practiceNewPerSessionAtom);
   // A build without the Coach shows nothing of it: no category, no rows, no search results.
@@ -312,7 +314,11 @@ export default function Page() {
           onChange={(val) => setDefaultPanelTab(val as DefaultPanelTab)}
         />
       ),
-      "panels-beside-notation": () => <SettingsSwitch atom={panelsBesideNotationAtom} />,
+      "board-layout": () => (
+        <Button variant="default" onClick={() => setBoardArrangement(defaultBoardArrangement())}>
+          {t("Settings.BoardLayout.Reset")}
+        </Button>
+      ),
       "text-input": () => <SettingsSwitch atom={moveInputAtom} />,
       "spell-check": () => <SettingsSwitch atom={spellCheckAtom} />,
       theme: () => <ThemeButton />,
@@ -491,6 +497,7 @@ export default function Page() {
       setMaterialDisplay,
       defaultPanelTab,
       setDefaultPanelTab,
+      setBoardArrangement,
       practiceGrading,
       setPracticeGrading,
       practiceNewPerSession,

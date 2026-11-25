@@ -2,7 +2,7 @@
 id: databases
 title: Database, esploratore, ricerca di posizione, giocatori e tornei
 summary: Aggiungi o scarica database di partite, scegli un database di riferimento, cerca posizioni nell’esploratore e sfoglia partite, giocatori e tornei.
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 I database si trovano in [[page:library]] ({{label:SideBar.Library}}) insieme ai tuoi file PGN e sono archiviati in [[setting:databases-directory]].
@@ -34,5 +34,5 @@ Sulla scacchiera di analisi, apri {{label:Board.Tabs.Database}} per usare l’es
 - Scegli {{label:Board.Database.LichessAll}} o {{label:Board.Database.LichessMaster}} nel menu delle fonti e in {{label:Board.Database.Compare}} (gli esploratori online di Lichess richiedono un account Lichess connesso su [[page:accounts]]).
 - Passa tra {{label:Board.Database.Stats}} (statistiche delle mosse) e {{label:Board.Database.Games}} (partite corrispondenti).
 - Fai clic su {{label:Board.Database.Compare}} per affiancare due fonti, oppure apri {{label:Board.Database.Local.Position}} per passare dalla ricerca di posizione {{label:Board.Database.Local.Exact}} a {{label:Board.Database.Local.Partial}} (inclusa {{label:Board.Database.Local.SimilarStructure}} per la ricerca per struttura pedonale e {{label:Fen.Empty}} per schemi personalizzati).
-- Usa {{label:Board.Database.Pin}} per fissare l’esploratore sopra o sotto la scacchiera o la notazione, e {{label:Board.Database.Unpin}} per riportarlo tra le schede.
+- Puoi anche mostrare {{label:Board.Tabs.Database}} come area dedicata sulla scacchiera di analisi e usare {{label:Board.Area.ReturnToTabs}} per riportarla tra le schede.
 - Quando {{label:Databases.OpeningTree.Prepare}} apre una scacchiera per un giocatore del database, l’esploratore parte dal database di riferimento come ulteriore colonna accanto alle partite dell’avversario; fai clic su {{label:Board.Database.RemoveReference}} per nascondere una colonna o su {{label:Board.Database.AddColumn}} per aggiungerne un’altra.

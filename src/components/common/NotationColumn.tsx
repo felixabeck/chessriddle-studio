@@ -4,7 +4,7 @@ import classes from "./NotationColumn.module.css";
 
 export default function NotationColumn({ children }: { children: ReactNode }) {
   return (
-    <Stack h="100%" gap="xs" className={classes.column} data-pinned-pane>
+    <Stack h="100%" gap="xs" className={classes.column}>
       {children}
     </Stack>
   );

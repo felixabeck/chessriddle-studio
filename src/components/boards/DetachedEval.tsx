@@ -1,5 +1,5 @@
 import { Box, Group, Menu, Paper, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core";
-import { Move, PinOff, Pause, Play } from "lucide-react";
+import { Check, Move, PinOff, Pause, Play } from "lucide-react";
 import { useAtom, useAtomValue } from "jotai";
 import { memo, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +7,7 @@ import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import {
   currentDetachedEngineAtom,
+  PINNED_PLACEMENTS,
   type PinnedPlacement,
   detachedEngineLinesAtom,
   detachedEnginePlacementAtom,
@@ -24,7 +25,6 @@ import { EngineScoreBubble } from "../panels/analysis/ScoreBubble";
 import { ThreatBadge } from "../panels/analysis/ThreatBadge";
 import classes from "./DetachedEval.module.css";
 import IconAction from "../common/IconAction";
-import { PinnedPlacementItems } from "./PinnedPlacementItems";
 import { TreeStateContext } from "../common/TreeStateContext";
 
 /** Moves rendered per line; the row clips whatever does not fit its width. */
@@ -179,7 +179,34 @@ const DetachedEvalInner = memo(function DetachedEvalInner({
             </IconAction>
           </Menu.Target>
           <Menu.Dropdown>
-            <PinnedPlacementItems current={placement} onChoose={moveTo} />
+            {PINNED_PLACEMENTS.map((option) => {
+              const label =
+                option === "tabs"
+                  ? t("Pinned.AboveTabs")
+                  : option === "notation"
+                    ? t("Pinned.AboveNotation")
+                    : option === "belowNotation"
+                      ? t("Pinned.BelowNotation")
+                      : t("Pinned.BelowBoard");
+              return (
+                <Menu.Item
+                  key={option}
+                  aria-current={option === placement || undefined}
+                  leftSection={
+                    option === placement ? (
+                      <Check size="0.875rem" />
+                    ) : (
+                      <Box w="0.875rem" aria-hidden />
+                    )
+                  }
+                  onClick={() => {
+                    if (option !== placement) moveTo(option);
+                  }}
+                >
+                  {label}
+                </Menu.Item>
+              );
+            })}
           </Menu.Dropdown>
         </Menu>
         <IconAction label={t("Engine.Unpin")} size="sm" variant="subtle" onClick={onClose}>

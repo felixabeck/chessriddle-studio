@@ -2,7 +2,7 @@
 id: databases
 title: Базы дадзеных, аглядальнік, пошук пазіцый, гульцы і турніры
 summary: Даданне або спампоўка баз партый, выбар даведачнай базы, пошук пазіцый у аглядальніку, а таксама прагляд партый, гульцоў і турніраў.
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 Базы дадзеных знаходзяцца ў [[page:library]] ({{label:SideBar.Library}}) побач з вашымі файламі PGN і захоўваюцца ў [[setting:databases-directory]].
@@ -34,5 +34,5 @@ source: d1a9092c9321c351
 - Выберыце {{label:Board.Database.LichessAll}} або {{label:Board.Database.LichessMaster}} у меню крыніц і ў {{label:Board.Database.Compare}} (анлайн-аглядальнікі Lichess патрабуюць уваходу ў акаўнт Lichess на старонцы [[page:accounts]]).
 - Пераключайцеся паміж {{label:Board.Database.Stats}} (статыстыка хадоў) і {{label:Board.Database.Games}} (адпаведныя партыі).
 - Націсніце {{label:Board.Database.Compare}}, каб параўнаць дзве крыніцы побач, або адкрыйце {{label:Board.Database.Local.Position}} для пераключэння паміж пошукам пазіцыі {{label:Board.Database.Local.Exact}} і {{label:Board.Database.Local.Partial}} (уключаючы {{label:Board.Database.Local.SimilarStructure}} для пошуку па пешкавай структуры і {{label:Fen.Empty}} для адвольных шаблонаў).
-- Выкарыстоўвайце {{label:Board.Database.Pin}}, каб замацаваць аглядальнік над або пад дошкай ці натацыяй, і {{label:Board.Database.Unpin}}, каб вярнуць яго ва ўкладкі.
+- Вы таксама можаце паказаць {{label:Board.Tabs.Database}} як асобную вобласць на дошцы аналізу і скарыстацца {{label:Board.Area.ReturnToTabs}}, каб вярнуць яе ва ўкладкі.
 - Калі кнопка {{label:Databases.OpeningTree.Prepare}} адкрывае дошку для гульца з базы дадзеных, аглядальнік пачынае з даведачнай базы як дадатковага слупка побач з партыямі саперніка; націсніце {{label:Board.Database.RemoveReference}}, каб схаваць слупок, або {{label:Board.Database.AddColumn}}, каб дадаць яшчэ адзін.

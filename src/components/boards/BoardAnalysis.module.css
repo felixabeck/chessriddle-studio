@@ -1,5 +1,5 @@
-/* The slot holds the pinned explorer strip and engine bar while they sit below the board. Empty,
-   it takes no room and no gap. */
+/* The slot holds the pinned engine bar while it sits below the board. Empty, it takes no room
+   and no gap. */
 .belowBoard {
   display: flex;
   flex-direction: column;
@@ -9,10 +9,4 @@
 
 .belowBoard:empty {
   display: none;
-}
-
-/* The slot across the notation and the panels: no box of its own, so what is pinned there is
-   laid out by the right side's own column. */
-.spanSlot {
-  display: contents;
 }

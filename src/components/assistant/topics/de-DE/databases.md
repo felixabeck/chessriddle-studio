@@ -2,7 +2,7 @@
 id: databases
 title: Datenbanken, Explorer, Stellungssuche, Spieler und Turniere
 summary: Partiedatenbanken hinzufügen oder herunterladen, Referenzdatenbank wählen, Stellungen im Explorer suchen sowie Partien, Spieler und Turniere durchsuchen.
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 Datenbanken befinden sich neben deinen PGN-Dateien in [[page:library]] ({{label:SideBar.Library}}) und werden unter [[setting:databases-directory]] gespeichert.
@@ -34,5 +34,5 @@ Wechsle in der Tabellenansicht der Datenbank zwischen {{label:Common.Games}}, {{
 - Wähle {{label:Board.Database.LichessAll}} oder {{label:Board.Database.LichessMaster}} im Quellenmenü und unter {{label:Board.Database.Compare}} (die Online-Explorer von Lichess erfordern ein angemeldetes Lichess-Konto unter [[page:accounts]]).
 - Wechsle zwischen {{label:Board.Database.Stats}} (Zugstatistiken) und {{label:Board.Database.Games}} (passende Partien).
 - Klicke auf {{label:Board.Database.Compare}}, um zwei Quellen nebeneinander anzuzeigen, oder öffne {{label:Board.Database.Local.Position}}, um zwischen {{label:Board.Database.Local.Exact}} und {{label:Board.Database.Local.Partial}} umzuschalten (einschließlich {{label:Board.Database.Local.SimilarStructure}} für die Bauernstruktursuche und {{label:Fen.Empty}} für eigene Muster).
-- Nutze {{label:Board.Database.Pin}}, um den Explorer über oder unter dem Brett oder der Notation anzuheften, und {{label:Board.Database.Unpin}}, um ihn in die Tabs zurückzulegen.
+- Du kannst {{label:Board.Tabs.Database}} auf dem Analysebrett auch als eigenen Bereich anzeigen und mit {{label:Board.Area.ReturnToTabs}} wieder in die Tabs zurücklegen.
 - Wenn {{label:Databases.OpeningTree.Prepare}} ein Brett für einen Datenbankspieler öffnet, zeigt der Explorer zuerst deine Referenzdatenbank als weitere Spalte neben den Partien des Gegners; klicke auf {{label:Board.Database.RemoveReference}}, um eine Spalte auszublenden, oder auf {{label:Board.Database.AddColumn}}, um eine weitere hinzuzufügen.

@@ -1,26 +1,22 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { act, useContext, useRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import {
-  Provider as JotaiProvider,
-  createStore as createJotaiStore,
-  getDefaultStore,
-  useAtomValue,
-} from "jotai";
+import { Provider as JotaiProvider, createStore as createJotaiStore, useAtomValue } from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { type BoardLayoutMode, BoardLayoutModeContext } from "@/state/paneLayout";
+import {
+  BoardArrangementContext,
+  type BoardArrangementContextValue,
+} from "@/components/tabs/BoardTabLayout";
+import type { PanelAreaId } from "@/state/boardArrangement";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import {
   activeTabAtom,
   autoSaveAtom,
   closeWorkspaceTabAtom,
   currentTabAtom,
-  defaultPanelTabAtom,
   tabFamily,
-  explorerDetachedAtom,
-  explorerPlacementAtom,
-  type PinnedPlacement,
   analysisTabFamily,
+  practiceMoveControllerFamily,
   practiceTabFamily,
   reportModalOpenFamily,
   practiceStateFamily,
@@ -70,7 +66,7 @@ import { normalizeError, type AppError } from "@/platform/errors";
 import FileFreshnessGate from "@/components/tabs/FileFreshnessGate";
 import i18n, { initializeI18n } from "@/i18n";
 
-// The pinned explorer strip measures its pane.
+// Mantine layout controls measure their containers with ResizeObserver.
 installResizeObserverStub();
 
 const mocks = vi.hoisted(() => ({
@@ -145,8 +141,22 @@ vi.mock("@mantine/core", async (importOriginal) => {
   );
   return {
     MantineProvider: actual.MantineProvider,
-    Paper: passthrough,
-    // The Portal stand-in names its destination: the beside arrangement moves panels between them.
+    ActionIcon: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+    Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
+    Paper: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+      <div
+        {...Object.fromEntries(
+          Object.entries(props).filter(([name]) => name.startsWith("data-") || name === "role"),
+        )}
+      >
+        {children}
+      </div>
+    ),
+    // The Portal stand-in names its destination so panel areas can be asserted by target id.
     Portal: ({ children, target }: { children?: ReactNode; target?: string }) => (
       <div data-portal-target={target}>{children}</div>
     ),
@@ -390,6 +400,7 @@ describe("BoardAnalysis", () => {
 
   beforeEach(async ({ task }) => {
     board.mockClear();
+    hotkeys.mockClear();
     mocks.gameNameModal = undefined;
     mocks.editingMode = false;
     mocks.notationChapterSwitch = undefined;
@@ -534,61 +545,191 @@ describe("BoardAnalysis", () => {
     expect(typeof mocks.notationChapterSwitch).toBe("function");
   });
 
-  test("a pinned explorer renders once above the tabs, leaves the tab list, and a stored Database choice shows Annotate", async () => {
+  async function renderWithArrangement(
+    shownPanelAreas: readonly PanelAreaId[],
+    returnPanel: (panel: PanelAreaId) => void = vi.fn(),
+  ) {
     mocks.realTabs = true;
     vi.stubGlobal(
       "matchMedia",
       vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
     );
+    const ctx: BoardArrangementContextValue = {
+      shownPanelAreas: new Set(shownPanelAreas),
+      arrangingAvailable: true,
+      returnPanel,
+    };
     await act(async () => {
-      jotaiStore.set(tabFamily(tabId), "database");
       root.render(
         <MantineProvider>
           <JotaiProvider store={jotaiStore}>
             <TreeStateContext.Provider value={treeStore}>
-              <RetainedBoardHarness />
+              <BoardArrangementContext.Provider value={ctx}>
+                <RetainedBoardHarness />
+              </BoardArrangementContext.Provider>
             </TreeStateContext.Provider>
           </JotaiProvider>
         </MantineProvider>,
       );
     });
+    return { returnPanel };
+  }
+
+  test("a detached panel area renders once in its own portal with header and Return button, leaves the tab strip, and falls back to Annotate", async () => {
+    const returnPanel = vi.fn();
+    jotaiStore.set(tabFamily(tabId), "database");
+    await renderWithArrangement([], returnPanel);
+
     const panels = () => [...container.querySelectorAll('[data-testid="database-panel"]')];
     const headings = () =>
       Array.from(container.querySelectorAll('[role="tab"]'), (heading) => heading.textContent);
     const selected = () =>
       container.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
-    const databaseKey = async () => {
-      const keys = jotaiStore.get(keyMapAtom).DATABASE_TAB.keys;
+    const hotkeyFor = async (keys: string) => {
       const binding = hotkeys.mock.calls
         .flatMap(([bindings]) => bindings)
         .findLast(([bound]) => bound === keys)!;
       await act(async () => binding[1](new KeyboardEvent("keydown", { cancelable: true })));
     };
 
-    // As a tab: one panel, inside the tab panel.
+    // In the strip: one panel inside the tabpanel.
     expect(panels()).toHaveLength(1);
     expect(panels()[0].closest('[role="tabpanel"]')).not.toBeNull();
     expect(selected()).toBe("Board.Tabs.Database");
 
-    await act(async () => jotaiStore.set(explorerDetachedAtom, true));
+    // Shown as an area: mounted once in #board-area-database, removed from the strip, stored choice untouched.
+    await renderWithArrangement(["database"], returnPanel);
     expect(panels()).toHaveLength(1);
     expect(panels()[0].closest('[role="tabpanel"]')).toBeNull();
+    const area = container.querySelector(
+      '[data-portal-target="#board-area-database"] [data-panel-area="database"]',
+    )!;
+    expect(area).not.toBeNull();
+    expect(area.textContent).toContain("Board.Tabs.Database");
     expect(headings()).toEqual(["Board.Tabs.Analysis", "Board.Tabs.Annotate", "Board.Tabs.Info"]);
     expect(selected()).toBe("Board.Tabs.Annotate");
-    // The stored choice is derived around, not rewritten, and the shortcut has no tab to open.
     expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
-    await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
-    await databaseKey();
-    expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
-    expect(panels()).toHaveLength(1);
 
-    await act(async () => jotaiStore.set(explorerDetachedAtom, false));
-    expect(headings()).toContain("Board.Tabs.Database");
-    expect(panels()).toHaveLength(0);
-    await databaseKey();
+    // Hotkey for a detached panel does nothing.
+    await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
+    await hotkeyFor(jotaiStore.get(keyMapAtom).DATABASE_TAB.keys);
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
+
+    // Clicking Return selects the panel in the strip and asks the layout to return it.
+    const returnButton = area.querySelector<HTMLButtonElement>(
+      'button[aria-label="Board.Area.ReturnToTabs"]',
+    )!;
+    await act(async () => returnButton.click());
+    expect(returnPanel).toHaveBeenCalledExactlyOnceWith("database");
     expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
-    expect(panels()).toHaveLength(1);
-    expect(panels()[0].closest('[role="tabpanel"]')).not.toBeNull();
+  });
+
+  test("ANALYSIS_TAB and COACH_TAB hotkeys do nothing while those panels are areas (available: true)", async () => {
+    await renderWithArrangement(["analysis", "coach"]);
+    await act(async () => {});
+    await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
+
+    const fireHotkey = async (keys: string) => {
+      const binding = hotkeys.mock.calls
+        .flatMap(([bindings]) => bindings)
+        .findLast(([bound]) => bound === keys)!;
+      await act(async () => binding[1](new KeyboardEvent("keydown", { cancelable: true })));
+    };
+
+    await fireHotkey(jotaiStore.get(keyMapAtom).ANALYSIS_TAB.keys);
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
+
+    await fireHotkey(jotaiStore.get(keyMapAtom).COACH_TAB.keys);
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
+  });
+
+  test("report hotkey with Analysis as an area switches Analysis to report and opens the modal without moving the strip selection", async () => {
+    await act(async () => {
+      treeStore.setState({ root: defaultTree().root, position: [], dirty: false });
+      treeStore.getState().makeMove({ payload: "e4" });
+      jotaiStore.set(tabFamily(tabId), "info");
+      jotaiStore.set(analysisTabFamily(tabId), "engines");
+      jotaiStore.set(reportModalOpenFamily(tabId), false);
+    });
+    await renderWithArrangement(["analysis"]);
+
+    const keys = jotaiStore.get(keyMapAtom).GENERATE_REPORT.keys;
+    const binding = hotkeys.mock.calls
+      .flatMap(([bindings]) => bindings)
+      .findLast(([bound]) => bound === keys)!;
+    await act(async () => binding[1](new KeyboardEvent("keydown", { cancelable: true })));
+
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
+    expect(jotaiStore.get(analysisTabFamily(tabId))).toBe("report");
+    expect(jotaiStore.get(reportModalOpenFamily(tabId))).toBe(true);
+  });
+
+  test("on a repertoire tab with Annotate taken out, fallback skips Practice and keeps training mode off; training mode works with other panels taken out", async () => {
+    const practiceController = { canMove: true, submitMove: vi.fn() };
+    await act(async () => {
+      jotaiStore.set(tabsAtom, (tabs) =>
+        tabs.map((current) =>
+          current.value === tabId && current.gameOrigin.kind === "file"
+            ? {
+                ...current,
+                gameOrigin: {
+                  ...current.gameOrigin,
+                  file: {
+                    ...current.gameOrigin.file,
+                    metadata: { ...current.gameOrigin.file.metadata, type: "repertoire" },
+                  },
+                },
+              }
+            : current,
+        ),
+      );
+      jotaiStore.set(practiceMoveControllerFamily(tabId), practiceController);
+      jotaiStore.set(tabFamily(tabId), "annotate");
+      jotaiStore.set(practiceTabFamily(tabId), "train");
+    });
+    await renderWithArrangement(["annotate"]);
+
+    const selected = () =>
+      container.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
+    expect(selected()).toBe("Board.Tabs.Analysis");
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("annotate");
+    expect(board.mock.lastCall?.[0].practiceMove).toBeUndefined();
+
+    // Selecting Practice explicitly still enters training mode even when Database is an area.
+    await act(async () => jotaiStore.set(tabFamily(tabId), "practice"));
+    await renderWithArrangement(["database"]);
+    expect(selected()).toBe("Board.Tabs.Practice");
+    expect(board.mock.lastCall?.[0].practiceMove).toBe(practiceController);
+  });
+
+  test("Photo tab stays in the strip, never becomes a fallback, and falls back past Practice/Photo when the review ends", async () => {
+    await act(async () => {
+      treeStore.setState({
+        scoresheetReview: {},
+      });
+      jotaiStore.set(tabFamily(tabId), "photo");
+    });
+    await renderWithArrangement(["annotate"]);
+    const selected = () =>
+      container.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
+    // With a review and Annotate taken out, stored `photo` shows Photo.
+    expect(selected()).toBe("Board.Tabs.Photo");
+
+    // After the review ends, fallback shows the first always-present strip panel and stored selection stays `photo`.
+    await act(async () => treeStore.setState({ scoresheetReview: undefined }));
+    expect(selected()).toBe("Board.Tabs.Analysis");
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("photo");
+
+    // With Analysis, Database and Annotate taken out and a review present, fallback shows Info, never Photo.
+    await act(async () => {
+      treeStore.setState({
+        scoresheetReview: {},
+      });
+      jotaiStore.set(tabFamily(tabId), "database");
+    });
+    await renderWithArrangement(["analysis", "database", "annotate"]);
+    expect(selected()).toBe("Board.Tabs.Info");
+    expect(container.querySelector('[data-testid="scoresheet-photo-panel"]')).toBeNull();
   });
 
   async function renderCoachChoice() {
@@ -649,42 +790,6 @@ describe("BoardAnalysis", () => {
     expect(jotaiStore.get(tabFamily(tabId))).toBe("coach");
   });
 
-  test("a board opening on a Database default shows Annotate while the explorer is pinned", async () => {
-    mocks.realTabs = true;
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
-    );
-    await act(async () => root.unmount());
-    tabFamily.remove(tabId);
-    getDefaultStore().set(defaultPanelTabAtom, "database");
-    try {
-      jotaiStore.set(explorerDetachedAtom, true);
-      root = createRoot(container);
-      await act(async () => {
-        root.render(
-          <MantineProvider>
-            <JotaiProvider store={jotaiStore}>
-              <TreeStateContext.Provider value={treeStore}>
-                <RetainedBoardHarness />
-              </TreeStateContext.Provider>
-            </JotaiProvider>
-          </MantineProvider>,
-        );
-      });
-      const selected = () =>
-        container.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
-      expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
-      expect(selected()).toBe("Board.Tabs.Annotate");
-
-      await act(async () => jotaiStore.set(explorerDetachedAtom, false));
-      expect(selected()).toBe("Board.Tabs.Database");
-    } finally {
-      getDefaultStore().set(defaultPanelTabAtom, "info");
-      tabFamily.remove(tabId);
-    }
-  });
-
   test("mounts one pinned-engine slot per placement, the board's below the board", () => {
     const slots = [...document.querySelectorAll("[data-engine-slot]")].map((slot) =>
       slot.getAttribute("data-engine-slot"),
@@ -706,101 +811,6 @@ describe("BoardAnalysis", () => {
   test("the analysis notation asks for the open-variation mark: it is where a file is built", () => {
     const notation = document.querySelector("[data-game-notation]");
     expect(notation?.getAttribute("data-mark-open-variations")).toBe("true");
-  });
-
-  test("pins the explorer strip in each place next to its content, with the engine bar outside it", async () => {
-    const strip = () =>
-      container
-        .querySelector('[data-testid="database-panel"]')!
-        .closest<HTMLElement>('[data-testid="pinned-explorer-strip"]')!;
-    const engine = (placement: string) =>
-      document.querySelector(`[data-engine-slot="${placement}"]`);
-    await act(async () => jotaiStore.set(explorerDetachedAtom, true));
-    try {
-      // Each place sits in a pane it measures against, beside its content; only one strip exists.
-      const expectIn = async (placement: PinnedPlacement) => {
-        await act(async () => jotaiStore.set(explorerPlacementAtom, placement));
-        expect(strip().closest("[data-pinned-pane]")).not.toBeNull();
-        expect(container.querySelectorAll('[data-testid="pinned-explorer-strip"]')).toHaveLength(1);
-      };
-      await expectIn("tabs");
-      expect(strip().parentElement?.hasAttribute("data-pinned-pane")).toBe(true);
-      expect(strip().previousElementSibling).toBe(engine("tabs"));
-      expect(strip().nextElementSibling?.textContent).toContain("Board.Tabs.Info");
-
-      await expectIn("notation");
-      expect(strip().parentElement?.hasAttribute("data-pinned-pane")).toBe(true);
-      expect(strip().previousElementSibling).toBe(engine("notation"));
-      expect(strip().nextElementSibling?.hasAttribute("data-game-notation")).toBe(true);
-
-      await expectIn("belowNotation");
-      expect(strip().previousElementSibling?.hasAttribute("data-move-controls")).toBe(true);
-      expect(strip().nextElementSibling).toBe(engine("belowNotation"));
-
-      await expectIn("board");
-      expect(strip().parentElement?.getAttribute("data-slot")).toBe("below-board");
-      expect(strip().parentElement?.parentElement?.hasAttribute("data-pinned-pane")).toBe(true);
-      // That pane grows with its content in the stacked layout, so the window stands in there.
-      expect(strip().parentElement?.parentElement?.hasAttribute("data-pinned-pane-grows")).toBe(
-        true,
-      );
-      expect(strip().nextElementSibling).toBe(engine("board"));
-    } finally {
-      await act(async () => {
-        jotaiStore.set(explorerPlacementAtom, "tabs");
-        jotaiStore.set(explorerDetachedAtom, false);
-      });
-    }
-  });
-
-  test("with the panels beside the notation, what is pinned above the tabs moves to the slot across both", async () => {
-    const renderIn = (mode: BoardLayoutMode) =>
-      act(async () =>
-        root.render(
-          <JotaiProvider store={jotaiStore}>
-            <TreeStateContext.Provider value={treeStore}>
-              <BoardLayoutModeContext.Provider value={mode}>
-                <RetainedBoardHarness />
-              </BoardLayoutModeContext.Provider>
-            </TreeStateContext.Provider>
-          </JotaiProvider>,
-        ),
-      );
-    const within = (target: string, selector: string) =>
-      container.querySelectorAll(`[data-portal-target="${target}"] ${selector}`);
-    const strip = '[data-testid="pinned-explorer-strip"]';
-    const engine = '[data-engine-slot="tabs"]';
-    await act(async () => {
-      jotaiStore.set(explorerPlacementAtom, "tabs");
-      jotaiStore.set(explorerDetachedAtom, true);
-    });
-    try {
-      await renderIn("beside");
-      // The engine bar then the strip, as above the tabs, and nothing else in the slot.
-      const slot = container.querySelector('[data-portal-target="#rightSpan"]')!;
-      expect([...slot.children]).toEqual([slot.querySelector(engine), slot.querySelector(strip)]);
-      expect(slot.querySelector(strip)).not.toBeNull();
-      expect(within("#topRight", strip)).toHaveLength(0);
-      expect(within("#topRight", engine)).toHaveLength(0);
-      expect(container.querySelectorAll(strip)).toHaveLength(1);
-      expect(container.querySelectorAll(engine)).toHaveLength(1);
-      // The other places stay in their own panes.
-      expect(within("#bottomRight", '[data-engine-slot="notation"]')).toHaveLength(1);
-      expect(within("#left", '[data-engine-slot="board"]')).toHaveLength(1);
-
-      for (const mode of ["mosaic", "stacked"] as const) {
-        await renderIn(mode);
-        expect(container.querySelector('[data-portal-target="#rightSpan"]')).toBeNull();
-        expect(within("#topRight", strip)).toHaveLength(1);
-        expect(within("#topRight", engine)).toHaveLength(1);
-        expect(container.querySelectorAll(strip)).toHaveLength(1);
-      }
-    } finally {
-      await act(async () => {
-        jotaiStore.set(explorerPlacementAtom, "tabs");
-        jotaiStore.set(explorerDetachedAtom, false);
-      });
-    }
   });
 
   async function resetToFirstMove() {

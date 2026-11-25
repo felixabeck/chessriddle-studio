@@ -79,20 +79,38 @@ export function reportPreferenceStorageFailure(
     reportPersistError(new Error(message, { cause }));
 }
 
+export function parseAndRepairStoredValue<Value>(
+    storage: SyncStringStorage,
+    key: string,
+    storedValue: string,
+    schema: z.ZodType<Value, z.ZodTypeDef, unknown>,
+    initialValue: Value,
+): Value {
+    const repair = (value: Value) => {
+        try {
+            storage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+            reportPreferenceStorageFailure("repair", error);
+        }
+    };
+    try {
+        const rawValue = JSON.parse(storedValue);
+        const parsedValue = schema.parse(rawValue);
+        if (!equal(rawValue, parsedValue)) {
+            repair(parsedValue);
+        }
+        return parsedValue;
+    } catch {
+        warn(`Invalid persisted value for ${key}`);
+        repair(initialValue);
+        return initialValue;
+    }
+}
+
 export function createZodStorage<Value>(
     schema: z.ZodType<Value, z.ZodTypeDef, unknown>,
     storage: SyncStringStorage,
 ): SyncStorage<Value> {
-    const write = (key: string, value: Value, operation: "repair" | "save") => {
-        try {
-            storage.setItem(key, JSON.stringify(value));
-            return true;
-        } catch (error) {
-            reportPreferenceStorageFailure(operation, error);
-            return false;
-        }
-    };
-
     return {
         getItem(key, initialValue) {
             let storedValue: string | null;
@@ -106,21 +124,14 @@ export function createZodStorage<Value>(
             if (storedValue === null) {
                 return initialValue;
             }
-            try {
-                const rawValue = JSON.parse(storedValue);
-                const parsedValue = schema.parse(rawValue);
-                if (!equal(rawValue, parsedValue)) {
-                    write(key, parsedValue, "repair");
-                }
-                return parsedValue;
-            } catch {
-                warn(`Invalid persisted value for ${key}`);
-                write(key, initialValue, "repair");
-                return initialValue;
-            }
+            return parseAndRepairStoredValue(storage, key, storedValue, schema, initialValue);
         },
         setItem(key, value) {
-            write(key, value, "save");
+            try {
+                storage.setItem(key, JSON.stringify(value));
+            } catch (error) {
+                reportPreferenceStorageFailure("save", error);
+            }
         },
         removeItem(key) {
             try {

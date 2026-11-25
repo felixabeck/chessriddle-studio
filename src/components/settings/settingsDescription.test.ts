@@ -127,7 +127,7 @@ test("board and analysis rows keep the specified group membership and order", ()
     ]);
     expect(idsFor("analysis", "layoutSaving")).toEqual([
         "default-panel-tab",
-        "panels-beside-notation",
+        "board-layout",
         "auto-save",
     ]);
     expect(

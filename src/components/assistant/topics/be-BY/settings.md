@@ -2,7 +2,7 @@
 id: settings
 title: Агляд налад
 summary: Шукайце налады ў раздзелах Дошка, Аналіз і натацыя, Трэніроўка рэпертуару, ШІ, Агульныя, Гук, Спалучэнні клавіш, Файлы і папкі і Дадаткова.
-source: 283ae23a831eb807
+source: 93abc6a025ea2804
 ---
 
 Адкрыйце [[page:settings]] ({{label:SideBar.Settings}}) з меню праграмы (або націсніце Cmd+, у macOS). Скарыстайцеся радком {{label:Common.Search}} уверсе [[page:settings]], каб фільтраваць усе налады па назве, апісанні, групе ці ключавым слове, і націсніце Escape, каб ачысціць пошук.
@@ -11,7 +11,7 @@ source: 283ae23a831eb807
 
 Шахматы:
 - [[settings-category:board]] ({{label:Settings.Board}}): выгляд дошкі і як вы ходзіце фігурамі, уключаючы [[setting:board-image]], [[setting:board-wood-texture]], [[setting:piece-set]], [[setting:piece-size]], [[setting:coordinates]], [[setting:animation-speed]], [[setting:piece-dest]], [[setting:move-highlight]], [[setting:move-highlight-color]], [[setting:move-highlight-opacity]], [[setting:move-method]], [[setting:text-input]], [[setting:auto-promote]], [[setting:flip-board-after-move]], [[setting:arrows]], [[setting:variation-arrows]], [[setting:snap-arrows]], [[setting:consecutive-arrows]] і [[setting:erase-drawables]].
-- [[settings-category:analysis]] ({{label:Settings.Analysis}}): натацыя, навігацыя, размяшчэнне панэляў і аўтазахаванне праз [[setting:move-notation]], [[setting:material-display]], [[setting:scroll-moves]], [[setting:choose-variation]], [[setting:preview-board]], [[setting:default-panel-tab]], [[setting:panels-beside-notation]] і [[setting:auto-save]].
+- [[settings-category:analysis]] ({{label:Settings.Analysis}}): натацыя, навігацыя, размяшчэнне панэляў і аўтазахаванне праз [[setting:move-notation]], [[setting:material-display]], [[setting:scroll-moves]], [[setting:choose-variation]], [[setting:preview-board]], [[setting:default-panel-tab]], [[setting:board-layout]] і [[setting:auto-save]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): парог пакрыцця рэпертуару і расклад практыкі праз [[setting:repertoire-depth]], [[setting:practice-grading]] і [[setting:practice-new-per-session]].
 - [[settings-category:coach]] ({{label:Settings.AI}}): кіруйце ШІ-падключэннямі Coach і Assistant, абярыце мадэль адказаў у [[setting:coach-model]] і лакальны рухавік Coach у [[setting:coach-engine]].
 

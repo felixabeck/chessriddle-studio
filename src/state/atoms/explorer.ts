@@ -1,4 +1,4 @@
-/** The board explorer's per-tab sources and its stored options and pinned strip. */
+/** The board explorer's per-tab sources and its stored options. */
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { z } from "zod";
@@ -11,7 +11,6 @@ import {
     masterOptionsSchema,
 } from "@/utils/lichess/explorer";
 import { createZodStorage } from "../utils";
-import { PINNED_PLACEMENTS, type PinnedPlacement } from "./boardPanels";
 import { documentPreferences } from "./rendererState";
 import { tabAtomFamily } from "./tabFamilies";
 
@@ -110,49 +109,6 @@ export const explorerHeaderCollapsedAtom = atomWithStorage<boolean>(
     "explorer-header-collapsed",
     true,
     createZodStorage(z.boolean(), localStorage),
-);
-
-/**
- * Whether the board explorer is pinned as a strip instead of being one of the panel tabs; where
- * it sits is `explorerPlacementAtom`. Called detached like the engine bar:
- * `pinnedExplorerDatabaseFamily` is a tab's own database, not this.
- */
-export const explorerDetachedAtom = atomWithStorage<boolean>(
-    "detached-explorer",
-    false,
-    createZodStorage(z.boolean(), localStorage),
-);
-
-/** Where the pinned explorer strip sits. */
-export const explorerPlacementAtom = atomWithStorage<PinnedPlacement>(
-    "detached-explorer-placement",
-    "tabs",
-    createZodStorage(z.enum(PINNED_PLACEMENTS), localStorage),
-);
-
-/**
- * A dragged explorer strip's height in pixels; anything else is dropped. Heights were once stored
- * as a share of the pane (at most 1), so a value of 1 or less is such a share and is dropped too.
- */
-const stripPixels = z.number().finite().gt(1).optional().catch(undefined);
-
-/**
- * The pinned explorer strip's dragged height per place, in pixels, so resizing the pane around it
- * leaves it alone. A place without a height sizes the strip to its content; an unreadable height
- * is dropped on its own.
- */
-export const explorerStripHeightsAtom = atomWithStorage<Partial<Record<PinnedPlacement, number>>>(
-    "detached-explorer-heights",
-    {},
-    createZodStorage(
-        z.object({
-            tabs: stripPixels,
-            notation: stripPixels,
-            belowNotation: stripPixels,
-            board: stripPixels,
-        }),
-        localStorage,
-    ),
 );
 
 export const dbTypeFamily = tabAtomFamily((_tab: string) => atom<ExplorerFirstSource>("local"));

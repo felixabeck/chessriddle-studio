@@ -2,7 +2,7 @@
 id: settings
 title: 설정 개요
 summary: 보드, 분석 및 기보, 레퍼토리 훈련, AI, 일반, 사운드, 단축키, 파일 및 폴더, 고급 설정을 찾고 검색합니다.
-source: 283ae23a831eb807
+source: 93abc6a025ea2804
 ---
 
 애플리케이션 메뉴에서 [[page:settings]] ({{label:SideBar.Settings}})를 엽니다(macOS에서는 Cmd+,). [[page:settings]] 상단의 {{label:Common.Search}} 바로 제목, 설명, 그룹 또는 키워드로 모든 설정을 필터링하고 Escape를 눌러 검색을 지웁니다.
@@ -11,7 +11,7 @@ source: 283ae23a831eb807
 
 체스:
 - [[settings-category:board]] ({{label:Settings.Board}}): 보드 모습과 기물 이동 방식. [[setting:board-image]], [[setting:board-wood-texture]], [[setting:piece-set]], [[setting:piece-size]], [[setting:coordinates]], [[setting:animation-speed]], [[setting:piece-dest]], [[setting:move-highlight]], [[setting:move-highlight-color]], [[setting:move-highlight-opacity]], [[setting:move-method]], [[setting:text-input]], [[setting:auto-promote]], [[setting:flip-board-after-move]], [[setting:arrows]], [[setting:variation-arrows]], [[setting:snap-arrows]], [[setting:consecutive-arrows]], [[setting:erase-drawables]] 포함.
-- [[settings-category:analysis]] ({{label:Settings.Analysis}}): 기보, 탐색, 패널 배치, 자동 저장. [[setting:move-notation]], [[setting:material-display]], [[setting:scroll-moves]], [[setting:choose-variation]], [[setting:preview-board]], [[setting:default-panel-tab]], [[setting:panels-beside-notation]], [[setting:auto-save]].
+- [[settings-category:analysis]] ({{label:Settings.Analysis}}): 기보, 탐색, 패널 배치, 자동 저장. [[setting:move-notation]], [[setting:material-display]], [[setting:scroll-moves]], [[setting:choose-variation]], [[setting:preview-board]], [[setting:default-panel-tab]], [[setting:board-layout]], [[setting:auto-save]].
 - [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): 레퍼토리 커버리지 기준과 연습 일정. [[setting:repertoire-depth]], [[setting:practice-grading]], [[setting:practice-new-per-session]].
 - [[settings-category:coach]] ({{label:Settings.AI}}): Coach와 Assistant의 AI 연결을 관리하고, 응답 모델을 [[setting:coach-model]]에서, Coach의 로컬 엔진을 [[setting:coach-engine]]에서 선택합니다.
 

@@ -36,9 +36,8 @@ export const coachTurnFamily = tabAtomFamily((_tab: string) =>
 );
 
 /**
- * Where a pinned panel (the engine bar, the explorer strip) sits on the analysis board: above the
- * panel tabs, above or below the move notation, or below the board. "notation" is the stored name
- * of the place above the notation.
+ * Where the pinned engine bar sits on the analysis board: above the panel tabs, above or below the
+ * move notation, or below the board. "notation" is the stored name of the place above the notation.
  */
 export const PINNED_PLACEMENTS = ["tabs", "notation", "belowNotation", "board"] as const;
 export type PinnedPlacement = (typeof PINNED_PLACEMENTS)[number];

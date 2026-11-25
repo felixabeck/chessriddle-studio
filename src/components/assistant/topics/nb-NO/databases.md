@@ -2,7 +2,7 @@
 id: databases
 title: Databaser, utforsker, stillingssøk, spillere og turneringer
 summary: Legg til eller last ned partidatabaser, velg en referansedatabase, søk etter stillinger i utforskeren og bla gjennom partier, spillere og turneringer.
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 Databaser ligger i [[page:library]] ({{label:SideBar.Library}}) sammen med PGN-filene dine, og lagres i [[setting:databases-directory]].
@@ -34,5 +34,5 @@ På analysebrettet åpner du {{label:Board.Tabs.Database}} for å bruke åpnings
 - Velg {{label:Board.Database.LichessAll}} eller {{label:Board.Database.LichessMaster}} i kildemenyen og i {{label:Board.Database.Compare}} (nettutforskerne for Lichess krever en innlogget Lichess-konto på [[page:accounts]]).
 - Bytt mellom {{label:Board.Database.Stats}} (trekkstatistikk) og {{label:Board.Database.Games}} (samsvarende partier).
 - Klikk {{label:Board.Database.Compare}} for å vise to kilder side ved side, eller åpne {{label:Board.Database.Local.Position}} for å bytte mellom {{label:Board.Database.Local.Exact}} og {{label:Board.Database.Local.Partial}} stillingssøk (inkludert {{label:Board.Database.Local.SimilarStructure}} for bondestruktursøk og {{label:Fen.Empty}} for egendefinerte mønstre).
-- Bruk {{label:Board.Database.Pin}} for å feste utforskeren over eller under brettet eller notasjonen, og {{label:Board.Database.Unpin}} for å legge den tilbake i fanene.
+- Du kan også vise {{label:Board.Tabs.Database}} som et eget område på analysebrettet og bruke {{label:Board.Area.ReturnToTabs}} for å legge den tilbake i fanene.
 - Når {{label:Databases.OpeningTree.Prepare}} åpner et brett for en databasespiller, starter utforskeren med referansedatabasen din som en ekstra kolonne ved siden av motstanderens partier; klikk {{label:Board.Database.RemoveReference}} for å skjule en kolonne eller {{label:Board.Database.AddColumn}} for å legge til en til.

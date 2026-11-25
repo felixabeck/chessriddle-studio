@@ -570,7 +570,7 @@ test("workspace-tabs: analysis row and nested column drags resize panes and rest
     }
     const percentages = () =>
         page.evaluate(() => {
-            const node = JSON.parse(localStorage.getItem("windowsState")!).currentNode;
+            const node = JSON.parse(localStorage.getItem("analysis-board-layout")!);
             return { row: node.splitPercentage, column: node.second.splitPercentage };
         });
     await expect.poll(async () => Math.abs((await percentages()).row - 60)).toBeLessThan(0.5);
@@ -662,13 +662,6 @@ for (const surface of [
                 localStorage.setItem("font-size", scale);
                 localStorage.setItem("reference-database", JSON.stringify(database));
                 localStorage.setItem("auto-save", "false");
-                if (scale === "200") {
-                    // Use the supported focused practice pane at the compact font-scaled size.
-                    localStorage.setItem(
-                        "windowsState",
-                        JSON.stringify({ currentNode: "topRight" }),
-                    );
-                }
             },
             { scale: surface.scale, database },
         );

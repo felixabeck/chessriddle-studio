@@ -2,7 +2,7 @@
 id: databases
 title: 데이터베이스, 탐색기, 포지션 검색, 선수 및 토너먼트
 summary: 기보 데이터베이스 추가 또는 다운로드, 참조 데이터베이스 지정, 탐색기에서 포지션 검색, 대국·선수·토너먼트 탐색하기.
-source: d1a9092c9321c351
+source: c53827bc1f3c7a6d
 ---
 
 데이터베이스는 PGN 파일과 함께 [[page:library]] ({{label:SideBar.Library}})에 표시되며 [[setting:databases-directory]]에 저장됩니다.
@@ -34,5 +34,5 @@ source: d1a9092c9321c351
 - 소스 드롭다운과 {{label:Board.Database.Compare}}에서 {{label:Board.Database.LichessAll}} 또는 {{label:Board.Database.LichessMaster}}를 선택하세요(Lichess 온라인 탐색기를 사용하려면 [[page:accounts]]에서 Lichess 계정에 로그인해야 합니다).
 - {{label:Board.Database.Stats}}(수 통계)와 {{label:Board.Database.Games}}(일치하는 대국) 보기를 전환합니다.
 - {{label:Board.Database.Compare}}을(를) 클릭해 두 소스를 나란히 보거나, {{label:Board.Database.Local.Position}}을 열어 {{label:Board.Database.Local.Exact}}와 {{label:Board.Database.Local.Partial}} 포지션 검색(폰 구조 검색용 {{label:Board.Database.Local.SimilarStructure}} 및 사용자 지정 패턴용 {{label:Fen.Empty}} 포함)을 전환할 수 있습니다.
-- {{label:Board.Database.Pin}}으로 탐색기를 보드나 기보 위아래에 고정하고, {{label:Board.Database.Unpin}}으로 다시 탭으로 되돌릴 수 있습니다.
+- 분석 보드에서 {{label:Board.Tabs.Database}} 패널을 별도 영역으로 표시할 수도 있으며, {{label:Board.Area.ReturnToTabs}}로 다시 탭으로 되돌릴 수 있습니다.
 - {{label:Databases.OpeningTree.Prepare}}로 데이터베이스 선수의 보드를 열면 탐색기가 참조 데이터베이스를 상대 대국 옆의 추가 열로 먼저 표시합니다. {{label:Board.Database.RemoveReference}}을(를) 클릭해 열을 숨기거나 {{label:Board.Database.AddColumn}}을(를) 클릭해 다른 열을 추가할 수 있습니다.

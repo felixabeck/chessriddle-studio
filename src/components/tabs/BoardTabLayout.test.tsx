@@ -20,6 +20,12 @@ vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
   return { fontSizeAtom: atom(100) };
 });
+const coachMock = vi.hoisted(() => ({ atom: null as any }));
+vi.mock("@/state/coach", async () => {
+  const { atom } = await import("jotai");
+  coachMock.atom = atom(false);
+  return { coachEnabledAtom: coachMock.atom };
+});
 vi.mock("@/platform/native", () => ({ warn: vi.fn() }));
 vi.mock("@/i18n", () => ({ default: { t: (key: string) => key } }));
 vi.mock("react-mosaic-component", () => {
@@ -50,13 +56,21 @@ vi.mock("react-mosaic-component", () => {
       );
     return <div data-mosaic-tree={JSON.stringify(value)}>{render(value)}</div>;
   };
-  // The beside arrangement nests a split without its own drag-and-drop context.
-  return { Mosaic, MosaicWithoutDragDropContext: Mosaic };
+  return { Mosaic };
 });
 
-import BoardTabLayout from "./BoardTabLayout";
+import BoardTabLayout, { BoardArrangementContext, boardAreaTargetId } from "./BoardTabLayout";
 import { fontSizeAtom } from "@/state/atoms";
-import { BoardLayoutModeContext } from "@/state/paneLayout";
+import {
+  ANALYSIS_BOARD_LAYOUT_KEY,
+  boardArrangementAtom,
+  WINDOWS_STATE_KEY,
+} from "@/state/layoutStorage";
+import {
+  defaultBoardArrangement,
+  type BoardArrangement,
+  type PanelAreaId,
+} from "@/state/boardArrangement";
 
 function StatefulConsumer() {
   const [count, setCount] = useState(0);
@@ -65,7 +79,7 @@ function StatefulConsumer() {
   }, []);
   return (
     <>
-      {(["left", "topRight", "bottomRight", "rightSpan"] as const).map((id) => (
+      {(["left", "topRight", "bottomRight"] as const).map((id) => (
         <Portal key={id} target={`#${id}`}>
           <button onClick={() => setCount(count + 1)}>
             {id}:{count}
@@ -76,9 +90,18 @@ function StatefulConsumer() {
   );
 }
 
-/** The layout mode as the board inside the layout reads it. */
-function ShownMode() {
-  return <output data-testid="mode">{useContext(BoardLayoutModeContext)}</output>;
+/** The arrangement context as the board inside the layout reads it. */
+let latestContext: React.ContextType<typeof BoardArrangementContext> | null = null;
+function ArrangementProbe() {
+  const ctx = useContext(BoardArrangementContext);
+  latestContext = ctx;
+  return (
+    <output
+      data-testid="arrangement-ctx"
+      data-arranging={String(ctx.arrangingAvailable)}
+      data-panels={[...ctx.shownPanelAreas].join(",")}
+    />
+  );
 }
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -103,15 +126,15 @@ afterEach(async () => {
   document.documentElement.style.fontSize = "";
   vi.restoreAllMocks();
 });
-async function renderAt(width: number, besideCapable = false) {
+async function renderAt(width: number, arrangeable = false) {
   measured.width = width;
   await act(async () =>
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout besideCapable={besideCapable}>
+          <BoardTabLayout arrangeable={arrangeable}>
             <StatefulConsumer />
-            <ShownMode />
+            <ArrangementProbe />
           </BoardTabLayout>
         </MantineProvider>
       </Provider>,
@@ -145,7 +168,7 @@ test("narrow round trips preserve real portal state, attached target identity an
     const composition =
       width >= 646
         ? container.querySelector("[data-mosaic-tree]")?.getAttribute("data-mosaic-tree")
-        : // The slot of the beside arrangement is kept out of sight and is no part of the stack.
+        : // Hidden panel-area slots are parked out of sight and are no part of the stack.
           [...container.querySelectorAll("[data-board-slot]")]
             .filter((slot) => !slot.closest("[hidden]"))
             .map((slot) => slot.getAttribute("data-board-slot"));
@@ -223,177 +246,212 @@ test("initial container measurement selects desktop before an observer animation
 
 const layoutMode = () =>
   container.querySelector("[data-board-layout]")?.getAttribute("data-board-layout");
-const trees = () =>
-  [...container.querySelectorAll("[data-mosaic-tree]")].map((mosaic) =>
-    JSON.parse(mosaic.getAttribute("data-mosaic-tree")!),
-  );
-const BESIDE_KEY = "panels-beside-notation";
-const SPLITS_KEY = "board-beside-splits";
+const mosaicTree = () => {
+  const raw = container.querySelector("[data-mosaic-tree]")?.getAttribute("data-mosaic-tree");
+  return raw ? JSON.parse(raw) : null;
+};
 
-test("an analysis board that wants its panels beside the notation gets the notation and the panels side by side below the slot across both", async () => {
-  const saved =
-    '{"currentNode":{"direction":"row","first":"left","second":{"direction":"column","first":"topRight","second":"bottomRight"},"splitPercentage":60}}';
-  localStorage.setItem("windowsState", saved);
-  localStorage.setItem(BESIDE_KEY, "true");
+const THREE_PANE_ARRANGEMENT: BoardArrangement = {
+  direction: "row",
+  first: "left",
+  splitPercentage: 40,
+  second: {
+    direction: "column",
+    first: "database",
+    splitPercentage: 30,
+    second: {
+      direction: "row",
+      first: "bottomRight",
+      second: "topRight",
+      splitPercentage: 55,
+    },
+  },
+};
+
+test("analysis board switches cleanly across stacked, fallback windowsState and shown arrangement by width", async () => {
+  const savedWindows = {
+    currentNode: {
+      direction: "row" as const,
+      first: "left" as const,
+      second: {
+        direction: "column" as const,
+        first: "topRight" as const,
+        second: "bottomRight" as const,
+      },
+      splitPercentage: 62,
+    },
+  };
+  localStorage.setItem(WINDOWS_STATE_KEY, JSON.stringify(savedWindows));
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
   const writes = vi.spyOn(Storage.prototype, "setItem");
-  await renderAt(2000, true);
-  expect(layoutMode()).toBe("beside");
-  expect(container.querySelector('[data-testid="mode"]')?.textContent).toBe("beside");
-  // The board keeps the edge it has with the panels above; the right side starts halved.
-  expect(trees()).toEqual([
-    { direction: "row", first: "left", second: "right", splitPercentage: 60 },
-    { direction: "row", first: "bottomRight", second: "topRight", splitPercentage: 50 },
-  ]);
-  for (const id of [...ids, "rightSpan"]) {
-    const target = document.getElementById(id)!;
-    expect(target.isConnected).toBe(true);
-    expect(target.closest("[hidden]")).toBeNull();
-    expect(target.textContent).toBe(`${id}:0`);
-  }
-  // One pane holds the slot across the top and, after it, the notation then the panels.
-  const pane = document.getElementById("rightSpan")!.closest("[data-pinned-pane]")!;
-  expect(pane.firstElementChild?.getAttribute("data-board-slot")).toBe("rightSpan");
-  const below = pane.lastElementChild!;
-  expect(below).not.toBe(pane.firstElementChild);
-  expect([...below.querySelectorAll("#bottomRight, #topRight")].map((tile) => tile.id)).toEqual([
-    "bottomRight",
-    "topRight",
-  ]);
-  expect(pane.contains(document.getElementById("left"))).toBe(false);
-  expect(localStorage.getItem("windowsState")).toBe(saved);
-  expect(writes.mock.calls.filter(([key]) => key === "windowsState")).toEqual([]);
+
+  // Case 1: narrower than two pane floors -> stacked, no panel areas, arranging unavailable.
+  await renderAt(645, true);
+  expect(layoutMode()).toBe("stacked");
+  expect(latestContext?.arrangingAvailable).toBe(false);
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+  expect(
+    document.getElementById(boardAreaTargetId("database"))?.closest("[hidden]"),
+  ).not.toBeNull();
+
+  // Case 3: fits two panes but not three -> shared windowsState layout, stored arrangement untouched.
+  await renderAt(971, true);
+  expect(layoutMode()).toBe("mosaic");
+  expect(mosaicTree()).toEqual(savedWindows.currentNode);
+  expect(latestContext?.arrangingAvailable).toBe(false);
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+  expect(
+    document.getElementById(boardAreaTargetId("database"))?.closest("[hidden]"),
+  ).not.toBeNull();
+
+  // Case 2: fits three panes -> shown arrangement with database panel area.
+  await renderAt(972, true);
+  expect(layoutMode()).toBe("mosaic");
+  expect(mosaicTree()).toEqual(THREE_PANE_ARRANGEMENT);
+  expect(latestContext?.arrangingAvailable).toBe(true);
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["database"]);
+  expect(document.getElementById(boardAreaTargetId("database"))?.closest("[hidden]")).toBeNull();
+
+  // Switching across modes never rewrote either stored key.
+  expect(
+    writes.mock.calls.filter(([k]) => k === ANALYSIS_BOARD_LAYOUT_KEY || k === WINDOWS_STATE_KEY),
+  ).toEqual([]);
+  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!)).toEqual(
+    THREE_PANE_ARRANGEMENT,
+  );
 });
 
-test.each([
-  [645, "stacked"],
-  [646, "mosaic"],
-  [971, "mosaic"],
-  [972, "beside"],
-] as const)(
-  "at %ipx a board that wants its panels beside the notation is %s",
-  async (width, mode) => {
-    localStorage.setItem(BESIDE_KEY, "true");
-    await renderAt(width, true);
-    expect(layoutMode()).toBe(mode);
-    expect(container.querySelector('[data-testid="mode"]')?.textContent).toBe(mode);
-    // Outside the beside arrangement the slot across the top is kept, out of sight.
-    const slot = document.getElementById("rightSpan")!;
-    expect(slot.isConnected).toBe(true);
-    expect(!!slot.closest("[hidden]")).toBe(mode !== "beside");
-    expect(localStorage.getItem(BESIDE_KEY)).toBe("true");
-  },
-);
-
-test("the beside threshold follows the root font scale", async () => {
-  localStorage.setItem(BESIDE_KEY, "true");
+test("arrangement width threshold follows the root font scale", async () => {
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
   document.documentElement.style.fontSize = "32px";
   await act(async () => store.set(fontSizeAtom, 200));
+
   await renderAt(1931, true);
   expect(layoutMode()).toBe("mosaic");
+  expect(latestContext?.arrangingAvailable).toBe(false);
+
   await renderAt(1932, true);
-  expect(layoutMode()).toBe("beside");
-});
-
-test("only a board that can show its panels beside the notation does, and only when asked to", async () => {
-  await renderAt(2000, true);
   expect(layoutMode()).toBe("mosaic");
-  localStorage.setItem(BESIDE_KEY, "true");
-  await act(async () => root.unmount());
-  root = createRoot(container);
-  store = createStore();
-  await renderAt(2000);
-  expect(layoutMode()).toBe("mosaic");
-  await renderAt(2000, true);
-  expect(layoutMode()).toBe("beside");
+  expect(latestContext?.arrangingAvailable).toBe(true);
+  expect(mosaicTree()).toEqual(THREE_PANE_ARRANGEMENT);
 });
 
-test("an unreadable beside choice shows the panels above the notation", async () => {
-  localStorage.setItem(BESIDE_KEY, '"yes"');
-  await renderAt(2000, true);
-  expect(layoutMode()).toBe("mosaic");
-});
-
-test("portal state and target identity survive every switch into and out of the beside arrangement", async () => {
-  localStorage.setItem(BESIDE_KEY, "true");
-  await renderAt(2000, true);
-  const all = [...ids, "rightSpan"];
-  const targets = all.map((id) => document.getElementById(id)!);
-  // The four portals share one consumer's count.
-  await act(async () => targets[0].querySelector("button")!.click());
-  for (const width of [800, 2000, 320, 2000, 971, 972]) {
-    await renderAt(width, true);
-    for (const [index, id] of all.entries()) {
-      expect(document.getElementById(id)).toBe(targets[index]);
-      expect(targets[index].isConnected).toBe(true);
-      expect(targets[index].textContent).toBe(`${id}:1`);
-    }
-    expect(measured.mounts).toBe(1);
-  }
-});
-
-test("dragging a beside divider stores the position it reached, and never the panels-above layout", async () => {
-  localStorage.setItem(BESIDE_KEY, "true");
+test("divider drag in case 2 updates analysis-board-layout only; in case 3 updates windowsState only", async () => {
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+  await renderAt(1400, true);
   const writes = vi.spyOn(Storage.prototype, "setItem");
-  await renderAt(2000, true);
-  const drag = (tiles: string, splitPercentage: number) =>
-    act(async () => dividers.get(tiles)!({ direction: "row", splitPercentage }));
-  await drag("left+right", 40);
-  expect(JSON.parse(localStorage.getItem(SPLITS_KEY)!)).toEqual({ board: 40 });
-  expect(trees()[0].splitPercentage).toBe(40);
-  // Of the 1200px right side the notation keeps its 326px floor.
-  await drag("bottomRight+topRight", 5);
-  const stored = JSON.parse(localStorage.getItem(SPLITS_KEY)!);
-  expect(stored.board).toBe(40);
-  expect(stored.notation).toBeCloseTo((326 / 1200) * 100, 5);
-  expect(trees()[1].splitPercentage).toBe(stored.notation);
-  // Dragged past the right side's floor, the board divider stops where both panes still fit.
-  await drag("left+right", 99);
-  expect(JSON.parse(localStorage.getItem(SPLITS_KEY)!).board).toBeCloseTo(67.55, 5);
-  // A change that carries no divider position (a tile, or nothing) stores nothing.
-  const before = localStorage.getItem(SPLITS_KEY);
-  await act(async () => dividers.get("left+right")!("left"));
-  await act(async () => dividers.get("left+right")!(null));
-  expect(localStorage.getItem(SPLITS_KEY)).toBe(before);
-  expect(writes.mock.calls.filter(([key]) => key === "windowsState")).toEqual([]);
+
+  // Case 2 drag: updates analysis-board-layout, never windowsState.
+  const resized = { ...THREE_PANE_ARRANGEMENT, splitPercentage: 48 };
+  await act(async () => dividers.get("left+database+bottomRight+topRight")!(resized));
+  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!).splitPercentage).toBe(48);
+  expect(writes.mock.calls.filter(([k]) => k === WINDOWS_STATE_KEY)).toEqual([]);
+
+  // Case 3 drag: updates windowsState, never analysis-board-layout.
+  writes.mockClear();
+  await renderAt(800, true);
+  const nextWindows = {
+    direction: "row" as const,
+    first: "left" as const,
+    second: {
+      direction: "column" as const,
+      first: "topRight" as const,
+      second: "bottomRight" as const,
+    },
+    splitPercentage: 58,
+  };
+  await act(async () => dividers.get("left+topRight+bottomRight")!(nextWindows));
+  expect(JSON.parse(localStorage.getItem(WINDOWS_STATE_KEY)!)).toEqual({
+    currentNode: nextWindows,
+  });
+  expect(writes.mock.calls.filter(([k]) => k === ANALYSIS_BOARD_LAYOUT_KEY)).toEqual([]);
+  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!).splitPercentage).toBe(48);
 });
 
-test("a window too narrow for the stored beside dividers moves only the dividers shown", async () => {
-  const saved = JSON.stringify({ board: 60, notation: 30 });
-  localStorage.setItem(BESIDE_KEY, "true");
-  localStorage.setItem(SPLITS_KEY, saved);
-  const writes = vi.spyOn(Storage.prototype, "setItem");
-  await renderAt(1000, true);
-  const [board, right] = trees();
-  expect(board.splitPercentage).toBeCloseTo(35.1, 5);
-  expect(right.splitPercentage).toBeCloseTo((326 / 649) * 100, 5);
-  await renderAt(2000, true);
-  expect(trees().map((tree) => tree.splitPercentage)).toEqual([60, 40.75]);
-  await renderAt(3000, true);
-  expect(trees().map((tree) => tree.splitPercentage)).toEqual([60, 30]);
-  expect(localStorage.getItem(SPLITS_KEY)).toBe(saved);
-  expect(writes.mock.calls.filter(([key]) => key === SPLITS_KEY)).toEqual([]);
+test("hidden coach panel area is omitted while Coach is off and kept across divider drags", async () => {
+  const withCoach: BoardArrangement = {
+    direction: "row",
+    first: "left",
+    splitPercentage: 45,
+    second: {
+      direction: "column",
+      first: "coach",
+      splitPercentage: 35,
+      second: {
+        direction: "column",
+        first: "topRight",
+        second: "bottomRight",
+        splitPercentage: 50,
+      },
+    },
+  };
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withCoach));
+  await renderAt(1400, true);
+  expect(mosaicTree()).toEqual({
+    direction: "row",
+    first: "left",
+    splitPercentage: 45,
+    second: { direction: "column", first: "topRight", second: "bottomRight", splitPercentage: 50 },
+  });
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+
+  // Dragging a divider writes back past the hidden coach node.
+  await act(async () =>
+    dividers.get("left+topRight+bottomRight")!({
+      direction: "row",
+      first: "left",
+      splitPercentage: 55,
+      second: {
+        direction: "column",
+        first: "topRight",
+        second: "bottomRight",
+        splitPercentage: 65,
+      },
+    }),
+  );
+  const stored = JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!);
+  expect(stored).toEqual({
+    direction: "row",
+    first: "left",
+    splitPercentage: 55,
+    second: {
+      direction: "column",
+      first: "coach",
+      splitPercentage: 35,
+      second: {
+        direction: "column",
+        first: "topRight",
+        second: "bottomRight",
+        splitPercentage: 65,
+      },
+    },
+  });
+
+  // Turning Coach on reveals the coach area in its preserved position.
+  await act(async () => store.set(coachMock.atom, true));
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["coach"]);
 });
 
-test.each([
-  [
-    '{"currentNode":{"direction":"column","first":"left","second":"topRight","splitPercentage":70}}',
-  ],
-  ['{"currentNode":{"direction":"row","first":"topRight","second":"left","splitPercentage":70}}'],
-  ['{"currentNode":"left"}'],
-  ['{"currentNode":null}'],
-])(
-  "without a board edge to take over from %s the beside board divider starts in the middle",
-  async (saved) => {
-    localStorage.setItem("windowsState", saved);
-    localStorage.setItem(BESIDE_KEY, "true");
-    await renderAt(2000, true);
-    expect(trees()[0].splitPercentage).toBe(50);
-  },
-);
+test("returnPanel removes the panel area from analysis-board-layout", async () => {
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+  await renderAt(1400, true);
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["database"]);
 
-test("unreadable beside dividers start over from the middle", async () => {
-  localStorage.setItem(BESIDE_KEY, "true");
-  localStorage.setItem(SPLITS_KEY, '{"board":"wide","notation":140}');
-  await renderAt(2000, true);
-  expect(trees().map((tree) => tree.splitPercentage)).toEqual([50, 50]);
+  await act(async () => latestContext!.returnPanel("database" as PanelAreaId));
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+  expect(store.get(boardArrangementAtom)).toEqual({
+    direction: "row",
+    first: "left",
+    splitPercentage: 40,
+    second: { direction: "row", first: "bottomRight", second: "topRight", splitPercentage: 55 },
+  });
+});
+
+test("non-arrangeable boards (play, puzzles) ignore analysis-board-layout and stay on windowsState", async () => {
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+  await renderAt(1400, false);
+  expect(layoutMode()).toBe("mosaic");
+  expect(latestContext?.arrangingAvailable).toBe(false);
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+  expect(mosaicTree()).toEqual(defaultBoardArrangement());
 });
