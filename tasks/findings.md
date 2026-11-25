@@ -29256,7 +29256,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### In WebKit the "Hide moves" blur leaves the hidden moves fully readable, so the analysis board, Practice drills and the new preview mode show the answer
 
-* **ID:** f-20261125-10 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-10 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** WebKit verification of the hide-preview-moves change (worktree `build/hide-moves-20261125`, base `5f8988937`)
 * **Where:**
@@ -29266,3 +29266,5 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario:** in the desktop app (WebKitGTK), open a game, click the notation eye ("Hide moves"): the moves `1. d4 d5` stay legible. The same happens in a repertoire Practice drill (the answer stays readable) and in the new preview hide mode. Observed 2026-11-25 with Playwright WebKit 2336 against the built renderer: screenshots of the Files preview, database preview and an opened analysis tab with hidden notation all show readable moves.
 * **Fix:** blur the hidden content itself (`filter: blur(…)` on the inert rows container) instead of relying on the overlay's backdrop filter, keep the overlay for pointer blocking and the reveal button, and verify in WebKit.
 * **Found by:** Claude Code (orchestrator), WebKit probe during the hide-preview-moves change.
+* **Handled (2026-11-25, hide-preview-moves change):** `41566cf64` blurs the hidden rows themselves (`filter: blur(8px)`, `HIDDEN_NOTATION_FILTER` on the `data-notation-rows` container in `GameNotation.tsx`) instead of relying on the overlay's backdrop filter, which is removed; the overlay keeps pointer blocking, the tint and the preview's Show moves button. Verified in Playwright WebKit 2336 against the built renderer: Files preview, database preview and an opened analysis tab with hidden notation now show blurred moves, readable again after Show moves. Guarded by `GameNotation.test.tsx` (rows carry the filter when hidden, red without it) and the `files-preview` e2e test (computed `filter: blur(8px)` while hidden, `none` after reveal). Full container e2e green (529 passed).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3fb040ecfe37b1eb0c2f8f43637f44598b3b98137441229307094c56b45335eb","header_sha256":"8ee1b32d0241a4226725e0410f07c7ee34c1cc0d98ae1d49ce7dc546676ee90d","header_status":"handled","input_sha256":"eb77595c93e5594310332051afbc6ff903e41f010c9a2a29c40cdacc731487fc","kind":"mutation-receipt","operation":"9dd3dee3e78c36419cefa837051149e832b41aae9fb9b24c65ef4d4255e61d56","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-10"],"target":"f-20261125-10","v":1} -->
