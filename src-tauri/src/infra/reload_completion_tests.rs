@@ -1106,9 +1106,11 @@ async fn lichess_linked_floor_without_native_cursor_progress_fails_once() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
+/// Waits for every lease to be released. The bound only catches a hang: the drain takes one to
+/// three seconds alone, and under a loaded parallel run it exceeded ten.
 async fn reload_completion_drain(registry: OperationRegistry) {
     assert!(
-        tokio::task::spawn_blocking(move || registry.wait_for_drain(Duration::from_secs(10)))
+        tokio::task::spawn_blocking(move || registry.wait_for_drain(Duration::from_secs(60)))
             .await
             .unwrap()
             .unwrap()
