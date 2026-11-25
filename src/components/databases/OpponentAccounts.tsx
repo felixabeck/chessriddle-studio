@@ -19,7 +19,6 @@ import {
   OPPONENT_PERIODS,
   OPPONENT_TIME_CONTROLS,
   type OpponentLink,
-  type OpponentPeriod,
   opponentProviderName,
   withOpponentAccount,
   withOpponentFilter,
@@ -29,6 +28,11 @@ import ConfirmModal from "../common/ConfirmModal";
 import { IconAction } from "../common/IconAction";
 import { SiteLogo } from "../home/SiteLogo";
 import AddOpponentAccount from "./AddOpponentAccount";
+import {
+  opponentPeriodOptions,
+  opponentPeriodToValue,
+  valueToOpponentPeriod,
+} from "./opponentPeriod";
 import {
   cancelOpponentImport,
   type OpponentImportResult,
@@ -336,25 +340,14 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
               size="xs"
               label={t("Databases.OpeningTree.Since", { defaultValue: "Since" })}
               disabled={inFlight}
-              value={String(link.filter.years ?? "all")}
+              value={opponentPeriodToValue(link.filter.years)}
               onChange={(event) => {
-                const value = event.currentTarget.value;
-                const years = (value === "all" ? null : Number(value)) as OpponentPeriod;
+                const years = valueToOpponentPeriod(event.currentTarget.value, link.filter.years);
                 setLinks((current) =>
                   withOpponentFilter(current, link.id, { ...link.filter, years }),
                 );
               }}
-              data={OPPONENT_PERIODS.map((years) => ({
-                value: String(years ?? "all"),
-                label:
-                  years === 1
-                    ? t("Databases.OpeningTree.OneYear", { defaultValue: "1 year" })
-                    : years === 3
-                      ? t("Databases.Opponent.ThreeYears", { defaultValue: "3 years" })
-                      : years === 5
-                        ? t("Databases.OpeningTree.FiveYears", { defaultValue: "5 years" })
-                        : t("Databases.OpeningTree.AllGames", { defaultValue: "All games" }),
-              }))}
+              data={opponentPeriodOptions(OPPONENT_PERIODS, t)}
             />
             <Checkbox.Group
               label={t("Databases.Opponent.TimeControls", { defaultValue: "Time controls" })}

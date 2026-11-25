@@ -1623,15 +1623,16 @@ describe("opponent preparation notation filtering", () => {
         keySeparator: false,
         resources: { [locale]: catalogue },
       });
-      for (const [key, opts] of [
+      const cases: readonly (readonly [string, Record<string, string | number> | undefined])[] = [
         ["Notation.PreparationFor", { name: "Karpov" }],
         ["Notation.PreparationLinesFilter", undefined],
         ["Notation.PreparationOpponentLines", undefined],
         ["Notation.PreparationAllLines", undefined],
         ["Notation.HiddenVariations", { count: 1 }],
         ["Notation.HiddenVariations", { count: 2 }],
-      ] as const) {
-        const value = String(i18n.t(key, opts as any));
+      ];
+      for (const [key, opts] of cases) {
+        const value = String(opts ? i18n.t(key, opts) : i18n.t(key));
         expect(value.trim()).toBeTruthy();
         expect(value).not.toBe(key);
       }

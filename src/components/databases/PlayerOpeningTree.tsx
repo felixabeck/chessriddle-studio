@@ -268,8 +268,8 @@ function OpeningTree({
     const pinned = queries.length === 1 ? queries[0] : undefined;
     setPreparing(true);
     try {
-      // The online games join as a second column once their player is known; without that the
-      // board still opens, on the first database alone.
+      // The online games join as a second column once their player is known; without them the
+      // board still opens with the card's database (and, for a database card, the reference database).
       let onlinePlayer: number | undefined;
       if (pinned && online) {
         // The card's answer is used when it is there; a click before it arrives asks once more.

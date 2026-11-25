@@ -1116,4 +1116,160 @@ describe("PlayerPreparation", () => {
       activeDatabaseViewStore.getState().setPlayersActiveTab("overview");
     }
   });
+
+  test("unmounting during openFile aborts it and suppresses preparation view, navigation and notification", async () => {
+    const openDeferred = deferred<string | null>();
+    let capturedSignal: AbortSignal | undefined;
+    mocks.openFile.mockImplementation(
+      (_file: unknown, _setTabs: unknown, opts?: { signal?: AbortSignal }) => {
+        capturedSignal = opts?.signal;
+        return openDeferred.promise;
+      },
+    );
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-line-row]")).not.toBeNull();
+    });
+
+    const row = container.querySelector<HTMLTableRowElement>("[data-preparation-line-row]")!;
+    await act(async () => row.click());
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    // Unmount while openFile is still pending -> signal is aborted.
+    await act(async () => root.unmount());
+    expect(capturedSignal?.aborted).toBe(true);
+
+    // Resolving after unmount writes no preparation view, does not navigate, and notifies nothing.
+    await act(async () => {
+      openDeferred.resolve("late-tab-after-unmount");
+    });
+    expect(store.get(tabPreparationViewFamily("late-tab-after-unmount"))).toBeNull();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+
+    // Re-create root for afterEach cleanup.
+    root = createRoot(container);
+  });
+
+  test("replacing the stored preparation during openFile aborts it and suppresses view, navigation and notification", async () => {
+    const openDeferred = deferred<string | null>();
+    let capturedSignal: AbortSignal | undefined;
+    mocks.openFile.mockImplementation(
+      (_file: unknown, _setTabs: unknown, opts?: { signal?: AbortSignal }) => {
+        capturedSignal = opts?.signal;
+        return openDeferred.promise;
+      },
+    );
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-line-row]")).not.toBeNull();
+    });
+
+    const row = container.querySelector<HTMLTableRowElement>("[data-preparation-line-row]")!;
+    await act(async () => row.click());
+    expect(capturedSignal?.aborted).toBe(false);
+
+    // Replace stored preparation (e.g. Refresh or another preparation) while openFile is pending.
+    const current = store.get(opponentPreparationAtom)!;
+    await act(async () => {
+      store.set(opponentPreparationAtom, { ...current, id: "replaced-prep-id" });
+    });
+    expect(capturedSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      openDeferred.resolve("late-tab-after-replace");
+    });
+    expect(store.get(tabPreparationViewFamily("late-tab-after-replace"))).toBeNull();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+  });
+
+  test("existing-tab branch reports a rejected navigation via notifyUnlessCancelled", async () => {
+    const existingTab: Tab = {
+      name: "Sicilian",
+      value: "existing-tab-nav-fail",
+      type: "analysis",
+      gameOrigin: { kind: "file", file: repFile, gameNumber: 0 },
+    };
+    store.set(tabsAtom, [existingTab]);
+    const navError = new Error("route failed");
+    mocks.navigate.mockRejectedValueOnce(navError);
+
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-line-row]")).not.toBeNull();
+    });
+
+    const row = container.querySelector<HTMLTableRowElement>("[data-preparation-line-row]")!;
+    await act(async () => row.click());
+    expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", navError);
+  });
+
+  test("unmounting during openFile suppresses error notification when openFile rejects", async () => {
+    const openDeferred = deferred<string | null>();
+    mocks.openFile.mockReturnValue(openDeferred.promise);
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-line-row]")).not.toBeNull();
+    });
+
+    const row = container.querySelector<HTMLTableRowElement>("[data-preparation-line-row]")!;
+    await act(async () => row.click());
+    await act(async () => root.unmount());
+
+    await act(async () => {
+      openDeferred.reject(new Error("disk read failed"));
+    });
+    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+    root = createRoot(container);
+  });
+
+  test("replacing the stored preparation during openFile suppresses error notification when openFile rejects", async () => {
+    const openDeferred = deferred<string | null>();
+    mocks.openFile.mockReturnValue(openDeferred.promise);
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-line-row]")).not.toBeNull();
+    });
+
+    const row = container.querySelector<HTMLTableRowElement>("[data-preparation-line-row]")!;
+    await act(async () => row.click());
+    const current = store.get(opponentPreparationAtom)!;
+    await act(async () => {
+      store.set(opponentPreparationAtom, { ...current, id: "replaced-prep-id" });
+    });
+
+    await act(async () => {
+      openDeferred.reject(new Error("disk read failed"));
+    });
+    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+  });
+
+  test("existing-tab branch suppresses error notification when navigate rejects after unmount", async () => {
+    const existingTab: Tab = {
+      name: "Sicilian",
+      value: "existing-tab-nav-unmount",
+      type: "analysis",
+      gameOrigin: { kind: "file", file: repFile, gameNumber: 0 },
+    };
+    store.set(tabsAtom, [existingTab]);
+    const navDeferred = deferred<void>();
+    mocks.navigate.mockReturnValueOnce(navDeferred.promise);
+
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-line-row]")).not.toBeNull();
+    });
+
+    const row = container.querySelector<HTMLTableRowElement>("[data-preparation-line-row]")!;
+    await act(async () => row.click());
+    await act(async () => root.unmount());
+
+    await act(async () => {
+      navDeferred.reject(new Error("route failed"));
+    });
+    expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
+    root = createRoot(container);
+  });
 });

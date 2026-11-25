@@ -77,8 +77,7 @@ export function useOpponentPreparation({
     period: OpponentPeriod;
 }): {
     state: PreparationJobState;
-    refresh: () => void;
-    retry: () => void;
+    restart: () => void;
     setSource: (source: PreparationSource) => void;
 } {
     const atoms = useStore();
@@ -356,8 +355,7 @@ export function useOpponentPreparation({
 
     return {
         state,
-        refresh: restart,
-        retry: restart,
+        restart,
         setSource,
     };
 }

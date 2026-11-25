@@ -47,6 +47,13 @@ import {
   readPreparationDecks,
 } from "@/utils/preparationRun";
 import { createTab, findChapterTab, runTabCreation } from "@/utils/tabs";
+import {
+  DEFAULT_PREPARATION_PERIOD,
+  opponentPeriodLabel,
+  opponentPeriodOptions,
+  opponentPeriodToValue,
+  valueToOpponentPeriod,
+} from "./opponentPeriod";
 import { useOnlineGames } from "./useOnlineGames";
 import { useOpponentPreparation } from "./useOpponentPreparation";
 import classes from "./PlayerPreparation.module.css";
@@ -55,16 +62,6 @@ const INITIAL_ROW_LIMIT = 30;
 
 /** Period options in display order: All games, 5 years, 3 years, 1 year. */
 const PERIOD_OPTIONS: readonly OpponentPeriod[] = [...OPPONENT_PERIODS].reverse();
-
-function periodToValue(period: OpponentPeriod): string {
-  return period === null ? "all" : String(period);
-}
-
-function valueToPeriod(value: string): OpponentPeriod {
-  if (value === "all") return null;
-  const parsed = Number(value);
-  return parsed === 1 || parsed === 3 || parsed === 5 ? parsed : 3;
-}
 
 function formatChapterLabel(title: LineTitle, fallback: string): string {
   const parts = [title.name, title.idea].filter((part): part is string => Boolean(part));
@@ -109,17 +106,19 @@ export default function PlayerPreparation({
   const [opponentColor, setOpponentColor] = useState<PreparationColor>(() =>
     matchesPlayer ? stored.opponentColor : "white",
   );
-  const [period, setPeriod] = useState<OpponentPeriod>(() => (matchesPlayer ? stored.period : 3));
+  const [period, setPeriod] = useState<OpponentPeriod>(() =>
+    matchesPlayer ? stored.period : DEFAULT_PREPARATION_PERIOD,
+  );
   const [showAllLines, setShowAllLines] = useState(false);
   const [showAllGaps, setShowAllGaps] = useState(false);
   const [opening, setOpening] = useState(false);
-  const openingRef = useRef(false);
+  const openAbortRef = useRef<AbortController | null>(null);
   const [startingRun, setStartingRun] = useState(false);
   const [trainError, setTrainError] = useState<"practice-unreadable" | null>(null);
   const trainAbortRef = useRef<AbortController | null>(null);
 
   const online = useOnlineGames(player, file);
-  const { state, refresh, retry, setSource } = useOpponentPreparation({
+  const { state, restart, setSource } = useOpponentPreparation({
     player,
     file,
     opponentName: shortName,
@@ -163,21 +162,31 @@ export default function PlayerPreparation({
 
   const openRow = useCallback(
     async (row: PreparationRow) => {
-      if (openingRef.current || state.kind !== "ready") return;
-      openingRef.current = true;
+      if (openAbortRef.current !== null || state.kind !== "ready") return;
+      const controller = new AbortController();
+      openAbortRef.current = controller;
       setOpening(true);
       const preparationId = state.preparation.id;
       const landing = { path: [...row.path], boardState: row.boardState };
+      const isStillValid = () =>
+        !controller.signal.aborted && atoms.get(opponentPreparationAtom)?.id === preparationId;
       try {
         const existing = findChapterTab(atoms.get(tabsAtom), row.workspaceKey, row.chapter);
         if (existing) {
+          if (!isStillValid()) return;
           if (!atoms.set(activeTabAtom, existing.value)) return;
           atoms.set(tabPreparationViewFamily(existing.value), {
             preparationId,
             landing,
             showAllLines: false,
           });
-          await navigate({ to: "/" });
+          try {
+            await navigate({ to: "/" });
+          } catch (error) {
+            if (!controller.signal.aborted) {
+              notifyUnlessCancelled(t("Common.Error"), error);
+            }
+          }
           return;
         }
         await runTabCreation({
@@ -185,8 +194,10 @@ export default function PlayerPreparation({
             openFile(row.file, setTabs, {
               gameNumber: row.chapter,
               store: atoms,
+              signal: controller.signal,
             }),
           onSuccess: (tabId) => {
+            if (!isStillValid()) return;
             atoms.set(tabPreparationViewFamily(tabId), {
               preparationId,
               landing,
@@ -194,28 +205,21 @@ export default function PlayerPreparation({
             });
             return navigate({ to: "/" });
           },
-          onError: (error) => notifyUnlessCancelled(t("Common.Error"), error, "files"),
+          onError: (error) => {
+            if (isStillValid()) {
+              notifyUnlessCancelled(t("Common.Error"), error, "files");
+            }
+          },
         });
       } finally {
-        openingRef.current = false;
-        setOpening(false);
+        if (openAbortRef.current === controller) {
+          openAbortRef.current = null;
+          setOpening(false);
+        }
       }
     },
     [atoms, navigate, setTabs, state, t],
   );
-
-  const periodLabel = (p: OpponentPeriod): string => {
-    switch (p) {
-      case null:
-        return t("Databases.OpeningTree.AllGames", { defaultValue: "All games" });
-      case 5:
-        return t("Databases.OpeningTree.FiveYears", { defaultValue: "5 years" });
-      case 3:
-        return t("Databases.Opponent.ThreeYears", { defaultValue: "3 years" });
-      case 1:
-        return t("Databases.OpeningTree.OneYear", { defaultValue: "1 year" });
-    }
-  };
 
   const colorLabel = t("Databases.OpeningTree.PlayerPlays", {
     defaultValue: "{{name}} plays:",
@@ -231,6 +235,14 @@ export default function PlayerPreparation({
   const activeView: PreparationView | null = readyViews
     ? preparationViewForSource(readyViews, effectiveSource)
     : null;
+
+  useEffect(() => {
+    return () => {
+      openAbortRef.current?.abort();
+      openAbortRef.current = null;
+      setOpening(false);
+    };
+  }, [preparationId]);
 
   useEffect(() => {
     setTrainError(null);
@@ -367,19 +379,16 @@ export default function PlayerPreparation({
           className={classes.since}
           size="xs"
           label={t("Databases.OpeningTree.Since", { defaultValue: "Since" })}
-          value={periodToValue(period)}
-          onChange={(event) => handlePeriodChange(valueToPeriod(event.currentTarget.value))}
-          data={PERIOD_OPTIONS.map((option) => ({
-            value: periodToValue(option),
-            label: periodLabel(option),
-          }))}
+          value={opponentPeriodToValue(period)}
+          onChange={(event) => handlePeriodChange(valueToOpponentPeriod(event.currentTarget.value))}
+          data={opponentPeriodOptions(PERIOD_OPTIONS, t)}
         />
         <Button
           size="xs"
           variant="default"
           className={classes.refresh}
           leftSection={<RefreshCw size={14} />}
-          onClick={refresh}
+          onClick={restart}
           data-preparation-refresh
         >
           {t("Databases.Preparation.Refresh", { defaultValue: "Refresh" })}
@@ -458,7 +467,7 @@ export default function PlayerPreparation({
                 defaultValue: "Your repertoire could not be read.",
               })}
             </Text>
-            <Button size="xs" variant="default" onClick={retry}>
+            <Button size="xs" variant="default" onClick={restart}>
               {t("Common.Retry")}
             </Button>
           </Stack>
@@ -492,7 +501,7 @@ export default function PlayerPreparation({
               {inlineFailureMessage(state.error, "database", t("Databases.LoadError.Title")) ??
                 t("Databases.LoadError.Title")}
             </Text>
-            <Button size="xs" variant="default" onClick={retry}>
+            <Button size="xs" variant="default" onClick={restart}>
               {t("Common.Retry")}
             </Button>
           </Stack>
@@ -516,7 +525,7 @@ export default function PlayerPreparation({
               defaultValue: "{{name}} as {{color}} ({{period}}) · {{count}} games",
               name: shortName,
               color: opponentColorName,
-              period: periodLabel(period),
+              period: opponentPeriodLabel(period, t),
               count: activeView.total,
             })}
           </Text>
@@ -530,7 +539,7 @@ export default function PlayerPreparation({
                   defaultValue: "No games found for {{name}} as {{color}} ({{period}}).",
                   name: shortName,
                   color: opponentColorName,
-                  period: periodLabel(period),
+                  period: opponentPeriodLabel(period, t),
                 })}
               </Text>
             </div>

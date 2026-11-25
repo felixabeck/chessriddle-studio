@@ -20,7 +20,6 @@ import {
     INITIAL_BOARD_STATE,
     type NodeClassification,
     type PreparationColor,
-    preparationShare,
     preparationViewForSource,
 } from "@/utils/opponentPreparation";
 import { defaultTree, getBoardState, type TreeNode } from "@/utils/treeReducer";
@@ -477,7 +476,6 @@ describe("lines, gaps, ordering, and transpositions across chapters", () => {
         ]);
         const view = computePreparationView([makeFile("QGD", [ch.chapter])], "black", stats);
         expect(view.total).toBe(0);
-        expect(preparationShare(4, view.total)).toBeNull();
         expect(view.lines).toHaveLength(1);
         expect(view.lines[0]).toMatchObject({
             chapter: 0,
@@ -534,7 +532,6 @@ describe("lines, gaps, ordering, and transpositions across chapters", () => {
             "Beta:c4 e5", // 5 games, 2025.05.01, file 1
         ]);
         expect(view.gaps.map((g) => g.move)).toEqual(["d6", "g6", "b6"]);
-        expect(preparationShare(5, view.total)).toBe(0.25);
     });
 });
 

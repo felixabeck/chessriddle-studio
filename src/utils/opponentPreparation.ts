@@ -90,11 +90,6 @@ export function chapterOrientation(orientation: PreparationColor | undefined): P
     return orientation ?? "white";
 }
 
-/** Share of total games (`games / total`), or `null` when `total <= 0`. */
-export function preparationShare(games: number, total: number): number | null {
-    return total > 0 ? games / total : null;
-}
-
 /** Resolves the active `PreparationView` for a source, falling back to `otb` when absent. */
 export function preparationViewForSource(
     views: PreparationViews,
@@ -110,7 +105,7 @@ function rowGames(row: PositionStats): number {
 }
 
 /** Number of selected games that reached a position, including `"*"` and unknown results. */
-export function positionStatsGames(rows: readonly PositionStats[] | undefined): number {
+function positionStatsGames(rows: readonly PositionStats[] | undefined): number {
     if (!rows || rows.length === 0) return 0;
     let total = 0;
     for (const row of rows) total += rowGames(row);
@@ -118,7 +113,7 @@ export function positionStatsGames(rows: readonly PositionStats[] | undefined): 
 }
 
 /** Latest `last_played` over all rows of a position's statistics, the `"*"` row included. */
-export function positionStatsLastPlayed(rows: readonly PositionStats[] | undefined): string | null {
+function positionStatsLastPlayed(rows: readonly PositionStats[] | undefined): string | null {
     if (!rows || rows.length === 0) return null;
     let best: string | null = null;
     let bestKey = "";
