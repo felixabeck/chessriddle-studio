@@ -3939,10 +3939,10 @@ test("database-files: the panels sit beside the notation below a database strip 
     expect((await rect(notation)).y).toBeGreaterThan((await rect(panels)).y);
     const above = await geometry();
 
-    // The choice is a switch on the Board settings page.
+    // The choice is a switch on the Analysis & notation settings page.
     await goToSettings(page);
-    await page.getByRole("tab", { name: "Board", exact: true }).click();
-    const beside = page.getByRole("switch", { name: "Panels beside the notation", exact: true });
+    await page.getByRole("tab", { name: "Analysis & notation", exact: true }).click();
+    const beside = page.getByRole("switch", { name: "Panels Beside Notation", exact: true });
     await expect(beside).not.toBeChecked();
     await beside.check();
     await expect(beside).toBeChecked();

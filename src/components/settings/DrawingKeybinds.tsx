@@ -1,8 +1,11 @@
 import { Box, Group, Table, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
+import shellClasses from "@/components/common/SidebarTabsPage.module.css";
 import { platform } from "@/platform/native";
 import { DRAWING_MODIFIERS, type DrawingColor, pgnDrawingBrushes } from "@/utils/drawings";
+import { KEYBIND_DRAWING_EMOJI } from "./keybindGroups";
 import { KbdDisplay } from "./KeybindInput";
+import classes from "./SettingsPage.module.css";
 
 /** Read-only list of the right-click modifiers that pick a drawing colour. */
 export function DrawingKeybinds({ titleClassName }: { titleClassName?: string }) {
@@ -20,13 +23,18 @@ export function DrawingKeybinds({ titleClassName }: { titleClassName?: string })
 
   return (
     <>
-      <Text size="lg" fw={500} className={titleClassName} mt="xl">
-        {t("Settings.Drawing")}
-      </Text>
+      <Group gap="xs" wrap="nowrap">
+        <span aria-hidden="true" className={shellClasses.sectionEmoji}>
+          {KEYBIND_DRAWING_EMOJI}
+        </span>
+        <Text size="lg" fw={500} className={titleClassName}>
+          {t("Settings.Drawing")}
+        </Text>
+      </Group>
       <Text size="xs" c="dimmed" mt={3} mb="lg">
         {t("Settings.Drawing.Desc")}
       </Text>
-      <Table>
+      <Table classNames={{ table: classes.keybindTable }}>
         <Table.Thead>
           <Table.Tr>
             <Table.Th>{t("Settings.Drawing.Color")}</Table.Th>

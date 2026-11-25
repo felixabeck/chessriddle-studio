@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
 title: Klavye kısayolları ve çizim değiştiricileri
-summary: Klavye kısayollarını görüntüleyin, özelleştirin, sıfırlayın ve ok çizimi için fare değiştiricilerini öğrenin.
-source: ffc64b2decf8dd86
+summary: Gruplu tablolarda klavye kısayollarını görüntüleyin, özelleştirin ve sıfırlayın; ok çizmek için fare değiştiricilerini öğrenin.
+source: a3350229108d7308
 ---
 
-[[page:settings]] sayfasındaki [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) bölümünde tüm klavye kısayollarını görüntüleyin ve özelleştirin. Yeni bir tuş birleşimi kaydetmek için tablodaki herhangi bir kısayola tıklayın veya tüm varsayılanları geri yüklemek için başlığın yanındaki {{label:Common.Reset}} düğmesine tıklayın.
+Tüm klavye kısayollarını [[page:settings]] üzerindeki [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) içinde görüntüleyin ve özelleştirin. Kısayollar başlıklı gruplarda listelenir. Yeni bir tuş kombinasyonu kaydetmek için bir gruptaki herhangi bir kısayola tıklayın veya tüm varsayılanları geri yüklemek için başlığın yanındaki {{label:Common.Reset}} öğesine tıklayın.
 
 Yaygın varsayılan kısayollar (Windows/Linux'ta Ctrl ve macOS'ta Cmd kullanılarak):
 - Sekmeler ve dosyalar: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

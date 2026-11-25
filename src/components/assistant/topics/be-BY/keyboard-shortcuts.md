@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: Гарачыя клавішы і мадыфікатары малявання
-summary: Прагляд, налада і скід гарачых клавіш, а таксама мадыфікатары мышы для малявання стрэлак.
-source: ffc64b2decf8dd86
+title: Спалучэнні клавіш і мадыфікатары малявання
+summary: Праглядайце, наладжвайце і скідвайце спалучэнні клавіш у згрупаваных табліцах і даведайцеся мадыфікатары мышы для малявання стрэлак.
+source: a3350229108d7308
 ---
 
-Праглядайце і наладжвайце ўсе гарачыя клавішы ў [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) на старонцы [[page:settings]]. Пстрыкніце любое спалучэнне ў табліцы, каб запісаць новую камбінацыю клавіш, або націсніце {{label:Common.Reset}} побач з загалоўкам, каб аднавіць усе значэнні па змаўчанні.
+Праглядайце і наладжвайце ўсе спалучэнні клавіш у [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) на [[page:settings]]. Спалучэнні пералічаны ў групах з загалоўкамі. Націсніце любое спалучэнне ў групе, каб запісаць новую камбінацыю, або націсніце {{label:Common.Reset}} каля загалоўка, каб аднавіць усе стандартныя значэнні.
 
 Асноўныя гарачыя клавішы па змаўчанні (Ctrl у Windows/Linux і Cmd на macOS):
 - Укладкі і файлы: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

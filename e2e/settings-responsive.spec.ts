@@ -16,15 +16,23 @@ test("settings-responsive: preserves keyboard focus at narrow 200% font scale", 
         .locator("../..")
         .getByRole("tab");
     await expect(categoryTabs).toHaveCount(8);
-    await expect(categoryTabs.last()).toHaveText("Advanced");
+    await expect(categoryTabs.last()).toHaveAccessibleName("Advanced");
     // The Board tab is open first, so it has to be there to be measured.
     await expect(page.getByRole("tabpanel", { name: /board/i })).toBeVisible();
+    await expect(page.locator("[data-settings-section=look]")).toContainText("Look");
+    await expect(page.locator("[data-settings-section=highlights]")).toContainText("Highlights");
+    await expect(page.locator("[data-settings-section=movingPieces]")).toContainText(
+        "Moving Pieces",
+    );
+    await expect(page.locator("[data-settings-section=arrowsDrawing]")).toContainText(
+        "Arrows & Drawing",
+    );
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
-    const appearance = page.getByRole("tab", { name: /appearance/i });
-    await appearance.focus();
+    const general = page.getByRole("tab", { name: /general/i });
+    await general.focus();
     await page.keyboard.press("Enter");
-    await expect(appearance).toHaveAttribute("aria-selected", "true");
+    await expect(general).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("slider", { name: /font size/i })).toBeVisible();
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
@@ -65,11 +73,29 @@ test("settings-responsive: keybinds list the six drawing colours and their right
     assertNoHorizontalOverflow,
     capture,
 }) => {
+    // This project runs at 200% font; 1280px is still compact there, so headings are omitted.
+    await page.addInitScript(() => {
+        localStorage.setItem("font-size", JSON.stringify(100));
+    });
     await page.setViewportSize({ width: 1280, height: 1000 });
     await page.goto("/settings");
-    const keybinds = page.getByRole("tab", { name: /keybinds/i });
-    await keybinds.click();
-    await expect(keybinds).toHaveAttribute("aria-selected", "true");
+    await expect(
+        page.getByRole("heading", { name: /settings/i }).locator("../.."),
+    ).not.toHaveAttribute("data-compact");
+    await expect(page.locator("[data-settings-group=chess]")).toHaveText("Chess");
+    await expect(page.locator("[data-settings-group=app]")).toHaveText("App");
+    const shortcuts = page.getByRole("tab", { name: /shortcuts/i });
+    await shortcuts.click();
+    await expect(shortcuts).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("[data-settings-section=tabsFiles]")).toContainText("Tabs & Files");
+    await expect(page.locator("[data-settings-section=navigation]")).toContainText(
+        "Moving Through the Game",
+    );
+    await expect(page.locator("[data-settings-section=editing]")).toContainText("Editing");
+    await expect(page.locator("[data-settings-section=annotations]")).toContainText("Annotations");
+    await expect(page.locator("[data-settings-section=engine]")).toContainText("Engine");
+    await expect(page.locator("[data-settings-section=panels]")).toContainText("Panels");
+    await expect(page.locator("[data-settings-section=drawing]")).toContainText("Drawing");
     const expected = {
         green: "Right-click",
         red: "shift+Right-click",
@@ -94,9 +120,9 @@ test("settings-responsive: uses the fixed accent and retains scheme selection", 
 }) => {
     await page.setViewportSize({ width: 1280, height: 1000 });
     await page.goto("/settings");
-    const appearance = page.getByRole("tab", { name: /appearance/i });
-    await appearance.click();
-    await expect(appearance).toHaveAttribute("aria-selected", "true");
+    const general = page.getByRole("tab", { name: /general/i });
+    await general.click();
+    await expect(general).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("radiogroup", { name: "Accent Color" })).toHaveCount(0);
     await expect(page.getByRole("radio", { name: /accent color/i })).toHaveCount(0);
     await expect(page.getByText("Accent Color", { exact: true })).toHaveCount(0);

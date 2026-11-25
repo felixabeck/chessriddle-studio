@@ -84,7 +84,7 @@ async function makeEditedMove(page: Page) {
 
 async function switchTheme(page: Page, scheme: "light" | "dark") {
     await goToSettings(page);
-    await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+    await page.getByRole("tab", { name: "General", exact: true }).click();
     await page.getByText(scheme === "dark" ? "Dark" : "Light", { exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", scheme);
     await goToBoards(page);

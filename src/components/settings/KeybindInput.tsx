@@ -50,6 +50,8 @@ function KeybindInput({
         <Button
           variant="subtle"
           color="gray"
+          h="auto"
+          className={classes.shortcut}
           aria-label={keybindLabel(t, action, keybind)}
           onMouseEnter={() => setHovering(true)}
           onMouseLeave={() => setHovering(false)}
@@ -76,7 +78,7 @@ export function KbdDisplay({
 }) {
   const splitted = [...(keys ? formatKeymap(keys).split("+") : []), ...(suffix ? [suffix] : [])];
   return (
-    <Group>
+    <Group wrap="wrap">
       {splitted.map((key, i) => (
         <Group key={key}>
           <Kbd className={cx({ [classes.kbd]: hovering })}>{key}</Kbd>

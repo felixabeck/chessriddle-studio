@@ -54,7 +54,7 @@ test("settings directories hydrate and retain selected workspace names", async (
     }
     await mockScenario({ commands });
     await page.goto("/settings");
-    await page.getByRole("tab", { name: "Directories", exact: true }).click();
+    await page.getByRole("tab", { name: "Files & folders", exact: true }).click();
     const buttons = page.getByRole("button", { name: "Select directory", exact: true });
     for (const { current, selected } of workspaces) {
         await expect(buttons.filter({ hasText: current })).toBeVisible();
@@ -62,7 +62,7 @@ test("settings directories hydrate and retain selected workspace names", async (
         await expect(buttons.filter({ hasText: selected })).toBeVisible();
     }
     await page.getByRole("tab", { name: "Board", exact: true }).click();
-    await page.getByRole("tab", { name: "Directories", exact: true }).click();
+    await page.getByRole("tab", { name: "Files & folders", exact: true }).click();
     for (const { selected } of workspaces) {
         await expect(buttons.filter({ hasText: selected })).toBeVisible();
     }

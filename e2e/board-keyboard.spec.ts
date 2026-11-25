@@ -1194,7 +1194,7 @@ test("board-keyboard: next move at a branch asks which continuation to play", as
     const start = page.getByRole("button", { name: "Go to start", exact: true });
     await start.click();
     await goToSettings(page);
-    await page.getByRole("tab", { name: "Board", exact: true }).click();
+    await page.getByRole("tab", { name: "Analysis & notation", exact: true }).click();
     const chooseVariations = page.getByRole("switch", {
         name: "Choose Variations at Branches",
         exact: true,
@@ -1204,6 +1204,7 @@ test("board-keyboard: next move at a branch asks which continuation to play", as
     await expect(chooseVariations).not.toBeChecked();
 
     await preserveStorageForReload(page);
+    await page.getByRole("tab", { name: "Analysis & notation", exact: true }).click();
     await expect(chooseVariations).not.toBeChecked();
     await goToBoards(page);
     await expect(board).toBeVisible();

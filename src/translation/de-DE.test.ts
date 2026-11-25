@@ -23,7 +23,7 @@ test("de-DE catalogue never says Spiel or Position for a chess game or position"
     // Candidates: Spiel, Spiele, Spiels and compounds such as Spieldatei. Spieler… compounds
     // (Spielerin, Spielerinfo) and the verb spielen are never candidates.
     const suspectTerm = /Spiel(?!er|en\b)|\bPosition(en)?\b/;
-    // Forms of the verb spielen, plus Spielstärke/Spielphase/Spielsteuerung compounds.
+    // Forms of the verb spielen, plus Spielstärke/Spielphase compounds.
     const legitimateSpielUses: Record<string, string> = {
         "Board.Action.PlayFromHere": "Spiele von hier",
         "Board.Analysis.Report.NeedsMoves":
@@ -38,7 +38,6 @@ test("de-DE catalogue never says Spiel or Position for a chess game or position"
         "Engines.Options.UCI_Elo.Description":
             "Die Spielstärke, die die Engine bei aktiver Begrenzung anstrebt.",
         "Engines.Options.UCI_LimitStrength.Label": "Spielstärke auf eine Elo-Zahl begrenzen",
-        "Settings.Board.Desc": "Passe das Analysebrett und die Spielsteuerung an",
         "Training.Settings.Categories.Phases": "Spielphase",
     };
     const offenders = Object.entries(de).filter(

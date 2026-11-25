@@ -1,4 +1,4 @@
-import { MantineProvider } from "@mantine/core";
+import { MantineProvider, VisuallyHidden } from "@mantine/core";
 import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   defaultPanelTabAtom,
   materialDisplayAtom,
+  moveHighlightAtom,
   practiceGradingAtom,
   practiceNewPerSessionAtom,
 } from "@/state/atoms";
@@ -19,6 +20,7 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { describeSettings } from "./settingsDescription";
 import Page from "./SettingsPage";
+import classes from "./SettingsPage.module.css";
 
 vi.mock("@/platform/native", () => ({
   platform: vi.fn(() => "linux"),
@@ -44,6 +46,10 @@ vi.mock("@/i18n", async (original) => ({
   changeLocale: vi.fn(),
 }));
 vi.mock("./BoardSelect", () => ({ default: () => null }));
+const layout = vi.hoisted(() => ({ compact: false }));
+vi.mock("@/hooks/useScaledMaxWidth", () => ({
+  useScaledMaxWidth: () => layout.compact,
+}));
 vi.mock("./KeybindInput", () => ({ default: () => null, KbdDisplay: () => null }));
 vi.mock("./PercentagePreferenceSlider", () => ({ default: () => null }));
 vi.mock("./PiecesSelect", () => ({ default: () => null }));
@@ -103,6 +109,7 @@ afterEach(async () => {
   host?.remove();
   localStorage.clear();
   translation.t = translation.identity;
+  layout.compact = false;
   coach.enabled = false;
   actionMocks.reloadApp.mockReset();
   actionMocks.clearSavedData.mockReset();
@@ -156,8 +163,8 @@ test("practice settings expose automatic/manual grading and the session new-move
   expect(host.querySelector('input[placeholder="Common.Search"]')?.getAttribute("aria-label")).toBe(
     "Common.Search",
   );
-  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === "Settings.Repertoire",
+  const tab = host.querySelector<HTMLButtonElement>(
+    '[role="tab"][data-settings-category="repertoire"]',
   )!;
   await act(async () => tab.click());
   const grading = host.querySelector<HTMLInputElement>(
@@ -237,8 +244,8 @@ test("keybind actions are labelled in the active language", async () => {
   const i18n = await catalogueI18n("de-DE");
   translation.t = (key, options) => i18n.t(key, options);
   const { host } = await renderSettingsPage();
-  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === "Tastenkombinationen",
+  const tab = host.querySelector<HTMLButtonElement>(
+    '[role="tab"][data-settings-category="keybinds"]',
   )!;
   await act(async () => tab.click());
   const labels = [...host.querySelectorAll("td:first-child")].map((cell) => cell.textContent);
@@ -273,10 +280,20 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-async function openAdvanced(host: HTMLElement) {
-  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === "Settings.Advanced",
+function settingsTab(host: HTMLElement, category: string) {
+  return host.querySelector<HTMLButtonElement>(
+    `[role="tab"][data-settings-category="${category}"]`,
   )!;
+}
+
+function tabIds(host: HTMLElement) {
+  return [...host.querySelectorAll("[data-settings-category]")].map((node) =>
+    node.getAttribute("data-settings-category"),
+  );
+}
+
+async function openAdvanced(host: HTMLElement) {
+  const tab = settingsTab(host, "advanced");
   await act(async () => tab.click());
   return tab;
 }
@@ -297,9 +314,9 @@ async function searchSettings(host: HTMLElement, query: string) {
 
 test("Advanced is the eighth and last settings category", async () => {
   const { host } = await renderSettingsPage();
-  const tabs = [...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
+  const tabs = tabIds(host);
   expect(tabs).toHaveLength(8);
-  expect(tabs.at(-1)).toBe("Settings.Advanced");
+  expect(tabs.at(-1)).toBe("advanced");
 });
 
 test("a build without the Coach shows no Coach category, row or search result", async () => {
@@ -314,9 +331,7 @@ test("a build without the Coach shows no Coach category, row or search result", 
 test("the Coach shortcut is listed only in a build with the Coach", async () => {
   const keybindRows = async () => {
     const { host } = await renderSettingsPage();
-    const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-      (node) => node.textContent === "Settings.Keybinds",
-    )!;
+    const tab = settingsTab(host, "keybinds");
     await act(async () => tab.click());
     const rows = [...host.querySelectorAll("tbody tr")].map((row) => row.textContent);
     await act(async () => root!.unmount());
@@ -331,15 +346,23 @@ test("the Coach shortcut is listed only in a build with the Coach", async () => 
   expect(await keybindRows()).toContain("Settings.Keybinds.Actions.COACH_TAB");
 });
 
-test("a build with the Coach adds its category before Advanced, with connections and the engine row", async () => {
+test("a build with the Coach adds its category in the Chess group, with connections and the engine row", async () => {
   coach.enabled = true;
   const { host } = await renderSettingsPage();
-  const tabs = [...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent);
+  const tabs = tabIds(host);
   expect(tabs).toHaveLength(9);
-  expect(tabs.slice(-2)).toEqual(["Settings.AI", "Settings.Advanced"]);
-  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === "Settings.AI",
-  )!;
+  expect(tabs).toEqual([
+    "board",
+    "analysis",
+    "repertoire",
+    "coach",
+    "general",
+    "sound",
+    "keybinds",
+    "directories",
+    "advanced",
+  ]);
+  const tab = settingsTab(host, "coach");
   await act(async () => tab.click());
   const panel = host.querySelector<HTMLElement>(`#${tab.getAttribute("aria-controls")}`)!;
   expect(panel.querySelector('[data-testid="coach-connections"]')).not.toBeNull();
@@ -475,7 +498,7 @@ test("a request for a setting selects its category, marks its row, scrolls it in
   const search = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
   expect(search.value).toBe("");
   const activeTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
-  expect(activeTab?.textContent).toBe("Settings.Sound");
+  expect(activeTab?.getAttribute("data-settings-category")).toBe("sound");
 
   const row = host.querySelector<HTMLElement>('[data-setting-id="volume"]')!;
   expect(row.getAttribute("data-highlighted")).toBe("true");
@@ -503,7 +526,7 @@ test("a request for a category selects it, clears an entered search, and clears 
   const search = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
   expect(search.value).toBe("");
   const activeTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
-  expect(activeTab?.textContent).toBe("Settings.Directories");
+  expect(activeTab?.getAttribute("data-settings-category")).toBe("directories");
   expect(host.querySelectorAll("[data-highlighted]")).toHaveLength(0);
   expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
 });
@@ -517,14 +540,14 @@ test("switching tabs manually clears a prior setting highlight", async () => {
     "true",
   );
 
-  const appearanceTab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (node) => node.textContent === "Settings.Appearance",
-  )!;
-  await act(async () => appearanceTab.click());
+  const generalTab = settingsTab(host, "general");
+  await act(async () => generalTab.click());
 
-  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-    "Settings.Appearance",
-  );
+  expect(
+    host
+      .querySelector('[role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-settings-category"),
+  ).toBe("general");
   expect(host.querySelectorAll("[data-highlighted]")).toHaveLength(0);
 });
 
@@ -533,9 +556,11 @@ test("a consumed request does not act again on remount", async () => {
   requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
   const { host: firstHost } = await renderSettingsPage(atoms);
 
-  expect(firstHost.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-    "Settings.Sound",
-  );
+  expect(
+    firstHost
+      .querySelector('[role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-settings-category"),
+  ).toBe("sound");
   expect(
     firstHost.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted"),
   ).toBe("true");
@@ -549,9 +574,11 @@ test("a consumed request does not act again on remount", async () => {
   scrollSpy.mockClear();
 
   const { host: secondHost } = await renderSettingsPage(atoms);
-  expect(secondHost.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-    "Settings.Board",
-  );
+  expect(
+    secondHost
+      .querySelector('[role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-settings-category"),
+  ).toBe("board");
   expect(secondHost.querySelectorAll("[data-highlighted]")).toHaveLength(0);
   expect(scrollSpy).not.toHaveBeenCalled();
 });
@@ -562,9 +589,11 @@ test("a newer request replaces an unconsumed one before Settings mounts", async 
   requestSettingsNavigation({ kind: "setting", settingId: "font-size" }, atoms);
 
   const { host } = await renderSettingsPage(atoms);
-  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-    "Settings.Appearance",
-  );
+  expect(
+    host
+      .querySelector('[role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-settings-category"),
+  ).toBe("general");
   expect(
     host.querySelector('[data-setting-id="font-size"]')?.getAttribute("data-highlighted"),
   ).toBe("true");
@@ -579,9 +608,11 @@ test("a request for a hidden setting is consumed without leaving a broken select
   requestSettingsNavigation({ kind: "setting", settingId: "coach-engine" }, atoms);
 
   const { host } = await renderSettingsPage(atoms);
-  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-    "Settings.Board",
-  );
+  expect(
+    host
+      .querySelector('[role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-settings-category"),
+  ).toBe("board");
   expect(host.querySelectorAll("[data-highlighted]")).toHaveLength(0);
   expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
 });
@@ -602,10 +633,182 @@ test("a request for a hidden category leaves tab, search and highlight untouched
   expect(search.value).toBe("reload");
 
   await searchSettings(host, "");
-  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-    "Settings.Sound",
-  );
+  expect(
+    host
+      .querySelector('[role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-settings-category"),
+  ).toBe("sound");
   expect(host.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted")).toBe(
     "true",
   );
+});
+
+test("last-move highlight dependents hide when the switch is off and reappear when it is on", async () => {
+  const { atoms, host } = await renderSettingsPage();
+  expect(host.querySelector('[data-setting-id="move-highlight-color"]')).not.toBeNull();
+  expect(host.querySelector('[data-setting-id="move-highlight-opacity"]')).not.toBeNull();
+
+  await act(async () => {
+    atoms.set(moveHighlightAtom, false);
+  });
+  expect(host.querySelector('[data-setting-id="move-highlight-color"]')).toBeNull();
+  expect(host.querySelector('[data-setting-id="move-highlight-opacity"]')).toBeNull();
+  expect(host.querySelector('[data-setting-id="move-highlight"]')).not.toBeNull();
+
+  await act(async () => {
+    atoms.set(moveHighlightAtom, true);
+  });
+  expect(host.querySelector('[data-setting-id="move-highlight-color"]')).not.toBeNull();
+  expect(host.querySelector('[data-setting-id="move-highlight-opacity"]')).not.toBeNull();
+});
+
+test("search still lists highlight dependents and groups them under Board · Highlights", async () => {
+  const atoms = createStore();
+  atoms.set(moveHighlightAtom, false);
+  const { host } = await renderSettingsPage(atoms);
+  await searchSettings(host, "Highlights");
+  expect(host.querySelector('[data-setting-id="move-highlight-color"]')).not.toBeNull();
+  expect(host.querySelector('[data-setting-id="move-highlight-opacity"]')).not.toBeNull();
+  expect(
+    host.querySelector('[data-search-group="Settings.Board · Settings.Group.Highlights"]'),
+  ).not.toBeNull();
+
+  await searchSettings(host, "");
+  expect(host.querySelector('[data-setting-id="move-highlight-color"]')).toBeNull();
+  expect(host.querySelector('[data-setting-id="move-highlight-opacity"]')).toBeNull();
+  expect(atoms.get(moveHighlightAtom)).toBe(false);
+});
+
+test("navigation to a hidden highlight dependent reveals and scrolls to it", async () => {
+  const atoms = createStore();
+  atoms.set(moveHighlightAtom, false);
+  requestSettingsNavigation({ kind: "setting", settingId: "move-highlight-color" }, atoms);
+  const { host } = await renderSettingsPage(atoms);
+
+  const row = host.querySelector<HTMLElement>('[data-setting-id="move-highlight-color"]')!;
+  expect(row).toBeTruthy();
+  expect(row.getAttribute("data-highlighted")).toBe("true");
+  expect(row.getAttribute("data-dependent")).toBe("true");
+  expect(
+    host
+      .querySelector('[role="tab"][aria-selected="true"]')
+      ?.getAttribute("data-settings-category"),
+  ).toBe("board");
+  expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+  expect(atoms.get(moveHighlightAtom)).toBe(false);
+});
+
+function panelFor(host: HTMLElement, category: string) {
+  const tab = settingsTab(host, category);
+  return host.querySelector<HTMLElement>(`#${tab.getAttribute("aria-controls")}`)!;
+}
+
+function sectionIds(host: HTMLElement, category: string) {
+  return [...panelFor(host, category).querySelectorAll("[data-settings-section]")].map((node) =>
+    node.getAttribute("data-settings-section"),
+  );
+}
+
+test("the page renders Chess and App sidebar groups and titled section cards", async () => {
+  const { host } = await renderSettingsPage();
+  expect(
+    [...host.querySelectorAll("[data-settings-group]")].map((node) =>
+      node.getAttribute("data-settings-group"),
+    ),
+  ).toEqual(["chess", "app"]);
+  expect(host.querySelector('[data-settings-group="chess"]')?.textContent).toBe(
+    "Settings.Group.Chess",
+  );
+  expect(host.querySelector('[data-settings-group="app"]')?.textContent).toBe("Settings.Group.App");
+
+  expect(sectionIds(host, "board")).toEqual([
+    "look",
+    "highlights",
+    "movingPieces",
+    "arrowsDrawing",
+  ]);
+  expect(
+    panelFor(host, "board").querySelector('[data-settings-section="look"]')?.textContent,
+  ).toContain("Settings.Group.Look");
+  expect(
+    panelFor(host, "board").querySelector('[data-settings-section="highlights"]')?.textContent,
+  ).toContain("Settings.Group.Highlights");
+  expect(
+    panelFor(host, "board").querySelector('[data-settings-section="movingPieces"]')?.textContent,
+  ).toContain("Settings.Group.MovingPieces");
+  expect(
+    panelFor(host, "board").querySelector('[data-settings-section="arrowsDrawing"]')?.textContent,
+  ).toContain("Settings.Group.ArrowsDrawing");
+
+  expect(sectionIds(host, "analysis")).toEqual(["notation", "navigating", "layoutSaving"]);
+  expect(
+    panelFor(host, "analysis").querySelector('[data-settings-section="notation"]')?.textContent,
+  ).toContain("Settings.Group.Notation");
+  expect(
+    panelFor(host, "analysis").querySelector('[data-settings-section="navigating"]')?.textContent,
+  ).toContain("Settings.Group.Navigating");
+  expect(
+    panelFor(host, "analysis").querySelector('[data-settings-section="layoutSaving"]')?.textContent,
+  ).toContain("Settings.Group.LayoutSaving");
+
+  expect(sectionIds(host, "keybinds")).toEqual([
+    "tabsFiles",
+    "navigation",
+    "editing",
+    "annotations",
+    "engine",
+    "panels",
+    "drawing",
+  ]);
+  expect(
+    panelFor(host, "keybinds").querySelector('[data-settings-section="tabsFiles"]')?.textContent,
+  ).toContain("Settings.Keybinds.Group.TabsFiles");
+  expect(
+    panelFor(host, "keybinds").querySelector('[data-settings-section="navigation"]')?.textContent,
+  ).toContain("Settings.Keybinds.Group.Navigation");
+  expect(
+    panelFor(host, "keybinds").querySelector('[data-settings-section="editing"]')?.textContent,
+  ).toContain("Settings.Keybinds.Group.Editing");
+  expect(
+    panelFor(host, "keybinds").querySelector('[data-settings-section="annotations"]')?.textContent,
+  ).toContain("Settings.Keybinds.Group.Annotations");
+  expect(
+    panelFor(host, "keybinds").querySelector('[data-settings-section="engine"]')?.textContent,
+  ).toContain("Settings.Keybinds.Group.Engine");
+  expect(
+    panelFor(host, "keybinds").querySelector('[data-settings-section="panels"]')?.textContent,
+  ).toContain("Settings.Keybinds.Group.Panels");
+  expect(
+    panelFor(host, "keybinds").querySelector('[data-settings-section="drawing"]')?.textContent,
+  ).toContain("Settings.Drawing");
+
+  const keybindsPanel = panelFor(host, "keybinds");
+  const tabsFilesTable = keybindsPanel.querySelector('[data-settings-section="tabsFiles"] table');
+  const drawingTable = keybindsPanel.querySelector('[data-settings-section="drawing"] table');
+  expect(tabsFilesTable?.className).toContain(classes.keybindTable);
+  expect(drawingTable?.className).toContain(classes.keybindTable);
+  expect(tabsFilesTable?.querySelector("thead")?.className).toContain(VisuallyHidden.classes.root);
+  expect(drawingTable?.querySelector("thead")?.className).not.toContain(
+    VisuallyHidden.classes.root,
+  );
+});
+
+test("compact Shortcuts stack each action above its key instead of a two-column table", async () => {
+  layout.compact = true;
+  const { host } = await renderSettingsPage();
+  expect(host.querySelector("[data-compact]")).not.toBeNull();
+  await act(async () => settingsTab(host, "keybinds").click());
+  const panel = panelFor(host, "keybinds");
+  expect(panel.querySelector('[data-settings-section="tabsFiles"] table')).toBeNull();
+  expect(panel.querySelector('[data-settings-section="drawing"] table')).not.toBeNull();
+  expect(sectionIds(host, "keybinds")).toEqual([
+    "tabsFiles",
+    "navigation",
+    "editing",
+    "annotations",
+    "engine",
+    "panels",
+    "drawing",
+  ]);
+  expect(panel.textContent).toContain("Settings.Keybinds.Actions.NEW_TAB");
 });

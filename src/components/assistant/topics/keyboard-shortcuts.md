@@ -1,10 +1,10 @@
 ---
 id: keyboard-shortcuts
 title: Keyboard shortcuts and drawing modifiers
-summary: View, customize, and reset keyboard shortcuts, and learn the mouse modifiers for drawing arrows.
+summary: View, customize, and reset keyboard shortcuts in grouped tables, and learn the mouse modifiers for drawing arrows.
 ---
 
-View and customize all keyboard shortcuts in [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) on [[page:settings]]. Click any shortcut in the table to record a new key combination, or click {{label:Common.Reset}} beside the heading to restore all defaults.
+View and customize all keyboard shortcuts in [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) on [[page:settings]]. Shortcuts are listed in titled groups. Click any shortcut in a group to record a new key combination, or click {{label:Common.Reset}} beside the heading to restore all defaults.
 
 Common default shortcuts (using Ctrl on Windows/Linux and Cmd on macOS):
 - Tabs and files: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

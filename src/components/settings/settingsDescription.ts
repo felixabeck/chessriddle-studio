@@ -1,17 +1,78 @@
-/** Tab order of the settings browser; titles come from `settingCategoryTitle` below, descriptions and icons live in `SettingsPage`. */
+/** Tab order of the settings browser; titles come from `settingCategoryTitle` below; category descriptions live in SettingsPage `categoryInfo`; emojis live in this file. */
 export const SETTING_CATEGORIES = [
     "board",
-    "inputs",
-    "appearance",
+    "analysis",
+    "repertoire",
+    "coach",
+    "general",
     "sound",
     "keybinds",
     "directories",
-    "repertoire",
-    "coach",
     "advanced",
 ] as const;
 
 export type SettingCategory = (typeof SETTING_CATEGORIES)[number];
+
+export const SETTING_CATEGORY_GROUPS = [
+    {
+        id: "chess",
+        accent: "chart-2",
+        categories: ["board", "analysis", "repertoire", "coach"],
+    },
+    {
+        id: "app",
+        accent: "chart-4",
+        categories: ["general", "sound", "keybinds", "directories", "advanced"],
+    },
+] as const;
+
+export type SettingCategoryGroupId = (typeof SETTING_CATEGORY_GROUPS)[number]["id"];
+
+export const SETTING_CONTENT_GROUPS = [
+    "look",
+    "highlights",
+    "movingPieces",
+    "arrowsDrawing",
+    "notation",
+    "navigating",
+    "layoutSaving",
+] as const;
+
+export type SettingContentGroup = (typeof SETTING_CONTENT_GROUPS)[number];
+
+export const SETTING_CATEGORY_EMOJI: Record<SettingCategory, string> = {
+    board: "♟️",
+    analysis: "🔍",
+    repertoire: "📖",
+    coach: "💬",
+    general: "⚙️",
+    sound: "🔊",
+    keybinds: "⌨️",
+    directories: "🗃️",
+    advanced: "🧪",
+};
+
+export const SETTING_CONTENT_GROUP_EMOJI: Record<SettingContentGroup, string> = {
+    look: "🎨",
+    highlights: "✨",
+    movingPieces: "🖱️",
+    arrowsDrawing: "🏹",
+    notation: "📝",
+    navigating: "🧭",
+    layoutSaving: "📋",
+};
+
+/** Last-move highlight colour and opacity nest under the highlight switch. */
+export const LAST_MOVE_HIGHLIGHT_CHILD_IDS = [
+    "move-highlight-color",
+    "move-highlight-opacity",
+] as const;
+
+export type LastMoveHighlightChildId = (typeof LAST_MOVE_HIGHLIGHT_CHILD_IDS)[number];
+
+export function isLastMoveHighlightChild(id: string): id is LastMoveHighlightChildId {
+    return (LAST_MOVE_HIGHLIGHT_CHILD_IDS as readonly string[]).includes(id);
+}
 
 export interface SettingsBuildFacts {
     /** Build target platform (`import.meta.env.VITE_PLATFORM`), e.g. `"win32"`, `"linux"`, `"darwin"`. */
@@ -25,6 +86,7 @@ export type SettingsTranslator = (key: string) => string;
 export interface SettingDescription<Id extends string = SettingId> {
     readonly id: Id;
     readonly category: SettingCategory;
+    readonly group?: SettingContentGroup;
     readonly title: string;
     readonly description: string;
     readonly keywords: readonly string[];
@@ -38,6 +100,20 @@ export function visibleSettingCategories(
     return SETTING_CATEGORIES.filter((category) => category !== "coach" || facts.coachEnabled);
 }
 
+/** Sidebar groups with hidden categories (Coach when disabled) removed. */
+export function visibleSettingCategoryGroups(facts: Pick<SettingsBuildFacts, "coachEnabled">): {
+    readonly id: SettingCategoryGroupId;
+    readonly accent: (typeof SETTING_CATEGORY_GROUPS)[number]["accent"];
+    readonly categories: SettingCategory[];
+}[] {
+    const visible = new Set(visibleSettingCategories(facts));
+    return SETTING_CATEGORY_GROUPS.map((group) => ({
+        id: group.id,
+        accent: group.accent,
+        categories: group.categories.filter((category) => visible.has(category)),
+    })).filter((group) => group.categories.length > 0);
+}
+
 /**
  * Localized title for a settings category. Every key is a literal `t` call so i18next extraction
  * retains every key.
@@ -46,23 +122,68 @@ export function settingCategoryTitle(t: SettingsTranslator, category: SettingCat
     switch (category) {
         case "board":
             return t("Settings.Board");
-        case "inputs":
-            return t("Settings.Inputs");
-        case "appearance":
-            return t("Settings.Appearance");
+        case "analysis":
+            return t("Settings.Analysis");
+        case "repertoire":
+            return t("Settings.Repertoire");
+        case "coach":
+            return t("Settings.AI");
+        case "general":
+            return t("Settings.General");
         case "sound":
             return t("Settings.Sound");
         case "keybinds":
             return t("Settings.Keybinds");
         case "directories":
             return t("Settings.Directories");
-        case "repertoire":
-            return t("Settings.Repertoire");
-        case "coach":
-            return t("Settings.AI");
         case "advanced":
             return t("Settings.Advanced");
     }
+}
+
+export function settingCategoryGroupTitle(
+    t: SettingsTranslator,
+    groupId: SettingCategoryGroupId,
+): string {
+    switch (groupId) {
+        case "chess":
+            return t("Settings.Group.Chess");
+        case "app":
+            return t("Settings.Group.App");
+    }
+}
+
+export function settingContentGroupTitle(
+    t: SettingsTranslator,
+    group: SettingContentGroup,
+): string {
+    switch (group) {
+        case "look":
+            return t("Settings.Group.Look");
+        case "highlights":
+            return t("Settings.Group.Highlights");
+        case "movingPieces":
+            return t("Settings.Group.MovingPieces");
+        case "arrowsDrawing":
+            return t("Settings.Group.ArrowsDrawing");
+        case "notation":
+            return t("Settings.Group.Notation");
+        case "navigating":
+            return t("Settings.Group.Navigating");
+        case "layoutSaving":
+            return t("Settings.Group.LayoutSaving");
+    }
+}
+
+/** Search-result heading: `"Board · Highlights"` when the row has a content group. */
+export function settingSearchGroupLabel(
+    t: SettingsTranslator,
+    setting: { readonly category: SettingCategory; readonly group?: SettingContentGroup },
+): string {
+    const category = settingCategoryTitle(t, setting.category);
+    const group = setting.group;
+    if (!group) return category;
+    return `${category} · ${settingContentGroupTitle(t, group)}`;
 }
 
 /**
@@ -72,107 +193,48 @@ export function settingCategoryTitle(t: SettingsTranslator, category: SettingCat
 export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFacts) {
     const showTitleBar = facts.platform === "win32" || facts.platform === "linux";
 
-    return [
-        // Board settings
+    const settings = [
+        // Board · Look
         {
-            id: "piece-dest",
+            id: "board-image",
             category: "board",
-            title: t("Settings.PieceDest"),
-            description: t("Settings.PieceDest.Desc"),
-            keywords: ["destination", "moves", "highlight"],
+            group: "look",
+            title: t("Settings.Appearance.BoardImage"),
+            description: t("Settings.Appearance.BoardImage.Desc"),
+            keywords: ["board", "image", "texture"],
             shown: true,
         },
         {
-            id: "move-highlight",
+            id: "board-wood-texture",
             category: "board",
-            title: t("Settings.MoveHighlight"),
-            description: t("Settings.MoveHighlight.Desc"),
-            keywords: ["highlight", "last move"],
+            group: "look",
+            title: t("Settings.Appearance.WoodTexture"),
+            description: t("Settings.Appearance.WoodTexture.Desc"),
+            keywords: ["wood", "texture", "grain", "board"],
             shown: true,
         },
         {
-            id: "move-highlight-color",
+            id: "piece-set",
             category: "board",
-            title: t("Settings.MoveHighlightColor"),
-            description: t("Settings.MoveHighlightColor.Desc"),
-            keywords: ["highlight", "last move", "color", "colour"],
+            group: "look",
+            title: t("Settings.Appearance.PieceSet"),
+            description: t("Settings.Appearance.PieceSet.Desc"),
+            keywords: ["piece", "set", "style"],
             shown: true,
         },
         {
-            id: "move-highlight-opacity",
+            id: "piece-size",
             category: "board",
-            title: t("Settings.MoveHighlightOpacity"),
-            description: t("Settings.MoveHighlightOpacity.Desc"),
-            keywords: ["highlight", "last move", "opacity", "transparency"],
-            shown: true,
-        },
-        {
-            id: "arrows",
-            category: "board",
-            title: t("Settings.Arrows"),
-            description: t("Settings.Arrows.Desc"),
-            keywords: ["arrows", "analysis"],
-            shown: true,
-        },
-        {
-            id: "variation-arrows",
-            category: "board",
-            title: t("Settings.VariationArrows"),
-            description: t("Settings.VariationArrows.Desc"),
-            keywords: ["arrows", "variations", "alternative"],
-            shown: true,
-        },
-        {
-            id: "move-notation",
-            category: "board",
-            title: t("Settings.MoveNotation"),
-            description: t("Settings.MoveNotation.Desc"),
-            keywords: ["notation", "letters", "symbols", "pieces"],
-            shown: true,
-        },
-        {
-            id: "move-method",
-            category: "board",
-            title: t("Settings.MoveMethod"),
-            description: t("Settings.MoveMethod.Desc"),
-            keywords: ["drag", "click", "move", "pieces"],
-            shown: true,
-        },
-        {
-            id: "snap-arrows",
-            category: "board",
-            title: t("Settings.SnapArrows"),
-            description: t("Settings.SnapArrows.Desc"),
-            keywords: ["arrows", "snap"],
-            shown: true,
-        },
-        {
-            id: "consecutive-arrows",
-            category: "board",
-            title: t("Settings.ConsecutiveArrows"),
-            description: t("Settings.ConsecutiveArrows.Desc"),
-            keywords: ["arrows", "consecutive"],
-            shown: true,
-        },
-        {
-            id: "erase-drawables",
-            category: "board",
-            title: t("Settings.EraseDrawablesOnClick"),
-            description: t("Settings.EraseDrawablesOnClick.Desc"),
-            keywords: ["erase", "drawables", "click", "arrows"],
-            shown: true,
-        },
-        {
-            id: "auto-promote",
-            category: "board",
-            title: t("Settings.AutoPromition"),
-            description: t("Settings.AutoPromition.Desc"),
-            keywords: ["promote", "queen", "pawn"],
+            group: "look",
+            title: t("Settings.Appearance.PieceSize"),
+            description: t("Settings.Appearance.PieceSize.Desc"),
+            keywords: ["piece", "size", "scale"],
             shown: true,
         },
         {
             id: "coordinates",
             category: "board",
+            group: "look",
             title: t("Settings.Coordinates"),
             description: t("Settings.Coordinates.Desc"),
             keywords: ["coordinates", "a-h", "1-8"],
@@ -181,38 +243,156 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
         {
             id: "animation-speed",
             category: "board",
+            group: "look",
             title: t("Settings.AnimationSpeed"),
             description: t("Settings.AnimationSpeed.Desc"),
             keywords: ["animation", "speed", "duration", "move"],
             shown: true,
         },
+        // Board · Highlights
         {
-            id: "auto-save",
+            id: "piece-dest",
             category: "board",
-            title: t("Settings.AutoSave"),
-            description: t("Settings.AutoSave.Desc"),
-            keywords: ["save", "auto"],
+            group: "highlights",
+            title: t("Settings.PieceDest"),
+            description: t("Settings.PieceDest.Desc"),
+            keywords: ["destination", "moves", "highlight"],
             shown: true,
         },
         {
-            id: "preview-board",
+            id: "move-highlight",
             category: "board",
-            title: t("Settings.PreviewBoard"),
-            description: t("Settings.PreviewBoard.Desc"),
-            keywords: ["preview", "hover"],
+            group: "highlights",
+            title: t("Settings.MoveHighlight"),
+            description: t("Settings.MoveHighlight.Desc"),
+            keywords: ["highlight", "last move"],
+            shown: true,
+        },
+        {
+            id: "move-highlight-color",
+            category: "board",
+            group: "highlights",
+            title: t("Settings.MoveHighlightColor"),
+            description: t("Settings.MoveHighlightColor.Desc"),
+            keywords: ["highlight", "last move", "color", "colour"],
+            shown: true,
+        },
+        {
+            id: "move-highlight-opacity",
+            category: "board",
+            group: "highlights",
+            title: t("Settings.MoveHighlightOpacity"),
+            description: t("Settings.MoveHighlightOpacity.Desc"),
+            keywords: ["highlight", "last move", "opacity", "transparency"],
+            shown: true,
+        },
+        // Board · Moving pieces
+        {
+            id: "move-method",
+            category: "board",
+            group: "movingPieces",
+            title: t("Settings.MoveMethod"),
+            description: t("Settings.MoveMethod.Desc"),
+            keywords: ["drag", "click", "move", "pieces"],
+            shown: true,
+        },
+        {
+            id: "text-input",
+            category: "board",
+            group: "movingPieces",
+            title: t("Settings.Inputs.TextInput"),
+            description: t("Settings.Inputs.TextInput.Desc"),
+            keywords: ["text", "input", "type"],
+            shown: true,
+        },
+        {
+            id: "auto-promote",
+            category: "board",
+            group: "movingPieces",
+            title: t("Settings.AutoPromition"),
+            description: t("Settings.AutoPromition.Desc"),
+            keywords: ["promote", "queen", "pawn"],
             shown: true,
         },
         {
             id: "flip-board-after-move",
             category: "board",
+            group: "movingPieces",
             title: t("Settings.FlipBoardAfterMove"),
             description: t("Settings.FlipBoardAfterMove.Desc"),
             keywords: ["flip", "board", "move"],
             shown: true,
         },
+        // Board · Arrows & drawing
+        {
+            id: "arrows",
+            category: "board",
+            group: "arrowsDrawing",
+            title: t("Settings.Arrows"),
+            description: t("Settings.Arrows.Desc"),
+            keywords: ["arrows", "analysis"],
+            shown: true,
+        },
+        {
+            id: "variation-arrows",
+            category: "board",
+            group: "arrowsDrawing",
+            title: t("Settings.VariationArrows"),
+            description: t("Settings.VariationArrows.Desc"),
+            keywords: ["arrows", "variations", "alternative"],
+            shown: true,
+        },
+        {
+            id: "snap-arrows",
+            category: "board",
+            group: "arrowsDrawing",
+            title: t("Settings.SnapArrows"),
+            description: t("Settings.SnapArrows.Desc"),
+            keywords: ["arrows", "snap"],
+            shown: true,
+        },
+        {
+            id: "consecutive-arrows",
+            category: "board",
+            group: "arrowsDrawing",
+            title: t("Settings.ConsecutiveArrows"),
+            description: t("Settings.ConsecutiveArrows.Desc"),
+            keywords: ["arrows", "consecutive"],
+            shown: true,
+        },
+        {
+            id: "erase-drawables",
+            category: "board",
+            group: "arrowsDrawing",
+            title: t("Settings.EraseDrawablesOnClick"),
+            description: t("Settings.EraseDrawablesOnClick.Desc"),
+            keywords: ["erase", "drawables", "click", "arrows"],
+            shown: true,
+        },
+        // Analysis · Notation
+        {
+            id: "move-notation",
+            category: "analysis",
+            group: "notation",
+            title: t("Settings.MoveNotation"),
+            description: t("Settings.MoveNotation.Desc"),
+            keywords: ["notation", "letters", "symbols", "pieces"],
+            shown: true,
+        },
+        {
+            id: "material-display",
+            category: "analysis",
+            group: "notation",
+            title: t("Settings.MaterialDisplay"),
+            description: t("Settings.MaterialDisplay.Desc"),
+            keywords: ["material", "captured", "pieces", "difference", "hide"],
+            shown: true,
+        },
+        // Analysis · Navigating
         {
             id: "scroll-moves",
-            category: "board",
+            category: "analysis",
+            group: "navigating",
             title: t("Settings.ScrollThroughMoves"),
             description: t("Settings.ScrollThroughMoves.Desc"),
             keywords: ["scroll", "moves", "wheel"],
@@ -220,23 +400,27 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
         },
         {
             id: "choose-variation",
-            category: "board",
+            category: "analysis",
+            group: "navigating",
             title: t("Settings.ChooseVariation"),
             description: t("Settings.ChooseVariation.Desc"),
             keywords: ["variation", "branch", "arrow", "keyboard", "continuation"],
             shown: true,
         },
         {
-            id: "material-display",
-            category: "board",
-            title: t("Settings.MaterialDisplay"),
-            description: t("Settings.MaterialDisplay.Desc"),
-            keywords: ["material", "captured", "pieces", "difference", "hide"],
+            id: "preview-board",
+            category: "analysis",
+            group: "navigating",
+            title: t("Settings.PreviewBoard"),
+            description: t("Settings.PreviewBoard.Desc"),
+            keywords: ["preview", "hover"],
             shown: true,
         },
+        // Analysis · Layout & saving
         {
             id: "default-panel-tab",
-            category: "board",
+            category: "analysis",
+            group: "layoutSaving",
             title: t("Settings.DefaultPanel"),
             description: t("Settings.DefaultPanel.Desc"),
             keywords: [
@@ -253,7 +437,8 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
         },
         {
             id: "panels-beside-notation",
-            category: "board",
+            category: "analysis",
+            group: "layoutSaving",
             title: t("Settings.PanelsBesideNotation"),
             description: t("Settings.PanelsBesideNotation.Desc"),
             keywords: [
@@ -268,89 +453,16 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
             ],
             shown: true,
         },
-        // Input settings
         {
-            id: "text-input",
-            category: "inputs",
-            title: t("Settings.Inputs.TextInput"),
-            description: t("Settings.Inputs.TextInput.Desc"),
-            keywords: ["text", "input", "type"],
+            id: "auto-save",
+            category: "analysis",
+            group: "layoutSaving",
+            title: t("Settings.AutoSave"),
+            description: t("Settings.AutoSave.Desc"),
+            keywords: ["save", "auto"],
             shown: true,
         },
-        {
-            id: "spell-check",
-            category: "inputs",
-            title: t("Settings.Inputs.SpellCheck"),
-            description: t("Settings.Inputs.SpellCheck.Desc"),
-            keywords: ["spell", "check", "grammar"],
-            shown: true,
-        },
-        // Appearance settings
-        {
-            id: "theme",
-            category: "appearance",
-            title: t("Settings.Appearance.Theme"),
-            description: t("Settings.Appearance.Theme.Desc"),
-            keywords: ["theme", "dark", "light", "color"],
-            shown: true,
-        },
-        {
-            id: "language",
-            category: "appearance",
-            title: t("Settings.Appearance.Language"),
-            description: t("Settings.Appearance.Language.Desc"),
-            keywords: ["language", "locale", "translation"],
-            shown: true,
-        },
-        {
-            id: "title-bar",
-            category: "appearance",
-            title: t("Settings.Appearance.TitleBar"),
-            description: t("Settings.Appearance.TitleBar.Desc"),
-            keywords: ["title", "bar", "native", "custom"],
-            shown: showTitleBar,
-        },
-        {
-            id: "font-size",
-            category: "appearance",
-            title: t("Settings.Appearance.FontSize"),
-            description: t("Settings.Appearance.FontSize.Desc"),
-            keywords: ["font", "size", "text"],
-            shown: true,
-        },
-        {
-            id: "piece-set",
-            category: "appearance",
-            title: t("Settings.Appearance.PieceSet"),
-            description: t("Settings.Appearance.PieceSet.Desc"),
-            keywords: ["piece", "set", "style"],
-            shown: true,
-        },
-        {
-            id: "piece-size",
-            category: "appearance",
-            title: t("Settings.Appearance.PieceSize"),
-            description: t("Settings.Appearance.PieceSize.Desc"),
-            keywords: ["piece", "size", "scale"],
-            shown: true,
-        },
-        {
-            id: "board-image",
-            category: "appearance",
-            title: t("Settings.Appearance.BoardImage"),
-            description: t("Settings.Appearance.BoardImage.Desc"),
-            keywords: ["board", "image", "texture"],
-            shown: true,
-        },
-        {
-            id: "board-wood-texture",
-            category: "appearance",
-            title: t("Settings.Appearance.WoodTexture"),
-            description: t("Settings.Appearance.WoodTexture.Desc"),
-            keywords: ["wood", "texture", "grain", "board"],
-            shown: true,
-        },
-        // Repertoire settings
+        // Repertoire
         {
             id: "repertoire-depth",
             category: "repertoire",
@@ -375,7 +487,48 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
             keywords: ["practice", "new", "limit", "session"],
             shown: true,
         },
-        // Sound settings
+        // General (no groups)
+        {
+            id: "language",
+            category: "general",
+            title: t("Settings.Appearance.Language"),
+            description: t("Settings.Appearance.Language.Desc"),
+            keywords: ["language", "locale", "translation"],
+            shown: true,
+        },
+        {
+            id: "theme",
+            category: "general",
+            title: t("Settings.Appearance.Theme"),
+            description: t("Settings.Appearance.Theme.Desc"),
+            keywords: ["theme", "dark", "light", "color"],
+            shown: true,
+        },
+        {
+            id: "font-size",
+            category: "general",
+            title: t("Settings.Appearance.FontSize"),
+            description: t("Settings.Appearance.FontSize.Desc"),
+            keywords: ["font", "size", "text"],
+            shown: true,
+        },
+        {
+            id: "title-bar",
+            category: "general",
+            title: t("Settings.Appearance.TitleBar"),
+            description: t("Settings.Appearance.TitleBar.Desc"),
+            keywords: ["title", "bar", "native", "custom"],
+            shown: showTitleBar,
+        },
+        {
+            id: "spell-check",
+            category: "general",
+            title: t("Settings.Inputs.SpellCheck"),
+            description: t("Settings.Inputs.SpellCheck.Desc"),
+            keywords: ["spell", "check", "grammar"],
+            shown: true,
+        },
+        // Sound
         {
             id: "volume",
             category: "sound",
@@ -392,7 +545,7 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
             keywords: ["sound", "collection", "audio", "effects"],
             shown: true,
         },
-        // Directories settings
+        // Directories
         {
             id: "files-directory",
             category: "directories",
@@ -425,7 +578,7 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
             keywords: ["puzzles", "directory", "folder", "path"],
             shown: true,
         },
-        // Coach settings
+        // Coach
         {
             id: "coach-model",
             category: "coach",
@@ -442,7 +595,7 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
             keywords: ["coach", "ai", "engine"],
             shown: facts.coachEnabled,
         },
-        // Advanced settings
+        // Advanced
         {
             id: "reload",
             category: "advanced",
@@ -468,6 +621,9 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
             shown: true,
         },
     ] as const satisfies readonly SettingDescription<string>[];
+    return settings as readonly ((typeof settings)[number] & {
+        readonly group?: SettingContentGroup;
+    })[];
 }
 
 export type SettingId = ReturnType<typeof describeSettings>[number]["id"];

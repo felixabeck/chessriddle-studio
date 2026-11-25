@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
 title: Atalhos de teclado e modificadores de desenho
-summary: Veja, personalize e reponha os atalhos de teclado, e conheça os modificadores do rato para desenhar setas.
-source: ffc64b2decf8dd86
+summary: Veja, personalize e reponha atalhos de teclado em tabelas agrupadas e aprenda os modificadores do rato para desenhar setas.
+source: a3350229108d7308
 ---
 
-Veja e personalize todos os atalhos de teclado em [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) em [[page:settings]]. Clique em qualquer atalho na tabela para gravar uma nova combinação de teclas, ou clique em {{label:Common.Reset}} junto ao título para repor todas as predefinições.
+Veja e personalize todos os atalhos de teclado em [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) em [[page:settings]]. Os atalhos aparecem em grupos com título. Clique num atalho de um grupo para gravar uma nova combinação, ou clique em {{label:Common.Reset}} junto ao cabeçalho para restaurar todos os valores predefinidos.
 
 Atalhos predefinidos comuns (usando Ctrl no Windows/Linux e Cmd no macOS):
 - Separadores e ficheiros: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

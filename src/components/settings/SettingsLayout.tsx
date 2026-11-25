@@ -10,12 +10,14 @@ export function SettingRow({
   description,
   children,
   highlight = false,
+  nested = false,
 }: {
   id?: string;
   title: string;
   description: string;
   children: ReactNode;
   highlight?: boolean;
+  nested?: boolean;
 }) {
   return (
     <Group
@@ -24,6 +26,7 @@ export function SettingRow({
       className={classes.item}
       data-setting-id={id}
       data-highlighted={highlight || undefined}
+      data-dependent={nested || undefined}
     >
       <div className={classes.settingCopy}>
         <Text className={classes.settingTitle}>{title}</Text>

@@ -123,9 +123,6 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Library tab in the navigation row | `Library` | `shared/icon-catalog.json:790` |
 | Engines page item, local engine portraits and computer opponent | `Brain` | `web/src/components/analysis/EnginePanel.tsx:272` |
 | Settings and engine configuration | `Settings` | `shared/icon-catalog.json:793` |
-| Advanced settings category | `Wrench` | Closest by meaning |
-| Appearance category | `Palette` | `shared/icon-catalog.json:661` |
-| Sound category | `Volume2` | `shared/icon-catalog.json:667` |
 | Privacy category | `Shield` | `shared/icon-catalog.json:676` |
 | Puzzle tabs and new puzzle card | `Puzzle` | `shared/icon-catalog.json:757` |
 | Tournament and engine rating | `Trophy` | `shared/icon-catalog.json:721` |
@@ -146,8 +143,8 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Back from database | `ArrowLeft` | `web/src/components/entityEditor/EntityEditorHeader.tsx:113` |
 | Next and previous database record, return to practice position | `ArrowRight`, `ArrowLeft` | `web/src/components/puzzle/ReviewActionDock.tsx:22`, `web/src/components/entityEditor/EntityEditorHeader.tsx:113` |
 | Rename and edit metadata | `Pencil` | `web/src/components/profile/ProfileHeader.tsx:71` |
-| Repertoire file, review and settings | `BookOpen` | `web/src/components/puzzle/OpeningSelect.tsx:432` |
-| Coach settings category and panel | `MessagesSquare` | Closest by meaning |
+| Repertoire file and review | `BookOpen` | `web/src/components/puzzle/OpeningSelect.tsx:432` |
+| Coach panel | `MessagesSquare` | Closest by meaning |
 | Start a new Coach conversation | `MessageSquarePlus` | Closest by meaning |
 | Insert a Coach line as a variation | `ListPlus` | Closest by meaning |
 | Upload engine portrait | `ImagePlus` | `web/src/components/feedback/FeedbackModal.tsx:396` |
@@ -188,7 +185,6 @@ and meaning. Entries marked closest by meaning have no exact reference slot.
 | Advanced filters and log filter | `EllipsisVertical`, `ListFilter` | Closest by meaning |
 | Empty engine logs | `Terminal` | Closest by meaning |
 | Repertoire start and Anarchy category | `Flag` | Closest by meaning |
-| Inputs and keybindings categories | `Mouse`, `Keyboard` | Closest by meaning |
 | Automatic, dark and light theme | `Monitor`, `Moon`, `Sun` | Closest by meaning |
 | Recent file time | `Clock` | Closest by meaning |
 | Account statistic increase and decrease | `ArrowUpRight`, `ArrowDownRight` | Closest by meaning |
@@ -241,7 +237,7 @@ board. Its asset and coordinate map reproduce the reference maple preset.
 Existing `board-image` selections remain unchanged, all previous choices stay
 available, and the piece-set default remains `staunty`. ChessRiddle's wood grain
 (`wood4-square.png`, soft-light, one tile per square) is on by default and can be
-switched off under Appearance → Wood texture (`d-20261031-03`).
+switched off under Board → Look → Wood Texture (`d-20261031-03`).
 Board corners scale with the board: 3% of its width, capped at the default lg
 radius, so a main board keeps 16px and small previews keep their corner squares.
 Light, Dark and Auto keep their existing behaviour.

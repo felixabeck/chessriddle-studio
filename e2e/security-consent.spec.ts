@@ -23,7 +23,7 @@ test("security-consent: keeps storage free of credential fields and sends no tel
     await expect(page.getByRole("tabpanel", { name: /board/i })).toBeVisible();
     await assertAccessible();
 
-    await page.getByRole("tab", { name: /appearance/i }).click();
+    await page.getByRole("tab", { name: /general/i }).click();
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
     await assertAccessible();

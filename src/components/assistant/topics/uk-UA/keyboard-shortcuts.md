@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: Гарячі клавіші та модифікатори малювання
-summary: Перегляд, налаштування та скидання гарячих клавіш і модифікатори миші для малювання стрілок.
-source: ffc64b2decf8dd86
+title: Сполучення клавіш і модифікатори малювання
+summary: Переглядайте, налаштовуйте та скидайте сполучення клавіш у згрупованих таблицях і дізнайтеся модифікатори миші для малювання стрілок.
+source: a3350229108d7308
 ---
 
-Переглядайте й налаштовуйте всі гарячі клавіші у [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) на сторінці [[page:settings]]. Клацніть будь-яке скорочення в таблиці, щоб записати нову комбінацію клавіш, або натисніть {{label:Common.Reset}} біля заголовка, щоб відновити всі типові значення.
+Переглядайте й налаштовуйте всі сполучення клавіш у [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) на [[page:settings]]. Сполучення перелічені в групах із заголовками. Клацніть будь-яке сполучення в групі, щоб записати нову комбінацію, або клацніть {{label:Common.Reset}} біля заголовка, щоб відновити всі типові значення.
 
 Поширені типові гарячі клавіші (Ctrl у Windows/Linux та Cmd у macOS):
 - Вкладки та файли: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

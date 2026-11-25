@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
 title: Skróty klawiszowe i modyfikatory rysowania
-summary: Przeglądaj, dostosowuj i resetuj skróty klawiszowe oraz poznaj modyfikatory myszy do rysowania strzałek.
-source: ffc64b2decf8dd86
+summary: Przeglądaj, dostosowuj i resetuj skróty klawiszowe w pogrupowanych tabelach oraz poznaj modyfikatory myszy do rysowania strzałek.
+source: a3350229108d7308
 ---
 
-Przeglądaj i dostosowuj wszystkie skróty klawiszowe w [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) w [[page:settings]]. Kliknij dowolny skrót w tabeli, aby nagrać nową kombinację klawiszy, lub kliknij {{label:Common.Reset}} obok nagłówka, aby przywrócić wszystkie ustawienia domyślne.
+Przeglądaj i dostosowuj wszystkie skróty klawiszowe w [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) na [[page:settings]]. Skróty są wymienione w zatytułowanych grupach. Kliknij dowolny skrót w grupie, aby nagrać nową kombinację, albo kliknij {{label:Common.Reset}} obok nagłówka, aby przywrócić wszystkie wartości domyślne.
 
 Popularne domyślne skróty (z Ctrl w Windows/Linux i Cmd na macOS):
 - Karty i pliki: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

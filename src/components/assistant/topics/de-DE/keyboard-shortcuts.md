@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: Tastenkombinationen und Zeichen-Modifikatoren
-summary: Tastenkombinationen ansehen, anpassen und zurücksetzen sowie die Maus-Modifikatoren zum Pfeilezeichnen kennenlernen.
-source: ffc64b2decf8dd86
+title: Tastenkürzel und Zeichen-Modifikatoren
+summary: Tastenkürzel in gruppierten Tabellen ansehen, anpassen und zurücksetzen sowie die Maus-Modifikatoren zum Pfeilezeichnen kennenlernen.
+source: a3350229108d7308
 ---
 
-Alle Tastenkombinationen kannst du unter [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) auf [[page:settings]] einsehen und anpassen. Klicke auf ein Kürzel in der Tabelle, um eine neue Tastenkombination aufzunehmen, oder klicke auf {{label:Common.Reset}} neben der Überschrift, um alle Standardwerte wiederherzustellen.
+Alle Tastenkürzel kannst du unter [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) auf [[page:settings]] einsehen und anpassen. Die Kürzel stehen in betitelten Gruppen. Klicke auf ein Kürzel in einer Gruppe, um eine neue Tastenkombination aufzunehmen, oder klicke auf {{label:Common.Reset}} neben der Überschrift, um alle Standardwerte wiederherzustellen.
 
 Häufige Standardkürzel (Strg unter Windows/Linux und Cmd unter macOS):
 - Tabs und Dateien: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

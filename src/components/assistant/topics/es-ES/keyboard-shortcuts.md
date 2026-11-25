@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
 title: Atajos de teclado y modificadores de dibujo
-summary: Consulta, personaliza y restablece los atajos de teclado, y aprende los modificadores del ratón para dibujar flechas.
-source: ffc64b2decf8dd86
+summary: Consulta, personaliza y restablece los atajos de teclado en tablas agrupadas, y aprende los modificadores del ratón para dibujar flechas.
+source: a3350229108d7308
 ---
 
-Consulta y personaliza todos los atajos de teclado en [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) dentro de [[page:settings]]. Haz clic en cualquier atajo de la tabla para grabar una nueva combinación de teclas, o haz clic en {{label:Common.Reset}} junto al título para restaurar todos los valores predeterminados.
+Consulta y personaliza todos los atajos de teclado en [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) de [[page:settings]]. Los atajos aparecen en grupos con título. Haz clic en cualquier atajo de un grupo para grabar una nueva combinación, o pulsa {{label:Common.Reset}} junto al encabezado para restaurar todos los valores predeterminados.
 
 Atajos predeterminados habituales (con Ctrl en Windows/Linux y Cmd en macOS):
 - Pestañas y archivos: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

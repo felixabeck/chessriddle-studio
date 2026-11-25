@@ -1,3 +1,16 @@
 [data-mantine-color-scheme] .kbd {
   background-color: var(--cf-surface-inset);
 }
+
+.shortcut {
+  height: auto;
+  min-height: var(--button-height, 2.25rem);
+  max-width: 100%;
+}
+
+.shortcut :global(.mantine-Button-inner),
+.shortcut :global(.mantine-Button-label) {
+  height: auto;
+  overflow: visible;
+  white-space: normal;
+}

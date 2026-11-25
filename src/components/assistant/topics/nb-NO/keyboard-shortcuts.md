@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: Tastaturbindinger og tegnemodifikatorer
-summary: Vis, tilpass og tilbakestill tastaturbindinger, og lær musmodifikatorene for å tegne piler.
-source: ffc64b2decf8dd86
+title: Tastatursnarveier og tegnemodifikatorer
+summary: Se, tilpass og tilbakestill tastatursnarveier i grupperte tabeller, og lær musemodifikatorene for å tegne piler.
+source: a3350229108d7308
 ---
 
-Vis og tilpass alle tastaturbindinger under [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) på [[page:settings]]. Klikk på en snarvei i tabellen for å registrere en ny tastekombinasjon, eller klikk {{label:Common.Reset}} ved siden av overskriften for å gjenopprette alle standarder.
+Se og tilpass alle tastatursnarveier i [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) på [[page:settings]]. Snarveiene står i grupper med overskrift. Klikk på en snarvei i en gruppe for å ta opp en ny tastekombinasjon, eller klikk {{label:Common.Reset}} ved overskriften for å gjenopprette alle standardverdier.
 
 Vanlige standardsnarveier (med Ctrl på Windows/Linux og Cmd på macOS):
 - Faner og filer: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

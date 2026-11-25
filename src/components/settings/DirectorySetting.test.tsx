@@ -5,7 +5,7 @@ import { DirectorySetting } from "./DirectorySetting";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@mantine/core", () => ({
-  Input: ({ children, component: Component = "div", ...props }: any) => (
+  Input: ({ children, component: Component = "div", classNames: _classNames, ...props }: any) => (
     <Component {...props}>{children}</Component>
   ),
   Text: ({ children }: any) => <span>{children}</span>,

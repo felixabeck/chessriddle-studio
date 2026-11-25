@@ -14,7 +14,8 @@ const ANIMATION_WINDOW_MS = 700;
 
 async function chooseAnimationSpeed(page: Page, label: string) {
     await goToSettings(page);
-    const select = page.getByRole("textbox", { name: "Piece animation", exact: true });
+    await page.getByRole("tab", { name: "Board", exact: true }).click();
+    const select = page.getByRole("textbox", { name: "Piece Animation", exact: true });
     await select.scrollIntoViewIfNeeded();
     await select.click();
     await page.getByRole("option", { name: label, exact: true }).click();

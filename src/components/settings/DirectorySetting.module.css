@@ -1,0 +1,16 @@
+.wrapper {
+  height: auto;
+  overflow: visible;
+}
+
+.input {
+  height: auto;
+  min-height: var(--input-height);
+  overflow: visible;
+  white-space: normal;
+}
+
+.label {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

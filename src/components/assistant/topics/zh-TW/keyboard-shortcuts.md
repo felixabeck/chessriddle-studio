@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: 快捷鍵與繪圖輔助鍵
-summary: 檢視、自訂與重設鍵盤快捷鍵，並了解繪製箭頭的滑鼠輔助鍵。
-source: ffc64b2decf8dd86
+title: 鍵盤快捷鍵與繪圖修飾鍵
+summary: 在分組表格中檢視、自訂並重設鍵盤快捷鍵，並了解繪製箭頭的滑鼠修飾鍵。
+source: a3350229108d7308
 ---
 
-在 [[page:settings]] 上的 [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) 中檢視並自訂所有鍵盤快捷鍵。點擊表格中的任意快捷鍵即可錄製新的按鍵組合，或點擊標題旁的 {{label:Common.Reset}} 還原所有預設值。
+在 [[page:settings]] 的 [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) 中檢視並自訂所有鍵盤快捷鍵。快捷鍵依帶標題的分組列出。點選某組中的任一快捷鍵以錄製新組合，或點選標題旁的 {{label:Common.Reset}} 以還原全部預設值。
 
 常用預設快捷鍵（Windows/Linux 使用 Ctrl，macOS 使用 Cmd）：
 - 分頁與檔案：{{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`)、{{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`)、{{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`)、{{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`)、{{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`)、{{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`)、{{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`)。

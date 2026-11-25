@@ -19,9 +19,9 @@ async function openBoard(page: Page) {
     return board;
 }
 
-async function openAppearanceTab(page: Page) {
+async function openBoardSettingsTab(page: Page) {
     await goToSettings(page);
-    await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+    await page.getByRole("tab", { name: "Board", exact: true }).click();
 }
 
 function boardPiece(page: Page, selector = "piece.white.king") {
@@ -155,11 +155,11 @@ test("piece-size: default board pieces fill the square with cover and no padding
     expect(Math.abs(layout.height - layout.square)).toBeLessThanOrEqual(1);
 });
 
-test("piece-size: Appearance slider stores 70, insets the image, keeps click-moves, and survives reload", async ({
+test("piece-size: Board slider stores 70, insets the image, keeps click-moves, and survives reload", async ({
     page,
 }) => {
     const board = await openBoard(page);
-    await openAppearanceTab(page);
+    await openBoardSettingsTab(page);
     const slider = await setPieceSizeToSeventy(page);
     await expect(slider).toHaveAttribute("aria-valuenow", "70");
     await expect.poll(() => page.evaluate(() => localStorage.getItem("piece-size"))).toBe("70");
@@ -213,7 +213,7 @@ test("piece-size: merida paint at 100% extends outside the centred 70% box, and 
     page,
 }) => {
     const board = await openBoard(page);
-    await openAppearanceTab(page);
+    await openBoardSettingsTab(page);
     await selectMeridaPieceSet(page);
 
     await goToBoards(page);
@@ -230,7 +230,7 @@ test("piece-size: merida paint at 100% extends outside the centred 70% box, and 
             atFull.maxY > atFull.height - insetY,
     ).toBe(true);
 
-    await openAppearanceTab(page);
+    await openBoardSettingsTab(page);
     await setPieceSizeToSeventy(page);
     await goToBoards(page);
     await expect(board).toBeVisible();

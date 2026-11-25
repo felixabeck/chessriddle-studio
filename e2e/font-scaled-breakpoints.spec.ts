@@ -716,8 +716,8 @@ for (const scale of [200, 100] as const) {
         if (scale === 100) await seedFontScale(page, scale);
         await page.goto("/settings");
         await assertSettingsLayout(page, compact);
-        await page.getByRole("tab", { name: "Appearance", exact: true }).click();
-        const panel = page.getByRole("tabpanel", { name: "Appearance", exact: true });
+        await page.getByRole("tab", { name: "General", exact: true }).click();
+        const panel = page.getByRole("tabpanel", { name: "General", exact: true });
         await expect(panel).toBeVisible();
         const control = labelledSliderControl(panel, "Font Size");
         await assertSettingRow(control, compact);
@@ -795,7 +795,7 @@ test("font-scaled-breakpoints: live slider change stacks Settings and database p
     await page.goto("/settings");
     const documentStartedAt = await page.evaluate(() => performance.timeOrigin);
     await assertSettingsLayout(page, false);
-    await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+    await page.getByRole("tab", { name: "General", exact: true }).click();
     const slider = page.getByRole("slider", { name: "Font Size", exact: true });
     await expect(slider).toHaveAttribute("aria-valuenow", "100");
     await slider.scrollIntoViewIfNeeded();

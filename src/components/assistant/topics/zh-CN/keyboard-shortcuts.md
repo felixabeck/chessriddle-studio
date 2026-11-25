@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: 快捷键与绘图修饰键
-summary: 查看、自定义和重置键盘快捷键，并了解用于绘制箭头的鼠标修饰键。
-source: ffc64b2decf8dd86
+title: 键盘快捷键和绘图修饰键
+summary: 在分组表格中查看、自定义和重置键盘快捷键，并了解绘制箭头的鼠标修饰键。
+source: a3350229108d7308
 ---
 
-在 [[page:settings]] 的 [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) 中查看和自定义所有键盘快捷键。点击表格中的任意快捷键即可录制新的按键组合，或点击标题旁的 {{label:Common.Reset}} 恢复所有默认值。
+在 [[page:settings]] 的 [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) 中查看并自定义所有键盘快捷键。快捷键按带标题的分组列出。点击某组中的任意快捷键以录制新组合，或点击标题旁的 {{label:Common.Reset}} 以恢复全部默认值。
 
 常用默认快捷键（Windows/Linux 使用 Ctrl，macOS 使用 Cmd）：
 - 标签页与文件：{{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`)、{{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`)、{{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`)、{{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`)、{{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`)、{{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`)、{{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`)。

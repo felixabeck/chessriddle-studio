@@ -148,7 +148,7 @@ test("ask the Assistant, follow a setting link, and open prefilled feedback", as
     await assertAccessible();
     await expect(page).toHaveScreenshot("assistant-answer.png");
 
-    // Clicking the setting link opens Settings on Appearance with Font size marked.
+    // Clicking the setting link opens Settings on General with Font Size marked.
     await links.nth(0).click();
     if (isNarrow) {
         await panel.getByRole("button", { name: "Close Assistant" }).click();

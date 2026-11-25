@@ -246,6 +246,10 @@ const definitions = {
     },
 } satisfies Record<string, KeybindDefinition>;
 
+export type KeybindActionId = keyof typeof definitions;
+
+export const KEYBIND_ACTION_IDS = Object.keys(definitions) as KeybindActionId[];
+
 // Stored keymaps stay `{ [action]: { name, keys } }`; the label key is never persisted.
 const keys: KeyMap = Object.fromEntries(
     Object.entries(definitions).map(([action, { name, keys }]) => [action, { name, keys }]),

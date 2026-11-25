@@ -512,7 +512,7 @@ test("each tab and panel header shows its topic emoji and each tab carries its g
     group.topics.map(({ id }) => {
       const tab = host.querySelector<HTMLButtonElement>(`[role="tab"][data-topic-id="${id}"]`)!;
       const tabEmoji = tab.querySelector<HTMLElement>('[aria-hidden="true"]')?.textContent ?? null;
-      const tabAccent = tab.style.getPropertyValue("--guide-accent");
+      const tabAccent = tab.style.getPropertyValue("--sidebar-accent");
       const panelHeading = host.querySelector<HTMLElement>(
         `[role="tabpanel"][data-topic-panel="${id}"] h2`,
       );

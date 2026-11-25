@@ -28,10 +28,10 @@ async function openBoard(page: Page) {
     return board;
 }
 
-async function openAppearanceTab(page: Page) {
+async function openBoardSettingsTab(page: Page) {
     await goToSettings(page);
-    await page.getByRole("tab", { name: "Appearance", exact: true }).click();
-    const woodTexture = page.getByRole("switch", { name: "Wood texture", exact: true });
+    await page.getByRole("tab", { name: "Board", exact: true }).click();
+    const woodTexture = page.getByRole("switch", { name: "Wood Texture", exact: true });
     await expect(woodTexture).toBeVisible();
     return woodTexture;
 }
@@ -46,7 +46,7 @@ test("board-wood-texture: the real stylesheet layers the tile over the board ima
     await expect(board).toHaveCSS("background-size", "12.5% 12.5%, cover");
     await expect(board).toHaveCSS("background-blend-mode", "soft-light, normal");
 
-    const woodTexture = await openAppearanceTab(page);
+    const woodTexture = await openBoardSettingsTab(page);
     await expect(woodTexture).toBeChecked();
     await woodTexture.uncheck();
     await expect(woodTexture).not.toBeChecked();
@@ -67,12 +67,12 @@ test("board-wood-texture: the real stylesheet layers the tile over the board ima
     expect(await page.evaluate(() => localStorage.getItem("board-wood-texture"))).toBe("false");
 });
 
-test("board-wood-texture: Appearance switch track labels pass the accessibility scan on and off", async ({
+test("board-wood-texture: Board switch track labels pass the accessibility scan on and off", async ({
     page,
     assertAccessible,
 }) => {
     await page.goto("/settings");
-    const woodTexture = await openAppearanceTab(page);
+    const woodTexture = await openBoardSettingsTab(page);
     await expect(woodTexture).toBeChecked();
     // The sidebar link's tooltip fades out once the pointer leaves it; axe must not sample it.
     await expect(page.getByRole("tooltip")).toHaveCount(0);
@@ -351,7 +351,7 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
     };
     const withTextureIndex = await exportSnapshotIndex();
 
-    const woodTexture = await openAppearanceTab(page);
+    const woodTexture = await openBoardSettingsTab(page);
     await woodTexture.uncheck();
     await expect(woodTexture).not.toBeChecked();
     await goToBoards(page);

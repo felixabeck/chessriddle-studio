@@ -597,7 +597,7 @@ test("engine editor: refused cloud draft settles at 320px and 200% German", asyn
 });
 
 async function setTitleBarFontScale(page: Page, scale: 100 | 200) {
-    await page.getByRole("tab", { name: "Erscheinungsbild", exact: true }).click();
+    await page.getByRole("tab", { name: "Allgemein", exact: true }).click();
     const slider = page.getByRole("slider", { name: "Schriftgröße", exact: true });
     await slider.focus();
     await page.keyboard.press("Home");
@@ -889,7 +889,7 @@ test("compact title-bar: failed Custom installation preserves native decorations
     capture,
 }) => {
     await page.goto("/settings");
-    await page.getByRole("tab", { name: "Erscheinungsbild", exact: true }).click();
+    await page.getByRole("tab", { name: "Allgemein", exact: true }).click();
     const selector = page.getByRole("textbox", { name: "Titelleiste", exact: true });
     await selector.click();
     await page.getByRole("option", { name: "Native", exact: true }).click();
@@ -1485,7 +1485,15 @@ test("async-errors: verifies German navigation and a delayed native rejection at
     await expect(page.getByRole("tabpanel", { name: "Brett" })).toBeVisible();
     await assertNoHorizontalOverflow();
     await assertPageNotClipped(page);
-    for (const tab of ["Erscheinungsbild", "Ton"]) {
+    for (const tab of [
+        "Analyse & Notation",
+        "Repertoiretraining",
+        "Allgemein",
+        "Ton",
+        "Tastenkürzel",
+        "Dateien & Ordner",
+        "Erweitert",
+    ]) {
         await page.getByRole("tab", { name: tab }).click();
         await expect(page.getByRole("tabpanel", { name: tab })).toBeVisible();
         await assertNoHorizontalOverflow();

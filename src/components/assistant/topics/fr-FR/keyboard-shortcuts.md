@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: Raccourcis clavier et touches modificatrices de dessin
-summary: Consultez, personnalisez et réinitialisez les raccourcis clavier, et découvrez les modificateurs de souris pour tracer des flèches.
-source: ffc64b2decf8dd86
+title: Raccourcis clavier et modificateurs de dessin
+summary: Consulter, personnaliser et réinitialiser les raccourcis clavier dans des tableaux groupés, et apprendre les modificateurs de souris pour dessiner des flèches.
+source: a3350229108d7308
 ---
 
-Consultez et personnalisez tous les raccourcis clavier dans [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) sur [[page:settings]]. Cliquez sur un raccourci du tableau pour enregistrer une nouvelle combinaison de touches, ou cliquez sur {{label:Common.Reset}} à côté du titre pour rétablir tous les réglages par défaut.
+Consultez et personnalisez tous les raccourcis clavier dans [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) sur [[page:settings]]. Les raccourcis sont listés dans des groupes titrés. Cliquez sur un raccourci d’un groupe pour enregistrer une nouvelle combinaison, ou cliquez sur {{label:Common.Reset}} à côté du titre pour restaurer toutes les valeurs par défaut.
 
 Raccourcis par défaut courants (Ctrl sous Windows/Linux et Cmd sur macOS) :
 - Onglets et fichiers : {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

@@ -10,10 +10,67 @@
 
 .list {
   margin-inline: var(--mantine-spacing-xs);
+  width: 17rem;
+  max-width: 35%;
+  flex-shrink: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  flex-wrap: nowrap;
 }
 
 .tab {
   justify-content: flex-start;
+  position: relative;
+  white-space: normal;
+  height: auto;
+  padding-block: var(--mantine-spacing-xs);
+  padding-inline-start: calc(var(--mantine-spacing-sm) + 3px);
+  line-height: 1.35;
+  border-radius: var(--cf-radius-md);
+}
+
+.tab[data-active]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 4px;
+  width: 3px;
+  border-radius: var(--cf-radius-full);
+  background: var(--sidebar-accent, var(--cf-primary));
+}
+
+.groupHeading {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mantine-color-dimmed);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm) 2px;
+  user-select: none;
+}
+
+.groupHeading:not(:first-child) {
+  margin-top: var(--mantine-spacing-xs);
+}
+
+.tabEmoji,
+.sectionEmoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tabEmoji {
+  font-size: 1.05rem;
+  width: 1.35rem;
+}
+
+.sectionEmoji {
+  font-size: 1.25rem;
+  width: 1.5rem;
 }
 
 .content {
@@ -56,7 +113,11 @@
     flex-wrap: nowrap;
     flex-shrink: 0;
     height: auto;
-    max-width: 100%;
+    width: auto;
+    /* Base .list keeps margin-inline: xs; 100% + those margins overflowed the Tabs root. */
+    max-width: calc(100% - 2 * var(--mantine-spacing-xs));
+    min-width: 0;
+    box-sizing: border-box;
     overflow-x: auto;
   }
 
@@ -67,5 +128,28 @@
   .card [role="tabpanel"] {
     min-width: 0;
     overflow-x: auto;
+  }
+
+  .list {
+    overflow-y: hidden;
+  }
+
+  .tab {
+    white-space: nowrap;
+    border-radius: var(--cf-radius-full);
+    padding-inline-start: var(--mantine-spacing-sm);
+  }
+
+  .tab :global(.mantine-Tabs-tabLabel) {
+    white-space: nowrap;
+  }
+
+  .tab[data-active]::before {
+    inset-inline-start: 10px;
+    inset-inline-end: 10px;
+    inset-block-start: auto;
+    inset-block-end: 0;
+    width: auto;
+    height: 2px;
   }
 }

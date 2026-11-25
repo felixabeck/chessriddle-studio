@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: Tasti di scelta rapida e modificatori di disegno
-summary: Visualizza, personalizza e ripristina le scorciatoie da tastiera e scopri i modificatori del mouse per disegnare frecce.
-source: ffc64b2decf8dd86
+title: Scorciatoie da tastiera e modificatori di disegno
+summary: Visualizza, personalizza e ripristina le scorciatoie da tastiera in tabelle raggruppate e scopri i modificatori del mouse per disegnare frecce.
+source: a3350229108d7308
 ---
 
-Visualizza e personalizza tutti i tasti di scelta rapida in [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) su [[page:settings]]. Fai clic su qualsiasi scorciatoia nella tabella per registrare una nuova combinazione di tasti, oppure fai clic su {{label:Common.Reset}} accanto al titolo per ripristinare tutti i valori predefiniti.
+Visualizza e personalizza tutte le scorciatoie da tastiera in [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) su [[page:settings]]. Le scorciatoie sono elencate in gruppi con titolo. Fai clic su una scorciatoia in un gruppo per registrare una nuova combinazione, oppure fai clic su {{label:Common.Reset}} accanto all'intestazione per ripristinare tutti i valori predefiniti.
 
 Scorciatoie predefinite comuni (con Ctrl su Windows/Linux e Cmd su macOS):
 - Schede e file: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

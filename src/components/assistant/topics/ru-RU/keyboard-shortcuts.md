@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: Горячие клавиши и модификаторы рисования
-summary: Просмотр, настройка и сброс горячих клавиш, а также модификаторы мыши для рисования стрелок.
-source: ffc64b2decf8dd86
+title: Сочетания клавиш и модификаторы рисования
+summary: Просматривайте, настраивайте и сбрасывайте сочетания клавиш в сгруппированных таблицах и узнайте модификаторы мыши для рисования стрелок.
+source: a3350229108d7308
 ---
 
-Просматривайте и настраивайте все горячие клавиши в разделе [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) на странице [[page:settings]]. Нажмите на любую клавишу в таблице, чтобы записать новое сочетание, или нажмите {{label:Common.Reset}} рядом с заголовком, чтобы вернуть все значения по умолчанию.
+Просматривайте и настраивайте все сочетания клавиш в [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) на [[page:settings]]. Сочетания перечислены в группах с заголовками. Нажмите любое сочетание в группе, чтобы записать новую комбинацию, или нажмите {{label:Common.Reset}} рядом с заголовком, чтобы восстановить все значения по умолчанию.
 
 Основные горячие клавиши по умолчанию (Ctrl в Windows/Linux и Cmd на macOS):
 - Вкладки и файлы: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

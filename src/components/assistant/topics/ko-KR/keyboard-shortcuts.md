@@ -1,11 +1,11 @@
 ---
 id: keyboard-shortcuts
-title: 단축키와 그리기 보조 키
-summary: 키보드 단축키 보기, 사용자 지정, 초기화 및 화살표 그리기용 마우스 보조 키 익히기.
-source: ffc64b2decf8dd86
+title: 키보드 단축키와 그리기 보조 키
+summary: 그룹 테이블에서 키보드 단축키를 보고, 사용자 지정하고, 초기화하며, 화살표를 그리는 마우스 보조 키를 배웁니다.
+source: a3350229108d7308
 ---
 
-[[page:settings]]의 [[settings-category:keybinds]] ({{label:Settings.Keybinds}})에서 모든 키보드 단축키를 보고 사용자 지정할 수 있습니다. 표에서 아무 단축키나 클릭해 새 키 조합을 기록하거나, 제목 옆의 {{label:Common.Reset}}을(를) 클릭해 모든 기본값을 복원하세요.
+[[page:settings]]의 [[settings-category:keybinds]] ({{label:Settings.Keybinds}})에서 모든 키보드 단축키를 보고 사용자 지정하세요. 단축키는 제목이 있는 그룹으로 나열됩니다. 그룹의 단축키를 클릭해 새 키 조합을 녹음하거나, 제목 옆의 {{label:Common.Reset}}을 클릭해 모든 기본값을 복원하세요.
 
 주요 기본 단축키(Windows/Linux에서는 Ctrl, macOS에서는 Cmd 사용):
 - 탭 및 파일: {{label:Settings.Keybinds.Actions.NEW_TAB}} (`Ctrl/Cmd+T`), {{label:Settings.Keybinds.Actions.CLOSE_TAB}} (`Ctrl/Cmd+W`), {{label:Settings.Keybinds.Actions.OPEN_FILE}} (`Ctrl/Cmd+O`), {{label:Settings.Keybinds.Actions.SAVE_FILE}} (`Ctrl/Cmd+S`), {{label:Settings.Keybinds.Actions.COPY_PGN}} (`Ctrl/Cmd+K`), {{label:Settings.Keybinds.Actions.CYCLE_TABS}} (`Ctrl+Tab`), {{label:Settings.Keybinds.Actions.REVERSE_CYCLE_TABS}} (`Ctrl+Shift+Tab`).

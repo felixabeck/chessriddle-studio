@@ -1,6 +1,7 @@
 import { Input, Text } from "@mantine/core";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { useTranslation } from "react-i18next";
+import classes from "./DirectorySetting.module.css";
 
 type DirectorySettingProps = {
   value: string | null | undefined;
@@ -41,8 +42,10 @@ export function DirectorySetting({
       onClick={() => void chooseDirectory()}
       disabled={disabled || pending}
       w="min(100%, 22rem)"
+      miw={0}
+      classNames={{ wrapper: classes.wrapper, input: classes.input }}
     >
-      <Text lineClamp={1}>
+      <Text className={classes.label}>
         {pending || value === undefined
           ? t("Common.Loading")
           : value || t("Settings.Directories.Select")}

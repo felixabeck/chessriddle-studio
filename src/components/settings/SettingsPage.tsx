@@ -10,22 +10,11 @@ import {
   Text,
   TextInput,
   Title,
+  VisuallyHidden,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useHotkeys } from "@mantine/hooks";
-import {
-  BookOpen,
-  MessagesSquare,
-  Palette,
-  ChessKnight,
-  Wrench,
-  Folder,
-  Keyboard,
-  Mouse,
-  RotateCcw,
-  Search,
-  Volume2,
-} from "lucide-react";
+import { RotateCcw, Search } from "lucide-react";
 import { useLoaderData } from "@tanstack/react-router";
 import { useAtom, useAtomValue } from "jotai";
 import { RESET } from "jotai/utils";
@@ -84,6 +73,7 @@ import {
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import DraftNumberInput from "../common/DraftNumberInput";
+import { GroupedSidebarTabs, type GroupedSidebarGroup } from "../common/GroupedSidebarTabs";
 import { IconAction } from "../common/IconAction";
 import { clearSavedData, openAppLogs, reloadApp } from "./advancedActions";
 import BoardSelect from "./BoardSelect";
@@ -100,12 +90,21 @@ import { DirectorySetting } from "./DirectorySetting";
 import { WorkspaceDirectorySetting } from "./WorkspaceDirectorySetting";
 import shellClasses from "../common/SidebarTabsPage.module.css";
 import classes from "./SettingsPage.module.css";
+import { groupedKeybindActions, keybindGroupTitle } from "./keybindGroups";
 import { SettingRow } from "./SettingsLayout";
 import {
   describeSettings,
+  isLastMoveHighlightChild,
+  SETTING_CATEGORY_EMOJI,
+  SETTING_CONTENT_GROUP_EMOJI,
+  settingCategoryGroupTitle,
   settingCategoryTitle,
+  settingContentGroupTitle,
+  settingSearchGroupLabel,
   visibleSettingCategories,
+  visibleSettingCategoryGroups,
   type SettingCategory,
+  type SettingContentGroup,
   type SettingDescription,
   type SettingId,
 } from "./settingsDescription";
@@ -193,7 +192,12 @@ export default function Page() {
   const [practiceNewPerSession, setPracticeNewPerSession] = useAtom(practiceNewPerSessionAtom);
   // A build without the Coach shows nothing of it: no category, no rows, no search results.
   const coachEnabled = useAtomValue(coachEnabledAtom);
+  const moveHighlight = useAtomValue(moveHighlightAtom);
   const categories = useMemo(() => visibleSettingCategories({ coachEnabled }), [coachEnabled]);
+  const categoryGroups = useMemo(
+    () => visibleSettingCategoryGroups({ coachEnabled }),
+    [coachEnabled],
+  );
   const effectiveCategory = categories.includes(activeCategory) ? activeCategory : categories[0];
 
   const settings = useMemo(
@@ -494,70 +498,102 @@ export default function Page() {
 
   const categoryInfo: Record<
     SettingCategory,
-    { title: string; description: string; icon: React.ReactNode }
+    { title: string; description: string; emoji: string }
   > = useMemo(
     () => ({
       board: {
         title: settingCategoryTitle(t, "board"),
         description: t("Settings.Board.Desc"),
-        icon: <ChessKnight size="1rem" />,
+        emoji: SETTING_CATEGORY_EMOJI.board,
       },
-      inputs: {
-        title: settingCategoryTitle(t, "inputs"),
-        description: t("Settings.Inputs.Desc"),
-        icon: <Mouse size="1rem" />,
-      },
-      appearance: {
-        title: settingCategoryTitle(t, "appearance"),
-        description: t("Settings.Appearance.Desc"),
-        icon: <Palette size="1rem" />,
-      },
-      sound: {
-        title: settingCategoryTitle(t, "sound"),
-        description: t("Settings.Sound.Desc"),
-        icon: <Volume2 size="1rem" />,
-      },
-      keybinds: {
-        title: settingCategoryTitle(t, "keybinds"),
-        description: t("Settings.Keybinds.Desc"),
-        icon: <Keyboard size="1rem" />,
-      },
-      directories: {
-        title: settingCategoryTitle(t, "directories"),
-        description: t("Settings.Directories.Desc"),
-        icon: <Folder size="1rem" />,
+      analysis: {
+        title: settingCategoryTitle(t, "analysis"),
+        description: t("Settings.Analysis.Desc"),
+        emoji: SETTING_CATEGORY_EMOJI.analysis,
       },
       repertoire: {
         title: settingCategoryTitle(t, "repertoire"),
         description: t("Settings.Repertoire.Desc"),
-        icon: <BookOpen size="1rem" />,
+        emoji: SETTING_CATEGORY_EMOJI.repertoire,
       },
       coach: {
         title: settingCategoryTitle(t, "coach"),
         description: t("Settings.Coach.Desc"),
-        icon: <MessagesSquare size="1rem" />,
+        emoji: SETTING_CATEGORY_EMOJI.coach,
+      },
+      general: {
+        title: settingCategoryTitle(t, "general"),
+        description: t("Settings.General.Desc"),
+        emoji: SETTING_CATEGORY_EMOJI.general,
+      },
+      sound: {
+        title: settingCategoryTitle(t, "sound"),
+        description: t("Settings.Sound.Desc"),
+        emoji: SETTING_CATEGORY_EMOJI.sound,
+      },
+      keybinds: {
+        title: settingCategoryTitle(t, "keybinds"),
+        description: t("Settings.Keybinds.Desc"),
+        emoji: SETTING_CATEGORY_EMOJI.keybinds,
+      },
+      directories: {
+        title: settingCategoryTitle(t, "directories"),
+        description: t("Settings.Directories.Desc"),
+        emoji: SETTING_CATEGORY_EMOJI.directories,
       },
       advanced: {
         title: settingCategoryTitle(t, "advanced"),
         description: t("Settings.Advanced.Desc"),
-        icon: <Wrench size="1rem" />,
+        emoji: SETTING_CATEGORY_EMOJI.advanced,
       },
     }),
     [t],
   );
 
+  const sidebarGroups = useMemo((): GroupedSidebarGroup[] => {
+    return categoryGroups.map((group) => ({
+      id: group.id,
+      title: settingCategoryGroupTitle(t, group.id),
+      headingProps: { "data-settings-group": group.id },
+      tabs: group.categories.map((category) => ({
+        value: category,
+        label: categoryInfo[category].title,
+        emoji: categoryInfo[category].emoji,
+        accent: `var(--cf-${group.accent})`,
+        tabProps: { "data-settings-category": category },
+      })),
+    }));
+  }, [categoryGroups, categoryInfo, t]);
+
   const filteredSettings = useMemo(() => {
     if (!searchQuery.trim()) return null;
     const query = searchQuery.toLowerCase();
-    return settings.filter(
-      (setting) =>
+    return settings.filter((setting) => {
+      const groupTitle = setting.group ? settingContentGroupTitle(t, setting.group) : "";
+      return (
         setting.title.toLowerCase().includes(query) ||
         setting.description.toLowerCase().includes(query) ||
         categoryInfo[setting.category].title.toLowerCase().includes(query) ||
+        groupTitle.toLowerCase().includes(query) ||
         setting.id.toLowerCase().includes(query) ||
-        setting.keywords.some((kw) => kw.toLowerCase().includes(query)),
-    );
-  }, [searchQuery, settings, categoryInfo]);
+        setting.keywords.some((kw) => kw.toLowerCase().includes(query))
+      );
+    });
+  }, [searchQuery, settings, categoryInfo, t]);
+
+  const revealNestedId =
+    highlightedSettingId && isLastMoveHighlightChild(highlightedSettingId)
+      ? highlightedSettingId
+      : pendingScroll && isLastMoveHighlightChild(pendingScroll.settingId)
+        ? pendingScroll.settingId
+        : null;
+
+  const isSettingRowVisible = (setting: SettingDescription) => {
+    if (!isLastMoveHighlightChild(setting.id)) return true;
+    if (filteredSettings) return true;
+    if (moveHighlight) return true;
+    return revealNestedId === setting.id;
+  };
 
   useEffect(() => {
     if (!navigationRequest) return;
@@ -591,6 +627,30 @@ export default function Page() {
     setPendingScroll(null);
   }, [pendingScroll, filteredSettings, effectiveCategory]);
 
+  const renderSettingRow = (setting: SettingDescription, highlight = false) => (
+    <SettingRow
+      key={setting.id}
+      id={setting.id}
+      title={setting.title}
+      description={setting.description}
+      highlight={highlight}
+      nested={isLastMoveHighlightChild(setting.id)}
+    >
+      {settingControls[setting.id]()}
+    </SettingRow>
+  );
+
+  const renderGroupHeading = (emoji: string, title: string) => (
+    <Group gap="xs" mb="xs" wrap="nowrap">
+      <span aria-hidden="true" className={shellClasses.sectionEmoji}>
+        {emoji}
+      </span>
+      <Text size="lg" fw={500} className={classes.title}>
+        {title}
+      </Text>
+    </Group>
+  );
+
   const renderSearchResults = () => {
     if (!filteredSettings) return null;
 
@@ -604,38 +664,34 @@ export default function Page() {
       );
     }
 
-    // Group filtered settings by category
-    const groupedSettings = filteredSettings.reduce(
-      (acc, setting) => {
-        if (!acc[setting.category]) {
-          acc[setting.category] = [];
-        }
-        acc[setting.category].push(setting);
-        return acc;
-      },
-      {} as Record<SettingCategory, SettingDescription[]>,
-    );
+    const groupedSettings: { label: string; emoji: string; settings: SettingDescription[] }[] = [];
+    for (const setting of filteredSettings) {
+      const label = settingSearchGroupLabel(t, setting);
+      const last = groupedSettings.at(-1);
+      if (last && last.label === label) {
+        last.settings.push(setting);
+      } else {
+        groupedSettings.push({
+          label,
+          emoji: SETTING_CATEGORY_EMOJI[setting.category],
+          settings: [setting],
+        });
+      }
+    }
 
     return (
       <Card withBorder className={`${shellClasses.card} ${classes.card} wrap-anywhere`} w="100%">
-        {Object.entries(groupedSettings).map(([category, categorySettings]) => (
-          <div key={category}>
-            <Group gap="xs" mt="md" mb="xs">
-              {categoryInfo[category as SettingCategory].icon}
+        {groupedSettings.map(({ label, emoji, settings: groupSettings }, index) => (
+          <div key={label} data-search-group={label}>
+            <Group gap="xs" mt={index === 0 ? 0 : "md"} mb="xs">
+              <span aria-hidden="true" className={shellClasses.sectionEmoji}>
+                {emoji}
+              </span>
               <Text fw={500} size="sm" c="dimmed">
-                {categoryInfo[category as SettingCategory].title}
+                {label}
               </Text>
             </Group>
-            {categorySettings.map((setting) => (
-              <SettingRow
-                key={setting.id}
-                id={setting.id}
-                title={setting.title}
-                description={setting.description}
-              >
-                {settingControls[setting.id]()}
-              </SettingRow>
-            ))}
+            {groupSettings.map((setting) => renderSettingRow(setting))}
           </div>
         ))}
       </Card>
@@ -643,45 +699,129 @@ export default function Page() {
   };
 
   const renderCategorySettings = (category: SettingCategory) => {
-    const categorySettings = settings.filter((s) => s.category === category);
-    return categorySettings.map((setting) => (
-      <SettingRow
-        key={setting.id}
-        id={setting.id}
-        title={setting.title}
-        description={setting.description}
-        highlight={highlightedSettingId === setting.id}
-      >
-        {settingControls[setting.id]()}
-      </SettingRow>
-    ));
+    const categorySettings = settings
+      .filter((setting) => setting.category === category)
+      .filter(isSettingRowVisible);
+    const groups: SettingContentGroup[] = [];
+    for (const setting of categorySettings) {
+      if (setting.group && !groups.includes(setting.group)) groups.push(setting.group);
+    }
+
+    if (groups.length === 0) {
+      return (
+        <Card withBorder className={`${shellClasses.card} ${classes.card} wrap-anywhere`} w="100%">
+          {category === "coach" && <CoachConnections />}
+          {categorySettings.map((setting) =>
+            renderSettingRow(setting, highlightedSettingId === setting.id),
+          )}
+        </Card>
+      );
+    }
+
+    return (
+      <Stack>
+        {groups.map((group) => (
+          <Card
+            key={group}
+            withBorder
+            className={`${shellClasses.card} ${classes.card} wrap-anywhere`}
+            w="100%"
+            data-settings-section={group}
+          >
+            {renderGroupHeading(
+              SETTING_CONTENT_GROUP_EMOJI[group],
+              settingContentGroupTitle(t, group),
+            )}
+            {categorySettings
+              .filter((setting) => setting.group === group)
+              .map((setting) => renderSettingRow(setting, highlightedSettingId === setting.id))}
+          </Card>
+        ))}
+      </Stack>
+    );
   };
 
-  const renderKeybinds = () => (
-    <>
-      <Table>
-        <Table.Thead>
+  const renderKeybindTable = (actions: readonly string[]) => {
+    if (compactTabs) {
+      return (
+        <div>
+          {actions.map((action) => {
+            const keybind = keyMap[action];
+            return (
+              <Group key={action} justify="space-between" gap="xl" className={classes.item}>
+                <div className={classes.settingCopy}>
+                  <Text className={classes.settingTitle}>{keybindLabel(t, action, keybind)}</Text>
+                </div>
+                <div className={classes.settingControl}>
+                  <KeybindInput action={action} keybind={keybind} />
+                </div>
+              </Group>
+            );
+          })}
+        </div>
+      );
+    }
+    return (
+      <Table classNames={{ table: classes.keybindTable }}>
+        <Table.Thead className={VisuallyHidden.classes.root}>
           <Table.Tr>
             <Table.Th>{t("Common.Description")}</Table.Th>
             <Table.Th>{t("Settings.Key")}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {Object.entries(keyMap)
-            .filter(([action]) => coachEnabled || action !== "COACH_TAB")
-            .map(([action, keybind]) => (
+          {actions.map((action) => {
+            const keybind = keyMap[action];
+            return (
               <Table.Tr key={action}>
                 <Table.Td>{keybindLabel(t, action, keybind)}</Table.Td>
                 <Table.Td>
                   <KeybindInput action={action} keybind={keybind} />
                 </Table.Td>
               </Table.Tr>
-            ))}
+            );
+          })}
         </Table.Tbody>
       </Table>
-      <DrawingKeybinds titleClassName={classes.title} />
-    </>
-  );
+    );
+  };
+
+  const renderKeybinds = () => {
+    const { groups, extraActions } = groupedKeybindActions(keyMap, coachEnabled);
+    return (
+      <Stack>
+        {groups.map((group) => (
+          <Card
+            key={group.id}
+            withBorder
+            className={`${shellClasses.card} ${classes.card} wrap-anywhere`}
+            w="100%"
+            data-settings-section={group.id}
+          >
+            {renderGroupHeading(group.emoji, keybindGroupTitle(t, group.id))}
+            {renderKeybindTable(group.actions)}
+          </Card>
+        ))}
+        {extraActions.length > 0 && (
+          <Card
+            withBorder
+            className={`${shellClasses.card} ${classes.card} wrap-anywhere`}
+            w="100%"
+          >
+            {renderKeybindTable(extraActions)}
+          </Card>
+        )}
+        <Card
+          withBorder
+          className={`${shellClasses.card} ${classes.card} wrap-anywhere`}
+          w="100%"
+          data-settings-section="drawing"
+        >
+          <DrawingKeybinds titleClassName={classes.title} />
+        </Card>
+      </Stack>
+    );
+  };
 
   return (
     <Stack ref={pageRef} h="100%" gap={0} data-compact={compactTabs || undefined}>
@@ -732,7 +872,7 @@ export default function Page() {
           flex={1}
           className={shellClasses.tabs}
           classNames={{
-            list: `${shellClasses.list} ${classes.categoryList}`,
+            list: shellClasses.list,
             tab: shellClasses.tab,
           }}
           styles={{
@@ -741,48 +881,35 @@ export default function Page() {
             },
           }}
         >
-          <Tabs.List h={compactTabs ? undefined : "100%"}>
-            {categories.map((category) => (
-              <Tabs.Tab key={category} value={category} leftSection={categoryInfo[category].icon}>
-                {categoryInfo[category].title}
-              </Tabs.Tab>
-            ))}
-          </Tabs.List>
+          <GroupedSidebarTabs groups={sidebarGroups} compact={compactTabs} />
           <Stack flex={1} className={shellClasses.content}>
             <ScrollArea className={shellClasses.scroll}>
-              <Card
-                withBorder
-                className={`${shellClasses.card} ${classes.card} wrap-anywhere`}
-                w="100%"
-              >
-                {categories.map((category) => {
-                  const title = (
-                    <Text size="lg" fw={500} className={classes.title}>
-                      {categoryInfo[category].title}
+              {categories.map((category) => {
+                const title = (
+                  <Text size="lg" fw={500} className={`${classes.title} wrap-anywhere`}>
+                    {categoryInfo[category].title}
+                  </Text>
+                );
+                const isKeybinds = category === "keybinds";
+                return (
+                  <Tabs.Panel key={category} value={category}>
+                    {isKeybinds ? (
+                      <Group>
+                        {title}
+                        <IconAction label={t("Common.Reset")} onClick={() => setKeyMap(RESET)}>
+                          <RotateCcw size="1rem" />
+                        </IconAction>
+                      </Group>
+                    ) : (
+                      title
+                    )}
+                    <Text size="xs" c="dimmed" mt={3} mb="lg">
+                      {categoryInfo[category].description}
                     </Text>
-                  );
-                  const isKeybinds = category === "keybinds";
-                  return (
-                    <Tabs.Panel key={category} value={category}>
-                      {isKeybinds ? (
-                        <Group>
-                          {title}
-                          <IconAction label={t("Common.Reset")} onClick={() => setKeyMap(RESET)}>
-                            <RotateCcw size="1rem" />
-                          </IconAction>
-                        </Group>
-                      ) : (
-                        title
-                      )}
-                      <Text size="xs" c="dimmed" mt={3} mb="lg">
-                        {categoryInfo[category].description}
-                      </Text>
-                      {category === "coach" && <CoachConnections />}
-                      {isKeybinds ? renderKeybinds() : renderCategorySettings(category)}
-                    </Tabs.Panel>
-                  );
-                })}
-              </Card>
+                    {isKeybinds ? renderKeybinds() : renderCategorySettings(category)}
+                  </Tabs.Panel>
+                );
+              })}
             </ScrollArea>
             <Text size="xs" c="dimmed" ta="right">
               {t("Settings.Version", { version })}

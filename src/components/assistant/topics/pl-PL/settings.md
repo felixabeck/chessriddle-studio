@@ -1,19 +1,23 @@
 ---
 id: settings
 title: Przegląd ustawień
-summary: Znajduj i wyszukuj ustawienia w kategoriach Szachownica, Wejścia, Wygląd, Dźwięk, Skróty klawiszowe, Katalogi, Repertuar, AI i Zaawansowane.
-source: 83781801054182a6
+summary: Znajdź i przeszukaj ustawienia w Szachownicy, Analizie i notacji, Treningu repertuaru, SI, Ogólnych, Dźwięku, Skrótach, Plikach i folderach oraz Zaawansowanych.
+source: 283ae23a831eb807
 ---
 
-Otwórz [[page:settings]] ({{label:SideBar.Settings}}) z menu aplikacji (lub naciśnij Cmd+, na macOS). Użyj paska {{label:Common.Search}} na górze [[page:settings]], aby filtrować wszystkie ustawienia według tytułu, opisu lub słowa kluczowego, i naciśnij Escape, aby wyczyścić wyszukiwanie.
+Otwórz [[page:settings]] ({{label:SideBar.Settings}}) z menu aplikacji (lub naciśnij Cmd+, na macOS). Użyj paska {{label:Common.Search}} u góry [[page:settings]], aby filtrować wszystkie ustawienia według tytułu, opisu, grupy lub słowa kluczowego, i naciśnij Escape, aby wyczyścić wyszukiwanie.
 
-Ustawienia są podzielone na dziewięć kategorii:
-- [[settings-category:board]] ({{label:Settings.Board}}): zachowanie i układ szachownicy, w tym [[setting:piece-dest]], [[setting:move-highlight]], [[setting:move-highlight-color]], [[setting:move-highlight-opacity]], [[setting:arrows]], [[setting:variation-arrows]], [[setting:move-notation]], [[setting:move-method]], [[setting:snap-arrows]], [[setting:consecutive-arrows]], [[setting:erase-drawables]], [[setting:auto-promote]], [[setting:coordinates]], [[setting:animation-speed]], [[setting:auto-save]], [[setting:preview-board]], [[setting:flip-board-after-move]], [[setting:scroll-moves]], [[setting:choose-variation]], [[setting:material-display]], [[setting:default-panel-tab]] i [[setting:panels-beside-notation]].
-- [[settings-category:inputs]] ({{label:Settings.Inputs}}): wpisywanie ruchów i sprawdzanie pisowni komentarzy poprzez [[setting:text-input]] oraz [[setting:spell-check]].
-- [[settings-category:appearance]] ({{label:Settings.Appearance}}): dostosowanie wyglądu poprzez [[setting:theme]], [[setting:language]], {{label:Settings.Appearance.TitleBar}} (w Windows i Linux), [[setting:font-size]], [[setting:piece-set]], [[setting:piece-size]], [[setting:board-image]] oraz [[setting:board-wood-texture]].
-- [[settings-category:sound]] ({{label:Settings.Sound}}): głośność dźwięku ruchów i zestaw dźwięków poprzez [[setting:volume]] oraz [[setting:sound-collection]].
-- [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): dostosuj skróty klawiszowe, przywróć je przyciskiem {{label:Common.Reset}} i zobacz modyfikatory myszy dla {{label:Settings.Drawing}}.
-- [[settings-category:directories]] ({{label:Settings.Directories}}): skonfiguruj foldery przechowywania poprzez [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] oraz [[setting:puzzles-directory]].
-- [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): próg pokrycia repertuaru i harmonogram ćwiczeń poprzez [[setting:repertoire-depth]], [[setting:practice-grading]] oraz [[setting:practice-new-per-session]].
-- [[settings-category:coach]] ({{label:Settings.AI}}): zarządzaj połączeniami AI dla Coach i Assistant, wybierz model, którym odpowiadają, w [[setting:coach-model]] oraz wybierz lokalny silnik Coach w [[setting:coach-engine]].
-- [[settings-category:advanced]] ({{label:Settings.Advanced}}): narzędzia serwisowe obejmujące [[setting:reload]], [[setting:clear-saved-data]] oraz [[setting:open-logs]].
+Ustawienia są podzielone na dwie grupy paska bocznego, Szachy i Aplikacja:
+
+Szachy:
+- [[settings-category:board]] ({{label:Settings.Board}}): wygląd szachownicy i sposób przesuwania bierek, w tym [[setting:board-image]], [[setting:board-wood-texture]], [[setting:piece-set]], [[setting:piece-size]], [[setting:coordinates]], [[setting:animation-speed]], [[setting:piece-dest]], [[setting:move-highlight]], [[setting:move-highlight-color]], [[setting:move-highlight-opacity]], [[setting:move-method]], [[setting:text-input]], [[setting:auto-promote]], [[setting:flip-board-after-move]], [[setting:arrows]], [[setting:variation-arrows]], [[setting:snap-arrows]], [[setting:consecutive-arrows]] i [[setting:erase-drawables]].
+- [[settings-category:analysis]] ({{label:Settings.Analysis}}): notacja, nawigacja, układ paneli i automatyczny zapis przez [[setting:move-notation]], [[setting:material-display]], [[setting:scroll-moves]], [[setting:choose-variation]], [[setting:preview-board]], [[setting:default-panel-tab]], [[setting:panels-beside-notation]] i [[setting:auto-save]].
+- [[settings-category:repertoire]] ({{label:Settings.Repertoire}}): próg pokrycia repertuaru i planowanie ćwiczeń przez [[setting:repertoire-depth]], [[setting:practice-grading]] i [[setting:practice-new-per-session]].
+- [[settings-category:coach]] ({{label:Settings.AI}}): zarządzaj połączeniami SI Coacha i Asystenta, wybierz model odpowiedzi w [[setting:coach-model]] oraz lokalny silnik Coacha w [[setting:coach-engine]].
+
+Aplikacja:
+- [[settings-category:general]] ({{label:Settings.General}}): język, motyw, rozmiar czcionki i preferencje wprowadzania przez [[setting:language]], [[setting:theme]], [[setting:font-size]], {{label:Settings.Appearance.TitleBar}} (w Windows i Linux) i [[setting:spell-check]].
+- [[settings-category:sound]] ({{label:Settings.Sound}}): głośność dźwięków ruchów i pakiet dźwięków przez [[setting:volume]] i [[setting:sound-collection]].
+- [[settings-category:keybinds]] ({{label:Settings.Keybinds}}): dostosuj skróty klawiszowe, przywróć je za pomocą {{label:Common.Reset}} i zobacz modyfikatory myszy {{label:Settings.Drawing}}.
+- [[settings-category:directories]] ({{label:Settings.Directories}}): skonfiguruj foldery przechowywania przez [[setting:files-directory]], [[setting:databases-directory]], [[setting:engines-directory]] i [[setting:puzzles-directory]].
+- [[settings-category:advanced]] ({{label:Settings.Advanced}}): narzędzia konserwacyjne, w tym [[setting:reload]], [[setting:clear-saved-data]] i [[setting:open-logs]].

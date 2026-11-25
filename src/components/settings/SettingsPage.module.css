@@ -9,6 +9,17 @@
   align-items: center;
 }
 
+/* Ungrouped cards start with a row: no empty strip or divider above it. A heading, Coach
+   connections, or a search-group label before the first row keeps the divider. */
+.card > .item:first-child {
+  border-top: none;
+  margin-top: 0;
+}
+
+.item[data-dependent] {
+  padding-inline-start: var(--mantine-spacing-lg);
+}
+
 .item[data-highlighted] {
   background: color-mix(in srgb, var(--cf-primary) 10%, transparent);
   box-shadow: inset 3px 0 0 var(--cf-primary);
@@ -43,6 +54,17 @@
   font-weight: 500;
 }
 
+/* Wide Shortcuts cards are separate tables; a shared 50% first column lines the Key column up. */
+.keybindTable {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.keybindTable th:first-child,
+.keybindTable td:first-child {
+  width: 50%;
+}
+
 .title {
   line-height: 1;
 }
@@ -55,10 +77,6 @@
   letter-spacing: 0.12em;
   text-align: center;
   user-select: all;
-}
-
-.categoryList {
-  align-self: flex-start;
 }
 
 [data-compact] {
@@ -75,5 +93,47 @@
   .settingControl {
     width: 100%;
     min-width: 0;
+  }
+
+  /* Drawing (and any leftover table) stacks at the compact width instead of overflowing. */
+  :global(.mantine-Table-scrollContainer) {
+    min-width: 0;
+    overflow: visible;
+  }
+
+  :global(.mantine-Table-table) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :global(.mantine-Table-thead) {
+    display: none;
+  }
+
+  :global(.mantine-Table-tbody),
+  :global(.mantine-Table-tr),
+  :global(.mantine-Table-th),
+  :global(.mantine-Table-td) {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Outranks the wide 50% first column so stacked cells stay full width. */
+  .keybindTable th:first-child,
+  .keybindTable td:first-child {
+    width: 100%;
+  }
+
+  :global(.mantine-Table-tr) {
+    border-top: 1px solid var(--cf-border);
+    padding-top: var(--mantine-spacing-sm);
+    margin-top: var(--mantine-spacing-sm);
+  }
+
+  :global(.mantine-Table-td) {
+    padding-inline: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }

@@ -2,17 +2,14 @@ import { Button, Card, Divider, Group, ScrollArea, Stack, Tabs, Text, Title } fr
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { ArrowRight } from "lucide-react";
-import {
-  type CSSProperties,
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AssistantTopic } from "@/bindings";
+import {
+  GroupedSidebarTabs,
+  type GroupedSidebarGroup,
+  type GroupedSidebarTab,
+} from "@/components/common/GroupedSidebarTabs";
 import shellClasses from "@/components/common/SidebarTabsPage.module.css";
 import { wrappingButton } from "@/components/common/wrappingButton";
 import { useTabCommands } from "@/components/tabs/TabCommands";
@@ -176,24 +173,38 @@ export default function GuidePage() {
     }
   }, []);
 
-  const renderTopicTab = (topic: AssistantTopic) => {
-    const { emoji, accentVar } = getTopicVisuals(topic.id);
-    return (
-      <Tabs.Tab
-        key={topic.id}
-        value={topic.id}
-        data-topic-id={topic.id}
-        style={{ "--guide-accent": accentVar } as CSSProperties}
-        leftSection={
-          <span aria-hidden="true" className={classes.tabEmoji}>
-            {emoji}
-          </span>
-        }
-      >
-        {topic.title}
-      </Tabs.Tab>
-    );
-  };
+  const sidebarGroups = useMemo((): GroupedSidebarGroup[] => {
+    return groupedTopics.map(({ group, items }) => ({
+      id: group.id,
+      title: groupTitle(t, group.id),
+      headingProps: { "data-guide-group": group.id },
+      tabs: items.map((topic) => {
+        const { emoji, accentVar } = getTopicVisuals(topic.id);
+        return {
+          value: topic.id,
+          label: topic.title,
+          emoji,
+          accent: accentVar,
+          tabProps: { "data-topic-id": topic.id },
+        } satisfies GroupedSidebarTab;
+      }),
+    }));
+  }, [groupedTopics, t]);
+
+  const extraTabs = useMemo(
+    (): GroupedSidebarTab[] =>
+      ungroupedTopics.map((topic) => {
+        const { emoji, accentVar } = getTopicVisuals(topic.id);
+        return {
+          value: topic.id,
+          label: topic.title,
+          emoji,
+          accent: accentVar,
+          tabProps: { "data-topic-id": topic.id },
+        };
+      }),
+    [ungroupedTopics],
+  );
 
   return (
     <Stack h="100%" gap={0} data-compact={compact || undefined}>
@@ -228,8 +239,8 @@ export default function GuidePage() {
           flex={1}
           className={shellClasses.tabs}
           classNames={{
-            list: `${shellClasses.list} ${classes.topicList}`,
-            tab: `${shellClasses.tab} ${classes.topicTab}`,
+            list: shellClasses.list,
+            tab: shellClasses.tab,
           }}
           styles={{
             tabLabel: {
@@ -237,28 +248,12 @@ export default function GuidePage() {
             },
           }}
         >
-          <Tabs.List h={compact ? undefined : "100%"} aria-label={t("Guide.Topics")}>
-            {compact ? (
-              topics.map((topic) => renderTopicTab(topic))
-            ) : (
-              <>
-                {groupedTopics.map(({ group, items }) => (
-                  <Fragment key={group.id}>
-                    <div
-                      role="presentation"
-                      aria-hidden="true"
-                      data-guide-group={group.id}
-                      className={classes.groupHeading}
-                    >
-                      {groupTitle(t, group.id)}
-                    </div>
-                    {items.map((topic) => renderTopicTab(topic))}
-                  </Fragment>
-                ))}
-                {ungroupedTopics.map((topic) => renderTopicTab(topic))}
-              </>
-            )}
-          </Tabs.List>
+          <GroupedSidebarTabs
+            groups={sidebarGroups}
+            extraTabs={extraTabs}
+            compact={compact}
+            aria-label={t("Guide.Topics")}
+          />
           <Stack flex={1} className={`${shellClasses.content} ${classes.guideContent}`}>
             <ScrollArea className={shellClasses.scroll} viewportRef={scrollViewportRef}>
               <Card
