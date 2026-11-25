@@ -29364,3 +29364,18 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Open question:** how does the sweep prove a `.atomic-<UUID>` sibling in the database root has no live writer? Writers there are not only the index build but every atomic replace in that root (database file replacement, integrity sidecars), possibly concurrent within one instance, so the sweep needs either a per-root writer lease the sweep waits on (as the engine-image issuance count does) or a startup-only point before any database command is admitted.
 * **Fix direction:** Optimal: extend the existing crash-orphan sweep pattern to the database root, reusing the engine-image sweep's protections (own-root instance lock held, no active index build or other atomic writer in that root, regular files only, `.atomic-<UUID>` names only, bounded listing), at startup. Related: f-20261004-12 (same orphan shape, engine images, handled with a sweep).
 * **Found by:** Claude Code (Opus 5.5), session 8d6f0ded-064c-4c6f-9bcb-1065dd9442c7, preparing the English demo profile, 2026-11-25.
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### A "Prepare on board" tab comes back unpinned after a restart, without its opponent and reference columns
+
+* **ID:** f-20261125-14 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes
+* **Where:** `src/state/atoms/explorer.ts` (`pinnedExplorerDatabaseFamily`, `pinnedExplorerComparisonFamily`, `pinnedExplorerReferenceFamily`, `dbTypeFamily`: plain in-memory tab atoms), `src/state/workspaceSession.ts` `restoreWorkspaceSessionAtStart` (reseeds the same tab ids into `sessionStorage`), `src/state/restoreOpenTabs.ts` (restore on by default), `src/components/panels/database/explorerComparison.ts` (an unpinned tab reads the app-wide `comparison-database`).
+* **Defect:** since the whole-workspace restore (`61c4b3954`, d-20261125-14) a tab survives quit, crash and shutdown, but the board explorer's tab-scoped choices are not part of what it restores. A preparation board opened through "Prepare on board" returns as an ordinary unpinned board: its pinned database, the opponent's online-games column and the reference column are gone, and the panel shows the reference database and the app-wide second source instead. A board whose Database panel was switched to Lichess All or Lichess Masters returns on Local.
+* **Failure scenario:** Felix prepares against an opponent with "Prepare on board", quits Studio in the evening and starts it again; the restored tab shows his own reference database (plus any app-wide comparison) instead of the opponent's games beside the reference database, with nothing telling him the preparation view was lost.
+* **Open question:** persist the preparation board's tab-scoped explorer state (pin, opponent column, further columns, first source) with the restored tab, or keep them per process and say so. d-20261125-14 rejected a second per-tab restore format; the session mirror already restores `sessionStorage` keys, so storing these atoms there is the likely route.
+* **Found by:** Claude Code (Opus 5.5), build lichess-explorer-source drift round r3 (Grok lenses review-plan and review-persisted-state), 2026-11-25.
