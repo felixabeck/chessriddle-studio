@@ -35,6 +35,30 @@
   margin-inline: calc(-1 * var(--mantine-spacing-sm));
 }
 
+/* A switch row flips from anywhere on it. The hover tint is a layer behind the row, reaching
+   halfway into the gaps above and below the content, so it marks the target without moving it. */
+.item[data-toggle-row] {
+  position: relative;
+  isolation: isolate;
+  cursor: pointer;
+}
+
+.item[data-toggle-row]::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: calc(var(--mantine-spacing-sm) / 2) calc(-1 * var(--mantine-spacing-xs))
+    calc(-1 * var(--mantine-spacing-sm) / 2);
+  border-radius: var(--mantine-radius-sm);
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .item[data-toggle-row]:hover::before {
+    background: var(--cf-primary-row-hover);
+  }
+}
+
 .settingCopy {
   flex: 1 1 18rem;
   min-width: 0;

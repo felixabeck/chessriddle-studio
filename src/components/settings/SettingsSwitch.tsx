@@ -2,7 +2,7 @@ import { Switch } from "@mantine/core";
 import { type PrimitiveAtom, useAtom } from "jotai";
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
-import { SettingLabelContext } from "./SettingsLayout";
+import { SettingLabelContext, SettingToggleContext } from "./SettingsLayout";
 
 export default function SettingsSwitch({
   atom,
@@ -13,9 +13,11 @@ export default function SettingsSwitch({
 }) {
   const { t } = useTranslation();
   const inheritedLabel = useContext(SettingLabelContext);
+  const registerToggle = useContext(SettingToggleContext);
   const [checked, setChecked] = useAtom(atom);
   return (
     <Switch
+      ref={registerToggle ?? undefined}
       aria-label={label || inheritedLabel}
       onLabel={t("Common.On")}
       offLabel={t("Common.Off")}
