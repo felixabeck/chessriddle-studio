@@ -29322,3 +29322,20 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario:** a user whose session storage is full clicks New Tab and gets the refusal notice twice; the e2e gate on master is red about one run in eight.
 * **Fix direction:** find which restore/mirror path causes the second report (e.g. a deferred flush or store-creation subscription re-entering tab creation or workspace commit) and remove the cause; the test stays unchanged.
 * **Found by:** Claude Code (Opus 5.5), session ee439b95-8204-44ff-b74f-b24e6916f3dc, build workspace-restore, 2026-11-25.
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The daily game-practice mutation sweep is red: four survivors in the unseen-line ordering of practice sessions
+
+* **ID:** f-20261125-16 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45604503911
+* **First red:** run 45604503911 on `952b7cbbb` (scheduled 2026-11-25 11:26 UTC; the previous Mutation run 45395218545 on `41bf2e516` had `frontend-mutation (game-practice)` green). `952b7cbbb` only changed icons; the surviving lines come from `e441a022d` (frequent lines first) and `d30f897ad` (timed run), both 2026-11-24.
+* **Spotted outside diff:** yes (push gate `pnpm ci:remote:check` of the panel-tab icon change)
+* **Where:** `src/components/panels/practice/session.ts:26` (`if (leftWeight === undefined && rightWeight === undefined) return 0;`, ConditionalExpression at 26:37 survives), `:27` (`if (leftWeight === undefined) return 1;`, survives), `:52` (`return byWeight !== 0 ? byWeight : left - right;`, ConditionalExpression at 52:16 and ArithmeticOperator at 52:44 survive)
+* **Defect:** no test fails when the both-unweighted and left-unweighted branches of `compareUnseenByWeight` or the index tie-break of the unseen-line sort are mutated, so the frontend mutation package game-practice scores 98.60 under its breaking threshold of 100. The daily Mutation workflow is red and `pnpm ci:remote:check` refuses every later code push.
+* **Failure scenario:** job `frontend-mutation (game-practice)` of Mutation run 45604503911: "Final mutation score 98.60 under breaking threshold 100, setting exit code to 1".
+* **Fix:** add tests that order unseen lines where both, one, or neither carry a weight and where equal weights must keep their original order, or remove a branch that is provably redundant (not a Stryker disable unless proven equivalent).
+* **Proof:** `FRONTEND_MUTATION_PACKAGE=game-practice pnpm mutation:frontend` reports 100.
