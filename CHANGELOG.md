@@ -4,6 +4,10 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 
 ## Unreleased
 
+### New
+
+- Scoresheet photo import: choose, paste, or drop up to four photos of a handwritten scoresheet in Import Game to transcribe the moves with your connected AI model, check them against the rules of chess, and review and save the game beside the photo.
+
 ### Improved
 
 - Explorer: Lichess All and Lichess Masters are now sources like your databases. Pick them in the Database panel's source drop-down or under Compare, in the "Online" group, to see a local database and Lichess side by side without downloading anything. Each Lichess column has its own filters and needs a signed-in Lichess account. The Local / Lichess All / Lichess Masters switch is gone.

@@ -14,10 +14,12 @@
 // particular always opens a native picker, so no engine can be registered from here — a check that
 // needs a live engine child is still Felix's.
 //
-// Prerequisites, all three one-off:
+// Prerequisites, all five one-off:
 //   sudo apt install webkit2gtk-driver     (must match the installed libwebkit2gtk version)
 //   cargo install tauri-driver --locked
 //   sudo apt install kwin-wayland
+//   sudo apt install wl-clipboard          (provides wl-copy for --scoresheet-paste)
+//   sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-tools  (provides fakeaudiosink)
 
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -136,15 +138,16 @@ export function requirePrerequisites(application = APP_BINARY) {
   if (!existsSync("/usr/bin/WebKitWebDriver")) {
     missing.push("WebKitWebDriver — install with: sudo apt install webkit2gtk-driver");
   }
-  try {
-    execFileSync("sh", ["-c", "command -v tauri-driver"], { stdio: "ignore" });
-  } catch {
-    missing.push("tauri-driver — install with: cargo install tauri-driver --locked");
-  }
-  try {
-    execFileSync("sh", ["-c", "command -v kwin_wayland"], { stdio: "ignore" });
-  } catch {
-    missing.push("kwin_wayland — install with: sudo apt install kwin-wayland");
+  for (const [binary, hint] of [
+    ["tauri-driver", "cargo install tauri-driver --locked"],
+    ["kwin_wayland", "sudo apt install kwin-wayland"],
+    ["wl-copy", "sudo apt install wl-clipboard"],
+  ]) {
+    try {
+      execFileSync("sh", ["-c", `command -v ${binary}`], { stdio: "ignore" });
+    } catch {
+      missing.push(`${binary} — install with: ${hint}`);
+    }
   }
   // `startDriver` silences the app by ranking `fakeaudiosink` first; without the element that
   // ranking is a no-op and `autoaudiosink` falls back to the real output, so its absence is a

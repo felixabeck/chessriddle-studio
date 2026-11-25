@@ -554,4 +554,34 @@ finding ids and date.
   a preparation board is no longer possible, there it is a further column; a failed Lichess
   request is not retried by itself, moving to another position asks again; a column that cannot
   answer shows empty cells instead of dashes.
+
+## 2026-11-25 — Importing a game from a scoresheet photo
+
+- **Question:** How should a user with an AI connection turn a photo of a handwritten scoresheet
+  into a game, and which product points of the reviewed plan
+  (`tasks/plans/2026-11-24-scoresheet-photo-import.md`) apply?
+- **Choice:** Felix, 2026-11-24: "yes the entry point is fine from photo Everything else as you
+  recommend." A "From photo" option in the import dialog plus drag and drop and paste; the game
+  opens as a new unsaved tab with the photo beside the board and unclear moves marked, and the
+  user corrects and saves it into the file they choose; several photos per game; without an AI
+  connection the option is shown with a hint to connect one; names, date, event and result are
+  read from the sheet too. On 2026-11-25 he confirmed the plan's six product points by sending
+  the build order ("P1 yes, P2 yes, P3 yes, P4 yes, P5 yes, P6 yes"):
+  - **P1** "Continue with the rest of the sheet": after a stop or a corrected wrong move the
+    sheet's own moves are put back. Reason in the plan: without it a wrong move in the middle
+    means typing the rest of the game again.
+  - **P2** Photos are kept in memory only: after a restart the game and its marks are back, the
+    photo has to be loaded again.
+  - **P3** Up to 4 photos per game; JPEG, PNG and WebP; no HEIC and no PDF.
+  - **P4** Standard chess from the starting position only.
+  - **P5** Dropping a photo works on the open "From photo" pane, not anywhere in the window.
+  - **P6** The wording of the first-use notice: what is sent (the photos, with names and whatever
+    else is written on the sheet) and to whom (the provider of the chosen connection), that
+    photo metadata such as location is removed first, and that nothing else of the user's data
+    goes with it.
+- **Felix's reason:** from the original question: "I saw it in another app that they provide this
+  feature to directly upload a photo of your notation and then it gets converted into a file".
+- **Technical record:** `d-20261125-40` to `d-20261125-49` (DA1 to DA10 of the plan) and the
+  bundle decisions `d-20261125-37` to `d-20261125-39` and `d-20261125-50` in `tasks/decisions.md`; the privacy text is
+  ChessRiddle commit `7757a40b7`.
 - **Date:** 2026-11-25.

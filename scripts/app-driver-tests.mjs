@@ -8,14 +8,21 @@ import { join } from "node:path";
 import { syncBuiltinESMExports } from "node:module";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { crc32, inflateSync } from "node:zlib";
 import {
   ASSERTION_SESSION_OPEN_PHRASE,
   BOARD_TAB_STOP_SELECTOR,
+  EXCLUSIVE_FLOW_FLAGS,
+  SCORESHEET_PASTE_PARTIAL_EXIT_CODE,
   STARTUP_RECONCILIATION_LATENCY_PHRASE,
+  assertExclusiveFlowModes,
+  classifyScoresheetConnectionCheck,
+  createScoresheetTestPng,
   createSinceOpenLogReader,
   evaluateWorkspaceRestoreSnapshot,
   mainlineMovesFromTree,
   openAssertionSession,
+  scoresheetPasteExitOutcome,
   treeNodeAtPath,
   verifyConversionCancellationContract,
   waitForStartupReconciliation,
@@ -127,6 +134,7 @@ test("prerequisites check the selected application even when the default binary 
     [
       ["sh", ["-c", "command -v tauri-driver"]],
       ["sh", ["-c", "command -v kwin_wayland"]],
+      ["sh", ["-c", "command -v wl-copy"]],
       ["gst-inspect-1.0", ["--exists", "fakeaudiosink"]],
     ],
   );
@@ -139,6 +147,154 @@ test("prerequisites check the selected application even when the default binary 
   assert.throws(
     () => requirePrerequisites(),
     (error) => error.message.includes(`${APP_BINARY} — build it with: agent-gate pnpm build`),
+  );
+});
+
+test("prerequisites report wl-copy with its wl-clipboard install hint when missing", (t) => {
+  const application = join(tmpdir(), "app-driver-wl-copy-test-app");
+  t.mock.method(
+    fs,
+    "existsSync",
+    (path) => path === "/usr/bin/WebKitWebDriver" || path === application,
+  );
+  t.mock.method(childProcess, "execFileSync", (command, args) => {
+    if (command === "sh" && args[1] === "command -v wl-copy") {
+      throw new Error("wl-copy missing");
+    }
+    return Buffer.alloc(0);
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+
+  assert.throws(
+    () => requirePrerequisites(application),
+    (error) => error.message.includes("wl-copy — install with: sudo apt install wl-clipboard"),
+  );
+});
+
+test("verify-app single-flow modes including --scoresheet-paste are mutually exclusive", () => {
+  assert.equal(assertExclusiveFlowModes(["node", "scripts/verify-app.mjs"]), null);
+  for (const flag of EXCLUSIVE_FLOW_FLAGS) {
+    assert.equal(assertExclusiveFlowModes(["node", "scripts/verify-app.mjs", flag]), flag);
+  }
+  assert.ok(EXCLUSIVE_FLOW_FLAGS.includes("--scoresheet-paste"));
+  for (const other of EXCLUSIVE_FLOW_FLAGS.filter((flag) => flag !== "--scoresheet-paste")) {
+    assert.throws(
+      () =>
+        assertExclusiveFlowModes(["node", "scripts/verify-app.mjs", "--scoresheet-paste", other]),
+      /--scoresheet-paste.*mutually exclusive/u,
+    );
+  }
+});
+
+test("createScoresheetTestPng produces a valid 64x64 RGBA PNG with valid chunk CRCs and inflated scanlines", () => {
+  const png = createScoresheetTestPng(64, 64);
+  assert.deepEqual(
+    png.subarray(0, 8),
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  );
+
+  let offset = 8;
+  const chunks = [];
+  while (offset < png.length) {
+    assert.ok(offset + 12 <= png.length, `truncated PNG chunk header at ${offset}`);
+    const length = png.readUInt32BE(offset);
+    const type = png.subarray(offset + 4, offset + 8).toString("ascii");
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    assert.ok(dataEnd + 4 <= png.length, `truncated PNG chunk ${type} at ${offset}`);
+    const data = png.subarray(dataStart, dataEnd);
+    const actualCrc = png.readUInt32BE(dataEnd);
+    const expectedCrc = crc32(png.subarray(offset + 4, dataEnd)) >>> 0;
+    assert.equal(actualCrc, expectedCrc, `CRC mismatch for chunk ${type}`);
+    chunks.push({ type, data });
+    offset = dataEnd + 4;
+  }
+
+  assert.equal(chunks[0]?.type, "IHDR");
+  assert.equal(chunks[0].data.length, 13);
+  assert.equal(chunks[0].data.readUInt32BE(0), 64);
+  assert.equal(chunks[0].data.readUInt32BE(4), 64);
+  assert.equal(chunks[0].data[8], 8); // 8-bit depth
+  assert.equal(chunks[0].data[9], 6); // RGBA
+  assert.equal(chunks[chunks.length - 1]?.type, "IEND");
+  assert.equal(chunks[chunks.length - 1].data.length, 0);
+
+  const idatBytes = Buffer.concat(
+    chunks.filter((chunk) => chunk.type === "IDAT").map((chunk) => chunk.data),
+  );
+  assert.ok(idatBytes.length > 0);
+  const inflated = inflateSync(idatBytes);
+  assert.equal(inflated.length, 64 * (1 + 64 * 4));
+});
+
+test("scoresheetPasteExitOutcome distinguishes pass, partial, and failure exit codes", () => {
+  assert.equal(SCORESHEET_PASTE_PARTIAL_EXIT_CODE, 3);
+  assert.deepEqual(
+    scoresheetPasteExitOutcome({ failuresCount: 0, spNPassed: true, spPStatus: "passed" }),
+    { exitCode: 0, partial: false },
+  );
+  assert.deepEqual(
+    scoresheetPasteExitOutcome({ failuresCount: 0, spNPassed: true, spPStatus: "not-proven" }),
+    { exitCode: 3, partial: true },
+  );
+  assert.deepEqual(
+    scoresheetPasteExitOutcome({ failuresCount: 1, spNPassed: true, spPStatus: "not-proven" }),
+    { exitCode: 1, partial: false },
+  );
+  assert.deepEqual(
+    scoresheetPasteExitOutcome({ failuresCount: 1, spNPassed: false, spPStatus: "not-proven" }),
+    { exitCode: 1, partial: false },
+  );
+  assert.deepEqual(
+    scoresheetPasteExitOutcome({ failuresCount: 0, spNPassed: false, spPStatus: "not-proven" }),
+    { exitCode: 1, partial: false },
+  );
+});
+
+test("classifyScoresheetConnectionCheck treats rejections, errors, timeouts, and non-booleans as failed, never not-connected", () => {
+  assert.deepEqual(classifyScoresheetConnectionCheck({ result: { json: "true" }, value: true }), {
+    status: "connected",
+    detail: null,
+  });
+  assert.deepEqual(classifyScoresheetConnectionCheck({ result: { json: "false" }, value: false }), {
+    status: "not-connected",
+    detail: null,
+  });
+  // Regression for invokeJsonAndWait storing IPC rejection / WebDriver timeout on result.{rejected,error}.
+  assert.deepEqual(
+    classifyScoresheetConnectionCheck({ result: { rejected: "Storage" }, value: undefined }),
+    { status: "failed", detail: "Storage" },
+  );
+  assert.deepEqual(
+    classifyScoresheetConnectionCheck({
+      result: { error: "timed out waiting for coach_has_connection" },
+      value: undefined,
+    }),
+    { status: "failed", detail: "timed out waiting for coach_has_connection" },
+  );
+  assert.deepEqual(
+    classifyScoresheetConnectionCheck({
+      result: { json: "{" },
+      value: undefined,
+      error: "Unexpected end of JSON input",
+    }),
+    { status: "failed", detail: "Unexpected end of JSON input" },
+  );
+  assert.deepEqual(classifyScoresheetConnectionCheck({ result: {}, value: undefined }), {
+    status: "failed",
+    detail: "coach_has_connection returned no value",
+  });
+  assert.equal(
+    classifyScoresheetConnectionCheck({ result: { json: "null" }, value: null }).status,
+    "failed",
+  );
+  assert.equal(
+    classifyScoresheetConnectionCheck({ result: { json: '"false"' }, value: "false" }).status,
+    "failed",
   );
 });
 

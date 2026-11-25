@@ -224,6 +224,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { deflateSync } from "node:zlib";
 import { Chess, makeSquare } from "chessops";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
@@ -264,8 +265,28 @@ const progressContractOnly = process.argv.includes("--progress-contract");
 const fallbackEngineInstallOnly = process.argv.includes("--fallback-engine-install");
 // Installs the catalog engine like --fallback-engine-install, then runs a real game report.
 const gameReportOnly = process.argv.includes("--game-report");
+const scoresheetPasteOnly = process.argv.includes("--scoresheet-paste");
 const timedRunOnly = process.argv.includes("--timed-run");
 const workspaceRestoreOnly = process.argv.includes("--workspace-restore");
+
+export const EXCLUSIVE_FLOW_FLAGS = [
+  "--fallback-engine-install",
+  "--game-report",
+  "--progress-contract",
+  "--scoresheet-paste",
+  "--timed-run",
+  "--workspace-restore",
+];
+
+export function assertExclusiveFlowModes(argv = process.argv) {
+  const selected = EXCLUSIVE_FLOW_FLAGS.filter((flag) => argv.includes(flag));
+  if (selected.length > 1) {
+    throw new Error(
+      "--fallback-engine-install, --game-report, --progress-contract, --scoresheet-paste, --timed-run and --workspace-restore are mutually exclusive",
+    );
+  }
+  return selected[0] ?? null;
+}
 const expectClearRejection = process.argv.includes("--expect-clear-rejection");
 const applicationIndex = process.argv.indexOf("--application");
 const progressGenerationIndex = process.argv.indexOf("--expect-progress-generation");
@@ -7909,17 +7930,7 @@ async function verifyGameReport(session) {
         ),
       );
       // Mantine fades the modal in; a screenshot taken before the fade ends shows no dialog.
-      await waitFor("the fully shown dialog", () =>
-        session.execute(`
-          const content = document.querySelector('[role="dialog"]');
-          let node = content;
-          while (node && node !== document.body) {
-            if (Number(getComputedStyle(node).opacity) < 1) return false;
-            node = node.parentElement;
-          }
-          return !!content;
-        `),
-      );
+      await waitForDialogShown(session);
       if (screenshotPath) {
         const dialogPath = screenshotPath.replace(/(\.png)?$/, "-dialog.png");
         await writeFile(dialogPath, Buffer.from(await session.screenshot(), "base64"));
@@ -8575,26 +8586,426 @@ async function verifyTimedRun(profileDirectory, screenshotDirectory) {
   }
 }
 
+const PNG_CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function pngCrc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc = PNG_CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const typeBytes = Buffer.from(type, "ascii");
+  const length = Buffer.allocUnsafe(4);
+  length.writeUInt32BE(data.length, 0);
+  const body = Buffer.concat([typeBytes, data]);
+  const crc = Buffer.allocUnsafe(4);
+  crc.writeUInt32BE(pngCrc32(body), 0);
+  return Buffer.concat([length, body, crc]);
+}
+
+/** Generates a valid RGBA PNG buffer with a visible checkerboard pattern (at least 64x64). */
+export function createScoresheetTestPng(width = 64, height = 64) {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = Buffer.allocUnsafe(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // RGBA
+  ihdr[10] = 0; // compression
+  ihdr[11] = 0; // filter
+  ihdr[12] = 0; // interlace
+
+  const stride = 1 + width * 4;
+  const raw = Buffer.allocUnsafe(stride * height);
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * stride;
+    raw[rowOffset] = 0;
+    for (let x = 0; x < width; x += 1) {
+      const px = rowOffset + 1 + x * 4;
+      const dark = ((x >> 3) + (y >> 3)) % 2 === 0;
+      raw[px] = dark ? 24 : 240;
+      raw[px + 1] = dark ? 36 : 235;
+      raw[px + 2] = dark ? 72 : 210;
+      raw[px + 3] = 255;
+    }
+  }
+
+  return Buffer.concat([
+    signature,
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(raw)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+// `wl-copy --foreground` publishes its Wayland selection asynchronously after reading stdin EOF
+// and prints no readiness signal; pause briefly so it registers the offer or exits on failure.
+const WL_COPY_READY_SETTLE_MS = 200;
+
+export const SCORESHEET_PASTE_PARTIAL_EXIT_CODE = 3;
+
+export function invokeJsonFailure(outcome) {
+  return outcome?.error ?? outcome?.result?.rejected ?? outcome?.result?.error ?? null;
+}
+
+export function classifyScoresheetConnectionCheck(outcome) {
+  const failure =
+    invokeJsonFailure(outcome) ??
+    (outcome?.value === undefined ? "coach_has_connection returned no value" : null);
+  if (failure) {
+    return { status: "failed", detail: String(failure) };
+  }
+  if (outcome.value === true) {
+    return { status: "connected", detail: null };
+  }
+  if (outcome.value === false) {
+    return { status: "not-connected", detail: null };
+  }
+  return {
+    status: "failed",
+    detail: `expected boolean from coach_has_connection, got ${JSON.stringify(outcome.value)}`,
+  };
+}
+
+export function scoresheetPasteExitOutcome({ failuresCount, spNPassed, spPStatus }) {
+  if (failuresCount > 0) return { exitCode: 1, partial: false };
+  if (spNPassed && spPStatus === "not-proven") {
+    return { exitCode: SCORESHEET_PASTE_PARTIAL_EXIT_CODE, partial: true };
+  }
+  if (spNPassed && spPStatus === "passed") {
+    return { exitCode: 0, partial: false };
+  }
+  return { exitCode: 1, partial: false };
+}
+
+async function waitForDialogShown(session, label = "the fully shown dialog") {
+  // Mantine fades the modal in; reading or screenshotting before opacity reaches 1 misses it.
+  await waitFor(label, () =>
+    session.execute(`
+      const content = document.querySelector('[role="dialog"]');
+      if (!content) return false;
+      let node = content;
+      while (node && node !== document.body) {
+        if (Number(getComputedStyle(node).opacity) < 1) return false;
+        node = node.parentElement;
+      }
+      return true;
+    `),
+  );
+}
+
+async function startWaylandClipboardPng(pngBuffer, appEnvironment) {
+  const output = outputBuffer();
+  const clipboardOwner = launch("wl-copy", ["--foreground", "--type", "image/png"], {
+    env: appEnvironment,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  clipboardOwner.stdout?.on("data", (chunk) => output.push(chunk));
+  clipboardOwner.stderr?.on("data", (chunk) => output.push(chunk));
+  await new Promise((resolve, reject) => {
+    clipboardOwner.once("error", reject);
+    clipboardOwner.stdin.end(pngBuffer, resolve);
+  });
+  await sleep(WL_COPY_READY_SETTLE_MS);
+  if (clipboardOwner.exitCode !== null || clipboardOwner.signalCode !== null) {
+    throw new Error(
+      `wl-copy exited prematurely (exit ${clipboardOwner.exitCode ?? "none"}, signal ${clipboardOwner.signalCode ?? "none"}): ${output.text()}`,
+    );
+  }
+  return clipboardOwner;
+}
+
+async function verifyScoresheetPaste(profileDirectory, appEnvironment, screenshotDirectory) {
+  // Seed one Active registry entry for SP-P. CredentialManager::initialize -> reconcile() currently
+  // drops Active entries that have no OS keyring secret, and this flow never touches the keyring;
+  // SP-P is therefore currently unreachable on a clean throwaway profile and runs automatically once
+  // a connection can persist without a keyring secret.
+  const credentialsDirectory = join(
+    profileDirectory,
+    ".local/share/com.chessriddle.studio/credentials",
+  );
+  await mkdir(credentialsDirectory, { recursive: true, mode: 0o700 });
+  chmodSync(credentialsDirectory, 0o700);
+  const connectionHandle = randomUUID();
+  const coachConnectionsFile = join(credentialsDirectory, "coach-connections.json");
+  await writeFile(
+    coachConnectionsFile,
+    JSON.stringify({
+      version: 2,
+      accounts: {
+        [connectionHandle]: {
+          state: "active",
+          account: {
+            handle: connectionHandle,
+            username: "Verify Scoresheet Connection",
+          },
+        },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  chmodSync(coachConnectionsFile, 0o600);
+
+  const clipboardOwner = await startWaylandClipboardPng(
+    createScoresheetTestPng(64, 64),
+    appEnvironment,
+  );
+  const session = await Session.open(APP_BINARY);
+  let spNPassed = false;
+  let spPStatus = "failed";
+  try {
+    const startupOk = await assertion(
+      "SP0 scoresheet-paste renderer starts on the seeded profile",
+      () => waitFor("scoresheet-paste renderer startup", () => session.execute(closeControlProbe)),
+    );
+
+    // SP-N: native clipboard route (always runs on startup success, independent of SP-P).
+    spNPassed = await assertion(
+      "SP-N native scoresheet_paste_photo returns a JPEG data URL that renders under the real CSP",
+      async () => {
+        if (!startupOk) throw new Error("SP0 renderer startup failed");
+        const pasted = await invokeJsonAndWait(
+          session,
+          "scoresheet_paste_photo",
+          "__verifyScoresheetNativePaste",
+          'window.__TAURI_INTERNALS__.invoke("scoresheet_paste_photo")',
+        );
+        const pastedFailure = invokeJsonFailure(pasted);
+        if (pastedFailure) {
+          throw new Error(`scoresheet_paste_photo failed: ${pastedFailure}`);
+        }
+        const dataUrl = pasted.value?.dataUrl;
+        if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/jpeg;base64,")) {
+          throw new Error(
+            `expected JPEG data URL from scoresheet_paste_photo, got: ${JSON.stringify(pasted.value)}`,
+          );
+        }
+        try {
+          await session.execute(
+            `
+              const existing = document.getElementById('__verify-scoresheet-native-img');
+              if (existing) existing.remove();
+              const img = document.createElement('img');
+              img.id = '__verify-scoresheet-native-img';
+              img.alt = 'verify scoresheet native paste';
+              img.style.cssText = 'position:fixed;top:16px;left:16px;z-index:999999;border:2px solid #000;background:#fff;';
+              img.src = arguments[0];
+              document.body.appendChild(img);
+              return true;
+            `,
+            [dataUrl],
+          );
+          const decoded = await waitFor("native scoresheet JPEG image to render", () =>
+            session.execute(`
+              const img = document.getElementById('__verify-scoresheet-native-img');
+              if (!img || !img.complete) return false;
+              return {
+                src: img.getAttribute('src') || '',
+                naturalWidth: img.naturalWidth,
+                naturalHeight: img.naturalHeight,
+              };
+            `),
+          );
+          if (
+            !decoded.src.startsWith("data:image/jpeg;base64,") ||
+            decoded.naturalWidth <= 0 ||
+            decoded.naturalHeight <= 0
+          ) {
+            throw new Error(
+              `native scoresheet image did not decode cleanly: ${JSON.stringify(decoded)}`,
+            );
+          }
+          console.log(
+            `  .. native clipboard image rendered: ${decoded.naturalWidth}x${decoded.naturalHeight} (src length ${decoded.src.length})`,
+          );
+          if (screenshotDirectory) {
+            await mkdir(screenshotDirectory, { recursive: true });
+            const nativeShotPath = join(screenshotDirectory, "scoresheet-native-paste.png");
+            await writeFile(nativeShotPath, Buffer.from(await session.screenshot(), "base64"));
+            console.log(`  .. scoresheet-native-paste screenshot: ${nativeShotPath}`);
+          }
+        } finally {
+          await session
+            .execute(
+              "document.getElementById('__verify-scoresheet-native-img')?.remove(); return true;",
+            )
+            .catch(() => {});
+        }
+      },
+    );
+
+    // SP-P: "From photo" pane route (requires coach_has_connection === true).
+    if (startupOk) {
+      const available = await invokeJsonAndWait(
+        session,
+        "coach_available",
+        "__verifyScoresheetCoachAvailable",
+        'window.__TAURI_INTERNALS__.invoke("coach_available")',
+      );
+      const hasConnection = await invokeJsonAndWait(
+        session,
+        "coach_has_connection",
+        "__verifyScoresheetCoachHasConnection",
+        'window.__TAURI_INTERNALS__.invoke("coach_has_connection")',
+      );
+      const availableFailure = invokeJsonFailure(available);
+      const connectionCheck = classifyScoresheetConnectionCheck(hasConnection);
+      if (availableFailure || available.value !== true) {
+        await assertion("SP-P Coach availability check succeeded", () => {
+          throw new Error(
+            availableFailure
+              ? `coach_available failed: ${availableFailure}`
+              : `coach_available was ${JSON.stringify(available.value)}`,
+          );
+        });
+        spPStatus = "failed";
+      } else if (connectionCheck.status === "failed") {
+        await assertion("SP-P connection registry check succeeded", () => {
+          throw new Error(`coach_has_connection failed: ${connectionCheck.detail}`);
+        });
+        spPStatus = "failed";
+      } else if (connectionCheck.status === "not-connected") {
+        console.log(
+          "NOT PROVEN: From photo pane route — the profile cannot hold an AI connection without an OS keyring secret (credentials reconcile), and this flow never touches the keyring",
+        );
+        spPStatus = "not-proven";
+      } else {
+        const spPOpened = await assertion(
+          "SP-P1 Import dialog opens and selects From photo in the connected state",
+          async () => {
+            await goToBoards(session);
+            await clickButton(session, "Import");
+            await waitForDialogShown(session, "the fully shown Import dialog");
+            const fromPhotoPresent = await session.execute(
+              `return [...document.querySelectorAll('[role="dialog"] button')].some(node => !node.disabled && node.textContent.trim() === 'From photo')`,
+            );
+            if (!fromPhotoPresent) {
+              throw new Error(
+                "'From photo' option is missing from the Import dialog even though coach_available was true",
+              );
+            }
+            const fromPhotoCard = await reachableStableCoordinates(
+              session,
+              "From photo",
+              `[...document.querySelectorAll('[role="dialog"] button')].find(node => !node.disabled && node.textContent.trim() === 'From photo')`,
+            );
+            await clickAt(session, fromPhotoCard.x, fromPhotoCard.y);
+
+            const paneState = await waitFor("From photo pane to settle", () =>
+              session.execute(`
+                const dialog = document.querySelector('[role="dialog"]');
+                if (!dialog) return false;
+                if (dialog.querySelector('[data-scoresheet-no-connection]')) return "no-connection";
+                if (dialog.querySelector('[data-scoresheet-intake-pane]')) return "connected";
+                return false;
+              `),
+            );
+            if (paneState !== "connected") {
+              throw new Error(
+                `expected connected From photo pane when coach_has_connection was true (paneState=${paneState})`,
+              );
+            }
+          },
+        );
+
+        const spPPasted = await assertion(
+          "SP-P2 Paste from clipboard renders a JPEG data-URL thumbnail with naturalWidth > 0",
+          async () => {
+            if (!spPOpened) throw new Error("SP-P1 Import dialog did not open From photo");
+            const pasteButton = await reachableStableCoordinates(
+              session,
+              "Paste from clipboard",
+              `[...document.querySelectorAll('[data-scoresheet-intake-pane] button')].find(node => !node.disabled && node.textContent.trim() === 'Paste from clipboard')`,
+            );
+            await clickAt(session, pasteButton.x, pasteButton.y);
+
+            const thumbnail = await waitFor("pasted scoresheet JPEG thumbnail", async () => {
+              const state = await session.execute(`
+                const img = document.querySelector('[data-scoresheet-thumbnails] img');
+                const status = document.querySelector('[data-scoresheet-intake-status]')?.textContent?.trim() ?? null;
+                if (!img) return status ? { status, missing: true } : false;
+                return {
+                  src: img.getAttribute('src') || '',
+                  complete: img.complete,
+                  naturalWidth: img.naturalWidth,
+                  naturalHeight: img.naturalHeight,
+                  status,
+                };
+              `);
+              if (!state) return false;
+              if (state.missing) {
+                throw new Error(
+                  `clipboard paste reported intake status without thumbnail: ${state.status}`,
+                );
+              }
+              if (!state.src.startsWith("data:image/jpeg;base64,")) return false;
+              if (!state.complete || state.naturalWidth <= 0) return false;
+              return state;
+            });
+            console.log(
+              `  .. scoresheet thumbnail rendered: ${thumbnail.naturalWidth}x${thumbnail.naturalHeight} (src length ${thumbnail.src.length})`,
+            );
+          },
+        );
+
+        let spPScreenshot = true;
+        if (screenshotDirectory) {
+          spPScreenshot = await assertion(
+            "SP-P3 scoresheet-paste screenshot is written",
+            async () => {
+              if (!spPPasted) throw new Error("SP-P2 thumbnail did not render");
+              await mkdir(screenshotDirectory, { recursive: true });
+              const path = join(screenshotDirectory, "scoresheet-paste.png");
+              await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
+              console.log(`  .. scoresheet-paste screenshot: ${path}`);
+            },
+          );
+        }
+
+        spPStatus = spPOpened && spPPasted && spPScreenshot ? "passed" : "failed";
+      }
+
+      await assertion("SP-Close scoresheet-paste application exits cleanly", async () => {
+        const closed = await closeApplicationThroughTitlebar(session, "scoresheet-paste");
+        if (!closed.gone || closed.survivors.length > 0) {
+          throw new Error(
+            `scoresheet-paste processes survived close: ${closed.survivors.join(", ")}`,
+          );
+        }
+      });
+    }
+  } finally {
+    const quit = await session.quit();
+    if (!quit.released) {
+      console.log(`  .. scoresheet-paste WebDriver session release returned: ${quit.error}`);
+    }
+    await stopLaunchedChild(clipboardOwner).catch((error) => {
+      console.log(`  .. wl-copy cleanup returned: ${error.message}`);
+    });
+  }
+  return { spNPassed, spPStatus };
+}
+
 async function main() {
   process.on("exit", () => {
     restoreRootPermissionsForCleanup("exit");
     if (!cleanupSettled) console.error("cleanup did not finish before process exit");
   });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, handleSignal);
+  let scoresheetPasteResult = null;
   try {
-    if (
-      [
-        progressContractOnly,
-        fallbackEngineInstallOnly,
-        gameReportOnly,
-        timedRunOnly,
-        workspaceRestoreOnly,
-      ].filter(Boolean).length > 1
-    ) {
-      throw new Error(
-        "--fallback-engine-install, --game-report, --progress-contract, --timed-run and --workspace-restore are mutually exclusive",
-      );
-    }
+    assertExclusiveFlowModes(process.argv);
     if (
       screenshotDirIndex !== -1 &&
       (!screenshotDirectory || screenshotDirectory.startsWith("--"))
@@ -8646,6 +9057,12 @@ async function main() {
       } finally {
         await fallbackSession.quit();
       }
+    } else if (scoresheetPasteOnly) {
+      scoresheetPasteResult = await verifyScoresheetPaste(
+        profileDirectory,
+        appEnvironment,
+        screenshotDirectory,
+      );
     } else if (timedRunOnly) {
       const timedRunScreenshotDirectory =
         screenshotDirectory ?? join(profileDirectory, "timed-run-screenshots");
@@ -8678,6 +9095,18 @@ async function main() {
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed`);
     process.exitCode = 1;
+  } else if (scoresheetPasteOnly && process.exitCode !== 1) {
+    const outcome = scoresheetPasteExitOutcome({
+      failuresCount: failures.length,
+      spNPassed: Boolean(scoresheetPasteResult?.spNPassed),
+      spPStatus: scoresheetPasteResult?.spPStatus ?? "failed",
+    });
+    if (outcome.partial) {
+      console.log("\nPARTIAL: native route proven, pane route NOT PROVEN");
+    } else if (outcome.exitCode === 0) {
+      console.log("\nall checks passed");
+    }
+    process.exitCode = outcome.exitCode;
   } else if (process.exitCode !== 1) {
     console.log("\nall checks passed");
   }

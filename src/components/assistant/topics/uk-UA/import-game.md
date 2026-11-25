@@ -1,15 +1,25 @@
 ---
 id: import-game
 title: Імпорт партії
-summary: Імпортуйте партію з файлу PGN, вставленого тексту PGN, посилання Lichess чи Chess.com або позиції FEN.
-source: 5f27dc589f7b69aa
+summary: Імпортуйте партію з файлу PGN, вставленого тексту PGN, посилання Lichess чи Chess.com, позиції FEN або фотографій рукописного бланку партії.
+source: bda7f1cdec3151e0
 ---
 
 Щоб імпортувати партію або позицію, відкрийте [[page:new-tab]] та натисніть {{label:Home.Card.ImportGame.Button}}, щоб відкрити діалог {{label:Home.Card.ImportGame.Title}}. Ви також можете відкрити файл PGN безпосередньо через {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (або комбінацію клавіш {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
 
-У діалозі {{label:Home.Card.ImportGame.Title}} виберіть одну з трьох вкладок:
+У діалозі {{label:Home.Card.ImportGame.Title}} виберіть один із варіантів:
 - **PGN**: виберіть {{label:Common.PGNFile}} на комп’ютері або вставте текст у поле {{label:Common.PGNGame}}. Позначте {{label:Import.SaveToCollection}}, щоб зберегти копію до робочої теки в [[page:library]], а потім введіть {{label:Common.Name}} і виберіть {{label:Files.FileType}}.
 - **{{label:Import.Online}}**: вставте {{label:Import.GameURL}} із Lichess або Chess.com, щоб завантажити партію та відкрити її на дошці аналізу.
 - **FEN**: вставте рядок FEN, щоб відкрити дошку аналізу з цієї позиції.
+- **{{label:Import.FromPhoto}}** (коли функції ШІ доступні): розпізнайте від 1 до 4 фотографій рукописного бланку партії у нову партію. Для цього потрібне щонайменше одне підключення ШІ в розділі [[settings-category:coach]] ({{label:Settings.AI}}).
 
-Натисніть {{label:Home.Card.ImportGame.Button}}, щоб завантажити партію в поточну вкладку.
+Для PGN, {{label:Import.Online}} та FEN натисніть {{label:Home.Card.ImportGame.Button}}, щоб завантажити партію в поточну вкладку.
+
+Щоб імпортувати через **{{label:Import.FromPhoto}}**:
+- Додайте до 4 фотографій JPEG, PNG або WebP через {{label:Scoresheet.Intake.ChoosePhotos}}, {{label:Scoresheet.Intake.PasteFromClipboard}} (або Ctrl+V / Cmd+V, коли панель відкрита) чи перетягнувши фото на відкриту панель.
+- Виберіть підключення ШІ та модель із підтримкою зображень за допомогою кнопки моделі або в [[setting:coach-model]] ({{label:Settings.Coach.Model}}).
+- Натисніть {{label:Scoresheet.Read.Button}}, щоб почати. Перед першим зчитуванням через підключення вікно {{label:Scoresheet.Notice.Title}} пояснює, що вибрані фотографії (разом з іменами гравців і всім іншим на бланку) надсилаються цьому постачальнику, метадані на кшталт місця зйомки заздалегідь видаляються, а жодні інші дані не надсилаються.
+- Студія перевіряє кожен хід за стандартними правилами шахів із початкової позиції та відкриває партію в новій незбереженій вкладці аналізу з панеллю {{label:Board.Tabs.Photo}} поруч із дошкою.
+- Сумнівні або виправлені ходи позначаються в нотації як непевні. Переглядайте їх на панелі {{label:Board.Tabs.Photo}} та натискайте {{label:Scoresheet.MarkAsChecked}} після перевірки кожного ходу. Якщо ви виправили хід посеред партії або продовжуєте після зупинки, натисніть {{label:Scoresheet.ContinueWithSheet}}, щоб відтворити подальші законні ходи з бланку. Коли закінчите, натисніть {{label:Scoresheet.FinishReview}}, щоб прибрати решту позначок.
+- Збережіть партію у файл або базу даних звичайним способом ({{label:Menu.File}} -> {{label:Common.Save}}, кнопка збереження або {{label:Board.Database.Save}}).
+- Фотографії зберігаються лише в пам’яті (для до 4 відкритих вкладок) і не записуються на диск; після перезавантаження або перезапуску партія та позначки перевірки залишаються, і ви можете натиснути {{label:Scoresheet.LoadPhotoAgain}} на панелі {{label:Board.Tabs.Photo}}, щоб знову переглянути фото без надсилання.

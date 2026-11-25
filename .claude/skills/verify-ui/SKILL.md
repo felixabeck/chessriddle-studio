@@ -67,7 +67,13 @@ now does (proof 2 below).
    leaves no child behind. In the default run it also asserts full workspace
    restore across titlebar close (with no quit dialog), SIGTERM, and SIGKILL
    (>= 2 s after the last edit) — same tabs, tab order, active tab, move list,
-   and current move — plus "Close without saving" leaf removal.
+   and current move — plus "Close without saving" leaf removal. `pnpm verify:app --scoresheet-paste`
+   places a 64×64 PNG on the private compositor's clipboard (`wl-copy`) and proves the native
+   clipboard route (`scoresheet_paste_photo` returning a `data:image/jpeg;base64,...` image rendered
+   in WebKitGTK under the real CSP); the "From photo" pane route remains NOT PROVEN without an OS
+   keyring secret (startup credential reconciliation removes an unbacked `coach-connections.json`
+   entry so `coach_has_connection` is `false`, and the mode exits `3` with `PARTIAL: native route
+   proven, pane route NOT PROVEN` when the native route passes and the pane route cannot run).
 
    **What it cannot reach, permanently:** native GTK chrome. The menu bar, the
    window decorations and every file dialog are drawn by GTK, not by the page,
