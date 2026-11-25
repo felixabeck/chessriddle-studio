@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   defaultPanelTabAtom,
+  fileWorkspaceAtom,
   materialDisplayAtom,
   moveHighlightAtom,
   practiceGradingAtom,
@@ -57,7 +58,44 @@ vi.mock("./PercentagePreferenceSlider", () => ({ default: () => null }));
 vi.mock("./PiecesSelect", () => ({ default: () => null }));
 vi.mock("./RepertoireMinGamesSetting", () => ({ default: () => null }));
 vi.mock("./DirectorySetting", () => ({ DirectorySetting: () => null }));
-vi.mock("./WorkspaceDirectorySetting", () => ({ WorkspaceDirectorySetting: () => null }));
+const directoryRows = vi.hoisted(() => ({
+  current: [] as Array<{
+    issue: () => Promise<{ displayName: string }>;
+    onShowInFolder?: () => Promise<void> | void;
+    onError: (error: unknown) => void;
+  }>,
+}));
+vi.mock("./WorkspaceDirectorySetting", () => ({
+  WorkspaceDirectorySetting: (props: {
+    issue: () => Promise<{ displayName: string }>;
+    onShowInFolder?: () => Promise<void> | void;
+    onError: (error: unknown) => void;
+  }) => {
+    directoryRows.current.push(props);
+    return null;
+  },
+}));
+const tauriMocks = vi.hoisted(() => ({
+  issueFileWorkspace: vi.fn(),
+  openFileWorkspace: vi.fn(),
+  openDatabaseWorkspace: vi.fn(),
+  openEngineWorkspace: vi.fn(),
+  openPuzzleWorkspace: vi.fn(),
+}));
+vi.mock("@/platform/tauri", async (original) => {
+  const actual = await original<typeof import("@/platform/tauri")>();
+  return {
+    ...actual,
+    tauri: {
+      ...actual.tauri,
+      issueFileWorkspace: (...args: unknown[]) => tauriMocks.issueFileWorkspace(...args),
+      openFileWorkspace: (...args: unknown[]) => tauriMocks.openFileWorkspace(...args),
+      openDatabaseWorkspace: (...args: unknown[]) => tauriMocks.openDatabaseWorkspace(...args),
+      openEngineWorkspace: (...args: unknown[]) => tauriMocks.openEngineWorkspace(...args),
+      openPuzzleWorkspace: (...args: unknown[]) => tauriMocks.openPuzzleWorkspace(...args),
+    },
+  };
+});
 vi.mock("./SoundSelect", () => ({ default: () => null }));
 vi.mock("./VolumeSlider", () => ({ default: () => null }));
 vi.mock("./ThemeButton", () => ({ default: () => null }));
@@ -117,6 +155,12 @@ afterEach(async () => {
   actionMocks.openAppLogs.mockReset();
   actionMocks.notifyUnlessCancelled.mockReset();
   actionMocks.notificationsShow.mockReset();
+  directoryRows.current = [];
+  tauriMocks.issueFileWorkspace.mockReset();
+  tauriMocks.openFileWorkspace.mockReset();
+  tauriMocks.openDatabaseWorkspace.mockReset();
+  tauriMocks.openEngineWorkspace.mockReset();
+  tauriMocks.openPuzzleWorkspace.mockReset();
   root = undefined;
   if (originalScroll) Object.defineProperty(Element.prototype, "scrollIntoView", originalScroll);
   else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
@@ -914,4 +958,66 @@ test("Reset layout in Analysis / Layout & Saving restores default arrangement an
   expect(localStorage.getItem("detached-engine-lines")).toBe(JSON.stringify(2));
   expect(localStorage.getItem("detached-engine-placement")).toBe(JSON.stringify("board"));
   expect(atoms.get(tabFamily("tab-1"))).toBe("database");
+});
+
+async function openDirectoryRows(atoms = createStore()) {
+  directoryRows.current = [];
+  const rendered = await renderSettingsPage(atoms);
+  await act(async () => settingsTab(rendered.host, "directories").click());
+  const rows = directoryRows.current.slice(-4);
+  expect(rows).toHaveLength(4);
+  return { ...rendered, rows };
+}
+
+test("Files & folders PGN picker issues the current handle and show-in-folder opens each workspace", async () => {
+  const workspace = { id: { id: "pgn-workspace" }, kind: "fileWorkspace" as const };
+  localStorage.setItem("file-workspace", JSON.stringify(workspace));
+  tauriMocks.issueFileWorkspace.mockResolvedValue({ handle: workspace, displayName: "MyPGN" });
+  const atoms = createStore();
+  atoms.set(fileWorkspaceAtom, workspace);
+  const { rows } = await openDirectoryRows(atoms);
+  await rows[0]?.issue();
+  expect(tauriMocks.issueFileWorkspace).toHaveBeenCalledWith(workspace);
+  await rows[0]?.onShowInFolder?.();
+  expect(tauriMocks.openFileWorkspace).toHaveBeenCalledWith(workspace);
+  await rows[1]?.onShowInFolder?.();
+  expect(tauriMocks.openDatabaseWorkspace).toHaveBeenCalledOnce();
+  await rows[2]?.onShowInFolder?.();
+  expect(tauriMocks.openEngineWorkspace).toHaveBeenCalledOnce();
+  await rows[3]?.onShowInFolder?.();
+  expect(tauriMocks.openPuzzleWorkspace).toHaveBeenCalledOnce();
+});
+
+test("Files & folders errors notify with the row's root-failure domain", async () => {
+  const { rows } = await openDirectoryRows();
+  const error = {
+    tag: "backend-error",
+    category: "io",
+    message: "native diagnostic",
+    rootFailure: "missing",
+  };
+  rows[0]?.onError(error);
+  expect(actionMocks.notifyUnlessCancelled).toHaveBeenLastCalledWith(
+    "Common.Error",
+    error,
+    "files",
+  );
+  rows[1]?.onError(error);
+  expect(actionMocks.notifyUnlessCancelled).toHaveBeenLastCalledWith(
+    "Common.Error",
+    error,
+    "database",
+  );
+  rows[2]?.onError(error);
+  expect(actionMocks.notifyUnlessCancelled).toHaveBeenLastCalledWith(
+    "Common.Error",
+    error,
+    "engine",
+  );
+  rows[3]?.onError(error);
+  expect(actionMocks.notifyUnlessCancelled).toHaveBeenLastCalledWith(
+    "Common.Error",
+    error,
+    "puzzle",
+  );
 });

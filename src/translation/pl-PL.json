@@ -1722,6 +1722,7 @@
     "Settings.Directories.Puzzles": "Katalog zadań",
     "Settings.Directories.Puzzles.Desc": "Tutaj przechowywane są bazy zadań",
     "Settings.Directories.Select": "Wybierz katalog",
+    "Settings.Directories.ShowInFolder": "Pokaż w folderze",
     "Settings.Drawing": "Rysowanie",
     "Settings.Drawing.Blue": "Niebieski",
     "Settings.Drawing.Color": "Kolor",

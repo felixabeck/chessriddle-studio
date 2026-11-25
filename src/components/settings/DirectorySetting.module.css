@@ -1,3 +1,16 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+  width: min(100%, 26rem);
+}
+
+.row .wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .wrapper {
   height: auto;
   overflow: visible;

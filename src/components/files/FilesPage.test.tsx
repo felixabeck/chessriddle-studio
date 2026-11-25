@@ -2075,7 +2075,7 @@ describe("listing failures", () => {
     mocks.issueFileWorkspace.mockResolvedValueOnce({ handle: workspace, displayName: "Games" });
     click("Choose folder");
     await settle();
-    expect(mocks.issueFileWorkspace).toHaveBeenCalledOnce();
+    expect(mocks.issueFileWorkspace).toHaveBeenCalledWith(workspace);
   });
   test.each(["conflict", "missing-resource", "permission", "resource-limit", "io", "plain"])(
     "%s without rootFailure retries",

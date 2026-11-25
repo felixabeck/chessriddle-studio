@@ -107,7 +107,7 @@ export async function ensureFileWorkspace(): Promise<FileWorkspaceHandle | null>
     const existing = store.get(fileWorkspaceAtom);
     if (existing) return existing;
     try {
-        const result = await tauri.issueFileWorkspace();
+        const result = await tauri.issueFileWorkspace(null);
         store.set(fileWorkspaceAtom, result.handle);
         store.set(fileWorkspaceDisplayNameAtom, result.displayName);
         return result.handle;

@@ -1660,6 +1660,7 @@
     "Settings.Directories.Puzzles": "Puzzle",
     "Settings.Directories.Puzzles.Desc": "Hier werden deine Puzzle-Datenbanken gespeichert",
     "Settings.Directories.Select": "Verzeichnis auswählen",
+    "Settings.Directories.ShowInFolder": "Im Ordner anzeigen",
     "Settings.Drawing": "Zeichnen",
     "Settings.Drawing.Blue": "Blau",
     "Settings.Drawing.Color": "Farbe",

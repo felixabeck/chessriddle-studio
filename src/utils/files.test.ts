@@ -691,6 +691,7 @@ describe("ensureFileWorkspace", () => {
             displayName: "My Files",
         });
         await expect(ensureFileWorkspace()).resolves.toBe(handle);
+        expect(mocks.issueFileWorkspace).toHaveBeenCalledWith(null);
         expect(mocks.storeSet).toHaveBeenCalledWith(fileWorkspaceAtom, handle);
         expect(mocks.storeSet).toHaveBeenCalledWith(fileWorkspaceDisplayNameAtom, "My Files");
     });

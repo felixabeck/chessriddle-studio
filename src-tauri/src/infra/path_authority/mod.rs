@@ -1154,6 +1154,56 @@ pub(crate) fn selected_root_display_name(path: &Path, fallback: &str) -> String 
         .unwrap_or_else(|| fallback.into())
 }
 
+/// Folder row status for Settings. Display names are folder leaves; no filesystem path
+/// is included. For databases, engines, and puzzles, `is_default` is decided by stored/live
+/// identity, never by path spelling. PGN has no default until phase 2, so `is_default` is
+/// always false.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderStatus {
+    pub display_name: String,
+    pub is_default: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub root_failure: Option<crate::error::RootFailure>,
+}
+
+/// Converts a stored native path to the Win32 form that `OpenerExt` and
+/// `FileDialogBuilder::set_directory` accept. Verbatim `\\?\` and `\\?\UNC\` prefixes
+/// are stripped; other platforms return the path unchanged.
+pub(crate) fn native_shell_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        let mut components = path.components();
+        match components.next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::VerbatimDisk(disk) => {
+                    let mut out = PathBuf::from(format!("{}:", disk as char));
+                    out.push(components.as_path());
+                    out
+                }
+                Prefix::VerbatimUNC(server, share) => {
+                    let mut out = PathBuf::from(r"\\");
+                    out.push(server);
+                    out.push(share);
+                    let rest = components.as_path();
+                    if !rest.as_os_str().is_empty() {
+                        out.push(rest);
+                    }
+                    out
+                }
+                _ => path.to_path_buf(),
+            },
+            _ => path.to_path_buf(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_path_buf()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PuzzleDatabaseDescriptor {

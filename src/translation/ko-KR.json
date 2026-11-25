@@ -1629,6 +1629,7 @@
     "Settings.Directories.Puzzles": "퍼즐 경로",
     "Settings.Directories.Puzzles.Desc": "퍼즐 데이터베이스가 저장되는 곳입니다",
     "Settings.Directories.Select": "디렉터리 선택",
+    "Settings.Directories.ShowInFolder": "폴더에서 보기",
     "Settings.Drawing": "그리기",
     "Settings.Drawing.Blue": "파랑",
     "Settings.Drawing.Color": "색상",

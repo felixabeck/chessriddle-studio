@@ -1660,6 +1660,7 @@
     "Settings.Directories.Puzzles": "Bulmaca klasörü",
     "Settings.Directories.Puzzles.Desc": "Bulmaca veritabanları burada saklanır",
     "Settings.Directories.Select": "Dizin seç",
+    "Settings.Directories.ShowInFolder": "Klasörde göster",
     "Settings.Drawing": "Çizim",
     "Settings.Drawing.Blue": "Mavi",
     "Settings.Drawing.Color": "Renk",

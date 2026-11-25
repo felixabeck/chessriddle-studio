@@ -588,3 +588,19 @@ fn app_owned_default_root_junction_leaf_is_refused_as_io() {
         );
     }
 }
+
+#[test]
+fn native_shell_path_strips_verbatim_and_unc_prefixes() {
+    assert_eq!(
+        native_shell_path(Path::new(r"\\?\C:\Users\studio\Engines")),
+        PathBuf::from(r"C:\Users\studio\Engines")
+    );
+    assert_eq!(
+        native_shell_path(Path::new(r"\\?\UNC\server\share\Engines")),
+        PathBuf::from(r"\\server\share\Engines")
+    );
+    assert_eq!(
+        native_shell_path(Path::new(r"C:\Users\studio\Engines")),
+        PathBuf::from(r"C:\Users\studio\Engines")
+    );
+}

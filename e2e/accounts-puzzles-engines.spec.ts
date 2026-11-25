@@ -47,9 +47,9 @@ test("settings directories hydrate and retain selected workspace names", async (
     const commands: NonNullable<MockScenario["commands"]> = {};
     for (const { noun, kind, current, selected } of workspaces) {
         const root = { id: { id: `${noun}-root` }, kind };
-        commands[`get_${noun}_workspace`] = {
-            outcomes: [{ result: { root, displayName: current } }],
-            result: { root, displayName: selected },
+        commands[`get_${noun}_folder_status`] = {
+            outcomes: [{ result: { displayName: current, isDefault: false } }],
+            result: { displayName: selected, isDefault: false },
         };
         commands[`issue_${noun}_workspace`] = { result: { root, displayName: selected } };
     }
@@ -70,6 +70,42 @@ test("settings directories hydrate and retain selected workspace names", async (
     await assertAccessible();
     await assertNoHorizontalOverflow();
     await capture("settings-workspace-directories");
+});
+
+test("settings directories show in folder opens each native workspace", async ({
+    page,
+    mockScenario,
+}) => {
+    const handle = { id: { id: "pgn-workspace" }, kind: "fileWorkspace" };
+    await page.addInitScript((workspace) => {
+        localStorage.setItem("file-workspace", JSON.stringify(workspace));
+    }, handle);
+    await mockScenario({
+        commands: {
+            get_file_folder_status: { result: { displayName: "MyPGN", isDefault: false } },
+            get_database_folder_status: { result: { displayName: "MyChessDBs", isDefault: false } },
+            get_engine_folder_status: {
+                result: { displayName: "MyChessEngines", isDefault: false },
+            },
+            get_puzzle_folder_status: {
+                result: { displayName: "MyChessPuzzles", isDefault: false },
+            },
+        },
+    });
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "Files & folders", exact: true }).click();
+    const show = page.getByRole("button", { name: "Show in folder", exact: true });
+    await expect(show).toHaveCount(4);
+    for (let index = 0; index < 4; index += 1) {
+        await show.nth(index).click();
+    }
+    const invocations = await page.evaluate(() => window.__E2E_TAURI__.invocations());
+    expect(invocations.filter(({ command }) => command === "open_file_workspace")).toEqual([
+        { command: "open_file_workspace", args: { workspace: handle } },
+    ]);
+    expect(invocations.some(({ command }) => command === "open_database_workspace")).toBe(true);
+    expect(invocations.some(({ command }) => command === "open_engine_workspace")).toBe(true);
+    expect(invocations.some(({ command }) => command === "open_puzzle_workspace")).toBe(true);
 });
 
 async function assertCatalogActionReachable(action: Locator, cancel: Locator) {

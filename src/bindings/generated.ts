@@ -482,6 +482,14 @@ async getDatabaseWorkspace() : Promise<Result<DatabaseRootDescriptor, ErrorPaylo
     else return { status: "error", error: e  as any };
 }
 },
+async getDatabaseFolderStatus() : Promise<Result<FolderStatus, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_database_folder_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listWorkspaceDatabases(root: DatabaseRootHandle, ticket: string | null) : Promise<Result<DatabaseListing, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_workspace_databases", { root, ticket }) };
@@ -521,6 +529,14 @@ async issueEngineWorkspace() : Promise<Result<EngineRootDescriptor, ErrorPayload
 async getEngineWorkspace() : Promise<Result<EngineRootDescriptor, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_engine_workspace") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getEngineFolderStatus() : Promise<Result<FolderStatus, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_engine_folder_status") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -574,17 +590,41 @@ async issueOpeningBook() : Promise<Result<OpeningBookHandle, ErrorPayload>> {
     else return { status: "error", error: e  as any };
 }
 },
-async openEngineWorkspace(root: EngineRootHandle) : Promise<Result<null, ErrorPayload>> {
+async openEngineWorkspace() : Promise<Result<null, ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("open_engine_workspace", { root }) };
+    return { status: "ok", data: await TAURI_INVOKE("open_engine_workspace") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async issueFileWorkspace() : Promise<Result<FileWorkspaceDescriptor, ErrorPayload>> {
+async openDatabaseWorkspace() : Promise<Result<null, ErrorPayload>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("issue_file_workspace") };
+    return { status: "ok", data: await TAURI_INVOKE("open_database_workspace") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async issueFileWorkspace(workspace: FileWorkspaceHandle | null) : Promise<Result<FileWorkspaceDescriptor, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("issue_file_workspace", { workspace }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getFileFolderStatus(workspace: FileWorkspaceHandle) : Promise<Result<FolderStatus, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_file_folder_status", { workspace }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openFileWorkspace(workspace: FileWorkspaceHandle) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_file_workspace", { workspace }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -792,6 +832,22 @@ async issuePuzzleWorkspace() : Promise<Result<PuzzleRootDescriptor, ErrorPayload
 async getPuzzleWorkspace() : Promise<Result<PuzzleRootDescriptor, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_puzzle_workspace") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getPuzzleFolderStatus() : Promise<Result<FolderStatus, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_puzzle_folder_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openPuzzleWorkspace() : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_puzzle_workspace") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2149,6 +2205,13 @@ export type FileWorkspaceDescriptor = { handle: FileWorkspaceHandle; displayName
  */
 export type FileWorkspaceHandle = { id: PathRef; kind: FileWorkspaceHandleKind }
 export type FileWorkspaceHandleKind = "fileWorkspace"
+/**
+ * Folder row status for Settings. Display names are folder leaves; no filesystem path
+ * is included. For databases, engines, and puzzles, `is_default` is decided by stored/live
+ * identity, never by path spelling. PGN has no default until phase 2, so `is_default` is
+ * always false.
+ */
+export type FolderStatus = { displayName: string; isDefault: boolean; rootFailure?: RootFailure | null }
 export type GameAnalysis = { positions: ReportPosition[]; novelty: NoveltyOutcome }
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"

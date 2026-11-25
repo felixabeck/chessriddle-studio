@@ -1660,6 +1660,7 @@
     "Settings.Directories.Puzzles": "Oppgavemappe",
     "Settings.Directories.Puzzles.Desc": "Her lagres oppgavedatabasene",
     "Settings.Directories.Select": "Velg mappe",
+    "Settings.Directories.ShowInFolder": "Vis i mappe",
     "Settings.Drawing": "Tegning",
     "Settings.Drawing.Blue": "Blå",
     "Settings.Drawing.Color": "Farge",

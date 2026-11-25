@@ -6,7 +6,7 @@ use tauri::{Manager, WebviewWindow};
 
 use crate::chessbase;
 use crate::error::Error;
-use crate::file_workspace::map_picker_join;
+use crate::file_workspace::{map_picker_join, open_resolved_folder, seed_folder_picker};
 use crate::infra::blocking::BLOCKING_GATEWAY;
 use crate::infra::operations::OperationRegistry;
 use crate::{native_read_operation, AppState};
@@ -312,18 +312,23 @@ pub async fn issue_database_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
-    use tauri_plugin_dialog::DialogExt;
+    let authority = state.pgn_path_authority.clone();
+    let picker_authority = authority.clone();
     let path = tokio::task::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .blocking_pick_folder()
-            .ok_or(Error::Cancellation)?
-            .into_path()
-            .map_err(|error| Error::native_selection("invalid database folder selection", error))
+        use tauri_plugin_dialog::DialogExt;
+        seed_folder_picker(
+            app.dialog().file(),
+            &picker_authority,
+            &app,
+            |authority, lookup| authority.database_folder_open_path(lookup).ok(),
+        )
+        .blocking_pick_folder()
+        .ok_or(Error::Cancellation)?
+        .into_path()
+        .map_err(|error| Error::native_selection("invalid database folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;
-    let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
         "issue_database_workspace",
@@ -507,18 +512,23 @@ pub async fn issue_engine_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
-    use tauri_plugin_dialog::DialogExt;
+    let authority = state.pgn_path_authority.clone();
+    let picker_authority = authority.clone();
     let path = tokio::task::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .blocking_pick_folder()
-            .ok_or(Error::Cancellation)?
-            .into_path()
-            .map_err(|error| Error::native_selection("invalid engine folder selection", error))
+        use tauri_plugin_dialog::DialogExt;
+        seed_folder_picker(
+            app.dialog().file(),
+            &picker_authority,
+            &app,
+            |authority, lookup| authority.engine_folder_open_path(lookup).ok(),
+        )
+        .blocking_pick_folder()
+        .ok_or(Error::Cancellation)?
+        .into_path()
+        .map_err(|error| Error::native_selection("invalid engine folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;
-    let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
         "issue_engine_workspace",
@@ -979,20 +989,106 @@ pub(crate) fn register_installed_engine_blocking(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn open_engine_workspace(
+pub async fn get_database_folder_status(
     app: tauri::AppHandle,
-    root: crate::infra::path_authority::EngineRootHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    let authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "get_database_folder_status",
+        move || {
+            get_database_folder_status_blocking(&authority, &|| {
+                crate::infra::path_authority::AppDataDir::for_app(&app)
+            })
+        },
+    )
+    .await
+}
+
+fn get_database_folder_status_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    authority.with_mut(|authority| authority.database_folder_status(app_data))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_engine_folder_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    let authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "get_engine_folder_status",
+        move || {
+            get_engine_folder_status_blocking(&authority, &|| {
+                crate::infra::path_authority::AppDataDir::for_app(&app)
+            })
+        },
+    )
+    .await
+}
+
+fn get_engine_folder_status_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    authority.with_mut(|authority| authority.engine_folder_status(app_data))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn open_database_workspace(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
     use tauri_plugin_opener::OpenerExt;
     let authority = state.pgn_path_authority.clone();
+    let lookup_app = app.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "open_database_workspace",
+        move || {
+            open_database_workspace_blocking(
+                &authority,
+                &|| crate::infra::path_authority::AppDataDir::for_app(&lookup_app),
+                |path| app.opener().open_path(path.to_string_lossy(), None::<&str>),
+            )
+        },
+    )
+    .await
+}
+
+fn open_database_workspace_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    opener: impl FnOnce(&std::path::Path) -> Result<(), tauri_plugin_opener::Error>,
+) -> Result<(), Error> {
+    let path = authority.with_mut(|authority| authority.database_folder_open_path(app_data))??;
+    open_resolved_folder(&path, opener)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn open_engine_workspace(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    use tauri_plugin_opener::OpenerExt;
+    let authority = state.pgn_path_authority.clone();
+    let lookup_app = app.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
         "open_engine_workspace",
         move || {
-            open_engine_workspace_blocking(&authority, root, |path| {
-                app.opener().open_path(path.to_string_lossy(), None::<&str>)
-            })
+            open_engine_workspace_blocking(
+                &authority,
+                &|| crate::infra::path_authority::AppDataDir::for_app(&lookup_app),
+                |path| app.opener().open_path(path.to_string_lossy(), None::<&str>),
+            )
         },
     )
     .await
@@ -1000,20 +1096,17 @@ pub async fn open_engine_workspace(
 
 fn open_engine_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
-    root: crate::infra::path_authority::EngineRootHandle,
+    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
     opener: impl FnOnce(&std::path::Path) -> Result<(), tauri_plugin_opener::Error>,
 ) -> Result<(), Error> {
-    let path = authority.with_mut(|authority| authority.engine_root_path(&root))??;
-    opener(&path).map_err(|error| {
-        let error = Error::from(error);
-        log::error!("cannot open engine workspace: {}", error.diagnostic());
-        error
-    })
+    let path = authority.with_mut(|authority| authority.engine_folder_open_path(app_data))??;
+    open_resolved_folder(&path, opener)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::file_workspace::canonical_shell_path;
     use crate::infra::blocking::source_scan::body_at_indent;
     use std::time::Duration;
 
@@ -1131,11 +1224,13 @@ mod tests {
         let root = authority
             .get_or_create_engine_root(&fixture_path, "Engines", None)
             .unwrap();
+        authority.set_active_engine_root(&root).unwrap();
         let authority = SharedPathAuthority::installed(authority);
         let capture = crate::error::LogCaptureScope::start();
         let cause = format!("opener rejected private path {}", fixture_path.display());
-        let error = open_engine_workspace_blocking(&authority, root, |path| {
-            assert_eq!(path, fixture_path);
+        let no_default = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let error = open_engine_workspace_blocking(&authority, &no_default, |path| {
+            assert_eq!(path, canonical_shell_path(&fixture_path).as_path());
             Err(tauri_plugin_opener::Error::Io(std::io::Error::other(
                 cause.clone(),
             )))
@@ -1153,6 +1248,221 @@ mod tests {
             .messages()
             .iter()
             .any(|message| message.contains(&cause)));
+    }
+
+    #[test]
+    fn database_folder_status_and_open_cover_leaf_default_and_failure() {
+        use crate::error::RootFailure;
+        use crate::infra::path_authority::{FolderStatus, PathAuthority, SharedPathAuthority};
+
+        let directory = tempfile::tempdir().unwrap();
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        );
+        let looked_up = std::cell::Cell::new(false);
+        let no_lookup = || {
+            looked_up.set(true);
+            Err(Error::Conflict("unexpected app-data lookup".into()))
+        };
+        let idle = get_database_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(
+            idle,
+            FolderStatus {
+                display_name: "Databases".into(),
+                is_default: true,
+                root_failure: None,
+            }
+        );
+        assert!(!looked_up.get());
+
+        let selected = directory.path().join("MyChessDBs");
+        std::fs::create_dir(&selected).unwrap();
+        issue_database_workspace_blocking(&authority, selected.clone()).unwrap();
+        let custom = get_database_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(custom.display_name, "MyChessDBs");
+        assert!(!custom.is_default);
+        assert_eq!(custom.root_failure, None);
+
+        let capture = crate::error::LogCaptureScope::start();
+        let cause = format!("opener rejected private path {}", selected.display());
+        let error = open_database_workspace_blocking(&authority, &no_lookup, |path| {
+            assert_eq!(path, canonical_shell_path(&selected).as_path());
+            Err(tauri_plugin_opener::Error::Io(std::io::Error::other(
+                cause.clone(),
+            )))
+        })
+        .unwrap_err();
+        let payload = serde_json::to_value(&error).unwrap();
+        assert!(!payload.to_string().contains(&cause));
+        assert!(!payload
+            .to_string()
+            .contains(&selected.display().to_string()));
+        assert!(matches!(&error, Error::TauriOpener(_)));
+        assert!(error.diagnostic().contains(&cause));
+        assert!(capture
+            .messages()
+            .iter()
+            .any(|message| message.contains(&cause)));
+
+        std::fs::remove_dir(&selected).unwrap();
+        let missing = get_database_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(missing.display_name, "MyChessDBs");
+        assert!(!missing.is_default);
+        assert_eq!(missing.root_failure, Some(RootFailure::Missing));
+
+        let missing_open = crate::error::LogCaptureScope::start();
+        let error = open_database_workspace_blocking(&authority, &no_lookup, |_| {
+            panic!("missing folder must not reach the opener")
+        })
+        .unwrap_err();
+        assert_eq!(error.root_failure(), Some(RootFailure::Missing));
+        let payload = serde_json::to_value(&error).unwrap();
+        assert!(!payload
+            .to_string()
+            .contains(&selected.display().to_string()));
+        assert!(missing_open.messages().is_empty());
+    }
+
+    #[test]
+    fn engine_folder_status_covers_leaf_default_and_failure() {
+        use crate::error::RootFailure;
+        use crate::infra::path_authority::{FolderStatus, PathAuthority, SharedPathAuthority};
+
+        let directory = tempfile::tempdir().unwrap();
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        );
+        let no_lookup = || Err(Error::Conflict("unexpected app-data lookup".into()));
+        let idle = get_engine_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(
+            idle,
+            FolderStatus {
+                display_name: "Engines".into(),
+                is_default: true,
+                root_failure: None,
+            }
+        );
+        let selected = directory.path().join("MyChessEngines");
+        std::fs::create_dir(&selected).unwrap();
+        issue_engine_workspace_blocking(&authority, selected.clone()).unwrap();
+        let custom = get_engine_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(custom.display_name, "MyChessEngines");
+        assert!(!custom.is_default);
+        assert_eq!(custom.root_failure, None);
+        std::fs::remove_dir(&selected).unwrap();
+        let missing = get_engine_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(missing.display_name, "MyChessEngines");
+        assert_eq!(missing.root_failure, Some(RootFailure::Missing));
+    }
+
+    #[test]
+    fn database_folder_open_path_follows_identity_checked_resolution() {
+        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_app_data};
+        use crate::infra::path_authority::AppOwnedDefaultRoot;
+        let directory = tempfile::tempdir().unwrap();
+        let (authority, app_path) = idle_app_data(&directory);
+        let selected = directory.path().join("MyChessDBs");
+        assert_kind_folder_open_path_identity(
+            &authority,
+            &app_path,
+            &selected,
+            AppOwnedDefaultRoot::Databases,
+            |authority, lookup| {
+                authority
+                    .with_mut(|authority| authority.database_folder_open_path(lookup).ok())
+                    .unwrap()
+            },
+            |authority, path| {
+                issue_database_workspace_blocking(authority, path).unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn engine_folder_open_path_follows_identity_checked_resolution() {
+        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_app_data};
+        use crate::infra::path_authority::AppOwnedDefaultRoot;
+        let directory = tempfile::tempdir().unwrap();
+        let (authority, app_path) = idle_app_data(&directory);
+        let selected = directory.path().join("MyChessEngines");
+        assert_kind_folder_open_path_identity(
+            &authority,
+            &app_path,
+            &selected,
+            AppOwnedDefaultRoot::Engines,
+            |authority, lookup| {
+                authority
+                    .with_mut(|authority| authority.engine_folder_open_path(lookup).ok())
+                    .unwrap()
+            },
+            |authority, path| {
+                issue_engine_workspace_blocking(authority, path).unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn idle_database_and_engine_open_reach_the_default_directory() {
+        use crate::file_workspace::{canonical_shell_path, idle_app_data};
+        use crate::infra::path_authority::{
+            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let (authority, app_path) = idle_app_data(&directory);
+        let lookup = || Ok(AppDataDir::for_test(&app_path));
+        let databases = canonical_shell_path(
+            ensure_app_owned_default_dir(
+                &AppDataDir::for_test(&app_path),
+                AppOwnedDefaultRoot::Databases,
+            )
+            .unwrap()
+            .path(),
+        );
+        open_database_workspace_blocking(&authority, &lookup, |path| {
+            assert_eq!(path, databases.as_path());
+            Ok(())
+        })
+        .unwrap();
+        let engines = canonical_shell_path(
+            ensure_app_owned_default_dir(
+                &AppDataDir::for_test(&app_path),
+                AppOwnedDefaultRoot::Engines,
+            )
+            .unwrap()
+            .path(),
+        );
+        open_engine_workspace_blocking(&authority, &lookup, |path| {
+            assert_eq!(path, engines.as_path());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn database_and_engine_pickers_seed_from_the_current_folder() {
+        let workspace_commands = include_str!("workspace_commands.rs");
+        for signature in [
+            "async fn issue_database_workspace(",
+            "async fn issue_engine_workspace(",
+        ] {
+            let body = body_at_indent(workspace_commands, signature);
+            assert!(
+                body.contains("seed_folder_picker(")
+                    && body.contains("_folder_open_path(")
+                    && body.contains("blocking_pick_folder"),
+                "{signature} must seed the folder picker: {body}"
+            );
+            let start = body
+                .find("seed_folder_picker(")
+                .unwrap_or_else(|| panic!("{signature} must resolve the current folder: {body}"));
+            let pick = body
+                .find("blocking_pick_folder")
+                .expect("blocking_pick_folder");
+            assert!(
+                start < pick,
+                "{signature} must resolve the start directory before the dialog: {body}"
+            );
+        }
     }
 
     #[test]

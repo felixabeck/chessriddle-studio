@@ -1629,6 +1629,7 @@
     "Settings.Directories.Puzzles": "谜题目录",
     "Settings.Directories.Puzzles.Desc": "这是“谜题”页面中谜题数据库存储的位置",
     "Settings.Directories.Select": "選擇目錄",
+    "Settings.Directories.ShowInFolder": "在資料夾中顯示",
     "Settings.Drawing": "繪圖",
     "Settings.Drawing.Blue": "藍色",
     "Settings.Drawing.Color": "顏色",

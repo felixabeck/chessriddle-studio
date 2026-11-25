@@ -1691,6 +1691,7 @@
     "Settings.Directories.Puzzles": "Cartella puzzles",
     "Settings.Directories.Puzzles.Desc": "Seleziona la cartella in cui salvare i database dei puzzle",
     "Settings.Directories.Select": "Seleziona cartella",
+    "Settings.Directories.ShowInFolder": "Mostra nella cartella",
     "Settings.Drawing": "Disegno",
     "Settings.Drawing.Blue": "Blu",
     "Settings.Drawing.Color": "Colore",

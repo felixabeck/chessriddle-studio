@@ -1,6 +1,8 @@
 import { Input, Text } from "@mantine/core";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
+import { Folder } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { IconAction } from "../common/IconAction";
 import classes from "./DirectorySetting.module.css";
 
 type DirectorySettingProps = {
@@ -8,6 +10,7 @@ type DirectorySettingProps = {
   onSelect: (directory: string) => Promise<void> | void;
   /** Native code issues an opaque workspace capability and returns display metadata. */
   issueWorkspace: () => Promise<string>;
+  onShowInFolder?: () => Promise<void> | void;
   onError?: (error: unknown) => void;
   disabled?: boolean;
 };
@@ -17,11 +20,13 @@ export function DirectorySetting({
   value,
   onSelect,
   issueWorkspace,
+  onShowInFolder,
   onError,
   disabled = false,
 }: DirectorySettingProps) {
   const { t } = useTranslation();
   const { pending, run } = useSingleFlight();
+  const showFolder = useSingleFlight();
 
   const chooseDirectory = () =>
     run(async () => {
@@ -33,7 +38,16 @@ export function DirectorySetting({
       }
     });
 
-  return (
+  const openFolder = () =>
+    showFolder.run(async () => {
+      try {
+        await onShowInFolder?.();
+      } catch (error) {
+        onError?.(error);
+      }
+    });
+
+  const picker = (
     <Input
       component="button"
       type="button"
@@ -51,5 +65,21 @@ export function DirectorySetting({
           : value || t("Settings.Directories.Select")}
       </Text>
     </Input>
+  );
+
+  if (!onShowInFolder) return picker;
+
+  return (
+    <div className={classes.row}>
+      <IconAction
+        label={t("Settings.Directories.ShowInFolder")}
+        onClick={() => void openFolder()}
+        disabled={disabled || showFolder.pending || value == null}
+        pending={showFolder.pending}
+      >
+        <Folder size="1.25rem" />
+      </IconAction>
+      {picker}
+    </div>
   );
 }

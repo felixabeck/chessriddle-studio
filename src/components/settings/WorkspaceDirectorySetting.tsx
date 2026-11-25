@@ -4,6 +4,7 @@ import { DirectorySetting } from "./DirectorySetting";
 type WorkspaceDirectorySettingProps = {
   load: () => Promise<{ displayName: string }>;
   issue: () => Promise<{ displayName: string }>;
+  onShowInFolder?: () => Promise<void> | void;
   onSelected?: (name: string) => void;
   onError: (error: unknown) => void;
 };
@@ -11,6 +12,7 @@ type WorkspaceDirectorySettingProps = {
 export function WorkspaceDirectorySetting({
   load,
   issue,
+  onShowInFolder,
   onSelected,
   onError,
 }: WorkspaceDirectorySettingProps) {
@@ -40,6 +42,7 @@ export function WorkspaceDirectorySetting({
     <DirectorySetting
       value={name}
       issueWorkspace={async () => (await issue()).displayName}
+      onShowInFolder={onShowInFolder}
       onSelect={(selected) => {
         // The native root is already switched, so consumers hear about it even after unmount.
         onSelected?.(selected);

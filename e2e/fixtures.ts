@@ -1438,12 +1438,28 @@ const tauriBootstrap = () => {
                 displayName: "Databases",
             },
         },
+        get_database_folder_status: {
+            result: { displayName: "Databases", isDefault: true },
+        },
         get_engine_workspace: {
             result: {
                 root: { id: { id: "engine-root" }, kind: "engineRoot" },
                 displayName: "Engines",
             },
         },
+        get_engine_folder_status: {
+            result: { displayName: "Engines", isDefault: true },
+        },
+        get_puzzle_folder_status: {
+            result: { displayName: "E2E puzzles", isDefault: true },
+        },
+        get_file_folder_status: {
+            result: { displayName: "PGN", isDefault: false },
+        },
+        open_database_workspace: { result: null },
+        open_engine_workspace: { result: null },
+        open_puzzle_workspace: { result: null },
+        open_file_workspace: { result: null },
         list_workspace_databases: { result: { entries: [], unread: [] } },
         linked_collections_supported: { result: false },
         collection_for_database: { result: null },

@@ -1691,6 +1691,7 @@
     "Settings.Directories.Puzzles": "Carpeta de puzles",
     "Settings.Directories.Puzzles.Desc": "Aquí se guardan tus bases de datos de puzles",
     "Settings.Directories.Select": "Seleccionar directorio",
+    "Settings.Directories.ShowInFolder": "Mostrar en la carpeta",
     "Settings.Drawing": "Dibujo",
     "Settings.Drawing.Blue": "Azul",
     "Settings.Drawing.Color": "Color",

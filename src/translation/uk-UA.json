@@ -1722,6 +1722,7 @@
     "Settings.Directories.Puzzles": "Тека задач",
     "Settings.Directories.Puzzles.Desc": "Тут зберігаються бази шахових задач",
     "Settings.Directories.Select": "Вибрати каталог",
+    "Settings.Directories.ShowInFolder": "Показати в теці",
     "Settings.Drawing": "Малювання",
     "Settings.Drawing.Blue": "Синій",
     "Settings.Drawing.Color": "Колір",

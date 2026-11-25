@@ -74,6 +74,7 @@ import {
   LAST_MOVE_HIGHLIGHT_OPACITY_STEP,
 } from "@/state/lastMoveHighlight";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import type { RootFailureDomain } from "@/components/files/listingFailure";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import DraftNumberInput from "../common/DraftNumberInput";
 import { GroupedSidebarTabs, type GroupedSidebarGroup } from "../common/GroupedSidebarTabs";
@@ -90,7 +91,6 @@ import { DrawingKeybinds } from "./DrawingKeybinds";
 import PercentagePreferenceSlider from "./PercentagePreferenceSlider";
 import PiecesSelect from "./PiecesSelect";
 import RepertoireMinGamesSetting from "./RepertoireMinGamesSetting";
-import { DirectorySetting } from "./DirectorySetting";
 import { WorkspaceDirectorySetting } from "./WorkspaceDirectorySetting";
 import shellClasses from "../common/SidebarTabsPage.module.css";
 import classes from "./SettingsPage.module.css";
@@ -175,14 +175,12 @@ export default function Page() {
   const [keyMap, setKeyMap] = useAtom(keyMapAtom);
   const [isNative, setIsNative] = useAtom(nativeBarAtom);
   const { version } = useLoaderData({ from: "/settings" });
-  const [, setFileWorkspace] = useAtom(fileWorkspaceAtom);
-  const [fileWorkspaceDisplayName, setFileWorkspaceDisplayName] = useAtom(
-    fileWorkspaceDisplayNameAtom,
-  );
+  const [fileWorkspace, setFileWorkspace] = useAtom(fileWorkspaceAtom);
+  const [, setFileWorkspaceDisplayName] = useAtom(fileWorkspaceDisplayNameAtom);
   const [, setPuzzleWorkspaceGeneration] = useAtom(puzzleWorkspaceGenerationAtom);
   const showDirectoryError = useCallback(
-    (error: unknown) => {
-      notifyUnlessCancelled(t("Common.Error"), error);
+    (error: unknown, domain: RootFailureDomain) => {
+      notifyUnlessCancelled(t("Common.Error"), error, domain);
     },
     [t],
   );
@@ -432,37 +430,56 @@ export default function Page() {
       volume: () => <VolumeSlider />,
       "sound-collection": () => <SoundSelect />,
       "files-directory": () => (
-        <DirectorySetting
-          value={fileWorkspaceDisplayName || null}
-          issueWorkspace={async () => {
-            const workspace = await tauri.issueFileWorkspace();
-            setFileWorkspace(workspace.handle);
-            return workspace.displayName;
+        <WorkspaceDirectorySetting
+          load={async () => {
+            if (!fileWorkspace) throw new Error("no workspace");
+            return tauri.getFileFolderStatus(fileWorkspace);
           }}
-          onSelect={setFileWorkspaceDisplayName}
-          onError={showDirectoryError}
+          issue={async () => {
+            const workspace = await tauri.issueFileWorkspace(fileWorkspace);
+            setFileWorkspace(workspace.handle);
+            setFileWorkspaceDisplayName(workspace.displayName);
+            return workspace;
+          }}
+          onShowInFolder={
+            fileWorkspace
+              ? async () => {
+                  await tauri.openFileWorkspace(fileWorkspace);
+                }
+              : undefined
+          }
+          onError={(error) => showDirectoryError(error, "files")}
         />
       ),
       "databases-directory": () => (
         <WorkspaceDirectorySetting
-          load={() => tauri.getDatabaseWorkspace()}
+          load={() => tauri.getDatabaseFolderStatus()}
           issue={() => tauri.issueDatabaseWorkspace()}
-          onError={showDirectoryError}
+          onShowInFolder={async () => {
+            await tauri.openDatabaseWorkspace();
+          }}
+          onError={(error) => showDirectoryError(error, "database")}
         />
       ),
       "engines-directory": () => (
         <WorkspaceDirectorySetting
-          load={() => tauri.getEngineWorkspace()}
+          load={() => tauri.getEngineFolderStatus()}
           issue={() => tauri.issueEngineWorkspace()}
-          onError={showDirectoryError}
+          onShowInFolder={async () => {
+            await tauri.openEngineWorkspace();
+          }}
+          onError={(error) => showDirectoryError(error, "engine")}
         />
       ),
       "puzzles-directory": () => (
         <WorkspaceDirectorySetting
-          load={() => tauri.getPuzzleWorkspace()}
+          load={() => tauri.getPuzzleFolderStatus()}
           issue={() => tauri.issuePuzzleWorkspace()}
+          onShowInFolder={async () => {
+            await tauri.openPuzzleWorkspace();
+          }}
           onSelected={() => setPuzzleWorkspaceGeneration((generation) => generation + 1)}
-          onError={showDirectoryError}
+          onError={(error) => showDirectoryError(error, "puzzle")}
         />
       ),
       "coach-model": () => <CoachModelSetting />,
@@ -492,7 +509,7 @@ export default function Page() {
       showCoordinates,
       animationSpeed,
       materialDisplay,
-      fileWorkspaceDisplayName,
+      fileWorkspace,
       setMoveNotationType,
       setMoveMethod,
       setIsNative,

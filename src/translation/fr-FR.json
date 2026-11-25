@@ -1691,6 +1691,7 @@
     "Settings.Directories.Puzzles": "Dossier des problèmes",
     "Settings.Directories.Puzzles.Desc": "C'est ici que sont stockées vos bases de données de problèmes",
     "Settings.Directories.Select": "Sélectionner un dossier",
+    "Settings.Directories.ShowInFolder": "Afficher dans le dossier",
     "Settings.Drawing": "Dessin",
     "Settings.Drawing.Blue": "Bleu",
     "Settings.Drawing.Color": "Couleur",

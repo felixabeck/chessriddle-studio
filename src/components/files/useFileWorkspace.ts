@@ -201,7 +201,7 @@ export function useFileWorkspace(
         return picker.run(async () => {
             const result = await runUnlessCancelled(
                 t("Common.Error"),
-                () => tauri.issueFileWorkspace(),
+                () => tauri.issueFileWorkspace(workspace),
                 "files",
             );
             if (!result) return;

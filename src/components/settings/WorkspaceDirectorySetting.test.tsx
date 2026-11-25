@@ -10,6 +10,13 @@ vi.mock("@mantine/core", () => ({
   ),
   Text: ({ children }: any) => <span>{children}</span>,
 }));
+vi.mock("../common/IconAction", () => ({
+  IconAction: ({ label, onClick }: { label: string; onClick: () => void }) => (
+    <button type="button" aria-label={label} onClick={onClick}>
+      Show
+    </button>
+  ),
+}));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -17,6 +24,7 @@ let root: Root;
 let host: HTMLDivElement;
 let load: ReturnType<typeof vi.fn<() => Promise<{ displayName: string }>>>;
 let issue: ReturnType<typeof vi.fn<() => Promise<{ displayName: string }>>>;
+let onShowInFolder: ReturnType<typeof vi.fn<() => Promise<void>>>;
 let onSelected: ReturnType<typeof vi.fn<(name: string) => void>>;
 let onError: ReturnType<typeof vi.fn<(error: unknown) => void>>;
 
@@ -26,6 +34,7 @@ beforeEach(() => {
   root = createRoot(host);
   load = vi.fn().mockResolvedValue({ displayName: "MyChessDBs" });
   issue = vi.fn().mockResolvedValue({ displayName: "NewFolder" });
+  onShowInFolder = vi.fn().mockResolvedValue(undefined);
   onSelected = vi.fn();
   onError = vi.fn();
 });
@@ -35,12 +44,17 @@ afterEach(async () => {
   host.remove();
 });
 
+function pickerButton() {
+  return host.querySelector<HTMLButtonElement>('button[aria-label="Settings.Directories.Select"]')!;
+}
+
 async function render() {
   await act(async () =>
     root.render(
       <WorkspaceDirectorySetting
         load={load}
         issue={issue}
+        onShowInFolder={onShowInFolder}
         onSelected={onSelected}
         onError={onError}
       />,
@@ -56,7 +70,7 @@ test("hydrates the stored workspace display name on mount", async () => {
 
 test("shows the issued name and reports the successful selection", async () => {
   await render();
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () => pickerButton().click());
   expect(host.textContent).toContain("NewFolder");
   expect(onSelected).toHaveBeenCalledExactlyOnceWith("NewFolder");
 });
@@ -82,7 +96,7 @@ test("late hydration cannot overwrite a successfully selected name", async () =>
   let resolve!: (workspace: { displayName: string }) => void;
   load.mockReturnValue(new Promise((done) => (resolve = done)));
   await render();
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () => pickerButton().click());
   await act(async () => resolve({ displayName: "OldFolder" }));
   expect(host.textContent).toContain("NewFolder");
   expect(host.textContent).not.toContain("OldFolder");
@@ -92,7 +106,7 @@ test("late hydration failure cannot overwrite a successfully selected name", asy
   let reject!: (error: Error) => void;
   load.mockReturnValue(new Promise((_, fail) => (reject = fail)));
   await render();
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () => pickerButton().click());
   await act(async () => reject(new Error("stale")));
   expect(host.textContent).toContain("NewFolder");
   expect(host.textContent).not.toContain("Settings.Directories.Select");
@@ -120,11 +134,22 @@ test("hydration from an unmounted instance cannot overwrite a remounted instance
   expect(onError).not.toHaveBeenCalled();
 });
 
+test("opens the current folder from status without a renderer path", async () => {
+  await render();
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('button[aria-label="Settings.Directories.ShowInFolder"]')!
+      .click(),
+  );
+  expect(onShowInFolder).toHaveBeenCalledOnce();
+  expect(host.textContent).toContain("MyChessDBs");
+});
+
 test("a selection that lands after unmount still reports the switched native root", async () => {
   let resolve!: (workspace: { displayName: string }) => void;
   issue.mockReturnValue(new Promise((done) => (resolve = done)));
   await render();
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () => pickerButton().click());
   await act(async () => root.unmount());
   root = createRoot(host);
   await act(async () => resolve({ displayName: "NewFolder" }));

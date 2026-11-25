@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     db::{puzzle_themes, puzzles, themes, DatabaseIdentity, DatabaseRepository, Puzzle},
     error::{CommittedRemoval, Error},
-    file_workspace::map_picker_join,
+    file_workspace::{map_picker_join, open_resolved_folder, seed_folder_picker},
     infra::blocking::BLOCKING_GATEWAY,
 };
 
@@ -389,18 +389,23 @@ pub async fn issue_puzzle_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<crate::infra::path_authority::PuzzleRootDescriptor, Error> {
-    use tauri_plugin_dialog::DialogExt;
+    let authority = state.pgn_path_authority.clone();
+    let picker_authority = authority.clone();
     let path = tokio::task::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .blocking_pick_folder()
-            .ok_or(Error::Cancellation)?
-            .into_path()
-            .map_err(|error| Error::native_selection("invalid puzzle folder selection", error))
+        use tauri_plugin_dialog::DialogExt;
+        seed_folder_picker(
+            app.dialog().file(),
+            &picker_authority,
+            &app,
+            |authority, lookup| authority.puzzle_folder_open_path(lookup).ok(),
+        )
+        .blocking_pick_folder()
+        .ok_or(Error::Cancellation)?
+        .into_path()
+        .map_err(|error| Error::native_selection("invalid puzzle folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;
-    let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
         "issue_puzzle_workspace",
@@ -445,6 +450,64 @@ pub async fn get_puzzle_workspace(
         },
     )
     .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_puzzle_folder_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    let authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "get_puzzle_folder_status",
+        move || {
+            get_puzzle_folder_status_blocking(&authority, &|| {
+                crate::infra::path_authority::AppDataDir::for_app(&app)
+            })
+        },
+    )
+    .await
+}
+
+fn get_puzzle_folder_status_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    authority.with_mut(|authority| authority.puzzle_folder_status(app_data))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn open_puzzle_workspace(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<(), Error> {
+    use tauri_plugin_opener::OpenerExt;
+    let authority = state.pgn_path_authority.clone();
+    let lookup_app = app.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "open_puzzle_workspace",
+        move || {
+            open_puzzle_workspace_blocking(
+                &authority,
+                &|| crate::infra::path_authority::AppDataDir::for_app(&lookup_app),
+                |path| app.opener().open_path(path.to_string_lossy(), None::<&str>),
+            )
+        },
+    )
+    .await
+}
+
+fn open_puzzle_workspace_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    app_data: &dyn Fn() -> Result<crate::infra::path_authority::AppDataDir, Error>,
+    opener: impl FnOnce(&Path) -> Result<(), tauri_plugin_opener::Error>,
+) -> Result<(), Error> {
+    let path = authority.with_mut(|authority| authority.puzzle_folder_open_path(app_data))??;
+    open_resolved_folder(&path, opener)
 }
 
 #[tauri::command]
@@ -853,6 +916,78 @@ mod workspace_tests {
                 .active_puzzle_root()
                 .unwrap(),
             Some(workspace_b)
+        );
+    }
+
+    #[test]
+    fn puzzle_folder_open_path_follows_identity_checked_resolution() {
+        use crate::file_workspace::{assert_kind_folder_open_path_identity, idle_app_data};
+        use crate::infra::path_authority::AppOwnedDefaultRoot;
+        let directory = tempfile::tempdir().unwrap();
+        let (authority, app_path) = idle_app_data(&directory);
+        let selected = directory.path().join("MyPuzzles");
+        assert_kind_folder_open_path_identity(
+            &authority,
+            &app_path,
+            &selected,
+            AppOwnedDefaultRoot::Puzzles,
+            |authority, lookup| {
+                authority
+                    .with_mut(|authority| authority.puzzle_folder_open_path(lookup).ok())
+                    .unwrap()
+            },
+            |authority, path| {
+                issue_puzzle_workspace_blocking(authority, path).unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn idle_puzzle_open_reaches_the_default_directory() {
+        use crate::file_workspace::{canonical_shell_path, idle_app_data};
+        use crate::infra::path_authority::{
+            ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let (authority, app_path) = idle_app_data(&directory);
+        let lookup = || Ok(AppDataDir::for_test(&app_path));
+        let expected = canonical_shell_path(
+            ensure_app_owned_default_dir(
+                &AppDataDir::for_test(&app_path),
+                AppOwnedDefaultRoot::Puzzles,
+            )
+            .unwrap()
+            .path(),
+        );
+        open_puzzle_workspace_blocking(&authority, &lookup, |path| {
+            assert_eq!(path, expected.as_path());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn puzzle_picker_seeds_from_the_current_folder() {
+        use crate::infra::blocking::source_scan::body_at_indent;
+        let body = body_at_indent(
+            include_str!("puzzle.rs"),
+            "pub async fn issue_puzzle_workspace(",
+        );
+        assert!(
+            body.contains("seed_folder_picker(")
+                && body.contains("puzzle_folder_open_path(")
+                && body.contains("blocking_pick_folder"),
+            "issue_puzzle_workspace must seed the folder picker: {body}"
+        );
+        let start = body
+            .find("seed_folder_picker(")
+            .expect("seed_folder_picker");
+        let pick = body
+            .find("blocking_pick_folder")
+            .expect("blocking_pick_folder");
+        assert!(
+            start < pick,
+            "issue_puzzle_workspace must resolve the start directory before the dialog: {body}"
         );
     }
 }
@@ -2787,5 +2922,72 @@ mod tests {
             "unexpected error: {error:?}"
         );
         assert_eq!(error.root_failure(), None);
+    }
+
+    #[test]
+    fn puzzle_folder_status_and_open_cover_leaf_default_and_failure() {
+        use crate::error::RootFailure;
+        use crate::infra::path_authority::{FolderStatus, PathAuthority};
+
+        let directory = tempfile::tempdir().unwrap();
+        let authority = crate::infra::path_authority::SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        );
+        let looked_up = std::cell::Cell::new(false);
+        let no_lookup = || {
+            looked_up.set(true);
+            Err(Error::Conflict("unexpected app-data lookup".into()))
+        };
+        let idle = get_puzzle_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(
+            idle,
+            FolderStatus {
+                display_name: "Puzzles".into(),
+                is_default: true,
+                root_failure: None,
+            }
+        );
+        assert!(!looked_up.get());
+
+        let selected = directory.path().join("MyPuzzles");
+        std::fs::create_dir(&selected).unwrap();
+        issue_puzzle_workspace_blocking(&authority, selected.clone()).unwrap();
+        let custom = get_puzzle_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(custom.display_name, "MyPuzzles");
+        assert!(!custom.is_default);
+        assert_eq!(custom.root_failure, None);
+
+        let capture = crate::error::LogCaptureScope::start();
+        let cause = format!("opener rejected private path {}", selected.display());
+        let error = open_puzzle_workspace_blocking(&authority, &no_lookup, |path| {
+            assert_eq!(
+                path,
+                crate::infra::path_authority::native_shell_path(
+                    &std::fs::canonicalize(&selected).unwrap()
+                )
+                .as_path()
+            );
+            Err(tauri_plugin_opener::Error::Io(std::io::Error::other(
+                cause.clone(),
+            )))
+        })
+        .unwrap_err();
+        let payload = serde_json::to_value(&error).unwrap();
+        assert!(!payload.to_string().contains(&cause));
+        assert!(!payload
+            .to_string()
+            .contains(&selected.display().to_string()));
+        assert!(matches!(&error, Error::TauriOpener(_)));
+        assert!(error.diagnostic().contains(&cause));
+        assert!(capture
+            .messages()
+            .iter()
+            .any(|message| message.contains(&cause)));
+
+        std::fs::remove_dir(&selected).unwrap();
+        let missing = get_puzzle_folder_status_blocking(&authority, &no_lookup).unwrap();
+        assert_eq!(missing.display_name, "MyPuzzles");
+        assert!(!missing.is_default);
+        assert_eq!(missing.root_failure, Some(RootFailure::Missing));
     }
 }

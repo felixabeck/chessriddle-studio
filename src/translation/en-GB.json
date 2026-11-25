@@ -1660,6 +1660,7 @@
     "Settings.Directories.Puzzles": "Puzzles Directory",
     "Settings.Directories.Puzzles.Desc": "This is where your puzzle databases are stored",
     "Settings.Directories.Select": "Select directory",
+    "Settings.Directories.ShowInFolder": "Show in folder",
     "Settings.Drawing": "Drawing",
     "Settings.Drawing.Blue": "Blue",
     "Settings.Drawing.Color": "Colour",

@@ -4675,3 +4675,58 @@ fn promote_dialog_mints_a_fresh_capability_for_a_replaced_pgn_file() {
         .resolve(&newest.id, PathOperation::ReadPgn, &[])
         .is_ok());
 }
+
+#[test]
+fn folder_status_compares_default_by_identity_and_keeps_unusable_selection() {
+    let dir = tempfile::tempdir().unwrap();
+    let app_path = dir.path().join("app-data");
+    fs::create_dir(&app_path).unwrap();
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let lookup = || Ok(AppDataDir::for_test(&app_path));
+    let idle = authority.database_folder_status(&lookup).unwrap();
+    assert_eq!(idle.display_name, "Databases");
+    assert!(idle.is_default);
+    assert_eq!(idle.root_failure, None);
+    assert!(!app_path.join("db").exists());
+
+    let authorized = ensure_app_owned_default_dir(
+        &AppDataDir::for_test(&app_path),
+        AppOwnedDefaultRoot::Databases,
+    )
+    .unwrap();
+    let root = authority
+        .get_or_create_database_root(authorized.path(), "Databases", Some(authorized.identity()))
+        .unwrap();
+    authority.set_active_database_root(&root).unwrap();
+    let default = authority.database_folder_status(&lookup).unwrap();
+    assert_eq!(default.display_name, "Databases");
+    assert!(default.is_default);
+    assert_eq!(default.root_failure, None);
+
+    let custom_path = dir.path().join("CustomDBs");
+    fs::create_dir(&custom_path).unwrap();
+    let custom = authority
+        .get_or_create_database_root(&custom_path, "a/b\\c", None)
+        .unwrap();
+    authority.set_active_database_root(&custom).unwrap();
+    let custom_status = authority.database_folder_status(&lookup).unwrap();
+    assert_eq!(custom_status.display_name, "CustomDBs");
+    assert!(!custom_status.is_default);
+    assert_eq!(custom_status.root_failure, None);
+
+    fs::remove_dir(&custom_path).unwrap();
+    let missing = authority.database_folder_status(&lookup).unwrap();
+    assert_eq!(missing.display_name, "CustomDBs");
+    assert!(!missing.is_default);
+    assert_eq!(
+        missing.root_failure,
+        Some(crate::error::RootFailure::Missing)
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn native_shell_path_is_unchanged_off_windows() {
+    let path = PathBuf::from("/home/user/Engines");
+    assert_eq!(native_shell_path(&path), path);
+}

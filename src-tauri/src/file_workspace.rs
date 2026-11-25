@@ -9,10 +9,10 @@ use crate::{
     infra::blocking::BLOCKING_GATEWAY,
     infra::cancellable_lock::lock_std_cancellable,
     infra::path_authority::{
-        equivalent_sibling_leaves, workspace_sidecar_leaf as sidecar_leaf, FileWorkspaceDescriptor,
-        FileWorkspaceHandle, IdentityBinding, NativePath, PathAuthority, PathClass, PathOperation,
-        PathRef, SharedPathAuthority, WorkspaceMutationTarget, WorkspaceRemovalStatus,
-        PICKER_DIALOG_GRANT_TTL,
+        equivalent_sibling_leaves, workspace_sidecar_leaf as sidecar_leaf, AppDataDir,
+        FileWorkspaceDescriptor, FileWorkspaceHandle, FolderStatus, IdentityBinding, NativePath,
+        PathAuthority, PathClass, PathOperation, PathRef, SharedPathAuthority,
+        WorkspaceMutationTarget, WorkspaceRemovalStatus, PICKER_DIALOG_GRANT_TTL,
     },
     pgn, AppState,
 };
@@ -1128,6 +1128,285 @@ pub(crate) fn map_picker_join(error: tokio::task::JoinError) -> Error {
     }
 }
 
+/// Production seam for `FileDialogBuilder::set_directory`. Production dialogs and the
+/// recording picker in tests share this one start-directory application.
+pub(crate) trait FolderPickerStart {
+    fn with_start_directory(self, path: PathBuf) -> Self;
+}
+
+impl<R: tauri::Runtime> FolderPickerStart for tauri_plugin_dialog::FileDialogBuilder<R> {
+    fn with_start_directory(self, path: PathBuf) -> Self {
+        self.set_directory(path)
+    }
+}
+
+pub(crate) fn apply_folder_picker_start<B: FolderPickerStart>(
+    builder: B,
+    start: Option<PathBuf>,
+) -> B {
+    match start {
+        Some(path) => builder.with_start_directory(path),
+        None => builder,
+    }
+}
+
+pub(crate) fn resolve_folder_picker_start<R: tauri::Runtime>(
+    authority: &SharedPathAuthority,
+    app: &tauri::AppHandle<R>,
+    resolve: impl FnOnce(&mut PathAuthority, &dyn Fn() -> Result<AppDataDir, Error>) -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    authority
+        .with_mut(|authority| resolve(authority, &|| AppDataDir::for_app(app)))
+        .ok()
+        .flatten()
+}
+
+/// Resolves the picker start directory and applies it to the dialog builder.
+pub(crate) fn seed_folder_picker<B: FolderPickerStart, R: tauri::Runtime>(
+    builder: B,
+    authority: &SharedPathAuthority,
+    app: &tauri::AppHandle<R>,
+    resolve: impl FnOnce(&mut PathAuthority, &dyn Fn() -> Result<AppDataDir, Error>) -> Option<PathBuf>,
+) -> B {
+    apply_folder_picker_start(
+        builder,
+        resolve_folder_picker_start(authority, app, resolve),
+    )
+}
+
+pub(crate) fn open_resolved_folder(
+    path: &Path,
+    opener: impl FnOnce(&Path) -> Result<(), tauri_plugin_opener::Error>,
+) -> Result<(), Error> {
+    opener(path).map_err(|error| {
+        let error = Error::from(error);
+        log::error!("cannot open folder: {}", error.diagnostic());
+        error
+    })
+}
+
+#[cfg(test)]
+mod folder_shell_tests {
+    use super::*;
+
+    struct RecordingPicker {
+        directory: Option<PathBuf>,
+    }
+
+    impl FolderPickerStart for RecordingPicker {
+        fn with_start_directory(self, path: PathBuf) -> Self {
+            Self {
+                directory: Some(path),
+            }
+        }
+    }
+
+    #[test]
+    fn folder_picker_start_seeds_the_dialog_builder() {
+        let start = PathBuf::from("/tmp/current-folder");
+        let seeded =
+            apply_folder_picker_start(RecordingPicker { directory: None }, Some(start.clone()));
+        assert_eq!(seeded.directory.as_deref(), Some(start.as_path()));
+        let unseeded = apply_folder_picker_start(RecordingPicker { directory: None }, None);
+        assert_eq!(unseeded.directory, None);
+    }
+
+    #[test]
+    fn seed_folder_picker_reaches_set_directory_from_resolver() {
+        let directory = tempfile::tempdir().unwrap();
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        );
+        let app = tauri::test::mock_app();
+        let start = PathBuf::from("/tmp/current-folder");
+        let seeded = seed_folder_picker(
+            RecordingPicker { directory: None },
+            &authority,
+            app.handle(),
+            |_, _| Some(start.clone()),
+        );
+        assert_eq!(seeded.directory.as_deref(), Some(start.as_path()));
+        let unseeded = seed_folder_picker(
+            RecordingPicker { directory: None },
+            &authority,
+            app.handle(),
+            |_, _| None,
+        );
+        assert_eq!(unseeded.directory, None);
+    }
+
+    #[test]
+    fn open_resolved_folder_redacts_opener_path_and_logs_native_cause() {
+        let fixture_path = PathBuf::from("/private/engine-root");
+        let cause = format!("opener rejected private path {}", fixture_path.display());
+        let capture = crate::error::LogCaptureScope::start();
+        let error = open_resolved_folder(&fixture_path, |path| {
+            assert_eq!(path, fixture_path.as_path());
+            Err(tauri_plugin_opener::Error::Io(std::io::Error::other(
+                cause.clone(),
+            )))
+        })
+        .unwrap_err();
+        let payload = serde_json::to_value(&error).unwrap();
+        assert!(!payload.to_string().contains(&cause));
+        assert!(!payload
+            .to_string()
+            .contains(&fixture_path.display().to_string()));
+        assert_eq!(payload["category"], "platform");
+        assert!(matches!(&error, Error::TauriOpener(_)));
+        assert!(error.diagnostic().contains(&cause));
+        assert!(capture
+            .messages()
+            .iter()
+            .any(|message| message.contains(&cause)));
+    }
+
+    #[test]
+    fn file_folder_status_and_open_cover_leaf_and_failure() {
+        use crate::error::RootFailure;
+        use crate::infra::path_authority::PathAuthority;
+
+        let directory = tempfile::tempdir().unwrap();
+        let selected = directory.path().join("MyPGN");
+        std::fs::create_dir(&selected).unwrap();
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        );
+        let issued = issue_file_workspace_blocking(&authority, selected.clone()).unwrap();
+        let status = get_file_folder_status_blocking(&authority, &issued.handle).unwrap();
+        assert_eq!(status.display_name, "MyPGN");
+        assert!(!status.is_default);
+        assert_eq!(status.root_failure, None);
+
+        let capture = crate::error::LogCaptureScope::start();
+        let cause = format!("opener rejected private path {}", selected.display());
+        let error = open_file_workspace_blocking(&authority, &issued.handle, |path| {
+            assert_eq!(
+                path,
+                crate::infra::path_authority::native_shell_path(
+                    &std::fs::canonicalize(&selected).unwrap()
+                )
+                .as_path()
+            );
+            Err(tauri_plugin_opener::Error::Io(std::io::Error::other(
+                cause.clone(),
+            )))
+        })
+        .unwrap_err();
+        let payload = serde_json::to_value(&error).unwrap();
+        assert!(!payload.to_string().contains(&cause));
+        assert!(!payload
+            .to_string()
+            .contains(&selected.display().to_string()));
+        assert!(matches!(&error, Error::TauriOpener(_)));
+        assert!(error.diagnostic().contains(&cause));
+        assert!(capture
+            .messages()
+            .iter()
+            .any(|message| message.contains(&cause)));
+
+        std::fs::remove_dir(&selected).unwrap();
+        let missing = get_file_folder_status_blocking(&authority, &issued.handle).unwrap();
+        assert_eq!(missing.display_name, "MyPGN");
+        assert!(!missing.is_default);
+        assert_eq!(missing.root_failure, Some(RootFailure::Missing));
+    }
+
+    #[test]
+    fn file_folder_open_path_follows_identity_checked_resolution() {
+        let directory = tempfile::tempdir().unwrap();
+        let selected = directory.path().join("MyPGN");
+        std::fs::create_dir(&selected).unwrap();
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        );
+        let issued = issue_file_workspace_blocking(&authority, selected.clone()).unwrap();
+        let custom = authority
+            .with_mut(|authority| authority.file_folder_open_path(&issued.handle).ok())
+            .unwrap();
+        assert_eq!(
+            custom.as_deref(),
+            Some(canonical_shell_path(&selected).as_path())
+        );
+
+        #[cfg(unix)]
+        {
+            let displaced = selected.with_file_name("MyPGN-displaced");
+            std::fs::rename(&selected, &displaced).unwrap();
+            assert_eq!(
+                authority
+                    .with_mut(|authority| authority.file_folder_open_path(&issued.handle).ok())
+                    .unwrap(),
+                None
+            );
+            std::fs::create_dir(&selected).unwrap();
+            assert_eq!(
+                authority
+                    .with_mut(|authority| authority.file_folder_open_path(&issued.handle).ok())
+                    .unwrap(),
+                None
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn canonical_shell_path(path: &Path) -> PathBuf {
+    crate::infra::path_authority::native_shell_path(&std::fs::canonicalize(path).unwrap())
+}
+
+#[cfg(test)]
+pub(crate) fn idle_app_data(directory: &tempfile::TempDir) -> (SharedPathAuthority, PathBuf) {
+    let app_path = directory.path().join("app-data");
+    std::fs::create_dir(&app_path).unwrap();
+    (
+        SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        ),
+        app_path,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn assert_kind_folder_open_path_identity(
+    authority: &SharedPathAuthority,
+    app_path: &Path,
+    selected: &Path,
+    default_kind: crate::infra::path_authority::AppOwnedDefaultRoot,
+    open_path: impl Fn(&SharedPathAuthority, &dyn Fn() -> Result<AppDataDir, Error>) -> Option<PathBuf>,
+    issue: impl FnOnce(&SharedPathAuthority, PathBuf),
+) {
+    use crate::infra::path_authority::{ensure_app_owned_default_dir, AppDataDir};
+    let lookup = || Ok(AppDataDir::for_test(app_path));
+    let idle = open_path(authority, &lookup);
+    let expected_default = canonical_shell_path(
+        ensure_app_owned_default_dir(&AppDataDir::for_test(app_path), default_kind)
+            .unwrap()
+            .path(),
+    );
+    assert_eq!(idle.as_deref(), Some(expected_default.as_path()));
+
+    std::fs::create_dir(selected).unwrap();
+    issue(authority, selected.to_path_buf());
+    let custom = open_path(authority, &lookup);
+    assert_eq!(
+        custom.as_deref(),
+        Some(canonical_shell_path(selected).as_path())
+    );
+
+    #[cfg(unix)]
+    {
+        let displaced = selected.with_file_name(format!(
+            "{}-displaced",
+            selected.file_name().unwrap().to_string_lossy()
+        ));
+        std::fs::rename(selected, &displaced).unwrap();
+        assert_eq!(open_path(authority, &lookup), None);
+        std::fs::create_dir(selected).unwrap();
+        assert_eq!(open_path(authority, &lookup), None);
+    }
+}
+
 #[cfg(all(test, unix))]
 type WorkspaceListingConfirmHook = Box<dyn FnMut(&DirectoryEntry)>;
 
@@ -1598,22 +1877,81 @@ fn listing_count_error(error: Error) -> Result<ErrorCategory, Error> {
 
 #[tauri::command]
 #[specta::specta]
+pub async fn get_file_folder_status(
+    workspace: FileWorkspaceHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<FolderStatus, Error> {
+    let pgn_path_authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "get_file_folder_status",
+        move || get_file_folder_status_blocking(&pgn_path_authority, &workspace),
+    )
+    .await
+}
+
+fn get_file_folder_status_blocking(
+    pgn_path_authority: &SharedPathAuthority,
+    workspace: &FileWorkspaceHandle,
+) -> Result<FolderStatus, Error> {
+    pgn_path_authority.with_mut(|authority| authority.file_folder_status(workspace))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn open_file_workspace(
+    app: tauri::AppHandle,
+    workspace: FileWorkspaceHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    use tauri_plugin_opener::OpenerExt;
+    let pgn_path_authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "open_file_workspace",
+        move || {
+            open_file_workspace_blocking(&pgn_path_authority, &workspace, |path| {
+                app.opener().open_path(path.to_string_lossy(), None::<&str>)
+            })
+        },
+    )
+    .await
+}
+
+fn open_file_workspace_blocking(
+    pgn_path_authority: &SharedPathAuthority,
+    workspace: &FileWorkspaceHandle,
+    opener: impl FnOnce(&Path) -> Result<(), tauri_plugin_opener::Error>,
+) -> Result<(), Error> {
+    let path =
+        pgn_path_authority.with_mut(|authority| authority.file_folder_open_path(workspace))??;
+    open_resolved_folder(&path, opener)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn issue_file_workspace(
     app: tauri::AppHandle,
+    workspace: Option<FileWorkspaceHandle>,
     state: tauri::State<'_, AppState>,
 ) -> Result<FileWorkspaceDescriptor, Error> {
-    use tauri_plugin_dialog::DialogExt;
+    let pgn_path_authority = state.pgn_path_authority.clone();
+    let picker_authority = pgn_path_authority.clone();
     let path = tokio::task::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .blocking_pick_folder()
-            .ok_or(Error::Cancellation)?
-            .into_path()
-            .map_err(|error| Error::native_selection("invalid native folder selection", error))
+        use tauri_plugin_dialog::DialogExt;
+        seed_folder_picker(
+            app.dialog().file(),
+            &picker_authority,
+            &app,
+            |authority, _| authority.file_folder_open_path(workspace.as_ref()?).ok(),
+        )
+        .blocking_pick_folder()
+        .ok_or(Error::Cancellation)?
+        .into_path()
+        .map_err(|error| Error::native_selection("invalid native folder selection", error))
     })
     .await
     .map_err(map_picker_join)??;
-    let pgn_path_authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
         "issue_file_workspace",
@@ -1651,6 +1989,25 @@ fn issue_file_workspace_blocking(
             availability: crate::infra::path_authority::PathAvailability::Available,
         })
     })?
+}
+
+#[cfg(test)]
+mod file_picker_scan_tests {
+    #[test]
+    fn file_picker_seeds_from_the_current_folder() {
+        use crate::infra::blocking::source_scan::body_at_indent;
+        let body = body_at_indent(
+            include_str!("file_workspace.rs"),
+            "pub async fn issue_file_workspace(",
+        );
+        assert!(
+            body.contains("seed_folder_picker(")
+                && body.contains("file_folder_open_path(")
+                && body.contains("blocking_pick_folder")
+                && !body.contains("file_folder_picker_start("),
+            "issue_file_workspace must seed the folder picker: {body}"
+        );
+    }
 }
 
 pub(crate) async fn list_file_workspace_core(

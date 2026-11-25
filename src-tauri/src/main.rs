@@ -95,9 +95,9 @@ use crate::infra::operations::{OperationLease, OperationRegistry};
 use crate::feedback::submit_feedback;
 use crate::file_workspace::{
     create_workspace_directory, create_workspace_file, delete_workspace_trash_item,
-    empty_workspace_trash, issue_file_workspace, list_file_workspace, list_workspace_trash,
-    move_workspace_entry, rename_workspace_file, restore_workspace_trash_item,
-    trash_workspace_entry, write_workspace_file_metadata,
+    empty_workspace_trash, get_file_folder_status, issue_file_workspace, list_file_workspace,
+    list_workspace_trash, move_workspace_entry, open_file_workspace, rename_workspace_file,
+    restore_workspace_trash_item, trash_workspace_entry, write_workspace_file_metadata,
 };
 use crate::lexer::lex_pgn;
 use crate::lichess::{
@@ -117,19 +117,20 @@ use crate::practice::{
     reset_practice_deck, sync_practice_positions,
 };
 use crate::puzzle::{
-    delete_puzzle_database, get_puzzle, get_puzzle_themes, get_puzzle_workspace,
-    get_themes_for_puzzle, issue_puzzle_download_destination, issue_puzzle_workspace,
-    list_puzzle_databases,
+    delete_puzzle_database, get_puzzle, get_puzzle_folder_status, get_puzzle_themes,
+    get_puzzle_workspace, get_themes_for_puzzle, issue_puzzle_download_destination,
+    issue_puzzle_workspace, list_puzzle_databases, open_puzzle_workspace,
 };
 use crate::sound::get_sound_server_port;
 use crate::unsaved_games::{clear_unsaved_games, list_unsaved_games, remove_unsaved_game};
 use crate::workspace_commands::{
     create_workspace_database, database_download_destination, download_destination_is_known,
-    get_database_workspace, get_engine_workspace, issue_database_workspace,
-    issue_download_destination, issue_engine_binary, issue_engine_image, issue_engine_resource,
-    issue_engine_workspace, issue_opening_book, issue_pgn_export_destination, issue_pgn_workspace,
-    list_workspace_databases, open_engine_workspace, read_engine_image, save_board_snapshot,
-    save_engine_logs,
+    get_database_folder_status, get_database_workspace, get_engine_folder_status,
+    get_engine_workspace, issue_database_workspace, issue_download_destination,
+    issue_engine_binary, issue_engine_image, issue_engine_resource, issue_engine_workspace,
+    issue_opening_book, issue_pgn_export_destination, issue_pgn_workspace,
+    list_workspace_databases, open_database_workspace, open_engine_workspace, read_engine_image,
+    save_board_snapshot, save_engine_logs,
 };
 use crate::workspace_session::{
     clear_workspace_session, list_workspace_session_names, quarantine_workspace_session_leaves,
@@ -1556,18 +1557,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             download_destination_is_known,
             issue_database_workspace,
             get_database_workspace,
+            get_database_folder_status,
             list_workspace_databases,
             create_workspace_database,
             database_download_destination,
             issue_engine_workspace,
             get_engine_workspace,
+            get_engine_folder_status,
             issue_engine_binary,
             issue_engine_resource,
             issue_engine_image,
             read_engine_image,
             issue_opening_book,
             open_engine_workspace,
+            open_database_workspace,
             issue_file_workspace,
+            get_file_folder_status,
+            open_file_workspace,
             list_file_workspace,
             create_workspace_file,
             create_workspace_directory,
@@ -1594,6 +1600,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             issue_puzzle_download_destination,
             issue_puzzle_workspace,
             get_puzzle_workspace,
+            get_puzzle_folder_status,
+            open_puzzle_workspace,
             list_puzzle_databases,
             load_practice_deck,
             practice_epoch,
@@ -4632,10 +4640,22 @@ mod blocking_offload_scans {
                 "async fn get_engine_workspace(",
                 "get_engine_workspace_blocking",
             ),
+            (
+                "async fn get_database_folder_status(",
+                "get_database_folder_status_blocking",
+            ),
+            (
+                "async fn get_engine_folder_status(",
+                "get_engine_folder_status_blocking",
+            ),
             ("async fn read_engine_image(", "read_engine_image_blocking"),
             (
                 "async fn open_engine_workspace(",
                 "open_engine_workspace_blocking",
+            ),
+            (
+                "async fn open_database_workspace(",
+                "open_database_workspace_blocking",
             ),
             (
                 "async fn issue_pgn_workspace(",
@@ -4712,6 +4732,14 @@ mod blocking_offload_scans {
                 "issue_puzzle_workspace_blocking",
             ),
             (
+                "pub async fn get_puzzle_folder_status(",
+                "get_puzzle_folder_status_blocking",
+            ),
+            (
+                "pub async fn open_puzzle_workspace(",
+                "open_puzzle_workspace_blocking",
+            ),
+            (
                 "pub async fn list_puzzle_databases(",
                 "list_puzzle_databases_blocking",
             ),
@@ -4723,6 +4751,14 @@ mod blocking_offload_scans {
             (
                 "pub async fn issue_file_workspace(",
                 "issue_file_workspace_blocking",
+            ),
+            (
+                "pub async fn get_file_folder_status(",
+                "get_file_folder_status_blocking",
+            ),
+            (
+                "pub async fn open_file_workspace(",
+                "open_file_workspace_blocking",
             ),
             (
                 "pub(crate) async fn list_file_workspace_core(",
@@ -5539,6 +5575,7 @@ mod blocking_offload_scans {
     fn app_owned_default_roots_are_pinned_to_their_call_sites() {
         let workspace_commands = include_str!("workspace_commands.rs");
         let puzzle = include_str!("puzzle.rs");
+        let workspace_authority = include_str!("infra/path_authority/workspace.rs");
         let lazy = "&app_data()?,";
         for (source, name, lookup) in [
             (
@@ -5641,6 +5678,43 @@ mod blocking_offload_scans {
                 !body.contains(&quoted),
                 "{file}::{name} must not join {quoted} itself: {body}"
             );
+        }
+
+        let open_default = body_at_indent(workspace_authority, "fn kind_folder_open_path(");
+        let open_call = "ensure_app_owned_default_dir(";
+        let open_at = open_default.find(open_call).unwrap_or_else(|| {
+            panic!("kind_folder_open_path must materialise its root through {open_call}: {open_default}")
+        });
+        assert!(
+            open_default[open_at..].contains("default_kind"),
+            "kind_folder_open_path must pass the kind parameter to ensure: {open_default}"
+        );
+        let open_between = {
+            let variant_at = open_default[open_at..]
+                .find("default_kind")
+                .map(|offset| open_at + offset)
+                .unwrap();
+            &open_default[open_at + open_call.len()..variant_at]
+        };
+        let open_argument: String = open_between[..=open_between
+            .rfind(',')
+            .expect("kind_folder_open_path parent argument")]
+            .split_whitespace()
+            .collect();
+        assert_eq!(
+            open_argument, lazy,
+            "kind_folder_open_path must pass its app-data directory as {lazy}: {open_default}"
+        );
+        for (name, variant) in [
+            (
+                "database_folder_open_path",
+                "AppOwnedDefaultRoot::Databases",
+            ),
+            ("engine_folder_open_path", "AppOwnedDefaultRoot::Engines"),
+            ("puzzle_folder_open_path", "AppOwnedDefaultRoot::Puzzles"),
+        ] {
+            let body = body_at_indent(workspace_authority, &format!("fn {name}("));
+            assert!(body.contains(variant), "{name} must pass {variant}: {body}");
         }
 
         // Pin the descriptor identity as the third root-registration argument. Searching the

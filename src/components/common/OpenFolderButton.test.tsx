@@ -3,7 +3,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const native = vi.hoisted(() => ({
-  getEngineWorkspace: vi.fn(),
   openEngineWorkspace: vi.fn(),
   notify: vi.fn(),
 }));
@@ -31,10 +30,6 @@ let root: Root;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  native.getEngineWorkspace.mockResolvedValue({
-    root: { id: { id: "engine-root" }, kind: "engineRoot" },
-    displayName: "Engines",
-  });
   native.openEngineWorkspace.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
@@ -50,38 +45,31 @@ test("opens only the native engine workspace capability", async () => {
   await act(async () => root.render(<OpenFolderButton />));
   await act(async () => container.querySelector("button")!.click());
 
-  expect(native.getEngineWorkspace).toHaveBeenCalledOnce();
-  expect(native.openEngineWorkspace).toHaveBeenCalledWith({
-    id: { id: "engine-root" },
-    kind: "engineRoot",
+  expect(native.openEngineWorkspace).toHaveBeenCalledOnce();
+  expect(native.openEngineWorkspace).toHaveBeenCalledWith();
+});
+
+test.each(["labelled", "unlabelled"])("handles %s workspace open rejection", async (outcome) => {
+  native.openEngineWorkspace.mockRejectedValue({
+    tag: "backend-error",
+    category: "io",
+    message: "native failure",
+    ...(outcome === "labelled" ? { rootFailure: "missing" } : {}),
+  });
+  await act(async () => root.render(<OpenFolderButton />));
+  await act(async () => container.querySelector("button")!.click());
+  expect(native.notify).toHaveBeenCalledExactlyOnceWith({
+    color: "danger",
+    title: "Common.Error",
+    message:
+      outcome === "labelled"
+        ? "This engine folder is no longer available. Choose another in Settings."
+        : "native failure",
   });
 });
 
-test.each(["labelled", "unlabelled"])(
-  "handles %s workspace acquisition rejection",
-  async (outcome) => {
-    native.getEngineWorkspace.mockRejectedValue({
-      tag: "backend-error",
-      category: "io",
-      message: "native failure",
-      ...(outcome === "labelled" ? { rootFailure: "missing" } : {}),
-    });
-    await act(async () => root.render(<OpenFolderButton />));
-    await act(async () => container.querySelector("button")!.click());
-    expect(native.openEngineWorkspace).not.toHaveBeenCalled();
-    expect(native.notify).toHaveBeenCalledExactlyOnceWith({
-      color: "danger",
-      title: "Common.Error",
-      message:
-        outcome === "labelled"
-          ? "This engine folder is no longer available. Choose another in Settings."
-          : "native failure",
-    });
-  },
-);
-
-test("keeps workspace acquisition cancellation silent", async () => {
-  native.getEngineWorkspace.mockRejectedValue({
+test("keeps workspace open cancellation silent", async () => {
+  native.openEngineWorkspace.mockRejectedValue({
     tag: "backend-error",
     category: "cancellation",
     message: "Cancellation",
@@ -89,11 +77,10 @@ test("keeps workspace acquisition cancellation silent", async () => {
   });
   await act(async () => root.render(<OpenFolderButton />));
   await act(async () => container.querySelector("button")!.click());
-  expect(native.openEngineWorkspace).not.toHaveBeenCalled();
   expect(native.notify).not.toHaveBeenCalled();
 });
 
-test("notifies a failure to open an acquired folder", async () => {
+test("notifies a failure to open the engine folder", async () => {
   native.openEngineWorkspace.mockRejectedValue(new Error("open failed"));
   await act(async () => root.render(<OpenFolderButton />));
   await act(async () => container.querySelector("button")!.click());

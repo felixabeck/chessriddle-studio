@@ -10,6 +10,29 @@ vi.mock("@mantine/core", () => ({
   ),
   Text: ({ children }: any) => <span>{children}</span>,
 }));
+vi.mock("../common/IconAction", () => ({
+  IconAction: ({
+    label,
+    onClick,
+    disabled,
+    pending,
+  }: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    pending?: boolean;
+  }) => (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      aria-busy={pending || undefined}
+      onClick={onClick}
+    >
+      Show
+    </button>
+  ),
+}));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -117,4 +140,42 @@ test("recovers its interactive state when issuing a workspace fails", async () =
   expect(onError).toHaveBeenCalledWith(expect.any(Error));
   expect(button.disabled).toBe(false);
   expect(host.textContent).toContain("Current workspace");
+});
+
+test("shows the folder in the native explorer from the row action", async () => {
+  const onShowInFolder = vi.fn().mockResolvedValue(undefined);
+  await act(async () =>
+    root.render(
+      <DirectorySetting
+        value="Current workspace"
+        issueWorkspace={vi.fn()}
+        onSelect={vi.fn()}
+        onShowInFolder={onShowInFolder}
+      />,
+    ),
+  );
+  const show = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Settings.Directories.ShowInFolder"]',
+  )!;
+  await act(async () => show.click());
+  expect(onShowInFolder).toHaveBeenCalledOnce();
+});
+
+test("disables the show-in-folder action while no folder is known", async () => {
+  const onShowInFolder = vi.fn();
+  await act(async () =>
+    root.render(
+      <DirectorySetting
+        value={null}
+        issueWorkspace={vi.fn()}
+        onSelect={vi.fn()}
+        onShowInFolder={onShowInFolder}
+      />,
+    ),
+  );
+  const show = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Settings.Directories.ShowInFolder"]',
+  );
+  expect(show).not.toBeNull();
+  expect(show!.disabled).toBe(true);
 });

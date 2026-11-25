@@ -1722,6 +1722,7 @@
     "Settings.Directories.Puzzles": "Папка задач",
     "Settings.Directories.Puzzles.Desc": "Здесь хранятся базы шахматных задач",
     "Settings.Directories.Select": "Выбрать папку",
+    "Settings.Directories.ShowInFolder": "Показать в папке",
     "Settings.Drawing": "Рисование",
     "Settings.Drawing.Blue": "Синий",
     "Settings.Drawing.Color": "Цвет",
