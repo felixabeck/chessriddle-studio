@@ -2,6 +2,14 @@
 
 What changed in each ChessRiddle Studio release. The release workflow copies a version's section into its GitHub release, so keep each section plain Markdown: headings, lists and links.
 
+## Unreleased
+
+### Improved
+
+- Explorer: Lichess All and Lichess Masters are now sources like your databases. Pick them in the Database panel's source drop-down or under Compare, in the "Online" group, to see a local database and Lichess side by side without downloading anything. Each Lichess column has its own filters and needs a signed-in Lichess account. The Local / Lichess All / Lichess Masters switch is gone.
+- Explorer: on a board opened with "Prepare on board", "Add column" adds your reference database, Lichess All or Lichess Masters as a further column, up to three columns.
+- Explorer: with two or more columns, a column whose source cannot answer is named above the table and its cells stay empty instead of showing dashes.
+
 ## 1.2.0
 
 ### New

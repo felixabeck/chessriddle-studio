@@ -525,3 +525,33 @@ finding ids and date.
     its Preparation tab. Finding accounts by a person's name stays out (his decision of
     2026-11-22).
 - **Date:** 2026-11-25.
+
+## 2026-11-25 — Lichess All and Lichess Masters are normal sources of the board's Database panel
+
+- **Question:** A friend asked to see his Mega database on the left and the Lichess database on
+  the right without downloading Lichess. Felix: "So is there a way to include leaches? Maybe to
+  include it into one of the databases that are already open." Should Lichess become a source in
+  the same drop-downs as the local databases, and what happens to the Local / Lichess All /
+  Lichess Masters switch and to the column limits?
+- **Choice:** Felix accepted the recommendation: Lichess All and Lichess Masters appear in the
+  database drop-down and in the "+ Compare" menu, in an "Online" group below the local databases;
+  each Lichess column has its own filter button with the existing Lichess filters; the
+  preparation board can show Lichess as a further column. His words: "And yes, let's go with your
+  approach above to not download leeches." and, to the two open questions, "Both questions go
+  with your recommendation." That means:
+  - The Local / Lichess All / Lichess Masters switch is removed entirely, not kept as a shortcut.
+  - At most two columns on a normal board and three on the preparation board.
+- **Agent proposals Felix confirmed, not his wording:**
+  - The starred "Reference database" in the Library stays a local database; picking Lichess as
+    the first source is a choice of the board tab, exactly as the switch is today.
+  - Lichess is not offered as a download.
+  - The limits he was told: a Lichess column needs a signed-in Lichess account and shows the
+    sign-in hint without one while the other columns keep working; Lichess returns only its most
+    common moves, so a rare move shows "–" in the Lichess column while the total stays correct;
+    the Games view gets only a handful of top and recent games from Lichess; a partial position
+    search has no Lichess answer.
+- **Consequences recorded as agent decisions d-20261125-24 to d-20261125-36 (tasks/decisions.md):** Lichess alone on
+  a preparation board is no longer possible, there it is a further column; a failed Lichess
+  request is not retried by itself, moving to another position asks again; a column that cannot
+  answer shows empty cells instead of dashes.
+- **Date:** 2026-11-25.
