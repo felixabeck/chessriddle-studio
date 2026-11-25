@@ -554,6 +554,7 @@ finding ids and date.
   a preparation board is no longer possible, there it is a further column; a failed Lichess
   request is not retried by itself, moving to another position asks again; a column that cannot
   answer shows empty cells instead of dashes.
+- **Date:** 2026-11-25.
 
 ## 2026-11-25 — Importing a game from a scoresheet photo
 
