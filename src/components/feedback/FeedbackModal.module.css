@@ -1,0 +1,9 @@
+/* Emoji-labelled type segments wrap onto a second row instead of clipping when a locale's labels,
+   the font scale or a narrow window leave too little width for one row. */
+.typeControl {
+  flex-wrap: wrap;
+}
+
+.typeControl :global(.mantine-SegmentedControl-control) {
+  flex: 1 0 auto;
+}

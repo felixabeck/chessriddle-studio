@@ -817,3 +817,37 @@ test("font-scaled-breakpoints: live slider change stacks Settings and database p
     expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStartedAt);
     await capture("live-database-panes-200");
 });
+
+// Emoji-labelled Feedback type segments wrap onto a second row rather than clipping; the longest
+// shipped labels (Italian, Russian) overflowed one row of the fixed-width dialog at every window size.
+// 320px at 200% is excluded: there the dialog itself is narrower than single words (f-20261125-09).
+for (const [locale, feedback] of [
+    ["it-IT", "Feedback"],
+    ["ru-RU", "Отзыв"],
+] as const) {
+    test.describe(locale, () => {
+        test.use({ appLocale: locale });
+
+        for (const [width, scale] of [
+            [1000, 200],
+            [420, 100],
+        ] as const) {
+            test(`font-scaled-breakpoints: ${locale} Feedback type choice at ${width}px and ${scale}%`, async ({
+                page,
+                mockScenario,
+            }) => {
+                if (scale === 100) await seedFontScale(page, scale);
+                await page.setViewportSize({ width, height: 720 });
+                await mockScenario({ commands: { coach_available: { result: false } } });
+                await page.goto("/");
+                await page.getByRole("button", { name: feedback, exact: true }).first().click();
+                const dialog = page.getByRole("dialog");
+                await expect(dialog).toBeVisible();
+                await waitForFontsSettled(page);
+                const types = dialog.locator(".mantine-SegmentedControl-root");
+                await expect(types.getByRole("radio")).toHaveCount(4);
+                await assertNothingClipped(types);
+            });
+        }
+    });
+}

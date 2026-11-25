@@ -18,6 +18,7 @@ import AppModal from "@/components/common/AppModal";
 import { EmojiLabel } from "@/components/common/Emoji";
 import { IconAction } from "@/components/common/IconAction";
 import { wrappingButton } from "@/components/common/wrappingButton";
+import classes from "./FeedbackModal.module.css";
 import { normalizeError } from "@/platform/errors";
 import { tauri } from "@/platform/tauri";
 
@@ -343,6 +344,7 @@ export default function FeedbackModal({
             </Text>
             <SegmentedControl
               fullWidth
+              className={classes.typeControl}
               value={feedbackType}
               onChange={(value) => setFeedbackType(value as FeedbackType)}
               data={[
