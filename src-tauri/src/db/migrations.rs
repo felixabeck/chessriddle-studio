@@ -445,7 +445,6 @@ fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
         migrate_event_editions(conn)?;
         if restore_required_indexes {
             conn.batch_execute(super::INDEXES_SQL)?;
-            repair_later_added_required_indexes(conn)?;
         }
         insert_info(conn, "Version", CURRENT_DATABASE_VERSION)?;
         validate_database(conn)
