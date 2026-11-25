@@ -42,6 +42,7 @@ import {
   showDestsAtom,
   showVariationArrowsAtom,
   snapArrowsAtom,
+  invisibleFamily,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import classes from "@/styles/Chessboard.module.css";
@@ -203,6 +204,7 @@ function Board({
   const moveHighlight = useAtomValue(moveHighlightAtom);
   const showArrows = useAtomValue(showArrowsAtom);
   const showVariationArrows = useAtomValue(showVariationArrowsAtom);
+  const notationHidden = useAtomValue(useTabAtom(invisibleFamily));
   const showConsecutiveArrows = useAtomValue(showConsecutiveArrowsAtom);
   const autoPromote = useAtomValue(autoPromoteAtom);
   const showCoordinates = useAtomValue(showCoordinatesAtom);
@@ -342,7 +344,13 @@ function Board({
     }
 
     // Variation arrows: show all children moves when there are alternatives
-    if (!isPractice && !choice && showVariationArrows && currentNode.children.length > 1) {
+    if (
+      !isPractice &&
+      !choice &&
+      showVariationArrows &&
+      currentNode.children.length > 1 &&
+      !notationHidden
+    ) {
       for (const child of currentNode.children) {
         const arrow = childMoveArrow(child, "variation", MEDIUM_BRUSH);
         if (arrow && !shapes.find((s) => s.orig === arrow.orig && s.dest === arrow.dest)) {
@@ -363,6 +371,7 @@ function Board({
     showConsecutiveArrows,
     showVariationArrows,
     currentNode.children,
+    notationHidden,
   ]);
 
   const hasClock =

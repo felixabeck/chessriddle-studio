@@ -388,6 +388,15 @@ export function describeSettings(t: SettingsTranslator, facts: SettingsBuildFact
             keywords: ["material", "captured", "pieces", "difference", "hide"],
             shown: true,
         },
+        {
+            id: "hide-preview-moves",
+            category: "analysis",
+            group: "notation",
+            title: t("Settings.HidePreviewMoves"),
+            description: t("Settings.HidePreviewMoves.Desc"),
+            keywords: ["hide", "moves", "notation", "preview", "puzzle", "solution", "training"],
+            shown: true,
+        },
         // Analysis · Navigating
         {
             id: "scroll-moves",

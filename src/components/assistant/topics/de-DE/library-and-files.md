@@ -2,7 +2,7 @@
 id: library-and-files
 title: Dateien und die Bibliothek
 summary: Workspace-Ordner einrichten, PGN-Dateien erstellen und ordnen, Partien öffnen und speichern sowie den Papierkorb verwalten.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) führt deine Workspace-PGN-Dateien (Partien, Repertoires, Turniere, Puzzles und sonstige Dateien) mit deinen Partiedatenbanken zusammen.
@@ -12,7 +12,7 @@ Bevor du Dateien anlegst, wähle einen Workspace-Ordner aus. Wenn noch kein Ordn
 In [[page:library]]:
 - Klicke auf {{label:Files.CreateFile}}, um eine neue PGN-Datei anzulegen, oder auf {{label:Files.CreateFolder}}, um Dateien in Unterordner zu gliedern.
 - Nutze das Eingabefeld {{label:Common.Search}} und das Auswahlmenü {{label:Files.FileType}}, um nach Dateityp oder {{label:Library.GamesDatabase}} zu filtern.
-- Wähle eine Datei aus, um eine Vorschau ihrer Partien anzuzeigen, sie auf dem Analysebrett zu öffnen oder {{label:Files.Rename}}, {{label:Files.Move}} und {{label:Files.Trash}} zu verwenden.
+- Wähle eine Datei aus, um eine Vorschau ihrer Partien anzuzeigen (die Vorschau kann ihre Züge mit dem Auge-Button ausblenden, [[setting:hide-preview-moves]]), sie auf dem Analysebrett zu öffnen oder {{label:Files.Rename}}, {{label:Files.Move}} und {{label:Files.Trash}} zu verwenden.
 
 Während du eine Datei auf dem Analysebrett bearbeitest:
 - Speichere Änderungen über die Speichern-Schaltfläche in der Brett-Werkzeugleiste, über {{label:Menu.File}} -> {{label:Common.Save}} oder mit dem Tastenkürzel {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

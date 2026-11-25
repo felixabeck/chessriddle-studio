@@ -69,10 +69,13 @@ function GameTable() {
   const games = failure ? [] : (data?.data ?? []);
   const game = games.find((game) => game.id === selectedGameId);
   const count = failure ? undefined : data?.count;
-  const gameOpen = useOpenDatabaseGame((record: NormalizedGame) => ({
-    game: record,
-    database: file,
-  }));
+  const gameOpen = useOpenDatabaseGame(
+    (record: NormalizedGame) => ({
+      game: record,
+      database: file,
+    }),
+    { fromPreview: true },
+  );
 
   const table = useDatabaseListTable({
     records: games,

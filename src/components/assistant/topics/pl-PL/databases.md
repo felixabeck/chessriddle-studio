@@ -2,7 +2,7 @@
 id: databases
 title: Bazy danych, eksplorator, wyszukiwanie pozycji, gracze i turnieje
 summary: Dodawaj lub pobieraj bazy partii, wybieraj bazę odniesienia, wyszukuj pozycje w eksploratorze i przeglądaj partie, graczy oraz turnieje.
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 Bazy danych znajdują się w [[page:library]] ({{label:SideBar.Library}}) obok plików PGN i są przechowywane w [[setting:databases-directory]].
@@ -19,7 +19,7 @@ Wybierz bazę danych w [[page:library]], aby nią zarządzać:
 - W sekcji {{label:Databases.Settings.AdvancedTools}} użyj {{label:Databases.Settings.MergePlayers}}, aby połączyć zduplikowane wpisy graczy, albo {{label:Databases.Settings.RemoveDup}} i {{label:Databases.Settings.RemoveEmpty}}, aby uporządkować partie.
 
 W widoku tabeli bazy danych przełączaj się między {{label:Common.Games}}, {{label:Databases.Card.Players}} i {{label:Databases.Settings.Events}} (turnieje):
-- Wyszukuj i sortuj partie, podejrzyj partię lub otwórz ją na tablicy analizy.
+- Wyszukuj i sortuj partie, podejrzyj partię (podgląd może ukryć ruchy przyciskiem oka, [[setting:hide-preview-moves]]) lub otwórz ją na tablicy analizy.
 - W {{label:Databases.Card.Players}} wybierz gracza, aby zobaczyć {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} i {{label:Home.Personal.Openings}} (interaktywne drzewo debiutowe z przyciskiem {{label:Databases.OpeningTree.Prepare}}), a także informacje FIDE poprzez {{label:Databases.FIDE.Info}}.
 - W {{label:Databases.Settings.Events}} wyszukuj turnieje po nazwie i sortuj według daty, graczy, partii lub średniego Elo.
 

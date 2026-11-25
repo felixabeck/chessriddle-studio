@@ -2,7 +2,7 @@
 id: databases
 title: Bases de dados, explorador, pesquisa de posição, jogadores e torneios
 summary: Adicione ou transfira bases de dados de partidas, escolha uma base de referência, pesquise posições no explorador e consulte partidas, jogadores e torneios.
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 As bases de dados ficam em [[page:library]] ({{label:SideBar.Library}}) junto aos seus ficheiros PGN e são guardadas em [[setting:databases-directory]].
@@ -19,7 +19,7 @@ Selecione uma base de dados em [[page:library]] para a gerir:
 - Em {{label:Databases.Settings.AdvancedTools}}, utilize {{label:Databases.Settings.MergePlayers}} para combinar registos duplicados de jogadores, ou {{label:Databases.Settings.RemoveDup}} e {{label:Databases.Settings.RemoveEmpty}} para limpar partidas.
 
 Dentro da vista de tabela da base de dados, alterne entre {{label:Common.Games}}, {{label:Databases.Card.Players}} e {{label:Databases.Settings.Events}} (torneios):
-- Pesquise e ordene partidas, pré-visualize uma partida ou abra-a no tabuleiro de análise.
+- Pesquise e ordene partidas, pré-visualize uma partida (a pré-visualização pode ocultar os lances com o botão do olho, [[setting:hide-preview-moves]]) ou abra-a no tabuleiro de análise.
 - Em {{label:Databases.Card.Players}}, selecione um jogador para consultar {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (uma árvore de aberturas interativa com o botão {{label:Databases.OpeningTree.Prepare}}), bem como informação FIDE através de {{label:Databases.FIDE.Info}}.
 - Em {{label:Databases.Settings.Events}}, pesquise torneios por nome e ordene por data, jogadores, partidas ou Elo médio.
 

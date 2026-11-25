@@ -2,7 +2,7 @@
 id: library-and-files
 title: 文件与资料库
 summary: 设置工作区文件夹、创建和整理 PGN 文件、打开和保存对局，以及管理回收站。
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) 将您的工作区 PGN 文件（对局、开局库、赛事、谜题和其他文件）以及棋局数据库集中在一起。
@@ -12,7 +12,7 @@ source: 2c064b437ded0b67
 在 [[page:library]] 中：
 - 点击 {{label:Files.CreateFile}} 创建新的 PGN 文件，或点击 {{label:Files.CreateFolder}} 使用子文件夹整理文件。
 - 使用 {{label:Common.Search}} 输入框和 {{label:Files.FileType}} 下拉菜单按文件类型或 {{label:Library.GamesDatabase}} 进行筛选。
-- 选择一个文件以预览其中的对局、在分析棋盘上打开，或使用 {{label:Files.Rename}}、{{label:Files.Move}} 和 {{label:Files.Trash}} 操作。
+- 选择一个文件以预览其中的对局（预览可用眼睛按钮隐藏着法，[[setting:hide-preview-moves]]）、在分析棋盘上打开，或使用 {{label:Files.Rename}}、{{label:Files.Move}} 和 {{label:Files.Trash}} 操作。
 
 在分析棋盘上编辑文件时：
 - 通过棋盘工具栏中的保存按钮、{{label:Menu.File}} -> {{label:Common.Save}}，或 {{label:Settings.Keybinds.Actions.SAVE_FILE}} 快捷键保存更改。

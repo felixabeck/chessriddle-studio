@@ -2,7 +2,7 @@
 id: library-and-files
 title: Файли та бібліотека
 summary: Налаштування робочої теки, створення й упорядкування файлів PGN, відкриття та збереження партій і робота з кошиком.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 Розділ [[page:library]] ({{label:SideBar.Library}}) об’єднує ваші робочі файли PGN (партії, репертуари, турніри, задачі та інші файли) і бази даних партій.
@@ -12,7 +12,7 @@ source: 2c064b437ded0b67
 На сторінці [[page:library]]:
 - Натисніть {{label:Files.CreateFile}}, щоб створити новий файл PGN, або {{label:Files.CreateFolder}}, щоб упорядкувати файли за підтеками.
 - Використовуйте поле {{label:Common.Search}} та випадний список {{label:Files.FileType}} для фільтрації за типом файлу або за пунктом {{label:Library.GamesDatabase}}.
-- Виберіть файл, щоб переглянути його партії, відкрити на дошці аналізу або скористатися діями {{label:Files.Rename}}, {{label:Files.Move}} і {{label:Files.Trash}}.
+- Виберіть файл, щоб переглянути його партії (попередній перегляд може приховати ходи кнопкою-оком, [[setting:hide-preview-moves]]), відкрити на дошці аналізу або скористатися діями {{label:Files.Rename}}, {{label:Files.Move}} і {{label:Files.Trash}}.
 
 Під час редагування файлу на дошці аналізу:
 - Зберігайте зміни кнопкою збереження на панелі інструментів дошки, через {{label:Menu.File}} -> {{label:Common.Save}} або комбінацією клавіш {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

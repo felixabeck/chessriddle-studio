@@ -2,7 +2,7 @@
 id: library-and-files
 title: Ficheiros e Biblioteca
 summary: Configure uma pasta de trabalho, crie e organize ficheiros PGN, abra e guarde partidas e faça a gestão do lixo.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) reúne os ficheiros PGN da sua área de trabalho (partidas, repertórios, torneios, problemas e outros ficheiros) e as suas bases de dados de partidas.
@@ -12,7 +12,7 @@ Antes de criar ficheiros, escolha uma pasta de trabalho. Se ainda não existir n
 Em [[page:library]]:
 - Clique em {{label:Files.CreateFile}} para criar um novo ficheiro PGN ou em {{label:Files.CreateFolder}} para organizar ficheiros em subpastas.
 - Utilize o campo {{label:Common.Search}} e a lista {{label:Files.FileType}} para filtrar por tipo de ficheiro ou {{label:Library.GamesDatabase}}.
-- Selecione um ficheiro para pré-visualizar as respetivas partidas, abri-lo no tabuleiro de análise ou usar {{label:Files.Rename}}, {{label:Files.Move}} e {{label:Files.Trash}}.
+- Selecione um ficheiro para pré-visualizar as respetivas partidas (a pré-visualização pode ocultar os lances com o botão do olho, [[setting:hide-preview-moves]]), abri-lo no tabuleiro de análise ou usar {{label:Files.Rename}}, {{label:Files.Move}} e {{label:Files.Trash}}.
 
 Enquanto edita um ficheiro no tabuleiro de análise:
 - Guarde as alterações com o botão guardar na barra do tabuleiro, {{label:Menu.File}} -> {{label:Common.Save}}, ou o atalho {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

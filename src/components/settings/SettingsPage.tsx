@@ -47,6 +47,7 @@ import {
   previewBoardOnHoverAtom,
   flipBoardAfterMoveAtom,
   fontSizeAtom,
+  hidePreviewMovesAtom,
   showArrowsAtom,
   showConsecutiveArrowsAtom,
   showCoordinatesAtom,
@@ -295,6 +296,7 @@ export default function Page() {
           onChange={(val) => setMaterialDisplay(val as MaterialDisplay)}
         />
       ),
+      "hide-preview-moves": () => <SettingsSwitch atom={hidePreviewMovesAtom} />,
       "default-panel-tab": () => (
         <SettingsSelect
           data={[

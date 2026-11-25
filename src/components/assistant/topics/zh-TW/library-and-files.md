@@ -2,7 +2,7 @@
 id: library-and-files
 title: 檔案與資料庫
 summary: 設定工作區資料夾、建立與整理 PGN 檔案、開啟與儲存對局，以及管理垃圾桶。
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) 整合了您的工作區 PGN 檔案（對局、開局庫、賽事、謎題與其他檔案）以及棋局資料庫。
@@ -12,7 +12,7 @@ source: 2c064b437ded0b67
 在 [[page:library]] 中：
 - 點擊 {{label:Files.CreateFile}} 建立新的 PGN 檔案，或點擊 {{label:Files.CreateFolder}} 以子資料夾整理檔案。
 - 使用 {{label:Common.Search}} 輸入框與 {{label:Files.FileType}} 下拉選單，依檔案類型或 {{label:Library.GamesDatabase}} 篩選。
-- 選取檔案即可預覽其中的對局、在分析棋盤上開啟，或使用 {{label:Files.Rename}}、{{label:Files.Move}} 與 {{label:Files.Trash}}。
+- 選取檔案即可預覽其中的對局（預覽可用眼睛按鈕隱藏著法，[[setting:hide-preview-moves]]）、在分析棋盤上開啟，或使用 {{label:Files.Rename}}、{{label:Files.Move}} 與 {{label:Files.Trash}}。
 
 在分析棋盤上編輯檔案時：
 - 使用棋盤工具列的儲存按鈕、{{label:Menu.File}} -> {{label:Common.Save}}，或 {{label:Settings.Keybinds.Actions.SAVE_FILE}} 快捷鍵儲存變更。

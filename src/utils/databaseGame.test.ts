@@ -10,6 +10,8 @@ import {
     lastOpenedAtom,
     closingTabsAtom,
     tabFamily,
+    hidePreviewMovesAtom,
+    invisibleFamily,
     type RecentEntryInput,
 } from "@/state/atoms";
 import { databaseGameOpenedKey } from "@/state/lastOpened";
@@ -654,5 +656,44 @@ test.each(["Unknown", "?", ""])(
         const tree = tabStorage.read<TreeState>(id!)?.state;
         expect(tree?.headers.orientation).toBeUndefined();
         expect(tree?.dirty).toBe(false);
+    },
+);
+
+test.each([
+    { fromPreview: true, preference: true, hidden: true },
+    { fromPreview: true, preference: false, hidden: false },
+    { fromPreview: false, preference: true, hidden: false },
+])(
+    "fromPreview=$fromPreview with preference $preference sets invisible=$hidden",
+    async ({ fromPreview, preference, hidden }) => {
+        const game: NormalizedGame = {
+            id: 9,
+            fen: INITIAL_FEN,
+            event: "Hide",
+            event_id: 1,
+            site: "Board",
+            site_id: 1,
+            white: "White",
+            white_id: 1,
+            black: "Black",
+            black_id: 2,
+            result: "*",
+            moves: "1. e4 e5 *",
+        };
+        const workspace = createStore();
+        workspace.set(tabsAtom, []);
+        workspace.set(hidePreviewMovesAtom, preference);
+        native.getDbGame.mockResolvedValue({ kind: "found", game });
+        const id = await openDatabaseGame({
+            game,
+            database,
+            setTabs: (...args) => workspace.set(tabsAtom, ...args),
+            addRecentFile: vi.fn(),
+            store: workspace,
+            ...(fromPreview ? { fromPreview: true } : {}),
+        });
+        expect(id).not.toBeNull();
+        ids.push(id!);
+        expect(workspace.get(invisibleFamily(id!))).toBe(hidden);
     },
 );

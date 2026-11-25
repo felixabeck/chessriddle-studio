@@ -2,7 +2,7 @@
 id: library-and-files
 title: Filer og biblioteket
 summary: Sett opp en arbeidsmappe, opprett og organiser PGN-filer, åpne og lagre partier og administrer papirkurven.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) samler PGN-filene i arbeidsområdet ditt (partier, repertoarer, turneringer, oppgaver og andre filer) sammen med partidatabasene dine.
@@ -12,7 +12,7 @@ Før du oppretter filer må du velge en arbeidsmappe. Hvis ingen mappe er valgt 
 På [[page:library]]:
 - Klikk {{label:Files.CreateFile}} for å opprette en ny PGN-fil eller {{label:Files.CreateFolder}} for å organisere filer i undermapper.
 - Bruk søkefeltet {{label:Common.Search}} og rullegardinmenyen {{label:Files.FileType}} til å filtrere etter filtype eller {{label:Library.GamesDatabase}}.
-- Velg en fil for å forhåndsvise partiene i den, åpne den på analysebrettet eller bruke {{label:Files.Rename}}, {{label:Files.Move}} og {{label:Files.Trash}}.
+- Velg en fil for å forhåndsvise partiene i den (forhåndsvisningen kan skjule trekkene med øyeknappen, [[setting:hide-preview-moves]]), åpne den på analysebrettet eller bruke {{label:Files.Rename}}, {{label:Files.Move}} og {{label:Files.Trash}}.
 
 Mens du redigerer en fil på analysebrettet:
 - Lagre endringer med lagreknappen i brettets verktøylinje, {{label:Menu.File}} -> {{label:Common.Save}}, eller hurtigtasten {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

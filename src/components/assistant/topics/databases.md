@@ -18,7 +18,7 @@ Select a database in [[page:library]] to manage it:
 - Under {{label:Databases.Settings.AdvancedTools}}, use {{label:Databases.Settings.MergePlayers}} to combine duplicate player entries, or {{label:Databases.Settings.RemoveDup}} and {{label:Databases.Settings.RemoveEmpty}} to clean up games.
 
 Inside the database table view, switch between {{label:Common.Games}}, {{label:Databases.Card.Players}}, and {{label:Databases.Settings.Events}} (tournaments):
-- Search and sort games, preview a game, or open it on the analysis board.
+- Search and sort games, preview a game (the preview can hide its moves with the eye button, [[setting:hide-preview-moves]]), or open it on the analysis board.
 - In {{label:Databases.Card.Players}}, select a player to view {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, and {{label:Home.Personal.Openings}} (an interactive opening tree with a {{label:Databases.OpeningTree.Prepare}} button), plus FIDE info via {{label:Databases.FIDE.Info}}.
 - In {{label:Databases.Settings.Events}}, search tournaments by name and sort by date, players, games, or average ELO.
 

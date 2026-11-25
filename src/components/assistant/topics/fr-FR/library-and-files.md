@@ -2,7 +2,7 @@
 id: library-and-files
 title: Fichiers et Bibliothèque
 summary: Configurez un dossier de travail, créez et organisez des fichiers PGN, ouvrez et enregistrez des parties et gérez la corbeille.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) rassemble les fichiers PGN de votre espace de travail (parties, répertoires, tournois, problèmes et autres fichiers) ainsi que vos bases de parties.
@@ -12,7 +12,7 @@ Avant de créer des fichiers, choisissez un dossier de travail. Si aucun dossier
 Sur [[page:library]] :
 - Cliquez sur {{label:Files.CreateFile}} pour créer un nouveau fichier PGN ou sur {{label:Files.CreateFolder}} pour organiser vos fichiers en sous-dossiers.
 - Utilisez le champ {{label:Common.Search}} et le menu {{label:Files.FileType}} pour filtrer par type de fichier ou par {{label:Library.GamesDatabase}}.
-- Sélectionnez un fichier pour prévisualiser ses parties, l’ouvrir sur l’échiquier d’analyse ou utiliser {{label:Files.Rename}}, {{label:Files.Move}} et {{label:Files.Trash}}.
+- Sélectionnez un fichier pour prévisualiser ses parties (l’aperçu peut masquer les coups avec le bouton œil, [[setting:hide-preview-moves]]), l’ouvrir sur l’échiquier d’analyse ou utiliser {{label:Files.Rename}}, {{label:Files.Move}} et {{label:Files.Trash}}.
 
 Lorsque vous modifiez un fichier sur l’échiquier d’analyse :
 - Enregistrez vos modifications via le bouton d’enregistrement de la barre d’outils de l’échiquier, {{label:Menu.File}} -> {{label:Common.Save}}, ou le raccourci {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

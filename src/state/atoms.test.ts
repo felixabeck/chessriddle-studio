@@ -52,10 +52,11 @@ test("file deck invalidation evicts every cached ordinal and preserves other fil
     expect(atoms.deckAtomFamily({ file: "file-b", game: 0 })).toBe(other);
 });
 
-test("the eight eager preferences share declaration-ordered synchronous document initial values", async () => {
+test("the eager preferences share declaration-ordered synchronous document initial values", async () => {
     const values = [
         ["download-destination-capability", { id: "download" }],
         ["file-workspace", { id: { id: "workspace" }, kind: "fileWorkspace" }],
+        ["hide-preview-moves", true],
         ["default-panel-tab", "database"],
         ["show-coordinates-v2", "all"],
         ["sound-collection", "piano"],
@@ -77,6 +78,7 @@ test("the eight eager preferences share declaration-ordered synchronous document
     const preferences: Atom<unknown>[] = [
         atoms.downloadDestinationAtom,
         atoms.fileWorkspaceAtom,
+        atoms.hidePreviewMovesAtom,
         atoms.defaultPanelTabAtom,
         atoms.showCoordinatesAtom,
         atoms.soundCollectionAtom,
@@ -646,6 +648,14 @@ test("the fresh-start flag is sampled before the default workspace is written", 
     const reloaded = await importAtoms();
     reloaded.atoms.initializeWorkspace();
     expect(reloaded.atoms.workspaceStartedFresh()).toBe(false);
+});
+
+test("hide-preview-moves is readable from a store before any subscriber mounts", async () => {
+    localStorage.setItem("hide-preview-moves", JSON.stringify(true));
+    const { atoms } = await importAtoms();
+    const { getDefaultStore, createStore } = await import("jotai");
+    expect(getDefaultStore().get(atoms.hidePreviewMovesAtom)).toBe(true);
+    expect(createStore().get(atoms.hidePreviewMovesAtom)).toBe(true);
 });
 
 test("a new board's panel starts on the stored default panel setting", async () => {

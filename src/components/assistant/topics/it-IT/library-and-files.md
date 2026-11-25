@@ -2,7 +2,7 @@
 id: library-and-files
 title: File e Biblioteca
 summary: Configura una cartella di lavoro, crea e organizza file PGN, apri e salva partite e gestisci il cestino.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) riunisce i file PGN del tuo spazio di lavoro (partite, repertori, tornei, puzzle e altri file) e i tuoi database di partite.
@@ -12,7 +12,7 @@ Prima di creare file, scegli una cartella di lavoro. Se non è ancora impostata 
 Su [[page:library]]:
 - Fai clic su {{label:Files.CreateFile}} per creare un nuovo file PGN o su {{label:Files.CreateFolder}} per organizzare i file in sottocartelle.
 - Usa il campo {{label:Common.Search}} e il menu {{label:Files.FileType}} per filtrare per tipo di file o {{label:Library.GamesDatabase}}.
-- Seleziona un file per visualizzarne l’anteprima delle partite, aprirlo sulla scacchiera di analisi oppure usare {{label:Files.Rename}}, {{label:Files.Move}} e {{label:Files.Trash}}.
+- Seleziona un file per visualizzarne l’anteprima delle partite (l’anteprima può nascondere le mosse con il pulsante a forma di occhio, [[setting:hide-preview-moves]]), aprirlo sulla scacchiera di analisi oppure usare {{label:Files.Rename}}, {{label:Files.Move}} e {{label:Files.Trash}}.
 
 Mentre modifichi un file sulla scacchiera di analisi:
 - Salva le modifiche con il pulsante di salvataggio nella barra della scacchiera, {{label:Menu.File}} -> {{label:Common.Save}}, oppure con la scorciatoia {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

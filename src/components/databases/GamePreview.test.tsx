@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { cancellationError } from "@/platform/tauri";
 import type { StampedGame } from "@/bindings";
 import { installMatchMediaStub } from "@/tests/matchMedia";
-import { activeTabAtom, tabsAtom } from "@/state/atoms";
+import { activeTabAtom, hidePreviewMovesAtom, tabsAtom } from "@/state/atoms";
 import { DatabaseLayoutContext } from "@/state/databaseLayout";
 import { getEffectiveGameEnd, type GameHeaders, type TreeNode } from "@/utils/treeReducer";
 import { INITIAL_FEN } from "chessops/fen";
@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   readGames: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
   realNotation: false,
+  // A minimal notation that honours `hidden`/`onReveal`; the real one is too heavy for these tests.
+  hideAwareNotation: false,
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -78,11 +80,34 @@ vi.mock("../common/GameNotation", async (importOriginal) => {
   const { useStore } = await import("zustand");
   const { TreeStateContext } = await import("../common/TreeStateContext");
   return {
-    default: () => {
+    default: (props: { hidden?: boolean; onReveal?: () => void }) => {
       const tree = useStore(useContext(TreeStateContext)!);
-      return mocks.realNotation ? (
-        <actual.default />
-      ) : (
+      if (mocks.realNotation) return <actual.default />;
+      if (mocks.hideAwareNotation) {
+        const sans: string[] = [];
+        let node = tree.root;
+        while (node.children[0]) {
+          node = node.children[0];
+          if (node.san) sans.push(node.san);
+        }
+        return (
+          <div>
+            {props.hidden ? (
+              <button type="button" onClick={props.onReveal}>
+                Notation.ShowMoves
+              </button>
+            ) : null}
+            <div inert={props.hidden || undefined}>
+              {sans.map((san) => (
+                <button key={san} type="button" data-node={san}>
+                  {san}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      }
+      return (
         <div
           data-testid="game-notation"
           data-headers={JSON.stringify(tree.headers)}
@@ -371,6 +396,8 @@ describe("GamePreview board sizing", () => {
       );
     });
     await vi.waitFor(() => expect(container.textContent).toContain("e4"));
+    // Only the real GameNotation renders its rows container; the hide-aware stub does not.
+    expect(container.querySelector("[data-notation-rows]")).not.toBeNull();
     expect(store.get(tabsAtom)).toEqual([]);
     expect(store.get(activeTabAtom)).toBeNull();
     expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
@@ -1021,5 +1048,123 @@ describe("GamePreview board sizing", () => {
       );
       show.mockRestore();
     });
+  });
+});
+
+describe("GamePreview hide-moves preference", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    mocks.lexPgn.mockReset();
+    mocks.lexPgn.mockResolvedValue([
+      { type: "San", value: "e4" },
+      { type: "San", value: "e5" },
+    ]);
+    mocks.hideAwareNotation = true;
+    vi.stubGlobal("ResizeObserver", ReportingResizeObserver);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    mocks.hideAwareNotation = false;
+    localStorage.clear();
+  });
+
+  async function renderPreview(store: ReturnType<typeof createStore>, pgn: string) {
+    await act(async () => {
+      root.render(
+        <Provider store={store}>
+          <MantineProvider>
+            <SWRConfig value={{ provider: () => new Map() }}>
+              <GamePreviewWrapper pgn={pgn} />
+            </SWRConfig>
+          </MantineProvider>
+        </Provider>,
+      );
+    });
+    await vi.waitFor(() =>
+      expect(container.querySelector("[data-testid='chessground']")).not.toBeNull(),
+    );
+    await vi.waitFor(() => expect(container.querySelector("[data-node]")).not.toBeNull());
+  }
+
+  test("the eye toggles the preference on and hides notation until this game is revealed", async () => {
+    const store = createStore();
+    store.set(hidePreviewMovesAtom, false);
+    await renderPreview(store, "1. e4 e5");
+
+    const move = container.querySelector('[data-node="e4"]');
+    expect(move).not.toBeNull();
+    expect(move!.closest("[inert]")).toBeNull();
+    const hide = container.querySelector<HTMLButtonElement>('[aria-label="Notation.HideMoves"]');
+    expect(hide).not.toBeNull();
+    await act(async () => hide!.click());
+    expect(store.get(hidePreviewMovesAtom)).toBe(true);
+
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-node="e4"]')!.closest("[inert]")).not.toBeNull(),
+    );
+    expect(container.querySelector('[aria-label="Notation.ShowMovesAlways"]')).not.toBeNull();
+    const overlayReveal = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Notation.ShowMoves",
+    );
+    expect(overlayReveal).toBeDefined();
+    await act(async () => overlayReveal!.click());
+    expect(container.querySelector('[data-node="e4"]')!.closest("[inert]")).toBeNull();
+  });
+
+  test("a remount with another game is hidden again, and turning the mode off reveals", async () => {
+    const store = createStore();
+    store.set(hidePreviewMovesAtom, true);
+    await renderPreview(store, "1. e4 e5");
+    expect(container.querySelector('[data-node="e4"]')!.closest("[inert]")).not.toBeNull();
+    const overlayReveal = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Notation.ShowMoves",
+    );
+    await act(async () => overlayReveal!.click());
+    expect(container.querySelector('[data-node="e4"]')!.closest("[inert]")).toBeNull();
+
+    mocks.lexPgn.mockResolvedValue([{ type: "San", value: "d4" }]);
+    await renderPreview(store, "1. d4");
+    await vi.waitFor(() => expect(container.querySelector('[data-node="d4"]')).not.toBeNull());
+    expect(container.querySelector('[data-node="d4"]')!.closest("[inert]")).not.toBeNull();
+
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Notation.ShowMovesAlways"]')!
+        .click(),
+    );
+    expect(store.get(hidePreviewMovesAtom)).toBe(false);
+    expect(container.querySelector('[data-node="d4"]')!.closest("[inert]")).toBeNull();
+  });
+
+  test("turning the mode back on hides the current game after a reveal", async () => {
+    const store = createStore();
+    store.set(hidePreviewMovesAtom, true);
+    await renderPreview(store, "1. e4 e5");
+    const overlayReveal = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Notation.ShowMoves",
+    );
+    await act(async () => overlayReveal!.click());
+    expect(container.querySelector('[data-node="e4"]')!.closest("[inert]")).toBeNull();
+
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Notation.ShowMovesAlways"]')!
+        .click(),
+    );
+    expect(store.get(hidePreviewMovesAtom)).toBe(false);
+    expect(container.querySelector('[data-node="e4"]')!.closest("[inert]")).toBeNull();
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Notation.HideMoves"]')!.click(),
+    );
+    expect(store.get(hidePreviewMovesAtom)).toBe(true);
+    expect(container.querySelector('[data-node="e4"]')!.closest("[inert]")).not.toBeNull();
   });
 });

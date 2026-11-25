@@ -2,7 +2,7 @@
 id: databases
 title: Datenbanken, Explorer, Stellungssuche, Spieler und Turniere
 summary: Partiedatenbanken hinzufügen oder herunterladen, Referenzdatenbank wählen, Stellungen im Explorer suchen sowie Partien, Spieler und Turniere durchsuchen.
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 Datenbanken befinden sich neben deinen PGN-Dateien in [[page:library]] ({{label:SideBar.Library}}) und werden unter [[setting:databases-directory]] gespeichert.
@@ -19,7 +19,7 @@ Wähle eine Datenbank in [[page:library]] aus, um sie zu verwalten:
 - Nutze unter {{label:Databases.Settings.AdvancedTools}} die Funktionen {{label:Databases.Settings.MergePlayers}} zum Zusammenführen doppelter Spielereinträge sowie {{label:Databases.Settings.RemoveDup}} und {{label:Databases.Settings.RemoveEmpty}} zum Bereinigen von Partien.
 
 Wechsle in der Tabellenansicht der Datenbank zwischen {{label:Common.Games}}, {{label:Databases.Card.Players}} und {{label:Databases.Settings.Events}} (Turnieren):
-- Durchsuche und sortiere Partien, sieh dir eine Vorschau an oder öffne sie auf dem Analysebrett.
+- Durchsuche und sortiere Partien, sieh dir eine Vorschau an (die Vorschau kann ihre Züge mit dem Auge-Button ausblenden, [[setting:hide-preview-moves]]) oder öffne sie auf dem Analysebrett.
 - Wähle unter {{label:Databases.Card.Players}} einen Spieler aus, um {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} und {{label:Home.Personal.Openings}} (einen interaktiven Eröffnungsbaum mit der Schaltfläche {{label:Databases.OpeningTree.Prepare}}) sowie FIDE-Daten über {{label:Databases.FIDE.Info}} einzusehen.
 - Suche unter {{label:Databases.Settings.Events}} Turniere nach Namen und sortiere nach Datum, Spielern, Partien oder Durchschnitts-Elo.
 

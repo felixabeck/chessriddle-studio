@@ -1,6 +1,6 @@
 /** Per-tab board view and panel state, and where pinned panels sit. */
 import { atom, getDefaultStore } from "jotai";
-import { defaultPanelTabAtom } from "./preferences";
+import { defaultPanelTabAtom, hidePreviewMovesAtom } from "./preferences";
 import { tabAtomFamily } from "./tabFamilies";
 
 export const evalOpenFamily = tabAtomFamily((_tab: string) => atom(true));
@@ -8,6 +8,13 @@ export const evalOpenFamily = tabAtomFamily((_tab: string) => atom(true));
 export const evalBarDisplayFamily = tabAtomFamily((_tab: string) => atom<"cp" | "wdl">("cp"));
 
 export const invisibleFamily = tabAtomFamily((_tab: string) => atom(false));
+
+/** When the hide-preview-moves preference is on, the tab starts with its moves hidden. */
+export function applyPreviewMovesHidden(store: ReturnType<typeof getDefaultStore>, tabId: string) {
+    if (store.get(hidePreviewMovesAtom)) {
+        store.set(invisibleFamily(tabId), true);
+    }
+}
 
 export const showCommentsFamily = tabAtomFamily((_tab: string) => atom(true));
 

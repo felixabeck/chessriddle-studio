@@ -2,7 +2,7 @@
 id: databases
 title: Veritabanları, gezgin, konum arama, oyuncular ve turnuvalar
 summary: Oyun veritabanları ekleme veya indirme, referans veritabanı seçme, gezginde konum arama ve oyunları, oyuncuları ve turnuvaları inceleme.
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 Veritabanları PGN dosyalarınızla birlikte [[page:library]] ({{label:SideBar.Library}}) içinde yer alır ve [[setting:databases-directory]] konumunda saklanır.
@@ -19,7 +19,7 @@ Yönetmek için [[page:library]] içinde bir veritabanı seçin:
 - {{label:Databases.Settings.AdvancedTools}} altında yinelenen oyuncu kayıtlarını birleştirmek için {{label:Databases.Settings.MergePlayers}} ya da oyunları temizlemek için {{label:Databases.Settings.RemoveDup}} ve {{label:Databases.Settings.RemoveEmpty}} seçeneklerini kullanın.
 
 Veritabanı tablo görünümünde {{label:Common.Games}}, {{label:Databases.Card.Players}} ve {{label:Databases.Settings.Events}} (turnuvalar) arasında geçiş yapın:
-- Oyunları arayın ve sıralayın, bir oyunu önizleyin veya analiz tahtasında açın.
+- Oyunları arayın ve sıralayın, bir oyunu önizleyin (önizleme, göz düğmesiyle hamleleri gizleyebilir, [[setting:hide-preview-moves]]) veya analiz tahtasında açın.
 - {{label:Databases.Card.Players}} bölümünde bir oyuncu seçerek {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} ve {{label:Home.Personal.Openings}} ({{label:Databases.OpeningTree.Prepare}} düğmesine sahip etkileşimli açılış ağacı) sekmelerini ve ayrıca {{label:Databases.FIDE.Info}} üzerinden FIDE bilgilerini görüntüleyin.
 - {{label:Databases.Settings.Events}} bölümünde turnuvaları ada göre arayın ve tarihe, oyuncu sayısına, oyun sayısına veya ortalama ELO'ya göre sıralayın.
 

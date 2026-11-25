@@ -163,6 +163,11 @@ vi.mock("@mantine/core", () => {
     Divider: element,
     Group: element,
     Overlay: element,
+    Button: ({ children, ...props }: any) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
     Paper: element,
     ScrollArea: ({ children, viewportRef }: any) => <div ref={viewportRef}>{children}</div>,
     SegmentedControl: ({ data, value, onChange, "aria-label": ariaLabel }: any) => (
@@ -1113,19 +1118,78 @@ test.each([false, true])(
       );
     });
 
-    // f-20261119-15: the blur overlay blocks only the pointer; Tab + Enter on a hidden move
+    // f-20261119-15: the overlay blocks only the pointer; Tab + Enter on a hidden move
     // past the drill card showed the answer. `inert` is what removes that path in a browser.
     const answer = host.querySelector('[data-node="Nf3"]');
     expect(answer).not.toBeNull();
     expect(answer!.closest("[inert]") !== null).toBe(invisible);
+    // f-20261125-10: the hidden rows blur themselves; an overlay backdrop blur left them
+    // readable in WebKit.
+    const rows = answer!.closest<HTMLElement>("[data-notation-rows]");
+    expect(rows!.style.filter).toBe(invisible ? "blur(8px)" : "");
     // The reveal toggle in the header must stay operable while the moves are hidden.
     const toggle = host.querySelector(
       `[aria-label="${invisible ? "Notation.ShowMoves" : "Notation.HideMoves"}"]`,
     );
     expect(toggle).not.toBeNull();
     expect(toggle!.closest("[inert]")).toBeNull();
+    expect(
+      [...host.querySelectorAll("button")].find(
+        (button) => button.textContent === "Notation.ShowMoves",
+      ),
+    ).toBeUndefined();
   },
 );
+
+test("a hidden prop without topBar blurs the moves and reveals them from the overlay", async () => {
+  const onReveal = vi.fn();
+  store.getState().makeMoves({ payload: ["e4", "e5"] });
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation hidden onReveal={onReveal} />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  const answer = host.querySelector('[data-node="e4"]');
+  expect(answer).not.toBeNull();
+  expect(answer!.closest("[inert]")).not.toBeNull();
+  expect(answer!.closest<HTMLElement>("[data-notation-rows]")!.style.filter).toBe("blur(8px)");
+  const reveal = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Notation.ShowMoves",
+  );
+  expect(reveal).toBeDefined();
+  expect(reveal!.closest("[inert]")).toBeNull();
+  await act(async () => reveal!.click());
+  expect(onReveal).toHaveBeenCalledOnce();
+});
+
+test("an omitted hidden prop without topBar leaves the moves reachable", async () => {
+  store.getState().makeMoves({ payload: ["e4"] });
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  const answer = host.querySelector('[data-node="e4"]');
+  expect(answer).not.toBeNull();
+  expect(answer!.closest("[inert]")).toBeNull();
+  expect(
+    [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Notation.ShowMoves",
+    ),
+  ).toBeUndefined();
+});
 
 const renderNotation = (markOpenVariations = false) =>
   act(async () => {

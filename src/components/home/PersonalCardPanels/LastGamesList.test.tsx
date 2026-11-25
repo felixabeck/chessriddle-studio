@@ -52,7 +52,7 @@ vi.mock("@/utils/tabs", () => ({
 }));
 vi.mock("@/utils/db", () => ({ query_games: mocks.queryGames }));
 vi.mock("@/state/atoms", () => ({ tabsAtom: {}, addRecentFileAtom: {} }));
-vi.mock("jotai", () => ({ useSetAtom: () => vi.fn() }));
+vi.mock("jotai", () => ({ useSetAtom: () => vi.fn(), useStore: () => ({ get: vi.fn() }) }));
 vi.mock("@mantine/core", () => ({
   Box: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
     <div {...props}>{children}</div>

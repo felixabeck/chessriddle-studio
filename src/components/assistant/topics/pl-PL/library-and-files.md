@@ -2,7 +2,7 @@
 id: library-and-files
 title: Pliki i Biblioteka
 summary: Skonfiguruj folder roboczy, twórz i porządkuj pliki PGN, otwieraj i zapisuj partie oraz zarządzaj koszem.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) łączy pliki PGN z Twojego obszaru roboczego (partie, repertuary, turnieje, zagadki i inne pliki) z Twoimi bazami partii.
@@ -12,7 +12,7 @@ Zanim utworzysz pliki, wybierz folder roboczy. Jeśli żaden folder nie jest jes
 W [[page:library]]:
 - Kliknij {{label:Files.CreateFile}}, aby utworzyć nowy plik PGN, lub {{label:Files.CreateFolder}}, aby uporządkować pliki w podfolderach.
 - Użyj pola {{label:Common.Search}} oraz listy rozwijanej {{label:Files.FileType}}, aby filtrować według typu pliku lub {{label:Library.GamesDatabase}}.
-- Wybierz plik, aby podejrzeć jego partie, otworzyć go na tablicy analizy lub użyć {{label:Files.Rename}}, {{label:Files.Move}} i {{label:Files.Trash}}.
+- Wybierz plik, aby podejrzeć jego partie (podgląd może ukryć ruchy przyciskiem oka, [[setting:hide-preview-moves]]), otworzyć go na tablicy analizy lub użyć {{label:Files.Rename}}, {{label:Files.Move}} i {{label:Files.Trash}}.
 
 Podczas edycji pliku na tablicy analizy:
 - Zapisz zmiany przyciskiem zapisu na pasku szachownicy, przez {{label:Menu.File}} -> {{label:Common.Save}} lub skrótem {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

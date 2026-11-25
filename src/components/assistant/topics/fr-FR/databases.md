@@ -2,7 +2,7 @@
 id: databases
 title: Bases de données, explorateur, recherche de position, joueurs et tournois
 summary: Ajoutez ou téléchargez des bases de parties, choisissez une base de référence, recherchez des positions dans l’explorateur et parcourez parties, joueurs et tournois.
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 Les bases de données se trouvent dans [[page:library]] ({{label:SideBar.Library}}) aux côtés de vos fichiers PGN et sont stockées dans [[setting:databases-directory]].
@@ -19,7 +19,7 @@ Sélectionnez une base de données dans [[page:library]] pour la gérer :
 - Sous {{label:Databases.Settings.AdvancedTools}}, utilisez {{label:Databases.Settings.MergePlayers}} pour regrouper des fiches de joueurs en double, ou {{label:Databases.Settings.RemoveDup}} et {{label:Databases.Settings.RemoveEmpty}} pour nettoyer les parties.
 
 Dans la vue tabulaire de la base de données, passez de {{label:Common.Games}} à {{label:Databases.Card.Players}} et {{label:Databases.Settings.Events}} (tournois) :
-- Recherchez et triez les parties, prévisualisez une partie ou ouvrez-la sur l’échiquier d’analyse.
+- Recherchez et triez les parties, prévisualisez une partie (l’aperçu peut masquer les coups avec le bouton œil, [[setting:hide-preview-moves]]) ou ouvrez-la sur l’échiquier d’analyse.
 - Dans {{label:Databases.Card.Players}}, sélectionnez un joueur pour consulter {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} et {{label:Home.Personal.Openings}} (un arbre d’ouvertures interactif avec un bouton {{label:Databases.OpeningTree.Prepare}}), ainsi que les informations FIDE via {{label:Databases.FIDE.Info}}.
 - Dans {{label:Databases.Settings.Events}}, recherchez les tournois par nom et triez par date, joueurs, parties ou Elo moyen.
 

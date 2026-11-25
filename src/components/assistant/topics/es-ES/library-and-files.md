@@ -2,7 +2,7 @@
 id: library-and-files
 title: Archivos y la Biblioteca
 summary: Configura una carpeta de trabajo, crea y organiza archivos PGN, abre y guarda partidas y gestiona la papelera.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) reúne tus archivos PGN del espacio de trabajo (partidas, repertorios, torneos, puzles y otros archivos) junto con tus bases de datos de partidas.
@@ -12,7 +12,7 @@ Antes de crear archivos, elige una carpeta de trabajo. Si aún no hay ninguna co
 En [[page:library]]:
 - Haz clic en {{label:Files.CreateFile}} para crear un nuevo archivo PGN o en {{label:Files.CreateFolder}} para organizar los archivos en subcarpetas.
 - Usa el campo {{label:Common.Search}} y el desplegable {{label:Files.FileType}} para filtrar por tipo de archivo o por {{label:Library.GamesDatabase}}.
-- Selecciona un archivo para previsualizar sus partidas, abrirlo en el tablero de análisis o usar {{label:Files.Rename}}, {{label:Files.Move}} y {{label:Files.Trash}}.
+- Selecciona un archivo para previsualizar sus partidas (la vista previa puede ocultar las jugadas con el botón del ojo, [[setting:hide-preview-moves]]), abrirlo en el tablero de análisis o usar {{label:Files.Rename}}, {{label:Files.Move}} y {{label:Files.Trash}}.
 
 Mientras editas un archivo en el tablero de análisis:
 - Guarda los cambios con el botón de guardar en la barra del tablero, {{label:Menu.File}} -> {{label:Common.Save}}, o el atajo {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

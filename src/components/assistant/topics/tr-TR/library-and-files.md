@@ -2,7 +2,7 @@
 id: library-and-files
 title: Dosyalar ve Kütüphane
 summary: Çalışma alanı klasörü belirleme, PGN dosyaları oluşturup düzenleme, oyun açıp kaydetme ve çöp kutusunu yönetme.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) sayfası çalışma alanı PGN dosyalarınızı (oyunlar, repertuvarlar, turnuvalar, bulmacalar ve diğer dosyalar) ve oyun veritabanlarınızı bir araya getirir.
@@ -12,7 +12,7 @@ Dosya oluşturmadan önce bir çalışma alanı klasörü seçin. Henüz bir kla
 [[page:library]] sayfasında:
 - Yeni bir PGN dosyası oluşturmak için {{label:Files.CreateFile}} düğmesine, dosyaları alt klasörlerde düzenlemek için {{label:Files.CreateFolder}} düğmesine tıklayın.
 - Dosya türüne veya {{label:Library.GamesDatabase}} seçeneğine göre filtrelemek için {{label:Common.Search}} kutusunu ve {{label:Files.FileType}} açılır listesini kullanın.
-- Oyunlarını önizlemek, analiz tahtasında açmak veya {{label:Files.Rename}}, {{label:Files.Move}} ve {{label:Files.Trash}} işlemlerini uygulamak için bir dosya seçin.
+- Oyunlarını önizlemek (önizleme, göz düğmesiyle hamleleri gizleyebilir, [[setting:hide-preview-moves]]), analiz tahtasında açmak veya {{label:Files.Rename}}, {{label:Files.Move}} ve {{label:Files.Trash}} işlemlerini uygulamak için bir dosya seçin.
 
 Bir dosyayı analiz tahtasında düzenlerken:
 - Değişiklikleri tahta araç çubuğundaki kaydet düğmesiyle, {{label:Menu.File}} -> {{label:Common.Save}} yoluyla veya {{label:Settings.Keybinds.Actions.SAVE_FILE}} kısayoluyla kaydedin.

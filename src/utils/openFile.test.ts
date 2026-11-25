@@ -33,7 +33,7 @@ vi.mock("./tabs", () => ({ createTab: mocks.createTab }));
 
 import type { StampedGame } from "@/bindings";
 import i18n, { initializeI18n } from "@/i18n";
-import { addRecentFileAtom, tabFamily } from "@/state/atoms";
+import { addRecentFileAtom, hidePreviewMovesAtom, invisibleFamily, tabFamily } from "@/state/atoms";
 import { getFileFreshness } from "@/state/fileFreshness";
 import { beginFileStructureChange, hasFileOpenInFlight } from "@/state/fileStructureChange";
 import { openFile } from "./openFile";
@@ -365,4 +365,24 @@ describe("openFile tab admission", () => {
             verifiedRevision: "new-revision",
         });
     });
+
+    test.each([
+        { fromPreview: true, preference: true, hidden: true },
+        { fromPreview: true, preference: false, hidden: false },
+        { fromPreview: false, preference: true, hidden: false },
+    ])(
+        "fromPreview=$fromPreview with preference $preference sets invisible=$hidden",
+        async ({ fromPreview, preference, hidden }) => {
+            mocks.createTab.mockResolvedValueOnce("tab-id");
+            mocks.storeGet.mockImplementation((atom) =>
+                atom === hidePreviewMovesAtom ? preference : undefined,
+            );
+            await openFile(file, setTabs, fromPreview ? { fromPreview: true } : undefined);
+            expect(
+                mocks.storeSet.mock.calls.some(
+                    ([atom, value]) => atom === invisibleFamily("tab-id") && value === true,
+                ),
+            ).toBe(hidden);
+        },
+    );
 });

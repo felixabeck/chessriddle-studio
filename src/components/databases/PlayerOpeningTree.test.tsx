@@ -455,7 +455,12 @@ test("game selection previews within the card, Open and double-click use the est
   expect(container.querySelector("[data-game-preview]")?.textContent).toBe(first.moves);
   await click(button("Open on board"));
   expect(mocks.openGame).toHaveBeenCalledWith(
-    expect.objectContaining({ game: first, database: file, targetFens: [INITIAL_FEN] }),
+    expect.objectContaining({
+      game: first,
+      database: file,
+      targetFens: [INITIAL_FEN],
+      fromPreview: true,
+    }),
   );
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/" });
   await act(async () =>

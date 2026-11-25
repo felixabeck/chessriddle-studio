@@ -2,7 +2,7 @@
 id: library-and-files
 title: Файлы і бібліятэка
 summary: Налада працоўнай папкі, стварэнне і ўпарадкаванне файлаў PGN, адкрыццё і захаванне партый, а таксама кіраванне сметніцай.
-source: 2c064b437ded0b67
+source: 1c8e1ec37f492b22
 ---
 
 Раздзел [[page:library]] ({{label:SideBar.Library}}) аб’ядноўвае вашы працоўныя файлы PGN (партыі, рэпертуары, турніры, задачы і іншыя файлы) і базы даных партый.
@@ -12,7 +12,7 @@ source: 2c064b437ded0b67
 На старонцы [[page:library]]:
 - Націсніце {{label:Files.CreateFile}}, каб стварыць новы файл PGN, або {{label:Files.CreateFolder}}, каб упарадкаваць файлы па падпапках.
 - Выкарыстоўвайце поле {{label:Common.Search}} і выпадны спіс {{label:Files.FileType}} для фільтрацыі па тыпе файла або па пункце {{label:Library.GamesDatabase}}.
-- Выберыце файл, каб праглядзець яго партыі, адкрыць яго на дошцы аналізу або выкарыстаць дзеянні {{label:Files.Rename}}, {{label:Files.Move}} і {{label:Files.Trash}}.
+- Выберыце файл, каб праглядзець яго партыі (папярэдні прагляд можа схаваць хады кнопкай-вокам, [[setting:hide-preview-moves]]), адкрыць яго на дошцы аналізу або выкарыстаць дзеянні {{label:Files.Rename}}, {{label:Files.Move}} і {{label:Files.Trash}}.
 
 Падчас рэдагавання файла на дошцы аналізу:
 - Захоўвайце змены кнопкай захавання на панэлі інструментаў дошкі, праз {{label:Menu.File}} -> {{label:Common.Save}} або спалучэннем клавіш {{label:Settings.Keybinds.Actions.SAVE_FILE}}.

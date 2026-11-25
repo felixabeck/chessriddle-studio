@@ -2,7 +2,7 @@
 id: databases
 title: 資料庫、開局探索器、局面搜尋、棋手與賽事
 summary: 新增或下載棋局資料庫、選取參考資料庫、在探索器中搜尋局面，以及瀏覽對局、棋手與賽事。
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 資料庫與您的 PGN 檔案一同位在 [[page:library]] ({{label:SideBar.Library}}) 中，並儲存於 [[setting:databases-directory]]。
@@ -19,7 +19,7 @@ source: a32dc09e8451de84
 - 在 {{label:Databases.Settings.AdvancedTools}} 下，使用 {{label:Databases.Settings.MergePlayers}} 合併重複的棋手項目，或使用 {{label:Databases.Settings.RemoveDup}} 與 {{label:Databases.Settings.RemoveEmpty}} 清理對局。
 
 在資料庫表格檢視中，可在 {{label:Common.Games}}、{{label:Databases.Card.Players}} 與 {{label:Databases.Settings.Events}}（賽事）之間切換：
-- 搜尋與排序對局、預覽對局，或在分析棋盤上開啟。
+- 搜尋與排序對局、預覽對局（預覽可用眼睛按鈕隱藏著法，[[setting:hide-preview-moves]]），或在分析棋盤上開啟。
 - 在 {{label:Databases.Card.Players}} 中選取一位棋手，可檢視 {{label:Home.Personal.Overview}}、{{label:Home.Personal.Ratings}} 與 {{label:Home.Personal.Openings}}（附有 {{label:Databases.OpeningTree.Prepare}} 按鈕的互動式開局樹），以及透過 {{label:Databases.FIDE.Info}} 查看國際棋總（FIDE）資訊。
 - 在 {{label:Databases.Settings.Events}} 中依名稱搜尋賽事，並依日期、棋手數、對局數或平均 Elo 排序。
 

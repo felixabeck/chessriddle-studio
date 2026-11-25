@@ -254,6 +254,7 @@ function OpeningTree({
       database: source.file,
       targetFens: [line.fen],
     }),
+    { fromPreview: true },
   );
   const changeMoves = (next: string[]) => {
     setSelected(null);

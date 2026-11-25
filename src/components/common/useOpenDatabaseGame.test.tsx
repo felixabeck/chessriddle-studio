@@ -99,6 +99,20 @@ test("abort signal, owner and store reach the tab admission", async () => {
   );
 });
 
+test("fromPreview from the list opener reaches tab admission", async () => {
+  await mount();
+  await act(() => open({ game, database: handle("games") }, { fromPreview: true }));
+  expect(mocks.openDatabaseGame).toHaveBeenCalledWith(
+    expect.objectContaining({ fromPreview: true }),
+  );
+});
+
+test("the default opener does not pass fromPreview", async () => {
+  await mount();
+  await act(() => open({ game, database: handle("games") }));
+  expect(mocks.openDatabaseGame.mock.lastCall![0].fromPreview).toBeUndefined();
+});
+
 test("an unlisted, failed or absent database records no title", () => {
   expect(listedDatabaseTitle(listing, handle("other"))).toBeUndefined();
   expect(listedDatabaseTitle(listing, handle("broken"))).toBeUndefined();

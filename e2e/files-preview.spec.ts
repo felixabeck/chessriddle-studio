@@ -1039,6 +1039,38 @@ test("files-preview: saved shapes stay beside chooser arrows and follow the chos
     await expect(page).toHaveURL("/library");
 });
 
+test("files-preview: the preview eye hides notation until Show moves reveals it", async ({
+    page,
+    mockScenario,
+}) => {
+    await page.setViewportSize({ width: 1920, height: 1100 });
+    await mockScenario({
+        commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+            ...pgnFileCommands,
+        }),
+    });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
+    const e4 = page.getByRole("button", { name: "e4", exact: true });
+    await expect(e4).toBeVisible();
+    await page.getByRole("button", { name: "Hide moves", exact: true }).click();
+    await expect(
+        page.getByRole("button", { name: "Always show moves", exact: true }),
+    ).toBeVisible();
+    await expect(
+        page.locator("[inert]").getByRole("button", { name: "e4", exact: true }),
+    ).toHaveCount(1);
+    // The hidden rows blur themselves; an overlay backdrop blur left them readable in WebKit.
+    await expect(page.locator("[data-notation-rows]")).toHaveCSS("filter", "blur(8px)");
+    await page.getByRole("button", { name: "Show moves", exact: true }).click();
+    await expect(page.locator("[data-notation-rows]")).toHaveCSS("filter", "none");
+    await expect(
+        page.locator("[inert]").getByRole("button", { name: "e4", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "e4", exact: true })).toBeVisible();
+});
+
 test("files-preview: numbered comment prose stays inline with its moves", async ({
     page,
     mockScenario,

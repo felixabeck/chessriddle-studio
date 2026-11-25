@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useSetAtom } from "jotai";
+import { useSetAtom, useStore } from "jotai";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
@@ -24,7 +24,10 @@ export type DatabaseGameTarget = {
     targetFens?: readonly string[];
 };
 
-type OpenOptions = Pick<Parameters<typeof openDatabaseGame>[0], "signal" | "ownerId" | "store">;
+type OpenOptions = Pick<
+    Parameters<typeof openDatabaseGame>[0],
+    "signal" | "ownerId" | "store" | "fromPreview"
+>;
 
 /**
  * The one open-a-database-game policy: admit the tab, record it in Recent under the database's
@@ -33,6 +36,7 @@ type OpenOptions = Pick<Parameters<typeof openDatabaseGame>[0], "signal" | "owne
 export function useDatabaseGameOpener() {
     const setTabs = useSetAtom(tabsAtom);
     const addRecentFile = useSetAtom(addRecentFileAtom);
+    const store = useStore();
     const navigate = useNavigate();
     const { cache } = useSWRConfig();
     return useCallback(
@@ -49,22 +53,26 @@ export function useDatabaseGameOpener() {
                 setTabs,
                 addRecentFile,
                 targetFens,
+                store,
                 ...options,
             });
             if (id !== null) await navigate({ to: "/" });
             return id;
         },
-        [setTabs, addRecentFile, navigate, cache],
+        [setTabs, addRecentFile, navigate, cache, store],
     );
 }
 
 /** A surface's single-flight open handle for its rows and buttons, reporting failures as toasts. */
-export function useOpenDatabaseGame<T>(target: (value: T) => DatabaseGameTarget) {
+export function useOpenDatabaseGame<T>(
+    target: (value: T) => DatabaseGameTarget,
+    options: Pick<OpenOptions, "fromPreview"> = {},
+) {
     const { t } = useTranslation();
     const open = useDatabaseGameOpener();
     const onError = (error: unknown) => notifyUnlessCancelled(t("Common.Error"), error);
     return useGameOpen(
-        (value: T) => runTabCreation({ create: () => open(target(value)), onError }),
+        (value: T) => runTabCreation({ create: () => open(target(value), options), onError }),
         onError,
     );
 }

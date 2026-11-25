@@ -2,7 +2,7 @@
 id: databases
 title: Database, esploratore, ricerca di posizione, giocatori e tornei
 summary: Aggiungi o scarica database di partite, scegli un database di riferimento, cerca posizioni nell’esploratore e sfoglia partite, giocatori e tornei.
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 I database si trovano in [[page:library]] ({{label:SideBar.Library}}) insieme ai tuoi file PGN e sono archiviati in [[setting:databases-directory]].
@@ -19,7 +19,7 @@ Seleziona un database in [[page:library]] per gestirlo:
 - Sotto {{label:Databases.Settings.AdvancedTools}}, usa {{label:Databases.Settings.MergePlayers}} per unire voci giocatore duplicate, oppure {{label:Databases.Settings.RemoveDup}} e {{label:Databases.Settings.RemoveEmpty}} per ripulire le partite.
 
 All’interno della vista tabellare del database, passa tra {{label:Common.Games}}, {{label:Databases.Card.Players}} e {{label:Databases.Settings.Events}} (tornei):
-- Cerca e ordina le partite, visualizza un’anteprima o apri una partita sulla scacchiera di analisi.
+- Cerca e ordina le partite, visualizza un’anteprima (l’anteprima può nascondere le mosse con il pulsante a forma di occhio, [[setting:hide-preview-moves]]) o apri una partita sulla scacchiera di analisi.
 - In {{label:Databases.Card.Players}}, seleziona un giocatore per consultare {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (un albero delle aperture interattivo con il pulsante {{label:Databases.OpeningTree.Prepare}}), oltre alle informazioni FIDE tramite {{label:Databases.FIDE.Info}}.
 - In {{label:Databases.Settings.Events}}, cerca i tornei per nome e ordina per data, giocatori, partite o Elo medio.
 

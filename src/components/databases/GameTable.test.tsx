@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
 import { type AppError, normalizeError } from "@/platform/errors";
-import { tabsAtom, recentFilesAtom } from "@/state/atoms";
+import { tabsAtom, recentFilesAtom, hidePreviewMovesAtom, invisibleFamily } from "@/state/atoms";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { tabStorage } from "@/state/store/tabStorage";
 import { defaultTree } from "@/utils/treeReducer";
@@ -547,6 +547,18 @@ test("single click previews, labelled button admits the selected content and dat
   expect(stored?.state.root.halfMoves).toBe(13);
   expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/" });
 });
+
+test.each([true, false])(
+  "opening from the game list starts hidden only when the preview preference is on (preference: %s)",
+  async (preference) => {
+    jotai.set(hidePreviewMovesAtom, preference);
+    await render();
+    await act(async () => row(1).click());
+    await act(async () => openButton().click());
+    const id = jotai.get(tabsAtom)[0].value;
+    expect(jotai.get(invisibleFamily(id))).toBe(preference);
+  },
+);
 
 test("linked explorer opening admits the original file tree and persists its native locator", async () => {
   const { tauri } = await import("@/platform/tauri");

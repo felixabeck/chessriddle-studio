@@ -11,6 +11,7 @@ import {
   Table,
   Text,
   UnstyledButton,
+  Button,
 } from "@mantine/core";
 import {
   ArrowRight,
@@ -82,6 +83,9 @@ import { GameReferenceProvider } from "./GameReference";
 // Room for three inline move rows, including their padding and line boxes.
 const NOTATION_MIN_HEIGHT_REM = "9rem";
 
+// Strong enough that SAN at any notation font size cannot be read through it (f-20261125-10).
+const HIDDEN_NOTATION_FILTER = "blur(8px)";
+
 // Bound the frames spent waiting for React to mount a row after its offset scroll.
 const NOTATION_REVEAL_MAX_ATTEMPTS = 10;
 const NOTATION_INDEX_SCROLL_MAX_ATTEMPTS = 10;
@@ -152,6 +156,8 @@ function GameNotation({
   controls,
   moveActions,
   markOpenVariations,
+  hidden,
+  onReveal,
 }: {
   topBar?: boolean;
   controls?: React.ReactNode;
@@ -161,6 +167,10 @@ function GameNotation({
    * analysis board); a puzzle solution, a database preview or a game in play has no line to finish.
    */
   markOpenVariations?: boolean;
+  /** Hide the moves regardless of the tab's hide-moves state (used by previews, which have no top bar). */
+  hidden?: boolean;
+  /** Called by the overlay's Show moves button to reveal this notation instance. */
+  onReveal?: () => void;
 }) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
@@ -186,7 +196,7 @@ function GameNotation({
   const [preparationView, setPreparationView] = useAtom(useTabAtom(tabPreparationViewFamily));
   const viewport = useRef<HTMLDivElement>(null);
   const [invisibleValue, setInvisible] = useAtom(useTabAtom(invisibleFamily));
-  const invisible = topBar && invisibleValue;
+  const invisible = hidden === true || (!!topBar && invisibleValue);
   const keyMap = useAtomValue(keyMapAtom);
 
   const activePreparation =
@@ -431,17 +441,30 @@ function GameNotation({
             <Stack gap="xs">
               <Box>
                 {invisible && (
-                  <Overlay backgroundOpacity={0.6} color="var(--cf-inset)" blur={8} zIndex={2} />
+                  <Overlay
+                    backgroundOpacity={0.6}
+                    color="var(--cf-inset)"
+                    zIndex={2}
+                    center={onReveal != null}
+                  >
+                    {onReveal ? (
+                      <Button onClick={onReveal}>{t("Notation.ShowMoves")}</Button>
+                    ) : undefined}
+                  </Overlay>
                 )}
                 {/* The overlay only blocks the pointer. `inert` also takes the hidden moves out of
                     the tab order and the accessibility tree, so neither Tab + Enter nor a screen
-                    reader reaches the drill's answer (f-20261119-15). */}
+                    reader reaches the drill's answer (f-20261119-15). The rows blur themselves rather
+                    than relying on an overlay backdrop-filter, which WebKit does not apply to these
+                    transformed rows, so the moves stayed readable (f-20261125-10). */}
                 <Box
+                  data-notation-rows
                   inert={invisible}
                   style={{
                     height: rowVirtualizer.getTotalSize(),
                     width: "100%",
                     position: "relative",
+                    filter: invisible ? HIDDEN_NOTATION_FILTER : undefined,
                   }}
                 >
                   {rowVirtualizer.getVirtualItems().map((virtualRow) => (

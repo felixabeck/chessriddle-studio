@@ -114,7 +114,11 @@ test("board and analysis rows keep the specified group membership and order", ()
         "consecutive-arrows",
         "erase-drawables",
     ]);
-    expect(idsFor("analysis", "notation")).toEqual(["move-notation", "material-display"]);
+    expect(idsFor("analysis", "notation")).toEqual([
+        "move-notation",
+        "material-display",
+        "hide-preview-moves",
+    ]);
     expect(idsFor("analysis", "navigating")).toEqual([
         "scroll-moves",
         "choose-variation",

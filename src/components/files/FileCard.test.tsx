@@ -1131,6 +1131,7 @@ describe("FileCard", () => {
         expect(openFile).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), {
           gameNumber: 1,
           expected: originalExpected,
+          fromPreview: true,
         });
         expect(openButton().disabled).toBe(false);
 
@@ -1139,6 +1140,7 @@ describe("FileCard", () => {
         expect(openFile).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), {
           gameNumber: 1,
           expected: originalExpected,
+          fromPreview: true,
         });
         expect(mocks.readGame).toHaveBeenCalledTimes(2);
         expect(mocks.readGame).toHaveBeenLastCalledWith(sampleFileA.handle, 1, undefined);
@@ -1162,6 +1164,7 @@ describe("FileCard", () => {
       expect(openFile).toHaveBeenNthCalledWith(3, expect.anything(), expect.anything(), {
         gameNumber: 1,
         expected: { stamp: currentGame.stamp, revision: currentGame.revision },
+        fromPreview: true,
       });
       expect(seed).toHaveBeenCalledOnce();
       expect(getDefaultStore().get(tabsAtom)).toEqual([

@@ -2,7 +2,7 @@
 id: databases
 title: Базы данных, обозреватель, поиск позиций, игроки и турниры
 summary: Добавление и загрузка баз партий, выбор справочной базы, поиск позиций в обозревателе, а также просмотр партий, игроков и турниров.
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 Базы данных находятся в [[page:library]] ({{label:SideBar.Library}}) рядом с вашими PGN-файлами и хранятся в каталоге [[setting:databases-directory]].
@@ -19,7 +19,7 @@ source: a32dc09e8451de84
 - В разделе {{label:Databases.Settings.AdvancedTools}} используйте {{label:Databases.Settings.MergePlayers}} для объединения дублирующихся записей игроков, а также {{label:Databases.Settings.RemoveDup}} и {{label:Databases.Settings.RemoveEmpty}} для очистки партий.
 
 В табличном просмотре базы данных переключайтесь между разделами {{label:Common.Games}}, {{label:Databases.Card.Players}} и {{label:Databases.Settings.Events}} (турниры):
-- Ищите и сортируйте партии, просматривайте партию в предпросмотре или открывайте её на доске анализа.
+- Ищите и сортируйте партии, просматривайте партию в предпросмотре (предпросмотр может скрыть ходы кнопкой-глазом, [[setting:hide-preview-moves]]) или открывайте её на доске анализа.
 - В разделе {{label:Databases.Card.Players}} выберите игрока, чтобы увидеть вкладки {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} и {{label:Home.Personal.Openings}} (интерактивное дерево дебютов с кнопкой {{label:Databases.OpeningTree.Prepare}}), а также данные ФИДЕ через {{label:Databases.FIDE.Info}}.
 - В разделе {{label:Databases.Settings.Events}} ищите турниры по названию и сортируйте по дате, числу игроков, количеству партий или среднему рейтингу Эло.
 

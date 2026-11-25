@@ -2,7 +2,7 @@
 id: databases
 title: Базы дадзеных, аглядальнік, пошук пазіцый, гульцы і турніры
 summary: Даданне або спампоўка баз партый, выбар даведачнай базы, пошук пазіцый у аглядальніку, а таксама прагляд партый, гульцоў і турніраў.
-source: a32dc09e8451de84
+source: d3afecf524059542
 ---
 
 Базы дадзеных знаходзяцца ў [[page:library]] ({{label:SideBar.Library}}) побач з вашымі файламі PGN і захоўваюцца ў [[setting:databases-directory]].
@@ -19,7 +19,7 @@ source: a32dc09e8451de84
 - У раздзеле {{label:Databases.Settings.AdvancedTools}} выкарыстоўвайце {{label:Databases.Settings.MergePlayers}} для аб’яднання дублікатаў гульцоў або {{label:Databases.Settings.RemoveDup}} і {{label:Databases.Settings.RemoveEmpty}} для ачысткі партый.
 
 У таблічным праглядзе базы дадзеных пераключайцеся паміж {{label:Common.Games}}, {{label:Databases.Card.Players}} і {{label:Databases.Settings.Events}} (турнірамі):
-- Шукайце і сартуйце партыі, праглядайце партыю або адкрывайце яе на дошцы аналізу.
+- Шукайце і сартуйце партыі, праглядайце партыю (папярэдні прагляд можа схаваць хады кнопкай-вокам, [[setting:hide-preview-moves]]) або адкрывайце яе на дошцы аналізу.
 - У раздзеле {{label:Databases.Card.Players}} выберыце гульца, каб праглядзець {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} і {{label:Home.Personal.Openings}} (інтэрактыўнае дрэва дэбютаў з кнопкай {{label:Databases.OpeningTree.Prepare}}), а таксама звесткі ФІДЭ праз {{label:Databases.FIDE.Info}}.
 - У раздзеле {{label:Databases.Settings.Events}} шукайце турніры па назве і сартуйце па даце, колькасці гульцоў, партый або сярэднім рэйтынгу Эла.
 

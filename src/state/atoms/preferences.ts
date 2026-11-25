@@ -152,6 +152,14 @@ export const materialDisplayAtom = atomWithStorage<MaterialDisplay>(
     "diff",
     createZodStorage(z.enum(MATERIAL_DISPLAY_MODES), localStorage),
 );
+/** Hide notation in game previews, and in games opened from those previews. */
+// Hydrated with the document's eager preferences, so opening a game from a preview
+// sees the stored choice even when no preview or settings page has mounted it.
+export const hidePreviewMovesAtom = documentPreferences.atomWithStorage<boolean>(
+    "hide-preview-moves",
+    false,
+    createPreferenceStorage(false),
+);
 export const BOARD_ANIMATION_SPEEDS = ["off", "fast", "normal", "slow"] as const;
 export type BoardAnimationSpeed = (typeof BOARD_ANIMATION_SPEEDS)[number];
 /** Piece movement animation length in milliseconds; "off" disables animation. */

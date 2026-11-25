@@ -2,7 +2,8 @@ import { EphemeralTabScope } from "@/state/tabScope";
 import { Box, Group, Menu, Stack } from "@mantine/core";
 import { useElementSize } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { ArrowUpDown, Copy } from "lucide-react";
+import { ArrowUpDown, Copy, Eye, EyeOff } from "lucide-react";
+import { useAtom } from "jotai";
 import { useContext, useMemo, useRef, useState } from "react";
 import useSWRImmutable from "swr/immutable";
 import { useStore } from "zustand";
@@ -19,6 +20,7 @@ import {
   DatabaseLayoutContext,
   fitPreviewSquare,
 } from "@/state/databaseLayout";
+import { hidePreviewMovesAtom } from "@/state/atoms";
 import { parsePGN, parseStartHeader } from "@/utils/chess";
 import { writeClipboardText } from "@/utils/clipboard";
 import {
@@ -27,6 +29,7 @@ import {
   getNodeAtPath,
   type TreeState,
 } from "@/utils/treeReducer";
+import IconAction from "../common/IconAction";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
 import OpeningName from "../common/OpeningName";
@@ -161,6 +164,10 @@ function GamePreview({
   flippedTo: BoardSide | null;
   onFlip: (side: BoardSide) => void;
 } & PreviewLayout) {
+  const { t } = useTranslation();
+  const [hidePreviewMoves, setHidePreviewMoves] = useAtom(hidePreviewMovesAtom);
+  const [revealed, setRevealed] = useState(false);
+  const notationHidden = hidePreviewMoves && !revealed;
   const { compact, rootFont } = useContext(DatabaseLayoutContext);
   const { ref: boardRef, height } = useElementSize();
   const { ref: frameRef, width: frameWidth, height: frameHeight } = useElementSize();
@@ -235,9 +242,28 @@ function GamePreview({
                       : undefined
                   }
                 >
-                  <GameNotation />
+                  <GameNotation
+                    hidden={notationHidden}
+                    onReveal={notationHidden ? () => setRevealed(true) : undefined}
+                  />
                 </Box>
-                <MoveControls readOnly />
+                <Group gap="xs" wrap="nowrap">
+                  <Box flex={1} miw={0}>
+                    <MoveControls readOnly />
+                  </Box>
+                  <IconAction
+                    label={
+                      hidePreviewMoves ? t("Notation.ShowMovesAlways") : t("Notation.HideMoves")
+                    }
+                    onClick={() => {
+                      setHidePreviewMoves((value) => !value);
+                      setRevealed(false);
+                    }}
+                    pressed={!hidePreviewMoves}
+                  >
+                    {hidePreviewMoves ? <EyeOff size="1rem" /> : <Eye size="1rem" />}
+                  </IconAction>
+                </Group>
               </Stack>
             )}
           </Group>

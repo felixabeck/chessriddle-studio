@@ -1,4 +1,6 @@
+import { getDefaultStore } from "jotai";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
+import { applyPreviewMovesHidden } from "@/state/atoms";
 import { databaseGameHeaders } from "./databaseGameTree";
 import { createTab } from "./tabs";
 import type { RecentEntryInput } from "@/state/recentFiles";
@@ -16,6 +18,7 @@ export async function openDatabaseGame({
     store,
     signal,
     targetFens,
+    fromPreview,
 }: {
     game: NormalizedGame;
     database?: DatabaseHandle | null;
@@ -27,9 +30,15 @@ export async function openDatabaseGame({
     signal?: AbortSignal;
     /** Positions to open at, in order of preference; see `createTab`. */
     targetFens?: readonly string[];
+    /** Opened from a game preview: the tab starts with its moves hidden when the hide-preview-moves preference is on. */
+    fromPreview?: boolean;
 }) {
+    const tabStore = store ?? getDefaultStore();
     const seed = databaseGameSeed(game, database);
     const id = await createTab({ ...seed, targetFens, setTabs, ownerId, store, signal });
+    if (id !== null && fromPreview) {
+        applyPreviewMovesHidden(tabStore, id);
+    }
     if (id !== null && database) {
         addRecentFile({
             kind: "database",

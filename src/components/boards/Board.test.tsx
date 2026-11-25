@@ -33,6 +33,7 @@ vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
   const evalOpen = atom(false);
   const showComments = atom(false);
+  const notationHidden = atom(false);
   return {
     autoPromoteAtom: atom(false),
     createBestMovesAtom: () => atom(new Map()),
@@ -40,6 +41,7 @@ vi.mock("@/state/atoms", async () => {
     tabEngineSettingsFamily: () => atom({ enabled: false }),
     evalOpenFamily: () => evalOpen,
     showCommentsFamily: () => showComments,
+    invisibleFamily: () => notationHidden,
     enableBoardScrollAtom: atom(false),
     materialDisplayAtom: atom("diff"),
     moveHighlightAtom: atom(false),

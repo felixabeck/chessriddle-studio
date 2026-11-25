@@ -11,7 +11,7 @@ Before creating files, choose a workspace folder. If no folder is set yet, click
 On [[page:library]]:
 - Click {{label:Files.CreateFile}} to create a new PGN file or {{label:Files.CreateFolder}} to organize files into subfolders.
 - Use the {{label:Common.Search}} input and the {{label:Files.FileType}} dropdown to filter by file type or {{label:Library.GamesDatabase}}.
-- Select a file to preview its games, open it on the analysis board, or use {{label:Files.Rename}}, {{label:Files.Move}}, and {{label:Files.Trash}}.
+- Select a file to preview its games (the preview can hide its moves with the eye button, [[setting:hide-preview-moves]]), open it on the analysis board, or use {{label:Files.Rename}}, {{label:Files.Move}}, and {{label:Files.Trash}}.
 
 While editing a file on the analysis board:
 - Save changes with the save button in the board toolbar, {{label:Menu.File}} -> {{label:Common.Save}}, or the {{label:Settings.Keybinds.Actions.SAVE_FILE}} shortcut.

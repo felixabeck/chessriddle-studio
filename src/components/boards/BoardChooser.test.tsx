@@ -20,6 +20,7 @@ import {
   tabEngineSettingsFamily,
   showArrowsAtom,
   showVariationArrowsAtom,
+  invisibleFamily,
 } from "@/state/atoms";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import type { VariationChooserStore } from "@/state/store/variationChooser";
@@ -223,6 +224,17 @@ test("engine arrows require this tab's enabled loaded engine at the cached index
     atoms.set(engineSettings(second.id), (settings) => ({ ...settings, enabled: true }));
   });
   expect(boardConfig.drawable!.autoShapes!.map((shape) => shape.brush)).toEqual(["red", "paleRed"]);
+});
+
+test("hidden notation suppresses variation arrows", () => {
+  const atoms = render();
+  const variation = () =>
+    (boardConfig.drawable!.autoShapes ?? []).filter((shape) => shape.brush === "variation");
+  expect(variation().length).toBeGreaterThan(1);
+  act(() => atoms.set(invisibleFamily("chooser-test"), true));
+  expect(variation()).toEqual([]);
+  act(() => atoms.set(invisibleFamily("chooser-test"), false));
+  expect(variation().length).toBeGreaterThan(1);
 });
 
 test("rendered arrows give chooser candidates priority over engines and suppress ordinary variations only while open", () => {

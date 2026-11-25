@@ -244,7 +244,7 @@ function FileCard({
       expected?: GameSelectorRow["identity"];
     }) =>
       runTabCreation({
-        create: () => openFile(file, setTabs, { gameNumber: index, expected }),
+        create: () => openFile(file, setTabs, { gameNumber: index, expected, fromPreview: true }),
         onSuccess: () => navigate({ to: "/" }),
         onError: reportOpenError,
       }),

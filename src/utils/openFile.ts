@@ -1,6 +1,6 @@
 import { getDefaultStore } from "jotai";
 import type { FileMetadata } from "@/components/files/file";
-import { addRecentFileAtom, tabFamily } from "@/state/atoms";
+import { addRecentFileAtom, applyPreviewMovesHidden, tabFamily } from "@/state/atoms";
 import { setFileFreshness } from "@/state/fileFreshness";
 import { beginFileOpen, StaleFileGameError } from "@/state/fileStructureChange";
 import { getFileGameName, loadFileGame } from "./files";
@@ -18,6 +18,8 @@ export async function openFile(
         store?: ReturnType<typeof getDefaultStore>;
         signal?: AbortSignal;
         expected?: { stamp: string; revision: string };
+        /** Opened from a game preview: the tab starts with its moves hidden when the hide-preview-moves preference is on. */
+        fromPreview?: boolean;
     },
 ) {
     const store = options?.store ?? getDefaultStore();
@@ -61,6 +63,10 @@ export async function openFile(
 
         if (options?.panel === "practice") {
             store.set(tabFamily(id), "practice");
+        }
+
+        if (options?.fromPreview) {
+            applyPreviewMovesHidden(store, id);
         }
 
         store.set(addRecentFileAtom, {
