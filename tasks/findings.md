@@ -29332,7 +29332,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### The daily game-practice mutation sweep is red: four survivors in the unseen-line ordering of practice sessions
 
-* **ID:** f-20261125-16 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-16 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45604503911
 * **First red:** run 45604503911 on `952b7cbbb` (scheduled 2026-11-25 11:26 UTC; the previous Mutation run 45395218545 on `41bf2e516` had `frontend-mutation (game-practice)` green). `952b7cbbb` only changed icons; the surviving lines come from `e441a022d` (frequent lines first) and `d30f897ad` (timed run), both 2026-11-24.
@@ -29344,3 +29344,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Proof:** `FRONTEND_MUTATION_PACKAGE=game-practice pnpm mutation:frontend` reports 100.
 * **Repair owner:** ee439b95-8204-44ff-b74f-b24e6916f3dc on tuxedo-atlas, 2026-11-25T12:41:19Z
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d3c6ff0e836ac7d9f0083e3b7bd60003400fec763580c03600503533d9957048","input_sha256":"15ea0a8b4852210f53caae5d689ef400657469a7b12c75941b109b95de49e8c5","kind":"mutation-receipt","operation":"120a3f13e196ba931851db4080126aa95a83273c8d71e69f727f85d04699565d","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-16"],"target":"f-20261125-16","v":1} -->
+
+* **Handled (2026-11-25, Claude Code (Opus 5.5), session ee439b95-8204-44ff-b74f-b24e6916f3dc, took over the repair to unblock the workspace-restore e2e repair push):** commit `ac47c740f`. Comparator tests for both-unweighted, one-unweighted and weighted pairs kill the :26/:27 survivors; the :52 index tie-break is removed as redundant (unseenIndices ascending, Array.prototype.sort stable), which removes its two mutants.
+  * **Proof:** `FRONTEND_MUTATION_PACKAGE=game-practice pnpm mutation:frontend`: session.ts 245 killed, 1 timeout (line 92 `length--` loop mutant), every mutant on lines 26–29 and 52–53 killed; package 280 killed, 2 timeouts. vitest related 922/922. Review on agy: tests and correctness APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"fed144c8f463ef11c79b5cd811b9486aac8250290afc1dd0dcb4dca7861aa406","header_sha256":"17e6ddde980c14db4ecd065898d21afecfe4eb65d1dbcc2702f95cfb0a5745b0","header_status":"handled","input_sha256":"f26a4d780ad3178acd717efd94333e5a3a442b1b4eba0badb3356fce3366ef9b","kind":"mutation-receipt","operation":"6a5a4b5812f0eb886bff4498f3667f0974a2a4987061705bf84525f04a433aef","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-16"],"target":"f-20261125-16","v":1} -->
