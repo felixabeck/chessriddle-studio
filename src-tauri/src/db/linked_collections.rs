@@ -251,7 +251,7 @@ fn selected_metadata(
     })
 }
 
-fn relative_locator(
+pub(crate) fn relative_locator(
     authority: &SharedPathAuthority,
     workspace: &FileWorkspaceHandle,
     file: &FileWorkspaceHandle,
@@ -268,7 +268,7 @@ fn relative_locator(
     })?
 }
 
-fn serialize_locator<S: serde::Serializer>(
+pub(crate) fn serialize_locator<S: serde::Serializer>(
     parts: &[OsString],
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
@@ -279,7 +279,7 @@ fn serialize_locator<S: serde::Serializer>(
         .serialize(serializer)
 }
 
-fn deserialize_locator<'de, D: serde::Deserializer<'de>>(
+pub(crate) fn deserialize_locator<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<OsString>, D::Error> {
     Vec::<authority::NativePath>::deserialize(deserializer)?
@@ -561,6 +561,59 @@ pub(crate) struct CollectionService {
 }
 
 impl CollectionService {
+    /// Returns the handles and relative locators of non-trashed account-linked collection files
+    /// in `workspace`. Read-only; acquires only the collection registry lock.
+    pub(crate) fn account_linked_files(
+        &self,
+        authority: &SharedPathAuthority,
+        workspace: &FileWorkspaceHandle,
+        cancellation: &CancellationToken,
+    ) -> Result<(HashSet<FileWorkspaceHandle>, HashSet<Vec<OsString>>), Error> {
+        let mut guard = self.lock(cancellation)?;
+        let registry = Self::state(&mut guard)?;
+        let mut handles = HashSet::new();
+        let mut locators = HashSet::new();
+        for record in &registry.records {
+            if record.workspace != *workspace || record.account.is_none() || record.is_trashed() {
+                continue;
+            }
+            if let Ok(live_locator) = relative_locator(authority, workspace, &record.file) {
+                if crate::file_workspace::is_trash_locator(&live_locator) {
+                    continue;
+                }
+                handles.insert(record.file.clone());
+                if !live_locator.is_empty() {
+                    locators.insert(live_locator);
+                }
+            } else {
+                handles.insert(record.file.clone());
+                if !record.locator.is_empty() {
+                    locators.insert(record.locator.clone());
+                }
+            }
+        }
+        Ok((handles, locators))
+    }
+
+    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+    pub(crate) fn set_test_record_account(
+        &self,
+        workspace: &FileWorkspaceHandle,
+        file: &FileWorkspaceHandle,
+        account: AccountIdentity,
+    ) -> Result<(), Error> {
+        let token = CancellationToken::new();
+        let mut guard = self.lock(&token)?;
+        let mut registry = Self::state(&mut guard)?.clone();
+        let record = registry
+            .records
+            .iter_mut()
+            .find(|r| r.workspace == *workspace && r.file == *file)
+            .ok_or(Error::StaleGame)?;
+        record.account = Some(account);
+        self.save(&mut guard, registry)
+    }
+
     pub(crate) fn capture_binding(
         &self,
         authority: &SharedPathAuthority,

@@ -2253,6 +2253,7 @@ pub(crate) enum AppOwnedDefaultRoot {
     Credentials,
     Practice,
     UnsavedGames,
+    LibrarySync,
     #[cfg(target_os = "macos")]
     EngineLaunch,
 }
@@ -2268,6 +2269,7 @@ impl AppOwnedDefaultRoot {
         Self::Credentials,
         Self::Practice,
         Self::UnsavedGames,
+        Self::LibrarySync,
         #[cfg(target_os = "macos")]
         Self::EngineLaunch,
     ];
@@ -2282,6 +2284,7 @@ impl AppOwnedDefaultRoot {
             Self::Credentials => "credentials",
             Self::Practice => "practice",
             Self::UnsavedGames => "unsaved-games",
+            Self::LibrarySync => "library-sync",
             #[cfg(target_os = "macos")]
             Self::EngineLaunch => "engine-launch",
         }
@@ -2293,6 +2296,7 @@ impl AppOwnedDefaultRoot {
             Self::Collections => Some(0o700),
             Self::Credentials => Some(0o700),
             Self::UnsavedGames => Some(0o700),
+            Self::LibrarySync => Some(0o700),
             #[cfg(target_os = "macos")]
             Self::EngineLaunch => Some(0o700),
             Self::Databases
@@ -5779,6 +5783,7 @@ const APP_OWNED_DEFAULT_ROOT_LEAVES: &[(AppOwnedDefaultRoot, &str)] = &[
     (AppOwnedDefaultRoot::Credentials, "credentials"),
     (AppOwnedDefaultRoot::Practice, "practice"),
     (AppOwnedDefaultRoot::UnsavedGames, "unsaved-games"),
+    (AppOwnedDefaultRoot::LibrarySync, "library-sync"),
     #[cfg(target_os = "macos")]
     (AppOwnedDefaultRoot::EngineLaunch, "engine-launch"),
 ];

@@ -101,6 +101,46 @@ async chessriddleOpenWebsite() : Promise<Result<null, AccountError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async librarySyncSnapshot(workspace: FileWorkspaceHandle) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("library_sync_snapshot", { workspace }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async librarySyncTurnOn(workspace: FileWorkspaceHandle, deselected: FileWorkspaceHandle[]) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("library_sync_turn_on", { workspace, deselected }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async librarySyncTurnOff(workspace: FileWorkspaceHandle, mode: LibrarySyncTurnOffMode) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("library_sync_turn_off", { workspace, mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async librarySyncSetFileSelected(workspace: FileWorkspaceHandle, file: FileWorkspaceHandle, selected: boolean) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("library_sync_set_file_selected", { workspace, file, selected }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async librarySyncNow(workspace: FileWorkspaceHandle) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("library_sync_now", { workspace }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async coachAvailable() : Promise<Result<boolean, CoachError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("coach_available") };
@@ -1622,6 +1662,7 @@ databaseContentFailure: DatabaseContentFailure,
 gameLinkPending: GameLinkPending,
 gameMoveEvent: GameMoveEvent,
 gameOverEvent: GameOverEvent,
+librarySyncChanged: LibrarySyncChanged,
 progressEvent: ProgressEvent
 }>({
 assistantTurnEvent: "assistant-turn-event",
@@ -1635,6 +1676,7 @@ databaseContentFailure: "database-content-failure",
 gameLinkPending: "game-link-pending",
 gameMoveEvent: "game-move-event",
 gameOverEvent: "game-over-event",
+librarySyncChanged: "library-sync-changed",
 progressEvent: "progress-event"
 })
 
@@ -2051,6 +2093,35 @@ export type HistoryRole = "user" | "coach"
 export type InsertedDbGame = { id: number; stamp: string }
 export type InstalledEngineResult = { handle: EngineHandle; config: EngineConfig; filename: string }
 export type LatestRatingData = { time_control: string; date: string; time: string | null; game_id: number; player_elo: number }
+/**
+ * Monotonic change signal emitted to the renderer (at most 4 Hz); the renderer refetches the
+ * snapshot for its active workspace.
+ */
+export type LibrarySyncChanged = { revision: number }
+/**
+ * Closed command error vocabulary for Library sync IPC commands.
+ */
+export type LibrarySyncError = "unavailable" | "busy" | "localStorage" | "invalidWorkspace" | "notActive"
+/**
+ * One candidate PGN file in the Library sync snapshot.
+ */
+export type LibrarySyncFile = { handle: FileWorkspaceHandle; name: string; folderLabel: string; selected: boolean; status: LibrarySyncFileStatus }
+/**
+ * Closed per-file sync status vocabulary exposed to the renderer.
+ */
+export type LibrarySyncFileStatus = { kind: "synced" } | { kind: "pending" } | { kind: "uploading" } | { kind: "notSelected" } | { kind: "tooLarge" } | { kind: "tooManyMoves" } | { kind: "tooManyGames" } | { kind: "invalidPgn"; gameNumber: number | null } | { kind: "unsupportedVariant" } | { kind: "tooComplex" } | { kind: "commentTooLong" } | { kind: "empty" } | { kind: "libraryFull" } | { kind: "storageFull" } | { kind: "unreadable" } | { kind: "rejected" }
+/**
+ * Full Library sync snapshot for one workspace.
+ */
+export type LibrarySyncSnapshot = { workspace: FileWorkspaceHandle; revision: number; available: boolean; state: LibrarySyncState; files: LibrarySyncFile[] }
+/**
+ * Closed overall Library sync state vocabulary exposed to the renderer.
+ */
+export type LibrarySyncState = { status: "off" } | { status: "otherFolder" } | { status: "syncing"; done: number; total: number } | { status: "synced" } | { status: "attention"; count: number } | { status: "removing"; done: number; total: number } | { status: "offline" } | { status: "serverBusy" } | { status: "serverError" } | { status: "signInNeeded" } | { status: "unavailable" } | { status: "folderUnavailable" } | { status: "localError" }
+/**
+ * How turning Library sync off treats files already synced to the website.
+ */
+export type LibrarySyncTurnOffMode = "keep" | "remove"
 export type LichessAccountHandle = string
 export type LichessAccountMetadata = { handle: LichessAccountHandle; username: string }
 export type LichessAccountRemoval = { state: "not_found" } | { state: "removed"; revocation_pending: boolean; revocation_outcome: LichessRevocationOutcome | null; durability_uncertain: boolean }

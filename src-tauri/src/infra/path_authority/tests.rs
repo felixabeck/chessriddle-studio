@@ -6395,7 +6395,8 @@ fn ensure_app_owned_default_dir_applies_only_declared_private_mode() {
         let expected_mode = match root {
             AppOwnedDefaultRoot::Credentials
             | AppOwnedDefaultRoot::Collections
-            | AppOwnedDefaultRoot::UnsavedGames => 0o700,
+            | AppOwnedDefaultRoot::UnsavedGames
+            | AppOwnedDefaultRoot::LibrarySync => 0o700,
             #[cfg(target_os = "macos")]
             AppOwnedDefaultRoot::EngineLaunch => 0o700,
             _ => 0o755,

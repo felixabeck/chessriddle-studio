@@ -486,34 +486,62 @@ pub(crate) fn mistake_count(body: &[u8]) -> Result<u32, AccountError> {
         .map_err(|_| AccountError::Server)
 }
 
+/// Shared reader for the ChessRiddle JSON error envelope (`code`, `error.code`, `detail.code`,
+/// and `details` / `error.details` / `detail.details`). Used by both training and Library sync.
+pub(crate) struct ErrorEnvelope {
+    value: serde_json::Value,
+}
+
+impl ErrorEnvelope {
+    pub(crate) fn parse(body: &[u8]) -> Self {
+        Self {
+            value: serde_json::from_slice::<serde_json::Value>(body).unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn code(&self) -> Option<&str> {
+        self.value
+            .get("code")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| {
+                self.value
+                    .pointer("/error/code")
+                    .and_then(serde_json::Value::as_str)
+            })
+            .or_else(|| {
+                self.value
+                    .pointer("/detail/code")
+                    .and_then(serde_json::Value::as_str)
+            })
+    }
+
+    pub(crate) fn details(&self) -> Option<&serde_json::Value> {
+        self.value
+            .get("details")
+            .filter(|v| v.is_object())
+            .or_else(|| {
+                self.value
+                    .pointer("/error/details")
+                    .filter(|v| v.is_object())
+            })
+            .or_else(|| {
+                self.value
+                    .pointer("/detail/details")
+                    .filter(|v| v.is_object())
+            })
+    }
+
+    pub(crate) fn reason(&self) -> Option<&str> {
+        self.details()
+            .and_then(|details| details.get("reason"))
+            .and_then(serde_json::Value::as_str)
+    }
+}
+
 pub(crate) fn server_error(status: u16, body: &[u8]) -> AccountError {
-    let value = serde_json::from_slice::<serde_json::Value>(body).unwrap_or_default();
-    let code = value
-        .get("code")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| {
-            value
-                .pointer("/error/code")
-                .and_then(serde_json::Value::as_str)
-        })
-        .or_else(|| {
-            value
-                .pointer("/detail/code")
-                .and_then(serde_json::Value::as_str)
-        });
-    let reason = value
-        .pointer("/details/reason")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| {
-            value
-                .pointer("/error/details/reason")
-                .and_then(serde_json::Value::as_str)
-        })
-        .or_else(|| {
-            value
-                .pointer("/detail/details/reason")
-                .and_then(serde_json::Value::as_str)
-        });
+    let envelope = ErrorEnvelope::parse(body);
+    let code = envelope.code();
+    let reason = envelope.reason();
     // Specific reasons refine generic envelope codes such as CONFLICT and FORBIDDEN.
     let specific_reason = match (status, reason) {
         (403, Some("desktop_route_forbidden")) => Some(AccountError::UpdateRequired),

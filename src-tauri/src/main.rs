@@ -22,6 +22,7 @@ mod infra;
 
 mod fs;
 mod lexer;
+mod library_sync;
 mod lichess;
 mod oauth;
 mod oauth_pkce;
@@ -562,6 +563,7 @@ pub struct AppState {
     auth: Arc<AuthLifecycle>,
     credentials: Arc<crate::credentials::CredentialManager>,
     pub(crate) chessriddle: Arc<std::sync::OnceLock<crate::chessriddle::AccountOwner>>,
+    pub(crate) library_sync: Arc<std::sync::OnceLock<crate::library_sync::LibrarySyncOwner>>,
     pub(crate) coach: Arc<std::sync::OnceLock<crate::coach::Coach>>,
     game_manager: Arc<GameManager>,
     progress_state: progress::ProgressStore,
@@ -603,6 +605,7 @@ impl AppState {
             auth: Arc::new(AuthLifecycle::default()),
             credentials,
             chessriddle: Arc::new(std::sync::OnceLock::new()),
+            library_sync: Arc::new(std::sync::OnceLock::new()),
             coach: Arc::new(std::sync::OnceLock::new()),
             game_manager: Arc::new(GameManager::default()),
             progress_state: Default::default(),
@@ -1507,6 +1510,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chessriddle::chessriddle_save_training_settings,
             chessriddle::chessriddle_training_motifs,
             chessriddle::chessriddle_open_website,
+            library_sync::commands::library_sync_snapshot,
+            library_sync::commands::library_sync_turn_on,
+            library_sync::commands::library_sync_turn_off,
+            library_sync::commands::library_sync_set_file_selected,
+            library_sync::commands::library_sync_now,
             coach::coach_available,
             coach::coach_has_connection,
             coach::coach_connections,
@@ -1698,7 +1706,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             GameOverEvent,
             infra::game_link::GameLinkPending,
             coach::CoachTurnEvent,
-            coach::AssistantTurnEvent
+            coach::AssistantTurnEvent,
+            library_sync::LibrarySyncChanged
         ));
 
     #[cfg(debug_assertions)]
@@ -1884,6 +1893,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             specta_builder.mount_events(app);
 
+            let library_sync =
+                crate::library_sync::initialize(app.handle(), &app.state::<AppState>())
+                    .map_err(|error| format!("Library sync initialization failed: {error}"))?;
+            app.state::<AppState>()
+                .library_sync
+                .set(library_sync)
+                .map_err(|_| "Library sync was already initialized")?;
+
             // sound-startup — sliced by sound_startup_keeps_all_four_outcomes_distinguishable
             let (port, lifecycle) =
                 match crate::infra::path_authority::ResourceDir::for_app(app.handle()) {
@@ -2036,6 +2053,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // A sign-in that still waits for its browser ends here,
                                     // with its listener, before the process does.
                                     coach::shutdown_sign_ins(&state).await;
+                                    library_sync::shutdown(&state).await;
                                     shutdown_engine_attachments(app_handle.clone())
                                         .await
                                         .map_err(|error| error.diagnostic())
@@ -5235,6 +5253,7 @@ mod blocking_offload_scans {
                 "infra/operations/opponents.rs",
                 include_str!("infra/operations/opponents.rs"),
             ),
+            ("library_sync/scan.rs", include_str!("library_sync/scan.rs")),
         ] {
             let mut search_from = 0;
             while let Some(rel) = next_blocking_offset(source, search_from) {

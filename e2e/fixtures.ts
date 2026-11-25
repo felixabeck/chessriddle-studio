@@ -1340,6 +1340,51 @@ const tauriBootstrap = () => {
         chessriddle_training_settings: { error: "updateRequired" },
         chessriddle_training_motifs: { result: [] },
         chessriddle_open_website: { result: null },
+        library_sync_snapshot: {
+            result: {
+                workspace: filesWorkspaceFixture.workspace,
+                revision: 1,
+                available: false,
+                state: { status: "off" },
+                files: [],
+            },
+        },
+        library_sync_turn_on: {
+            result: {
+                workspace: filesWorkspaceFixture.workspace,
+                revision: 2,
+                available: true,
+                state: { status: "syncing", done: 0, total: 0 },
+                files: [],
+            },
+        },
+        library_sync_turn_off: {
+            result: {
+                workspace: filesWorkspaceFixture.workspace,
+                revision: 3,
+                available: false,
+                state: { status: "off" },
+                files: [],
+            },
+        },
+        library_sync_set_file_selected: {
+            result: {
+                workspace: filesWorkspaceFixture.workspace,
+                revision: 4,
+                available: true,
+                state: { status: "synced" },
+                files: [],
+            },
+        },
+        library_sync_now: {
+            result: {
+                workspace: filesWorkspaceFixture.workspace,
+                revision: 5,
+                available: true,
+                state: { status: "synced" },
+                files: [],
+            },
+        },
         get_puzzle_workspace: {
             result: {
                 root: { id: { id: "puzzle-root" }, kind: "puzzleRoot" },

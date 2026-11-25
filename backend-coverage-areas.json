@@ -66,6 +66,7 @@
         "src-tauri/src/oauth_pkce.rs",
         "src-tauri/src/chessriddle.rs",
         "src-tauri/src/chessriddle_training.rs",
+        "src-tauri/src/library_sync/**",
         "src-tauri/src/coach/**",
         "src-tauri/src/lichess.rs"
       ]

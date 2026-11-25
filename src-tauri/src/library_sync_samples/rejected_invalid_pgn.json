@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Unparsable PGN game.",
+    "details": {
+      "error_code": "invalid_pgn",
+      "game_number": 2
+    }
+  }
+}

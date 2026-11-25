@@ -14,6 +14,11 @@ use crate::{
             Bearer, BearerError, IssuedTokens, RefreshError, TokenAuthority, TokenSession,
         },
     },
+    library_sync::wire::{
+        self as library_wire, LibraryDeleteOutcome, LibraryFileKind, LibraryListOutcome,
+        LibraryPrecondition, LibraryPutOutcome, LibraryRequestError,
+        LIBRARY_LIST_MAX_RESPONSE_BYTES,
+    },
     oauth_pkce::{self, AttemptRegistry, OAuthProvider},
 };
 use oauth2::TokenResponse;
@@ -339,13 +344,23 @@ struct Permissions {
     tier: Plan,
 }
 
-async fn response_bytes(response: reqwest::Response) -> Result<(u16, Vec<u8>), AccountError> {
+async fn response_parts(
+    response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<(u16, reqwest::header::HeaderMap, Vec<u8>), AccountError> {
     let status = response.status().as_u16();
-    match crate::infra::net::read_bounded_body(response, MAX_RESPONSE_BYTES).await {
-        Ok(body) => Ok((status, body)),
+    let headers = response.headers().clone();
+    match crate::infra::net::read_bounded_body(response, max_bytes).await {
+        Ok(body) => Ok((status, headers, body)),
         Err(crate::infra::net::BoundedBodyError::Transport(_)) => Err(AccountError::Network),
         Err(crate::infra::net::BoundedBodyError::TooLarge) => Err(AccountError::Server),
     }
+}
+
+async fn response_bytes(response: reqwest::Response) -> Result<(u16, Vec<u8>), AccountError> {
+    response_parts(response, MAX_RESPONSE_BYTES)
+        .await
+        .map(|(status, _, body)| (status, body))
 }
 
 fn token_response(status: u16, body: &[u8]) -> Result<Tokens, AccountError> {
@@ -380,8 +395,22 @@ enum Action {
     Submit(TrainingSubmission),
     OpenUpgrade(BrowserOpener),
     Status,
+    IsConnected,
     Connect(BrowserOpener),
     Disconnect,
+    LibraryList,
+    LibraryPut {
+        epoch: u64,
+        studio_file_id: String,
+        name: String,
+        kind: LibraryFileKind,
+        bytes: Vec<u8>,
+        precondition: LibraryPrecondition,
+    },
+    LibraryDelete {
+        epoch: u64,
+        studio_file_id: String,
+    },
 }
 enum Reply {
     Settings(TrainingSettings),
@@ -391,13 +420,18 @@ enum Reply {
     Verdict(TrainingVerdict),
     Opened,
     Status(AccountStatus),
+    Connected(bool),
     Disconnect(DisconnectOutcome),
+    LibraryList(LibraryListOutcome),
+    LibraryPut(LibraryPutOutcome),
+    LibraryDelete(LibraryDeleteOutcome),
 }
 struct Request {
     action: Action,
     reply: oneshot::Sender<Result<Reply, AccountError>>,
 }
 
+#[derive(Clone)]
 pub(crate) struct AccountOwner {
     sender: mpsc::Sender<Request>,
     available: bool,
@@ -412,6 +446,9 @@ struct Worker {
     session: Option<Session>,
     loaded: bool,
     reconnect_needed: bool,
+    /// Monotonic epoch bumped on every connect, disconnect, and ended session so Library writes
+    /// can never reach another account than the one their list observed (P16a).
+    connection_epoch: u64,
 }
 
 impl AccountOwner {
@@ -434,6 +471,7 @@ impl AccountOwner {
                 session: None,
                 loaded: false,
                 reconnect_needed: false,
+                connection_epoch: 1,
             };
             while let Some(request) = receiver.recv().await {
                 let result = worker.execute(request.action).await;
@@ -441,6 +479,108 @@ impl AccountOwner {
             }
         });
         Self { sender, available }
+    }
+
+    pub(crate) fn is_available(&self) -> bool {
+        self.available
+    }
+
+    pub(crate) async fn is_connected(&self) -> Result<bool, AccountError> {
+        match self.request(Action::IsConnected).await? {
+            Reply::Connected(value) => Ok(value),
+            _ => Err(AccountError::Server),
+        }
+    }
+
+    pub(crate) async fn library_list(&self) -> LibraryListOutcome {
+        match self.request(Action::LibraryList).await {
+            Ok(Reply::LibraryList(outcome)) => outcome,
+            Ok(_) => Err(LibraryRequestError::Account(AccountError::Server)),
+            Err(error) => Err(LibraryRequestError::Account(error)),
+        }
+    }
+
+    pub(crate) async fn library_put(
+        &self,
+        epoch: u64,
+        studio_file_id: String,
+        name: String,
+        kind: LibraryFileKind,
+        bytes: Vec<u8>,
+        precondition: LibraryPrecondition,
+    ) -> LibraryPutOutcome {
+        match self
+            .request(Action::LibraryPut {
+                epoch,
+                studio_file_id,
+                name,
+                kind,
+                bytes,
+                precondition,
+            })
+            .await
+        {
+            Ok(Reply::LibraryPut(outcome)) => outcome,
+            Ok(_) => Err(LibraryRequestError::Account(AccountError::Server)),
+            Err(error) => Err(LibraryRequestError::Account(error)),
+        }
+    }
+
+    pub(crate) async fn library_delete(
+        &self,
+        epoch: u64,
+        studio_file_id: String,
+    ) -> LibraryDeleteOutcome {
+        match self
+            .request(Action::LibraryDelete {
+                epoch,
+                studio_file_id,
+            })
+            .await
+        {
+            Ok(Reply::LibraryDelete(outcome)) => outcome,
+            Ok(_) => Err(LibraryRequestError::Account(AccountError::Server)),
+            Err(error) => Err(LibraryRequestError::Account(error)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn start_for_test(
+        credentials: Arc<ChessRiddleCredentials>,
+        origin: &str,
+        http: reqwest::Client,
+    ) -> Self {
+        let endpoints = Endpoints::new("org.chessriddle.studio.dev", Some(origin), Some(origin))
+            .expect("valid test origin");
+        let (sender, mut receiver) = mpsc::channel::<Request>(OWNER_QUEUE_CAPACITY);
+        let available = endpoints.available;
+        let submit_http = Ok(http.clone());
+        tauri::async_runtime::spawn(async move {
+            let mut worker = Worker {
+                credentials,
+                endpoints,
+                http,
+                submit_http,
+                attempts: Arc::new(AttemptRegistry::default()),
+                session: None,
+                loaded: false,
+                reconnect_needed: false,
+                connection_epoch: 1,
+            };
+            while let Some(request) = receiver.recv().await {
+                let result = worker.execute(request.action).await;
+                let _ = request.reply.send(result);
+            }
+        });
+        Self { sender, available }
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn disconnect_for_test(&self) -> Result<DisconnectOutcome, AccountError> {
+        match self.request(Action::Disconnect).await? {
+            Reply::Disconnect(outcome) => Ok(outcome),
+            _ => Err(AccountError::Server),
+        }
     }
 
     async fn request(&self, action: Action) -> Result<Reply, AccountError> {
@@ -535,6 +675,7 @@ impl Worker {
             Err(BearerError::Ended) => {
                 self.session = None;
                 self.reconnect_needed = true;
+                self.connection_epoch = self.connection_epoch.wrapping_add(1);
                 Err(AccountError::InvalidGrant)
             }
             Err(BearerError::Failed(error)) => Err(error),
@@ -550,11 +691,12 @@ impl Worker {
         }
     }
 
-    async fn authenticated(
+    async fn authenticated_raw(
         &mut self,
         http: reqwest::Client,
+        max_bytes: usize,
         build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
-    ) -> Result<(u16, Vec<u8>), AccountError> {
+    ) -> Result<(u16, reqwest::header::HeaderMap, Vec<u8>), AccountError> {
         let mut bearer = self.bearer().await?;
         for retry in [false, true] {
             let response = build(&http)
@@ -562,7 +704,7 @@ impl Worker {
                 .send()
                 .await
                 .map_err(|_| AccountError::Network)?;
-            let (status, body) = response_bytes(response).await?;
+            let (status, headers, body) = response_parts(response, max_bytes).await?;
             if status == 401 && !retry {
                 // A website revoke is terminal only when refresh confirms invalid_grant.
                 if let Some(session) = self.session.as_mut() {
@@ -571,9 +713,107 @@ impl Worker {
                 bearer = self.bearer().await?;
                 continue;
             }
-            return Ok((status, body));
+            return Ok((status, headers, body));
         }
         Err(AccountError::Server)
+    }
+
+    async fn authenticated(
+        &mut self,
+        http: reqwest::Client,
+        build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+    ) -> Result<(u16, Vec<u8>), AccountError> {
+        self.authenticated_raw(http, MAX_RESPONSE_BYTES, build)
+            .await
+            .map(|(status, _, body)| (status, body))
+    }
+
+    async fn library_list(&mut self) -> LibraryListOutcome {
+        let url = self.endpoints.api("/library/studio-files");
+        match self
+            .authenticated_raw(self.http.clone(), LIBRARY_LIST_MAX_RESPONSE_BYTES, |http| {
+                http.get(&url)
+            })
+            .await
+        {
+            Ok((status, headers, body)) => {
+                library_wire::parse_list_response(self.connection_epoch, status, &headers, &body)
+            }
+            Err(error) => Err(LibraryRequestError::Account(error)),
+        }
+    }
+
+    async fn library_put(
+        &mut self,
+        epoch: u64,
+        studio_file_id: String,
+        name: String,
+        kind: LibraryFileKind,
+        bytes: Vec<u8>,
+        precondition: LibraryPrecondition,
+    ) -> LibraryPutOutcome {
+        if self.connection_epoch != epoch {
+            return Err(LibraryRequestError::AccountChanged);
+        }
+        if !library_wire::is_valid_studio_file_id(&studio_file_id) {
+            return Err(LibraryRequestError::Account(AccountError::InvalidRequest));
+        }
+        let http = match self.submit_http.clone() {
+            Ok(http) => http,
+            Err(error) => return Err(LibraryRequestError::Account(error)),
+        };
+        let url = self
+            .endpoints
+            .api(&format!("/library/studio-files/{studio_file_id}"));
+        let (header_name, header_value) = precondition.header();
+        let upload_name = format!("{name}.pgn");
+        match self
+            .authenticated_raw(http, MAX_RESPONSE_BYTES, |http| {
+                let part =
+                    reqwest::multipart::Part::bytes(bytes.clone()).file_name(upload_name.clone());
+                let part = match part.mime_str("application/x-chess-pgn") {
+                    Ok(part) => part,
+                    Err(_) => reqwest::multipart::Part::bytes(bytes.clone())
+                        .file_name(upload_name.clone()),
+                };
+                let form = reqwest::multipart::Form::new()
+                    .part("file", part)
+                    .text("name", name.clone())
+                    .text("kind", kind.as_str().to_owned());
+                http.put(&url)
+                    .header(header_name, header_value.as_str())
+                    .multipart(form)
+            })
+            .await
+        {
+            Ok((status, headers, body)) => {
+                library_wire::parse_put_response(status, &headers, &body)
+            }
+            Err(error) => Err(LibraryRequestError::Account(error)),
+        }
+    }
+
+    async fn library_delete(&mut self, epoch: u64, studio_file_id: String) -> LibraryDeleteOutcome {
+        if self.connection_epoch != epoch {
+            return Err(LibraryRequestError::AccountChanged);
+        }
+        if !library_wire::is_valid_studio_file_id(&studio_file_id) {
+            return Err(LibraryRequestError::Account(AccountError::InvalidRequest));
+        }
+        let url = self
+            .endpoints
+            .api(&format!("/library/studio-files/{studio_file_id}"));
+        match self
+            .authenticated_raw(self.http.clone(), MAX_RESPONSE_BYTES, |http| {
+                http.delete(&url)
+            })
+            .await
+        {
+            Ok((status, headers, body)) => {
+                library_wire::parse_delete_response(status, &headers, &body)
+            }
+            Err(error) => Err(LibraryRequestError::Account(error)),
+        }
     }
 
     async fn read_status(&mut self) -> Result<AccountStatus, AccountError> {
@@ -809,6 +1049,7 @@ impl Worker {
             durability_uncertain: false,
         });
         self.reconnect_needed = false;
+        self.connection_epoch = self.connection_epoch.wrapping_add(1);
         self.persist().await?;
         self.status().await
     }
@@ -841,6 +1082,7 @@ impl Worker {
         };
         let session = self.session.take().ok_or(AccountError::Storage)?;
         self.reconnect_needed = false;
+        self.connection_epoch = self.connection_epoch.wrapping_add(1);
         let revoked = self.revoke_session(session).await;
         Ok(DisconnectOutcome::Removed {
             revocation_pending: !revoked,
@@ -894,8 +1136,27 @@ impl Worker {
                 Ok(Reply::Opened)
             }
             Action::Status => self.status().await.map(Reply::Status),
+            Action::IsConnected => Ok(Reply::Connected(self.session.is_some())),
             Action::Connect(opener) => self.connect(opener).await.map(Reply::Status),
             Action::Disconnect => self.disconnect().await.map(Reply::Disconnect),
+            Action::LibraryList => Ok(Reply::LibraryList(self.library_list().await)),
+            Action::LibraryPut {
+                epoch,
+                studio_file_id,
+                name,
+                kind,
+                bytes,
+                precondition,
+            } => Ok(Reply::LibraryPut(
+                self.library_put(epoch, studio_file_id, name, kind, bytes, precondition)
+                    .await,
+            )),
+            Action::LibraryDelete {
+                epoch,
+                studio_file_id,
+            } => Ok(Reply::LibraryDelete(
+                self.library_delete(epoch, studio_file_id).await,
+            )),
         }
     }
 }
@@ -1063,7 +1324,17 @@ pub(crate) async fn connect_chessriddle(
 ) -> Result<AccountStatus, AccountError> {
     let opener = browser_opener(app);
     match owner(&state)?.request(Action::Connect(opener)).await? {
-        Reply::Status(status) => Ok(status),
+        Reply::Status(status) => {
+            if matches!(
+                status,
+                AccountStatus::Connected { .. } | AccountStatus::StatusUnreadable { .. }
+            ) {
+                if let Some(sync) = state.library_sync.get() {
+                    sync.notify_account_connected();
+                }
+            }
+            Ok(status)
+        }
         _ => Err(AccountError::Server),
     }
 }
@@ -1074,7 +1345,14 @@ pub(crate) async fn disconnect_chessriddle(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<DisconnectOutcome, AccountError> {
     match owner(&state)?.request(Action::Disconnect).await? {
-        Reply::Disconnect(outcome) => Ok(outcome),
+        Reply::Disconnect(outcome) => {
+            if matches!(outcome, DisconnectOutcome::Removed { .. }) {
+                if let Some(sync) = state.library_sync.get() {
+                    sync.notify_account_disconnected();
+                }
+            }
+            Ok(outcome)
+        }
         _ => Err(AccountError::Server),
     }
 }
@@ -2563,6 +2841,7 @@ mod tests {
             session: None,
             loaded: false,
             reconnect_needed: false,
+            connection_epoch: 1,
         };
         worker.load().await.unwrap();
         assert!(matches!(

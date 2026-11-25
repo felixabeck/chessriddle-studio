@@ -1,4 +1,4 @@
-import type { AccountError } from "@/bindings";
+import type { AccountError, LibrarySyncError } from "@/bindings";
 
 export function requiresChessRiddleConnection(error: AccountError | null): boolean {
     return error === "notConnected" || error === "authentication" || error === "invalidGrant";
@@ -39,6 +39,30 @@ export class ChessRiddleCommandError extends Error {
                 : "server";
         super(code);
         this.name = "ChessRiddleCommandError";
+        this.code = code;
+    }
+}
+
+const librarySyncErrors: Record<LibrarySyncError, true> = {
+    unavailable: true,
+    busy: true,
+    localStorage: true,
+    invalidWorkspace: true,
+    notActive: true,
+};
+
+/** Only the native closed error vocabulary crosses the Library sync boundary. */
+export class LibrarySyncCommandError extends Error {
+    readonly code: LibrarySyncError;
+
+    constructor(cause: unknown) {
+        const value = cause instanceof Error ? cause.message : cause;
+        const code =
+            typeof value === "string" && Object.hasOwn(librarySyncErrors, value)
+                ? (value as LibrarySyncError)
+                : "unavailable";
+        super(code);
+        this.name = "LibrarySyncCommandError";
         this.code = code;
     }
 }

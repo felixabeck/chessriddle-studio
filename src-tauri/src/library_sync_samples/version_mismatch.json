@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "PRECONDITION_FAILED",
+    "message": "Library file version mismatch.",
+    "details": {
+      "error_code": "version_mismatch",
+      "version": 3
+    }
+  }
+}

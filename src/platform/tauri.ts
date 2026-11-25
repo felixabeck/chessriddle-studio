@@ -20,7 +20,7 @@ import type {
 } from "@/bindings";
 import { recordDatabaseWrite } from "./databaseWrites";
 import { normalizeError } from "./errors";
-import { ChessRiddleCommandError } from "./chessriddle";
+import { ChessRiddleCommandError, LibrarySyncCommandError } from "./chessriddle";
 import { CoachCommandError } from "./coach";
 import { error as logError, getCurrentWindow } from "./native";
 import { capabilityKey } from "@/utils/pathCapabilities";
@@ -43,6 +43,11 @@ const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error
     ["chessriddleAccount", ChessRiddleCommandError],
     ["connectChessriddle", ChessRiddleCommandError],
     ["disconnectChessriddle", ChessRiddleCommandError],
+    ["librarySyncSnapshot", LibrarySyncCommandError],
+    ["librarySyncTurnOn", LibrarySyncCommandError],
+    ["librarySyncTurnOff", LibrarySyncCommandError],
+    ["librarySyncSetFileSelected", LibrarySyncCommandError],
+    ["librarySyncNow", LibrarySyncCommandError],
     ["coachAvailable", CoachCommandError],
     ["coachHasConnection", CoachCommandError],
     ["coachConnections", CoachCommandError],
@@ -601,6 +606,8 @@ export const tauriSubscriptions = {
     ) => events.databaseContentFailure.listen(callback),
     gameLinkPending: (callback: Parameters<typeof events.gameLinkPending.listen>[0]) =>
         events.gameLinkPending.listen(callback),
+    librarySyncChanged: (callback: Parameters<typeof events.librarySyncChanged.listen>[0]) =>
+        events.librarySyncChanged.listen(callback),
     gameMove: eventSubscription(
         (callback) => events.gameMoveEvent.listen(callback),
         normalizeGameMoveEvent,

@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "LIBRARY_BUSY",
+    "message": "Library is busy. Please try again in a few seconds.",
+    "details": {
+      "retry_after": 3
+    }
+  }
+}
