@@ -41,6 +41,7 @@ test("round-trips a valid bounded Mosaic layout", () => {
 
 test.each([
     { currentNode: "obsoletePane" },
+    { currentNode: "database" },
     {
         currentNode: {
             direction: "row",
@@ -54,6 +55,25 @@ test.each([
             first: "left",
             second: "topRight",
             obsolete: true,
+        },
+    },
+    {
+        currentNode: {
+            direction: "row",
+            first: "left",
+            second: "topRight",
+            splitPercentage: 101,
+        },
+    },
+    {
+        currentNode: {
+            direction: "row",
+            first: "left",
+            second: {
+                direction: "column",
+                first: "topRight",
+                second: { direction: "row", first: "bottomRight", second: "left" },
+            },
         },
     },
 ])("repairs corrupt or obsolete hydration to the safe layout", (stored) => {
