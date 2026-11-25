@@ -4,13 +4,13 @@
   "limits": {
     "entry": 620000,
     "largestLazy": 590000,
-    "total": 2410000
+    "total": 2420000
   },
   "measurement": {
     "source": "pnpm build-vite",
     "date": "2026-11-25",
-    "entry": 612464,
-    "largestLazy": 581264,
-    "total": 2395654
+    "entry": 615543,
+    "largestLazy": 582883,
+    "total": 2414642
   }
 }

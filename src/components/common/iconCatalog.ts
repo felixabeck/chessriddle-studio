@@ -9,6 +9,7 @@ import {
     Dumbbell,
     Flame,
     Hourglass,
+    Image,
     Info,
     Library,
     MessageSquarePlus,
@@ -130,6 +131,8 @@ export const StreakIcon: LucideIcon = Flame;
 export const PracticeIcon: LucideIcon = Dumbbell;
 /** A game's details and PGN tags: the board panel's Info tab. */
 export const GameInfoIcon: LucideIcon = Tags;
+/** A scoresheet photo under review: the board panel's Photo tab. */
+export const ScoresheetPhotoIcon: LucideIcon = Image;
 export const UltraBulletIcon: LucideIcon = ChevronsRight;
 export const BulletIcon: LucideIcon = ChevronRight;
 export const BlitzIcon: LucideIcon = Zap;
@@ -155,6 +158,7 @@ export const LUCIDE_IDENTITIES = {
     streak: { icon: StreakIcon, chessRiddle: "streak" },
     practice: { icon: PracticeIcon, chessRiddle: "training" },
     gameInfo: { icon: GameInfoIcon },
+    scoresheetPhoto: { icon: ScoresheetPhotoIcon },
     ultraBullet: { icon: UltraBulletIcon },
     bullet: { icon: BulletIcon },
     blitz: { icon: BlitzIcon },

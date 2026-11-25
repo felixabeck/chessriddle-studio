@@ -10,14 +10,23 @@ import { fixtureNode } from "@/tests/treeFixtures";
 import {
     createNode,
     defaultTree,
+    deriveScoresheetRemaining,
+    getMainLineUnsurePaths,
     getMemoizedBoardStateMap,
     getNodeAtPath,
     getEffectiveGameEnd,
     getEffectiveTermination,
     MAX_GAME_END_TERMINATION_LENGTH,
+    stripUnsureMarks,
     treeIterator,
     type TreeNode,
 } from "@/utils/treeReducer";
+import { newCoachSession } from "@/state/coachSession";
+import {
+    clearAllScoresheetPhotosForTests,
+    getScoresheetPhotos,
+    setScoresheetPhotos,
+} from "@/state/scoresheetPhotos";
 import { positionFromFen } from "@/utils/chessops";
 import * as sound from "@/utils/sound";
 import {
@@ -2361,4 +2370,208 @@ test("goToNextOpenVariation keeps the cursor when the tree has no open variation
     store.getState().goToNextOpenVariation();
 
     expect(store.getState().position).toBe(before);
+});
+
+test("deriveScoresheetRemaining covers L < ply, L = ply, L > ply and exhausted tokens", () => {
+    const stopped = { ply: 4, tokens: ["Nxe5", "d6", "Nf3"] };
+    expect(deriveScoresheetRemaining(stopped, 2)).toEqual({
+        nextPly: 4,
+        moveNumber: 3,
+        color: "white",
+        tokens: ["Nxe5", "d6", "Nf3"],
+    });
+    expect(deriveScoresheetRemaining(stopped, 4)).toEqual({
+        nextPly: 4,
+        moveNumber: 3,
+        color: "white",
+        tokens: ["Nxe5", "d6", "Nf3"],
+        failedToken: "Nxe5",
+    });
+    expect(deriveScoresheetRemaining(stopped, 5)).toEqual({
+        nextPly: 5,
+        moveNumber: 3,
+        color: "black",
+        tokens: ["d6", "Nf3"],
+    });
+    expect(deriveScoresheetRemaining(stopped, 7)).toBeNull();
+    expect(deriveScoresheetRemaining(undefined, 0)).toBeNull();
+});
+
+test("scoresheet review marks travel with undo, clear/finish are not undoable, and no mark is stored without a review on either write route", () => {
+    const id = crypto.randomUUID();
+    persistedIds.push(id);
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    const e5 = addMove(e4, "e7e5");
+    e4.unsure = true;
+    e5.unsure = true;
+    const alt = addMove(e4, "c7c5");
+    alt.unsure = true;
+    initial.scoresheetReview = { stopped: { ply: 2, tokens: ["Nf3"] } };
+    initial.position = [0];
+
+    expect(getMainLineUnsurePaths(initial.root)).toEqual([[0], [0, 0]]);
+    const cleanRoot = defaultTree().root;
+    expect(stripUnsureMarks(cleanRoot)).toBe(cleanRoot);
+
+    const store = createTreeStore(id, initial);
+
+    // clearUnsureMark clears one mark without recording undo or changing dirty.
+    store.getState().clearUnsureMark();
+    expect(getNodeAtPath(store.getState().root, [0]).unsure).toBeUndefined();
+    expect(getNodeAtPath(store.getState().root, [0, 0]).unsure).toBe(true);
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(0);
+
+    // Make an undoable move so undo history contains a root with unsure marks.
+    store.getState().goToMove([0, 0]);
+    store.getState().makeMove({ payload: "Nf3" });
+    expect(store.getState().history.past).toHaveLength(1);
+
+    // Finish review clears marks and review without recording an undo step or changing dirty.
+    store.getState().save();
+    store.getState().finishScoresheetReview();
+    expect(store.getState().scoresheetReview).toBeUndefined();
+    expect(getNodeAtPath(store.getState().root, [0, 0]).unsure).toBeUndefined();
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(1);
+
+    // Undo restores the snapshot whose node still has unsure in memory, but scoresheetReview stays absent.
+    store.getState().undo();
+    expect(store.getState().scoresheetReview).toBeUndefined();
+    expect(getNodeAtPath(store.getState().root, [0, 0]).unsure).toBe(true);
+
+    // Route 1: debounced flush (partialize -> tabStorage.write -> flush) must store NO unsure marks.
+    tabStorage.flush();
+    const afterFlush = deserializeStorageValue(sessionStorage.getItem(id)!) as {
+        state: ReturnType<typeof defaultTree>;
+    };
+    expect(afterFlush.state.scoresheetReview).toBeUndefined();
+    expect(getNodeAtPath(afterFlush.state.root, [0, 0]).unsure).toBeUndefined();
+    expect(getNodeAtPath(afterFlush.state.root, [0, 1]).unsure).toBeUndefined();
+
+    // Route 2: direct session-change write (admitSessionTransition -> prepareTreeForStorage -> seed)
+    // must also store NO unsure marks.
+    const result = store.getState().transitionCoachSession(() => newCoachSession());
+    expect(result.success).toBe(true);
+    const afterSession = deserializeStorageValue(sessionStorage.getItem(id)!) as {
+        state: ReturnType<typeof defaultTree>;
+    };
+    expect(afterSession.state.scoresheetReview).toBeUndefined();
+    expect(getNodeAtPath(afterSession.state.root, [0, 0]).unsure).toBeUndefined();
+});
+
+test("replacing the start position clears scoresheetReview and undo afterwards stores no marks", () => {
+    const id = crypto.randomUUID();
+    persistedIds.push(id);
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    e4.unsure = true;
+    initial.scoresheetReview = { stopped: { ply: 1, tokens: ["e5"] } };
+    const store = createTreeStore(id, initial);
+
+    store.getState().setFen("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+    expect(store.getState().scoresheetReview).toBeUndefined();
+
+    store.getState().undo();
+    expect(store.getState().scoresheetReview).toBeUndefined();
+    tabStorage.flush();
+    const stored = deserializeStorageValue(sessionStorage.getItem(id)!) as {
+        state: ReturnType<typeof defaultTree>;
+    };
+    expect(getNodeAtPath(stored.state.root, [0]).unsure).toBeUndefined();
+});
+
+test("partialize keeps unsure marks while scoresheetReview is active and strips them when absent", () => {
+    const id = crypto.randomUUID();
+    persistedIds.push(id);
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    e4.unsure = true;
+    initial.scoresheetReview = { stopped: { ply: 1, tokens: ["e5"] } };
+    const store = createTreeStore(id, initial);
+
+    // Debounced persist while review is active must keep the mark in storage.
+    store.getState().setComment("check");
+    tabStorage.flush();
+    const duringReview = deserializeStorageValue(sessionStorage.getItem(id)!) as {
+        state: ReturnType<typeof defaultTree>;
+    };
+    expect(duringReview.state.scoresheetReview).toEqual({ stopped: { ply: 1, tokens: ["e5"] } });
+    expect(getNodeAtPath(duringReview.state.root, [0]).unsure).toBe(true);
+
+    // Finish review, then undo so the node carries unsure in memory without scoresheetReview.
+    store.getState().finishScoresheetReview();
+    store.getState().undo();
+    expect(getNodeAtPath(store.getState().root, [0]).unsure).toBe(true);
+    expect(store.getState().scoresheetReview).toBeUndefined();
+
+    tabStorage.flush();
+    const afterReview = deserializeStorageValue(sessionStorage.getItem(id)!) as {
+        state: ReturnType<typeof defaultTree>;
+    };
+    expect(afterReview.state.scoresheetReview).toBeUndefined();
+    expect(getNodeAtPath(afterReview.state.root, [0]).unsure).toBeUndefined();
+});
+
+test("replacing the game or start FEN clears scoresheetReview and tab photos, while unchanged-FEN setHeaders keeps both", () => {
+    const PHOTO = "data:image/jpeg;base64,AAAA";
+    const id = crypto.randomUUID();
+    persistedIds.push(id);
+    const makeReviewTree = () => ({
+        ...defaultTree(),
+        scoresheetReview: { stopped: { ply: 1, tokens: ["e5"] } },
+    });
+    const store = createTreeStore(id, makeReviewTree());
+
+    try {
+        // setHeaders with unchanged FEN keeps scoresheetReview and photos.
+        setScoresheetPhotos(id, [PHOTO]);
+        store.getState().setHeaders({ ...store.getState().headers, white: "Alice" });
+        expect(store.getState().scoresheetReview).toEqual({
+            stopped: { ply: 1, tokens: ["e5"] },
+        });
+        expect(getScoresheetPhotos(id)).toEqual([PHOTO]);
+
+        // setState with another game clears scoresheetReview and photos.
+        store.getState().setState(defaultTree());
+        expect(store.getState().scoresheetReview).toBeUndefined();
+        expect(getScoresheetPhotos(id)).toEqual([]);
+
+        // reset clears scoresheetReview and photos.
+        store.getState().setState(makeReviewTree());
+        setScoresheetPhotos(id, [PHOTO]);
+        store.getState().reset();
+        expect(store.getState().scoresheetReview).toBeUndefined();
+        expect(getScoresheetPhotos(id)).toEqual([]);
+
+        // setFen clears scoresheetReview and photos.
+        store.getState().setState(makeReviewTree());
+        setScoresheetPhotos(id, [PHOTO]);
+        store.getState().setFen("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+        expect(store.getState().scoresheetReview).toBeUndefined();
+        expect(getScoresheetPhotos(id)).toEqual([]);
+
+        // setHeaders with a different FEN clears scoresheetReview and photos.
+        store.getState().setState(makeReviewTree());
+        setScoresheetPhotos(id, [PHOTO]);
+        store.getState().setHeaders({
+            ...store.getState().headers,
+            fen: "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1",
+        });
+        expect(store.getState().scoresheetReview).toBeUndefined();
+        expect(getScoresheetPhotos(id)).toEqual([]);
+
+        // prepareTreeStoreRetarget clears scoresheetReview and photos.
+        store.getState().setState(makeReviewTree());
+        setScoresheetPhotos(id, [PHOTO]);
+        const nextKey = crypto.randomUUID();
+        tabStorage.seed(nextKey, defaultTree());
+        prepareTreeStoreRetarget(id, nextKey, defaultTree())();
+        expect(store.getState().scoresheetReview).toBeUndefined();
+        expect(getScoresheetPhotos(id)).toEqual([]);
+        tabStorage.remove(nextKey);
+    } finally {
+        clearAllScoresheetPhotosForTests();
+    }
 });

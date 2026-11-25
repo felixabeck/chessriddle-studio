@@ -10,6 +10,7 @@ import {
     getResolvedPathLength,
     MAX_GAME_END_TERMINATION_LENGTH,
     type ReportSummary,
+    type ScoresheetReview,
     type TreeState,
 } from "@/utils/treeReducer";
 import { boundedGoModeSchema } from "@/utils/engines";
@@ -120,6 +121,29 @@ function createLegacyAnnotationsSchema() {
         .max(MAX_NODE_NAGS);
 }
 
+export const MAX_SCORESHEET_TOKENS = 600;
+export const MAX_SCORESHEET_TOKEN_LENGTH = 12;
+
+const scoresheetReviewSchema = z.object({
+    stopped: z
+        .object({
+            ply: z.number().int().nonnegative(),
+            tokens: z
+                .array(z.string().min(1).max(MAX_SCORESHEET_TOKEN_LENGTH))
+                .max(MAX_SCORESHEET_TOKENS),
+        })
+        .optional(),
+});
+
+/**
+ * A stored scoresheet review as it is read back. Anything that does not match the schema is
+ * dropped rather than refused: a malformed review field must never make its tab's game unreadable.
+ */
+export function readStoredScoresheetReview(value: unknown): ScoresheetReview | undefined {
+    const parsed = scoresheetReviewSchema.safeParse(value);
+    return parsed.success ? parsed.data : undefined;
+}
+
 const reportSummarySchema = z.object({
     engine: z.string().max(PGN_TEXT_MAX),
     goMode: boundedGoModeSchema,
@@ -213,6 +237,7 @@ function createPersistedTreeSchema() {
         diagram: z.literal(true).optional(),
         // A wrong-typed marker is dropped, never a reason to refuse the node or the tree.
         reportLine: z.literal(true).optional().catch(undefined),
+        unsure: z.literal(true).optional().catch(undefined),
     });
 
     return {
@@ -237,6 +262,7 @@ function createPersistedTreeSchema() {
             practicePath: pathSchema.nullable().optional(),
             puzzleSession: puzzleSessionSchema.optional(),
             coachSession: coachSessionSchema.optional(),
+            scoresheetReview: scoresheetReviewSchema.optional(),
         }),
     };
 }
@@ -448,6 +474,7 @@ export function migrateTreeForStorage(value: unknown): unknown {
         // A conversation that cannot be read is dropped here, before validation, so it can
         // never make the game it belongs to unreadable.
         coachSession: readStoredCoachSession(value.coachSession),
+        scoresheetReview: readStoredScoresheetReview(value.scoresheetReview),
     };
 }
 
@@ -465,6 +492,7 @@ type ParseTreeResult = { value: ValidatedStoredTree } | { limit: TreeStorageLimi
 function validatePersistedTree(
     root: unknown,
     treeNodeObjectSchema: PersistedTreeSchemas["treeNodeObjectSchema"],
+    stripUnsure: boolean,
 ): PersistedTreeNode | null {
     type Frame = {
         input: unknown;
@@ -480,6 +508,7 @@ function validatePersistedTree(
             ...parsed.data,
             children: [],
         };
+        if (stripUnsure || node.unsure !== true) delete node.unsure;
         if (frame.parent) frame.parent.children.push(node);
         else validatedRoot = node;
         for (let index = parsed.data.children.length - 1; index >= 0; index--) {
@@ -516,7 +545,12 @@ function parseTreeResult(value: unknown): ParseTreeResult {
     const { stateSchema, treeNodeObjectSchema } = createPersistedTreeSchema();
     const parsed = stateSchema.safeParse(candidate);
     if (!parsed.success) return null;
-    const root = validatePersistedTree(parsed.data.root, treeNodeObjectSchema);
+    // Marks exist only inside an active review; strip them on every direct write/read without one.
+    const root = validatePersistedTree(
+        parsed.data.root,
+        treeNodeObjectSchema,
+        parsed.data.scoresheetReview === undefined,
+    );
     if (!root) return null;
 
     // A stored path is repaired against the tree it was stored with: the cursor and the drill path

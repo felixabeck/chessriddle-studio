@@ -186,6 +186,7 @@ function GameNotation({
   const currentNode = useStore(store, (s) => s.currentNode());
   const position = useStore(store, (s) => s.position);
   const copyPgn = useStore(store, (s) => s.copyPgn);
+  const hasScoresheetReview = useStore(store, (s) => s.scoresheetReview !== undefined);
   const showComments = useAtomValue(useTabAtom(showCommentsFamily));
   const showVariations = useAtomValue(useTabAtom(showVariationsFamily));
   const showDiagrams = useAtomValue(useTabAtom(showDiagramsFamily));
@@ -478,6 +479,7 @@ function GameNotation({
                       currentNode={currentNode}
                       startNode={startNode}
                       showComments={showComments}
+                      hasScoresheetReview={hasScoresheetReview}
                       tableView={tableView}
                       orientation={headers.orientation ?? "white"}
                       onToggleVariation={(parent) => {
@@ -641,6 +643,7 @@ function NotationVirtualRow({
   currentNode,
   startNode,
   showComments,
+  hasScoresheetReview,
   tableView,
   orientation,
   onToggleVariation,
@@ -657,6 +660,7 @@ function NotationVirtualRow({
   currentNode: TreeNode;
   startNode: TreeNode;
   showComments: boolean;
+  hasScoresheetReview: boolean;
   tableView: boolean;
   orientation: "white" | "black";
   onToggleVariation: (parent: TreeNode) => void;
@@ -689,6 +693,7 @@ function NotationVirtualRow({
           currentNode={currentNode}
           startNode={startNode}
           showComments={showComments}
+          hasScoresheetReview={hasScoresheetReview}
         />
       )}
       {row.type === "table" && (
@@ -699,6 +704,7 @@ function NotationVirtualRow({
           currentNode={currentNode}
           startNode={startNode}
           showComments={showComments}
+          hasScoresheetReview={hasScoresheetReview}
         />
       )}
     </Box>
@@ -747,6 +753,7 @@ function moveProps(
   currentNode: TreeNode,
   startNode: TreeNode,
   showComments: boolean,
+  unsure: boolean,
   tableLayout?: boolean,
   scoreText?: string,
 ) {
@@ -769,6 +776,7 @@ function moveProps(
     scoreText,
     analysis: move.analysis,
     openVariation: move.openVariation,
+    unsure,
   };
 }
 
@@ -783,6 +791,7 @@ function InlineRow({
   currentNode,
   startNode,
   showComments,
+  hasScoresheetReview,
 }: {
   row: Extract<NotationRow, { type: "moves" }>;
   index: NotationNodeIndex;
@@ -790,6 +799,7 @@ function InlineRow({
   currentNode: TreeNode;
   startNode: TreeNode;
   showComments: boolean;
+  hasScoresheetReview: boolean;
 }) {
   const isVariationBlock = row.depth >= 1;
   return (
@@ -800,7 +810,15 @@ function InlineRow({
       {row.moves.map((move) => (
         <CompleteMoveCell
           key={move.node.fen}
-          {...moveProps(move, index, root, currentNode, startNode, showComments)}
+          {...moveProps(
+            move,
+            index,
+            root,
+            currentNode,
+            startNode,
+            showComments,
+            hasScoresheetReview && row.depth === 0 && move.node.unsure === true,
+          )}
         />
       ))}
     </Box>
@@ -945,6 +963,7 @@ function TableRow({
   currentNode,
   startNode,
   showComments,
+  hasScoresheetReview,
 }: {
   row: Extract<NotationRow, { type: "table" }>;
   index: NotationNodeIndex;
@@ -952,6 +971,7 @@ function TableRow({
   currentNode: TreeNode;
   startNode: TreeNode;
   showComments: boolean;
+  hasScoresheetReview: boolean;
 }) {
   return (
     <Table layout="fixed">
@@ -968,6 +988,7 @@ function TableRow({
                   currentNode,
                   startNode,
                   showComments,
+                  hasScoresheetReview && row.white.node.unsure === true,
                   true,
                   showComments ? notationScoreText(row.white.node) : undefined,
                 )}
@@ -988,6 +1009,7 @@ function TableRow({
                   currentNode,
                   startNode,
                   showComments,
+                  hasScoresheetReview && row.black.node.unsure === true,
                   true,
                   showComments ? notationScoreText(row.black.node) : undefined,
                 )}

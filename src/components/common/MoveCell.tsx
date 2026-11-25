@@ -55,6 +55,8 @@ interface MoveCellProps {
   analysis?: boolean;
   /** A side line one move long: framed with a dashed line until it gets a second move. */
   openVariation?: boolean;
+  /** Flagged as unsure during an active scoresheet photo review. */
+  unsure?: boolean;
   ref?: RefObject<HTMLButtonElement>;
 }
 
@@ -98,6 +100,14 @@ function MoveCell(props: MoveCellProps) {
     props.onClick();
   };
 
+  const formattedMove = moveNotationType === "symbols" ? addPieceSymbol(props.move) : props.move;
+  const formattedNags = showAnnotations ? formatNagGlyphs(props.annotations) : "";
+  const title = props.unsure
+    ? t("Notation.UnsureMove")
+    : props.openVariation
+      ? t("Notation.OpenVariation")
+      : undefined;
+
   return (
     <Box
       ref={props.ref}
@@ -105,7 +115,13 @@ function MoveCell(props: MoveCellProps) {
       className={`${classes.cell} ${props.fullWidth ? classes.cellFullWidth : ""}`}
       data-notation-analysis={props.analysis ? "true" : undefined}
       data-notation-open-variation={props.openVariation ? "true" : undefined}
-      title={props.openVariation ? t("Notation.OpenVariation") : undefined}
+      data-notation-unsure={props.unsure ? "true" : undefined}
+      title={title}
+      aria-label={
+        props.unsure
+          ? t("Notation.UnsureMoveLabel", { move: `${formattedMove}${formattedNags}` })
+          : undefined
+      }
       aria-current={props.isCurrentVariation ? "true" : undefined}
       style={{
         "--light-color": lightColor,
@@ -118,8 +134,8 @@ function MoveCell(props: MoveCellProps) {
     >
       <Box component="span" className={classes.moveText}>
         {props.isStart && <Flag style={{ marginRight: 5 }} size="0.875rem" />}
-        {moveNotationType === "symbols" ? addPieceSymbol(props.move) : props.move}
-        {showAnnotations ? formatNagGlyphs(props.annotations) : ""}
+        {formattedMove}
+        {formattedNags}
       </Box>
       {props.rightAccessory && (
         <Box component="span" className={classes.rightAccessory}>

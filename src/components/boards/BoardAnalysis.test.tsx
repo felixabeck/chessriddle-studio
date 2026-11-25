@@ -62,7 +62,7 @@ import {
 import * as tabs from "@/utils/tabs";
 import { useHotkeys } from "@mantine/hooks";
 import { MantineProvider } from "@mantine/core";
-import BoardAnalysis from "./BoardAnalysis";
+import BoardAnalysis, { scoresheetPhotoPanelLoader } from "./BoardAnalysis";
 import { useFileChapterSwitch, type SwitchFileChapter } from "./FileChapterSwitch";
 import { requestBoardCommand } from "./boardCommands";
 import type Board from "./Board";
@@ -124,7 +124,9 @@ vi.mock("@mantine/core", async (importOriginal) => {
   // The Stack stand-in keeps data attributes: the pinned panes are found by them.
   const stack = ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <div
-      {...Object.fromEntries(Object.entries(props).filter(([name]) => name.startsWith("data-")))}
+      {...Object.fromEntries(
+        Object.entries(props).filter(([name]) => name.startsWith("data-") || name === "role"),
+      )}
     >
       {children}
     </div>
@@ -271,6 +273,9 @@ vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
 vi.mock("../panels/annotation/AnnotationPanel", () => ({ default: () => null }));
 vi.mock("../panels/coach/CoachPanel", () => ({
   default: () => <div data-testid="coach-panel" />,
+}));
+vi.mock("../panels/scoresheet/ScoresheetPhotoPanel", () => ({
+  default: () => <div data-testid="scoresheet-photo-panel" />,
 }));
 vi.mock("../panels/database/DatabasePanel", () => ({
   default: () => <span data-testid="database-panel" />,
@@ -3704,5 +3709,115 @@ describe("BoardAnalysis preparation landing", () => {
         message: "Databases.Preparation.PositionGone",
       }),
     );
+  });
+
+  test("shows the Photo tab only while scoresheetReview is active and falls back from photo to annotate otherwise", async () => {
+    mocks.realTabs = true;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    try {
+      jotaiStore.set(tabFamily(tabId), "photo");
+      await act(async () => {
+        root.render(
+          <MantineProvider>
+            <JotaiProvider store={jotaiStore}>
+              <WorkspaceTabScope tabId={tabId}>
+                <TreeStateContext.Provider value={treeStore}>
+                  <BoardAnalysis />
+                </TreeStateContext.Provider>
+              </WorkspaceTabScope>
+            </JotaiProvider>
+          </MantineProvider>,
+        );
+      });
+      expect(container.querySelector('[role="tab"][data-active="true"]')?.textContent).toContain(
+        "Board.Tabs.Annotate",
+      );
+      expect(container.textContent).not.toContain("Board.Tabs.Photo");
+
+      await act(async () => {
+        treeStore.setState({ scoresheetReview: {} });
+      });
+      expect(container.textContent).toContain("Board.Tabs.Photo");
+      expect(container.querySelector('[role="tab"][data-active="true"]')?.textContent).toContain(
+        "Board.Tabs.Photo",
+      );
+
+      // The lazy Photo panel content actually mounts inside the Photo tab.
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="scoresheet-photo-panel"]')).not.toBeNull();
+      });
+
+      // Removing scoresheetReview removes the Photo tab and falls back to Annotate.
+      await act(async () => {
+        treeStore.setState({ scoresheetReview: undefined });
+      });
+      expect(container.textContent).not.toContain("Board.Tabs.Photo");
+      expect(container.querySelector('[data-testid="scoresheet-photo-panel"]')).toBeNull();
+      expect(container.querySelector('[role="tab"][data-active="true"]')?.textContent).toContain(
+        "Board.Tabs.Annotate",
+      );
+    } finally {
+      mocks.realTabs = false;
+    }
+  });
+
+  test("isolates a failed Photo panel lazy load to an in-place alert and recovers when Retry reloads the chunk", async () => {
+    mocks.realTabs = true;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const loadSpy = vi
+      .spyOn(scoresheetPhotoPanelLoader, "load")
+      .mockRejectedValueOnce(new Error("chunk failed"));
+    try {
+      treeStore.setState({ scoresheetReview: {} });
+      jotaiStore.set(tabFamily(tabId), "photo");
+      await act(async () => {
+        root.render(
+          <MantineProvider>
+            <JotaiProvider store={jotaiStore}>
+              <WorkspaceTabScope tabId={tabId}>
+                <TreeStateContext.Provider value={treeStore}>
+                  <BoardAnalysis />
+                </TreeStateContext.Provider>
+              </WorkspaceTabScope>
+            </JotaiProvider>
+          </MantineProvider>,
+        );
+      });
+
+      await vi.waitFor(() => {
+        expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+          "Scoresheet.LoadFailed",
+        );
+      });
+      // The rest of the board remains rendered while the Photo panel is in its error state.
+      expect(container.querySelector("[data-game-notation]")).not.toBeNull();
+      expect(container.querySelector('[data-testid="scoresheet-photo-panel"]')).toBeNull();
+
+      const retryButton = Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Common.Retry"),
+      );
+      expect(retryButton).toBeDefined();
+
+      await act(async () => {
+        retryButton!.click();
+      });
+
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="scoresheet-photo-panel"]')).not.toBeNull();
+      });
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(loadSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      loadSpy.mockRestore();
+      consoleError.mockRestore();
+      mocks.realTabs = false;
+    }
   });
 });

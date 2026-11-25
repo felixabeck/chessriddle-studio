@@ -1,0 +1,97 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs);
+}
+
+.photoSection {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--mantine-spacing-xs);
+}
+
+.photoToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+  flex-shrink: 0;
+}
+
+.viewport {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-color: var(--cf-surface-inset);
+  border: 1px solid var(--cf-border-strong);
+  border-radius: var(--cf-radius-sm);
+}
+
+.viewport[data-scoresheet-photo-size="full"] {
+  display: block;
+  overflow: auto;
+}
+
+.imageFit {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.imageFull {
+  width: auto;
+  height: auto;
+  max-width: none;
+  display: block;
+}
+
+.emptyPhoto {
+  flex: 1;
+  min-height: 6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-md);
+  background-color: var(--cf-surface-inset);
+  border: 1px solid var(--cf-border-strong);
+  border-radius: var(--cf-radius-sm);
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  flex-shrink: 0;
+}
+
+.stopNotice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--mantine-spacing-xs);
+  background-color: var(--cf-surface-inset);
+  border: 1px solid var(--cf-border-strong);
+  border-left: 3px solid var(--cf-warning);
+  border-radius: var(--cf-radius-sm);
+}
+
+.remainingTokens {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  max-height: 5rem;
+  overflow-y: auto;
+  word-break: break-word;
+  user-select: text;
+}

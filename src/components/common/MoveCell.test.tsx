@@ -189,3 +189,26 @@ test("only an open variation carries the mark and its explanation", async () => 
   expect(cell().getAttribute("title")).toBe("Notation.OpenVariation");
   expect(cell().classList.contains(classes.cell)).toBe(true);
 });
+
+test("an unsure move carries data-notation-unsure and announces itself to assistive technology", async () => {
+  expect(cell().hasAttribute("data-notation-unsure")).toBe(false);
+  expect(cell().hasAttribute("aria-label")).toBe(false);
+
+  await act(async () =>
+    root.render(
+      <MoveCell
+        annotations={[]}
+        isStart={false}
+        isCurrentVariation={false}
+        move="Nf3"
+        onClick={onClick}
+        onContextMenu={() => {}}
+        unsure
+      />,
+    ),
+  );
+
+  expect(cell().getAttribute("data-notation-unsure")).toBe("true");
+  expect(cell().getAttribute("title")).toBe("Notation.UnsureMove");
+  expect(cell().getAttribute("aria-label")).toBe("Notation.UnsureMoveLabel");
+});

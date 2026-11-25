@@ -53,6 +53,24 @@
   pointer-events: none;
 }
 
+/* A main-line move flagged as unsure during a scoresheet photo review. Uses the warning semantic
+   token with a subtle tint and bottom accent so it stays distinct from the current-move gold fill
+   and annotation text colours across Light, Dark and Dim. */
+.cell[data-notation-unsure="true"] {
+  position: relative;
+  background-color: color-mix(in srgb, var(--cf-warning) 14%, var(--move-bg));
+}
+
+.cell[data-notation-unsure="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 2px 2px 2px;
+  height: 2px;
+  background-color: var(--cf-warning);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
 [data-mantine-color-scheme="light"] .cell {
   color: var(--light-color);
 }

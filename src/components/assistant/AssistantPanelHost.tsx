@@ -1,11 +1,10 @@
-import { Button, Stack, Text } from "@mantine/core";
 import cx from "clsx";
 import { X } from "lucide-react";
-import { Component, lazy, Suspense, useState, type ComponentType, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { IconAction } from "@/components/common/IconAction";
+import { PanelErrorBoundary } from "@/components/common/PanelErrorBoundary";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
-import { logFailureSafely, safeFailureContext } from "@/platform/errors";
 import type { AssistantPanelProps } from "./AssistantPanel";
 import classes from "./AssistantPanel.module.css";
 
@@ -14,51 +13,6 @@ const NARROW_OVERLAY_WIDTH_EM = 56;
 export type AssistantPanelLoader = () => Promise<{ default: ComponentType<AssistantPanelProps> }>;
 
 const defaultPanelLoader: AssistantPanelLoader = () => import("./AssistantPanel");
-
-class PanelErrorBoundary extends Component<
-  {
-    onRetry: () => void;
-    loadFailedText: string;
-    retryLabel: string;
-    children: ReactNode;
-  },
-  { hasError: boolean }
-> {
-  override state = { hasError: false };
-
-  static getDerivedStateFromError(): { hasError: boolean } {
-    return { hasError: true };
-  }
-
-  override componentDidCatch(error: Error) {
-    const primaryFailure = safeFailureContext(error);
-    void logFailureSafely(
-      `Assistant panel failed to load: ${primaryFailure.message}`,
-      { operation: "assistant-panel-load", primaryFailure },
-      "assistant-panel-load",
-    );
-  }
-
-  override render() {
-    if (this.state.hasError) {
-      return (
-        <Stack className={classes.fallback} align="flex-start" gap="sm" role="alert">
-          <Text c="danger">{this.props.loadFailedText}</Text>
-          <Button
-            variant="default"
-            onClick={() => {
-              this.setState({ hasError: false });
-              this.props.onRetry();
-            }}
-          >
-            {this.props.retryLabel}
-          </Button>
-        </Stack>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 function DockedAssistantPanel({
   onClose,
@@ -95,6 +49,9 @@ function DockedAssistantPanel({
       <div className={classes.body}>
         <PanelErrorBoundary
           key={loadState.attempt}
+          operation="assistant-panel-load"
+          logLabel="Assistant panel failed to load"
+          className={classes.fallback}
           onRetry={() =>
             setLoadState((current) => ({
               attempt: current.attempt + 1,

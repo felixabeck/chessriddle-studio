@@ -3,6 +3,13 @@ import type { Atom } from "jotai";
 import { atomFamily } from "jotai/utils";
 import { chessRiddleTrainingSessions } from "../chessRiddleTraining";
 
+const tabDisposers = new Set<(tabId: string) => void>();
+
+/** Registers a module-owned cleanup callback to run when a tab closes. */
+export function registerTabDisposer(dispose: (tabId: string) => void): void {
+    tabDisposers.add(dispose);
+}
+
 /**
  * A runtime atom family whose entries belong to one tab. Every such family is declared through
  * `tabAtomFamily` or `tabEngineAtomFamily`, which register it here, so `disposeTabAtoms` releases
@@ -58,5 +65,6 @@ export function tabEngineAtomFamily<EngineKey extends string, AtomType extends A
 /** Remove every runtime atom whose identity is a closed tab, including per-engine entries. */
 export function disposeTabAtoms(tabId: string) {
     chessRiddleTrainingSessions.remove(tabId);
+    for (const dispose of tabDisposers) dispose(tabId);
     for (const family of tabScopedFamilies) family.dispose(tabId);
 }

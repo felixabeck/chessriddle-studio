@@ -1631,3 +1631,62 @@ test("O3: cell mounted before index build completes shows the file-wide marker o
     host.querySelector('[aria-label="Notation.TranspositionInChapter(Italian Base)"]'),
   ).not.toBeNull();
 });
+
+test("forwards unsure to MoveCell (including inside OpenMoveMenu) and re-renders when only unsure changes", async () => {
+  const tree = defaultTree();
+  const e4 = createNode({
+    fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+    move: parseUci("e2e4")!,
+    san: "e4",
+    halfMoves: 1,
+  });
+  tree.root.children.push(e4);
+  const store = createTreeStore(undefined, tree);
+  const rootNode = store.getState().root;
+  const nodeIndex = createNotationNodeIndex(rootNode);
+  const annotations: never[] = [];
+
+  moveCell.useReal = true;
+  try {
+    const renderWith = (unsure: boolean) =>
+      act(async () => {
+        root.render(
+          <TreeStateContext.Provider value={store}>
+            <WorkspaceTabScope tabId="tab">
+              <CompleteMoveCell
+                node={e4}
+                nodeIndex={nodeIndex}
+                root={rootNode}
+                halfMoves={e4.halfMoves}
+                move={e4.san}
+                fen={e4.fen}
+                comment=""
+                annotations={annotations}
+                showComments={false}
+                unsure={unsure}
+              />
+            </WorkspaceTabScope>
+          </TreeStateContext.Provider>,
+        );
+      });
+
+    await renderWith(false);
+    expect(host.querySelector("button")?.hasAttribute("data-notation-unsure")).toBe(false);
+
+    // Changing only `unsure` must bypass memoization and mark the cell.
+    await renderWith(true);
+    const button = host.querySelector("button")!;
+    expect(button.getAttribute("data-notation-unsure")).toBe("true");
+
+    // Opening the context menu mounts OpenMoveMenu, which must also forward `unsure`.
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    expect(host.querySelector('button[data-notation-unsure="true"]')).not.toBeNull();
+
+    await renderWith(false);
+    expect(host.querySelector('button[data-notation-unsure="true"]')).toBeNull();
+  } finally {
+    moveCell.useReal = false;
+  }
+});

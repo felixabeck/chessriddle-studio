@@ -145,6 +145,7 @@ vi.mock("./CompleteMoveCell", async () => ({
         data-score-text={props.scoreText}
         data-analysis={props.analysis ? "true" : "false"}
         data-open-variation={props.openVariation ? "true" : "false"}
+        data-unsure={props.unsure ? "true" : "false"}
         onClick={() => store.getState().goToMove(path)}
       >
         {props.move}
@@ -1704,4 +1705,90 @@ describe("opponent preparation notation filtering", () => {
       }
     },
   );
+});
+
+describe("scoresheet unsure marks in notation", () => {
+  test("draws unsure only on main-line moves while scoresheetReview is active, never without one", async () => {
+    const initial = defaultTree();
+    const store = createTreeStore(undefined, { ...initial, scoresheetReview: {} });
+    store.getState().makeMove({ payload: parseUci("e2e4")! });
+    store.getState().makeMove({ payload: parseUci("e7e5")! });
+    store.getState().goToMove([0]);
+    store.getState().makeMove({ payload: parseUci("c7c5")! });
+
+    const clonedRoot = structuredClone(store.getState().root);
+    clonedRoot.children[0].unsure = true; // main-line e4
+    clonedRoot.children[0].children[1].unsure = true; // variation c5
+    const reviewStore = createTreeStore(undefined, {
+      ...defaultTree(),
+      root: clonedRoot,
+      scoresheetReview: {},
+    });
+
+    await act(async () => {
+      root.render(
+        <WorkspaceTabScope tabId="scoresheet-tab">
+          <TreeStateContext.Provider value={reviewStore}>
+            <GameNotation />
+          </TreeStateContext.Provider>
+        </WorkspaceTabScope>,
+      );
+    });
+
+    expect(host.querySelector('[data-node="e4"]')?.getAttribute("data-unsure")).toBe("true");
+    expect(host.querySelector('[data-node="e5"]')?.getAttribute("data-unsure")).toBe("false");
+    // Variations never draw unsure marks.
+    expect(host.querySelector('[data-node="c5"]')?.getAttribute("data-unsure")).toBe("false");
+
+    // Make an edit, finish review, then undo: node still has unsure in memory, but review is gone.
+    await act(async () => {
+      reviewStore.getState().goToMove([0, 0]);
+      reviewStore.getState().makeMove({ payload: parseUci("g1f3")! });
+      reviewStore.getState().finishScoresheetReview();
+      reviewStore.getState().undo();
+    });
+    expect(reviewStore.getState().root.children[0].unsure).toBe(true);
+    expect(reviewStore.getState().scoresheetReview).toBeUndefined();
+    expect(host.querySelector('[data-node="e4"]')?.getAttribute("data-unsure")).toBe("false");
+  });
+
+  test("table view draws unsure on both White and Black main-line cells only while scoresheetReview is active", async () => {
+    const store = createTreeStore();
+    store.getState().makeMove({ payload: parseUci("e2e4")! });
+    store.getState().makeMove({ payload: parseUci("e7e5")! });
+    const clonedRoot = structuredClone(store.getState().root);
+    clonedRoot.children[0].unsure = true; // White: e4
+    clonedRoot.children[0].children[0].unsure = true; // Black: e5
+
+    const reviewStore = createTreeStore(undefined, {
+      ...defaultTree(),
+      root: clonedRoot,
+      scoresheetReview: {},
+    });
+
+    notationSettings.tableView = true;
+    try {
+      await act(async () => {
+        root.render(
+          <WorkspaceTabScope tabId="scoresheet-table-tab">
+            <TreeStateContext.Provider value={reviewStore}>
+              <GameNotation />
+            </TreeStateContext.Provider>
+          </WorkspaceTabScope>,
+        );
+      });
+
+      expect(host.querySelector('[data-node="e4"]')?.getAttribute("data-unsure")).toBe("true");
+      expect(host.querySelector('[data-node="e5"]')?.getAttribute("data-unsure")).toBe("true");
+
+      await act(async () => {
+        reviewStore.setState({ scoresheetReview: undefined });
+      });
+
+      expect(host.querySelector('[data-node="e4"]')?.getAttribute("data-unsure")).toBe("false");
+      expect(host.querySelector('[data-node="e5"]')?.getAttribute("data-unsure")).toBe("false");
+    } finally {
+      notationSettings.tableView = false;
+    }
+  });
 });

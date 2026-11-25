@@ -11,10 +11,11 @@ import {
   DatabaseIcon,
   GameInfoIcon,
   PracticeIcon,
+  ScoresheetPhotoIcon,
 } from "@/components/common/iconCatalog";
 import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type StoreApi, useStore } from "zustand";
 import type { TreeStoreState } from "@/state/store/tree";
@@ -68,6 +69,7 @@ import CoachPanel from "../panels/coach/CoachPanel";
 import DatabasePanel from "../panels/database/DatabasePanel";
 import InfoPanel from "../panels/info/InfoPanel";
 import PracticePanel from "../panels/practice/PracticePanel";
+import { PanelErrorBoundary } from "../common/PanelErrorBoundary";
 import Board from "./Board";
 import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
@@ -83,6 +85,39 @@ import paneClasses from "../common/PaneTabs.module.css";
 import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
 import { BoardLayoutModeContext } from "@/state/paneLayout";
+
+/** Testable seam for the Photo panel's lazy chunk loader. */
+export const scoresheetPhotoPanelLoader = {
+  load: () => import("../panels/scoresheet/ScoresheetPhotoPanel"),
+};
+
+function LazyScoresheetPhotoPanel() {
+  const { t } = useTranslation();
+  const [loadState, setLoadState] = useState(() => ({
+    attempt: 0,
+    Panel: lazy(() => scoresheetPhotoPanelLoader.load()),
+  }));
+  const PhotoPanel = loadState.Panel;
+  return (
+    <PanelErrorBoundary
+      key={loadState.attempt}
+      operation="scoresheet-photo-panel-load"
+      logLabel="Scoresheet photo panel failed to load"
+      loadFailedText={t("Scoresheet.LoadFailed")}
+      retryLabel={t("Common.Retry")}
+      onRetry={() =>
+        setLoadState((current) => ({
+          attempt: current.attempt + 1,
+          Panel: lazy(() => scoresheetPhotoPanelLoader.load()),
+        }))
+      }
+    >
+      <Suspense fallback={null}>
+        <PhotoPanel />
+      </Suspense>
+    </PanelErrorBoundary>
+  );
+}
 
 /**
  * Owns the single file position index request for the mounted file-backed analysis tab, releasing
@@ -260,11 +295,13 @@ function BoardAnalysis() {
   // choice is the explorer shows Annotate meanwhile; the stored choice is left alone.
   const explorerDetached = useAtomValue(explorerDetachedAtom);
   // A build without the Coach has no Coach tab, hotkey or panel; a stored choice of it shows
-  // Annotate, like the pinned explorer's.
+  // Annotate, like the pinned explorer's. The Photo tab exists only while a scoresheet review is active.
   const coachEnabled = useAtomValue(coachEnabledAtom);
+  const hasScoresheetReview = useStore(store, (s) => s.scoresheetReview !== undefined);
   const shownTab =
     (explorerDetached && currentTabSelected === "database") ||
-    (!coachEnabled && currentTabSelected === "coach")
+    (!coachEnabled && currentTabSelected === "coach") ||
+    (!hasScoresheetReview && currentTabSelected === "photo")
       ? "annotate"
       : currentTabSelected;
   const [, setReportModalOpen] = useAtom(useTabAtom(reportModalOpenFamily));
@@ -545,6 +582,9 @@ function BoardAnalysis() {
                   ...(coachEnabled
                     ? [{ value: "coach", title: t("Board.Tabs.Coach"), Icon: AiChatIcon }]
                     : []),
+                  ...(hasScoresheetReview
+                    ? [{ value: "photo", title: t("Board.Tabs.Photo"), Icon: ScoresheetPhotoIcon }]
+                    : []),
                   { value: "info", title: t("Board.Tabs.Info"), Icon: GameInfoIcon },
                 ].map(({ value, title, Icon }) => (
                   <Tabs.Tab key={value} value={value} leftSection={<Icon size="1rem" />}>
@@ -571,6 +611,11 @@ function BoardAnalysis() {
               {coachEnabled && (
                 <Tabs.Panel value="coach">
                   <CoachPanel />
+                </Tabs.Panel>
+              )}
+              {hasScoresheetReview && (
+                <Tabs.Panel value="photo">
+                  <LazyScoresheetPhotoPanel />
                 </Tabs.Panel>
               )}
               <Tabs.Panel value="analysis">

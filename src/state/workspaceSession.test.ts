@@ -1409,3 +1409,46 @@ test("a truncated leaf listing still counts an open tab's present leaf as durabl
     await mirror.drain();
     mirror.stop();
 });
+
+test("restore classification keeps a dirty review tab and never treats a malformed review field as undecodable", async () => {
+    const fake = fakeSessionNative();
+    const dirtyId = crypto.randomUUID();
+    const cleanMalformedId = crypto.randomUUID();
+    const tabs = [analysisTab(dirtyId, "Review"), analysisTab(cleanMalformedId, "Clean Malformed")];
+
+    const dirtyTree = defaultTree();
+    dirtyTree.dirty = true;
+    dirtyTree.scoresheetReview = { stopped: { ply: 2, tokens: ["Nf3"] } };
+    fake.leaves.set(
+        dirtyId,
+        serializeStorageValue({ version: TREE_STORAGE_VERSION, state: dirtyTree }),
+    );
+
+    const cleanMalformed = defaultTree() as unknown as Record<string, unknown>;
+    cleanMalformed.dirty = false;
+    cleanMalformed.scoresheetReview = { stopped: { ply: -5, tokens: ["bad"] } };
+    fake.leaves.set(
+        cleanMalformedId,
+        serializeStorageValue({ version: TREE_STORAGE_VERSION, state: cleanMalformed }),
+    );
+    fake.leaves.set(WORKSPACE_LEAF_KEY, workspacePayload(tabs, dirtyId));
+
+    // With "Restore open tabs at start" off, only dirty/undecodable/append-outstanding tabs stay.
+    // A clean tab with a malformed scoresheetReview must be classified as clean (dropped), never undecodable.
+    const result = await restoreWorkspaceSessionAtStart({
+        native: fake.native,
+        session: sessionStorage,
+        local: localStorage,
+        warn: () => undefined,
+        sampleFresh: () => ({ fresh: true, unreadable: false }),
+        readRestorePreference: () => false,
+    });
+
+    expect(result).toEqual({ kind: "restored", tabCount: 1, skippedCount: 0 });
+    const restoredWorkspace = parseStoredWorkspaceForRestore(
+        sessionStorage.getItem(WORKSPACE_STORAGE_KEY)!,
+    )!;
+    expect(restoredWorkspace.tabs.map((tab) => tab.value)).toEqual([dirtyId]);
+    const restoredReview = decodeLegacyOrCompressed(sessionStorage.getItem(dirtyId)!)!;
+    expect(restoredReview.state.scoresheetReview).toEqual({ stopped: { ply: 2, tokens: ["Nf3"] } });
+});

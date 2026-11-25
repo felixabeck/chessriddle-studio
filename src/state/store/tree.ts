@@ -39,6 +39,7 @@ import {
     getNodeAtPath,
     type ListNode,
     nextOpenVariation,
+    stripUnsureMarks,
     type TreeNode,
     type TreeState,
     treeIteratorMainLine,
@@ -173,6 +174,10 @@ export interface TreeStoreState extends TreeState {
     setEngineScore: (score: Score) => void;
 
     clearShapes: () => void;
+    /** Clears the scoresheet unsure mark on the current node. Not undoable, leaves `dirty` unchanged. */
+    clearUnsureMark: () => void;
+    /** Ends the scoresheet review: clears every unsure mark, `scoresheetReview` and in-memory photos. Not undoable, leaves `dirty` unchanged. */
+    finishScoresheetReview: () => void;
 
     setFen: (fen: string) => void;
 
@@ -229,6 +234,16 @@ const reportOwners = new Map<string, object>();
 const treeStores = new Map<string, PersistedTreeStore>();
 const treeStoreCreatedListeners = new Set<(id: string, store: TreeStore) => void>();
 const closingReportOwners = new Map<string, ReportOwnerInvalidation>();
+const reviewEndedListeners = new Set<(tabId: string) => void>();
+
+/** Registers a cleanup callback invoked when a tab's scoresheet review ends or its game is replaced. */
+export function registerScoresheetReviewCleanup(listener: (tabId: string) => void): void {
+    reviewEndedListeners.add(listener);
+}
+
+function notifyScoresheetReviewEnded(tabId: string): void {
+    for (const listener of reviewEndedListeners) listener(tabId);
+}
 
 /** Notifies subscribers whenever a persisted per-tab tree store is created and cached. */
 export function subscribeTreeStoreCreated(
@@ -249,6 +264,8 @@ function treeReplacementState(tree: CompleteTreeState) {
         puzzleSession: undefined,
         // Another game starts another conversation, unless the tree brings its own back.
         coachSession: undefined,
+        // Another game ends any scoresheet review, unless the tree brings its own back.
+        scoresheetReview: undefined,
         ...tree,
         documentId: newDocumentId(),
         linkedSource: tree.linkedSource ?? null,
@@ -268,6 +285,7 @@ export function prepareTreeStoreRetarget(tab: string, treeKey: string, tree: Com
     const install = store[installAdmittedTree];
     return Object.assign(
         () => {
+            notifyScoresheetReviewEnded(tab);
             store.persist.setOptions(options);
             install(state);
         },
@@ -340,6 +358,7 @@ export function closeTreeStore(tab: string): void {
     treeStores.delete(tab);
     reportOwners.delete(tab);
     removeFileFreshness(tab);
+    notifyScoresheetReviewEnded(tab);
     closing?.decide(false);
 }
 
@@ -362,6 +381,7 @@ export function discardTreeStoreStorage(tab: string, treeKey = tab): boolean {
 function installRoot(state: Draft<TreeStoreState>, root: TreeNode): void {
     state.root = root;
     state.documentId = newDocumentId();
+    state.scoresheetReview = undefined;
     // A fresh headers object, never a mutation of the current one: in setHeaders it is the caller's
     // object, just assigned into the draft. The start path indexed the tree being replaced.
     const { start: _start, ...headers } = state.headers;
@@ -477,6 +497,8 @@ type TreeMarkupActions = Pick<
     | "setReportInProgress"
     | "setReportOperationId"
     | "clearShapes"
+    | "clearUnsureMark"
+    | "finishScoresheetReview"
 >;
 
 /**
@@ -691,15 +713,17 @@ function treeNavigationActions(set: TreeSet, get: TreeGet): TreeNavigationAction
 }
 
 /** Tree edits; the node bookkeeping lives in the module-level helpers (`installRoot`, `makeMove`, `deleteMove`, `promoteVariation`). */
-function treeMutationActions(set: TreeSet, get: TreeGet): TreeMutationActions {
+function treeMutationActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMutationActions {
     return {
-        setFen: (fen) =>
+        setFen: (fen) => {
             set(
                 produce((state) => {
                     state.dirty = true;
                     installRoot(state, defaultTree(fen).root);
                 }),
-            ),
+            );
+            if (tabId) notifyScoresheetReviewEnded(tabId);
+        },
 
         makeMove: ({ payload, changePosition, mainline, clock, changeHeaders = true }) => {
             set(
@@ -784,7 +808,7 @@ function treeMutationActions(set: TreeSet, get: TreeGet): TreeMutationActions {
 }
 
 /** Clipboard export, annotations, comments, game end, headers, shapes, scores, analysis and report flags. */
-function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
+function treeMarkupActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMarkupActions {
     return {
         copyVariationPgn: (path) => {
             const { root } = get();
@@ -908,7 +932,8 @@ function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
                     state.dirty = true;
                 }),
             ),
-        setHeaders: (headers) =>
+        setHeaders: (headers) => {
+            let rootReplaced = false;
             set(
                 produce((state) => {
                     state.dirty = true;
@@ -920,9 +945,12 @@ function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
                         : headers;
                     if (headers.fen && state.headers.fen !== normalizeFen(state.root.fen)) {
                         installRoot(state, defaultTree(headers.fen).root);
+                        rootReplaced = true;
                     }
                 }),
-            ),
+            );
+            if (rootReplaced && tabId) notifyScoresheetReviewEnded(tabId);
+        },
         setResult: (result) =>
             set(
                 produce((state) => {
@@ -981,6 +1009,33 @@ function treeMarkupActions(set: TreeSet, get: TreeGet): TreeMarkupActions {
                     }
                 }),
             ),
+
+        clearUnsureMark: () =>
+            set(
+                produce((state) => {
+                    if (!state.scoresheetReview) return;
+                    const target = state.position;
+                    if (
+                        target.length === 0 ||
+                        getResolvedPathLength(state.root, target) !== target.length
+                    )
+                        return;
+                    const node = getNodeAtPath(state.root, target);
+                    if (node.unsure) delete node.unsure;
+                }),
+            ),
+
+        finishScoresheetReview: () => {
+            set(
+                produce((state) => {
+                    for (const { node } of treeIterator(state.root)) {
+                        if (node.unsure !== undefined) delete node.unsure;
+                    }
+                    state.scoresheetReview = undefined;
+                }),
+            );
+            if (tabId) notifyScoresheetReviewEnded(tabId);
+        },
     };
 }
 
@@ -1011,13 +1066,15 @@ const UNDOABLE_EDITS = [
     "clearShapes",
 ] as const;
 
-/** Clipboard export, the engine's view-only score and report bookkeeping are not edits. */
+/** Clipboard export, the engine's view-only score, report bookkeeping and scoresheet review controls are not edits. */
 const NOT_UNDOABLE = [
     "copyPgn",
     "copyVariationPgn",
     "setEngineScore",
     "setReportInProgress",
     "setReportOperationId",
+    "clearUnsureMark",
+    "finishScoresheetReview",
 ] as const;
 
 type UndoableEdit = (typeof UNDOABLE_EDITS)[number];
@@ -1054,7 +1111,7 @@ function editMergeKey(
  * action in `UNDOABLE_EDITS` records; the `NOT_UNDOABLE` actions write through the same setter
  * with no edit active, so they never record.
  */
-function recordingEditActions(set: TreeSet, get: TreeGet): EditActions {
+function recordingEditActions(set: TreeSet, get: TreeGet, tabId?: string): EditActions {
     let active: UndoableEdit | null = null;
     const recordingSet = ((partial: Parameters<TreeSet>[0], replace?: boolean) =>
         set(
@@ -1071,8 +1128,8 @@ function recordingEditActions(set: TreeSet, get: TreeGet): EditActions {
             replace as false | undefined,
         )) as TreeSet;
     const actions: EditActions = {
-        ...treeMutationActions(recordingSet, get),
-        ...treeMarkupActions(recordingSet, get),
+        ...treeMutationActions(recordingSet, get, tabId),
+        ...treeMarkupActions(recordingSet, get, tabId),
     };
     const recorded: Record<string, unknown> = { ...actions };
     for (const name of UNDOABLE_EDITS) {
@@ -1187,10 +1244,14 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
         setPracticePath: (path) => set({ practicePath: path }),
 
         setState: (state) => {
+            if (id) notifyScoresheetReviewEnded(id);
             set(() => treeReplacementState(state));
         },
 
-        reset: () => set(() => treeReplacementState(defaultTree())),
+        reset: () => {
+            if (id) notifyScoresheetReviewEnded(id);
+            set(() => treeReplacementState(defaultTree()));
+        },
 
         save: (stamp, revision) => {
             set((state) => ({
@@ -1218,7 +1279,7 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
         setLinkedSource: (linkedSource) => set({ linkedSource }),
 
         ...treeNavigationActions(set, get),
-        ...recordingEditActions(set, get),
+        ...recordingEditActions(set, get, id),
     });
 
     if (id) {
@@ -1226,7 +1287,8 @@ export const createTreeStore = (id?: string, initTree?: CompleteTreeState, treeK
             name: treeKey!,
             version: TREE_STORAGE_VERSION,
             storage: tabStorage.storageFor<PersistedTreeStoreState>(treeKey !== id),
-            partialize: ({ documentId: _documentId, history: _history, ...state }) => state,
+            partialize: ({ documentId: _documentId, history: _history, ...state }) =>
+                state.scoresheetReview ? state : { ...state, root: stripUnsureMarks(state.root) },
             onRehydrateStorage: () => (state, error) => {
                 if (!error && state) {
                     // A renderer reload cannot resume the JavaScript completion owner that

@@ -69,6 +69,8 @@ type CompleteMoveCellProps = {
   analysis?: boolean;
   /** Frame the move as an open variation: a side line one move long, in a notation that marks them. */
   openVariation?: boolean;
+  /** Flagged as unsure during an active scoresheet photo review. */
+  unsure?: boolean;
   isStart?: boolean;
   isCurrentVariation?: boolean;
   root: TreeNode;
@@ -89,6 +91,7 @@ function CompleteMoveCell({
   scoreText,
   analysis,
   openVariation,
+  unsure,
   isStart: providedIsStart,
   isCurrentVariation: providedIsCurrentVariation,
   root,
@@ -175,6 +178,7 @@ function CompleteMoveCell({
       rightAccessory={rightAccessory}
       analysis={analysis}
       openVariation={openVariation}
+      unsure={unsure}
     />
   ) : null;
 
@@ -228,6 +232,7 @@ function CompleteMoveCell({
             rightAccessory={rightAccessory}
             analysis={analysis}
             openVariation={openVariation}
+            unsure={unsure}
             onClose={() => setOpen(false)}
           />
         ) : (
@@ -385,6 +390,7 @@ function OpenMoveMenu({
   rightAccessory,
   analysis,
   openVariation,
+  unsure,
   onClose,
 }: {
   store: NonNullable<React.ContextType<typeof TreeStateContext>>;
@@ -399,6 +405,7 @@ function OpenMoveMenu({
   rightAccessory?: React.ReactNode;
   analysis?: boolean;
   openVariation?: boolean;
+  unsure?: boolean;
   onClose: () => void;
 }) {
   const [currentTab] = useOwnerTab();
@@ -427,6 +434,7 @@ function OpenMoveMenu({
           rightAccessory={rightAccessory}
           analysis={analysis}
           openVariation={openVariation}
+          unsure={unsure}
         />
       </Menu.Target>
       <Menu.Dropdown>
@@ -484,6 +492,7 @@ export default memo(CompleteMoveCell, (prev, next) => {
     prev.scoreText === next.scoreText &&
     prev.analysis === next.analysis &&
     prev.openVariation === next.openVariation &&
+    prev.unsure === next.unsure &&
     prev.isStart === next.isStart &&
     prev.isCurrentVariation === next.isCurrentVariation
   );

@@ -3274,3 +3274,59 @@ test("a stored report without a summary hydrates as no summary", () => {
         (storage.read("summary-less-report")!.state as ReturnType<typeof defaultTree>).report,
     ).toEqual({ inProgress: false, operationId: "older" });
 });
+
+test("scoresheetReview and unsure marks round-trip through tab storage when a review is active", () => {
+    const tree = treeWithPaths({});
+    tree.scoresheetReview = { stopped: { ply: 2, tokens: ["Nf3", "Nc6", "?"] } };
+    tree.root.children[0].unsure = true;
+
+    storage.seed("scoresheet-roundtrip", tree);
+    const read = storage.read("scoresheet-roundtrip")?.state as ReturnType<typeof defaultTree>;
+
+    expect(read.scoresheetReview).toEqual({ stopped: { ply: 2, tokens: ["Nf3", "Nc6", "?"] } });
+    expect(read.root.children[0].unsure).toBe(true);
+    expect(read.root.children[0].children[0].unsure).toBeUndefined();
+});
+
+test("malformed scoresheetReview or unsure fields read as absent and never fail rehydration", () => {
+    const malformedReviews: unknown[] = [
+        "bad",
+        { stopped: "bad" },
+        { stopped: { ply: -1, tokens: ["e4"] } },
+        { stopped: { ply: 1.5, tokens: ["e4"] } },
+        { stopped: { ply: 0, tokens: Array(601).fill("e4") } },
+        { stopped: { ply: 0, tokens: ["a".repeat(13)] } },
+        { stopped: { ply: 0, tokens: [""] } },
+    ];
+    for (const [index, badReview] of malformedReviews.entries()) {
+        const tree = treeWithPaths({}) as unknown as Record<string, unknown>;
+        tree.scoresheetReview = badReview;
+        (tree.root as { children: Record<string, unknown>[] }).children[0].unsure = true;
+        sessionStorage.setItem(`bad-review-${index}`, JSON.stringify(tree));
+        const read = storage.read(`bad-review-${index}`)?.state as ReturnType<typeof defaultTree>;
+        expect(read).toBeDefined();
+        expect(read.scoresheetReview).toBeUndefined();
+        // Without a valid review, any unsure mark is stripped too.
+        expect(read.root.children[0].unsure).toBeUndefined();
+    }
+
+    const wrongUnsure = treeWithPaths({}) as unknown as Record<string, unknown>;
+    wrongUnsure.scoresheetReview = {};
+    (wrongUnsure.root as { children: Record<string, unknown>[] }).children[0].unsure = "yes";
+    sessionStorage.setItem("wrong-unsure", JSON.stringify(wrongUnsure));
+    const readWrong = storage.read("wrong-unsure")?.state as ReturnType<typeof defaultTree>;
+    expect(readWrong.scoresheetReview).toEqual({});
+    expect(readWrong.root.children[0].unsure).toBeUndefined();
+});
+
+test("prepareTreeForStorage and seed strip unsure marks when scoresheetReview is absent", () => {
+    const tree = treeWithPaths({});
+    tree.root.children[0].unsure = true;
+
+    const prepared = prepareTreeForStorage(tree);
+    expect(prepared.root.children[0].unsure).toBeUndefined();
+
+    storage.seed("no-review-strip", tree);
+    const read = storage.read("no-review-strip")?.state as ReturnType<typeof defaultTree>;
+    expect(read.root.children[0].unsure).toBeUndefined();
+});

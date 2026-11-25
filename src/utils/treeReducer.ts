@@ -7,6 +7,17 @@ import type { BoundedGoMode } from "@/utils/engines";
 import type { PuzzleSession } from "@/state/puzzleSession";
 import { dropInvalidEpSquare, positionFromFen } from "@/utils/chessops";
 
+export interface ScoresheetReviewStop {
+    /** 0-based sheet ply where reading stopped (number of legal plies before the first unplayable token). */
+    ply: number;
+    /** Sheet tokens from `ply` onward (`tokens[0]` is the token that did not fit). */
+    tokens: string[];
+}
+
+export interface ScoresheetReview {
+    stopped?: ScoresheetReviewStop;
+}
+
 export interface TreeState {
     root: TreeNode;
     headers: GameHeaders;
@@ -19,6 +30,8 @@ export interface TreeState {
     puzzleSession?: PuzzleSession;
     /** The tab's Coach conversation. Not part of the game: never saved into a PGN. */
     coachSession?: CoachSession;
+    /** Review state of a game imported from a scoresheet photo. Never saved into a PGN. */
+    scoresheetReview?: ScoresheetReview;
 }
 
 type BoardStateMap = Record<string, { node: TreeNode; path: number[] }[]>;
@@ -65,6 +78,11 @@ export interface TreeNode {
      * written to PGN, so a saved and reopened line is an ordinary variation.
      */
     reportLine?: true;
+    /**
+     * Move flagged for review during a scoresheet photo import. Session and tab storage only:
+     * never written to PGN, and only active while `scoresheetReview` is present.
+     */
+    unsure?: true;
 }
 
 export type ListNode = {
@@ -548,4 +566,104 @@ export function getBoardState(fen: string): string {
         }
     }
     return fields.join(" ");
+}
+
+export interface ScoresheetRemaining {
+    /** 0-based sheet ply of the next remaining token. */
+    nextPly: number;
+    /** 1-based move number of the next remaining token, anchored to `rootHalfMoves`. */
+    moveNumber: number;
+    /** Side to move of the next remaining token, anchored to `rootHalfMoves`. */
+    color: "white" | "black";
+    /** Remaining sheet tokens from `nextPly` onward. */
+    tokens: string[];
+    /** The token that did not fit, present only while the main line still ends at the stop. */
+    failedToken?: string;
+}
+
+/**
+ * Derives what remains of a scoresheet stop from the immutable `stopped` record and the current
+ * main-line length `L`. Returns `null` when nothing remains.
+ *
+ * - `L < ply`: the stop is at `ply` and all tokens remain (the game no longer ends at the stop).
+ * - `L === ply`: the game still ends at the stop; `tokens[0]` is `failedToken` and all tokens remain.
+ * - `L > ply`: the next token is `tokens[L - ply]` and the tokens from there on remain, or `null`
+ *   once `L - ply >= tokens.length`.
+ */
+export function deriveScoresheetRemaining(
+    stopped: ScoresheetReviewStop | undefined,
+    mainLineLength: number,
+    initialHalfMoves = 0,
+): ScoresheetRemaining | null {
+    if (!stopped || stopped.tokens.length === 0) return null;
+    const { ply, tokens } = stopped;
+    let nextPly: number;
+    let remaining: string[];
+    let failedToken: string | undefined;
+
+    if (mainLineLength < ply) {
+        nextPly = ply;
+        remaining = tokens;
+    } else {
+        const offset = mainLineLength - ply;
+        if (offset >= tokens.length) return null;
+        nextPly = mainLineLength;
+        remaining = offset === 0 ? tokens : tokens.slice(offset);
+        if (offset === 0) failedToken = tokens[0];
+    }
+
+    const halfMoves = initialHalfMoves + nextPly + 1;
+    const color: "white" | "black" = halfMoves % 2 === 1 ? "white" : "black";
+    const moveNumber = Math.ceil(halfMoves / 2);
+
+    return failedToken !== undefined
+        ? { nextPly, moveNumber, color, tokens: remaining, failedToken }
+        : { nextPly, moveNumber, color, tokens: remaining };
+}
+
+/** Paths of main-line nodes currently marked `unsure`, in ply order (root is never included). */
+export function getMainLineUnsurePaths(root: TreeNode): number[][] {
+    const paths: number[][] = [];
+    for (const { position, node } of treeIteratorMainLine(root)) {
+        if (position.length > 0 && node.unsure === true) {
+            paths.push(position);
+        }
+    }
+    return paths;
+}
+
+/**
+ * Returns `root` unchanged when no node carries `unsure`; otherwise returns an iterative shallow
+ * copy of the tree with `unsure` removed from every node.
+ */
+export function stripUnsureMarks(root: TreeNode): TreeNode {
+    let hasUnsure = false;
+    for (const { node } of treeIterator(root)) {
+        if (node.unsure !== undefined) {
+            hasUnsure = true;
+            break;
+        }
+    }
+    if (!hasUnsure) return root;
+
+    const cloneNode = (node: TreeNode): TreeNode => {
+        if (node.unsure === undefined) return { ...node, children: [] };
+        const { unsure: _unsure, ...rest } = node;
+        return { ...rest, children: [] };
+    };
+
+    const clonedRoot = cloneNode(root);
+    const stack: Array<{ source: TreeNode; target: TreeNode }> = [
+        { source: root, target: clonedRoot },
+    ];
+    while (stack.length > 0) {
+        const { source, target } = stack.pop()!;
+        for (let i = source.children.length - 1; i >= 0; i--) {
+            const child = source.children[i];
+            const clonedChild = cloneNode(child);
+            target.children[i] = clonedChild;
+            stack.push({ source: child, target: clonedChild });
+        }
+    }
+    return clonedRoot;
 }
