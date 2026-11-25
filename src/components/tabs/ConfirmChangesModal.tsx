@@ -178,12 +178,14 @@ function ConfirmChangesModal({
   }
 
   return (
-    <AppModal withCloseButton={false} opened={modalOpen} onClose={cancel} pending={savePending}>
+    <AppModal
+      opened={modalOpen}
+      onClose={cancel}
+      pending={savePending}
+      title={t("Tab.UnsavedChanges")}
+    >
       <Stack>
         <div>
-          <Text fz="lg" fw="bold" mb={10}>
-            {t("Tab.UnsavedChanges")}
-          </Text>
           <Text>{t("Tab.UnsavedChangesConfirm")}</Text>
           {saveMessage && <Text c="danger">{saveMessage}</Text>}
         </div>

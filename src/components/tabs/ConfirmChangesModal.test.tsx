@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   writeGame: vi.fn(),
   lexPgn: vi.fn(),
   navigate: vi.fn(),
+  modalProps: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/platform/tauri", async (importOriginal) => {
@@ -62,8 +63,10 @@ vi.mock("@mantine/core", () => ({
   ),
 }));
 vi.mock("../common/AppModal", () => ({
-  default: ({ opened, children, pending, onClose }: any) =>
-    opened ? (
+  default: (props: any) => {
+    const { opened, children, pending, onClose } = props;
+    mocks.modalProps = props;
+    return opened ? (
       <div role="dialog">
         <button
           data-testid="dismiss-dialog"
@@ -73,7 +76,8 @@ vi.mock("../common/AppModal", () => ({
         />
         {children}
       </div>
-    ) : null,
+    ) : null;
+  },
 }));
 
 vi.mock("../boards/GameNameModal", () => ({
@@ -218,6 +222,34 @@ test("a successful background save forwards the receipt to the captured pending 
     jotaiStore.get(tabsAtom).find((tab) => tab.value === backgroundTab.value)?.gameOrigin.kind,
   ).toBe("file");
   expect(onSaved).toHaveBeenCalledOnce();
+});
+
+test("the dialog shows a close button and its title, and closing it cancels the close", async () => {
+  const onCancel = vi.fn();
+  const onDiscard = vi.fn();
+  const onSaved = vi.fn();
+  await act(async () =>
+    root.render(
+      <Owner>
+        <ConfirmChangesModal
+          pendingClose={{ tabId: backgroundTab.value, store: treeStore }}
+          tab={backgroundTab}
+          onCancel={onCancel}
+          onDiscard={onDiscard}
+          onSaved={onSaved}
+        />
+      </Owner>,
+    ),
+  );
+
+  expect(mocks.modalProps?.withCloseButton).not.toBe(false);
+  expect(mocks.modalProps?.title).toBe("Tab.UnsavedChanges");
+
+  await dismissDialog();
+
+  expect(onCancel).toHaveBeenCalledOnce();
+  expect(onDiscard).not.toHaveBeenCalled();
+  expect(onSaved).not.toHaveBeenCalled();
 });
 
 test("first-save pending close retains a no-throw subscriber edit and saves it later with game CAS", async () => {

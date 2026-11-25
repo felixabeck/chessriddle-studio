@@ -155,5 +155,12 @@ test("file-wide-transpositions: clicking the marker on a dirty tree shows the un
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("Unsaved changes");
+    await waitForFontsSettled(page);
+    await expect(dialog).toHaveScreenshot("unsaved-changes-dialog.png");
+
+    // The close button aborts the switch: no save, no discard, the dirty tree stays.
+    await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(notation.getByRole("button", { name: "a3", exact: true })).toHaveCount(1);
     expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 1 });
 });
