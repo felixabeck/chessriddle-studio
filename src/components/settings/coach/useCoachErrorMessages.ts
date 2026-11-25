@@ -37,6 +37,8 @@ export function useCoachErrorMessages(): Record<CoachError, string> {
             creditsExhausted: t("Coach.Error.CreditsExhausted"),
             photoUnreadable: t("Coach.Error.PhotoUnreadable"),
             clipboardEmpty: t("Coach.Error.ClipboardEmpty"),
+            imagesUnsupported: t("Coach.Error.ImagesUnsupported"),
+            scoresheetUnreadable: t("Coach.Error.ScoresheetUnreadable"),
         }),
         [t],
     );

@@ -9,7 +9,9 @@ import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 const fixtures = vi.hoisted(() => ({
   atoms: {
     addRecentFile: Symbol("add-recent-file"),
+    coachEnabled: Symbol("coach-enabled"),
   },
+  coachEnabled: false,
   file: {
     type: "file",
     handle: { id: { id: "selected-pgn" }, kind: "fileWorkspace" as const },
@@ -38,9 +40,33 @@ const fixtures = vi.hoisted(() => ({
 }));
 
 vi.mock("@/state/atoms", () => ({ addRecentFileAtom: fixtures.atoms.addRecentFile }));
+vi.mock("@/state/coachAvailability", () => ({
+  coachEnabledAtom: fixtures.atoms.coachEnabled,
+}));
 vi.mock("jotai", async (original) => ({
   ...(await original<typeof import("jotai")>()),
   useStore: () => fixtures.store,
+  useAtomValue: (atom: unknown) =>
+    atom === fixtures.atoms.coachEnabled ? fixtures.coachEnabled : undefined,
+}));
+vi.mock("./ImportPhotoPane", () => ({
+  default: ({
+    ownerId,
+    onReadingChange,
+  }: {
+    ownerId?: string;
+    onReadingChange?: (reading: boolean) => void;
+  }) => (
+    <div data-testid="import-photo-pane" data-owner={ownerId}>
+      <button
+        type="button"
+        data-testid="toggle-photo-reading"
+        onClick={() => onReadingChange?.(true)}
+      >
+        Reading
+      </button>
+    </div>
+  ),
 }));
 vi.mock("@/utils/chess", () => ({ parsePGN: fixtures.parsePGN }));
 vi.mock("@/utils/chess.com/api", () => ({ getChesscomGame: fixtures.getChesscomGame }));
@@ -134,7 +160,9 @@ vi.mock("@mantine/core", () => ({
   ),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SimpleGrid: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Stack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Stack: ({ children, role }: { children: React.ReactNode; role?: string }) => (
+    <div role={role}>{children}</div>
+  ),
   Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   Textarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
   TextInput: ({
@@ -150,7 +178,7 @@ vi.mock("@mantine/core", () => ({
   ),
 }));
 
-import ImportModal from "./ImportModal";
+import ImportModal, { importPhotoPaneLoader } from "./ImportModal";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -243,6 +271,7 @@ function deferred<T>() {
 beforeEach(() => {
   sessionStorage.clear();
   vi.resetAllMocks();
+  fixtures.coachEnabled = false;
   fixtures.store.activeTabId = "owner-tab";
   fixtures.replaceNewTab.mockReturnValue({ kind: "committed", id: "imported-tab" });
   fixtures.pickPgnFile.mockResolvedValue(fixtures.file);
@@ -1084,3 +1113,64 @@ test.each([
     expect(fixtures.openFile).toHaveBeenCalledExactlyOnceWith(fixtures.file, fixtures.setTabs);
   },
 );
+
+test("From photo card is shown only while the Coach switch is on and mounts ImportPhotoPane lazily", async () => {
+  fixtures.coachEnabled = false;
+  await renderModal();
+  expect(host.querySelector('[data-testid="mode-Photo"]')).toBeNull();
+
+  fixtures.coachEnabled = true;
+  await renderModal();
+  const photoCard = host.querySelector<HTMLButtonElement>('[data-testid="mode-Photo"]');
+  expect(photoCard).not.toBeNull();
+
+  await act(async () => {
+    photoCard!.click();
+  });
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="import-photo-pane"]')).not.toBeNull(),
+  );
+  // Generic Import button is hidden in Photo mode; modal pending reflects photo reading.
+  expect(submitButton()).toBeUndefined();
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[data-testid="toggle-photo-reading"]')!.click();
+  });
+  expect(modalElement().dataset.pending).toBe("true");
+});
+
+test("From photo lazy load failure is isolated by PanelErrorBoundary and recovers on retry", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const originalLoad = importPhotoPaneLoader.load;
+  let attempts = 0;
+  importPhotoPaneLoader.load = () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return Promise.reject(new Error("chunk failed"));
+    }
+    return originalLoad();
+  };
+  try {
+    fixtures.coachEnabled = true;
+    await renderModal();
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="mode-Photo"]')!.click();
+    });
+    await vi.waitFor(() =>
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain("Scoresheet.LoadFailed"),
+    );
+
+    const retryButton = Array.from(host.querySelectorAll("button")).find(
+      (btn) => btn.textContent === "Common.Retry",
+    )!;
+    await act(async () => {
+      retryButton.click();
+    });
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid="import-photo-pane"]')).not.toBeNull(),
+    );
+    expect(attempts).toBe(2);
+  } finally {
+    importPhotoPaneLoader.load = originalLoad;
+    consoleError.mockRestore();
+  }
+});

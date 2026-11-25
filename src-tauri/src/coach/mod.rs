@@ -23,6 +23,7 @@ pub(crate) mod model_loop;
 pub(crate) mod models;
 pub(crate) mod prompt;
 pub(crate) mod responses;
+pub(crate) mod scoresheet;
 pub(crate) mod scoresheet_photo;
 pub(crate) mod sse;
 pub(crate) mod stats;
@@ -45,6 +46,7 @@ use tauri_specta::Event;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) use self::assistant::{AssistantTurnEvent, AssistantTurnInput, AssistantTurnUpdate};
+pub(crate) use self::scoresheet::{ScoresheetGame, ScoresheetReadInput, MAX_SCORESHEET_READS};
 pub(crate) use self::scoresheet_photo::{
     clear_window_dropped_photos, handle_drop as handle_scoresheet_drop, DroppedPhotoSlots,
     ScoresheetPhoto, ScoresheetPhotoBatch, ScoresheetPhotosDropped,
@@ -131,6 +133,7 @@ pub(crate) struct Coach {
     http: HttpClients,
     turns: Arc<TurnSlots>,
     assistant_turns: Arc<TurnSlots<String, MAX_ASSISTANT_TURNS>>,
+    scoresheet_reads: Arc<TurnSlots<String, MAX_SCORESHEET_READS>>,
     chatgpt: Arc<ChatGpt>,
     grok: Arc<Grok>,
     /// The tokens of the signed-in connections.
@@ -541,6 +544,7 @@ impl Coach {
             http,
             turns: Arc::default(),
             assistant_turns: Arc::default(),
+            scoresheet_reads: Arc::default(),
             chatgpt,
             grok,
             sign_ins: Arc::default(),
@@ -614,7 +618,7 @@ impl Coach {
                 }
                 _ => {
                     let (error, message) =
-                        responses::classify_plan_refusal(provider, status, &body, false);
+                        responses::classify_plan_refusal(provider, status, &body, false, false);
                     log::warn!(
                         "coach: the plan model list was refused with HTTP {status}: {}",
                         http::diagnostic(&message, Some(&bearer.token))
@@ -936,6 +940,17 @@ pub(crate) async fn scoresheet_take_dropped_photos(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<ScoresheetPhotoBatch, CoachError> {
     scoresheet_photo::take_dropped_photos(drop, &window, &state).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scoresheet_read(
+    read: ScoresheetReadInput,
+    ticket: Option<String>,
+    state: tauri::State<'_, crate::AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<ScoresheetGame, CoachError> {
+    scoresheet::read_scoresheet(read, ticket, &state, window.label()).await
 }
 
 fn open_usage(state: &crate::AppState, opener: &BrowserOpener) -> Result<(), CoachError> {
@@ -2591,5 +2606,223 @@ mod tests {
             .lock()
             .unwrap()
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn scoresheet_read_command_enforces_switch_ticket_slots_claim_and_release() {
+        use axum::{
+            body::StreamBody,
+            http::{header::CONTENT_TYPE, StatusCode},
+            routing::post,
+            Json, Router,
+        };
+        use base64::Engine as _;
+
+        let jpeg_url = || {
+            let bytes = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F'];
+            format!(
+                "data:image/jpeg;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        };
+        let sample_read = |connection: CoachConnectionHandle| ScoresheetReadInput {
+            connection,
+            model: "vision-model".into(),
+            effort: None,
+            photos: vec![jpeg_url()],
+        };
+        let some_handle = || CoachConnectionHandle(uuid::Uuid::new_v4().to_string());
+
+        // 1. Kill switch off / uninitialized -> Unavailable.
+        for coach in [None, Some(test_coach(false))] {
+            let state = crate::AppState::default();
+            let _dir = coach.map(|(coach, dir)| {
+                assert!(state.coach.set(coach).is_ok());
+                dir
+            });
+            assert_eq!(
+                scoresheet::read_scoresheet(
+                    sample_read(some_handle()),
+                    Some("ticket".into()),
+                    &state,
+                    "main"
+                )
+                .await,
+                Err(CoachError::Unavailable)
+            );
+        }
+
+        // Loopback ChatCompletions server answering one valid scoresheet JSON round.
+        let reply = serde_json::json!({
+            "status": "ok",
+            "headers": { "white": "Alice", "black": "Bob", "result": "1-0" },
+            "moves": [{ "n": 1, "white": "e4", "black": "e5" }]
+        })
+        .to_string();
+        let sse_ok = format!(
+            "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+            serde_json::json!({ "choices": [{ "index": 0, "delta": { "content": reply } }] }),
+            serde_json::json!({ "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }] }),
+        );
+        let ok_server = test_server::serve(Router::new().route(
+            "/v1/chat/completions",
+            post(move || {
+                let body = sse_ok.clone();
+                async move {
+                    let stream =
+                        futures_util::stream::iter([Ok::<_, std::convert::Infallible>(body)]);
+                    (
+                        [(CONTENT_TYPE, "text/event-stream")],
+                        StreamBody::new(stream),
+                    )
+                }
+            }),
+        ));
+        let err_server = test_server::serve(Router::new().route(
+            "/v1/chat/completions",
+            post(|| async move {
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(serde_json::json!({ "error": { "message": "slow down" } })),
+                )
+            }),
+        ));
+        let hang_server = test_server::serve(Router::new().route(
+            "/v1/chat/completions",
+            post(|| async move {
+                let silent =
+                    futures_util::stream::pending::<Result<String, std::convert::Infallible>>();
+                (
+                    [(CONTENT_TYPE, "text/event-stream")],
+                    StreamBody::new(silent),
+                )
+            }),
+        ));
+
+        let (coach, _dir) = test_coach(true);
+        let ok_conn = local_connection(&coach, &ok_server.url("/v1"), None).await;
+        let err_conn = local_connection(&coach, &err_server.url("/v1"), None).await;
+        let hang_conn = local_connection(&coach, &hang_server.url("/v1"), None).await;
+        let state = crate::AppState::default();
+        assert!(state.coach.set(coach).is_ok());
+
+        // 2. Missing or blank ticket -> InvalidInput.
+        for bad_ticket in [None, Some("".into()), Some("   ".into())] {
+            assert_eq!(
+                scoresheet::read_scoresheet(
+                    sample_read(ok_conn.clone()),
+                    bad_ticket,
+                    &state,
+                    "main"
+                )
+                .await,
+                Err(CoachError::InvalidInput)
+            );
+        }
+
+        // 3. Slot pool refuses a second read in the same window and a third overall -> Busy.
+        {
+            let slots = &state.coach.get().unwrap().scoresheet_reads;
+            let _hold1 = slots.take_key("main".into()).unwrap();
+            let t = state.operations.prepare_read("main").unwrap();
+            assert_eq!(
+                scoresheet::read_scoresheet(sample_read(ok_conn.clone()), Some(t), &state, "main")
+                    .await,
+                Err(CoachError::Busy)
+            );
+            let _hold2 = slots.take_key("second".into()).unwrap();
+            let t3 = state.operations.prepare_read("third").unwrap();
+            assert_eq!(
+                scoresheet::read_scoresheet(
+                    sample_read(ok_conn.clone()),
+                    Some(t3),
+                    &state,
+                    "third"
+                )
+                .await,
+                Err(CoachError::Busy)
+            );
+        }
+
+        // 4. claim_read refusal: unknown, foreign-window, and pre-claim cancelled tickets all
+        //    answer InvalidInput (in-flight cancellation answers Cancelled, tested in 5c below).
+        assert_eq!(
+            scoresheet::read_scoresheet(
+                sample_read(ok_conn.clone()),
+                Some("unknown-ticket".into()),
+                &state,
+                "main"
+            )
+            .await,
+            Err(CoachError::InvalidInput)
+        );
+        let foreign = state.operations.prepare_read("other-window").unwrap();
+        assert_eq!(
+            scoresheet::read_scoresheet(
+                sample_read(ok_conn.clone()),
+                Some(foreign),
+                &state,
+                "main"
+            )
+            .await,
+            Err(CoachError::InvalidInput)
+        );
+        let cancelled = state.operations.prepare_read("main").unwrap();
+        state.operations.cancel_read(&cancelled, "main").unwrap();
+        assert_eq!(
+            scoresheet::read_scoresheet(
+                sample_read(ok_conn.clone()),
+                Some(cancelled),
+                &state,
+                "main"
+            )
+            .await,
+            Err(CoachError::InvalidInput)
+        );
+
+        let slots_empty = || {
+            state
+                .coach
+                .get()
+                .unwrap()
+                .scoresheet_reads
+                .0
+                .lock()
+                .unwrap()
+                .is_empty()
+        };
+
+        // 5a. Slot released after normal completion.
+        let t_ok = state.operations.prepare_read("main").unwrap();
+        let game =
+            scoresheet::read_scoresheet(sample_read(ok_conn.clone()), Some(t_ok), &state, "main")
+                .await
+                .expect("read succeeded");
+        assert_eq!(game.moves.len(), 2);
+        assert!(slots_empty());
+
+        // 5b. Slot released after provider error.
+        let t_err = state.operations.prepare_read("main").unwrap();
+        assert_eq!(
+            scoresheet::read_scoresheet(sample_read(err_conn), Some(t_err), &state, "main").await,
+            Err(CoachError::RateLimited)
+        );
+        assert!(slots_empty());
+
+        // 5c. Slot released after in-flight cancellation.
+        let t_cancel = state.operations.prepare_read("main").unwrap();
+        let ops = state.operations.clone();
+        let cancel_ticket = t_cancel.clone();
+        let cancel_task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            let _ = ops.cancel_read(&cancel_ticket, "main");
+        });
+        assert_eq!(
+            scoresheet::read_scoresheet(sample_read(hang_conn), Some(t_cancel), &state, "main")
+                .await,
+            Err(CoachError::Cancelled)
+        );
+        cancel_task.await.unwrap();
+        assert!(slots_empty());
     }
 }

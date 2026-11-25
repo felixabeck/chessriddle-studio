@@ -31,6 +31,8 @@ const coachErrors: Record<CoachError, true> = {
     creditsExhausted: true,
     photoUnreadable: true,
     clipboardEmpty: true,
+    imagesUnsupported: true,
+    scoresheetUnreadable: true,
 };
 
 export function isCoachError(value: unknown): value is CoachError {

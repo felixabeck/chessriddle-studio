@@ -209,3 +209,181 @@ test("updates and cleans up the window Escape listener across onClose and unmoun
   dispatchEscape(document.body);
   expect(secondClose).toHaveBeenCalledTimes(1);
 });
+
+test("nested open modals close one at a time on Escape, topmost first", async () => {
+  const outerClose = vi.fn();
+  const innerClose = vi.fn();
+
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <AppModal opened onClose={outerClose} title="Outer">
+          <AppModal opened onClose={innerClose} title="Inner">
+            <div>Inner body</div>
+          </AppModal>
+        </AppModal>
+      </MantineProvider>,
+    );
+  });
+
+  const firstEvent = dispatchEscape(document.body);
+  expect(firstEvent.defaultPrevented).toBe(true);
+  expect(innerClose).toHaveBeenCalledTimes(1);
+  expect(outerClose).not.toHaveBeenCalled();
+
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <AppModal opened onClose={outerClose} title="Outer">
+          <div>Outer body</div>
+        </AppModal>
+      </MantineProvider>,
+    );
+  });
+
+  const secondEvent = dispatchEscape(document.body);
+  expect(secondEvent.defaultPrevented).toBe(true);
+  expect(outerClose).toHaveBeenCalledTimes(1);
+});
+
+test("pending modal on top of an open modal blocks Escape from dismissing the modal underneath", async () => {
+  const underClose = vi.fn();
+  const topClose = vi.fn();
+
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <AppModal opened onClose={underClose} title="Under">
+          <div>Under</div>
+        </AppModal>
+        <AppModal opened={false} pending onClose={topClose} title="Top">
+          <div>Top</div>
+        </AppModal>
+      </MantineProvider>,
+    );
+  });
+
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <AppModal opened onClose={underClose} title="Under">
+          <div>Under</div>
+        </AppModal>
+        <AppModal opened pending onClose={topClose} title="Top">
+          <div>Top</div>
+        </AppModal>
+      </MantineProvider>,
+    );
+  });
+
+  const event = dispatchEscape(document.body);
+  expect(event.defaultPrevented).toBe(true);
+  expect(topClose).not.toHaveBeenCalled();
+  expect(underClose).not.toHaveBeenCalled();
+});
+
+test("a root-level modal opened after a nested pair closes before the nested pair on Escape", async () => {
+  const outerClose = vi.fn();
+  const innerClose = vi.fn();
+  const rootClose = vi.fn();
+
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <AppModal opened onClose={outerClose} title="Outer">
+          <AppModal opened onClose={innerClose} title="Inner">
+            <div>Inner</div>
+          </AppModal>
+        </AppModal>
+        <AppModal opened={false} onClose={rootClose} title="Root">
+          <div>Root</div>
+        </AppModal>
+      </MantineProvider>,
+    );
+  });
+
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <AppModal opened onClose={outerClose} title="Outer">
+          <AppModal opened onClose={innerClose} title="Inner">
+            <div>Inner</div>
+          </AppModal>
+        </AppModal>
+        <AppModal opened onClose={rootClose} title="Root">
+          <div>Root</div>
+        </AppModal>
+      </MantineProvider>,
+    );
+  });
+
+  dispatchEscape(document.body);
+  expect(rootClose).toHaveBeenCalledTimes(1);
+  expect(innerClose).not.toHaveBeenCalled();
+  expect(outerClose).not.toHaveBeenCalled();
+});
+
+test("two sibling modals opened in sequence close the later one first on Escape", async () => {
+  const firstClose = vi.fn();
+  const secondClose = vi.fn();
+
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <AppModal opened onClose={firstClose} title="First">
+          <div>First</div>
+        </AppModal>
+        <AppModal opened={false} onClose={secondClose} title="Second">
+          <div>Second</div>
+        </AppModal>
+      </MantineProvider>,
+    );
+  });
+
+  await act(async () => {
+    root.render(
+      <MantineProvider env="test">
+        <AppModal opened onClose={firstClose} title="First">
+          <div>First</div>
+        </AppModal>
+        <AppModal opened onClose={secondClose} title="Second">
+          <div>Second</div>
+        </AppModal>
+      </MantineProvider>,
+    );
+  });
+
+  dispatchEscape(document.body);
+  expect(secondClose).toHaveBeenCalledTimes(1);
+  expect(firstClose).not.toHaveBeenCalled();
+});
+
+test("re-opening a mounted modal after another modal opens puts it on top for Escape", async () => {
+  const xClose = vi.fn();
+  const yClose = vi.fn();
+
+  const renderPair = async (xOpened: boolean, yOpened: boolean) => {
+    await act(async () => {
+      root.render(
+        <MantineProvider env="test">
+          <AppModal opened={xOpened} onClose={xClose} title="Modal X">
+            <div>X</div>
+          </AppModal>
+          <AppModal opened={yOpened} onClose={yClose} title="Modal Y">
+            <div>Y</div>
+          </AppModal>
+        </MantineProvider>,
+      );
+    });
+  };
+
+  // X opens, closes, Y opens, then X re-opens while Y stays open -> X is now topmost.
+  await renderPair(true, false);
+  await renderPair(false, false);
+  await renderPair(false, true);
+  await renderPair(true, true);
+
+  dispatchEscape(document.body);
+  expect(xClose).toHaveBeenCalledTimes(1);
+  expect(yClose).not.toHaveBeenCalled();
+});

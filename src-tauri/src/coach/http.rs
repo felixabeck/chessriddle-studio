@@ -107,7 +107,12 @@ pub(crate) fn key_refused(status: u16, message: &str) -> bool {
 
 /// Tells apart the refusals a user can act on. Providers share no error codes for these, so the
 /// status and the provider's wording decide; anything unclear is a plain provider failure.
-pub(crate) fn classify_refusal(status: u16, message: &str, effort_sent: bool) -> CoachError {
+pub(crate) fn classify_refusal(
+    status: u16,
+    message: &str,
+    effort_sent: bool,
+    has_images: bool,
+) -> CoachError {
     if key_refused(status, message) {
         return CoachError::KeyRejected;
     }
@@ -119,6 +124,12 @@ pub(crate) fn classify_refusal(status: u16, message: &str, effort_sent: bool) ->
                 CoachError::NoFunctionCalling
             } else if effort_sent && message.contains("effort") {
                 CoachError::EffortRejected
+            } else if has_images
+                && (message.contains("image")
+                    || message.contains("vision")
+                    || message.contains("modalit"))
+            {
+                CoachError::ImagesUnsupported
             } else if status == 404
                 || (message.contains("model")
                     && (message.contains("not found") || message.contains("not exist")))
@@ -223,5 +234,39 @@ mod tests {
         assert_eq!(logged.chars().count(), MAX_DIAGNOSTIC_CHARS);
         assert_eq!(diagnostic("plain", None), "plain");
         assert_eq!(diagnostic("plain", Some("")), "plain");
+    }
+
+    #[test]
+    fn image_refusals_classify_only_when_images_were_sent_and_after_key_before_model_not_found() {
+        for (status, msg) in [
+            (400, "Model does not support image inputs"),
+            (404, "No endpoints support vision"),
+            (422, "Unsupported input modalities"),
+        ] {
+            assert_eq!(
+                classify_refusal(status, msg, false, true),
+                CoachError::ImagesUnsupported,
+                "{status}: {msg}"
+            );
+        }
+        // Without images, the same messages never classify as ImagesUnsupported.
+        assert_eq!(
+            classify_refusal(400, "Model does not support image inputs", false, false),
+            CoachError::ProviderFailure
+        );
+        assert_eq!(
+            classify_refusal(404, "No endpoints support vision", false, false),
+            CoachError::ModelUnavailable
+        );
+        // Key refusal still wins over image wording even when images were sent.
+        assert_eq!(
+            classify_refusal(400, "Invalid API key for image endpoint", false, true),
+            CoachError::KeyRejected
+        );
+        // Plain 404 without image/vision/modality wording still classifies as ModelUnavailable.
+        assert_eq!(
+            classify_refusal(404, "The model does not exist", false, true),
+            CoachError::ModelUnavailable
+        );
     }
 }

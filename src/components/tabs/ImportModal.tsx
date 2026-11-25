@@ -11,7 +11,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { type FenError, makeFen, parseFen } from "chessops/fen";
-import { useStore } from "jotai";
+import { useAtomValue, useStore } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
@@ -19,6 +19,7 @@ import { workspaceErrorMessage } from "../files/workspaceError";
 import { match } from "ts-pattern";
 import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
 import { addRecentFileAtom } from "@/state/atoms";
+import { coachEnabledAtom } from "@/state/coachAvailability";
 import { beginFileOpen } from "@/state/fileStructureChange";
 import { parsePGN } from "@/utils/chess";
 import { getChesscomGame } from "@/utils/chess.com/api";
@@ -37,9 +38,15 @@ import { replaceNewTab, type ReplaceNewTabResult, type SetTabs, type Tab } from 
 import { defaultTree, getGameName, type TreeState } from "@/utils/treeReducer";
 import AppModal from "../common/AppModal";
 import GenericCard from "../common/GenericCard";
+import { RetryableLazyPanel } from "../common/PanelErrorBoundary";
 import { FILE_TYPES, type FileMetadata, type FileType } from "../files/file";
 
-type ImportType = "PGN" | "Link" | "FEN";
+/** Testable seam for the "From photo" pane's lazy chunk loader. */
+export const importPhotoPaneLoader = {
+  load: () => import("./ImportPhotoPane"),
+};
+
+type ImportType = "PGN" | "Link" | "FEN" | "Photo";
 
 /** Classifies a game link by its parsed hostname; a substring match would accept any host. */
 function gameUrlHost(link: string): "chess.com" | "lichess" | null {
@@ -74,8 +81,16 @@ export default function ImportModal({
   const [importType, setImportType] = useState<ImportType>("PGN");
   const [filetype, setFiletype] = useState<FileType>("game");
   const [inFlightCount, setInFlightCount] = useState(0);
+  const [photoReading, setPhotoReading] = useState(false);
   const loading = inFlightCount > 0;
+  const coachEnabled = useAtomValue(coachEnabledAtom);
   const [fenError, setFenError] = useState<FenError | null>(null);
+
+  useEffect(() => {
+    if (!coachEnabled && importType === "Photo") {
+      setImportType("PGN");
+    }
+  }, [coachEnabled, importType]);
 
   const [save, setSave] = useState(false);
   const [filename, setFilename] = useState("");
@@ -369,12 +384,28 @@ export default function ImportModal({
         }}
       />
     ))
+    .with("Photo", () => (
+      <RetryableLazyPanel
+        load={() => importPhotoPaneLoader.load()}
+        panelProps={{
+          ownerId,
+          onClose: () => setOpenModal(false),
+          replaceImportedTab,
+          onReadingChange: setPhotoReading,
+        }}
+        operation="scoresheet-import-pane-load"
+        logLabel="Scoresheet import pane failed to load"
+        loadFailedText={t("Scoresheet.LoadFailed")}
+        retryLabel={t("Common.Retry")}
+      />
+    ))
     .exhaustive();
 
   const disabled = match(importType)
     .with("PGN", () => !pgn && !file)
     .with("Link", () => !link)
     .with("FEN", () => !fen)
+    .with("Photo", () => true)
     .exhaustive();
 
   return (
@@ -382,7 +413,7 @@ export default function ImportModal({
       opened={openModal}
       onClose={() => setOpenModal(false)}
       title={t("Home.Card.ImportGame.Title")}
-      pending={loading}
+      pending={loading || photoReading}
     >
       <Group grow mb="sm">
         <GenericCard
@@ -405,25 +436,38 @@ export default function ImportModal({
           setSelected={setImportType}
           Header={<Text ta="center">FEN</Text>}
         />
+
+        {coachEnabled && (
+          <GenericCard
+            id={"Photo"}
+            isSelected={importType === "Photo"}
+            setSelected={setImportType}
+            Header={<Text ta="center">{t("Import.FromPhoto")}</Text>}
+          />
+        )}
       </Group>
 
       {Input}
 
-      <Button
-        fullWidth
-        mt="md"
-        radius="md"
-        loading={loading}
-        disabled={disabled}
-        onClick={handleSubmit}
-      >
-        {loading ? t("Import.Importing") : t("Home.Card.ImportGame.Button")}
-      </Button>
+      {importType !== "Photo" && (
+        <>
+          <Button
+            fullWidth
+            mt="md"
+            radius="md"
+            loading={loading}
+            disabled={disabled}
+            onClick={handleSubmit}
+          >
+            {loading ? t("Import.Importing") : t("Home.Card.ImportGame.Button")}
+          </Button>
 
-      {submitError && (
-        <Text c="danger" size="sm" mt="xs">
-          {submitError}
-        </Text>
+          {submitError && (
+            <Text c="danger" size="sm" mt="xs">
+              {submitError}
+            </Text>
+          )}
+        </>
       )}
     </AppModal>
   );

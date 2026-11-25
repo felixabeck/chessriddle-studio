@@ -1,5 +1,5 @@
 import { Button, Stack, Text } from "@mantine/core";
-import { Component, type ReactNode } from "react";
+import { Component, lazy, Suspense, useState, type ComponentType, type ReactNode } from "react";
 import { logFailureSafely, safeFailureContext } from "@/platform/errors";
 
 export interface PanelErrorBoundaryProps {
@@ -59,4 +59,54 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, { has
     }
     return this.props.children;
   }
+}
+
+export interface RetryableLazyPanelProps<P extends object> {
+  load: () => Promise<{ default: ComponentType<P> }>;
+  panelProps: P;
+  operation: string;
+  logLabel: string;
+  loadFailedText: string;
+  retryLabel: string;
+  className?: string;
+}
+
+/**
+ * Shared retryable lazy panel wrapper: isolates a chunk-load or render failure in
+ * `PanelErrorBoundary` and re-creates the `React.lazy` boundary on Retry.
+ */
+export function RetryableLazyPanel<P extends object>({
+  load,
+  panelProps,
+  operation,
+  logLabel,
+  loadFailedText,
+  retryLabel,
+  className,
+}: RetryableLazyPanelProps<P>) {
+  const [loadState, setLoadState] = useState(() => ({
+    attempt: 0,
+    Panel: lazy(load),
+  }));
+  const LazyPanel = loadState.Panel;
+  return (
+    <PanelErrorBoundary
+      key={loadState.attempt}
+      operation={operation}
+      logLabel={logLabel}
+      loadFailedText={loadFailedText}
+      retryLabel={retryLabel}
+      className={className}
+      onRetry={() =>
+        setLoadState((current) => ({
+          attempt: current.attempt + 1,
+          Panel: lazy(load),
+        }))
+      }
+    >
+      <Suspense fallback={null}>
+        <LazyPanel {...panelProps} />
+      </Suspense>
+    </PanelErrorBoundary>
+  );
 }

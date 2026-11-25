@@ -39,6 +39,11 @@ pub(crate) struct ToolCall {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Message {
     User(String),
+    /// A user message that carries text together with one or more validated JPEG data URLs.
+    UserWithImages {
+        text: String,
+        images: Vec<String>,
+    },
     Assistant {
         text: String,
         tool_calls: Vec<ToolCall>,
@@ -58,6 +63,14 @@ pub(crate) struct RoundRequest<'a> {
     pub system: &'a str,
     pub messages: &'a [Message],
     pub tools: &'a [ToolSpec],
+}
+
+impl RoundRequest<'_> {
+    pub(crate) fn has_images(&self) -> bool {
+        self.messages
+            .iter()
+            .any(|message| matches!(message, Message::UserWithImages { images, .. } if !images.is_empty()))
+    }
 }
 
 /// One completed model round: its text, and the tool calls it asks for (none ends the loop).

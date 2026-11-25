@@ -64,6 +64,7 @@ const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error
     ["scoresheetPickPhotos", CoachCommandError],
     ["scoresheetPastePhoto", CoachCommandError],
     ["scoresheetTakeDroppedPhotos", CoachCommandError],
+    ["scoresheetRead", CoachCommandError],
 ]);
 
 type GameCounterFields = Pick<GameState, "session" | "revision">;
@@ -187,7 +188,8 @@ type NativeReadCommandName =
     | "listWorkspaceTrash"
     | "listLinkedCollections"
     | "resolveLinkedGame"
-    | "collectionForDatabase";
+    | "collectionForDatabase"
+    | "scoresheetRead";
 type NativeReadFacade<T> = T extends (
     ...args: [...infer Args, string | null]
 ) => Promise<infer Result>
@@ -234,6 +236,7 @@ const NATIVE_READ_ARITY: Readonly<Record<NativeReadCommandName, number>> = {
     listLinkedCollections: 1,
     resolveLinkedGame: 3,
     collectionForDatabase: 1,
+    scoresheetRead: 1,
 };
 
 const EXPECTED_SESSION_COMMANDS = new Set<PropertyKey>([
@@ -431,24 +434,45 @@ export function withConversionTicket<T>(continuation: (ticket: string) => Promis
     });
 }
 
+function unwrapMaybeClosed(result: unknown, ClosedError?: new (cause: unknown) => Error): any {
+    if (!isCommandResult(result)) return result;
+    if (ClosedError) {
+        if (result.status === "error") throw new ClosedError(result.error);
+        return result.data;
+    }
+    return unwrapCommand(result);
+}
+
 async function invokeNativeRead(
     commandName: PropertyKey,
     command: (...args: unknown[]) => Promise<unknown>,
     args: unknown[],
     options: NativeReadOptions | undefined,
+    ClosedError?: new (cause: unknown) => Error,
 ): Promise<unknown> {
     const signal = options?.signal;
     if (!signal) return command(...args, null);
-    return withPreparedTicket({
-        signal,
-        operation: commandName,
-        prepare: () => commands.prepareNativeRead(),
-        cancel: (ticket) => commands.cancelNativeRead(ticket),
-        continuation: async (ticket) => {
-            const result = await command(...args, ticket);
-            return isCommandResult(result) ? unwrapCommand(result) : result;
-        },
-    });
+    try {
+        return await withPreparedTicket({
+            signal,
+            operation: commandName,
+            prepare: () => commands.prepareNativeRead(),
+            cancel: (ticket) => commands.cancelNativeRead(ticket),
+            continuation: async (ticket) =>
+                unwrapMaybeClosed(await command(...args, ticket), ClosedError),
+        });
+    } catch (error) {
+        if (ClosedError) {
+            if (
+                signal.aborted ||
+                (error instanceof TauriCommandError && error.details.category === "cancelled")
+            ) {
+                throw new ClosedError("cancelled");
+            }
+            throw error instanceof ClosedError ? error : new ClosedError(error);
+        }
+        throw error;
+    }
 }
 
 async function prepareAnalysis(
@@ -496,8 +520,15 @@ export const tauri: TauriCommands = new Proxy(commands, {
                     const arity = NATIVE_READ_ARITY[name];
                     const options =
                         args.length > arity ? (args.pop() as NativeReadOptions) : undefined;
-                    const result = await invokeNativeRead(property, command, args, options);
-                    return isCommandResult(result) ? unwrapCommand(result) : result;
+                    const ClosedError = CLOSED_ERROR_COMMANDS.get(property);
+                    const result = await invokeNativeRead(
+                        property,
+                        command,
+                        args,
+                        options,
+                        ClosedError,
+                    );
+                    return unwrapMaybeClosed(result, ClosedError);
                 }
                 if (EXPECTED_SESSION_COMMANDS.has(property)) {
                     args[1] = encodeCounter(args[1] as bigint, "expectedSession");
@@ -519,13 +550,9 @@ export const tauri: TauriCommands = new Proxy(commands, {
                 const result = await command(...args);
                 const ClosedError = CLOSED_ERROR_COMMANDS.get(property);
                 if (ClosedError) {
-                    if (isCommandResult(result)) {
-                        if (result.status === "error") throw new ClosedError(result.error);
-                        return result.data;
-                    }
-                    return result;
+                    return unwrapMaybeClosed(result, ClosedError);
                 }
-                const value = isCommandResult(result) ? unwrapCommand(result) : result;
+                const value = unwrapMaybeClosed(result);
                 collectImportCommittedDatabase(property, value, recordedHandles);
                 if (property === "clearProgress") return decodeProgressGeneration(value);
                 if (property === "getProgress") {

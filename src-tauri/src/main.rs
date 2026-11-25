@@ -1538,6 +1538,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             coach::scoresheet_pick_photos,
             coach::scoresheet_paste_photo,
             coach::scoresheet_take_dropped_photos,
+            coach::scoresheet_read,
             close_splashscreen,
             verify_signed_bytes,
             prepare_native_read,

@@ -244,6 +244,62 @@ export function AiModelFields({
 }
 
 /**
+ * The shared model selector button and its popover (connection, model, effort, and ChatGPT plan
+ * notice). Used by the Coach, the Assistant, and the scoresheet photo import pane.
+ */
+export function AiModelButton({
+  state,
+  errors,
+  position = "top-end",
+  disabled = false,
+}: {
+  state: AiModelSelectionState;
+  errors: Record<CoachError, string>;
+  position?: "top-start" | "top-end";
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const effortLabel = useEffortLabel();
+  const { chosen } = state;
+  const shown = chosen.model
+    ? [chosen.model.name, ...(chosen.effort ? [effortLabel(chosen.effort)] : [])].join(" · ")
+    : t("Coach.ChooseModel");
+  const full = [chosen.connection?.label, shown].filter(Boolean).join(" · ");
+
+  return (
+    <AppPopover position={position} shadow="md" withinPortal>
+      <AppPopover.Target>
+        <Button
+          className={classes.modelButton}
+          classNames={{ label: classes.modelLabel }}
+          variant="subtle"
+          color="gray"
+          size="compact-sm"
+          disabled={disabled}
+          aria-label={t("Coach.ModelSettings", { model: full })}
+          rightSection={<ChevronDown size="0.875rem" aria-hidden />}
+        >
+          <span className={classes.modelName}>{shown}</span>
+        </Button>
+      </AppPopover.Target>
+      <AppPopover.Dropdown className={classes.modelPopover}>
+        <AiModelFields state={state} errors={errors} inPopover />
+        {chosen.connection?.kind === "chatGpt" && (
+          <Group gap="xs" mt="xs">
+            <Text size="xs" c="dimmed">
+              {t("Coach.Plan.Using")}
+            </Text>
+            <Anchor component="button" type="button" size="xs" onClick={openCoachUsage}>
+              {t("Coach.Plan.ManageUsage")}
+            </Anchor>
+          </Group>
+        )}
+      </AppPopover.Dropdown>
+    </AppPopover>
+  );
+}
+
+/**
  * The composer's model button and "New conversation". The button names the model that answers
  * (its accessible name adds the connection); it opens the selectors, with the ChatGPT plan notice
  * when that connection is used.
@@ -260,43 +316,10 @@ export function AiModelControls({
   onNewConversation: () => void;
 }) {
   const { t } = useTranslation();
-  const effortLabel = useEffortLabel();
-  const { chosen } = state;
-  const shown = chosen.model
-    ? [chosen.model.name, ...(chosen.effort ? [effortLabel(chosen.effort)] : [])].join(" · ")
-    : t("Coach.ChooseModel");
-  const full = [chosen.connection?.label, shown].filter(Boolean).join(" · ");
 
   return (
     <>
-      <AppPopover position="top-end" shadow="md" withinPortal>
-        <AppPopover.Target>
-          <Button
-            className={classes.modelButton}
-            classNames={{ label: classes.modelLabel }}
-            variant="subtle"
-            color="gray"
-            size="compact-sm"
-            aria-label={t("Coach.ModelSettings", { model: full })}
-            rightSection={<ChevronDown size="0.875rem" aria-hidden />}
-          >
-            <span className={classes.modelName}>{shown}</span>
-          </Button>
-        </AppPopover.Target>
-        <AppPopover.Dropdown className={classes.modelPopover}>
-          <AiModelFields state={state} errors={errors} inPopover />
-          {chosen.connection?.kind === "chatGpt" && (
-            <Group gap="xs" mt="xs">
-              <Text size="xs" c="dimmed">
-                {t("Coach.Plan.Using")}
-              </Text>
-              <Anchor component="button" type="button" size="xs" onClick={openCoachUsage}>
-                {t("Coach.Plan.ManageUsage")}
-              </Anchor>
-            </Group>
-          )}
-        </AppPopover.Dropdown>
-      </AppPopover>
+      <AiModelButton state={state} errors={errors} />
       <IconAction
         label={t("Coach.NewConversation")}
         variant="subtle"

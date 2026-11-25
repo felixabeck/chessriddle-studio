@@ -1459,6 +1459,11 @@ const tauriBootstrap = () => {
         // The Coach is off unless a scenario turns it on. Release builds have it since 2026-11-24;
         // the default stays off so the snapshots of every other scenario stay without it.
         coach_available: { result: false },
+        coach_has_connection: { result: false },
+        scoresheet_pick_photos: { result: { photos: [], skipped: 0, failed: 0 } },
+        scoresheet_paste_photo: { error: "clipboardEmpty" },
+        scoresheet_take_dropped_photos: { error: "notFound" },
+        scoresheet_read: { error: "scoresheetUnreadable" },
         get_engine_config: { result: { name: "E2E Stockfish", options: [] } },
         stop_engine: { result: false },
         release_engine_search: { result: null },

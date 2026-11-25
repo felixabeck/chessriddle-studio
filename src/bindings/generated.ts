@@ -307,6 +307,14 @@ async scoresheetTakeDroppedPhotos(drop: string) : Promise<Result<ScoresheetPhoto
     else return { status: "error", error: e  as any };
 }
 },
+async scoresheetRead(read: ScoresheetReadInput, ticket: string | null) : Promise<Result<ScoresheetGame, CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scoresheet_read", { read, ticket }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async closeSplashscreen() : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
@@ -1964,7 +1972,15 @@ export type CoachError =
 /**
  * The system clipboard does not currently contain a readable image.
  */
-"clipboardEmpty"
+"clipboardEmpty" | 
+/**
+ * The chosen model does not accept image inputs.
+ */
+"imagesUnsupported" | 
+/**
+ * The photos could not be read as a chess scoresheet with any legal move.
+ */
+"scoresheetUnreadable"
 /**
  * Broadcast to every window; the receiver keeps only the turn it is waiting for.
  */
@@ -2373,9 +2389,14 @@ export type ScoreValue =
  * Mate coming up in this many moves. Negative value means the engine is getting mated.
  */
 { type: "mate"; value: number }
+export type ScoresheetGame = { headers: ScoresheetHeaders; moves: ScoresheetMove[]; stopped: ScoresheetStop | null }
+export type ScoresheetHeaders = { white: string; black: string; event: string; site: string; date: string; round: string; result: string; whiteElo: string; blackElo: string }
+export type ScoresheetMove = { san: string; unsure: boolean }
 export type ScoresheetPhoto = { dataUrl: string }
 export type ScoresheetPhotoBatch = { photos: ScoresheetPhoto[]; skipped: number; failed: number }
 export type ScoresheetPhotosDropped = { drop: string }
+export type ScoresheetReadInput = { connection: CoachConnectionHandle; model: string; effort?: string | null; photos: string[] }
+export type ScoresheetStop = { ply: number; tokens: string[] }
 export type Segment = { type: "text"; text: string } | 
 /**
  * A line that is legal from the turn position, in the library's SAN with its engine moves.

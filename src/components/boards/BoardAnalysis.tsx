@@ -15,7 +15,7 @@ import {
 } from "@/components/common/iconCatalog";
 import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
-import { lazy, Suspense, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type StoreApi, useStore } from "zustand";
 import type { TreeStoreState } from "@/state/store/tree";
@@ -69,7 +69,7 @@ import CoachPanel from "../panels/coach/CoachPanel";
 import DatabasePanel from "../panels/database/DatabasePanel";
 import InfoPanel from "../panels/info/InfoPanel";
 import PracticePanel from "../panels/practice/PracticePanel";
-import { PanelErrorBoundary } from "../common/PanelErrorBoundary";
+import { RetryableLazyPanel } from "../common/PanelErrorBoundary";
 import Board from "./Board";
 import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
@@ -90,34 +90,6 @@ import { BoardLayoutModeContext } from "@/state/paneLayout";
 export const scoresheetPhotoPanelLoader = {
   load: () => import("../panels/scoresheet/ScoresheetPhotoPanel"),
 };
-
-function LazyScoresheetPhotoPanel() {
-  const { t } = useTranslation();
-  const [loadState, setLoadState] = useState(() => ({
-    attempt: 0,
-    Panel: lazy(() => scoresheetPhotoPanelLoader.load()),
-  }));
-  const PhotoPanel = loadState.Panel;
-  return (
-    <PanelErrorBoundary
-      key={loadState.attempt}
-      operation="scoresheet-photo-panel-load"
-      logLabel="Scoresheet photo panel failed to load"
-      loadFailedText={t("Scoresheet.LoadFailed")}
-      retryLabel={t("Common.Retry")}
-      onRetry={() =>
-        setLoadState((current) => ({
-          attempt: current.attempt + 1,
-          Panel: lazy(() => scoresheetPhotoPanelLoader.load()),
-        }))
-      }
-    >
-      <Suspense fallback={null}>
-        <PhotoPanel />
-      </Suspense>
-    </PanelErrorBoundary>
-  );
-}
 
 /**
  * Owns the single file position index request for the mounted file-backed analysis tab, releasing
@@ -615,7 +587,14 @@ function BoardAnalysis() {
               )}
               {hasScoresheetReview && (
                 <Tabs.Panel value="photo">
-                  <LazyScoresheetPhotoPanel />
+                  <RetryableLazyPanel
+                    load={() => scoresheetPhotoPanelLoader.load()}
+                    panelProps={{}}
+                    operation="scoresheet-photo-panel-load"
+                    logLabel="Scoresheet photo panel failed to load"
+                    loadFailedText={t("Scoresheet.LoadFailed")}
+                    retryLabel={t("Common.Retry")}
+                  />
                 </Tabs.Panel>
               )}
               <Tabs.Panel value="analysis">

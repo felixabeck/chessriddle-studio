@@ -1,9 +1,9 @@
 import cx from "clsx";
 import { X } from "lucide-react";
-import { lazy, Suspense, useState, type ComponentType } from "react";
+import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { IconAction } from "@/components/common/IconAction";
-import { PanelErrorBoundary } from "@/components/common/PanelErrorBoundary";
+import { RetryableLazyPanel } from "@/components/common/PanelErrorBoundary";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import type { AssistantPanelProps } from "./AssistantPanel";
 import classes from "./AssistantPanel.module.css";
@@ -27,11 +27,6 @@ function DockedAssistantPanel({
 }) {
   const { t } = useTranslation();
   const narrow = useScaledMaxWidth(NARROW_OVERLAY_WIDTH_EM);
-  const [loadState, setLoadState] = useState(() => ({
-    attempt: 0,
-    Panel: lazy(loadPanel),
-  }));
-  const LazyPanel = loadState.Panel;
 
   return (
     <aside
@@ -47,29 +42,15 @@ function DockedAssistantPanel({
         </IconAction>
       </div>
       <div className={classes.body}>
-        <PanelErrorBoundary
-          key={loadState.attempt}
+        <RetryableLazyPanel
+          load={loadPanel}
+          panelProps={{ createNewTab, openAccounts, openEngines, openSettings }}
           operation="assistant-panel-load"
           logLabel="Assistant panel failed to load"
           className={classes.fallback}
-          onRetry={() =>
-            setLoadState((current) => ({
-              attempt: current.attempt + 1,
-              Panel: lazy(loadPanel),
-            }))
-          }
           loadFailedText={t("Assistant.LoadFailed")}
           retryLabel={t("Common.Retry")}
-        >
-          <Suspense fallback={null}>
-            <LazyPanel
-              createNewTab={createNewTab}
-              openAccounts={openAccounts}
-              openEngines={openEngines}
-              openSettings={openSettings}
-            />
-          </Suspense>
-        </PanelErrorBoundary>
+        />
       </div>
     </aside>
   );

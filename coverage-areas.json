@@ -105,6 +105,7 @@
         "src/utils/phase.ts",
         "src/utils/repertoire.ts",
         "src/utils/score.ts",
+        "src/utils/scoresheet.ts",
         "src/utils/timeControl.ts",
         "src/utils/treeReducer.ts"
       ]

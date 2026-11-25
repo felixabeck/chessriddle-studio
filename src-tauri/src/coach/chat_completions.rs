@@ -47,6 +47,14 @@ fn request_body(request: &RoundRequest<'_>) -> Value {
     for message in request.messages {
         messages.push(match message {
             Message::User(text) => json!({ "role": "user", "content": text }),
+            Message::UserWithImages { text, images } => {
+                let mut parts = Vec::with_capacity(1 + images.len());
+                parts.push(json!({ "type": "text", "text": text }));
+                for url in images {
+                    parts.push(json!({ "type": "image_url", "image_url": { "url": url } }));
+                }
+                json!({ "role": "user", "content": parts })
+            }
             Message::Assistant {
                 text,
                 tool_calls,
@@ -314,7 +322,12 @@ impl ModelBackend for ChatCompletions {
                 body = read_bounded_body(response, MAX_ERROR_BODY_BYTES) => body.unwrap_or_default(),
             };
             let message = error_text(&body);
-            let error = classify_refusal(status.as_u16(), &message, request.effort.is_some());
+            let error = classify_refusal(
+                status.as_u16(),
+                &message,
+                request.effort.is_some(),
+                request.has_images(),
+            );
             log::warn!(
                 "coach: chat completions refused with HTTP {}: {}",
                 status.as_u16(),
@@ -938,5 +951,57 @@ mod tests {
         assert!(!diagnostic.contains("sk-secret"));
         assert!(diagnostic.contains("[key]"));
         assert!(diagnostic.chars().count() < text.chars().count());
+    }
+
+    #[tokio::test]
+    async fn user_message_with_images_serialises_content_array_without_detail_and_classifies_image_refusal(
+    ) {
+        let img1 = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+        let img2 = "data:image/jpeg;base64,/9j/4BBQSg==";
+        let messages = vec![Message::UserWithImages {
+            text: "Transcribe this sheet.".into(),
+            images: vec![img1.into(), img2.into()],
+        }];
+        let (server, seen) = provider(vec![text_delta("{}"), finish("stop")]);
+        run(&backend(&server, None), &messages, None, &[])
+            .await
+            .0
+            .unwrap();
+        let sent = seen.lock().unwrap()[0].1["messages"][1].clone();
+        assert_eq!(
+            sent,
+            json!({
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "Transcribe this sheet." },
+                    { "type": "image_url", "image_url": { "url": img1 } },
+                    { "type": "image_url", "image_url": { "url": img2 } },
+                ],
+            })
+        );
+        assert!(sent["content"][1]["image_url"].get("detail").is_none());
+
+        // A 400/404/422 naming images, vision or modalities classifies as ImagesUnsupported when
+        // images were sent, and does not when no images were sent.
+        let server = refusing(
+            StatusCode::BAD_REQUEST,
+            json!({ "error": { "message": "This model does not support image inputs." } }),
+        );
+        let with_images = run(&backend(&server, None), &messages, None, &[])
+            .await
+            .0
+            .unwrap_err();
+        assert_eq!(
+            with_images,
+            RoundFailure::new(CoachError::ImagesUnsupported)
+        );
+        let without_images = run(&backend(&server, None), &user(), None, &[])
+            .await
+            .0
+            .unwrap_err();
+        assert_eq!(
+            without_images,
+            RoundFailure::new(CoachError::ProviderFailure)
+        );
     }
 }

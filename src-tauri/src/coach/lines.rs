@@ -12,7 +12,7 @@ use super::error::CoachError;
 /// The longest line a model may write or a tool may be asked about.
 pub(crate) const MAX_LINE_PLIES: usize = 40;
 /// The longest token still considered a move ("exd8=Q+" has 7 characters).
-const MAX_MOVE_TOKEN_CHARS: usize = 12;
+pub(crate) const MAX_MOVE_TOKEN_CHARS: usize = 12;
 
 /// The position a turn is about: the game start FEN and the UCI moves that lead to the node the
 /// board showed when the user sent the message.
@@ -119,13 +119,9 @@ pub(crate) fn terminal(position: &Chess) -> Option<Terminal> {
     }
 }
 
-/// Splits model text into move tokens: move numbers ("12.", "12...", "12.Nf3"), ellipses, result
-/// markers and annotation glyphs are dropped, digit-zero castling is read as castling.
-pub(crate) fn move_tokens(text: &str) -> Vec<String> {
-    text.split_whitespace().filter_map(move_token).collect()
-}
-
-fn move_token(word: &str) -> Option<String> {
+/// Normalises a single raw move token: strips trailing annotation punctuation, drops result
+/// markers and leading move numbers/ellipses, and converts digit-zero castling to letter-O.
+pub(crate) fn normalize_move_token(word: &str) -> Option<String> {
     let word = word.trim_end_matches(['!', '?', ',', ';']);
     if matches!(word, "1-0" | "0-1" | "1/2-1/2" | "*") {
         return None;
@@ -133,7 +129,7 @@ fn move_token(word: &str) -> Option<String> {
     // A move number is digits followed by a dot; "0-0" is not one.
     let after_digits = word.trim_start_matches(|c: char| c.is_ascii_digit());
     let word = if after_digits.is_empty() || after_digits.starts_with(['.', '…']) {
-        after_digits.trim_start_matches(['.', '…'])
+        after_digits.trim_start_matches(['.', '…']).trim_start()
     } else {
         word
     };
@@ -144,6 +140,32 @@ fn move_token(word: &str) -> Option<String> {
     } else {
         Some(word.to_owned())
     }
+}
+
+/// Splits model text into move tokens: move numbers ("12.", "12...", "12.Nf3"), ellipses, result
+/// markers and annotation glyphs are dropped, digit-zero castling is read as castling.
+pub(crate) fn move_tokens(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .filter_map(normalize_move_token)
+        .collect()
+}
+
+/// Resolves one SAN token against `position`, advancing `position` and returning `(san, uci)` in
+/// the library's own spelling, or `None` if the token is overlong, unparseable, or illegal.
+pub(crate) fn resolve_move_token(
+    position: &mut Chess,
+    castling_mode: CastlingMode,
+    token: &str,
+) -> Option<(String, String)> {
+    if token.chars().count() > MAX_MOVE_TOKEN_CHARS {
+        return None;
+    }
+    let played = SanPlus::from_ascii(token.as_bytes())
+        .ok()
+        .and_then(|parsed| parsed.san.to_move(position).ok())?;
+    let uci = UciMove::from_move(&played, castling_mode).to_string();
+    let san = SanPlus::from_move_and_play_unchecked(position, &played).to_string();
+    Some((san, uci))
 }
 
 fn resolve_line(
@@ -158,19 +180,16 @@ fn resolve_line(
     let mut san = Vec::with_capacity(tokens.len());
     let mut uci = Vec::with_capacity(tokens.len());
     for (ply, token) in tokens.iter().enumerate() {
-        let illegal = || LineError::Illegal {
-            ply,
-            token: token.chars().take(MAX_MOVE_TOKEN_CHARS).collect(),
+        let Some((played_san, played_uci)) =
+            resolve_move_token(&mut position, castling_mode, token)
+        else {
+            return Err(LineError::Illegal {
+                ply,
+                token: token.chars().take(MAX_MOVE_TOKEN_CHARS).collect(),
+            });
         };
-        if token.chars().count() > MAX_MOVE_TOKEN_CHARS {
-            return Err(illegal());
-        }
-        let played = SanPlus::from_ascii(token.as_bytes())
-            .ok()
-            .and_then(|parsed| parsed.san.to_move(&position).ok())
-            .ok_or_else(illegal)?;
-        uci.push(UciMove::from_move(&played, castling_mode).to_string());
-        san.push(SanPlus::from_move_and_play_unchecked(&mut position, &played).to_string());
+        san.push(played_san);
+        uci.push(played_uci);
     }
     Ok(ResolvedLine {
         san,

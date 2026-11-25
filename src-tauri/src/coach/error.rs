@@ -60,4 +60,8 @@ pub(crate) enum CoachError {
     PhotoUnreadable,
     /// The system clipboard does not currently contain a readable image.
     ClipboardEmpty,
+    /// The chosen model does not accept image inputs.
+    ImagesUnsupported,
+    /// The photos could not be read as a chess scoresheet with any legal move.
+    ScoresheetUnreadable,
 }

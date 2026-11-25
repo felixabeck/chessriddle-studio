@@ -131,6 +131,14 @@ fn request_body(request: &RoundRequest<'_>, provider: PlanProvider, with_reasoni
     for message in request.messages {
         match message {
             Message::User(text) => input.push(json!({ "role": "user", "content": text })),
+            Message::UserWithImages { text, images } => {
+                let mut parts = Vec::with_capacity(1 + images.len());
+                parts.push(json!({ "type": "input_text", "text": text }));
+                for url in images {
+                    parts.push(json!({ "type": "input_image", "image_url": url }));
+                }
+                input.push(json!({ "role": "user", "content": parts }));
+            }
             Message::Assistant {
                 text,
                 tool_calls,
@@ -204,6 +212,7 @@ pub(crate) fn classify_plan_refusal(
     status: u16,
     body: &[u8],
     effort_sent: bool,
+    has_images: bool,
 ) -> (CoachError, String) {
     let message = error_text(body);
     let value = serde_json::from_slice::<Value>(body).unwrap_or(Value::Null);
@@ -225,7 +234,7 @@ pub(crate) fn classify_plan_refusal(
         429 | 503 => CoachError::RateLimited,
         400 if param.starts_with("reasoning") && effort_sent => CoachError::EffortRejected,
         400 if param.starts_with("tools") => CoachError::NoFunctionCalling,
-        400 | 404 | 422 => match classify_refusal(status, &message, effort_sent) {
+        400 | 404 | 422 => match classify_refusal(status, &message, effort_sent, has_images) {
             // There is no key on this route.
             CoachError::KeyRejected => CoachError::ProviderFailure,
             other => other,
@@ -481,6 +490,7 @@ impl<B: BearerSource> ModelBackend for Responses<B> {
                 status.as_u16(),
                 &refusal,
                 request.effort.is_some(),
+                request.has_images(),
             );
             log::warn!(
                 "coach: responses refused with HTTP {}: {}",
@@ -682,8 +692,14 @@ mod tests {
             json!({ "error": { "code": "forbidden", "message": "no access" } }),
         ] {
             assert_eq!(
-                classify_plan_refusal(PlanProvider::Grok, 403, body.to_string().as_bytes(), false)
-                    .0,
+                classify_plan_refusal(
+                    PlanProvider::Grok,
+                    403,
+                    body.to_string().as_bytes(),
+                    false,
+                    false
+                )
+                .0,
                 CoachError::SubscriptionNotEligible
             );
         }
@@ -1198,6 +1214,52 @@ mod tests {
         assert_eq!(
             result.unwrap_err(),
             RoundFailure::new(CoachError::Cancelled)
+        );
+    }
+
+    #[tokio::test]
+    async fn user_message_with_images_serialises_input_array_without_detail_and_classifies_image_refusal(
+    ) {
+        let img1 = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+        let img2 = "data:image/jpeg;base64,/9j/4BBQSg==";
+        let messages = vec![Message::UserWithImages {
+            text: "Transcribe this sheet.".into(),
+            images: vec![img1.into(), img2.into()],
+        }];
+        let (server, seen) = provider(vec![Answer::Stream(vec![text_delta("{}"), completed()])]);
+        ask(&backend(&server, Arc::default()), &messages, None)
+            .await
+            .0
+            .unwrap();
+        let sent = seen.lock().unwrap()[0].1["input"][0].clone();
+        assert_eq!(
+            sent,
+            json!({
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": "Transcribe this sheet." },
+                    { "type": "input_image", "image_url": img1 },
+                    { "type": "input_image", "image_url": img2 },
+                ],
+            })
+        );
+        assert!(sent["content"][1].get("detail").is_none());
+
+        // Refusal naming modalities/vision/images classifies as ImagesUnsupported only when images were sent.
+        let refusal =
+            json!({ "error": { "message": "Selected model does not support vision modalities." } });
+        let (server, _) = provider(vec![
+            Answer::Refusal(StatusCode::UNPROCESSABLE_ENTITY, refusal.clone()),
+            Answer::Refusal(StatusCode::UNPROCESSABLE_ENTITY, refusal),
+        ]);
+        let b = backend(&server, Arc::default());
+        assert_eq!(
+            ask(&b, &messages, None).await.0.unwrap_err(),
+            RoundFailure::new(CoachError::ImagesUnsupported)
+        );
+        assert_eq!(
+            ask(&b, &question(), None).await.0.unwrap_err(),
+            RoundFailure::new(CoachError::ProviderFailure)
         );
     }
 }
