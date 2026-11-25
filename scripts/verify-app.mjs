@@ -224,7 +224,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { deflateSync } from "node:zlib";
+import { crc32, deflateSync } from "node:zlib";
 import { Chess, makeSquare } from "chessops";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
@@ -8586,31 +8586,13 @@ async function verifyTimedRun(profileDirectory, screenshotDirectory) {
   }
 }
 
-const PNG_CRC32_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n += 1) {
-    let c = n;
-    for (let k = 0; k < 8; k += 1) c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function pngCrc32(buffer) {
-  let crc = 0xffffffff;
-  for (const byte of buffer) {
-    crc = PNG_CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
 function pngChunk(type, data) {
   const typeBytes = Buffer.from(type, "ascii");
   const length = Buffer.allocUnsafe(4);
   length.writeUInt32BE(data.length, 0);
   const body = Buffer.concat([typeBytes, data]);
   const crc = Buffer.allocUnsafe(4);
-  crc.writeUInt32BE(pngCrc32(body), 0);
+  crc.writeUInt32BE(crc32(body), 0);
   return Buffer.concat([length, body, crc]);
 }
 

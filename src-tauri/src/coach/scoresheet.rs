@@ -12,12 +12,13 @@ use specta::Type;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    backend::{Message, ModelBackend, RoundRequest},
+    backend::{Message, ModelBackend},
     coach,
     driver::TURN_DEADLINE,
     effort_is_plain,
     error::CoachError,
     lines::{normalize_move_token, position_fen, resolve_move_token, MAX_MOVE_TOKEN_CHARS},
+    model_loop::ModelRounds,
     plain,
     scoresheet_photo::{MAX_OUTPUT_JPEG_BYTES, MAX_SCORESHEET_PHOTOS},
     MAX_MODEL_CHARS,
@@ -514,28 +515,12 @@ fn correction_prompt(failed_ply: usize, failed_token: &str, position: &Chess) ->
     )
 }
 
-async fn ask_round(
-    backend: &dyn ModelBackend,
-    model: &str,
-    effort: Option<&str>,
-    messages: &[Message],
-    cancellation: &CancellationToken,
-) -> Result<String, CoachError> {
-    if cancellation.is_cancelled() {
+async fn ask_round(rounds: &ModelRounds<'_>, messages: &[Message]) -> Result<String, CoachError> {
+    if rounds.cancellation.is_cancelled() {
         return Err(CoachError::Cancelled);
     }
-    let round = backend
-        .round(
-            RoundRequest {
-                model,
-                effort,
-                system: SYSTEM_PROMPT,
-                messages,
-                tools: &[],
-            },
-            &mut |_| {},
-            cancellation,
-        )
+    let round = rounds
+        .ask(messages, &mut |_| {})
         .await
         .map_err(|failure| failure.error)?;
     Ok(round.text)
@@ -575,6 +560,14 @@ async fn run_scoresheet_rounds(
     photos: Vec<String>,
     cancellation: &CancellationToken,
 ) -> Result<ScoresheetGame, CoachError> {
+    let rounds = ModelRounds {
+        backend,
+        model,
+        effort,
+        system: SYSTEM_PROMPT,
+        tools: &[],
+        cancellation,
+    };
     let mut messages = vec![Message::UserWithImages {
         text: INITIAL_USER_PROMPT.into(),
         images: photos,
@@ -584,7 +577,7 @@ async fn run_scoresheet_rounds(
     // Initial reading (retrying malformed/out-of-bound replies within the 4-round budget).
     let (headers, mut cells) = loop {
         rounds_used += 1;
-        let reply_text = ask_round(backend, model, effort, &messages, cancellation).await?;
+        let reply_text = ask_round(&rounds, &messages).await?;
         messages.push(Message::Assistant {
             text: reply_text.clone(),
             tool_calls: Vec::new(),
@@ -653,7 +646,7 @@ async fn run_scoresheet_rounds(
         rounds_used += 1;
 
         // A provider, transport or deadline failure in any round fails the whole read.
-        let reply_text = ask_round(backend, model, effort, &messages, cancellation).await?;
+        let reply_text = ask_round(&rounds, &messages).await?;
         messages.push(Message::Assistant {
             text: reply_text.clone(),
             tool_calls: Vec::new(),
@@ -762,7 +755,7 @@ pub(crate) async fn read_scoresheet(
 mod tests {
     use super::*;
     use crate::coach::{
-        backend::RoundFailure,
+        backend::{RoundFailure, RoundRequest},
         turn::tests::{text, ScriptedBackend},
         TurnSlots,
     };

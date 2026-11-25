@@ -94,9 +94,19 @@ describe("scoresheet tree building", () => {
 
     test("completely read game keeps game-end default, marks unsure nodes, sets review state and dirty", async () => {
         const game = sampleGame();
+        const controller = new AbortController();
         mocks.parsePGN.mockResolvedValueOnce(makeParsedTree(["e4", "e5", "Nf3"], "1-0"));
 
-        const tree = await buildScoresheetTree(game);
+        const tree = await buildScoresheetTree(game, { signal: controller.signal });
+
+        expect(mocks.parsePGN).toHaveBeenCalledWith(scoresheetGameToPgn(game), undefined, {
+            signal: controller.signal,
+        });
+        const [passedPgn] = mocks.parsePGN.mock.calls[0];
+        expect(passedPgn).toContain('[Event "Club Open"]');
+        expect(passedPgn).toContain('[White "Alice"]');
+        expect(passedPgn).toContain('[Black "Bob"]');
+        expect(passedPgn).toContain("1. e4 e5 2. Nf3 1-0");
 
         const n1 = tree.root.children[0];
         const n2 = n1.children[0];

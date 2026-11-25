@@ -301,9 +301,9 @@ async function renderPane(options?: {
       <Provider store={store}>
         <ImportPhotoPane
           ownerId={options?.ownerId ?? "owner-tab"}
-          onClose={options?.onClose}
-          replaceImportedTab={options?.replaceImportedTab}
-          onReadingChange={options?.onReadingChange}
+          onClose={options?.onClose ?? vi.fn()}
+          replaceImportedTab={options?.replaceImportedTab ?? vi.fn()}
+          onReadingChange={options?.onReadingChange ?? vi.fn()}
         />
       </Provider>,
     );
@@ -783,7 +783,12 @@ test("Escape on the first-use notice closes only the notice and keeps the enclos
     root.render(
       <Provider store={store}>
         <AppModal opened onClose={onOuterClose} title="Import">
-          <ImportPhotoPane ownerId="owner-tab" onClose={onOuterClose} />
+          <ImportPhotoPane
+            ownerId="owner-tab"
+            onClose={onOuterClose}
+            replaceImportedTab={vi.fn()}
+            onReadingChange={vi.fn()}
+          />
         </AppModal>
       </Provider>,
     );
@@ -806,6 +811,69 @@ test("Escape on the first-use notice closes only the notice and keeps the enclos
   expect(host.querySelector('[data-testid="ai-notice-modal"]')).toBeNull();
   expect(onOuterClose).not.toHaveBeenCalled();
   expect(host.querySelectorAll("img")).toHaveLength(1);
+});
+
+test("while a read is pending, paste, drop events, and photo removal change nothing and call no intake command", async () => {
+  await renderPane({
+    hasConnection: true,
+    noticeAccepted: [CONNECTION.handle],
+  });
+
+  // Fill all 4 photo slots so handlePastePhoto's own readingRef guard is exercised directly
+  // (without it, handlePastePhoto would set an intake status before reaching runIntake).
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce({
+    photos: [
+      { dataUrl: PHOTO_1 },
+      { dataUrl: PHOTO_2 },
+      { dataUrl: PHOTO_3 },
+      { dataUrl: PHOTO_4 },
+    ],
+    skipped: 0,
+    failed: 0,
+  });
+  await act(async () => {
+    buttonByText("Scoresheet.Intake.ChoosePhotos").click();
+  });
+  expect(host.querySelectorAll("img")).toHaveLength(4);
+  expect(host.querySelector("[data-scoresheet-intake-status]")).toBeNull();
+
+  // Start a read that stays pending, and fire a same-tick remove click before React commits
+  // disabled={reading} so handleRemovePhoto's own readingRef guard is exercised directly.
+  const removeBtn = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Scoresheet.Intake.RemovePhoto(number=1)"]',
+  )!;
+  mocks.scoresheetRead.mockImplementationOnce(() => new Promise<ScoresheetGame>(() => {}));
+  await act(async () => {
+    buttonByText("Scoresheet.Read.Button").click();
+    removeBtn.click();
+  });
+  expect(host.querySelector("[data-scoresheet-reading]")).not.toBeNull();
+  expect(host.querySelectorAll("img")).toHaveLength(4);
+  expect(removeBtn.disabled).toBe(true);
+
+  mocks.scoresheetPickPhotos.mockClear();
+  mocks.scoresheetPastePhoto.mockClear();
+  mocks.scoresheetTakeDroppedPhotos.mockClear();
+
+  // 1. Ctrl+V paste while reading does nothing and sets no intake status.
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "v", ctrlKey: true, bubbles: true }));
+    await Promise.resolve();
+  });
+  expect(mocks.scoresheetPastePhoto).not.toHaveBeenCalled();
+  expect(host.querySelector("[data-scoresheet-intake-status]")).toBeNull();
+  expect(host.querySelectorAll("img")).toHaveLength(4);
+
+  // 2. Drop event while reading calls no intake command and changes nothing.
+  const [listener] = [...mocks.dropListeners];
+  await act(async () => {
+    listener({ payload: { drop: "drop-during-read" } });
+    await Promise.resolve();
+  });
+  expect(mocks.scoresheetTakeDroppedPhotos).not.toHaveBeenCalled();
+  expect(host.querySelector("[data-scoresheet-intake-status]")).toBeNull();
+  expect(host.querySelectorAll("img")).toHaveLength(4);
+  expect(mocks.scoresheetPickPhotos).not.toHaveBeenCalled();
 });
 
 test.each(Object.entries(catalogues))(

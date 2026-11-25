@@ -390,18 +390,32 @@ pub(crate) async fn pick_photos(
     app: tauri::AppHandle,
     state: &crate::AppState,
 ) -> Result<ScoresheetPhotoBatch, CoachError> {
-    let _ = coach(state)?;
-    let picker_app = app.clone();
-    // Picker runs on spawn_blocking outside BLOCKING_GATEWAY so an open dialog never holds a permit.
-    let picked = tokio::task::spawn_blocking(move || {
-        picker_app
-            .dialog()
+    pick_photos_with(state, move || {
+        app.dialog()
             .file()
             .add_filter("Image", &PICKER_EXTENSIONS)
             .blocking_pick_files()
+            .map(|paths| {
+                paths
+                    .into_iter()
+                    .map(tauri_plugin_dialog::FilePath::into_path)
+                    .collect()
+            })
     })
     .await
-    .map_err(|error| {
+}
+
+async fn pick_photos_with<F, E>(
+    state: &crate::AppState,
+    pick: F,
+) -> Result<ScoresheetPhotoBatch, CoachError>
+where
+    F: FnOnce() -> Option<Vec<Result<PathBuf, E>>> + Send + 'static,
+    E: Send + 'static,
+{
+    let _ = coach(state)?;
+    // Picker runs on spawn_blocking outside BLOCKING_GATEWAY so an open dialog never holds a permit.
+    let picked = tokio::task::spawn_blocking(pick).await.map_err(|error| {
         log::error!("scoresheet photo picker task failed: {error}");
         CoachError::PhotoUnreadable
     })?;
@@ -412,11 +426,6 @@ pub(crate) async fn pick_photos(
     if selections.is_empty() {
         return Err(CoachError::Cancelled);
     }
-
-    let selections: Vec<Result<PathBuf, _>> = selections
-        .into_iter()
-        .map(tauri_plugin_dialog::FilePath::into_path)
-        .collect();
 
     let authority = state.pgn_path_authority.clone();
     BLOCKING_GATEWAY
@@ -464,13 +473,13 @@ fn read_clipboard_photo() -> Result<ScoresheetPhoto, CoachError> {
 /// Consumes the calling window's pending dropped-photo grants if `drop` matches its slot.
 pub(crate) async fn take_dropped_photos(
     drop: String,
-    window: &tauri::WebviewWindow,
+    window_label: &str,
     state: &crate::AppState,
 ) -> Result<ScoresheetPhotoBatch, CoachError> {
     let coach_state = coach(state)?;
     let slot = coach_state
         .dropped_photos
-        .take(window.label(), &drop)
+        .take(window_label, &drop)
         .ok_or(CoachError::NotFound)?;
     let authority = state.pgn_path_authority.clone();
     BLOCKING_GATEWAY
@@ -1040,5 +1049,174 @@ mod tests {
         window.unlisten(photo_listener);
         window.unlisten(cb_listener);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn intake_commands_refuse_when_coach_is_unavailable() {
+        use crate::{
+            coach::Coach,
+            credentials::{CoachCredentials, MemoryCredentialStore},
+        };
+        use std::sync::Arc;
+
+        for enabled in [None, Some(false)] {
+            let state = crate::AppState::default();
+            let _cred_dir = enabled.map(|flag| {
+                let (credentials, dir) =
+                    CoachCredentials::for_test(Arc::new(MemoryCredentialStore::default()));
+                let coach_state = Coach::new(flag, Arc::new(credentials)).expect("coach");
+                assert!(state.coach.set(coach_state).is_ok());
+                dir
+            });
+
+            assert_eq!(
+                pick_photos_with(&state, || -> Option<Vec<Result<PathBuf, ()>>> {
+                    panic!("picker must not run when coach is unavailable")
+                })
+                .await,
+                Err(CoachError::Unavailable)
+            );
+            assert_eq!(paste_photo(&state).await, Err(CoachError::Unavailable));
+            assert_eq!(
+                take_dropped_photos("any-drop-id".into(), "main", &state).await,
+                Err(CoachError::Unavailable)
+            );
+        }
+    }
+
+    #[test]
+    fn handle_drop_stages_nothing_and_emits_nothing_when_coach_is_unavailable(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::{
+            coach::Coach,
+            credentials::{CoachCredentials, MemoryCredentialStore},
+        };
+        use std::sync::Arc;
+        use tauri::Listener;
+
+        let (dir, _unused) = make_test_authority();
+        let img = dir.path().join("page1.jpg");
+        std::fs::write(&img, make_rgb_jpeg(24, 24, [10, 80, 160]))?;
+
+        for enabled in [None, Some(false)] {
+            let (_auth_dir, authority) = make_test_authority();
+            let app = tauri::test::mock_app();
+            tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+                .events(tauri_specta::collect_events!(ScoresheetPhotosDropped))
+                .mount_events(&app);
+            let state = crate::AppState {
+                pgn_path_authority: authority,
+                ..Default::default()
+            };
+            let _cred_dir = enabled.map(|flag| {
+                let (credentials, cred_dir) =
+                    CoachCredentials::for_test(Arc::new(MemoryCredentialStore::default()));
+                let coach_state = Coach::new(flag, Arc::new(credentials)).expect("coach");
+                assert!(state.coach.set(coach_state).is_ok());
+                cred_dir
+            });
+            app.manage(state);
+
+            let webview =
+                tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build()?;
+            let window = webview.as_ref().window();
+            let photo_drops: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+            let p_obs = photo_drops.clone();
+            let listener = ScoresheetPhotosDropped::listen(&window, move |event| {
+                if let Ok(mut list) = p_obs.lock() {
+                    list.push(event.payload.drop);
+                }
+            });
+
+            handle_drop(
+                &window,
+                &tauri::DragDropEvent::Drop {
+                    paths: vec![img.clone()],
+                    position: tauri::PhysicalPosition::new(0.0, 0.0),
+                },
+            )?;
+
+            assert!(photo_drops.lock().unwrap().is_empty());
+            if let Some(coach_state) = app.state::<crate::AppState>().coach.get() {
+                assert!(coach_state.dropped_photos.slots.lock().unwrap().is_empty());
+            }
+            window.unlisten(listener);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn take_dropped_photos_and_pick_photos_route_through_command_body() {
+        use crate::{
+            coach::Coach,
+            credentials::{CoachCredentials, MemoryCredentialStore},
+        };
+        use std::sync::Arc;
+
+        let (dir, authority) = make_test_authority();
+        let img = dir.path().join("sheet.jpg");
+        std::fs::write(&img, make_rgb_jpeg(24, 24, [20, 40, 60])).unwrap();
+
+        let (credentials, _cred_dir) =
+            CoachCredentials::for_test(Arc::new(MemoryCredentialStore::default()));
+        let coach_state = Coach::new(true, Arc::new(credentials)).expect("coach");
+        let state = crate::AppState {
+            pgn_path_authority: authority,
+            ..Default::default()
+        };
+        assert!(state.coach.set(coach_state).is_ok());
+
+        // take_dropped_photos: empty slot, wrong id, and foreign window all answer NotFound.
+        assert_eq!(
+            take_dropped_photos("missing".into(), "main", &state).await,
+            Err(CoachError::NotFound)
+        );
+        let drop_id = stage_dropped_paths(
+            &state.coach.get().unwrap().dropped_photos,
+            &state.pgn_path_authority,
+            "main",
+            std::slice::from_ref(&img),
+        )
+        .expect("drop id");
+        assert_eq!(
+            take_dropped_photos("wrong-id".into(), "main", &state).await,
+            Err(CoachError::NotFound)
+        );
+        assert_eq!(
+            take_dropped_photos(drop_id.clone(), "other", &state).await,
+            Err(CoachError::NotFound)
+        );
+        let batch = take_dropped_photos(drop_id.clone(), "main", &state)
+            .await
+            .expect("valid drop");
+        assert_eq!(batch.photos.len(), 1);
+        assert_eq!(batch.skipped, 0);
+        assert_eq!(batch.failed, 0);
+        assert_eq!(
+            take_dropped_photos(drop_id, "main", &state).await,
+            Err(CoachError::NotFound)
+        );
+
+        // pick_photos_with: cancelled / empty selections answer Cancelled; valid selection succeeds.
+        assert_eq!(
+            pick_photos_with(&state, || -> Option<Vec<Result<PathBuf, ()>>> { None }).await,
+            Err(CoachError::Cancelled)
+        );
+        assert_eq!(
+            pick_photos_with(&state, || -> Option<Vec<Result<PathBuf, ()>>> {
+                Some(Vec::new())
+            })
+            .await,
+            Err(CoachError::Cancelled)
+        );
+        let picked_path = img.clone();
+        let picked = pick_photos_with(&state, move || -> Option<Vec<Result<PathBuf, ()>>> {
+            Some(vec![Ok(picked_path)])
+        })
+        .await
+        .expect("picked batch");
+        assert_eq!(picked.photos.len(), 1);
+        assert_eq!(picked.skipped, 0);
+        assert_eq!(picked.failed, 0);
     }
 }

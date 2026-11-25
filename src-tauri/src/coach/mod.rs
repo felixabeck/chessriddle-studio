@@ -939,7 +939,7 @@ pub(crate) async fn scoresheet_take_dropped_photos(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<ScoresheetPhotoBatch, CoachError> {
-    scoresheet_photo::take_dropped_photos(drop, &window, &state).await
+    scoresheet_photo::take_dropped_photos(drop, window.label(), &state).await
 }
 
 #[tauri::command]

@@ -1138,6 +1138,24 @@ test("From photo card is shown only while the Coach switch is on and mounts Impo
   expect(modalElement().dataset.pending).toBe("true");
 });
 
+test("turning the Coach switch off while Photo is selected falls back and unmounts ImportPhotoPane", async () => {
+  fixtures.coachEnabled = true;
+  await renderModal();
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-Photo"]')!.click();
+  });
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="import-photo-pane"]')).not.toBeNull(),
+  );
+  expect(submitButton()).toBeUndefined();
+
+  fixtures.coachEnabled = false;
+  await renderModal();
+  expect(host.querySelector('[data-testid="mode-Photo"]')).toBeNull();
+  expect(host.querySelector('[data-testid="import-photo-pane"]')).toBeNull();
+  expect(submitButton()).toBeDefined();
+});
+
 test("From photo lazy load failure is isolated by PanelErrorBoundary and recovers on retry", async () => {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
   const originalLoad = importPhotoPaneLoader.load;

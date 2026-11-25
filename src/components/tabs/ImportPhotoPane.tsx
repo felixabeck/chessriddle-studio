@@ -33,23 +33,23 @@ import {
 } from "@/state/scoresheetPhotos";
 import { requestSettingsNavigation } from "@/state/settingsNavigation";
 import { buildScoresheetTree } from "@/utils/scoresheet";
-import { replaceNewTab, type ReplaceNewTabResult, type Tab } from "@/utils/tabs";
+import type { ReplaceNewTabResult, Tab } from "@/utils/tabs";
 import { getGameName, type TreeState } from "@/utils/treeReducer";
 import classes from "./ImportPhotoPane.module.css";
 
 export type ImportPhotoPaneProps = {
   /** Id of the tab that owns the import dialog, used to cancel a read if that tab closes. */
-  ownerId?: string;
+  ownerId: string;
   /** Called before navigating away or after opening the imported game. */
-  onClose?: () => void;
-  /** Replaces the owner tab with the built game tree. Defaults to `replaceNewTab`. */
-  replaceImportedTab?: (
+  onClose: () => void;
+  /** Replaces the owner tab with the built game tree. */
+  replaceImportedTab: (
     submittingOwnerId: string,
     tab: Omit<Tab, "value">,
     tree: TreeState,
   ) => ReplaceNewTabResult | undefined;
   /** Reports whether a native scoresheet reading turn is currently in progress. */
-  onReadingChange?: (reading: boolean) => void;
+  onReadingChange: (reading: boolean) => void;
 };
 
 function isEditableElement(target: EventTarget | null): boolean {
@@ -77,7 +77,7 @@ function ScoresheetDropSubscription({
 }
 
 function ImportPhotoPane({
-  ownerId = "",
+  ownerId,
   onClose,
   replaceImportedTab,
   onReadingChange,
@@ -125,7 +125,7 @@ function ImportPhotoPane({
     return () => {
       mountedRef.current = false;
       abortActiveRead();
-      onReadingChange?.(false);
+      onReadingChange(false);
     };
   }, [abortActiveRead, onReadingChange]);
 
@@ -245,7 +245,7 @@ function ImportPhotoPane({
   }, []);
 
   const handleOpenSettings = useCallback(() => {
-    onClose?.();
+    onClose();
     requestSettingsNavigation({ kind: "category", category: "coach" }, store);
     void navigate({ to: "/settings" });
   }, [navigate, onClose, store]);
@@ -265,7 +265,7 @@ function ImportPhotoPane({
     setReading(true);
     readingRef.current = true;
     setReadError(null);
-    onReadingChange?.(true);
+    onReadingChange(true);
 
     const isActiveSubmit = () =>
       mountedRef.current && readSubmitIdRef.current === submitId && !controller.signal.aborted;
@@ -312,9 +312,7 @@ function ImportPhotoPane({
       };
       let result: ReplaceNewTabResult | undefined;
       try {
-        result = replaceImportedTab
-          ? replaceImportedTab(submittingOwnerId, tab, tree)
-          : replaceNewTab({ store, ownerId: submittingOwnerId, tab, tree });
+        result = replaceImportedTab(submittingOwnerId, tab, tree);
       } catch (cause) {
         warnSafely(`Scoresheet tab open failed: ${normalizeError(cause).message.slice(0, 200)}`);
         result = undefined;
@@ -329,7 +327,7 @@ function ImportPhotoPane({
 
       setScoresheetPhotos(result.id, submittedPhotos);
       store.set(tabFamily(result.id), "photo");
-      onClose?.();
+      onClose();
     } finally {
       if (readControllerRef.current === controller) {
         readControllerRef.current = null;
@@ -337,7 +335,7 @@ function ImportPhotoPane({
       if (mountedRef.current && readSubmitIdRef.current === submitId) {
         setReading(false);
         readingRef.current = false;
-        onReadingChange?.(false);
+        onReadingChange(false);
       }
     }
   }, [
@@ -369,7 +367,7 @@ function ImportPhotoPane({
     setReading(false);
     readingRef.current = false;
     setReadError(null);
-    onReadingChange?.(false);
+    onReadingChange(false);
   }, [abortActiveRead, onReadingChange]);
 
   const selectionHint = aiSelectionHint(modelSelection, errorMessages, t);
