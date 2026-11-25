@@ -18,8 +18,9 @@ import {
   VisuallyHidden,
 } from "@mantine/core";
 import { TriangleAlert, ChevronRight, Search } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useStore } from "jotai";
 import { fileWorkspaceDisplayNameAtom } from "@/state/atoms";
 import useSWR, { useSWRConfig } from "swr";
 import { tauri } from "@/platform/tauri";
@@ -39,6 +40,9 @@ import {
 } from "@/components/databases/DatabaseLibraryStatus";
 import { DatabaseLibraryDetail } from "@/components/databases/DatabaseLibraryDetail";
 import { DatabaseLibraryDialogs } from "@/components/databases/DatabaseLibraryDialogs";
+import AddOpponentAccount from "@/components/databases/AddOpponentAccount";
+import { enterOnlineOpponent } from "@/components/databases/onlineOpponent";
+import OnlineOpponentDownload from "@/components/databases/OnlineOpponentDownload";
 import { FileWorkspaceCreation, FileWorkspaceStatus } from "@/components/files/FileWorkspaceStatus";
 import { FileTrashNotice, FileTrashView } from "@/components/files/FileTrash";
 import { FileWorkspaceDetail } from "@/components/files/FileWorkspaceDetail";
@@ -61,6 +65,9 @@ export default function LibraryPage() {
   const [visibleCount, setVisibleCount] = useState(0);
   const folderName = useAtomValue(fileWorkspaceDisplayNameAtom);
   const [migrationDatabase, setMigrationDatabase] = useState<string | null>(null);
+  const [addingOpponent, setAddingOpponent] = useState(false);
+  const store = useStore();
+  const navigate = useNavigate();
   const { mutate } = useSWRConfig();
   const { data: linkSupported } = useSWR("linkedCollectionsSupported", () =>
     tauri.linkedCollectionsSupported(),
@@ -260,6 +267,14 @@ export default function LibraryPage() {
         >
           {t("Library.AddDatabase", { defaultValue: "Import or download database" })}
         </Button>
+        <Button
+          miw={0}
+          onClick={() => setAddingOpponent(true)}
+          {...libraryButtonProps}
+          variant="default"
+        >
+          {t("Library.OnlineOpponent", { defaultValue: "Online opponent" })}
+        </Button>
         <Suspense fallback={null}>
           <LibrarySyncControl workspace={files.workspace} />
         </Suspense>
@@ -441,6 +456,15 @@ export default function LibraryPage() {
       </SimpleGrid>
       <FileWorkspaceDialogs files={files} />
       <DatabaseLibraryDialogs library={databases} />
+      <AddOpponentAccount
+        opened={addingOpponent}
+        onClose={() => setAddingOpponent(false)}
+        linked={[]}
+        onLink={(account) => {
+          void enterOnlineOpponent({ store, navigate, mutateCache: mutate, t }, account);
+        }}
+      />
+      <OnlineOpponentDownload />
       {databases.selectedDatabase?.type === "success" && files.workspace && (
         <CollectionMigration
           opened={migrationDatabase === databaseHandleKey(databases.selectedDatabase.file)}

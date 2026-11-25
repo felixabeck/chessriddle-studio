@@ -1,8 +1,20 @@
+import { Button, Group, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import type { TFunction } from "i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { opponentProviderName } from "@/state/opponentLinks";
 import type { OpponentImportResult } from "./opponentImport";
+
+/** Reports that an opponent's downloaded online games could not be read. */
+export function reportOpponentUnavailable(t: TFunction): void {
+  notifications.show({
+    color: "danger",
+    title: t("Common.Error"),
+    message: t("Databases.OpeningTree.OnlineUnavailable", {
+      defaultValue: "The online games could not be read.",
+    }),
+  });
+}
 
 export function reportOpponentLeftover(t: TFunction): void {
   notifications.show({
@@ -14,19 +26,43 @@ export function reportOpponentLeftover(t: TFunction): void {
   });
 }
 
-function announce(t: TFunction, result: OpponentImportResult): void {
+function announce(t: TFunction, result: OpponentImportResult, onOpen?: () => void): void {
   if (result.kind === "cancelled") return;
   if (result.kind === "failed") {
     notifyUnlessCancelled(t("Common.Error"), result.error, "database");
     return;
   }
   if (result.kind === "imported") {
+    const text = t("Databases.Opponent.Downloaded", {
+      defaultValue: "Downloaded {{count}} online games.",
+      count: result.games,
+    });
+    if (!onOpen) {
+      notifications.show({
+        color: "success",
+        message: text,
+      });
+      return;
+    }
+    const id = `opponent-imported-${crypto.randomUUID()}`;
     notifications.show({
+      id,
       color: "success",
-      message: t("Databases.Opponent.Downloaded", {
-        defaultValue: "Downloaded {{count}} online games.",
-        count: result.games,
-      }),
+      message: (
+        <Group justify="space-between" gap="xs" wrap="wrap">
+          <Text size="sm">{text}</Text>
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            onClick={() => {
+              notifications.hide(id);
+              onOpen();
+            }}
+          >
+            {t("Common.Open", { defaultValue: "Open" })}
+          </Button>
+        </Group>
+      ),
     });
     return;
   }
@@ -69,8 +105,12 @@ function announce(t: TFunction, result: OpponentImportResult): void {
 }
 
 /** Reports an opponent import outcome and any older copy that could not be deleted. */
-export function reportOpponentImport(t: TFunction, result: OpponentImportResult): void {
-  announce(t, result);
+export function reportOpponentImport(
+  t: TFunction,
+  result: OpponentImportResult,
+  onOpen?: () => void,
+): void {
+  announce(t, result, onOpen);
   // A copy that could not be deleted is named whatever the run's ending.
   if (result.leftovers > 0) reportOpponentLeftover(t);
 }

@@ -1,4 +1,3 @@
-import { notifications } from "@mantine/notifications";
 import type { createStore } from "jotai";
 import type { ScopedMutator } from "swr";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -8,19 +7,10 @@ import { errorUnlessCancelled, safeFailureContext, warnSafely } from "@/platform
 import { opponentLinksAtom, pendingPlayerCardAtom } from "@/state/atoms";
 import { type DatabaseList, databaseHandleKey } from "@/utils/db";
 import { type DatabaseRouteTarget, databaseRouteTarget } from "./databaseRoute";
+import { reportOpponentUnavailable } from "./opponentImportNotice";
 import { type OpponentPlayer, opponentPlayers } from "./opponentLookup";
 
 type Store = ReturnType<typeof createStore>;
-
-function reportUnavailable(): void {
-    notifications.show({
-        color: "danger",
-        title: i18n.t("Common.Error"),
-        message: i18n.t("Databases.OpeningTree.OnlineUnavailable", {
-            defaultValue: "The online games could not be read.",
-        }),
-    });
-}
 
 /**
  * Opens an opponent link's downloaded database on its player's Preparation card.
@@ -35,7 +25,7 @@ export async function openOpponentCard(
 ): Promise<boolean> {
     const link = store.get(opponentLinksAtom).find((other) => other.id === linkId);
     if (!link?.database) {
-        reportUnavailable();
+        reportOpponentUnavailable(i18n.t);
         return false;
     }
 
@@ -49,7 +39,7 @@ export async function openOpponentCard(
 
     const entry = listing?.databases.find((database) => database.filename === link.database);
     if (!entry || entry.type !== "success") {
-        reportUnavailable();
+        reportOpponentUnavailable(i18n.t);
         return false;
     }
 
@@ -61,14 +51,14 @@ export async function openOpponentCard(
             warnSafely(
                 `The players of an opponent's online games could not be read: ${safeFailureContext(cause).message}`,
             );
-            reportUnavailable();
+            reportOpponentUnavailable(i18n.t);
         }
         return false;
     }
 
     const player = players[0];
     if (!player) {
-        reportUnavailable();
+        reportOpponentUnavailable(i18n.t);
         return false;
     }
 

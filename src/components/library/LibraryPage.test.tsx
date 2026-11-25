@@ -17,6 +17,7 @@ import { installResizeObserverStub } from "@/tests/resizeObserver";
 import LibraryPage from "./LibraryPage";
 import { libraryFilterAtom, librarySearchAtom, librarySelectionAtom } from "./memory";
 import { chessBaseGuideAtom } from "./chessBaseGuideState";
+import { onlineOpponentDownloadAtom } from "@/components/databases/onlineOpponent";
 
 const mocks = vi.hoisted(() => ({
   files: [] as Entry[] | undefined,
@@ -39,6 +40,8 @@ const mocks = vi.hoisted(() => ({
   pickPgnFile: vi.fn(),
   notify: vi.fn(),
   mutate: vi.fn(),
+  lookupOpponentAccount: vi.fn(),
+  enterOnlineOpponent: vi.fn(),
 }));
 vi.mock("swr", async () => {
   const actual = await vi.importActual<typeof import("swr")>("swr");
@@ -125,6 +128,14 @@ vi.mock("@/components/databases/AddDatabase", () => ({
     opened: boolean;
     disableLocalConversion: boolean;
   }) => (opened ? <output data-import data-disabled={disableLocalConversion} /> : null),
+}));
+vi.mock("@/components/databases/opponentLookup", async (original) => ({
+  ...(await original<typeof import("@/components/databases/opponentLookup")>()),
+  lookupOpponentAccount: mocks.lookupOpponentAccount,
+}));
+vi.mock("@/components/databases/onlineOpponent", async (original) => ({
+  ...(await original<typeof import("@/components/databases/onlineOpponent")>()),
+  enterOnlineOpponent: mocks.enterOnlineOpponent,
 }));
 vi.mock("@/components/common/AppModal", () => ({
   default: ({ opened, children }: { opened: boolean; children: React.ReactNode }) =>
@@ -1029,4 +1040,61 @@ test("the clearable type filter hides rows while retaining detail and exposes an
   await click(clear);
   expect(rows()).toHaveLength(2);
   expect(rows()[1].getAttribute("aria-selected")).toBe("true");
+});
+
+test("the Online opponent button sits beside Import or download database with the same props and opens the entry", async () => {
+  const addGroup = host.querySelector('[role="group"][aria-label="Add new"]')!;
+  const groupButtons = [...addGroup.querySelectorAll("button")];
+  const importDb = groupButtons.find((item) => item.textContent === "Import or download database")!;
+  const onlineOpponent = groupButtons.find((item) => item.textContent === "Online opponent")!;
+  expect(importDb).toBeDefined();
+  expect(onlineOpponent).toBeDefined();
+  expect(groupButtons.indexOf(onlineOpponent)).toBe(groupButtons.indexOf(importDb) + 1);
+  expect(onlineOpponent.getAttribute("data-variant")).toBe(importDb.getAttribute("data-variant"));
+
+  await click(onlineOpponent);
+  const dialog = document.body.querySelector('[role="dialog"]')!;
+  expect(dialog).not.toBeNull();
+  expect(dialog.textContent).toContain("Website");
+  expect(dialog.textContent).toContain("Username");
+  expect(button("Look up")).toBeDefined();
+
+  // Closing the dialog closes it without calling enterOnlineOpponent.
+  await click(button("Cancel"));
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  expect(mocks.enterOnlineOpponent).not.toHaveBeenCalled();
+
+  // Confirming a looked-up account calls enterOnlineOpponent with it and closes the dialog.
+  mocks.lookupOpponentAccount.mockResolvedValueOnce({
+    kind: "found",
+    profile: { provider: "lichess", username: "DrNykterstein", closed: false },
+  });
+  await click(onlineOpponent);
+  await input(
+    document.body.querySelector<HTMLInputElement>('[role="dialog"] input')!,
+    "DrNykterstein",
+  );
+  await act(async () => {
+    document.body
+      .querySelector('[role="dialog"] form')!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  await vi.waitFor(() => expect(button("Link account")).toBeDefined());
+  await click(button("Link account"));
+  expect(mocks.enterOnlineOpponent).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ store, mutateCache: mocks.mutate }),
+    { provider: "lichess", username: "DrNykterstein" },
+  );
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+  // OnlineOpponentDownload is mounted on LibraryPage and responds to onlineOpponentDownloadAtom.
+  await act(async () => store.set(onlineOpponentDownloadAtom, "link-1"));
+  const downloadDialog = document.body.querySelector('[role="dialog"]');
+  expect(downloadDialog).not.toBeNull();
+  expect(downloadDialog?.textContent).toContain(
+    "Downloading online games. Closing this dialog keeps the download running.",
+  );
+  await click(button("Close"));
+  expect(store.get(onlineOpponentDownloadAtom)).toBeNull();
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 });
