@@ -5,6 +5,23 @@ async function openFileMenu(page: Page) {
     await openApplicationMenu(page);
 }
 
+/**
+ * The app persists the workspace after it renders, so a read right after navigation or a click can
+ * find nothing or the previous tab. `activeWorkspaceTab` asserts inside, and `expect.poll` does not
+ * retry a callback that throws, so a missing workspace reads as `undefined` and is polled again.
+ */
+async function expectActiveTabType(page: Page, type: string) {
+    await expect
+        .poll(async () => {
+            try {
+                return (await activeWorkspaceTab(page))?.type;
+            } catch {
+                return undefined;
+            }
+        })
+        .toBe(type);
+}
+
 const saveToDialog = (page: Page) =>
     page.getByRole("dialog", { name: "Save to file or database…", exact: true });
 
@@ -25,7 +42,7 @@ test("File → Save to file or database… opens the dialog of the active analys
 }) => {
     await page.goto("/");
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
-    expect((await activeWorkspaceTab(page))?.type).toBe("analysis");
+    await expectActiveTabType(page, "analysis");
     await openFileMenu(page);
     await page.getByRole("menuitem", { name: "Save to file or database…" }).click();
     await expect(saveToDialog(page)).toBeVisible();
@@ -33,7 +50,7 @@ test("File → Save to file or database… opens the dialog of the active analys
 
 test("File → Save to file or database… does nothing without an analysis tab", async ({ page }) => {
     await page.goto("/");
-    expect((await activeWorkspaceTab(page))?.type).toBe("new");
+    await expectActiveTabType(page, "new");
     await openFileMenu(page);
     await page.getByRole("menuitem", { name: "Save to file or database…" }).click();
     await expect(page.getByRole("menu")).toHaveCount(0);
