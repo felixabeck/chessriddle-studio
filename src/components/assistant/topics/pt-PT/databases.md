@@ -2,7 +2,7 @@
 id: databases
 title: Bases de dados, explorador, pesquisa de posição, jogadores e torneios
 summary: Adicione ou transfira bases de dados de partidas, escolha uma base de referência, pesquise posições no explorador e consulte partidas, jogadores e torneios.
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 As bases de dados ficam em [[page:library]] ({{label:SideBar.Library}}) junto aos seus ficheiros PGN e são guardadas em [[setting:databases-directory]].
@@ -31,8 +31,8 @@ No cartão de um jogador, abra o separador {{label:Home.Personal.Preparation}} p
 - Para se preparar contra um adversário que só tem uma conta no Lichess ou Chess.com, clique em {{label:Library.OnlineOpponent}} em [[page:library]] para procurar a conta, transferir as partidas e abrir o cartão diretamente no separador {{label:Home.Personal.Preparation}} (ao introduzir novamente a mesma conta, reabre sem transferir outra vez).
 
 No tabuleiro de análise, abra {{label:Board.Tabs.Database}} para usar o explorador de aberturas:
-- Alterne entre {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} e {{label:Board.Database.LichessMaster}} (os exploradores em linha do Lichess requerem uma conta Lichess com sessão iniciada em [[page:accounts]]).
+- Escolha {{label:Board.Database.LichessAll}} ou {{label:Board.Database.LichessMaster}} no menu de fontes e em {{label:Board.Database.Compare}} (os exploradores em linha do Lichess requerem uma conta Lichess com sessão iniciada em [[page:accounts]]).
 - Alterne entre {{label:Board.Database.Stats}} (estatísticas de lances) e {{label:Board.Database.Games}} (partidas correspondentes).
-- Para bases de dados locais, clique em {{label:Board.Database.Compare}} para ver duas bases lado a lado, ou abra {{label:Board.Database.Local.Position}} para alternar entre pesquisa de posição {{label:Board.Database.Local.Exact}} e {{label:Board.Database.Local.Partial}} (incluindo {{label:Board.Database.Local.SimilarStructure}} para pesquisa por estrutura de peões e {{label:Fen.Empty}} para padrões personalizados).
+- Clique em {{label:Board.Database.Compare}} para ver duas fontes lado a lado, ou abra {{label:Board.Database.Local.Position}} para alternar entre pesquisa de posição {{label:Board.Database.Local.Exact}} e {{label:Board.Database.Local.Partial}} (incluindo {{label:Board.Database.Local.SimilarStructure}} para pesquisa por estrutura de peões e {{label:Fen.Empty}} para padrões personalizados).
 - Utilize {{label:Board.Database.Pin}} para fixar o explorador acima ou abaixo do tabuleiro ou da notação, e {{label:Board.Database.Unpin}} para o devolver aos separadores.
-- Quando {{label:Databases.OpeningTree.Prepare}} abre um tabuleiro para um jogador da base de dados, o explorador adiciona a sua base de referência como outra coluna ao lado das partidas do adversário; clique em {{label:Board.Database.RemoveReference}} para a ocultar ou em {{label:Board.Database.ShowReference}} para a voltar a mostrar.
+- Quando {{label:Databases.OpeningTree.Prepare}} abre um tabuleiro para um jogador da base de dados, o explorador começa com a sua base de referência como outra coluna ao lado das partidas do adversário; clique em {{label:Board.Database.RemoveReference}} para ocultar uma coluna ou em {{label:Board.Database.AddColumn}} para adicionar outra.

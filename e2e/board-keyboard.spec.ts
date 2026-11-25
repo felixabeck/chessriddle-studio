@@ -223,7 +223,8 @@ for (const timezoneId of ["America/Los_Angeles", "Europe/Berlin"]) {
             await page.getByRole("tab", { name: "Database", exact: true }).click();
             // No local database is chosen yet, so the header's controls are open; with an
             // online source it collapses to its caption until the settings button opens it.
-            await page.getByText("Lichess All", { exact: true }).click();
+            await page.getByPlaceholder("add a database").click();
+            await page.getByRole("option", { name: "Lichess All", exact: true }).click();
             await page.getByRole("button", { name: "Show database settings", exact: true }).click();
             const filterButton = page.getByRole("button", { name: /^Filters: / });
             await filterButton.click();
@@ -248,7 +249,8 @@ for (const timezoneId of ["America/Los_Angeles", "Europe/Berlin"]) {
             await pickDate(since, "Jan");
             await expect(since).toHaveText("January 2024");
 
-            await page.getByText("Lichess Masters", { exact: true }).click();
+            await page.locator("[data-explorer-source]").first().getByRole("textbox").click();
+            await page.getByRole("option", { name: "Lichess Masters", exact: true }).click();
             await expect(options).toBeHidden();
             await filterButton.click();
             if (pinsLayout) await expect(options).toHaveScreenshot("explorer-masters-options.png");

@@ -2,7 +2,7 @@
 id: databases
 title: Veritabanları, gezgin, konum arama, oyuncular ve turnuvalar
 summary: Oyun veritabanları ekleme veya indirme, referans veritabanı seçme, gezginde konum arama ve oyunları, oyuncuları ve turnuvaları inceleme.
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 Veritabanları PGN dosyalarınızla birlikte [[page:library]] ({{label:SideBar.Library}}) içinde yer alır ve [[setting:databases-directory]] konumunda saklanır.
@@ -31,8 +31,8 @@ Bir oyuncunun kartında oyunlarını repertuvar dosyalarınızla karşılaştır
 - Yalnızca Lichess veya Chess.com hesabı olan bir rakibe hazırlanmak için [[page:library]] içinde {{label:Library.OnlineOpponent}} düğmesine tıklayarak hesabını arayın, oyunlarını indirin ve kartını doğrudan {{label:Home.Personal.Preparation}} sekmesinde açın (aynı hesabı tekrar girdiğinizde yeniden indirmeden açılır).
 
 Analiz tahtasında açılış gezginini kullanmak için {{label:Board.Tabs.Database}} sekmesini açın:
-- {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} ve {{label:Board.Database.LichessMaster}} arasında geçiş yapın (Lichess çevrimiçi gezginleri için [[page:accounts]] sayfasında oturum açılmış bir Lichess hesabı gerekir).
+- Kaynak menüsünde ve {{label:Board.Database.Compare}} içinde {{label:Board.Database.LichessAll}} veya {{label:Board.Database.LichessMaster}} seçin (Lichess çevrimiçi gezginleri için [[page:accounts]] sayfasında oturum açılmış bir Lichess hesabı gerekir).
 - {{label:Board.Database.Stats}} (hamle istatistikleri) ve {{label:Board.Database.Games}} (eşleşen oyunlar) görünümleri arasında geçiş yapın.
-- Yerel veritabanları için iki veritabanını yan yana görmek üzere {{label:Board.Database.Compare}} düğmesine tıklayın veya {{label:Board.Database.Local.Exact}} ve {{label:Board.Database.Local.Partial}} konum aramaları (piyon yapısı araması için {{label:Board.Database.Local.SimilarStructure}} ve özel kalıplar için {{label:Fen.Empty}} dahil) arasında geçiş yapmak üzere {{label:Board.Database.Local.Position}} menüsünü açın.
+- İki kaynağı yan yana görmek üzere {{label:Board.Database.Compare}} düğmesine tıklayın veya {{label:Board.Database.Local.Exact}} ve {{label:Board.Database.Local.Partial}} konum aramaları (piyon yapısı araması için {{label:Board.Database.Local.SimilarStructure}} ve özel kalıplar için {{label:Fen.Empty}} dahil) arasında geçiş yapmak üzere {{label:Board.Database.Local.Position}} menüsünü açın.
 - Gezgini tahtanın veya notasyonun üstüne ya da altına sabitlemek için {{label:Board.Database.Pin}}, sekmelere geri döndürmek için {{label:Board.Database.Unpin}} seçeneğini kullanın.
-- {{label:Databases.OpeningTree.Prepare}} bir veritabanı oyuncusu için tahta açtığında gezgin referans veritabanınızı rakibin oyunlarının yanına ek bir sütun olarak ekler; gizlemek için {{label:Board.Database.RemoveReference}}, geri getirmek için {{label:Board.Database.ShowReference}} düğmesine tıklayın.
+- {{label:Databases.OpeningTree.Prepare}} bir veritabanı oyuncusu için tahta açtığında gezgin referans veritabanınızla rakibin oyunlarının yanında ek bir sütun olarak başlar; bir sütunu gizlemek için {{label:Board.Database.RemoveReference}}, başka bir sütun eklemek için {{label:Board.Database.AddColumn}} düğmesine tıklayın.

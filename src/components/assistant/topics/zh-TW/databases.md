@@ -2,7 +2,7 @@
 id: databases
 title: 資料庫、開局探索器、局面搜尋、棋手與賽事
 summary: 新增或下載棋局資料庫、選取參考資料庫、在探索器中搜尋局面，以及瀏覽對局、棋手與賽事。
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 資料庫與您的 PGN 檔案一同位在 [[page:library]] ({{label:SideBar.Library}}) 中，並儲存於 [[setting:databases-directory]]。
@@ -31,8 +31,8 @@ source: d3afecf524059542
 - 若要針對僅有 Lichess 或 Chess.com 帳戶的對手進行準備，請在 [[page:library]] 中點擊 {{label:Library.OnlineOpponent}}，尋找並確認其帳戶、下載對局，並直接在 {{label:Home.Personal.Preparation}} 分頁開啟棋手卡片（再次輸入同一帳戶時將直接開啟而不會重複下載）。
 
 在分析棋盤上，開啟 {{label:Board.Tabs.Database}} 分頁以使用開局探索器：
-- 在 {{label:Board.Database.Local}}、{{label:Board.Database.LichessAll}} 與 {{label:Board.Database.LichessMaster}} 之間切換（Lichess 線上探索器需要在 [[page:accounts]] 登入 Lichess 帳戶）。
+- 在來源下拉選單和 {{label:Board.Database.Compare}} 中選擇 {{label:Board.Database.LichessAll}} 或 {{label:Board.Database.LichessMaster}}（Lichess 線上探索器需要在 [[page:accounts]] 登入 Lichess 帳戶）。
 - 在 {{label:Board.Database.Stats}}（著法統計）與 {{label:Board.Database.Games}}（相符對局）之間切換。
-- 針對本機資料庫，點擊 {{label:Board.Database.Compare}} 可並排檢視兩個資料庫，或開啟 {{label:Board.Database.Local.Position}} 在 {{label:Board.Database.Local.Exact}} 與 {{label:Board.Database.Local.Partial}} 局面搜尋之間切換（包括用於兵型結構搜尋的 {{label:Board.Database.Local.SimilarStructure}} 與用於自訂樣式的 {{label:Fen.Empty}}）。
+- 點擊 {{label:Board.Database.Compare}} 可並排檢視兩個來源，或開啟 {{label:Board.Database.Local.Position}} 在 {{label:Board.Database.Local.Exact}} 與 {{label:Board.Database.Local.Partial}} 局面搜尋之間切換（包括用於兵型結構搜尋的 {{label:Board.Database.Local.SimilarStructure}} 與用於自訂樣式的 {{label:Fen.Empty}}）。
 - 使用 {{label:Board.Database.Pin}} 將探索器釘選在棋盤或記譜上方或下方，並使用 {{label:Board.Database.Unpin}} 將其放回分頁中。
-- 當透過 {{label:Databases.OpeningTree.Prepare}} 為資料庫棋手開啟棋盤時，探索器會在對手對局旁新增一欄顯示您的參考資料庫；點擊 {{label:Board.Database.RemoveReference}} 可將其隱藏，點擊 {{label:Board.Database.ShowReference}} 可再次顯示。
+- 當透過 {{label:Databases.OpeningTree.Prepare}} 為資料庫棋手開啟棋盤時，探索器會先把參考資料庫作為額外一欄顯示在對手對局旁；點擊 {{label:Board.Database.RemoveReference}} 可隱藏一欄，點擊 {{label:Board.Database.AddColumn}} 可再新增一欄。

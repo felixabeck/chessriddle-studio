@@ -87,19 +87,17 @@ export type ReferenceSourceState =
  * stays absent without an error.
  */
 export function pinnedReferenceState({
-    local,
     pinned,
     primary,
     reference,
     databases,
 }: {
-    local: boolean;
     pinned: boolean;
     primary: DatabaseHandle | null;
     reference: DatabaseHandle | null;
     databases: readonly ManagedDatabaseInfo[] | undefined;
 }): ReferenceSourceState {
-    if (!local || !pinned || !primary || !reference || !databases) {
+    if (!pinned || !primary || !reference || !databases) {
         return { kind: "none" };
     }
     const key = databaseHandleKey(reference);
@@ -145,7 +143,6 @@ export function shownFurtherColumns({
         }
         if (id === "reference") {
             const source = pinnedReferenceState({
-                local: true,
                 pinned: true,
                 primary,
                 reference,
@@ -211,7 +208,6 @@ export function furtherColumnChoices(
         if (id !== "reference") return true;
         return (
             pinnedReferenceState({
-                local: true,
                 pinned: true,
                 primary: context.primary,
                 reference: context.reference,

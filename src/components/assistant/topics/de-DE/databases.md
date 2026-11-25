@@ -2,7 +2,7 @@
 id: databases
 title: Datenbanken, Explorer, Stellungssuche, Spieler und Turniere
 summary: Partiedatenbanken hinzufügen oder herunterladen, Referenzdatenbank wählen, Stellungen im Explorer suchen sowie Partien, Spieler und Turniere durchsuchen.
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 Datenbanken befinden sich neben deinen PGN-Dateien in [[page:library]] ({{label:SideBar.Library}}) und werden unter [[setting:databases-directory]] gespeichert.
@@ -31,8 +31,8 @@ Wechsle in der Tabellenansicht der Datenbank zwischen {{label:Common.Games}}, {{
 - Um dich auf einen Gegner vorzubereiten, der nur ein Lichess- oder Chess.com-Konto hat, klicke in [[page:library]] auf {{label:Library.OnlineOpponent}}, suche sein Konto, lade seine Partien herunter und öffne seine Karte direkt im Tab {{label:Home.Personal.Preparation}} (bei erneuter Eingabe desselben Kontos öffnet sich die Karte ohne erneuten Download).
 
 Öffne auf dem Analysebrett {{label:Board.Tabs.Database}}, um den Eröffnungs-Explorer zu nutzen:
-- Wechsle zwischen {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} und {{label:Board.Database.LichessMaster}} (die Online-Explorer von Lichess erfordern ein angemeldetes Lichess-Konto unter [[page:accounts]]).
+- Wähle {{label:Board.Database.LichessAll}} oder {{label:Board.Database.LichessMaster}} im Quellenmenü und unter {{label:Board.Database.Compare}} (die Online-Explorer von Lichess erfordern ein angemeldetes Lichess-Konto unter [[page:accounts]]).
 - Wechsle zwischen {{label:Board.Database.Stats}} (Zugstatistiken) und {{label:Board.Database.Games}} (passende Partien).
-- Klicke bei lokalen Datenbanken auf {{label:Board.Database.Compare}}, um zwei Datenbanken nebeneinander anzuzeigen, oder öffne {{label:Board.Database.Local.Position}}, um zwischen {{label:Board.Database.Local.Exact}} und {{label:Board.Database.Local.Partial}} umzuschalten (einschließlich {{label:Board.Database.Local.SimilarStructure}} für die Bauernstruktursuche und {{label:Fen.Empty}} für eigene Muster).
+- Klicke auf {{label:Board.Database.Compare}}, um zwei Quellen nebeneinander anzuzeigen, oder öffne {{label:Board.Database.Local.Position}}, um zwischen {{label:Board.Database.Local.Exact}} und {{label:Board.Database.Local.Partial}} umzuschalten (einschließlich {{label:Board.Database.Local.SimilarStructure}} für die Bauernstruktursuche und {{label:Fen.Empty}} für eigene Muster).
 - Nutze {{label:Board.Database.Pin}}, um den Explorer über oder unter dem Brett oder der Notation anzuheften, und {{label:Board.Database.Unpin}}, um ihn in die Tabs zurückzulegen.
-- Wenn {{label:Databases.OpeningTree.Prepare}} ein Brett für einen Datenbankspieler öffnet, zeigt der Explorer zusätzlich deine Referenzdatenbank als weitere Spalte neben den Partien des Gegners; klicke auf {{label:Board.Database.RemoveReference}}, um sie auszublenden, oder auf {{label:Board.Database.ShowReference}}, um sie wieder einzublenden.
+- Wenn {{label:Databases.OpeningTree.Prepare}} ein Brett für einen Datenbankspieler öffnet, zeigt der Explorer zuerst deine Referenzdatenbank als weitere Spalte neben den Partien des Gegners; klicke auf {{label:Board.Database.RemoveReference}}, um eine Spalte auszublenden, oder auf {{label:Board.Database.AddColumn}}, um eine weitere hinzuzufügen.

@@ -2,7 +2,7 @@
 id: databases
 title: Бази даних, оглядач, пошук позицій, гравці та турніри
 summary: Додавання або завантаження баз партій, вибір довідкової бази, пошук позицій в оглядачі та перегляд партій, гравців і турнірів.
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 Бази даних містяться в [[page:library]] ({{label:SideBar.Library}}) поряд із вашими файлами PGN і зберігаються в [[setting:databases-directory]].
@@ -31,8 +31,8 @@ source: d3afecf524059542
 - Щоб підготуватися до суперника, який має лише акаунт на Lichess або Chess.com, натисніть {{label:Library.OnlineOpponent}} у [[page:library]], знайдіть його акаунт, завантажте партії та відкрийте картку відразу на вкладці {{label:Home.Personal.Preparation}} (повторне введення того самого акаунта відкриє її без повторного завантаження).
 
 На дошці аналізу відкрийте вкладку {{label:Board.Tabs.Database}}, щоб скористатися оглядачем дебютів:
-- Перемикайтеся між {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} і {{label:Board.Database.LichessMaster}} (онлайн-оглядачі Lichess вимагають авторизованого облікового запису Lichess на сторінці [[page:accounts]]).
+- Виберіть {{label:Board.Database.LichessAll}} або {{label:Board.Database.LichessMaster}} у меню джерел і в {{label:Board.Database.Compare}} (онлайн-оглядачі Lichess вимагають авторизованого облікового запису Lichess на сторінці [[page:accounts]]).
 - Перемикайтеся між {{label:Board.Database.Stats}} (статистика ходів) і {{label:Board.Database.Games}} (відповідні партії).
-- Для локальних баз даних натисніть {{label:Board.Database.Compare}}, щоб порівняти дві бази поруч, або відкрийте {{label:Board.Database.Local.Position}} для перемикання між пошуком позиції {{label:Board.Database.Local.Exact}} і {{label:Board.Database.Local.Partial}} (включно з {{label:Board.Database.Local.SimilarStructure}} для пошуку за пішаковою структурою та {{label:Fen.Empty}} для довільних шаблонів).
+- Натисніть {{label:Board.Database.Compare}}, щоб порівняти два джерела поруч, або відкрийте {{label:Board.Database.Local.Position}} для перемикання між пошуком позиції {{label:Board.Database.Local.Exact}} і {{label:Board.Database.Local.Partial}} (включно з {{label:Board.Database.Local.SimilarStructure}} для пошуку за пішаковою структурою та {{label:Fen.Empty}} для довільних шаблонів).
 - Використовуйте {{label:Board.Database.Pin}}, щоб закріпити оглядач над чи під дошкою або нотацією, та {{label:Board.Database.Unpin}}, щоб повернути його до вкладок.
-- Коли кнопка {{label:Databases.OpeningTree.Prepare}} відкриває дошку для гравця з бази даних, оглядач додає вашу довідкову базу ще одним стовпцем поруч із партіями суперника; натисніть {{label:Board.Database.RemoveReference}}, щоб приховати її, або {{label:Board.Database.ShowReference}}, щоб повернути.
+- Коли кнопка {{label:Databases.OpeningTree.Prepare}} відкриває дошку для гравця з бази даних, оглядач починає з довідкової бази як додаткового стовпця поруч із партіями суперника; натисніть {{label:Board.Database.RemoveReference}}, щоб приховати стовпець, або {{label:Board.Database.AddColumn}}, щоб додати ще один.

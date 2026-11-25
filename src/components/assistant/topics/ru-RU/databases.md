@@ -2,7 +2,7 @@
 id: databases
 title: Базы данных, обозреватель, поиск позиций, игроки и турниры
 summary: Добавление и загрузка баз партий, выбор справочной базы, поиск позиций в обозревателе, а также просмотр партий, игроков и турниров.
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 Базы данных находятся в [[page:library]] ({{label:SideBar.Library}}) рядом с вашими PGN-файлами и хранятся в каталоге [[setting:databases-directory]].
@@ -31,8 +31,8 @@ source: d3afecf524059542
 - Чтобы подготовиться к сопернику, у которого есть только аккаунт на Lichess или Chess.com, нажмите {{label:Library.OnlineOpponent}} в [[page:library]], найдите его аккаунт, загрузите партии и откройте карточку сразу на вкладке {{label:Home.Personal.Preparation}} (повторный ввод того же аккаунта откроет её без новой загрузки).
 
 На доске анализа откройте вкладку {{label:Board.Tabs.Database}}, чтобы использовать дебютный обозреватель:
-- Переключайтесь между {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} и {{label:Board.Database.LichessMaster}} (онлайн-обозреватели Lichess требуют авторизованного аккаунта Lichess на странице [[page:accounts]]).
+- Выберите {{label:Board.Database.LichessAll}} или {{label:Board.Database.LichessMaster}} в меню источников и в {{label:Board.Database.Compare}} (онлайн-обозреватели Lichess требуют авторизованного аккаунта Lichess на странице [[page:accounts]]).
 - Переключайтесь между {{label:Board.Database.Stats}} (статистика ходов) и {{label:Board.Database.Games}} (подходящие партии).
-- Для локальных баз данных нажмите {{label:Board.Database.Compare}}, чтобы сравнить две базы рядом, или откройте {{label:Board.Database.Local.Position}} для переключения между режимами поиска позиции {{label:Board.Database.Local.Exact}} и {{label:Board.Database.Local.Partial}} (включая {{label:Board.Database.Local.SimilarStructure}} для поиска по пешечной структуре и {{label:Fen.Empty}} для произвольных шаблонов).
+- Нажмите {{label:Board.Database.Compare}}, чтобы сравнить два источника рядом, или откройте {{label:Board.Database.Local.Position}} для переключения между режимами поиска позиции {{label:Board.Database.Local.Exact}} и {{label:Board.Database.Local.Partial}} (включая {{label:Board.Database.Local.SimilarStructure}} для поиска по пешечной структуре и {{label:Fen.Empty}} для произвольных шаблонов).
 - Используйте {{label:Board.Database.Pin}}, чтобы закрепить обозреватель над или под доской либо нотацией, и {{label:Board.Database.Unpin}}, чтобы вернуть его во вкладки.
-- Когда кнопка {{label:Databases.OpeningTree.Prepare}} открывает доску для игрока базы данных, обозреватель добавляет вашу справочную базу ещё одним столбцом рядом с партиями соперника; нажмите {{label:Board.Database.RemoveReference}}, чтобы скрыть её, или {{label:Board.Database.ShowReference}}, чтобы вернуть обратно.
+- Когда кнопка {{label:Databases.OpeningTree.Prepare}} открывает доску для игрока базы данных, обозреватель начинает со справочной базы как дополнительного столбца рядом с партиями соперника; нажмите {{label:Board.Database.RemoveReference}}, чтобы скрыть столбец, или {{label:Board.Database.AddColumn}}, чтобы добавить ещё один.

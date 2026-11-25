@@ -69,7 +69,7 @@ export const pinnedExplorerFurtherColumnsFamily = tabAtomFamily((_tab: string) =
 
 export type ExplorerGamesSourceRole = "primary" | "comparison";
 
-/** Whose sample games the Games view lists while two local sources are shown. */
+/** Whose sample games the Games view lists. The switch offers the first and second column of an unpinned board, a Lichess column included. */
 export const explorerGamesSourceFamily = tabAtomFamily((_tab: string) =>
     atom<ExplorerGamesSourceRole>("primary"),
 );

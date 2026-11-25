@@ -20,7 +20,6 @@ import { Pin, PinOff, Plus, Settings, X } from "lucide-react";
 import { memo, type ReactNode, useCallback, useContext, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
-import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
@@ -36,6 +35,9 @@ import {
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
   type ExplorerColumnId,
+  type ExplorerFurtherColumn,
+  type ExplorerGamesSourceRole,
+  type ExplorerOnlineSource,
   isDatabaseComparisonSource,
   localOptionsFamily,
   pinnedExplorerComparisonFamily,
@@ -50,7 +52,13 @@ import {
 } from "@/state/atoms";
 import { databaseHandleFromKey, databaseHandleKey, type Opening } from "@/utils/db";
 import classes from "./DatabasePanel.module.css";
-import { comparisonState, pinnedReferenceState } from "./explorerComparison";
+import {
+  addFurtherColumn,
+  comparisonState,
+  furtherColumnChoices,
+  pinnedReferenceState,
+  shownFurtherColumns,
+} from "./explorerComparison";
 import ExplorerSourceHeader, { ExplorerSourceCaption } from "./ExplorerSourceHeader";
 import { lichessFiltersActive, localFilterSummary, masterFiltersActive } from "./filterSummary";
 import GamesTable from "./GamesTable";
@@ -82,6 +90,15 @@ type OpeningData = {
   gameFailures?: OnlineExplorerResult["gameFailures"];
 };
 
+type SelectItem = { value: string; label: string };
+type SelectGroup = { group: string; items: SelectItem[] };
+
+const ONLINE_SOURCES: readonly ExplorerOnlineSource[] = ["lch_all", "lch_master"];
+
+function isOnlineSource(value: string | null): value is ExplorerOnlineSource {
+  return value === "lch_all" || value === "lch_master";
+}
+
 /** The height of the sources' size "sm" select, so a titled source lines up with a selectable one. */
 const SOURCE_SELECT_HEIGHT = 36;
 
@@ -98,6 +115,17 @@ function useCollectionDatabase(
     }
   }, [current, selected, replaced]);
   return currency;
+}
+
+function failedGameLabels(failures: OnlineExplorerResult["gameFailures"]): string {
+  return (
+    failures
+      ?.map(({ item }) => {
+        const names = [item.white.name.trim(), item.black.name.trim()].filter(Boolean);
+        return names.join(" - ") || item.id;
+      })
+      .join(", ") ?? ""
+  );
 }
 
 function DatabasePanel() {
@@ -135,16 +163,16 @@ function DatabasePanel() {
   const lichessOptions = useAtomValue(lichessOptionsAtom);
   const masterOptions = useAtomValue(masterOptionsAtom);
   const setLocalOptions = useSetAtom(useTabAtom(localOptionsFamily));
-  const [db, setDb] = useAtom(useTabAtom(dbTypeFamily));
+  const [firstSource, setFirstSource] = useAtom(useTabAtom(dbTypeFamily));
   const explorerHandle = sessions.find((session) => session.lichess?.handle)?.lichess?.handle;
-  const missingExplorerAuthentication = db !== "local" && !explorerHandle;
 
-  const { data: databases, error: databasesError } = useDatabaseList(db === "local");
+  const { data: databases, error: databasesError } = useDatabaseList();
 
   const databasesFailure = failureUnlessCancelled(databasesError);
   const readableDatabases = databasesFailure
     ? []
     : (databases?.databases ?? []).filter((d) => d.type === "success");
+  const listedDatabases = databasesFailure ? undefined : databases?.databases;
   const effectiveReferenceDatabase = databaseHandleFromKey(
     readableDatabases,
     selectedDatabase ? databaseHandleKey(selectedDatabase) : null,
@@ -158,37 +186,50 @@ function DatabasePanel() {
     : null;
 
   const comparison = comparisonState({
-    first: db,
+    first: firstSource,
     pinned,
     primary: effectiveReferenceDatabase,
     stored: storedComparison,
     pinnedComparison: pinnedComparison?.database ?? null,
-    databases: databasesFailure ? undefined : databases?.databases,
+    databases: listedDatabases,
   });
   const comparisonDatabase = comparison.kind === "database" ? comparison.database : null;
+  const comparisonShown = comparison.kind === "database" || comparison.kind === "online";
   const availableReference = pinnedReferenceState({
-    local: db === "local",
     pinned,
     primary: effectiveReferenceDatabase,
     reference: referenceDatabase,
-    databases: databasesFailure ? undefined : databases?.databases,
+    databases: listedDatabases,
   });
-  // Phase 1 shows only the reference entry of the further-column list.
-  const referenceSource = furtherColumns.includes("reference")
-    ? availableReference
-    : { kind: "none" as const };
+  const furtherContext = {
+    pinned,
+    primary: effectiveReferenceDatabase,
+    comparisonShown,
+    reference: referenceDatabase,
+    databases: listedDatabases,
+  };
+  const furtherShown = shownFurtherColumns({
+    columns: furtherColumns,
+    ...furtherContext,
+  });
+  const furtherChoices = furtherColumnChoices(furtherColumns, furtherContext);
+  const referenceFurther = furtherShown.find((column) => column.id === "reference");
+  const showingLocalSource =
+    firstSource === "local" ||
+    comparison.kind === "database" ||
+    furtherShown.some((column) => column.id === "reference");
 
   useEffect(() => {
-    if (db === "local") {
+    if (showingLocalSource) {
       setLocalOptions((q) => (q.type === "exact" ? { ...q, fen: debouncedFen } : q));
     }
-  }, [debouncedFen, setLocalOptions, db]);
+  }, [debouncedFen, setLocalOptions, showingLocalSource]);
 
   useEffect(() => {
-    if (db === "local") {
+    if (showingLocalSource) {
       setLocalOptions((q) => ({ ...q, path: effectiveReferenceDatabase }));
     }
-  }, [effectiveReferenceDatabase, setLocalOptions, db]);
+  }, [effectiveReferenceDatabase, setLocalOptions, showingLocalSource]);
 
   const {
     filters: localFilters,
@@ -201,15 +242,12 @@ function DatabasePanel() {
   // The stored choice is followed, not the shown one: a database its collection already replaced
   // is no longer in the list, and only its collection still knows the successor.
   useCollectionDatabase(
-    db === "local" && !pinned && isDatabaseComparisonSource(storedComparison)
-      ? storedComparison
-      : null,
+    !pinned && isDatabaseComparisonSource(storedComparison) ? storedComparison : null,
     replaceStored,
   );
-  useCollectionDatabase(db === "local" && pinned ? referenceDatabase : null, replaceStored);
+  useCollectionDatabase(pinned ? referenceDatabase : null, replaceStored);
   const comparisonFilters = useExplorerFilters(comparisonDatabase, comparisonPlayer);
-  const pinnedReferenceDatabase =
-    referenceSource.kind === "source" ? referenceSource.database : null;
+  const pinnedReferenceDatabase = referenceFurther?.database ?? null;
   const pinnedReferenceFilters = useExplorerFilters(pinnedReferenceDatabase, null, { saved: true });
   // A player filter is named in each header, so a board says whose games it shows.
   const primaryPlayerName = usePlayerName(effectiveReferenceDatabase, localFilters.player);
@@ -221,90 +259,219 @@ function DatabasePanel() {
   const [tab] = useOwnerTab();
   const [storedView, setStoredView] = useAtom(useTabAtom(dbTabFamily));
   // A partial position has no move statistics. The view is derived, so the stored choice returns
-  // with the exact position.
-  const statsUnavailable = db === "local" && effectiveLocalOptions.type === "partial";
+  // with the exact position. A Lichess-only panel ignores the partial setting.
+  const statsUnavailable = showingLocalSource && effectiveLocalOptions.type === "partial";
   const view = statsUnavailable || storedView === "games" ? "games" : "stats";
   // A partial search is a pattern, not one position, so its games open at the start.
   const gamesTargetFen = statsUnavailable ? undefined : debouncedFen;
   const localExplorer = useLocalExplorer(
     effectiveLocalOptions,
-    db === "local",
+    firstSource === "local" && effectiveReferenceDatabase !== null,
     tab?.value || undefined,
   );
   // Its own progress id: a job on the primary's id would supersede the primary's progress.
   const comparisonExplorer = useLocalExplorer(
     comparisonFilters.options,
-    db === "local" && comparisonDatabase !== null,
+    comparison.kind === "database",
     tab?.value ? `${tab.value}:comparison` : undefined,
   );
   const pinnedReferenceExplorer = useLocalExplorer(
     pinnedReferenceFilters.options,
-    db === "local" && pinnedReferenceDatabase !== null,
+    referenceFurther !== undefined,
     tab?.value ? `${tab.value}:reference` : undefined,
   );
   const [storedGamesSource, setGamesSource] = useAtom(useTabAtom(explorerGamesSourceFamily));
-  const gamesSource =
-    comparisonDatabase && storedGamesSource === "comparison" ? "comparison" : "primary";
   const [sort, setSort] = useAtom(useTabAtom(explorerSortFamily));
+  const askOnline = (source: ExplorerOnlineSource) => {
+    if (statsUnavailable) return false;
+    if (firstSource === source) return true;
+    if (comparison.kind === "online" && comparison.source === source) return true;
+    return furtherShown.some((column) => column.id === source);
+  };
   const lichessAllExplorer = useOnlineExplorer(
     "lch_all",
     debouncedFen,
     lichessOptions,
     explorerHandle,
-    db === "lch_all",
+    askOnline("lch_all"),
   );
   const lichessMasterExplorer = useOnlineExplorer(
     "lch_master",
     debouncedFen,
     masterOptions,
     explorerHandle,
-    db === "lch_master",
+    askOnline("lch_master"),
   );
-  const onlineExplorer = db === "lch_master" ? lichessMasterExplorer : lichessAllExplorer;
-  const openingData: OpeningData | undefined = db === "local" ? localExplorer : onlineExplorer;
-  const isLoading = db === "local" ? localExplorer.loading : onlineExplorer.loading;
-  const errorMessage: string | undefined =
-    db === "local" ? localExplorer.error : onlineExplorer.error;
 
-  const failedGames = openingData?.gameFailures
-    ?.map(({ item }) => {
-      const names = [item.white.name.trim(), item.black.name.trim()].filter(Boolean);
-      return names.join(" - ") || item.id;
-    })
-    .join(", ");
-  const hasGameFailures = (openingData?.gameFailures?.length ?? 0) > 0;
+  const onlineName = (source: ExplorerOnlineSource) =>
+    source === "lch_all" ? t("Board.Database.LichessAll") : t("Board.Database.LichessMaster");
+  const onlineFilters = (source: ExplorerOnlineSource) =>
+    source === "lch_all" ? <LichessOptionsPanel /> : <MasterOptionsPanel />;
+  const onlineFiltered = (source: ExplorerOnlineSource) =>
+    source === "lch_all"
+      ? lichessFiltersActive(lichessOptions)
+      : masterFiltersActive(masterOptions);
+  const onlineExplorer = (source: ExplorerOnlineSource) =>
+    source === "lch_all" ? lichessAllExplorer : lichessMasterExplorer;
+
+  type StatsColumn = {
+    role: ExplorerColumnId;
+    name: string;
+    kind: "local" | "online";
+    explorer: OpeningData & { loading: boolean; error: string | undefined };
+    database: DatabaseHandle | null;
+  };
+  const localColumn = (
+    role: ExplorerColumnId,
+    name: string,
+    explorer: ReturnType<typeof useLocalExplorer>,
+    database: DatabaseHandle,
+  ): StatsColumn => ({
+    role,
+    name,
+    kind: "local",
+    explorer,
+    database,
+  });
+  const onlineColumn = (role: ExplorerColumnId, source: ExplorerOnlineSource): StatsColumn => ({
+    role,
+    name: onlineName(source),
+    kind: "online",
+    explorer: onlineExplorer(source),
+    database: null,
+  });
+
+  const primaryTitle =
+    dbSelectData.find((choice) => choice.value === selectedReferenceDatabase)?.label ?? "";
+  const primaryColumn: StatsColumn | null =
+    firstSource === "local"
+      ? effectiveReferenceDatabase
+        ? localColumn("primary", primaryTitle, localExplorer, effectiveReferenceDatabase)
+        : null
+      : onlineColumn("primary", firstSource);
+  const comparisonColumn: StatsColumn | null =
+    comparison.kind === "database"
+      ? localColumn("comparison", comparison.title, comparisonExplorer, comparison.database)
+      : comparison.kind === "online"
+        ? onlineColumn("comparison", comparison.source)
+        : null;
+  const furtherColumnsStats: StatsColumn[] = furtherShown.map((column) =>
+    column.id === "reference"
+      ? localColumn("reference", column.title, pinnedReferenceExplorer, column.database)
+      : onlineColumn(column.id, column.id),
+  );
+  const shownColumns = [
+    ...(primaryColumn ? [primaryColumn] : []),
+    ...(comparisonColumn ? [comparisonColumn] : []),
+    ...furtherColumnsStats,
+  ];
+  const columnUnavailable = (column: StatsColumn) =>
+    column.explorer.error !== undefined || (column.kind === "online" && !explorerHandle);
+  const statsSources = shownColumns.length > 1 ? shownColumns : null;
+  const answeringColumns = shownColumns.filter((column) => !columnUnavailable(column));
+  const failedColumns = shownColumns.filter((column) => column.explorer.error !== undefined);
+  const missingOnlineAuth = shownColumns.some(
+    (column) => column.kind === "online" && !explorerHandle,
+  );
+
+  const gamesColumns = [primaryColumn, comparisonColumn].filter((column): column is StatsColumn => {
+    if (!column) return false;
+    return !(statsUnavailable && column.kind === "online");
+  });
+  const gamesSource: ExplorerGamesSourceRole = gamesColumns.some(
+    (column) => column.role === storedGamesSource,
+  )
+    ? storedGamesSource
+    : gamesColumns[0]?.role === "comparison"
+      ? "comparison"
+      : "primary";
+  const gamesFrom = gamesColumns.find((column) => column.role === gamesSource);
+  const oneGamesColumnAmongSeveralStats = gamesColumns.length === 1 && statsSources !== null;
+
+  const openingData: OpeningData | undefined = primaryColumn?.explorer;
+  const isLoading = primaryColumn?.explorer.loading ?? false;
+  const errorMessage: string | undefined = primaryColumn?.explorer.error;
 
   // Clearing the native search cache only frees memory; a choice never depends on it.
   const clearSearchCache = () => void Promise.resolve(tauri.clearGames()).catch(() => undefined);
-  const choose = (store: (database: DatabaseHandle | null) => void) => (value: string | null) => {
+  const chooseFirstSource = (value: string | null) => {
     clearSearchCache();
-    store(databaseHandleFromKey(readableDatabases, value));
+    if (isOnlineSource(value)) {
+      setFirstSource(value);
+      return;
+    }
+    setFirstSource("local");
+    const database = databaseHandleFromKey(readableDatabases, value);
+    if (pinned) setPinnedDatabase(database);
+    else setReferenceDatabase(database);
   };
-  const chooseDatabase = choose(pinnedDatabase ? setPinnedDatabase : setReferenceDatabase);
-  const chooseComparison = choose(setStoredComparison);
-  const comparisonChoices = dbSelectData.filter(
-    (choice) => choice.value !== selectedReferenceDatabase,
-  );
-  const primaryTitle =
-    dbSelectData.find((choice) => choice.value === selectedReferenceDatabase)?.label ?? "";
+  const chooseComparison = (value: string | null) => {
+    clearSearchCache();
+    if (isOnlineSource(value)) {
+      setStoredComparison(value);
+      return;
+    }
+    setStoredComparison(databaseHandleFromKey(readableDatabases, value));
+  };
+  const firstOnline = firstSource === "local" ? null : firstSource;
+  const firstLocalKey = firstSource === "local" ? selectedReferenceDatabase : null;
+  const comparisonLocalChoices = dbSelectData.filter((choice) => choice.value !== firstLocalKey);
+  const onlineSourceChoices = (except: ExplorerOnlineSource | null = null) =>
+    ONLINE_SOURCES.filter((source) => source !== except).map((source) => ({
+      value: source,
+      label: onlineName(source),
+    }));
+  const comparisonOnlineChoices = onlineSourceChoices(firstOnline);
+  const groupedChoices = (local: SelectItem[], online: SelectItem[]): SelectGroup[] => [
+    ...(local.length > 0 ? [{ group: t("Board.Database.Databases"), items: local }] : []),
+    ...(online.length > 0 ? [{ group: t("Board.Database.Online"), items: online }] : []),
+  ];
+  const firstSelectData: SelectItem[] | SelectGroup[] = pinned
+    ? dbSelectData
+    : groupedChoices(dbSelectData, onlineSourceChoices());
+  const comparisonSelectData = groupedChoices(comparisonLocalChoices, comparisonOnlineChoices);
+  const firstSet = firstSource !== "local" || !!effectiveReferenceDatabase;
   const canCompare =
-    db === "local" &&
     !pinned &&
-    !!effectiveReferenceDatabase &&
+    firstSet &&
     comparison.kind === "none" &&
-    comparisonChoices.length > 0;
-  const canRestoreReference =
-    db === "local" &&
-    pinned &&
-    !furtherColumns.includes("reference") &&
-    availableReference.kind === "source";
+    (comparisonLocalChoices.length > 0 || comparisonOnlineChoices.length > 0);
+  const canAddFurther = pinned && furtherChoices.length > 0;
+
+  const titledSource = (title: string) => (
+    <Flex align="center" flex={1} miw={0} h={SOURCE_SELECT_HEIGHT}>
+      <Text fz="sm" fw={600} truncate title={title}>
+        {title}
+      </Text>
+    </Flex>
+  );
+
+  const sourceSelect = (source: {
+    data: SelectItem[] | SelectGroup[];
+    value: string | null;
+    choose: (value: string | null) => void;
+    placeholder?: string;
+    name?: string;
+  }) => (
+    <Select
+      data={source.data}
+      value={source.value}
+      onChange={source.choose}
+      placeholder={source.placeholder}
+      aria-label={source.name}
+      size="sm"
+      flex={1}
+      miw={0}
+      allowDeselect={false}
+    />
+  );
 
   /** A local source's cell: each source differs only in its database, title, and filter binding. */
   const localSourceHeader = (source: {
     key: string;
-    choices: typeof dbSelectData;
+    choices?: SelectItem[] | SelectGroup[];
     database: DatabaseHandle | null;
-    choose: (value: string | null) => void;
+    choose?: (value: string | null) => void;
     name?: string;
     /** A source that cannot be exchanged shows this title instead of the select. */
     fixedTitle?: string;
@@ -316,25 +483,15 @@ function DatabasePanel() {
     <ExplorerSourceHeader
       key={source.key}
       select={
-        source.fixedTitle !== undefined ? (
-          <Flex align="center" flex={1} miw={0} h={SOURCE_SELECT_HEIGHT}>
-            <Text fz="sm" fw={600} truncate title={source.fixedTitle}>
-              {source.fixedTitle}
-            </Text>
-          </Flex>
-        ) : (
-          <Select
-            data={source.choices}
-            value={source.database ? databaseHandleKey(source.database) : null}
-            onChange={source.choose}
-            placeholder={source.name ? undefined : t("Board.Database.SelectReference")}
-            aria-label={source.name}
-            size="sm"
-            flex={1}
-            miw={0}
-            allowDeselect={false}
-          />
-        )
+        source.fixedTitle !== undefined
+          ? titledSource(source.fixedTitle)
+          : sourceSelect({
+              data: source.choices ?? [],
+              value: source.database ? databaseHandleKey(source.database) : null,
+              choose: source.choose ?? (() => undefined),
+              placeholder: source.name ? undefined : t("Board.Database.SelectReference"),
+              name: source.name,
+            })
       }
       filterLabel={localFilterSummary(source.binding.filters, t, source.playerName)}
       filterDisabled={!source.database}
@@ -349,83 +506,101 @@ function DatabasePanel() {
       action={source.action}
     />
   );
-  const sourceHeader = match(db)
-    .with("local", () =>
-      localSourceHeader({
-        key: db,
-        choices: dbSelectData,
-        database: effectiveReferenceDatabase,
-        choose: chooseDatabase,
-        binding: { filters: localFilters, setFilters: setLocalFilters },
-        playerName: primaryPlayerName,
-      }),
-    )
-    .with("lch_all", () => (
-      <ExplorerSourceHeader
-        key={db}
-        filterLabel={t("Board.Database.Filters")}
-        filters={<LichessOptionsPanel />}
-      />
-    ))
-    .with("lch_master", () => (
-      <ExplorerSourceHeader
-        key={db}
-        filterLabel={t("Board.Database.Filters")}
-        filters={<MasterOptionsPanel />}
-      />
-    ))
-    .exhaustive();
+  const onlineSourceHeader = (source: {
+    key: string;
+    online: ExplorerOnlineSource;
+    select?: ReactNode;
+    action?: ReactNode;
+  }) => (
+    <ExplorerSourceHeader
+      key={source.key}
+      select={source.select}
+      filterLabel={t("Board.Database.Filters")}
+      filters={onlineFilters(source.online)}
+      action={source.action}
+    />
+  );
+  const removeAction = (label: string, onClick: () => void) => (
+    <IconAction label={label} variant="subtle" size="sm" onClick={onClick}>
+      <X size="0.875rem" />
+    </IconAction>
+  );
+  const firstHeader =
+    firstSource === "local"
+      ? localSourceHeader({
+          key: "primary",
+          choices: firstSelectData,
+          database: effectiveReferenceDatabase,
+          choose: chooseFirstSource,
+          binding: { filters: localFilters, setFilters: setLocalFilters },
+          playerName: primaryPlayerName,
+        })
+      : onlineSourceHeader({
+          key: "primary",
+          online: firstSource,
+          select: sourceSelect({
+            data: firstSelectData,
+            value: firstSource,
+            choose: chooseFirstSource,
+          }),
+        });
   const comparisonHeader =
-    comparison.kind === "database" &&
-    localSourceHeader({
-      key: "comparison",
-      choices: comparisonChoices,
-      database: comparison.database,
-      choose: chooseComparison,
-      name: t("Board.Database.CompareWith"),
-      ...(pinned ? { fixedTitle: comparison.title, fixedPlayer: comparisonPlayer !== null } : {}),
-      binding: comparisonFilters,
-      playerName: comparisonPlayerName,
-      action: (
-        <IconAction
-          label={t("Board.Database.RemoveComparison")}
-          variant="subtle"
-          size="sm"
-          onClick={removeComparison}
-        >
-          <X size="0.875rem" />
-        </IconAction>
-      ),
-    });
-  const pinnedReferenceHeader =
-    referenceSource.kind === "source" &&
-    localSourceHeader({
-      key: "reference",
-      choices: [],
-      database: referenceSource.database,
-      choose: () => undefined,
-      fixedTitle: referenceSource.title,
-      binding: pinnedReferenceFilters,
-      playerName: pinnedReferencePlayerName,
-      action: (
-        <IconAction
-          label={t("Board.Database.RemoveReference")}
-          variant="subtle"
-          size="sm"
-          onClick={() =>
-            setFurtherColumns((columns) => columns.filter((column) => column !== "reference"))
-          }
-        >
-          <X size="0.875rem" />
-        </IconAction>
-      ),
-    });
+    comparison.kind === "database"
+      ? localSourceHeader({
+          key: "comparison",
+          choices: comparisonSelectData,
+          database: comparison.database,
+          choose: chooseComparison,
+          name: t("Board.Database.CompareWith"),
+          ...(pinned
+            ? { fixedTitle: comparison.title, fixedPlayer: comparisonPlayer !== null }
+            : {}),
+          binding: comparisonFilters,
+          playerName: comparisonPlayerName,
+          action: removeAction(t("Board.Database.RemoveComparison"), removeComparison),
+        })
+      : comparison.kind === "online"
+        ? onlineSourceHeader({
+            key: "comparison",
+            online: comparison.source,
+            select: sourceSelect({
+              data: comparisonSelectData,
+              value: comparison.source,
+              choose: chooseComparison,
+              name: t("Board.Database.CompareWith"),
+            }),
+            action: removeAction(t("Board.Database.RemoveComparison"), removeComparison),
+          })
+        : false;
+  const furtherHeaders = furtherShown.map((column) =>
+    column.id === "reference"
+      ? localSourceHeader({
+          key: "reference",
+          choices: [],
+          database: column.database,
+          choose: () => undefined,
+          fixedTitle: column.title,
+          binding: pinnedReferenceFilters,
+          playerName: pinnedReferencePlayerName,
+          action: removeAction(t("Board.Database.RemoveReference"), () =>
+            setFurtherColumns((columns) => columns.filter((entry) => entry !== "reference")),
+          ),
+        })
+      : onlineSourceHeader({
+          key: column.id,
+          online: column.id,
+          select: titledSource(onlineName(column.id)),
+          action: removeAction(t("Board.Database.RemoveColumn"), () =>
+            setFurtherColumns((columns) => columns.filter((entry) => entry !== column.id)),
+          ),
+        }),
+  );
 
   const [storedCollapsed, setStoredCollapsed] = useAtom(explorerHeaderCollapsedAtom);
   // The panel asks for a database through its select, so the controls stay open until the list
   // has answered with one. The stored preference is left as it is.
   const needsDatabase =
-    db === "local" &&
+    firstSource === "local" &&
     !effectiveReferenceDatabase &&
     (databases !== undefined || databasesFailure !== undefined);
   const collapsed = storedCollapsed && !needsDatabase;
@@ -453,43 +628,41 @@ function DatabasePanel() {
         .join(" · ")}
     />
   );
-  const onlineCaption = (name: string, filtered: boolean) => (
+  const onlineCaption = (key: string, source: ExplorerOnlineSource) => (
     <ExplorerSourceCaption
-      key={db}
-      name={name}
-      detail={filtered ? t("Board.Database.Filters") : undefined}
+      key={key}
+      name={onlineName(source)}
+      detail={onlineFiltered(source) ? t("Board.Database.Filters") : undefined}
     />
   );
-  const sourceCaptions = match(db)
-    .with("local", () => [
+  const sourceCaptions = [
+    firstSource === "local"
+      ? localCaption({
+          key: "primary",
+          name: primaryTitle,
+          filters: localFilters,
+          playerName: primaryPlayerName,
+        })
+      : onlineCaption("primary", firstSource),
+    comparison.kind === "database" &&
       localCaption({
-        key: db,
-        name: primaryTitle,
-        filters: localFilters,
-        playerName: primaryPlayerName,
+        key: "comparison",
+        name: comparison.title,
+        filters: comparisonFilters.filters,
+        playerName: comparisonPlayerName,
       }),
-      comparison.kind === "database" &&
-        localCaption({
-          key: "comparison",
-          name: comparison.title,
-          filters: comparisonFilters.filters,
-          playerName: comparisonPlayerName,
-        }),
-      referenceSource.kind === "source" &&
-        localCaption({
-          key: "reference",
-          name: referenceSource.title,
-          filters: pinnedReferenceFilters.filters,
-          playerName: pinnedReferencePlayerName,
-        }),
-    ])
-    .with("lch_all", () =>
-      onlineCaption(t("Board.Database.LichessAll"), lichessFiltersActive(lichessOptions)),
-    )
-    .with("lch_master", () =>
-      onlineCaption(t("Board.Database.LichessMaster"), masterFiltersActive(masterOptions)),
-    )
-    .exhaustive();
+    comparison.kind === "online" && onlineCaption("comparison", comparison.source),
+    ...furtherShown.map((column) =>
+      column.id === "reference"
+        ? localCaption({
+            key: "reference",
+            name: column.title,
+            filters: pinnedReferenceFilters.filters,
+            playerName: pinnedReferencePlayerName,
+          })
+        : onlineCaption(column.id, column.id),
+    ),
+  ];
   const [detached, setDetached] = useAtom(explorerDetachedAtom);
   const [placement, setPlacement] = useAtom(explorerPlacementAtom);
   const setBoardPanel = useSetAtom(useTabAtom(tabFamily));
@@ -545,69 +718,100 @@ function DatabasePanel() {
     </>
   );
 
-  // With multiple sources a failure belongs to its source: it is named, and the others stay.
-  type LocalSourceEntry = {
-    role: ExplorerColumnId;
-    name: string;
-    explorer: typeof localExplorer;
-  };
-  const extraStatsSources: LocalSourceEntry[] =
-    db === "local"
-      ? [
-          ...(comparison.kind === "database"
-            ? [
-                {
-                  role: "comparison" as const,
-                  name: comparison.title,
-                  explorer: comparisonExplorer,
-                },
-              ]
-            : []),
-          ...(referenceSource.kind === "source"
-            ? [
-                {
-                  role: "reference" as const,
-                  name: referenceSource.title,
-                  explorer: pinnedReferenceExplorer,
-                },
-              ]
-            : []),
-        ]
-      : [];
-  const statsSources: LocalSourceEntry[] | null =
-    extraStatsSources.length > 0
-      ? [{ role: "primary", name: primaryTitle, explorer: localExplorer }, ...extraStatsSources]
-      : null;
-  const sourceAlert = (source: LocalSourceEntry) => (
+  const sourceAlert = (source: StatsColumn) => (
     <Alert key={source.role} color="danger" style={{ flexShrink: 0 }}>
       {`${source.name}: ${source.explorer.error}`}
     </Alert>
   );
-  const failedSources = statsSources?.filter((source) => source.explorer.error !== undefined) ?? [];
-  // The games view keeps the primary and optional comparison source; the reference source adds
-  // no games list and no entry to that switch.
-  const gamesSources =
-    db === "local" && comparison.kind === "database"
-      ? ([
-          { role: "primary", name: primaryTitle, explorer: localExplorer },
-          { role: "comparison", name: comparison.title, explorer: comparisonExplorer },
-        ] as const)
-      : null;
-  const gamesFrom = gamesSources?.find((source) => source.role === gamesSource);
+  const signInNotice = (
+    <Alert color="warning" style={{ flexShrink: 0 }}>
+      {t("Board.Database.ExplorerAuthRequired1")}{" "}
+      <Link to="/accounts">{t("Home.Accounts.Users")}</Link>{" "}
+      {t("Board.Database.ExplorerAuthRequired2")}
+    </Alert>
+  );
 
-  /** What a view shows instead of its table while the source cannot answer. */
+  const groupedMenu = (
+    local: SelectItem[],
+    online: SelectItem[],
+    choose: (value: string) => void,
+  ) => (
+    <>
+      {local.length > 0 && (
+        <>
+          <Menu.Label>{t("Board.Database.Databases")}</Menu.Label>
+          {local.map((choice) => (
+            <Menu.Item key={choice.value} onClick={() => choose(choice.value)}>
+              {choice.label}
+            </Menu.Item>
+          ))}
+        </>
+      )}
+      {online.length > 0 && (
+        <>
+          <Menu.Label>{t("Board.Database.Online")}</Menu.Label>
+          {online.map((choice) => (
+            <Menu.Item key={choice.value} onClick={() => choose(choice.value)}>
+              {choice.label}
+            </Menu.Item>
+          ))}
+        </>
+      )}
+    </>
+  );
+
+  const gamesView = (source: StatsColumn) => {
+    if (source.kind === "online" && !explorerHandle) return signInNotice;
+    if (source.explorer.error !== undefined) return sourceAlert(source);
+    const failures = source.explorer.gameFailures;
+    const hasGameFailures = (failures?.length ?? 0) > 0;
+    const failedGames = failedGameLabels(failures);
+    return (
+      <>
+        {hasGameFailures && (
+          <Alert color="warning" style={{ flexShrink: 0 }}>
+            {source.explorer.games.length
+              ? t("Board.Database.GamesIncomplete", {
+                  defaultValue: "Could not load these games: {{games}}",
+                  games: failedGames,
+                })
+              : t("Board.Database.GamesFailed", {
+                  defaultValue: "Could not load games: {{games}}",
+                  games: failedGames,
+                })}
+          </Alert>
+        )}
+        {(!hasGameFailures || !!source.explorer.games.length) && (
+          <GamesTable
+            games={source.explorer.games}
+            loading={source.explorer.loading}
+            databasePath={source.database}
+            targetFen={gamesTargetFen}
+          />
+        )}
+      </>
+    );
+  };
+
+  /** What a view shows instead of its table while the only source cannot answer. */
   const unavailable: ReactNode | null =
-    db === "local" && !effectiveReferenceDatabase ? (
+    firstSource === "local" && !effectiveReferenceDatabase ? (
       <NoDatabaseWarning />
     ) : errorMessage !== undefined ? (
       <Alert color="danger">{errorMessage}</Alert>
-    ) : missingExplorerAuthentication ? (
-      <Alert color="warning">
-        {t("Board.Database.ExplorerAuthRequired1")}{" "}
-        <Link to="/accounts">{t("Home.Accounts.Users")}</Link>{" "}
-        {t("Board.Database.ExplorerAuthRequired2")}
-      </Alert>
+    ) : primaryColumn?.kind === "online" && !explorerHandle ? (
+      signInNotice
     ) : null;
+
+  const addFurther = (id: ExplorerFurtherColumn) =>
+    setFurtherColumns((columns) => addFurtherColumn(columns, id, furtherContext));
+  const furtherMenuItems = furtherChoices.flatMap((id): SelectItem[] => {
+    if (id !== "reference") return [{ value: id, label: onlineName(id) }];
+    if (availableReference.kind !== "source") return [];
+    return [{ value: id, label: availableReference.title }];
+  });
+  const furtherLocalItems = furtherMenuItems.filter((item) => item.value === "reference");
+  const furtherOnlineItems = furtherMenuItems.filter((item) => item.value !== "reference");
 
   return (
     <Tabs
@@ -636,16 +840,7 @@ function DatabasePanel() {
         <>
           <Group justify="space-between" wrap="nowrap" gap="xs">
             <Group gap="xs">
-              <SegmentedControl
-                data={[
-                  { label: t("Board.Database.Local"), value: "local" },
-                  { label: t("Board.Database.LichessAll"), value: "lch_all" },
-                  { label: t("Board.Database.LichessMaster"), value: "lch_master" },
-                ]}
-                value={db}
-                onChange={(value) => setDb(value as "local" | "lch_all" | "lch_master")}
-              />
-              {db === "local" && <PositionSearchControl boardFen={debouncedFen} />}
+              {showingLocalSource && <PositionSearchControl boardFen={debouncedFen} />}
               {canCompare && (
                 <Menu position="bottom-start" withinPortal>
                   <Menu.Target>
@@ -659,27 +854,28 @@ function DatabasePanel() {
                     </Button>
                   </Menu.Target>
                   <Menu.Dropdown>
-                    {comparisonChoices.map((choice) => (
-                      <Menu.Item key={choice.value} onClick={() => chooseComparison(choice.value)}>
-                        {choice.label}
-                      </Menu.Item>
-                    ))}
+                    {groupedMenu(comparisonLocalChoices, comparisonOnlineChoices, chooseComparison)}
                   </Menu.Dropdown>
                 </Menu>
               )}
-              {canRestoreReference && (
-                <Button
-                  variant="subtle"
-                  size="compact-sm"
-                  leftSection={<Plus size="0.875rem" />}
-                  onClick={() =>
-                    setFurtherColumns((columns) =>
-                      columns.includes("reference") ? columns : [...columns, "reference"],
-                    )
-                  }
-                >
-                  {t("Board.Database.ShowReference")}
-                </Button>
+              {canAddFurther && (
+                <Menu position="bottom-start" withinPortal>
+                  <Menu.Target>
+                    <Button
+                      variant="subtle"
+                      size="compact-sm"
+                      leftSection={<Plus size="0.875rem" />}
+                      aria-label={t("Board.Database.AddColumn")}
+                    >
+                      {t("Board.Database.AddColumn")}
+                    </Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    {groupedMenu(furtherLocalItems, furtherOnlineItems, (value) =>
+                      addFurther(value as ExplorerFurtherColumn),
+                    )}
+                  </Menu.Dropdown>
+                </Menu>
               )}
             </Group>
             <Group gap={4} wrap="nowrap">
@@ -696,9 +892,9 @@ function DatabasePanel() {
             className={classes.sources}
             data-sources={statsSources ? String(statsSources.length) : undefined}
           >
-            {sourceHeader}
+            {firstHeader}
             {comparisonHeader}
-            {pinnedReferenceHeader}
+            {furtherHeaders}
           </div>
         </>
       )}
@@ -718,16 +914,18 @@ function DatabasePanel() {
       <ViewPanel value="stats" view={view} plain={collapsed}>
         {statsSources ? (
           <>
-            {failedSources.map(sourceAlert)}
-            {failedSources.length < statsSources.length && (
+            {missingOnlineAuth && signInNotice}
+            {failedColumns.map(sourceAlert)}
+            {answeringColumns.length > 0 && (
               <OpeningsTable
-                openings={localExplorer.openings}
-                loading={localExplorer.loading}
-                sources={statsSources.map(({ role, explorer }) => ({
-                  role,
-                  openings: explorer.openings,
-                  loading: explorer.loading,
-                  unavailable: explorer.error !== undefined,
+                openings={primaryColumn?.explorer.openings ?? []}
+                loading={primaryColumn?.explorer.loading ?? false}
+                sources={statsSources.map((column) => ({
+                  role: column.role,
+                  openings: column.explorer.openings,
+                  loading: column.explorer.loading,
+                  total: column.explorer.total,
+                  unavailable: columnUnavailable(column),
                 }))}
                 sort={sort}
                 onSortChange={setSort}
@@ -745,55 +943,27 @@ function DatabasePanel() {
         )}
       </ViewPanel>
       <ViewPanel value="games" view={view} plain={collapsed}>
-        {gamesSources && gamesFrom ? (
+        {gamesColumns.length > 1 && gamesFrom ? (
           <Stack gap="xs" flex={1} style={{ overflow: "hidden" }}>
             <SegmentedControl
               aria-label={t("Board.Database.GamesSource")}
               style={{ flexShrink: 0, alignSelf: "flex-start" }}
               size="xs"
-              data={gamesSources.map((source) => ({ value: source.role, label: source.name }))}
+              data={gamesColumns.map((column) => ({
+                value: column.role,
+                label: column.name,
+              }))}
               value={gamesSource}
-              onChange={(value) => setGamesSource(value as typeof gamesSource)}
+              onChange={(value) => {
+                if (value === "primary" || value === "comparison") setGamesSource(value);
+              }}
             />
-            {gamesFrom.explorer.error !== undefined ? (
-              sourceAlert(gamesFrom)
-            ) : (
-              <GamesTable
-                games={gamesFrom.explorer.games}
-                loading={gamesFrom.explorer.loading}
-                databasePath={
-                  gamesFrom.role === "comparison" ? comparisonDatabase : effectiveReferenceDatabase
-                }
-                targetFen={gamesTargetFen}
-              />
-            )}
+            {gamesView(gamesFrom)}
           </Stack>
+        ) : oneGamesColumnAmongSeveralStats && gamesFrom ? (
+          gamesView(gamesFrom)
         ) : (
-          (unavailable ?? (
-            <>
-              {hasGameFailures && (
-                <Alert color="warning" style={{ flexShrink: 0 }}>
-                  {openingData?.games.length
-                    ? t("Board.Database.GamesIncomplete", {
-                        defaultValue: "Could not load these games: {{games}}",
-                        games: failedGames,
-                      })
-                    : t("Board.Database.GamesFailed", {
-                        defaultValue: "Could not load games: {{games}}",
-                        games: failedGames,
-                      })}
-                </Alert>
-              )}
-              {(!hasGameFailures || !!openingData?.games.length) && (
-                <GamesTable
-                  games={openingData?.games || []}
-                  loading={isLoading}
-                  databasePath={db === "local" ? effectiveLocalOptions.path : null}
-                  targetFen={gamesTargetFen}
-                />
-              )}
-            </>
-          ))
+          (unavailable ?? (primaryColumn ? gamesView(primaryColumn) : null))
         )}
       </ViewPanel>
     </Tabs>

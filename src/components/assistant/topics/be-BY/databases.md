@@ -2,7 +2,7 @@
 id: databases
 title: Базы дадзеных, аглядальнік, пошук пазіцый, гульцы і турніры
 summary: Даданне або спампоўка баз партый, выбар даведачнай базы, пошук пазіцый у аглядальніку, а таксама прагляд партый, гульцоў і турніраў.
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 Базы дадзеных знаходзяцца ў [[page:library]] ({{label:SideBar.Library}}) побач з вашымі файламі PGN і захоўваюцца ў [[setting:databases-directory]].
@@ -31,8 +31,8 @@ source: d3afecf524059542
 - Каб падрыхтавацца да саперніка, які мае толькі акаўнт на Lichess або Chess.com, націсніце {{label:Library.OnlineOpponent}} у [[page:library]], каб знайсці яго акаўнт, спампаваць партыі і адкрыць картку адразу на ўкладцы {{label:Home.Personal.Preparation}} (паўторны ўвод таго ж акаўнта адкрые картку без паўторнай спампоўкі).
 
 На дошцы аналізу адкрыйце ўкладку {{label:Board.Tabs.Database}}, каб карыстацца дэбютным аглядальнікам:
-- Пераключайцеся паміж {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} і {{label:Board.Database.LichessMaster}} (анлайн-аглядальнікі Lichess патрабуюць уваходу ў акаўнт Lichess на старонцы [[page:accounts]]).
+- Выберыце {{label:Board.Database.LichessAll}} або {{label:Board.Database.LichessMaster}} у меню крыніц і ў {{label:Board.Database.Compare}} (анлайн-аглядальнікі Lichess патрабуюць уваходу ў акаўнт Lichess на старонцы [[page:accounts]]).
 - Пераключайцеся паміж {{label:Board.Database.Stats}} (статыстыка хадоў) і {{label:Board.Database.Games}} (адпаведныя партыі).
-- Для лакальных баз дадзеных націсніце {{label:Board.Database.Compare}}, каб параўнаць дзве базы побач, або адкрыйце {{label:Board.Database.Local.Position}} для пераключэння паміж пошукам пазіцыі {{label:Board.Database.Local.Exact}} і {{label:Board.Database.Local.Partial}} (уключаючы {{label:Board.Database.Local.SimilarStructure}} для пошуку па пешкавай структуры і {{label:Fen.Empty}} для адвольных шаблонаў).
+- Націсніце {{label:Board.Database.Compare}}, каб параўнаць дзве крыніцы побач, або адкрыйце {{label:Board.Database.Local.Position}} для пераключэння паміж пошукам пазіцыі {{label:Board.Database.Local.Exact}} і {{label:Board.Database.Local.Partial}} (уключаючы {{label:Board.Database.Local.SimilarStructure}} для пошуку па пешкавай структуры і {{label:Fen.Empty}} для адвольных шаблонаў).
 - Выкарыстоўвайце {{label:Board.Database.Pin}}, каб замацаваць аглядальнік над або пад дошкай ці натацыяй, і {{label:Board.Database.Unpin}}, каб вярнуць яго ва ўкладкі.
-- Калі кнопка {{label:Databases.OpeningTree.Prepare}} адкрывае дошку для гульца з базы дадзеных, аглядальнік дадае вашу даведачную базу яшчэ адным слупком побач з партыямі саперніка; націсніце {{label:Board.Database.RemoveReference}}, каб схаваць яе, або {{label:Board.Database.ShowReference}}, каб вярнуць.
+- Калі кнопка {{label:Databases.OpeningTree.Prepare}} адкрывае дошку для гульца з базы дадзеных, аглядальнік пачынае з даведачнай базы як дадатковага слупка побач з партыямі саперніка; націсніце {{label:Board.Database.RemoveReference}}, каб схаваць слупок, або {{label:Board.Database.AddColumn}}, каб дадаць яшчэ адзін.

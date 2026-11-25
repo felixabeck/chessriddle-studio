@@ -244,7 +244,6 @@ test("a Lichess first source beside a local first-column database does not hide 
 });
 
 const pinnedRef = {
-    local: true,
     pinned: true,
     primary: handle("mega"),
     reference: handle("ref"),
@@ -269,7 +268,6 @@ test("a pinned tab accepts the same database as the pinned one for its reference
 
 test.each<[string, Partial<typeof pinnedRef> & { databases?: DatabaseInfo[] | undefined }]>([
     ["an unpinned tab", { pinned: false }],
-    ["a Lichess source", { local: false }],
     ["no primary database", { primary: null as unknown as DatabaseHandle }],
     ["no reference database selected", { reference: null as unknown as DatabaseHandle }],
     ["a missing reference database", { databases: [readable("mega")] }],

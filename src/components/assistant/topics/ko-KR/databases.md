@@ -2,7 +2,7 @@
 id: databases
 title: 데이터베이스, 탐색기, 포지션 검색, 선수 및 토너먼트
 summary: 기보 데이터베이스 추가 또는 다운로드, 참조 데이터베이스 지정, 탐색기에서 포지션 검색, 대국·선수·토너먼트 탐색하기.
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 데이터베이스는 PGN 파일과 함께 [[page:library]] ({{label:SideBar.Library}})에 표시되며 [[setting:databases-directory]]에 저장됩니다.
@@ -31,8 +31,8 @@ source: d3afecf524059542
 - Lichess 또는 Chess.com 계정만 있는 상대를 대비하려면 [[page:library]]에서 {{label:Library.OnlineOpponent}}을(를) 클릭해 계정을 조회하고 대국을 다운로드한 뒤 {{label:Home.Personal.Preparation}} 탭에서 바로 선수 카드를 여세요(같은 계정을 다시 입력하면 다시 다운로드하지 않고 바로 열립니다).
 
 분석 보드에서 오프닝 탐색기를 사용하려면 {{label:Board.Tabs.Database}} 탭을 여세요:
-- {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}}, {{label:Board.Database.LichessMaster}} 사이를 전환할 수 있습니다(Lichess 온라인 탐색기를 사용하려면 [[page:accounts]]에서 Lichess 계정에 로그인해야 합니다).
+- 소스 드롭다운과 {{label:Board.Database.Compare}}에서 {{label:Board.Database.LichessAll}} 또는 {{label:Board.Database.LichessMaster}}를 선택하세요(Lichess 온라인 탐색기를 사용하려면 [[page:accounts]]에서 Lichess 계정에 로그인해야 합니다).
 - {{label:Board.Database.Stats}}(수 통계)와 {{label:Board.Database.Games}}(일치하는 대국) 보기를 전환합니다.
-- 로컬 데이터베이스에서는 {{label:Board.Database.Compare}}을(를) 클릭해 두 데이터베이스를 나란히 보거나, {{label:Board.Database.Local.Position}}을 열어 {{label:Board.Database.Local.Exact}}와 {{label:Board.Database.Local.Partial}} 포지션 검색(폰 구조 검색용 {{label:Board.Database.Local.SimilarStructure}} 및 사용자 지정 패턴용 {{label:Fen.Empty}} 포함)을 전환할 수 있습니다.
+- {{label:Board.Database.Compare}}을(를) 클릭해 두 소스를 나란히 보거나, {{label:Board.Database.Local.Position}}을 열어 {{label:Board.Database.Local.Exact}}와 {{label:Board.Database.Local.Partial}} 포지션 검색(폰 구조 검색용 {{label:Board.Database.Local.SimilarStructure}} 및 사용자 지정 패턴용 {{label:Fen.Empty}} 포함)을 전환할 수 있습니다.
 - {{label:Board.Database.Pin}}으로 탐색기를 보드나 기보 위아래에 고정하고, {{label:Board.Database.Unpin}}으로 다시 탭으로 되돌릴 수 있습니다.
-- {{label:Databases.OpeningTree.Prepare}}로 데이터베이스 선수의 보드를 열면 탐색기에 상대 대국 옆의 추가 열로 참조 데이터베이스가 표시됩니다. {{label:Board.Database.RemoveReference}}을(를) 클릭해 숨기거나 {{label:Board.Database.ShowReference}}을(를) 클릭해 다시 불러올 수 있습니다.
+- {{label:Databases.OpeningTree.Prepare}}로 데이터베이스 선수의 보드를 열면 탐색기가 참조 데이터베이스를 상대 대국 옆의 추가 열로 먼저 표시합니다. {{label:Board.Database.RemoveReference}}을(를) 클릭해 열을 숨기거나 {{label:Board.Database.AddColumn}}을(를) 클릭해 다른 열을 추가할 수 있습니다.

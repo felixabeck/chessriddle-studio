@@ -38,6 +38,7 @@ import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { formatNumber } from "@/utils/format";
 import { getLichessGames, getMasterGames, type PositionData } from "@/utils/lichess/api";
+import { savePublicSessions } from "@/utils/session";
 
 const mocks = vi.hoisted(() => ({
   logError: vi.fn(),
@@ -179,6 +180,7 @@ describe("DatabasePanel", () => {
     });
     sessionStorage.clear();
     localStorage.clear();
+    savePublicSessions([]);
     // These tests operate the header's controls; the collapsed header has its own tests.
     localStorage.setItem(HEADER_COLLAPSED_KEY, "false");
     container = document.createElement("div");
@@ -190,7 +192,12 @@ describe("DatabasePanel", () => {
     mocks.getMasterGames.mockReset();
     mocks.getPublicLichessJson.mockReset();
     mocks.lexPgn.mockReset();
-    mocks.getDatabases.mockReset();
+    mocks.getDatabases.mockReset().mockResolvedValue({
+      databases: [],
+      unread: [],
+      workspaceFilenames: [],
+      root: { id: { id: "database-root" }, kind: "databaseRoot" },
+    });
     mocks.searchPosition.mockReset().mockResolvedValue([[], []]);
     mocks.collectionForDatabase.mockReset().mockResolvedValue(null);
     mocks.clearGames.mockReset().mockResolvedValue(undefined);
@@ -1293,6 +1300,28 @@ describe("DatabasePanel", () => {
       Array.from(container.querySelectorAll("button")).find(
         (button) => button.textContent === "Board.Database.Compare",
       );
+    const addColumnButton = () =>
+      Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Board.Database.AddColumn",
+      );
+    const positionControl = () =>
+      Array.from(container.querySelectorAll("button")).find((button) =>
+        button.textContent?.startsWith("Board.Database.PositionMode"),
+      );
+    const listedOptions = (select: HTMLInputElement) =>
+      Array.from(select.ownerDocument.querySelectorAll<HTMLElement>('[role="option"]')).filter(
+        (option) => option.closest('[role="listbox"]')?.id === select.getAttribute("aria-controls"),
+      );
+    const listedGroups = (select: HTMLInputElement) =>
+      Array.from(select.ownerDocument.querySelectorAll<HTMLElement>(".mantine-Select-groupLabel"))
+        .filter(
+          (label) => label.closest('[role="listbox"]')?.id === select.getAttribute("aria-controls"),
+        )
+        .map((label) => label.textContent);
+    const menuChoices = () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).map(
+        (item) => item.textContent,
+      );
 
     const settingsButton = () =>
       container.querySelector<HTMLButtonElement>(
@@ -2000,11 +2029,19 @@ describe("DatabasePanel", () => {
           expect(store.get(explorerSortFamily(tabId)).source).toBe("reference");
           expect(rowsSortedByRef()[0]).not.toBe("c4");
 
-          // Restore reference source from the header button: stored reference sort applies again.
-          const restore = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-            (b) => b.textContent?.includes("Board.Database.ShowReference"),
+          // Restore the reference source from the further-column control: stored sort applies again.
+          const add = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+            (b) => b.textContent === "Board.Database.AddColumn",
           )!;
-          expect(restore).toBeDefined();
+          expect(add.getAttribute("aria-label")).toBe("Board.Database.AddColumn");
+          await act(async () => add.click());
+          const restore = await vi.waitFor(() => {
+            const item = Array.from(
+              document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+            ).find((entry) => entry.textContent === "Third database");
+            expect(item).toBeDefined();
+            return item!;
+          });
           await act(async () => restore.click());
           await vi.waitFor(() => expect(sources()).toHaveLength(3));
           expect(rowsSortedByRef()[0]).toBe("c4");
@@ -2078,6 +2115,61 @@ describe("DatabasePanel", () => {
           });
         });
 
+        test("adds, removes, and limits further Lichess columns through one control", async () => {
+          mocks.getLichessGames.mockResolvedValue(mockExplorerData);
+          mocks.getPublicLichessJson.mockResolvedValue(`[White "W1"]\n[Black "B1"]\n\n1. d4 d5 *`);
+          mocks.lexPgn.mockResolvedValue([
+            { type: "Header", value: { tag: "White", value: "W1" } },
+            { type: "Header", value: { tag: "Black", value: "B1" } },
+          ]);
+          const { store } = await mountPrepBoard({ withOnline: true });
+          await act(async () => store.set(sessionsAtom, [validSession]));
+          await vi.waitFor(() => expect(sources()).toHaveLength(3));
+          expect(addColumnButton()).toBeUndefined();
+
+          const removeRef = sources()[2].querySelector<HTMLButtonElement>(
+            'button[aria-label="Board.Database.RemoveReference"]',
+          )!;
+          await act(async () => removeRef.click());
+          expect(sources()).toHaveLength(2);
+          const add = addColumnButton()!;
+          expect(add.getAttribute("aria-label")).toBe("Board.Database.AddColumn");
+          await act(async () => add.click());
+          const furtherItems = await vi.waitFor(() => {
+            const found = menuChoices();
+            expect(found).not.toHaveLength(0);
+            return found;
+          });
+          expect(furtherItems).toEqual([
+            "Third database",
+            "Board.Database.LichessAll",
+            "Board.Database.LichessMaster",
+          ]);
+          await act(async () =>
+            Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+              .find((item) => item.textContent === "Board.Database.LichessAll")!
+              .click(),
+          );
+          await vi.waitFor(() => expect(sources()).toHaveLength(3));
+          expect(sources()[2].textContent).toContain("Board.Database.LichessAll");
+          expect(
+            sources()[2].querySelector('button[aria-label="Board.Database.RemoveColumn"]'),
+          ).not.toBeNull();
+          expect(
+            sources()[2].querySelector('button[aria-label="Board.Database.RemoveComparison"]'),
+          ).toBeNull();
+          expect(container.querySelector('[data-sources="3"]')).not.toBeNull();
+          expect(addColumnButton()).toBeUndefined();
+          expect(store.get(pinnedExplorerFurtherColumnsFamily(tabId))).toEqual(["lch_all"]);
+
+          await act(async () => store.set(dbTabFamily(tabId), "games"));
+          const games = selectedPanel("games");
+          const gamesSwitch = Array.from(
+            games.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+          ).map((radio) => radio.value);
+          expect(gamesSwitch).toEqual(["primary", "comparison"]);
+        });
+
         test("collapsing the header shows a caption for the reference source", async () => {
           await mountPrepBoard({ withOnline: true });
           await vi.waitFor(() => expect(sources()).toHaveLength(3));
@@ -2143,7 +2235,7 @@ describe("DatabasePanel", () => {
           });
           await vi.waitFor(() => expect(store.get(referenceDbAtom)).toEqual(successor));
           const restore = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-            (b) => b.textContent?.includes("Board.Database.ShowReference"),
+            (b) => b.textContent === "Board.Database.AddColumn",
           );
           expect(restore).toBeDefined();
         });
@@ -2178,8 +2270,12 @@ describe("DatabasePanel", () => {
           expect(found).not.toHaveLength(0);
           return found;
         });
-        // Every other readable database is offered, never the primary one.
-        expect(items.map((item) => item.textContent)).toEqual([list[1].title]);
+        // Every other readable database is offered, never the primary one, plus both Lichess sources.
+        expect(items.map((item) => item.textContent)).toEqual([
+          list[1].title,
+          "Board.Database.LichessAll",
+          "Board.Database.LichessMaster",
+        ]);
         mocks.clearGames.mockRejectedValue(new Error("cache unavailable"));
         await act(async () => items[0].click());
         expect(store.get(comparisonDbAtom)).toEqual(list[1].file);
@@ -2203,7 +2299,7 @@ describe("DatabasePanel", () => {
       await act(async () => remove.click());
       expect(store.get(comparisonDbAtom)).toBeNull();
       expect(container.textContent).not.toContain("Board.Database.ComparisonUnreadable");
-      expect(compareButton()).toBeUndefined();
+      expect(compareButton()).toBeDefined();
     });
 
     test("the comparison select changes the comparison alone and never offers the primary", async () => {
@@ -2219,6 +2315,8 @@ describe("DatabasePanel", () => {
       expect(options.map((option) => option.textContent)).toEqual([
         "Correspondence",
         "Third database",
+        "Board.Database.LichessAll",
+        "Board.Database.LichessMaster",
       ]);
       await act(async () => options[1].click());
       expect(store.get(comparisonDbAtom)).toEqual(third.file);
@@ -2372,6 +2470,415 @@ describe("DatabasePanel", () => {
       await vi.waitFor(() =>
         expect(searchesOf(current).at(-1)?.[1]).toMatchObject({ wantedResult: "whitewon" }),
       );
+    });
+
+    const mockOnlineGames = (
+      data: {
+        topGames?: { id: string; white: { name: string }; black: { name: string } }[];
+        recentGames?: { id: string; white: { name: string }; black: { name: string } }[];
+      } = mockExplorerData,
+      rejectedIds: string[] = [],
+    ) => {
+      mocks.getLichessGames.mockResolvedValue(data);
+      mocks.getMasterGames.mockResolvedValue(data);
+      mocks.getPublicLichessJson.mockImplementation(async ({ game_id }: { game_id: string }) => {
+        if (rejectedIds.includes(game_id)) throw new Error("sample-fetch-diagnostic");
+        const game = [...(data.topGames ?? []), ...(data.recentGames ?? [])].find(
+          (entry) => entry.id === game_id,
+        );
+        const white = game?.white.name ?? "W1";
+        const black = game?.black.name ?? "B1";
+        return `[White "${white}"]\n[Black "${black}"]\n\n1. d4 d5 *`;
+      });
+      mocks.lexPgn.mockImplementation(async (pgn: string) =>
+        [...pgn.matchAll(/\[(White|Black) "([^"]*)"\]/g)].map(([, tag, value]) => ({
+          type: "Header",
+          value: { tag, value },
+        })),
+      );
+    };
+
+    async function mountMixed({
+      first = "local" as "local" | "lch_all" | "lch_master",
+      comparison = "lch_all" as string | DatabaseHandle | null,
+      session = true,
+      list = [readable, corrInfo, third] as ManagedDatabaseInfo[],
+      rejectedIds = [] as string[],
+      lichess = mockExplorerData,
+      masters = mockExplorerData,
+    } = {}) {
+      mocks.getDatabases.mockResolvedValue(databaseList(list));
+      mocks.searchPosition.mockImplementation(async (file: DatabaseHandle) => {
+        return answers[databaseHandleKey(file)] ?? [[], []];
+      });
+      mockOnlineGames(lichess, rejectedIds);
+      mocks.getMasterGames.mockResolvedValue(masters);
+      if (comparison !== undefined) {
+        localStorage.setItem("comparison-database", JSON.stringify(comparison));
+      }
+      const mounted = await mountLocal();
+      await act(async () => {
+        if (session) mounted.store.set(sessionsAtom, [validSession]);
+        if (first !== "local") mounted.store.set(dbTypeFamily(tabId), first);
+      });
+      await act(async () => {});
+      return mounted;
+    }
+
+    test.each([
+      {
+        name: "a populated list",
+        setup: () => mocks.getDatabases.mockResolvedValue(databaseList([readable])),
+        groups: ["Board.Database.Databases", "Board.Database.Online"],
+        options: ["Saved reference", "Board.Database.LichessAll", "Board.Database.LichessMaster"],
+      },
+      {
+        name: "an empty list",
+        setup: () => mocks.getDatabases.mockResolvedValue(databaseList([])),
+        groups: ["Board.Database.Online"],
+        options: ["Board.Database.LichessAll", "Board.Database.LichessMaster"],
+      },
+      {
+        name: "a pending list",
+        setup: () => mocks.getDatabases.mockReturnValue(new Promise(() => undefined)),
+        groups: ["Board.Database.Online"],
+        options: ["Board.Database.LichessAll", "Board.Database.LichessMaster"],
+      },
+      {
+        name: "a failed list",
+        setup: () => mocks.getDatabases.mockRejectedValue(new Error("list failed")),
+        groups: ["Board.Database.Online"],
+        options: ["Board.Database.LichessAll", "Board.Database.LichessMaster"],
+      },
+    ])(
+      "the first select groups the readable local databases and always offers the Online group with $name",
+      async ({ setup, groups, options }) => {
+        setup();
+        await mountLocal();
+        const select = container.querySelector<HTMLInputElement>(".mantine-Select-input")!;
+        await act(async () => select.click());
+        expect(listedGroups(select)).toEqual(groups);
+        expect(listedOptions(select).map((option) => option.textContent)).toEqual(options);
+      },
+    );
+
+    test("choosing Lichess in the first select leaves the reference database unchanged", async () => {
+      mockOnlineGames();
+      mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+      const { store } = await mountLocal();
+      await act(async () => store.set(sessionsAtom, [validSession]));
+      const select = container.querySelector<HTMLInputElement>(".mantine-Select-input")!;
+      await act(async () => select.click());
+      const lichess = listedOptions(select).find(
+        (option) => option.textContent === "Board.Database.LichessAll",
+      )!;
+      await act(async () => lichess.click());
+      expect(store.get(dbTypeFamily(tabId))).toBe("lch_all");
+      expect(store.get(referenceDbAtom)).toEqual(reference);
+      expect(JSON.parse(localStorage.getItem("reference-database")!)).toEqual(reference);
+      expect(positionControl()).toBeUndefined();
+    });
+
+    test("a pinned first select offers local databases only", async () => {
+      await mountCompared({ pin: reference });
+      const select = sources()[0].querySelector<HTMLInputElement>(".mantine-Select-input")!;
+      await act(async () => select.click());
+      expect(listedOptions(select).map((option) => option.textContent)).toEqual([
+        "Saved reference",
+        "Correspondence",
+        "Third database",
+      ]);
+    });
+
+    test("local beside Lichess shows both columns, Lichess totals, and a dash for an unlisted move", async () => {
+      const { store } = await mountMixed();
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      expect(
+        sources().map(
+          (source) =>
+            source.querySelector<HTMLInputElement>(".mantine-Select-input")?.value ??
+            source.textContent,
+        ),
+      ).toEqual(["Saved reference", "Board.Database.LichessAll"]);
+      expect(positionControl()).toBeDefined();
+      await vi.waitFor(() =>
+        expect(
+          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+        ).toEqual([
+          ["e4", "71%100", "50%100"],
+          ["d4", "29%40", "–"],
+          ["Board.Database.StatsTable.Total", "140", "200"],
+        ]),
+      );
+      expect(store.get(referenceDbAtom)).toEqual(reference);
+      expect(mocks.getLichessGames).toHaveBeenCalled();
+      expect(searchesOf(reference).at(-1)?.[1].position.fen).toBe(
+        treeStore.getState().currentNode().fen,
+      );
+    });
+
+    test("Lichess beside a local database searches the local column with the board position", async () => {
+      await mountMixed({ first: "lch_all", comparison: reference });
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      expect(positionControl()).toBeDefined();
+      await vi.waitFor(() => expect(searchesOf(reference)).not.toHaveLength(0));
+      const startFen = treeStore.getState().currentNode().fen;
+      expect(searchesOf(reference).at(-1)?.[1].position.fen).toBe(startFen);
+      await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 80)));
+      await vi.waitFor(() =>
+        expect(searchesOf(reference).at(-1)?.[1].position.fen).toBe(
+          treeStore.getState().currentNode().fen,
+        ),
+      );
+      expect(treeStore.getState().currentNode().fen).toBe(afterE4);
+      await vi.waitFor(() =>
+        expect(
+          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+        ).toEqual([
+          ["e4", "50%100", "71%100"],
+          ["d4", "–", "29%40"],
+          ["Board.Database.StatsTable.Total", "200", "140"],
+        ]),
+      );
+    });
+
+    test("both Lichess sources sit side by side while the database list is pending", async () => {
+      mocks.getDatabases.mockReturnValue(new Promise(() => undefined));
+      mockOnlineGames();
+      const masters = {
+        ...mockExplorerData,
+        white: 10,
+        black: 5,
+        draws: 5,
+        moves: [{ uci: "d2d4", san: "d4", averageRating: 2200, white: 8, black: 1, draws: 1 }],
+      };
+      mocks.getMasterGames.mockResolvedValue(masters);
+      localStorage.setItem("comparison-database", JSON.stringify("lch_master"));
+      const store = createJotaiStore();
+      store.set(tabsAtom, [validTab]);
+      store.set(activeTabAtom, tabId);
+      store.set(dbTypeFamily(tabId), "lch_all");
+      store.set(sessionsAtom, [validSession]);
+      await renderPanel(store, {
+        provider: () => new Map(),
+        dedupingInterval: 0,
+        shouldRetryOnError: false,
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+      });
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      expect(positionControl()).toBeUndefined();
+      await vi.waitFor(() =>
+        expect(
+          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+        ).toEqual([
+          ["e4", "50%100", "–"],
+          ["d4", "–", "50%10"],
+          ["Board.Database.StatsTable.Total", "200", "20"],
+        ]),
+      );
+      expect(mocks.getLichessGames).toHaveBeenCalled();
+      expect(mocks.getMasterGames).toHaveBeenCalled();
+    });
+
+    test("a failing Lichess column is named and leaves the local column", async () => {
+      mocks.getLichessGames.mockRejectedValue(new Error("lichess down"));
+      mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+      mocks.searchPosition.mockImplementation(async (file: DatabaseHandle) => {
+        return answers[databaseHandleKey(file)] ?? [[], []];
+      });
+      localStorage.setItem("comparison-database", JSON.stringify("lch_all"));
+      const { store } = await mountLocal();
+      await act(async () => store.set(sessionsAtom, [validSession]));
+      const panel = selectedPanel("stats");
+      await vi.waitFor(() => expect(panel.querySelector('[role="alert"]')).not.toBeNull());
+      expect(panel.querySelector('[role="alert"]')?.textContent).toMatch(
+        /^Board.Database.LichessAll: /,
+      );
+      expect(panel.querySelector("table")).not.toBeNull();
+      await vi.waitFor(() =>
+        expect(
+          moveRows().map(([move, primary, , comparison]) => [move, primary, comparison]),
+        ).toEqual([
+          ["e4", "71%100", ""],
+          ["d4", "29%40", ""],
+          ["Board.Database.StatsTable.Total", "140", ""],
+        ]),
+      );
+    });
+
+    test("one sign-in notice covers both Lichess columns and no table is shown", async () => {
+      localStorage.setItem("comparison-database", JSON.stringify("lch_master"));
+      const store = createJotaiStore();
+      store.set(tabsAtom, [validTab]);
+      store.set(activeTabAtom, tabId);
+      store.set(dbTypeFamily(tabId), "lch_all");
+      await renderPanel(store, {
+        provider: () => new Map(),
+        dedupingInterval: 0,
+        shouldRetryOnError: false,
+      });
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      const panel = selectedPanel("stats");
+      expect(
+        Array.from(panel.querySelectorAll('[role="alert"]'), (alert) => alert.textContent),
+      ).toEqual([expect.stringContaining("Board.Database.ExplorerAuthRequired1")]);
+      expect(panel.querySelector("table")).toBeNull();
+      expect(mocks.getLichessGames).not.toHaveBeenCalled();
+      expect(mocks.getMasterGames).not.toHaveBeenCalled();
+    });
+
+    test("collapsed captions name every mixed local and Lichess column", async () => {
+      localStorage.setItem(HEADER_COLLAPSED_KEY, "true");
+      await mountMixed();
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      expect(sources()[0].firstElementChild?.textContent).toBe("Saved reference");
+      expect(sources()[1].firstElementChild?.textContent).toBe("Board.Database.LichessAll");
+      expect(positionControl()).toBeUndefined();
+    });
+
+    test("a partial search with mixed columns hides statistics and does not ask Lichess", async () => {
+      const { store } = await mountMixed();
+      await vi.waitFor(() => expect(mocks.getLichessGames).toHaveBeenCalled());
+      mocks.getLichessGames.mockClear();
+      mocks.searchPosition.mockClear();
+      await act(async () =>
+        store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
+      );
+      selectedPanel("games");
+      const stats = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+        (tab) => tab.textContent === "Board.Database.Stats",
+      )!;
+      expect(stats.disabled).toBe(true);
+      await vi.waitFor(() =>
+        expect(searchesOf(reference).at(-1)?.[1].position.type_).toBe("partial"),
+      );
+      expect(mocks.getLichessGames).not.toHaveBeenCalled();
+      const games = selectedPanel("games");
+      expect(games.querySelector('input[type="radio"]')).toBeNull();
+      await vi.waitFor(() => expect(games.textContent).toContain("Mega player"));
+      expect(store.get(explorerGamesSourceFamily(tabId))).toBe("primary");
+    });
+
+    test("the Games switch offers a Lichess column on an unpinned board, including its notices and a game without a database", async () => {
+      await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
+      const { store } = await mountMixed({ rejectedIds: ["g0"] });
+      await act(async () => store.set(dbTabFamily(tabId), "games"));
+      const panel = selectedPanel("games");
+      await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
+      const choices = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+      expect(choices.map((choice) => choice.value)).toEqual(["primary", "comparison"]);
+      expect(
+        Array.from(
+          panel.querySelectorAll(".mantine-SegmentedControl-label"),
+          (label) => label.textContent,
+        ),
+      ).toEqual(["Saved reference", "Board.Database.LichessAll"]);
+      await act(async () => choices[1].click());
+      expect(store.get(explorerGamesSourceFamily(tabId))).toBe("comparison");
+      await vi.waitFor(() => expect(panel.textContent).toContain("Board.Database.GamesIncomplete"));
+      expect(panel.querySelector("table")).not.toBeNull();
+      await openListedGame("W1");
+      expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({
+        database: null,
+        targetFens: [afterE4],
+      });
+    });
+
+    test("Games of a Lichess column without an account shows the sign-in notice and no table", async () => {
+      const { store } = await mountMixed({ session: false });
+      await vi.waitFor(() => expect(sources()).toHaveLength(2));
+      await act(async () => store.set(dbTabFamily(tabId), "games"));
+      const panel = selectedPanel("games");
+      const choices = await vi.waitFor(() => {
+        const found = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+        expect(found).toHaveLength(2);
+        return found;
+      });
+      await act(async () => choices[1].click());
+      await vi.waitFor(() =>
+        expect(panel.querySelector('[role="alert"]')?.textContent).toContain(
+          "Board.Database.ExplorerAuthRequired1",
+        ),
+      );
+      expect(panel.querySelector("table")).toBeNull();
+    });
+
+    test("a remembered Games choice that is not offered falls back on read without rewriting it", async () => {
+      const { store } = await mountMixed();
+      await act(async () => store.set(explorerGamesSourceFamily(tabId), "comparison"));
+      await act(async () =>
+        store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
+      );
+      const panel = selectedPanel("games");
+      expect(panel.querySelector('input[type="radio"]')).toBeNull();
+      await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
+      expect(store.get(explorerGamesSourceFamily(tabId))).toBe("comparison");
+    });
+
+    test.each([true, false])(
+      "Lichess first with a local comparison and a partial search shows the local games (session %s)",
+      async (session) => {
+        const { store } = await mountMixed({ first: "lch_all", comparison: reference, session });
+        await vi.waitFor(() => expect(sources()).toHaveLength(2));
+        await vi.waitFor(() => expect(mocks.getLichessGames.mock.calls.length > 0).toBe(session));
+        mocks.getLichessGames.mockClear();
+        mocks.searchPosition.mockClear();
+        await act(async () =>
+          store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
+        );
+        const panel = selectedPanel("games");
+        expect(panel.querySelector('input[type="radio"]')).toBeNull();
+        await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
+        expect(panel.querySelector('[role="alert"]')).toBeNull();
+        expect(store.get(explorerGamesSourceFamily(tabId))).toBe("primary");
+        expect(mocks.getLichessGames).not.toHaveBeenCalled();
+      },
+    );
+
+    test("Compare is offered when Lichess is the first source and no local database is chosen", async () => {
+      await mountMixed({ first: "lch_all", comparison: null, list: [] });
+      await vi.waitFor(() => expect(sources()).toHaveLength(1));
+      const compare = compareButton()!;
+      expect(compare).toBeDefined();
+      await act(async () => compare.click());
+      const items = await vi.waitFor(() => {
+        const found = menuChoices();
+        expect(found).not.toHaveLength(0);
+        return found;
+      });
+      expect(items).toEqual(["Board.Database.LichessMaster"]);
+    });
+
+    test("a panel whose first source is already Lichess on first paint still reads the database list", async () => {
+      mocks.getDatabases.mockResolvedValue(databaseList([readable]));
+      mockOnlineGames();
+      const store = createJotaiStore();
+      store.set(tabsAtom, [validTab]);
+      store.set(activeTabAtom, tabId);
+      store.set(dbTypeFamily(tabId), "lch_all");
+      store.set(sessionsAtom, [validSession]);
+      await renderPanel(store, {
+        provider: () => new Map(),
+        dedupingInterval: 0,
+        shouldRetryOnError: false,
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+      });
+      await vi.waitFor(() => expect(mocks.getDatabases).toHaveBeenCalled());
+    });
+
+    test("all failed Lichess games beside a local column name every game and show no table", async () => {
+      const { store } = await mountMixed({ rejectedIds: ["g0", "g1"] });
+      await act(async () => store.set(dbTabFamily(tabId), "games"));
+      const panel = selectedPanel("games");
+      const choices = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+      await act(async () => choices[1].click());
+      await vi.waitFor(() =>
+        expect(panel.textContent).toContain("Board.Database.GamesFailed W0 - B0, W1 - B1"),
+      );
+      expect(panel.querySelector("table")).toBeNull();
     });
   });
 

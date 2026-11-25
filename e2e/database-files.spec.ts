@@ -29,6 +29,7 @@ import {
     goToLibrary,
     waitForFontsSettled,
 } from "./fixtures";
+import { serializeStorageValue } from "../src/state/store/debouncedStorage";
 import type { Locator, Page } from "@playwright/test";
 
 async function openingHeaderOverlaps(tree: Locator): Promise<string[]> {
@@ -3898,34 +3899,84 @@ test("database-files: windowed All mode bounds DOM across chunks, keeps ArrowDow
     await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
 });
 
+const lichessExplorerPosition = {
+    white: 80,
+    black: 50,
+    draws: 70,
+    moves: [
+        { uci: "e2e4", san: "e4", averageRating: 2200, white: 50, black: 20, draws: 30 },
+        { uci: "d2d4", san: "d4", averageRating: 2100, white: 20, black: 10, draws: 10 },
+    ],
+};
+
+const lichessExplorerSession = serializeStorageValue([
+    {
+        updatedAt: Date.UTC(2024, 0, 1),
+        lichess: {
+            username: "explorer-player",
+            account: { id: "explorer-player", username: "explorer-player" },
+        },
+    },
+]);
+
+const lichessExplorerCommands: NonNullable<MockScenario["commands"]> = {
+    list_lichess_accounts: {
+        result: [{ handle: "explorer-account", username: "explorer-player" }],
+    },
+    get_authenticated_lichess_explorer: {
+        result: JSON.stringify(lichessExplorerPosition),
+    },
+};
+
 /**
- * An analysis board over two local databases that answer the start position differently.
- * `stored` seeds further `localStorage` values before the first load.
+ * An analysis board over the fixture Mega database, optionally with a second local database and a
+ * signed-in Lichess account. `stored` seeds further `localStorage` values before the first load.
  */
-async function openBoardOverTwoDatabases(
+async function openBoardOverDatabases(
     page: Page,
     mockScenario: MockScenario,
-    stored: Record<string, string> = {},
+    options: {
+        comparison?: boolean;
+        signedIn?: boolean;
+        stored?: Record<string, string>;
+    } = {},
 ) {
-    const mega = { id: { id: gameOpeningFixture.databaseId }, kind: "database" };
-    const corr = { id: { id: "correspondence-db" }, kind: "database" };
+    const mega = { id: { id: gameOpeningFixture.databaseId }, kind: "database" as const };
+    const corr = { id: { id: "correspondence-db" }, kind: "database" as const };
+    const comparison = options.comparison === true;
+    const signedIn = options.signedIn === true;
+    const stored = options.stored ?? {};
     await page.addInitScript(
-        ({ mega, corr, stored }) => {
+        ({ mega, corr, comparison, sessions, stored }) => {
             localStorage.setItem("reference-database", JSON.stringify(mega));
-            localStorage.setItem("comparison-database", JSON.stringify(corr));
-            localStorage.setItem(
-                "explorer-database-filters",
-                JSON.stringify([
-                    {
-                        database: mega.id.id,
-                        filters: { player: null, color: "white", result: "any", elo: [1900, 2500] },
-                    },
-                ]),
-            );
+            if (comparison) {
+                localStorage.setItem("comparison-database", JSON.stringify(corr));
+                localStorage.setItem(
+                    "explorer-database-filters",
+                    JSON.stringify([
+                        {
+                            database: mega.id.id,
+                            filters: {
+                                player: null,
+                                color: "white",
+                                result: "any",
+                                elo: [1900, 2500],
+                            },
+                        },
+                    ]),
+                );
+            }
             localStorage.setItem("font-size", "100");
+            if (sessions) localStorage.setItem("sessions", sessions);
             for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
         },
-        { mega, corr, stored },
+        {
+            mega,
+            corr,
+            comparison,
+            sessions: signedIn ? lichessExplorerSession : null,
+            stored,
+        },
     );
     await page.setViewportSize({ width: 1440, height: 1000 });
     await mockScenario({
@@ -3935,7 +3986,9 @@ async function openBoardOverTwoDatabases(
                 result: {
                     entries: [
                         { handle: mega, filename: "mega.db3", availability: "available" },
-                        { handle: corr, filename: "corr.db3", availability: "available" },
+                        ...(comparison
+                            ? [{ handle: corr, filename: "corr.db3", availability: "available" }]
+                            : []),
                     ],
                     unread: [],
                 },
@@ -3944,50 +3997,60 @@ async function openBoardOverTwoDatabases(
             linked_collections_supported: { result: true },
             list_linked_collections: { result: [] },
             search_position: { result: [[], []] },
+            ...(signedIn ? lichessExplorerCommands : {}),
         }),
     });
     // The shared mock answers by command alone; these two commands differ by database here.
-    await page.addInitScript((megaId) => {
-        type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
-        const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
-            .__TAURI_INTERNALS__;
-        const invoke = internals.invoke;
-        const row = (move: string, white: number, draw: number, black: number) => ({
-            move,
-            white,
-            draw,
-            black,
-            unknown: 0,
-            last_played: null,
-            year_counts: [],
-            recent: [],
-        });
-        internals.invoke = async (command, args = {}) => {
-            const reply = await invoke(command, args);
-            const file = (args.file as { id?: { id?: string } } | undefined)?.id?.id;
-            if (!file) return reply;
-            const isMega = file === megaId;
-            if (command === "get_db_info") {
-                return {
-                    ...(reply as object),
-                    title: isMega ? "Mega Database" : "Correspondence",
-                };
-            }
-            if (command === "search_position") {
-                return isMega
-                    ? [
-                          [
-                              row("e4", 500, 300, 400),
-                              row("d4", 300, 200, 150),
-                              row("c4", 40, 30, 20),
-                          ],
-                          [],
-                      ]
-                    : [[row("d4", 20, 90, 10), row("h4", 10, 60, 5), row("e4", 5, 25, 5)], []];
-            }
-            return reply;
-        };
-    }, mega.id.id);
+    await page.addInitScript(
+        ({ megaId, comparison }) => {
+            type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+            const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
+                .__TAURI_INTERNALS__;
+            const invoke = internals.invoke;
+            const row = (move: string, white: number, draw: number, black: number) => ({
+                move,
+                white,
+                draw,
+                black,
+                unknown: 0,
+                last_played: null,
+                year_counts: [],
+                recent: [],
+            });
+            internals.invoke = async (command, args = {}) => {
+                const reply = await invoke(command, args);
+                const file = (args.file as { id?: { id?: string } } | undefined)?.id?.id;
+                if (!file) return reply;
+                const isMega = file === megaId;
+                if (command === "get_db_info") {
+                    return {
+                        ...(reply as object),
+                        title: isMega ? "Mega Database" : "Correspondence",
+                    };
+                }
+                if (command === "search_position") {
+                    if (isMega) {
+                        return [
+                            [
+                                row("e4", 500, 300, 400),
+                                row("d4", 300, 200, 150),
+                                row("c4", 40, 30, 20),
+                            ],
+                            [],
+                        ];
+                    }
+                    if (comparison) {
+                        return [
+                            [row("d4", 20, 90, 10), row("h4", 10, 60, 5), row("e4", 5, 25, 5)],
+                            [],
+                        ];
+                    }
+                }
+                return reply;
+            };
+        },
+        { megaId: mega.id.id, comparison },
+    );
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(
@@ -3996,6 +4059,40 @@ async function openBoardOverTwoDatabases(
     await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     return { mega, corr };
+}
+
+async function openBoardOverTwoDatabases(
+    page: Page,
+    mockScenario: MockScenario,
+    stored: Record<string, string> = {},
+) {
+    return openBoardOverDatabases(page, mockScenario, { comparison: true, stored });
+}
+
+async function openBoardOverMegaDatabase(
+    page: Page,
+    mockScenario: MockScenario,
+    signedIn: boolean,
+) {
+    const { mega } = await openBoardOverDatabases(page, mockScenario, { signedIn });
+    return mega;
+}
+
+async function expectExplorerSourcesAligned(page: Page, columns: number) {
+    const edges = await page.evaluate(() => {
+        const left = (element: Element) => Math.round(element.getBoundingClientRect().left);
+        return {
+            cells: [...document.querySelectorAll("[data-explorer-source]")].map(left),
+            headers: [...document.querySelectorAll("thead th")]
+                .filter((th) => (th as HTMLElement).offsetParent !== null)
+                .map(left),
+        };
+    });
+    for (let index = 0; index < columns; index++) {
+        expect(Math.abs(edges.cells[index]! - edges.headers[1 + index * 2]!)).toBeLessThanOrEqual(
+            2,
+        );
+    }
 }
 
 test("database-files: the board explorer compares two databases side by side", async ({
@@ -4320,6 +4417,73 @@ test("database-files: the board explorer compares two databases side by side", a
     await page.getByRole("button", { name: "Remove comparison database", exact: true }).click();
     await expect(sources).toHaveCount(1);
     await expect(page.getByRole("button", { name: "Compare with a database" })).toBeVisible();
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
+
+test("database-files: a local database sits beside Lichess All with Lichess totals and a dash", async ({
+    page,
+    mockScenario,
+}) => {
+    await openBoardOverMegaDatabase(page, mockScenario, true);
+    await page.getByRole("tab", { name: "Database", exact: true }).click();
+    await page.getByRole("button", { name: "Show database settings", exact: true }).click();
+    await page.mouse.move(0, 0);
+    await page.getByRole("button", { name: "Compare with a database" }).click();
+    await expect(page.getByRole("menuitem")).toHaveText(["Lichess All", "Lichess Masters"]);
+    await page.getByRole("menuitem", { name: "Lichess All", exact: true }).click();
+
+    const sources = page.locator("[data-explorer-source]");
+    await expect(sources).toHaveCount(2);
+    await expect(sources.nth(0).getByRole("textbox")).toHaveValue("Mega Database");
+    await expect(sources.nth(1).getByRole("textbox")).toHaveValue("Lichess All");
+    await expect(page.getByRole("button", { name: /^Position: / })).toBeVisible();
+
+    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
+    const rows = stats.locator("tbody tr");
+    await expect(rows).toHaveCount(4);
+    expect(await rows.locator("td:first-child").allTextContents()).toEqual([
+        "e4",
+        "d4",
+        "c4",
+        "Total",
+    ]);
+    expect(await rows.nth(2).locator("td").nth(3).textContent()).toBe("–");
+    const totals = await rows.nth(3).locator("td").allTextContents();
+    expect(totals[1]).toBe("1,940");
+    expect(totals[3]).toBe("200");
+    const listedLichess = lichessExplorerPosition.moves.reduce(
+        (sum, move) => sum + move.white + move.black + move.draws,
+        0,
+    );
+    expect(Number(totals[3]!.replaceAll(",", ""))).toBeGreaterThan(listedLichess);
+    await expectExplorerSourcesAligned(page, 2);
+    await waitForFontsSettled(page);
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tabpanel", { name: "Database", exact: true })).toHaveScreenshot(
+        "explorer-local-lichess.png",
+    );
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
+
+test("database-files: Lichess All beside a local database without an account shows the sign-in notice", async ({
+    page,
+    mockScenario,
+}) => {
+    await openBoardOverMegaDatabase(page, mockScenario, false);
+    await page.getByRole("tab", { name: "Database", exact: true }).click();
+    await page.getByRole("button", { name: "Show database settings", exact: true }).click();
+    await page.mouse.move(0, 0);
+    await page.getByRole("button", { name: "Compare with a database" }).click();
+    await page.getByRole("menuitem", { name: "Lichess All", exact: true }).click();
+
+    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
+    await expect(stats.getByRole("alert")).toContainText(
+        "Lichess Explorer now requires authentication",
+    );
+    const rows = stats.locator("tbody tr");
+    await expect(rows).toHaveCount(4);
+    expect(await rows.nth(3).locator("td").nth(1).textContent()).toBe("1,940");
+    expect(await rows.nth(3).locator("td").nth(3).textContent()).toBe("");
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
 
@@ -4784,25 +4948,28 @@ test("database-files: the card's Overview and Ratings switch to a linked opponen
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
 
-test("database-files: Prepare on board shows a linked opponent's over-the-board, online, and reference databases side by side", async ({
-    page,
-    mockScenario,
-    assertNoHorizontalOverflow,
-}) => {
+async function prepareFirstWhiteOnBoard(
+    page: Page,
+    mockScenario: MockScenario,
+    options: { signedIn?: boolean } = {},
+) {
     const referenceDbHandle = { id: { id: "reference-mega-db" }, kind: "database" as const };
+    const signedIn = options.signedIn === true;
     await page.addInitScript(
-        ([linkKey, linkValue, refKey, refValue]) => {
+        ([linkKey, linkValue, refKey, refValue, sessions]) => {
             localStorage.setItem("font-size", "100");
             // The explorer opens on its controls, where each column names its database.
             localStorage.setItem("explorer-header-collapsed", "false");
             localStorage.setItem(linkKey, linkValue);
             localStorage.setItem(refKey, refValue);
+            if (sessions) localStorage.setItem("sessions", sessions);
         },
         [
             "opponent-links",
             JSON.stringify([opponentLink]),
             "reference-database",
             JSON.stringify(referenceDbHandle),
+            signedIn ? lichessExplorerSession : null,
         ] as const,
     );
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -4953,11 +5120,21 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board,
                     ],
                 },
             },
+            ...(signedIn ? lichessExplorerCommands : {}),
         },
     });
     const preview = await openFirstWhiteCard(page);
     await preview.getByRole("tab", { name: "Openings", exact: true }).click();
     const tree = preview.locator("[data-player-opening-tree]");
+    return { tree, preview };
+}
+
+test("database-files: Prepare on board shows a linked opponent's over-the-board, online, and reference databases side by side", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    const { tree } = await prepareFirstWhiteOnBoard(page, mockScenario);
     // The card shows the online games as their own section beside the over-the-board games.
     const overTheBoard = tree.locator('[data-opening-section="primary"]');
     const online = tree.locator('[data-opening-section="online"]');
@@ -5085,4 +5262,51 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board,
     await page.setViewportSize({ width: 800, height: 720 });
     await assertNoHorizontalOverflow();
     await assertTableFitsPanel();
+});
+
+test("database-files: Prepare on board replaces the reference column with Lichess All", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    const { tree } = await prepareFirstWhiteOnBoard(page, mockScenario, { signedIn: true });
+    await expect(tree.locator('[data-opening-section="online"]')).toContainText("Online");
+    await tree.getByRole("button", { name: "Prepare on board", exact: true }).click();
+    await expect(page).toHaveURL("/");
+
+    const sources = page.locator("[data-explorer-source]");
+    await expect(sources).toHaveCount(3);
+    await sources
+        .nth(2)
+        .getByRole("button", { name: "Remove reference database", exact: true })
+        .click();
+    await expect(sources).toHaveCount(2);
+    await page.getByRole("button", { name: "Add column", exact: true }).click();
+    await expect(page.getByRole("menuitem")).toHaveText([
+        "Mega Reference",
+        "Lichess All",
+        "Lichess Masters",
+    ]);
+    await page.getByRole("menuitem", { name: "Lichess All", exact: true }).click();
+    await expect(sources).toHaveCount(3);
+    await expect(sources.nth(2)).toContainText("Lichess All");
+    await expect(sources.nth(2).getByRole("textbox")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Add column", exact: true })).toHaveCount(0);
+    await expect(
+        sources.nth(2).getByRole("button", { name: "Remove column", exact: true }),
+    ).toBeVisible();
+
+    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
+    const totals = stats.locator("tbody tr").last().locator("td");
+    await expect(totals.nth(5)).toHaveText("200");
+    await expect(page.locator('[data-sources="3"]')).toBeVisible();
+    await expectExplorerSourcesAligned(page, 3);
+    await assertNoHorizontalOverflow();
+    await waitForFontsSettled(page);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tabpanel", { name: "Database", exact: true })).toHaveScreenshot(
+        "opponent-board-lichess-column.png",
+    );
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });

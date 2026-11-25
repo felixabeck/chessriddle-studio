@@ -2,7 +2,7 @@
 id: databases
 title: Bazy danych, eksplorator, wyszukiwanie pozycji, gracze i turnieje
 summary: Dodawaj lub pobieraj bazy partii, wybieraj bazę odniesienia, wyszukuj pozycje w eksploratorze i przeglądaj partie, graczy oraz turnieje.
-source: d3afecf524059542
+source: d1a9092c9321c351
 ---
 
 Bazy danych znajdują się w [[page:library]] ({{label:SideBar.Library}}) obok plików PGN i są przechowywane w [[setting:databases-directory]].
@@ -31,8 +31,8 @@ Na karcie gracza otwórz kartę {{label:Home.Personal.Preparation}}, aby porówn
 - Aby przygotować się na przeciwnika, który ma tylko konto na Lichess lub Chess.com, kliknij {{label:Library.OnlineOpponent}} w [[page:library]], aby wyszukać jego konto, pobrać partie i otworzyć jego kartę od razu na karcie {{label:Home.Personal.Preparation}} (ponowne wpisanie tego samego konta otwiera ją bez kolejnego pobierania).
 
 Na tablicy analizy otwórz {{label:Board.Tabs.Database}}, aby korzystać z eksploratora debiutów:
-- Przełączaj się między {{label:Board.Database.Local}}, {{label:Board.Database.LichessAll}} i {{label:Board.Database.LichessMaster}} (internetowe eksploratory Lichess wymagają zalogowanego konta Lichess w [[page:accounts]]).
+- Wybierz {{label:Board.Database.LichessAll}} lub {{label:Board.Database.LichessMaster}} w menu źródeł oraz w {{label:Board.Database.Compare}} (internetowe eksploratory Lichess wymagają zalogowanego konta Lichess w [[page:accounts]]).
 - Przełączaj się między {{label:Board.Database.Stats}} (statystyki ruchów) i {{label:Board.Database.Games}} (pasujące partie).
-- Dla baz lokalnych kliknij {{label:Board.Database.Compare}}, aby wyświetlić dwie bazy obok siebie, albo otwórz {{label:Board.Database.Local.Position}}, aby przełączać między wyszukiwaniem pozycji {{label:Board.Database.Local.Exact}} i {{label:Board.Database.Local.Partial}} (w tym {{label:Board.Database.Local.SimilarStructure}} do wyszukiwania struktury pionowej oraz {{label:Fen.Empty}} dla własnych układów).
+- Kliknij {{label:Board.Database.Compare}}, aby wyświetlić dwa źródła obok siebie, albo otwórz {{label:Board.Database.Local.Position}}, aby przełączać między wyszukiwaniem pozycji {{label:Board.Database.Local.Exact}} i {{label:Board.Database.Local.Partial}} (w tym {{label:Board.Database.Local.SimilarStructure}} do wyszukiwania struktury pionowej oraz {{label:Fen.Empty}} dla własnych układów).
 - Użyj {{label:Board.Database.Pin}}, aby przypiąć eksplorator nad lub pod szachownicą albo notacją, oraz {{label:Board.Database.Unpin}}, aby przywrócić go do kart.
-- Gdy {{label:Databases.OpeningTree.Prepare}} otwiera tablicę dla gracza z bazy danych, eksplorator dodaje twoją bazę odniesienia jako kolejną kolumnę obok partii przeciwnika; kliknij {{label:Board.Database.RemoveReference}}, aby ją ukryć, lub {{label:Board.Database.ShowReference}}, aby ją przywrócić.
+- Gdy {{label:Databases.OpeningTree.Prepare}} otwiera tablicę dla gracza z bazy danych, eksplorator zaczyna od twojej bazy odniesienia jako kolejnej kolumny obok partii przeciwnika; kliknij {{label:Board.Database.RemoveReference}}, aby ukryć kolumnę, lub {{label:Board.Database.AddColumn}}, aby dodać następną.
