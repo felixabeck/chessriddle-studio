@@ -79,6 +79,7 @@ import { GroupedSidebarTabs, type GroupedSidebarGroup } from "../common/GroupedS
 import { IconAction } from "../common/IconAction";
 import { clearSavedData, openAppLogs, reloadApp } from "./advancedActions";
 import BoardSelect from "./BoardSelect";
+import BoardSettingsPreview from "./BoardSettingsPreview";
 import { CoachConnections } from "./coach/CoachConnections";
 import { CoachEngineSelect } from "./coach/CoachEngineSelect";
 import { CoachModelSetting } from "./coach/CoachModelSetting";
@@ -736,6 +737,7 @@ export default function Page() {
               SETTING_CONTENT_GROUP_EMOJI[group],
               settingContentGroupTitle(t, group),
             )}
+            {group === "look" && <BoardSettingsPreview />}
             {categorySettings
               .filter((setting) => setting.group === group)
               .map((setting) => renderSettingRow(setting, highlightedSettingId === setting.id))}

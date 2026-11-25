@@ -111,6 +111,22 @@
   line-height: 1;
 }
 
+/* The Look card's live board: white's first three ranks of a full board. Chessground publishes
+   the painted size, which it rounds down from the box, on this parent; cutting by that size
+   keeps the window on whole ranks at any width. */
+.boardPreview {
+  width: min(100%, 30rem);
+  height: calc(var(---cg-height, 0px) * 3 / 8);
+  margin: var(--mantine-spacing-xs) auto var(--mantine-spacing-md);
+  overflow: hidden;
+  border-radius: var(--mantine-radius-sm);
+  pointer-events: none;
+}
+
+.boardPreview > :global(.cg-wrap) {
+  margin-top: calc(var(---cg-height, 0px) * -5 / 8);
+}
+
 /* A code the user types elsewhere: large, evenly spaced and selectable. */
 .signInCode {
   font-family: var(--mantine-font-family-monospace);

@@ -35,7 +35,9 @@ cg-board square {
   pointer-events: none;
 }
 
-cg-board square.move-dest {
+/* Only a board that takes moves lets its destination squares catch the pointer (hover tint);
+   Chessground marks such a board `manipulable`, never a view-only one. */
+.cg-wrap.manipulable cg-board square.move-dest {
   pointer-events: auto;
 }
 

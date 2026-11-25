@@ -302,7 +302,21 @@ export function Chessground({ ref, overlay, ...props }: ChessgroundProps) {
     // The bounds cache still holds the 0×0 box measured at creation until it is cleared. Only a
     // positive size may clear it: a hidden board must not re-cache a 0×0 box.
     if (bounds.width > 0 && bounds.height > 0) api.state.dom.bounds.clear();
+    // The last applied config is kept as a snapshot; its coordinate fields are plain values.
+    const previous = lastAppliedRef.current as Pick<
+      Config,
+      "coordinates" | "coordinatesOnSquares"
+    > | null;
     api.set(next);
+    // Chessground builds its coordinate labels only while drawing the whole board, which `set`
+    // does for an orientation change alone. A changed coordinate mode needs that redraw too.
+    if (
+      previous !== null &&
+      (previous.coordinates !== next.coordinates ||
+        previous.coordinatesOnSquares !== next.coordinatesOnSquares)
+    ) {
+      api.redrawAll();
+    }
     lastAppliedRef.current = snap;
     divergedRef.current = false;
   }, [props, moveMethod, animationSpeed]);

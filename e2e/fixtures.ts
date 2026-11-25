@@ -568,6 +568,9 @@ export async function waitForBoardSizeSettled(page: Page) {
 // * a fixed or positioned box past the viewport where nothing scrolls to it.
 // Both modes count a box that starts before the content of the container holding it, or before the
 // document's origin, because scrolling only ever reaches right and down.
+// A window that shows part of something on purpose (the Board settings preview's three ranks)
+// carries `data-deliberate-crop`: what it cuts is not counted, while the window itself is still
+// judged against its own container.
 export async function assertNothingClipped(
     target: Locator,
     { mode = "clipped" }: { mode?: "clipped" | "reachable" } = {},
@@ -747,13 +750,15 @@ export async function assertNothingClipped(
         const found: string[] = [];
         const check = (node: Element, placed: boolean) => {
             if (reachableMode && invisible(node)) return;
+            if (node.parentElement?.closest("[data-deliberate-crop]")) return;
+            const crops = node.hasAttribute("data-deliberate-crop");
             const box = node.getBoundingClientRect();
             const laidOut = box.width > 1 && box.height > 1;
             // The Files columns keep their horizontal-only check; the page-wide rule adds y.
             for (const axis of reachableMode ? axes : axes.slice(0, 1)) {
                 // No layout-box guard: an element without one (an svg child, an inline span)
                 // reports 0 for both sizes, while a scroller squeezed to zero width must count.
-                if (overflowing(node, axis) && contentLost(node, axis)) {
+                if (!crops && overflowing(node, axis) && contentLost(node, axis)) {
                     const size = `${node[axis.scroll]}px > ${node[axis.client]}px`;
                     found.push(describe(node, `${axis.name} ${size}`));
                 }

@@ -701,6 +701,22 @@ test("last-move highlight dependents hide when the switch is off and reappear wh
   expect(host.querySelector('[data-setting-id="move-highlight-opacity"]')).not.toBeNull();
 });
 
+test("the board preview opens the Look card, above its first row, and appears nowhere else", async () => {
+  const { host } = await renderSettingsPage();
+  const previews = host.querySelectorAll('[data-testid="board-settings-preview"]');
+  expect(previews).toHaveLength(1);
+  const look = host.querySelector('[data-settings-section="look"]')!;
+  expect(look.contains(previews[0])).toBe(true);
+  const firstRow = look.querySelector('[data-setting-id="board-image"]')!;
+  expect(previews[0].compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+
+  await searchSettings(host, "texture");
+  expect(host.querySelector('[data-setting-id="board-wood-texture"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="board-settings-preview"]')).toBeNull();
+});
+
 test("search still lists highlight dependents and groups them under Board · Highlights", async () => {
   const atoms = createStore();
   atoms.set(moveHighlightAtom, false);

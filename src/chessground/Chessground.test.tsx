@@ -14,6 +14,7 @@ const { api, createChessground } = vi.hoisted(() => {
   const api = {
     destroy: vi.fn(),
     set: vi.fn((_config: Config) => {}),
+    redrawAll: vi.fn(),
     setAutoShapes: vi.fn(),
     setShapes: vi.fn(),
     playPremove: vi.fn(() => false),
@@ -69,6 +70,7 @@ afterEach(async () => {
   mountedRoots.clear();
   api.destroy.mockClear();
   api.set.mockClear();
+  api.redrawAll.mockClear();
   api.setAutoShapes.mockClear();
   api.setShapes.mockClear();
   api.state.drawable.current = undefined;
@@ -406,6 +408,24 @@ test("destinations apply changed Map content but skip an equal-content new Map",
   await rerender({ movable: { dests: new Map([["e2", ["e3", "e4"]]]) } });
   expect(api.set).not.toHaveBeenCalled();
   expect(api.state.dom.bounds.clear).not.toHaveBeenCalled();
+});
+
+test("a changed coordinate mode redraws the mounted board so its labels follow", async () => {
+  const { rerender } = await renderConfig({ fen: "start", coordinates: false });
+  await rerender({ fen: "start", coordinates: true, coordinatesOnSquares: false });
+  expect(api.set).toHaveBeenCalledOnce();
+  expect(api.redrawAll).toHaveBeenCalledOnce();
+  expect(api.set.mock.invocationCallOrder[0]).toBeLessThan(
+    api.redrawAll.mock.invocationCallOrder[0],
+  );
+
+  api.redrawAll.mockClear();
+  await rerender({ fen: "start", coordinates: true, coordinatesOnSquares: true });
+  expect(api.redrawAll).toHaveBeenCalledOnce();
+
+  api.redrawAll.mockClear();
+  await rerender({ fen: "8/8/8/8/8/8/8/8", coordinates: true, coordinatesOnSquares: true });
+  expect(api.redrawAll).not.toHaveBeenCalled();
 });
 
 test("snapshots destinations before Chessground mutates the passed Map", async () => {
