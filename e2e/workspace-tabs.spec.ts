@@ -1744,6 +1744,9 @@ test("workspace-tabs: refuses failed creation and close until durable retry", as
     const closeTab = page.locator(
         "header [role='tablist'] [role='tab'][aria-selected='true'] + button",
     );
+    // Startup restores the workspace session before it writes the first workspace, so the load
+    // event no longer means that write is done; wait for the rendered tab before refusing writes.
+    await expect(tabs).toHaveCount(1);
 
     await rejectWorkspaceWrites(page);
     await newTab.click();
