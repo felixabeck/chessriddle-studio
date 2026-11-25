@@ -1965,7 +1965,8 @@ export type CoachError =
 /**
  * The account has no credits left: they have to be bought, or the plan upgraded.
  */
-"creditsExhausted"
+"creditsExhausted" | 
+/**
  * A scoresheet photo could not be read, decoded or encoded within the supported bounds.
  */
 "photoUnreadable" | 

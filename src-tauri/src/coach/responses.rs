@@ -984,7 +984,7 @@ mod tests {
     fn a_grok_account_without_credits_is_told_apart_from_an_ineligible_one() {
         let refusal = |message: &str| {
             let body = json!({ "error": message }).to_string();
-            classify_plan_refusal(PlanProvider::Grok, 403, body.as_bytes(), false).0
+            classify_plan_refusal(PlanProvider::Grok, 403, body.as_bytes(), false, false).0
         };
         assert_eq!(
             refusal("You have run out of credits or need a Grok subscription. Add credits at https://grok.com/?_s=usage or upgrade at https://grok.com/supergrok."),
@@ -994,7 +994,7 @@ mod tests {
         // Only Grok says it in words; another provider's 403 keeps its meaning.
         let body = json!({ "error": "You have run out of credits" }).to_string();
         assert_eq!(
-            classify_plan_refusal(PlanProvider::ChatGpt, 403, body.as_bytes(), false).0,
+            classify_plan_refusal(PlanProvider::ChatGpt, 403, body.as_bytes(), false, false).0,
             CoachError::SubscriptionNotEligible
         );
     }
