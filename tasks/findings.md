@@ -29400,7 +29400,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### file-menu-save e2e reads the workspace before it is persisted and fails intermittently
 
-* **ID:** f-20261125-19 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-19 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Where:** `e2e/file-menu-save.spec.ts:36`, "File → Save to file or database… does nothing without an analysis tab": `expect((await activeWorkspaceTab(page))?.type).toBe("new")` immediately after `page.goto("/")`. `activeWorkspaceTab` (`e2e/fixtures.ts:859-862`) reads `sessionStorage.workspace` once and asserts it is truthy.
 * **Defect:** the test reads the persisted workspace once, without waiting for the app to write it. On a loaded runner the read happens first and the helper fails with `expect(received).toBeTruthy()`, `Received: null` (`fixtures.ts:861`). Sibling specs avoid this with `expect.poll(... activeWorkspaceTab(page))`.
 * **CI run:** 45638982168
@@ -29410,3 +29410,6 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Found by:** Claude Code on 2026-11-25, in the CI wait after pushing the database licence credits.
 * **Repair owner:** Claude Code session 5a1dbb4f-7526-4b42-989c-e564ddabe862 on tuxedo-atlas, 2026-11-25T16:22+01:00 (corrects the host named above)
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"953884699a07380f5171e0ecadfe51242fb2984346108febaac36f139baefb80","input_sha256":"c4640015bbcb7291edf59f7855a6a4e4d9360152bb84b16528ed7bde9858620c","kind":"mutation-receipt","operation":"83030c79f84f29d6b3b9b8698421266eeff1de1b22bca3cdbb76720a99ed05a2","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-19"],"target":"f-20261125-19","v":1} -->
+
+* **Handled in 8c98f9bdd:** `e2e/file-menu-save.spec.ts` polls the active tab type through a helper that catches `activeWorkspaceTab`'s assertion, because `expect.poll` does not retry a throwing callback (playwright 1.62.1 `invokePollMatcher`). Proof: a probe that withheld the workspace for 1.5 s failed with the old one-shot read and passed with the helper; `pnpm test:e2e:container --project=file-menu-save --repeat-each=10` 30/30. Review: review-tests APPROVED. The five `expect.poll(... activeWorkspaceTab ...)` sites in new-game-to-file and game-references share the non-retry flaw but run after a user action and have no observed failure, so no finding was filed.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"275edfe94572791d36fbdbf221169a9018de88fd10839f1f032f4ecef5276454","header_sha256":"b15a00d895f81f8a6159b0785cda64c44fa9d3461d196718757f16fea44b25c3","header_status":"handled","input_sha256":"39c092766ee6d8c5cd292e553ba81a34716b60f2f0e9d51965b60743f8c147de","kind":"mutation-receipt","operation":"bf7cb692827b5d7225e0890a6889ceb721c1efe1ba11a1dcb2961fbd22920cb8","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-19"],"target":"f-20261125-19","v":1} -->
