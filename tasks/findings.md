@@ -29249,3 +29249,20 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario (observed):** e2e container run on 2026-11-25, project `font-scaled-breakpoints` (200%), viewport 320×720, locale it-IT, with the type labels as plain text (no emoji; checked to rule out the icon pass): `assertNothingClipped` reported `mantine-Stack-root: x 301px > 222px; form: x 301px > 222px; mantine-Modal-body: x 333px > 286px; mantine-Modal-content: x 333px > 286px; mantine-SegmentedControl-root: x 256px > 220px`. ru-RU fails the same way. Log: `/tmp/build-icon-pass/e2e-fb-noemoji.log` (icon-pass run).
 * **Proof:** an e2e case in `e2e/font-scaled-breakpoints.spec.ts` at 320px and 200% for it-IT and ru-RU that asserts `assertNothingClipped` on the whole dialog, red before the fix. The icon pass added the same check at 1000px/200% and 420px/100%, and left 320px/200% out because of this defect.
 * **Found by:** Claude Code (icon-pass build, session 02e161d1-0335-4944-985b-fd7ac5398d0d), 2026-11-25.
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### In WebKit the "Hide moves" blur leaves the hidden moves fully readable, so the analysis board, Practice drills and the new preview mode show the answer
+
+* **ID:** f-20261125-10 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** WebKit verification of the hide-preview-moves change (worktree `build/hide-moves-20261125`, base `5f8988937`)
+* **Where:**
+  * `src/components/common/GameNotation.tsx` (hidden-notation block): hiding relies only on a Mantine `Overlay` with `blur={8}` (CSS `backdrop-filter: blur(8px)`) and a `var(--cf-inset)` tint at `backgroundOpacity={0.6}`, which computes to about 5 % alpha.
+  * The move rows are absolutely positioned virtualizer rows with a `transform`, inside the Mantine `ScrollArea` viewport (`overflow: hidden scroll`).
+* **Defect:** WebKit does not render the backdrop blur over those composited rows. The overlay sits on top (`elementFromPoint` at a move returns the overlay; computed `backdrop-filter` and `-webkit-backdrop-filter` are `blur(8px)`), yet the move text renders crisp, and the 5 % tint hides nothing. Chromium, where the e2e suite runs, blurs correctly, so the committed snapshots cannot show it.
+* **Failure scenario:** in the desktop app (WebKitGTK), open a game, click the notation eye ("Hide moves"): the moves `1. d4 d5` stay legible. The same happens in a repertoire Practice drill (the answer stays readable) and in the new preview hide mode. Observed 2026-11-25 with Playwright WebKit 2336 against the built renderer: screenshots of the Files preview, database preview and an opened analysis tab with hidden notation all show readable moves.
+* **Fix:** blur the hidden content itself (`filter: blur(…)` on the inert rows container) instead of relying on the overlay's backdrop filter, keep the overlay for pointer blocking and the reveal button, and verify in WebKit.
+* **Found by:** Claude Code (orchestrator), WebKit probe during the hide-preview-moves change.
