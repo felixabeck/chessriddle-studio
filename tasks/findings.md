@@ -29339,3 +29339,5 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario:** job `frontend-mutation (game-practice)` of Mutation run 45604503911: "Final mutation score 98.60 under breaking threshold 100, setting exit code to 1".
 * **Fix:** add tests that order unseen lines where both, one, or neither carry a weight and where equal weights must keep their original order, or remove a branch that is provably redundant (not a Stryker disable unless proven equivalent).
 * **Proof:** `FRONTEND_MUTATION_PACKAGE=game-practice pnpm mutation:frontend` reports 100.
+* **Repair owner:** ee439b95-8204-44ff-b74f-b24e6916f3dc on tuxedo-atlas, 2026-11-25T12:41:19Z
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"d3c6ff0e836ac7d9f0083e3b7bd60003400fec763580c03600503533d9957048","input_sha256":"15ea0a8b4852210f53caae5d689ef400657469a7b12c75941b109b95de49e8c5","kind":"mutation-receipt","operation":"120a3f13e196ba931851db4080126aa95a83273c8d71e69f727f85d04699565d","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-16"],"target":"f-20261125-16","v":1} -->
