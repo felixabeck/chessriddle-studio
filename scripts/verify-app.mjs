@@ -3064,7 +3064,8 @@ async function clickButton(session, name, icon = false) {
   const point = await reachableStableCoordinates(
     session,
     name,
-    `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : node.textContent.trim() === arguments[0]))`,
+    // Feature buttons lead with an emoji since 4aee1135b; the text match ignores that prefix.
+    `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : node.textContent.trim().replace(/^[\\p{Extended_Pictographic}\\uFE0F\\u200D\\s]+/u, '') === arguments[0]))`,
     [name, icon],
   );
   await clickAt(session, point.x, point.y);
@@ -8405,7 +8406,7 @@ async function verifyTimedRun(profileDirectory, screenshotDirectory) {
         await waitFor("New Tab Train openings action", () =>
           session.execute(`
             return location.pathname === '/' && [...document.querySelectorAll('[data-home-action]')]
-              .some((action) => action.textContent.trim() === 'Train openings');
+              .some((action) => action.textContent.trim().replace(/^[\\p{Extended_Pictographic}\\uFE0F\\u200D\\s]+/u, '') === 'Train openings');
           `),
         );
       });
