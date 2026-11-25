@@ -1,10 +1,10 @@
-import { MantineProvider } from "@mantine/core";
+import { MantineProvider, type SelectProps } from "@mantine/core";
 import { INITIAL_FEN } from "chessops/fen";
 import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
 import type {
   DatabaseHandle,
   PositionSearchQuery,
@@ -30,6 +30,8 @@ import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { chooseSelectOption } from "@/tests/select";
+import { stubScrollIntoView } from "@/tests/scrollIntoView";
 import { catalogueI18n, shippedCatalogues } from "@/tests/catalogues";
 import type { SupportedLocale } from "@/i18n";
 import { getNodeAtPath } from "@/utils/treeReducer";
@@ -42,6 +44,7 @@ import PlayerOpeningTree, {
 
 const mocks = vi.hoisted(() => ({
   searchPosition: vi.fn(),
+  selectOnChange: vi.fn(),
   navigate: vi.fn(),
   notify: vi.fn(),
   createTab: vi.fn(),
@@ -53,6 +56,21 @@ const mocks = vi.hoisted(() => ({
   onlinePlayers: vi.fn(),
   showNotification: vi.fn(),
 }));
+vi.mock("@mantine/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@mantine/core")>();
+  function Select(props: SelectProps) {
+    return (
+      <actual.Select
+        {...props}
+        onChange={(value, option) => {
+          mocks.selectOnChange(value, option);
+          props.onChange?.(value, option);
+        }}
+      />
+    );
+  }
+  return { ...actual, Select };
+});
 vi.mock("./opponentLookup", () => ({ opponentPlayers: mocks.onlinePlayers }));
 vi.mock("@mantine/notifications", async (original) => {
   const actual = await original<typeof import("@mantine/notifications")>();
@@ -168,6 +186,7 @@ let treeStore: TreeStore | undefined;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub({ matches: () => false });
 installInlineComputedStyleStub();
+const restoreScrollIntoView = stubScrollIntoView();
 globalThis.ResizeObserver = class {
   observe() {}
   unobserve() {}
@@ -223,6 +242,7 @@ afterEach(async () => {
   container.remove();
   vi.useRealTimers();
 });
+afterAll(() => restoreScrollIntoView());
 
 async function render(playerOverride = player, fileOverride = file, panelId?: string) {
   await act(async () =>
@@ -266,12 +286,16 @@ async function black() {
   await click(container.querySelector('input[value="black"]')!);
 }
 
+function sinceInput() {
+  const input = container.querySelector<HTMLInputElement>(
+    "[data-opening-toolbar] input.mantine-Select-input",
+  );
+  if (!input) throw new Error("Since select is not rendered");
+  return input;
+}
+
 async function since(value: string) {
-  const select = container.querySelector("select")!;
-  await act(async () => {
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await chooseSelectOption(sinceInput(), value);
 }
 
 test.each([
@@ -346,11 +370,25 @@ test("moves and the terminal row show their own last played date and year strip"
   );
 });
 
+test("clicking the selected Since keeps All games and does not search again", async () => {
+  await render();
+  const searches = mocks.searchPosition.mock.calls.length;
+  expect(sinceInput().value).toBe("All games");
+  mocks.selectOnChange.mockClear();
+  await chooseSelectOption(sinceInput(), "all");
+  expect(sinceInput().value).toBe("All games");
+  expect(mocks.selectOnChange).not.toHaveBeenCalled();
+  expect(mocks.selectOnChange).not.toHaveBeenCalledWith(null);
+  expect(mocks.searchPosition).toHaveBeenCalledTimes(searches);
+});
+
 test("Since keeps one rolling cutoff for the search and Prepare, retains moves and clears selection", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 10, 8, 12));
   await render();
-  expect(container.querySelector("select")?.value).toBe("all");
+  expect(sinceInput().closest(".mantine-Select-root")).not.toBeNull();
+  expect(container.querySelector("select")).toBeNull();
+  expect(sinceInput().value).toBe("All games");
   expect(mocks.searchPosition.mock.lastCall?.[1].startDate).toBeUndefined();
   await click(row("e4"));
   await click(container.querySelector("[data-opening-games] tbody tr")!);

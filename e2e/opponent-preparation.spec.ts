@@ -51,12 +51,25 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     await expect(preview).toHaveScreenshot("opponent-preparation-tab.png");
 
     // Raising the minimum drops the gap played in only 4 games, without a new search.
-    const minGames = prep.getByRole("combobox", { name: "Minimum games", exact: true });
-    await minGames.selectOption("5");
+    const minGames = prep.getByRole("textbox", { name: "Minimum games", exact: true });
+    await minGames.click();
+    // The open list is as wide as its options, so the checked row (check icon + digit) is not
+    // clipped by a list squeezed to the narrow trigger.
+    const fit = await page.getByRole("option", { name: "1", exact: true }).evaluate((row) => {
+        const icon = row.querySelector("svg")!.getBoundingClientRect();
+        const label = row.querySelector("span")!.getBoundingClientRect();
+        const box = row.getBoundingClientRect();
+        const list = row.closest('[role="listbox"]')!.getBoundingClientRect();
+        return { gap: label.left - icon.right, overflow: box.right - list.right };
+    });
+    expect(fit.gap).toBeGreaterThanOrEqual(0);
+    expect(fit.overflow).toBeLessThanOrEqual(0.5);
+    await page.getByRole("option", { name: "5", exact: true }).click();
     await expect(prep.locator("[data-preparation-gaps]")).not.toContainText("Nc3");
     await expect(prep.locator("[data-preparation-gaps]")).toContainText("Bb5+");
     await expect(prep.locator("[data-preparation-lines]")).toContainText("6 of 26 games");
-    await minGames.selectOption("1");
+    await minGames.click();
+    await page.getByRole("option", { name: "1", exact: true }).click();
     await expect(prep.locator("[data-preparation-gaps]")).toContainText("Nc3");
 
     // Activating a line opens the repertoire chapter at the matched position (2...d6).
@@ -141,19 +154,17 @@ test("opponent-preparation: narrow card stacks Since and Minimum games controls 
     await expect(prep.locator("[data-preparation-lines]")).toContainText("Sicilian Najdorf");
 
     for (const name of ["Since", "Minimum games"]) {
-        const layout = await prep
-            .getByRole("combobox", { name, exact: true })
-            .evaluate((select) => {
-                const root = select.closest(".mantine-NativeSelect-root")!;
-                const label = root.querySelector("label")!;
-                const style = getComputedStyle(root);
-                return {
-                    flexDirection: style.flexDirection,
-                    alignItems: style.alignItems,
-                    labelLeft: label.getBoundingClientRect().left,
-                    selectLeft: select.getBoundingClientRect().left,
-                };
-            });
+        const layout = await prep.getByRole("textbox", { name, exact: true }).evaluate((select) => {
+            const root = select.closest(".mantine-Select-root")!;
+            const label = root.querySelector("label")!;
+            const style = getComputedStyle(root);
+            return {
+                flexDirection: style.flexDirection,
+                alignItems: style.alignItems,
+                labelLeft: label.getBoundingClientRect().left,
+                selectLeft: select.getBoundingClientRect().left,
+            };
+        });
         expect(layout.flexDirection, name).toBe("column");
         expect(layout.alignItems, name).toBe("start");
         expect(Math.abs(layout.labelLeft - layout.selectLeft), name).toBeLessThanOrEqual(1);

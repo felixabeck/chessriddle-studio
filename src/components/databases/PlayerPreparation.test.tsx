@@ -2,7 +2,7 @@ import { MantineProvider } from "@mantine/core";
 import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { DatabaseHandle, FileWorkspaceHandle, Player, PositionStats } from "@/bindings";
 import type { FileMetadata } from "@/components/files/file";
 import {
@@ -16,6 +16,8 @@ import { activeDatabaseViewStore } from "@/state/store/database";
 import type { RepertoireSnapshot } from "@/state/repertoireIndex";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
+import { chooseSelectOption } from "@/tests/select";
+import { stubScrollIntoView } from "@/tests/scrollIntoView";
 import { INITIAL_BOARD_STATE } from "@/utils/opponentPreparation";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import type { Tab } from "@/utils/tabs";
@@ -81,6 +83,8 @@ vi.mock("../home/PersonalCardPanels/OpeningsPanel", () => ({ default: () => null
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
 installResizeObserverStub();
+const restoreScrollIntoView = stubScrollIntoView();
+afterAll(() => restoreScrollIntoView());
 
 const workspace: FileWorkspaceHandle = { id: { id: "ws-1" }, kind: "fileWorkspace" };
 const cardDb: DatabaseHandle = { id: { id: "db-otb" }, kind: "database" };
@@ -220,6 +224,23 @@ describe("PlayerPreparation", () => {
       );
     });
   };
+
+  function periodInput() {
+    const label = [
+      ...container.querySelectorAll<HTMLLabelElement>("[data-preparation-toolbar] label"),
+    ].find((item) => item.textContent?.trim() === "Databases.OpeningTree.Since");
+    const input = label?.htmlFor
+      ? (document.getElementById(label.htmlFor) as HTMLInputElement | null)
+      : null;
+    if (!input) throw new Error("Since select is not rendered");
+    return input;
+  }
+
+  function minGamesInput() {
+    const input = container.querySelector<HTMLInputElement>("[data-preparation-min-games]");
+    if (!input) throw new Error("Minimum games select is not rendered");
+    return input;
+  }
 
   test("unreadable repertoire shows failure state with Retry and never 'no repertoire'", async () => {
     mocks.readRepertoireIndex.mockReturnValue(
@@ -661,11 +682,7 @@ describe("PlayerPreparation", () => {
     expect(store.get(opponentPreparationAtom)?.source).toBe("online");
 
     // Change period -> new run finishes -> Online stays stored and selected.
-    const select = container.querySelector<HTMLSelectElement>("[data-preparation-toolbar] select")!;
-    await act(async () => {
-      select.value = "1";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseSelectOption(periodInput(), "1");
     await vi.waitFor(() => {
       expect(store.get(opponentPreparationAtom)?.period).toBe(1);
     });
@@ -829,15 +846,15 @@ describe("PlayerPreparation", () => {
     expect(gapMoves()).toEqual(["e4 c5 Nf3", "d4"]);
     expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(1);
 
-    const minGames = container.querySelector<HTMLSelectElement>(
-      "select[data-preparation-min-games]",
-    )!;
-    expect(minGames.value).toBe("1");
+    expect(minGamesInput().closest(".mantine-Select-root")).not.toBeNull();
+    expect(container.querySelector("select")).toBeNull();
+    expect(minGamesInput().value).toBe("1");
+    const searchesBeforeReselect = mocks.fetchBatchStatistics.mock.calls.length;
+    await chooseSelectOption(minGamesInput(), "1");
+    expect(minGamesInput().value).toBe("1");
+    expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(searchesBeforeReselect);
     const preparationId = store.get(opponentPreparationAtom)?.id;
-    await act(async () => {
-      minGames.value = "5";
-      minGames.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseSelectOption(minGamesInput(), "5");
 
     expect(gapMoves()).toEqual(["e4 c5 Nf3"]);
     expect(container.querySelectorAll("[data-preparation-line-row]")).toHaveLength(1);
@@ -855,11 +872,7 @@ describe("PlayerPreparation", () => {
         [AFTER_E4, [statRow("c5", 3)]],
       ]),
     );
-    const period = container.querySelector<HTMLSelectElement>("[data-preparation-toolbar] select")!;
-    await act(async () => {
-      period.value = "1";
-      period.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseSelectOption(periodInput(), "1");
     await vi.waitFor(() => {
       expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(2);
       expect(store.get(opponentPreparationAtom)?.period).toBe(1);
@@ -877,13 +890,7 @@ describe("PlayerPreparation", () => {
   });
 
   const selectMinGames = async (value: string) => {
-    const select = container.querySelector<HTMLSelectElement>(
-      "select[data-preparation-min-games]",
-    )!;
-    await act(async () => {
-      select.value = value;
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseSelectOption(minGamesInput(), value);
   };
 
   test("a minimum changed in place reaches the training, the online view and a remount", async () => {
@@ -932,9 +939,7 @@ describe("PlayerPreparation", () => {
     await act(async () => root.unmount());
     root = createRoot(container);
     await renderTab(online);
-    expect(
-      container.querySelector<HTMLSelectElement>("select[data-preparation-min-games]")?.value,
-    ).toBe("5");
+    expect(minGamesInput().value).toBe("5");
     expect(container.querySelector("[data-preparation-lines]")?.textContent).toContain(
       "Databases.Preparation.LinesBelowMinimum",
     );
@@ -973,11 +978,7 @@ describe("PlayerPreparation", () => {
       expect(container.querySelector("[data-preparation-lines]")).not.toBeNull();
     });
     // Change period to 5 years and wait for it to finish.
-    const select = container.querySelector<HTMLSelectElement>("[data-preparation-toolbar] select")!;
-    await act(async () => {
-      select.value = "5";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseSelectOption(periodInput(), "5");
     await vi.waitFor(() => {
       expect(store.get(opponentPreparationAtom)?.period).toBe(5);
     });
@@ -988,9 +989,7 @@ describe("PlayerPreparation", () => {
     root = createRoot(container);
     await renderTab();
     expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(callsBeforeRemount);
-    expect(
-      container.querySelector<HTMLSelectElement>("[data-preparation-toolbar] select")?.value,
-    ).toBe("5");
+    expect(periodInput().value).toBe("Databases.OpeningTree.FiveYears");
     expect(container.querySelector("[data-preparation-lines]")).not.toBeNull();
   });
 
@@ -1009,13 +1008,7 @@ describe("PlayerPreparation", () => {
         includeUnknownResults: true,
       });
 
-      const select = container.querySelector<HTMLSelectElement>(
-        "[data-preparation-toolbar] select",
-      )!;
-      await act(async () => {
-        select.value = "1";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      });
+      await chooseSelectOption(periodInput(), "1");
       await vi.waitFor(() => {
         expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(2);
       });
@@ -1026,10 +1019,7 @@ describe("PlayerPreparation", () => {
         includeUnknownResults: true,
       });
 
-      await act(async () => {
-        select.value = "all";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      });
+      await chooseSelectOption(periodInput(), "all");
       await vi.waitFor(() => {
         expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(3);
       });
@@ -1222,13 +1212,7 @@ describe("PlayerPreparation", () => {
         '[data-preparation-toolbar] input[value="black"]',
       )!;
       await act(async () => blackRadio.click());
-      const select = container.querySelector<HTMLSelectElement>(
-        "[data-preparation-toolbar] select",
-      )!;
-      await act(async () => {
-        select.value = "1";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      });
+      await chooseSelectOption(periodInput(), "1");
       await vi.waitFor(() => {
         expect(store.get(opponentPreparationAtom)?.opponentColor).toBe("black");
         expect(store.get(opponentPreparationAtom)?.period).toBe(1);
@@ -1253,9 +1237,7 @@ describe("PlayerPreparation", () => {
         container.querySelector<HTMLInputElement>('[data-preparation-toolbar] input[value="white"]')
           ?.checked,
       ).toBe(true);
-      expect(
-        container.querySelector<HTMLSelectElement>("[data-preparation-toolbar] select")?.value,
-      ).toBe("3");
+      expect(periodInput().value).toBe("Databases.Opponent.ThreeYears");
       expect(
         container.querySelector<HTMLInputElement>('[data-preparation-source] input[value="otb"]')
           ?.checked,

@@ -193,14 +193,14 @@ test("piece-size: Board slider stores 70, insets the image, keeps click-moves, a
 });
 
 async function selectMeridaPieceSet(page: Page) {
-    // The control is named by its field and the active set, never by the field alone.
-    const pieceSet = page.getByRole("button", { name: /^Piece Set \S/ });
+    // SettingsSelect names the field via aria-label; the selected set is the input value.
+    const pieceSet = page.getByRole("textbox", { name: "Piece Set" });
     await pieceSet.scrollIntoViewIfNeeded();
     await pieceSet.click();
     const merida = page.getByRole("option", { name: "Merida", exact: true });
     await merida.click();
-    await expect(pieceSet).toHaveText("Merida");
-    await expect(pieceSet).toHaveAccessibleName("Piece Set Merida");
+    await expect(pieceSet).toHaveValue("Merida");
+    await expect(pieceSet).toHaveAccessibleName("Piece Set");
     await page.waitForFunction(() =>
         [...document.querySelectorAll('link[rel="stylesheet"]')].some((element) => {
             const link = element as HTMLLinkElement;

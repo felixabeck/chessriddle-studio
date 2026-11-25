@@ -1,10 +1,9 @@
-import { Box, Flex, Text } from "@mantine/core";
+import { Box, Flex } from "@mantine/core";
 import { useAtom } from "jotai";
-import { useTranslation } from "react-i18next";
 import { pieceSetAtom } from "@/state/atoms";
 import { PIECE_SETS, type PieceSet } from "@/state/artworkCatalog";
 import PieceComponent from "../common/Piece";
-import { SettingsCombobox } from "./SettingsCombobox";
+import SettingsSelect from "./SettingsSelect";
 
 function DisplayPieces() {
   const pieces = ["rook", "knight", "bishop", "queen", "king", "pawn"] as const;
@@ -20,26 +19,23 @@ function DisplayPieces() {
 }
 
 export default function PiecesSelect() {
-  const { t } = useTranslation();
   const [pieceSet, setPieceSet] = useAtom(pieceSetAtom);
 
   return (
     <Flex justify="space-between" align="center" gap="md" wrap="wrap">
       <DisplayPieces />
-      <SettingsCombobox<PieceSet>
-        ariaLabel={t("Settings.Appearance.PieceSet")}
-        value={pieceSet}
-        width="10rem"
+      <SettingsSelect
+        allowDeselect={false}
         data={PIECE_SETS.map((item) => ({
           value: item.value,
-          label: (
-            <Text fz="sm" fw={500}>
-              {item.label}
-            </Text>
-          ),
+          label: item.label,
         }))}
-        onPreview={setPieceSet}
-        onCommit={setPieceSet}
+        value={pieceSet}
+        onPreview={(val) => setPieceSet(val as PieceSet)}
+        onChange={(val) => {
+          if (val == null) return;
+          setPieceSet(val as PieceSet);
+        }}
       />
     </Flex>
   );

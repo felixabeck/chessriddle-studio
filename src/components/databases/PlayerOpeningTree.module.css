@@ -189,10 +189,6 @@
     align-items: start;
   }
 
-  .since :global(.mantine-NativeSelect-wrapper) {
-    max-width: 100%;
-  }
-
   .recency {
     flex-direction: row;
     flex-wrap: wrap;

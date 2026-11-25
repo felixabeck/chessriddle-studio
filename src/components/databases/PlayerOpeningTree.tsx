@@ -2,7 +2,7 @@ import {
   Alert,
   Button,
   Group,
-  NativeSelect,
+  Select,
   SegmentedControl,
   Skeleton,
   Stack,
@@ -18,6 +18,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DatabaseHandle, NormalizedGame, Player, PositionStats } from "@/bindings";
 import { Chessground } from "@/chessground/Chessground";
+import { fitSelectProps } from "@/components/common/fitSelectProps";
 import { IconAction } from "@/components/common/IconAction";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -204,6 +205,18 @@ function OpeningTree({
     defaultValue: "{{name}} plays:",
     name,
   });
+  const sinceOptions = [
+    {
+      value: "all",
+      label: t("Databases.OpeningTree.AllGames", { defaultValue: "All games" }),
+    },
+    {
+      value: "5",
+      label: t("Databases.OpeningTree.FiveYears", { defaultValue: "5 years" }),
+    },
+    { value: "2", label: t("Databases.OpeningTree.TwoYears", { defaultValue: "2 years" }) },
+    { value: "1", label: t("Databases.OpeningTree.OneYear", { defaultValue: "1 year" }) },
+  ];
   const queryFor = (source: OpeningTreeSource): SourceQuery => ({
     source,
     options: {
@@ -347,13 +360,14 @@ function OpeningTree({
             { value: "black", label: t("Fen.Black") },
           ]}
         />
-        <NativeSelect
+        <Select
           className={classes.since}
           size="xs"
+          allowDeselect={false}
           label={t("Databases.OpeningTree.Since", { defaultValue: "Since" })}
           value={since.preset}
-          onChange={(event) => {
-            const preset = event.currentTarget.value;
+          onChange={(preset) => {
+            if (preset == null) return;
             setSince({
               preset,
               startDate:
@@ -363,18 +377,8 @@ function OpeningTree({
             });
             setSelected(null);
           }}
-          data={[
-            {
-              value: "all",
-              label: t("Databases.OpeningTree.AllGames", { defaultValue: "All games" }),
-            },
-            {
-              value: "5",
-              label: t("Databases.OpeningTree.FiveYears", { defaultValue: "5 years" }),
-            },
-            { value: "2", label: t("Databases.OpeningTree.TwoYears", { defaultValue: "2 years" }) },
-            { value: "1", label: t("Databases.OpeningTree.OneYear", { defaultValue: "1 year" }) },
-          ]}
+          data={sinceOptions}
+          {...fitSelectProps(sinceOptions)}
         />
         <Text size="sm" className={classes.notation} data-opening-sequence>
           {line.notation || t("Databases.OpeningTree.Start", { defaultValue: "Start position" })}

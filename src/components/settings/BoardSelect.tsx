@@ -1,62 +1,55 @@
-import { Box, Group, Text } from "@mantine/core";
+import { Box, Group } from "@mantine/core";
 import { useAtom } from "jotai";
-import { useTranslation } from "react-i18next";
 import { boardImageAtom } from "@/state/atoms";
 import { BOARD_IMAGES, type BoardImage } from "@/state/artworkCatalog";
-import { SettingsCombobox } from "./SettingsCombobox";
+import SettingsSelect from "./SettingsSelect";
 
-function SelectOption({ label }: { label: string }) {
-  let image = label;
-  if (!label.endsWith(".svg")) {
-    image = label.replace(".", ".thumbnail.");
-  }
+function boardName(image: string) {
+  return image.split(".")[0];
+}
+
+function BoardThumbnail({ image }: { image: string }) {
+  const file = image.endsWith(".svg") ? image : image.replace(".", ".thumbnail.");
 
   return (
-    <Group wrap="nowrap" miw={0}>
-      <Box
-        style={{
-          width: "64px",
-          height: "32px",
-          backgroundImage: `url(/board/${image})`,
-          flexShrink: 0,
-          backgroundSize: label.endsWith(".svg") ? "256px" : undefined,
-        }}
-      />
-      {/* Ellipsis without `truncate`, whose overflow: hidden would also cut descenders. */}
-      <Text
-        fz="sm"
-        fw={500}
-        miw={0}
-        style={{
-          overflowX: "clip",
-          overflowY: "visible",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          // Room for a glyph's ink overhang (the tail of a "g"), which the clip would trim.
-          paddingInline: 2,
-          marginInline: -2,
-        }}
-      >
-        {label.split(".")[0]}
-      </Text>
-    </Group>
+    <Box
+      style={{
+        width: 64,
+        height: 32,
+        backgroundImage: `url(/board/${file})`,
+        flexShrink: 0,
+        backgroundSize: image.endsWith(".svg") ? 256 : undefined,
+      }}
+    />
   );
 }
 
+function setKnownBoard(value: string, setBoard: (image: BoardImage) => void) {
+  if ((BOARD_IMAGES as readonly string[]).includes(value)) setBoard(value as BoardImage);
+}
+
 export default function BoardSelect() {
-  const { t } = useTranslation();
   const [board, setBoard] = useAtom(boardImageAtom);
 
   return (
-    <SettingsCombobox<BoardImage>
-      ariaLabel={t("Settings.Appearance.BoardImage")}
-      value={board}
+    <SettingsSelect
+      allowDeselect={false}
       data={BOARD_IMAGES.map((item) => ({
         value: item,
-        label: <SelectOption label={item} />,
-        preview: <SelectOption label={item} />,
+        label: boardName(item),
       }))}
-      onCommit={setBoard}
+      value={board}
+      renderOption={({ option }) => (
+        <Group wrap="nowrap" gap="xs" miw={0}>
+          <BoardThumbnail image={option.value} />
+          {option.label}
+        </Group>
+      )}
+      onPreview={(val) => setKnownBoard(val, setBoard)}
+      onChange={(val) => {
+        if (val == null) return;
+        setKnownBoard(val, setBoard);
+      }}
     />
   );
 }

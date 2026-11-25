@@ -94,6 +94,7 @@
           "src/components/common/FideInfo.tsx",
           "src/components/common/FidePlayerDialogs.tsx",
           "src/components/common/ResultBar.tsx",
+          "src/components/common/fitSelectProps.ts",
           "src/components/common/flagpack.ts",
           "src/components/common/gameOpen.tsx",
           "src/components/common/useOpenDatabaseGame.ts",

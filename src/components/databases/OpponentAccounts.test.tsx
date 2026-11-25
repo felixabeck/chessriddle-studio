@@ -3,7 +3,7 @@ import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { DatabaseHandle, ErrorPayload } from "@/bindings";
 import { opponentImportsAtom, opponentLinksAtom } from "@/state/atoms";
 import { defaultOpponentFilter, type OpponentLink } from "@/state/opponentLinks";
@@ -11,6 +11,9 @@ import { activeDatabaseViewStore } from "@/state/store/database";
 import { catalogueI18n } from "@/tests/catalogues";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
+import { chooseSelectOption } from "@/tests/select";
+import { stubScrollIntoView } from "@/tests/scrollIntoView";
 import type { OpponentImportResult } from "./opponentImport";
 
 /** A run's ending as the tests give it; no copy was left behind unless a test says so. */
@@ -89,7 +92,9 @@ import OpponentAccounts, { opponentGames } from "./OpponentAccounts";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub({ matches: () => false });
+installResizeObserverStub();
 installInlineComputedStyleStub();
+const restoreScrollIntoView = stubScrollIntoView();
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const DATABASE = `opponent-${ID}-0a1b2c3d.db3`;
@@ -161,6 +166,14 @@ async function confirm(name: string) {
   await act(async () => inDialog.click());
 }
 
+function sinceInput() {
+  const input = document.body.querySelector<HTMLInputElement>(
+    "[data-opponent-details] input.mantine-Select-input",
+  );
+  if (!input) throw new Error("Since select is not rendered");
+  return input;
+}
+
 function status() {
   return document.body.querySelector("[data-opponent-status]")!;
 }
@@ -208,6 +221,7 @@ afterEach(async () => {
   container.remove();
   activeDatabaseViewStore.getState().clearDatabase();
 });
+afterAll(() => restoreScrollIntoView());
 
 describe("opponentGames", () => {
   test("a link without a database has no games, whatever the listing says", () => {
@@ -291,7 +305,9 @@ describe("a player without online accounts", () => {
     });
     expect(created.database).toBeUndefined();
     // The new link opens on its settings: last three years, every time control but bullet.
-    expect(document.body.querySelector<HTMLSelectElement>("select")!.value).toBe("3");
+    expect(sinceInput().value).toBe("3 years");
+    expect(sinceInput().closest(".mantine-Select-root")).not.toBeNull();
+    expect(document.body.querySelector("select")).toBeNull();
     expect(checkbox("Bullet").checked).toBe(false);
     for (const control of ["Blitz", "Rapid", "Classical", "Correspondence"]) {
       expect(checkbox(control).checked).toBe(true);
@@ -423,7 +439,7 @@ describe("downloading", () => {
     expect(button("Remove online games").disabled).toBe(true);
     expect(button("Unlink accounts").disabled).toBe(true);
     expect(button("Remove DrNykterstein").disabled).toBe(true);
-    expect(document.body.querySelector<HTMLSelectElement>("select")!.disabled).toBe(true);
+    expect(sinceInput().disabled).toBe(true);
     expect(checkbox("Blitz").disabled).toBe(true);
 
     await click("Cancel");
@@ -567,18 +583,12 @@ describe("managing a link", () => {
   test("period and time controls are stored on the link", async () => {
     await render();
     await click("Manage online accounts");
-    const select = document.body.querySelector<HTMLSelectElement>("select")!;
-    expect([...select.options].map((option) => option.textContent)).toEqual([
-      "1 year",
-      "3 years",
-      "5 years",
-      "All games",
-    ]);
-
-    await act(async () => {
-      select.value = "all";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    expect(sinceInput().closest(".mantine-Select-root")).not.toBeNull();
+    await act(async () => sinceInput().click());
+    expect(
+      [...document.querySelectorAll('[role="option"]')].map((option) => option.textContent),
+    ).toEqual(["1 year", "3 years", "5 years", "All games"]);
+    await chooseSelectOption(sinceInput(), "all");
     expect(storedLink()?.filter.years).toBeNull();
 
     await act(async () => checkbox("Bullet").click());
@@ -590,6 +600,18 @@ describe("managing a link", () => {
       "correspondence",
     ]);
     expect(storedLink()?.database).toBe(DATABASE);
+  });
+
+  test("re-clicking the selected Since period keeps it", async () => {
+    await render();
+    await click("Manage online accounts");
+    expect(sinceInput().value).toBe("3 years");
+    expect(storedLink()?.filter.years).toBe(3);
+
+    await chooseSelectOption(sinceInput(), "3 years");
+
+    expect(sinceInput().value).toBe("3 years");
+    expect(storedLink()?.filter.years).toBe(3);
   });
 
   test("removing one of several accounts needs no confirmation", async () => {

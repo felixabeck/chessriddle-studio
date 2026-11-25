@@ -1,4 +1,4 @@
-import { Button, Checkbox, Group, NativeSelect, Paper, Progress, Stack, Text } from "@mantine/core";
+import { Button, Checkbox, Group, Paper, Progress, Select, Stack, Text } from "@mantine/core";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore } from "jotai";
 import { Plus, Settings, X } from "lucide-react";
@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
 import { CheckboxRow } from "@/components/common/CheckboxRow";
+import { fitSelectProps } from "@/components/common/fitSelectProps";
 import type { DatabaseHandle, OpponentAccount, OpponentTimeControl } from "@/bindings";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
@@ -111,6 +112,7 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
   const link = findOpponentLink(links, playerName);
   const games = opponentGames(link, listing, listingError);
   const inFlight = link !== undefined && imports.has(link.id);
+  const periodOptions = opponentPeriodOptions(OPPONENT_PERIODS, t);
   const ticket = link ? (imports.get(link.id) ?? null) : null;
   const gamesFile = games.kind === "games" ? games.file : null;
   // Usernames that met each other stay separate players; the board then follows the first one.
@@ -304,18 +306,21 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
             </Group>
           )}
           <Group gap="md" align="flex-start" wrap="wrap">
-            <NativeSelect
+            <Select
               size="xs"
+              allowDeselect={false}
               label={t("Databases.OpeningTree.Since", { defaultValue: "Since" })}
               disabled={inFlight}
               value={opponentPeriodToValue(link.filter.years)}
-              onChange={(event) => {
-                const years = valueToOpponentPeriod(event.currentTarget.value, link.filter.years);
+              onChange={(value) => {
+                if (value == null) return;
+                const years = valueToOpponentPeriod(value, link.filter.years);
                 setLinks((current) =>
                   withOpponentFilter(current, link.id, { ...link.filter, years }),
                 );
               }}
-              data={opponentPeriodOptions(OPPONENT_PERIODS, t)}
+              data={periodOptions}
+              {...fitSelectProps(periodOptions)}
             />
             <Checkbox.Group
               label={t("Databases.Opponent.TimeControls", { defaultValue: "Time controls" })}

@@ -4467,7 +4467,7 @@ for (const surface of [
         await expect(strip.locator("[data-opponent-status]")).toHaveText("No games downloaded");
         // A new link opens on its settings: the last three years, every time control but bullet.
         await expect(strip.locator("[data-opponent-details]")).toBeVisible();
-        await expect(strip.getByRole("combobox", { name: "Since" })).toHaveValue("3");
+        await expect(strip.getByRole("textbox", { name: "Since" })).toHaveValue("3 years");
         await expect(strip.getByRole("checkbox", { name: "Bullet" })).not.toBeChecked();
         for (const control of ["Blitz", "Rapid", "Classical", "Correspondence"]) {
             await expect(strip.getByRole("checkbox", { name: control })).toBeChecked();
@@ -4522,7 +4522,7 @@ test("database-files: an opponent's downloaded online games show their count bes
     await expect(strip.locator("[data-opponent-separate]")).toHaveCount(0);
 
     await strip.getByRole("button", { name: "Manage online accounts", exact: true }).click();
-    await expect(strip.getByRole("combobox", { name: "Since" })).toHaveValue("5");
+    await expect(strip.getByRole("textbox", { name: "Since" })).toHaveValue("5 years");
     await expect(strip.getByRole("button", { name: "Remove online games" })).toBeEnabled();
     await strip.getByRole("button", { name: "Remove online games", exact: true }).click();
     const confirmation = page.getByRole("dialog", { name: "Remove online games", exact: true });

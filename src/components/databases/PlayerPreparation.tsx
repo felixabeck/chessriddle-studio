@@ -2,7 +2,7 @@ import {
   Alert,
   Button,
   Group,
-  NativeSelect,
+  Select,
   SegmentedControl,
   Skeleton,
   Stack,
@@ -15,6 +15,7 @@ import { RefreshCw } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DatabaseHandle, Player } from "@/bindings";
+import { fitSelectProps } from "@/components/common/fitSelectProps";
 import { inlineFailureMessage, notifyUnlessCancelled } from "@/components/files/notifyError";
 import DatabaseLoader from "@/components/panels/database/DatabaseLoader";
 import { isAbortError } from "@/components/panels/practice/prepareTimedRun";
@@ -357,6 +358,8 @@ export default function PlayerPreparation({
   });
   const onlineLabel = t("Databases.OpeningTree.Online", { defaultValue: "Online" });
   const bothLabel = t("Databases.Preparation.Both", { defaultValue: "Both" });
+  const periodOptions = opponentPeriodOptions(PERIOD_OPTIONS, t);
+  const minGamesOptions = PREPARATION_MIN_GAMES_OPTIONS.map((option) => String(option));
 
   return (
     <Stack className={classes.root} gap="sm" data-player-preparation>
@@ -373,23 +376,31 @@ export default function PlayerPreparation({
             { value: "black", label: t("Fen.Black") },
           ]}
         />
-        <NativeSelect
+        <Select
           className={classes.toolbarSelect}
           size="xs"
+          allowDeselect={false}
           label={t("Databases.OpeningTree.Since", { defaultValue: "Since" })}
           value={opponentPeriodToValue(period)}
-          onChange={(event) => handlePeriodChange(valueToOpponentPeriod(event.currentTarget.value))}
-          data={opponentPeriodOptions(PERIOD_OPTIONS, t)}
+          onChange={(value) => {
+            if (value == null) return;
+            handlePeriodChange(valueToOpponentPeriod(value));
+          }}
+          data={periodOptions}
+          {...fitSelectProps(periodOptions)}
         />
-        <NativeSelect
+        <Select
           className={classes.toolbarSelect}
           size="xs"
+          allowDeselect={false}
           label={t("Databases.Preparation.MinGames", { defaultValue: "Minimum games" })}
           value={String(minGames)}
-          onChange={(event) =>
-            handleMinGamesChange(parsePreparationMinGames(event.currentTarget.value))
-          }
-          data={PREPARATION_MIN_GAMES_OPTIONS.map((option) => String(option))}
+          onChange={(value) => {
+            if (value == null) return;
+            handleMinGamesChange(parsePreparationMinGames(value));
+          }}
+          data={minGamesOptions}
+          {...fitSelectProps(minGamesOptions)}
           data-preparation-min-games
         />
         <Button

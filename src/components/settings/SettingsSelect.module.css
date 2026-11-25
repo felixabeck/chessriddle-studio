@@ -1,0 +1,21 @@
+.previewOption {
+  position: relative;
+}
+
+.previewHit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Cover the option padding box (Mantine --combobox-option-padding, or this app's 12px
+   .option override) so hover anywhere on the row previews. The hit stays in flow;
+   the pseudo is positioned against .previewOption. */
+.previewHit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
