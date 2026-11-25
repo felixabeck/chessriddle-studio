@@ -29127,3 +29127,19 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario:** on the Preparation tab, click a line (its chapter opens in a tab), go back to the Preparation tab, click "Train these lines": the run trains in the existing chapter tab and an extra empty "New tab" remains in the tab strip.
 * **Open question:** close an unused `newTabId` once the first segment opened in another tab (changes the timed run's tab contract for "Train openings" as well), or have the preparation start detect that the planned first chapter is already open and launch from that tab (needs a second leave rule, rejected by d-20261124-34), or something else.
 * **Found by:** Claude Code build run (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), review-persisted-state lens on phase 5 of `tasks/plans/2026-11-24-opponent-preparation.md`, 2026-11-25; not reproduced in the running app.
+
+---
+
+## 2026-11-25 — filed through the inbox spool
+
+### The batch allocation test's threshold depends on the runner's CPU count and fails on CI
+
+* **ID:** f-20261125-03 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45529959373
+* **Repair owner:** 5deefa91-5f88-4872-a94c-a87dfaec39f3 on tuxedo-atlas, 2026-11-25T02:23:37Z
+* **Where:** `src-tauri/src/db/search.rs` `batch_tests::batch_working_memory_does_not_grow_with_a_table_per_unreached_position` (added in `ac34b938d`/push `725e3384d`, opponent preparation phase 1).
+* **Defect:** the test bounds the batch's peak allocation by half the cost of one empty `DashMap` per requested position, and that cost scales with DashMap's shard count, which follows the CPU count. On a many-core workstation the bound is several MB and the test passes; on the CI runners `single=2048` gives a 2 MB bound, while the unfiltered call's peak (3,192,369 B for 1,984 unreached positions) also contains the position-statistics cache entries it writes for every position, which existed before the change. The test therefore fails on runners with few CPUs although no table per position is allocated.
+* **Failure scenario (observed):** Test run 45529959373 (first red, head `725e3384d`) and 45530194354, jobs `rust` and `rust-macos-test`: "batch peak 3192369 bytes for 1984 unreached positions (filter=None) exceeded half of per-position DashMap cost (4063232 bytes, single=2048)".
+* **Proof:** the test passes on the CI runners and still fails against the pre-change per-position `DashMap` allocation.
+* **Found by:** Claude Code build run (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), post-push CI of opponent preparation, 2026-11-25.
