@@ -29607,6 +29607,10 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
   * **Proof:** `pnpm rust:windows:check` passes; a disposable Linux probe of the test's portable steps passed; the next push's rust-windows-test run is the execution proof.
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"30f1eebf32837202f45da4ba4110ffd7f7c777dc7b3849e43ca6d8fea4a94506","header_sha256":"ffecd27515875ea92f93b4d7ffecc3df8fea30883c09ecfe774074df24ee12ea","header_status":"handled","input_sha256":"5e955de0caab618e981f2d3eabad05f2db73aca17cdfa4be09b099613e42729f","kind":"mutation-receipt","operation":"9da82b989fe9cc9181ca9620447711e99b8fb37d18a2080d2c19f0925c75dd5d","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-07"],"target":"f-20261126-07","v":1} -->
 
+* **Correction (2026-11-26, same session):** rust-windows-test of Test run 45820095311 (on `519d17b52`) no longer hung and ran the test to its next step, where the assertion "mmapped .ecsi must block rename before SearchCache::quiesce_root" failed: the sidecar is opened with FILE_SHARE_DELETE (`open_regular_at` → `open_windows_child(.., allow_delete_share = true)`) and NTFS renames a mapped file opened that way. The premise was false; no product path relies on it (folder move and delete paths quiesce or invalidate the cache first). Commit `e4380eff4` removes it.
+  * **Proof:** `pnpm rust:windows:check` passes; one platform lens approved; the next push's rust-windows-test is the execution proof.
+<!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"ce22583993d2392fec8f198f88a5bc125198f46edb9a414fd6dd08fdd019f6cc","input_sha256":"22386b1beeb96abd4ab75e689b1be2411d589512af058effcc0839b0477b5a8d","kind":"mutation-receipt","operation":"3614cadacfdf07dc897f4020d545576c6350cd25227cf7e6a2a001b73b3bd6db","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-07"],"target":"f-20261126-07","v":1} -->
+
 ---
 
 ## 2026-11-26 — filed through the inbox spool
