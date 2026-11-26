@@ -4,6 +4,7 @@ import {
     expect,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
+    seedBoardLayouts,
     selectFilesTreeRow,
     test,
 } from "./fixtures";
@@ -246,6 +247,8 @@ test("import PGN into open repertoire without reference DB shows review mark, Ma
     ];
     const chapter = { pgn: initialPgn, stamp: "c".repeat(64), revision: REVISION, present: true };
 
+    // The spec is about the import, not the repertoire preset: keep the two-pane default layout.
+    await seedBoardLayouts(page);
     await mockScenario({
         commands: filesWorkspaceCommands([[repertoireFile]], {
             count_pgn_games: { result: 1 },

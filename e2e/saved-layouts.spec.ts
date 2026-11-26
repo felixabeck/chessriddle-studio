@@ -412,4 +412,35 @@ test("saved-layouts: narrow save and manage layout dialogs fit without overflow"
     await waitForTransitionsSettled(page);
     await page.mouse.move(0, 0);
     await expect(manageDialog).toHaveScreenshot("saved-layouts-manage-dialog.png");
+
+    // Delete confirmation prompt wraps the 40-char spaceless name without horizontal overflow.
+    await manageDialog.getByRole("button", { name: "Delete", exact: true }).click();
+    const deletePrompt = manageDialog.getByText(`Delete layout "${longLayoutName}"?`, {
+        exact: true,
+    });
+    await expect(deletePrompt).toBeVisible();
+    expect(
+        await deletePrompt.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await assertNoHorizontalOverflow();
+    await assertNothingClipped(manageDialog, { mode: "reachable" });
+    await manageDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    // Replace confirmation prompt wraps the same 40-char spaceless name without horizontal overflow.
+    await manageDialog.getByRole("button", { name: "Save layout as…", exact: true }).click();
+    await expect(saveDialog).toBeVisible();
+    await saveDialog
+        .getByRole("textbox", { name: "Layout name", exact: true })
+        .fill(longLayoutName);
+    await saveDialog.getByRole("button", { name: "Save", exact: true }).click();
+    const replacePrompt = saveDialog.getByText(
+        `A saved layout named "${longLayoutName}" already exists. Replace it?`,
+        { exact: true },
+    );
+    await expect(replacePrompt).toBeVisible();
+    expect(
+        await replacePrompt.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await assertNoHorizontalOverflow();
+    await assertNothingClipped(saveDialog, { mode: "reachable" });
 });

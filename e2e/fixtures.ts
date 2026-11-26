@@ -13,7 +13,7 @@ import type {
     EngineInstallRequest,
     InstalledEngineResult,
 } from "../src/bindings/generated";
-import type { BoardArrangement } from "../src/state/boardArrangement";
+import { defaultBoardArrangement, type BoardArrangement } from "../src/state/boardArrangement";
 import { needsTwoPaneStack } from "../src/state/paneLayout";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import type { Tab } from "../src/state/workspaceTypes";
@@ -99,11 +99,7 @@ export function bestMovesPayload(
     };
 }
 
-export const DEFAULT_BOARD_ARRANGEMENT: BoardArrangement = {
-    direction: "row",
-    first: "left",
-    second: { direction: "column", first: "topRight", second: "bottomRight" },
-};
+export const DEFAULT_BOARD_ARRANGEMENT: BoardArrangement = defaultBoardArrangement();
 
 export async function seedBoardLayouts(
     page: Page,
