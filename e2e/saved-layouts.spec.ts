@@ -55,6 +55,8 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
     assertAccessible,
     assertNoHorizontalOverflow,
 }) => {
+    // Runs every layout flow in one test (~53 s on CI vs. the default 45 s timeout).
+    test.setTimeout(120_000);
     await seedAnalysisEngines(page, [
         { id: "layout-e2e-engine", name: "Layout Stockfish", handleId: "e2e-engine-handle" },
     ]);
