@@ -29596,13 +29596,16 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### CI rust-windows-test hangs on master in the Windows folder-switch quiesce test
 
-* **ID:** f-20261126-07 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-07 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **CI run:** 45802684322
 * **First red:** run 45802684322 on `99500cdae`, job rust-windows-test (previous red 45794137032 failed, not hung).
 * **Failure scenario:** job rust-windows-test of Test run 45802684322 ran 30 min into its job timeout and was cancelled while `infra::path_authority::windows_tests::windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_unwind_safety` was running; every other test finished. Its later sections (engine actor drain via `EngineSupervisor::quiesce_executables`, case folding, backstop unwind) had never run on Windows before, because the test failed earlier in run 45794137032. Linux and macOS jobs are green.
 * **Open question:** does `quiesce_executables` (actor drain or process termination wait) never return on Windows for a test actor holding a file lease, or is the hang in another section?
 * **Spotted outside diff:** no, folder-settings build (2026-11-26), which owns the test.
+* **Handled (2026-11-26, Claude Code (Opus 5.5), folder-settings build):** commit `a3f3ffb95`. Answer to the open question: neither the engine drain nor folding; the hang was `windows_quiesce_drains_sqlite_and_ecsi_before_rename` (named by the split test, run 45808657841). Its fixture database held only an `Info` table, so `DatabaseRepository::connection` started a schema upgrade with `Handle::try_current()` → `runtime.spawn` and then blocked in `UpgradeJob::wait(None)` on the `#[tokio::test]` current-thread runtime's only thread, so the upgrade never ran. The test now seeds the shared current-schema fixture (`create_schema_database_file`) and runs as a plain `#[test]`. Production calls these only from `BLOCKING_GATEWAY`/`spawn_blocking` threads (two lenses traced every caller), so it is a test defect.
+  * **Proof:** `pnpm rust:windows:check` passes; a disposable Linux probe of the test's portable steps passed; the next push's rust-windows-test run is the execution proof.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"30f1eebf32837202f45da4ba4110ffd7f7c777dc7b3849e43ca6d8fea4a94506","header_sha256":"ffecd27515875ea92f93b4d7ffecc3df8fea30883c09ecfe774074df24ee12ea","header_status":"handled","input_sha256":"5e955de0caab618e981f2d3eabad05f2db73aca17cdfa4be09b099613e42729f","kind":"mutation-receipt","operation":"9da82b989fe9cc9181ca9620447711e99b8fb37d18a2080d2c19f0925c75dd5d","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-07"],"target":"f-20261126-07","v":1} -->
 
 ---
 
