@@ -16,9 +16,13 @@ vi.mock("@mantine/hooks", async () => {
     useElementSize: () => ({ ref: useRef(null), width: measured.width, height: 720 }),
   };
 });
+const enginesMock = vi.hoisted(() => ({
+  atom: null as PrimitiveAtom<{ id: string; name: string; loaded?: boolean }[] | undefined> | null,
+}));
 vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
-  return { fontSizeAtom: atom(100) };
+  enginesMock.atom = atom<{ id: string; name: string; loaded?: boolean }[] | undefined>([]);
+  return { fontSizeAtom: atom(100), enginesAtom: enginesMock.atom };
 });
 const coachMock = vi.hoisted(() => ({ atom: null as PrimitiveAtom<boolean> | null }));
 vi.mock("@/state/coach", async () => {
@@ -1134,7 +1138,7 @@ test("unmount during active drag cleans up listeners and capture; placing ends o
 });
 
 test("pending focus whose target never mounts does not steal focus later; zero-targets renders Board.Arrange.NoTargets", async () => {
-  const threeTakenOut: BoardArrangement = {
+  const fourTakenOut: BoardArrangement = {
     direction: "row",
     first: "left",
     second: {
@@ -1142,16 +1146,20 @@ test("pending focus whose target never mounts does not steal focus later; zero-t
       first: "analysis",
       second: {
         direction: "column",
-        first: "database",
+        first: "report",
         second: {
           direction: "column",
-          first: "annotate",
-          second: { direction: "column", first: "topRight", second: "bottomRight" },
+          first: "database",
+          second: {
+            direction: "column",
+            first: "annotate",
+            second: { direction: "column", first: "topRight", second: "bottomRight" },
+          },
         },
       },
     },
   };
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(threeTakenOut));
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(fourTakenOut));
   await renderAt(1400, true);
 
   // Zero-targets branch: placing "info" violates the strip rule so 0 targets are offered.
@@ -1224,7 +1232,9 @@ test("placing Escape cancels when focus is on body, and does not steal Escape fr
 });
 
 test("exposes element portal targets for base, panel and special-char engine leaves, restores focus safely, and drops removed engine targets in the same render", async () => {
-  const specialEngine = engineAreaId('legacy-engine-identity:sf"16\\x');
+  const specialEngineId = 'legacy-engine-identity:sf"16\\x';
+  const specialEngine = engineAreaId(specialEngineId);
+  store.set(enginesMock.atom!, [{ id: specialEngineId, name: "Stockfish", loaded: true }]);
   const withEngine = placeArea(defaultBoardArrangement(), specialEngine, "left", "bottom");
   localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withEngine));
 
@@ -1293,4 +1303,591 @@ test("exposes element portal targets for base, panel and special-char engine lea
     ...container.querySelectorAll<HTMLElement>("[data-board-area]"),
   ].filter((el) => el.dataset.boardArea === specialEngine);
   expect(remainingEngineTargets).toEqual([]);
+});
+
+test("engine return via keyboard placing focuses returned card grip, or Analysis tab, or notation grip when strip is hidden", async () => {
+  const engId = "sf:1";
+  const engArea = engineAreaId(engId);
+  store.set(enginesMock.atom!, [{ id: engId, name: "Stockfish", loaded: true }]);
+
+  // Case 1: returned card grip is rendered -> focuses returned card grip.
+  const withEngine = placeArea(defaultBoardArrangement(), engArea, "left", "bottom");
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withEngine));
+  let showCardInPanel = true;
+  function FocusProbe() {
+    const ctx = useContext(BoardArrangementContext);
+    return (
+      <>
+        <Portal target={ctx.getAreaTarget("topRight")}>
+          <button type="button" role="tab" data-panel-tab="analysis">
+            Analysis
+          </button>
+          {showCardInPanel && !ctx.shownEngineAreas.has(engArea) && (
+            <button type="button" data-arrange-grip={engArea}>
+              panel-card-grip
+            </button>
+          )}
+        </Portal>
+        <Portal target={ctx.getAreaTarget("bottomRight")}>
+          <button type="button" data-arrange-grip="bottomRight">
+            notation-grip
+          </button>
+        </Portal>
+      </>
+    );
+  }
+  measured.width = 1400;
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider>
+          <BoardTabLayout arrangeable>
+            <ArrangementProbe />
+            <FocusProbe />
+          </BoardTabLayout>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  await act(async () => latestContext!.startPlacing(engArea, engArea));
+  const returnBtn = [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="board-arrange-placing"] button',
+    ),
+  ].find((btn) => btn.textContent === "Board.Arrange.BackIntoEngines")!;
+  expect(returnBtn).toBeDefined();
+  await act(async () => returnBtn.click());
+  expect(document.activeElement?.textContent).toBe("panel-card-grip");
+
+  // Case 2: card not rendered (another tab active), strip visible -> focuses Analysis strip tab.
+  showCardInPanel = false;
+  await act(async () => store.set(boardArrangementAtom, withEngine));
+  await act(async () => latestContext!.startPlacing(engArea, engArea));
+  const returnBtn2 = [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="board-arrange-placing"] button',
+    ),
+  ].find((btn) => btn.textContent === "Board.Arrange.BackIntoEngines")!;
+  await act(async () => returnBtn2.click());
+  await act(async () => {
+    await new Promise((r) => requestAnimationFrame(r));
+  });
+  expect(document.activeElement?.textContent).toBe("Analysis");
+
+  // Case 3: strip hidden with Analysis selected (card grip mounted inside `<div hidden>`) ->
+  // both keyboard return and × (`returnEngine`) skip the hidden subtree and focus the notation grip.
+  showCardInPanel = true;
+  localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "true");
+  await act(async () => {
+    latestContext!.setTabsHidden(true);
+    store.set(boardArrangementAtom, withEngine);
+  });
+  await act(async () => latestContext!.startPlacing(engArea, engArea));
+  const returnBtn3 = [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="board-arrange-placing"] button',
+    ),
+  ].find((btn) => btn.textContent === "Board.Arrange.BackIntoEngines")!;
+  await act(async () => returnBtn3.click());
+  await act(async () => {
+    await new Promise((r) => requestAnimationFrame(r));
+  });
+  expect(document.activeElement?.textContent).toBe("notation-grip");
+
+  // Clicking × (`returnEngine`) on an engine window while the strip is hidden also removes the leaf
+  // and lands focus on the notation grip rather than the hidden panel card grip.
+  await act(async () => store.set(boardArrangementAtom, withEngine));
+  (document.activeElement as HTMLElement | null)?.blur();
+  await act(async () => latestContext!.returnEngine(engArea));
+  await act(async () => {
+    await new Promise((r) => requestAnimationFrame(r));
+  });
+  expect(latestContext!.shownEngineAreas.has(engArea)).toBe(false);
+  expect(store.get(boardArrangementAtom)).toEqual(defaultBoardArrangement());
+  expect(document.activeElement?.textContent).toBe("notation-grip");
+});
+
+test("engine card grip drag reorders even in stacked (non-arranged) mode", async () => {
+  store.set(enginesMock.atom!, [
+    { id: "e1", name: "One", loaded: true },
+    { id: "e2", name: "Two", loaded: true },
+  ]);
+  const onReorder = vi.fn();
+  let listEl: HTMLDivElement | null = null;
+  function StackedEngineList() {
+    const ctx = useContext(BoardArrangementContext);
+    return (
+      <Portal target={ctx.getAreaTarget("topRight")}>
+        <div
+          ref={(el) => {
+            listEl = el;
+          }}
+        >
+          {["e1", "e2"].map((id) => (
+            <div key={id} data-engine-card-id={id}>
+              <button
+                type="button"
+                data-arrange-grip={engineAreaId(id)}
+                onPointerDown={(e) =>
+                  ctx.beginDrag(engineAreaId(id), e, {
+                    listContainer: listEl,
+                    reorderIds: ["e1", "e2"],
+                    onReorder,
+                  })
+                }
+              >
+                {id}
+              </button>
+            </div>
+          ))}
+        </div>
+      </Portal>
+    );
+  }
+  measured.width = 500; // stacked mode -> arrangingAvailable is false
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider>
+          <BoardTabLayout arrangeable>
+            <ArrangementProbe />
+            <StackedEngineList />
+          </BoardTabLayout>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  expect(latestContext!.arrangingAvailable).toBe(false);
+  const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+  vi.spyOn(layoutEl, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 700));
+  vi.spyOn(listEl!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 400, 120));
+  const cards = [...listEl!.querySelectorAll<HTMLElement>("[data-engine-card-id]")];
+  vi.spyOn(cards[0], "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 400, 50));
+  vi.spyOn(cards[1], "getBoundingClientRect").mockReturnValue(new DOMRect(0, 160, 400, 50));
+
+  const grip0 = cards[0].querySelector<HTMLButtonElement>("button")!;
+  grip0.setPointerCapture = vi.fn();
+  grip0.releasePointerCapture = vi.fn();
+  await act(async () => {
+    grip0.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 1,
+        clientX: 20,
+        clientY: 120,
+      }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 20, clientY: 205 }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 20, clientY: 205 }),
+    );
+  });
+  expect(onReorder).toHaveBeenCalledWith(0, 1);
+
+  // Upward reorder: dragging card 1 above card 0's midpoint calls onReorder(1, 0).
+  onReorder.mockClear();
+  const grip1 = cards[1].querySelector<HTMLButtonElement>("button")!;
+  grip1.setPointerCapture = vi.fn();
+  grip1.releasePointerCapture = vi.fn();
+  await act(async () => {
+    grip1.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 2,
+        clientX: 20,
+        clientY: 180,
+      }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 2, clientX: 20, clientY: 105 }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 2, clientX: 20, clientY: 105 }),
+    );
+  });
+  expect(onReorder).toHaveBeenCalledWith(1, 0);
+});
+
+test("overflowed engine list clips reorder hit-testing to its scroll viewport, suppresses preview on own slot, and places on the board outside", async () => {
+  store.set(enginesMock.atom!, [
+    { id: "e1", name: "One", loaded: true },
+    { id: "e2", name: "Two", loaded: true },
+  ]);
+  const onReorder = vi.fn();
+  let viewportEl: HTMLDivElement | null = null;
+  let listEl: HTMLDivElement | null = null;
+  function OverflowedEngineList() {
+    const ctx = useContext(BoardArrangementContext);
+    return (
+      <Portal target={ctx.getAreaTarget("topRight")}>
+        <div
+          ref={(el) => {
+            viewportEl = el;
+          }}
+          style={{ overflowY: "auto" }}
+        >
+          <div
+            ref={(el) => {
+              listEl = el;
+            }}
+          >
+            {["e1", "e2"].map((id) => (
+              <div key={id} data-engine-card-id={id}>
+                <button
+                  type="button"
+                  data-arrange-grip={engineAreaId(id)}
+                  onPointerDown={(e) =>
+                    ctx.beginDrag(engineAreaId(id), e, {
+                      listContainer: listEl,
+                      reorderIds: ["e1", "e2"],
+                      onReorder,
+                    })
+                  }
+                >
+                  {id}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Portal>
+    );
+  }
+  measured.width = 1400;
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider>
+          <BoardTabLayout arrangeable>
+            <ArrangementProbe />
+            <OverflowedEngineList />
+          </BoardTabLayout>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+  vi.spyOn(layoutEl, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1400, 800));
+  const leftTile = latestContext!.getAreaTarget("left")!;
+  const topRightTile = latestContext!.getAreaTarget("topRight")!;
+  const bottomRightTile = latestContext!.getAreaTarget("bottomRight")!;
+  vi.spyOn(leftTile, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 700, 800));
+  vi.spyOn(topRightTile, "getBoundingClientRect").mockReturnValue(new DOMRect(700, 0, 700, 300));
+  vi.spyOn(bottomRightTile, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(700, 300, 700, 500),
+  );
+
+  // Scroll viewport ends at y=280, while the list overflows down to y=500 over the notation tile.
+  vi.spyOn(viewportEl!, "getBoundingClientRect").mockReturnValue(new DOMRect(700, 40, 680, 240));
+  vi.spyOn(listEl!, "getBoundingClientRect").mockReturnValue(new DOMRect(700, 40, 680, 460));
+  const cards = [...listEl!.querySelectorAll<HTMLElement>("[data-engine-card-id]")];
+  vi.spyOn(cards[0], "getBoundingClientRect").mockReturnValue(new DOMRect(700, 40, 680, 200));
+  vi.spyOn(cards[1], "getBoundingClientRect").mockReturnValue(new DOMRect(700, 250, 680, 250));
+
+  const grip0 = cards[0].querySelector<HTMLButtonElement>("button")!;
+  grip0.setPointerCapture = vi.fn();
+  grip0.releasePointerCapture = vi.fn();
+
+  await act(async () => {
+    grip0.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 1,
+        clientX: 720,
+        clientY: 60,
+      }),
+    );
+    // Hovering over the card's own slot inside the visible viewport shows no preview at all.
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 720, clientY: 120 }),
+    );
+  });
+  expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
+
+  // Moving below the visible scroll viewport (y=420, inside the unclipped listEl 40..500!) hits
+  // the notation tile (300..800) below rather than reorder, and releasing places the engine on bottomRight.
+  await act(async () => {
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 900, clientY: 420 }),
+    );
+  });
+  const preview = container.querySelector('[data-testid="board-arrange-preview"]')!;
+  expect(preview).not.toBeNull();
+  expect(preview.getAttribute("data-arrange-kind")).toBe("place");
+  expect(preview.getAttribute("data-arrange-target")).toBe("bottomRight");
+
+  await act(async () => {
+    window.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 900, clientY: 420 }),
+    );
+  });
+  expect(onReorder).not.toHaveBeenCalled();
+  expect(latestContext!.shownEngineAreas.has(engineAreaId("e1"))).toBe(true);
+});
+
+test("reordering when the leading card is scrolled out of the viewport maps to the full-list index", async () => {
+  store.set(enginesMock.atom!, [
+    { id: "e1", name: "One", loaded: true },
+    { id: "e2", name: "Two", loaded: true },
+    { id: "e3", name: "Three", loaded: true },
+  ]);
+  const onReorder = vi.fn();
+  let viewportEl: HTMLDivElement | null = null;
+  let listEl: HTMLDivElement | null = null;
+  function ScrolledThreeCardList() {
+    const ctx = useContext(BoardArrangementContext);
+    return (
+      <Portal target={ctx.getAreaTarget("topRight")}>
+        <div
+          ref={(el) => {
+            viewportEl = el;
+          }}
+          style={{ overflowY: "auto" }}
+        >
+          <div
+            ref={(el) => {
+              listEl = el;
+            }}
+          >
+            {["e1", "e2", "e3"].map((id) => (
+              <div key={id} data-engine-card-id={id}>
+                <button
+                  type="button"
+                  data-arrange-grip={engineAreaId(id)}
+                  onPointerDown={(e) =>
+                    ctx.beginDrag(engineAreaId(id), e, {
+                      listContainer: listEl,
+                      reorderIds: ["e1", "e2", "e3"],
+                      onReorder,
+                    })
+                  }
+                >
+                  {id}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Portal>
+    );
+  }
+  measured.width = 500;
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider>
+          <BoardTabLayout arrangeable>
+            <ArrangementProbe />
+            <ScrolledThreeCardList />
+          </BoardTabLayout>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+  vi.spyOn(layoutEl, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 700));
+  vi.spyOn(viewportEl!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 400, 200));
+  vi.spyOn(listEl!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 300));
+  const cards = [...listEl!.querySelectorAll<HTMLElement>("[data-engine-card-id]")];
+  // Card 0 (e1) is scrolled completely above the viewport (0..80 vs viewport 100..300).
+  vi.spyOn(cards[0], "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 80));
+  vi.spyOn(cards[1], "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 400, 80));
+  vi.spyOn(cards[2], "getBoundingClientRect").mockReturnValue(new DOMRect(0, 190, 400, 80));
+
+  const grip1 = cards[1].querySelector<HTMLButtonElement>("button")!;
+  grip1.setPointerCapture = vi.fn();
+  grip1.releasePointerCapture = vi.fn();
+  await act(async () => {
+    grip1.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 1,
+        clientX: 20,
+        clientY: 120,
+      }),
+    );
+    // Drop below card 2's midpoint (230): visibleSlot=2 must remap to fullSlot=3 -> onReorder(1, 2).
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 20, clientY: 260 }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 20, clientY: 260 }),
+    );
+  });
+  expect(onReorder).toHaveBeenCalledWith(1, 2);
+});
+
+test("pointer-dragging an engine window over the tab list or the Analysis area header returns it", async () => {
+  const engArea = engineAreaId("sf");
+  store.set(enginesMock.atom!, [{ id: "sf", name: "Stockfish", loaded: true }]);
+
+  // (a) Analysis in the tab strip -> dropping over [data-board-tab-list="true"] returns the engine.
+  const withEngine = placeArea(defaultBoardArrangement(), engArea, "left", "bottom");
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withEngine));
+
+  let headerEl: HTMLDivElement | null = null;
+  let tabListEl: HTMLDivElement | null = null;
+  let analysisHeaderEl: HTMLDivElement | null = null;
+  function DragReturnProbe() {
+    const ctx = useContext(BoardArrangementContext);
+    const engineTarget = ctx.getAreaTarget(engArea);
+    const analysisTarget = ctx.getAreaTarget("analysis");
+    return (
+      <>
+        <Portal target={ctx.getAreaTarget("topRight")}>
+          <div
+            ref={(el) => {
+              tabListEl = el;
+            }}
+            data-board-tab-list="true"
+          />
+        </Portal>
+        {ctx.shownPanelAreas.has("analysis") && analysisTarget && (
+          <Portal target={analysisTarget}>
+            <div
+              ref={(el) => {
+                analysisHeaderEl = el;
+              }}
+              data-panel-header="analysis"
+            />
+          </Portal>
+        )}
+        {engineTarget && (
+          <Portal target={engineTarget}>
+            <div
+              ref={(el) => {
+                headerEl = el;
+              }}
+              onPointerDown={(e) => ctx.beginDrag(engArea, e)}
+            >
+              header
+            </div>
+          </Portal>
+        )}
+      </>
+    );
+  }
+
+  measured.width = 1400;
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider>
+          <BoardTabLayout arrangeable>
+            <ArrangementProbe />
+            <DragReturnProbe />
+          </BoardTabLayout>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+  const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+  vi.spyOn(layoutEl, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1400, 800));
+  vi.spyOn(tabListEl!, "getBoundingClientRect").mockReturnValue(new DOMRect(700, 0, 700, 40));
+
+  headerEl!.setPointerCapture = vi.fn();
+  headerEl!.releasePointerCapture = vi.fn();
+  await act(async () => {
+    headerEl!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 1,
+        clientX: 100,
+        clientY: 600,
+      }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 800, clientY: 20 }),
+    );
+  });
+  const tabReturnPreview = container.querySelector('[data-testid="board-arrange-preview"]')!;
+  expect(tabReturnPreview.getAttribute("data-arrange-kind")).toBe("return");
+  expect(tabReturnPreview.getAttribute("data-arrange-target")).toBe("tabs");
+  await act(async () => {
+    window.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 800, clientY: 20 }),
+    );
+  });
+  expect(store.get(boardArrangementAtom)).toEqual(defaultBoardArrangement());
+
+  // (b) Analysis as its own area -> dropping over [data-panel-header="analysis"] returns the engine.
+  const withAnalysisAndEngine = placeArea(
+    placeArea(defaultBoardArrangement(), "analysis", "left", "right"),
+    engArea,
+    "left",
+    "bottom",
+  );
+  await act(async () => store.set(boardArrangementAtom, withAnalysisAndEngine));
+  vi.spyOn(analysisHeaderEl!, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(400, 0, 300, 32),
+  );
+  headerEl!.setPointerCapture = vi.fn();
+  headerEl!.releasePointerCapture = vi.fn();
+  await act(async () => {
+    headerEl!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        pointerId: 2,
+        clientX: 100,
+        clientY: 600,
+      }),
+    );
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerId: 2, clientX: 500, clientY: 16 }),
+    );
+  });
+  const enginesReturnPreview = container.querySelector('[data-testid="board-arrange-preview"]')!;
+  expect(enginesReturnPreview.getAttribute("data-arrange-kind")).toBe("return");
+  expect(enginesReturnPreview.getAttribute("data-arrange-target")).toBe("engines");
+  await act(async () => {
+    window.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 2, clientX: 500, clientY: 16 }),
+    );
+  });
+  expect(latestContext!.shownEngineAreas.has(engArea)).toBe(false);
+  expect(store.get(boardArrangementAtom)).toEqual(
+    placeArea(defaultBoardArrangement(), "analysis", "left", "right"),
+  );
+});
+
+test("unloaded engine leaves stay stored without rendering a tile, and deleted engine leaves are pruned", async () => {
+  const unloadedArea = engineAreaId("unloaded-eng");
+  const deletedArea = engineAreaId("deleted-eng");
+  const start = placeArea(
+    placeArea(defaultBoardArrangement(), unloadedArea, "left", "bottom"),
+    deletedArea,
+    "topRight",
+    "top",
+  );
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(start));
+  store.set(enginesMock.atom!, [{ id: "unloaded-eng", name: "Unloaded", loaded: false }]);
+
+  measured.width = 1400;
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider>
+          <BoardTabLayout arrangeable>
+            <ArrangementProbe />
+          </BoardTabLayout>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+
+  // Unloaded engine is hidden from shownEngineAreas/Mosaic tiles, but kept in stored arrangement.
+  // Deleted engine (absent from loaded engines list) is pruned from stored arrangement.
+  expect(latestContext!.shownEngineAreas.has(unloadedArea)).toBe(false);
+  expect(latestContext!.shownEngineAreas.has(deletedArea)).toBe(false);
+  expect(store.get(boardArrangementAtom)).toEqual(
+    placeArea(defaultBoardArrangement(), unloadedArea, "left", "bottom"),
+  );
 });

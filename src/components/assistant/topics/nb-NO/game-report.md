@@ -2,12 +2,12 @@
 id: game-report
 title: Partirapport
 summary: Kjør en automatisk computergjennomgang av et parti for å se nøyaktighet, evalueringsgraf, nøkkeløyeblikk og trekkklassifiseringer.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 Partirapporten analyserer hvert trekk i hovedvarianten med en lokal sjakkcomputer og oppsummerer partiets nøyaktighet og feil.
 
-For å lage en rapport åpner du et parti på analysebrettet, bytter til {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} og klikker {{label:Board.Analysis.GenerateReport}} (eller trykker hurtigtasten {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+For å lage en rapport åpner du et parti på analysebrettet, bytter til fanen {{label:Board.Analysis.Report}} og klikker {{label:Board.Analysis.GenerateReport}} (eller trykker hurtigtasten {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 I dialogen {{label:Board.Analysis.GenerateReport}}:
 - Velg en lokal {{label:Common.Engine}}. Hvis ingen er installert, legg til en på [[page:engines]].

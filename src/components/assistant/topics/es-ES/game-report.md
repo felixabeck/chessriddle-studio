@@ -2,12 +2,12 @@
 id: game-report
 title: Informe de partida
 summary: Ejecuta una revisión automática con motor de una partida para ver la precisión, la gráfica de evaluación, los momentos clave y la clasificación de jugadas.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 El informe de partida analiza cada jugada de la línea principal con un motor de ajedrez local y resume la precisión y los errores de la partida.
 
-Para generar un informe, abre una partida en el tablero de análisis, cambia a {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} y haz clic en {{label:Board.Analysis.GenerateReport}} (o pulsa el atajo {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+Para generar un informe, abre una partida en el tablero de análisis, cambia a la pestaña {{label:Board.Analysis.Report}} y haz clic en {{label:Board.Analysis.GenerateReport}} (o pulsa el atajo {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 En el diálogo {{label:Board.Analysis.GenerateReport}}:
 - Elige un {{label:Common.Engine}} local. Si no tienes ninguno instalado, añade uno en [[page:engines]].

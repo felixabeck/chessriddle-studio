@@ -2,12 +2,12 @@
 id: game-report
 title: Отчёт по партии
 summary: Автоматический анализ партии движком с отображением точности, графика оценки, ключевых моментов и классификации ходов.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 Отчёт по партии анализирует каждый ход главной линии с помощью локального шахматного движка и подводит итог по точности и ошибкам.
 
-Чтобы создать отчёт, откройте партию на доске анализа, перейдите в {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} и нажмите {{label:Board.Analysis.GenerateReport}} (или горячую клавишу {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+Чтобы создать отчёт, откройте партию на доске анализа, перейдите на вкладку {{label:Board.Analysis.Report}} и нажмите {{label:Board.Analysis.GenerateReport}} (или горячую клавишу {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 В диалоге {{label:Board.Analysis.GenerateReport}}:
 - Выберите локальный {{label:Common.Engine}}. Если ни один не установлен, добавьте его на странице [[page:engines]].

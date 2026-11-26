@@ -6,7 +6,7 @@ summary: Run an automated engine review of a game to see accuracy, evaluation gr
 
 The game report analyzes every move of the mainline with a local chess engine and summarizes the game's accuracy and mistakes.
 
-To generate a report, open a game on the analysis board, switch to {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}}, and click {{label:Board.Analysis.GenerateReport}} (or press the {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} shortcut).
+To generate a report, open a game on the analysis board, switch to the {{label:Board.Analysis.Report}} tab, and click {{label:Board.Analysis.GenerateReport}} (or press the {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} shortcut).
 
 In the {{label:Board.Analysis.GenerateReport}} dialog:
 - Choose a local {{label:Common.Engine}}. If none is installed, add one on [[page:engines]].

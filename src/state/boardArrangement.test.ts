@@ -159,13 +159,17 @@ describe("validateMosaicTree and isValidBoardArrangement", () => {
             },
         ],
         [
-            "strip rule violated (all four always-present panels)",
+            "strip rule violated (all five always-present panels)",
             {
                 direction: "row",
                 first: {
                     direction: "column",
                     first: "left",
-                    second: { direction: "row", first: "analysis", second: "database" },
+                    second: {
+                        direction: "row",
+                        first: "analysis",
+                        second: { direction: "row", first: "report", second: "database" },
+                    },
                 },
                 second: {
                     direction: "column",
@@ -266,6 +270,40 @@ describe("placeArea, returnPanelArea and canTakeOutPanel", () => {
         expect(isValidBoardArrangement(result)).toBe(true);
     });
 
+    test.each([
+        [
+            "left",
+            { direction: "row", first: engineAreaId("sf"), second: "left", splitPercentage: 30 },
+        ],
+        [
+            "right",
+            { direction: "row", first: "left", second: engineAreaId("sf"), splitPercentage: 70 },
+        ],
+        [
+            "top",
+            { direction: "column", first: engineAreaId("sf"), second: "left", splitPercentage: 30 },
+        ],
+        [
+            "bottom",
+            { direction: "column", first: "left", second: engineAreaId("sf"), splitPercentage: 70 },
+        ],
+    ] as const)(
+        "places an engine window on the %s side of a target with a 30 %% share",
+        (side, expected) => {
+            const result = placeArea(defaultBoardArrangement(), engineAreaId("sf"), "left", side);
+            expect(result).toEqual({
+                direction: "row",
+                first: expected,
+                second: {
+                    direction: "column",
+                    first: "topRight",
+                    second: "bottomRight",
+                },
+            });
+            expect(isValidBoardArrangement(result)).toBe(true);
+        },
+    );
+
     test("moves an existing area by removing it first and keeping sibling splits", () => {
         const start: BoardArrangement = {
             direction: "row",
@@ -348,22 +386,23 @@ describe("placeArea, returnPanelArea and canTakeOutPanel", () => {
         // Target must be in the tree.
         expect(placeArea(start, "database", "analysis", "bottom")).toBe(start);
 
-        // Strip rule: taking out the fourth always-present panel is refused, while coach and
+        // Strip rule: taking out the fifth always-present panel is refused, while coach and
         // moving an already-present panel are allowed.
-        let threeOut = placeArea(start, "analysis", "left", "bottom");
-        threeOut = placeArea(threeOut, "database", "topRight", "top");
-        threeOut = placeArea(threeOut, "annotate", "bottomRight", "bottom");
-        expect(canTakeOutPanel(threeOut, "info")).toBe(false);
-        expect(canTakeOutPanel(threeOut, "analysis")).toBe(false);
-        expect(canTakeOutPanel(threeOut, "coach")).toBe(true);
-        expect(placeArea(threeOut, "info", "left", "right")).toBe(threeOut);
+        let fourOut = placeArea(start, "analysis", "left", "bottom");
+        fourOut = placeArea(fourOut, "report", "left", "top");
+        fourOut = placeArea(fourOut, "database", "topRight", "top");
+        fourOut = placeArea(fourOut, "annotate", "bottomRight", "bottom");
+        expect(canTakeOutPanel(fourOut, "info")).toBe(false);
+        expect(canTakeOutPanel(fourOut, "analysis")).toBe(false);
+        expect(canTakeOutPanel(fourOut, "coach")).toBe(true);
+        expect(placeArea(fourOut, "info", "left", "right")).toBe(fourOut);
 
-        const withCoach = placeArea(threeOut, "coach", "topRight", "right");
-        expect(withCoach).not.toBe(threeOut);
+        const withCoach = placeArea(fourOut, "coach", "topRight", "right");
+        expect(withCoach).not.toBe(fourOut);
         expect(isValidBoardArrangement(withCoach)).toBe(true);
 
-        const movedExisting = placeArea(threeOut, "database", "left", "right");
-        expect(movedExisting).not.toBe(threeOut);
+        const movedExisting = placeArea(fourOut, "database", "left", "right");
+        expect(movedExisting).not.toBe(fourOut);
         expect(isValidBoardArrangement(movedExisting)).toBe(true);
     });
 

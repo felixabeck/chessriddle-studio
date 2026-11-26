@@ -2,12 +2,12 @@
 id: game-report
 title: Partiebericht
 summary: Eine automatische Engine-Auswertung einer Partie erstellen, um Genauigkeit, Bewertungsverlauf, Schlüsselmomente und Zugklassifikationen zu sehen.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 Der Partiebericht analysiert jeden Zug der Hauptvariante mit einer lokalen Schach-Engine und fasst die Genauigkeit sowie Fehler der Partie zusammen.
 
-Um einen Bericht zu erstellen, öffne eine Partie auf dem Analysebrett, wechsle zu {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} und klicke auf {{label:Board.Analysis.GenerateReport}} (oder drücke das Tastenkürzel {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+Um einen Bericht zu erstellen, öffne eine Partie auf dem Analysebrett, wechsle zum Tab {{label:Board.Analysis.Report}} und klicke auf {{label:Board.Analysis.GenerateReport}} (oder drücke das Tastenkürzel {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 Im Dialog {{label:Board.Analysis.GenerateReport}}:
 - Wähle eine lokale {{label:Common.Engine}}. Falls keine installiert ist, füge unter [[page:engines]] eine hinzu.

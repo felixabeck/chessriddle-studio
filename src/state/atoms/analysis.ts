@@ -1,14 +1,11 @@
-/** Engine analysis: score display, per-tab engine results and settings, best-move arrows and the pinned engine bar. */
+/** Engine analysis: score display, per-tab engine results and settings, and best-move arrows. */
 import { atom } from "jotai";
-import { atomFamily, atomWithStorage } from "jotai/utils";
-import { z } from "zod";
+import { atomFamily } from "jotai/utils";
 import type { BestMoves, EngineTerminalSnapshot } from "@/bindings";
 import { analysisSearch } from "@/utils/analysisSearch";
 import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
 import { getWinChance, normalizeScore } from "@/utils/score";
-import { createZodStorage } from "../utils";
 import { projectAnalysisSettings, type AnalysisSettings } from "../analysisSettings";
-import { PINNED_PLACEMENTS, type PinnedPlacement } from "./boardPanels";
 import { enginesAtom } from "./engineOwners";
 import { tabAtomFamily, tabEngineAtomFamily } from "./tabFamilies";
 
@@ -20,26 +17,6 @@ export const threatFamily = tabAtomFamily((_tab: string) => atom(false));
 
 export const expandedEnginesFamily = tabAtomFamily((_tab: string) =>
     atom<string[] | undefined>(undefined),
-);
-
-export const currentDetachedEngineAtom = atomWithStorage<string | null>(
-    "detached-engine",
-    null,
-    createZodStorage(z.string().nullable(), localStorage),
-);
-
-/** How many lines the pinned engine bar shows at most; null shows every line the engine computes. */
-export const detachedEngineLinesAtom = atomWithStorage<number | null>(
-    "detached-engine-lines",
-    null,
-    createZodStorage(z.number().int().min(1).max(5).nullable(), localStorage),
-);
-
-/** Where the pinned engine bar sits. */
-export const detachedEnginePlacementAtom = atomWithStorage<PinnedPlacement>(
-    "detached-engine-placement",
-    "tabs",
-    createZodStorage(z.enum(PINNED_PLACEMENTS), localStorage),
 );
 
 export const engineMovesFamily = tabEngineAtomFamily("engine", () =>

@@ -2,12 +2,12 @@
 id: game-report
 title: Справаздача па партыі
 summary: Аўтаматычны аналіз партыі рухавіком з паказам дакладнасці, графіка ацэнкі, ключавых момантаў і класіфікацыі хадоў.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 Справаздача па партыі аналізуе кожны ход галоўнай лініі з дапамогай лакальнага шахматнага рухавіка і падсумоўвае дакладнасць і памылкі ў партыі.
 
-Каб стварыць справаздачу, адкрыйце партыю на дошцы аналізу, перайдзіце ў {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} і націсніце {{label:Board.Analysis.GenerateReport}} (або націсніце спалучэнне клавіш {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+Каб стварыць справаздачу, адкрыйце партыю на дошцы аналізу, перайдзіце на ўкладку {{label:Board.Analysis.Report}} і націсніце {{label:Board.Analysis.GenerateReport}} (або націсніце спалучэнне клавіш {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 У дыялогу {{label:Board.Analysis.GenerateReport}}:
 - Выберыце лакальны {{label:Common.Engine}}. Калі ні адзін не ўсталяваны, дадайце яго на старонцы [[page:engines]].

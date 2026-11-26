@@ -2,12 +2,12 @@
 id: game-report
 title: Relatório da partida
 summary: Execute uma revisão automática com motor a uma partida para ver a precisão, o gráfico de avaliação, os momentos-chave e as classificações dos lances.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 O relatório da partida analisa cada lance da linha principal com um motor de xadrez local e resume a precisão e os erros da partida.
 
-Para gerar um relatório, abra uma partida no tabuleiro de análise, mude para {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} e clique em {{label:Board.Analysis.GenerateReport}} (ou prima o atalho {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+Para gerar um relatório, abra uma partida no tabuleiro de análise, mude para o separador {{label:Board.Analysis.Report}} e clique em {{label:Board.Analysis.GenerateReport}} (ou prima o atalho {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 Na janela {{label:Board.Analysis.GenerateReport}}:
 - Escolha um {{label:Common.Engine}} local. Se nenhum estiver instalado, adicione um em [[page:engines]].

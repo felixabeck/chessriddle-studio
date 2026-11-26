@@ -2,12 +2,12 @@
 id: game-report
 title: 对局报告
 summary: 运行自动引擎复盘，查看准确率、评估曲线、关键时刻和着法分类。
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 对局报告会使用本地国际象棋引擎分析主线中的每一步棋，并总结对局的准确率和失误情况。
 
-要生成报告，请在分析棋盘上打开一局棋，切换到 {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}}，然后点击 {{label:Board.Analysis.GenerateReport}}（或按 {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} 快捷键）。
+要生成报告，请在分析棋盘上打开一局棋，切换到 {{label:Board.Analysis.Report}} 标签页，然后点击 {{label:Board.Analysis.GenerateReport}}（或按 {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} 快捷键）。
 
 在 {{label:Board.Analysis.GenerateReport}} 对话框中：
 - 选择一个本地 {{label:Common.Engine}}。如果尚未安装，请在 [[page:engines]] 中添加。

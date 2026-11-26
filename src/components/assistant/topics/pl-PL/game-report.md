@@ -2,12 +2,12 @@
 id: game-report
 title: Raport partii
 summary: Uruchom automatyczną analizę partii silnikiem, aby zobaczyć dokładność, wykres oceny, kluczowe momenty i klasyfikacje ruchów.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 Raport partii analizuje każdy ruch linii głównej za pomocą lokalnego silnika szachowego i podsumowuje dokładność oraz błędy w partii.
 
-Aby wygenerować raport, otwórz partię na tablicy analizy, przejdź do {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} i kliknij {{label:Board.Analysis.GenerateReport}} (lub naciśnij skrót {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+Aby wygenerować raport, otwórz partię na tablicy analizy, przejdź do karty {{label:Board.Analysis.Report}} i kliknij {{label:Board.Analysis.GenerateReport}} (lub naciśnij skrót {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 W oknie {{label:Board.Analysis.GenerateReport}}:
 - Wybierz lokalny {{label:Common.Engine}}. Jeśli żaden nie jest zainstalowany, dodaj go w [[page:engines]].

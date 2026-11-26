@@ -2,12 +2,12 @@
 id: game-report
 title: Oyun raporu
 summary: Doğruluk oranını, değerlendirme grafiğini, önemli anları ve hamle sınıflandırmalarını görmek için otomatik motor incelemesi çalıştırın.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 Oyun raporu, ana varyanttaki her hamleyi yerel bir satranç motoruyla analiz eder ve oyunun doğruluk oranını ve hatalarını özetler.
 
-Rapor oluşturmak için analiz tahtasında bir oyun açın, {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} yoluna gidin ve {{label:Board.Analysis.GenerateReport}} düğmesine tıklayın (veya {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} kısayoluna basın).
+Rapor oluşturmak için analiz tahtasında bir oyun açın, {{label:Board.Analysis.Report}} sekmesine geçin ve {{label:Board.Analysis.GenerateReport}} düğmesine tıklayın (veya {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} kısayoluna basın).
 
 {{label:Board.Analysis.GenerateReport}} iletişim kutusunda:
 - Yerel bir {{label:Common.Engine}} seçin. Yüklü motor yoksa [[page:engines]] üzerinden ekleyin.

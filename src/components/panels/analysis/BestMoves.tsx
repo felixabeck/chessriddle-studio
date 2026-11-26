@@ -1,11 +1,11 @@
 import { useTabAtom, useOwnerTabId } from "@/state/tabScope";
 import {
-  Accordion,
   Box,
   Button,
   Code,
   Collapse,
   Group,
+  Menu,
   Progress,
   Skeleton,
   Stack,
@@ -16,37 +16,42 @@ import {
 } from "@mantine/core";
 import { useToggle } from "@mantine/hooks";
 import {
+  ChevronDown,
+  Crosshair,
   GripVertical,
-  Pin,
-  PinOff,
   Pause,
   Play,
-  Settings as SettingsIcon,
-  Crosshair,
   ScrollText,
+  Settings as SettingsIcon,
+  X,
 } from "lucide-react";
 import equal from "fast-deep-equal";
 import { useAtom, useAtomValue } from "jotai";
-import { memo, startTransition, useState } from "react";
+import {
+  memo,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
-import type { BestMoves } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import {
-  currentDetachedEngineAtom,
-  threatFamily,
   engineProgressFamily,
   engineRetryFamily,
+  enginesAtom,
+  expandedEnginesFamily,
+  threatFamily,
 } from "@/state/atoms";
+import { engineAreaId } from "@/state/boardArrangement";
 import { translateChessopsError } from "@/utils/chessops";
 import type { ChessDBLine } from "@/utils/chessdb/api";
-import { engineMultiPv, type Engine } from "@/utils/engines";
-import { formatNodes } from "@/utils/format";
-import { formatScore } from "@/utils/score";
+import { engineMultiPv, setEngineMultiPv, type Engine } from "@/utils/engines";
 import AnalysisRow from "./AnalysisRow";
 import AssessmentSymbol from "./AssessmentSymbol";
 import classes from "./BestMoves.module.css";
 import EngineLogsModal from "./EngineLogsModal";
 import EngineSettingsForm from "./EngineSettingsForm";
+import LinesSlider, { LINE_COUNT_OPTIONS } from "./LinesSlider";
 import { ThreatBadge } from "./ThreatBadge";
 import { engineFailureMessage } from "./engineFailure";
 import { useDisplayedEngineLines } from "./useDisplayedEngineLines";
@@ -60,13 +65,29 @@ export const arrowColors = [
 ];
 
 interface BestMovesProps {
+  /** Index in the loaded-engine order (determines arrow colour and status stripe). */
   id: number;
   engine: Engine;
   fen: string;
   moves: string[];
   halfMoves: number;
-  dragHandleProps: any;
   orientation: "white" | "black";
+  /** `"panel"` inside the Engines panel, `"window"` when pulled out as its own tile. */
+  mode?: "panel" | "window";
+  /** Pointer-down handler for the six-dot grip (and top row in window mode). */
+  onDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
+  /** Suppresses the trailing click after a drag gesture finishes. */
+  onSuppressClick?: (event: ReactMouseEvent) => void;
+  /** Panel mode: grip menu actions for reordering or pulling out. */
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canShowAsArea?: boolean;
+  onShowAsArea?: () => void;
+  /** Window mode: click grip starts placing; × returns to the Engines panel. */
+  onStartPlacing?: () => void;
+  onReturn?: () => void;
 }
 
 function BestMovesComponent({
@@ -75,14 +96,26 @@ function BestMovesComponent({
   fen,
   moves,
   halfMoves,
-  dragHandleProps,
   orientation,
+  mode = "panel",
+  onDragStart,
+  onSuppressClick,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
+  canShowAsArea = false,
+  onShowAsArea,
+  onStartPlacing,
+  onReturn,
 }: BestMovesProps) {
   const { t } = useTranslation();
 
   const ownerTabId = useOwnerTabId();
   const engineProgress = useAtomValue(engineProgressFamily({ engine: engine.id, tab: ownerTabId }));
   const [, setRetry] = useAtom(engineRetryFamily({ engine: engine.id, tab: ownerTabId }));
+  const engines = useAtomValue(enginesAtom);
+  const [expanded, setExpanded] = useAtom(useTabAtom(expandedEnginesFamily));
   const { settings, setSettings } = useTabEngineSettings(engine);
 
   const [settingsOn, toggleSettingsOn] = useToggle();
@@ -99,8 +132,6 @@ function BestMovesComponent({
     </Button>
   );
   const [threat, setThreat] = useAtom(useTabAtom(threatFamily));
-  const [detachedEngineId, setDetachedEngineId] = useAtom(currentDetachedEngineAtom);
-  const isDetached = detachedEngineId === engine.id;
   const theme = useMantineTheme();
 
   const {
@@ -117,6 +148,26 @@ function BestMovesComponent({
   } = useDisplayedEngineLines(engine, fen, moves, halfMoves);
   const progress = available ? engineProgress : 0;
 
+  const isExpanded = expanded === undefined || expanded.includes(engine.id);
+  const toggleExpanded = () => {
+    setExpanded((prev) => {
+      if (prev === undefined) {
+        const loadedIds = (engines ?? []).filter((e) => e.loaded).map((e) => e.id);
+        return loadedIds.filter((item) => item !== engine.id);
+      }
+      return prev.includes(engine.id)
+        ? prev.filter((item) => item !== engine.id)
+        : [...prev, engine.id];
+    });
+  };
+
+  const hasMultiPv = settings.settings.some(
+    (option) => option.name === "MultiPV" && option.type === "string",
+  );
+  const multiPv = engineMultiPv(settings.settings);
+  const engineArea = engineAreaId(engine.id);
+  const isWindow = mode === "window";
+
   return (
     <Box
       className={classes.engine}
@@ -129,8 +180,51 @@ function BestMovesComponent({
             : "var(--cf-border-strong)",
       }}
     >
-      <Box className={classes.header}>
-        <Stack gap={0} py="1rem">
+      <Box
+        className={isWindow ? `${classes.header} ${classes.windowHeader}` : classes.header}
+        onPointerDown={isWindow ? onDragStart : undefined}
+        onClickCapture={isWindow ? onSuppressClick : undefined}
+      >
+        <Group gap={6} wrap="nowrap" className={classes.headerLeft}>
+          {isWindow ? (
+            <IconAction
+              label={t("Board.Arrange.MoveArea", { area: engine.name })}
+              size="xs"
+              variant="subtle"
+              className={classes.grip}
+              data-arrange-grip={engineArea}
+              onClick={onStartPlacing}
+            >
+              <GripVertical size="0.875rem" />
+            </IconAction>
+          ) : (
+            <Menu position="bottom-start" shadow="md" withinPortal>
+              <Menu.Target>
+                <IconAction
+                  label={t("Board.Analysis.ReorderEngine")}
+                  size="xs"
+                  variant="subtle"
+                  className={classes.grip}
+                  data-arrange-grip={engineArea}
+                  onPointerDown={onDragStart}
+                  onClickCapture={onSuppressClick}
+                >
+                  <GripVertical size="0.875rem" />
+                </IconAction>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item disabled={!canMoveUp} onClick={onMoveUp}>
+                  {t("Board.Analysis.MoveUp")}
+                </Menu.Item>
+                <Menu.Item disabled={!canMoveDown} onClick={onMoveDown}>
+                  {t("Board.Analysis.MoveDown")}
+                </Menu.Item>
+                {canShowAsArea && onShowAsArea && (
+                  <Menu.Item onClick={onShowAsArea}>{t("Board.Analysis.ShowAsOwnArea")}</Menu.Item>
+                )}
+              </Menu.Dropdown>
+            </Menu>
+          )}
           <IconAction
             label={
               settings.enabled
@@ -138,75 +232,94 @@ function BestMovesComponent({
                 : t("Board.Analysis.EnableEngine")
             }
             pressed={settings.enabled}
-            size="md"
+            size="sm"
             variant={settings.enabled ? "filled" : "transparent"}
             color={theme.primaryColor}
+            data-no-drag="true"
             onClick={() => {
               setSettings((prev) => ({ ...prev, enabled: !prev.enabled }));
             }}
-            style={{ marginLeft: 12 }}
           >
-            {settings.enabled ? <Pause size="1rem" /> : <Play size="1rem" />}
+            {settings.enabled ? <Pause size="0.875rem" /> : <Play size="0.875rem" />}
           </IconAction>
-        </Stack>
-        <Accordion.Control>
-          <EngineTop
-            name={engine.name}
-            showNodes={engine.type !== "chessdb"}
-            engineVariations={engineVariations}
-            isGameOver={isGameOver}
-            enabled={settings.enabled}
-            progress={progress}
-            error={error}
-            loading={loading}
-            dimmed={dimmed}
-            failed={failure !== null}
-            threat={threat}
-          />
-        </Accordion.Control>
-        <Group gap={0}>
+          <Text fw={600} fz="sm" truncate className={classes.name}>
+            {engine.name}
+          </Text>
+          {threat && <ThreatBadge />}
+          {loading && settings.enabled && !isGameOver && !error && (
+            <Code fz="xs">{t("Common.Loading")}</Code>
+          )}
+          {!isGameOver && engineVariations && engineVariations.length > 0 && (
+            <Group gap={4} wrap="nowrap" opacity={dimmed ? 0.5 : 1} className={classes.stats}>
+              <Text fz="xs" fw={700} tt="uppercase" c="dimmed">
+                {t("GoMode.Depth")}
+              </Text>
+              <Text fz="sm" fw={700}>
+                {engineVariations[0].depth}
+              </Text>
+              <AssessmentSymbol score={engineVariations[0].score.value} fz="sm" />
+            </Group>
+          )}
+        </Group>
+        <Group gap={2} wrap="nowrap" className={classes.actions} data-no-drag="true">
+          {hasMultiPv && (
+            <Tooltip label={t("Engines.Settings.NumOfLines")}>
+              <Box>
+                <LinesSlider
+                  ariaLabel={t("Engines.Settings.NumOfLines")}
+                  value={Math.min(Math.max(1, multiPv), LINE_COUNT_OPTIONS.length)}
+                  setValue={(count) => {
+                    setSettings((previous) => ({
+                      ...previous,
+                      settings: setEngineMultiPv(previous.settings, count),
+                    }));
+                  }}
+                />
+              </Box>
+            </Tooltip>
+          )}
           <IconAction
             label={t("Board.Analysis.CheckThreat")}
             pressed={threat}
-            size="lg"
+            size="sm"
             onClick={() => setThreat(!threat)}
             disabled={!settings.enabled}
-            variant="transparent"
-            style={{ marginTop: "auto", marginBottom: "auto" }}
+            variant="subtle"
           >
-            <Crosshair color={threat ? "var(--cf-destructive)" : undefined} size="1rem" />
-          </IconAction>
-          <IconAction
-            label={isDetached ? t("Board.Analysis.Unpin") : t("Board.Analysis.Pin")}
-            pressed={isDetached}
-            size="lg"
-            onClick={() =>
-              startTransition(() => {
-                setDetachedEngineId(isDetached ? null : engine.id);
-              })
-            }
-            variant={isDetached ? "light" : "transparent"}
-            style={{ marginTop: "auto", marginBottom: "auto" }}
-          >
-            {isDetached ? <PinOff size="1rem" /> : <Pin size="1rem" />}
+            <Crosshair color={threat ? "var(--cf-destructive)" : undefined} size="0.875rem" />
           </IconAction>
           <IconAction
             label={t("Board.Analysis.EngineSettings")}
             pressed={settingsOn}
-            size="lg"
+            size="sm"
+            variant="subtle"
             onClick={() => toggleSettingsOn()}
-            style={{ marginTop: "auto", marginBottom: "auto" }}
           >
-            <SettingsIcon size="1rem" />
+            <SettingsIcon size="0.875rem" />
           </IconAction>
           <IconAction
-            label={t("Board.Analysis.ReorderEngine")}
-            size="lg"
-            style={{ marginRight: 8, marginTop: "auto", marginBottom: "auto", cursor: "grab" }}
-            {...dragHandleProps}
+            label={isExpanded ? t("Board.Analysis.Collapse") : t("Board.Analysis.Expand")}
+            pressed={isExpanded}
+            size="sm"
+            variant="subtle"
+            style={{
+              transition: "transform 200ms ease",
+              transform: isExpanded ? "rotate(180deg)" : "none",
+            }}
+            onClick={toggleExpanded}
           >
-            <GripVertical size="1rem" />
+            <ChevronDown size="0.875rem" />
           </IconAction>
+          {isWindow && onReturn && (
+            <IconAction
+              label={t("Board.Area.ReturnToEngines")}
+              size="sm"
+              variant="subtle"
+              onClick={onReturn}
+            >
+              <X size="0.875rem" />
+            </IconAction>
+          )}
         </Group>
         <Progress
           aria-label={engine.name}
@@ -218,7 +331,7 @@ function BestMovesComponent({
           striped={available && progress < 100 && !settings.enabled && !failure}
         />
       </Box>
-      <Collapse in={settingsOn} px={30} pb={15}>
+      <Collapse in={settingsOn} px="sm" py="xs">
         <EngineSettingsForm
           engine={engine}
           settings={settings}
@@ -239,96 +352,96 @@ function BestMovesComponent({
         />
       )}
 
-      <Accordion.Panel pos="relative">
-        <Table>
-          <Table.Tbody>
-            {failure && (
-              <Table.Tr>
-                <Table.Td colSpan={3}>
-                  <Stack gap="xs" role="status">
-                    <Text c="danger" fw={700}>
-                      {t("Board.Analysis.EngineFailed")}
-                    </Text>
-                    <Text size="sm">
-                      {engineFailureMessage(
-                        t,
-                        failure.snapshot,
-                        failure.message,
-                        failure.cleanupFailed,
-                      )}
-                    </Text>
-                    <Group gap="xs" grow>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        onClick={() => setRetry((value) => value + 1)}
-                      >
-                        {t("Board.Analysis.RetryEngine")}
-                      </Button>
-                      {logsButton}
-                    </Group>
-                  </Stack>
-                </Table.Td>
-              </Table.Tr>
-            )}
-            {error && (
-              <Table.Tr>
-                <Table.Td>
-                  <Text ta="center" my="lg">
-                    {t("Board.Analysis.InvalidPosition", {
-                      error: translateChessopsError(t, error),
-                    })}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-            {isGameOver && (
-              <Table.Tr>
-                <Table.Td>
-                  <Text ta="center" my="lg">
-                    {t("Board.Analysis.GameOver")}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-            {engineVariations && engineVariations.length === 0 && !isGameOver && (
-              <Table.Tr>
-                <Table.Td>
-                  <Text ta="center" my="lg">
-                    {terminal?.type === "not-in-database"
-                      ? t("Board.Analysis.NotInChessDB")
-                      : t("Board.Analysis.NoAnalysisAvailable")}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-            {!isGameOver &&
-              !error &&
-              !engineVariations &&
-              (settings.enabled ? (
-                loading &&
-                [...Array(engineMultiPv(settings.settings))].map((_, i) => (
-                  <Table.Tr key={i}>
-                    <Table.Td>
-                      <Skeleton height={35} radius="xl" p={5} />
-                    </Table.Td>
-                  </Table.Tr>
-                ))
-              ) : (
+      {isExpanded && (
+        <Box className={classes.body} pos="relative">
+          <Table verticalSpacing={2} horizontalSpacing="xs">
+            <Table.Tbody>
+              {failure && (
+                <Table.Tr>
+                  <Table.Td colSpan={3}>
+                    <Stack gap="xs" role="status">
+                      <Text c="danger" fw={700}>
+                        {t("Board.Analysis.EngineFailed")}
+                      </Text>
+                      <Text size="sm">
+                        {engineFailureMessage(
+                          t,
+                          failure.snapshot,
+                          failure.message,
+                          failure.cleanupFailed,
+                        )}
+                      </Text>
+                      <Group gap="xs" grow>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          onClick={() => setRetry((value) => value + 1)}
+                        >
+                          {t("Board.Analysis.RetryEngine")}
+                        </Button>
+                        {logsButton}
+                      </Group>
+                    </Stack>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+              {error && (
                 <Table.Tr>
                   <Table.Td>
-                    <Text c="dimmed" size="sm" my={4}>
-                      {t("Board.Analysis.InactiveEngine")}
+                    <Text ta="center" my="xs">
+                      {t("Board.Analysis.InvalidPosition", {
+                        error: translateChessopsError(t, error),
+                      })}
                     </Text>
                   </Table.Td>
                 </Table.Tr>
-              ))}
-            {!isGameOver &&
-              !error &&
-              searchedBoardFen &&
-              engineVariations &&
-              engineVariations.map((engineVariation, index) => {
-                return (
+              )}
+              {isGameOver && (
+                <Table.Tr>
+                  <Table.Td>
+                    <Text ta="center" my="xs">
+                      {t("Board.Analysis.GameOver")}
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+              {engineVariations && engineVariations.length === 0 && !isGameOver && (
+                <Table.Tr>
+                  <Table.Td>
+                    <Text ta="center" my="xs">
+                      {terminal?.type === "not-in-database"
+                        ? t("Board.Analysis.NotInChessDB")
+                        : t("Board.Analysis.NoAnalysisAvailable")}
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+              {!isGameOver &&
+                !error &&
+                !engineVariations &&
+                (settings.enabled ? (
+                  loading &&
+                  [...Array(multiPv)].map((_, i) => (
+                    <Table.Tr key={i}>
+                      <Table.Td>
+                        <Skeleton height={26} radius="xl" p={4} />
+                      </Table.Td>
+                    </Table.Tr>
+                  ))
+                ) : (
+                  <Table.Tr>
+                    <Table.Td>
+                      <Text c="dimmed" size="sm" my={2}>
+                        {t("Board.Analysis.InactiveEngine")}
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              {!isGameOver &&
+                !error &&
+                searchedBoardFen &&
+                engineVariations &&
+                engineVariations.map((engineVariation, index) => (
                   <AnalysisRow
                     key={index}
                     engineId={engine.id}
@@ -346,102 +459,12 @@ function BestMovesComponent({
                     fen={searchedBoardFen}
                     orientation={orientation}
                   />
-                );
-              })}
-          </Table.Tbody>
-        </Table>
-      </Accordion.Panel>
+                ))}
+            </Table.Tbody>
+          </Table>
+        </Box>
+      )}
     </Box>
-  );
-}
-
-function EngineTop({
-  name,
-  showNodes,
-  engineVariations,
-  isGameOver,
-  enabled,
-  progress,
-  error,
-  loading,
-  dimmed,
-  failed,
-  threat,
-}: {
-  name: string;
-  showNodes: boolean;
-  engineVariations: BestMoves[] | undefined;
-  isGameOver: boolean;
-  enabled: boolean;
-  progress: number;
-  error: any;
-  loading: boolean;
-  dimmed: boolean;
-  failed: boolean;
-  threat: boolean;
-}) {
-  const { t } = useTranslation();
-  const isComputed = engineVariations && engineVariations.length > 0;
-  const depth = isComputed ? engineVariations[0].depth : 0;
-  const nodes = isComputed ? formatNodes(engineVariations[0].nodes, 2) : 0;
-  const nps = isComputed ? formatNodes(engineVariations[0].nps, 1) : 0;
-
-  return (
-    <Group justify="space-between" wrap="wrap" gap="xs" opacity={dimmed ? 0.5 : 1}>
-      <Group align="center" wrap="nowrap">
-        <Text fw={600} fz="sm" lineClamp={1}>
-          {name}
-        </Text>
-        {threat && <ThreatBadge />}
-        {loading && enabled && !isGameOver && !error && <Code fz="xs">{t("Common.Loading")}</Code>}
-        {showNodes &&
-          progress < 100 &&
-          !failed &&
-          enabled &&
-          !isGameOver &&
-          engineVariations &&
-          engineVariations.length > 0 && (
-            <Tooltip label={t("Board.Analysis.EngineSpeedHint")}>
-              <Code fz="xs">{nps}n/s</Code>
-            </Tooltip>
-          )}
-      </Group>
-      <Group gap="sm" wrap="nowrap" className={classes.stats}>
-        {!isGameOver && engineVariations && engineVariations.length > 0 && (
-          <>
-            <Stack align="center" gap={0}>
-              <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
-                {t("Board.Analysis.Evaluation")}
-              </Text>
-              <Group gap={6} wrap="nowrap">
-                <Text fw="bold" fz="md">
-                  {formatScore(engineVariations[0].score.value, 1) ?? 0}
-                </Text>
-                <AssessmentSymbol score={engineVariations[0].score.value} fz="md" />
-              </Group>
-            </Stack>
-            <Stack align="center" gap={0}>
-              <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
-                {t("GoMode.Depth")}
-              </Text>
-              <Text fw="bold" fz="md">
-                {depth}
-              </Text>
-            </Stack>
-            {showNodes && (
-              <Stack align="center" gap={0}>
-                <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
-                  {t("GoMode.Nodes")}
-                </Text>
-                <Text fw="bold" fz="md">
-                  {nodes}
-                </Text>
-              </Stack>
-            )}
-          </>
-        )}
-      </Group>
-    </Group>
   );
 }
 
@@ -452,6 +475,17 @@ export default memo(BestMovesComponent, (prev, next) => {
     prev.fen === next.fen &&
     equal(prev.moves, next.moves) &&
     prev.halfMoves === next.halfMoves &&
-    prev.orientation === next.orientation
+    prev.orientation === next.orientation &&
+    prev.mode === next.mode &&
+    prev.canMoveUp === next.canMoveUp &&
+    prev.canMoveDown === next.canMoveDown &&
+    prev.canShowAsArea === next.canShowAsArea &&
+    prev.onDragStart === next.onDragStart &&
+    prev.onSuppressClick === next.onSuppressClick &&
+    prev.onMoveUp === next.onMoveUp &&
+    prev.onMoveDown === next.onMoveDown &&
+    prev.onShowAsArea === next.onShowAsArea &&
+    prev.onStartPlacing === next.onStartPlacing &&
+    prev.onReturn === next.onReturn
   );
 });

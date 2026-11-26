@@ -7,7 +7,12 @@ import {
   BoardArrangementContext,
   type BoardArrangementContextValue,
 } from "@/components/tabs/BoardTabLayout";
-import { ALWAYS_PRESENT_PANEL_IDS, type PanelAreaId } from "@/state/boardArrangement";
+import {
+  ALWAYS_PRESENT_PANEL_IDS,
+  engineAreaId,
+  type EngineAreaId,
+  type PanelAreaId,
+} from "@/state/boardArrangement";
 import { analysisTabsHiddenAtom } from "@/state/layoutStorage";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import {
@@ -16,7 +21,6 @@ import {
   closeWorkspaceTabAtom,
   currentTabAtom,
   tabFamily,
-  analysisTabFamily,
   practiceMoveControllerFamily,
   practiceTabFamily,
   reportModalOpenFamily,
@@ -168,8 +172,16 @@ vi.mock("@mantine/core", async (importOriginal) => {
     ),
     Menu,
     Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
-    Paper: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+    Paper: ({
+      children,
+      onScroll,
+      ...props
+    }: {
+      children?: ReactNode;
+      onScroll?: React.UIEventHandler<HTMLDivElement>;
+    } & Record<string, unknown>) => (
       <div
+        onScroll={onScroll}
         {...Object.fromEntries(
           Object.entries(props).filter(([name]) => name.startsWith("data-") || name === "role"),
         )}
@@ -298,9 +310,6 @@ vi.mock("../panels/info/InfoPanel", () => ({
   },
 }));
 
-vi.mock("./DetachedEval", () => ({
-  default: ({ placement }: { placement: string }) => <span data-engine-slot={placement} />,
-}));
 vi.mock("../common/GameNotation", () => ({
   default: ({
     controls,
@@ -322,6 +331,41 @@ vi.mock("../common/GameNotation", () => ({
 }));
 vi.mock("../common/MoveControls", () => ({ default: () => <span data-move-controls /> }));
 vi.mock("../panels/analysis/AnalysisPanel", () => ({ default: () => null }));
+vi.mock("../panels/analysis/ReportPanel", () => ({
+  default: () => <div data-testid="report-panel" />,
+}));
+vi.mock("../panels/analysis/BestMoves", () => ({
+  default: ({
+    id,
+    engine,
+    mode,
+    onReturn,
+    onStartPlacing,
+  }: {
+    id: number;
+    engine: Engine;
+    mode?: string;
+    onReturn?: () => void;
+    onStartPlacing?: () => void;
+  }) => (
+    <div
+      data-testid="mock-engine-card"
+      data-engine-id={engine.id}
+      data-color-index={id}
+      data-mode={mode}
+    >
+      <button type="button" data-arrange-grip={engineAreaId(engine.id)} onClick={onStartPlacing}>
+        grip
+      </button>
+      <span>{engine.name}</span>
+      {mode === "window" && onReturn && (
+        <button type="button" aria-label="Board.Area.ReturnToEngines" onClick={onReturn}>
+          close
+        </button>
+      )}
+    </div>
+  ),
+}));
 vi.mock("../panels/annotation/AnnotationPanel", () => ({ default: () => null }));
 vi.mock("../panels/coach/CoachPanel", () => ({
   default: () => <div data-testid="coach-panel" />,
@@ -615,6 +659,7 @@ describe("BoardAnalysis", () => {
     };
     const ctx: BoardArrangementContextValue = {
       shownPanelAreas: shownSet,
+      shownEngineAreas: new Set<EngineAreaId>(),
       getAreaTarget,
       arrangingAvailable: true,
       canTakeOut: (panel) => {
@@ -622,7 +667,9 @@ describe("BoardAnalysis", () => {
         const next = new Set([...shownSet, panel]);
         return ALWAYS_PRESENT_PANEL_IDS.some((id) => !next.has(id));
       },
+      canTakeOutEngine: () => true,
       returnPanel: wrappedReturnPanel,
+      returnEngine: vi.fn(),
       registerReturnListener: vi.fn((listener) => {
         registeredReturnListener = listener;
       }),
@@ -684,7 +731,12 @@ describe("BoardAnalysis", () => {
     )!;
     expect(area).not.toBeNull();
     expect(area.textContent).toContain("Board.Tabs.Database");
-    expect(headings()).toEqual(["Board.Tabs.Analysis", "Board.Tabs.Annotate", "Board.Tabs.Info"]);
+    expect(headings()).toEqual([
+      "Board.Tabs.Analysis",
+      "Board.Analysis.Report",
+      "Board.Tabs.Annotate",
+      "Board.Tabs.Info",
+    ]);
     expect(selected()).toBe("Board.Tabs.Annotate");
     expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
 
@@ -721,15 +773,15 @@ describe("BoardAnalysis", () => {
     expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
   });
 
-  test("report hotkey with Analysis as an area switches Analysis to report and opens the modal without moving the strip selection", async () => {
+  test("report hotkey with Report as its own area opens the modal without moving the strip selection or showing hidden tabs", async () => {
     await act(async () => {
       treeStore.setState({ root: defaultTree().root, position: [], dirty: false });
       treeStore.getState().makeMove({ payload: "e4" });
       jotaiStore.set(tabFamily(tabId), "info");
-      jotaiStore.set(analysisTabFamily(tabId), "engines");
+      jotaiStore.set(analysisTabsHiddenAtom, true);
       jotaiStore.set(reportModalOpenFamily(tabId), false);
     });
-    await renderWithArrangement(["analysis"]);
+    await renderWithArrangement(["report"], vi.fn(), { tabsHidden: true });
 
     const keys = jotaiStore.get(keyMapAtom).GENERATE_REPORT.keys;
     const binding = hotkeys.mock.calls
@@ -738,7 +790,7 @@ describe("BoardAnalysis", () => {
     await act(async () => binding[1](new KeyboardEvent("keydown", { cancelable: true })));
 
     expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
-    expect(jotaiStore.get(analysisTabFamily(tabId))).toBe("report");
+    expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(true);
     expect(jotaiStore.get(reportModalOpenFamily(tabId))).toBe(true);
   });
 
@@ -798,14 +850,14 @@ describe("BoardAnalysis", () => {
     expect(selected()).toBe("Board.Tabs.Analysis");
     expect(jotaiStore.get(tabFamily(tabId))).toBe("photo");
 
-    // With Analysis, Database and Annotate taken out and a review present, fallback shows Info, never Photo.
+    // With Analysis, Report, Database and Annotate taken out and a review present, fallback shows Info, never Photo.
     await act(async () => {
       treeStore.setState({
         scoresheetReview: {},
       });
       jotaiStore.set(tabFamily(tabId), "database");
     });
-    await renderWithArrangement(["analysis", "database", "annotate"]);
+    await renderWithArrangement(["analysis", "report", "database", "annotate"]);
     expect(selected()).toBe("Board.Tabs.Info");
     expect(container.querySelector('[data-testid="scoresheet-photo-panel"]')).toBeNull();
     // Photo has no drag start and no placing entry; Info cannot be taken out (strip rule).
@@ -889,7 +941,7 @@ describe("BoardAnalysis", () => {
     const startPlacing = vi.fn();
     await renderWithArrangement([], vi.fn(), { setTabsHidden, startPlacing });
 
-    // Shown: the strip offers Hide, the notation header has no Show button, the engine bar slot sits in the strip.
+    // Shown: the strip offers Hide and the notation header has no Show button.
     const hide = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Board.Area.HideTabs"]',
     )!;
@@ -897,21 +949,15 @@ describe("BoardAnalysis", () => {
     await act(async () => hide.click());
     expect(setTabsHidden).toHaveBeenCalledExactlyOnceWith(true);
     const notationPortal = () => container.querySelector('[data-portal-target="bottomRight"]')!;
-    const stripPortal = () => container.querySelector('[data-portal-target="topRight"]')!;
     const showButton = () =>
       notationPortal().querySelector<HTMLButtonElement>(
         'button[aria-label="Board.Arrange.ShowTabs"]',
       );
-    expect(stripPortal().querySelector('[data-engine-slot="tabs"]')).not.toBeNull();
-    expect(notationPortal().querySelector('[data-engine-slot="tabs"]')).toBeNull();
     expect(showButton()).toBeNull();
 
-    // Hidden: the notation header shows the button, the grip still places directly, and the engine
-    // bar pinned above the tabs moves above the notation.
+    // Hidden: the notation header shows the button and the grip still places directly.
     setTabsHidden.mockClear();
     await renderWithArrangement([], vi.fn(), { setTabsHidden, startPlacing, tabsHidden: true });
-    expect(stripPortal().querySelector('[data-engine-slot="tabs"]')).toBeNull();
-    expect(notationPortal().querySelector('[data-engine-slot="tabs"]')).not.toBeNull();
     const grip = container.querySelector<HTMLButtonElement>('[data-arrange-grip="bottomRight"]')!;
     // The × leaves the page while hidden, so its open tooltip cannot outlive the strip.
     expect(container.querySelector('button[aria-label="Board.Area.HideTabs"]')).toBeNull();
@@ -960,7 +1006,7 @@ describe("BoardAnalysis", () => {
       [keyMap.ANALYSIS_TAB.keys, "analysis"],
       [keyMap.DATABASE_TAB.keys, "database"],
       [keyMap.INFO_TAB.keys, "info"],
-      [keyMap.GENERATE_REPORT.keys, "analysis"],
+      [keyMap.GENERATE_REPORT.keys, "report"],
     ] as const) {
       await act(async () => {
         jotaiStore.set(analysisTabsHiddenAtom, true);
@@ -1068,6 +1114,7 @@ describe("BoardAnalysis", () => {
     const { headings, selected, shortcut } = await renderCoachChoice();
     expect(headings).toEqual([
       "Board.Tabs.Analysis",
+      "Board.Analysis.Report",
       "Board.Tabs.Database",
       "Board.Tabs.Annotate",
       "Board.Tabs.Coach",
@@ -1080,22 +1127,51 @@ describe("BoardAnalysis", () => {
     expect(jotaiStore.get(tabFamily(tabId))).toBe("coach");
   });
 
-  test("mounts one pinned-engine slot per placement, the board's below the board", () => {
-    const slots = [...document.querySelectorAll("[data-engine-slot]")].map((slot) =>
-      slot.getAttribute("data-engine-slot"),
-    );
-    expect(slots.sort()).toEqual(["belowNotation", "board", "notation", "tabs"]);
-    expect(
-      document.querySelector('[data-slot="below-board"] [data-engine-slot="board"]'),
-    ).not.toBeNull();
-    // The two notation slots open and close the same notation column, the lower one after the
-    // move buttons.
-    const above = document.querySelector('[data-engine-slot="notation"]')!;
-    const below = document.querySelector('[data-engine-slot="belowNotation"]')!;
-    expect(above.parentElement).toBe(below.parentElement);
-    expect(above.parentElement!.firstElementChild).toBe(above);
-    expect(below.parentElement!.lastElementChild).toBe(below);
-    expect(below.previousElementSibling?.hasAttribute("data-move-controls")).toBe(true);
+  test("pulled-out engine window renders once in its own tile without PanelArea header, preserves loaded-order color index, and returns via ×", async () => {
+    const first = { ...displayEngine, id: "first", name: "Alpha", loaded: true };
+    const second = {
+      ...displayEngine,
+      id: "legacy:second",
+      name: "Beta",
+      loaded: true,
+    };
+    await act(async () => {
+      await jotaiStore.set(enginesAtom, [first, second]);
+    });
+    const returnEngine = vi.fn();
+    const area = engineAreaId(second.id);
+    await renderWithArrangement([], vi.fn(), {
+      shownEngineAreas: new Set([area]),
+      returnEngine,
+    });
+    const portal = container.querySelector(`[data-portal-target="${area}"]`)!;
+    expect(portal).not.toBeNull();
+    // Plain bordered tile without a PanelArea header: exactly one grip, one close button, and no panel-area wrapper.
+    expect(portal.querySelector("[data-panel-area]")).toBeNull();
+    expect(portal.querySelectorAll("[data-arrange-grip]")).toHaveLength(1);
+    expect(portal.querySelectorAll('[aria-label="Board.Area.ReturnToEngines"]')).toHaveLength(1);
+    const card = portal.querySelector('[data-testid="mock-engine-card"]')!;
+    expect(card.getAttribute("data-engine-id")).toBe(second.id);
+    expect(card.getAttribute("data-color-index")).toBe("1");
+    expect(card.getAttribute("data-mode")).toBe("window");
+
+    await act(async () => {
+      portal.querySelector<HTMLButtonElement>('[aria-label="Board.Area.ReturnToEngines"]')!.click();
+    });
+    expect(returnEngine).toHaveBeenCalledWith(area);
+
+    // Scrolling the engine window dispatches the shared preview-reposition scroll event.
+    const onScrollEvent = vi.fn();
+    document.addEventListener("analysis-panel-scroll", onScrollEvent);
+    try {
+      const windowEl = portal.querySelector<HTMLElement>("[data-engine-window]")!;
+      await act(async () => {
+        windowEl.dispatchEvent(new Event("scroll"));
+      });
+      expect(onScrollEvent).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener("analysis-panel-scroll", onScrollEvent);
+    }
   });
 
   test("the analysis notation asks for the open-variation mark: it is where a file is built", () => {
@@ -1473,6 +1549,7 @@ describe("BoardAnalysis", () => {
         );
       expect(headings()).toEqual([
         "Board.Tabs.Analysis",
+        "Board.Analysis.Report",
         "Board.Tabs.Database",
         "Board.Tabs.Annotate",
         "Board.Tabs.Info",
@@ -1507,8 +1584,7 @@ describe("BoardAnalysis", () => {
       await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
       const emptyEvent = await shortcut(keys.GENERATE_REPORT.keys);
       expect(emptyEvent.defaultPrevented).toBe(true);
-      expect(jotaiStore.get(tabFamily(tabId))).toBe("analysis");
-      expect(jotaiStore.get(analysisTabFamily(tabId))).toBe("report");
+      expect(jotaiStore.get(tabFamily(tabId))).toBe("report");
       expect(jotaiStore.get(reportModalOpenFamily(tabId))).toBe(false);
       // With moves it opens the dialog, unless the tab already runs a report.
       await act(async () => treeStore.getState().makeMoves({ payload: ["e4"] }));
@@ -1524,8 +1600,7 @@ describe("BoardAnalysis", () => {
       });
       const reportEvent = await shortcut(keys.GENERATE_REPORT.keys);
       expect(reportEvent.defaultPrevented).toBe(true);
-      expect(jotaiStore.get(tabFamily(tabId))).toBe("analysis");
-      expect(jotaiStore.get(analysisTabFamily(tabId))).toBe("report");
+      expect(jotaiStore.get(tabFamily(tabId))).toBe("report");
       expect(jotaiStore.get(reportModalOpenFamily(tabId))).toBe(true);
       if (!isFileBackedTab(tab)) throw new Error("Expected file owner");
       await act(async () =>
@@ -1549,6 +1624,7 @@ describe("BoardAnalysis", () => {
       expect(headings()).toEqual([
         "Board.Tabs.Practice",
         "Board.Tabs.Analysis",
+        "Board.Analysis.Report",
         "Board.Tabs.Database",
         "Board.Tabs.Annotate",
         "Board.Tabs.Info",
@@ -1563,8 +1639,7 @@ describe("BoardAnalysis", () => {
       expect(tabIcon("Board.Tabs.Info")).toBe("Tags");
       await shortcut(keys.PRACTICE_TAB.keys);
       expect(jotaiStore.get(tabFamily(tabId))).toBe("practice");
-      expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(5);
-      expect(jotaiStore.get(analysisTabFamily(tabId))).toBe("report");
+      expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(6);
       expect(jotaiStore.get(reportModalOpenFamily(tabId))).toBe(true);
     },
   );

@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablero de análisis, variantes, comentarios y flechas
 summary: Introduce jugadas, edita posiciones, gestiona variantes, escribe comentarios, añade anotaciones y dibuja flechas en el tablero.
-source: c4040958465a3812
+source: b6980e03955d9511
 ---
 
 Abre un tablero de análisis desde [[page:new-tab]] haciendo clic en {{label:Home.Card.AnalysisBoard.Title}} o abriendo una partida o repertorio guardado desde [[page:library]].
@@ -25,6 +25,6 @@ Para dibujar flechas y resaltar casillas, haz clic derecho y arrastra sobre el t
 
 La pestaña {{label:Board.Tabs.Info}} muestra las cabeceras de la partida, el FEN, el texto PGN y estadísticas del árbol, y te permite cambiar entre partidas en un archivo PGN con varias partidas.
 
-Para organizar el tablero de análisis, arrastra una pestaña de panel ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} o {{label:Board.Tabs.Info}}) o usa los botones de agarre de la barra de pestañas, la cabecera de la notación o la cabecera de un área de panel para colocar áreas al lado, encima o debajo de otra área con vista previa o con el teclado. Para que un panel abarque dos áreas (por ejemplo, {{label:Board.Tabs.Database}} sobre la notación y las pestañas), coloca primero el panel encima de una de ellas y después mueve la otra a su lado. Usa {{label:Board.Area.ReturnToTabs}} o arrastra un área de panel sobre la lista de pestañas para devolverla a las pestañas, y usa [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) para restaurar la disposición predeterminada.
+Para organizar el tablero de análisis, arrastra una pestaña de panel ({{label:Board.Tabs.Analysis}}, {{label:Board.Analysis.Report}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} o {{label:Board.Tabs.Info}}) o el asa de seis puntos de una tarjeta de motor o usa los botones de agarre de la barra de pestañas, la cabecera de la notación o la cabecera de un área de panel para colocar áreas al lado, encima o debajo de otra área con vista previa o con el teclado. Para que un panel abarque dos áreas (por ejemplo, {{label:Board.Tabs.Database}} sobre la notación y las pestañas), coloca primero el panel encima de una de ellas y después mueve la otra a su lado. Usa {{label:Board.Area.ReturnToTabs}} (o {{label:Board.Area.ReturnToEngines}} para una ventana de motor) o arrastra el área sobre la lista de pestañas para devolverla, y usa [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) para restaurar la disposición predeterminada.
 
 Para ocultar las pestañas, por ejemplo cuando cada panel que usas se muestra como su propia zona, haz clic en {{label:Board.Area.HideTabs}} debajo del asa al final de la barra de pestañas; las zonas vecinas ocupan su espacio. Las pestañas conservan su posición y tamaño: vuelve a mostrarlas con el botón {{label:Board.Arrange.ShowTabs}} que aparece en el encabezado de la notación mientras están ocultas, con un atajo de pestaña o al generar el informe. Un panel que devuelves mientras las pestañas están ocultas pasa a las pestañas ocultas.

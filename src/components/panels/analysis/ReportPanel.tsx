@@ -158,7 +158,7 @@ function ReportPanel() {
 
   if (!hasMoves) {
     return (
-      <ScrollArea offsetScrollbars>
+      <ScrollArea h="100%" pt="xs" pl="xs" offsetScrollbars>
         {modal}
         <Paper withBorder p="md" mr="xs" data-testid="report-needs-moves">
           <Text c="dimmed">{t("Board.Analysis.Report.NeedsMoves")}</Text>
@@ -168,7 +168,7 @@ function ReportPanel() {
   }
 
   return (
-    <ScrollArea offsetScrollbars>
+    <ScrollArea h="100%" pt="xs" pl="xs" offsetScrollbars>
       {modal}
       <Stack mb="lg" gap="0.4rem" mr="xs">
         <ProgressButton

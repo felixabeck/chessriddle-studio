@@ -2,12 +2,12 @@
 id: game-report
 title: Звіт про партію
 summary: Автоматичний аналіз партії рушієм із точністю, графіком оцінки, ключовими моментами та класифікацією ходів.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 Звіт про партію аналізує кожен хід головної лінії за допомогою локального шахового рушія та підсумовує точність і помилки в партії.
 
-Щоб створити звіт, відкрийте партію на дошці аналізу, перейдіть у {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} і натисніть {{label:Board.Analysis.GenerateReport}} (або скористайтеся комбінацією клавіш {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+Щоб створити звіт, відкрийте партію на дошці аналізу, перейдіть на вкладку {{label:Board.Analysis.Report}} і натисніть {{label:Board.Analysis.GenerateReport}} (або скористайтеся комбінацією клавіш {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 У діалозі {{label:Board.Analysis.GenerateReport}}:
 - Виберіть локальний {{label:Common.Engine}}. Якщо жоден не встановлено, додайте його на сторінці [[page:engines]].

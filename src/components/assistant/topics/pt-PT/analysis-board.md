@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tabuleiro de análise, variantes, comentários e setas
 summary: Introduza lances, edite posições, gira variantes, escreva comentários, adicione anotações e desenhe setas no tabuleiro.
-source: c4040958465a3812
+source: b6980e03955d9511
 ---
 
 Abra um tabuleiro de análise a partir de [[page:new-tab]] clicando em {{label:Home.Card.AnalysisBoard.Title}}, ou abrindo uma partida ou repertório guardado a partir de [[page:library]].
@@ -25,6 +25,6 @@ Para desenhar setas e destacar casas, clique com o botão direito do rato e arra
 
 O separador {{label:Board.Tabs.Info}} mostra os cabeçalhos da partida, a FEN, o texto PGN e as estatísticas da árvore, permitindo também alternar entre partidas num ficheiro PGN com várias partidas.
 
-Para organizar o tabuleiro de análise, arraste um separador de painel ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} ou {{label:Board.Tabs.Info}}) ou use as pegas na barra de separadores, no cabeçalho da notação ou no cabeçalho de uma área de painel para colocar áreas ao lado, acima ou abaixo de outra área com pré-visualização ou por teclado. Para colocar um painel sobre duas áreas (por exemplo, {{label:Board.Tabs.Database}} acima da notação e dos separadores), coloque primeiro o painel acima de uma delas e depois mova a outra para o lado. Use {{label:Board.Area.ReturnToTabs}} ou arraste uma área de painel para a lista de separadores para a devolver aos separadores, e use [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) para repor a disposição predefinida.
+Para organizar o tabuleiro de análise, arraste um separador de painel ({{label:Board.Tabs.Analysis}}, {{label:Board.Analysis.Report}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} ou {{label:Board.Tabs.Info}}) ou a pega de seis pontos de um cartão de motor ou use as pegas na barra de separadores, no cabeçalho da notação ou no cabeçalho de uma área de painel para colocar áreas ao lado, acima ou abaixo de outra área com pré-visualização ou por teclado. Para colocar um painel sobre duas áreas (por exemplo, {{label:Board.Tabs.Database}} acima da notação e dos separadores), coloque primeiro o painel acima de uma delas e depois mova a outra para o lado. Use {{label:Board.Area.ReturnToTabs}} (ou {{label:Board.Area.ReturnToEngines}} para uma janela de motor) ou arraste a área de volta para a lista de separadores para a devolver, e use [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) para repor a disposição predefinida.
 
 Para ocultar os separadores, por exemplo quando cada painel que usa é mostrado como área própria, clique em {{label:Board.Area.HideTabs}} por baixo da pega no fim da barra de separadores; as áreas vizinhas ocupam o seu espaço. Os separadores mantêm a posição e o tamanho: volte a mostrá-los com o botão {{label:Board.Arrange.ShowTabs}} que aparece no cabeçalho da notação enquanto estão ocultos, com um atalho de separador ou ao gerar o relatório. Um painel que devolva enquanto os separadores estão ocultos vai para os separadores ocultos.

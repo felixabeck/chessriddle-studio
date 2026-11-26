@@ -6,11 +6,24 @@ export const BASE_AREA_IDS = ["left", "topRight", "bottomRight"] as const;
 export type BaseAreaId = (typeof BASE_AREA_IDS)[number];
 
 /** Panels that can be taken out of the analysis board's tab strip as their own areas. */
-export const PANEL_AREA_IDS = ["analysis", "database", "annotate", "coach", "info"] as const;
+export const PANEL_AREA_IDS = [
+    "analysis",
+    "report",
+    "database",
+    "annotate",
+    "coach",
+    "info",
+] as const;
 export type PanelAreaId = (typeof PANEL_AREA_IDS)[number];
 
 /** Panels present on every analysis tab; at least one must remain in the tab strip. */
-export const ALWAYS_PRESENT_PANEL_IDS = ["analysis", "database", "annotate", "info"] as const;
+export const ALWAYS_PRESENT_PANEL_IDS = [
+    "analysis",
+    "report",
+    "database",
+    "annotate",
+    "info",
+] as const;
 
 export const BOARD_AREA_IDS = [...BASE_AREA_IDS, ...PANEL_AREA_IDS] as const;
 export type StaticBoardAreaId = (typeof BOARD_AREA_IDS)[number];
@@ -242,26 +255,41 @@ function replaceLeaf<Leaf extends string>(
     return { ...node, first, second };
 }
 
+/** Default split share (%) for a carried-over area or a newly placed engine window. */
+const CARRIED_AREA_SHARE = 30;
+
+/** Percentage share of the split given to `area` when placed beside another tile. */
+export function areaSplitShare(area: BoardAreaId): number {
+    return isEngineArea(area) ? CARRIED_AREA_SHARE : 50;
+}
+
 function splitTarget(
     area: BoardAreaId,
     target: BoardAreaId,
     side: PlacementSide,
 ): BoardArrangement {
+    const share = areaSplitShare(area);
     switch (side) {
         case "left":
-            return { direction: "row", first: area, second: target, splitPercentage: 50 };
+            return { direction: "row", first: area, second: target, splitPercentage: share };
         case "right":
-            return { direction: "row", first: target, second: area, splitPercentage: 50 };
+            return { direction: "row", first: target, second: area, splitPercentage: 100 - share };
         case "top":
-            return { direction: "column", first: area, second: target, splitPercentage: 50 };
+            return { direction: "column", first: area, second: target, splitPercentage: share };
         case "bottom":
-            return { direction: "column", first: target, second: area, splitPercentage: 50 };
+            return {
+                direction: "column",
+                first: target,
+                second: area,
+                splitPercentage: 100 - share,
+            };
     }
 }
 
 /**
- * Places `area` on `side` of `target` at 50 %. Removes `area` from its previous position first
- * if it is already in the tree. Returns `arrangement` unchanged on any disallowed move.
+ * Places `area` on `side` of `target` (30 % for an engine window, 50 % otherwise). Removes `area`
+ * from its previous position first if it is already in the tree. Returns `arrangement` unchanged
+ * on any disallowed move.
  */
 export function placeArea(
     arrangement: BoardArrangement,
@@ -311,7 +339,7 @@ export function returnEngineArea(
 
 export interface EnginePresence {
     id: string;
-    loaded?: boolean;
+    loaded?: boolean | null;
 }
 
 /**
@@ -415,7 +443,6 @@ export function applyShownSplits(
 const CARRIED_PLACEMENTS = ["tabs", "notation", "belowNotation", "board"] as const;
 type CarriedPlacement = (typeof CARRIED_PLACEMENTS)[number];
 const carriedPlacementSchema = z.enum(CARRIED_PLACEMENTS);
-const CARRIED_AREA_SHARE = 30;
 
 /** Raw string values already read from storage for the legacy layout keys and `windowsState`. */
 export interface LegacyLayoutValues {

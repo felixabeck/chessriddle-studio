@@ -1,14 +1,11 @@
-/* The slot holds the pinned engine bar while it sits below the board. Empty, it takes no room
-   and no gap. */
-.belowBoard {
+.engineWindow {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  gap: var(--mantine-spacing-xs);
-}
-
-.belowBoard:empty {
-  display: none;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .tabStripRow {

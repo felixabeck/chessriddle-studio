@@ -55,7 +55,7 @@ function AnalysisRow({
   const mark = chessdb?.note.match(/^[^\p{L}\p{N}\s()]+/u)?.[0];
   const winrate = chessdb?.winrate?.trim() ? Number(chessdb.winrate) : Number.NaN;
   const scoreBubble = (
-    <EngineScoreBubble engineId={engineId} size="md" score={score} inert={inert} />
+    <EngineScoreBubble engineId={engineId} size="sm" score={score} inert={inert} />
   );
 
   return (
@@ -66,7 +66,7 @@ function AnalysisRow({
       opacity={inert ? 0.5 : 1}
       style={{ verticalAlign: "top" }}
     >
-      <Table.Td width={chessdb ? undefined : 70}>
+      <Table.Td width={chessdb ? undefined : 62}>
         {chessdb ? (
           <Tooltip label={chessdb.note}>
             <Flex align="center" gap="xs" wrap="nowrap">
@@ -84,7 +84,7 @@ function AnalysisRow({
           direction="row"
           wrap="wrap"
           style={{
-            height: open ? "100%" : 35,
+            height: open ? "100%" : 28,
             overflow: "hidden",
             alignItems: "center",
           }}

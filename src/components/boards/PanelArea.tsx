@@ -44,6 +44,7 @@ export default function PanelArea({
         justify="space-between"
         gap="xs"
         wrap="nowrap"
+        data-panel-header={panel}
         onPointerDown={onDragStart}
         onClickCapture={onSuppressClick}
       >

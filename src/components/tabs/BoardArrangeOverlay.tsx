@@ -13,6 +13,7 @@ interface BoardArrangeOverlayProps {
   placing: PlacingState | null;
   onSelectTarget: (target: ArrangeTarget) => void;
   onCancelPlacing: () => void;
+  resolveEngineName?: (engineId: string) => string | undefined;
 }
 
 /**
@@ -24,6 +25,7 @@ export default function BoardArrangeOverlay({
   placing,
   onSelectTarget,
   onCancelPlacing,
+  resolveEngineName,
 }: BoardArrangeOverlayProps) {
   const { t } = useTranslation();
   const titleId = useId();
@@ -97,27 +99,47 @@ export default function BoardArrangeOverlay({
 
   return (
     <>
-      {dragPreview && (
-        <div
-          className={classes.preview}
-          data-testid="board-arrange-preview"
-          data-arrange-kind={dragPreview.target.kind}
-          data-arrange-target={
-            dragPreview.target.kind === "place" ? dragPreview.target.target : "tabs"
-          }
-          data-arrange-side={
-            dragPreview.target.kind === "place" ? dragPreview.target.side : undefined
-          }
-          style={{
-            left: dragPreview.box.left,
-            top: dragPreview.box.top,
-            width: dragPreview.box.width,
-            height: dragPreview.box.height,
-          }}
-        >
-          <span className={classes.previewBadge}>{arrangeTargetLabel(t, dragPreview.target)}</span>
-        </div>
-      )}
+      {dragPreview &&
+        (dragPreview.target.kind === "reorder" ? (
+          <div
+            className={classes.reorderPreview}
+            data-testid="board-arrange-preview"
+            data-arrange-kind="reorder"
+            data-arrange-index={dragPreview.target.index}
+            style={{
+              left: dragPreview.box.left,
+              top: dragPreview.box.top,
+              width: dragPreview.box.width,
+              height: dragPreview.box.height,
+            }}
+          />
+        ) : (
+          <div
+            className={classes.preview}
+            data-testid="board-arrange-preview"
+            data-arrange-kind={dragPreview.target.kind}
+            data-arrange-target={
+              dragPreview.target.kind === "place"
+                ? dragPreview.target.target
+                : "returnZone" in dragPreview
+                  ? (dragPreview.returnZone ?? "tabs")
+                  : "tabs"
+            }
+            data-arrange-side={
+              dragPreview.target.kind === "place" ? dragPreview.target.side : undefined
+            }
+            style={{
+              left: dragPreview.box.left,
+              top: dragPreview.box.top,
+              width: dragPreview.box.width,
+              height: dragPreview.box.height,
+            }}
+          >
+            <span className={classes.previewBadge}>
+              {arrangeTargetLabel(t, dragPreview.target, resolveEngineName, dragPreview.area)}
+            </span>
+          </div>
+        ))}
       {placing && (
         <div
           className={classes.placingBackdrop}
@@ -144,7 +166,9 @@ export default function BoardArrangeOverlay({
               wrap="nowrap"
             >
               <Text id={titleId} fw={600} fz="sm" className={classes.placingTitle}>
-                {t("Board.Arrange.PlaceTitle", { area: areaDisplayName(t, placing.area) })}
+                {t("Board.Arrange.PlaceTitle", {
+                  area: areaDisplayName(t, placing.area, resolveEngineName),
+                })}
               </Text>
               <IconAction
                 ref={closeButtonRef}
@@ -171,7 +195,7 @@ export default function BoardArrangeOverlay({
                       classNames={{ label: classes.targetButtonLabel }}
                       onClick={() => onSelectTarget(target)}
                     >
-                      {arrangeTargetLabel(t, target)}
+                      {arrangeTargetLabel(t, target, resolveEngineName, placing.area)}
                     </Button>
                   );
                 })}

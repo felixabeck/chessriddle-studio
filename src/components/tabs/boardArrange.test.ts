@@ -11,8 +11,10 @@ import {
     areaDisplayName,
     arrangeTargetLabel,
     hitTestArrangeTarget,
+    hitTestReorderSlot,
     nearestEdge,
     previewBoxForTarget,
+    reorderPreviewBox,
     type RectBox,
     validArrangeTargets,
 } from "./boardArrange";
@@ -45,7 +47,7 @@ describe("validArrangeTargets", () => {
     });
 
     test("enforces the strip rule when taking out the last always-present panel", () => {
-        const threeTakenOut: BoardArrangement = {
+        const fourTakenOut: BoardArrangement = {
             direction: "row",
             first: "left",
             second: {
@@ -53,14 +55,18 @@ describe("validArrangeTargets", () => {
                 first: "analysis",
                 second: {
                     direction: "column",
-                    first: "database",
+                    first: "report",
                     second: {
                         direction: "column",
-                        first: "annotate",
+                        first: "database",
                         second: {
                             direction: "column",
-                            first: "topRight",
-                            second: "bottomRight",
+                            first: "annotate",
+                            second: {
+                                direction: "column",
+                                first: "topRight",
+                                second: "bottomRight",
+                            },
                         },
                     },
                 },
@@ -69,8 +75,8 @@ describe("validArrangeTargets", () => {
         expect(
             validArrangeTargets({
                 area: "info",
-                stored: threeTakenOut,
-                displayed: threeTakenOut,
+                stored: fourTakenOut,
+                displayed: fourTakenOut,
                 hiddenAreas: EMPTY_SET,
                 width: 1440,
                 rootFont: 16,
@@ -80,8 +86,8 @@ describe("validArrangeTargets", () => {
         expect(
             validArrangeTargets({
                 area: "coach",
-                stored: threeTakenOut,
-                displayed: threeTakenOut,
+                stored: fourTakenOut,
+                displayed: fourTakenOut,
                 hiddenAreas: EMPTY_SET,
                 width: 1440,
                 rootFont: 16,
@@ -168,7 +174,7 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
         width: 500,
         height: 400,
     };
-    const tabListRect: RectBox = {
+    const returnRect: RectBox = {
         left: 604,
         top: 54,
         right: 1096,
@@ -201,7 +207,7 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
                 area: "database",
                 validTargets: valid,
                 tileRects,
-                tabListRect,
+                returnRect,
             }),
         ).toEqual({ kind: "return" });
 
@@ -213,7 +219,7 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
                 area: "database",
                 validTargets: valid,
                 tileRects,
-                tabListRect,
+                returnRect,
             }),
         ).toBeNull();
     });
@@ -224,7 +230,7 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
                 { kind: "place", target: "left", side: "left" },
                 layoutRect,
                 tileRects,
-                tabListRect,
+                returnRect,
             ),
         ).toEqual({ left: 0, top: 0, width: 250, height: 800 });
         expect(
@@ -232,7 +238,7 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
                 { kind: "place", target: "left", side: "right" },
                 layoutRect,
                 tileRects,
-                tabListRect,
+                returnRect,
             ),
         ).toEqual({ left: 250, top: 0, width: 250, height: 800 });
         expect(
@@ -240,7 +246,7 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
                 { kind: "place", target: "left", side: "top" },
                 layoutRect,
                 tileRects,
-                tabListRect,
+                returnRect,
             ),
         ).toEqual({ left: 0, top: 0, width: 500, height: 400 });
         expect(
@@ -248,17 +254,54 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
                 { kind: "place", target: "left", side: "bottom" },
                 layoutRect,
                 tileRects,
-                tabListRect,
+                returnRect,
             ),
         ).toEqual({ left: 0, top: 400, width: 500, height: 400 });
-        expect(previewBoxForTarget({ kind: "return" }, layoutRect, tileRects, tabListRect)).toEqual(
-            {
-                left: 504,
-                top: 4,
-                width: 492,
-                height: 40,
-            },
-        );
+        expect(previewBoxForTarget({ kind: "return" }, layoutRect, tileRects, returnRect)).toEqual({
+            left: 504,
+            top: 4,
+            width: 492,
+            height: 40,
+        });
+
+        // Engine windows preview with the same 30 % share that placeArea applies on each side.
+        const eng = engineAreaId("sf");
+        expect(
+            previewBoxForTarget(
+                { kind: "place", target: "left", side: "left" },
+                layoutRect,
+                tileRects,
+                returnRect,
+                eng,
+            ),
+        ).toEqual({ left: 0, top: 0, width: 150, height: 800 });
+        expect(
+            previewBoxForTarget(
+                { kind: "place", target: "left", side: "right" },
+                layoutRect,
+                tileRects,
+                returnRect,
+                eng,
+            ),
+        ).toEqual({ left: 350, top: 0, width: 150, height: 800 });
+        expect(
+            previewBoxForTarget(
+                { kind: "place", target: "left", side: "top" },
+                layoutRect,
+                tileRects,
+                returnRect,
+                eng,
+            ),
+        ).toEqual({ left: 0, top: 0, width: 500, height: 240 });
+        expect(
+            previewBoxForTarget(
+                { kind: "place", target: "left", side: "bottom" },
+                layoutRect,
+                tileRects,
+                returnRect,
+                eng,
+            ),
+        ).toEqual({ left: 0, top: 560, width: 500, height: 240 });
     });
 
     test("arrangeTargetLabel uses grammatical base-area keys and parameterized panel keys", () => {
@@ -333,5 +376,119 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
                 id === "legacy-engine-identity:sf" ? "Stockfish" : undefined,
             ),
         ).toBe("Board.Arrange.Below(Stockfish)");
+        expect(arrangeTargetLabel(t, { kind: "return" }, undefined, eng)).toBe(
+            "Board.Arrange.BackIntoEngines",
+        );
+        expect(arrangeTargetLabel(t, { kind: "return" }, undefined, "database")).toBe(
+            "Board.Arrange.BackIntoTabs",
+        );
+        expect(areaDisplayName(t, "report")).toBe("Board.Analysis.Report");
+    });
+
+    test("hitTestReorderSlot and reorderPreviewBox resolve insertion slots and skip no-op slots", () => {
+        const containerRect: RectBox = {
+            left: 10,
+            top: 100,
+            right: 210,
+            bottom: 250,
+            width: 200,
+            height: 150,
+        };
+        const cardRects: RectBox[] = [
+            { left: 10, top: 100, right: 210, bottom: 145, width: 200, height: 45 },
+            { left: 10, top: 150, right: 210, bottom: 195, width: 200, height: 45 },
+            { left: 10, top: 200, right: 210, bottom: 245, width: 200, height: 45 },
+        ];
+        // Dragging card 0: slots 0 and 1 are no-ops; slot 2 (above card 2) and slot 3 (after card 2) are valid.
+        expect(
+            hitTestReorderSlot({ x: 50, y: 110, containerRect, cardRects, currentIndex: 0 }),
+        ).toBeNull();
+        expect(
+            hitTestReorderSlot({ x: 50, y: 160, containerRect, cardRects, currentIndex: 0 }),
+        ).toBeNull();
+        expect(
+            hitTestReorderSlot({ x: 50, y: 210, containerRect, cardRects, currentIndex: 0 }),
+        ).toBe(2);
+        expect(
+            hitTestReorderSlot({ x: 50, y: 240, containerRect, cardRects, currentIndex: 0 }),
+        ).toBe(3);
+        // Outside container returns null so board placement targets can take over.
+        expect(
+            hitTestReorderSlot({ x: 300, y: 210, containerRect, cardRects, currentIndex: 0 }),
+        ).toBeNull();
+
+        const layoutRect: RectBox = {
+            left: 0,
+            top: 0,
+            right: 800,
+            bottom: 600,
+            width: 800,
+            height: 600,
+        };
+        expect(reorderPreviewBox(2, layoutRect, cardRects)).toEqual({
+            left: 10,
+            top: 195.5,
+            width: 200,
+            height: 4,
+        });
+    });
+
+    test("engine return zone hit-tests before Analysis tile edges while the rest of the Analysis tile keeps placement edges", () => {
+        const eng = engineAreaId("sf");
+        const layout = placeArea(
+            placeArea(defaultBoardArrangement(), "analysis", "left", "right"),
+            eng,
+            "left",
+            "bottom",
+        );
+        const targets = validArrangeTargets({
+            area: eng,
+            stored: layout,
+            displayed: layout,
+            hiddenAreas: EMPTY_SET,
+            width: 1440,
+            rootFont: 16,
+        });
+        const analysisTile: RectBox = {
+            left: 400,
+            top: 0,
+            right: 800,
+            bottom: 400,
+            width: 400,
+            height: 400,
+        };
+        const analysisHeader: RectBox = {
+            left: 400,
+            top: 0,
+            right: 800,
+            bottom: 32,
+            width: 400,
+            height: 32,
+        };
+        const tileRects = new Map<BoardAreaId, RectBox>([["analysis", analysisTile]]);
+
+        // Over the Analysis header -> return.
+        expect(
+            hitTestArrangeTarget({
+                x: 500,
+                y: 16,
+                area: eng,
+                validTargets: targets,
+                tileRects,
+                returnRect: analysisHeader,
+            }),
+        ).toEqual({ kind: "return" });
+
+        // Over the bottom of the Analysis tile -> place below Analysis.
+        expect(
+            hitTestArrangeTarget({
+                x: 500,
+                y: 380,
+                area: eng,
+                validTargets: targets,
+                tileRects,
+                returnRect: analysisHeader,
+            }),
+        ).toEqual({ kind: "place", target: "analysis", side: "bottom" });
     });
 });

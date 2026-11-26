@@ -1,6 +1,7 @@
 import {
     BookBookmark,
     Brain,
+    ChartNoAxesColumn,
     ChessKnight,
     ChevronRight,
     ChevronsRight,
@@ -125,6 +126,7 @@ export const GuideIcon: LucideIcon = Info;
 /** Both AI chats: the Coach panel on the board and the Assistant panel. */
 export const AiChatIcon: LucideIcon = MessagesSquare;
 export const AnalysisIcon: LucideIcon = ScanSearch;
+export const ReportIcon: LucideIcon = ChartNoAxesColumn;
 export const FeedbackIcon: LucideIcon = MessageSquarePlus;
 export const StreakIcon: LucideIcon = Flame;
 /** Repertoire practice: the board panel's Practice tab. */
@@ -154,6 +156,7 @@ export const LUCIDE_IDENTITIES = {
     guide: { icon: GuideIcon, chessRiddle: "guide" },
     aiChat: { icon: AiChatIcon },
     analysis: { icon: AnalysisIcon },
+    report: { icon: ReportIcon, chessRiddle: "statistics" },
     feedback: { icon: FeedbackIcon, chessRiddle: "feedback" },
     streak: { icon: StreakIcon, chessRiddle: "streak" },
     practice: { icon: PracticeIcon, chessRiddle: "training" },

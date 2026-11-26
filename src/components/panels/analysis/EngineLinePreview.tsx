@@ -12,6 +12,7 @@ import { moveHighlightAtom, previewBoardOnHoverAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { positionFromFen } from "@/utils/chessops";
 import { backgroundHotkeyOptions, ENGINE_LINE_PREVIEW_ATTRIBUTE } from "@/utils/keyboardOwnership";
+import { ANALYSIS_PANEL_SCROLL_EVENT } from "./analysisPanelScroll";
 import EngineLineMove from "./EngineLineMove";
 
 /** The preview index of the line's start position, before its first move; only keys reach it. */
@@ -169,8 +170,8 @@ export function useEngineLinePreview({
     }
     const place = () => setPlacement(previewPlacement(anchor.current));
     place();
-    document.addEventListener("analysis-panel-scroll", place);
-    return () => document.removeEventListener("analysis-panel-scroll", place);
+    document.addEventListener(ANALYSIS_PANEL_SCROLL_EVENT, place);
+    return () => document.removeEventListener(ANALYSIS_PANEL_SCROLL_EVENT, place);
   }, [open, anchor]);
 
   const board: ReactNode = shown && placement && (

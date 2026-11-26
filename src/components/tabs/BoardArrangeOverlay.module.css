@@ -12,6 +12,15 @@
   padding: 4px;
 }
 
+.reorderPreview {
+  position: absolute;
+  z-index: 35;
+  pointer-events: none;
+  box-sizing: border-box;
+  background: var(--cf-primary);
+  border-radius: var(--cf-radius-full);
+}
+
 .previewBadge {
   background: var(--cf-popover);
   color: var(--cf-popover-foreground);

@@ -2,7 +2,7 @@
 id: engines
 title: 西洋棋引擎與分析面板
 summary: 安裝或新增本機與雲端引擎、設定 UCI 選項，並在棋盤上使用即時分析。
-source: 0e9ac8bab01e58b5
+source: f40b5fdf8e5c15a0
 ---
 
 在 [[page:engines]] ({{label:SideBar.Engines}}) 管理您的西洋棋引擎。
@@ -14,12 +14,12 @@ source: 0e9ac8bab01e58b5
 
 在 [[page:engines]] 上選取任意引擎進行設定。對於本機引擎，您可以編輯一般詳細資料、設定預設 UCI 選項（例如 Threads、Hash 與 MultiPV）、附加如 Syzygy 殘局庫等資源檔案，點擊 {{label:Engines.Settings.Reset}} 還原預設值、{{label:Common.Duplicate}} 複製設定，或 {{label:Common.Remove}} 將其移除。對於雲端引擎，您可以編輯名稱與 {{label:Engines.Settings.NumOfLines}}。
 
-在分析棋盤上，開啟 {{label:Board.Tabs.Analysis}} 分頁並選取 {{label:Board.Analysis.Engines}}：
+在分析棋盤上，開啟 {{label:Board.Tabs.Analysis}} 分頁：
 - 點擊 {{label:Board.Analysis.SelectEngines}} 選取要載入面板的已安裝引擎，或點擊 {{label:Board.Analysis.ManageEngines}} 跳轉至 [[page:engines]]。
-- 點擊引擎卡片上的 {{label:Board.Analysis.EnableEngine}} 或 {{label:Board.Analysis.DisableEngine}} 開始或暫停分析，載入多個引擎時可使用 {{label:Board.Analysis.EnableAllEngines}}。
+- 點擊引擎卡片上的 {{label:Board.Analysis.EnableEngine}} 或 {{label:Board.Analysis.DisableEngine}} 開始或暫停分析，或使用底部的 {{label:Board.Analysis.EnableAllEngines}}。
 - 點擊 {{label:Board.Analysis.CheckThreat}}（或按 {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} 快捷鍵）分析對手的威脅。
-- 點擊 {{label:Board.Analysis.Pin}} 將引擎評估條釘選在分頁外部，或點擊 {{label:Board.Analysis.EngineSettings}} 調整各分頁專屬設定，如搜尋上限與變例數。
-- 透過 {{label:Board.Analysis.ReorderEngine}} 拖曳引擎卡片以調整順序。
+- 使用卡片上的變例數選擇器挑選 1 到 5 條變例，或點擊 {{label:Board.Analysis.EngineSettings}} 調整各分頁專屬設定，如搜尋上限與 UCI 選項。
+- 拖曳引擎卡片的六點手把（{{label:Board.Analysis.ReorderEngine}}）可調整順序或將其拖出到棋盤上作為獨立視窗，點擊手把則可用鍵盤移動。點擊 {{label:Board.Area.ReturnToEngines}} 或將視窗拖回分頁列（或 {{label:Board.Tabs.Analysis}} 標題列）即可放回。
 - 引擎發生錯誤時，點擊 {{label:Board.Analysis.RetryEngine}} 旁的 {{label:Board.Analysis.Logs}} 檢視其 UCI 通訊紀錄。對於執行中的引擎，相同按鈕位於其卡片的 {{label:Board.Analysis.EngineSettings}} 中。
 
 透過 [[setting:arrows]] ({{label:Settings.Arrows}}) 控制棋盤上的引擎箭頭。本機引擎儲存在 [[setting:engines-directory]] 所設定的資料夾中。

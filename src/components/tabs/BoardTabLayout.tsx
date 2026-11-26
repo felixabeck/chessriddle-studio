@@ -21,17 +21,23 @@ import {
   BASE_AREA_IDS,
   BOARD_AREA_IDS,
   type BoardAreaId,
+  canTakeOutEngine,
   canTakeOutPanel,
+  type EngineAreaId,
   type HideableAreaId,
+  hiddenEngineAreas,
   isEngineArea,
   isPanelArea,
   type PanelAreaId,
   placeArea,
   type PlacementSide,
+  pruneMissingEngineAreas,
+  returnEngineArea,
   returnPanelArea,
   shownArrangement,
   type StaticBoardAreaId,
 } from "@/state/boardArrangement";
+import { enginesAtom } from "@/state/atoms";
 import { coachEnabledAtom } from "@/state/coach";
 import {
   analysisTabsHiddenAtom,
@@ -42,14 +48,11 @@ import {
 import { arrangementFitsWidth, needsTwoPaneStack } from "@/state/paneLayout";
 import BoardArrangeOverlay from "./BoardArrangeOverlay";
 import classes from "./BoardsPage.module.css";
-import { useBoardArranging } from "./useBoardArranging";
+import { type EngineCardReorderOptions, useBoardArranging } from "./useBoardArranging";
 
 const resize = { minimumPaneSizePercentage: 0 };
 const EMPTY_PANEL_SET: ReadonlySet<PanelAreaId> = new Set();
-const NOTHING_HIDDEN: ReadonlySet<HideableAreaId> = new Set();
-const COACH_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["coach"]);
-const TABS_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["topRight"]);
-const COACH_AND_TABS_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["coach", "topRight"]);
+const EMPTY_ENGINE_SET: ReadonlySet<EngineAreaId> = new Set();
 
 /** DOM id of the portal destination for a static board area. Base areas keep their existing ids. */
 export function boardAreaTargetId(area: StaticBoardAreaId): string {
@@ -69,18 +72,28 @@ function createAreaTarget(id: BoardAreaId): HTMLDivElement {
 export interface BoardArrangementContextValue {
   /** Panel areas currently shown as their own tiles on the board. */
   shownPanelAreas: ReadonlySet<PanelAreaId>;
+  /** Engine areas currently shown as their own tiles on the board. */
+  shownEngineAreas: ReadonlySet<EngineAreaId>;
   /** Portal destination element owned by the layout mount for `area`. */
   getAreaTarget: (area: BoardAreaId) => HTMLElement | undefined;
   /** Whether the analysis board's own arrangement is currently displayed and arrangeable. */
   arrangingAvailable: boolean;
   /** Whether `panel` is in the strip and can be taken out without breaking the strip rule. */
   canTakeOut: (panel: PanelAreaId) => boolean;
+  /** Whether `area` is an engine not yet in the arrangement and below the engine window cap. */
+  canTakeOutEngine: (area: EngineAreaId) => boolean;
   /** Returns a panel area back to the tab strip. */
   returnPanel: (panel: PanelAreaId) => void;
+  /** Returns a pulled-out engine area back to the Engines panel. */
+  returnEngine: (area: EngineAreaId) => void;
   /** Registers a listener invoked whenever a panel area returns to the tab strip. */
   registerReturnListener: (listener: ((panel: PanelAreaId) => void) | null) => void;
-  /** Starts a pointer-capture drag for `area`. */
-  beginDrag: (area: BoardAreaId, event: ReactPointerEvent<HTMLElement>) => void;
+  /** Starts a pointer-capture drag for `area` (with optional reorder slots for engine cards). */
+  beginDrag: (
+    area: BoardAreaId,
+    event: ReactPointerEvent<HTMLElement>,
+    reorder?: EngineCardReorderOptions,
+  ) => void;
   /** Suppresses the trailing click after a drag gesture finishes. */
   consumeSuppressedClick: (event: ReactMouseEvent) => void;
   /** Starts keyboard/click placing for `area`, returning focus on cancel to `originArea`. */
@@ -93,10 +106,13 @@ export interface BoardArrangementContextValue {
 
 export const BoardArrangementContext = createContext<BoardArrangementContextValue>({
   shownPanelAreas: EMPTY_PANEL_SET,
+  shownEngineAreas: EMPTY_ENGINE_SET,
   getAreaTarget: () => undefined,
   arrangingAvailable: false,
   canTakeOut: () => false,
+  canTakeOutEngine: () => false,
   returnPanel: () => undefined,
+  returnEngine: () => undefined,
   registerReturnListener: () => undefined,
   beginDrag: () => undefined,
   consumeSuppressedClick: () => undefined,
@@ -135,21 +151,33 @@ export default function BoardTabLayout({
   const [windowsState, setWindowsState] = useAtom(windowsStateAtom);
   const [storedArrangement, setStoredArrangement] = useAtom(boardArrangementAtom);
   const coachEnabled = useAtomValue(coachEnabledAtom);
+  const engines = useAtomValue(enginesAtom);
   const [tabsHiddenStored, setTabsHidden] = useAtom(analysisTabsHiddenAtom);
   const { ref, width } = useElementWidth();
   const rootFont = useRootFontPx();
   const returnListenerRef = useRef<((panel: PanelAreaId) => void) | null>(null);
 
+  // Prune stored engine leaves whose engine was deleted once the engine list has loaded.
+  useEffect(() => {
+    if (!arrangeable || engines === undefined) return;
+    const pruned = pruneMissingEngineAreas(storedArrangement, engines);
+    if (pruned !== storedArrangement) {
+      setStoredArrangement(pruned);
+    }
+  }, [arrangeable, engines, storedArrangement, setStoredArrangement]);
+
   // The tab strip is hidden only from the analysis board's arrangement; other boards and the
   // stacked and too-narrow layouts below always show it.
   const tabsHiddenHere = arrangeable && tabsHiddenStored;
-  const hiddenAreas = coachEnabled
-    ? tabsHiddenHere
-      ? TABS_HIDDEN
-      : NOTHING_HIDDEN
-    : tabsHiddenHere
-      ? COACH_AND_TABS_HIDDEN
-      : COACH_HIDDEN;
+  const hiddenAreas = useMemo<ReadonlySet<HideableAreaId>>(() => {
+    const next = new Set<HideableAreaId>();
+    if (!coachEnabled) next.add("coach");
+    if (tabsHiddenHere) next.add("topRight");
+    for (const area of hiddenEngineAreas(storedArrangement, engines)) {
+      next.add(area);
+    }
+    return next;
+  }, [coachEnabled, tabsHiddenHere, storedArrangement, engines]);
   const displayedArrangement = useMemo(
     () => shownArrangement(storedArrangement, hiddenAreas),
     [storedArrangement, hiddenAreas],
@@ -205,6 +233,13 @@ export default function BoardTabLayout({
     [setStoredArrangement],
   );
 
+  const returnEngineLeaf = useCallback(
+    (area: EngineAreaId) => {
+      setStoredArrangement((stored) => returnEngineArea(stored, area));
+    },
+    [setStoredArrangement],
+  );
+
   const handlePlace = useCallback(
     (area: BoardAreaId, target: BoardAreaId, side: PlacementSide) => {
       setStoredArrangement((stored) => placeArea(stored, area, target, side));
@@ -214,6 +249,11 @@ export default function BoardTabLayout({
 
   const canTakeOut = useCallback(
     (panel: PanelAreaId) => canTakeOutPanel(storedArrangement, panel),
+    [storedArrangement],
+  );
+
+  const canTakeOutEngineHere = useCallback(
+    (area: EngineAreaId) => canTakeOutEngine(storedArrangement, area),
     [storedArrangement],
   );
 
@@ -228,20 +268,44 @@ export default function BoardTabLayout({
     rootFont,
     onPlace: handlePlace,
     onReturn: returnPanel,
+    onReturnEngine: returnEngineLeaf,
   });
+
+  const { scheduleEngineReturnFocus } = arranging;
+  const returnEngine = useCallback(
+    (area: EngineAreaId) => {
+      scheduleEngineReturnFocus(area);
+      returnEngineLeaf(area);
+    },
+    [scheduleEngineReturnFocus, returnEngineLeaf],
+  );
+
+  const resolveEngineName = useCallback(
+    (engineId: string) => engines?.find((engine) => engine.id === engineId)?.name,
+    [engines],
+  );
 
   const shownPanelAreas = useMemo<ReadonlySet<PanelAreaId>>(
     () => (useArrangement ? new Set(arrangementPanelAreas(displayedArrangement)) : EMPTY_PANEL_SET),
     [useArrangement, displayedArrangement],
   );
 
+  const shownEngineAreas = useMemo<ReadonlySet<EngineAreaId>>(
+    () =>
+      useArrangement ? new Set(arrangementEngineAreas(displayedArrangement)) : EMPTY_ENGINE_SET,
+    [useArrangement, displayedArrangement],
+  );
+
   const arrangementContext = useMemo<BoardArrangementContextValue>(
     () => ({
       shownPanelAreas,
+      shownEngineAreas,
       getAreaTarget,
       arrangingAvailable: useArrangement,
       canTakeOut,
+      canTakeOutEngine: canTakeOutEngineHere,
       returnPanel,
+      returnEngine,
       registerReturnListener,
       beginDrag: arranging.beginDrag,
       consumeSuppressedClick: arranging.consumeSuppressedClick,
@@ -251,10 +315,13 @@ export default function BoardTabLayout({
     }),
     [
       shownPanelAreas,
+      shownEngineAreas,
       getAreaTarget,
       useArrangement,
       canTakeOut,
+      canTakeOutEngineHere,
       returnPanel,
+      returnEngine,
       registerReturnListener,
       arranging.beginDrag,
       arranging.consumeSuppressedClick,
@@ -311,12 +378,13 @@ export default function BoardTabLayout({
               <TargetHost key={id} target={target} />
             ))}
         </div>
-        {useArrangement && (
+        {(useArrangement || arranging.dragPreview !== null) && (
           <BoardArrangeOverlay
             dragPreview={arranging.dragPreview}
-            placing={arranging.placing}
+            placing={useArrangement ? arranging.placing : null}
             onSelectTarget={arranging.applyPlacingTarget}
             onCancelPlacing={arranging.cancelPlacing}
+            resolveEngineName={resolveEngineName}
           />
         )}
       </div>

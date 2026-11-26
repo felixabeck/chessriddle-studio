@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import {
+    areaSplitShare,
     arrangementLeaves,
     type BoardAreaId,
     type BoardArrangement,
@@ -20,6 +21,10 @@ import { arrangementFitsWidth } from "@/state/paneLayout";
 export type ArrangeTarget =
     | { kind: "place"; target: BoardAreaId; side: PlacementSide }
     | { kind: "return" };
+
+export type DragTarget = ArrangeTarget | { kind: "reorder"; index: number };
+
+export type ReturnZone = "tabs" | "engines";
 
 export interface RectBox {
     left: number;
@@ -114,6 +119,17 @@ export function pointInRect(x: number, y: number, rect: RectBox): boolean {
     );
 }
 
+/** Intersection of two rectangles, or `null` when they do not overlap with positive area. */
+export function intersectRects(a: RectBox, b: RectBox): RectBox | null {
+    const left = Math.max(a.left, b.left);
+    const top = Math.max(a.top, b.top);
+    const right = Math.min(a.right, b.right);
+    const bottom = Math.min(a.bottom, b.bottom);
+    const width = right - left;
+    const height = bottom - top;
+    return width > 0 && height > 0 ? { left, top, right, bottom, width, height } : null;
+}
+
 /**
  * Picks the edge of `rect` closest to `(x, y)` using normalized distances so tall or wide tiles
  * treat all four sides proportionally. Returns `null` when the point is outside `rect`.
@@ -134,9 +150,68 @@ export function nearestEdge(x: number, y: number, rect: RectBox): PlacementSide 
 }
 
 /**
+ * Resolves a reorder insertion slot (0..cardRects.length) within `cardRects` (ordered
+ * top-to-bottom) when `(x, y)` lies inside `containerRect`. Returns `null` when outside
+ * `containerRect` or when dropping at that slot would leave `currentIndex` unchanged.
+ */
+export function hitTestReorderSlot({
+    x,
+    y,
+    containerRect,
+    cardRects,
+    currentIndex,
+}: {
+    x: number;
+    y: number;
+    containerRect: RectBox;
+    cardRects: readonly RectBox[];
+    currentIndex: number;
+}): number | null {
+    if (cardRects.length < 2 || currentIndex < 0 || currentIndex >= cardRects.length) return null;
+    if (!pointInRect(x, y, containerRect)) return null;
+    let slot = cardRects.length;
+    for (let i = 0; i < cardRects.length; i += 1) {
+        const midpoint = cardRects[i].top + cardRects[i].height / 2;
+        if (y < midpoint) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot === currentIndex || slot === currentIndex + 1) return null;
+    return slot;
+}
+
+/** Computes a thin horizontal insertion indicator relative to `layoutRect` for a reorder slot. */
+export function reorderPreviewBox(
+    slot: number,
+    layoutRect: RectBox,
+    cardRects: readonly RectBox[],
+): PreviewBox | null {
+    if (cardRects.length === 0 || slot < 0 || slot > cardRects.length) return null;
+    const BAR_HEIGHT = 4;
+    let top: number;
+    if (slot === 0) {
+        top = cardRects[0].top - layoutRect.top - BAR_HEIGHT / 2;
+    } else if (slot === cardRects.length) {
+        top = cardRects[cardRects.length - 1].bottom - layoutRect.top - BAR_HEIGHT / 2;
+    } else {
+        top =
+            (cardRects[slot - 1].bottom + cardRects[slot].top) / 2 -
+            layoutRect.top -
+            BAR_HEIGHT / 2;
+    }
+    return {
+        left: cardRects[0].left - layoutRect.left,
+        top,
+        width: cardRects[0].width,
+        height: BAR_HEIGHT,
+    };
+}
+
+/**
  * Resolves the hovered drop target under pointer coordinates `(x, y)` among `validTargets`.
- * Over the tab list a detached panel area targets "Back into the tabs"; otherwise the tile under
- * the pointer chooses its nearest edge if that edge is in `validTargets`.
+ * Over the return zone (tab list, or the Analysis area's header for an engine window) a detached
+ * area targets "return"; otherwise the tile under the pointer chooses its nearest edge if valid.
  */
 export function hitTestArrangeTarget({
     x,
@@ -144,17 +219,17 @@ export function hitTestArrangeTarget({
     area,
     validTargets,
     tileRects,
-    tabListRect,
+    returnRect,
 }: {
     x: number;
     y: number;
     area: BoardAreaId;
     validTargets: readonly ArrangeTarget[];
     tileRects: ReadonlyMap<BoardAreaId, RectBox>;
-    tabListRect: RectBox | null;
+    returnRect: RectBox | null;
 }): ArrangeTarget | null {
     const canReturn = validTargets.some((item) => item.kind === "return");
-    if (canReturn && tabListRect && pointInRect(x, y, tabListRect)) {
+    if (canReturn && returnRect && pointInRect(x, y, returnRect)) {
         return { kind: "return" };
     }
 
@@ -176,15 +251,16 @@ export function previewBoxForTarget(
     target: ArrangeTarget,
     layoutRect: RectBox,
     tileRects: ReadonlyMap<BoardAreaId, RectBox>,
-    tabListRect: RectBox | null,
+    returnRect: RectBox | null,
+    movingArea?: BoardAreaId,
 ): PreviewBox | null {
     if (target.kind === "return") {
-        if (!tabListRect) return null;
+        if (!returnRect) return null;
         return {
-            left: tabListRect.left - layoutRect.left,
-            top: tabListRect.top - layoutRect.top,
-            width: tabListRect.width,
-            height: tabListRect.height,
+            left: returnRect.left - layoutRect.left,
+            top: returnRect.top - layoutRect.top,
+            width: returnRect.width,
+            height: returnRect.height,
         };
     }
 
@@ -192,24 +268,25 @@ export function previewBoxForTarget(
     if (!rect) return null;
     const relLeft = rect.left - layoutRect.left;
     const relTop = rect.top - layoutRect.top;
+    const ratio = (movingArea ? areaSplitShare(movingArea) : 50) / 100;
     switch (target.side) {
         case "left":
-            return { left: relLeft, top: relTop, width: rect.width / 2, height: rect.height };
+            return { left: relLeft, top: relTop, width: rect.width * ratio, height: rect.height };
         case "right":
             return {
-                left: relLeft + rect.width / 2,
+                left: relLeft + rect.width * (1 - ratio),
                 top: relTop,
-                width: rect.width / 2,
+                width: rect.width * ratio,
                 height: rect.height,
             };
         case "top":
-            return { left: relLeft, top: relTop, width: rect.width, height: rect.height / 2 };
+            return { left: relLeft, top: relTop, width: rect.width, height: rect.height * ratio };
         case "bottom":
             return {
                 left: relLeft,
-                top: relTop + rect.height / 2,
+                top: relTop + rect.height * (1 - ratio),
                 width: rect.width,
-                height: rect.height / 2,
+                height: rect.height * ratio,
             };
     }
 }
@@ -233,6 +310,8 @@ export function areaDisplayName(
             return t("Board.Area.Notation");
         case "analysis":
             return t("Board.Tabs.Analysis");
+        case "report":
+            return t("Board.Analysis.Report");
         case "database":
             return t("Board.Tabs.Database");
         case "annotate":
@@ -249,9 +328,12 @@ export function arrangeTargetLabel(
     t: TFunction,
     target: ArrangeTarget,
     resolveEngineName?: (engineId: string) => string | undefined,
+    movingArea?: BoardAreaId,
 ): string {
     if (target.kind === "return") {
-        return t("Board.Arrange.BackIntoTabs");
+        return movingArea && isEngineArea(movingArea)
+            ? t("Board.Arrange.BackIntoEngines")
+            : t("Board.Arrange.BackIntoTabs");
     }
     if (target.target === "left") {
         switch (target.side) {

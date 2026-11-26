@@ -1,48 +1,86 @@
-import { INITIAL_FEN } from "chessops/fen";
 import { act } from "react";
-import { engineTerminalFamily, enginesAtom, scoreTypeFamily, threatFamily } from "@/state/atoms";
+import { enginesAtom } from "@/state/atoms";
+import {
+  BoardArrangementContext,
+  type BoardArrangementContextValue,
+} from "@/components/tabs/BoardTabLayout";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
+import { engineAreaId, type EngineAreaId, type PanelAreaId } from "@/state/boardArrangement";
 import { createTreeStore } from "@/state/store/tree";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
-import { engineIdentity, engineLineContext } from "./analysisLineContext";
 import { afterEach, expect, test, vi } from "vitest";
-import { displayEngine, displayLines, engineDisplayHarness } from "@/tests/engineDisplay";
-import AnalysisPanel, { applyEngineOrder, EngineSummary } from "./AnalysisPanel";
-import { analysisSearch } from "@/utils/analysisSearch";
-import scoreBubbleClasses from "./ScoreBubble.module.css";
+import { displayEngine, engineDisplayHarness } from "@/tests/engineDisplay";
+import AnalysisPanel, { applyEngineOrder } from "./AnalysisPanel";
 
 const reorder = vi.hoisted(() => ({
   reconcile: vi.fn(),
-  drag: undefined as
-    | undefined
-    | ((result: { source: { index: number }; destination: { index: number } }) => void),
+  cards: new Map<
+    string,
+    {
+      canMoveUp?: boolean;
+      canMoveDown?: boolean;
+      onMoveUp?: () => void;
+      onMoveDown?: () => void;
+      canShowAsArea?: boolean;
+      onShowAsArea?: () => void;
+      onDragStart?: (event: any) => void;
+      id: number;
+    }
+  >(),
 }));
 vi.mock("@/platform/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/platform/tauri")>();
   return { ...actual, tauri: { ...actual.tauri, reconcileEngineAttachments: reorder.reconcile } };
 });
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
-vi.mock("@hello-pangea/dnd", () => ({
-  DragDropContext: ({ onDragEnd, children }: any) => {
-    reorder.drag = onDragEnd;
-    return children;
-  },
-  Droppable: ({ children }: any) =>
-    children({ innerRef: () => undefined, droppableProps: {}, placeholder: null }),
-  Draggable: ({ children }: any) =>
-    children({ innerRef: () => undefined, draggableProps: {}, dragHandleProps: {} }),
-}));
 vi.mock("./BestMoves", () => ({
-  default: ({ engine }: any) => <span data-engine-id={engine.id} />,
-  arrowColors: [{ strong: "blue" }, { strong: "green" }],
+  default: (props: any) => {
+    reorder.cards.set(props.engine.id, props);
+    return (
+      <span
+        data-engine-id={props.engine.id}
+        data-color-index={props.id}
+        data-can-move-up={String(Boolean(props.canMoveUp))}
+        data-can-move-down={String(Boolean(props.canMoveDown))}
+        data-can-show-as-area={String(Boolean(props.canShowAsArea))}
+      />
+    );
+  },
+  arrowColors: [{ strong: "blue" }, { strong: "green" }, { strong: "red" }, { strong: "yellow" }],
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("./EngineSelection", () => ({ default: () => null }));
-vi.mock("./ReportPanel", () => ({ default: () => null }));
 vi.mock("./TablebaseInfo", () => ({ default: () => null }));
+
 let h: ReturnType<typeof engineDisplayHarness>;
-afterEach(async () => h?.close());
+afterEach(async () => {
+  reorder.cards.clear();
+  await h?.close();
+});
+
+function makeArrangementCtx(
+  overrides: Partial<BoardArrangementContextValue> = {},
+): BoardArrangementContextValue {
+  return {
+    shownPanelAreas: new Set<PanelAreaId>(),
+    shownEngineAreas: new Set<EngineAreaId>(),
+    getAreaTarget: () => undefined,
+    arrangingAvailable: true,
+    canTakeOut: () => true,
+    canTakeOutEngine: () => true,
+    returnPanel: vi.fn(),
+    returnEngine: vi.fn(),
+    registerReturnListener: vi.fn(),
+    beginDrag: vi.fn(),
+    consumeSuppressedClick: vi.fn(),
+    startPlacing: vi.fn(),
+    tabsHidden: false,
+    setTabsHidden: vi.fn(),
+    ...overrides,
+  };
+}
+
 test("order intents preserve latest membership, unloaded slots and current record fields", () => {
   const first = { ...displayEngine, id: "first", name: "Same name" };
   const second = { ...displayEngine, id: "second", name: "Same name", version: "upgraded" };
@@ -56,7 +94,7 @@ test("order intents preserve latest membership, unloaded slots and current recor
   expect(reordered[0]).toBe(second);
 });
 
-test("real-store drag intent cannot resurrect a queued removal or overwrite newer fields", async () => {
+test("real-store reorder intent cannot resurrect a queued removal or overwrite newer fields", async () => {
   installResizeObserverStub();
   reorder.reconcile.mockReset().mockResolvedValue(undefined);
   h = engineDisplayHarness();
@@ -67,10 +105,13 @@ test("real-store drag intent cannot resurrect a queued removal or overwrite newe
   const added = { ...displayEngine, id: "added" };
   const unloaded = { ...displayEngine, id: "unloaded", loaded: false };
   await h.store.set(enginesAtom, [first, unloaded, second, third]);
+  const beginDrag = vi.fn();
   await h.render(
-    <TreeStateContext.Provider value={tree}>
-      <AnalysisPanel />
-    </TreeStateContext.Provider>,
+    <BoardArrangementContext.Provider value={makeArrangementCtx({ beginDrag })}>
+      <TreeStateContext.Provider value={tree}>
+        <AnalysisPanel />
+      </TreeStateContext.Provider>
+    </BoardArrangementContext.Provider>,
   );
   let release!: () => void;
   reorder.reconcile.mockImplementationOnce(
@@ -87,7 +128,10 @@ test("real-store drag intent cannot resurrect a queued removal or overwrite newe
   ]);
   await vi.waitFor(() => expect(release).toBeTypeOf("function"));
   const removal = h.store.set(enginesAtom, { removeLocalId: first.id });
-  await act(async () => reorder.drag!({ source: { index: 2 }, destination: { index: 0 } }));
+  // Trigger reorder (move third from index 2 to index 0) via the beginDrag reorder callback.
+  reorder.cards.get("third")!.onDragStart!({});
+  const onReorder = beginDrag.mock.calls[0][2].onReorder as (from: number, to: number) => void;
+  await act(async () => onReorder(2, 0));
   await act(async () => {
     release();
     await newer;
@@ -103,22 +147,100 @@ test("real-store drag intent cannot resurrect a queued removal or overwrite newe
   );
 });
 
-test("the side tabs are Engines and Report only; engine logs live on the engine card", async () => {
+test("has no inner tablist and no score pills; hides start/pause-all when no engine is listed", async () => {
   installResizeObserverStub();
   h = engineDisplayHarness();
-  await h.store.set(enginesAtom, [displayEngine]);
+  await h.store.set(enginesAtom, []);
   await h.render(
-    <TreeStateContext.Provider value={createTreeStore()}>
-      <AnalysisPanel />
-    </TreeStateContext.Provider>,
+    <BoardArrangementContext.Provider value={makeArrangementCtx()}>
+      <TreeStateContext.Provider value={createTreeStore()}>
+        <AnalysisPanel />
+      </TreeStateContext.Provider>
+    </BoardArrangementContext.Provider>,
   );
-  expect([...h.host.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
-    "Board.Analysis.Engines",
-    "Board.Analysis.Report",
-  ]);
+  expect(h.host.querySelector('[role="tablist"]')).toBeNull();
+  expect(h.host.querySelectorAll('[role="tab"]')).toHaveLength(0);
+  expect(
+    h.host.querySelector(
+      'button[aria-label="Board.Analysis.EnableAllEngines"], button[aria-label="Board.Analysis.PauseAllEngines"]',
+    ),
+  ).toBeNull();
+  expect(h.host.querySelector('[data-testid="all-engines-pulled-out"]')).toBeNull();
 });
 
-test("refused routed drag rolls its presentation back to committed order", async () => {
+test("pulled-out engines are omitted from the panel, remaining engines keep their loaded-order index, and all-out shows hint and hides start-all", async () => {
+  installResizeObserverStub();
+  h = engineDisplayHarness();
+  const first = { ...displayEngine, id: "first", loaded: true };
+  const second = { ...displayEngine, id: "second", loaded: true };
+  await h.store.set(enginesAtom, [first, second]);
+
+  // First engine pulled out -> only second is listed, keeping its loaded-order index 1.
+  await h.render(
+    <BoardArrangementContext.Provider
+      value={makeArrangementCtx({ shownEngineAreas: new Set([engineAreaId("first")]) })}
+    >
+      <TreeStateContext.Provider value={createTreeStore()}>
+        <AnalysisPanel />
+      </TreeStateContext.Provider>
+    </BoardArrangementContext.Provider>,
+  );
+  const listed = [...h.host.querySelectorAll("[data-engine-id]")];
+  expect(listed.map((el) => el.getAttribute("data-engine-id"))).toEqual(["second"]);
+  expect(listed[0].getAttribute("data-color-index")).toBe("1");
+  expect(
+    h.host.querySelector('button[aria-label="Board.Analysis.EnableAllEngines"]'),
+  ).not.toBeNull();
+
+  // All loaded engines pulled out -> dimmed hint shown, start/pause-all hidden.
+  await h.render(
+    <BoardArrangementContext.Provider
+      value={makeArrangementCtx({
+        shownEngineAreas: new Set([engineAreaId("first"), engineAreaId("second")]),
+      })}
+    >
+      <TreeStateContext.Provider value={createTreeStore()}>
+        <AnalysisPanel />
+      </TreeStateContext.Provider>
+    </BoardArrangementContext.Provider>,
+  );
+  expect(h.host.querySelectorAll("[data-engine-id]")).toHaveLength(0);
+  expect(h.host.querySelector('[data-testid="all-engines-pulled-out"]')).not.toBeNull();
+  expect(
+    h.host.querySelector(
+      'button[aria-label="Board.Analysis.EnableAllEngines"], button[aria-label="Board.Analysis.PauseAllEngines"]',
+    ),
+  ).toBeNull();
+});
+
+test("grip menu disables end move items, hides Show as its own area at cap, and reorders on click", async () => {
+  installResizeObserverStub();
+  reorder.reconcile.mockReset().mockResolvedValue(undefined);
+  h = engineDisplayHarness();
+  const first = { ...displayEngine, id: "first", loaded: true };
+  const second = { ...displayEngine, id: "second", loaded: true };
+  await h.store.set(enginesAtom, [first, second]);
+
+  await h.render(
+    <BoardArrangementContext.Provider value={makeArrangementCtx({ canTakeOutEngine: () => false })}>
+      <TreeStateContext.Provider value={createTreeStore()}>
+        <AnalysisPanel />
+      </TreeStateContext.Provider>
+    </BoardArrangementContext.Provider>,
+  );
+  expect(reorder.cards.get("first")!.canMoveUp).toBe(false);
+  expect(reorder.cards.get("first")!.canMoveDown).toBe(true);
+  expect(reorder.cards.get("first")!.canShowAsArea).toBe(false);
+  expect(reorder.cards.get("second")!.canMoveUp).toBe(true);
+  expect(reorder.cards.get("second")!.canMoveDown).toBe(false);
+
+  await act(async () => reorder.cards.get("first")!.onMoveDown!());
+  await vi.waitFor(() =>
+    expect(h.store.get(enginesAtom)?.map((e) => e.id)).toEqual(["second", "first"]),
+  );
+});
+
+test("refused routed reorder rolls its presentation back to committed order", async () => {
   installResizeObserverStub();
   reorder.reconcile.mockReset().mockResolvedValue(undefined);
   h = engineDisplayHarness();
@@ -128,9 +250,11 @@ test("refused routed drag rolls its presentation back to committed order", async
     { ...displayEngine, id: "second" },
   ]);
   await h.render(
-    <TreeStateContext.Provider value={tree}>
-      <AnalysisPanel />
-    </TreeStateContext.Provider>,
+    <BoardArrangementContext.Provider value={makeArrangementCtx()}>
+      <TreeStateContext.Provider value={tree}>
+        <AnalysisPanel />
+      </TreeStateContext.Provider>
+    </BoardArrangementContext.Provider>,
   );
   const order = () =>
     [...h.host.querySelectorAll("[data-engine-id]")].map((node) =>
@@ -143,97 +267,10 @@ test("refused routed drag rolls its presentation back to committed order", async
         reject = refuse;
       }),
   );
-  await act(async () => reorder.drag!({ source: { index: 0 }, destination: { index: 1 } }));
+  await act(async () => reorder.cards.get("first")!.onMoveDown!());
   await vi.waitFor(() => expect(reject).toBeTypeOf("function"));
   expect(order()).toEqual(["second", "first"]);
   await act(async () => reject(new Error("drag refused")));
   await vi.waitFor(() => expect(order()).toEqual(["first", "second"]));
   expect(h.store.get(enginesAtom)?.map((item) => item.id)).toEqual(["first", "second"]);
 });
-test("EngineSummary uses the shared dimmed fallback instead of ??? until a current result", async () => {
-  h = engineDisplayHarness();
-  await h.remember();
-  const summary = (moves: string[]) => (
-    <EngineSummary engine={displayEngine} fen={INITIAL_FEN} moves={moves} shorten={false} i={0} />
-  );
-  await h.render(summary([]));
-  await h.render(summary(["e2e4"]));
-  expect(h.host.querySelector("[inert]")?.textContent).toContain("0.34");
-  expect(h.host.textContent).not.toContain("???");
-  await h.remember(
-    [{ ...displayLines[0], score: { value: { type: "cp", value: 55 }, wdl: null } }],
-    ["e2e4"],
-  );
-  expect(h.host.querySelector("[inert]")).toBeNull();
-  expect(h.host.textContent).toContain("0.55");
-});
-
-test("EngineSummary displays and toggles the engine's shared WDL preference unless dimmed", async () => {
-  h = engineDisplayHarness();
-  h.store.set(scoreTypeFamily(displayEngine.id), "wdl");
-  await h.remember([
-    { ...displayLines[0], score: { ...displayLines[0].score, wdl: [450, 300, 250] } },
-  ]);
-  const summary = (moves: string[]) => (
-    <EngineSummary engine={displayEngine} fen={INITIAL_FEN} moves={moves} shorten={false} i={0} />
-  );
-  await h.render(summary([]));
-  const chip = () => h.host.querySelector<HTMLElement>(`.${scoreBubbleClasses.bubble}`)!;
-  expect(h.host.querySelector('[aria-label="Board.Analysis.Tablebase.WhiteWins"]')).not.toBeNull();
-  await act(async () => chip().click());
-  expect(h.store.get(scoreTypeFamily(displayEngine.id))).toBe("cp");
-  await act(async () => chip().click());
-  expect(h.store.get(scoreTypeFamily(displayEngine.id))).toBe("wdl");
-  await h.render(summary(["e2e4"]));
-  expect(chip().closest("[inert]")).not.toBeNull();
-  await act(async () => chip().click());
-  expect(h.store.get(scoreTypeFamily(displayEngine.id))).toBe("wdl");
-});
-
-test("EngineSummary clears historical threat evaluation while unavailable and restores the legal key", async () => {
-  h = engineDisplayHarness();
-  h.store.set(threatFamily("display-tab"), true);
-  h.store.set(h.memoryAtom, new Map([[analysisSearch(INITIAL_FEN, [], true).key!, displayLines]]));
-  const summary = (moves: string[]) => (
-    <EngineSummary engine={displayEngine} fen={INITIAL_FEN} moves={moves} shorten={false} i={0} />
-  );
-  await h.render(summary([]));
-  expect(h.host.textContent).toContain("0.34");
-  const badge = () => h.host.querySelector('[role="img"][aria-label="Board.Analysis.ThreatMode"]');
-  expect(badge()?.getAttribute("style")).toContain("var(--cf-destructive)");
-  await h.render(summary(["e2e4", "d7d5", "f1b5"]));
-  expect(badge()).not.toBeNull();
-  expect(h.host.textContent).toContain("???");
-  expect(h.host.textContent).not.toContain("0.34");
-  expect(h.host.textContent).not.toContain("Board.Analysis.EngineFailed");
-  expect(h.host.querySelector("[inert]")).toBeNull();
-  await h.render(summary([]));
-  expect(h.host.textContent).toContain("0.34");
-  await act(async () => h.store.set(threatFamily("display-tab"), false));
-  expect(badge()).toBeNull();
-});
-
-test.each([false, true])(
-  "P2 EngineSummary shows failure with historical evaluation, partial lines %s",
-  async (partial) => {
-    h = engineDisplayHarness();
-    if (partial) await h.remember();
-    await h.render(
-      <EngineSummary engine={displayEngine} fen={INITIAL_FEN} moves={[]} shorten={false} i={0} />,
-    );
-    await act(async () =>
-      h.store.set(engineTerminalFamily({ tab: "display-tab", engine: displayEngine.id }), {
-        type: "failed",
-        searchedKey: `${INITIAL_FEN}:`,
-        fingerprint: "attempt",
-        generation: "generation",
-        retry: 0,
-        context: engineLineContext(h.store.get(h.settingsAtom), displayEngine),
-        engineIdentity: engineIdentity(displayEngine),
-      }),
-    );
-    expect(h.host.textContent).toContain("Board.Analysis.EngineFailed");
-    expect(h.host.querySelector("[inert]") !== null).toBe(partial);
-    expect(h.host.querySelector("[inert]")?.textContent).toBe(partial ? "+0.34" : undefined);
-  },
-);

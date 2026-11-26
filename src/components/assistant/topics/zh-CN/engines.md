@@ -2,7 +2,7 @@
 id: engines
 title: 国际象棋引擎与分析面板
 summary: 安装或添加本地与云端引擎、配置 UCI 选项，并在棋盘上使用实时分析。
-source: 0e9ac8bab01e58b5
+source: f40b5fdf8e5c15a0
 ---
 
 在 [[page:engines]] ({{label:SideBar.Engines}}) 页面管理您的国际象棋引擎。
@@ -14,12 +14,12 @@ source: 0e9ac8bab01e58b5
 
 在 [[page:engines]] 中选择任意引擎进行配置。对于本地引擎，您可以编辑基本信息、设置默认 UCI 选项（如 Threads、Hash 和 MultiPV）、附加资源文件（如 Syzygy 残局库），点击 {{label:Engines.Settings.Reset}} 恢复默认值、{{label:Common.Duplicate}} 复制配置或 {{label:Common.Remove}} 移除引擎。对于云端引擎，您可以编辑名称和 {{label:Engines.Settings.NumOfLines}}。
 
-在分析棋盘上，打开 {{label:Board.Tabs.Analysis}} 标签页并选择 {{label:Board.Analysis.Engines}}：
+在分析棋盘上，打开 {{label:Board.Tabs.Analysis}} 标签页：
 - 点击 {{label:Board.Analysis.SelectEngines}} 选择要加载到面板中的已安装引擎，或点击 {{label:Board.Analysis.ManageEngines}} 跳转到 [[page:engines]]。
-- 点击引擎卡片上的 {{label:Board.Analysis.EnableEngine}} 或 {{label:Board.Analysis.DisableEngine}} 开始或暂停分析，加载了多个引擎时可使用 {{label:Board.Analysis.EnableAllEngines}}。
+- 点击引擎卡片上的 {{label:Board.Analysis.EnableEngine}} 或 {{label:Board.Analysis.DisableEngine}} 开始或暂停分析，或使用底部的 {{label:Board.Analysis.EnableAllEngines}}。
 - 点击 {{label:Board.Analysis.CheckThreat}}（或按 {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} 快捷键）分析对手的威胁。
-- 点击 {{label:Board.Analysis.Pin}} 将引擎评估条固定在标签页外部，或点击 {{label:Board.Analysis.EngineSettings}} 调整当前标签页的搜索限制和变化数量等设置。
-- 按住 {{label:Board.Analysis.ReorderEngine}} 拖动引擎卡片以调整顺序。
+- 使用卡片上的变例数选择器挑选 1 到 5 条变例，或点击 {{label:Board.Analysis.EngineSettings}} 调整当前标签页的搜索限制与 UCI 选项等设置。
+- 拖动引擎卡片的六点手柄（{{label:Board.Analysis.ReorderEngine}}）可调整顺序或将其拖出到棋盘上作为独立窗口，点击手柄则可用键盘移动。点击 {{label:Board.Area.ReturnToEngines}} 或将窗口拖回标签栏（或 {{label:Board.Tabs.Analysis}} 标题栏）即可放回。
 - 引擎出错时，点击 {{label:Board.Analysis.RetryEngine}} 旁边的 {{label:Board.Analysis.Logs}} 查看其 UCI 通信日志。对于正在运行的引擎，同一按钮位于其卡片的 {{label:Board.Analysis.EngineSettings}} 中。
 
 通过 [[setting:arrows]] ({{label:Settings.Arrows}}) 控制棋盘上的引擎箭头。本地引擎存储在 [[setting:engines-directory]] 所设定的文件夹中。

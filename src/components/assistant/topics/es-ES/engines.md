@@ -2,7 +2,7 @@
 id: engines
 title: Motores de ajedrez y el panel de análisis
 summary: Instala o añade motores locales y en la nube, configura opciones UCI y usa el análisis en vivo en el tablero.
-source: 0e9ac8bab01e58b5
+source: f40b5fdf8e5c15a0
 ---
 
 Gestiona tus motores de ajedrez en [[page:engines]] ({{label:SideBar.Engines}}).
@@ -14,12 +14,12 @@ Para añadir un motor, haz clic en {{label:Common.AddNew}} en [[page:engines]] p
 
 Selecciona cualquier motor en [[page:engines]] para configurarlo. En los motores locales puedes editar los detalles generales, definir opciones UCI predeterminadas (como Threads, Hash y MultiPV), adjuntar archivos de recursos como tablas de finales Syzygy, hacer clic en {{label:Engines.Settings.Reset}} para restaurar los valores predeterminados, {{label:Common.Duplicate}} para copiar la configuración o {{label:Common.Remove}} para quitarlo. En los motores en la nube puedes editar el nombre y {{label:Engines.Settings.NumOfLines}}.
 
-En el tablero de análisis, abre la pestaña {{label:Board.Tabs.Analysis}} y selecciona {{label:Board.Analysis.Engines}}:
+En el tablero de análisis, abre la pestaña {{label:Board.Tabs.Analysis}}:
 - Haz clic en {{label:Board.Analysis.SelectEngines}} para elegir qué motores instalados se cargan en el panel, o en {{label:Board.Analysis.ManageEngines}} para ir a [[page:engines]].
-- Haz clic en {{label:Board.Analysis.EnableEngine}} o {{label:Board.Analysis.DisableEngine}} en la tarjeta de un motor para iniciar o pausar el análisis, o usa {{label:Board.Analysis.EnableAllEngines}} cuando haya varios motores cargados.
+- Haz clic en {{label:Board.Analysis.EnableEngine}} o {{label:Board.Analysis.DisableEngine}} en la tarjeta de un motor para iniciar o pausar el análisis, o usa {{label:Board.Analysis.EnableAllEngines}} en la fila inferior.
 - Haz clic en {{label:Board.Analysis.CheckThreat}} (o pulsa el atajo {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}}) para analizar la amenaza del rival.
-- Haz clic en {{label:Board.Analysis.Pin}} para fijar la barra de evaluación de un motor fuera de la pestaña, o en {{label:Board.Analysis.EngineSettings}} para ajustar opciones por pestaña como el límite de búsqueda y las líneas.
-- Arrastra las tarjetas de motor desde {{label:Board.Analysis.ReorderEngine}} para cambiar su orden.
+- Usa el selector de líneas de la tarjeta para elegir de 1 a 5 líneas, o haz clic en {{label:Board.Analysis.EngineSettings}} para ajustar opciones por pestaña como el límite de búsqueda y las opciones UCI.
+- Arrastra una tarjeta de motor por su asa de seis puntos ({{label:Board.Analysis.ReorderEngine}}) para reordenarla o sacarla al tablero como ventana propia, o haz clic en el asa para moverla con el teclado. Haz clic en {{label:Board.Area.ReturnToEngines}} o arrastra la ventana sobre la lista de pestañas (o la cabecera de {{label:Board.Tabs.Analysis}}) para devolverla.
 - Si un motor falla, haz clic en {{label:Board.Analysis.Logs}} junto a {{label:Board.Analysis.RetryEngine}} para revisar su comunicación UCI. Con un motor en marcha, el mismo botón está en {{label:Board.Analysis.EngineSettings}} de su tarjeta.
 
 Controla las flechas del motor en el tablero con [[setting:arrows]] ({{label:Settings.Arrows}}). Los motores locales se guardan en la carpeta configurada en [[setting:engines-directory]].

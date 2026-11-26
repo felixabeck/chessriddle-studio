@@ -1,4 +1,4 @@
-/** Per-tab board view and panel state, and where the pinned engine bar sits. */
+/** Per-tab board view and panel state. */
 import { atom, getDefaultStore } from "jotai";
 import { defaultPanelTabAtom, hidePreviewMovesAtom } from "./preferences";
 import { tabAtomFamily } from "./tabFamilies";
@@ -34,15 +34,6 @@ export const reportModalOpenFamily = tabAtomFamily((_tab: string) => atom(false)
 export const coachTurnFamily = tabAtomFamily((_tab: string) =>
     atom<import("../coachSession").CoachRunningTurn | null>(null),
 );
-
-/**
- * Where the pinned engine bar sits on the analysis board: above the panel tabs, above or below the
- * move notation, or below the board. "notation" is the stored name of the place above the notation.
- */
-export const PINNED_PLACEMENTS = ["tabs", "notation", "belowNotation", "board"] as const;
-export type PinnedPlacement = (typeof PINNED_PLACEMENTS)[number];
-
-export const analysisTabFamily = tabAtomFamily((_tab: string) => atom("engines"));
 
 export const practiceTabFamily = tabAtomFamily((_tab: string) => atom("train"));
 

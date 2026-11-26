@@ -2,12 +2,12 @@
 id: game-report
 title: 對局報告
 summary: 執行自動引擎複盤，以檢視準確率、評估曲線、關鍵時刻與著法分類。
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 對局報告會使用本機西洋棋引擎分析主變例中的每一步著法，並總結對局的準確率與失誤。
 
-若要生成報告，請在分析棋盤上開啟對局，切換至 {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}}，然後點擊 {{label:Board.Analysis.GenerateReport}}（或按 {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} 快捷鍵）。
+若要生成報告，請在分析棋盤上開啟對局，切換至 {{label:Board.Analysis.Report}} 分頁，然後點擊 {{label:Board.Analysis.GenerateReport}}（或按 {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} 快捷鍵）。
 
 在 {{label:Board.Analysis.GenerateReport}} 對話方塊中：
 - 選取本機 {{label:Common.Engine}}。若尚未安裝，請在 [[page:engines]] 中新增。

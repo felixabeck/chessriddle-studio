@@ -1,4 +1,3 @@
-import { Accordion } from "@mantine/core";
 import { INITIAL_FEN } from "chessops/fen";
 import { act } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -10,6 +9,7 @@ import {
   engineTerminalFamily,
   engineRetryFamily,
   enginesAtom,
+  expandedEnginesFamily,
   tabEngineSettingsFamily,
   threatFamily,
   engineProgressFamily,
@@ -94,19 +94,14 @@ beforeEach(() => {
 function LivePanel() {
   const engine = useAtomValue(enginesAtom)?.[0];
   return engine ? (
-    <Accordion value="engine">
-      <Accordion.Item value="engine">
-        <BestMoves
-          id={0}
-          engine={engine}
-          fen={INITIAL_FEN}
-          moves={[]}
-          halfMoves={0}
-          dragHandleProps={{}}
-          orientation="white"
-        />
-      </Accordion.Item>
-    </Accordion>
+    <BestMoves
+      id={0}
+      engine={engine}
+      fen={INITIAL_FEN}
+      moves={[]}
+      halfMoves={0}
+      orientation="white"
+    />
   ) : null;
 }
 
@@ -424,19 +419,14 @@ const panel = (
   halfMoves = moves.length,
   engine: Engine = displayEngine,
 ) => (
-  <Accordion value="engine">
-    <Accordion.Item value="engine">
-      <BestMoves
-        id={0}
-        engine={engine}
-        fen={fen}
-        moves={moves}
-        halfMoves={halfMoves}
-        dragHandleProps={{}}
-        orientation="white"
-      />
-    </Accordion.Item>
-  </Accordion>
+  <BestMoves
+    id={0}
+    engine={engine}
+    fen={fen}
+    moves={moves}
+    halfMoves={halfMoves}
+    orientation="white"
+  />
 );
 
 function terminal(moves: string[] = [], engine: Engine = displayEngine) {
@@ -746,10 +736,11 @@ test.each([
     );
     expect(rows.map((row) => row.getAttribute("data-chessdb"))).toEqual(expectedAnnotations);
     expect(h.host.textContent).toContain("GoMode.Depth");
-    expect(h.host.textContent).toContain("Board.Analysis.Evaluation");
     expect(h.host.textContent).toContain("20");
-    expect(h.host.textContent?.includes("GoMode.Nodes")).toBe(type !== "chessdb");
-    expect(h.host.textContent?.includes("n/s")).toBe(type !== "chessdb");
+    expect(h.host.textContent).toContain("⩲");
+    expect(h.host.textContent).not.toContain("Board.Analysis.Evaluation");
+    expect(h.host.textContent).not.toContain("GoMode.Nodes");
+    expect(h.host.textContent).not.toContain("n/s");
   },
 );
 
@@ -898,4 +889,189 @@ test("a failed cloud engine offers Retry but no logs", async () => {
   const labels = [...status.querySelectorAll("button")].map((b) => b.textContent);
   expect(labels).toContain("Board.Analysis.RetryEngine");
   expect(labels).not.toContain("Board.Analysis.Logs");
+});
+
+test("line selector writes MultiPV directly and hides when MultiPV option is absent", async () => {
+  const withMultiPv: Engine = {
+    ...displayEngine,
+    settings: [{ type: "string", name: "MultiPV", value: "2" }],
+  };
+  await h.store.set(enginesAtom, [withMultiPv]);
+  h.store.set(h.settingsAtom, (prev) => ({
+    ...prev,
+    synced: false,
+    settings: [{ type: "string", name: "MultiPV", value: "2" }],
+  }));
+  await h.render(panel([], INITIAL_FEN, 0, withMultiPv));
+
+  const fourRadio = h.host.querySelector<HTMLInputElement>('input[type="radio"][value="4"]')!;
+  expect(fourRadio).not.toBeNull();
+  await act(async () => {
+    fourRadio.click();
+  });
+  const stored = h.store.get(
+    tabEngineSettingsFamily({ tab: "display-tab", engineId: withMultiPv.id }),
+  );
+  const multiPvOption = stored.settings.find(
+    (o): o is { type: "string"; name: string; value: string } =>
+      o.type === "string" && o.name === "MultiPV",
+  );
+  expect(multiPvOption?.value).toBe("4");
+
+  const withoutMultiPv: Engine = { ...displayEngine, settings: [] };
+  await h.store.set(enginesAtom, [withoutMultiPv]);
+  h.store.set(h.settingsAtom, (prev) => ({ ...prev, synced: false, settings: [] }));
+  await h.render(panel([], INITIAL_FEN, 0, withoutMultiPv));
+  expect(h.host.querySelector('input[type="radio"]')).toBeNull();
+});
+
+test("collapse button toggles only its own id in expandedEnginesFamily", async () => {
+  const first = { ...displayEngine, name: "First", loaded: true };
+  const second = { ...displayEngine, id: "eng-2", name: "Second", loaded: true };
+  await h.store.set(enginesAtom, [first, second]);
+  await h.remember(displayLines);
+  await h.render(panel([], INITIAL_FEN, 0, first));
+
+  expect(h.store.get(expandedEnginesFamily("display-tab"))).toBeUndefined();
+  expect(h.host.querySelectorAll("[data-fen]")).toHaveLength(1);
+
+  const collapseBtn = h.host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Analysis.Collapse"]',
+  )!;
+  await act(async () => collapseBtn.click());
+  // Only first was collapsed; eng-2 stays expanded.
+  expect(h.store.get(expandedEnginesFamily("display-tab"))).toEqual(["eng-2"]);
+  expect(h.host.querySelectorAll("[data-fen]")).toHaveLength(0);
+
+  const expandBtn = h.host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Analysis.Expand"]',
+  )!;
+  await act(async () => expandBtn.click());
+  expect(h.store.get(expandedEnginesFamily("display-tab"))).toEqual(["eng-2", first.id]);
+  expect(h.host.querySelectorAll("[data-fen]")).toHaveLength(1);
+});
+
+test("settings gear opens settings form under the top row, and × appears only in window mode with one grip, name and ×", async () => {
+  const onReturn = vi.fn();
+  const onStartPlacing = vi.fn();
+  await h.store.set(enginesAtom, [displayEngine]);
+
+  // Panel mode: no × button.
+  await h.render(panel([], INITIAL_FEN, 0, displayEngine));
+  expect(h.host.querySelector('button[aria-label="Board.Area.ReturnToEngines"]')).toBeNull();
+  expect(h.host.querySelectorAll("[data-arrange-grip]")).toHaveLength(1);
+
+  // Settings gear toggles pressed state.
+  const settingsBtn = h.host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Analysis.EngineSettings"]',
+  )!;
+  expect(settingsBtn.getAttribute("aria-pressed")).toBe("false");
+  await act(async () => settingsBtn.click());
+  expect(settingsBtn.getAttribute("aria-pressed")).toBe("true");
+
+  // Window mode: exactly one grip, one engine name, and one × button.
+  await h.render(
+    <BestMoves
+      id={1}
+      engine={displayEngine}
+      fen={INITIAL_FEN}
+      moves={[]}
+      halfMoves={0}
+      orientation="white"
+      mode="window"
+      onReturn={onReturn}
+      onStartPlacing={onStartPlacing}
+    />,
+  );
+  expect(h.host.querySelectorAll("[data-arrange-grip]")).toHaveLength(1);
+  const closeBtns = h.host.querySelectorAll<HTMLButtonElement>(
+    'button[aria-label="Board.Area.ReturnToEngines"]',
+  );
+  expect(closeBtns).toHaveLength(1);
+  await act(async () => closeBtns[0].click());
+  expect(onReturn).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    h.host.querySelector<HTMLButtonElement>("[data-arrange-grip]")!.click();
+  });
+  expect(onStartPlacing).toHaveBeenCalledTimes(1);
+});
+
+test("collapse after a prior toggle removes only the toggled id from an explicit array", async () => {
+  const first = { ...displayEngine, id: "a", name: "Engine A", loaded: true };
+  const second = { ...displayEngine, id: "b", name: "Engine B", loaded: true };
+  await h.store.set(enginesAtom, [first, second]);
+  h.store.set(expandedEnginesFamily("display-tab"), ["a", "b"]);
+  await h.render(panel([], INITIAL_FEN, 0, first));
+
+  const collapseBtn = h.host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Analysis.Collapse"]',
+  )!;
+  await act(async () => collapseBtn.click());
+  expect(h.store.get(expandedEnginesFamily("display-tab"))).toEqual(["b"]);
+});
+
+test("panel-mode grip menu disables end move items, invokes onMoveDown, and gates Show as its own area", async () => {
+  vi.useRealTimers();
+  const onMoveUp = vi.fn();
+  const onMoveDown = vi.fn();
+  const onShowAsArea = vi.fn();
+  await h.store.set(enginesAtom, [displayEngine]);
+
+  const openMenu = async () => {
+    const grip = h.host.querySelector<HTMLButtonElement>("[data-arrange-grip]")!;
+    await act(async () => grip.click());
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll('[role="menuitem"]').length).toBeGreaterThan(0),
+    );
+    return [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+  };
+
+  // First card with canShowAsArea=true: Move up disabled, Move down enabled, Show as its own area present.
+  await h.render(
+    <BestMoves
+      id={0}
+      engine={displayEngine}
+      fen={INITIAL_FEN}
+      moves={[]}
+      halfMoves={0}
+      orientation="white"
+      mode="panel"
+      canMoveUp={false}
+      canMoveDown={true}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
+      canShowAsArea={true}
+      onShowAsArea={onShowAsArea}
+    />,
+  );
+  let items = await openMenu();
+  const findItem = (label: string) => items.find((item) => item.textContent === label);
+  expect(findItem("Board.Analysis.MoveUp")?.disabled).toBe(true);
+  expect(findItem("Board.Analysis.MoveDown")?.disabled).toBe(false);
+  expect(findItem("Board.Analysis.ShowAsOwnArea")).toBeDefined();
+  await act(async () => findItem("Board.Analysis.MoveDown")!.click());
+  expect(onMoveDown).toHaveBeenCalledTimes(1);
+
+  // Last card with canShowAsArea=false: Move up enabled, Move down disabled, Show as its own area absent.
+  await h.render(
+    <BestMoves
+      id={0}
+      engine={displayEngine}
+      fen={INITIAL_FEN}
+      moves={[]}
+      halfMoves={0}
+      orientation="white"
+      mode="panel"
+      canMoveUp={true}
+      canMoveDown={false}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
+      canShowAsArea={false}
+      onShowAsArea={onShowAsArea}
+    />,
+  );
+  items = await openMenu();
+  expect(findItem("Board.Analysis.MoveUp")?.disabled).toBe(false);
+  expect(findItem("Board.Analysis.MoveDown")?.disabled).toBe(true);
+  expect(findItem("Board.Analysis.ShowAsOwnArea")).toBeUndefined();
 });

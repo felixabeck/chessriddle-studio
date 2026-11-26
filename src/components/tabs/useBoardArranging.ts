@@ -12,7 +12,10 @@ import {
     arrangementLeaves,
     type BoardAreaId,
     type BoardArrangement,
+    type EngineAreaId,
+    engineIdFromArea,
     type HideableAreaId,
+    isEngineArea,
     isPanelArea,
     type PanelAreaId,
     type PlacementSide,
@@ -21,24 +24,35 @@ import { isPlainEscape } from "@/utils/keyboardOwnership";
 import { capturePointer, releasePointerCaptureSafely } from "@/utils/pointerCapture";
 import {
     type ArrangeTarget,
+    type DragTarget,
     hitTestArrangeTarget,
+    hitTestReorderSlot,
+    intersectRects,
+    pointInRect,
     type PreviewBox,
     previewBoxForTarget,
     type RectBox,
+    reorderPreviewBox,
+    type ReturnZone,
     validArrangeTargets,
 } from "./boardArrange";
 
 /** Pointer movement in pixels required before a press becomes a drag instead of a click. */
 export const ARRANGE_DRAG_THRESHOLD_PX = 6;
 
-export interface DragPreviewState {
-    target: ArrangeTarget;
-    box: PreviewBox;
-}
+export type DragPreviewState =
+    | { area: BoardAreaId; target: ArrangeTarget; returnZone?: ReturnZone; box: PreviewBox }
+    | { area: BoardAreaId; target: { kind: "reorder"; index: number }; box: PreviewBox };
 
 export interface PlacingState {
     area: BoardAreaId;
     targets: ArrangeTarget[];
+}
+
+export interface EngineCardReorderOptions {
+    listContainer: HTMLElement | null;
+    reorderIds: readonly string[];
+    onReorder: (fromIndex: number, toIndex: number) => void;
 }
 
 interface ActiveDragSession {
@@ -48,14 +62,16 @@ interface ActiveDragSession {
     startY: number;
     element: HTMLElement;
     active: boolean;
-    hoveredTarget: ArrangeTarget | null;
+    hoveredTarget: DragTarget | null;
     validTargets: ArrangeTarget[];
+    reorder?: EngineCardReorderOptions;
     cleanup: () => void;
 }
 
 type PendingFocus =
     | { kind: "grip"; area: BoardAreaId }
     | { kind: "tab"; panel: PanelAreaId }
+    | { kind: "engineReturn"; area: EngineAreaId }
     | null;
 
 function readTileRects(
@@ -79,6 +95,69 @@ function readTabListRect(layoutEl: HTMLElement | null): RectBox | null {
     return rect.width > 0 && rect.height > 0 ? rect : null;
 }
 
+function readReturnZone(
+    layoutEl: HTMLElement | null,
+    area: BoardAreaId,
+    displayed: BoardArrangement,
+): { rect: RectBox; zone: ReturnZone } | null {
+    if (isEngineArea(area) && arrangementLeaves(displayed).includes("analysis")) {
+        const header = layoutEl?.querySelector<HTMLElement>('[data-panel-header="analysis"]');
+        if (!header) return null;
+        const rect = header.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 ? { rect, zone: "engines" } : null;
+    }
+    const rect = readTabListRect(layoutEl);
+    return rect ? { rect, zone: "tabs" } : null;
+}
+
+/**
+ * Intersects `element`'s bounding rect with every clipping ancestor (scroll viewport or
+ * `overflow != visible`) up to `stopAt` so overflowed lists never intercept drops outside their
+ * visible scroll viewport.
+ */
+function visibleClipRect(element: HTMLElement, stopAt: HTMLElement | null): RectBox | null {
+    let rect: RectBox | null = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    let ancestor = element.parentElement;
+    while (ancestor && ancestor !== stopAt) {
+        const style = window.getComputedStyle(ancestor);
+        const clips =
+            (style.overflow !== "" && style.overflow !== "visible") ||
+            (style.overflowX !== "" && style.overflowX !== "visible") ||
+            (style.overflowY !== "" && style.overflowY !== "visible");
+        if (clips) {
+            const clip = ancestor.getBoundingClientRect();
+            if (clip.width > 0 && clip.height > 0) {
+                rect = intersectRects(rect, clip);
+                if (!rect) return null;
+            }
+        }
+        ancestor = ancestor.parentElement;
+    }
+    return rect;
+}
+
+function readVisibleEngineCardSlots(
+    container: HTMLElement,
+    reorderIds: readonly string[],
+    clipRect: RectBox,
+): Array<{ index: number; rect: RectBox }> {
+    const byId = new Map<string, HTMLElement>();
+    for (const el of container.querySelectorAll<HTMLElement>("[data-engine-card-id]")) {
+        const id = el.dataset.engineCardId;
+        if (id) byId.set(id, el);
+    }
+    const visible: Array<{ index: number; rect: RectBox }> = [];
+    for (let index = 0; index < reorderIds.length; index += 1) {
+        const el = byId.get(reorderIds[index]);
+        if (!el) continue;
+        const raw = el.getBoundingClientRect();
+        const clipped = intersectRects(raw, clipRect);
+        if (clipped) visible.push({ index, rect: clipped });
+    }
+    return visible;
+}
+
 /**
  * Owns pointer-capture dragging and keyboard/click placing for the analysis board's areas.
  * Every exit path (release, cancel, lost capture, Escape, window blur, unmount, or leaving the
@@ -95,6 +174,7 @@ export function useBoardArranging({
     rootFont,
     onPlace,
     onReturn,
+    onReturnEngine,
 }: {
     enabled: boolean;
     layoutRef: RefObject<HTMLDivElement | null>;
@@ -106,6 +186,7 @@ export function useBoardArranging({
     rootFont: number;
     onPlace: (area: BoardAreaId, target: BoardAreaId, side: PlacementSide) => void;
     onReturn: (panel: PanelAreaId) => void;
+    onReturnEngine: (area: EngineAreaId) => void;
 }) {
     const [dragPreview, setDragPreview] = useState<DragPreviewState | null>(null);
     const [placingRequest, setPlacingRequest] = useState<{
@@ -121,6 +202,7 @@ export function useBoardArranging({
 
     // Keep latest callbacks and layout inputs readable from active window listeners.
     const latestRef = useRef({
+        enabled,
         layoutRef,
         targets,
         storedArrangement,
@@ -130,8 +212,10 @@ export function useBoardArranging({
         rootFont,
         onPlace,
         onReturn,
+        onReturnEngine,
     });
     latestRef.current = {
+        enabled,
         layoutRef,
         targets,
         storedArrangement,
@@ -141,6 +225,7 @@ export function useBoardArranging({
         rootFont,
         onPlace,
         onReturn,
+        onReturnEngine,
     };
 
     const clearPendingReleaseSuppression = useCallback(() => {
@@ -220,10 +305,16 @@ export function useBoardArranging({
         [endDragSession, clearPendingReleaseSuppression],
     );
 
-    // Turning arranging off (`enabled` -> false) or unmounting tears down every active resource.
+    // Turning arranging off (`enabled` -> false) tears down placing and board-arrangement drags
+    // (an active engine-card reorder drag continues since reorder works in non-arranged mode too).
     useEffect(() => {
-        if (!enabled) cancelArranging(false);
-    }, [enabled, cancelArranging]);
+        if (!enabled) {
+            if (sessionRef.current && !sessionRef.current.reorder) {
+                endDragSession(true);
+            }
+            setPlacingRequest(null);
+        }
+    }, [enabled, endDragSession]);
 
     useEffect(
         () => () => {
@@ -246,31 +337,47 @@ export function useBoardArranging({
     }, [placingRequest, cancelArranging]);
 
     // After placing completes or cancels, restore focus to the moved area's grip or returned tab.
-    // A newly detached PanelArea mounts through Mantine's Portal after context propagation, so retry
+    // A newly detached PanelArea or returned engine card mounts after context propagation, so retry
     // once on the next animation frame and always clear pending focus afterwards.
     useEffect(() => {
         if (placingRequest !== null) return;
         const pending = pendingFocusRef.current;
         if (!pending) return;
-        const tryFocus = () => {
+        const findGrip = (root: ParentNode, area: BoardAreaId) =>
+            Array.from(root.querySelectorAll<HTMLElement>("[data-arrange-grip]")).find(
+                (el) => el.dataset.arrangeGrip === area && !el.closest("[hidden]"),
+            ) ?? null;
+        const findTab = (root: ParentNode, panel: PanelAreaId) =>
+            Array.from(root.querySelectorAll<HTMLElement>('[role="tab"][data-panel-tab]')).find(
+                (el) => el.dataset.panelTab === panel && !el.closest("[hidden]"),
+            ) ?? null;
+        const tryFocus = (allowFallback: boolean) => {
             const root = layoutRef.current ?? document;
             // Match dataset directly rather than interpolating area ids (which may contain `:`) into a CSS selector.
-            const target =
-                pending.kind === "grip"
-                    ? (Array.from(root.querySelectorAll<HTMLElement>("[data-arrange-grip]")).find(
-                          (el) => el.dataset.arrangeGrip === pending.area,
-                      ) ?? null)
-                    : (Array.from(
-                          root.querySelectorAll<HTMLElement>('[role="tab"][data-panel-tab]'),
-                      ).find((el) => el.dataset.panelTab === pending.panel) ?? null);
+            let target: HTMLElement | null = null;
+            if (pending.kind === "grip") {
+                target = findGrip(root, pending.area);
+            } else if (pending.kind === "tab") {
+                target = findTab(root, pending.panel);
+            } else {
+                target = findGrip(root, pending.area);
+                if (!target && allowFallback) {
+                    if (!latestRef.current.hiddenAreas.has("topRight")) {
+                        target = findTab(root, "analysis");
+                    }
+                    if (!target) {
+                        target = findGrip(root, "bottomRight");
+                    }
+                }
+            }
             if (!target) return false;
             pendingFocusRef.current = null;
             target.focus();
             return true;
         };
-        if (tryFocus()) return;
+        if (tryFocus(false)) return;
         const frame = requestAnimationFrame(() => {
-            tryFocus();
+            tryFocus(true);
             pendingFocusRef.current = null;
         });
         return () => cancelAnimationFrame(frame);
@@ -300,8 +407,13 @@ export function useBoardArranging({
     ]);
 
     const beginDrag = useCallback(
-        (area: BoardAreaId, event: ReactPointerEvent<HTMLElement>) => {
-            if (!enabled || event.button !== 0 || area === "left") return;
+        (
+            area: BoardAreaId,
+            event: ReactPointerEvent<HTMLElement>,
+            reorder?: EngineCardReorderOptions,
+        ) => {
+            if (event.button !== 0 || area === "left") return;
+            if (!reorder && !enabled) return;
             const eventTarget = event.target instanceof Element ? event.target : null;
             if (eventTarget?.closest('[data-no-drag="true"]')) return;
 
@@ -316,15 +428,18 @@ export function useBoardArranging({
                 rootFont: currentFont,
             } = latestRef.current;
 
-            const validTargets = validArrangeTargets({
-                area,
-                stored,
-                displayed,
-                hiddenAreas: hidden,
-                width: currentWidth,
-                rootFont: currentFont,
-            });
-            if (validTargets.length === 0) return;
+            const validTargets = enabled
+                ? validArrangeTargets({
+                      area,
+                      stored,
+                      displayed,
+                      hiddenAreas: hidden,
+                      width: currentWidth,
+                      rootFont: currentFont,
+                  })
+                : [];
+            const canReorder = Boolean(reorder && reorder.reorderIds.length >= 2);
+            if (validTargets.length === 0 && !canReorder) return;
 
             const element = event.currentTarget;
             const pointerId = event.pointerId;
@@ -345,40 +460,133 @@ export function useBoardArranging({
                     current.active = true;
                 }
                 const {
+                    enabled: currentEnabled,
                     layoutRef: currentLayoutRef,
                     targets: currentTargets,
                     displayedArrangement: currentDisplayed,
                 } = latestRef.current;
                 const layoutEl = currentLayoutRef.current;
-                if (!layoutEl) return;
-                const layoutRect = layoutEl.getBoundingClientRect();
+                const layoutRect = layoutEl?.getBoundingClientRect() ?? null;
+
+                if (
+                    current.reorder &&
+                    isEngineArea(current.area) &&
+                    current.reorder.listContainer?.isConnected
+                ) {
+                    const visibleListRect = visibleClipRect(
+                        current.reorder.listContainer,
+                        layoutEl,
+                    );
+                    if (
+                        visibleListRect &&
+                        pointInRect(moveEvent.clientX, moveEvent.clientY, visibleListRect)
+                    ) {
+                        const visibleSlots = readVisibleEngineCardSlots(
+                            current.reorder.listContainer,
+                            current.reorder.reorderIds,
+                            visibleListRect,
+                        );
+                        const currentIndex = current.reorder.reorderIds.indexOf(
+                            engineIdFromArea(current.area),
+                        );
+                        const visibleCurrentIndex = visibleSlots.findIndex(
+                            (entry) => entry.index === currentIndex,
+                        );
+                        const cardRects = visibleSlots.map((entry) => entry.rect);
+                        const visibleSlot =
+                            visibleCurrentIndex !== -1
+                                ? hitTestReorderSlot({
+                                      x: moveEvent.clientX,
+                                      y: moveEvent.clientY,
+                                      containerRect: visibleListRect,
+                                      cardRects,
+                                      currentIndex: visibleCurrentIndex,
+                                  })
+                                : null;
+                        if (visibleSlot !== null) {
+                            const fullSlot =
+                                visibleSlot === visibleSlots.length
+                                    ? visibleSlots[visibleSlots.length - 1].index + 1
+                                    : visibleSlots[visibleSlot].index;
+                            const target = { kind: "reorder" as const, index: fullSlot };
+                            current.hoveredTarget = target;
+                            const box = layoutRect
+                                ? reorderPreviewBox(visibleSlot, layoutRect, cardRects)
+                                : null;
+                            setDragPreview(box ? { area: current.area, target, box } : null);
+                            return;
+                        }
+                        // Inside the visible card list on the card's own slot: neither reorder nor pull-out.
+                        current.hoveredTarget = null;
+                        setDragPreview(null);
+                        return;
+                    }
+                }
+
+                if (
+                    !currentEnabled ||
+                    !layoutEl ||
+                    !layoutRect ||
+                    current.validTargets.length === 0
+                ) {
+                    current.hoveredTarget = null;
+                    setDragPreview(null);
+                    return;
+                }
                 const tileRects = readTileRects(currentDisplayed, currentTargets);
-                const tabListRect = readTabListRect(layoutEl);
+                const returnZone = readReturnZone(layoutEl, current.area, currentDisplayed);
+                const returnRect = returnZone?.rect ?? null;
                 const hovered = hitTestArrangeTarget({
                     x: moveEvent.clientX,
                     y: moveEvent.clientY,
                     area: current.area,
                     validTargets: current.validTargets,
                     tileRects,
-                    tabListRect,
+                    returnRect,
                 });
                 current.hoveredTarget = hovered;
                 const box = hovered
-                    ? previewBoxForTarget(hovered, layoutRect, tileRects, tabListRect)
+                    ? previewBoxForTarget(hovered, layoutRect, tileRects, returnRect, current.area)
                     : null;
-                setDragPreview(hovered && box ? { target: hovered, box } : null);
+                setDragPreview(
+                    hovered && box
+                        ? {
+                              area: current.area,
+                              target: hovered,
+                              returnZone: hovered.kind === "return" ? returnZone?.zone : undefined,
+                              box,
+                          }
+                        : null,
+                );
             };
 
             const onPointerUp = (upEvent: PointerEvent) => {
                 const current = sessionRef.current;
                 if (!current || current.pointerId !== upEvent.pointerId) return;
-                const { active, hoveredTarget, area: movedArea } = current;
+                const { active, hoveredTarget, area: movedArea, reorder: activeReorder } = current;
                 endDragSession(true);
                 if (active) {
                     armClickSuppression();
                     if (hoveredTarget) {
-                        if (hoveredTarget.kind === "return") {
-                            if (isPanelArea(movedArea)) latestRef.current.onReturn(movedArea);
+                        if (hoveredTarget.kind === "reorder") {
+                            if (activeReorder && isEngineArea(movedArea)) {
+                                const fromIndex = activeReorder.reorderIds.indexOf(
+                                    engineIdFromArea(movedArea),
+                                );
+                                const toIndex =
+                                    hoveredTarget.index > fromIndex
+                                        ? hoveredTarget.index - 1
+                                        : hoveredTarget.index;
+                                if (fromIndex !== -1 && toIndex !== fromIndex) {
+                                    activeReorder.onReorder(fromIndex, toIndex);
+                                }
+                            }
+                        } else if (hoveredTarget.kind === "return") {
+                            if (isPanelArea(movedArea)) {
+                                latestRef.current.onReturn(movedArea);
+                            } else if (isEngineArea(movedArea)) {
+                                latestRef.current.onReturnEngine(movedArea);
+                            }
                         } else {
                             latestRef.current.onPlace(
                                 movedArea,
@@ -434,6 +642,7 @@ export function useBoardArranging({
                 active: false,
                 hoveredTarget: null,
                 validTargets,
+                reorder,
                 cleanup: () => {
                     window.removeEventListener("pointermove", onPointerMove);
                     window.removeEventListener("pointerup", onPointerUp);
@@ -469,6 +678,10 @@ export function useBoardArranging({
         [enabled, endDragSession],
     );
 
+    const scheduleEngineReturnFocus = useCallback((area: EngineAreaId) => {
+        pendingFocusRef.current = { kind: "engineReturn", area };
+    }, []);
+
     const applyPlacingTarget = useCallback(
         (target: ArrangeTarget) => {
             if (!placingRequest) return;
@@ -481,13 +694,16 @@ export function useBoardArranging({
                         ? { kind: "grip", area: "bottomRight" }
                         : { kind: "tab", panel: movedArea };
                     onReturn(movedArea);
+                } else if (isEngineArea(movedArea)) {
+                    pendingFocusRef.current = { kind: "engineReturn", area: movedArea };
+                    onReturnEngine(movedArea);
                 }
-            } else {
+            } else if (target.kind === "place") {
                 pendingFocusRef.current = { kind: "grip", area: movedArea };
                 onPlace(movedArea, target.target, target.side);
             }
         },
-        [placingRequest, onPlace, onReturn],
+        [placingRequest, onPlace, onReturn, onReturnEngine],
     );
 
     return {
@@ -497,6 +713,7 @@ export function useBoardArranging({
         consumeSuppressedClick,
         startPlacing,
         applyPlacingTarget,
+        scheduleEngineReturnFocus,
         cancelPlacing: useCallback(() => cancelArranging(true), [cancelArranging]),
     };
 }

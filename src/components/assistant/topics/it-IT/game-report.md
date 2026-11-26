@@ -2,12 +2,12 @@
 id: game-report
 title: Report della partita
 summary: Esegui una revisione automatica della partita con il motore per visualizzare precisione, grafico di valutazione, momenti chiave e classificazione delle mosse.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 Il report della partita analizza ogni mossa della linea principale con un motore scacchistico locale e riassume precisione ed errori della partita.
 
-Per generare un report, apri una partita sulla scacchiera di analisi, passa a {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}} e fai clic su {{label:Board.Analysis.GenerateReport}} (oppure premi la scorciatoia {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
+Per generare un report, apri una partita sulla scacchiera di analisi, passa alla scheda {{label:Board.Analysis.Report}} e fai clic su {{label:Board.Analysis.GenerateReport}} (oppure premi la scorciatoia {{label:Settings.Keybinds.Actions.GENERATE_REPORT}}).
 
 Nella finestra {{label:Board.Analysis.GenerateReport}}:
 - Scegli un {{label:Common.Engine}} locale. Se non ne hai nessuno installato, aggiungine uno su [[page:engines]].

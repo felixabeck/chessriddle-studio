@@ -3,7 +3,7 @@ import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { errorUnlessCancelled } from "@/platform/errors";
 import { Menu, Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useElementSize, useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
+import { useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
 import { GripVertical, NotebookPen, PanelTop, X } from "lucide-react";
 import {
   AiChatIcon,
@@ -11,18 +11,29 @@ import {
   DatabaseIcon,
   GameInfoIcon,
   PracticeIcon,
+  ReportIcon,
   ScoresheetPhotoIcon,
 } from "@/components/common/iconCatalog";
 import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
-import { type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { type StoreApi, useStore } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import type { TreeStoreState } from "@/state/store/tree";
 import {
   allEnabledFamily,
   autoSaveAtom,
-  analysisTabFamily,
   practiceTabFamily,
   reportModalOpenFamily,
   tabFamily,
@@ -34,7 +45,13 @@ import {
   tabEngineSettingsFamily,
   tabPreparationViewFamily,
 } from "@/state/atoms";
-import { isPanelArea, PANEL_AREA_IDS, type PanelAreaId } from "@/state/boardArrangement";
+import {
+  engineIdFromArea,
+  isPanelArea,
+  PANEL_AREA_IDS,
+  type PanelAreaId,
+} from "@/state/boardArrangement";
+import type { Engine } from "@/utils/engines";
 import { selectStripTab } from "@/state/stripTab";
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
@@ -58,7 +75,6 @@ import { applyGameNames } from "./gameNames";
 import GameNameModal from "./GameNameModal";
 import { useBoardCommands } from "./boardCommands";
 import SaveToTargetModal from "./SaveToTargetModal";
-import DetachedEval from "./DetachedEval";
 import GameNotation from "../common/GameNotation";
 import IconAction from "../common/IconAction";
 import MoveControls from "../common/MoveControls";
@@ -66,6 +82,9 @@ import NotationColumn from "../common/NotationColumn";
 import PanelArea from "./PanelArea";
 import { TreeStateContext } from "../common/TreeStateContext";
 import AnalysisPanel from "../panels/analysis/AnalysisPanel";
+import BestMoves from "../panels/analysis/BestMoves";
+import { notifyAnalysisPanelScroll } from "../panels/analysis/analysisPanelScroll";
+import ReportPanel from "../panels/analysis/ReportPanel";
 import AnnotationPanel from "../panels/annotation/AnnotationPanel";
 import CoachPanel from "../panels/coach/CoachPanel";
 import DatabasePanel from "../panels/database/DatabasePanel";
@@ -150,15 +169,66 @@ function PreparationLandingConsumer() {
   return null;
 }
 
+/** A pulled-out engine window: one plain bordered tile whose scrolling body hosts `BestMoves`. */
+function EngineWindowCard({
+  engine,
+  colorIndex,
+  onReturn,
+  onDragStart,
+  onSuppressClick,
+  onStartPlacing,
+}: {
+  engine: Engine;
+  colorIndex: number;
+  onReturn: () => void;
+  onDragStart: (event: ReactPointerEvent<HTMLElement>) => void;
+  onSuppressClick: (event: ReactMouseEvent) => void;
+  onStartPlacing: () => void;
+}) {
+  const store = useContext(TreeStateContext)!;
+  const rootFen = useStore(store, (s) => s.root.fen);
+  const moves = useStore(
+    store,
+    useShallow((s) => getVariationLine(s.root, s.position)),
+  );
+  const halfMoves = useStore(store, (s) => s.currentNode().halfMoves);
+  const orientation = useStore(store, (s) => s.headers.orientation || "white");
+
+  return (
+    <Paper
+      withBorder
+      className={classes.engineWindow}
+      data-engine-window={engine.id}
+      onScroll={notifyAnalysisPanelScroll}
+    >
+      <BestMoves
+        id={colorIndex}
+        engine={engine}
+        fen={rootFen}
+        moves={moves}
+        halfMoves={halfMoves}
+        orientation={orientation}
+        mode="window"
+        onReturn={onReturn}
+        onDragStart={onDragStart}
+        onSuppressClick={onSuppressClick}
+        onStartPlacing={onStartPlacing}
+      />
+    </Paper>
+  );
+}
+
 function BoardAnalysis() {
   const { t } = useTranslation();
   const compactTabs = useScaledMaxWidth(COMPACT_PANE_TABS_WIDTH_EM);
   const {
     shownPanelAreas,
+    shownEngineAreas,
     getAreaTarget,
     arrangingAvailable,
     canTakeOut,
     returnPanel,
+    returnEngine,
     registerReturnListener,
     beginDrag,
     consumeSuppressedClick,
@@ -177,9 +247,9 @@ function BoardAnalysis() {
     !!currentTab && isPersistentGameOrigin(currentTab) && !isDraftGameOrigin(currentTab.gameOrigin);
   const [saveToModal, setSaveToModal] = useState(false);
   const autoSave = useAtomValue(autoSaveAtom);
+  const engines = useAtomValue(enginesAtom);
+  const loadedEngines = useMemo(() => (engines ?? []).filter((e) => e.loaded), [engines]);
   const boardRef = useRef(null);
-  // The engine bar below the board: the board gives up its rendered height.
-  const { ref: belowBoardRef, height: belowBoardHeight } = useElementSize<HTMLDivElement>();
 
   const store = useContext(TreeStateContext)!;
 
@@ -268,7 +338,6 @@ function BoardAnalysis() {
 
   const keyMap = useAtomValue(keyMapAtom);
 
-  const [, setAnalysisTab] = useAtom(useTabAtom(analysisTabFamily));
   const [currentTabSelected, setCurrentTabSelected] = useAtom(useTabAtom(tabFamily));
   // A build without the Coach has no Coach tab, hotkey or panel. The Photo tab exists only while a
   // scoresheet review is active. Detached panel areas leave the tab strip and render in their own tiles.
@@ -277,6 +346,7 @@ function BoardAnalysis() {
   const isRepertoire = isRepertoireTab(currentTab);
   const panelMeta: Record<PanelAreaId, { title: string; Icon: typeof AnalysisIcon }> = {
     analysis: { title: t("Board.Tabs.Analysis"), Icon: AnalysisIcon },
+    report: { title: t("Board.Analysis.Report"), Icon: ReportIcon },
     database: { title: t("Board.Tabs.Database"), Icon: DatabaseIcon },
     annotate: { title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
     coach: { title: t("Board.Tabs.Coach"), Icon: AiChatIcon },
@@ -287,6 +357,7 @@ function BoardAnalysis() {
       ? [{ value: "practice", title: t("Board.Tabs.Practice"), Icon: PracticeIcon }]
       : []),
     ...(!shownPanelAreas.has("analysis") ? [{ value: "analysis", ...panelMeta.analysis }] : []),
+    ...(!shownPanelAreas.has("report") ? [{ value: "report", ...panelMeta.report }] : []),
     ...(!shownPanelAreas.has("database") ? [{ value: "database", ...panelMeta.database }] : []),
     ...(!shownPanelAreas.has("annotate") ? [{ value: "annotate", ...panelMeta.annotate }] : []),
     ...(coachEnabled && !shownPanelAreas.has("coach")
@@ -425,8 +496,7 @@ function BoardAnalysis() {
       [
         keyMap.GENERATE_REPORT.keys,
         (e) => {
-          if (!shownPanelAreas.has("analysis")) selectInStrip("analysis");
-          setAnalysisTab("report");
+          if (!shownPanelAreas.has("report")) selectInStrip("report");
           // Without moves, or while this tab runs a report, the shortcut only shows the tab.
           const { root, report } = store.getState();
           if (root.children.length > 0 && !report.inProgress) setReportModalOpen(true);
@@ -483,6 +553,7 @@ function BoardAnalysis() {
 
   const panelContent: Record<PanelAreaId, () => ReactNode> = {
     analysis: () => <AnalysisPanel />,
+    report: () => <ReportPanel />,
     database: () => <DatabasePanel />,
     annotate: () => <AnnotationPanel />,
     coach: () => <CoachPanel />,
@@ -569,30 +640,16 @@ function BoardAnalysis() {
       <FilePositionIndexSync />
       <PreparationLandingConsumer />
       <Portal target={getAreaTarget("left")} style={{ height: "100%" }}>
-        <Stack
-          h="100%"
-          gap="xs"
-          style={{
-            "--board-below-height":
-              belowBoardHeight > 0
-                ? `calc(${belowBoardHeight}px + var(--mantine-spacing-xs))`
-                : undefined,
-          }}
-        >
-          <Paper withBorder style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-            <Board
-              repertoire={isRepertoire}
-              onRenameLine={() => setNameDialog("rename")}
-              practiceMove={practicing ? (practiceMoveController ?? undefined) : undefined}
-              editingMode={editingMode}
-              boardRef={boardRef}
-              selectedPiece={selectedPiece}
-            />
-          </Paper>
-          <div ref={belowBoardRef} className={classes.belowBoard} data-slot="below-board">
-            <DetachedEval placement="board" />
-          </div>
-        </Stack>
+        <Paper withBorder h="100%" style={{ overflow: "hidden" }}>
+          <Board
+            repertoire={isRepertoire}
+            onRenameLine={() => setNameDialog("rename")}
+            practiceMove={practicing ? (practiceMoveController ?? undefined) : undefined}
+            editingMode={editingMode}
+            boardRef={boardRef}
+            selectedPiece={selectedPiece}
+          />
+        </Paper>
       </Portal>
       <Portal
         target={getAreaTarget("topRight")}
@@ -600,7 +657,6 @@ function BoardAnalysis() {
         style={{ height: "100%" }}
       >
         <Stack h="100%" gap="xs" className={paneClasses.root}>
-          {!tabsHidden && <DetachedEval placement="tabs" />}
           <Paper
             withBorder
             className={paneClasses.root}
@@ -739,6 +795,24 @@ function BoardAnalysis() {
           </Portal>
         );
       })}
+      {[...shownEngineAreas].map((engineArea) => {
+        const engineId = engineIdFromArea(engineArea);
+        const colorIndex = loadedEngines.findIndex((e) => e.id === engineId);
+        if (colorIndex === -1) return null;
+        const engine = loadedEngines[colorIndex];
+        return (
+          <Portal key={engineArea} target={getAreaTarget(engineArea)} style={{ height: "100%" }}>
+            <EngineWindowCard
+              engine={engine}
+              colorIndex={colorIndex}
+              onReturn={() => returnEngine(engineArea)}
+              onDragStart={(e) => beginDrag(engineArea, e)}
+              onSuppressClick={consumeSuppressedClick}
+              onStartPlacing={() => startPlacing(engineArea)}
+            />
+          </Portal>
+        );
+      })}
       <Portal target={getAreaTarget("bottomRight")} style={{ height: "100%" }}>
         {editingMode ? (
           <EditingCard
@@ -749,9 +823,6 @@ function BoardAnalysis() {
           />
         ) : (
           <NotationColumn>
-            {/* A bar pinned above the hidden tabs stays reachable above the notation. */}
-            {tabsHidden && <DetachedEval placement="tabs" />}
-            <DetachedEval placement="notation" />
             <GameNotation
               topBar
               markOpenVariations
@@ -784,7 +855,6 @@ function BoardAnalysis() {
               }
             />
             <MoveControls />
-            <DetachedEval placement="belowNotation" />
           </NotationColumn>
         )}
       </Portal>

@@ -2,12 +2,12 @@
 id: game-report
 title: 게임 보고서
 summary: 정확도, 평가 그래프, 주요 장면 및 수 분류를 확인하는 자동 엔진 검토 실행하기.
-source: a5e00adfe821f3f3
+source: b69aae8a4fe0f417
 ---
 
 게임 보고서는 로컬 체스 엔진으로 메인 라인의 모든 수를 분석하여 대국의 정확도와 실수를 요약합니다.
 
-보고서를 생성하려면 분석 보드에서 대국을 열고 {{label:Board.Tabs.Analysis}} -> {{label:Board.Analysis.Report}}로 이동한 뒤 {{label:Board.Analysis.GenerateReport}}을(를) 클릭하세요(또는 {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} 단축키 사용).
+보고서를 생성하려면 분석 보드에서 대국을 열고 {{label:Board.Analysis.Report}} 탭으로 전환한 뒤 {{label:Board.Analysis.GenerateReport}}을(를) 클릭하세요(또는 {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} 단축키 사용).
 
 {{label:Board.Analysis.GenerateReport}} 대화상자에서:
 - 로컬 {{label:Common.Engine}}을(를) 선택합니다. 설치된 엔진이 없다면 [[page:engines]]에서 추가하세요.
