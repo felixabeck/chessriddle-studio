@@ -2967,12 +2967,20 @@ pub(crate) fn ensure_home_owned_default_dir(
         .file_name()
         .and_then(OsStr::to_str)
         .is_some_and(|name| name.eq_ignore_ascii_case(home.studio_leaf()));
-    if !same_name || canonical_studio.parent() != Some(canonical_home.as_path()) {
+    // The home path was canonicalized once when it was acquired and is never followed again.
+    if canonical_home != home.as_path()
+        || !same_name
+        || canonical_studio.parent() != Some(canonical_home.as_path())
+    {
         return Err(changed());
     }
+    // The requested spelling must still open no-follow (a link planted there is refused) and,
+    // like the canonical spelling, name the directory that was opened.
+    let opened_studio = opened_file_identity(&studio)?;
     if canonical_identity(&canonical_home).map_err(refuse)?
         != opened_file_identity(&home.directory)?
-        || canonical_identity(&canonical_studio).map_err(refuse)? != opened_file_identity(&studio)?
+        || canonical_identity(&studio_path).map_err(refuse)? != opened_studio
+        || canonical_identity(&canonical_studio).map_err(refuse)? != opened_studio
     {
         return Err(changed());
     }

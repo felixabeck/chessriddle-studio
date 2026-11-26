@@ -5161,3 +5161,26 @@ fn home_default_path_is_the_canonical_spelling_and_activates() {
         .list_database_children_cancellable(&root, &CancellationToken::new())
         .unwrap();
 }
+
+/// On a case-sensitive filesystem a studio folder renamed to another case and replaced by a
+/// link to it after the open stays inside home but is a link at the requested spelling: it
+/// must be refused, as a link there is before the open.
+#[cfg(unix)]
+#[test]
+fn home_default_refuses_a_case_variant_link_planted_at_the_studio_spelling() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    fs::create_dir_all(&home_path).unwrap();
+    let home = HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER);
+    let studio = home.as_path().join(home.studio_leaf());
+    let variant = home.as_path().join(home.studio_leaf().to_lowercase());
+    let (studio_hook, variant_hook) = (studio.clone(), variant.clone());
+    HOME_DEFAULT_AFTER_STUDIO_OPEN_HOOK.with(|slot| {
+        *slot.borrow_mut() = Some(Box::new(move || {
+            fs::rename(&studio_hook, &variant_hook).unwrap();
+            std::os::unix::fs::symlink(&variant_hook, &studio_hook).unwrap();
+        }));
+    });
+    assert!(ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases).is_err());
+    assert!(!variant.join("Databases").exists());
+}
