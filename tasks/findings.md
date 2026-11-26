@@ -29696,3 +29696,18 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Found by:** Claude Code (Opus 5.5), focus-mode build push, 2026-11-26
 * **Handled (2026-11-26, Claude Code (Opus 5.5), focus-mode build):** commit `b043c7410` re-records `e2e/focus-mode.spec.ts-snapshots/focus-mode-board-focus-mode.png` in the container on `eb3648c7c`; the new image shows the hidden header, the full-height board, and the board bar, notation frame and Report tab from the two upstream builds. Proof: Test run 45873688892 on `b043c7410` is green in every job, e2e included. Cause on the process side: after rebasing onto `e273f1c46` the focus-mode e2e spec was not rerun in the container before the push.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5012093956015afe4ec6d4613956748add8285b4105c52afb81194abd07f923f","header_sha256":"999069ff485daad00902dd57a5a6d5cba2388a9f8115aa4ae2fb9ce9b3eb657e","header_status":"handled","input_sha256":"d24e3ddb3c5410648ddc77d06f4b6d4091bfffff09ace72193a80529d8a1a912","kind":"mutation-receipt","operation":"4e7e3859c52e827ca048ade0f65d7205caeb3bbdbf569986bf58a569d5bb4973","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-12"],"target":"f-20261126-12","v":1} -->
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### Changing a PGN file's type to Repertoire in the Library leaves it training as White
+
+* **ID:** f-20261126-10 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes, during the repertoire PGN import build (2026-11-26)
+* **Where:** `src/components/files/useFileWorkspace.ts` `setFileType` (Library → Edit metadata → type); colour read at `src/components/panels/practice/PracticePanel.tsx:556` and `src/components/panels/practice/RepertoireInfo.tsx:103` as `headers.orientation || "white"`
+* **Failure scenario:** a player sets an existing PGN of Black lines (no `[Orientation "black"]` header) to type Repertoire through Edit metadata; Practice drills it as White, asking the player to find White's moves, and nothing asks for the colour. The only switch is flipping the board, which is not explained.
+* **Fix:** ask for the colour when the type becomes Repertoire and write it as the `Orientation` header, or show the trained colour with a switch in Practice.
+* **Open question:** none; the repertoire PGN import build fixes the import paths only.
+* **Found by:** Claude Code (Opus 5.5), repertoire PGN import build, 2026-11-26
