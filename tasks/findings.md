@@ -29633,7 +29633,7 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### The folder-settings build-ledger row fails the ledger format check
 
-* **ID:** f-20261126-09 · **Status:** open · **Area:** docs-agent-config · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-09 · **Status:** handled · **Area:** docs-agent-config · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45828605741
 * **First red:** `dd8835ec2` (the push that added the row; its Test run 45828427723 was still in progress when filed; the previous Test run 45823513947 on `bca9c4500` was green); run 45828605741 on `f5f360ef7` inherits it
@@ -29645,3 +29645,6 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Fix:** drop ` (+1 carried)` from that cell and note the carried issue in the row's notes column.
 * **Proof:** `pnpm gates:contract:check` green; the next Test run's `frontend` job succeeds.
 * **Found by:** Claude Code (Opus 5.5), engine-card pull-out push, 2026-11-26
+
+2026-11-26, `1fe8182f2` drops ` (+1 carried)` from `plan_adopted_per_round` of the folder-settings row in `tasks/build-ledger.md` and notes the carried issue in its notes column. Proof: `./scripts/findings.py check` ok and `pnpm gates:contract:check` green on the tree that carries the repair; CI confirmation comes with the next Test run.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"6ceadcac1eb646bfd513b326f4548251c0ade738fba2ccec67f6e956e9642542","header_sha256":"9aebd4497a289d0dfa666464ca7ee27d592b3e1322162bebd2bf8df692829c31","header_status":"handled","input_sha256":"16ca01fdf205908633ef78be53e6d8471c11be34aba37e72698f0f698be12bab","kind":"mutation-receipt","operation":"da054e4c47088cd596846ba8504518deb55604874dba77448fb6115b0d023443","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-09"],"target":"f-20261126-09","v":1} -->
