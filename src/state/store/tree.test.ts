@@ -2472,20 +2472,20 @@ test("goToNextOpenVariation keeps the cursor when the tree has no open variation
 
 test("deriveScoresheetRemaining covers L < ply, L = ply, L > ply and exhausted tokens", () => {
     const stopped = { ply: 4, tokens: ["Nxe5", "d6", "Nf3"] };
-    expect(deriveScoresheetRemaining(stopped, 2)).toEqual({
+    expect(deriveScoresheetRemaining(stopped, 2)).toStrictEqual({
         nextPly: 4,
         moveNumber: 3,
         color: "white",
         tokens: ["Nxe5", "d6", "Nf3"],
     });
-    expect(deriveScoresheetRemaining(stopped, 4)).toEqual({
+    expect(deriveScoresheetRemaining(stopped, 4)).toStrictEqual({
         nextPly: 4,
         moveNumber: 3,
         color: "white",
         tokens: ["Nxe5", "d6", "Nf3"],
         failedToken: "Nxe5",
     });
-    expect(deriveScoresheetRemaining(stopped, 5)).toEqual({
+    expect(deriveScoresheetRemaining(stopped, 5)).toStrictEqual({
         nextPly: 5,
         moveNumber: 3,
         color: "black",
@@ -2493,6 +2493,39 @@ test("deriveScoresheetRemaining covers L < ply, L = ply, L > ply and exhausted t
     });
     expect(deriveScoresheetRemaining(stopped, 7)).toBeNull();
     expect(deriveScoresheetRemaining(undefined, 0)).toBeNull();
+    expect(deriveScoresheetRemaining({ ply: 4, tokens: [] }, 2)).toBeNull();
+});
+
+test("stripUnsureMarks copies every node without its mark and leaves the source tree unchanged", () => {
+    const root = defaultTree().root;
+    const e4 = addMove(root, "e2e4");
+    const d4 = addMove(root, "d2d4");
+    const e5 = addMove(e4, "e7e5");
+    const c5 = addMove(e4, "c7c5");
+    const nf3 = addMove(c5, "g1f3");
+    addMove(e5, "g1f3");
+    addMove(d4, "d7d5");
+    e4.unsure = true;
+    nf3.unsure = true;
+    const before = structuredClone(root);
+    const expected = structuredClone(root);
+    delete expected.children[0].unsure;
+    delete expected.children[0].children[1].children[0].unsure;
+
+    const stripped = stripUnsureMarks(root);
+
+    expect(stripped).toStrictEqual(expected);
+    expect(root).toStrictEqual(before);
+    expect(stripped).not.toBe(root);
+    expect(stripped.children[0]).not.toBe(e4);
+});
+
+test("getMainLineUnsurePaths never reports the root, even when it carries a mark", () => {
+    const root = defaultTree().root;
+    const e4 = addMove(root, "e2e4");
+    root.unsure = true;
+    e4.unsure = true;
+    expect(getMainLineUnsurePaths(root)).toEqual([[0]]);
 });
 
 test("scoresheet review marks travel with undo, clear/finish are not undoable, and no mark is stored without a review on either write route", () => {

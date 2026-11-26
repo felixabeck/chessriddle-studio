@@ -7,6 +7,7 @@ import { deserializeStorageValue, serializeStorageValue } from "./debouncedStora
 import {
     canRehydrate,
     decodeLegacyOrCompressed,
+    inspectRawTreeForRestore,
     isBoundedTreeForStorage,
     migrateTreeForStorage,
     prepareTreeForStorage,
@@ -1490,6 +1491,7 @@ test("reading and writing reserved session keys never admits them as tab trees",
         ["activeTab", JSON.stringify("other-tab")],
         ["database-view", JSON.stringify({ activeTab: "games" })],
         ["expanded-directories", JSON.stringify({ expanded: ["/games"] })],
+        ["workspace-session-unavailable", "1"],
     ]);
 
     for (const [key, raw] of reservedValues) {
@@ -3317,6 +3319,51 @@ test("malformed scoresheetReview or unsure fields read as absent and never fail 
     const readWrong = storage.read("wrong-unsure")?.state as ReturnType<typeof defaultTree>;
     expect(readWrong.scoresheetReview).toEqual({});
     expect(readWrong.root.children[0].unsure).toBeUndefined();
+    expect(Object.hasOwn(readWrong.root.children[0], "unsure")).toBe(false);
+});
+
+test("inspectRawTreeForRestore classifies dirty, append-outstanding, clean and undecodable trees", () => {
+    const raw = (change: (state: Record<string, unknown>) => void = () => {}) => {
+        const state = structuredClone(defaultTree()) as unknown as Record<string, unknown>;
+        change(state);
+        return serializeStorageValue({ version: TREE_STORAGE_VERSION, state });
+    };
+    expect(inspectRawTreeForRestore(raw())).toBe("clean");
+    expect(
+        inspectRawTreeForRestore(
+            raw((state) => {
+                state.dirty = true;
+            }),
+        ),
+    ).toBe("dirty");
+    expect(
+        inspectRawTreeForRestore(
+            raw((state) => {
+                state.appendAttempted = true;
+            }),
+        ),
+    ).toBe("append-outstanding");
+    expect(inspectRawTreeForRestore("not a stored tree")).toBe("undecodable");
+});
+
+test("committed-write listeners hear seeded and flushed trees until they unsubscribe", () => {
+    const heard: string[] = [];
+    const unsubscribe = storage.subscribeCommittedWrite((tabId) => heard.push(tabId));
+
+    storage.seed("seeded-tab", defaultTree());
+    storage.write("written-tab", { version: TREE_STORAGE_VERSION, state: defaultTree() });
+    expect(heard).toEqual(["seeded-tab"]);
+    vi.runAllTimers();
+    expect(heard).toEqual(["seeded-tab", "written-tab"]);
+
+    unsubscribe();
+    storage.seed("after-unsubscribe", defaultTree());
+    storage.write("after-unsubscribe-write", {
+        version: TREE_STORAGE_VERSION,
+        state: defaultTree(),
+    });
+    vi.runAllTimers();
+    expect(heard).toEqual(["seeded-tab", "written-tab"]);
 });
 
 test("prepareTreeForStorage and seed strip unsure marks when scoresheetReview is absent", () => {

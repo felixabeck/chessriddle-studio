@@ -608,7 +608,7 @@ export function deriveScoresheetRemaining(
         const offset = mainLineLength - ply;
         if (offset >= tokens.length) return null;
         nextPly = mainLineLength;
-        remaining = offset === 0 ? tokens : tokens.slice(offset);
+        remaining = tokens.slice(offset);
         if (offset === 0) failedToken = tokens[0];
     }
 
@@ -647,7 +647,6 @@ export function stripUnsureMarks(root: TreeNode): TreeNode {
     if (!hasUnsure) return root;
 
     const cloneNode = (node: TreeNode): TreeNode => {
-        if (node.unsure === undefined) return { ...node, children: [] };
         const { unsure: _unsure, ...rest } = node;
         return { ...rest, children: [] };
     };
