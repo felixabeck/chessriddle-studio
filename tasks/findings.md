@@ -29802,3 +29802,18 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Open question:** should activation publish urgently when it also navigates onto the board view (keeping the transition only when already on `/`, which `BoardsPage.test.tsx` "transitions $name before showing a suspending tab" pins), or does an urgent activation off the board route reintroduce the close-time crash `b829b562` fixed with `startTransition`?
 * **Fix:** decide the priority rule for activation-plus-navigation, apply it once in `handleSetActiveTab`'s callers, and prove it with a renderer test in the style of `src/utils/openFile.admission.test.tsx` (active-tab subscription mounted above the routes, first board render logged).
 * **Found by:** Claude Code (Opus 5.5) build urgent-tab-admission, phase 1 diff review, 2026-11-26
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### The Train-reaches-Start-Practice e2e test measures the panel before the second resize settles and fails about one run in three
+
+* **ID:** f-20261127-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `e2e/workspace-tabs.spec.ts:923` ("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer at 800×500"), lines 1030-1039.
+* **Defect:** after `resize(80)` the test polls `geometry().inside` until the layout settles, but after `resize(50)` it calls `measure("restored")` straight away, so the measurement can catch the Train panel before the mosaic has shrunk it back.
+* **Observed:** 2026-11-27 on `build/scoresheet-pdf-import-20261126` (`08e261e08` plus uncommitted copy changes that do not touch this page): the full `pnpm test:e2e:container` run failed it with `expect(restored.buttonBottom).toBeGreaterThan(restored.bottom)` — expected > 313, received 266.5 (`restored.bottom` 313 is the tall panel's bottom, not the 50 % one); `pnpm test:e2e:container -- --project=workspace-tabs --grep "Train reaches Start Practice" --repeat-each=3`: 1 failed, 2 passed. The same test passed in two earlier full runs of the same branch.
+* **Failure scenario:** the CI e2e job (and any local full e2e run) turns red on unchanged product code about one run in three, which blocks or confuses a push.
+* **Fix direction:** after `resize(50)`, poll until the panel's bottom matches the restored layout (as the test already does after `resize(80)`) before asserting; product code stays unchanged. Prove with `--repeat-each=30`.
+* **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
