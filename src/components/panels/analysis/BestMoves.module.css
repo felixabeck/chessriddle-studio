@@ -63,3 +63,9 @@
   color: var(--mantine-color-dimmed);
   font-variant-numeric: tabular-nums;
 }
+
+/* A disabled IconAction sits in an inline span for its tooltip; as a block item it would add a
+   line box, so dimming a line would change the row height. */
+.lineActions > span {
+  display: flex;
+}

@@ -100,7 +100,7 @@ function AnalysisRow({
         {preview.board}
       </Table.Td>
       <Table.Th>
-        <Flex direction="column" align="center" gap={4}>
+        <Flex direction="column" align="center" gap={4} className={classes.lineActions}>
           <IconAction
             label={open ? t("Board.Analysis.Collapse") : t("Board.Analysis.Expand")}
             pressed={open}

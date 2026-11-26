@@ -12,12 +12,12 @@ import {
     type AnalysisRequest,
     type MockScenario,
     goToSettings,
-    scrollbarFreeScreenshot,
+    preserveStorageForReload,
     moveBackground,
     CURRENT_MOVE_FILL,
     CURRENT_MOVE_HOVER,
 } from "./fixtures";
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type { EngineOptions, ErrorPayload } from "../src/bindings/generated";
 
 async function setupNotationMenu(
@@ -382,7 +382,7 @@ async function setupAnalysisEngine(page: Page, engineCount = 1) {
                 .filter(({ command }) => command === "get_best_moves"),
         );
     await expect.poll(async () => (await searches()).length).toBe(engineCount);
-    const panel = page.locator(".mantine-Accordion-item").filter({ hasText: "E2E Stockfish" });
+    const panel = page.locator('[data-engine-card-id="e2e-engine"]');
     return { searches, panel };
 }
 
@@ -437,7 +437,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         await page.mouse.move(splitter.x + splitter.width / 2, 930, { steps: 5 });
         await page.mouse.up();
         await page.mouse.move(0, 0);
-        const engines = rightColumn.locator(".mantine-Accordion-item");
+        const engines = rightColumn.locator("[data-engine-card-id]");
         await expect(engines).toHaveCount(2);
         for (const engine of await engines.all()) {
             await expect(
@@ -449,7 +449,7 @@ for (const colorScheme of ["light", "dark"] as const) {
             await expect(engine.getByText("0.00", { exact: true })).toBeInViewport({ ratio: 1 });
         }
         await expect(rightColumn.getByText("+0.34", { exact: true }).last()).toBeVisible();
-        const scoreChips = engines.first().locator("tbody tr > td:first-child > [data-size='md']");
+        const scoreChips = engines.first().locator("tbody tr > td:first-child > [data-size='sm']");
         await expect(scoreChips).toHaveText(["+0.34", "-0.21", "0.00"]);
         const chipBackgrounds = await scoreChips.evaluateAll((chips) =>
             chips.map((chip) => getComputedStyle(chip).backgroundColor),
@@ -592,35 +592,91 @@ test("engine-gap: A lines stay dimmed and inert at B until explicitly emitted B 
     await expect(panel).not.toContainText("Loading");
 });
 
-/** The threat line d4 Nf3 as the pinned bar renders it after 1. e4 a6 2. e5 d5. */
-const PINNED_THREAT_LINE = "3...d44.♘f3";
-
-test("engine-gap: engines reorder from the keyboard on their grip", async ({ page }) => {
+test("engine-gap: engines reorder by drag and by the grip menu", async ({ page }) => {
     await setupAnalysisEngine(page, 2);
-    const names = page.locator(".mantine-Accordion-item").getByText(/^E2E (Stockfish|ChessDB)$/);
+    const cards = page.locator("[data-engine-card-id]");
+    const names = cards.getByText(/^E2E (Stockfish|ChessDB)$/);
     await expect(names).toHaveText(["E2E Stockfish", "E2E ChessDB"]);
-    // The grip is a button: the keyboard lift starts on the button itself, the route the
-    // library's interactive-element check blocks.
-    await page.getByRole("button", { name: "Reorder engine", exact: true }).first().focus();
-    await page.keyboard.press("Space");
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("Space");
+
+    const menu = page.getByRole("menu");
+    await page.locator('[data-arrange-grip="engine:e2e-engine"]').click();
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Move up", exact: true })).toBeDisabled();
+    await expect(
+        menu.getByRole("menuitem", { name: "Show as its own area", exact: true }),
+    ).toBeVisible();
+    await menu.getByRole("menuitem", { name: "Move down", exact: true }).click();
     await expect(names).toHaveText(["E2E ChessDB", "E2E Stockfish"]);
+
+    await page.locator('[data-arrange-grip="engine:e2e-engine"]').click();
+    await expect(menu.getByRole("menuitem", { name: "Move down", exact: true })).toBeDisabled();
+    await menu.getByRole("menuitem", { name: "Move up", exact: true }).click();
+    await expect(names).toHaveText(["E2E Stockfish", "E2E ChessDB"]);
+
+    // Dragging the first card's grip below the second card's midpoint reorders the list.
+    const gripBox = (await page.locator('[data-arrange-grip="engine:e2e-engine"]').boundingBox())!;
+    const secondCardBox = (await page
+        .locator('[data-engine-card-id="e2e-engine-2"]')
+        .boundingBox())!;
+    await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+        secondCardBox.x + secondCardBox.width / 2,
+        secondCardBox.y + secondCardBox.height * 0.85,
+        { steps: 8 },
+    );
+    const preview = page.getByTestId("board-arrange-preview");
+    await expect(preview).toHaveAttribute("data-arrange-kind", "reorder");
+    await page.mouse.up();
+    await expect(preview).toHaveCount(0);
+    await expect(names).toHaveText(["E2E ChessDB", "E2E Stockfish"]);
+
+    // Reordering by drag still works in non-arranged stacked mode, where pull-out is unavailable.
+    await page.setViewportSize({ width: 600, height: 900 });
+    await expect(page.locator("[data-board-layout='stacked']")).toBeVisible();
+    await page
+        .getByRole("button", { name: "Manage Engines", exact: true })
+        .scrollIntoViewIfNeeded();
+    await page.locator('[data-arrange-grip="engine:e2e-engine-2"]').click();
+    await expect(
+        menu.getByRole("menuitem", { name: "Show as its own area", exact: true }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+
+    const stackedGripBox = (await page
+        .locator('[data-arrange-grip="engine:e2e-engine-2"]')
+        .boundingBox())!;
+    const stackedSecondBox = (await page
+        .locator('[data-engine-card-id="e2e-engine"]')
+        .boundingBox())!;
+    await page.mouse.move(
+        stackedGripBox.x + stackedGripBox.width / 2,
+        stackedGripBox.y + stackedGripBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+        stackedSecondBox.x + stackedSecondBox.width / 2,
+        stackedSecondBox.y + stackedSecondBox.height * 0.85,
+        { steps: 8 },
+    );
+    await expect(preview).toHaveAttribute("data-arrange-kind", "reorder");
+    await page.mouse.up();
+    await expect(names).toHaveText(["E2E Stockfish", "E2E ChessDB"]);
 });
 
-test("engine-gap: pinned engine shows up to its own line count and moves between its four places", async ({
+test("engine-gap: engine cards pull out by drag and grip menu, support two windows, and return by X or strip drop", async ({
     page,
     emitTauriEvent,
     assertAccessible,
 }) => {
     await page.emulateMedia({ colorScheme: "dark" });
     await page.addInitScript(() => localStorage.setItem("mantine-color-scheme", "dark"));
-    const { searches, panel } = await setupAnalysisEngine(page, 2);
-    await panel.getByRole("button", { name: "Pin engine", exact: true }).click();
-    const detached = page.getByTestId("pinned-engine");
-    const request = (await searches()).find(
-        ({ args }) => (args as AnalysisRequest).id === "e2e-engine",
-    )!.args as AnalysisRequest;
+    const { searches } = await setupAnalysisEngine(page, 2);
+
+    const allSearches = await searches();
+    const request = allSearches.find(({ args }) => (args as AnalysisRequest).id === "e2e-engine")!
+        .args as AnalysisRequest;
     const payload = bestMovesPayload(request, ["e4", "e5", "Nf3"], ["e2e4", "e7e5", "g1f3"], 34);
     payload.bestLines.push(
         {
@@ -639,62 +695,67 @@ test("engine-gap: pinned engine shows up to its own line count and moves between
         },
     );
     await emitTauriEvent({ event: "best-moves-payload", payload });
-    const scores = detached.locator("[data-size='sm']:has(> p)");
-    await expect(scores).toHaveText(["+0.34", "+0.21", "0.00"]);
-    await expect(detached).toContainText("1.e4e52.♘f3");
-    const lineCount = detached.getByRole("radiogroup", { name: "Number of lines", exact: true });
-    await expect(lineCount.getByRole("radio", { name: "3", exact: true })).toBeChecked();
-    for (const count of [1, 2, 3, 4, 5]) {
-        await expect(
-            lineCount.getByRole("radio", { name: String(count), exact: true }),
-        ).toBeEnabled();
-    }
-    await lineCount.getByText("2", { exact: true }).click();
-    await expect(scores).toHaveText(["+0.34", "+0.21"]);
-    await expect(panel.locator("tbody tr > td:first-child > [data-size='md']")).toHaveText([
-        "+0.34",
-        "+0.21",
-        "0.00",
-    ]);
-    await page.mouse.move(0, 0);
-    await assertAccessible();
-    await expect(detached).toHaveScreenshot("pinned-engine-two-lines-dark.png", {
-        animations: "disabled",
+    const request2 = allSearches.find(
+        ({ args }) => (args as AnalysisRequest).id === "e2e-engine-2",
+    )!.args as AnalysisRequest;
+    await emitTauriEvent({
+        event: "best-moves-payload",
+        payload: bestMovesPayload(request2, ["d4", "d5", "c4"], ["d2d4", "d7d5", "c2c4"], 15),
     });
 
-    // Hovering a pinned move previews the position after it on a board inside the window,
-    // and the board stays while the pointer stays on the move (it never takes the pointer).
-    const move = detached.getByRole("button", { name: "e5", exact: true }).first();
-    await move.hover();
-    const preview = page.getByTestId("engine-line-preview");
-    await expect(preview.locator("cg-board")).toBeVisible();
-    // The previewed move takes the notation's gold current-move hover, not a gray fill.
-    await expect(move).toHaveAttribute("aria-current", "true");
-    const previewed = await moveBackground(move, CURRENT_MOVE_HOVER);
-    expect(previewed.actual).toBe(previewed.expected);
-    const box = (await preview.boundingBox())!;
-    const viewport = page.viewportSize()!;
-    expect(box.width).toBeGreaterThan(150);
-    expect(box.y).toBeGreaterThanOrEqual(0);
-    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-    const moveBox = (await move.boundingBox())!;
-    await page.mouse.move(moveBox.x + moveBox.width - 2, moveBox.y + moveBox.height / 2);
-    await expect(preview).toBeVisible();
-    await expect(page).toHaveScreenshot("pinned-engine-hover-preview-dark.png", {
-        animations: "disabled",
-        // A hover scrollbar can outlive the pointer, and it is not what this image pins.
-        stylePath: scrollbarFreeScreenshot,
+    // Pull out the first engine by dragging its card grip onto the bottom edge of the board.
+    const grip1 = page.locator('[data-arrange-grip="engine:e2e-engine"]');
+    const gripBox = (await grip1.boundingBox())!;
+    const boardBox = (await page.locator("#left").boundingBox())!;
+    await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(boardBox.x + boardBox.width / 2, boardBox.y + boardBox.height - 24, {
+        steps: 8,
     });
-    await page.mouse.move(0, 0);
+    const preview = page.getByTestId("board-arrange-preview");
+    await expect(preview).toBeVisible();
+    await expect(preview).toHaveAttribute("data-arrange-kind", "place");
+    await expect(preview).toHaveAttribute("data-arrange-target", "left");
+    await expect(preview).toHaveAttribute("data-arrange-side", "bottom");
+    await expect(preview).toHaveText("Below the board");
+    await page.mouse.up();
     await expect(preview).toHaveCount(0);
 
+    const win1Tile = page.locator('.mosaic-tile:has(> [data-board-area="engine:e2e-engine"])');
+    const win1 = page.locator('[data-engine-window="e2e-engine"]');
+    const panelCard2 = page.locator('[data-engine-card-id="e2e-engine-2"]');
+    await expect(win1).toBeVisible();
+    await expect(page.locator('[data-engine-card-id="e2e-engine"]')).toHaveCount(0);
+    await expect(panelCard2).toBeVisible();
+
+    // Window tile has one header: exactly one grip, one engine name, and one ×, with no Evaluation/Nodes/n/s.
+    await expect(win1Tile.locator("[data-arrange-grip]")).toHaveCount(1);
+    await expect(win1Tile.getByText("E2E Stockfish", { exact: true })).toHaveCount(1);
+    await expect(
+        win1Tile.getByRole("button", { name: "Return to the Engines panel", exact: true }),
+    ).toHaveCount(1);
+    await expect(win1).not.toContainText(/Evaluation|Nodes|n\/s/);
+    const updatedBoardBox = (await page.locator("#left").boundingBox())!;
+    const win1Box = (await win1.boundingBox())!;
+    expect(win1Box.y).toBeGreaterThanOrEqual(updatedBoardBox.y + updatedBoardBox.height - 2);
+
+    // Collapse toggles only this card, leaving the panel card's lines visible; line selector writes MultiPV; hover preview paints on top inside the viewport.
+    await win1.getByRole("button", { name: "Collapse analysis", exact: true }).click();
+    await expect(win1.locator("tbody tr")).toHaveCount(0);
+    await expect(win1.getByRole("button", { name: "e4", exact: true })).toHaveCount(0);
+    await expect(panelCard2.locator("tbody tr")).toHaveCount(1);
+    await expect(panelCard2.getByRole("button", { name: "d4", exact: true })).toBeVisible();
+    await win1.getByRole("button", { name: "Expand analysis", exact: true }).click();
+
+    const lineCount = win1.getByRole("radiogroup", { name: "Number of lines", exact: true });
+    await expect(lineCount.getByRole("radio", { name: "3", exact: true })).toBeChecked();
     await lineCount.getByText("4", { exact: true }).click();
     const raisedSearch = async () =>
         (await searches()).findLast(({ args }) => {
-            const request = args as AnalysisRequest & { options: EngineOptions };
+            const req = args as AnalysisRequest & { options: EngineOptions };
             return (
-                request.id === "e2e-engine" &&
-                request.options.extraOptions.some(
+                req.id === "e2e-engine" &&
+                req.options.extraOptions.some(
                     (option) =>
                         option.name === "MultiPV" &&
                         option.type === "string" &&
@@ -704,235 +765,213 @@ test("engine-gap: pinned engine shows up to its own line count and moves between
         })?.args as AnalysisRequest | undefined;
     await expect.poll(raisedSearch).toBeDefined();
     const raisedRequest = (await raisedSearch())!;
-    const fourthLine = {
-        ...payload.bestLines[0],
-        multipv: 4,
-        score: { value: { type: "cp" as const, value: -10 }, wdl: null },
-        sanMoves: ["c4", "e5"],
-        uciMoves: ["c2c4", "e7e5"],
-    };
     await emitTauriEvent({
         event: "best-moves-payload",
         payload: {
             ...bestMovesPayload(raisedRequest, ["e4", "e5", "Nf3"], ["e2e4", "e7e5", "g1f3"], 34),
-            bestLines: [...payload.bestLines, fourthLine],
+            bestLines: [
+                ...payload.bestLines,
+                {
+                    ...payload.bestLines[0],
+                    multipv: 4,
+                    score: { value: { type: "cp", value: -10 }, wdl: null },
+                    sanMoves: ["c4", "e5"],
+                    uciMoves: ["c2c4", "e7e5"],
+                },
+            ],
         },
     });
-    await expect(lineCount.getByRole("radio", { name: "4", exact: true })).toBeChecked();
-    await expect(scores).toHaveText(["+0.34", "+0.21", "0.00", "-0.10"]);
-    await expect(detached).toContainText("1.c4e5");
+    const win1Scores = win1.locator("tbody tr > td:first-child > [data-size='sm']");
+    await expect(win1Scores).toHaveText(["+0.34", "+0.21", "0.00", "-0.10"]);
 
-    // The bar starts above the panel tabs. Its position menu names every slot and moves it there.
-    const tabList = page.locator("#topRight").getByRole("tablist").first();
-    const right = page.locator("#bottomRight");
-    // The first card in the column that is not the engine bar itself.
-    const notationCard = right
-        .locator(".mantine-Paper-root:not([data-testid='pinned-engine'])")
-        .first();
-    const rect = async (locator: Locator) => (await locator.boundingBox())!;
-    const top = async (locator: Locator) => (await rect(locator)).y;
-    const bottom = async (locator: Locator) => {
-        const { y, height } = await rect(locator);
-        return y + height;
-    };
-    expect(await top(detached)).toBeLessThan(await top(tabList));
-    await detached.getByRole("button", { name: "Engine position", exact: true }).click();
-    const items = page.getByRole("menuitem");
-    await expect(items).toHaveText([
-        "Above the tabs",
-        "Above the notation",
-        "Below the notation",
-        "Below the board",
-    ]);
-    await expect(items.and(page.locator("[aria-current='true']"))).toHaveText("Above the tabs");
-    await items.getByText("Above the notation", { exact: true }).click();
-    await expect(page.getByRole("menu")).toHaveCount(0);
-    await expect(detached).toHaveCount(1);
-    expect(await top(detached)).toBeGreaterThan(await top(tabList));
-    expect(await bottom(detached)).toBeLessThanOrEqual((await top(notationCard)) + 0.5);
-    // Focus follows the bar into its new slot.
-    await expect(
-        detached.getByRole("button", { name: "Engine position", exact: true }),
-    ).toBeFocused();
-
-    // Below the notation, the bar closes the right column and takes the same room from the
-    // notation as above it.
-    // The notation card cannot shrink below its tool column, so a short pane scrolls the column
-    // in either notation slot; this check uses a pane tall enough for all four lines.
-    await page.setViewportSize({ width: 1440, height: 1200 });
-    const cardAbove = (await rect(notationCard)).height;
-    await detached.getByRole("button", { name: "Engine position", exact: true }).click();
-    await items.getByText("Below the notation", { exact: true }).click();
-    await expect(detached).toHaveCount(1);
-    expect(await top(detached)).toBeGreaterThanOrEqual((await bottom(notationCard)) - 0.5);
-    await expect.poll(async () => (await bottom(right)) - (await bottom(detached))).toBeLessThan(2);
-    expect(await bottom(detached)).toBeLessThanOrEqual((await bottom(right)) + 0.5);
-    expect((await rect(notationCard)).height).toBeCloseTo(cardAbove, 0);
-    await expect(right).toHaveScreenshot("pinned-engine-below-notation.png", {
-        animations: "disabled",
-    });
-
-    await detached.getByRole("button", { name: "Engine position", exact: true }).click();
-    await items.getByText("Below the board", { exact: true }).click();
-    await expect(page.locator("#left").getByTestId("pinned-engine")).toHaveCount(1);
-    await expect(detached).toHaveCount(1);
-    await detached.getByRole("button", { name: "Engine position", exact: true }).click();
-    await items.getByText("Above the tabs", { exact: true }).click();
-    expect(await top(detached)).toBeLessThan(await top(tabList));
-    await expect(
-        detached.getByRole("button", { name: "Engine position", exact: true }),
-    ).toBeFocused();
-});
-
-test("engine-gap: the pinned engine below the board stays inside the left pane and the board makes room", async ({
-    page,
-    emitTauriEvent,
-}) => {
-    const { searches, panel } = await setupAnalysisEngine(page, 2);
-    await panel.getByRole("button", { name: "Pin engine", exact: true }).click();
-    const detached = page.getByTestId("pinned-engine");
-    const lineCount = detached.getByRole("radiogroup", { name: "Number of lines", exact: true });
-    await lineCount.getByText("4", { exact: true }).click();
-    const raisedSearch = async () =>
-        (await searches()).findLast(({ args }) => {
-            const request = args as AnalysisRequest & { options: EngineOptions };
-            return (
-                request.id === "e2e-engine" &&
-                request.options.extraOptions.some(
-                    (option) =>
-                        option.name === "MultiPV" &&
-                        option.type === "string" &&
-                        option.value === "4",
-                )
-            );
-        })?.args as AnalysisRequest | undefined;
-    await expect.poll(raisedSearch).toBeDefined();
-    const payload = bestMovesPayload(
-        (await raisedSearch())!,
-        ["e4", "e5", "Nf3"],
-        ["e2e4", "e7e5", "g1f3"],
-        34,
-    );
-    payload.bestLines.push(
-        ...[2, 3, 4].map((multipv) => ({
-            ...payload.bestLines[0],
-            multipv,
-            score: { value: { type: "cp" as const, value: 40 - 10 * multipv }, wdl: null },
-        })),
-    );
-    await emitTauriEvent({ event: "best-moves-payload", payload });
-    const scores = detached.locator("[data-size='sm']:has(> p)");
-    await expect(scores).toHaveCount(4);
-
-    const left = page.locator("#left");
-    const card = left.locator(".mantine-Paper-root").first();
-    const surface = left.locator("[data-board-surface]");
-    const box = async (locator: Locator) => (await locator.boundingBox())!;
-    const bottom = async (locator: Locator) => {
-        const { y, height } = await box(locator);
-        return y + height;
-    };
-    const boardSize = async () => (await box(surface)).height;
-    const moveTo = async (position: string) => {
-        await detached.getByRole("button", { name: "Engine position", exact: true }).click();
-        await page.getByRole("menuitem", { name: position, exact: true }).click();
-        await expect(page.getByRole("menu")).toHaveCount(0);
-    };
-    const belowBoard = async () => {
-        await moveTo("Below the board");
-        await expect(left.getByTestId("pinned-engine")).toHaveCount(1);
-    };
-    /** Board, player bars and engine bar lie inside the left pane, and none is clipped or overlaps. */
-    const expectFits = async () => {
-        expect(await card.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
-        for (const bar of await left.locator("[data-board-bar]").all()) {
-            expect(await bottom(bar)).toBeLessThanOrEqual((await bottom(card)) + 0.5);
-        }
-        expect((await box(detached)).y).toBeGreaterThanOrEqual((await bottom(card)) - 0.5);
-        expect(await bottom(detached)).toBeLessThanOrEqual((await bottom(left)) + 0.5);
-    };
-
-    // Height-bounded: the board gives up exactly the bar and its gap, whatever the bar's height.
-    await page.setViewportSize({ width: 1440, height: 700 });
-    await expect.poll(boardSize).toBeLessThan((await box(left)).width - 50);
-    const above = await boardSize();
-    await belowBoard();
-    await expectFits();
-
-    // A preview from the last line has no room below it, so it opens upward over the board and
-    // must paint in front of it, not behind its chessground layers.
-    await detached.getByRole("button", { name: "e5", exact: true }).last().hover();
-    const preview = page.getByTestId("engine-line-preview");
-    await expect(preview.locator("cg-board")).toBeVisible();
-    const boardSurface = await surface.elementHandle();
-    const previewOnTop = await preview.evaluate((node: HTMLElement, board) => {
-        const a = node.getBoundingClientRect();
-        const b = (board as HTMLElement).getBoundingClientRect();
-        const overlap = {
-            left: Math.max(a.left, b.left),
-            right: Math.min(a.right, b.right),
-            top: Math.max(a.top, b.top),
-            bottom: Math.min(a.bottom, b.bottom),
-        };
-        if (overlap.right <= overlap.left || overlap.bottom <= overlap.top) return "no overlap";
+    const move = win1.getByRole("button", { name: "e5", exact: true }).first();
+    await move.hover();
+    const linePreview = page.getByTestId("engine-line-preview");
+    await expect(linePreview.locator("cg-board")).toBeVisible();
+    await expect(move).toHaveAttribute("aria-current", "true");
+    const previewed = await moveBackground(move, CURRENT_MOVE_HOVER);
+    expect(previewed.actual).toBe(previewed.expected);
+    const previewBox = (await linePreview.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(previewBox.width).toBeGreaterThan(150);
+    expect(previewBox.x).toBeGreaterThanOrEqual(0);
+    expect(previewBox.y).toBeGreaterThanOrEqual(0);
+    expect(previewBox.x + previewBox.width).toBeLessThanOrEqual(viewport.width);
+    expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(viewport.height);
+    const previewOnTop = await linePreview.evaluate((node: HTMLElement) => {
+        const rect = node.getBoundingClientRect();
         // Hit testing skips `pointer-events: none`; enable it just for this synchronous probe.
         node.style.pointerEvents = "auto";
         const hit = document.elementFromPoint(
-            (overlap.left + overlap.right) / 2,
-            (overlap.top + overlap.bottom) / 2,
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
         );
         node.style.pointerEvents = "none";
         return hit !== null && node.contains(hit) ? "preview" : (hit?.tagName ?? "nothing");
-    }, boardSurface);
+    });
     expect(previewOnTop).toBe("preview");
     await page.mouse.move(0, 0);
+    await expect(linePreview).toHaveCount(0);
+
+    // Pull out the second engine via the grip menu ("Show as its own area").
+    await page.locator('[data-arrange-grip="engine:e2e-engine-2"]').click();
+    await page.getByRole("menuitem", { name: "Show as its own area", exact: true }).click();
+    const placingDialog = page.getByTestId("board-arrange-placing");
+    await expect(placingDialog).toBeVisible();
+    await placingDialog.getByRole("button", { name: "Above the tabs", exact: true }).click();
+    await expect(placingDialog).toHaveCount(0);
+
+    const win2 = page.locator('[data-engine-window="e2e-engine-2"]');
+    await expect(win1).toBeVisible();
+    await expect(win2).toBeVisible();
+    await expect(page.locator("[data-engine-card-id]")).toHaveCount(0);
+    await expect(page.getByTestId("all-engines-pulled-out")).toBeVisible();
+    await expect(
+        page.getByRole("button", { name: /Pause all engines|Enable all engines/ }),
+    ).toHaveCount(0);
+
+    await page.mouse.move(0, 0);
+    await assertAccessible();
+
+    // × returns win2 back into the Engines panel and restores focus to its card grip.
+    await win2.getByRole("button", { name: "Return to the Engines panel", exact: true }).click();
+    await expect(win2).toHaveCount(0);
+    await expect(page.locator('[data-engine-card-id="e2e-engine-2"]')).toBeVisible();
+    await expect(page.getByTestId("all-engines-pulled-out")).toHaveCount(0);
+    await expect(page.locator('[data-arrange-grip="engine:e2e-engine-2"]')).toBeFocused();
+
+    // Dragging win1 back onto the tab strip returns it to the Engines panel.
+    const win1GripBox = (await win1
+        .locator('[data-arrange-grip="engine:e2e-engine"]')
+        .boundingBox())!;
+    const tabListBox = (await page.locator('[data-board-tab-list="true"]').boundingBox())!;
+    await page.mouse.move(
+        win1GripBox.x + win1GripBox.width / 2,
+        win1GripBox.y + win1GripBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+        tabListBox.x + tabListBox.width / 2,
+        tabListBox.y + tabListBox.height / 2,
+        { steps: 8 },
+    );
+    await expect(preview).toHaveAttribute("data-arrange-kind", "return");
+    await expect(preview).toHaveAttribute("data-arrange-target", "tabs");
+    await expect(preview).toHaveText("Back into the Engines panel");
+    await page.mouse.up();
     await expect(preview).toHaveCount(0);
 
-    const reserve = async () => (await bottom(detached)) - (await bottom(card));
-    await expect
-        .poll(async () => above - (await boardSize()) - (await reserve()))
-        .toBeCloseTo(0, 0);
-    const fourLines = { board: await boardSize(), bar: (await box(detached)).height };
-    await lineCount.getByText("1", { exact: true }).click();
-    await expect(scores).toHaveCount(1);
-    await expect
-        .poll(
-            async () =>
-                (await boardSize()) -
-                fourLines.board -
-                (fourLines.bar - (await box(detached)).height),
-        )
-        .toBeCloseTo(0, 0);
-    expect((await box(detached)).height).toBeLessThan(fourLines.bar - 20);
-    await expectFits();
-    await lineCount.getByText("4", { exact: true }).click();
-    await expect(scores).toHaveCount(4);
-    await moveTo("Above the notation");
-    await expect.poll(boardSize).toBeCloseTo(above, 0);
+    await expect(win1).toHaveCount(0);
+    await expect(page.locator('[data-engine-card-id="e2e-engine"]')).toBeVisible();
+    await expect(page.locator("[data-engine-card-id]")).toHaveCount(2);
+});
 
-    // Width-bounded with room below: the board keeps its size.
-    await page.setViewportSize({ width: 1000, height: 1400 });
-    await expect
-        .poll(async () => (await bottom(left)) - (await bottom(surface)))
-        .toBeGreaterThan(400);
-    const wide = await boardSize();
-    await belowBoard();
-    await expect.poll(boardSize).toBeCloseTo(wide, 0);
-    await expectFits();
-    await expect(left).toHaveScreenshot("pinned-engine-below-board.png", {
-        animations: "disabled",
+test("engine-gap: carries over a seeded pinned engine below the board and removes retired keys", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({});
+    await seedAnalysisEngines(page, [
+        { id: "e2e-engine", name: "E2E Stockfish", handleId: "e2e-engine-handle" },
+        { id: "e2e-engine-2", name: "E2E ChessDB", handleId: "e2e-engine-handle" },
+    ]);
+    await page.addInitScript(() => {
+        if (localStorage.getItem("analysis-board-layout") === null) {
+            localStorage.setItem("detached-engine", JSON.stringify("e2e-engine"));
+            localStorage.setItem("detached-engine-placement", JSON.stringify("board"));
+            localStorage.setItem("detached-engine-lines", JSON.stringify(2));
+        }
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
+
+    const win = page.locator('[data-engine-window="e2e-engine"]');
+    await expect(win).toBeVisible();
+
+    const boardBox = (await page.locator("#left").boundingBox())!;
+    const winBox = (await win.boundingBox())!;
+    expect(winBox.y).toBeGreaterThanOrEqual(boardBox.y + boardBox.height - 2);
+    expect(Math.abs(winBox.x - boardBox.x)).toBeLessThanOrEqual(4);
+
+    await page.getByRole("tab", { name: "Analysis", exact: true }).click();
+    await expect(page.locator('[data-engine-card-id="e2e-engine"]')).toHaveCount(0);
+    await expect(page.locator('[data-engine-card-id="e2e-engine-2"]')).toBeVisible();
+
+    const storageState = await page.evaluate(() => ({
+        layout: JSON.parse(localStorage.getItem("analysis-board-layout")!),
+        retired: [
+            localStorage.getItem("detached-engine"),
+            localStorage.getItem("detached-engine-placement"),
+            localStorage.getItem("detached-engine-lines"),
+        ],
+    }));
+    expect(storageState.retired).toEqual([null, null, null]);
+    expect(storageState.layout).toEqual({
+        direction: "row",
+        first: {
+            direction: "column",
+            first: "left",
+            second: "engine:e2e-engine",
+            splitPercentage: 70,
+        },
+        second: {
+            direction: "column",
+            first: "topRight",
+            second: "bottomRight",
+        },
     });
 
-    // Stacked: the bar follows the board in flow, before the next pane.
-    await page.setViewportSize({ width: 600, height: 900 });
-    await expect(page.locator("[data-board-layout='stacked']")).toBeVisible();
-    await detached.scrollIntoViewIfNeeded();
-    await expect(detached).toBeVisible();
-    expect((await box(detached)).y).toBeGreaterThanOrEqual((await bottom(card)) - 0.5);
-    expect(await bottom(detached)).toBeLessThanOrEqual(
-        (await box(page.locator("[data-board-slot='topRight']"))).y + 0.5,
+    await preserveStorageForReload(page);
+    await expect(win).toBeVisible();
+});
+
+test("engine-gap: pulled-out engine window below the board renders cleanly in light", async ({
+    page,
+    emitTauriEvent,
+}) => {
+    const { searches } = await setupAnalysisEngine(page, 2);
+    const request = (await searches()).find(
+        ({ args }) => (args as AnalysisRequest).id === "e2e-engine",
+    )!.args as AnalysisRequest;
+    const payload = bestMovesPayload(request, ["e4", "e5", "Nf3"], ["e2e4", "e7e5", "g1f3"], 34);
+    payload.bestLines.push(
+        {
+            ...payload.bestLines[0],
+            multipv: 2,
+            score: { value: { type: "cp", value: -21 }, wdl: null },
+            sanMoves: ["d4", "d5"],
+            uciMoves: ["d2d4", "d7d5"],
+        },
+        {
+            ...payload.bestLines[0],
+            multipv: 3,
+            score: { value: { type: "cp", value: 0 }, wdl: null },
+            sanMoves: ["Nf3", "d5"],
+            uciMoves: ["g1f3", "d7d5"],
+        },
     );
-    expect(await card.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+    await emitTauriEvent({ event: "best-moves-payload", payload });
+
+    const grip = page.locator('[data-arrange-grip="engine:e2e-engine"]');
+    const gripBox = (await grip.boundingBox())!;
+    const boardBox = (await page.locator("#left").boundingBox())!;
+    await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(boardBox.x + boardBox.width / 2, boardBox.y + boardBox.height - 24, {
+        steps: 8,
+    });
+    await page.mouse.up();
+
+    const winTile = page.locator('.mosaic-tile:has(> [data-board-area="engine:e2e-engine"])');
+    const win = page.locator('[data-engine-window="e2e-engine"]');
+    await expect(win).toBeVisible();
+    await expect(winTile.locator("[data-arrange-grip]")).toHaveCount(1);
+    await expect(winTile.getByText("E2E Stockfish", { exact: true })).toHaveCount(1);
+    await expect(win.locator("tbody tr")).toHaveCount(3);
+    await page.mouse.move(0, 0);
+    await expect(win).toHaveScreenshot("engine-window-below-board-light.png", {
+        animations: "disabled",
+    });
 });
 
 test("engine-gap: legal threat after a double push becomes unavailable in check and recovers", async ({
@@ -941,8 +980,6 @@ test("engine-gap: legal threat after a double push becomes unavailable in check 
 }) => {
     await page.clock.install({ time: new Date("2026-10-21T12:00:00Z") });
     const { searches, panel } = await setupAnalysisEngine(page);
-    await panel.getByRole("button", { name: "Pin engine", exact: true }).click();
-    const detached = page.getByTestId("pinned-engine");
     const board = page.locator("cg-board");
     for (const [index, [from, to]] of [
         ["e2", "e4"],
@@ -968,7 +1005,6 @@ test("engine-gap: legal threat after a double push becomes unavailable in check 
         });
     await emit(request);
     await expect(panel.getByRole("button", { name: "d4", exact: true })).toBeVisible();
-    await expect(detached).toContainText(PINNED_THREAT_LINE);
     const preparations = () =>
         page.evaluate(
             () =>
@@ -980,10 +1016,8 @@ test("engine-gap: legal threat after a double push becomes unavailable in check 
     await playBoardMove(page, board, "f1", "b5");
     await page.clock.runFor(1500);
     await expect(panel).toContainText("No analysis available");
-    await expect(detached).toContainText("—");
     await emit(request);
     await expect(panel.getByRole("button", { name: "d4", exact: true })).toHaveCount(0);
-    await expect(detached).not.toContainText(PINNED_THREAT_LINE);
     await expect(panel).not.toContainText("Loading");
     await expect(panel).not.toContainText("n/s");
     await expect(panel.locator(".mantine-Skeleton-root, [data-animated], tr[inert]")).toHaveCount(
@@ -1015,7 +1049,6 @@ test("engine-gap: legal threat after a double push becomes unavailable in check 
     expect(recovered.generation).not.toBe(request.generation);
     await emit(recovered);
     await expect(panel.getByRole("button", { name: "d4", exact: true })).toBeVisible();
-    await expect(detached).toContainText(PINNED_THREAT_LINE);
     await expect(panel.locator("tr[inert]")).toHaveCount(0);
     await expect(page.locator(".mantine-Notification-root")).toHaveCount(0);
     await page.mouse.move(1400, 850);

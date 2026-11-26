@@ -17,7 +17,7 @@ async function setup(page: Page) {
     await page.goto("/");
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
-    const panel = page.locator(".mantine-Accordion-item").filter({ hasText: "Hotkey Stockfish" });
+    const panel = page.locator('[data-engine-card-id="hotkey-engine"]');
     await panel.getByRole("button", { name: "Enable engine", exact: true }).click();
     const request = async (moves: string[]) => {
         let latest: AnalysisRequest | undefined;

@@ -83,7 +83,6 @@ async function openReportTab(
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
-    await page.getByRole("tab", { name: "Analysis", exact: true }).click();
     await page.getByRole("tab", { name: "Report", exact: true }).click();
     const panel = page.getByRole("tabpanel", { name: "Report", exact: true });
     await expect(panel.getByText(/This game has no evaluations yet/)).toBeVisible();

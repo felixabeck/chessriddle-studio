@@ -73,7 +73,7 @@ test.beforeEach(async ({ page, mockScenario }) => {
 
 test("automatic install stays visible across routes, cancels, and never starts again after reload", async ({
     page,
-}, testInfo) => {
+}) => {
     await page.goto("/");
     await expect.poll(() => installCalls(page)).toBe(1);
     const notice = page.getByRole("status").filter({ hasText: `Stockfish ${stockfish.version}` });
@@ -186,20 +186,17 @@ test("automatic install stays visible across routes, cancels, and never starts a
     expect(observations.every((sample) => sample.marker === marker)).toBe(true);
     await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
-    await page.getByRole("tab", { name: "Analysis", exact: true }).click();
+    const analysisTab = page.getByRole("tab", { name: "Analysis", exact: true });
+    await analysisTab.click();
     await expect(page.getByRole("button", { name: "Manage Engines", exact: true })).toBeVisible();
     await assertPageNotClipped(page);
-    const compact = testInfo.project.name !== "first-engine-install";
-    const enginesTab = page.getByRole("tab", { name: "Engines", exact: true });
-    await expect(page.getByRole("tablist").filter({ has: enginesTab })).toHaveAttribute(
-        "aria-orientation",
-        compact ? "horizontal" : "vertical",
-    );
-    await enginesTab.focus();
-    await page.keyboard.press(compact ? "ArrowRight" : "ArrowDown");
+    await expect(page.getByRole("tab", { name: "Engines", exact: true })).toHaveCount(0);
+    await expect(analysisTab).toHaveAttribute("aria-selected", "true");
+    await analysisTab.focus();
+    await page.keyboard.press("ArrowRight");
     await expect(page.getByRole("tab", { name: "Report", exact: true })).toBeFocused();
-    await enginesTab.click();
-    await expect(enginesTab).toHaveAttribute("aria-selected", "true");
+    await analysisTab.click();
+    await expect(analysisTab).toHaveAttribute("aria-selected", "true");
     await page.getByRole("button", { name: "Select engines", exact: true }).click();
     const picker = page.locator(".mantine-Popover-dropdown");
     await expect(button).toBeVisible();

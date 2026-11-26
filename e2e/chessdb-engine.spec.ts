@@ -63,7 +63,7 @@ async function openChessDBAnalysis(page: Page) {
     await page.goto("/");
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Analysis", exact: true }).click();
-    const card = page.locator(".mantine-Accordion-item").filter({ hasText: "ChessDB" });
+    const card = page.locator('[data-engine-card-id="e2e-chessdb"]');
     await card.getByRole("button", { name: "Enable engine", exact: true }).click();
     await expect(card.getByRole("button", { name: "Disable engine", exact: true })).toBeVisible();
     return card;

@@ -4,6 +4,7 @@ import {
     expect,
     goToSettings,
     preserveStorageForReload,
+    seedAnalysisEngines,
     test,
 } from "./fixtures";
 
@@ -523,4 +524,100 @@ test("board-arrange: hiding the tabs keeps their place and size, survives reload
             splitPercentage: 40,
         },
     });
+});
+
+test("board-arrange: Report tab lives in the strip and pulls out as its own area, and engine leaves follow arrangement fallback and return", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({});
+    await seedAnalysisEngines(page, [
+        { id: "arrange-engine-1", name: "Arrange Stockfish", handleId: "e2e-engine-handle" },
+        { id: "arrange-engine-2", name: "Arrange Leela", handleId: "e2e-engine-handle" },
+    ]);
+    await openAnalysisBoard(page);
+
+    const layout = page.locator("[data-board-layout]");
+    const tabsArea = page.locator("#topRight");
+    const reportTab = tabsArea.getByRole("tab", { name: "Report", exact: true });
+    const analysisTab = tabsArea.getByRole("tab", { name: "Analysis", exact: true });
+    await expect(reportTab).toBeVisible();
+    await expect(analysisTab).toBeVisible();
+    // Analysis no longer hosts an inner Engines/Report tablist.
+    await analysisTab.click();
+    await expect(tabsArea.getByRole("tablist")).toHaveCount(1);
+    await expect(tabsArea.getByRole("tab", { name: "Engines", exact: true })).toHaveCount(0);
+
+    // Pull Report out as its own area via the strip grip menu.
+    await page.locator('[data-arrange-grip="topRight"]').click();
+    await page.getByRole("menuitem", { name: "Show Report as its own area", exact: true }).click();
+    const placingDialog = page.getByTestId("board-arrange-placing");
+    await expect(placingDialog).toBeVisible();
+    await placingDialog.getByRole("button", { name: "Below the board", exact: true }).click();
+    await expect(placingDialog).toHaveCount(0);
+
+    const reportArea = page.locator('[data-panel-area="report"]');
+    await expect(reportArea).toBeVisible();
+    await expect(reportArea.getByTestId("report-needs-moves")).toBeVisible();
+    await expect(reportTab).toHaveCount(0);
+
+    await preserveStorageForReload(page);
+    await expect(reportArea).toBeVisible();
+    await expect(reportTab).toHaveCount(0);
+
+    await reportArea.getByRole("button", { name: "Return to the tabs", exact: true }).click();
+    await expect(reportArea).toHaveCount(0);
+    await expect(reportTab).toHaveAttribute("aria-selected", "true");
+
+    // Pull Analysis out as its own area, then pull an engine leaf out beside the board.
+    await page.locator('[data-arrange-grip="topRight"]').click();
+    await page
+        .getByRole("menuitem", { name: "Show Analysis as its own area", exact: true })
+        .click();
+    await placingDialog.getByRole("button", { name: "Below the notation", exact: true }).click();
+    const analysisArea = page.locator('[data-panel-area="analysis"]');
+    await expect(analysisArea).toBeVisible();
+
+    await analysisArea.locator('[data-arrange-grip="engine:arrange-engine-1"]').click();
+    await page.getByRole("menuitem", { name: "Show as its own area", exact: true }).click();
+    await placingDialog.getByRole("button", { name: "Below the board", exact: true }).click();
+
+    const engineWindow = page.locator('[data-engine-window="arrange-engine-1"]');
+    await expect(engineWindow).toBeVisible();
+    await expect(analysisArea.locator('[data-engine-card-id="arrange-engine-1"]')).toHaveCount(0);
+    await expect(analysisArea.locator('[data-engine-card-id="arrange-engine-2"]')).toBeVisible();
+
+    // Narrow stacked width hides detached areas and lists the engine back in the Engines panel.
+    await page.setViewportSize({ width: 600, height: 800 });
+    await expect(layout).toHaveAttribute("data-board-layout", "stacked");
+    await expect(engineWindow).toHaveCount(0);
+    await expect(analysisArea).toHaveCount(0);
+    await tabsArea.getByRole("tab", { name: "Analysis", exact: true }).click();
+    await expect(tabsArea.locator('[data-engine-card-id="arrange-engine-1"]')).toBeVisible();
+
+    // Widening back restores the stored arrangement with both Analysis and the engine window.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
+    await expect(engineWindow).toBeVisible();
+    await expect(analysisArea).toBeVisible();
+
+    // When Analysis is its own area, dragging an engine window onto the Analysis header returns it.
+    const gripBox = (await engineWindow
+        .locator('[data-arrange-grip="engine:arrange-engine-1"]')
+        .boundingBox())!;
+    const analysisHeaderBox = (await page.locator('[data-panel-header="analysis"]').boundingBox())!;
+    await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+        analysisHeaderBox.x + analysisHeaderBox.width / 2,
+        analysisHeaderBox.y + analysisHeaderBox.height / 2,
+        { steps: 8 },
+    );
+    const preview = page.getByTestId("board-arrange-preview");
+    await expect(preview).toHaveAttribute("data-arrange-kind", "return");
+    await expect(preview).toHaveAttribute("data-arrange-target", "engines");
+    await page.mouse.up();
+
+    await expect(engineWindow).toHaveCount(0);
+    await expect(analysisArea.locator('[data-engine-card-id="arrange-engine-1"]')).toBeVisible();
 });
