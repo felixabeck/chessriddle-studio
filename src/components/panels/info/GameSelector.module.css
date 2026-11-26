@@ -49,7 +49,6 @@
 .index {
   font-variant-numeric: tabular-nums;
   opacity: 0.5;
-  font-size: 0.75em;
   min-width: 0.75rem;
   text-align: right;
   flex-shrink: 0;

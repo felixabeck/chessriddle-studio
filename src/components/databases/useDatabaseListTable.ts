@@ -5,6 +5,7 @@ import type { QueryOptions } from "@/bindings";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import type { RecordsPerPageChoice } from "@/state/store/database";
+import { tableScrollAreaProps } from "./databaseColumns";
 import { type DatabaseListFooterProps, DEFAULT_PAGE_SIZE } from "./DatabaseListFooter";
 import { getAdjacentRecordId } from "./pageSelection";
 import classes from "./styles.module.css";
@@ -94,6 +95,7 @@ export function useDatabaseListTable<R extends { id: number }, Q extends ListQue
         rowFactory: windowing.rowFactory,
         fetching: isLoading,
         scrollViewportRef,
+        scrollAreaProps: tableScrollAreaProps,
         onScrollToBottom: mode === "all" ? loadMore : undefined,
         customRowAttributes: (record: R) => ({
             ...gameRowActivation(record, activate),

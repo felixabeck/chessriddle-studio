@@ -40,7 +40,7 @@
 }
 
 .groupHeading {
-  font-size: 0.6875rem;
+  font-size: var(--mantine-font-size-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;

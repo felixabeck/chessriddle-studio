@@ -6,3 +6,15 @@
 .section {
   font-variant-numeric: tabular-nums;
 }
+
+/* Mantine sizes a bar label at 65% of the bar's height, which puts it under the 12px text floor
+   (DESIGN.md) in any bar lower than 18.5px. Same rule, with the floor as its lower bound. The
+   floor stops at 12px when the Font Size setting is raised, because named sizes such as `xl` are
+   fixed pixel heights that do not grow with it, and follows the setting below 100%. */
+.label {
+  font-size: clamp(
+    min(var(--mantine-font-size-xs), 12px),
+    calc(var(--progress-size) * 0.65),
+    calc(1.125rem * var(--mantine-scale))
+  );
+}

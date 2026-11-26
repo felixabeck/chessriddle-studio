@@ -49,7 +49,6 @@ function ScoreBubble({
         className={`${classes.bubble} ${classes.wdl}`}
         data-size={size}
         onClick={() => setEvalDisplay("cp")}
-        fz="0.5rem"
         styles={{
           label: {
             paddingInline: 0,

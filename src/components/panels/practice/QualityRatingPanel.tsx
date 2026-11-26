@@ -53,7 +53,7 @@ export function QualityRatingPanel({
                 <Text fz="xs" fw={600}>
                   {t("Board.Practice.Again")}
                 </Text>
-                <Text fz={10} c="dimmed">
+                <Text fz="xs" c="dimmed">
                   {reviewTimes
                     ? formatReviewInterval(reviewTimes[1].getTime(), now, i18n.language)
                     : ""}
@@ -73,7 +73,7 @@ export function QualityRatingPanel({
                 <Text fz="xs" fw={600}>
                   {t("Board.Practice.Hard")}
                 </Text>
-                <Text fz={10} c="dimmed">
+                <Text fz="xs" c="dimmed">
                   {reviewTimes
                     ? formatReviewInterval(reviewTimes[2].getTime(), now, i18n.language)
                     : ""}
@@ -93,7 +93,7 @@ export function QualityRatingPanel({
                 <Text fz="xs" fw={600}>
                   {t("Board.Practice.Good")}
                 </Text>
-                <Text fz={10} c="dimmed">
+                <Text fz="xs" c="dimmed">
                   {reviewTimes
                     ? formatReviewInterval(reviewTimes[3].getTime(), now, i18n.language)
                     : ""}
@@ -113,7 +113,7 @@ export function QualityRatingPanel({
                 <Text fz="xs" fw={600}>
                   {t("Board.Practice.Easy")}
                 </Text>
-                <Text fz={10} c="dimmed">
+                <Text fz="xs" c="dimmed">
                   {reviewTimes
                     ? formatReviewInterval(reviewTimes[4].getTime(), now, i18n.language)
                     : ""}
@@ -122,7 +122,7 @@ export function QualityRatingPanel({
             </Button>
           </Tooltip>
         </SimpleGrid>
-        <Text fz={10} c="dimmed">
+        <Text fz="xs" c="dimmed">
           {t("Board.Practice.KeyboardHint")}
         </Text>
       </Stack>

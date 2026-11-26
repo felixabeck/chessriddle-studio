@@ -70,7 +70,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: calc(var(--mantine-font-size-xs) * var(--notation-scale, 1));
+  /* Not scaled with the variation block: xs is the text floor (DESIGN.md). */
+  font-size: var(--mantine-font-size-xs);
   line-height: 1.2;
   color: var(--mantine-color-dimmed);
   padding: 2px 4px;

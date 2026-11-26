@@ -20,7 +20,7 @@ import type {
 import { getTournamentGames } from "@/utils/db";
 import { DatabaseListFooter, DEFAULT_PAGE_SIZE } from "./DatabaseListFooter";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
-import { dateColumn, numericColumn } from "./databaseColumns";
+import { dateColumn, numericColumn, tableScrollAreaProps } from "./databaseColumns";
 import PlayerRatingCell from "./PlayerRatingCell";
 import { ALL_RECORDS_MAX_ROWS } from "./useDatabaseListQuery";
 import { useWindowedTableRows } from "./useWindowedTableRows";
@@ -213,6 +213,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                   withTableBorder
                   highlightOnHover
                   scrollViewportRef={scrollViewportRef}
+                  scrollAreaProps={tableScrollAreaProps}
                   records={windowing.visibleRecords}
                   rowFactory={windowing.rowFactory}
                   sortStatus={sort}
@@ -275,6 +276,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                 fetching={isLoading || revision === null}
                 withTableBorder
                 highlightOnHover
+                scrollAreaProps={tableScrollAreaProps}
                 records={players}
                 columns={[
                   {

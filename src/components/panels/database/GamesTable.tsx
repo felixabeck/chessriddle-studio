@@ -4,7 +4,11 @@ import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
 import PlayerRatingCell from "@/components/databases/PlayerRatingCell";
-import { dateColumn, numericColumn } from "@/components/databases/databaseColumns";
+import {
+  dateColumn,
+  numericColumn,
+  tableScrollAreaProps,
+} from "@/components/databases/databaseColumns";
 import { useTranslation } from "react-i18next";
 
 function GamesTable({
@@ -36,6 +40,7 @@ function GamesTable({
     <DataTable
       withTableBorder
       highlightOnHover
+      scrollAreaProps={tableScrollAreaProps}
       records={filteredGames}
       fetching={loading}
       totalRecords={games.length}

@@ -227,7 +227,7 @@ function OpeningsPanel({
             </Text>
           </Group>
           <Divider mt="md" />
-          <ScrollArea viewportRef={parentRef} flex={1} mih="16rem">
+          <ScrollArea viewportRef={parentRef} flex={1} mih="16rem" offsetScrollbars="y">
             <Box
               style={{
                 height: rowVirtualizer.getTotalSize(),

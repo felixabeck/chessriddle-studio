@@ -10,7 +10,7 @@ import {
   Text,
 } from "@mantine/core";
 import { Info } from "lucide-react";
-import { useContext, useMemo, useState, type ReactNode } from "react";
+import { useContext, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import type { PlayerGameInfo } from "@/bindings";
@@ -31,6 +31,16 @@ import PlayerOpeningTree from "../databases/PlayerOpeningTree";
 import PlayerPreparation from "../databases/PlayerPreparation";
 import { databaseHandleKey } from "@/utils/db";
 import type { DatabaseHandle, Player } from "@/bindings";
+
+// A panel that scrolls keeps its content clear of the scrollbar: a reserved gutter plus right
+// padding, so neither text nor bars end up under it.
+const SCROLLING_PANEL_STYLE: CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  overflowY: "auto",
+  scrollbarGutter: "stable",
+  paddingRight: "1.25rem",
+};
 
 /**
  * A database player's downloaded online games for the Overview and Ratings tabs. They are kept
@@ -161,7 +171,7 @@ function PersonalPlayerCard({
             </Tabs.Tab>
           )}
         </Tabs.List>
-        <Tabs.Panel value="overview" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <Tabs.Panel value="overview" style={SCROLLING_PANEL_STYLE}>
           {sourceSwitch}
           {showOnline ? (
             <OnlinePanel online={online}>
@@ -186,17 +196,7 @@ function PersonalPlayerCard({
         </Tabs.Panel>
         <Tabs.Panel
           value="openings"
-          style={
-            isDatabase && databasePlayer
-              ? {
-                  flex: 1,
-                  minHeight: 0,
-                  overflowY: "auto",
-                  scrollbarGutter: "stable",
-                  paddingRight: "1.25rem",
-                }
-              : { overflow: "hidden" }
-          }
+          style={isDatabase && databasePlayer ? SCROLLING_PANEL_STYLE : { overflow: "hidden" }}
         >
           {isDatabase && databasePlayer ? (
             <PlayerOpeningTree {...databasePlayer} />
@@ -228,16 +228,7 @@ function PersonalPlayerCard({
           )}
         </Tabs.Panel>
         {hasPreparation && databasePlayer && (
-          <Tabs.Panel
-            value="preparation"
-            style={{
-              flex: 1,
-              minHeight: 0,
-              overflowY: "auto",
-              scrollbarGutter: "stable",
-              paddingRight: "1.25rem",
-            }}
-          >
+          <Tabs.Panel value="preparation" style={SCROLLING_PANEL_STYLE}>
             <PlayerPreparation
               key={`${databaseHandleKey(databasePlayer.file)}:${databasePlayer.player.id}`}
               {...databasePlayer}

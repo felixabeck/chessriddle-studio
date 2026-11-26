@@ -79,6 +79,13 @@ The theme defines ChessRiddle's heading, title, body and caption scale. Labels u
 medium weight, headings use semibold or bold, and numeric displays use tabular
 Inter figures. Preserve the compact notation and engine-line spacing.
 
+No rendered text is smaller than 12px (the theme's `xs`) at the default font size. Two things are
+exempt: text that scales with the board, such as its coordinates, and the ON/OFF word inside a
+switch track. Bar labels and badges are held at the floor centrally (`src/styles/Progress.module.css`,
+`src/styles/Badge.module.css`), so a low bar or a small badge cannot print smaller text. A spot
+that reads too small at 12px is raised on its own; there is no rule that controls or labels use a
+larger size.
+
 Choose radius by actual control dimensions: xs 4px, sm 8px, md 12px, lg 16px, or
 full. Checkboxes use xs, compact controls sm, small buttons md, standard inputs
 and cards lg, and switches, segments and badges use full.

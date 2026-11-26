@@ -244,7 +244,7 @@ function ColorRow({
         )}
       </Group>
       {color.games > 0 && (
-        <ResultsChart won={color.won} draw={color.drawn} lost={color.lost} size="1rem" />
+        <ResultsChart won={color.won} draw={color.drawn} lost={color.lost} size="1.25rem" />
       )}
     </Stack>
   );

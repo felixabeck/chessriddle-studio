@@ -6,6 +6,13 @@ export const numericColumn = {
   cellsStyle: () => ({ fontVariantNumeric: "tabular-nums" }),
 } satisfies Partial<DataTableColumn<unknown>>;
 
+/**
+ * The table's scrollbar is drawn over its content, so the scroll area keeps a strip free for it.
+ * The strip is permanent ("y"): Mantine's "present" re-measures only when the viewport is resized,
+ * not when rows load into it, and would leave the last column under the scrollbar.
+ */
+export const tableScrollAreaProps = { offsetScrollbars: "y" } as const;
+
 export const dateColumn = {
   noWrap: true,
 } satisfies Partial<DataTableColumn<unknown>>;

@@ -1,6 +1,6 @@
 import { useOwnerTab } from "@/state/tabScope";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { Code, Divider, Group, Text, Tooltip } from "@mantine/core";
+import { Divider, Group, Text, Tooltip } from "@mantine/core";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -84,9 +84,11 @@ function FileInfo({
             number: formatNumber(tabFile.numGames ?? 0),
           })}
         </Text>
-        <Group>
+        <Group wrap="nowrap" miw={0}>
           <Tooltip label={tabFile.name}>
-            <Code>{tabFile.name}</Code>
+            <Text size="sm" c="dimmed" truncate>
+              {tabFile.name}
+            </Text>
           </Tooltip>
 
           <IconAction

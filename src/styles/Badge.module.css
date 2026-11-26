@@ -2,6 +2,9 @@
   border-radius: var(--cf-radius-full);
   font-weight: 600;
   letter-spacing: 0.025em;
+  /* Mantine's xs, sm and md badges are 9, 10 and 11px, under the 12px text floor (DESIGN.md).
+     Badge heights are fixed pixels, so the floor stops at 12px when the Font Size setting is raised. */
+  font-size: max(var(--badge-fz), min(var(--mantine-font-size-xs), 12px));
 }
 
 .root[data-variant="light"],
