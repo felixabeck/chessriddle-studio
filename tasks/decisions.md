@@ -15002,3 +15002,31 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Feature growth ordered by Felix (draggable Assistant width, 2026-11-25), measured with the procedure of d-20261125-50. Reversal path: tighten the ceilings against a future smaller production build.
 * **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-25/26 for board-layout-arrange (full auto) · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"aacb230abd38b72c0ab0bffb494fbbffbf3503e108616b4b2dfafd537b6175e2","input_sha256":"29258e21796805a0e6aff69c57b98b09c196110e52695c88bf2dfd9fa49897be","kind":"mutation-receipt","operation":"8bd56c774fd7cdb4a0ad5fce167179c671cb23035d852f639477f1ea53f2caf0","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-02"],"target":"decisions-ledger","v":1} -->
+
+### d-20261126-03 — How is a hidden analysis-board tab strip stored and where does it apply?
+
+* **Question:** Felix ordered (2026-11-26) that the analysis board's tab strip can be hidden and returns "exactly where it was, at the same size". How is that state kept, and which layouts honour it?
+* **Governs:** -
+* **Chosen:** One global localStorage boolean `analysis-board-tabs-hidden` (zod-validated, absent or corrupt reads as shown), separate from `analysis-board-layout`. While set, the shown arrangement leaves out the `topRight` leaf the same way a disabled Coach is left out; divider moves are written back past it. Only the arranged analysis board honours it; the stacked and too-narrow fallback layouts and other boards always show the strip.
+* **Rejected:** Removing the `topRight` leaf from the stored tree (loses place and size, breaks the strip rule and the carry-over schema).
+* **Reason:** Exact restore with no schema change. Reversal path: drop the key and the `topRight` member of the hidden set in `BoardTabLayout.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for hide-tab-strip (full auto), reviewed by Antigravity plan and diff lenses · **Superseded-by:** -
+
+### d-20261126-04 — Which requests show a hidden tab strip again?
+
+* **Question:** Felix's rule: the strip comes back when something inside it is asked for (Show tabs, Reset layout, the Practice/Analysis shortcuts, Generate Report). Which code paths count?
+* **Governs:** -
+* **Chosen:** Every strip-tab shortcut (Practice, Analysis, Database, Annotate, Coach, Info) and Generate Report when that tab is in the strip, plus the flows that open a strip tab for the user: a timed training run (Practice), the scoresheet review (Photo) and Prepare on board (Database, when it is in the strip). All go through one helper, `selectStripTab` in `src/state/stripTab.ts`. Returning a detached panel never shows the strip and keeps the strip's visible tab as the selection.
+* **Rejected:** Only the three named shortcuts (a training run or a photo review would open into an invisible panel).
+* **Reason:** Plan review P-1 (agy review-plan). Reversal path: call `tabFamily` directly at the flow that should not reveal.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for hide-tab-strip (full auto), reviewed by Antigravity plan and diff lenses · **Superseded-by:** -
+
+### d-20261126-05 — Where does an engine bar pinned above the tabs go while the tabs are hidden?
+
+* **Question:** The compact engine bar can be pinned above the tabs; its position menu lives in the bar itself, so hiding it with the tabs would make it unreachable.
+* **Governs:** -
+* **Chosen:** While the tabs are hidden, a bar pinned above the tabs is shown above the notation; its stored placement is unchanged, so it returns above the tabs when they are shown.
+* **Rejected:** Hiding the bar with the tabs (plan review P-5: unreachable position menu).
+* **Reason:** Keeps the bar visible and movable. Reversal path: render `DetachedEval placement="tabs"` only inside the tab area in `BoardAnalysis.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for hide-tab-strip (full auto), reviewed by Antigravity plan and diff lenses · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"3bd30fe7d15c15f344dff00bbf9e62ed3bfa3baa0b64f3bb6757c8514f6ee028","input_sha256":"c9fed7eb726784c72b60eb55c97704eb254099aab85d1ba51e1fd0d02512bb1b","kind":"mutation-receipt","operation":"c2805293b9a81e75ae31bb5d47c82004e943316360f85bbe12b1a28ca7e8db0c","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-03","d-20261126-04","d-20261126-05"],"target":"decisions-ledger","v":1} -->
