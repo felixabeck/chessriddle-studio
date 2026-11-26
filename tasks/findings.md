@@ -29297,7 +29297,7 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### verify:app AO1/AO2 time out on the Auto Save switch since the Settings regroup moved it into the Analysis & notation category
 
-* **ID:** f-20261125-13 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261125-13 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Where:** `scripts/verify-app.mjs` `verifyDatabaseOrientation` → `setAutoSave` (the "orientation Auto Save switch" wait), `src/components/settings/settingsDescription.ts` (`auto-save` in category `analysis`, group `layoutSaving`, since `fecfa6daa`).
 * **Defect:** `fecfa6daa` (Settings regroup, 2026-11-25) moved Auto Save from the default Board category to Analysis & notation. `setAutoSave` still goes to Settings and waits for `input[aria-label="Auto Save"]` to become clickable without selecting that category; Mantine keeps the inactive panel mounted with `display: none`, so the input is found but never visible and the wait times out. The harness code is unchanged between `5f8988937` and the workspace-restore branch.
@@ -29305,6 +29305,10 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 * **Failure scenario:** any default `pnpm verify:app` run since `fecfa6daa` ends red at AO1/AO2, so a lifecycle change verified there reports two failures that are not its own and the orientation autosave behaviour goes unverified in the real app.
 * **Fix direction:** Optimal: `setAutoSave` selects the setting's category through the existing Settings navigation (or the settings-navigation request the app already uses to jump to a setting) before waiting for the switch; no longer timeout, no visibility workaround.
 * **Found by:** Claude Code (Opus 5.5), session ee439b95-8204-44ff-b74f-b24e6916f3dc, build workspace-restore phase 3, 2026-11-25.
+
+Verifier drift: `fecfa6daa` moved Auto Save to Analysis & notation; `setAutoSave` now selects `[role="tab"][data-settings-category="analysis"]` and waits for `aria-selected="true"` before the Auto Save wait. Commit `1689db6de`.
+  * **Proof:** default `pnpm verify:app` against a release build of `06720f913` with the fixed harness: AO1 and AO2 pass. Reviewed by review-correctness and review-root-cause, APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"9bba722726179f49a0cf4b26f1f384ba47b5b71a373aa49addfb2927348cfcbd","header_sha256":"78bd612f53ef79ed59090e1ef8f096339b7ac62a001756eed9b0f849cd93f0ad","header_status":"handled","input_sha256":"57311aa5bb5e46d2de5ef43f304e4c53925d1c57b37138bb66c90a770523bd71","kind":"mutation-receipt","operation":"fbe79e868d753237902b500add01d2139a9231be8218caf479e7df6ebc6d5e50","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-13"],"target":"f-20261125-13","v":1} -->
 
 ---
 
