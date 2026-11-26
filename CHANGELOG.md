@@ -8,8 +8,12 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 
 - Arrange the analysis board: drag Analysis, Database, Annotate, Coach or Info out of the tab strip and drop it to the left, right, above or below the board, the notation, the tabs or another panel; a preview shows where it lands. The notation and the tabs move the same way, every move also works from a grip button with named places, "Return to the tabs" puts a panel back, and Settings → Analysis & notation → "Reset layout" restores the default. This replaces the Database panel's Pin menu and the setting "Panels beside the notation"; a pinned Database or a beside arrangement is carried over. When the window is too narrow for your arrangement, the board shows the plain tab layout until there is room again.
 
+- Files & folders: when you choose a new folder for databases, puzzles or engines and the old one has content, Studio asks whether to "Move files to new folder", "Use new folder only" or cancel. Moving keeps your databases, puzzles and engines working from the new place; if anything goes wrong, the old folder stays active and untouched, and a move interrupted by a crash is finished or undone at the next start.
+
 ### Improved
 
+- Files & folders: each row shows its folder's name, "Show in folder" opens it in your file manager, "Restore default" switches back to Studio's own folder, and the folder picker opens in the current folder. The PGN collection now has a default folder too.
+- Your databases, puzzles, engines and PGN files now live in a visible folder in your home folder, "ChessRiddle Studio", with one subfolder each, instead of hidden application data. Folders you chose yourself stay where they are; Studio's previous default folders are moved there once at the next start.
 - Assistant: drag its left edge, or use the arrow keys on it, to make the docked Assistant wider or narrower (from 20rem); double-click restores the default width, and Studio remembers your choice.
 
 ## 1.3.0
