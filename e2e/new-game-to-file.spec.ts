@@ -4,6 +4,7 @@ import {
     expect,
     activeWorkspaceTab,
     assertNothingClipped,
+    chooseBoardMoreAction,
     databaseCommands,
     filesWorkspaceCommands,
     gameOpeningFixture,
@@ -165,7 +166,7 @@ test("Save to file or database appends to a repertoire file and rebinds the tab"
     await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
-    await page.getByRole("button", { name: "Save to file or database…", exact: true }).click();
+    await chooseBoardMoreAction(page, /^Save to file or database…/);
     const modal = page.getByRole("dialog", { name: "Save to file or database…", exact: true });
     await modal.getByRole("textbox", { name: "File or database", exact: true }).click();
     await expect(page.getByRole("option", { name: repertoireFile.name })).toBeVisible();

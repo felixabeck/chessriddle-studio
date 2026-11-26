@@ -10,6 +10,7 @@ import {
     pgnFileCommands,
     selectFilesTreeRow,
     test,
+    toggleNotationViewOption,
     waitForBoardSizeSettled,
     waitForFontsSettled,
     scrollbarFreeScreenshot,
@@ -149,7 +150,7 @@ async function openHierarchyGame(
     await openLibraryFile(page);
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await expect(page).toHaveURL("/");
-    await expect(page.getByRole("button", { name: "Table view", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "View options", exact: true })).toBeVisible();
     const notation = notationViewport(page);
     await expect(notation).toHaveCount(1);
     await expect(
@@ -213,7 +214,7 @@ async function assertNotationNoOverflow(notation: Locator, view: "inline" | "tab
 }
 
 async function showTableView(page: Page, notation: Locator) {
-    await page.getByRole("button", { name: "Table view", exact: true }).click();
+    await toggleNotationViewOption(page, "Table view");
     await expect(
         notation.locator("td").filter({
             has: page.getByRole("button", { name: MAIN_SAN, exact: true }),

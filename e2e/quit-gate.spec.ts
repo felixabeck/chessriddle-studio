@@ -1,7 +1,7 @@
-import { INITIAL_FEN } from "chessops/fen";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import {
     activeWorkspaceTab,
+    createLiveGameState,
     expect,
     filesWorkspaceCommands,
     gameOpeningCommands,
@@ -13,27 +13,7 @@ import {
 } from "./fixtures";
 import type { Page } from "@playwright/test";
 
-const liveState = {
-    session: 1,
-    revision: 0,
-    status: "playing",
-    initialFen: INITIAL_FEN,
-    currentFen: INITIAL_FEN,
-    moves: [] as {
-        uci: string;
-        san: string;
-        clock: null;
-        whiteTime: null;
-        blackTime: null;
-        fenAfter: string;
-    }[],
-    ply: 0,
-    turn: "white",
-    whitePlayer: "Human",
-    blackPlayer: "E2E engine",
-    whiteTime: null,
-    blackTime: null,
-};
+const liveState = createLiveGameState();
 
 const acceptedMove = {
     uci: "e2e4",

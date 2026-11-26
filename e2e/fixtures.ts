@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import type { KeyedNode } from "@lichess-org/chessground/types";
 import { expect, test as base, type Locator, type Page, type Request } from "@playwright/test";
+import { INITIAL_FEN } from "chessops/fen";
 import type {
     BestMovesPayload,
     DatabaseInfo,
@@ -879,6 +880,65 @@ export async function openApplicationMenu(page: Page) {
 export async function chooseApplicationMenuItem(page: Page, name: string | RegExp) {
     await openApplicationMenu(page);
     await page.getByRole("menuitem", { name, exact: typeof name === "string" }).click();
+}
+
+export async function chooseBoardMoreAction(page: Page, name: string | RegExp) {
+    await page.getByRole("button", { name: "More actions", exact: true }).click();
+    await page
+        .getByRole("menu")
+        .getByRole("menuitem", { name, exact: typeof name === "string" })
+        .click();
+}
+
+export async function toggleNotationViewOption(page: Page, name: string | RegExp) {
+    await page.getByRole("button", { name: "View options", exact: true }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    await menu.getByRole("menuitem", { name, exact: typeof name === "string" }).click();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+}
+
+export type MockLiveGameMove = {
+    uci: string;
+    san: string;
+    clock: number | null;
+    whiteTime: number | null;
+    blackTime: number | null;
+    fenAfter: string;
+};
+
+export type MockLiveGameState = {
+    session: number;
+    revision: number;
+    status: "playing" | { finished: { result: unknown } };
+    initialFen: string;
+    currentFen: string;
+    moves: MockLiveGameMove[];
+    ply: number;
+    turn: "white" | "black";
+    whitePlayer: string;
+    blackPlayer: string;
+    whiteTime: number | null;
+    blackTime: number | null;
+};
+
+export function createLiveGameState(overrides: Partial<MockLiveGameState> = {}): MockLiveGameState {
+    return {
+        session: 1,
+        revision: 0,
+        status: "playing",
+        initialFen: INITIAL_FEN,
+        currentFen: INITIAL_FEN,
+        moves: [],
+        ply: 0,
+        turn: "white",
+        whitePlayer: "Human",
+        blackPlayer: "E2E engine",
+        whiteTime: null,
+        blackTime: null,
+        ...overrides,
+    };
 }
 
 export function libraryLink(page: Page) {

@@ -73,12 +73,19 @@ for (const tableView of [false, true]) {
         await board.click();
         await expect(notation.locator('[data-notation-current="true"]')).toContainText("f3");
 
-        // The header toggle hides the board and hands the comment back to the move flow.
-        await page.getByRole("button", { name: "Hide diagrams", exact: true }).click();
+        // The header View menu hides the diagram and hands the comment back to the move flow.
+        await page.getByRole("button", { name: "View options", exact: true }).click();
+        const showDiagrams = page.getByRole("menuitem", {
+            name: "Show diagrams",
+            exact: true,
+        });
+        await showDiagrams.click();
         await expect(diagram).toHaveCount(0);
         await expect(notation).toContainText("The knight attacks e5.");
-        await page.getByRole("button", { name: "Show diagrams", exact: true }).click();
+        await showDiagrams.click();
         await expect(diagram).toHaveCount(1);
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("menu")).toHaveCount(0);
 
         await page.mouse.move(0, 0);
         await waitForFontsSettled(page);

@@ -334,17 +334,29 @@ test("board-wood-texture: the exported board snapshot carries the wood grain, an
                     .filter(({ command }) => command === "save_board_snapshot").length,
         );
 
+    const moreActions = page.getByRole("button", { name: "More actions", exact: true });
+    const menu = page.getByRole("menu");
+    const takeSnapshot = menu.getByRole("menuitem", { name: /^Take Snapshot/ });
+
+    const clickTakeSnapshot = async () => {
+        await expect(moreActions).toBeEnabled();
+        if (!(await menu.isVisible())) {
+            await moreActions.click();
+        }
+        await expect(takeSnapshot).toBeEnabled({ timeout: 2_000 });
+        await takeSnapshot.click({ timeout: 2_000 });
+    };
+
     const exportSnapshotIndex = async () => {
-        const takeSnapshot = page.getByRole("button", { name: "Take Snapshot", exact: true });
-        await expect(takeSnapshot).toBeEnabled();
         const before = await snapshotCount();
-        await takeSnapshot.click();
         try {
+            await clickTakeSnapshot();
             await expect.poll(snapshotCount, { timeout: 6_000 }).toBeGreaterThan(before);
         } catch {
-            // Under load the click can be lost after the route change. Retry once only, after
-            // a window long enough that a slow export is not duplicated.
-            await takeSnapshot.click();
+            // Under load the click on "More actions" or "Take Snapshot" can be lost after the
+            // route change. Retry once only, after a window long enough that a slow export is
+            // not duplicated, without toggling an already-open menu closed.
+            await clickTakeSnapshot();
             await expect.poll(snapshotCount, { timeout: 6_000 }).toBeGreaterThan(before);
         }
         return (await snapshotCount()) - 1;

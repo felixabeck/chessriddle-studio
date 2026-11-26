@@ -3,6 +3,7 @@ import {
     expect,
     activeWorkspaceTab,
     assertNothingClipped,
+    chooseBoardMoreAction,
     filesWorkspaceCommands,
     gameOpeningCommands,
     gameOpeningFixture,
@@ -162,7 +163,7 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     await expect
         .poll(async () => (await saves()).map((item) => item.command))
         .toEqual(["insert_db_game", "write_db_game"]);
-    await page.getByRole("button", { name: "Save to file or database…", exact: true }).click();
+    await chooseBoardMoreAction(page, /^Save to file or database…/);
     const modal = page.getByRole("dialog", { name: "Save to file or database…", exact: true });
     await modal.getByRole("textbox", { name: "File or database", exact: true }).click();
     await page.getByRole("option", { name: gameOpeningFixture.databaseTitle, exact: true }).click();
@@ -178,10 +179,7 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     await expect
         .poll(async () => (await activeWorkspaceTab(page))?.gameOrigin)
         .toMatchObject({ kind: "database", gameId: 502 });
-    await expect(page.getByRole("button", { name: /^Save PGN/ })).toHaveAttribute(
-        "data-variant",
-        "transparent",
-    );
+    await expect(page.getByRole("button", { name: /^Save PGN/ })).toHaveCount(0);
     expect(await saves()).toHaveLength(3);
     await expect(page).toHaveScreenshot("saved-to-database.png");
 });
@@ -358,11 +356,7 @@ test("linked collection New game appends to its PGN without inserting into the i
         "data-file-freshness",
         /^verified:/,
     );
-    await expect(page.getByRole("button", { name: /^Save PGN/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Save PGN/ })).toHaveAttribute(
-        "data-variant",
-        "transparent",
-    );
+    await expect(page.getByRole("button", { name: /^Save PGN/ })).toHaveCount(0);
     const writes = await page.evaluate(() =>
         window.__E2E_TAURI__
             .invocations()

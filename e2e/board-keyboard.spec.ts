@@ -2,6 +2,8 @@ import {
     activeWorkspaceTab,
     assertChooserInsideBoard,
     assertNothingClipped,
+    chooseBoardMoreAction,
+    createLiveGameState,
     dragBoard,
     dragMosaicDivider,
     drawMark,
@@ -703,7 +705,7 @@ test("board-keyboard: editor castling rights follow a king dragged off its back 
         1,
     );
     await expect(grid.getByRole("gridcell", { name: "e2, empty", exact: true })).toHaveCount(1);
-    await page.getByRole("button", { name: "Edit Position", exact: true }).click();
+    await chooseBoardMoreAction(page, /^Edit Position/);
     const fen = page.locator("#bottomRight").getByPlaceholder("Enter FEN", { exact: true });
     await expect(fen).toHaveValue(initialFen);
 
@@ -729,7 +731,7 @@ for (const fixture of [
         capture,
     }) => {
         await importAnalysisFen(page, fixture.fen);
-        await page.getByRole("button", { name: "Edit Position", exact: true }).click();
+        await chooseBoardMoreAction(page, /^Edit Position/);
         const editor = page.locator("#bottomRight");
         await expect(editor.getByPlaceholder("Enter FEN", { exact: true })).toHaveValue(
             fixture.fen,
@@ -1282,4 +1284,270 @@ test("board-keyboard: overflowing chooser stays bounded and reaches lower contin
     await expect(page.getByRole("gridcell", { name: "f3, White Knight", exact: true })).toHaveCount(
         1,
     );
+});
+
+test("board-keyboard: analysis board puts actions in top bar, removes left column, and uses Notation frame with View menu", async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/");
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
+
+    const topBar = page.locator('[data-board-bar="above"]');
+    const notation = page.locator("#bottomRight");
+    const notationHeader = notation.locator('[data-panel-header="bottomRight"]');
+    const whiteBoard = page.getByRole("grid", {
+        name: "Chessboard, White orientation",
+        exact: true,
+    });
+    const blackBoard = page.getByRole("grid", {
+        name: "Chessboard, Black orientation",
+        exact: true,
+    });
+    await expect(whiteBoard).toBeVisible();
+
+    // Top bar holds Play from here, Flip Board, and More actions.
+    await expect(topBar.getByRole("button", { name: "Play from here", exact: true })).toBeVisible();
+    const flipButton = topBar.getByRole("button", { name: /^Flip Board/ });
+    await expect(flipButton).toBeVisible();
+    const moreButton = topBar.getByRole("button", { name: "More actions", exact: true });
+    await expect(moreButton).toBeVisible();
+
+    // Removed left-column buttons and top-level moved actions are absent.
+    for (const label of [
+        "Undo",
+        "Redo",
+        "Clear Drawings",
+        "Take back",
+        "Edit Position",
+        "Take Snapshot",
+        "Save to file or database…",
+    ]) {
+        await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(0);
+    }
+
+    // Notation uses the shared PanelHeader frame with title "Notation", grip, no close button,
+    // and no left toolbar column beside the move list.
+    await expect(notationHeader).toBeVisible();
+    await expect(notationHeader).toContainText("Notation");
+    await expect(notationHeader.locator('[data-arrange-grip="bottomRight"]')).toBeVisible();
+    await expect(notationHeader.getByRole("button", { name: /Return to the tabs/ })).toHaveCount(0);
+    const headerBox = (await notationHeader.boundingBox())!;
+    const rowsBox = (await notation.locator("[data-notation-rows]").boundingBox())!;
+    expect(Math.abs(rowsBox.x - headerBox.x)).toBeLessThanOrEqual(2);
+
+    // Flip in the top bar flips the board.
+    await flipButton.click();
+    await expect(blackBoard).toBeVisible();
+    await flipButton.click();
+    await expect(whiteBoard).toBeVisible();
+
+    // Add a variation and a comment, then toggle both through the View menu without it closing.
+    const board = page.locator("cg-board").first();
+    await playBoardMove(page, board, "e2", "e4");
+    await page.getByRole("button", { name: "Previous move", exact: true }).click();
+    await playBoardMove(page, board, "d2", "d4");
+    await page.getByRole("tab", { name: "Annotate", exact: true }).click();
+    await page.locator('[contenteditable="true"]').fill("Queen pawn alternative");
+    await expect(notation.getByText("Queen pawn alternative")).toBeVisible();
+    await expect(notation.getByRole("button", { name: "d4", exact: true })).toBeVisible();
+
+    await notation.getByRole("button", { name: "View options", exact: true }).click();
+    const viewMenu = page.getByRole("menu");
+    await expect(viewMenu).toBeVisible();
+    const showComments = viewMenu.getByRole("menuitem", {
+        name: "Show comments",
+        exact: true,
+    });
+    const showVariations = viewMenu.getByRole("menuitem", {
+        name: "Show variations",
+        exact: true,
+    });
+    await expect(showComments).toHaveAttribute("aria-checked", "true");
+    await expect(showVariations).toHaveAttribute("aria-checked", "true");
+
+    await showComments.click();
+    await expect(viewMenu).toBeVisible();
+    await expect(showComments).toHaveAttribute("aria-checked", "false");
+    await expect(notation.getByText("Queen pawn alternative")).toHaveCount(0);
+
+    await showVariations.click();
+    await expect(viewMenu).toBeVisible();
+    await expect(showVariations).toHaveAttribute("aria-checked", "false");
+    await expect(notation.getByRole("button", { name: "d4", exact: true })).toHaveCount(0);
+
+    await page.keyboard.press("Escape");
+    await expect(viewMenu).toHaveCount(0);
+
+    // More -> Edit Position opens the position editor.
+    await chooseBoardMoreAction(page, /^Edit Position/);
+    await expect(notation.getByPlaceholder("Enter FEN", { exact: true })).toBeVisible();
+    await expect(
+        notation.getByRole("button", { name: "Close position editor", exact: true }),
+    ).toBeVisible();
+});
+
+test("board-keyboard: game screen top bar actions and Edit position only while setting up", async ({
+    page,
+    mockScenario,
+}) => {
+    const liveState = createLiveGameState({ blackPlayer: "Human" });
+    await mockScenario({
+        commands: {
+            start_game: { gameState: liveState },
+            get_game_state: { gameState: liveState },
+        },
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Start game", exact: true })).toBeVisible();
+
+    const topBar = page.locator('[data-board-bar="above"]');
+    await expect(topBar.getByRole("button", { name: "Take back", exact: true })).toHaveCount(0);
+    await expect(topBar.getByRole("button", { name: "Analyze game", exact: true })).toBeVisible();
+    await expect(topBar.getByRole("button", { name: /^Flip Board/ })).toBeVisible();
+    const moreButton = topBar.getByRole("button", { name: "More actions", exact: true });
+    await expect(moreButton).toBeVisible();
+
+    // While setting up, More offers both Take Snapshot and Edit Position.
+    await moreButton.click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem", { name: /^Take Snapshot/ })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: /^Edit Position/ })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+
+    // Once the game starts, top bar adds Take back and More drops Edit Position.
+    await page.getByRole("button", { name: "Start game", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Resign", exact: true })).toBeVisible();
+    await expect(topBar.getByRole("button", { name: "Take back", exact: true })).toBeVisible();
+    await expect(topBar.getByRole("button", { name: "Analyze game", exact: true })).toBeVisible();
+    await expect(topBar.getByRole("button", { name: /^Flip Board/ })).toBeVisible();
+    await expect(moreButton).toBeVisible();
+
+    await moreButton.click();
+    await expect(menu.getByRole("menuitem", { name: /^Take Snapshot/ })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: /^Edit Position/ })).toHaveCount(0);
+});
+
+async function assertNarrowTopBar(page: Page, playerName: string, expectedActionCount: number) {
+    await waitForFontsSettled(page);
+    const topBar = page.locator('[data-board-bar="above"]');
+    const actions = topBar.locator('[data-no-drag="true"] button');
+    await expect(actions).toHaveCount(expectedActionCount);
+
+    const metrics = await topBar.evaluate((bar, expectedName) => {
+        const barRect = bar.getBoundingClientRect();
+        const rightGroupRect = bar.lastElementChild!.getBoundingClientRect();
+        const nameEl = [...bar.querySelectorAll("p")].find((p) => p.textContent === expectedName);
+        if (!nameEl) throw new Error(`missing player name ${expectedName}`);
+        const nameRect = nameEl.getBoundingClientRect();
+        const actionRects = [...bar.querySelectorAll('[data-no-drag="true"] button')].map((btn) =>
+            btn.getBoundingClientRect(),
+        );
+        return {
+            scrollWidth: bar.scrollWidth,
+            clientWidth: bar.clientWidth,
+            barRect: {
+                left: barRect.left,
+                right: barRect.right,
+                top: barRect.top,
+                bottom: barRect.bottom,
+            },
+            rightGroupLeft: rightGroupRect.left,
+            name: {
+                scrollWidth: nameEl.scrollWidth,
+                clientWidth: nameEl.clientWidth,
+                textOverflow: getComputedStyle(nameEl).textOverflow,
+                right: nameRect.right,
+                left: nameRect.left,
+            },
+            actions: actionRects.map((rect) => ({
+                left: rect.left,
+                right: rect.right,
+                top: rect.top,
+                bottom: rect.bottom,
+            })),
+        };
+    }, playerName);
+
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+    expect(metrics.name.scrollWidth).toBeGreaterThan(metrics.name.clientWidth);
+    expect(metrics.name.textOverflow).toBe("ellipsis");
+    expect(metrics.name.left).toBeGreaterThanOrEqual(metrics.barRect.left - 0.5);
+    expect(metrics.name.right).toBeLessThanOrEqual(metrics.rightGroupLeft + 0.5);
+
+    const firstTop = metrics.actions[0].top;
+    for (const action of metrics.actions) {
+        expect(Math.abs(action.top - firstTop)).toBeLessThanOrEqual(1);
+        expect(action.left).toBeGreaterThanOrEqual(metrics.barRect.left - 0.5);
+        expect(action.right).toBeLessThanOrEqual(metrics.barRect.right + 0.5);
+        expect(action.top).toBeGreaterThanOrEqual(metrics.barRect.top - 0.5);
+        expect(action.bottom).toBeLessThanOrEqual(metrics.barRect.bottom + 0.5);
+    }
+}
+
+test("board-keyboard: narrow 1024x700 top bar truncates long player name and keeps actions on one row", async ({
+    page,
+    mockScenario,
+}) => {
+    const longTopName = "Grandmaster VeryLongOpponentNameForNarrowBoardBarTruncationVerification";
+    const longBottomName = "Candidate Master LongBottomPlayerName";
+    const startedState = createLiveGameState({
+        whitePlayer: longBottomName,
+        blackPlayer: longTopName,
+        whiteTime: 180_000,
+        blackTime: 180_000,
+    });
+    const imbalancedHeaders = {
+        Event: "E2E",
+        Site: "?",
+        Date: "????.??.??",
+        Round: "?",
+        White: longBottomName,
+        Black: longTopName,
+        Result: "*",
+        SetUp: "1",
+        FEN: "rnbqkbnr/1ppppppp/8/8/8/8/2PPPPPP/RNBQKBNR w KQkq - 0 1",
+    };
+
+    await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
+    await page.setViewportSize({ width: 1024, height: 700 });
+    await mockScenario({
+        commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
+            ...pgnFileCommands,
+            lex_pgn: {
+                result: [
+                    ...Object.entries(imbalancedHeaders).map(([tag, value]) => ({
+                        type: "Header",
+                        value: { tag, value },
+                    })),
+                    { type: "Outcome", value: "*" },
+                ],
+            },
+            start_game: { gameState: startedState },
+            get_game_state: { gameState: startedState },
+        }),
+    });
+
+    // Analysis board: long player name + material (+1) + Play from here / Flip / Save PGN / More.
+    await page.goto("/library");
+    await page.getByRole("button", { name: /choose folder/i }).click();
+    await selectFilesTreeRow(page, filesWorkspaceFixture.pgnFile.name);
+    await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await expect(page.getByRole("grid")).toBeVisible();
+    await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
+    const topBar = page.locator('[data-board-bar="above"]');
+    await expect(topBar.getByText("+1", { exact: true })).toBeVisible();
+    await expect(topBar.getByRole("button", { name: /^Save PGN/ })).toBeVisible();
+    await assertNarrowTopBar(page, longTopName, 4);
+
+    // Game screen: started game with long player names + clock (03:00) + Take back / Analyze / Flip / More.
+    await page.goto("/");
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await page.getByRole("button", { name: "Start game", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Resign", exact: true })).toBeVisible();
+    await expect(topBar.getByText("03:00", { exact: true })).toBeVisible();
+    await assertNarrowTopBar(page, longTopName, 4);
 });

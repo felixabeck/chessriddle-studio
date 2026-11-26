@@ -638,6 +638,7 @@ test("engine-gap: engines reorder by drag and by the grip menu", async ({ page }
         .getByRole("button", { name: "Manage Engines", exact: true })
         .scrollIntoViewIfNeeded();
     await page.locator('[data-arrange-grip="engine:e2e-engine-2"]').click();
+    await expect(menu).toBeVisible();
     await expect(
         menu.getByRole("menuitem", { name: "Show as its own area", exact: true }),
     ).toHaveCount(0);

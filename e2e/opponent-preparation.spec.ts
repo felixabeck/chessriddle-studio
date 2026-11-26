@@ -4,6 +4,7 @@ import {
     gameOpeningFixture,
     gotoPreservingStorage,
     test,
+    toggleNotationViewOption,
     waitForFontsSettled,
 } from "./fixtures";
 import { preparationCommands } from "./opponentPreparationFixtures";
@@ -113,7 +114,7 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toHaveCount(0);
 
     // Table view also follows the filter.
-    await page.getByRole("button", { name: "Table view", exact: true }).click();
+    await toggleNotationViewOption(page, "Table view");
     await expect(notation.getByRole("button", { name: /Be2|♗e2/ })).toHaveCount(0);
     await expect(notation.locator('[data-notation-reveal-variations="1"]')).toBeVisible();
     await notation.getByText("All lines", { exact: true }).click();

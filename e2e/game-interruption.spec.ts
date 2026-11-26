@@ -1,21 +1,7 @@
-import { test, expect, activeWorkspaceTab } from "./fixtures";
-import { INITIAL_FEN } from "chessops/fen";
+import { test, expect, activeWorkspaceTab, createLiveGameState } from "./fixtures";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 
-const liveState = {
-    session: 1,
-    revision: 0,
-    status: "playing",
-    initialFen: INITIAL_FEN,
-    currentFen: INITIAL_FEN,
-    moves: [],
-    ply: 0,
-    turn: "white",
-    whitePlayer: "Human",
-    blackPlayer: "E2E engine",
-    whiteTime: null,
-    blackTime: null,
-};
+const liveState = createLiveGameState();
 const moves = [
     {
         uci: "e2e4",
