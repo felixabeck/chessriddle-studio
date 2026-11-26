@@ -320,6 +320,19 @@ where
         + 'static,
     F: Future<Output = Result<RuntimeDownload, Error>> + Send + 'static,
 {
+    // Only `Unlinked` targets open/mutate a Database root. `AccountImportTarget::Linked` writes
+    // exclusively to a non-migrating PGN collection (and a download-only PGN destination), so it
+    // stays ungated; `FolderMoveMode::StartupMigration` does not check global
+    // `has_uninterruptible_work()`, so a concurrent linked sync cannot trip `RootBusy`.
+    if matches!(request.target, AccountImportTarget::Unlinked { .. }) {
+        state
+            .folder_switch
+            .wait_for_migration(
+                crate::infra::path_authority::FolderSwitchKind::Database,
+                None,
+            )
+            .await?;
+    }
     let (attempt, start) = state.operations.admit_account_completion(&owner, request)?;
     if let Some(start) = start {
         start_account_completion(start, app, owner, state, download).await;
@@ -806,5 +819,149 @@ mod tests {
                 request.1
             );
         }
+    }
+
+    #[tokio::test]
+    async fn import_account_games_unlinked_waits_on_database_migration_and_succeeds() {
+        use crate::infra::path_authority::{
+            FolderSwitchKind, LegacyMigrationCandidate, PathAuthority, PathOperation, PathRef,
+            SharedPathAuthority,
+        };
+        use std::collections::HashSet;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+        use tauri::Manager;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_dir = dir.path().join("dbs");
+        let pgn_dir = dir.path().join("pgns");
+        std::fs::create_dir_all(&db_dir).unwrap();
+        std::fs::create_dir_all(&pgn_dir).unwrap();
+        let pgn_path = pgn_dir.join("player_lichess.pgn");
+        std::fs::write(
+            &pgn_path,
+            "[Event \"Test\"]\n[Site \"?\"]\n[Date \"2026.01.01\"]\n[Round \"?\"]\n[White \"player\"]\n[Black \"opp\"]\n[Result \"1-0\"]\n\n1. e4 e5 1-0\n",
+        )
+        .unwrap();
+
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(dir.path().join("auth.json"), vec![]).unwrap(),
+        );
+        let (db_handle, pgn_handle, dest_ref) = authority
+            .with_mut(|auth| {
+                let db_root = auth.get_or_create_database_root(&db_dir, "dbs", None)?;
+                auth.set_active_database_root(&db_root)?;
+                let db = auth.create_database_child(&db_root, std::ffi::OsStr::new("acct.db3"))?;
+                let pgn_ref = auth.get_or_create_persistent_file(
+                    &pgn_path,
+                    "player_lichess.pgn",
+                    vec![PathOperation::ReadPgn],
+                )?;
+                Ok::<_, Error>((
+                    db,
+                    FileWorkspaceHandle::new(pgn_ref.id),
+                    db_root.path_ref().clone(),
+                ))
+            })
+            .unwrap()
+            .unwrap();
+
+        let app = tauri::test::mock_app();
+        tauri_specta::Builder::<tauri::test::MockRuntime>::new()
+            .events(tauri_specta::collect_events!(
+                crate::progress::ProgressEvent,
+                crate::db::ConvertProgress,
+                CompletionChanged
+            ))
+            .mount_events(&app);
+        let state = AppState {
+            pgn_path_authority: authority,
+            ..AppState::default()
+        };
+        app.manage(state.clone());
+
+        let mut gates = state
+            .folder_switch
+            .raise_migration_gates(vec![LegacyMigrationCandidate {
+                kind: FolderSwitchKind::Database,
+                source_root: PathRef {
+                    id: "acct-db-mig".into(),
+                },
+                source_identity: (41, 42),
+                source_path: db_dir.clone(),
+                engine_descendants: HashSet::new(),
+            }]);
+        let (_, gate) = gates.pop().unwrap();
+
+        let download_invoked = Arc::new(AtomicBool::new(false));
+        let download_invoked_flag = Arc::clone(&download_invoked);
+        let pub_handle = pgn_handle.clone();
+        let request = AccountImportRequest {
+            provider: "lichess".into(),
+            account: "player".into(),
+            account_handle: None,
+            destination: dest_ref,
+            pending_batch: None,
+            since_ms: None,
+            target: AccountImportTarget::Unlinked {
+                database: db_handle,
+                title: "Account DB".into(),
+            },
+        };
+
+        let s = state.clone();
+        let app_handle = app.handle().clone();
+        let task = tokio::spawn(async move {
+            import_account_games_with_download(
+                request,
+                app_handle,
+                "main".into(),
+                s,
+                move |_req, _ticket, _owner, _app, _state| {
+                    download_invoked_flag.store(true, Ordering::SeqCst);
+                    let handle = pub_handle.clone();
+                    async move {
+                        Ok(RuntimeDownload {
+                            publication: ArtifactPublication {
+                                handle,
+                                durability: CommitDurability::Durable,
+                            },
+                            receipt_error: None,
+                            coverage_holds: None,
+                            coverage_floor_ms: None,
+                        })
+                    }
+                },
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(35)).await;
+        assert!(
+            !task.is_finished(),
+            "unlinked import_account_games must park while Database migration gate is raised"
+        );
+        assert!(
+            !download_invoked.load(Ordering::SeqCst),
+            "unlinked import_account_games must not start downloading or reading DB before gate releases"
+        );
+        assert!(
+            !state.operations.has_uninterruptible_work(),
+            "parked import_account_games must not claim a download before gate releases"
+        );
+
+        gate.release();
+        let completion = tokio::time::timeout(Duration::from_secs(10), task)
+            .await
+            .expect("unlinked import_account_games must complete after Database gate releases")
+            .unwrap()
+            .expect("unlinked import_account_games must succeed after Database gate releases");
+        assert!(
+            matches!(completion.outcome, CompletionOutcome::Succeeded(_)),
+            "expected Succeeded account completion, got {:?}",
+            completion.outcome
+        );
+        assert!(download_invoked.load(Ordering::SeqCst));
     }
 }

@@ -1337,8 +1337,14 @@ async fn spawn_configured_game_engine(
         engine_id,
         executable_ref,
     } = registration;
+    let resource_refs = crate::engine::resource_path_refs(options);
     let admission = supervisor
-        .admit_for_launch(key.clone(), engine_id.clone(), executable_ref.clone())
+        .admit_for_launch_with_resources(
+            key.clone(),
+            engine_id.clone(),
+            executable_ref.clone(),
+            &resource_refs,
+        )
         .await?;
     let (executable, resolved) = resolve_launch(
         authority,
@@ -1489,8 +1495,14 @@ async fn spawn_configured_game_engine_with_executable(
         engine_id,
         executable_ref,
     } = registration;
+    let resource_refs = crate::engine::resource_path_refs(options);
     let admission = supervisor
-        .admit_for_launch(key.clone(), engine_id.clone(), executable_ref.clone())
+        .admit_for_launch_with_resources(
+            key.clone(),
+            engine_id.clone(),
+            executable_ref.clone(),
+            &resource_refs,
+        )
         .await?;
     let mut resolved =
         authority.with_mut(|authority| resolve_engine_option_leases(authority, options))??;

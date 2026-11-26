@@ -110,6 +110,13 @@ pub async fn get_players_game_info(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<PlayerGameInfo, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "get_players_game_info")?;
     let cancellation = operation.token();
     let progress = JobProgress::best_effort(app.clone(), progress_id, "get_players_game_info");

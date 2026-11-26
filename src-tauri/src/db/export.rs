@@ -131,6 +131,13 @@ pub async fn export_to_pgn(
     destination: FileWorkspaceHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("export_to_pgn")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();

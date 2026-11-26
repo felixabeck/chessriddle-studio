@@ -6904,6 +6904,8 @@ fn dropping_replaced_admission_cancels_its_arc_without_removing_the_replacement(
         executable: path_ref("old"),
         cancelled: old_cancelled.clone(),
         cancellation_reason: Arc::default(),
+        cancel_token: CancellationToken::new(),
+        waiting_on_migration: Arc::new(AtomicBool::new(false)),
         prepared: false,
     };
     let lease = AdmissionLease {
@@ -6921,6 +6923,8 @@ fn dropping_replaced_admission_cancels_its_arc_without_removing_the_replacement(
             executable: path_ref("new"),
             cancelled: Arc::new(AtomicBool::new(false)),
             cancellation_reason: Arc::default(),
+            cancel_token: CancellationToken::new(),
+            waiting_on_migration: Arc::new(AtomicBool::new(false)),
             prepared: false,
         },
     );
@@ -11401,5 +11405,48 @@ async fn publish_admitted_locked_refuses_pending_actor_holding_quiesced_resource
         supervisor.get_exact(&key).is_none(),
         "refused pending actor must never be inserted into supervisor.actors"
     );
+    guard.lift();
+}
+
+#[tokio::test]
+async fn wait_for_migration_under_lease_clears_flag_on_early_return_so_quiesce_cancels_admission() {
+    // P4-14: Simulate the exact race where `waiting_on_migration` was initialized `true` while
+    // the Engine migration gate was raised, then the gate released BEFORE
+    // `wait_for_migration_under_lease` ran (taking its early return). `waiting_on_migration` MUST
+    // be cleared to `false` so a subsequent `quiesce_executables` cancels the live admission.
+    let supervisor = EngineSupervisor::default();
+    let key = EngineKey::new("tab-early".into(), "eng-early".into()).unwrap();
+    let exec_ref = path_ref("exec-early");
+    let mut lease = supervisor
+        .admit_for_launch(key.clone(), "eng-early".into(), exec_ref.clone())
+        .await
+        .unwrap();
+    lease
+        .admission
+        .waiting_on_migration
+        .store(true, Ordering::SeqCst);
+
+    // Gate is NOT raised -> `wait_for_migration_under_lease` takes its early return path.
+    supervisor
+        .wait_for_migration_under_lease(&lease, &[&exec_ref], None)
+        .await
+        .unwrap();
+
+    assert!(
+        !lease.admission.waiting_on_migration.load(Ordering::SeqCst),
+        "early return of wait_for_migration_under_lease must clear waiting_on_migration"
+    );
+
+    let mut exec_set = std::collections::HashSet::new();
+    exec_set.insert(exec_ref);
+    let guard = supervisor
+        .quiesce_executables(exec_set, std::collections::HashSet::new())
+        .await
+        .unwrap();
+    assert!(
+        matches!(lease.cancel_error(), Some(Error::Cancellation)),
+        "quiesce_executables must cancel the live admission once waiting_on_migration is cleared"
+    );
+    lease.disarm();
     guard.lift();
 }

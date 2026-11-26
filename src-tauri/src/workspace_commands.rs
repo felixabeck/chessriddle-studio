@@ -317,6 +317,13 @@ pub async fn issue_database_workspace(
     >,
     Error,
 > {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let _writer = state
         .folder_switch
         .try_acquire(crate::infra::path_authority::FolderSwitchKind::Database)?;
@@ -408,6 +415,13 @@ pub async fn restore_database_workspace(
     >,
     Error,
 > {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let _writer = state
         .folder_switch
         .try_acquire(crate::infra::path_authority::FolderSwitchKind::Database)?;
@@ -461,6 +475,13 @@ pub async fn get_database_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -513,6 +534,13 @@ pub async fn list_workspace_databases(
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::DatabaseListing, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = native_read_operation(ticket, &window, &state, "list_workspace_databases")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -565,6 +593,13 @@ pub async fn create_workspace_database(
     filename: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::DatabaseHandle, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -593,6 +628,13 @@ pub async fn database_download_destination(
     root: crate::infra::path_authority::DatabaseRootHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::PathRef, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -620,6 +662,10 @@ pub async fn issue_engine_workspace(
     >,
     Error,
 > {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Engine, None)
+        .await?;
     let _writer = state
         .folder_switch
         .try_acquire(crate::infra::path_authority::FolderSwitchKind::Engine)?;
@@ -684,6 +730,10 @@ pub async fn restore_engine_workspace(
     >,
     Error,
 > {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Engine, None)
+        .await?;
     let _writer = state
         .folder_switch
         .try_acquire(crate::infra::path_authority::FolderSwitchKind::Engine)?;
@@ -739,6 +789,10 @@ pub async fn apply_folder_switch(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(grant.kind, None)
+        .await?;
     let _writer = state.folder_switch.try_acquire(grant.kind)?;
     let authority = state.pgn_path_authority.clone();
     if mode == crate::infra::path_authority::FolderSwitchMode::UseOnly {
@@ -770,14 +824,64 @@ pub async fn apply_folder_switch(
         Err(replayed_status) => return Ok(replayed_status),
     };
 
-    if state.operations.has_uninterruptible_work() {
-        return Err(Error::FolderSwitch(
-            crate::error::FolderSwitchFailure::RootBusy,
-        ));
+    execute_quiesced_folder_move(
+        state.inner(),
+        crate::infra::path_authority::DefaultDirSource::App(app),
+        Some(grant),
+        prepared,
+        FolderMoveMode::Interactive,
+        "apply_folder_switch",
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FolderMoveMode {
+    /// Interactive Settings Move: no startup migration gate exists, so refuse conservatively with
+    /// `RootBusy` while any download/conversion is active (`has_uninterruptible_work()`) and
+    /// cancel active reads before quiescing pools/caches/engines.
+    Interactive,
+    /// Startup legacy-default migration (approach G): per-kind migration gates are raised
+    /// synchronously in `setup` before the window exists and held for the entire migration of each
+    /// kind, and the whole-tree command scan guarantees every command touching a migrating root
+    /// waits on its gate BEFORE claiming any read/analysis/conversion/download. No read,
+    /// download, or conversion targeting the migrating root can be active when startup migration
+    /// runs, so neither global `has_uninterruptible_work()` nor `cancel_active_reads()` applies:
+    /// unrelated downloads (Lichess/Chess.com PGN downloads, linked-collection account sync) and
+    /// leases claimed after an earlier kind's gate released must not abort a pending kind with
+    /// `RootBusy` or cancel unrelated reads.
+    StartupMigration,
+}
+
+/// Shared quiesce + move sequence used by both interactive `apply_folder_switch` (Move)
+/// and startup legacy-default migration (approach G).
+/// Caller must hold the per-kind writer guard from `state.folder_switch.try_acquire(prepared.kind)`.
+pub(crate) async fn execute_quiesced_folder_move<R: tauri::Runtime>(
+    state: &AppState,
+    default_dirs: crate::infra::path_authority::DefaultDirSource<R>,
+    grant: Option<crate::infra::path_authority::FolderSwitchGrant>,
+    prepared: crate::infra::path_authority::PreparedFolderMove,
+    mode: FolderMoveMode,
+    operation_label: &'static str,
+    cancellation: tokio_util::sync::CancellationToken,
+) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
     }
 
-    // Cancel active cancellable reads before quiescing pools/caches/engines.
-    state.operations.cancel_active_reads();
+    // Check global uninterruptible work and cancel active reads only for interactive Move
+    // (see `FolderMoveMode` invariant).
+    if matches!(mode, FolderMoveMode::Interactive) {
+        if state.operations.has_uninterruptible_work() {
+            return Err(Error::FolderSwitch(
+                crate::error::FolderSwitchFailure::RootBusy,
+            ));
+        }
+        state.operations.cancel_active_reads();
+    }
+
+    let authority = state.pgn_path_authority.clone();
 
     // Quiesce engines: install root-scoped registration/resolution barrier first, then re-snapshot
     // matching executable & resource PathRefs and drain matching actors (no lock held across .await).
@@ -811,16 +915,34 @@ pub async fn apply_folder_switch(
         cache.clear_for_root(prepared.source_identity, &prepared.source_path);
     }
 
+    if cancellation.is_cancelled() {
+        if let Some(guard) = engine_guard {
+            guard.lift();
+        }
+        if let Some(guard) = engine_root_guard {
+            guard.lift();
+        }
+        return Err(Error::Cancellation);
+    }
+
     let database_repository = std::sync::Arc::clone(&state.database_repository);
     let search_cache = std::sync::Arc::clone(&state.search_cache);
-    let operation = state.operations.accept("apply_folder_switch")?;
-    let cancellation = operation.token();
-    let result = crate::infra::operations::run_native_operation(
-        operation,
-        "apply_folder_switch",
-        async move {
+    let operation = state.operations.accept(operation_label)?;
+    let op_token = operation.token();
+    let combined_cancel = op_token.child_token();
+    let forward_cancel = combined_cancel.clone();
+    let external_cancel = cancellation.clone();
+    let forwarder = tokio::spawn(async move {
+        external_cancel.cancelled().await;
+        forward_cancel.cancel();
+    });
+    let result =
+        crate::infra::operations::run_native_operation(operation, operation_label, async move {
             BLOCKING_GATEWAY
-                .spawn_cancellable(cancellation, move |token| {
+                .spawn_cancellable(combined_cancel, move |token| {
+                    if token.is_cancelled() {
+                        return Err(Error::Cancellation);
+                    }
                     let (db_guard, search_guard) = if matches!(
                         prepared.kind,
                         crate::infra::path_authority::FolderSwitchKind::Database
@@ -832,6 +954,7 @@ pub async fn apply_folder_switch(
                                 Error::FolderSwitch(failure) => {
                                     Error::FolderSwitch(failure.clone())
                                 }
+                                Error::Cancellation => Error::Cancellation,
                                 _ => {
                                     log::error!(
                                         "database quiesce failed during folder move: {}",
@@ -853,12 +976,15 @@ pub async fn apply_folder_switch(
                     } else {
                         (None, None)
                     };
-                    let outcome =
-                        crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
-                            crate::infra::path_authority::execute_folder_move_blocking(
-                                &authority, &grant, &prepared, lookups,
-                            )
-                        });
+                    let outcome = default_dirs.with_lookups(|lookups| {
+                        crate::infra::path_authority::execute_folder_move_blocking(
+                            &authority,
+                            grant.as_ref(),
+                            &prepared,
+                            lookups,
+                            token,
+                        )
+                    });
                     drop(search_guard);
                     if let Some(guard) = db_guard {
                         guard.lift();
@@ -866,9 +992,9 @@ pub async fn apply_folder_switch(
                     outcome
                 })
                 .await
-        },
-    )
-    .await;
+        })
+        .await;
+    forwarder.abort();
     if let Some(guard) = engine_guard {
         guard.lift();
     }
@@ -876,6 +1002,182 @@ pub async fn apply_folder_switch(
         guard.lift();
     }
     result
+}
+
+fn migration_failure_reason_class(error: &Error) -> &'static str {
+    use crate::error::FolderSwitchFailure;
+    match error.unlabelled() {
+        Error::Cancellation => "cancelled",
+        Error::FolderSwitch(failure) => match failure {
+            FolderSwitchFailure::SameFolder => "same_folder",
+            FolderSwitchFailure::NestedFolders => "nested_folders",
+            FolderSwitchFailure::NameCollision { .. } => "name_collision",
+            FolderSwitchFailure::TargetUnwritable => "target_unwritable",
+            FolderSwitchFailure::SourceUnreadable => "source_unreadable",
+            FolderSwitchFailure::RootBusy => "root_busy",
+            FolderSwitchFailure::ExpiredGrant => "expired_grant",
+            FolderSwitchFailure::IdentityChanged => "identity_changed",
+            FolderSwitchFailure::JournalWriteFailed => "journal_write_failed",
+            FolderSwitchFailure::QuiesceFailed => "quiesce_failed",
+            FolderSwitchFailure::SymlinkInTree => "symlink_in_tree",
+            FolderSwitchFailure::TransferFailedRolledBack => "transfer_failed_rolled_back",
+            FolderSwitchFailure::RollbackIncomplete => "rollback_incomplete",
+            FolderSwitchFailure::InterruptedMove => "interrupted_move",
+            FolderSwitchFailure::SwitchInProgress => "switch_in_progress",
+        },
+        Error::Io(_) => "io",
+        Error::Conflict(_) => "conflict",
+        _ => "other",
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LegacyMigrationOutcome {
+    Skipped,
+    Completed,
+    CommittedCleanupDeferred,
+}
+
+async fn migrate_legacy_default_kind<R: tauri::Runtime>(
+    state: &AppState,
+    default_dirs: crate::infra::path_authority::DefaultDirSource<R>,
+    candidate: crate::infra::path_authority::LegacyMigrationCandidate,
+    cancellation: tokio_util::sync::CancellationToken,
+) -> Result<LegacyMigrationOutcome, Error> {
+    let _writer = state.folder_switch.try_acquire(candidate.kind)?;
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
+    let authority = state.pgn_path_authority.clone();
+    let prep_dirs = default_dirs.clone();
+    let kind = candidate.kind;
+    let source_root = candidate.source_root.clone();
+    let source_path = candidate.source_path.clone();
+    let source_identity = candidate.source_identity;
+
+    let prepared_opt = BLOCKING_GATEWAY
+        .spawn_cancellable(cancellation.clone(), move |token| {
+            if token.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
+            let still_active = authority.with_mut(|auth| {
+                if auth.has_unresolved_journal(kind) {
+                    return Ok(false);
+                }
+                let matches = auth.active_root_id_for_kind(kind).as_ref() == Some(&source_root)
+                    && auth.entry_matches_identity(&source_root, source_identity);
+                Ok::<bool, Error>(matches)
+            })??;
+            if !still_active {
+                return Ok(None);
+            }
+            let target_dir = prep_dirs.with_lookups(|lookups| {
+                crate::infra::path_authority::resolve_visible_default_dir(
+                    lookups,
+                    kind.visible_default_kind(),
+                )
+            })?;
+            let target_identity = target_dir.identity().pair();
+            if target_identity == source_identity {
+                // Resolver fell back to the legacy app-data leaf (home unusable):
+                // legacy == default, nothing to migrate and nothing to remove.
+                return Ok(None);
+            }
+            let target_display_name = kind.visible_default_kind().leaf().to_string();
+            let prepared = crate::infra::path_authority::PreparedFolderMove::for_legacy_migration(
+                kind,
+                source_root,
+                source_path,
+                source_identity,
+                target_dir.path().to_path_buf(),
+                target_identity,
+                target_display_name,
+            );
+            Ok(Some(prepared))
+        })
+        .await?;
+
+    let Some(prepared) = prepared_opt else {
+        return Ok(LegacyMigrationOutcome::Skipped);
+    };
+
+    let status = execute_quiesced_folder_move(
+        state,
+        default_dirs,
+        None,
+        prepared,
+        FolderMoveMode::StartupMigration,
+        "legacy_default_migration",
+        cancellation,
+    )
+    .await?;
+    if status.root_failure == Some(crate::error::RootFailure::InterruptedMove) {
+        Ok(LegacyMigrationOutcome::CommittedCleanupDeferred)
+    } else {
+        Ok(LegacyMigrationOutcome::Completed)
+    }
+}
+
+/// Runs startup one-time migration for every kind whose legacy app-data default was active at
+/// setup. Each kind's gate is released on every exit path (success, refusal, failure, cancel,
+/// or panic unwind). Failure logs kind + closed reason class and true terminal state only
+/// (no filesystem paths), so the next startup retries or finishes deferred cleanup.
+pub(crate) async fn run_legacy_default_migrations<R: tauri::Runtime>(
+    state: AppState,
+    default_dirs: crate::infra::path_authority::DefaultDirSource<R>,
+    pending: Vec<(
+        crate::infra::path_authority::LegacyMigrationCandidate,
+        crate::infra::path_authority::MigrationGateGuard,
+    )>,
+) {
+    let cancellation = state.folder_switch.migration_cancellation();
+    for (candidate, gate_guard) in pending {
+        let kind = candidate.kind;
+        let source_root = candidate.source_root.clone();
+        if cancellation.is_cancelled() {
+            gate_guard.release();
+            continue;
+        }
+        match migrate_legacy_default_kind(
+            &state,
+            default_dirs.clone(),
+            candidate,
+            cancellation.clone(),
+        )
+        .await
+        {
+            Ok(LegacyMigrationOutcome::Completed) => {
+                log::info!("legacy default migration completed for {kind:?}");
+            }
+            Ok(LegacyMigrationOutcome::Skipped) => {
+                log::info!("legacy default migration skipped for {kind:?}");
+            }
+            Ok(LegacyMigrationOutcome::CommittedCleanupDeferred) => {
+                log::warn!(
+                    "legacy default migration committed for {kind:?} with cleanup deferred; next start will finish cleanup"
+                );
+            }
+            Err(error) => {
+                let reason = migration_failure_reason_class(&error);
+                let still_legacy = state
+                    .pgn_path_authority
+                    .with_mut(|auth| {
+                        auth.active_root_id_for_kind(kind).as_ref() == Some(&source_root)
+                    })
+                    .unwrap_or(true);
+                if still_legacy {
+                    log::warn!(
+                        "legacy default migration did not complete for {kind:?}: reason={reason}; legacy root remains active"
+                    );
+                } else {
+                    log::warn!(
+                        "legacy default migration interrupted after commit for {kind:?}: reason={reason}; new default root is active and next start will finish cleanup"
+                    );
+                }
+            }
+        }
+        gate_guard.release();
+    }
 }
 
 /// Drops a pending folder-switch grant when the user chooses Cancel.
@@ -905,6 +1207,10 @@ pub async fn get_engine_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Engine, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -1341,6 +1647,13 @@ pub async fn get_database_folder_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -1367,6 +1680,10 @@ pub async fn get_engine_folder_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Engine, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -1394,6 +1711,13 @@ pub async fn open_database_workspace(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
     use tauri_plugin_opener::OpenerExt;
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let authority = state.pgn_path_authority.clone();
     let lookup_app = app.clone();
     crate::infra::operations::run_accepted_blocking(
@@ -1426,6 +1750,10 @@ pub async fn open_engine_workspace(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
     use tauri_plugin_opener::OpenerExt;
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Engine, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     let lookup_app = app.clone();
     crate::infra::operations::run_accepted_blocking(

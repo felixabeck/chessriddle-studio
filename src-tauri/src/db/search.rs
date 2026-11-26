@@ -1489,6 +1489,13 @@ where
         + Send
         + 'static,
 {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, command)?;
     let cancellation = operation.token();
     let progress = JobProgress::new(app.clone(), tab_id)?;
@@ -1581,6 +1588,13 @@ pub(crate) async fn position_stats_for_operation<R: tauri::Runtime>(
     fen: String,
     cancellation: &CancellationToken,
 ) -> Result<Vec<PositionStats>, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            Some(cancellation),
+        )
+        .await?;
     let progress = JobProgress::new(app.clone(), progress_id)?;
     let found = offload_position_search(
         SearchResources::of(state),

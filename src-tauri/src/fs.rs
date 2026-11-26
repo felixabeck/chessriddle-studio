@@ -925,6 +925,24 @@ fn production_integrity_validator() -> ArtifactIntegrityValidator {
     Box::new(|op, url, integrity| validate_artifact_integrity(op, url, Some(integrity)))
 }
 
+fn download_destination_migration_kind(
+    state: &AppState,
+    destination: &crate::infra::path_authority::PathRef,
+) -> Option<crate::infra::path_authority::FolderSwitchKind> {
+    state
+        .pgn_path_authority
+        .with_mut(|authority| authority.download_operations(destination))
+        .ok()
+        .and_then(|res| res.ok())
+        .and_then(|ops| OpClass::from_operations(&ops).ok())
+        .and_then(|class| match class {
+            OpClass::Db => Some(crate::infra::path_authority::FolderSwitchKind::Database),
+            OpClass::PuzzleDb => Some(crate::infra::path_authority::FolderSwitchKind::Puzzle),
+            OpClass::Engine => Some(crate::infra::path_authority::FolderSwitchKind::Engine),
+            OpClass::Lichess => None,
+        })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn download_file_runtime<R: tauri::Runtime>(
     id: String,
@@ -941,6 +959,17 @@ async fn download_file_runtime<R: tauri::Runtime>(
     integrity: ArtifactIntegrity,
     validate_integrity: ArtifactIntegrityValidator,
 ) -> Result<(), ErrorPayload> {
+    if let Some(kind) = download_destination_migration_kind(state, &destination) {
+        crate::wait_for_reserved_migration(
+            state,
+            kind,
+            Some(&job_id),
+            owner,
+            crate::infra::operations::ReservationKind::Download,
+        )
+        .await
+        .map_err(|error| error.renderer_payload())?;
+    }
     let lease = state
         .operations
         .claim_download(
@@ -2106,6 +2135,14 @@ pub(crate) async fn install_engine_workflow_runtime<R: tauri::Runtime>(
     owner: String,
     state: AppState,
 ) -> Result<crate::infra::operations::completions::EngineCompletion, Error> {
+    crate::wait_for_reserved_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Engine,
+        Some(&job_id),
+        &owner,
+        crate::infra::operations::ReservationKind::Download,
+    )
+    .await?;
     let (snapshot, lease) = state.operations.admit_engine_completion(
         &id,
         &owner,
@@ -3155,6 +3192,10 @@ pub async fn file_exists(
     file: crate::infra::path_authority::PathRef,
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Engine, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(&state.operations, "file_exists", move || {
         file_exists_blocking(&authority, file)
@@ -13101,5 +13142,233 @@ pub(crate) mod tests {
         assert!(registry.wait_for_drain(Duration::from_secs(1)).unwrap());
         assert!(!dir.path().join("published-engine").exists());
         assert_eq!(leaves(dir.path()), vec!["held.zip"]);
+    }
+
+    #[tokio::test]
+    async fn download_file_waits_on_matching_migration_gate_and_wakes_on_cancel_download() {
+        use crate::infra::path_authority::{
+            FolderSwitchKind, LegacyMigrationCandidate, PathAuthority, PathRef, SharedPathAuthority,
+        };
+        use std::collections::HashSet;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_dir = dir.path().join("dbs");
+        let puzzle_dir = dir.path().join("puzzles");
+        let engine_dir = dir.path().join("engines");
+        std::fs::create_dir_all(&db_dir).unwrap();
+        std::fs::create_dir_all(&puzzle_dir).unwrap();
+        std::fs::create_dir_all(&engine_dir).unwrap();
+
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(dir.path().join("auth.json"), vec![]).unwrap(),
+        );
+        let (db_ref, puzzle_ref, engine_ref) = authority
+            .with_mut(|auth| {
+                let db = auth.get_or_create_database_root(&db_dir, "dbs", None)?;
+                let pz = auth.get_or_create_puzzle_root(&puzzle_dir, "puzzles", None)?;
+                let eng = auth.get_or_create_engine_root(&engine_dir, "engines", None)?;
+                Ok::<_, Error>((
+                    db.path_ref().clone(),
+                    pz.path_ref().clone(),
+                    eng.path_ref().clone(),
+                ))
+            })
+            .unwrap()
+            .unwrap();
+
+        let app = tauri::test::mock_app();
+        let state = AppState {
+            pgn_path_authority: authority,
+            ..AppState::default()
+        };
+
+        for (idx, (kind, dest)) in [
+            (FolderSwitchKind::Database, db_ref),
+            (FolderSwitchKind::Puzzle, puzzle_ref),
+            (FolderSwitchKind::Engine, engine_ref),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut gates =
+                state
+                    .folder_switch
+                    .raise_migration_gates(vec![LegacyMigrationCandidate {
+                        kind,
+                        source_root: PathRef {
+                            id: format!("mig-dl-{idx}"),
+                        },
+                        source_identity: (idx as u64 + 10, idx as u64 + 20),
+                        source_path: dir.path().join(format!("src-{idx}")),
+                        engine_descendants: HashSet::new(),
+                    }]);
+            let (_, gate) = gates.pop().unwrap();
+
+            let job_id = state.operations.prepare_download("main").unwrap();
+            let s = state.clone();
+            let app_handle = app.handle().clone();
+            let j = job_id.clone();
+            let task = tokio::spawn(async move {
+                download_file_runtime(
+                    format!("dl-{idx}"),
+                    "https://127.0.0.1:9/artifact.bin".into(),
+                    dest,
+                    "artifact.bin".into(),
+                    &app_handle,
+                    "main",
+                    &s,
+                    None,
+                    j,
+                    ArtifactIntegrity {
+                        sha256: "0".repeat(64),
+                        signature: String::new(),
+                    },
+                    production_integrity_validator(),
+                )
+                .await
+            });
+
+            tokio::time::sleep(Duration::from_millis(35)).await;
+            assert!(
+                !task.is_finished(),
+                "download_file_runtime for {kind:?} must park while {kind:?} migration gate is raised"
+            );
+
+            state.operations.cancel_download(&job_id, "main").unwrap();
+            let result = tokio::time::timeout(Duration::from_secs(2), task)
+                .await
+                .expect("cancel_download must wake parked download_file_runtime")
+                .unwrap();
+            let err = result.expect_err("cancelled parked download must return Err");
+            assert_eq!(
+                err.category,
+                crate::error::ErrorCategory::Cancellation,
+                "cancel_download must yield Cancellation error payload for {kind:?}, got {err:?}"
+            );
+            gate.release();
+        }
+    }
+
+    #[tokio::test]
+    async fn install_engine_workflow_parked_past_shortened_ttl_still_claims_and_wakes_on_cancel() {
+        use crate::infra::operations::completions::{EngineInstallIntent, EngineInstallRequest};
+        use crate::infra::path_authority::{
+            FolderSwitchKind, LegacyMigrationCandidate, PathAuthority, PathRef, SharedPathAuthority,
+        };
+        use std::collections::HashSet;
+
+        let dir = tempfile::tempdir().unwrap();
+        let engine_dir = dir.path().join("engines");
+        std::fs::create_dir_all(&engine_dir).unwrap();
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(dir.path().join("auth.json"), vec![]).unwrap(),
+        );
+        let engine_root = authority
+            .with_mut(|auth| auth.get_or_create_engine_root(&engine_dir, "engines", None))
+            .unwrap()
+            .unwrap();
+        let app = tauri::test::mock_app();
+        let state = AppState {
+            pgn_path_authority: authority,
+            operations: crate::infra::operations::OperationRegistry::with_reservation_ttl(
+                Duration::from_millis(40),
+            ),
+            ..AppState::default()
+        };
+
+        let mut gates = state
+            .folder_switch
+            .raise_migration_gates(vec![LegacyMigrationCandidate {
+                kind: FolderSwitchKind::Engine,
+                source_root: PathRef {
+                    id: "eng-install-ttl".into(),
+                },
+                source_identity: (91, 92),
+                source_path: dir.path().join("legacy-engines"),
+                engine_descendants: HashSet::new(),
+            }]);
+        let (_, gate) = gates.pop().unwrap();
+
+        let make_request = |progress_id: &str, engine_id: &str| EngineInstallRequest {
+            intent: EngineInstallIntent::Add {
+                engine_id: engine_id.into(),
+            },
+            root: engine_root.clone(),
+            progress_id: progress_id.into(),
+            url: "https://127.0.0.1:9/sf.zip".into(),
+            sha256: "0".repeat(64),
+            signature: "deadbeef".into(),
+            relative_path: "sf/stockfish".into(),
+            name: "Stockfish".into(),
+            version: "17".into(),
+            elo: None,
+            download_size: None,
+        };
+
+        let cancel_job = state.operations.prepare_download("main").unwrap();
+        let claim_job = state.operations.prepare_download("main").unwrap();
+
+        let s1 = state.clone();
+        let a1 = app.handle().clone();
+        let j1 = cancel_job.clone();
+        let req1 = make_request("prog-cancel", "eng-cancel");
+        let cancel_task = tokio::spawn(async move {
+            install_engine_workflow_runtime("comp-cancel".into(), req1, j1, a1, "main".into(), s1)
+                .await
+        });
+
+        let s2 = state.clone();
+        let a2 = app.handle().clone();
+        let j2 = claim_job.clone();
+        let req2 = make_request("prog-claim", "eng-claim");
+        let claim_task = tokio::spawn(async move {
+            install_engine_workflow_runtime("comp-claim".into(), req2, j2, a2, "main".into(), s2)
+                .await
+        });
+
+        // Wait past the 40ms reservation TTL and trigger `purge_expired`.
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let _trigger = state.operations.prepare_download("main").unwrap();
+
+        assert!(
+            !cancel_task.is_finished(),
+            "install_engine_workflow_runtime must stay parked past TTL"
+        );
+        assert!(
+            !claim_task.is_finished(),
+            "install_engine_workflow_runtime must stay parked past TTL"
+        );
+
+        // 1. `cancel_download` wakes the parked install with `Error::Cancellation`.
+        state
+            .operations
+            .cancel_download(&cancel_job, "main")
+            .unwrap();
+        let cancel_res = tokio::time::timeout(Duration::from_secs(2), cancel_task)
+            .await
+            .expect("cancel_download must wake parked install_engine_workflow_runtime")
+            .unwrap();
+        assert!(
+            matches!(cancel_res, Err(Error::Cancellation)),
+            "expected Error::Cancellation, got {cancel_res:?}"
+        );
+
+        // 2. Releasing the Engine gate lets the second install claim its reservation past TTL
+        // (must NOT fail with "download reservation is unknown or expired").
+        gate.release();
+        let claim_res = tokio::time::timeout(Duration::from_secs(5), claim_task)
+            .await
+            .expect("releasing Engine gate must wake parked install_engine_workflow_runtime")
+            .unwrap();
+        match claim_res {
+            Ok(_) => {}
+            Err(Error::Conflict(msg)) if msg.contains("reservation") => {
+                panic!("parked download ticket expired past shortened TTL: {msg}");
+            }
+            Err(_) => {
+                // Claim succeeded; downstream download/destination resolution failed as expected
+                // for the dummy destination PathRef.
+            }
+        }
     }
 }

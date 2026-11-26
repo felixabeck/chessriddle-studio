@@ -16,3 +16,18 @@ pub(crate) use process::{
 pub use process::{EngineActor, EngineLog, EngineSupervisor, SupervisedEngine};
 pub use types::*;
 pub use uci::*;
+
+pub(crate) fn resource_path_refs(
+    options: &[EngineOption],
+) -> Vec<crate::infra::path_authority::PathRef> {
+    options
+        .iter()
+        .flat_map(|option| match option {
+            EngineOption::Resource { resources, .. } => resources
+                .iter()
+                .map(|handle| handle.path_ref().clone())
+                .collect::<Vec<_>>(),
+            EngineOption::String { .. } => Vec::new(),
+        })
+        .collect()
+}

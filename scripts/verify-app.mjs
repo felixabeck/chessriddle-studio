@@ -7829,6 +7829,26 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       `observed Databases alert: ${JSON.stringify({ ...alert, dbExists })}`,
     );
 
+    async function repointActiveDatabaseRoot(dirPath, displayName) {
+      const dirStat = statSync(dirPath);
+      const parentStat = statSync(join(dirPath, ".."));
+      const registry = JSON.parse(await readFile(registryFile, "utf8"));
+      const activeEntry = registry.entries.find(
+        ({ id }) => id.id === registry.active_database_root?.id,
+      );
+      if (!activeEntry) {
+        throw new Error(`no active database root entry in registry for ${displayName}`);
+      }
+      activeEntry.display_name = displayName;
+      activeEntry.path = {
+        platform: "unix",
+        bytes: Buffer.from(dirPath).toString("base64").replace(/=+$/, ""),
+      };
+      activeEntry.identity = { a: Number(dirStat.dev), b: Number(dirStat.ino) };
+      activeEntry.parent_identity = { a: Number(parentStat.dev), b: Number(parentStat.ino) };
+      await writeFile(registryFile, JSON.stringify(registry, null, 2), "utf8");
+    }
+
     // Phase 3 real-app check: create a database in a custom folder, switch to another folder
     // with Move (via Restore default -> FolderSwitchModal -> Move), assert the database opens
     // from the new folder and the old file is gone.
@@ -7848,19 +7868,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       await rm(join(selectedDatabaseRoot, "..", "db-moved"), { recursive: true, force: true });
       await rm(selectedDatabaseRoot, { recursive: true, force: true });
       await mkdir(customDbRoot, { recursive: true });
-      const customStat = statSync(customDbRoot);
-      const registry = JSON.parse(await readFile(registryFile, "utf8"));
-      const activeEntry = registry.entries.find(
-        ({ id }) => id.id === registry.active_database_root?.id,
-      );
-      if (!activeEntry) throw new Error("no active database root entry in registry");
-      activeEntry.display_name = "custom-move-dbs";
-      activeEntry.path = {
-        platform: "unix",
-        bytes: Buffer.from(customDbRoot).toString("base64"),
-      };
-      activeEntry.identity = { a: Number(customStat.dev), b: Number(customStat.ino) };
-      await writeFile(registryFile, JSON.stringify(registry, null, 2), "utf8");
+      await repointActiveDatabaseRoot(customDbRoot, "custom-move-dbs");
 
       session = await Session.open(APP_BINARY);
       await waitFor("renderer ready for folder move check", () =>
@@ -7992,6 +8000,82 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       );
     } catch (error) {
       check(false, moveSwitchCheck, error.message);
+    }
+
+    // Phase 4 real-app check: a profile whose active database root is the legacy app-data `db`
+    // directory with one database starts and lists that database from the release default
+    // `<HOME>/ChessRiddle Studio/Databases`, and the legacy directory is gone.
+    const legacyMigrationCheck =
+      "legacy app-data db root migrates on startup to release default HOME/ChessRiddle Studio/Databases and removes legacy db dir";
+    try {
+      const moveClose = await closeApplicationThroughTitlebar(session, "folder-move-switch");
+      if (!moveClose.gone || moveClose.survivors.length > 0)
+        throw new Error("the folder-move-switch application survived close");
+      const moveRelease = await session.quit();
+      if (!moveRelease.released)
+        throw new Error(`could not release the folder-move-switch session: ${moveRelease.error}`);
+
+      const legacyDbDir = join(profileDirectory, ".local/share/com.chessriddle.studio/db");
+      await rm(legacyDbDir, { recursive: true, force: true });
+      await mkdir(legacyDbDir, { recursive: true });
+      const seedDbSource = join(selectedDatabaseRoot, "move-verify.db3");
+      const legacyDbFile = join(legacyDbDir, "legacy-migrate.db3");
+      await writeFile(legacyDbFile, await readFile(seedDbSource));
+      await rm(selectedDatabaseRoot, { recursive: true, force: true });
+      await repointActiveDatabaseRoot(legacyDbDir, "db");
+
+      session = await Session.open(APP_BINARY);
+      await waitFor("renderer ready for legacy migration check", () =>
+        session.execute("return Boolean(window.__TAURI_INTERNALS__?.invoke)"),
+      );
+
+      const migratedWorkspace = await invokeIpc(
+        session,
+        "__legacyMigrationGetDbWorkspace",
+        "get_database_workspace",
+        {},
+      );
+      const migratedStatus = await invokeIpc(
+        session,
+        "__legacyMigrationGetDbStatus",
+        "get_database_folder_status",
+        {},
+      );
+      const migratedListing = await invokeIpc(
+        session,
+        "__legacyMigrationListDbs",
+        "list_workspace_databases",
+        { root: migratedWorkspace.root, ticket: null },
+      );
+      const migratedEntry = migratedListing?.entries?.find(
+        (e) => e.filename === "legacy-migrate.db3",
+      );
+      const migratedInfo = migratedEntry
+        ? await invokeIpc(session, "__legacyMigrationDbInfo", "get_db_info", {
+            file: migratedEntry.handle,
+            ticket: null,
+          })
+        : null;
+      const inReleaseDefault = existsSync(join(selectedDatabaseRoot, "legacy-migrate.db3"));
+      const legacyGone = !existsSync(legacyDbDir);
+      check(
+        inReleaseDefault &&
+          legacyGone &&
+          migratedStatus?.isDefault === true &&
+          migratedStatus?.displayName === "Databases" &&
+          Boolean(migratedEntry) &&
+          migratedInfo?.title === "Move Verify",
+        legacyMigrationCheck,
+        `observed legacy migration result: ${JSON.stringify({
+          inReleaseDefault,
+          legacyGone,
+          migratedStatus,
+          found: Boolean(migratedEntry),
+          title: migratedInfo?.title ?? null,
+        })}`,
+      );
+    } catch (error) {
+      check(false, legacyMigrationCheck, error.message);
     }
   } catch (error) {
     if (!defaultLocationSeen) check(false, defaultLocationCheck, error.message);

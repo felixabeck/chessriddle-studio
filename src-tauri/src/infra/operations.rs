@@ -42,6 +42,8 @@ static COMMIT_AFTER_HOOKS: crate::infra::test_hooks::KeyedTestHooks<String> =
 enum ReadState {
     Reserved {
         created_at: Instant,
+        cancellation: CancellationToken,
+        parked_on_migration: usize,
     },
     CancelledReserved {
         created_at: Instant,
@@ -50,6 +52,34 @@ enum ReadState {
         cancellation: CancellationToken,
         label: String,
     },
+}
+
+/// RAII guard marking a reserved read/analysis/download/conversion ticket as parked on a startup
+/// migration gate. While parked, `purge_expired` will not evict the `Reserved` entry (so waits
+/// longer than `READ_RESERVATION_TTL` never fail with "unknown or expired" and renderer cancels
+/// stay live); on drop, `created_at` is refreshed so the immediately following `claim_*` never
+/// observes an expired timestamp.
+pub(crate) struct ParkedReservationGuard {
+    registry: Arc<RegistryInner>,
+    ticket: String,
+}
+
+impl Drop for ParkedReservationGuard {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.registry.state.lock() {
+            if let Some(entry) = state.reads.get_mut(&self.ticket) {
+                if let ReadState::Reserved {
+                    created_at,
+                    parked_on_migration,
+                    ..
+                } = &mut entry.state
+                {
+                    *parked_on_migration = parked_on_migration.saturating_sub(1);
+                    *created_at = Instant::now();
+                }
+            }
+        }
+    }
 }
 
 struct ReadEntry {
@@ -81,7 +111,7 @@ pub(crate) struct CancelledOperation {
 }
 
 #[derive(Clone, Copy)]
-enum ReservationKind<'a> {
+pub(crate) enum ReservationKind<'a> {
     Read,
     Analysis { tab: &'a str },
     Download,
@@ -572,8 +602,26 @@ impl OperationRegistry {
     }
 
     fn purge_expired(state: &mut RegistryState, now: Instant, ttl: Duration) {
-        state.reads.retain(|_, entry| {
-            !matches!(entry.state, ReadState::Reserved { created_at } | ReadState::CancelledReserved { created_at } if now.saturating_duration_since(created_at) >= ttl)
+        state.reads.retain(|_, entry| match &entry.state {
+            ReadState::Reserved {
+                created_at,
+                cancellation,
+                parked_on_migration,
+            } => {
+                if *parked_on_migration > 0 {
+                    return true;
+                }
+                if now.saturating_duration_since(*created_at) >= ttl {
+                    cancellation.cancel();
+                    false
+                } else {
+                    true
+                }
+            }
+            ReadState::CancelledReserved { created_at } => {
+                now.saturating_duration_since(*created_at) < ttl
+            }
+            ReadState::Active { .. } => true,
         });
     }
 
@@ -596,6 +644,8 @@ impl OperationRegistry {
                 kind: kind.owned(),
                 state: ReadState::Reserved {
                     created_at: Instant::now(),
+                    cancellation: CancellationToken::new(),
+                    parked_on_migration: 0,
                 },
             },
         );
@@ -635,10 +685,10 @@ impl OperationRegistry {
             }
             _ => {}
         }
-        if !matches!(entry.state, ReadState::Reserved { .. }) {
-            return Err(Error::Conflict(kind.claimed_error().into()));
-        }
-        let cancellation = CancellationToken::new();
+        let cancellation = match &entry.state {
+            ReadState::Reserved { cancellation, .. } => cancellation.clone(),
+            _ => return Err(Error::Conflict(kind.claimed_error().into())),
+        };
         entry.state = ReadState::Active {
             cancellation: cancellation.clone(),
             label: label.to_owned(),
@@ -693,11 +743,69 @@ impl OperationRegistry {
     fn cancel_entry(state: &mut RegistryState, ticket: &str) {
         if let Some(entry) = state.reads.get(ticket) {
             match &entry.state {
-                ReadState::Reserved { .. } | ReadState::CancelledReserved { .. } => {
+                ReadState::Reserved { cancellation, .. } => {
+                    cancellation.cancel();
+                    state.reads.remove(ticket);
+                }
+                ReadState::CancelledReserved { .. } => {
                     state.reads.remove(ticket);
                 }
                 ReadState::Active { cancellation, .. } => cancellation.cancel(),
             }
+        }
+    }
+
+    /// Parks a prepared read/analysis/download/conversion ticket on a startup migration gate,
+    /// returning its cancellation token and an RAII guard that prevents TTL expiry while parked
+    /// and refreshes `created_at` on drop.
+    pub(crate) fn park_reserved_for_migration(
+        &self,
+        ticket: &str,
+        owner: &str,
+        expected_kind: ReservationKind<'_>,
+    ) -> Result<Option<(CancellationToken, ParkedReservationGuard)>, Error> {
+        let mut state = self.state()?;
+        let Some(entry) = state.reads.get_mut(ticket) else {
+            return Ok(None);
+        };
+        let matches_kind = match expected_kind {
+            ReservationKind::Read => {
+                entry.owner == owner && entry.kind == ReservationKindOwned::Read
+            }
+            ReservationKind::Analysis { tab } => {
+                entry.owner == owner
+                    && matches!(&entry.kind, ReservationKindOwned::Analysis { tab: entry_tab } if entry_tab == tab)
+            }
+            ReservationKind::Download => {
+                entry.owner == owner && entry.kind == ReservationKindOwned::Download
+            }
+            ReservationKind::Conversion => {
+                entry.owner == owner && entry.kind == ReservationKindOwned::Conversion
+            }
+        };
+        if !matches_kind {
+            return Ok(None);
+        }
+        match &mut entry.state {
+            ReadState::Reserved {
+                cancellation,
+                parked_on_migration,
+                ..
+            } => {
+                *parked_on_migration += 1;
+                Ok(Some((
+                    cancellation.clone(),
+                    ParkedReservationGuard {
+                        registry: Arc::clone(&self.inner),
+                        ticket: ticket.to_owned(),
+                    },
+                )))
+            }
+            ReadState::CancelledReserved { .. } => {
+                state.reads.remove(ticket);
+                Err(Error::Cancellation)
+            }
+            ReadState::Active { .. } => Ok(None),
         }
     }
 
@@ -932,8 +1040,9 @@ impl OperationRegistry {
             if entry.kind != kind.owned() {
                 return Err(Error::Conflict(kind.wrong_kind_error(true).into()));
             }
-            match entry.state {
-                ReadState::Reserved { .. } => {
+            match &entry.state {
+                ReadState::Reserved { cancellation, .. } => {
+                    cancellation.cancel();
                     if let Some(entry) = state.reads.get_mut(ticket) {
                         entry.state = ReadState::CancelledReserved {
                             created_at: Instant::now(),
@@ -1147,7 +1256,11 @@ impl OperationRegistry {
         let mut state = self.state()?;
         state.sealed = true;
         state.reads.retain(|_, entry| match &entry.state {
-            ReadState::Reserved { .. } | ReadState::CancelledReserved { .. } => false,
+            ReadState::Reserved { cancellation, .. } => {
+                cancellation.cancel();
+                false
+            }
+            ReadState::CancelledReserved { .. } => false,
             ReadState::Active { cancellation, .. } => {
                 cancellation.cancel();
                 true

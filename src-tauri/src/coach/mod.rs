@@ -1022,6 +1022,21 @@ async fn start_turn<R: tauri::Runtime>(
     let backend = coach.backend(connection).await?;
     let key =
         EngineKey::new("analysis".into(), id.clone()).map_err(|_| CoachError::InvalidInput)?;
+    if reference_db.is_some() {
+        crate::wait_for_reserved_migration(
+            state,
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            Some(&id),
+            window,
+            crate::infra::operations::ReservationKind::Analysis { tab: &tab },
+        )
+        .await
+        .map_err(|error| match error {
+            crate::error::Error::Cancellation => CoachError::Cancelled,
+            crate::error::Error::Conflict(_) => CoachError::Busy,
+            _ => CoachError::ProviderFailure,
+        })?;
+    }
     let operation = state
         .operations
         .claim_analysis(&id, window, &tab, &format!("coach_turn {id}"))
@@ -2824,5 +2839,111 @@ mod tests {
         );
         cancel_task.await.unwrap();
         assert!(slots_empty());
+    }
+
+    #[tokio::test]
+    async fn coach_start_turn_waits_on_database_migration_and_maps_cancel_to_cancelled() {
+        use crate::infra::path_authority::{
+            DatabaseHandle, FolderSwitchKind, LegacyMigrationCandidate, PathRef,
+        };
+        use std::collections::HashSet;
+        use std::path::PathBuf;
+        use std::time::Duration;
+
+        let app = tauri::test::mock_app();
+        let (coach, _directory) = test_coach(true);
+        let connection = local_connection(&coach, "http://127.0.0.1:9/v1", None).await;
+        let state = crate::AppState::default();
+        assert!(state.coach.set(coach).is_ok());
+
+        let mut gates = state
+            .folder_switch
+            .raise_migration_gates(vec![LegacyMigrationCandidate {
+                kind: FolderSwitchKind::Database,
+                source_root: PathRef {
+                    id: "coach-db-mig".into(),
+                },
+                source_identity: (77, 88),
+                source_path: PathBuf::from("/tmp/coach-db-mig"),
+                engine_descendants: HashSet::new(),
+            }]);
+        let (_, gate) = gates.pop().unwrap();
+
+        let make_ref_turn = || {
+            let mut input = turn_input(connection.clone());
+            input.reference_db = Some(DatabaseHandle::new(PathRef {
+                id: "ref-db-1".into(),
+            }));
+            input
+        };
+
+        // 1. A coach turn with `reference_db` parks on the Database migration gate; cancelling
+        // its analysis ticket wakes it with `CoachError::Cancelled` (not `ProviderFailure`).
+        let cancel_ticket = state.operations.prepare_analysis("main", "tab-c").unwrap();
+        let state_cancel = state.clone();
+        let app_cancel = app.handle().clone();
+        let ticket_for_task = cancel_ticket.clone();
+        let turn_input_cancel = make_ref_turn();
+        let cancel_task = tokio::spawn(async move {
+            start_turn(
+                ticket_for_task,
+                "tab-c".into(),
+                turn_input_cancel,
+                &state_cancel,
+                app_cancel,
+                "main",
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(35)).await;
+        assert!(
+            !cancel_task.is_finished(),
+            "coach start_turn with reference_db must park while Database migration gate is raised"
+        );
+
+        state
+            .operations
+            .cancel_analysis(&cancel_ticket, "main")
+            .unwrap();
+        let cancelled_res = tokio::time::timeout(Duration::from_secs(2), cancel_task)
+            .await
+            .expect("cancelling analysis ticket must wake parked coach start_turn")
+            .unwrap();
+        assert_eq!(cancelled_res, Err(CoachError::Cancelled));
+
+        // 2. A second turn parks on the gate and proceeds past it once the gate releases.
+        let proceed_ticket = state.operations.prepare_analysis("main", "tab-p").unwrap();
+        let state_proceed = state.clone();
+        let app_proceed = app.handle().clone();
+        let turn_input_proceed = make_ref_turn();
+        let proceed_task = tokio::spawn(async move {
+            start_turn(
+                proceed_ticket,
+                "tab-p".into(),
+                turn_input_proceed,
+                &state_proceed,
+                app_proceed,
+                "main",
+            )
+            .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(35)).await;
+        assert!(
+            !proceed_task.is_finished(),
+            "second coach start_turn must stay parked while Database gate is raised"
+        );
+
+        gate.release();
+        let proceed_res = tokio::time::timeout(Duration::from_secs(5), proceed_task)
+            .await
+            .expect("releasing Database gate must wake parked coach start_turn")
+            .unwrap();
+        assert_ne!(
+            proceed_res,
+            Err(CoachError::Cancelled),
+            "after gate release, coach start_turn must proceed past the gate (not cancel)"
+        );
     }
 }

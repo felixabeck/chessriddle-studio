@@ -1082,11 +1082,18 @@ impl AnalysisSession {
         cancellation: CancellationToken,
     ) -> Result<Self, Error> {
         let executable_ref = engine.id.clone();
+        let resource_refs = crate::engine::resource_path_refs(&uci_options);
         // Admission is deliberately before any descriptor resolution. A canceled analysis must not
         // acquire the authority lock or create a launch leaf.
         let admission = state
             .engine_supervisor
-            .admit_for_operation(key.clone(), engine_id, executable_ref, cancellation.clone())
+            .admit_for_operation_with_resources(
+                key.clone(),
+                engine_id,
+                executable_ref,
+                &resource_refs,
+                cancellation.clone(),
+            )
             .await?;
         let (executable, initial_resolved) = resolve_launch(
             state.pgn_path_authority.clone(),
@@ -1237,15 +1244,23 @@ pub async fn analyze_game(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
 ) -> Result<GameAnalysis, Error> {
+    if options.reference_db.is_some() {
+        crate::wait_for_reserved_migration(
+            state.inner(),
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            Some(&id),
+            window.label(),
+            crate::infra::operations::ReservationKind::Analysis { tab: &tab },
+        )
+        .await?;
+    }
     let label = format!("analyze_game {id}");
     let operation = state
         .operations
         .claim_analysis(&id, window.label(), &tab, &label)?;
     let cancellation = operation.token();
     let state = state.inner().clone();
-    crate::infra::operations::run_native_operation(
-        operation,
-        "analyze_game",
+    crate::infra::operations::run_native_operation(operation, "analyze_game", async move {
         analyze_game_core(
             id,
             engine,
@@ -1256,8 +1271,9 @@ pub async fn analyze_game(
             state,
             app,
             cancellation,
-        ),
-    )
+        )
+        .await
+    })
     .await
 }
 

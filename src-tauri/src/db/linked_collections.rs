@@ -2737,6 +2737,15 @@ pub(crate) async fn prepare_account_collection(
     legacy_database: Option<DatabaseHandle>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<AccountCollectionPreparation>, Error> {
+    if legacy_database.is_some() {
+        state
+            .folder_switch
+            .wait_for_migration(
+                crate::infra::path_authority::FolderSwitchKind::Database,
+                None,
+            )
+            .await?;
+    }
     let operation = state.operations.accept("prepare_account_collection")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -2927,6 +2936,13 @@ pub(crate) async fn collection_for_database(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<CollectionDescriptor>, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation =
         crate::native_read_operation(ticket, &window, &state, "collection_for_database")?;
     let cancellation = operation.token();
@@ -2962,6 +2978,13 @@ pub(crate) async fn migrate_linked_collection(
     destination_name: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<CollectionDescriptor>, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("migrate_linked_collection")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -3935,6 +3958,13 @@ pub(crate) async fn resolve_linked_game(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<OpenedLinkedGame>, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "resolve_linked_game")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -4164,6 +4194,13 @@ pub(crate) async fn restore_collection_archive(
     destination: DatabaseHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("restore_collection_archive")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();

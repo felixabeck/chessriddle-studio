@@ -42,6 +42,14 @@ pub(super) async fn convert_pgn_command_core<R: tauri::Runtime>(
     owner: &str,
     state: &AppState,
 ) -> Result<(), Error> {
+    crate::wait_for_reserved_migration(
+        state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket,
+        owner,
+        crate::infra::operations::ReservationKind::Conversion,
+    )
+    .await?;
     let operation = match ticket {
         Some(ticket) => state.operations.claim_conversion(ticket, owner)?,
         None => state.operations.accept("convert_pgn")?,
@@ -789,4 +797,131 @@ pub struct ConvertProgress {
 pub struct DatabaseContentFailure {
     pub filename: String,
     pub message: String,
+}
+
+#[cfg(test)]
+mod migration_gate_tests {
+    use super::*;
+    use crate::infra::path_authority::{
+        DatabaseHandle, FolderSwitchKind, LegacyMigrationCandidate, PathAuthority, PathRef,
+        SharedPathAuthority,
+    };
+    use std::collections::HashSet;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn convert_pgn_parked_past_shortened_ttl_still_claims_and_wakes_on_cancel() {
+        let dir = tempfile::tempdir().unwrap();
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(dir.path().join("auth.json"), vec![]).unwrap(),
+        );
+        let app = tauri::test::mock_app();
+        let state = AppState {
+            pgn_path_authority: authority,
+            operations: crate::infra::operations::OperationRegistry::with_reservation_ttl(
+                Duration::from_millis(40),
+            ),
+            ..AppState::default()
+        };
+
+        let mut gates = state
+            .folder_switch
+            .raise_migration_gates(vec![LegacyMigrationCandidate {
+                kind: FolderSwitchKind::Database,
+                source_root: PathRef {
+                    id: "conv-ttl".into(),
+                },
+                source_identity: (61, 62),
+                source_path: dir.path().join("legacy-db"),
+                engine_descendants: HashSet::new(),
+            }]);
+        let (_, gate) = gates.pop().unwrap();
+
+        let cancel_ticket = state.operations.prepare_conversion("main").unwrap();
+        let claim_ticket = state.operations.prepare_conversion("main").unwrap();
+
+        let s1 = state.clone();
+        let a1 = app.handle().clone();
+        let t1 = cancel_ticket.clone();
+        let cancel_task = tokio::spawn(async move {
+            convert_pgn_command_core(
+                "conv-cancel".into(),
+                vec![],
+                DatabaseHandle::new(PathRef {
+                    id: "dummy-db".into(),
+                }),
+                a1,
+                "Test".into(),
+                None,
+                Some(&t1),
+                "main",
+                &s1,
+            )
+            .await
+        });
+
+        let s2 = state.clone();
+        let a2 = app.handle().clone();
+        let t2 = claim_ticket.clone();
+        let claim_task = tokio::spawn(async move {
+            convert_pgn_command_core(
+                "conv-claim".into(),
+                vec![],
+                DatabaseHandle::new(PathRef {
+                    id: "dummy-db".into(),
+                }),
+                a2,
+                "Test".into(),
+                None,
+                Some(&t2),
+                "main",
+                &s2,
+            )
+            .await
+        });
+
+        // Wait past the 40ms reservation TTL and trigger `purge_expired`.
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let _trigger = state.operations.prepare_conversion("main").unwrap();
+
+        assert!(
+            !cancel_task.is_finished(),
+            "convert_pgn_command_core must stay parked past TTL"
+        );
+        assert!(
+            !claim_task.is_finished(),
+            "convert_pgn_command_core must stay parked past TTL"
+        );
+
+        // 1. `cancel_conversion` wakes the parked conversion with `Error::Cancellation`.
+        state
+            .operations
+            .cancel_conversion(&cancel_ticket, "main")
+            .unwrap();
+        let cancel_res = tokio::time::timeout(Duration::from_secs(2), cancel_task)
+            .await
+            .expect("cancel_conversion must wake parked convert_pgn_command_core")
+            .unwrap();
+        assert!(
+            matches!(cancel_res, Err(Error::Cancellation)),
+            "expected Error::Cancellation, got {cancel_res:?}"
+        );
+
+        // 2. Releasing the Database gate lets the second conversion claim its ticket past TTL
+        // (must NOT fail with "conversion reservation is unknown or expired").
+        gate.release();
+        let claim_res = tokio::time::timeout(Duration::from_secs(5), claim_task)
+            .await
+            .expect("releasing Database gate must wake parked convert_pgn_command_core")
+            .unwrap();
+        match claim_res {
+            Ok(()) => {}
+            Err(Error::Conflict(msg)) if msg.contains("reservation") => {
+                panic!("parked conversion ticket expired past shortened TTL: {msg}");
+            }
+            Err(_) => {
+                // Claim succeeded; downstream empty-file/dummy-db handling returned its own error.
+            }
+        }
+    }
 }

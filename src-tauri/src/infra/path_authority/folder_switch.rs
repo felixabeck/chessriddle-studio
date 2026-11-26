@@ -10,10 +10,12 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use specta::Type;
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
@@ -146,11 +148,134 @@ pub(super) struct FolderSwitchGrantMetadata {
     pub(super) committed_status: Option<FolderStatus>,
 }
 
+const MIGRATION_GATE_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
+
+#[derive(Clone, Debug, Default)]
+struct MigrationGateState {
+    gated: bool,
+    engine_descendants: Arc<HashSet<PathRef>>,
+}
+
+struct LegacyMigrationGates {
+    database: watch::Sender<MigrationGateState>,
+    engine: watch::Sender<MigrationGateState>,
+    puzzle: watch::Sender<MigrationGateState>,
+    shutdown: CancellationToken,
+    task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+}
+
+impl Default for LegacyMigrationGates {
+    fn default() -> Self {
+        Self {
+            database: watch::channel(MigrationGateState::default()).0,
+            engine: watch::channel(MigrationGateState::default()).0,
+            puzzle: watch::channel(MigrationGateState::default()).0,
+            shutdown: CancellationToken::new(),
+            task: Mutex::new(None),
+        }
+    }
+}
+
+impl LegacyMigrationGates {
+    fn sender(&self, kind: FolderSwitchKind) -> &watch::Sender<MigrationGateState> {
+        match kind {
+            FolderSwitchKind::Database => &self.database,
+            FolderSwitchKind::Engine => &self.engine,
+            FolderSwitchKind::Puzzle => &self.puzzle,
+        }
+    }
+}
+
+/// RAII guard for one kind's startup legacy-migration gate. Releases the gate on explicit
+/// `release()` or on `Drop` (including panic unwind), without ever panicking.
+pub(crate) struct MigrationGateGuard {
+    gates: Arc<LegacyMigrationGates>,
+    kind: FolderSwitchKind,
+    released: bool,
+}
+
+impl MigrationGateGuard {
+    pub(crate) fn release(mut self) {
+        self.release_inner();
+    }
+
+    fn release_inner(&mut self) {
+        if self.released {
+            return;
+        }
+        self.released = true;
+        let _ = self
+            .gates
+            .sender(self.kind)
+            .send_replace(MigrationGateState::default());
+    }
+}
+
+impl Drop for MigrationGateGuard {
+    fn drop(&mut self) {
+        self.release_inner();
+    }
+}
+
+/// One kind selected synchronously at startup for one-time migration from the legacy app-data
+/// default to the visible home default.
+#[derive(Clone, Debug)]
+pub(crate) struct LegacyMigrationCandidate {
+    pub(crate) kind: FolderSwitchKind,
+    pub(crate) source_root: PathRef,
+    pub(crate) source_path: PathBuf,
+    pub(crate) source_identity: (u64, u64),
+    pub(crate) engine_descendants: HashSet<PathRef>,
+}
+
+/// Source of default-directory lookups for async folder moves and startup migrations.
+/// Production uses `App(AppHandle)`; tests may supply custom home/app-data lookups.
+pub(crate) enum DefaultDirSource<R: tauri::Runtime> {
+    App(tauri::AppHandle<R>),
+    #[cfg(test)]
+    Custom {
+        home: Arc<dyn Fn() -> Result<HomeDir, Error> + Send + Sync>,
+        app_data: Arc<dyn Fn() -> Result<AppDataDir, Error> + Send + Sync>,
+    },
+}
+
+impl<R: tauri::Runtime> Clone for DefaultDirSource<R> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::App(app) => Self::App(app.clone()),
+            #[cfg(test)]
+            Self::Custom { home, app_data } => Self::Custom {
+                home: Arc::clone(home),
+                app_data: Arc::clone(app_data),
+            },
+        }
+    }
+}
+
+impl<R: tauri::Runtime> DefaultDirSource<R> {
+    pub(crate) fn with_lookups<T>(
+        &self,
+        f: impl FnOnce(&DefaultDirLookups<'_>) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        match self {
+            Self::App(app) => with_app_default_lookups(app, f),
+            #[cfg(test)]
+            Self::Custom { home, app_data } => {
+                let home_fn = || (home)();
+                let app_data_fn = || (app_data)();
+                f(&DefaultDirLookups::new(&home_fn, &app_data_fn))
+            }
+        }
+    }
+}
+
 /// Enforces one writer per `FolderSwitchKind` across choose, restore, apply, recovery and
-/// migration. Non-blocking acquisition refuses concurrent callers with `SwitchInProgress`.
+/// migration, and owns the per-kind startup legacy-migration gates. Non-blocking writer
+/// acquisition refuses concurrent callers with `SwitchInProgress`.
 #[derive(Clone, Default)]
 pub struct FolderSwitchCoordinator {
     in_flight: Arc<Mutex<BTreeSet<FolderSwitchKind>>>,
+    migration: Arc<LegacyMigrationGates>,
 }
 
 pub struct KindWriterGuard {
@@ -181,6 +306,182 @@ impl FolderSwitchCoordinator {
             in_flight: Arc::clone(&self.in_flight),
             kind,
         })
+    }
+
+    pub(crate) fn raise_migration_gate(
+        &self,
+        kind: FolderSwitchKind,
+        engine_descendants: HashSet<PathRef>,
+    ) -> MigrationGateGuard {
+        let state = MigrationGateState {
+            gated: true,
+            engine_descendants: Arc::new(engine_descendants),
+        };
+        let _ = self.migration.sender(kind).send_replace(state);
+        MigrationGateGuard {
+            gates: Arc::clone(&self.migration),
+            kind,
+            released: false,
+        }
+    }
+
+    pub(crate) fn raise_migration_gates(
+        &self,
+        candidates: Vec<LegacyMigrationCandidate>,
+    ) -> Vec<(LegacyMigrationCandidate, MigrationGateGuard)> {
+        candidates
+            .into_iter()
+            .map(|candidate| {
+                let guard =
+                    self.raise_migration_gate(candidate.kind, candidate.engine_descendants.clone());
+                (candidate, guard)
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_migration_gated(&self, kind: FolderSwitchKind) -> bool {
+        self.migration.sender(kind).borrow().gated
+    }
+
+    pub(crate) fn migration_cancellation(&self) -> CancellationToken {
+        self.migration.shutdown.clone()
+    }
+
+    pub(crate) fn cancel_migrations(&self) {
+        self.migration.shutdown.cancel();
+    }
+
+    pub(crate) fn set_migration_task(&self, handle: tauri::async_runtime::JoinHandle<()>) {
+        let mut slot = self
+            .migration
+            .task
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *slot = Some(handle);
+    }
+
+    pub(crate) async fn shutdown_migrations(&self, budget: Duration) {
+        self.cancel_migrations();
+        let handle = {
+            let mut slot = self
+                .migration
+                .task
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            slot.take()
+        };
+        let Some(handle) = handle else {
+            return;
+        };
+        match tokio::time::timeout(budget, handle).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                log::warn!("legacy default migration task join failed during shutdown: {error}");
+            }
+            Err(_) => {
+                log::warn!(
+                    "legacy default migration did not finish within shutdown budget; journal recovery will settle on next start"
+                );
+            }
+        }
+    }
+
+    pub(crate) async fn wait_for_migration(
+        &self,
+        kind: FolderSwitchKind,
+        cancellation: Option<&CancellationToken>,
+    ) -> Result<(), Error> {
+        self.wait_for_migration_with_timeout(kind, cancellation, MIGRATION_GATE_WAIT_TIMEOUT)
+            .await
+    }
+
+    pub(crate) async fn wait_for_migration_with_timeout(
+        &self,
+        kind: FolderSwitchKind,
+        cancellation: Option<&CancellationToken>,
+        timeout: Duration,
+    ) -> Result<(), Error> {
+        let mut rx = self.migration.sender(kind).subscribe();
+        if !rx.borrow().gated {
+            return Ok(());
+        }
+        wait_on_gate_receiver(
+            &mut rx,
+            &self.migration.shutdown,
+            None,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
+
+    pub(crate) fn is_engine_admission_gated(&self, path_refs: &[&PathRef]) -> bool {
+        let current = self.migration.sender(FolderSwitchKind::Engine).borrow();
+        current.gated
+            && path_refs
+                .iter()
+                .any(|path_ref| current.engine_descendants.contains(*path_ref))
+    }
+
+    pub(crate) async fn wait_for_engine_admission(
+        &self,
+        path_refs: &[&PathRef],
+        admission_cancel: Option<&CancellationToken>,
+        operation_cancel: Option<&CancellationToken>,
+    ) -> Result<(), Error> {
+        let mut rx = self.migration.sender(FolderSwitchKind::Engine).subscribe();
+        {
+            let current = rx.borrow();
+            if !current.gated
+                || !path_refs
+                    .iter()
+                    .any(|path_ref| current.engine_descendants.contains(*path_ref))
+            {
+                return Ok(());
+            }
+        }
+        wait_on_gate_receiver(
+            &mut rx,
+            &self.migration.shutdown,
+            admission_cancel,
+            operation_cancel,
+            MIGRATION_GATE_WAIT_TIMEOUT,
+        )
+        .await
+    }
+}
+
+async fn wait_on_gate_receiver(
+    rx: &mut watch::Receiver<MigrationGateState>,
+    shutdown: &CancellationToken,
+    admission_cancel: Option<&CancellationToken>,
+    operation_cancel: Option<&CancellationToken>,
+    timeout: Duration,
+) -> Result<(), Error> {
+    let admission_fut = async {
+        match admission_cancel {
+            Some(token) => token.cancelled().await,
+            None => std::future::pending::<()>().await,
+        }
+    };
+    let operation_fut = async {
+        match operation_cancel {
+            Some(token) => token.cancelled().await,
+            None => std::future::pending::<()>().await,
+        }
+    };
+    tokio::select! {
+        biased;
+        _ = shutdown.cancelled() => Err(Error::Cancellation),
+        _ = admission_fut => Err(Error::Cancellation),
+        _ = operation_fut => Err(Error::Cancellation),
+        result = tokio::time::timeout(timeout, rx.wait_for(|state| !state.gated)) => {
+            match result {
+                Ok(Ok(_)) | Ok(Err(_)) => Ok(()),
+                Err(_) => Err(Error::FolderSwitch(FolderSwitchFailure::SwitchInProgress)),
+            }
+        }
     }
 }
 
@@ -319,6 +620,50 @@ pub(crate) fn install_folder_switch_faults(
 #[cfg(test)]
 pub(crate) fn is_test_fault_pending(expected: FolderSwitchTestFault) -> bool {
     FOLDER_SWITCH_FAULTS.with(|slot| slot.borrow().contains(&expected))
+}
+
+#[cfg(test)]
+static CROSS_THREAD_CANCEL_AFTER_FIRST: Mutex<Vec<((u64, u64), CancellationToken)>> =
+    Mutex::new(Vec::new());
+
+#[cfg(test)]
+pub(crate) struct CrossThreadCancelReset {
+    source_identity: (u64, u64),
+}
+
+#[cfg(test)]
+impl Drop for CrossThreadCancelReset {
+    fn drop(&mut self) {
+        if let Ok(mut slot) = CROSS_THREAD_CANCEL_AFTER_FIRST.lock() {
+            slot.retain(|(id, _)| *id != self.source_identity);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn arm_cancel_after_first_transfer(
+    source_identity: (u64, u64),
+    token: CancellationToken,
+) -> CrossThreadCancelReset {
+    let mut slot = CROSS_THREAD_CANCEL_AFTER_FIRST
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    slot.push((source_identity, token));
+    CrossThreadCancelReset { source_identity }
+}
+
+#[cfg(test)]
+fn trigger_cross_thread_cancel_after_first(source_identity: (u64, u64)) -> bool {
+    let mut slot = CROSS_THREAD_CANCEL_AFTER_FIRST
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(pos) = slot.iter().position(|(id, _)| *id == source_identity) {
+        let (_, token) = slot.remove(pos);
+        token.cancel();
+        true
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -664,8 +1009,12 @@ fn copy_and_verify_file_at(
     target_parent: &fs::File,
     leaf: &OsStr,
     expected_source: Option<(u64, u64)>,
+    cancellation: &CancellationToken,
     on_created: &mut dyn FnMut((u64, u64)) -> Result<(), Error>,
 ) -> Result<(u64, u64), Error> {
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
     let mut source_file = open_regular_at(source_parent, leaf, RegularFileAccess::ReadOnly)
         .map_err(|error| {
             if matches!(error.unlabelled(), Error::InvalidInput(_)) {
@@ -694,6 +1043,9 @@ fn copy_and_verify_file_at(
         let mut total_bytes: u64 = 0;
         let mut buf = vec![0u8; COPY_BUFFER_BYTES];
         loop {
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
             let read = source_file.read(&mut buf)?;
             if read == 0 {
                 break;
@@ -767,8 +1119,12 @@ fn copy_and_verify_tree_at(
     leaf: &OsStr,
     expected_source: Option<(u64, u64)>,
     depth: usize,
+    cancellation: &CancellationToken,
     on_created: &mut dyn FnMut((u64, u64)) -> Result<(), Error>,
 ) -> Result<(u64, u64), Error> {
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
     if depth >= MAX_COPY_TREE_DEPTH {
         return Err(Error::FolderSwitch(FolderSwitchFailure::SourceUnreadable));
     }
@@ -792,9 +1148,11 @@ fn copy_and_verify_tree_at(
 
     let populate = (|| -> Result<(), Error> {
         on_created(target_id)?;
-        let entries =
-            read_directory_entries_at(&source_dir, &CancellationToken::new(), None, &mut |_| true)?;
+        let entries = read_directory_entries_at(&source_dir, cancellation, None, &mut |_| true)?;
         for entry in entries {
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
             match entry.kind {
                 DirectoryEntryKind::Directory => {
                     copy_and_verify_tree_at(
@@ -803,6 +1161,7 @@ fn copy_and_verify_tree_at(
                         &entry.name,
                         Some(entry.identity),
                         depth + 1,
+                        cancellation,
                         &mut |_| Ok(()),
                     )?;
                 }
@@ -812,6 +1171,7 @@ fn copy_and_verify_tree_at(
                         &target_dir,
                         &entry.name,
                         Some(entry.identity),
+                        cancellation,
                         &mut |_| Ok(()),
                     )?;
                     #[cfg(test)]
@@ -949,6 +1309,16 @@ pub(super) fn rollback_transfer(
     Ok(())
 }
 
+fn live_legacy_default_identity(
+    lookups: &DefaultDirLookups<'_>,
+    kind: FolderSwitchKind,
+) -> Option<(u64, u64)> {
+    let app_data = (lookups.app_data)().ok()?;
+    let legacy_path = app_data.path.join(kind.legacy_default_root().leaf());
+    let file = open_directory_nofollow_readonly(&legacy_path).ok()?;
+    opened_file_identity(&file).ok()
+}
+
 fn cleanup_after_commit(
     journal: &FolderSwitchJournal,
     source_dir: VerifiedDir,
@@ -992,16 +1362,8 @@ fn cleanup_after_commit(
     // ERROR_SHARING_VIOLATION.
     drop(source_dir);
 
-    let is_legacy = (lookups.app_data)()
-        .ok()
-        .map(|app_data| {
-            app_data
-                .path
-                .join(journal.kind.legacy_default_root().leaf())
-        })
-        .and_then(|legacy_path| open_directory_nofollow_readonly(&legacy_path).ok())
-        .and_then(|file| opened_file_identity(&file).ok())
-        .is_some_and(|id| id == source_id);
+    let is_legacy =
+        live_legacy_default_identity(lookups, journal.kind).is_some_and(|id| id == source_id);
     let is_current_default =
         live_visible_default_identity(lookups, journal.kind.visible_default_kind())
             .is_some_and(|id| (id.a, id.b) == source_id);
@@ -1128,6 +1490,32 @@ pub(crate) struct PreparedFolderMove {
     pub(crate) target_expected_identity: Option<Identity>,
 }
 
+impl PreparedFolderMove {
+    pub(crate) fn for_legacy_migration(
+        kind: FolderSwitchKind,
+        source_root: PathRef,
+        source_path: PathBuf,
+        source_identity: (u64, u64),
+        target_path: PathBuf,
+        target_identity: (u64, u64),
+        target_display_name: String,
+    ) -> Self {
+        Self {
+            kind,
+            source_root,
+            source_path,
+            source_identity,
+            target_path,
+            target_identity,
+            target_display_name,
+            target_expected_identity: Some(Identity {
+                a: target_identity.0,
+                b: target_identity.1,
+            }),
+        }
+    }
+}
+
 impl PathAuthority {
     pub(crate) fn quiesce_engine_root(&self, root_identity: (u64, u64)) -> EngineRootQuiesceGuard {
         self.quiesced_engine_roots
@@ -1169,10 +1557,33 @@ impl PathAuthority {
         {
             return true;
         }
-        if let Ok(ancestors) = ancestor_identities(path) {
-            if ancestors.iter().any(|id| quiesced.contains(id)) {
-                return true;
+        // Walk ancestors tolerating missing intermediate directories (e.g., `{old_root}/{install_dir}`
+        // already renamed to `{new_root}/{install_dir}` during the rename-to-commit window of an
+        // interactive same-volume Engine Move while `{old_root}` still exists and is quiesced).
+        let mut last_id: Option<(u64, u64)> = None;
+        let mut current = path.parent();
+        let mut depth = 0usize;
+        while let Some(dir) = current {
+            if depth >= MAX_ANCESTOR_WALK_DEPTH {
+                break;
             }
+            depth += 1;
+            match open_directory_nofollow_readonly(dir) {
+                Ok(file) => {
+                    if let Ok(id) = opened_file_identity(&file) {
+                        if quiesced.contains(&id) {
+                            return true;
+                        }
+                        if last_id == Some(id) {
+                            break;
+                        }
+                        last_id = Some(id);
+                    }
+                }
+                Err(error) if error.is_missing_entry() => {}
+                Err(_) => break,
+            }
+            current = dir.parent();
         }
         false
     }
@@ -1233,6 +1644,69 @@ impl PathAuthority {
     pub(crate) fn interrupted_move_root_error() -> Error {
         Error::FolderSwitch(FolderSwitchFailure::InterruptedMove)
             .with_root_failure(RootFailure::InterruptedMove)
+    }
+
+    pub(crate) fn entry_matches_identity(&self, id: &PathRef, expected: (u64, u64)) -> bool {
+        self.persistent
+            .get(&id.id)
+            .is_some_and(|entry| (entry.stored.identity.a, entry.stored.identity.b) == expected)
+    }
+
+    /// Synchronously decides (purely by directory identity, never by path spelling) which kinds
+    /// have the legacy app-data default active while the resolver's visible default is a different
+    /// directory. Kinds with an unresolved journal, custom roots, unset roots, or where the
+    /// resolver falls back to the legacy leaf are skipped.
+    pub(crate) fn plan_legacy_default_migrations(
+        &self,
+        lookups: &DefaultDirLookups<'_>,
+    ) -> Vec<LegacyMigrationCandidate> {
+        let mut candidates = Vec::new();
+        for kind in FolderSwitchKind::ALL {
+            if self.has_unresolved_journal(kind) {
+                continue;
+            }
+            let Some(active_id) = self.active_root_id_for_kind(kind) else {
+                continue;
+            };
+            let Some(entry) = self.persistent.get(&active_id.id) else {
+                continue;
+            };
+            let Ok(source_path) = entry.stored.path.to_path() else {
+                continue;
+            };
+            let stored_identity = (entry.stored.identity.a, entry.stored.identity.b);
+            let Some(legacy_identity) = live_legacy_default_identity(lookups, kind) else {
+                continue;
+            };
+            if stored_identity != legacy_identity {
+                continue;
+            }
+            if open_verified_directory(&source_path, legacy_identity).is_err() {
+                continue;
+            }
+            if live_visible_default_identity(lookups, kind.visible_default_kind())
+                .is_some_and(|id| (id.a, id.b) == legacy_identity)
+            {
+                // Resolver falls back to the legacy leaf (home unusable) or resolves to the same
+                // directory: legacy == default, nothing to migrate.
+                continue;
+            }
+            let engine_descendants = if kind == FolderSwitchKind::Engine {
+                let (mut execs, resources) = self.collect_engine_refs_under_root(legacy_identity);
+                execs.extend(resources);
+                execs
+            } else {
+                HashSet::new()
+            };
+            candidates.push(LegacyMigrationCandidate {
+                kind,
+                source_root: active_id,
+                source_path,
+                source_identity: legacy_identity,
+                engine_descendants,
+            });
+        }
+        candidates
     }
 
     pub(crate) fn active_root_id_for_kind(&self, kind: FolderSwitchKind) -> Option<PathRef> {
@@ -1799,7 +2273,7 @@ impl PathAuthority {
     /// the grant committed for replay.
     pub(crate) fn commit_folder_move(
         &mut self,
-        grant: &FolderSwitchGrant,
+        grant: Option<&FolderSwitchGrant>,
         prepared: &PreparedFolderMove,
         moved_items: &[JournalItem],
         lookups: &DefaultDirLookups<'_>,
@@ -1961,7 +2435,9 @@ impl PathAuthority {
         }
 
         let status = self.folder_status_for_kind(kind, lookups)?;
-        self.mark_folder_switch_grant_committed(grant, status.clone());
+        if let Some(grant) = grant {
+            self.mark_folder_switch_grant_committed(grant, status.clone());
+        }
         Ok(status)
     }
 
@@ -2020,10 +2496,14 @@ fn settle_failed_move(
 /// Caller holds the per-kind writer guard and all quiesce barriers (databases / engines / puzzles).
 pub(crate) fn execute_folder_move_blocking(
     authority: &SharedPathAuthority,
-    grant: &FolderSwitchGrant,
+    grant: Option<&FolderSwitchGrant>,
     prepared: &PreparedFolderMove,
     lookups: &DefaultDirLookups<'_>,
+    cancellation: &CancellationToken,
 ) -> Result<FolderStatus, Error> {
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
     // 1. Re-prove both directories and identities.
     let source_dir = open_verified_directory(&prepared.source_path, prepared.source_identity)
         .map_err(|_| Error::FolderSwitch(FolderSwitchFailure::IdentityChanged))?;
@@ -2056,6 +2536,10 @@ pub(crate) fn execute_folder_move_blocking(
 
     check_collisions(target_dir.as_file(), &plan.items)?;
 
+    if cancellation.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
+
     // 3. Decide TransferMode from opened-handle device/volume identity.
     #[cfg(test)]
     let force_copy = take_test_fault(FolderSwitchTestFault::ForceCopyMode);
@@ -2070,10 +2554,13 @@ pub(crate) fn execute_folder_move_blocking(
         TransferMode::Copy
     };
 
+    let grant_id = grant
+        .map(|g| g.id.id.clone())
+        .unwrap_or_else(|| format!("legacy-migration-{:?}", prepared.kind));
     let mut journal = FolderSwitchJournal {
         version: JOURNAL_VERSION,
         kind: prepared.kind,
-        grant_id: grant.id.id.clone(),
+        grant_id,
         mode: initial_mode,
         source_root_id: prepared.source_root.clone(),
         source_root_path: NativePath::from_path(&prepared.source_path),
@@ -2101,6 +2588,14 @@ pub(crate) fn execute_folder_move_blocking(
         journal.stage = JournalStage::Transferring;
         let mut idx = 0usize;
         while idx < journal.items.len() {
+            if cancellation.is_cancelled() {
+                return Err(Error::Cancellation);
+            }
+            #[cfg(test)]
+            if idx > 0 && trigger_cross_thread_cancel_after_first(prepared.source_identity) {
+                cancellation.cancel();
+                return Err(Error::Cancellation);
+            }
             #[cfg(test)]
             if idx > 0 && take_test_fault(FolderSwitchTestFault::FailTransferAfterFirst) {
                 return Err(Error::Io(Box::new(std::io::Error::other(
@@ -2179,6 +2674,7 @@ pub(crate) fn execute_folder_move_blocking(
                             leaf,
                             Some(expected_source),
                             0,
+                            cancellation,
                             &mut record_created,
                         )?
                     } else {
@@ -2187,6 +2683,7 @@ pub(crate) fn execute_folder_move_blocking(
                             target_dir.as_file(),
                             leaf,
                             Some(expected_source),
+                            cancellation,
                             &mut record_created,
                         )?
                     };
@@ -2199,6 +2696,10 @@ pub(crate) fn execute_folder_move_blocking(
                     idx += 1;
                 }
             }
+        }
+
+        if cancellation.is_cancelled() {
+            return Err(Error::Cancellation);
         }
 
         // For copied databases, rebind `.ecsi` and `.integrity` headers before commit and persist
@@ -2214,8 +2715,23 @@ pub(crate) fn execute_folder_move_blocking(
         Ok(())
     })();
 
+    let abandon_cancelled_move = |phase: &str, backstop: &mut MoveBackstopGuard| -> Error {
+        log::info!(
+            "folder switch cancelled {phase} for {:?}; journal recovery will settle on next start",
+            prepared.kind
+        );
+        let _ = authority.with_mut(|auth| auth.mark_unresolved_journal(prepared.kind));
+        backstop.disarm();
+        Error::Cancellation
+    };
+
     // If transfer failed, explicitly roll back in-process.
+    // On quit/cancellation, leave the durable write-ahead journal on disk so next-start recovery
+    // settles the tree without blocking shutdown.
     if let Err(primary) = transfer_result {
+        if matches!(primary.unlabelled(), Error::Cancellation) {
+            return Err(abandon_cancelled_move("during transfer", &mut backstop));
+        }
         return Err(settle_failed_move(
             authority,
             "transfer",
@@ -2225,6 +2741,10 @@ pub(crate) fn execute_folder_move_blocking(
             target_dir.as_file(),
             &mut backstop,
         ));
+    }
+
+    if cancellation.is_cancelled() {
+        return Err(abandon_cancelled_move("before commit", &mut backstop));
     }
 
     // 6. Commit the rebased entries and active-root switch.
@@ -2262,9 +2782,21 @@ pub(crate) fn execute_folder_move_blocking(
     // 7. Post-commit cleanup.
     journal.stage = JournalStage::Committed;
     let _ = authority.with_mut(|auth| auth.write_journal_file(&journal));
+    if cancellation.is_cancelled() {
+        return Err(abandon_cancelled_move("before cleanup", &mut backstop));
+    }
     match cleanup_after_commit(&journal, source_dir, &prepared.source_path, lookups) {
         Ok(()) => {
-            let _ = authority.with_mut(|auth| auth.remove_journal_file(prepared.kind));
+            if let Ok(Ok(updated)) = authority.with_mut(|auth| {
+                auth.remove_journal_file(prepared.kind);
+                let updated = auth.folder_status_for_kind(prepared.kind, lookups)?;
+                if let Some(grant) = grant {
+                    auth.mark_folder_switch_grant_committed(grant, updated.clone());
+                }
+                Ok::<FolderStatus, Error>(updated)
+            }) {
+                status = updated;
+            }
         }
         Err(cleanup_err) => {
             log::warn!(
@@ -2275,7 +2807,9 @@ pub(crate) fn execute_folder_move_blocking(
             if let Ok(Ok(updated)) = authority.with_mut(|auth| {
                 auth.mark_unresolved_journal(prepared.kind);
                 let updated = auth.folder_status_for_kind(prepared.kind, lookups)?;
-                auth.mark_folder_switch_grant_committed(grant, updated.clone());
+                if let Some(grant) = grant {
+                    auth.mark_folder_switch_grant_committed(grant, updated.clone());
+                }
                 Ok::<FolderStatus, Error>(updated)
             }) {
                 status = updated;

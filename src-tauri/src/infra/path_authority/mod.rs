@@ -75,7 +75,8 @@ use engine_attachments::{
 #[cfg(all(test, target_os = "macos"))]
 pub(crate) use engine_attachments::{set_engine_launch_failure, EngineLaunchFailure};
 pub(crate) use folder_switch::{
-    execute_folder_move_blocking, open_directory_for_identity_probe, FolderSwitchCoordinator,
+    execute_folder_move_blocking, open_directory_for_identity_probe, DefaultDirSource,
+    FolderSwitchCoordinator, LegacyMigrationCandidate, MigrationGateGuard, PreparedFolderMove,
 };
 pub use folder_switch::{FolderSwitchGrant, FolderSwitchKind, FolderSwitchMode, WorkspaceChoice};
 pub(crate) use handoff_endpoint::{HandoffDirectory, HandoffEndpoint, PublishedEndpoint};
@@ -699,7 +700,7 @@ mod verified_identity {
             Self(pair)
         }
 
-        pub(super) fn pair(self) -> (u64, u64) {
+        pub(crate) fn pair(self) -> (u64, u64) {
             self.0
         }
 
@@ -5427,6 +5428,27 @@ impl PathAuthority {
             }
         };
         let root = entry.stored.path.to_path().map_err(root_error)?;
+        // Check quiesced-engine-root refusal BEFORE `validate_target` so a resolve arriving in
+        // the rename-to-commit window of an interactive same-volume Engine Move (when the old
+        // install directory has already been renamed away) returns `Error::Conflict` rather than
+        // `Error::Io(NotFound)`.
+        if matches!(
+            operation,
+            PathOperation::EngineExecute
+                | PathOperation::EngineConfigure
+                | PathOperation::EngineResourceRead
+                | PathOperation::EngineInstall
+                | PathOperation::EngineBinaryInspect
+                | PathOperation::DownloadArchive
+        ) && self.is_under_quiesced_engine_root(
+            &root,
+            Some((entry.stored.identity.a, entry.stored.identity.b)),
+            entry.stored.parent_identity.as_ref().map(|id| (id.a, id.b)),
+        ) {
+            return Err(root_error(Error::Conflict(
+                "engine folder move is in progress".into(),
+            )));
+        }
         let actual = validate_target(
             &root,
             if entry.stored.target_is_dir {
@@ -5439,22 +5461,6 @@ impl PathAuthority {
         if actual != entry.stored.identity {
             return Err(root_error(Error::Conflict(
                 "path authority is unavailable because its object changed".into(),
-            )));
-        }
-        if matches!(
-            operation,
-            PathOperation::EngineExecute
-                | PathOperation::EngineConfigure
-                | PathOperation::EngineResourceRead
-                | PathOperation::EngineInstall
-                | PathOperation::DownloadArchive
-        ) && self.is_under_quiesced_engine_root(
-            &root,
-            Some((actual.a, actual.b)),
-            entry.stored.parent_identity.as_ref().map(|id| (id.a, id.b)),
-        ) {
-            return Err(root_error(Error::Conflict(
-                "engine folder move is in progress".into(),
             )));
         }
         #[cfg(test)]

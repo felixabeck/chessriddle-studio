@@ -254,6 +254,13 @@ pub async fn get_games(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<QueryResponse<Vec<NormalizedGame>>, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "get_games")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -383,6 +390,13 @@ pub async fn get_db_game(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<DbGameLookup, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "get_db_game")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -863,6 +877,13 @@ pub async fn infer_game_orientation(
     game_id: i32,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<BoardOrientation>, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("infer_game_orientation")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -1114,6 +1135,13 @@ pub async fn get_player(
     id: i32,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<Player>, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let authority = state.pgn_path_authority.clone();
     let repository = Arc::clone(&state.database_repository);
     crate::infra::operations::run_accepted_blocking(&state.operations, "get_player", move || {
@@ -1150,6 +1178,13 @@ pub async fn get_players(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<QueryResponse<Vec<Player>>, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "get_players")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -1333,6 +1368,13 @@ pub async fn get_tournaments(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<QueryResponse<Vec<TournamentEvent>>, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "get_tournaments")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();

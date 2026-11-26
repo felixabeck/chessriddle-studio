@@ -1679,6 +1679,13 @@ pub async fn get_db_info<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: tauri::State<'_, AppState>,
 ) -> Result<DatabaseInfoResult, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let authority = state.pgn_path_authority.clone();
     let repository = Arc::clone(&state.database_repository);
     let read_file = file.clone();
@@ -1826,6 +1833,13 @@ pub async fn create_indexes(
     file: DatabaseHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("create_indexes")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -1887,6 +1901,13 @@ pub async fn delete_indexes(
     file: DatabaseHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("delete_indexes")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -1925,6 +1946,13 @@ pub async fn edit_db_info(
     description: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("edit_db_info")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -2001,6 +2029,13 @@ pub async fn delete_db_game(
     game_id: i32,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("delete_db_game")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -2061,6 +2096,13 @@ pub async fn insert_db_game(
     pgn: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<InsertedDbGame, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("insert_db_game")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -2139,6 +2181,13 @@ pub async fn write_db_game(
     expected_stamp: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("write_db_game")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -2272,6 +2321,13 @@ pub async fn merge_players(
     player2: i32,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("merge_players")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -2455,6 +2511,13 @@ pub async fn preload_reference_db(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "preload_reference_db")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -12273,17 +12336,15 @@ mod tests {
             "merge_players",
             "convert_pgn_command_core",
         ] {
-            let start = source
-                .find(&format!(
-                    "{}fn {function}",
-                    if function == "convert_pgn_command_core" {
-                        "async "
-                    } else {
-                        "pub async "
-                    }
-                ))
-                .unwrap();
-            let body = &source[start..source[start..].find(".await").unwrap() + start];
+            let signature = format!(
+                "{}fn {function}",
+                if function == "convert_pgn_command_core" {
+                    "async "
+                } else {
+                    "pub async "
+                }
+            );
+            let body = crate::infra::blocking::source_scan::body_at_indent(&source, &signature);
             assert!(body.contains("move |token|"), "{function}");
             assert!(body.contains("token"), "{function}");
             assert!(body.contains("blocking"), "{function}");

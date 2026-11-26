@@ -8,6 +8,13 @@ pub async fn delete_database(
     file: DatabaseHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("delete_database")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -540,6 +547,13 @@ pub async fn delete_duplicated_games(
     file: DatabaseHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("delete_duplicated_games")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -619,6 +633,13 @@ pub async fn delete_empty_games(
     file: DatabaseHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
     let operation = state.operations.accept("delete_empty_games")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();

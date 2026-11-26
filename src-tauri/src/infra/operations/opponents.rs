@@ -195,6 +195,14 @@ pub(crate) async fn import_opponent_games_runtime<R: tauri::Runtime>(
     state: AppState,
 ) -> Result<OpponentImportOutcome, Error> {
     request.validate()?;
+    crate::wait_for_reserved_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        Some(&ticket),
+        owner,
+        crate::infra::operations::ReservationKind::Download,
+    )
+    .await?;
     let admission_key = format!("opponent_{}", request.filename.to_lowercase());
     let lease = state.operations.claim_download(
         &ticket,
@@ -1159,5 +1167,86 @@ mod tests {
             assert!(matches!(error, Error::InvalidInput(_)), "{error:?}");
         }
         assert!(fixture.requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn import_opponent_games_waits_on_database_migration_and_succeeds() {
+        use crate::infra::path_authority::{FolderSwitchKind, LegacyMigrationCandidate, PathRef};
+        use std::collections::HashSet;
+        use std::time::Duration;
+
+        let fixture = Fixture::new(|_| (200, lichess_body(&[("aaaaaaaa", "Opp", "x")])));
+        let mut gates =
+            fixture
+                .state
+                .folder_switch
+                .raise_migration_gates(vec![LegacyMigrationCandidate {
+                    kind: FolderSwitchKind::Database,
+                    source_root: PathRef {
+                        id: "opp-db-mig".into(),
+                    },
+                    source_identity: (43, 44),
+                    source_path: fixture.dir.path().join("databases"),
+                    engine_descendants: HashSet::new(),
+                }]);
+        let (_, gate) = gates.pop().unwrap();
+
+        // 1. A parked opponent import can be cancelled via `cancel_download` while waiting.
+        let cancel_ticket = fixture.state.operations.prepare_download("main").unwrap();
+        let cancel_req = fixture.request(&[(Lichess, "OppCancel")], &[Blitz]);
+        let s_cancel = fixture.state.clone();
+        let a_cancel = fixture.app.handle().clone();
+        let t_cancel = cancel_ticket.clone();
+        let cancel_task = tokio::spawn(async move {
+            import_opponent_games_runtime(cancel_req, t_cancel, "main", a_cancel, s_cancel).await
+        });
+
+        // 2. A second opponent import waits on the Database gate without claiming a download
+        // lease (`has_uninterruptible_work() == false`), then succeeds once the gate releases.
+        let ok_ticket = fixture.state.operations.prepare_download("main").unwrap();
+        let ok_req = fixture.request(&[(Lichess, "Opp")], &[Blitz]);
+        let s_ok = fixture.state.clone();
+        let a_ok = fixture.app.handle().clone();
+        let ok_task = tokio::spawn(async move {
+            import_opponent_games_runtime(ok_req, ok_ticket, "main", a_ok, s_ok).await
+        });
+
+        tokio::time::sleep(Duration::from_millis(35)).await;
+        assert!(
+            !cancel_task.is_finished(),
+            "import_opponent_games must park while Database migration gate is raised"
+        );
+        assert!(
+            !ok_task.is_finished(),
+            "import_opponent_games must park while Database migration gate is raised"
+        );
+        assert!(
+            !fixture.state.operations.has_uninterruptible_work(),
+            "parked import_opponent_games must not hold a claimed download lease before gate releases"
+        );
+
+        fixture
+            .state
+            .operations
+            .cancel_download(&cancel_ticket, "main")
+            .unwrap();
+        let cancelled = tokio::time::timeout(Duration::from_secs(2), cancel_task)
+            .await
+            .expect("cancel_download must wake parked import_opponent_games")
+            .unwrap();
+        assert!(
+            matches!(cancelled, Err(Error::Cancellation)),
+            "expected Error::Cancellation, got {cancelled:?}"
+        );
+
+        gate.release();
+        let outcome = tokio::time::timeout(Duration::from_secs(10), ok_task)
+            .await
+            .expect("import_opponent_games must complete after Database gate releases")
+            .unwrap()
+            .expect("import_opponent_games must succeed after Database gate releases");
+        let (database, games, _) = imported(outcome);
+        assert!(database.is_some());
+        assert_eq!(games, [1]);
     }
 }

@@ -657,6 +657,9 @@ impl AppState {
         let http_transport = Arc::new(crate::infra::net::ProdTransport::new(download_builder)?);
         let json_http_client = Arc::new(crate::infra::net::native_json_http_client(json_builder)?);
         let operations = OperationRegistry::default();
+        let folder_switch = crate::infra::path_authority::FolderSwitchCoordinator::default();
+        let engine_supervisor =
+            Arc::new(EngineSupervisor::with_folder_switch(folder_switch.clone()));
         Ok(Self {
             database_repository: Arc::new(db::DatabaseRepository::with_operations(
                 operations.clone(),
@@ -665,9 +668,9 @@ impl AppState {
             search_cache: Arc::new(SearchCache::default()),
             pgn_repository: Default::default(),
             pgn_path_authority: crate::infra::path_authority::SharedPathAuthority::uninitialized(),
-            folder_switch: crate::infra::path_authority::FolderSwitchCoordinator::default(),
+            folder_switch,
             workspace_mutation: Arc::new(std::sync::Mutex::new(())),
-            engine_supervisor: Arc::new(EngineSupervisor::default()),
+            engine_supervisor,
             auth: Arc::new(AuthLifecycle::default()),
             credentials,
             chessriddle: Arc::new(std::sync::OnceLock::new()),
@@ -701,6 +704,48 @@ fn cancel_native_read(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
     state.operations.cancel_read(&ticket, window.label())
+}
+
+/// Parks a prepared reservation ticket (read, analysis, download, or conversion) on a startup
+/// migration gate, awaits the gate under that ticket's cancellation token, and refreshes the
+/// reservation's `created_at` on exit so long migrations never cause spurious TTL expiry.
+pub(crate) async fn wait_for_reserved_migration(
+    state: &AppState,
+    kind: crate::infra::path_authority::FolderSwitchKind,
+    ticket: Option<&str>,
+    owner: &str,
+    reservation: crate::infra::operations::ReservationKind<'_>,
+) -> Result<(), Error> {
+    let parked = match ticket {
+        Some(ticket) => state
+            .operations
+            .park_reserved_for_migration(ticket, owner, reservation)?,
+        None => None,
+    };
+    let (cancellation, _park_guard) = match parked {
+        Some((token, guard)) => (Some(token), Some(guard)),
+        None => (None, None),
+    };
+    state
+        .folder_switch
+        .wait_for_migration(kind, cancellation.as_ref())
+        .await
+}
+
+pub(crate) async fn wait_for_read_migration(
+    state: &AppState,
+    kind: crate::infra::path_authority::FolderSwitchKind,
+    ticket: Option<&str>,
+    owner: &str,
+) -> Result<(), Error> {
+    wait_for_reserved_migration(
+        state,
+        kind,
+        ticket,
+        owner,
+        crate::infra::operations::ReservationKind::Read,
+    )
+    .await
 }
 
 pub(crate) fn native_read_operation(
@@ -1142,6 +1187,17 @@ async fn reconcile_startup_path_owners<'a>(
     owners: crate::infra::path_authority::StartupPathOwners,
     state: tauri::State<'a, AppState>,
 ) -> Result<(), Error> {
+    reconcile_startup_path_owners_core(owners, state.inner()).await
+}
+
+pub(crate) async fn reconcile_startup_path_owners_core(
+    owners: crate::infra::path_authority::StartupPathOwners,
+    state: &AppState,
+) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Engine, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -1173,6 +1229,10 @@ async fn reconcile_engine_attachments(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>, // caller's managed state
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Engine, None)
+        .await?;
     let startup = matches!(
         &action,
         crate::infra::path_authority::EngineAttachmentAction::Reconcile { startup: true, .. }
@@ -1976,15 +2036,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .map_err(|error| format!("path authority initialization failed: {error}"))?;
             authority.set_engine_image_sweep_root(app_data_locked.then_some(app_data));
-            crate::infra::path_authority::with_app_default_lookups(app.handle(), |lookups| {
-                authority.recover_folder_switch_journals(lookups);
-                Ok::<_, Error>(())
-            })
-            .map_err(|error| format!("folder switch recovery failed: {error}"))?;
+            let legacy_migrations =
+                crate::infra::path_authority::with_app_default_lookups(app.handle(), |lookups| {
+                    authority.recover_folder_switch_journals(lookups);
+                    Ok::<_, Error>(authority.plan_legacy_default_migrations(lookups))
+                })
+                .map_err(|error| format!("folder switch recovery failed: {error}"))?;
+            let pending_legacy_migrations = app
+                .state::<AppState>()
+                .folder_switch
+                .raise_migration_gates(legacy_migrations);
             app.state::<AppState>()
                 .pgn_path_authority
                 .install(authority)
                 .map_err(|_| "path authority lock poisoned")?;
+            if !pending_legacy_migrations.is_empty() {
+                let migration_state = app.state::<AppState>().inner().clone();
+                let migration_dirs =
+                    crate::infra::path_authority::DefaultDirSource::App(app.handle().clone());
+                let handle = tauri::async_runtime::spawn(async move {
+                    workspace_commands::run_legacy_default_migrations(
+                        migration_state,
+                        migration_dirs,
+                        pending_legacy_migrations,
+                    )
+                    .await;
+                });
+                app.state::<AppState>()
+                    .folder_switch
+                    .set_migration_task(handle);
+            }
             db::linked_collections::initialize(app.handle(), &app.state::<AppState>())
                 .map_err(|error| format!("collection service initialization failed: {error}"))?;
 
@@ -2143,6 +2224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             handoff.shutdown().await;
                         }
                         let state = app_handle.state::<AppState>();
+                        state.folder_switch.cancel_migrations();
                         shutdown_with_catalog_authority(
                             shutdown_backend_with_attachments(
                                 state.engine_supervisor.as_ref(),
@@ -2154,6 +2236,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // with its listener, before the process does.
                                     coach::shutdown_sign_ins(&state).await;
                                     library_sync::shutdown(&state).await;
+                                    state
+                                        .folder_switch
+                                        .shutdown_migrations(SHUTDOWN_BUDGET / 2)
+                                        .await;
                                     shutdown_engine_attachments(app_handle.clone())
                                         .await
                                         .map_err(|error| error.diagnostic())
@@ -5827,6 +5913,905 @@ mod blocking_offload_scans {
             assert_eq!(
                 expected_identity, "Some(authorized_dir.identity())",
                 "{file}::{name} must pass the descriptor identity third: {body}"
+            );
+        }
+    }
+
+    /// Enumerates every `#[tauri::command]` function name and byte offset in `source` (skipping
+    /// `#[cfg(test)]` commands) so a newly added command cannot escape classification.
+    fn enumerate_tauri_commands(source: &str) -> Vec<(String, usize)> {
+        let mut commands = Vec::new();
+        let mut cursor = 0usize;
+        while let Some(offset) = source[cursor..].find("#[tauri::command]") {
+            let attr_start = cursor + offset;
+            // Ignore matches inside string literals or test helpers (not at line start).
+            let line_start = source[..attr_start].rfind('\n').map_or(0, |i| i + 1);
+            if !source[line_start..attr_start].trim().is_empty() {
+                cursor = attr_start + "#[tauri::command]".len();
+                continue;
+            }
+            let after_attr = &source[attr_start + "#[tauri::command]".len()..];
+            let Some(fn_offset) = after_attr.find("fn ") else {
+                break;
+            };
+            let header = &after_attr[..fn_offset];
+            if header.contains("#[cfg(test)]") {
+                cursor = attr_start + "#[tauri::command]".len() + fn_offset + 3;
+                continue;
+            }
+            let name_start = fn_offset + 3;
+            let name_rest = &after_attr[name_start..];
+            let name_len = name_rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(name_rest.len());
+            if name_len > 0 {
+                commands.push((name_rest[..name_len].to_owned(), attr_start));
+            }
+            cursor = attr_start + "#[tauri::command]".len() + name_start + name_len;
+        }
+        commands
+    }
+
+    fn tauri_command_body<'a>(source: &'a str, attr_start: usize, name: &str) -> &'a str {
+        let tail = &source[attr_start..];
+        let header_end = tail.find('{').unwrap_or(tail.len());
+        let header = &tail[..header_end];
+        for prefix in [
+            format!("pub async fn {name}<"),
+            format!("pub async fn {name}("),
+            format!("pub(crate) async fn {name}<"),
+            format!("pub(crate) async fn {name}("),
+            format!("async fn {name}<"),
+            format!("async fn {name}("),
+            format!("pub fn {name}<"),
+            format!("pub fn {name}("),
+            format!("pub(crate) fn {name}<"),
+            format!("pub(crate) fn {name}("),
+            format!("fn {name}<"),
+            format!("fn {name}("),
+        ] {
+            if header.contains(&prefix) {
+                return body_at_indent(tail, &prefix);
+            }
+        }
+        panic!("could not locate command body for {name}");
+    }
+
+    fn collect_rust_source_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let mut entries: Vec<_> = std::fs::read_dir(dir)
+            .expect("read src-tauri/src directory")
+            .map(|entry| entry.expect("dir entry").path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            if path.is_dir() {
+                collect_rust_source_files(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    fn assert_gate_precedes_claims(label: &str, body: &str) {
+        let wait_pos = [
+            "wait_for_migration(",
+            "wait_for_read_migration(",
+            "wait_for_reserved_migration(",
+        ]
+        .into_iter()
+        .filter_map(|needle| body.find(needle))
+        .min()
+        .unwrap_or_else(|| {
+            panic!("{label} must await a migration gate: {body}");
+        });
+        for needle in [
+            ".claim_read(",
+            "native_read_operation(",
+            ".claim_analysis(",
+            ".claim_conversion(",
+            ".claim_download(",
+            ".admit_engine_completion(",
+            ".admit_account_completion(",
+            "run_accepted_blocking(",
+            ".accept(",
+            "BLOCKING_GATEWAY",
+            "pgn_path_authority",
+            "database_repository",
+            "puzzle_cache",
+        ] {
+            if let Some(claim_pos) = body.find(needle) {
+                assert!(
+                    wait_pos < claim_pos,
+                    "{label} must await its migration gate (offset {wait_pos}) BEFORE `{needle}` (offset {claim_pos}): {body}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_tauri_command_waits_for_migration_gate_before_claim_or_is_allowlisted() {
+        let src_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut rust_files = Vec::new();
+        collect_rust_source_files(&src_root, &mut rust_files);
+        assert!(
+            !rust_files.is_empty(),
+            "whole-tree scan must discover src-tauri/src/**/*.rs"
+        );
+
+        let read_rel = |rel: &str| {
+            std::fs::read_to_string(src_root.join(rel))
+                .unwrap_or_else(|e| panic!("failed to read {rel}: {e}"))
+        };
+
+        // Named choke points whose bodies must themselves await the migration gate BEFORE their
+        // first claim/open (ORDER verified by `assert_gate_precedes_claims`).
+        let convert_core_src = read_rel("db/import.rs");
+        let convert_core = body_at_indent(
+            &convert_core_src,
+            "pub(super) async fn convert_pgn_command_core<",
+        );
+        assert!(
+            convert_core.contains("wait_for_reserved_migration(")
+                && convert_core.contains("FolderSwitchKind::Database")
+                && convert_core.contains("ReservationKind::Conversion"),
+            "convert_pgn_command_core must wait on FolderSwitchKind::Database via wait_for_reserved_migration"
+        );
+        assert_gate_precedes_claims("db/import.rs::convert_pgn_command_core", convert_core);
+
+        let db_search_src = read_rel("db/search.rs");
+        let dispatch_search = body_at_indent(&db_search_src, "async fn dispatch_position_search<");
+        assert!(
+            dispatch_search.contains("wait_for_read_migration(")
+                && dispatch_search.contains("FolderSwitchKind::Database"),
+            "dispatch_position_search must wait on FolderSwitchKind::Database via wait_for_read_migration"
+        );
+        assert_gate_precedes_claims("db/search.rs::dispatch_position_search", dispatch_search);
+
+        let coach_stats_search = body_at_indent(
+            &db_search_src,
+            "pub(crate) async fn position_stats_for_operation<",
+        );
+        assert!(
+            coach_stats_search.contains("wait_for_migration(")
+                && coach_stats_search.contains("FolderSwitchKind::Database"),
+            "position_stats_for_operation must wait on FolderSwitchKind::Database"
+        );
+        assert_gate_precedes_claims(
+            "db/search.rs::position_stats_for_operation",
+            coach_stats_search,
+        );
+
+        let fs_src = read_rel("fs.rs");
+        let engine_install_rt = body_at_indent(
+            &fs_src,
+            "pub(crate) async fn install_engine_workflow_runtime<",
+        );
+        assert!(
+            engine_install_rt.contains("wait_for_reserved_migration(")
+                && engine_install_rt.contains("FolderSwitchKind::Engine")
+                && engine_install_rt.contains("ReservationKind::Download"),
+            "install_engine_workflow_runtime must wait on FolderSwitchKind::Engine via wait_for_reserved_migration"
+        );
+        assert_gate_precedes_claims("fs.rs::install_engine_workflow_runtime", engine_install_rt);
+
+        let download_file_rt = body_at_indent(&fs_src, "async fn download_file_runtime<");
+        assert!(
+            download_file_rt.contains("wait_for_reserved_migration(")
+                && download_file_rt.contains("ReservationKind::Download"),
+            "download_file_runtime must wait on the destination's migrating FolderSwitchKind via wait_for_reserved_migration"
+        );
+        assert_gate_precedes_claims("fs.rs::download_file_runtime", download_file_rt);
+
+        let coach_src = read_rel("coach/mod.rs");
+        let coach_start_turn = body_at_indent(&coach_src, "async fn start_turn<");
+        assert!(
+            coach_start_turn.contains("wait_for_reserved_migration(")
+                && coach_start_turn.contains("FolderSwitchKind::Database")
+                && coach_start_turn.contains("ReservationKind::Analysis"),
+            "coach::start_turn must wait on FolderSwitchKind::Database via wait_for_reserved_migration"
+        );
+        assert_gate_precedes_claims("coach/mod.rs::start_turn", coach_start_turn);
+
+        let accounts_src = read_rel("infra/operations/accounts.rs");
+        let accounts_core = body_at_indent(
+            &accounts_src,
+            "pub(crate) async fn import_account_games_with_download<",
+        );
+        assert!(
+            accounts_core.contains("wait_for_migration(")
+                && accounts_core.contains("FolderSwitchKind::Database"),
+            "import_account_games_with_download must wait on FolderSwitchKind::Database"
+        );
+        assert_gate_precedes_claims(
+            "infra/operations/accounts.rs::import_account_games_with_download",
+            accounts_core,
+        );
+
+        let opponents_src = read_rel("infra/operations/opponents.rs");
+        let opponents_core = body_at_indent(
+            &opponents_src,
+            "pub(crate) async fn import_opponent_games_runtime<",
+        );
+        assert!(
+            opponents_core.contains("wait_for_reserved_migration(")
+                && opponents_core.contains("FolderSwitchKind::Database")
+                && opponents_core.contains("ReservationKind::Download"),
+            "import_opponent_games_runtime must wait on FolderSwitchKind::Database via wait_for_reserved_migration"
+        );
+        assert_gate_precedes_claims(
+            "infra/operations/opponents.rs::import_opponent_games_runtime",
+            opponents_core,
+        );
+
+        let main_src = read_rel("main.rs");
+        let reconcile = body_at_indent(
+            &main_src,
+            "pub(crate) async fn reconcile_startup_path_owners_core(",
+        );
+        assert!(
+            reconcile.contains("wait_for_migration(")
+                && reconcile.contains("FolderSwitchKind::Engine"),
+            "reconcile_startup_path_owners_core must wait on FolderSwitchKind::Engine"
+        );
+        assert_gate_precedes_claims("main.rs::reconcile_startup_path_owners_core", reconcile);
+
+        // Commands that delegate through one of the verified choke points above or through
+        // `EngineSupervisor` admission gates (whose own gate tests verify waiting before launch).
+        let delegated_choke_points: &[(&str, &str)] = &[
+            ("convert_pgn", "convert_pgn_command_core("),
+            ("search_positions_stats", "dispatch_position_search("),
+            ("search_position", "dispatch_position_search("),
+            (
+                "install_engine_workflow",
+                "install_engine_workflow_runtime(",
+            ),
+            ("download_file", "download_file_runtime("),
+            ("coach_turn", "start_turn("),
+            ("import_account_games", "import_account_games_runtime("),
+            ("import_opponent_games", "import_opponent_games_runtime("),
+            (
+                "reconcile_startup_path_owners",
+                "reconcile_startup_path_owners_core(",
+            ),
+            ("prepare_engine_search", "prepare_engine_search("),
+            ("get_best_moves", "get_best_moves_core("),
+            ("get_engine_config", "get_engine_config_core("),
+            ("start_game", ".start_game("),
+        ];
+
+        // Single explicit allowlist of non-migrating commands across the entire `src-tauri/src`
+        // tree, each with a verified one-line reason why it cannot touch a migrating
+        // Database/Puzzle/Engine root. Any new `#[tauri::command]` in any file fails this test
+        // until it either awaits its migration gate before its first claim/open or is classified.
+        let non_migrating_allowlist: &[(&str, &str)] = &[
+            // chesscom.rs
+            (
+                "get_public_chess_com_json",
+                "public HTTP GET to api.chess.com only; touches no local root",
+            ),
+            (
+                "download_chess_com_games",
+                "enforces OpClass::Lichess (download-only PGN destination) via require_game_export_destination",
+            ),
+            // chessriddle.rs (remote ChessRiddle account & online puzzle training API + keychain)
+            (
+                "chessriddle_training_available",
+                "reads in-memory ChessRiddle availability config only",
+            ),
+            (
+                "chessriddle_training_next",
+                "fetches next online puzzle from ChessRiddle HTTPS API only",
+            ),
+            (
+                "chessriddle_mistake_count",
+                "fetches online mistake count from ChessRiddle HTTPS API only",
+            ),
+            (
+                "chessriddle_training_submit",
+                "submits online puzzle attempt to ChessRiddle HTTPS API only",
+            ),
+            (
+                "chessriddle_training_settings",
+                "reads online training settings from ChessRiddle HTTPS API only",
+            ),
+            (
+                "chessriddle_save_training_settings",
+                "saves online training settings to ChessRiddle HTTPS API only",
+            ),
+            (
+                "chessriddle_training_motifs",
+                "reads online motif catalog from ChessRiddle HTTPS API only",
+            ),
+            (
+                "chessriddle_open_website",
+                "opens external HTTPS URL in system browser only",
+            ),
+            (
+                "chessriddle_open_upgrade",
+                "opens external HTTPS upgrade URL in system browser only",
+            ),
+            (
+                "chessriddle_account",
+                "reads ChessRiddle account status from native credential store/API only",
+            ),
+            (
+                "connect_chessriddle",
+                "runs ChessRiddle OAuth flow and stores token in native credential store only",
+            ),
+            (
+                "disconnect_chessriddle",
+                "clears ChessRiddle token from native credential store only",
+            ),
+            // coach/mod.rs (`coach_turn` is gated above via `start_turn`)
+            (
+                "coach_available",
+                "reads Coach availability flag in memory only",
+            ),
+            (
+                "coach_has_connection",
+                "checks Coach connection store in app-data/keychain only",
+            ),
+            (
+                "coach_connections",
+                "lists Coach connections from app-data/keychain only",
+            ),
+            (
+                "coach_save_api_connection",
+                "saves Coach API connection in app-data/keychain only",
+            ),
+            (
+                "coach_remove_connection",
+                "removes Coach connection from app-data/keychain only",
+            ),
+            (
+                "coach_sign_in_chatgpt",
+                "runs ChatGPT OAuth flow in native credential store only",
+            ),
+            (
+                "coach_begin_grok_sign_in",
+                "starts Grok OAuth flow in native credential store only",
+            ),
+            (
+                "coach_finish_grok_sign_in",
+                "finishes Grok OAuth flow in native credential store only",
+            ),
+            (
+                "coach_cancel_sign_in",
+                "cancels in-flight Coach sign-in attempt in memory only",
+            ),
+            (
+                "coach_open_usage",
+                "opens external provider usage URL in system browser only",
+            ),
+            (
+                "coach_models",
+                "queries remote Coach LLM provider models over HTTPS only",
+            ),
+            (
+                "assistant_turn",
+                "runs LLM-only Assistant turn over HTTPS; never opens Database/Puzzle/Engine roots",
+            ),
+            // db/mod.rs
+            (
+                "clear_games",
+                "clears in-memory SearchCache only; touches no filesystem root",
+            ),
+            // db/import.rs
+            (
+                "prepare_conversion",
+                "mints a conversion ticket in OperationRegistry only",
+            ),
+            (
+                "cancel_conversion",
+                "cancels a conversion ticket in OperationRegistry only",
+            ),
+            (
+                "release_conversion",
+                "releases a conversion ticket in OperationRegistry only",
+            ),
+            // db/linked_collections.rs & batch.rs (app-data `collections/` + PGN workspaces)
+            (
+                "linked_collections_supported",
+                "returns a compile-time capability boolean",
+            ),
+            (
+                "edit_linked_collection",
+                "edits PGN collection index in app-data `collections/`, not migrating db root",
+            ),
+            (
+                "list_linked_collections",
+                "lists PGN collections in app-data `collections/` and PGN workspace",
+            ),
+            (
+                "rebuild_linked_collection",
+                "rebuilds PGN collection index from PGN workspace in app-data `collections/`",
+            ),
+            (
+                "reselect_linked_collection",
+                "rebinds PGN collection to a PGN FileWorkspaceHandle",
+            ),
+            (
+                "append_collection_games",
+                "appends PGN games into app-data `collections/` index",
+            ),
+            // feedback.rs
+            (
+                "submit_feedback",
+                "posts user feedback over HTTPS only; touches no migrating root",
+            ),
+            // file_workspace.rs (PGN file workspace + app-data trash; PGN is non-migrating)
+            (
+                "list_workspace_trash",
+                "lists non-migrating PGN workspace trash in app-data",
+            ),
+            (
+                "write_workspace_file_metadata",
+                "writes sidecar metadata in non-migrating PGN workspace",
+            ),
+            (
+                "get_file_folder_status",
+                "reads status of non-migrating PGN file workspace",
+            ),
+            (
+                "get_default_file_workspace",
+                "resolves non-migrating PGN file workspace",
+            ),
+            (
+                "open_file_workspace",
+                "opens non-migrating PGN file workspace in OS file manager",
+            ),
+            (
+                "issue_file_workspace",
+                "user-picked non-migrating PGN file workspace",
+            ),
+            (
+                "list_file_workspace",
+                "lists files in non-migrating PGN file workspace",
+            ),
+            (
+                "create_workspace_file",
+                "creates PGN file in non-migrating PGN workspace",
+            ),
+            (
+                "create_workspace_directory",
+                "creates subfolder in non-migrating PGN workspace",
+            ),
+            (
+                "move_workspace_entry",
+                "moves entry inside non-migrating PGN workspace",
+            ),
+            (
+                "rename_workspace_file",
+                "renames entry inside non-migrating PGN workspace",
+            ),
+            (
+                "trash_workspace_entry",
+                "moves PGN entry to non-migrating app-data trash",
+            ),
+            (
+                "restore_workspace_trash_item",
+                "restores PGN entry from non-migrating app-data trash",
+            ),
+            (
+                "delete_workspace_trash_item",
+                "deletes PGN entry from non-migrating app-data trash",
+            ),
+            (
+                "empty_workspace_trash",
+                "empties non-migrating app-data PGN trash",
+            ),
+            // infra/game_link.rs
+            (
+                "take_pending_game_links",
+                "drains in-memory pending deep-link queue only",
+            ),
+            // infra/operations/accounts.rs (`import_account_games` is gated above)
+            (
+                "pending_account_completions",
+                "reads in-memory AccountCompletion snapshots only",
+            ),
+            (
+                "acknowledge_account_completion",
+                "acknowledges an in-memory AccountCompletion entry only",
+            ),
+            // lexer.rs
+            ("lex_pgn", "pure in-memory PGN lexer"),
+            // library_sync/commands.rs (syncs non-migrating PGN file workspace to ChessRiddle cloud)
+            (
+                "library_sync_snapshot",
+                "reads in-memory PGN library sync status snapshot only",
+            ),
+            (
+                "library_sync_turn_on",
+                "enables cloud sync for non-migrating PGN workspace",
+            ),
+            (
+                "library_sync_turn_off",
+                "disables cloud sync for non-migrating PGN workspace",
+            ),
+            (
+                "library_sync_set_file_selected",
+                "updates PGN sync selection in non-migrating app-data state",
+            ),
+            (
+                "library_sync_now",
+                "triggers cloud sync for non-migrating PGN workspace",
+            ),
+            // lichess.rs
+            (
+                "get_public_lichess_json",
+                "public HTTP GET to lichess.org only; touches no local root",
+            ),
+            (
+                "get_authenticated_lichess_account",
+                "authenticated HTTP GET to lichess.org using native credential store only",
+            ),
+            (
+                "get_authenticated_lichess_explorer",
+                "authenticated HTTP GET to explorer.lichess.org only",
+            ),
+            // main.rs (`reconcile_startup_path_owners` & `reconcile_engine_attachments` are gated)
+            (
+                "prepare_native_read",
+                "mints a read ticket in OperationRegistry only",
+            ),
+            (
+                "cancel_native_read",
+                "cancels a read ticket; must never block on migration",
+            ),
+            (
+                "release_previous_document_operations",
+                "cancels prior document's in-flight reservations on reload; must never block",
+            ),
+            (
+                "close_splashscreen",
+                "reveals main window after startup cloak; touches no filesystem root",
+            ),
+            (
+                "open_app_log",
+                "opens app log directory in OS file manager; touches no migrating root",
+            ),
+            (
+                "is_bmi2_compatible",
+                "pure CPU feature detection in memory",
+            ),
+            ("memory_size", "pure OS RAM size query in memory"),
+            // oauth.rs (Lichess OAuth + native credential store only)
+            (
+                "authenticate",
+                "runs Lichess OAuth flow and stores token in native credential store only",
+            ),
+            (
+                "get_authentication_status",
+                "reads in-memory OAuth job status only",
+            ),
+            (
+                "list_lichess_accounts",
+                "lists Lichess accounts from native credential store only",
+            ),
+            (
+                "remove_lichess_account",
+                "removes Lichess account from native credential store only",
+            ),
+            (
+                "revoke_legacy_lichess_token",
+                "revokes legacy Lichess token via HTTPS only",
+            ),
+            (
+                "migrate_legacy_lichess_token",
+                "migrates Lichess token into native credential store only",
+            ),
+            // opening.rs (embedded ECO opening tables in memory)
+            (
+                "get_opening_from_name",
+                "pure lookup in embedded in-memory ECO table",
+            ),
+            (
+                "get_opening_from_fens",
+                "pure lookup in embedded in-memory ECO table",
+            ),
+            (
+                "search_opening_name",
+                "pure search in embedded in-memory ECO table",
+            ),
+            // pgn.rs (PGN FileWorkspaceHandle operations; PGN is non-migrating)
+            ("count_pgn_games", "reads non-migrating PGN FileWorkspaceHandle"),
+            ("read_games", "reads non-migrating PGN FileWorkspaceHandle"),
+            ("file_revision", "reads non-migrating PGN FileWorkspaceHandle"),
+            ("read_game", "reads non-migrating PGN FileWorkspaceHandle"),
+            ("move_games", "writes non-migrating PGN FileWorkspaceHandle"),
+            ("delete_game", "writes non-migrating PGN FileWorkspaceHandle"),
+            ("write_game", "writes non-migrating PGN FileWorkspaceHandle"),
+            (
+                "set_game_section",
+                "writes non-migrating PGN FileWorkspaceHandle",
+            ),
+            (
+                "set_game_orientation",
+                "writes non-migrating PGN FileWorkspaceHandle",
+            ),
+            // practice.rs (non-migrating app-data `practice/` store)
+            (
+                "load_practice_deck",
+                "reads non-migrating app-data `practice/` store",
+            ),
+            (
+                "practice_epoch",
+                "reads non-migrating app-data `practice/` epoch",
+            ),
+            (
+                "record_practice_review",
+                "writes non-migrating app-data `practice/` store",
+            ),
+            (
+                "sync_practice_positions",
+                "writes non-migrating app-data `practice/` store",
+            ),
+            (
+                "reset_practice_deck",
+                "writes non-migrating app-data `practice/` store",
+            ),
+            (
+                "load_practice_reviews",
+                "reads non-migrating app-data `practice/` store",
+            ),
+            (
+                "migrate_practice_deck",
+                "migrates legacy deck into non-migrating app-data `practice/` store",
+            ),
+            (
+                "acknowledge_practice_orphans",
+                "cleans non-migrating app-data `practice/` orphans",
+            ),
+            (
+                "repair_practice_deck",
+                "repairs non-migrating app-data `practice/` store",
+            ),
+            (
+                "list_practice_decks",
+                "lists non-migrating app-data `practice/` decks",
+            ),
+            // progress.rs (in-memory ProgressState only)
+            ("get_progress", "reads in-memory ProgressState only"),
+            (
+                "failed_progress_snapshot",
+                "reads in-memory ProgressState only",
+            ),
+            ("clear_progress", "clears in-memory ProgressState entry only"),
+            // sound.rs
+            (
+                "get_sound_server_port",
+                "returns in-memory localhost sound server port only",
+            ),
+            // unsaved_games.rs (non-migrating app-data `unsaved-games/` store)
+            (
+                "list_unsaved_games",
+                "reads non-migrating app-data `unsaved-games/` store",
+            ),
+            (
+                "remove_unsaved_game",
+                "removes entry from non-migrating app-data `unsaved-games/` store",
+            ),
+            (
+                "clear_unsaved_games",
+                "clears non-migrating app-data `unsaved-games/` store",
+            ),
+            // workspace_session.rs (non-migrating app-data `workspace-session/` store)
+            (
+                "write_workspace_session_leaf",
+                "writes non-migrating app-data `workspace-session/` store",
+            ),
+            (
+                "read_workspace_session_fixed",
+                "reads non-migrating app-data `workspace-session/` store",
+            ),
+            (
+                "read_workspace_session_leaves",
+                "reads non-migrating app-data `workspace-session/` store",
+            ),
+            (
+                "list_workspace_session_names",
+                "lists non-migrating app-data `workspace-session/` store",
+            ),
+            (
+                "remove_workspace_session_leaf",
+                "removes entry from non-migrating app-data `workspace-session/` store",
+            ),
+            (
+                "quarantine_workspace_session_leaves",
+                "quarantines corrupt leaves in non-migrating app-data `workspace-session/` store",
+            ),
+            (
+                "clear_workspace_session",
+                "clears non-migrating app-data `workspace-session/` store",
+            ),
+            // workspace_commands.rs
+            (
+                "issue_pgn_workspace",
+                "PGN file picker; PGN is non-migrating (MANDATE 5)",
+            ),
+            (
+                "issue_pgn_export_destination",
+                "PGN export save picker; PGN is non-migrating",
+            ),
+            (
+                "save_board_snapshot",
+                "saves a user-picked PNG export outside migrating roots",
+            ),
+            (
+                "save_engine_logs",
+                "saves a user-picked CSV export outside migrating roots",
+            ),
+            (
+                "issue_download_destination",
+                "user-picked one-file download folder outside migrating defaults",
+            ),
+            (
+                "download_destination_is_known",
+                "checks authority registry for a user-picked download PathRef",
+            ),
+            (
+                "cancel_folder_switch",
+                "drops a pending DialogGrant in memory only",
+            ),
+            (
+                "issue_engine_binary",
+                "interactive OS file picker (never called at startup); a pick under a quiesced engine root is refused with Conflict by register_engine_file",
+            ),
+            (
+                "issue_engine_resource",
+                "interactive OS file/folder picker (never called at startup); any resource under a quiesced engine root is refused with Conflict at resolve/admission",
+            ),
+            (
+                "issue_engine_image",
+                "copies an avatar image into non-migrating app-data `engine-images/`",
+            ),
+            (
+                "read_engine_image",
+                "reads an avatar image from non-migrating app-data `engine-images/`",
+            ),
+            (
+                "issue_opening_book",
+                "registers a user-picked opening book outside migrating roots",
+            ),
+            // chess.rs (teardown/status/ticket commands; search/analysis/config are gated above)
+            (
+                "kill_engines",
+                "terminates running engines for a tab; must never block on migration",
+            ),
+            (
+                "retire_engine",
+                "retires an engine id; must cancel parked admissions immediately",
+            ),
+            (
+                "kill_engine",
+                "kills one engine key; must never block on migration",
+            ),
+            (
+                "stop_engine",
+                "stops an active search; must never block on migration",
+            ),
+            (
+                "release_engine_search",
+                "releases a search generation; must never block on migration",
+            ),
+            ("get_engine_logs", "reads in-memory UCI log buffer only"),
+            (
+                "prepare_analysis",
+                "mints an analysis ticket in OperationRegistry only",
+            ),
+            (
+                "cancel_analysis",
+                "cancels an analysis ticket; must never block on migration",
+            ),
+            // game.rs (in-flight game state/control commands; `start_game` is gated above)
+            ("get_game_state", "reads in-memory GameManager state only"),
+            (
+                "make_game_move",
+                "submits a human move to an already-started GameManager session",
+            ),
+            (
+                "take_back_game_move",
+                "takes back a move in an already-started GameManager session",
+            ),
+            (
+                "resign_game",
+                "resigns an already-started GameManager session",
+            ),
+            (
+                "abort_game",
+                "aborts an already-started GameManager session",
+            ),
+            (
+                "get_game_engine_logs",
+                "reads in-memory game engine log buffer only",
+            ),
+            // fs.rs (downloads/verification/tickets; `install_engine_workflow`, `download_file`, and `file_exists` are gated above)
+            (
+                "verify_signed_bytes",
+                "pure cryptographic signature check in memory",
+            ),
+            (
+                "download_lichess_games",
+                "downloads Lichess PGNs into a download-only PGN FileWorkspaceHandle",
+            ),
+            (
+                "pending_engine_completions",
+                "reads in-memory EngineCompletion snapshots only",
+            ),
+            (
+                "retire_engine_completion",
+                "retires an in-memory EngineCompletion entry",
+            ),
+            (
+                "acknowledge_engine_completion",
+                "acknowledges an in-memory EngineCompletion entry",
+            ),
+            (
+                "prepare_download",
+                "mints a download ticket in OperationRegistry only",
+            ),
+            (
+                "release_download",
+                "releases a download ticket in OperationRegistry only",
+            ),
+            (
+                "cancel_download",
+                "cancels a download ticket; must never block on migration",
+            ),
+            (
+                "cancel_download_for_progress",
+                "cancels a download by progress id; must never block on migration",
+            ),
+        ];
+
+        let mut used_allowlist: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut total_commands = 0usize;
+
+        for path in &rust_files {
+            let rel = path
+                .strip_prefix(&src_root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let source = std::fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("failed to read {rel}: {e}"));
+            for (name, attr_start) in enumerate_tauri_commands(&source) {
+                total_commands += 1;
+                if let Some(&(entry, reason)) = non_migrating_allowlist
+                    .iter()
+                    .find(|&&(allowed, _)| allowed == name)
+                {
+                    assert!(
+                        !reason.trim().is_empty(),
+                        "allowlist reason missing for {entry}"
+                    );
+                    used_allowlist.insert(entry);
+                    continue;
+                }
+                let body = tauri_command_body(&source, attr_start, &name);
+                if let Some(&(_, choke_call)) =
+                    delegated_choke_points.iter().find(|&&(cmd, _)| cmd == name)
+                {
+                    assert!(
+                        body.contains(choke_call),
+                        "{rel}::{name} must delegate through {choke_call}: {body}"
+                    );
+                    continue;
+                }
+                assert_gate_precedes_claims(&format!("{rel}::{name}"), body);
+            }
+        }
+        assert!(
+            total_commands >= 180,
+            "whole-tree scan discovered unexpectedly few commands ({total_commands})"
+        );
+
+        // Ensure the allowlist contains no stale entries.
+        for &(entry, _) in non_migrating_allowlist {
+            assert!(
+                used_allowlist.contains(entry),
+                "stale entry in non_migrating_allowlist: {entry}"
             );
         }
     }

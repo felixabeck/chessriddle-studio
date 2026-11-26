@@ -334,6 +334,13 @@ pub async fn get_puzzle(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Puzzle, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Puzzle,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "get_puzzle")?;
     let cancellation = operation.token();
     validate_ratings(min_rating, max_rating)?;
@@ -440,6 +447,10 @@ pub async fn issue_puzzle_workspace(
     >,
     Error,
 > {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Puzzle, None)
+        .await?;
     let _writer = state
         .folder_switch
         .try_acquire(crate::infra::path_authority::FolderSwitchKind::Puzzle)?;
@@ -503,6 +514,10 @@ pub async fn restore_puzzle_workspace(
     >,
     Error,
 > {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Puzzle, None)
+        .await?;
     let _writer = state
         .folder_switch
         .try_acquire(crate::infra::path_authority::FolderSwitchKind::Puzzle)?;
@@ -555,6 +570,10 @@ pub async fn get_puzzle_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<crate::infra::path_authority::PuzzleRootDescriptor, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Puzzle, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     // `active_or_default_puzzle_workspace` already holds the whole body, so it is the blocking
     // function; a `get_puzzle_workspace_blocking` forwarding to it would be a pass-through.
@@ -576,6 +595,10 @@ pub async fn get_puzzle_folder_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Puzzle, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -603,6 +626,10 @@ pub async fn open_puzzle_workspace(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), Error> {
     use tauri_plugin_opener::OpenerExt;
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Puzzle, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     let lookup_app = app.clone();
     crate::infra::operations::run_accepted_blocking(
@@ -634,6 +661,10 @@ pub async fn issue_puzzle_download_destination(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<crate::infra::path_authority::PathRef, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Puzzle, None)
+        .await?;
     let authority = state.pgn_path_authority.clone();
     crate::infra::operations::run_accepted_blocking(
         &state.operations,
@@ -661,6 +692,13 @@ pub async fn list_puzzle_databases(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<PuzzleDatabaseInfo>, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Puzzle,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "list_puzzle_databases")?;
     let cancellation = operation.token();
     let authority = state.pgn_path_authority.clone();
@@ -759,6 +797,10 @@ pub async fn delete_puzzle_database(
     file: crate::infra::path_authority::PathRef,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), Error> {
+    state
+        .folder_switch
+        .wait_for_migration(crate::infra::path_authority::FolderSwitchKind::Puzzle, None)
+        .await?;
     let operation = state.operations.accept("delete_puzzle_database")?;
     let cancellation = operation.token();
     let state = state.inner().clone();
@@ -869,6 +911,13 @@ pub async fn get_puzzle_themes(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<String>, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Puzzle,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "get_puzzle_themes")?;
     let cancellation = operation.token();
     let resolved = resolve_puzzle(
@@ -899,6 +948,13 @@ pub async fn get_themes_for_puzzle(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<String>, Error> {
+    crate::wait_for_read_migration(
+        &state,
+        crate::infra::path_authority::FolderSwitchKind::Puzzle,
+        ticket.as_deref(),
+        window.label(),
+    )
+    .await?;
     let operation = crate::native_read_operation(ticket, &window, &state, "get_themes_for_puzzle")?;
     let cancellation = operation.token();
     let resolved = resolve_puzzle(

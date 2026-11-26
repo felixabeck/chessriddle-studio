@@ -244,6 +244,7 @@ pub struct EngineSupervisor {
     pub(super) retired_binaries: StdMutex<RetiredSet<(String, PathRef)>>,
     pub(super) quiesced_executables: StdMutex<HashSet<PathRef>>,
     pub(super) quiesced_resources: StdMutex<HashSet<PathRef>>,
+    pub(super) folder_switch: crate::infra::path_authority::FolderSwitchCoordinator,
     // `lifecycle` provides the per-key transition locks. Lifecycle transitions
     // may capture an actor before awaiting the per-key lock and recheck under
     // that lock before mutating an actor they still own. Kill and
@@ -255,6 +256,14 @@ pub struct EngineSupervisor {
 
 impl Default for EngineSupervisor {
     fn default() -> Self {
+        Self::with_folder_switch(crate::infra::path_authority::FolderSwitchCoordinator::default())
+    }
+}
+
+impl EngineSupervisor {
+    pub(crate) fn with_folder_switch(
+        folder_switch: crate::infra::path_authority::FolderSwitchCoordinator,
+    ) -> Self {
         Self {
             #[cfg(test)]
             spawn_attempts: std::sync::atomic::AtomicUsize::new(0),
@@ -271,6 +280,7 @@ impl Default for EngineSupervisor {
             retired_binaries: StdMutex::new(RetiredSet::new(MAX_RETIRED_ENGINE_BINARIES)),
             quiesced_executables: StdMutex::new(HashSet::new()),
             quiesced_resources: StdMutex::new(HashSet::new()),
+            folder_switch,
             lifecycle: KeyedLocks::default(),
         }
     }
@@ -298,6 +308,8 @@ pub(super) struct EngineAdmission {
     pub(super) executable: PathRef,
     pub(super) cancelled: Arc<AtomicBool>,
     pub(super) cancellation_reason: Arc<OnceLock<AdmissionCancellation>>,
+    pub(super) cancel_token: CancellationToken,
+    pub(super) waiting_on_migration: Arc<AtomicBool>,
     pub(super) prepared: bool,
 }
 
@@ -307,6 +319,7 @@ impl EngineAdmission {
         // this exact admission's reason even after its registry entry has been removed.
         self.cancellation_reason.get_or_init(|| reason);
         self.cancelled.store(true, Ordering::SeqCst);
+        self.cancel_token.cancel();
     }
 
     pub(super) fn cancel_error(&self) -> Option<Error> {
@@ -398,6 +411,16 @@ impl EngineSupervisor {
         engine_id: &str,
         executable: &PathRef,
     ) -> Result<(), Error> {
+        self.validate_admission_policy_inner(key, engine_id, executable, true)
+    }
+
+    fn validate_admission_policy_inner(
+        &self,
+        key: &EngineKey,
+        engine_id: &str,
+        executable: &PathRef,
+        check_quiesced: bool,
+    ) -> Result<(), Error> {
         if self.sealed.load(Ordering::SeqCst) {
             return Err(Error::Conflict("application is shutting down".into()));
         }
@@ -407,16 +430,17 @@ impl EngineSupervisor {
         if self.is_retired_executable(executable) {
             return Err(Error::Conflict("engine executable is retired".into()));
         }
-        if self
-            .quiesced_executables
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .contains(executable)
-            || self
-                .quiesced_resources
+        if check_quiesced
+            && (self
+                .quiesced_executables
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .contains(executable)
+                || self
+                    .quiesced_resources
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .contains(executable))
         {
             return Err(Error::Conflict("engine folder move is in progress".into()));
         }
@@ -454,8 +478,63 @@ impl EngineSupervisor {
         executable: PathRef,
         prepared: bool,
     ) -> Result<AdmissionLease, Error> {
+        self.admit_with_resources_and_cancellation(key, engine_id, executable, &[], prepared, None)
+            .await
+    }
+
+    pub(super) async fn wait_for_migration_under_lease(
+        &self,
+        lease: &AdmissionLease,
+        path_refs: &[&PathRef],
+        operation_cancellation: Option<&CancellationToken>,
+    ) -> Result<(), Error> {
+        struct WaitingOnMigrationReset<'a>(&'a AtomicBool);
+        impl Drop for WaitingOnMigrationReset<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::SeqCst);
+            }
+        }
+        // Always clear `waiting_on_migration` on every exit path (including the early return
+        // below when the gate released between admission insertion and this wait), so a later
+        // `quiesce_executables` never skips a live admission.
+        let _reset = WaitingOnMigrationReset(&lease.admission.waiting_on_migration);
+        if !self.folder_switch.is_engine_admission_gated(path_refs) {
+            return Ok(());
+        }
+        lease
+            .admission
+            .waiting_on_migration
+            .store(true, Ordering::SeqCst);
+        let wait_result = self
+            .folder_switch
+            .wait_for_engine_admission(
+                path_refs,
+                Some(&lease.admission.cancel_token),
+                operation_cancellation,
+            )
+            .await;
+        drop(_reset);
+        if let Some(error) = lease.cancel_error() {
+            return Err(error);
+        }
+        wait_result
+    }
+
+    async fn admit_with_resources_and_cancellation(
+        &self,
+        key: EngineKey,
+        engine_id: String,
+        executable: PathRef,
+        resources: &[PathRef],
+        prepared: bool,
+        operation_cancellation: Option<&CancellationToken>,
+    ) -> Result<AdmissionLease, Error> {
         validate_uci_text("engine", &engine_id)?;
-        self.validate_admission_policy(&key, &engine_id, &executable)?;
+        let mut gated_refs: Vec<&PathRef> = Vec::with_capacity(1 + resources.len());
+        gated_refs.push(&executable);
+        gated_refs.extend(resources.iter());
+        let migration_gated = self.folder_switch.is_engine_admission_gated(&gated_refs);
+        self.validate_admission_policy_inner(&key, &engine_id, &executable, !migration_gated)?;
         let generation = self.allocate_generation()?;
         let admission = EngineAdmission {
             generation,
@@ -463,13 +542,15 @@ impl EngineSupervisor {
             executable,
             cancelled: Arc::new(AtomicBool::new(false)),
             cancellation_reason: Arc::default(),
+            cancel_token: CancellationToken::new(),
+            waiting_on_migration: Arc::new(AtomicBool::new(migration_gated)),
             prepared,
         };
         let lease = AdmissionLease {
             admissions: self.admissions.clone(),
             key,
             admission,
-            operation_cancellation: None,
+            operation_cancellation: operation_cancellation.cloned(),
             disarmed: false,
         };
         {
@@ -477,10 +558,21 @@ impl EngineSupervisor {
                 .admission_coordination
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            self.validate_admission_policy(
+            let still_gated = {
+                let mut refs: Vec<&PathRef> = Vec::with_capacity(1 + resources.len());
+                refs.push(&lease.admission.executable);
+                refs.extend(resources.iter());
+                self.folder_switch.is_engine_admission_gated(&refs)
+            };
+            lease
+                .admission
+                .waiting_on_migration
+                .store(still_gated, Ordering::SeqCst);
+            self.validate_admission_policy_inner(
                 &lease.key,
                 &lease.admission.engine_id,
                 &lease.admission.executable,
+                !still_gated,
             )?;
             if prepared
                 && self
@@ -501,6 +593,16 @@ impl EngineSupervisor {
                 previous.cancel(AdmissionCancellation::Cancelled);
             }
         }
+        // Wait on the Engine migration gate AFTER inserting the admission into `self.admissions`,
+        // so tab close, kill, retirement, replacement, and shutdown cancel this parked caller
+        // immediately without leaking a reservation.
+        {
+            let mut refs: Vec<&PathRef> = Vec::with_capacity(1 + resources.len());
+            refs.push(&lease.admission.executable);
+            refs.extend(resources.iter());
+            self.wait_for_migration_under_lease(&lease, &refs, operation_cancellation)
+                .await?;
+        }
         let _registration = self.registration.lock().await;
         if let Some(error) = lease.cancel_error() {
             return Err(error);
@@ -516,6 +618,7 @@ impl EngineSupervisor {
     /// Reserves the exact engine generation and binds its publication barrier to the owning
     /// native operation. Cancellation is checked by the admission lease before an actor can be
     /// published, without creating a second engine identity or cancellation registry.
+    #[cfg(test)]
     pub(crate) async fn admit_for_operation(
         &self,
         key: EngineKey,
@@ -523,7 +626,28 @@ impl EngineSupervisor {
         executable: PathRef,
         cancellation: CancellationToken,
     ) -> Result<AdmissionLease, Error> {
-        let mut admission = self.admit(key, engine_id, executable, false).await?;
+        self.admit_for_operation_with_resources(key, engine_id, executable, &[], cancellation)
+            .await
+    }
+
+    pub(crate) async fn admit_for_operation_with_resources(
+        &self,
+        key: EngineKey,
+        engine_id: String,
+        executable: PathRef,
+        resources: &[PathRef],
+        cancellation: CancellationToken,
+    ) -> Result<AdmissionLease, Error> {
+        let mut admission = self
+            .admit_with_resources_and_cancellation(
+                key,
+                engine_id,
+                executable,
+                resources,
+                false,
+                Some(&cancellation),
+            )
+            .await?;
         admission.operation_cancellation = Some(cancellation);
         if let Some(error) = admission.cancel_error() {
             return Err(error);
@@ -537,7 +661,21 @@ impl EngineSupervisor {
         engine_id: String,
         executable: PathRef,
     ) -> Result<AdmissionLease, Error> {
-        self.admit(key, engine_id, executable, false).await
+        self.admit_for_launch_with_resources(key, engine_id, executable, &[])
+            .await
+    }
+
+    pub(crate) async fn admit_for_launch_with_resources(
+        &self,
+        key: EngineKey,
+        engine_id: String,
+        executable: PathRef,
+        resources: &[PathRef],
+    ) -> Result<AdmissionLease, Error> {
+        self.admit_with_resources_and_cancellation(
+            key, engine_id, executable, resources, false, None,
+        )
+        .await
     }
 
     pub async fn prepare_engine_search(
@@ -562,8 +700,8 @@ impl EngineSupervisor {
         let generation = generation.parse::<u64>().map_err(|_| {
             Error::Conflict("engine search reservation is invalid or expired".into())
         })?;
-        let _registration = self.registration.lock().await;
-        let admission = {
+        let lease = {
+            let _registration = self.registration.lock().await;
             let _coordination = self
                 .admission_coordination
                 .lock()
@@ -589,25 +727,34 @@ impl EngineSupervisor {
                     "engine search reservation does not match the request".into(),
                 ));
             }
-            self.admissions.insert(
-                key.clone(),
-                EngineAdmission {
-                    prepared: false,
-                    ..admission.clone()
-                },
-            );
-            admission
-        };
-        Ok(AdmissionLease {
-            admissions: self.admissions.clone(),
-            key,
-            admission: EngineAdmission {
+            let updated = EngineAdmission {
                 prepared: false,
                 ..admission
-            },
-            operation_cancellation: None,
-            disarmed: false,
-        })
+            };
+            self.admissions.insert(key.clone(), updated.clone());
+            AdmissionLease {
+                admissions: self.admissions.clone(),
+                key,
+                admission: updated,
+                operation_cancellation: None,
+                disarmed: false,
+            }
+        };
+        // Wait on the Engine migration gate while the live admission lease is in `self.admissions`,
+        // so tab close, kill, retirement, or shutdown cancels a parked consumer immediately.
+        let exec_ref = lease.admission.executable.clone();
+        self.wait_for_migration_under_lease(&lease, &[&exec_ref], None)
+            .await?;
+        let _registration = self.registration.lock().await;
+        if let Some(error) = lease.cancel_error() {
+            return Err(error);
+        }
+        self.validate_admission_policy(
+            &lease.key,
+            &lease.admission.engine_id,
+            &lease.admission.executable,
+        )?;
+        Ok(lease)
     }
 
     pub(super) fn with_retired<T>(
@@ -868,6 +1015,12 @@ impl EngineSupervisor {
     > {
         let mut guard =
             RegistrationGuard::for_search(self.clone(), key.clone(), admission.generation());
+        let option_resources = crate::engine::resource_path_refs(&options.extra_options);
+        if !option_resources.is_empty() {
+            let refs: Vec<&PathRef> = option_resources.iter().collect();
+            self.wait_for_migration_under_lease(&admission, &refs, None)
+                .await?;
+        }
         let lifecycle = self.lifecycle_lease(&key);
         let _transition = lifecycle.lock().await;
         if let Some(error) = admission.cancel_error() {
@@ -1595,8 +1748,9 @@ impl EngineSupervisor {
                 lifted: false,
             };
             self.cancel_admissions_matching(AdmissionCancellation::Cancelled, |_, admission| {
-                executables.contains(&admission.executable)
-                    || resources.contains(&admission.executable)
+                !admission.waiting_on_migration.load(Ordering::SeqCst)
+                    && (executables.contains(&admission.executable)
+                        || resources.contains(&admission.executable))
             });
             drop(_coordination);
             drop(registration);
