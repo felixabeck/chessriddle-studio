@@ -39,6 +39,13 @@ pub enum Token {
     Outcome(String),
 }
 
+#[derive(Serialize, Clone, Type, Debug, PartialEq)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum LexedPgnGame {
+    Ok { tokens: Vec<Token> },
+    Failed { message: String },
+}
+
 #[cfg(test)]
 pub(crate) struct LexerTestHook {
     pub entered: std::sync::mpsc::SyncSender<()>,
@@ -203,6 +210,57 @@ pub fn validate_pgn_len(pgn: &str) -> Result<(), Error> {
     Ok(())
 }
 
+pub fn lex_pgn_games_cancellable(
+    pgn: &str,
+    max_games: u32,
+    cancellation: Option<&CancellationToken>,
+) -> Result<Vec<LexedPgnGame>, Error> {
+    if cancellation.is_some_and(|token| token.is_cancelled()) {
+        return Err(Error::Cancellation);
+    }
+    let never_cancelled = CancellationToken::new();
+    let cancel = cancellation.unwrap_or(&never_cancelled);
+    let ranges = crate::pgn::scan_game_ranges(std::io::Cursor::new(pgn.as_bytes()), cancel)
+        .map_err(|error| match error {
+            Error::Io(ref source) if source.kind() == std::io::ErrorKind::InvalidData => {
+                Error::InvalidInput(crate::pgn::PGN_NOT_PARSEABLE.into())
+            }
+            other => other,
+        })?;
+    if cancel.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
+    if ranges.len() as u64 > u64::from(max_games) {
+        return Err(Error::ResourceLimit(format!(
+            "PGN text exceeds {max_games} games"
+        )));
+    }
+    let mut games = Vec::with_capacity(ranges.len());
+    for range in ranges {
+        if cancel.is_cancelled() {
+            return Err(Error::Cancellation);
+        }
+        let slice = usize::try_from(range.start)
+            .ok()
+            .zip(usize::try_from(range.end).ok())
+            .and_then(|(start, end)| pgn.get(start..end));
+        let Some(game_pgn) = slice else {
+            games.push(LexedPgnGame::Failed {
+                message: crate::pgn::PGN_NOT_PARSEABLE.into(),
+            });
+            continue;
+        };
+        match lex_pgn_cancellable(game_pgn, cancellation) {
+            Ok(tokens) => games.push(LexedPgnGame::Ok { tokens }),
+            Err(Error::Cancellation) => return Err(Error::Cancellation),
+            Err(error) => games.push(LexedPgnGame::Failed {
+                message: error.to_string(),
+            }),
+        }
+    }
+    Ok(games)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn lex_pgn(
@@ -219,6 +277,29 @@ pub async fn lex_pgn(
         crate::infra::blocking::BLOCKING_GATEWAY
             .spawn_cancellable(cancellation, move |token| {
                 lex_pgn_cancellable(&pgn, Some(token))
+            })
+            .await
+    })
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn lex_pgn_games(
+    pgn: String,
+    max_games: u32,
+    ticket: Option<String>,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<LexedPgnGame>, Error> {
+    validate_pgn_len(&pgn)?;
+
+    let operation = crate::native_read_operation(ticket, &window, &state, "lex_pgn_games")?;
+    let cancellation = operation.token();
+    crate::infra::operations::run_native_operation(operation, "lex_pgn_games", async move {
+        crate::infra::blocking::BLOCKING_GATEWAY
+            .spawn_cancellable(cancellation, move |token| {
+                lex_pgn_games_cancellable(&pgn, max_games, Some(token))
             })
             .await
     })
@@ -539,6 +620,19 @@ mod tests {
         assert!(matches!(result, Err(Error::Cancellation)));
     }
 
+    struct LexerHookGuard;
+
+    impl Drop for LexerHookGuard {
+        fn drop(&mut self) {
+            set_test_lexer_hook(None);
+        }
+    }
+
+    fn install_test_lexer_hook(hook: LexerTestHook) -> LexerHookGuard {
+        set_test_lexer_hook(Some(hook));
+        LexerHookGuard
+    }
+
     #[test]
     fn test_lex_pgn_cancels_while_running_mid_parse() {
         let pgn = "[Event \"Test\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 1-0";
@@ -550,17 +644,10 @@ mod tests {
         let pgn_str = pgn.to_string();
         let worker = std::thread::spawn(move || {
             // Install the ONE-SHOT thread-local hook INSIDE the actual worker thread
-            set_test_lexer_hook(Some(LexerTestHook {
+            let _hook_guard = install_test_lexer_hook(LexerTestHook {
                 entered: entered_tx,
                 release: release_rx,
-            }));
-            struct Cleanup;
-            impl Drop for Cleanup {
-                fn drop(&mut self) {
-                    set_test_lexer_hook(None);
-                }
-            }
-            let _cleanup = Cleanup;
+            });
             lex_pgn_cancellable(&pgn_str, Some(&thread_token))
         });
 
@@ -588,17 +675,10 @@ mod tests {
         let thread_token = token.clone();
         let pgn_owned = pgn.to_string();
         let worker = std::thread::spawn(move || {
-            set_test_lexer_hook(Some(LexerTestHook {
+            let _hook_guard = install_test_lexer_hook(LexerTestHook {
                 entered: entered_tx,
                 release: release_rx,
-            }));
-            struct Cleanup;
-            impl Drop for Cleanup {
-                fn drop(&mut self) {
-                    set_test_lexer_hook(None);
-                }
-            }
-            let _cleanup = Cleanup;
+            });
             let mut lexer = Lexer {
                 tokens: Vec::new(),
                 cancellation: Some(thread_token),
@@ -628,6 +708,169 @@ mod tests {
                 tag: "Event".to_string(),
                 value: "Test".to_string(),
             }]
+        );
+    }
+
+    #[test]
+    fn lex_pgn_games_splits_two_games_into_two_token_lists() {
+        let pgn = "\u{feff}[Event \"One\"]\r\n\r\n1. e4 e5 *\r\n\r\n[Event \"Two\"]\r\n\r\n1. d4 d5 1-0\r\n";
+        let games = lex_pgn_games_cancellable(pgn, 2, None).unwrap();
+        assert_eq!(
+            games,
+            vec![
+                LexedPgnGame::Ok {
+                    tokens: vec![
+                        Token::Header {
+                            tag: "Event".into(),
+                            value: "One".into(),
+                        },
+                        Token::San("e4".into()),
+                        Token::San("e5".into()),
+                        Token::Outcome("*".into()),
+                    ],
+                },
+                LexedPgnGame::Ok {
+                    tokens: vec![
+                        Token::Header {
+                            tag: "Event".into(),
+                            value: "Two".into(),
+                        },
+                        Token::San("d4".into()),
+                        Token::San("d5".into()),
+                        Token::Outcome("1-0".into()),
+                    ],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_pgn_games_keeps_line_start_bracket_inside_comment_in_one_game() {
+        let pgn = "[Event \"Commented\"]\n\n1. e4 { line one\n[FakeTag \"still inside comment\"]\n} 1... e5 *\n";
+        let games = lex_pgn_games_cancellable(pgn, 10, None).unwrap();
+        assert_eq!(games.len(), 1);
+        assert_eq!(
+            games[0],
+            LexedPgnGame::Ok {
+                tokens: vec![
+                    Token::Header {
+                        tag: "Event".into(),
+                        value: "Commented".into(),
+                    },
+                    Token::San("e4".into()),
+                    Token::Comment(" line one\n[FakeTag \"still inside comment\"]\n".into()),
+                    Token::San("e5".into()),
+                    Token::Outcome("*".into()),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn lex_pgn_games_reports_one_malformed_range_while_others_lex() {
+        let pgn = "[Event \"First\"]\n\n1. e4 e5 *\n\n[Event \"Broken\"]\n\n1. c4 *\n\n1. Nf3 *\n\n[Event \"Third\"]\n\n1. d4 d5 *\n";
+        let games = lex_pgn_games_cancellable(pgn, 10, None).unwrap();
+        assert_eq!(games.len(), 3);
+        assert!(
+            matches!(games[0], LexedPgnGame::Ok { ref tokens } if tokens.contains(&Token::San("e4".into())))
+        );
+        assert!(
+            matches!(
+                games[1],
+                LexedPgnGame::Failed { ref message } if message.contains(crate::pgn::MORE_THAN_ONE_GAME)
+            ),
+            "expected middle range to fail, got {games:?}"
+        );
+        assert!(
+            matches!(games[2], LexedPgnGame::Ok { ref tokens } if tokens.contains(&Token::San("d4".into())))
+        );
+    }
+
+    #[test]
+    fn lex_pgn_games_refuses_above_max_games_before_lexing() {
+        let pgn =
+            "[Event \"1\"]\n\n1. e4 *\n\n[Event \"2\"]\n\n1. d4 *\n\n[Event \"3\"]\n\n1. c4 *\n";
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (_release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        let _hook_guard = install_test_lexer_hook(LexerTestHook {
+            entered: entered_tx,
+            release: release_rx,
+        });
+
+        let result = lex_pgn_games_cancellable(pgn, 2, None);
+        assert!(matches!(result, Err(Error::ResourceLimit(_))));
+        assert!(
+            entered_rx.try_recv().is_err(),
+            "lexer must not be invoked when range count exceeds max_games"
+        );
+    }
+
+    #[test]
+    fn lex_pgn_games_empty_text_yields_zero_games() {
+        assert_eq!(lex_pgn_games_cancellable("", 10, None).unwrap(), vec![]);
+        assert_eq!(
+            lex_pgn_games_cancellable("   \r\n\t  \n", 10, None).unwrap(),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn lex_pgn_games_unclosed_comment_at_eof_returns_invalid_input() {
+        let pgn = "[Event \"Unclosed\"]\n\n1. e4 { no close\n";
+        let result = lex_pgn_games_cancellable(pgn, 10, None);
+        assert!(
+            matches!(
+                result,
+                Err(Error::InvalidInput(ref message)) if message == crate::pgn::PGN_NOT_PARSEABLE
+            ),
+            "expected InvalidInput for unclosed comment at EOF, got {result:?}"
+        );
+    }
+
+    fn lex_games_cancelled_mid_lex(pgn: &str) -> Result<Vec<LexedPgnGame>, Error> {
+        let token = CancellationToken::new();
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        let thread_token = token.clone();
+        let pgn_owned = pgn.to_string();
+        let worker = std::thread::spawn(move || {
+            let _hook_guard = install_test_lexer_hook(LexerTestHook {
+                entered: entered_tx,
+                release: release_rx,
+            });
+            lex_pgn_games_cancellable(&pgn_owned, 10, Some(&thread_token))
+        });
+
+        entered_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("worker must enter lexer");
+        token.cancel();
+        let _ = release_tx.send(());
+
+        worker.join().expect("worker thread must complete")
+    }
+
+    #[test]
+    fn lex_pgn_games_cancels_before_and_during_lexing() {
+        let pgn = "[Event \"1\"]\n\n1. e4 e5 *\n\n[Event \"2\"]\n\n1. d4 d5 *\n";
+        let pre_cancelled = CancellationToken::new();
+        pre_cancelled.cancel();
+        assert!(matches!(
+            lex_pgn_games_cancellable(pgn, 10, Some(&pre_cancelled)),
+            Err(Error::Cancellation)
+        ));
+
+        let result = lex_games_cancelled_mid_lex(pgn);
+        assert!(matches!(result, Err(Error::Cancellation)));
+    }
+
+    #[test]
+    fn lex_pgn_games_cancels_mid_lex_on_single_game() {
+        let pgn = "[Event \"Only\"]\n\n1. e4 e5 2. Nf3 Nc6 *";
+        let result = lex_games_cancelled_mid_lex(pgn);
+        assert!(
+            matches!(result, Err(Error::Cancellation)),
+            "single-game mid-lex cancellation must return Err(Cancellation), got {result:?}"
         );
     }
 }

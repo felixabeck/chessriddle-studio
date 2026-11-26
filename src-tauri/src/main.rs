@@ -100,7 +100,7 @@ use crate::file_workspace::{
     open_file_workspace, rename_workspace_file, restore_workspace_trash_item,
     trash_workspace_entry, write_workspace_file_metadata,
 };
-use crate::lexer::lex_pgn;
+use crate::lexer::{lex_pgn, lex_pgn_games};
 use crate::lichess::{
     get_authenticated_lichess_account, get_authenticated_lichess_explorer, get_public_lichess_json,
 };
@@ -1787,6 +1787,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             db::linked_collections::restore_collection_archive,
             read_games,
             lex_pgn,
+            lex_pgn_games,
             is_bmi2_compatible,
             delete_game,
             move_games,
@@ -6437,6 +6438,7 @@ mod blocking_offload_scans {
             ),
             // lexer.rs
             ("lex_pgn", "pure in-memory PGN lexer"),
+            ("lex_pgn_games", "pure in-memory multi-game PGN lexer"),
             // library_sync/commands.rs (syncs non-migrating PGN file workspace to ChessRiddle cloud)
             (
                 "library_sync_snapshot",

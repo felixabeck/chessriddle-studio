@@ -81,6 +81,7 @@ const mocks = vi.hoisted(() => ({
     readGames: vi.fn(),
     deleteGame: vi.fn(),
     lexPgn: vi.fn(),
+    lexPgnGames: vi.fn(),
     listFileWorkspace: vi.fn(),
     logError: vi.fn(),
     getCurrentWindow: vi.fn(),
@@ -473,6 +474,7 @@ vi.mock("@/bindings/generated", () => ({
         readGames: mocks.readGames,
         deleteGame: mocks.deleteGame,
         lexPgn: mocks.lexPgn,
+        lexPgnGames: mocks.lexPgnGames,
         listFileWorkspace: mocks.listFileWorkspace,
     },
     events: Object.fromEntries(
@@ -552,6 +554,7 @@ describe("tauri command facade", () => {
         mocks.readGames.mockReset();
         mocks.deleteGame.mockReset();
         mocks.lexPgn.mockReset();
+        mocks.lexPgnGames.mockReset();
         mocks.listFileWorkspace.mockReset();
         mocks.logError.mockReset().mockResolvedValue(undefined);
         mocks.windowListen.mockReset().mockResolvedValue(vi.fn());
@@ -949,6 +952,10 @@ describe("tauri command facade", () => {
         mocks.readGames.mockResolvedValue({ status: "ok", data: page });
         mocks.deleteGame.mockResolvedValue({ status: "ok", data: null });
         mocks.lexPgn.mockResolvedValue({ status: "ok", data: [] });
+        mocks.lexPgnGames.mockResolvedValue({
+            status: "ok",
+            data: [{ status: "ok", tokens: [] }],
+        });
         mocks.listFileWorkspace.mockResolvedValue({
             status: "ok",
             data: { entries: [], unread: [] },
@@ -981,6 +988,11 @@ describe("tauri command facade", () => {
         await tauri.lexPgn("1. e4", { signal });
         expect(mocks.lexPgn).toHaveBeenCalledWith("1. e4", "ticket-pgn");
 
+        await expect(tauri.lexPgnGames("1. e4 *", 2000, { signal })).resolves.toEqual([
+            { status: "ok", tokens: [] },
+        ]);
+        expect(mocks.lexPgnGames).toHaveBeenCalledWith("1. e4 *", 2000, "ticket-pgn");
+
         await tauri.listFileWorkspace(wsHandle, { signal });
         expect(mocks.listFileWorkspace).toHaveBeenCalledWith(wsHandle, "ticket-pgn");
 
@@ -999,6 +1011,9 @@ describe("tauri command facade", () => {
 
         await tauri.lexPgn("1. e4");
         expect(mocks.lexPgn).toHaveBeenCalledWith("1. e4", null);
+
+        await tauri.lexPgnGames("1. e4 *", 2000);
+        expect(mocks.lexPgnGames).toHaveBeenCalledWith("1. e4 *", 2000, null);
 
         await tauri.listFileWorkspace(wsHandle);
         expect(mocks.listFileWorkspace).toHaveBeenCalledWith(wsHandle, null);
