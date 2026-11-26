@@ -841,6 +841,8 @@ std::thread_local! {
         const { std::cell::RefCell::new(None) };
     static ACQUIRE_TARGET_BEFORE_PROOF_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
         const { std::cell::RefCell::new(None) };
+    static HOME_DEFAULT_AFTER_STUDIO_OPEN_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
     static PGN_EXPORT_POST_CREATE_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
         const { std::cell::RefCell::new(None) };
     static ACQUIRE_TARGET_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -2936,20 +2938,43 @@ pub(crate) fn ensure_home_owned_default_dir(
     let studio_path = home.as_path().join(studio_name);
     let studio = crate::infra::fs::ensure_directory_at(&home.directory, studio_name)
         .map_err(|error| default_root_refusal(&studio_path, error))?;
+    #[cfg(test)]
+    HOME_DEFAULT_AFTER_STUDIO_OPEN_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook();
+        }
+    });
     // A verified registration keeps the spelling it is given, and acquire_stored_target
     // re-proves it as canonical parent + leaf. An existing studio folder in another case
-    // (opened case-insensitively on NTFS) must therefore be spelled as it is on disk; the
-    // canonical spelling must still name the directory that was opened.
-    let canonical_studio = fs::canonicalize(&studio_path)
-        .map_err(|error| default_root_refusal(&studio_path, Error::from(error)))?;
-    let canonical_identity = opened_file_identity(
-        &folder_switch::open_directory_nofollow_readonly(&canonical_studio)?,
-    )?;
-    if canonical_identity != opened_file_identity(&studio)? {
-        return Err(default_root_refusal(
-            &studio_path,
-            Error::Conflict("default folder changed while it was opened".into()),
-        ));
+    // (opened case-insensitively on NTFS) must therefore be spelled as it is on disk. The
+    // canonical spelling must still be the opened home's child of that name and the opened
+    // directory: a rename plus link planted between the open and canonicalize resolves
+    // elsewhere and is refused.
+    let refuse = |error: Error| default_root_refusal(&studio_path, error);
+    let changed = || {
+        refuse(Error::Conflict(
+            "default folder changed while it was opened".into(),
+        ))
+    };
+    let canonical_identity = |path: &Path| -> Result<(u64, u64), Error> {
+        opened_file_identity(&folder_switch::open_directory_nofollow_readonly(path)?)
+    };
+    let canonical_home =
+        fs::canonicalize(home.as_path()).map_err(|error| refuse(Error::from(error)))?;
+    let canonical_studio =
+        fs::canonicalize(&studio_path).map_err(|error| refuse(Error::from(error)))?;
+    let same_name = canonical_studio
+        .file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|name| name.eq_ignore_ascii_case(home.studio_leaf()));
+    if !same_name || canonical_studio.parent() != Some(canonical_home.as_path()) {
+        return Err(changed());
+    }
+    if canonical_identity(&canonical_home).map_err(refuse)?
+        != opened_file_identity(&home.directory)?
+        || canonical_identity(&canonical_studio).map_err(refuse)? != opened_file_identity(&studio)?
+    {
+        return Err(changed());
     }
     let leaf = OsStr::new(kind.leaf());
     let path = canonical_studio.join(leaf);

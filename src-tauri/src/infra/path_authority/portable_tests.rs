@@ -5107,3 +5107,57 @@ fn native_shell_path_is_unchanged_off_windows() {
     let path = PathBuf::from("/home/user/Engines");
     assert_eq!(native_shell_path(&path), path);
 }
+
+/// A studio folder renamed away and replaced by a link to itself between the producer's
+/// no-follow open and its canonical spelling must be refused: the canonical spelling would
+/// otherwise name a directory outside the home folder.
+#[cfg(unix)]
+#[test]
+fn home_default_refuses_a_studio_folder_swapped_for_a_link_after_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    let outside = dir.path().join("outside");
+    fs::create_dir_all(&home_path).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    let home = HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER);
+    let studio = home.as_path().join(home.studio_leaf());
+    let hijacked = outside.join("hijacked");
+    let (studio_hook, hijacked_hook) = (studio.clone(), hijacked.clone());
+    HOME_DEFAULT_AFTER_STUDIO_OPEN_HOOK.with(|slot| {
+        *slot.borrow_mut() = Some(Box::new(move || {
+            fs::rename(&studio_hook, &hijacked_hook).unwrap();
+            std::os::unix::fs::symlink(&hijacked_hook, &studio_hook).unwrap();
+        }));
+    });
+    let result = ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases);
+    assert!(result.is_err(), "a swapped studio folder must be refused");
+    assert!(!hijacked.join("Databases").exists());
+}
+
+/// The producer spells the default as canonical parent + leaf, the spelling the registry
+/// re-proves; a root registered from it activates and lists.
+#[test]
+fn home_default_path_is_the_canonical_spelling_and_activates() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    fs::create_dir_all(&home_path).unwrap();
+    let authorized = ensure_home_owned_default_dir(
+        &HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER),
+        VisibleDefaultKind::Databases,
+    )
+    .unwrap();
+    assert_eq!(
+        authorized.path(),
+        fs::canonicalize(authorized.path().parent().unwrap())
+            .unwrap()
+            .join("Databases")
+    );
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let root = authority
+        .get_or_create_database_root(authorized.path(), "Databases", Some(authorized.identity()))
+        .unwrap();
+    authority.set_active_database_root(&root).unwrap();
+    authority
+        .list_database_children_cancellable(&root, &CancellationToken::new())
+        .unwrap();
+}
