@@ -703,6 +703,32 @@ fn default_get_or_create_reuses_by_live_identity_for_verbatim_and_8_3_spellings(
             .unwrap();
         assert_eq!(first.path_ref(), third.path_ref());
     }
+    // The registered root stays usable: activation and listing re-prove its stored spelling.
+    authority.set_active_database_root(&first).unwrap();
+    authority
+        .list_database_children_cancellable(&first, &tokio_util::sync::CancellationToken::new())
+        .unwrap();
+}
+
+#[test]
+fn default_root_under_a_case_variant_studio_folder_activates_and_lists() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    // The user already has the studio folder in another case; NTFS opens it case-insensitively.
+    fs::create_dir_all(home_path.join("chessriddle studio")).unwrap();
+    let authorized = ensure_home_owned_default_dir(
+        &HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER),
+        VisibleDefaultKind::Databases,
+    )
+    .unwrap();
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let root = authority
+        .get_or_create_database_root(authorized.path(), "Databases", Some(authorized.identity()))
+        .unwrap();
+    authority.set_active_database_root(&root).unwrap();
+    authority
+        .list_database_children_cancellable(&root, &tokio_util::sync::CancellationToken::new())
+        .unwrap();
 }
 
 #[tokio::test]

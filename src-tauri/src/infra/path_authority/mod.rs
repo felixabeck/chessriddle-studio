@@ -2936,8 +2936,23 @@ pub(crate) fn ensure_home_owned_default_dir(
     let studio_path = home.as_path().join(studio_name);
     let studio = crate::infra::fs::ensure_directory_at(&home.directory, studio_name)
         .map_err(|error| default_root_refusal(&studio_path, error))?;
+    // A verified registration keeps the spelling it is given, and acquire_stored_target
+    // re-proves it as canonical parent + leaf. An existing studio folder in another case
+    // (opened case-insensitively on NTFS) must therefore be spelled as it is on disk; the
+    // canonical spelling must still name the directory that was opened.
+    let canonical_studio = fs::canonicalize(&studio_path)
+        .map_err(|error| default_root_refusal(&studio_path, Error::from(error)))?;
+    let canonical_identity = opened_file_identity(
+        &folder_switch::open_directory_nofollow_readonly(&canonical_studio)?,
+    )?;
+    if canonical_identity != opened_file_identity(&studio)? {
+        return Err(default_root_refusal(
+            &studio_path,
+            Error::Conflict("default folder changed while it was opened".into()),
+        ));
+    }
     let leaf = OsStr::new(kind.leaf());
-    let path = studio_path.join(leaf);
+    let path = canonical_studio.join(leaf);
     let opened = crate::infra::fs::ensure_directory_at(&studio, leaf)
         .map_err(|error| default_root_refusal(&path, error))?;
     let identity = opened_file_identity(&opened)?;
